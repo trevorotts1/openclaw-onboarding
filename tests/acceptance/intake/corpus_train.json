@@ -1,0 +1,8021 @@
+{
+ "split": "train",
+ "frozen": false,
+ "note": "Train split. May be read while writing or tuning the intake rule.",
+ "items": [
+  {
+   "id": "JEV29-0001",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "plain",
+   "history": [],
+   "message": "What does our Marketing department do?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0002",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "plain",
+   "history": [],
+   "message": "How would you create this campaign?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0003",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you create the campaign for me?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0004",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Create the campaign and explain why you chose that approach.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0007",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "You do it.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0008",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "plain",
+   "history": [],
+   "message": "Can you explain it to me?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0009",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "Please have Marketing handle it.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0011",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "negated",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "I don't want you to do it; send it to Sales.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0012",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "quoted",
+   "history": [],
+   "message": "The client wrote, 'you do it'; what does that mean?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0013",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "Is that finished?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0014",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "Stop that task.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0016",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Actually, use the new-business-owner audience.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0017",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Thanks.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0018",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "negated",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "Draft it here, but do not send it.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0019",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign drafted."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring launch campaign draft is ready on task task-spring-launch-campaign. Nothing has been sent yet."
+    }
+   ],
+   "message": "Send the draft you already made.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0022",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you explain how our Billing team typically handles case study?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0023",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How would you approach campaign in theory, without doing anything?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0025",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Lay out the tradeoffs for pricing page but do not start any work.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0026",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Just describe the options for launch email; nothing to execute yet.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0028",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Teach me how newsletter is normally structured; background only.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0029",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "In principle, how does Creative decide the shape of landing page?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0031",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Summarize how Billing ran campaign last quarter; I am only reviewing.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0032",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Which team formally owns status report, and what do they cover?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0034",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "What are the common failure modes when teams attempt launch email?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0035",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How long does onboarding sequence usually take Creative, roughly speaking?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0037",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you explain how our Operations team typically handles status report?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0038",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How would you approach pricing page in theory, without doing anything?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0040",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Lay out the tradeoffs for onboarding sequence but do not start any work.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0041",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Just describe the options for newsletter; nothing to execute yet.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0043",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Teach me how case study is normally structured; background only.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0044",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "In principle, how does Marketing decide the shape of campaign?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0046",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Summarize how Operations ran pricing page last quarter; I am only reviewing.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0047",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Which team formally owns launch email, and what do they cover?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0049",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "What are the common failure modes when teams attempt newsletter?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0050",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How long does landing page usually take Marketing, roughly speaking?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0052",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you explain how our Creative team typically handles launch email?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0053",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How would you approach onboarding sequence in theory, without doing anything?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0055",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Lay out the tradeoffs for landing page but do not start any work.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0056",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Just describe the options for case study; nothing to execute yet.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0058",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Teach me how status report is normally structured; background only.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0059",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "In principle, how does Sales decide the shape of pricing page?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0061",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Summarize how Creative ran onboarding sequence last quarter; I am only reviewing.",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0062",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Which team formally owns newsletter, and what do they cover?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0064",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "What are the common failure modes when teams attempt case study?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0065",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "paraphrase",
+   "history": [],
+   "message": "How long does campaign usually take Sales, roughly speaking?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0066",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you build launch email for Marketing this week?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0067",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you please draft onboarding sequence by Monday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0069",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Please put together landing page for lapsed subscribers.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0070",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I need case study done before Tuesday; please take it on.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0072",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you get status report over the line for lapsed subscribers?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0073",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Build me pricing page; Support will approve the final.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0075",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Take ownership of onboarding sequence and drive it to done.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0076",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Please own newsletter end to end for Support.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0078",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I would like case study prepared for lapsed subscribers by Wednesday.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0079",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Can you take campaign off my plate this Thursday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0081",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you please draft newsletter by Monday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0082",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Would you create landing page covering churn signals?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0084",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I need campaign done before Tuesday; please take it on.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0085",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Go ahead and write status report with Billing owning review.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0087",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Build me launch email; Sales will approve the final.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0088",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Kick off onboarding sequence for first-time founders and keep me posted.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0090",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Please own landing page end to end for Sales.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0091",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Start case study now; details for first-time founders follow tomorrow.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0093",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Can you take status report off my plate this Thursday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0094",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you build newsletter for Operations this week?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0096",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Would you create case study covering onboarding friction?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0097",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Please put together campaign for agency partners.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0099",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Go ahead and write pricing page with Support owning review.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0100",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you get launch email over the line for agency partners?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0102",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Kick off newsletter for weekend shoppers and keep me posted.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0103",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Take ownership of landing page and drive it to done.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0105",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Start campaign now; details for weekend shoppers follow tomorrow.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0106",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I would like status report prepared for agency partners by Wednesday.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0108",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you build landing page for Billing this week?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0109",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Could you please draft case study by Monday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0111",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Please put together status report for first-time founders.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0112",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I need pricing page done before Tuesday; please take it on.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0114",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Can you get onboarding sequence over the line for first-time founders?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0115",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Build me newsletter; Creative will approve the final.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0117",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Take ownership of case study and drive it to done.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0118",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Please own campaign end to end for Creative.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0120",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "I would like pricing page prepared for first-time founders by Wednesday.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0121",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "paraphrase",
+   "history": [],
+   "message": "Can you take launch email off my plate this Thursday?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0123",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Draft case study for lapsed subscribers, then explain your three biggest choices.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0124",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Build newsletter and walk me through the reasoning afterwards.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0126",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Produce status report for Marketing and justify the headline approach.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0127",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Create pricing page and tell me why you structured it that way.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0129",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Build landing page and walk me through the reasoning afterwards.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0130",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Write onboarding sequence; I also want a short note on the alternatives you rejected.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0132",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Create launch email and tell me why you structured it that way.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0133",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Draft status report for lapsed subscribers, then explain your three biggest choices.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0135",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Write newsletter; I also want a short note on the alternatives you rejected.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0136",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Produce launch email for Marketing and justify the headline approach.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0138",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Draft pricing page for lapsed subscribers, then explain your three biggest choices.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0139",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Build campaign and walk me through the reasoning afterwards.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0141",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Produce onboarding sequence for Marketing and justify the headline approach.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0142",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Create newsletter and tell me why you structured it that way.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0144",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Build status report and walk me through the reasoning afterwards.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0145",
+   "source": "jev29-corpus",
+   "source_intent": "mixed_answer_and_task",
+   "form": "explicit",
+   "history": [],
+   "message": "Write case study; I also want a short note on the alternatives you rejected.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0148",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the status report done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the status report is on the Command Center board as task task-status-report-1 and the team is working on it."
+    }
+   ],
+   "message": "Stop work on the status report right now.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0149",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the pricing page done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the pricing page is on the Command Center board as task task-pricing-page-2 and the team is working on it."
+    }
+   ],
+   "message": "Pause the pricing page; do not delete anything.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0151",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the onboarding sequence done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the onboarding sequence is on the Command Center board as task task-onboarding-sequence-4 and the team is working on it."
+    }
+   ],
+   "message": "Resume the onboarding sequence where it left off.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0152",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the newsletter done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the newsletter is on the Command Center board as task task-newsletter-5 and the team is working on it."
+    }
+   ],
+   "message": "Cancel the newsletter and confirm it stopped.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0154",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the case study done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the case study is on the Command Center board as task task-case-study-7 and the team is working on it."
+    }
+   ],
+   "message": "Archive the case study once the summary lands.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0155",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the campaign is on the Command Center board as task task-campaign-8 and the team is working on it."
+    }
+   ],
+   "message": "Reopen the campaign; the client replied with changes.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0157",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the newsletter done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the newsletter is on the Command Center board as task task-pricing-page-10 and the team is working on it."
+    }
+   ],
+   "message": "Is the newsletter finished yet?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0158",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the landing page done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the landing page is on the Command Center board as task task-launch-email-11 and the team is working on it."
+    }
+   ],
+   "message": "Stop work on the landing page right now.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0160",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the campaign drafted."
+    },
+    {
+     "role": "assistant",
+     "content": "The campaign draft is ready on task task-newsletter-13. Nothing has been sent yet."
+    }
+   ],
+   "message": "Send the campaign draft you already made.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0161",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the status report done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the status report is on the Command Center board as task task-landing-page-14 and the team is working on it."
+    }
+   ],
+   "message": "Resume the status report where it left off.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0163",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the launch email done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the launch email is on the Command Center board as task task-campaign-16 and the team is working on it."
+    }
+   ],
+   "message": "What is the status of the launch email?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0164",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "explicit",
+   "history": [],
+   "message": "Archive the onboarding sequence once the summary lands.",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": true
+  },
+  {
+   "id": "JEV29-0165",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the newsletter done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the newsletter is on the Command Center board as task task-pricing-page-18 and the team is working on it."
+    }
+   ],
+   "message": "Reopen the newsletter; the client replied with changes.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0167",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the pricing page done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the pricing page is on the Command Center board as task task-onboarding-sequence-20 and the team is working on it."
+    }
+   ],
+   "message": "Is the pricing page finished yet?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0168",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the launch email done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the launch email is on the Command Center board as task task-newsletter-21 and the team is working on it."
+    }
+   ],
+   "message": "Stop work on the launch email right now.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0170",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the newsletter drafted."
+    },
+    {
+     "role": "assistant",
+     "content": "The newsletter draft is ready on task task-case-study-23. Nothing has been sent yet."
+    }
+   ],
+   "message": "Send the newsletter draft you already made.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0171",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the landing page done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the landing page is on the Command Center board as task task-campaign-24 and the team is working on it."
+    }
+   ],
+   "message": "Resume the landing page where it left off.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0173",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the campaign is on the Command Center board as task task-pricing-page-26 and the team is working on it."
+    }
+   ],
+   "message": "What is the status of the campaign?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0174",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the status report done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the status report is on the Command Center board as task task-launch-email-27 and the team is working on it."
+    }
+   ],
+   "message": "Archive the status report once the summary lands.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0176",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "explicit",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the launch email done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the launch email is on the Command Center board as task task-newsletter-29 and the team is working on it."
+    }
+   ],
+   "message": "Hold the launch email until I confirm the audience.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0177",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Yes, audience option lapsed subscribers is right; proceed with it.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0179",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Confirming: keep everything, only switch the headline for lapsed subscribers.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0180",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "The first-time founders framing is correct; lock it in.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0182",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Yes, audience option new-business owners is right; proceed with it.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0183",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Actually use weekend shoppers instead of the previous segment.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0185",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "The weekend shoppers framing is correct; lock it in.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0186",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Change of plan: target new-business owners and leave the rest untouched.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0188",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Actually use enterprise buyers instead of the previous segment.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0189",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Confirming: keep everything, only switch the headline for agency partners.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0191",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Change of plan: target agency partners and leave the rest untouched.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0192",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Yes, audience option first-time founders is right; proceed with it.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0194",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Confirming: keep everything, only switch the headline for first-time founders.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0195",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "The lapsed subscribers framing is correct; lock it in.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0197",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Yes, audience option weekend shoppers is right; proceed with it.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0198",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Actually use new-business owners instead of the previous segment.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0200",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "The new-business owners framing is correct; lock it in.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0201",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "plain",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "Change of plan: target weekend shoppers and leave the rest untouched.",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0202",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Thank you!",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0204",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Appreciate it.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0205",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Hi there.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0207",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Perfect, thanks!",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0208",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "That helps, thanks.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0210",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Thanks a lot.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0211",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Understood, thanks.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0213",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Morning — just checking in.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0214",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Lovely, thanks for that.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0216",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Good evening; nothing needed.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0217",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Thanks for the update.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0219",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Hello again.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0220",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "plain",
+   "history": [],
+   "message": "Much appreciated.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0222",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Hmm.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0223",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Uh...",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0225",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "???",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0226",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "asdf",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0228",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Hold on.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0229",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Wait.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0231",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Hm, interesting.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0232",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Erm.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0234",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Could be.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0235",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "...",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0237",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "One sec.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0238",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Hmm, let me get back to you.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0240",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Pass for now.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0241",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Meh.",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0242",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "misspelled",
+   "history": [],
+   "message": "Pls creat the campain for Marketing",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0247",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "misspelled",
+   "history": [],
+   "message": "Explian the optoins, dont biuld yet",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0248",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "misspelled",
+   "history": [],
+   "message": "Cna you bild the landnig page",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0249",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "misspelled",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "Whta is teh stauts of the reprot",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0250",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "misspelled",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "Yuo do it, dont delegtae",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0251",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "misspelled",
+   "history": [],
+   "message": "Sory, thnaks for hlep",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0253",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "misspelled",
+   "history": [],
+   "message": "How woudl you creat thsi sequnce",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0254",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "misspelled",
+   "history": [],
+   "message": "Buidl me the prcing page pls",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0255",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "misspelled",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "Cancell teh onbording sequnce now",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0256",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "misspelled",
+   "history": [],
+   "message": "Gud mornign",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0257",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "misspelled",
+   "history": [],
+   "message": "Craete case stduy and explian why",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0261",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "draft — here — no send",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0262",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "that thing... finished?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": true
+  },
+  {
+   "id": "JEV29-0264",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "marketing? handle?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0265",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "audience... yes?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0267",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "send... or hold?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0268",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "Jordan... that draft?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0270",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "new audience... switch?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0271",
+   "source": "jev29-corpus",
+   "source_intent": "unresolved",
+   "form": "fragment",
+   "history": [],
+   "message": "build... explain?",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0272",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "stt",
+   "history": [],
+   "message": "can you create the campaign for me please",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0273",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "stt",
+   "history": [
+    {
+     "role": "user",
+     "content": "We need a partner newsletter written for next month."
+    },
+    {
+     "role": "assistant",
+     "content": "Sounds good. Before I put it on the board: do you want to name who handles the partner newsletter, or should I pick?"
+    }
+   ],
+   "message": "have Jordan do it",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0275",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "stt",
+   "history": [],
+   "message": "what does our marketing department do",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0278",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "stt",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the newsletter drafted."
+    },
+    {
+     "role": "assistant",
+     "content": "The newsletter draft is ready on task task-newsletter. Nothing has been sent yet."
+    }
+   ],
+   "message": "send the newsletter draft you already made",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0279",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "stt",
+   "history": [],
+   "message": "explain the options but do not build anything yet",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0280",
+   "source": "jev29-corpus",
+   "source_intent": "clarification_response",
+   "form": "stt",
+   "history": [
+    {
+     "role": "user",
+     "content": "Build the spring promo landing page."
+    },
+    {
+     "role": "assistant",
+     "content": "The spring promo landing page is on the board as task task-landing-page-31. Before the team writes the headline: which audience should it target? New-business owners, lapsed subscribers, first-time founders, agency partners, or weekend shoppers?"
+    }
+   ],
+   "message": "yes that new audience sounds right",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0281",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "stt",
+   "history": [],
+   "message": "have support handle the onboarding calls",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0283",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "stt",
+   "history": [],
+   "message": "good morning just checking in",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0284",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "non_english",
+   "history": [],
+   "message": "¿Puedes crear la campaña por mí?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0287",
+   "source": "jev29-corpus",
+   "source_intent": "answer_only",
+   "form": "non_english",
+   "history": [],
+   "message": "Expliquez les options, ne construisez rien encore",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0288",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "non_english",
+   "history": [],
+   "message": "Bitte entwirf die Kampagne, sende sie aber nicht",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0289",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "non_english",
+   "history": [],
+   "message": "Grazie mille per l'aiuto",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0291",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "non_english",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "¿Ya terminó el informe?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0292",
+   "source": "jev29-corpus",
+   "source_intent": "existing_task_control",
+   "form": "non_english",
+   "history": [
+    {
+     "role": "user",
+     "content": "Please get the spring launch campaign done."
+    },
+    {
+     "role": "assistant",
+     "content": "On it: the spring launch campaign is on the Command Center board as task task-spring-launch-campaign and the team is working on it."
+    }
+   ],
+   "message": "Arrête cette tâche immédiatement",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0293",
+   "source": "jev29-corpus",
+   "source_intent": "social_conversation",
+   "form": "non_english",
+   "history": [],
+   "message": "Danke für die schnelle Antwort",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "JEV29-0294",
+   "source": "jev29-corpus",
+   "source_intent": "task_request",
+   "form": "non_english",
+   "history": [],
+   "message": "Per favore scrivi la sequenza di benvenuto",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0001",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "can u change the price on the coaching page to $997",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0002",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Mind sending me the latest contract?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0004",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "tell mrs henderson her cake will be ready friday at 2 not thursday",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0005",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Could you text the customer that the plumber is running 20 min late",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0007",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "need a flyer for the fall sale by wed",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0008",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Would you mind pulling together last month's sales numbers for me?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0010",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Book me a dentist appt next week sometime tues or wed afternoon",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0011",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Remind the team we close early on the 24th",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0013",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I need a blog post about how often people should get their gutters cleaned",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0014",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Could you follow up with the lady who asked about the wedding package, she never booked",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0016",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Draft a reply to that 1 star review, be nice but firm",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0017",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "can we get the new hire set up with an email account",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0019",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "make me a spreadsheet of all our vendors and their contact info",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0020",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Order more to-go boxes, we're almost out",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0022",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Walk the new VA through onboarding",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0023",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Summarize this week's sales calls for me",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0025",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Please cancel the Tuesday staff meeting and let everyone know",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0026",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "find me 3 quotes for commercial cleaning services",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0028",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can you look into why our website is loading so slow",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0029",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Set up a reminder text for appointments 24 hrs before",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0031",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "use the blue logo instead on the business cards",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0032",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "switch our newsletter to go out on tuesdays instead of mondays",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0034",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "ok so the thing is we got like 40 new leads from the expo and nobody has called them yet so can someone start reaching out today",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0035",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "get me a list of everyone who bought in the last 90 days but didnt come back",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0037",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "pay the electric bill",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0038",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Refund the customer from order 4471, the shoes came damaged",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0040",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "make a checklist for closing the shop at night",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0041",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I need the podcast episode edited and uploaded by thursday",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0043",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "write 5 captions for the new lash service",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0044",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "get the Q3 numbers to my accountant",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0046",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Is there any way you could redo the logo in a darker green?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0047",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I'd love it if someone could organize the shared drive, its a mess",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0049",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "we need a refund policy page on the website",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0050",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Fix the typo on the homepage, it says \"profesional\"",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0052",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Could you check if the Stripe payouts went through this week and flag anything weird",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0053",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "research what our competitors charge for a basic website package",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0055",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Add Dana Whitfield to the CRM, she signed today",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0056",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "tell the customer their order shipped",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0058",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "please unsubscribe that guy who keeps complaining from the newsletter",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0059",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Draft an agenda for monday's team meeting",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0061",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "can you make the booking page mobile friendly",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0062",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "i need you to write my bio for the chamber of commerce website",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0064",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "rewrite this so it sounds more professional: \"hey we cant do refunds after 30 days sorry\"",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0065",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "translate our flyer into spanish",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0067",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "schedule a call with the web designer for next week",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0068",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "add a 10% off code for first time customers",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0070",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "clean up the email list, lot of bounced ones",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0071",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Put the new price list in the shared folder",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0073",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I'm gonna need a slideshow for the investor meeting on the 12th",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0074",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Could ya make a quick video from the photos of the kitchen remodel",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0076",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "ask the vendor if they can deliver before 8am",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0077",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "wanna get a price sheet made up for the landscaping packages",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0079",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "ugh the printer is jammed again can someone call the repair guy",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0080",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "set up auto-reply for when I'm on vacation the 3rd thru the 10th",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0082",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "start a thread in slack for the spring event planning",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0083",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "make sure the new girl gets added to payroll",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0085",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "please chase up the Hendricks invoice, it's 45 days overdue",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0086",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Dont forget to renew the domain, it expires next week",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0088",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I want a loyalty program set up, like buy 9 get the 10th free",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0089",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Write something for our anniversary post, 10 years!!",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0091",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Tell the crew to bring the big ladder tomorrow",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0092",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "please send me the contract template for new contractors",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0094",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I need a sop for how we handle returns",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0095",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "create a survey for our customers about the new hours",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0097",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Have someone update the staff directory",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0098",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Hey hope your morning's going well! When you get a sec could you put together a short thank you email for our volunteers? no rush",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0100",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Please make sure the Hansen quote goes out before 5 today",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0101",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "could someone call back the lady from yesterday about the kitchen estimate she left a voicemail",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0103",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "let the customer know we can do the rush order but it's an extra $50",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0104",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "write a short bio for our new stylist Priya for the website",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0106",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can I get a one page summary of our insurance policy?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0107",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "puts the new class schedule up on the website pls",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0109",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Update the hours on the website and also email the Thompsons about their deposit",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0110",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "can you post the new menu on fb and then text the catering list about the tasting on friday",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0112",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "3 things: renew the domain, order more business cards, and set up a meeting with the accountant",
+   "expected": "task",
+   "jobs": 3,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 3
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 3
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0113",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Tell the customer the part is backordered, and also find me another supplier for that part",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0115",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "please fix the broken link on the pricing page. oh and remind Kelly about her review tomorrow",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0116",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can you draft a job post for a groomer and also put together an onboarding checklist for new groomers",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0118",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Need the quarterly report done and the budget spreadsheet updated before Friday",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0119",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "refund order 5520 and send the lady a 20% off code for next time",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0121",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Order the new uniforms, update the staff schedule for next week, and post a hiring ad on indeed",
+   "expected": "task",
+   "jobs": 3,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 3
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 3
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0122",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "can u make a flyer for the open house and ask the bakery if they can do cookies for 50 people",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0124",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "email the contractor about the delay + update the client on the new timeline",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0125",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "draft a thank you note to our volunteers and make a list of who showed up",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0127",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Get the tax docs to Linda and set up the new printer in the office",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0128",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "tell the kitchen we're out of salmon and 86 it from the online menu",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0130",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "whats our return window again? also can you update the policy page to say 45 days",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0131",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "how many leads came in this week, and send the new ones a welcome email",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0133",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Book a photographer for the grand opening. Out of curiosity, what did we pay last time?",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0134",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "two things when u get a chance - order more shampoo from the supplier and fix the online booking so it stops double booking saturdays",
+   "expected": "task",
+   "jobs": 2,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 2
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0136",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "whats the difference between an llc and s corp",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0137",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "How many people opened last week's newsletter?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0139",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "do you think tiktok is worth it for a hvac company",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0140",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Is it better to post in the morning or at night",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0142",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "So um what's a good markup for retail candles, like roughly",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0143",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can you tell me the balance on the business account?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0145",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Lay out the pros and cons of hiring a second receptionist but dont do anything yet",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0146",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what should I say to a customer who wants a refund after 60 days",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0148",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Remind me what we decided about the summer hours?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0149",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "is it normal for facebook ads to cost $4 a click",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0151",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Honestly I'm not sure whether to hire a VA or a part timer, what would you do",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0152",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "What does the marketing department actually handle for us?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0154",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can you explain what SEO means in plain english",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0155",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "whats a good name for a dog grooming van lol",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0157",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Could you tell me who our biggest customer was this year",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0158",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "was the Hendricks invoice ever paid?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0160",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Should I be worried that bookings are down this week?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0161",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "which is cheaper, mailchimp or constant contact",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0163",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "do we still have the discount code from black friday running?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0164",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "What are you able to do for me exactly",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0166",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Is today a holiday? the post office seems closed",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0167",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what's the weather gonna be like saturday for the outdoor market",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0169",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "how much did we spend on ads in august",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0170",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "whats the password policy we set up again",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0172",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what would a good instagram bio be for us? just give me a couple ideas",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0173",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "How should I price a 2 hr workshop",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0175",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what does net 30 mean exactly",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0176",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "is it worth paying for yelp ads",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0178",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "why do people keep asking if we're open on sundays, is our google listing wrong?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [
+    "task"
+   ],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0179",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "how many employees do I need before I need workers comp",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0181",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Can you remind me what the wifi password is for the shop",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0182",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "just curious, how many subscribers do we have now",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0184",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "In theory how would we set up a referral program? no need to build it",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0185",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what do u think of the new logo",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0187",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "what's the cheapest way to ship cakes",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0188",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "do you know if the Thompsons paid their deposit",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0190",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "How would you go about redoing our website?",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0191",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "real quick before my next client, is venmo business ok to use for deposits or is that sketchy",
+   "expected": "question",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "question",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0192",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Have a good weekend",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0193",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "thanks!!",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0195",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Morning! coffee hasn't kicked in yet",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0196",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "hold on",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0198",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "brb",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0199",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "ok cool",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0201",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "ugh what a day",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0202",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "hey",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0204",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "nvm",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0205",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "never mind, figured it out",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0207",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "lemme think about it",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0208",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "k",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0210",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "sorry, wrong chat",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0211",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "perfect thank u so much",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0213",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "I'm back",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0214",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "wait",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0216",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "👍",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0217",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "we'll see",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0219",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "just testing if this works",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0220",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "we crushed it today, record sales!!",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0222",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "Hmm not sure yet",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0223",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "maybe later",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0225",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "appreciate you",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0226",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [],
+   "message": "oops ignore that",
+   "expected": "small_talk",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "small_talk",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0227",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "can you make a flyer for the fall sale"
+    },
+    {
+     "role": "assistant",
+     "content": "Done: the fall sale flyer is on the Command Center board as task T-1042 and Marketing is on it."
+    }
+   ],
+   "message": "is the flyer done yet?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0228",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "can you make a flyer for the fall sale"
+    },
+    {
+     "role": "assistant",
+     "content": "Done: the fall sale flyer is on the Command Center board as task T-1042 and Marketing is on it."
+    }
+   ],
+   "message": "actually make it red instead of blue",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0230",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "need a blog post about spring lawn care"
+    },
+    {
+     "role": "assistant",
+     "content": "Got it: the spring lawn care blog post is on the board as task T-1043."
+    }
+   ],
+   "message": "how's the blog post coming along",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0231",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "chase the Hendricks invoice"
+    },
+    {
+     "role": "assistant",
+     "content": "On it: following up on the Hendricks invoice is on the board as task T-1044."
+    }
+   ],
+   "message": "put a rush on the invoice thing",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0233",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "edit and upload the podcast episode by thursday"
+    },
+    {
+     "role": "assistant",
+     "content": "The podcast edit is on the board as task T-1045 and the Podcast team has it."
+    }
+   ],
+   "message": "Stop working on the podcast edit, I'll do it myself",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0234",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "write this week's newsletter"
+    },
+    {
+     "role": "assistant",
+     "content": "The newsletter draft is on task T-1046. Two subject line options: 1) 'Spring is here' 2) 'Your garden called'. Which one?"
+    }
+   ],
+   "message": "yes go with option 2",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0236",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "write something for our 10 year anniversary post"
+    },
+    {
+     "role": "assistant",
+     "content": "The anniversary post draft is ready on task T-1048. Want the storefront photo or the team photo with it?"
+    }
+   ],
+   "message": "use the other photo instead",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0237",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "draft a reply to that 1 star review"
+    },
+    {
+     "role": "assistant",
+     "content": "The reply to the 1-star review is drafted on task T-1049. Want it posted?"
+    }
+   ],
+   "message": "yep send it",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0239",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "tell Marcus he's on the schedule saturday morning"
+    },
+    {
+     "role": "assistant",
+     "content": "Done: letting Marcus know about Saturday is on task T-1051."
+    }
+   ],
+   "message": "did Marcus get the message about saturday?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0240",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "I need the quarterly report"
+    },
+    {
+     "role": "assistant",
+     "content": "The quarterly report is on the board as task T-1052, due this Friday."
+    }
+   ],
+   "message": "push the deadline on the quarterly report to next friday",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0242",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "Refund order 4471, the shoes came damaged"
+    },
+    {
+     "role": "assistant",
+     "content": "The refund for order 4471 is on task T-1054 with Billing."
+    }
+   ],
+   "message": "any update on the refund for order 4471?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0243",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "draft a text blast for the flash sale saturday"
+    },
+    {
+     "role": "assistant",
+     "content": "The flash sale text blast is on task T-1055 and scheduled for Saturday 9am."
+    }
+   ],
+   "message": "hold off on sending the text blast",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0245",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "order catering for the open house"
+    },
+    {
+     "role": "assistant",
+     "content": "The catering order is on task T-1057. How many people is it for?"
+    }
+   ],
+   "message": "It's for 50 people, not 30",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0246",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "redo the website"
+    },
+    {
+     "role": "assistant",
+     "content": "The website redesign is on the board as task T-1058."
+    }
+   ],
+   "message": "put it on hold till after the holidays",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0248",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "create a customer survey about the new hours"
+    },
+    {
+     "role": "assistant",
+     "content": "The survey is ready for review on task T-1060. Want it sent to customers?"
+    }
+   ],
+   "message": "great, ship it",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0249",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "can you make a flyer for the fall sale"
+    },
+    {
+     "role": "assistant",
+     "content": "Done: the fall sale flyer is on the Command Center board as task T-1042 and Marketing is on it."
+    }
+   ],
+   "message": "why is it taking so long?",
+   "expected": "existing_task",
+   "jobs": 0,
+   "acceptable": [
+    "question"
+   ],
+   "label_a": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "label_b": {
+    "expected": "existing_task",
+    "jobs": 0
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0250",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "can you make a flyer for the fall sale"
+    },
+    {
+     "role": "assistant",
+     "content": "Done: the fall sale flyer is on the Command Center board as task T-1042 and Marketing is on it."
+    }
+   ],
+   "message": "ok and separately, can you book the carpet cleaners for monday",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  },
+  {
+   "id": "OWN-0251",
+   "source": "new-owner-voice",
+   "source_intent": null,
+   "form": null,
+   "history": [
+    {
+     "role": "user",
+     "content": "need a blog post about spring lawn care"
+    },
+    {
+     "role": "assistant",
+     "content": "Got it: the spring lawn care blog post is on the board as task T-1043."
+    }
+   ],
+   "message": "also need a new banner for the website",
+   "expected": "task",
+   "jobs": 1,
+   "acceptable": [],
+   "label_a": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "label_b": {
+    "expected": "task",
+    "jobs": 1
+   },
+   "disagree": false
+  }
+ ]
+}
