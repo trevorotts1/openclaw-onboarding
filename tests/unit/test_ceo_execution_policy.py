@@ -11,18 +11,18 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'shared-utils'))
 from ceo_execution_policy import POLICY, block, upgrade, registry_rows
 
-V3_MARKER = '<!-- CEO_EXECUTION_POLICY_V3 -->'
-V3_END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V3 -->'
+POLICY_MARKER = '<!-- CEO_EXECUTION_POLICY_V4 -->'
+POLICY_END_MARKER = '<!-- END CEO_EXECUTION_POLICY_V4 -->'
 
 class PolicyTests(unittest.TestCase):
     def test_legacy_upgrade_preserves_owner_bytes(self):
         for kind in ('CEO_ORCHESTRATOR_RULE', 'CEO_ROUTING_NO_LOOPHOLES'):
-            for version in (1, 2):
+            for version in (1, 2, 3):
                 with self.subTest(kind=kind, version=version):
                     start = '# SOUL.md owner title\nMy personal mission.\n---\n\n'
                     end = '\nOwner notes: keep all spaces.  \n'
                     managed = f'<!-- {kind}_V{version} -->\nLegacy router-only instructions.\n'
-                    if kind == 'CEO_ROUTING_NO_LOOPHOLES' and version == 2:
+                    if version == 3 or (kind == 'CEO_ROUTING_NO_LOOPHOLES' and version == 2):
                         managed += f'<!-- END {kind}_V{version} -->\n'
                     result = upgrade(start + managed + '---\n' + end, kind)
                     self.assertEqual(result, start + block(kind) + end)
@@ -130,18 +130,49 @@ process.stdout.write(JSON.stringify(out));})();'''
             self.assertIn('do NOT POST ingest again', text)
             self.assertNotIn('ASK instead', text)
 
-    def test_policy_documents_mc_route_auto_intake(self):
-        # JGT103: NEW INTAKE hands each new owner message to the decision engine via
-        # mc-route.sh auto, which prints JEV_ANSWER_DIRECTLY or ROUTED.
-        self.assertIn('mc-route.sh auto', POLICY)
-        self.assertIn('JEV_ANSWER_DIRECTLY', POLICY)
+    def test_v4_intake_wording_is_task_per_job_and_leans_to_card(self):
+        # JEV-504: the CEO decides question vs task; work (or doubt) becomes one
+        # mc-route.sh task call PER JOB, and nothing is promised without ROUTED.
+        for required in ('once PER JOB', 'unsure', 'ROUTED'):
+            self.assertIn(required, POLICY)
+        for sentence in (
+            'If the owner asks for any work \u2014 even phrased as a question, or next to a '
+            'question \u2014 or you are unsure, run mc-route.sh task once PER JOB (two jobs = '
+            'two calls), then answer any question part.',
+            'If it is only a question, an opinion or small talk, just answer \u2014 no call.',
+            'If it is about work already underway, act on that task instead of making a new one.',
+            'Never tell the owner work is being done unless the task call printed ROUTED.',
+        ):
+            self.assertIn(sentence, POLICY)
+        # The V3 auto/answer-directly intake is gone; the no-call clause stays.
+        self.assertNotIn('mc-route.sh auto', POLICY)
+        self.assertNotIn('JEV_ANSWER_DIRECTLY', POLICY)
+        self.assertIn('NO UNIVERSAL DECISION-CALL RULE', POLICY)
+        self.assertIn('## Task intake and assigned execution' + ' (V4)', POLICY)
+        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4 -->', block())
 
-    def test_every_grep_listed_v3_carrier_contains_exact_policy(self):
-        # The same discovery command JGT103 uses to find every byte-identical V3
+    def test_fleet_runner_loaded_marker_tracks_current_policy_marker(self):
+        # Landmine 8: the runner's loaded check must look for the marker block()
+        # stamps today (V4), accept V3 only for the transition, never the old V2.
+        src = (ROOT / 'shared-utils/fleet_refresh_runner.py').read_text()
+        consts = {}
+        for node in ast.parse(src).body:
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) \
+                    and node.targets[0].id in ('LOADED_MARKER', 'LOADED_MARKERS'):
+                consts[node.targets[0].id] = node.value
+        current = ast.literal_eval(consts['LOADED_MARKER'])
+        self.assertIn(f'<!-- {current} -->', block())
+        names = [current if isinstance(e, ast.Name) else ast.literal_eval(e)
+                 for e in consts['LOADED_MARKERS'].elts]
+        self.assertEqual(names, ['CEO_ORCHESTRATOR_RULE_V4', 'CEO_ORCHESTRATOR_RULE_V3'])
+        self.assertNotIn('CEO_ORCHESTRATOR_RULE_V2', src)
+
+    def test_every_grep_listed_v4_carrier_contains_exact_policy(self):
+        # The same discovery command JGT103 uses to find every byte-identical
         # carrier. A new carrier that shows up here must render canonical POLICY
         # exactly, or this test names it and fails. The heading is split so this
         # test file's own source (which names the heading) is not itself a hit.
-        heading = 'Task intake and assigned execution' + ' (V3)'
+        heading = 'Task intake and assigned execution' + ' (V4)'
         out = subprocess.run(
             ['grep', '-rl', '--binary-files=without-match', heading,
              '--exclude-dir=.git', '--exclude-dir=__pycache__', '--exclude-dir=node_modules', '.'],
@@ -151,7 +182,21 @@ process.stdout.write(JSON.stringify(out));})();'''
             line for line in out.splitlines()
             if line and Path(line).suffix in ('.py', '.js', '.md')
         )
-        self.assertGreaterEqual(len(carriers), 4, f"expected at least 4 V3 carriers, found {carriers}")
+        self.assertEqual(carriers, [
+            './23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md',
+            './AGENTS.md',
+            './extensions/ceo-routing-doctrine/dist/index.js',
+            './shared-utils/ceo_execution_policy.py',
+        ])
+        # No carrier may be left on the old V3 heading (a missed copy ships a
+        # mismatched pair on the next fleet roll).
+        stale = subprocess.run(
+            ['grep', '-rl', '--binary-files=without-match',
+             'Task intake and assigned execution' + ' (V3)',
+             '--exclude-dir=.git', '--exclude-dir=__pycache__', '--exclude-dir=node_modules', '.'],
+            cwd=ROOT, capture_output=True, text=True,
+        ).stdout.split()
+        self.assertEqual(stale, [])
         for rel in carriers:
             path = ROOT / rel
             with self.subTest(path=rel):
@@ -174,9 +219,9 @@ process.stdout.write(JSON.stringify(out));})();'''
                     self.assertEqual(text, POLICY)
                 else:
                     text = path.read_text()
-                    self.assertIn(V3_MARKER, text)
-                    start = text.index(V3_MARKER) + len(V3_MARKER) + 1
-                    region = text[start:text.index(V3_END_MARKER)]
+                    self.assertIn(POLICY_MARKER, text)
+                    start = text.index(POLICY_MARKER) + len(POLICY_MARKER) + 1
+                    region = text[start:text.index(POLICY_END_MARKER)]
                     self.assertEqual(region, POLICY)
 
     def test_both_installed_stampers_use_canonical_upgrade(self):

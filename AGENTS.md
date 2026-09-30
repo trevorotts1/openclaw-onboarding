@@ -1,22 +1,11 @@
-<!-- CEO_EXECUTION_POLICY_V3 -->
-## Task intake and assigned execution (V3)
+<!-- CEO_EXECUTION_POLICY_V4 -->
+## Task intake and assigned execution (V4)
 
 This policy supersedes older router-only, presentation-routing reflex, and role-discipline
 instructions ONLY for the verified existing assignment described below. It never changes
 an assigned specialist into a router or lets the CEO take another agent's execution.
 
-- NEW INTAKE: let the decision engine decide. Pass each new owner message (not a
-  report inside an existing execution) once through `mc-route.sh auto "<owner message
-  verbatim>"`. If it prints `JEV_ANSWER_DIRECTLY`, answer the owner yourself and
-  create nothing. If it prints `ROUTED`, Command Center created exactly one card in
-  the department it chose (General Task when nothing fits); tell the owner it is in
-  progress and do not route it again. If the helper fails or the decision engine is
-  off, answer conversation and informational questions directly, and Route new work
-  once through the authenticated `/api/tasks/ingest` helper; if the department is
-  absent or unmatched, use `department_slug: "general-task"`; Command Center selects
-  this client's available General Task worker or CEO. Do not ask the owner to pick a
-  department and do not hold a task merely for department correction. Do not invent a
-  department or runtime.
+- NEW INTAKE: you decide whether each new owner message (not a report inside an existing execution) is work. If the owner asks for any work — even phrased as a question, or next to a question — or you are unsure, run mc-route.sh task once PER JOB (two jobs = two calls), then answer any question part. If it is only a question, an opinion or small talk, just answer — no call. If it is about work already underway, act on that task instead of making a new one. Never tell the owner work is being done unless the task call printed ROUTED. The call is `mc-route.sh task "<short title>" "<owner's exact words for this job>"`: Command Center creates exactly one card for it, only picks the department (General Task when nothing fits) and never overrules it, so do not route that job again. You answer conversation and informational questions directly yourself. If the task call fails or does not print ROUTED, do not claim the work is underway: Route new work once through the authenticated `/api/tasks/ingest` helper with `department_slug: "general-task"` when the department is absent or unmatched (Command Center selects this client's available General Task worker or CEO), and tell the owner plainly whether a task was created. Do not ask the owner to pick a department and do not hold a task merely for department correction. Do not invent a department or runtime.
 - EXISTING EXECUTION: a trusted Command Center dispatcher assignment supplies the existing
   task ID, execution ID, assigned agent, and this client's company/runtime binding. Honor
   that assignment. General Task and specialists execute their assigned work; the CEO also
@@ -43,7 +32,7 @@ an assigned specialist into a router or lets the CEO take another agent's execut
   and deployments without the decision engine configured all have legitimate no-call
   paths. Answering conversation, running a pinned/deterministic job, and reusing an
   already-committed same-task decision must never be blocked waiting for a decision call.
-<!-- END CEO_EXECUTION_POLICY_V3 -->
+<!-- END CEO_EXECUTION_POLICY_V4 -->
 ---
 
 # AGENTS.md - Agent Operating Guide

@@ -295,6 +295,11 @@ def _classify_clause(clause: str, *, continuation: bool = False, grouped: bool =
     return "action"
 
 
+# FROZEN (JEV-506, review 2026-09 decision (e), approved by Trevor): the CEO AI
+# decides question vs task and runs `mc-route.sh task` itself; this lexical
+# intent heuristic is a BACKUP ONLY. No more tuning of it or of the clause
+# regexes above -- a new phrasing miss is fixed at the CEO AI intake rule,
+# never here. Department picking (_resolve_route_department) is not frozen.
 def _heuristic_intent(text: str) -> str:
     """Stdlib lexical fallback intent classifier (never returns 'unresolved').
 
@@ -351,13 +356,172 @@ def _stem(token: str) -> str:
     return token
 
 
-def _stem_text(text: str) -> str:
-    return " ".join(_stem(t) for t in re.findall(r"[a-z0-9]+", text.lower()))
+def _route_tokens(text: str) -> list[str]:
+    """Stemmed content tokens: stopwords, generic verbs, numbers and 1-letter
+    fragments ("week's" -> "week") dropped."""
+    out = []
+    for raw in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(raw) < 2 or raw.isdigit() or raw in _ROUTE_STOPWORDS:
+            continue
+        tok = _stem(raw)
+        if tok not in _ROUTE_GENERIC:
+            out.append(tok)
+    return out
 
 
-def _route_query(task: str) -> str:
-    tokens = [t for t in re.findall(r"[a-z0-9]+", task.lower()) if t not in _ROUTE_STOPWORDS]
-    return " ".join(_stem(t) for t in tokens)
+# JEV-506: words that say "do something", never "which department". A
+# department whose description happens to contain one ("podcast SHOW",
+# "sales FUNNELS") must not win on it (review 2026-09 misroutes).
+_ROUTE_GENERIC = frozenset(
+    _stem(w)
+    for w in (
+        "show make create build write draft set setup get put together send add change "
+        "update fix check help find give run look into new old next last week month year "
+        "today tomorrow tonight yesterday day time all everyone people them their they "
+        "who what why how when where which there here have has had was were been not "
+        "don dont can t as if than then out off over again sure let know start finish "
+        "prepare prep plan put keep keeps us one two three five some more most other "
+        "handle take do done go going see like work thing things stuff "
+        "improve increase lower reduce grow move clean clear test version versions "
+        "business company office our whole every each via per ve re ll stop stopped "
+        "role roles same never happen happens twice"
+    ).split()
+)
+
+# Role-title boilerplate every department carries (deep-research-specialist,
+# devils-advocate--x, healer-x, qc-specialist-x, sop-writer, ...). These say
+# nothing about the domain, so role titles are read WITHOUT them.
+_ROLE_BOILERPLATE = frozenset(
+    _stem(w)
+    for w in (
+        "specialist director head chief officer manager role version template dept "
+        "sop sops writer healer qc devils advocate deep research brainstorming buddy "
+        "agent department departments full cycle post pre"
+    ).split()
+)
+
+# JEV-506: distinctive domain words per standard-floor slug (strong, weak).
+# Applied to any catalog entry whose slug is a floor slug (standard floor
+# AND a Command Center request catalog), on top of the entry's own name,
+# description, keywords and role titles.
+# ponytail: a hand-kept word list is the ceiling of a lexical picker; the
+# better picker (CC's semantic router / the CEO AI) goes first, this is the
+# offline fallback. Grow it from the labeled set in
+# tests/unit/test_jev_department_routing.py, never from one message.
+_DOMAIN_LEXICON: dict[str, tuple[str, str]] = {
+    "marketing": (
+        "marketing campaign promo promotion promotional magnet newsletter brand "
+        "positioning content calendar copy copywriting headline subject "
+        "influencer referral affiliate journey messaging",
+        "email welcome blog webinar offer audience strategy launch",
+    ),
+    "sales": (
+        "sales sell selling prospect prospects deal deals proposal quote pricing "
+        "discovery closing closer close objection outreach commission account lead leads follow",
+        "call calls pipeline sequence script cold",
+    ),
+    "billing-finance": (
+        "bill bills billing invoice invoices payment payments pay paid refund charged "
+        "charge expense expenses reconcile payroll revenue profit loss tax taxes "
+        "receipt receipts accountant bookkeeping finance financial money cash "
+        "subscription unpaid overdue",
+        "budget spreadsheet",
+    ),
+    "customer-support": (
+        "support ticket tickets complaint upset login log password faq article "
+        "knowledge dispute churn retention onboard angry",
+        "customer customers member members client order delivery chat reply onboarding "
+        "review reviews",
+    ),
+    "web-development": (
+        "website site web homepage landing footer header link form seo wordpress "
+        "domain hosting load plugin menu page pages testimonial testimonials form forms",
+        "banner blog contact",
+    ),
+    "funnels": (
+        "funnel funnels ghl gohighlevel checkout optin upsell registration",
+        "masterclass webinar page",
+    ),
+    "app-development": (
+        "app apps mobile iphone ios android api backend push notification "
+        "notifications pwa desktop screen database",
+        "store",
+    ),
+    "graphics": (
+        "design logo flyer graphic graphics image images slide slides deck "
+        "presentation thumbnail infographic cover poster brochure icon mockup visual",
+        "banner photo photos",
+    ),
+    "video": (
+        "video videos caption captions subtitle subtitles reel reels livestream "
+        "stream footage film animation vsl youtube",
+        "edit short",
+    ),
+    "audio": (
+        "podcast episode voiceover voice audio sound music record recording "
+        "transcribe transcription audiobook mic",
+        "guest intro",
+    ),
+    "research": (
+        "research competitor competitors competitive market trend trends industry "
+        "analyze analysis data survey poll persona insight study",
+        "report",
+    ),
+    "communications": (
+        "announce announcement press release pr media news statement talking points "
+        "speech investor investors stakeholder memo crisis outlet outlets pitch",
+        "team policy story interview",
+    ),
+    "crm": (
+        "crm contact contacts tag tags segment automation workflow sms text texts "
+        "whatsapp deliverability spam duplicate",
+        "email emails pipeline stage sequence welcome list",
+    ),
+    "openclaw-maintenance": (
+        "openclaw ai system agent agents token tokens model backup restore upgrade "
+        "server mcp integration key keys secret security uptime slow performance "
+        "memory cron gateway rotate restart",
+        "api down",
+    ),
+    "legal": (
+        "legal contract contracts agreement nda disclosure privacy compliant "
+        "compliance regulation license trademark copyright lawsuit terms lawyer "
+        "attorney liability",
+        "policy",
+    ),
+    "social-media": (
+        "social instagram facebook linkedin tiktok twitter threads pinterest discord "
+        "reddit community post posts comment comments follower followers following "
+        "hashtag engagement",
+        "youtube",
+    ),
+    "paid-advertisement": (
+        "ad ads advertising paid ppc cpc cpl roas retargeting spend boost adwords budget",
+        "cost campaign google facebook",
+    ),
+    "personal-assistant": (
+        "calendar schedule reschedule appointment flight travel hotel trip reservation "
+        "dinner remind reminder inbox errand personal briefing dentist doctor",
+        "book meeting morning",
+    ),
+    "project-architecture-office": (
+        "project prd roadmap spec requirements scope milestone",
+        "plan",
+    ),
+    "bugs": ("bug bugs defect error errors broken glitch crash triage", ""),
+    "healer": ("root cause diagnose diagnosis recurring failing", ""),
+    "quality-control": ("audit quality qc sop sops procedure procedures", "standard"),
+}
+
+# JEV-506: people/HR work. The floor has no HR department, so this work
+# belongs to General Task, never to whichever department shares a noun
+# ("Walk the new VA through onboarding" is not Billing).
+_PEOPLE_SLUG = "__people__"
+_PEOPLE_WORDS = (
+    "hire hiring hired recruit recruiting applicant applicants candidate candidates "
+    "resume job va employee employees staff",
+    "",
+)
 
 
 def _standard_floor_catalog() -> list[dict]:
@@ -393,48 +557,63 @@ def _standard_floor_catalog() -> list[dict]:
         dept_roles = role_departments.get(slug)
         if isinstance(dept_roles, dict):
             roles = [r for r in (dept_roles.get("roles") or []) if isinstance(r, str)]
-        text = " ".join([display_name, one_liner, " ".join(roles)])
-        entries.append({"slug": slug, "text": text})
+        entries.append(
+            {"slug": slug, "text": display_name, "blurb": one_liner, "roles": " ".join(roles)}
+        )
     return entries
 
 
-def _domain_boosted_suitability(
-    query_tokens: list[str], catalog_entries: list[dict], suitability: dict[str, float]
-) -> dict[str, float]:
-    """Boost a department whose OWN vocabulary contains a rare query token.
+def _department_weights(entry: dict) -> dict[str, float]:
+    """token -> weight for one department: its lexicon (strong 1.0, weak 0.4),
+    its own name (plus a caller's description/keywords) 1.0, the floor's
+    one-liner prose 0.5, its role titles 0.5."""
+    weights: dict[str, float] = {}
 
-    ``_lexical_rank``'s score is overlap / len(query tokens), so one strong
-    domain keyword ("invoice") drowns in an otherwise generic query ("send
-    ... to the client") and never clears ROUTE_THRESHOLD. Here each query
-    token is weighted by 1/df (df = how many catalog entries' vocabulary
-    contain it), so a token that names exactly one department's domain
-    counts for far more than a token every department shares (or none do --
-    a token in no entry's vocabulary carries no signal and is dropped, so
-    nonsense queries still fall through to general-task).
-    ponytail: document-frequency-over-catalog is the ceiling, not semantic
-    similarity -- the upgrade path is embeddings, not a bigger weight table.
-    """
-    vocab_by_slug = {
-        e["slug"]: set(re.findall(r"[a-z0-9]+", e["text"].lower())) for e in catalog_entries
-    }
-    domain_tokens = {t for t in query_tokens if any(t in v for v in vocab_by_slug.values())}
-    if not domain_tokens:
-        return suitability
-    weights = {t: 1.0 / sum(1 for v in vocab_by_slug.values() if t in v) for t in domain_tokens}
-    total_weight = sum(weights.values())
-    boosted = dict(suitability)
-    for slug, vocab in vocab_by_slug.items():
-        matched_weight = sum(w for t, w in weights.items() if t in vocab)
-        if matched_weight <= 0:
-            continue
-        boosted[slug] = max(boosted.get(slug, 0.0), matched_weight / total_weight)
-    return boosted
+    def put(text: str, weight: float, skip=frozenset()) -> None:
+        for tok in _route_tokens(text or ""):
+            if tok not in skip:
+                weights[tok] = max(weights.get(tok, 0.0), weight)
+
+    slug = entry["slug"]
+    strong, weak = _PEOPLE_WORDS if slug == _PEOPLE_SLUG else _DOMAIN_LEXICON.get(slug, ("", ""))
+    put(weak, 0.4)
+    put(entry.get("roles", ""), 0.5, _ROLE_BOILERPLATE)
+    put(entry.get("blurb", ""), 0.5)
+    put(entry.get("text", ""), 1.0)
+    put(strong, 1.0)
+    return weights
+
+
+def _rank_departments(task: str, catalog_entries: list[dict]) -> list[tuple[str, float]]:
+    """[(slug, confidence)] best first. Each query token counts weight/df,
+    df = how many departments claim it, so a word only one department owns
+    ("invoice") outweighs a word many share ("email"); a word more than half
+    the catalog shares is generic and counts zero. Confidence = the share
+    of the message's domain signal the department captures."""
+    by_slug = {e["slug"]: _department_weights(e) for e in catalog_entries}
+    people = _department_weights({"slug": _PEOPLE_SLUG})
+    if not any(t in w for w in by_slug.values() for t in people):
+        by_slug[_PEOPLE_SLUG] = people  # no real HR department: HR work -> General Task
+    query = set(_route_tokens(task))
+    df = {t: sum(1 for w in by_slug.values() if t in w) for t in query}
+    generic_df = max(2, len(by_slug) // 2)
+    signal = {t: 1.0 / n for t, n in df.items() if 0 < n <= generic_df}
+    total = sum(max(by_slug[s].get(t, 0.0) for s in by_slug) * v for t, v in signal.items())
+    if total <= 0:
+        return []
+    scores = [
+        (slug, sum(w.get(t, 0.0) * v for t, v in signal.items()) / total)
+        for slug, w in by_slug.items()
+    ]
+    return sorted((s for s in scores if s[1] > 0), key=lambda s: -s[1])
 
 
 def _resolve_route_department(
     task: str, department_requested: str | None, catalog_entries: list[dict]
 ) -> tuple[str, float, bool]:
-    """Returns (department_slug, confidence, fallback). Never raises."""
+    """Returns (department_slug, confidence, fallback). Never raises.
+    Unsure (no signal, a tie, below ROUTE_THRESHOLD, or people/HR work the
+    catalog has no department for) -> general-task, fallback True."""
     try:
         if department_requested:
             wanted = department_requested.strip().lower()
@@ -443,21 +622,17 @@ def _resolve_route_department(
                     return entry["slug"], 1.0, False
         if not catalog_entries:
             return "general-task", 0.0, True
-        query = _route_query(task)
-        if not query:
+        ranking = _rank_departments(task, catalog_entries)
+        if not ranking:
             return "general-task", 0.0, True
-        catalog_entries = [{"slug": e["slug"], "text": _stem_text(e["text"])} for e in catalog_entries]
-        ranking = _fallback.select(
-            [{"id": e["slug"], "text": e["text"], "topics": []} for e in catalog_entries],
-            query,
-        )["ranking"]
-        suitability = {r["id"]: r["score"] for r in ranking}
-        suitability = _domain_boosted_suitability(query.split(), catalog_entries, suitability)
-        pick = _profiles.resolve_department_selection(suitability, threshold=ROUTE_THRESHOLD)
-        if pick == _NONE_SUITABLE:
-            top_score = ranking[0]["score"] if ranking else 0.0
+        top_slug, top_score = ranking[0]
+        tied = len(ranking) > 1 and abs(ranking[1][1] - top_score) < 1e-9
+        pick = _profiles.resolve_department_selection(
+            {top_slug: top_score}, threshold=ROUTE_THRESHOLD
+        )
+        if tied or top_slug == _PEOPLE_SLUG or pick == _NONE_SUITABLE:
             return "general-task", float(top_score), True
-        return pick, float(suitability.get(pick, 0.0)), False
+        return top_slug, float(top_score), False
     except Exception:  # noqa: BLE001 -- routing must never turn into rc != 0
         return "general-task", 0.0, True
 

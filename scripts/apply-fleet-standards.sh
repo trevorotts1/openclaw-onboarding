@@ -1491,6 +1491,7 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #
 #   USAGE:  mc-route.sh <department_slug> <title> [description...]
 #           mc-route.sh auto "<owner message verbatim>"
+#           mc-route.sh task "<short title>" "<owner's exact words>"
 #
 #     <department_slug>   target workspace/department (e.g. presentations,
 #                         general-task, social-media, video). REQUIRED.
@@ -1510,6 +1511,25 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #     HTTP 403 {error:control_probe_never_creates} also prints
 #     `JEV_ANSWER_DIRECTLY intent=unresolved` (exit 0); every other non-2xx escalates,
 #     exactly like slug mode.
+#
+#   TASK MODE (the CEO already decided "this is work"):
+#     `mc-route.sh task "<short title>" "<owner's exact words>"` posts ONE card
+#     {title, description=<owner's exact words>} with NO department_slug, so the
+#     Command Center picks the department (its picker, then General Task). A typed
+#     payload is never re-classified by CC, so a task call is never overruled into
+#     "answer". One call = one card: two jobs in one message = two calls with two
+#     titles. Leans to a card: a missing title uses the words, missing words use the
+#     title; only both empty fails. Idempotent per call: the operation key is derived
+#     from (company, source, requester, title, words) and reused for 60 s after the
+#     last identical call (state under MC_ROUTE_STATE_DIR), so a retry with the same
+#     words dedupes at CC instead of making a second card; MC_ROUTE_EVENT_ID /
+#     MC_ROUTE_OPERATION_ID, when set, replace the window with that stable event.
+#     stdout on success: the same `ROUTED workspace=<ws> department=<d> resolved_by=<r>`
+#     line as auto mode (exit 0). Any failure (transport, non-2xx, a 2xx with no
+#     task_id) prints `mc-route: FAILED — ...` + ESCALATE_TO_OPERATOR and exits 1.
+#     A card with no workspace, or one CC could only park on ->ceo/->unrouted, prints
+#     ROUTED plus an ESCALATE_TO_OPERATOR warning (exit 0: the card exists; retrying
+#     would not help).
 #
 # WHY (identical to route-presentation.sh): the Command Center ships FAIL-CLOSED.
 # Middleware 503s external ingest when WEBHOOK_SECRET is unset, and 401s when
@@ -1562,7 +1582,17 @@ DEPARTMENT_SLUG=""
 TITLE=""
 DESCRIPTION=""
 MESSAGE=""
-if [ "${1:-}" = "auto" ]; then
+if [ "${1:-}" = "task" ]; then
+  ROUTE_MODE="task"
+  shift
+  TITLE="${1:-}"
+  [ "$#" -gt 0 ] && shift
+  # The rest of the args form the owner's exact words, joined with single spaces.
+  DESCRIPTION="$*"
+  # Lean to a card: fill whichever half is missing from the other.
+  [ -n "$TITLE" ] || TITLE="$DESCRIPTION"
+  [ -n "$DESCRIPTION" ] || DESCRIPTION="$TITLE"
+elif [ "${1:-}" = "auto" ]; then
   ROUTE_MODE="auto"
   shift
   # The rest of the args (1..N) form the owner message, joined with single spaces.
@@ -1583,7 +1613,9 @@ _escalate() {
   exit 1
 }
 
-if [ "$ROUTE_MODE" = "auto" ]; then
+if [ "$ROUTE_MODE" = "task" ]; then
+  [ -n "$TITLE" ] || _escalate 'empty task (usage: mc-route.sh task "<short title>" "<owner'"'"'s exact words>")'
+elif [ "$ROUTE_MODE" = "auto" ]; then
   [ -n "$MESSAGE" ] || _escalate 'empty message argument (usage: mc-route.sh auto "<owner message verbatim>")'
 else
   [ -n "$DEPARTMENT_SLUG" ] || _escalate "empty department_slug argument (usage: mc-route.sh <department_slug> <title> [description...])"
@@ -1685,6 +1717,65 @@ if _rcid:
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY_AUTO
   [ "$_BODY_BUILD_OK" -eq 1 ] || _escalate "could not build request body"
+elif [ "$ROUTE_MODE" = "task" ]; then
+  if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+       REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+       MC_ROUTE_STATE_DIR="${MC_ROUTE_STATE_DIR:-${TMPDIR:-/tmp}/mc-route-task-$(id -u)}" \
+       "$PYTHON" - >"$BODY_FILE" <<'PYBODY_TASK'
+import hashlib, json, os, sys, time, uuid
+env = os.environ.get
+title = env("TITLE", "")[:120]
+words = env("DESCRIPTION", "")
+company = env("MC_ROUTE_COMPANY_ID", "").strip()
+rcid = env("REQUESTER_CHAT_ID", "").strip()
+channel = (env("REQUESTER_CHANNEL", "telegram").strip() or "telegram") if rcid else ""
+job = hashlib.sha256(json.dumps([company, env("SOURCE", "telegram"), channel, rcid, title, words]).encode()).hexdigest()[:32]
+event = env("MC_ROUTE_EVENT_ID") or env("MC_ROUTE_OPERATION_ID")
+if event:
+    # Stable originating event: same event + same job = same operation; two jobs
+    # from one event stay two operations (two cards).
+    key = "mc-route-task:" + hashlib.sha256((event + "\0" + job).encode()).hexdigest()[:40]
+else:
+    # 60 s retry window, sliding from the last identical call.
+    # ponytail: no lock; two identical calls in the same instant can mint two keys.
+    state_dir = env("MC_ROUTE_STATE_DIR")
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    path = os.path.join(state_dir, job)
+    now = time.time()
+    key = ""
+    try:
+        if now - os.path.getmtime(path) < 60:
+            key = open(path).read().strip()
+    except OSError:
+        pass
+    if not key:
+        key = "mc-route-task:%s:%s" % (job, uuid.uuid4().hex[:12])
+    with open(path, "w") as fh:
+        fh.write(key)
+    for name in os.listdir(state_dir):  # prune stale window files (> 1 h)
+        try:
+            if now - os.path.getmtime(os.path.join(state_dir, name)) > 3600:
+                os.remove(os.path.join(state_dir, name))
+        except OSError:
+            pass
+payload = {
+    "idempotency_key": key,
+    "external_session_id": env("MC_ROUTE_EXTERNAL_SESSION_ID", ""),
+    "title": title,
+    "description": words,
+    "source": env("SOURCE", "telegram"),
+    "priority": env("PRIORITY", "medium"),
+}
+if company:
+    payload["company_id"] = company
+if rcid:
+    payload["requester_chat_id"] = rcid
+    payload["requester_channel"] = channel
+sys.stdout.write(json.dumps(payload, separators=(",", ":")))
+PYBODY_TASK
+  then
+    _escalate "could not build request body"
+  fi
 else
   if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
        SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
@@ -1783,8 +1874,8 @@ PYRETRY
   sleep "$delay"
 done
 
-if [ "$ROUTE_MODE" = "auto" ]; then
-  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (mode=auto)"
+if [ "$ROUTE_MODE" != "slug" ]; then
+  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (mode=$ROUTE_MODE)"
 else
   echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (department=$DEPARTMENT_SLUG)"
 fi
@@ -1794,6 +1885,37 @@ fi
 
 case "$http_code" in
   2[0-9][0-9])
+    if [ "$ROUTE_MODE" = "task" ]; then
+      _TASK_FIELDS="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+rb = str(d.get("resolved_by") or "")
+dept = d.get("resolved_department")
+if not dept and rb.startswith("auto-route:"):
+    dept = rb[len("auto-route:"):]
+    if dept == "general-task-fallback":
+        dept = "general-task"
+for v in (d.get("task_id"), d.get("workspace_id"), dept or d.get("workspace_id"), rb):
+    print("" if v is None else str(v))' 2>/dev/null || true)"
+      _TASK_ID="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '1p')"
+      _TASK_WORKSPACE="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '2p')"
+      _TASK_DEPARTMENT="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '3p')"
+      _TASK_RESOLVED_BY="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '4p')"
+      [ -n "$_TASK_ID" ] || _escalate "ingest returned HTTP $http_code but no task_id — the card was NOT confirmed"
+      echo "ROUTED workspace=$_TASK_WORKSPACE department=$_TASK_DEPARTMENT resolved_by=$_TASK_RESOLVED_BY"
+      case "$_TASK_WORKSPACE:$_TASK_RESOLVED_BY" in
+        :*|*'->ceo'|*'->unrouted')
+          echo "mc-route: WARNING — card $_TASK_ID was created but has no department lane (workspace='$_TASK_WORKSPACE', resolved_by='$_TASK_RESOLVED_BY')." >&2
+          echo "ESCALATE_TO_OPERATOR: the card exists but could not be routed to a department. The CEO must tell the owner it is escalating to the operator. Do NOT call mc-route again for this job." >&2
+          ;;
+      esac
+      exit 0
+    fi
     if [ "$ROUTE_MODE" = "auto" ]; then
       # Raw-door response: {created:false,intent:...} means JEV answered without a
       # card; anything else with a 2xx is a created/auto-routed card. Never print
