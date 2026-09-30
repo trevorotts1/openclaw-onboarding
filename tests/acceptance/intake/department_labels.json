@@ -3,7 +3,6 @@
  "labels": {
   "JEV29-0003": ["crm", "marketing", "paid-advertisement", "social-media"],
   "JEV29-0004": ["crm", "marketing", "paid-advertisement", "social-media"],
-  "JEV29-0007": ["communications", "crm", "marketing"],
   "JEV29-0009": ["communications", "crm", "marketing"],
   "JEV29-0010": ["communications", "crm", "marketing"],
   "JEV29-0011": ["communications", "crm", "marketing", "sales"],
@@ -93,7 +92,6 @@
   "JEV29-0242": ["crm", "marketing", "paid-advertisement", "social-media"],
   "JEV29-0244": ["communications", "crm", "marketing"],
   "JEV29-0248": ["funnels", "marketing", "web-development"],
-  "JEV29-0250": ["communications", "crm", "marketing"],
   "JEV29-0252": ["communications", "crm", "marketing"],
   "JEV29-0254": ["funnels", "marketing", "sales", "web-development"],
   "JEV29-0257": ["communications", "marketing", "research", "sales"],
