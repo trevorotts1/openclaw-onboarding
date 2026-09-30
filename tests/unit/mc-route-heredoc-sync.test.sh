@@ -93,6 +93,28 @@ else
   fail "twin stamper heredocs drift from each other"
 fi
 
+# JEV-503: the stamped helper must carry `task` mode (the CEO intake rule calls
+# `mc-route.sh task`); byte-identity alone would pass if all three copies were old.
+# Run each stamper's heredoc through bash itself, so the check covers what the
+# installer actually writes, not only the regex extraction.
+echo "--- stamped helper (as bash writes it) carries task mode ---"
+for stamper in "$FLEET_STANDARDS" "$ROUTING_FIX"; do
+  name="$(basename "$stamper")"
+  stamped="$WORK/stamped-$name"
+  python3 - "$stamper" > "$WORK/stamp-$name.sh" <<'XS'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r"cat > \"\$MC_ROUTE_HELPER_PATH\" <<'MC_ROUTE_SH'\n.*?\nMC_ROUTE_SH\n", text, re.S)
+sys.stdout.write(m.group(0) if m else "exit 1\n")
+XS
+  if MC_ROUTE_HELPER_PATH="$stamped" bash "$WORK/stamp-$name.sh" && cmp -s "$stamped" "$MC_ROUTE" \
+     && grep -q '^if \[ "\${1:-}" = "task" \]; then$' "$stamped"; then
+    ok "$name stamps a byte-identical helper with task mode"
+  else
+    fail "$name does not stamp a byte-identical helper with task mode"
+  fi
+done
+
 echo ""
 echo "=== $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then
