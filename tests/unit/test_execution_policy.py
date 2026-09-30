@@ -175,11 +175,11 @@ class GeneratorTemplateTests(unittest.TestCase):
         self.assertNotIn('always use jev', lowered)
         self.assertNotIn('always route through jev', lowered)
 
-    def test_upgrade_preserves_v3_and_owner_bytes(self):
+    def test_upgrade_preserves_v4_and_owner_bytes(self):
         legacy = ('Owner head\n<!-- CEO_ORCHESTRATOR_RULE_V1 -->\nold\n---\n'
                   'Owner tail with spaces.  \n')
         out = cep.upgrade(legacy)
-        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V3 -->', out)
+        self.assertIn('<!-- CEO_ORCHESTRATOR_RULE_V4 -->', out)
         self.assertTrue(out.startswith('Owner head\n'))
         self.assertTrue(out.rstrip().endswith('Owner tail with spaces.'))
         self.assertEqual(cep.upgrade(out), out)

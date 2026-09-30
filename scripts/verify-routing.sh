@@ -4,7 +4,7 @@
 # Checks:
 #   G1  ROLE_DISCIPLINE_V1 marker present in the resolved AGENTS.md (exactly once)
 #   G2  CEO_ROUTING_NO_LOOPHOLES_V1 marker present in the resolved AGENTS.md
-#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V3) present in the resolved SOUL.md
+#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4, V3 during transition) present in the resolved SOUL.md
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
@@ -206,11 +206,11 @@ else
 fi
 
 # ─── G3: PRIME DIRECTIVE in SOUL.md ──────────────────────────────────────────
-_info "G3: checking CEO_ORCHESTRATOR_RULE_V3 (PRIME DIRECTIVE) in $SOUL_FILE"
-if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V3" "$SOUL_FILE" 2>/dev/null; then
-  _pass "G3: CEO_ORCHESTRATOR_RULE_V3 (PRIME DIRECTIVE) present in $SOUL_FILE"
+_info "G3: checking CEO_ORCHESTRATOR_RULE_V4 (or V3 during transition) in $SOUL_FILE"
+if [ -f "$SOUL_FILE" ] && grep -qE "CEO_ORCHESTRATOR_RULE_V[34]" "$SOUL_FILE" 2>/dev/null; then
+  _pass "G3: CEO_ORCHESTRATOR_RULE (PRIME DIRECTIVE) present in $SOUL_FILE"
 else
-  _fail "G3: CEO_ORCHESTRATOR_RULE_V3 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
+  _fail "G3: CEO_ORCHESTRATOR_RULE_V4 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
   FAILURES=$((FAILURES + 1))
 fi
 
