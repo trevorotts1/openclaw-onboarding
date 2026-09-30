@@ -329,7 +329,8 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
 #       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
 #               never dispatched again, row kept) + an owner note -> CANCELLED id=...
-#     No match -> `mc-route: NOT_FOUND ...`, several equal matches ->
+#     No match -> `mc-route: NOT_FOUND ...` (update: new work, run `task`; status or
+#     cancel: tell the owner, NO card), several equal matches ->
 #     `mc-route: AMBIGUOUS ...` with the candidates; both exit 3 and change nothing.
 #     MC_ROUTE_API_BASE overrides the Command Center base URL (default: the ingest
 #     URL without /api/tasks/ingest).
@@ -664,7 +665,13 @@ PYFIND
       printf '%s\n' "$FOUND" | sed '1d'
       exit 3 ;;
     *)
-      echo "mc-route: NOT_FOUND: no matching existing card. If this is work to do, run: mc-route.sh task \"<short title>\" \"<owner's exact words>\" (nothing was created or changed for \"$EXISTING_REF\")"
+      # JEV-801 (class F): only `update` points on to `task`. A status question or a
+      # cancel about something not on the board is never new work.
+      case "$EXISTING_ACTION" in
+        update) echo "mc-route: NOT_FOUND: no matching existing card. This is new work: run mc-route.sh task \"<short title>\" \"<owner's exact words>\" (nothing was created or changed for \"$EXISTING_REF\")" ;;
+        status) echo "mc-route: NOT_FOUND: nothing matching is on the board. Tell the owner; do NOT create a card. (nothing was created or changed for \"$EXISTING_REF\")" ;;
+        *)      echo "mc-route: NOT_FOUND: nothing matching is on the board to cancel. Tell the owner; do NOT create a card. (nothing was created or changed for \"$EXISTING_REF\")" ;;
+      esac
       exit 3 ;;
   esac
   _T_ID="$(printf '%s\n' "$FOUND" | sed -n '2p')"

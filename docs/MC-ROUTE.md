@@ -187,7 +187,9 @@ and changes nothing.
 
 | Case | output | exit |
 |---|---|---|
-| no task matches | `mc-route: NOT_FOUND: no matching existing card. If this is work to do, run: mc-route.sh task ...` (if the owner asked for work, run `task` next; a request is never dropped because no card matched) | `3` |
+| no task matches, `update` | `mc-route: NOT_FOUND: no matching existing card. This is new work: run mc-route.sh task ...` (run `task` next; a change request is never dropped because no card matched) | `3` |
+| no task matches, `status` | `mc-route: NOT_FOUND: nothing matching is on the board. Tell the owner; do NOT create a card.` | `3` |
+| no task matches, `cancel` | `mc-route: NOT_FOUND: nothing matching is on the board to cancel. Tell the owner; do NOT create a card.` | `3` |
 | several tasks match equally | `mc-route: AMBIGUOUS — ...`, then up to 5 `id=... status=... title="..."` lines (re-run with the id) | `3` |
 | wrong action, missing title or id, `update` without a note | `mc-route: REFUSED — ...` and the usage | `2` |
 | Command Center unreachable or a non-2xx | `mc-route: FAILED — ...` and `ESCALATE_TO_OPERATOR:` | `1` |

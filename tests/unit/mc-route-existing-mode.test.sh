@@ -16,8 +16,9 @@
 #   (c) existing update: adds the owner's note to that card, no card.
 #   (d) existing cancel: archives that card (+ an owner note), no card; a second cancel
 #       by id finds the archived card and changes nothing.
-#   (e) no match / several matches: exit 3, nothing written; NOT_FOUND points to
-#       `mc-route.sh task` for real work (JEV-702, ruling A).
+#   (e) no match / several matches: exit 3, nothing written. NOT_FOUND is per
+#       subcommand (JEV-801): update -> new work, run `mc-route.sh task` (JEV-702,
+#       ruling A); status / cancel -> tell the owner, do NOT create a card.
 #   (f) unknown first words ('status' without 'existing', 'stop', 'check', 'list',
 #       a department the board does not have, no args) create nothing and exit non-zero.
 #   (g) a real department still routes; a name/"dept-" alias is sent as the board's slug.
@@ -161,12 +162,25 @@ reset_board
 run existing cancel "quarterly tax filing"
 [ "$RC" -eq 3 ] && printf '%s\n' "$OUT" | grep -q 'NOT_FOUND' && [ "$(writes)" = 0 ] \
   && ok "(e) no match -> NOT_FOUND, exit 3, nothing written" || fail "(e) rc=$RC writes=$(writes): $OUT"
-# JEV-702 (Trevor ruling A): NOT_FOUND must send real work on to `task`, never tell
-# the agent to drop it ("do not make a new card" left change requests with no card).
-printf '%s\n' "$OUT" | grep -qF 'NOT_FOUND: no matching existing card. If this is work to do, run: mc-route.sh task ' \
-  && ok "(e) NOT_FOUND points the agent to mc-route.sh task" || fail "(e) NOT_FOUND text lacks the task pointer: $OUT"
-printf '%s\n' "$OUT" | grep -qi 'do not make a new card' \
-  && fail "(e) NOT_FOUND still says 'do not make a new card': $OUT" || ok "(e) NOT_FOUND never says 'do not make a new card'"
+# JEV-801 (class F): the NOT_FOUND text is per subcommand. Only `update` points on
+# to `task` (JEV-702 ruling A: a change request is never dropped); `status` and
+# `cancel` about something not on the board must never become a card.
+printf '%s\n' "$OUT" | grep -qF 'mc-route: NOT_FOUND: nothing matching is on the board to cancel. Tell the owner; do NOT create a card.' \
+  && ok "(e) cancel NOT_FOUND: tell the owner, no card" || fail "(e) cancel NOT_FOUND text wrong: $OUT"
+printf '%s\n' "$OUT" | grep -q 'mc-route.sh task' \
+  && fail "(e) cancel NOT_FOUND still points to mc-route.sh task: $OUT" || ok "(e) cancel NOT_FOUND never points to mc-route.sh task"
+run existing status "quarterly tax filing"
+[ "$RC" -eq 3 ] && [ "$(writes)" = 0 ] \
+  && printf '%s\n' "$OUT" | grep -qF 'mc-route: NOT_FOUND: nothing matching is on the board. Tell the owner; do NOT create a card.' \
+  && ok "(e) status NOT_FOUND: exit 3, nothing written, tell the owner, no card" || fail "(e) status NOT_FOUND rc=$RC writes=$(writes): $OUT"
+printf '%s\n' "$OUT" | grep -q 'mc-route.sh task' \
+  && fail "(e) status NOT_FOUND still points to mc-route.sh task: $OUT" || ok "(e) status NOT_FOUND never points to mc-route.sh task"
+run existing update "quarterly tax filing" "File it by Friday."
+[ "$RC" -eq 3 ] && [ "$(writes)" = 0 ] \
+  && printf '%s\n' "$OUT" | grep -qF 'mc-route: NOT_FOUND: no matching existing card. This is new work: run mc-route.sh task ' \
+  && ok "(e) update NOT_FOUND: exit 3, nothing written, points to mc-route.sh task" || fail "(e) update NOT_FOUND rc=$RC writes=$(writes): $OUT"
+printf '%s\n' "$OUT" | grep -qi 'do not' \
+  && fail "(e) update NOT_FOUND tells the agent not to act: $OUT" || ok "(e) update NOT_FOUND never says 'do not'"
 run existing cancel "post"
 [ "$RC" -eq 3 ] && printf '%s\n' "$OUT" | grep -q 'AMBIGUOUS' && printf '%s\n' "$OUT" | grep -q 'id=task-post1' \
   && printf '%s\n' "$OUT" | grep -q 'id=task-post2' && [ "$(writes)" = 0 ] \
