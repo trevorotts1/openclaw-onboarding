@@ -62,6 +62,8 @@ cat > "$WORK/bin/curl" <<'STUB'
 # capture path, and emit "body\n%{http_code}" (the real helper's -w format) from
 # the STUB_BODY/STUB_CODE env vars the test case set, so the caller's response-
 # parsing logic runs against a canned response instead of a live network call.
+# JEV-601: slug mode first checks the department exists on the board.
+case " $* " in *'/api/workspaces '*) printf '[{"id":"ws-legal","slug":"legal","name":"Legal"}]\n200'; exit 0 ;; esac
 CAP="$CAPTURE"
 prev=""
 for a in "$@"; do
