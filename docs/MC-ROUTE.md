@@ -12,13 +12,39 @@ and remove `exec` from the CEO allow-set (retire the interim)."_
 ## Usage
 
 ```
-mc-route.sh <department_slug> <title> [description...]
-mc-route.sh task "<short title>" "<owner's exact words>"
-mc-route.sh auto "<owner message verbatim>"
+mc-route.sh task "<short title>" "<owner's exact words>"      new card, one per job
+mc-route.sh existing status "<task title or id>"              read-only status of existing work; never creates a card
+mc-route.sh existing update "<task title or id>" "<note>"     adds the owner's note or change to that card
+mc-route.sh existing cancel "<task title or id>"              cancels that card
+(legacy) mc-route.sh auto "<owner message verbatim>"
+(legacy) mc-route.sh <department_slug> <title> [description...]
 ```
 
+### The first word is checked (JEV-601)
+
+The first word must be `task`, `existing`, `auto`, `help`, or a department that
+exists on this board. Before JEV-601 any first word was taken as a department, so
+a model that ran `mc-route.sh status <task>` or `mc-route.sh stop <task>` made a
+General Task card. That caused 757 of the 984 extra cards in the JEV-592
+acceptance run.
+
+- A department is checked against `GET /api/workspaces` (this company's board).
+  It matches the workspace's slug or id, or its name or slug with or without
+  `dept-` (so `social-media` finds `dept-social-media`, and `Marketing` finds
+  `marketing`). The card is sent with the board's real slug.
+- Anything else prints `mc-route: REFUSED — ...` and the usage on stderr, creates
+  nothing and exits `2`. Words models used for existing work (`status`, `stop`,
+  `check`, `list`, `show`, `cancel`, `update`, `resume` and similar) are refused
+  before any network call, with a pointer to `existing`.
+- If the department list can't be read (Command Center down), the helper prints
+  `mc-route: FAILED — ...` and `ESCALATE_TO_OPERATOR:`, creates nothing and
+  exits `1`.
+- `help`, `-h` or `--help` prints the usage and exits `0`.
+
+### Slug mode (legacy) arguments
+
 - `<department_slug>` — target workspace/department (e.g. `presentations`,
-  `general-task`, `social-media`). REQUIRED.
+  `general-task`, `social-media`). REQUIRED, and it must exist on the board.
 - `<title>` — short task title (truncated to 120 chars). REQUIRED.
 - `[description...]` — the remaining args are joined with single spaces into the
   task description (owner message, verbatim).
@@ -32,6 +58,7 @@ byte-for-byte identical to `route-presentation.sh`**):
 | `MC_ROUTE_SOURCE` | `telegram` |
 | `MC_ROUTE_PRIORITY` | `medium` |
 | `MC_ROUTE_MAX_RETRIES` | `2` |
+| `MC_ROUTE_API_BASE` (department check and `existing` mode) | `MC_ROUTE_INGEST_URL` without `/api/tasks/ingest` |
 
 Exit `0` on a 2xx ingest; non-zero on failure. On non-zero the helper prints an
 `ESCALATE_TO_OPERATOR:` line — the CEO must tell the owner it is escalating (never
@@ -111,6 +138,63 @@ the department named in `resolved_by=auto-route:<dept>`
 workspace.
 
 `auto` mode keeps working unchanged for boxes whose CEO rule still calls it.
+
+## Existing mode (work already on the board)
+
+```
+mc-route.sh existing status "<task title or id>"
+mc-route.sh existing update "<task title or id>" "<note>"
+mc-route.sh existing cancel "<task title or id>"
+```
+
+Use this when the owner asks about, changes or stops work that is already on
+the board ("Is that finished?", "Make it two pages", "Stop that task"). It never
+creates a card.
+
+**Finding the task.** The helper reads this company's departments
+(`GET /api/workspaces`) and the open tasks (`GET /api/tasks?limit=500`). It keeps
+only tasks on one of those departments, or on none yet. It then picks one task
+in this order:
+
+1. The exact task id.
+2. The exact title (not case-sensitive). With two cards of the same title, the
+   newest.
+3. The best word match on the title. At least half of the words you give must
+   be in the title, ignoring short words and words like "the", "task" and "card".
+
+An id that isn't in the open list, such as a cancelled card, is read with
+`GET /api/tasks/<id>`.
+
+**What each action does:**
+
+| Action | Command Center calls | stdout on success |
+|---|---|---|
+| `status` | GETs only (strictly read-only) | `STATUS id=<id> status=<s> department=<slug> updated=<t> cancelled=<yes\|no> title="<title>"` |
+| `update` | `POST /api/tasks/<id>/messages` `{content: <note>, sender: "owner"}` (an `owner_message` on the card) | `UPDATED id=<id> title="<title>"` |
+| `cancel` | `POST /api/tasks/<id>/archive`, then an owner note "Cancelled by the owner." | `CANCELLED id=<id> title="<title>"` |
+
+Command Center v7.6.90 has no "cancelled" status. Soft-archive is its way to
+cancel: the card leaves the board, auto-dispatch skips it, its pending dispatch
+intents are cancelled, and the row and its history are kept. A session that is
+already running on the card is not stopped by this. It can be
+restored with `DELETE /api/tasks/<id>/archive`. The signed
+`POST /api/tasks/<id>/status` route is not used, because it only moves cards
+made by a board producer (Skill 6 and similar) and refuses owner cards. Cancelling
+a card that's already cancelled prints `CANCELLED ... (it was already cancelled)`
+and changes nothing.
+
+**When it can't act (nothing is created or changed):**
+
+| Case | output | exit |
+|---|---|---|
+| no task matches | `mc-route: NOT_FOUND — ...` (ask the owner which task; do not make a new card) | `3` |
+| several tasks match equally | `mc-route: AMBIGUOUS — ...`, then up to 5 `id=... status=... title="..."` lines (re-run with the id) | `3` |
+| wrong action, missing title or id, `update` without a note | `mc-route: REFUSED — ...` and the usage | `2` |
+| Command Center unreachable or a non-2xx | `mc-route: FAILED — ...` and `ESCALATE_TO_OPERATOR:` | `1` |
+
+These calls use `Authorization: Bearer <MC_API_TOKEN>`, resolved the same way as
+for ingest. `MC_ROUTE_API_BASE` sets the Command Center base URL. By default it
+is `MC_ROUTE_INGEST_URL` without `/api/tasks/ingest`.
 
 ## Why signed (fail-closed Command Center)
 

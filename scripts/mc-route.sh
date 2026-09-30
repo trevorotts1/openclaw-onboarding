@@ -7,10 +7,35 @@
 # `mc-route__route_task` routing tool the CEO/orchestrator uses to route ANY
 # task to ANY department without self-executing.
 #
-#   USAGE:  mc-route.sh <department_slug> <title> [description...]
-#           mc-route.sh auto "<owner message verbatim>"
-#           mc-route.sh task "<short title>" "<owner's exact words>"
+#   USAGE:  mc-route.sh task "<short title>" "<owner's exact words>"
+#           mc-route.sh existing status "<task title or id>"
+#           mc-route.sh existing update "<task title or id>" "<note>"
+#           mc-route.sh existing cancel "<task title or id>"
+#           (legacy) mc-route.sh auto "<owner message verbatim>"
+#           (legacy) mc-route.sh <department_slug> <title> [description...]
 #
+#   FIRST WORD IS CHECKED (JEV-601): it must be task, existing, auto, help, or a
+#     department that EXISTS on this board (its slug, id or name, with or without
+#     "dept-"; checked against GET /api/workspaces and sent as the board's real
+#     slug). Anything else ("status", "stop", "check", "list", a department this
+#     box does not have) prints `mc-route: REFUSED — ...` plus the usage and exits
+#     2 WITHOUT creating anything. Before this, any first word was taken as a
+#     department, so `mc-route.sh status <task>` made a General Task card.
+#
+#   EXISTING MODE (work already on the board; NEVER creates a card):
+#     finds ONE task in this company by exact id, exact title, or best word match
+#     on the title (GET /api/tasks, then GET /api/tasks/<id> for an archived id).
+#       status  read-only (GETs only). Prints
+#               STATUS id=<id> status=<s> department=<d> updated=<t> cancelled=<yes|no> title="<title>"
+#       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
+#       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
+#               never dispatched again, row kept) + an owner note -> CANCELLED id=...
+#     No match -> `mc-route: NOT_FOUND ...`, several equal matches ->
+#     `mc-route: AMBIGUOUS ...` with the candidates; both exit 3 and change nothing.
+#     MC_ROUTE_API_BASE overrides the Command Center base URL (default: the ingest
+#     URL without /api/tasks/ingest).
+#
+#   SLUG MODE (legacy) arguments:
 #     <department_slug>   target workspace/department (e.g. presentations,
 #                         general-task, social-media, video). REQUIRED.
 #     <title>             short task title (truncated to 120 chars). REQUIRED.
@@ -61,9 +86,11 @@
 # Secrets are resolved at RUNTIME from the box's stores; NO secret value is ever
 # written into this file.
 #
-# EXIT 0 on a 2xx ingest; non-zero on failure — on non-zero the CEO must tell the
-# owner it is escalating to the operator (never self-intake, never ask intake
-# questions, never retry forever).
+# EXIT 0 on a 2xx ingest; 1 (with ESCALATE_TO_OPERATOR) on failure — then the CEO
+# must tell the owner it is escalating to the operator (never self-intake, never
+# ask intake questions, never retry forever). EXIT 2 = REFUSED usage error and
+# EXIT 3 = existing task not found / ambiguous: nothing was created or changed;
+# fix the call or ask the owner, do not escalate.
 #
 # OPTIONAL ENV OVERRIDES (all have safe defaults; the security-critical secret
 # resolution + signing are IDENTICAL to route-presentation.sh):
@@ -115,6 +142,12 @@ elif [ "${1:-}" = "auto" ]; then
   shift
   # The rest of the args (1..N) form the owner message, joined with single spaces.
   MESSAGE="$*"
+elif [ "${1:-}" = "existing" ]; then
+  ROUTE_MODE="existing"
+  EXISTING_ACTION="${2:-}"
+  EXISTING_REF="${3:-}"
+  shift; [ "$#" -gt 0 ] && shift; [ "$#" -gt 0 ] && shift
+  EXISTING_NOTE="$*"
 else
   DEPARTMENT_SLUG="${1:-}"
   TITLE="${2:-}"
@@ -131,13 +164,44 @@ _escalate() {
   exit 1
 }
 
+_usage() {
+  cat <<'USAGE'
+usage:
+  mc-route.sh task "<short title>" "<owner's exact words>"      new card, one per job
+  mc-route.sh existing status "<task title or id>"              read-only status of existing work; never creates a card
+  mc-route.sh existing update "<task title or id>" "<note>"     adds the owner's note or change to that card
+  mc-route.sh existing cancel "<task title or id>"              cancels that card
+  (legacy) mc-route.sh auto "<message>"  |  mc-route.sh <department> "<title>" [words...]
+USAGE
+}
+_refuse() {  # the caller used the tool wrong: say so, create nothing, exit 2
+  echo "mc-route: REFUSED — $1 Nothing was created or changed." >&2
+  _usage >&2
+  exit 2
+}
+
 if [ "$ROUTE_MODE" = "task" ]; then
   [ -n "$TITLE" ] || _escalate 'empty task (usage: mc-route.sh task "<short title>" "<owner'"'"'s exact words>")'
 elif [ "$ROUTE_MODE" = "auto" ]; then
   [ -n "$MESSAGE" ] || _escalate 'empty message argument (usage: mc-route.sh auto "<owner message verbatim>")'
+elif [ "$ROUTE_MODE" = "existing" ]; then
+  case "$EXISTING_ACTION" in
+    status|update|cancel) ;;
+    *) _refuse "'existing' must be followed by status, update or cancel (got '$EXISTING_ACTION')." ;;
+  esac
+  [ -n "$EXISTING_REF" ] || _refuse "'existing $EXISTING_ACTION' needs the task title or id."
+  [ "$EXISTING_ACTION" != "update" ] || [ -n "$EXISTING_NOTE" ] || _refuse "'existing update' needs the owner's note."
 else
-  [ -n "$DEPARTMENT_SLUG" ] || _escalate "empty department_slug argument (usage: mc-route.sh <department_slug> <title> [description...])"
-  [ -n "$TITLE" ]          || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+  case "$DEPARTMENT_SLUG" in -h|--help|help) _usage; exit 0 ;; esac
+  [ -n "$DEPARTMENT_SLUG" ] || _refuse "no command given."
+  # Words models used for existing work (JEV-592 acceptance run): refuse them
+  # before any network call and point at `existing`.
+  case "$(printf '%s' "$DEPARTMENT_SLUG" | tr '[:upper:]' '[:lower:]')" in
+    -*|status|stop|check|list|show|get|find|cancel|update|resume|pause|continue|kill|delete|close|done|tasks|queue|exec|execution|progress|info)
+      _refuse "'$DEPARTMENT_SLUG' is not a command or a department. For work already on the board use: mc-route.sh existing status|update|cancel \"<task title or id>\"." ;;
+  esac
+  # The title is checked after the board check below, so an unknown first word
+  # is always a REFUSED usage error, never an escalation.
 fi
 
 for _numeric in "$MAX_RETRIES" "$CONNECT_TIMEOUT" "$REQUEST_TIMEOUT" "$TOTAL_TIMEOUT"; do
@@ -207,7 +271,174 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 # ── Build the EXACT raw body once (compact JSON, like cc_board.py) ───────────
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
 HEADER_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-headers.XXXXXX")" || _escalate "mktemp failed"
-trap 'rm -f "$BODY_FILE" "$HEADER_FILE"' EXIT
+WS_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-ws.XXXXXX")" || _escalate "mktemp failed"
+TASKS_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-tasks.XXXXXX")" || _escalate "mktemp failed"
+trap 'rm -f "$BODY_FILE" "$HEADER_FILE" "$WS_FILE" "$TASKS_FILE"' EXIT
+
+# ── Command Center reads/writes other than ingest (JEV-601) ──────────────────
+API_BASE="${MC_ROUTE_API_BASE:-${INGEST_URL%/api/tasks/ingest}}"
+API_CODE=""
+API_OUT=""
+_api() {  # $1=METHOD $2=path [$3=JSON body file]. One try. Sets API_CODE (000 = transport) + API_OUT.
+  local h=(-H 'Accept: application/json') raw rc=0
+  [ -n "$MC_API_TOKEN" ] && h+=(-H "Authorization: Bearer $MC_API_TOKEN")
+  [ -n "${3:-}" ] && h+=(-H 'Content-Type: application/json' --data-binary @"$3")
+  raw="$(curl -sS --connect-timeout "$CONNECT_TIMEOUT" --max-time "$REQUEST_TIMEOUT" \
+    -X "$1" "$API_BASE$2" "${h[@]}" -w $'\n%{http_code}' 2>/dev/null)" || rc=$?
+  API_CODE="${raw##*$'\n'}"
+  API_OUT="${raw%$'\n'*}"
+  [ "$rc" -eq 0 ] || API_CODE="000"
+}
+_load_departments() {  # this company's board departments -> $WS_FILE, or escalate
+  _api GET /api/workspaces
+  case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the department list (GET /api/workspaces HTTP $API_CODE); nothing was created or changed" ;; esac
+  printf '%s' "$API_OUT" >"$WS_FILE"
+}
+
+if [ "$ROUTE_MODE" = "existing" ]; then
+  _load_departments
+  _api GET "/api/tasks?limit=500"
+  case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the task list (GET /api/tasks HTTP $API_CODE); nothing was changed" ;; esac
+  printf '%s' "$API_OUT" >"$TASKS_FILE"
+  _find_task() {  # prints FOUND + 6 fields, AMBIGUOUS + candidates, or NONE
+    "$PYTHON" - "$EXISTING_REF" "$WS_FILE" "$TASKS_FILE" <<'PYFIND'
+import json, re, sys
+ref, ws_path, tasks_path = sys.argv[1], sys.argv[2], sys.argv[3]
+def load(path):
+    try:
+        d = json.load(open(path))
+    except Exception:
+        return []
+    if isinstance(d, dict):
+        d = d.get("tasks") if isinstance(d.get("tasks"), list) else ([d] if d.get("id") else [])
+    return [x for x in d if isinstance(x, dict)] if isinstance(d, list) else []
+ws = {str(w.get("id")): str(w.get("slug") or w.get("id")) for w in load(ws_path) if w.get("id")}
+# This company only: tasks on one of its departments (or not yet on any).
+tasks = [t for t in load(tasks_path) if t.get("id") and (not t.get("workspace_id") or str(t["workspace_id"]) in ws)]
+STOP = {"the", "and", "for", "that", "this", "task", "card", "job", "with", "from", "our", "your", "about", "please", "one"}
+def words(s):
+    return {w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if len(w) > 2 and w not in STOP}
+def title(t):
+    return " ".join(str(t.get("title") or "").split())
+key = ref.strip().lower()
+pick = [t for t in tasks if str(t["id"]).lower() == key] or [t for t in tasks if title(t).lower() == key]
+if not pick:
+    want, scored = words(key), []
+    for t in tasks:
+        tl = title(t).lower()
+        score = 1.0 if key and key in tl else (len(want & words(tl)) / len(want) if want else 0.0)
+        if score >= 0.5:
+            scored.append((score, t))
+    if scored:
+        best = max(s for s, _ in scored)
+        pick = [t for s, t in scored if s == best]
+        if len({title(t).lower() for t in pick}) == 1:
+            pick = pick[:1]  # same title twice (a double card): the newest one
+if len(pick) == 1:
+    t = pick[0]
+    print("FOUND")
+    for v in (t["id"], t.get("status"), ws.get(str(t.get("workspace_id")), t.get("workspace_id") or "none"),
+              t.get("updated_at"), "yes" if t.get("archived_at") else "no", title(t).replace('"', "'")):
+        print("" if v is None else " ".join(str(v).split()))
+elif pick:
+    print("AMBIGUOUS")
+    for t in pick[:5]:
+        print('  id=%s status=%s title="%s"' % (t["id"], t.get("status"), title(t)))
+else:
+    print("NONE")
+PYFIND
+  }
+  FOUND="$(_find_task)"
+  if [ "$(printf '%s\n' "$FOUND" | sed -n '1p')" = "NONE" ]; then
+    case "$EXISTING_REF" in
+      *[[:space:]]*|'') ;;
+      *)  # an id the open list does not hold (e.g. already cancelled): read it directly
+        _api GET "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$EXISTING_REF")"
+        case "$API_CODE" in 2[0-9][0-9]) printf '%s' "$API_OUT" >"$TASKS_FILE"; FOUND="$(_find_task)" ;; esac
+        ;;
+    esac
+  fi
+  case "$(printf '%s\n' "$FOUND" | sed -n '1p')" in
+    FOUND) ;;
+    AMBIGUOUS)
+      echo "mc-route: AMBIGUOUS — several tasks match \"$EXISTING_REF\". Nothing was created or changed. Ask the owner which one, or re-run with its id:"
+      printf '%s\n' "$FOUND" | sed '1d'
+      exit 3 ;;
+    *)
+      echo "mc-route: NOT_FOUND — no task on this board matches \"$EXISTING_REF\". Nothing was created or changed. Ask the owner which task they mean; do not make a new card for it."
+      exit 3 ;;
+  esac
+  _T_ID="$(printf '%s\n' "$FOUND" | sed -n '2p')"
+  _T_STATUS="$(printf '%s\n' "$FOUND" | sed -n '3p')"
+  _T_DEPT="$(printf '%s\n' "$FOUND" | sed -n '4p')"
+  _T_UPDATED="$(printf '%s\n' "$FOUND" | sed -n '5p')"
+  _T_CANCELLED="$(printf '%s\n' "$FOUND" | sed -n '6p')"
+  _T_TITLE="$(printf '%s\n' "$FOUND" | sed -n '7p')"
+  _T_PATH="/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_T_ID")"
+  _note() {  # $1 = note text -> POST it to the card as an owner message
+    NOTE="$1" "$PYTHON" -c 'import json, os, sys; sys.stdout.write(json.dumps({"content": os.environ["NOTE"], "sender": "owner"}))' >"$BODY_FILE"
+    _api POST "$_T_PATH/messages" "$BODY_FILE"
+  }
+  case "$EXISTING_ACTION" in
+    status)
+      echo "STATUS id=$_T_ID status=$_T_STATUS department=$_T_DEPT updated=$_T_UPDATED cancelled=$_T_CANCELLED title=\"$_T_TITLE\""
+      ;;
+    update)
+      _note "$EXISTING_NOTE"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not add the note to task $_T_ID (HTTP $API_CODE)" ;; esac
+      echo "UPDATED id=$_T_ID title=\"$_T_TITLE\""
+      ;;
+    cancel)
+      if [ "$_T_CANCELLED" = "yes" ]; then
+        echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\" (it was already cancelled)"
+        exit 0
+      fi
+      _api POST "$_T_PATH/archive"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not cancel task $_T_ID (HTTP $API_CODE)" ;; esac
+      _note "Cancelled by the owner.${EXISTING_NOTE:+ $EXISTING_NOTE}"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) echo "mc-route: WARNING — task $_T_ID is cancelled but the cancel note was not saved (HTTP $API_CODE)." >&2 ;; esac
+      echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\""
+      ;;
+  esac
+  exit 0
+fi
+
+if [ "$ROUTE_MODE" = "slug" ]; then
+  # The first word must be a department that exists on this board; send its real slug.
+  _load_departments
+  _DEPT_RC=0
+  _DEPT="$("$PYTHON" - "$DEPARTMENT_SLUG" "$WS_FILE" <<'PYDEPT'
+import json, re, sys
+def norm(s):
+    s = re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")
+    return s[5:] if s.startswith("dept-") else s
+try:
+    rows = json.load(open(sys.argv[2]))
+except Exception:
+    sys.exit(3)
+if not isinstance(rows, list):
+    sys.exit(3)
+rows = [r for r in rows if isinstance(r, dict) and (r.get("slug") or r.get("id"))]
+arg = sys.argv[1].strip().lower()
+exact = [r for r in rows if arg in (str(r.get("slug") or "").lower(), str(r.get("id") or "").lower())]
+want = norm(arg)
+loose = [r for r in rows if want and want in (norm(r.get("slug")), norm(r.get("id")), norm(r.get("name")))]
+hit = exact[:1] or (loose if len(loose) == 1 else [])
+if hit:
+    print(hit[0].get("slug") or hit[0].get("id"))
+    sys.exit(0)
+print(" ".join(sorted({str(r.get("slug") or r.get("id")) for r in rows})))
+sys.exit(1)
+PYDEPT
+)" || _DEPT_RC=$?
+  case "$_DEPT_RC" in
+    0) DEPARTMENT_SLUG="$_DEPT" ;;
+    1) _refuse "'$DEPARTMENT_SLUG' is not a command or a department on this board (departments: ${_DEPT:-none}). To make a card and let Command Center pick the department use: mc-route.sh task \"<short title>\" \"<owner's exact words>\"." ;;
+    *) _escalate "the department list from Command Center was unreadable; nothing was created" ;;
+  esac
+  [ -n "$TITLE" ] || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+fi
+
 if [ "$ROUTE_MODE" = "auto" ]; then
   _BODY_BUILD_OK=0
   MESSAGE="$MESSAGE" SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
