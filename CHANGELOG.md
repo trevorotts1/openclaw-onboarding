@@ -1,3 +1,14 @@
+## [v25.2.21]  -  2026-09-30  -  JEV intake V4.3: mc-route.sh existing status/update/cancel; unknown first words never create cards; per-command NOT_FOUND; CEO intake policy V4.3; intake test kit fixes
+
+#### Why
+Acceptance testing of the v25.2.20 intake policy (V4) found it faulty: unknown first words to `mc-route.sh` created cards instead of being rejected, and a single shared NOT_FOUND message across subcommands made status/update/cancel failures unreadable. This release supersedes that faulty V4 intake policy with V4.3.
+
+#### What changed
+- `scripts/mc-route.sh` existing-mode (jev601/mc-route-existing-mode @ 36212e52): adds `existing status|update|cancel` subcommands. Unknown first words no longer create cards. Each subcommand prints its own NOT_FOUND text instead of one shared message. Both embedded copies in `scripts/apply-fleet-standards.sh` and `scripts/apply-routing-fix.sh` stay byte-identical. Tests: `tests/unit/mc-route-existing-mode.test.sh`.
+- CEO intake policy V4.3 (jev602/ceo-policy-v4-1 @ 7f75f44e): one card per job, the only command allowed is `mc-route.sh`, and the SOP/AGENTS.md/policy worked examples no longer leak the examples they were meant to illustrate. `shared-utils/ceo_execution_policy.py`, `AGENTS.md`, SOP-00, and `fleet_refresh_runner.py` all carry the V4.3 marker.
+- Intake test kit fixes (jev603/intake-harness-realistic @ 45d1985a): `tests/acceptance/intake/run_intake_acceptance.py` and the frozen/train corpora are corrected to exercise the V4.3 rule realistically; `department_labels.json` added.
+- `scripts/bump-version.sh` v25.2.21 (10 markers; Skill 23 is the only skill these branches touched, and its skill-version.txt is in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.21; Command Center pin is unchanged at v7.6.90.
+
 ## [v25.2.20]  -  2026-09-29  -  The CEO decides task or question and runs `mc-route.sh task` once per job; CEO policy V4; measured department picker; intake acceptance harness; CC pin v7.6.90
 
 #### Why

@@ -187,6 +187,16 @@ class RoutingTransport(unittest.TestCase):
         bodies=[];statuses=[503,200]
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self,*args):pass
+            def do_GET(self):
+                # JEV-601: mc-route.sh slug mode GETs /api/workspaces to confirm the
+                # department exists before routing. Top-level JSON list, as
+                # _load_departments()/the PYDEPT matcher in scripts/mc-route.sh require.
+                if self.path=='/api/workspaces':
+                    body=json.dumps([{"id":"ws-engineering","slug":"engineering","name":"Engineering"}]).encode()
+                    self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404);self.end_headers()
             def do_POST(self):
                 bodies.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
                 status=statuses.pop(0) if statuses else 200
