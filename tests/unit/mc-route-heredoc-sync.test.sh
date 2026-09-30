@@ -93,7 +93,7 @@ else
   fail "twin stamper heredocs drift from each other"
 fi
 
-# JEV-503: the stamped helper must carry `task` mode (the CEO intake rule calls
+# JEV-503 / JEV-601: the stamped helper must carry `task` and `existing` mode (the CEO intake rule calls
 # `mc-route.sh task`); byte-identity alone would pass if all three copies were old.
 # Run each stamper's heredoc through bash itself, so the check covers what the
 # installer actually writes, not only the regex extraction.
@@ -108,10 +108,11 @@ m = re.search(r"cat > \"\$MC_ROUTE_HELPER_PATH\" <<'MC_ROUTE_SH'\n.*?\nMC_ROUTE_
 sys.stdout.write(m.group(0) if m else "exit 1\n")
 XS
   if MC_ROUTE_HELPER_PATH="$stamped" bash "$WORK/stamp-$name.sh" && cmp -s "$stamped" "$MC_ROUTE" \
-     && grep -q '^if \[ "\${1:-}" = "task" \]; then$' "$stamped"; then
-    ok "$name stamps a byte-identical helper with task mode"
+     && grep -q '^if \[ "\${1:-}" = "task" \]; then$' "$stamped" \
+     && grep -q '^elif \[ "\${1:-}" = "existing" \]; then$' "$stamped"; then
+    ok "$name stamps a byte-identical helper with task + existing mode"
   else
-    fail "$name does not stamp a byte-identical helper with task mode"
+    fail "$name does not stamp a byte-identical helper with task + existing mode"
   fi
 done
 

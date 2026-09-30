@@ -58,6 +58,8 @@ cat > "$WORK/bin/curl" <<STUB
 # Stub curl: find the --data-binary @<file> argument, copy its contents to the
 # capture path, and emit a fake 200 in the exact "body\n%{http_code}" shape the
 # real helper's -w format produces so its success loop breaks on the first try.
+# JEV-601: slug mode first checks the department exists on the board.
+case " \$* " in *'/api/workspaces '*) printf '[{"id":"ws-sales","slug":"sales","name":"Sales"}]\\n200'; exit 0 ;; esac
 CAP="$CAPTURE"
 prev=""
 for a in "\$@"; do
