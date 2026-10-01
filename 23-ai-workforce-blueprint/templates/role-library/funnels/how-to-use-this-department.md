@@ -86,6 +86,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 ---
 
+<!-- DEPT_SKILLS_V1 -->
+## Skills This Department Can Operate For You 🛠️
+
+You never have to know these by name or type a command. Just say what you want in plain English, and this department reaches for the right pre-built engine ("skill") for you automatically. These are the ones it can run on your behalf:
+
+| If you say something like… | This department will… |
+|---|---|
+| "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" | Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system |
+
+You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
+<!-- END DEPT_SKILLS_V1 -->
+
 ## 5. What to Expect Back
 
 When you ask this department for something, here is the normal flow:

@@ -1,15 +1,15 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.2.26 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.92**.
+> **v25.3.0 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.92**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.2.26.
+> **Version:** see `/version` - this repo at v25.3.0.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v25.2.26
+## Current release: v25.3.0
 
 Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
@@ -163,14 +163,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.2.26** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.3.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **70 numbered skill folders (01–70)**: 65 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **71 numbered skill folders (01–71)**: 66 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -290,8 +290,9 @@ That file is the master instruction file. It contains:
 | 68-kie-audio | **KIE Audio (v1.0.0)** — the KIE.ai audio skill: TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs dialogue-v3 / multilingual-v2 / turbo-2-5 via generic createTask), Suno music/sound-effects (DEDICATED `/api/v1/generate` family — never createTask), and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no endpoint located, `dispatch_enabled: false`, refuses to invent one). Registry `models.json` (10 entries), deterministic `validate_audio_request.py` with HARD-REJECT rules (Suno via createTask, out-of-enum values, any STT dispatch), audio QC checklists (playable file, language, voice identity, pronunciation, clipping), marker-based `wire.sh`. Credential: `KIE_API_KEY`. |
 | 69-archify | **Archify (v2.17.0)** — an agent skill that turns plain-language requirements, pasted Mermaid (`flowchart` / `sequenceDiagram` / `stateDiagram`), or repository evidence into polished, validated architecture / workflow / sequence / data-flow / lifecycle diagrams as self-contained, explorable interactive HTML with inline SVG, dark/light themes, optional trace motion, and PNG/JPEG/WebP/SVG/WebM export. A zero-dependency Node.js CLI (entry `bin/archify.mjs`) whose `doctor` verifies all 15 subsystems, `validate` gates a diagram document against quality profiles, and `render` emits a standalone HTML file. MIT; vendored from `tt-a1i/archify`. Zero runtime dependencies; requires Node ≥ 18. |
 | 70-lean-core-file-system | **Lean Core File System (v1.0.0)**: keeps every core file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) under 40,000 characters by moving situational blocks into one playbook per system in the master files `playbooks/` folder, behind a one-line pointer reference of one to two sentences (WHAT, WHERE, WHEN); always-on rules stay inline, shortened. `pointer-audit.sh` (sizes, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved` content-preservation proof; exit 0 PASS, 1 FINDINGS, 2 tooling) and a quiet weekly OpenClaw cron job (`lean-core-file-system-weekly`, isolated session, thinking high, DeepSeek V4.1 Flash on Ollama Cloud with the OpenRouter DeepSeek V4.1 Flash as fallback, identifiers discovered from the box, never guessed). Standalone, not part of skill 01. |
+| 71-blackceo-signature-page | **BlackCEO Signature Page (v1.0.0)** — canonical BlackCEO single-page landing-page production skill: Standard or Long-Form copy, wireframes, mockups, image intelligence/prompts, QC, responsive HTML, GHL install/test; delegates image execution to Skill 66 kie-image / Skill 63 agnes-image and GHL build to Skill 6; routes multi-step funnels to Skill 49, DR/VSL to Skill 56, cinematic to Skill 62. Deployed by Skill 23 web-development / landing-page-specialist; SOP cluster universal-sops/signature-page-craft/. |
 
-**Total: 70 numbered skill folders** (01–70): **65 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 71 numbered skill folders** (01–71): **66 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

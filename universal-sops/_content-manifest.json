@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-01T02:36:57Z",
-  "file_count": 113,
+  "generated_at": "2026-10-01T16:09:04Z",
+  "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "b9e94a26cd2855d8a0c0bfd8f74aa470858b52a7465d0d7c63417f6a921711f6",
@@ -193,8 +193,8 @@
       "bytes": 5007
     },
     "funnel-craft/README.md": {
-      "sha256": "8e8cf76e10ed3bd337aa8e5b24d59ef3983d21be8ac1a199461f50e6d793f1d8",
-      "bytes": 6622
+      "sha256": "35014fc0871702f11e31953d148f0240b67da785895f5f6a3f22d140054e0833",
+      "bytes": 6638
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
@@ -363,6 +363,10 @@
     "sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md": {
       "sha256": "819ddada2ba7c906b8fa278fa81f5279ec760ae578368ac4cb43f6ab17b905bf",
       "bytes": 10197
+    },
+    "signature-page-craft/README.md": {
+      "sha256": "9285a415b16d8efb1a7056ff9784057cfc8875974a7dc154c7dc05b684e1cb8c",
+      "bytes": 11988
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {
       "sha256": "263dda9cb4e2ace67410e62847bab766a17248248606fef7022e18490ad1fdc7",

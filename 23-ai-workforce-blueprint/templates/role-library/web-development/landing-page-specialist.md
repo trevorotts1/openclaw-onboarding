@@ -169,7 +169,7 @@ This role contributes to the company revenue cascade by: **building and optimizi
 | Figma (view access) | Review landing page designs from Web Designer | Web app | Read access to design files for implementation reference |
 | Screaming Frog / Sitebulb | Landing page crawl for SEO health, broken links, redirect checking | Desktop tool | Weekly crawl of all live landing pages |
 | **Email Engine + superlibrary (Skill 50)** | Trigger the landing-page 10-promo email set after the Downsell page (Skill 49 hook) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
-| **Signature Funnel engine (Skill 49)** | The canonical engine for a Trevor Otts "signature landing page" / signature funnel -- it ORIGINATES the SACRED 12-section copy + images (this role does NOT originate that copy) | `49-signature-funnel/signature-funnel-entry.sh` (canonical fail-closed entry), routed via `06-ghl-install-pages/tools/funnel_engine_selector.py`; SOPs `universal-sops/funnel-craft/` | Delegation contract: intake JSON only; canonical entry only; the engine authors, Skill 47 renders, Skill 6 delivers; no signed certificate = not done; never waive an engine floor. Client runtime uses the CLIENT's own provider (never Anthropic). |
+| **Signature Funnel engine (Skill 49)** | The canonical engine for multi-step 3/5/7 Signature Funnels with checkout / upsell / downsell / OTO -- it ORIGINATES the SACRED 12-section copy + images (this role does NOT originate that copy). Single-page BlackCEO pages (landing / opt-in / squeeze / lead-gen / webinar / 5-day challenge / booking / Standard / Long-Form) are Skill 71 blackceo-signature-page, not this engine (see SOP 9.0). | `49-signature-funnel/signature-funnel-entry.sh` (canonical fail-closed entry), routed via `06-ghl-install-pages/tools/funnel_engine_selector.py`; SOPs `universal-sops/funnel-craft/` | Delegation contract: intake JSON only; canonical entry only; the engine authors, Skill 47 renders, Skill 6 delivers; no signed certificate = not done; never waive an engine floor. Client runtime uses the CLIENT's own provider (never Anthropic). |
 | **Sales Page Assets engine (Skill 56)** -- the Direct-Response sibling of Skill 49 | The canonical engine for a Trevor Otts "sales page assets" / "direct-response sales page" / VSL request -- it ORIGINATES the 8-section main A/B + countdown, the 9-section upsell, the downsell, the Sovereign Architect high-ticket, and the order-bump copy (this role does NOT originate that copy) | `56-sales-page-assets/sales-page-assets-entry.sh` (canonical fail-closed entry), routed via `06-ghl-install-pages/tools/funnel_engine_selector.py` + registry `funnel-engines/registry.json` (2nd entry); owned SOP cluster `universal-sops/sales-page-craft/` (extends `universal-sops/funnel-craft/`) | Delegation contract: intake JSON only; canonical entry only; the engine authors, Skill 47 (or the client's own image provider) renders, Skill 6 delivers, Skill 44 wires the bump; no signed certificate = not done; never waive an engine floor. Client runtime uses the CLIENT's own provider (never Anthropic). |
 | **GHL Form Builder (Skill 6)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Build a GHL **form** (standard + custom fields), retrieve its **embed snippet**, and embed it on a standalone landing page, and style it | Skill 6 `tools/ghl_form_builder.py` (two-layer: SMART plan + Skill-44 `zhc_` deps → DUMB browser operator) → `ghl_rest_canvas` `SKILL44_WIDGET → FORM` embed (VERBATIM, no SRI) → `ghl_verify.render_check`. Custom CSS in the form's Styles box + host-page wrapper. Shared procedure: `universal-sops/form-craft/` | Seeded token-only session; draft/preview by default; nothing publishes without human approval. |
 
@@ -181,9 +181,25 @@ This role contributes to the company revenue cascade by: **building and optimizi
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
+
+### SOP 9.0 — Page-Family Routing Gate (Skill 71 vs Skill 49 vs Skill 56 vs Skill 62)
+
+**When to run:** Before beginning any new landing-page build — resolve the page family from the native skill catalog first. Do not author a BlackCEO landing page by hand when the canonical skill is available.
+**Frequency:** Per page request (every new build, before SOP 9.1 step 1)
+**Inputs:** The client's plain-language page request (page family, offer type, number of steps, checkout/upsell presence), the native skill catalog (`23-ai-workforce-blueprint/skill-department-map.json`)
+**Steps:**
+1. **Single BlackCEO page → Skill 71 `blackceo-signature-page`:** landing / opt-in / squeeze / lead-generation / webinar / 5-day challenge / booking / event-registration page, Standard or Long-Form system. Follow Skill 71's Standard-or-Long-Form production workflow; do not recreate its rails.
+2. **Multi-step 3/5/7 Signature Funnel → Skill 49 `signature-funnel`:** any funnel with checkout / upsell / downsell / OTO / branching. Skill 49 is NOT the engine for single-page signature landing pages.
+3. **Direct-Response / VSL / high-ticket / order-bump asset stack → Skill 56 `sales-page-assets`.**
+4. **Animated / cinematic / scroll-controlled experience → Skill 62 `cinematic-web-funnel-engine`.**
+5. **Delegate execution rails — never fork them:** image generation to the selected installed image skill (Skill 66 Kie by default when applicable; Skill 63 Agnes when selected) and GHL delivery to Skill 6.
+**Outputs:** A resolved page family + owning skill recorded before any copy, wireframe, image, or build work starts
+**Hand to:** The owning engine (Skill 71 / 49 / 56 / 62) for authoring; Skill 6 (GHL delivery) and the selected image skill downstream
+**Failure mode:** The "hand-authored BlackCEO page" — building a signature landing page by hand, or letting the multi-step funnel engine (Skill 49) claim a single-page request, because the family was never resolved; the page then bypasses the canonical engine's copy, visual, and QC floors. Resolve the family FIRST; never waive an engine floor.
 
 ### SOP 9.1 — New Landing Page Build (End-to-End)
 

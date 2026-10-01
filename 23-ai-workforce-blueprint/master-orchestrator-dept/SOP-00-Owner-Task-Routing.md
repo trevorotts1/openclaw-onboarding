@@ -59,7 +59,7 @@ an assigned specialist into a router or lets the CEO take another agent's execut
 ---
 
 # SOP-00 — Owner Task Routing
-**Version:** 1.6.0 | 2026-07-07
+**Version:** 1.7.0 | 2026-10-01
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -125,6 +125,7 @@ Before applying the single-department routing table below, check whether the req
 - Request names both a page/funnel deliverable AND a follow-up automation in the same message (e.g., "build me a landing page and email follow-up sequence," "create a funnel with workflows," "VSL funnel with automation").
 - Request describes a multi-stage conversion flow: capture → nurture → sales → automation.
 - Request uses any of: "full funnel," "build me a funnel," "sales funnel," "lead magnet + sequence," "funnel + emails," "website factory," "webinar funnel," "opt-in + follow-up."
+- A single focused page request with NO follow-up automation and NO multi-stage flow (landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation) is NOT full-funnel intent: single-route it below. Skill 71 `blackceo-signature-page` owns single BlackCEO pages; Skill 49 `signature-funnel` owns multi-step 3/5/7 Signature Funnels.
 
 **If full-funnel intent is detected:** Do NOT single-route. Hand to SOP-07 (Full-Funnel Build Orchestration). SOP-07 creates the parent epic (`task_type: funnel_epic`) and the seven staged child cards (P0, P1, P2, P2e, P3, P4, P5) with `depends_on` edges. Idempotency: carry the parent `idempotency_key` on the epic; derive each child key as `sha256(parent_key + ':' + stage_slug)` so a Telegram retry cannot duplicate the funnel or any stage.
 
@@ -149,7 +150,8 @@ Do NOT classify the request and do NOT choose a department. Run `mc-route.sh tas
 | Customer inquiries, support tickets | `customer-support` |
 | Research, analysis, market intel | `research` |
 | Legal, compliance, contracts | `legal-compliance` |
-| Website, web app, landing pages | `web-development` |
+| Website, web app (multi-page sites) | `web-development` |
+| Single focused BlackCEO page — landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation ("build me a landing page", "build a squeeze page", "build a 5-day challenge page") | `web-development` |
 | Billing, invoices, financial reports | `billing` |
 | Personal assistant tasks | `personal-assistant` |
 | Anything that crosses multiple depts | CEO workspace + cc routing note |
@@ -371,6 +373,7 @@ This is the role #0 entry in `suggested-roles/graphics-suggested-roles.md` in th
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.7.0 | 2026-10-01 | Added the single-BlackCEO-page row to the single-department table (landing/opt-in/squeeze/webinar-event registration/5-day challenge/booking/lead-generation -> `web-development`, Skill 71 `blackceo-signature-page`) and narrowed the generic web row to multi-page sites so no phrase is claimed twice; added the Step-2 rule that a single focused page with no follow-up automation and no multi-stage flow is NOT full-funnel intent and must not be swallowed by the SOP-07 branch. Skill 49 keeps multi-step 3/5/7 Signature Funnels; Skill 56 keeps DR/VSL/high-ticket/order-bump; Skill 62 keeps cinematic/scroll pages. |
 | 1.6.0 | 2026-07-07 | Added the Anthology Engine dispatch rule (Skill 59, role `anthology-producer-orchestrator`): a single-department table row (`anthology`) plus a dedicated routing-only subsection documenting the three inbound anthology event classes (the self-dispatching intake webhook, per-stage gate events, and the producer's S9 assembly trigger) that dispatch to `anthology-producer-orchestrator` ONLY and NEVER to R8's `general-task` catch-all, closing the same class of gap the Skill 53 never-seeded-books-department hard lesson exposed. Routing-only (R1/R2/R3/R7): the orchestrator never runs a pipeline step, never intercepts the webhook, and never executes a gate or assembly event itself. Part of Anthology Engine wiring (W4.11). |
 | 1.5.0 | 2026-07-06 | Added the Podcast Production Engine dispatch rule: full podcast episode production routes to the `podcast` universal-floor department (`department_slug: "podcast"`), placed above and distinct from generic audio/voiceover which stays with `audio`. Documents the two inbound paths (the self-dispatching intake webhook on sessionKey `podcast:intake:<slug>`, and owner-message board dispatch) and reaffirms routing-only (R1/R2/R3/R7/R11): the orchestrator never runs a pipeline step, never renders audio or cover art, never writes to Convert and Flow or Podbean, never writes episode state. Silence and no-MCP-in-pipeline carry through. Part of Podcast Production Engine v18 wiring (W4.14). |
 | 1.4.0 | 2026-06-22 | Added Step-2 full-funnel/website-factory branch: when intent is detected, hand to SOP-07 (Full-Funnel Build Orchestration) instead of single-routing. Documents parent idempotency_key with child key derivation as sha256(parent_key+':'+stage_slug). Sibling SOP-07 added to master-orchestrator-dept/. |

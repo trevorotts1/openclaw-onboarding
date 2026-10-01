@@ -1,3 +1,16 @@
+## [v25.3.0]  -  2026-10-01  -  Skill 71 BlackCEO Signature Page: single-page landing engine + repo registration
+
+#### Why
+BlackCEO production needed one governed owner for focused-conversion pages (landing, opt-in, squeeze, webinar registration, 5-day challenge, and booking). Those page types were split across skills 49, 56, and 62, with no single owner for the full chain: copy, font and action planning, wireframes, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GoHighLevel installation and testing, and authorized publishing.
+
+#### What changed
+- New standalone skill `71-blackceo-signature-page` (v1.0.0): BlackCEO single-page production end to end, covering Standard and Long-Form copy, font and action planning, desktop and mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation and testing, and authorized publishing.
+- Departments wired to skill 71: web-development (landing-page-specialist), marketing, funnels, and graphics.
+- Page-type routing moved: landing, opt-in, squeeze, webinar registration, 5-day challenge, and booking pages now route to skill 71; the skill 49, 56, and 62 boundary rules are retained alongside it.
+- New `signature-page-craft` SOP cluster added.
+- Command Center verified at pinned release v7.6.92; no Command Center change required for this release.
+- `scripts/bump-version.sh` v25.3.0 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, and docs/interview-launch-recovery.md "Paired releases" line rolled to v25.3.0 / v7.6.92.
+
 ## [v25.2.26]  -  2026-10-01  -  Remove non-English intake acceptance message (ACC-001-16); add English-only reply rule for every test (PR #1420)
 
 #### Why

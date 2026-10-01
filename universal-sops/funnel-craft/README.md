@@ -27,7 +27,7 @@ This craft cluster (`universal-sops/funnel-craft/`) is the execution playbook fo
 
 | Skill | Reach for this craft when the client says… |
 |---|---|
-| **49** signature-funnel | "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" · "a full funnel" |
+| **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" · "an opt-in and upsell chain" · "a full funnel" |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" · "build an immersive funnel" · "create a cinematic squeeze page" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
