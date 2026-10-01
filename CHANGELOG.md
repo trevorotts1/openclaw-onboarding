@@ -1,3 +1,15 @@
+## [v25.2.23]  -  2026-10-01  -  Intake classifier chain, Agnes 3.0 Flash upgrade, decision-engine kill switch, Command Center pin helper, intake acceptance set
+
+#### Why
+Owner intake needed a deterministic classifier chain in front of the decision engine, the fleet's Agnes text model needed to move 2.x to 3.0 Flash, the decision engine needed a supported off switch that stops engine calls without stopping cards, and the Command Center pin plus intake acceptance coverage needed to stay in lockstep. This release ships all four as one batch train with one version bump.
+
+#### What changed
+- Intake classifier chain (CLS-001, v25.2.23-intake-chain): `scripts/intake-classifier-chain.sh`, `shared-utils/intake_classifier_policy.txt`. Tests: `tests/unit/test_intake_classifier_chain.sh`.
+- Agnes 3.0 Flash upgrade (AGN-001, v25.2.23-agnes-3-0): `63-agnes-image/` (CORE_UPDATES.md, INSTALL.md, PREREQS.json, QC.md, SKILL.md, agnes-image-full.md, wire.sh), `64-agnes-video/` (INSTALL.md, PREREQS.json), `install.sh`, `shared-utils/fleet_refresh_runner.py` (new agnes-30-upgrade step). Tests: `tests/unit/test_agnes_30_upgrade.py`.
+- Command Center pin helper and intake acceptance set (ACC-001, v25.2.23-cc-pin-and-intake-tests): `scripts/pin-cc-tag.py`, `tests/acceptance/intake/messages.json`, `tests/acceptance/intake/README.md`. Tests: `tests/unit/pin-cc-tag.test.py`.
+- Decision-engine kill switch (KIL-001, v25.2.23-kill-switch): `shared-utils/ceo_execution_policy.py`, `shared-utils/fleet_refresh_runner.py` (kill-mode resolution and loaded-verifier kill-on branch), `extensions/ceo-routing-doctrine/dist/index.js`, `scripts/apply-fleet-standards.sh`, `scripts/apply-routing-fix.sh`, `scripts/verify-routing.sh`. Tests: `tests/unit/test_kill_switch_preamble.py`. `echo off > ~/.openclaw/decision-engine-mode.conf` stops engine calls, not cards; corrupt store fails loud.
+- `scripts/bump-version.sh` v25.2.23 (all markers in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.23; Command Center pin unchanged at v7.6.90.
+
 ## [v25.2.22]  -  2026-09-30  -  JEV intake routing fixes 1-11: one-door intake via mc-route.sh task; exact-match update/cancel; NO_LOOPHOLES V4_3; fail-closed verbs; status honesty; harness aligned real script; housekeeping
 
 #### Why
