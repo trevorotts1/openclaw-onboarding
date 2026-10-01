@@ -784,22 +784,22 @@ def _verify_loaded(
         _info(f"  loaded check: kill switch SUPPORTED (mode={_kill_mode}, source={_kill_source}) — "
               "V4.3 presence NOT required; operative instructions must be ABSENT")
         artifacts = {
-            "soul_md": not _file_has_marker(_art_paths_soul(paths), LOADED_MARKER),
+            "soul_md": not _file_has_marker(_art_paths_soul(paths, shared_utils), LOADED_MARKER),
             "agents_md": not _file_has_marker(_loaded_artifact_paths(paths)["agents_md"], AGENTS_LOADED_MARKER),
             "plugin": True,  # plugin dist carries BOTH paths; prompt-time switch picks
         }
-        for _name, _ok in artifacts.items():
-            if not _ok:
-                _warn(f"  loaded check (kill on): {_name} still carries operative V4.3 instructions")
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check (kill on): {_art_name} still carries operative V4.3 instructions")
         marker_present = all(artifacts.values())
     else:
         artifacts = {"soul_md": marker_present}
         _art_paths = _loaded_artifact_paths(paths)
         artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
         artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
-        for _name, _ok in artifacts.items():
-            if not _ok:
-                _warn(f"  loaded check: {_name} does not carry the current policy marker")
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check: {_art_name} does not carry the current policy marker")
         marker_present = all(artifacts.values())
 
     # ── Board state ──────────────────────────────────────────────────────────
@@ -941,9 +941,21 @@ def _query_gateway_prompt(session_key: str, method: str) -> tuple[bool, Optional
         return False, None
 
 
-def _art_paths_soul(paths: dict) -> Path:
-    """SOUL.md path for the kill-on absence check (same file the proxy reads)."""
-    return _loaded_artifact_paths(paths)["soul_md"]
+def _art_paths_soul(paths: dict, shared_utils: Optional[Path] = None) -> Path:
+    """SOUL.md path for the kill-on absence check (same file the proxy reads).
+
+    Same order as _proxy_verify_loaded: injected resolution first, bare
+    workspace fallback only when the helper is unavailable.
+    """
+    if shared_utils is not None:
+        sys.path.insert(0, str(shared_utils))
+        try:
+            from resolve_injected_core_files import resolve_injected_core_files  # type: ignore
+        except ImportError:
+            pass
+        else:
+            return resolve_injected_core_files("main")["soul_md"]
+    return Path(paths["workspace"]) / "SOUL.md"
 
 
 def _proxy_verify_loaded(

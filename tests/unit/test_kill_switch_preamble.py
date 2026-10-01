@@ -38,11 +38,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared-utils"))
+import fleet_refresh_runner as runner  # noqa: E402
+from fleet_refresh_runner import BoxResult  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[2]
 DIST = REPO / "extensions" / "ceo-routing-doctrine" / "dist" / "index.js"
 POLICY_HELPER = REPO / "shared-utils" / "ceo_execution_policy.py"
 VERIFY_SH = REPO / "scripts" / "verify-routing.sh"
 RUNNER = REPO / "shared-utils" / "fleet_refresh_runner.py"
+SHARED_UTILS = REPO / "shared-utils"
 
 HOOK_SCRIPT = (
     "const {default:plugin}=await import(process.argv[1]); let hook;"
@@ -55,6 +60,9 @@ HOOK_SCRIPT = (
 # test (same trick as test_ceo_execution_policy.py).
 V43_HEADING = "Task intake and assigned execution" + " (V4.3)"
 FALLBACK_HEADING = "card for everything"
+# Same split trick: absence-fixture marker below writes this into temp dirs
+# only, never into the repo tree.
+SOUL_MARKER = "CEO_ORCHESTRATOR_RULE" + "_V4_3"
 
 
 def _hook(env_extra=None, oc_config=None):
@@ -224,3 +232,77 @@ class KillSwitchChainStepTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class KillOnSoulResolutionTests(unittest.TestCase):
+    """KIL-001 regression: the kill-on branch reads the real SOUL.md.
+
+    Pre-fix, _art_paths_soul read a "soul_md" key that _loaded_artifact_paths
+    never sets, so the first kill-on run raised KeyError (swallowed by
+    _finish_run into step_fail verify). These tests execute that branch.
+    """
+
+    def _hermetic(self):
+        fx = tempfile.TemporaryDirectory()
+        self.addCleanup(fx.cleanup)
+        base = Path(fx.name)
+        ws = base / "ws"
+        ws.mkdir()
+        (ws / "AGENTS.md").write_text("clean\n")
+        root = base / "root"
+        (root / "extensions" / "ceo-routing-doctrine" / "dist").mkdir(parents=True)
+        (root / "extensions" / "ceo-routing-doctrine" / "dist" / "index.js").write_text("clean\n")
+        (root / "decision-engine-mode.conf").write_text("off\n")
+        cfg = base / "openclaw.json"
+        cfg.write_text(json.dumps({"agents": {"defaults": {"workspace": str(ws)}}}))
+        saved = dict(os.environ)
+        os.environ.pop("OPENCLAW_DECISION_ENGINE_MODE", None)
+        os.environ["HOME"] = str(base)
+        os.environ["OC_JSON"] = str(cfg)
+        old_path = os.environ.get("PATH")
+        os.environ["PATH"] = "/usr/bin:/bin"
+        self.addCleanup(os.environ.pop, "OC_JSON", None)
+        self.addCleanup(os.environ.__setitem__, "PATH", old_path)
+        for k, v in saved.items():
+            if k not in os.environ:
+                self.addCleanup(os.environ.__setitem__, k, v)
+        self.addCleanup(os.environ.__setitem__, "HOME", saved.get("HOME", ""))
+        self.addCleanup(os.environ.pop, "FLEET_REFRESH_ROOT", None)
+        return {"workspace": ws, "root": root}
+
+    def test_art_paths_soul_resolves_real_soul_no_keyerror(self):
+        import inspect
+        paths = self._hermetic()
+        params = inspect.signature(runner._art_paths_soul).parameters
+        if len(params) >= 2:
+            got = runner._art_paths_soul(paths, SHARED_UTILS)
+        else:
+            got = runner._art_paths_soul(paths)  # pre-fix: raises KeyError
+        self.assertTrue(str(got).endswith("SOUL.md"))
+        sys.path.insert(0, str(SHARED_UTILS))
+        from resolve_injected_core_files import resolve_injected_core_files
+        self.assertEqual(got, resolve_injected_core_files("main")["soul_md"])
+
+    def test_verify_loaded_kill_on_completes_no_keyerror(self):
+        paths = self._hermetic()
+        self.assertTrue(runner._kill_active(paths)[0])
+        (Path(paths["workspace"]) / "SOUL.md").write_text("clean\n")
+        box = BoxResult("fx", True)
+        runner._verify_loaded(paths, SHARED_UTILS, None, box)
+        self.assertTrue(box.loaded["present"])
+        self.assertTrue(box.loaded["artifacts"]["soul_md"])
+        self.assertEqual(box.loaded["kill_mode"], "off")
+
+    def test_kill_on_absence_semantics(self):
+        paths = self._hermetic()
+        soul = Path(paths["workspace"]) / "SOUL.md"
+        soul.write_text("operative " + SOUL_MARKER + "\n")
+        box = BoxResult("fx", True)
+        runner._verify_loaded(paths, SHARED_UTILS, None, box)
+        self.assertFalse(box.loaded["present"])
+        self.assertFalse(box.loaded["artifacts"]["soul_md"])
+        soul.write_text("clean\n")
+        box2 = BoxResult("fx", True)
+        runner._verify_loaded(paths, SHARED_UTILS, None, box2)
+        self.assertTrue(box2.loaded["present"])
+        self.assertTrue(box2.loaded["artifacts"]["soul_md"])
