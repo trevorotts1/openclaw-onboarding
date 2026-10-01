@@ -1,3 +1,13 @@
+## [v25.2.26]  -  2026-10-01  -  Remove the non-English intake acceptance message (ACC-001-16); message count 16 to 15
+
+#### Why
+The operator-box intake acceptance set had one Spanish message (ACC-001-16, brochure cancel). It is dropped, and every count of the set now says 15.
+
+#### What changed
+- Removed item ACC-001-16 (`non_english_message`) from `tests/acceptance/intake/messages.json` (15 items; every count updated).
+- `tests/acceptance/intake/README.md` counts rolled 16 to 15 (heading, prose, and the two run-sizing lines).
+- `scripts/bump-version.sh` v25.2.26 (all markers in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.26.
+
 ## [v25.2.25]  -  2026-10-01  -  Merge train: #1414 AGN-201: Agnes 3.0 step report-only mode (would-change per box); #1415 MCR-202: mc-route.sh cancel/update honest replies (matches CANC-101…; #1416 Release v25.2.25: Command Center pin v7.6.92 (cancel/update reach…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

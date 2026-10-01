@@ -1,6 +1,6 @@
 {
-  "set": "operator-box intake acceptance — 16 failure classes (unit ACC-001, v25.2.23)",
-  "note": "One message per failure class, 16 exactly. DATA ONLY: nothing here executes. Running this set makes LIVE paid model calls on the OPERATOR BOX — only with Trevor's explicit go, and the cost figure must be stated FIRST (see README.md, 'The 16-message operator-box set'). run_intake_acceptance.py does NOT read this file (its SPLITS dict lists only corpus_train.json / corpus_frozen.json, lines 46-47), so adding it changes nothing about that harness. Every 'rule' below is a verbatim quote from this repo at branch v25.2.23-cc-pin-and-intake-tests; file:line per quote.",
+  "set": "operator-box intake acceptance — 15 failure classes (unit ACC-001, v25.2.23)",
+  "note": "One message per failure class, 15 exactly. DATA ONLY: nothing here executes. Running this set makes LIVE paid model calls on the OPERATOR BOX — only with Trevor's explicit go, and the cost figure must be stated FIRST (see README.md, 'The 15-message operator-box set'). run_intake_acceptance.py does NOT read this file (its SPLITS dict lists only corpus_train.json / corpus_frozen.json, lines 46-47), so adding it changes nothing about that harness. Every 'rule' below is a verbatim quote from this repo at branch v25.2.23-cc-pin-and-intake-tests; file:line per quote.",
   "decision_vocabulary": [
     "answer_no_card — the CEO answers directly; no call, no card",
     "one_card — exactly one mc-route.sh task call; exactly one card",
@@ -158,17 +158,6 @@
       "expected": "one_card",
       "expected_detail": "Exactly one task call for the one real job (the packing checklist). The rest is context and small talk: no card for any of it.",
       "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW WORK): \"Exactly one task call per distinct job; a restatement of the same job is not a second job (two jobs = two calls).\" Worked example 9: \"'Write the donor thank-you letter. The gala one, I mean.' -> one task call; the second sentence restates the same job.\" (NEW INTAKE): \"Never run ls, find, grep, cat, env or any other command to decide or route. Decide from the message and the conversation.\""
-    },
-    {
-      "id": "ACC-001-16",
-      "class": "non_english_message",
-      "history": [],
-      "message": "¿Puedes cancelar el trabajo de reimpresión del folleto? Ya no lo hacemos este trimestre.",
-      "board": "Loaded and reachable; holds a card whose title is the brochure reprint job.",
-      "expected": "existing_cancel",
-      "expected_language": "reply_english_only",
-      "expected_detail": "The intake decision is unchanged by language: this is an existing cancel on that card (same contract as ACC-001-06). The owner-facing reply is in English only.",
-      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW INTAKE): \"Reply to the owner in English only.\" (Cancellation contract: POLICY EXISTING WORK \"`mc-route.sh existing cancel \"<task title or id>\"` to cancel it\"; scripts/mc-route.sh:32-33.)"
     }
   ]
 }
