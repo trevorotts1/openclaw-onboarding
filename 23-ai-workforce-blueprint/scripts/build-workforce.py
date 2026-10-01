@@ -5366,12 +5366,12 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(soul_path, 'w') as f:
             f.write(soul_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of SOUL.md
-    # (idempotent - skip if V2 marker already present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V4.3 marker already present; upgrade older V1-V4 managed block if present)
     if is_ceo_dept:
         with open(soul_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
-            # Strip any V1 block first (so V2 is the only copy at the top)
+            # Managed-block upgrade handled inside _upgrade_ceo_policy (V4.3 is the only copy at the top)
             with open(soul_path, 'w') as f:
                 f.write(_upgrade_ceo_policy(existing))
 
@@ -5386,7 +5386,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(identity_path, 'w') as f:
             f.write(identity_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of IDENTITY.md
-    # (idempotent - skip if V2 marker present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V4.3 marker already present; upgrade older V1-V4 managed block if present)
     if is_ceo_dept:
         with open(identity_path, 'r') as f:
             existing = f.read()
@@ -5405,8 +5405,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
             else:
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
-    # G5: if CEO MEMORY.md already exists but lacks V2 marker, prepend it
-    # (upgrade V1→V2 if only V1 is present)
+    # G5: if CEO MEMORY.md already exists but lacks V4.3 marker, prepend it
+    # (upgrade older V1-V4 managed block if present)
     elif is_ceo_dept:
         with open(memory_path, 'r') as f:
             existing = f.read()
@@ -5443,7 +5443,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 ws_existing = _f.read()
         else:
             ws_existing = ""
-        # Only inject if V2 marker not already present
+        # Only inject if V4.3 marker not already present
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in ws_existing:
             with open(ws_soul_path, 'w') as _f:
                 _f.write(_upgrade_ceo_policy(ws_existing))
@@ -5479,7 +5479,10 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
 # before prepending - re-running the build never duplicates the block.
 
-CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V4 -->"
+# v25.2.22 fix 4: guard on the CURRENT marker. A bare _V4 guard read the old V4
+# block as present and skipped the upgrade, so existing departments/ceo
+# SOUL.md / IDENTITY.md / MEMORY.md stayed on V4 forever.
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V4_3 -->"
 CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
 CEO_ORCHESTRATOR_RULE = _ceo_policy_block()
 

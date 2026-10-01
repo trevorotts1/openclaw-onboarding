@@ -256,19 +256,26 @@ def _item(message, *history):
             "history": [{"role": r, "content": c} for r, c in zip(roles, history)]}
 
 
-def test_existing_is_not_found_unless_the_conversation_names_the_card():
+def test_existing_not_found_matches_the_real_script_per_subcommand():
+    # The real script answers per subcommand: only `update` points on to `task`;
+    # `status`/`cancel` say nothing matching is on the board and say do NOT create
+    # a card. The reply text mirrors scripts/mc-route.sh exactly.
     no_card = _item("Can you change the webinar date to the 15th?")
     board = H.board_from(no_card)
     assert board == {}
-    for cmd in ('mc-route.sh existing update "webinar" "Change the webinar date to the 15th"',
-                'mc-route.sh existing status "webinar"', 'mc-route.sh existing cancel "3pm"'):
-        cards, reply, _ = H.simulate(cmd, _fixed("x"), board)
-        assert cards == [] and reply.startswith("mc-route: NOT_FOUND: no matching existing card. "
-                                                "If this is work to do, run: mc-route.sh task ")
-        assert "do not make a new card" not in reply
+    cards, reply, _ = H.simulate(
+        'mc-route.sh existing update "webinar" "Change the webinar date to the 15th"',
+        _fixed("x"), board)
+    assert cards == [] and reply == H.NOT_FOUND_UPDATE.format(ref="webinar")
+    cards, reply, _ = H.simulate('mc-route.sh existing status "webinar"', _fixed("x"), board)
+    assert cards == [] and reply == H.NOT_FOUND_STATUS.format(ref="webinar")
+    assert "do NOT create a card" in reply and "run mc-route.sh task" not in reply
+    cards, reply, _ = H.simulate('mc-route.sh existing cancel "3pm"', _fixed("x"), board)
+    assert cards == [] and reply == H.NOT_FOUND_CANCEL.format(ref="3pm")
+    assert "do NOT create a card" in reply and "run mc-route.sh task" not in reply
     # no board given (parse_cards, old callers): nothing is found either
-    assert H.simulate('mc-route.sh existing status "webinar"', _fixed("x"))[1].startswith(
-        "mc-route: NOT_FOUND")
+    assert H.simulate('mc-route.sh existing status "webinar"', _fixed("x"))[1] == \
+        H.NOT_FOUND_STATUS.format(ref="webinar")
 
 
 def test_a_named_card_is_found_by_id_and_by_title_words():
@@ -278,8 +285,50 @@ def test_a_named_card_is_found_by_id_and_by_title_words():
     assert list(board) == ["T-1042"] and "T-1042" not in board["T-1042"]["title"]
     for ref in ("T-1042", "t-1042", "flyer", "fall sale flyer", "the flyer for the sale"):
         assert H.find_card(board, ref)["id"] == "T-1042", ref
+    # raw substring is not a match ("art" must not hit "cart"); a partial word set
+    # is not a match either (the real script needs every significant word whole)
+    board2 = dict(board)
+    board2["T-7"] = {"id": "T-7", "title": "cart repair quote", "cancelled": False}
+    assert H.find_card(board2, "art") is None
+    assert H.find_card(board2, "fall sale flyer extra words here") is None
     for ref in ("webinar", "3pm", "the newsletter", "T-9999"):
         assert H.find_card(board, ref) is None, ref
+
+
+def test_differently_titled_matches_answer_ambiguous():
+    # Several differently-titled matches answer AMBIGUOUS (never NOT_FOUND, never a
+    # silent first pick), mirroring the real script's exit-3 reply.
+    board = {"A-1": {"id": "A-1", "title": "fall sale flyer", "cancelled": False},
+             "A-2": {"id": "A-2", "title": "fall sale banner", "cancelled": False}}
+    assert H.find_card(board, "fall sale") is None  # ambiguous: no silent first pick
+    cards, reply, _ = H.simulate('mc-route.sh existing status "fall sale"', _fixed("x"), board)
+    assert cards == [] and reply.startswith(H.AMBIGUOUS_HEAD.format(ref="fall sale"))
+    assert "A-1" in reply and "A-2" in reply
+    # same-title duplicates are one job carded twice, not ambiguity
+    dupes = {"A-1": {"id": "A-1", "title": "fall sale flyer", "cancelled": False},
+             "A-2": {"id": "A-2", "title": "Fall Sale Flyer", "cancelled": False}}
+    assert H.find_card(dupes, "fall sale flyer")["id"] == "A-1"
+    cards, reply, _ = H.simulate('mc-route.sh existing cancel "fall sale flyer"',
+                                 _fixed("x"), dupes)
+    assert cards == [] and reply.startswith("CANCELLED id=A-1 ")
+    assert "(duplicate of the same job)" in reply
+    assert dupes["A-1"]["cancelled"] and dupes["A-2"]["cancelled"]
+
+
+def test_command_words_are_case_folded_like_the_real_script():
+    # Only the command word is folded; the ref keeps its case. TASK/Task/status all work.
+    board = {"T-1": {"id": "T-1", "title": "fall sale flyer", "cancelled": False}}
+    cards, reply, _ = H.simulate('mc-route.sh TASK "Flyer" "need a flyer"', _fixed("graphics"))
+    assert [c["department"] for c in cards] == ["graphics"]
+    cards, reply, _ = H.simulate('mc-route.sh Existing Status "fall sale flyer"',
+                                 _fixed("x"), board)
+    assert cards == [] and reply.startswith("STATUS id=T-1 ")
+    # board-list validation like the real script: exact slug, dept- prefix, loose norm.
+    assert H._resolve_department("Marketing") == "marketing"
+    assert H._resolve_department("DEPT-marketing") == "marketing"
+    assert H._resolve_department("bogus-probe-xyz") is None
+    cards, reply, _ = H.simulate('mc-route.sh bogus-probe-xyz "Title" "words"', _fixed("x"))
+    assert cards == [] and reply == H.USAGE  # unknown first word: usage error, no card
 
 
 def test_every_corpus_card_in_context_is_findable_by_its_id():

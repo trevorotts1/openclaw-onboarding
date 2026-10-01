@@ -183,8 +183,11 @@ role, never the zero-egress scripts) card the run with this 3-step contract. Ful
 `universal-sops/avatar-craft/SOP-AVATAR-01` §6.
 
 1. **Intake → open the card (`in_progress`).** The moment the brand-intake is accepted and BEFORE the
-   foreman dispatches, open the card on the marketing board:
-   `scripts/mc-route.sh marketing "Brand Intelligence — <First> <Last>" "<run_id / brief link>"`.
+   foreman dispatches, open the card. Do not name a department — `task` lets Command Center pick one
+   (General Task when nothing fits), so the card opens even with no marketing department installed:
+   `scripts/mc-route.sh task "Brand Intelligence — <First> <Last>" "<run_id / brief link>"` — the
+   `task` form, so no marketing department has to exist for the card to open (Command Center picks
+   the department, General Task when nothing fits).
    On a non-zero exit, escalate to the operator — never proceed board-blind.
 2. **QC certificate issued → advance to `review` (NEVER straight to `done`).** When
    `aa_delivery_gate.py` issues the signed `PROCESS-CERTIFICATE.json` (content gate PASS, 40/40
