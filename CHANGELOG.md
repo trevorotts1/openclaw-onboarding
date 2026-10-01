@@ -1,3 +1,35 @@
+## [v25.3.2]  -  2026-10-01  -  Merge train: #1424 Release v25.3.1: fix Fix-55 content gate wrong-pair comparison, sync…; #1425 Skill 71 QC fixes: routing resolution path + signature-landing-page…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1424 — [v25.3.1]  -  2026-10-01  -  Fix-55: content-completeness gate compared the wrong pair (unblocked v25.2.26 version stamp) + sync _skill48_ghl_media.py copies
+
+##### Why
+The v25.2.26 release update was withheld on the operator box: the post-materialization content-completeness gate (`verify_scripts_materialization`) compared the department copy of `_skill48_ghl_media.py` against the LIBRARY's copy, instead of the sibling source the two department copiers actually mirror from (`48-facebook-ad-generator/tools/ghl_media.py`). The library copy still held pre-Fix-32 bytes, so every roll failed closed with `hash-mismatch: _skill48_ghl_media.py`, the refresh step exited 3, the updater exited 1, and the version stamp never landed.
+
+##### What changed
+- `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`: `verify_scripts_materialization` now verifies `_skill48_ghl_media.py` against the pair that is genuinely supposed to match — the sibling `48-facebook-ad-generator/tools/ghl_media.py` source both copiers (`scaffold_department` and `refresh-dept-scripts._mirror_skill48_ghl_media`) use. When that source is not resolvable the strict library comparison above stands (fail-closed). All other library paths keep the original strict comparison.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/_skill48_ghl_media.py`: library copy rolled to be byte-identical with the skill-48 source (`sha256 1bcf435f4439fdbfc43fbb59f73f01230b1e1c4c3879bc77f03417b55c974483`), carrying the Fix-32 retry-safety changes (non-retryable OS errors and transport timeouts during upload are re-raised immediately instead of retried).
+- `scripts/bump-version.sh` v25.3.1 (all markers in lockstep).
+
+##### Risk
+The carve-out is scoped to the single `_skill48_ghl_media.py` basename and only relaxes the comparison when the sibling source file exists; the failure direction stays closed. No other gate behavior changes.
+
+### #1425 — [v25.3.2]  -  2026-10-01  -  Skill 71 QC fixes: page-family resolution path, signature-landing-page ownership sweep, docs alignment
+
+##### Why
+QC of the Skill 71 batch found routing and text defects that let a single BlackCEO page request fall through the STEP-0 funnel-engine selector (NO_ENGINE_MATCH) into a template-first hand-author path that SOP-07 forbids, and left the phrase "signature landing page" claiming Skill 49 ownership in several role and doc files, contradicting the merged Skill 71 wiring.
+
+##### What changed
+- SOP-07 P4 STEP-0 amended: single focused BlackCEO page families resolve via the native skill catalog (skill-department-map.json skill 71) and the Landing Page Specialist SOP 9.0 Page-Family Routing Gate; the funnel-engine selector + registry stays the STEP-0 instrument for multi-step families only (49 / 56 / 62); a NO_ENGINE_MATCH on a single-page request confirms Skill 71 ownership, never a hand-author path.
+- universal-sops/sales-page-craft/README.md routing disambiguation narrowed: the 12-section multi-step chain is Skill 49; a standalone BlackCEO landing page (Standard or Long-Form) is Skill 71. Intent-triggers block region unchanged.
+- funnel-strategist.md Skill 49 tools-table row narrowed to "signature funnel" + multi-step 3/5/7 wording, with the single-page Skill 71 carve-out (mirrors SOP 9.5 step 1.6).
+- signature-funnel-specialist.md (marketing) role-identity prose reworded to "signature funnel" + multi-step qualifier, agreeing with step 1a and the web-development sibling.
+- sales-page-assets-specialist.md signal list drops the bare "signature landing page" trigger and qualifies the 12-section multi-step case.
+- web-development-suggested-roles.md Signature Funnel Specialist entry reworded with the multi-step qualifier and the Skill 71 carve-out.
+- Start Here.md Skill 49 engine bullet reworded: multi-step chain routes via the STEP-0 selector; a standalone BlackCEO landing page routes to Skill 71.
+- 71-blackceo-signature-page/repo-integration/skill-department-map-entry.json snapshot refreshed to equal the live skill-department-map.json skill 71 entry (departments web-development + marketing + funnels, all 10 roles, 13 intent_triggers, execution_sops signature-page-craft); verified equal by JSON comparison.
+
 ## [v25.3.0]  -  2026-10-01  -  Skill 71 BlackCEO Signature Page: single-page landing engine + repo registration
 
 #### Why

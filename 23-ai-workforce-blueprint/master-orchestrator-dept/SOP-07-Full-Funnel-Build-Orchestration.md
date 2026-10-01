@@ -88,7 +88,7 @@ For each of the seven stages below, POST one child card (P2e is the email-sequen
 | P2 | `p2-copy` | `marketing` | `copy.md` / `copy.json` APPROVED | P1 done |
 | P2e | `p2e-email-copy` | `marketing` | Email sequence copy APPROVED | P1 done (parallel with P2) |
 | P3 | `p3-assets` | `graphics` | `assets-manifest.json` | P2 APPROVED |
-| P4 | `p4-build` | `web-development` | Page IDs, preview URLs, Gate-3 match; page family resolved at STEP 0 (49 multi-step / 71 single BlackCEO page / 56 DR-VSL / 62 cinematic) | P2 APPROVED + P3 done |
+| P4 | `p4-build` | `web-development` | Page IDs, preview URLs, Gate-3 match; page family resolved at STEP 0 (71 single BlackCEO page via native skill catalog / 49 multi-step / 56 DR-VSL / 62 cinematic via funnel-engine selector) | P2 APPROVED + P3 done |
 | P5 | `p5-automation` | `crm` | Skill-44 WF-1..21 PASS + rubric ≥ 8.5 | P2e APPROVED + P4 verified |
 
 **Child card POST body (template):**
@@ -234,14 +234,24 @@ Parent funnel epic: <parent_task_id>
 Child idempotency key: <p3_key>
 ```
 
-### P4 — Page Build (Web Development dept — funnel-engine STEP-0 resolution)
+### P4 — Page Build (Web Development dept — page-family STEP-0 resolution)
 
 ```
-STEP 0 (engine-first): resolve the page family through 06-ghl-install-pages/tools/funnel_engine_selector.py
-  + funnel-engines/registry.json. A single focused BlackCEO page (landing/opt-in/squeeze/
-  webinar-event registration/5-day challenge/booking/lead-generation) is authored by
-  Skill 71 blackceo-signature-page; a multi-step 3/5/7 Signature Funnel by Skill 49;
-  a DR/VSL/high-ticket/order-bump stack by Skill 56; a cinematic/scroll page by Skill 62.
+STEP 0 (engine-first): resolve the page family BEFORE any selector call.
+  (a) Single focused BlackCEO page families -- landing / opt-in / squeeze / lead-generation /
+  webinar-event registration / 5-day challenge / booking, Standard or Long-Form system --
+  resolve via the NATIVE SKILL CATALOG (23-ai-workforce-blueprint/skill-department-map.json,
+  skill "71" intent_triggers; one source of truth per universal-sops/native-skill-invocation.md
+  Rule 2) and the Landing Page Specialist SOP 9.0 Page-Family Routing Gate
+  (23-ai-workforce-blueprint/templates/role-library/web-development/landing-page-specialist.md).
+  These resolve to Skill 71 blackceo-signature-page and NEVER enter the funnel-engine
+  selector.
+  (b) The funnel-engine selector + registry (06-ghl-install-pages/tools/funnel_engine_selector.py
+  + funnel-engines/registry.json) stays the STEP-0 instrument for MULTI-STEP page families only:
+  a multi-step 3/5/7 Signature Funnel -> Skill 49; a DR/VSL/high-ticket/order-bump stack -> Skill 56;
+  a cinematic/scroll page -> Skill 62.
+  (c) If a single BlackCEO page request ever returns NO_ENGINE_MATCH from the selector, that is
+  NOT a template-first fallback and NOT a hand-author case: it confirms Skill 71 ownership.
   Never hand-author a single BlackCEO page in this stage.
 Run v2-autonomous-build-sop.md (06-ghl-install-pages).
 Inputs: approved copy.md (P2) + assets-manifest.json (P3) + funnel-spec.json (P1).
