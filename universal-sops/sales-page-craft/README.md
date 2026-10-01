@@ -120,9 +120,12 @@ Skill 49 (Signature Funnel) owns `universal-sops/funnel-craft/` and the SACRED 1
 engine. Skill 56 (Sales Page Assets) is the STANDALONE Direct-Response engine (8-section main / 9-section
 upsell / downsell / high-ticket / bump). **Do not merge or deduplicate the two engines.** They share the
 labeling grammar and the ONE Skill-6 delivery rail; this cluster EXTENDS funnel-craft for the common
-build/certify steps. Routing disambiguation: a "signature funnel" / "signature landing page" (12-section)
--> Skill 49; a "sales page assets" / "direct-response sales page" / VSL / upsell-downsell A/B stack ->
-Skill 56. The STEP-0 selector's `anti_signals` separate the two.
+build/certify steps. Routing disambiguation: a multi-step 3/5/7 "signature funnel" (the SACRED 12-section
+engine) -> Skill 49; a BlackCEO single-page "signature page" (landing/opt-in/squeeze/
+lead-generation/webinar-event registration/5-day challenge/booking) -> Skill 71
+`blackceo-signature-page`; a "sales page assets" / "direct-response sales page" / VSL /
+upsell-downsell A/B stack -> Skill 56. The STEP-0 selector's `anti_signals` separate
+Skills 49 and 56; single BlackCEO pages are not in the multi-step registry at all.
 
 ## Command Center registration (operator action)
 
