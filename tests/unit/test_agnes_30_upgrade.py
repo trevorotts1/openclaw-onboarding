@@ -266,7 +266,9 @@ class Agnes30Upgrade(unittest.TestCase):
         cap = mock.patch("sys.stdout")
         with cap:
             fr.step_agnes_30_upgrade(paths, res, dry_run=True)
-        self.assertEqual(res.steps["agnes-30-upgrade"], "skip:dry-run")
+        step = res.steps["agnes-30-upgrade"]
+        self.assertTrue(step.startswith("skip:providers.agnes.models: agnes-2.5-flash -> agnes-3.0-flash"), step)
+        self.assertIn("would back up openclaw.json first; nothing written in report mode", step)
         self.assertEqual(self._read(paths), cfg_before)
         self.assertFalse(calls.exists())
 
