@@ -636,10 +636,56 @@ def _check_deployed(
 # acceptances are removed — a box left on a bare _V4 or _V3 marker must NOT
 # report loaded. The verdict is exact-marker AND per-artifact (see
 # _verify_loaded): AGENTS.md and the plugin dist must carry the policy too.
+# KIL-001: the kill switch (mode off/legacy) is SUPPORTED, never REQUIRED —
+# _resolve_kill_mode() reads the same two sources in the same order as
+# scripts/decision-engine-mode.py (env, then the store, then default). Off-path
+# honours a SUPPORTED kill: presence NOT required there. Corrupt store fails
+# loud (ValueError), never silently re-enables.
 LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4_3"
 LOADED_MARKERS = (LOADED_MARKER,)
 AGENTS_LOADED_MARKER = "CEO_ROUTING_NO_LOOPHOLES_V4_3"
 PLUGIN_LOADED_MARKER = "(V4.3)"
+KILL_MODES = ("auto", "shadow", "legacy", "off")
+KILL_DEFAULT = "auto"
+KILL_STORE = "decision-engine-mode.conf"
+KILL_ENV = "OPENCLAW_DECISION_ENGINE_MODE"
+
+
+def _resolve_kill_mode(paths: dict) -> tuple[str, str]:
+    """(mode, source) — source is 'env' | 'file:<path>' | 'default'.
+
+    CHAIN STEP: variable-name presence only — _verify_loaded tests this
+    callable's return, never a marker string. Raises ValueError on a
+    corrupt/unknown value (fail loud, never silently re-enable).
+    """
+    env_raw = os.environ.get(KILL_ENV)
+    if env_raw is not None and env_raw.strip():
+        mode = env_raw.strip()
+        if mode not in KILL_MODES:
+            raise ValueError(
+                "CORRUPT decision-engine mode %r from $%s (expected one of %s). "
+                "Nothing was written." % (mode, KILL_ENV, "|".join(KILL_MODES)))
+        return mode, "env"
+    root = Path(paths.get("root") or Path.home() / ".openclaw")
+    for cand in (root / KILL_STORE, Path.home() / ".openclaw" / KILL_STORE):
+        if cand.is_file():
+            try:
+                raw = cand.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                raw = ""
+            mode = (raw.splitlines() or [""])[0].strip()
+            if mode not in KILL_MODES:
+                raise ValueError(
+                    "CORRUPT decision-engine mode store: %s holds %r (expected one of %s). "
+                    "Nothing was written." % (cand, mode, "|".join(KILL_MODES)))
+            return mode, "file:%s" % (cand,)
+    return KILL_DEFAULT, "default"
+
+
+def _kill_active(paths: dict) -> tuple[bool, str, str]:
+    """(engaged, mode, source). Engaged = mode off or legacy."""
+    mode, source = _resolve_kill_mode(paths)
+    return mode in ("off", "legacy"), mode, source
 
 
 def _has_loaded_marker(text) -> bool:
@@ -682,6 +728,12 @@ def _verify_loaded(
     carry the (V4.3) heading. A box left on a bare V4/V3 marker reports
     loaded=False.
 
+    KIL-001: a SUPPORTED kill (mode off/legacy, resolved by _resolve_kill_mode)
+    flips the verdict — SUPPORTED means honoured, never REQUIRED. Off-path the
+    stamps must NOT carry operative instructions (presence NOT required), so a
+    box whose markers are cleanly stripped reports loaded=True with
+    kill_mode set. Corrupt store raises (fail loud).
+
     Fallback (proxy): if no systemPromptReport RPC exists on this gateway
     version, fall back to:
         - disk: workspace/SOUL.md contains the marker (Layer-3 proof)
@@ -717,14 +769,38 @@ def _verify_loaded(
     # box, not only the injected SOUL.md text: the workspace AGENTS.md must
     # carry CEO_ROUTING_NO_LOOPHOLES_V4_3 and the installed plugin dist must
     # carry the (V4.3) heading. A box left on a bare V4/V3 marker is NOT loaded.
-    artifacts = {"soul_md": marker_present}
-    _art_paths = _loaded_artifact_paths(paths)
-    artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
-    artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
-    for _name, _ok in artifacts.items():
-        if not _ok:
-            _warn(f"  loaded check: {_name} does not carry the current policy marker")
-    marker_present = all(artifacts.values())
+    # KIL-001: kill switch SUPPORTED, never REQUIRED. Off-path the stamps
+    # must NOT carry operative instructions: presence NOT required there — a
+    # cleanly stripped box (no V4.3 anywhere) reports loaded=True with
+    # kill_mode set. Corrupt store raises (fail loud), never re-enables.
+    # CHAIN STEP: variable-name presence only — this branch tests the
+    # _kill_active() return, never a marker string.
+    try:
+        _kill_engaged, _kill_mode, _kill_source = _kill_active(paths)
+    except ValueError as exc:
+        _warn(f"  loaded check: {exc}")
+        raise
+    if _kill_engaged:
+        _info(f"  loaded check: kill switch SUPPORTED (mode={_kill_mode}, source={_kill_source}) — "
+              "V4.3 presence NOT required; operative instructions must be ABSENT")
+        artifacts = {
+            "soul_md": not _file_has_marker(_art_paths_soul(paths, shared_utils), LOADED_MARKER),
+            "agents_md": not _file_has_marker(_loaded_artifact_paths(paths)["agents_md"], AGENTS_LOADED_MARKER),
+            "plugin": True,  # plugin dist carries BOTH paths; prompt-time switch picks
+        }
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check (kill on): {_art_name} still carries operative V4.3 instructions")
+        marker_present = all(artifacts.values())
+    else:
+        artifacts = {"soul_md": marker_present}
+        _art_paths = _loaded_artifact_paths(paths)
+        artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
+        artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check: {_art_name} does not carry the current policy marker")
+        marker_present = all(artifacts.values())
 
     # ── Board state ──────────────────────────────────────────────────────────
     cc_healthy = _check_cc_health(paths)
@@ -741,6 +817,8 @@ def _verify_loaded(
         "artifacts":         artifacts,
         "loaded_confidence": confidence,
         "ceo_session_key":   ceo_session_key or "unresolved",
+        "kill_mode":         _kill_mode,
+        "kill_source":       _kill_source,
     }
 
     if marker_present:
@@ -861,6 +939,23 @@ def _query_gateway_prompt(session_key: str, method: str) -> tuple[bool, Optional
     except Exception as e:
         _warn(f"Gateway call {method} failed: {e}")
         return False, None
+
+
+def _art_paths_soul(paths: dict, shared_utils: Optional[Path] = None) -> Path:
+    """SOUL.md path for the kill-on absence check (same file the proxy reads).
+
+    Same order as _proxy_verify_loaded: injected resolution first, bare
+    workspace fallback only when the helper is unavailable.
+    """
+    if shared_utils is not None:
+        sys.path.insert(0, str(shared_utils))
+        try:
+            from resolve_injected_core_files import resolve_injected_core_files  # type: ignore
+        except ImportError:
+            pass
+        else:
+            return resolve_injected_core_files("main")["soul_md"]
+    return Path(paths["workspace"]) / "SOUL.md"
 
 
 def _proxy_verify_loaded(
