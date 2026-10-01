@@ -1418,7 +1418,7 @@ for _ceo_policy_candidate in "${ONBOARDING_DIR:-}/shared-utils/ceo_execution_pol
   if [ -f "$_ceo_policy_candidate" ]; then CEO_POLICY_HELPER="$_ceo_policy_candidate"; break; fi
 done
 if [ -z "$CEO_POLICY_HELPER" ]; then echo "Missing ceo_execution_policy.py" >&2; exit 1; fi
-python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE_EARLY" --kind CEO_ROUTING_NO_LOOPHOLES
+python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE_EARLY" --kind CEO_ROUTING_NO_LOOPHOLES --oc-config "$OC_ROOT"
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
@@ -3548,7 +3548,7 @@ fi
 # scrubs the contradictory "personal assistant / handle it yourself" intro.
 # Idempotent: guarded by <!-- CEO_ORCHESTRATOR_RULE_V2 --> marker.
 WS_SOUL_FILE="$WORKSPACE_DIR/SOUL.md"
-python3 "$CEO_POLICY_HELPER" "$WS_SOUL_FILE"
+python3 "$CEO_POLICY_HELPER" "$WS_SOUL_FILE" --oc-config "$OC_ROOT"
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$WS_SOUL_FILE" 2>/dev/null || true

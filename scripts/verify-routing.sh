@@ -81,6 +81,39 @@ fi
 
 OC_CONFIG="$OC_ROOT/openclaw.json"
 
+# ─── Decision-engine kill switch mode (KIL-001) ─────────────────────────────
+# Same two sources, same order, as scripts/decision-engine-mode.py: env
+# OPENCLAW_DECISION_ENGINE_MODE, then the first line of
+# $OC_ROOT/decision-engine-mode.conf. Absent: release default 'auto'
+# (RELEASE_DEFAULT writes nothing — preserve-by-construction). off/legacy
+# share the same improved no-JEV engine; both emit zero JEV traffic.
+# G2/G3 honour the switch: auto/shadow REQUIRE V4.3 present; off/legacy
+# REQUIRE it ABSENT (a SUPPORTED kill — presence NOT required off-path).
+# A corrupt/unknown value is FATAL here (fail loud, never silently re-enable).
+KILL_MODE="$(printf '%s' "${OPENCLAW_DECISION_ENGINE_MODE:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+KILL_SOURCE="env"
+if [ -z "$KILL_MODE" ]; then
+  KILL_SOURCE="default"
+  KILL_MODE="auto"
+  if [ -f "$OC_ROOT/decision-engine-mode.conf" ]; then
+    KILL_MODE="$(head -n1 "$OC_ROOT/decision-engine-mode.conf" 2>/dev/null | tr -d '\r' | xargs || true)"
+    KILL_SOURCE="file"
+  fi
+fi
+case "$KILL_MODE" in
+  auto|shadow|legacy|off)
+    _info "decision-engine mode: $KILL_MODE (source=$KILL_SOURCE)"
+    ;;
+  *)
+    _fail "decision-engine mode store is CORRUPT: '$KILL_MODE' (source=$KILL_SOURCE, expected one of auto|shadow|legacy|off). Nothing was written; write one word to $OC_ROOT/decision-engine-mode.conf or unset \$OPENCLAW_DECISION_ENGINE_MODE."
+    FAILURES=$((FAILURES + 1))
+    ;;
+esac
+KILL_ACTIVE=0
+if [ "$KILL_MODE" = "off" ] || [ "$KILL_MODE" = "legacy" ]; then
+  KILL_ACTIVE=1
+fi
+
 # ─── Gateway version detection (D1 — schema-aware G7b) ───────────────────────
 # OpenClaw 2026.6.8 REJECTS agents.defaults.tools.* so apply-fleet-standards.sh
 # expresses the GOAL-4 no-refusal baseline via the functional ungate instead
@@ -199,22 +232,45 @@ fi
 # Exact marker (v25.2.22 fix 3): the version-agnostic V[0-9]+ pattern accepted a
 # box left on V1/V2/V4. Only the current V4_3 marker passes; a bare _V4 or older
 # marker means the box missed the roll — run the stamper.
-_info "G2: checking CEO_ROUTING_NO_LOOPHOLES_V4_3 in $AGENTS_FILE"
-if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
-  _pass "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 present in $AGENTS_FILE"
+# KIL-001: G2 honours the kill switch (SUPPORTED, never REQUIRED). Kill off
+# (mode off/legacy): operative V4.3 instructions must be ABSENT — presence NOT
+# required, ABSENCE required. Kill on (auto/shadow): presence required.
+if [ "$KILL_ACTIVE" = "1" ]; then
+  _info "G2: kill switch on (mode=$KILL_MODE) — CEO_ROUTING_NO_LOOPHOLES_V4_3 must be ABSENT from $AGENTS_FILE"
+  if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
+    _fail "G2: kill switch on (mode=$KILL_MODE) but CEO_ROUTING_NO_LOOPHOLES_V4_3 still PRESENT in $AGENTS_FILE — re-run apply-routing-fix.sh to strip operative instructions"
+    FAILURES=$((FAILURES + 1))
+  else
+    _pass "G2: kill switch on (mode=$KILL_MODE) — no operative V4.3 routing block in $AGENTS_FILE"
+  fi
 else
-  _fail "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 MISSING from $AGENTS_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
-  FAILURES=$((FAILURES + 1))
+  _info "G2: checking CEO_ROUTING_NO_LOOPHOLES_V4_3 in $AGENTS_FILE"
+  if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
+    _pass "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 present in $AGENTS_FILE"
+  else
+    _fail "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 MISSING from $AGENTS_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
 fi
 
 # ─── G3: PRIME DIRECTIVE in SOUL.md ──────────────────────────────────────────
 # Exact marker (v25.2.22 fix 3): a box left on V4 or V3 must fail.
-_info "G3: checking CEO_ORCHESTRATOR_RULE_V4_3 in $SOUL_FILE"
-if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
-  _pass "G3: CEO_ORCHESTRATOR_RULE (PRIME DIRECTIVE) present in $SOUL_FILE"
+if [ "$KILL_ACTIVE" = "1" ]; then
+  _info "G3: kill switch on (mode=$KILL_MODE) — CEO_ORCHESTRATOR_RULE_V4_3 must be ABSENT from $SOUL_FILE"
+  if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
+    _fail "G3: kill switch on (mode=$KILL_MODE) but CEO_ORCHESTRATOR_RULE_V4_3 still PRESENT in $SOUL_FILE — re-run apply-routing-fix.sh to strip operative instructions"
+    FAILURES=$((FAILURES + 1))
+  else
+    _pass "G3: kill switch on (mode=$KILL_MODE) — no operative V4.3 directive in $SOUL_FILE"
+  fi
 else
-  _fail "G3: CEO_ORCHESTRATOR_RULE_V4_3 MISSING from $SOUL_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
-  FAILURES=$((FAILURES + 1))
+  _info "G3: checking CEO_ORCHESTRATOR_RULE_V4_3 in $SOUL_FILE"
+  if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
+    _pass "G3: CEO_ORCHESTRATOR_RULE (PRIME DIRECTIVE) present in $SOUL_FILE"
+  else
+    _fail "G3: CEO_ORCHESTRATOR_RULE_V4_3 MISSING from $SOUL_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
 fi
 
 # ─── G3b: plugin routing doctrine heading ───────────────────────────────────

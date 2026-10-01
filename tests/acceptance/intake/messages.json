@@ -1,0 +1,174 @@
+{
+  "set": "operator-box intake acceptance — 16 failure classes (unit ACC-001, v25.2.23)",
+  "note": "One message per failure class, 16 exactly. DATA ONLY: nothing here executes. Running this set makes LIVE paid model calls on the OPERATOR BOX — only with Trevor's explicit go, and the cost figure must be stated FIRST (see README.md, 'The 16-message operator-box set'). run_intake_acceptance.py does NOT read this file (its SPLITS dict lists only corpus_train.json / corpus_frozen.json, lines 46-47), so adding it changes nothing about that harness. Every 'rule' below is a verbatim quote from this repo at branch v25.2.23-cc-pin-and-intake-tests; file:line per quote.",
+  "decision_vocabulary": [
+    "answer_no_card — the CEO answers directly; no call, no card",
+    "one_card — exactly one mc-route.sh task call; exactly one card",
+    "two_cards — two task calls, one per job; two cards",
+    "status_read_only — one mc-route.sh existing status call; read-only (GETs only); no card",
+    "existing_update_no_new_card — one existing update call on that card; no new card",
+    "existing_cancel — one existing cancel call; cancel = archive; cancels every same-title duplicate",
+    "found_newest_same_title — same-title cards are ONE job carded twice, NOT ambiguity: newest is acted on",
+    "ambiguous_or_not_found_change_nothing — AMBIGUOUS (several differently-titled matches) or NOT_FOUND (none); both exit 3, nothing created or changed",
+    "failed_escalate_to_operator — exit 1, FAILED + ESCALATE_TO_OPERATOR; never NOT_FOUND; no card",
+    "reply_english_only — the owner-facing reply is English only, regardless of the message's language"
+  ],
+  "items": [
+    {
+      "id": "ACC-001-01",
+      "class": "plain_question",
+      "history": [],
+      "message": "What does our marketing department actually handle day to day?",
+      "expected": "answer_no_card",
+      "expected_detail": "Answer it directly from the conversation and what the CEO knows. No call, no card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, CONVERSATION): \"if it is only a question, an opinion or small talk, just answer — no call. You answer conversation and informational questions directly yourself.\" Worked example 3 in the same POLICY: \"'Out of curiosity, how many clients do we have in Texas?' -> answer it, no call.\""
+    },
+    {
+      "id": "ACC-001-02",
+      "class": "new_task",
+      "history": [],
+      "message": "Please draft the welcome email for the clients joining in November.",
+      "expected": "one_card",
+      "expected_detail": "One mc-route.sh task call (the owner message goes in verbatim as the description); exactly one card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW WORK): \"run `mc-route.sh task \"<short title>\" \"<owner's exact words for this job>\"` ... Exactly one task call per distinct job\". scripts/mc-route.sh:182 (usage): \"mc-route.sh task \"<short title>\" \"<owner's exact words>\"      new card, one per job\"."
+    },
+    {
+      "id": "ACC-001-03",
+      "class": "lookup_question_about_existing_work",
+      "history": [],
+      "message": "Where did the vendor contract review land — is it still open?",
+      "board": "Loaded and reachable; holds a card titled 'vendor contract review'.",
+      "expected": "status_read_only",
+      "expected_detail": "One mc-route.sh existing status \"vendor contract review\" call; read-only; no card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, CONVERSATION): \"if the answer depends on the board, use `mc-route.sh existing status`; otherwise say what you'd need.\" scripts/mc-route.sh:29 (EXISTING MODE header): \"status  read-only (GETs only).\""
+    },
+    {
+      "id": "ACC-001-04",
+      "class": "status_of_existing",
+      "history": [],
+      "message": "Status on the trade show packing checklist, please?",
+      "board": "Loaded and reachable; holds a card titled 'trade show packing checklist'.",
+      "expected": "status_read_only",
+      "expected_detail": "One existing status call; the reply carries STATUS id=... status=... department=... updated=... cancelled=... title=...; no card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, EXISTING WORK): \"`mc-route.sh existing status \"<task title or id>\"` to check on it (read-only, never creates a card)\". scripts/mc-route.sh:25-30 (EXISTING MODE): \"work already on the board; NEVER creates a card ... status  read-only (GETs only).\""
+    },
+    {
+      "id": "ACC-001-05",
+      "class": "update_to_existing",
+      "history": [],
+      "message": "The podcast recording moved — push it to Friday afternoon.",
+      "board": "Loaded and reachable; holds a card titled 'podcast recording'.",
+      "expected": "existing_update_no_new_card",
+      "expected_detail": "One existing update call, note = the owner's words; the card prints UPDATED; no new card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, worked example 15): \"'Push the podcast recording to Friday afternoon' -> `mc-route.sh existing update \"podcast recording\" \"Push it to Friday afternoon\"`\". scripts/mc-route.sh:31: \"update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...\"."
+    },
+    {
+      "id": "ACC-001-06",
+      "class": "cancel_of_existing",
+      "history": [],
+      "message": "Cancel the brochure reprint job — we're not doing it this quarter.",
+      "board": "Loaded and reachable; holds exactly one card titled 'brochure reprint job'.",
+      "expected": "existing_cancel",
+      "expected_detail": "One existing cancel call; the card is archived and prints CANCELLED; no new card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, worked example 18): \"'Cancel the brochure reprint job.' -> `mc-route.sh existing cancel \"brochure reprint\"`\". scripts/mc-route.sh:32-33: \"cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board, never dispatched again, row kept) + an owner note -> CANCELLED id=...\"."
+    },
+    {
+      "id": "ACC-001-07",
+      "class": "cancel_with_two_same_title_cards",
+      "history": [],
+      "message": "Cancel the brochure reprint job.",
+      "board": "Loaded and reachable; holds TWO cards both titled 'brochure reprint job' (the same job carded twice).",
+      "expected": "found_newest_same_title",
+      "expected_detail": "NOT AMBIGUOUS. Same-title cards are ONE job carded twice: the newest is acted on, and the cancel archives every one of them (the second prints '(duplicate of the same job)'). No card is created.",
+      "rule": "scripts/mc-route.sh:34-35 (EXISTING MODE header): \"Same-title cards are ONE job carded twice, not ambiguity: the newest is acted on, and cancel archives every one of them.\" scripts/mc-route.sh:395-397: \"Same-title cards are ONE job carded twice (a double card), not ambiguity: newest first so the live card is the one acted on. Cancel archives them all.\" scripts/mc-route.sh:404-414 (FOUND when all matches share one title; duplicates listed) and 490-504 (cancel archives every duplicate)."
+    },
+    {
+      "id": "ACC-001-08",
+      "class": "cancel_with_vague_one_word_reference",
+      "history": [],
+      "message": "Cancel the thing — you know the one I mean.",
+      "board": "Loaded and reachable. The reference matches several differently-titled cards (AMBIGUOUS) or nothing at all (NOT_FOUND); never a raw substring match.",
+      "expected": "ambiguous_or_not_found_change_nothing",
+      "expected_detail": "AMBIGUOUS when several differently-titled cards match — ask the owner which one, or re-run with its id; NOT_FOUND when none does — tell the owner nothing matching is on the board to cancel and do NOT create a card. Both exit 3 and change nothing.",
+      "rule": "scripts/mc-route.sh:40-42 (EXISTING MODE header): \"No match -> `mc-route: NOT_FOUND ...` (update: new work, run `task`; status or cancel: tell the owner, NO card), several differently-titled matches -> `mc-route: AMBIGUOUS ...` with the candidates; both exit 3 and change nothing.\" scripts/mc-route.sh:26-28: \"finds ONE task ... by exact id, exact title, or a WHOLE-WORD match at 1.0 on the title -- never a raw substring and never a partial score\"; 387-393: \"A task matches only when every word of the reference appears in its title as a whole word.\" 444-457: AMBIGUOUS prints and exits 3; cancel NOT_FOUND prints \"nothing matching is on the board to cancel. Tell the owner; do NOT create a card.\" and exits 3."
+    },
+    {
+      "id": "ACC-001-09",
+      "class": "change_request_that_sounds_like_a_question",
+      "history": [],
+      "message": "Can you change the webinar date to the 15th? I think that works better.",
+      "board": "Loaded and reachable; holds a card titled 'webinar date'.",
+      "expected": "existing_update_no_new_card",
+      "expected_detail": "A change request tries existing update FIRST on that card. Only if the script prints NOT_FOUND does the CEO run task (the change is never dropped). No new card while the update succeeds.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, EXISTING WORK): \"A change request (\"change X to Y\", \"move X to Z\") tries existing update first.\" and (NEW WORK): \"Only existing update that prints NOT_FOUND means new work -> run task.\" scripts/mc-route.sh:454: \"update) echo \"mc-route: NOT_FOUND: no matching existing card. This is new work: run mc-route.sh task ...\". tests/acceptance/intake/README.md:51 (JEV-702 ruling A): \"A change request ... tries `existing update`. If the script answers NOT_FOUND, the CEO must then run `task`. A task is never dropped because no card was found.\""
+    },
+    {
+      "id": "ACC-001-10",
+      "class": "deck_request",
+      "history": [],
+      "message": "Build me a 10-slide deck for the November investor update.",
+      "expected": "one_card",
+      "expected_detail": "Exactly ONE task call -> exactly one card. The deck run itself cards through the board (cc_board.py); at intake it is one job.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW WORK): \"Exactly one task call per distinct job; a restatement of the same job is not a second job (two jobs = two calls).\" scripts/mc-route.sh:182 (usage): \"new card, one per job\". (Deck producer-side carding: cc-compat.json notes, Skill 51 / cc_board.py.)"
+    },
+    {
+      "id": "ACC-001-11",
+      "class": "two_separate_jobs_one_message",
+      "history": [],
+      "message": "Reorder printer toner and schedule the carpet cleaning for Monday.",
+      "expected": "two_cards",
+      "expected_detail": "Two task calls, one per job (one card each). Not one card, not three.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, worked example 8): \"'Reorder printer toner and schedule the carpet cleaning for Monday' -> two task calls, one per job.\" and (NEW WORK): \"two jobs = two calls\"."
+    },
+    {
+      "id": "ACC-001-12",
+      "class": "approve_existing",
+      "history": [],
+      "message": "Go ahead and publish the blog draft you showed me.",
+      "board": "Loaded and reachable; holds a card titled 'blog draft'.",
+      "expected": "existing_update_no_new_card",
+      "expected_detail": "Approving work that already exists is existing update on that card (e.g. 'Owner approved: publish it'), NOT a new card.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, worked example 16): \"'Go ahead and publish the blog draft you showed me' -> `mc-route.sh existing update \"blog draft\" \"Owner approved: publish it\"`, not a new card.\" tests/acceptance/intake/README.md:53 (JEV-702 ruling C): \"Approving or sending work that already exists ... is an `existing update` on that card, not a new card.\""
+    },
+    {
+      "id": "ACC-001-13",
+      "class": "empty_board_status",
+      "history": [],
+      "message": "What's on the board right now?",
+      "board": "Reachable, but the task list comes back EMPTY (zero cards).",
+      "expected": "failed_escalate_to_operator",
+      "expected_detail": "Fail-closed: an empty task list is a broken read, so the script exits 1 with FAILED + ESCALATE_TO_OPERATOR — NEVER a false NOT_FOUND, and no card. The CEO tells the owner it is escalating to the operator and does not retry. (NOT_FOUND is only ever said of a list that loaded successfully and genuinely holds no match — e.g. a non-empty board with other cards.)",
+      "rule": "scripts/mc-route.sh:36-39 (EXISTING MODE header): \"FAIL-CLOSED (JEV-802): if the task list or the department list cannot be read, or comes back empty, or the matcher itself fails, this exits 1 with FAILED + ESCALATE_TO_OPERATOR -- never NOT_FOUND. NOT_FOUND is only ever said of a list that loaded successfully and genuinely holds no match.\" scripts/mc-route.sh:355-358 (matcher load): \"an unreadable file, a payload with no rows, or a row with no id is a broken read -- exit 4 so the caller escalates. It must never come back as an empty list, because empty reads as 'NONE' and NONE reads as 'the owner's work does not exist'.\" scripts/mc-route.sh:424-427: \"the matcher could not read the board it was given. That is not 'no matching card' -- never let it reach the NOT_FOUND text.\" scripts/mc-route.sh:173-177 (_escalate): \"mc-route: FAILED — ... ESCALATE_TO_OPERATOR: task routing failed. The CEO must tell the owner it is escalating this to the operator. Do NOT self-intake, do NOT ask intake questions, do NOT retry.\""
+    },
+    {
+      "id": "ACC-001-14",
+      "class": "unreadable_board",
+      "history": [],
+      "message": "Any updates on the summer catalog?",
+      "board": "The board/API cannot be read (HTTP error or transport failure; an unreadable or empty department list fails the same way).",
+      "expected": "failed_escalate_to_operator",
+      "expected_detail": "Fail-closed FAILED + ESCALATE_TO_OPERATOR (exit 1), never a false NOT_FOUND; nothing created or changed; the CEO tells the owner it is escalating to the operator, and does not retry or self-intake.",
+      "rule": "scripts/mc-route.sh:36-39 (EXISTING MODE header) quoted in row ACC-001-13; scripts/mc-route.sh:306 (department list unreadable -> escalate); 308-311 (JEV-802: \"an unreadable or EMPTY department list is not a board without departments. Escalate here, so no later lookup can read it as 'no matching department' and report a miss it never proved.\"); 327-332 (non-2xx task list -> escalate \"could not read the task list (GET /api/tasks HTTP $API_CODE); nothing was changed\"); 424-427 (matcher failure -> escalate, never NOT_FOUND)."
+    },
+    {
+      "id": "ACC-001-15",
+      "class": "long_rambling_message_one_real_task",
+      "history": [],
+      "message": "Okay, so the trade show is coming up and honestly this month has been chaos — flights are booked, the booth number changed twice, parking got sorted by Marta, and the neighbor's dog barked all weekend — anyway, can you put together the packing checklist for the booth? The garden is a mess too.",
+      "expected": "one_card",
+      "expected_detail": "Exactly one task call for the one real job (the packing checklist). The rest is context and small talk: no card for any of it.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW WORK): \"Exactly one task call per distinct job; a restatement of the same job is not a second job (two jobs = two calls).\" Worked example 9: \"'Write the donor thank-you letter. The gala one, I mean.' -> one task call; the second sentence restates the same job.\" (NEW INTAKE): \"Never run ls, find, grep, cat, env or any other command to decide or route. Decide from the message and the conversation.\""
+    },
+    {
+      "id": "ACC-001-16",
+      "class": "non_english_message",
+      "history": [],
+      "message": "¿Puedes cancelar el trabajo de reimpresión del folleto? Ya no lo hacemos este trimestre.",
+      "board": "Loaded and reachable; holds a card whose title is the brochure reprint job.",
+      "expected": "existing_cancel",
+      "expected_language": "reply_english_only",
+      "expected_detail": "The intake decision is unchanged by language: this is an existing cancel on that card (same contract as ACC-001-06). The owner-facing reply is in English only.",
+      "rule": "shared-utils/ceo_execution_policy.py:6 (POLICY, NEW INTAKE): \"Reply to the owner in English only.\" (Cancellation contract: POLICY EXISTING WORK \"`mc-route.sh existing cancel \"<task title or id>\"` to cancel it\"; scripts/mc-route.sh:32-33.)"
+    }
+  ]
+}

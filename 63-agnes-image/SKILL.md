@@ -95,7 +95,7 @@ prompt MUST carry the style-reference-only directive verbatim:
 - Teach Yourself Protocol (TYP) must be learned first (Skill 01).
 - Backup Protocol must be learned first (Skill 02).
 - `AGNES_AI_API_KEY` present in the box's secrets. This is an EXISTING fleet
-  credential — the same key the registered `agnes` / `agnes-2.5-flash` model on
+  credential — the same key the registered `agnes` / `agnes-3.0-flash` model on
   the boxes already uses against `apihub.agnes-ai.com/v1`. This skill REFERENCES
   that key; it does not mint a new one. Verify it is SET, never print its value.
 - `curl` available for the verification calls.

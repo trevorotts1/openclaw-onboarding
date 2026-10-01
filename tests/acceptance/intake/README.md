@@ -4,6 +4,20 @@ This folder holds the acceptance test from the JGT-401 review, section 4. It che
 
 It calls models, and each call can cost money. **Run it only when Trevor gives the go.** The offline self-test (`tests/unit/test_intake_acceptance_harness.py`) uses a fake model and costs nothing.
 
+## The 16-message operator-box set (`messages.json`)
+
+`messages.json` is a separate, small set: one owner message per failure class, 16 exactly, each carrying the decision this repo's rules say it must get. Every row quotes the rule it encodes, by file and line — classes 7 and 13 are pinned to the real `scripts/mc-route.sh` contract (same-title cards are one job carded twice, not ambiguity; an empty/unreadable board fails closed), not a guess. It is DATA only: this set is not run by `run_intake_acceptance.py` (whose `SPLITS` dict reads `corpus_train.json` / `corpus_frozen.json` only, lines 46-47), and no runner in this folder executes it.
+
+- **Run it ONLY with Trevor's explicit go.** Nothing here runs by itself.
+- **It runs on the OPERATOR BOX**, against the operator's own model account and a test board — never a client box, never a client's chat or feed.
+- **It sends about 16 messages, ONCE.** One run, no repeats.
+- **The COST FIGURE must be given FIRST — this is the required first step, before any run:**
+  1. Name the exact endpoint and model the run will use.
+  2. Read that model's current per-token prices from the provider's own pricing page or billing console that day. Do not reuse a remembered figure; prices move.
+  3. Size the run: 16 messages — one model request per message at minimum, and at most one per tool round with a hard cap of 6 rounds (`run_intake_acceptance.py`, `MAX_ROUNDS = 6`), so at most about 96 requests in the worst case. Each request carries the rule text, the message's history and the prior tool replies.
+  4. Multiply out and state the resulting figure to Trevor in the message asking for his go.
+- No dollar amount is written in this folder on purpose: any figure not checked against the provider that day is a guess.
+
 ## Files
 
 | File | What it is |
@@ -13,6 +27,7 @@ It calls models, and each call can cost money. **Run it only when Trevor gives t
 | `corpus_frozen.sha256` | Pins the frozen file. The unit test fails if one byte changes. |
 | `department_labels.json` | For each task item, the departments that may own it. General Task is always also fine. Kept outside the frozen file. |
 | `run_intake_acceptance.py` | The harness. It uses only the Python standard library and calls the model API directly. |
+| `messages.json` | The 16-message operator-box set, one per failure class, with expected decisions and quoted rules. Data only — see its own section above. |
 
 ## Corpus
 
