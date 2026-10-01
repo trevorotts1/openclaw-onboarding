@@ -636,10 +636,56 @@ def _check_deployed(
 # acceptances are removed — a box left on a bare _V4 or _V3 marker must NOT
 # report loaded. The verdict is exact-marker AND per-artifact (see
 # _verify_loaded): AGENTS.md and the plugin dist must carry the policy too.
+# KIL-001: the kill switch (mode off/legacy) is SUPPORTED, never REQUIRED —
+# _resolve_kill_mode() reads the same two sources in the same order as
+# scripts/decision-engine-mode.py (env, then the store, then default). Off-path
+# honours a SUPPORTED kill: presence NOT required there. Corrupt store fails
+# loud (ValueError), never silently re-enables.
 LOADED_MARKER = "CEO_ORCHESTRATOR_RULE_V4_3"
 LOADED_MARKERS = (LOADED_MARKER,)
 AGENTS_LOADED_MARKER = "CEO_ROUTING_NO_LOOPHOLES_V4_3"
 PLUGIN_LOADED_MARKER = "(V4.3)"
+KILL_MODES = ("auto", "shadow", "legacy", "off")
+KILL_DEFAULT = "auto"
+KILL_STORE = "decision-engine-mode.conf"
+KILL_ENV = "OPENCLAW_DECISION_ENGINE_MODE"
+
+
+def _resolve_kill_mode(paths: dict) -> tuple[str, str]:
+    """(mode, source) — source is 'env' | 'file:<path>' | 'default'.
+
+    CHAIN STEP: variable-name presence only — _verify_loaded tests this
+    callable's return, never a marker string. Raises ValueError on a
+    corrupt/unknown value (fail loud, never silently re-enable).
+    """
+    env_raw = os.environ.get(KILL_ENV)
+    if env_raw is not None and env_raw.strip():
+        mode = env_raw.strip()
+        if mode not in KILL_MODES:
+            raise ValueError(
+                "CORRUPT decision-engine mode %r from $%s (expected one of %s). "
+                "Nothing was written." % (mode, KILL_ENV, "|".join(KILL_MODES)))
+        return mode, "env"
+    root = Path(paths.get("root") or Path.home() / ".openclaw")
+    for cand in (root / KILL_STORE, Path.home() / ".openclaw" / KILL_STORE):
+        if cand.is_file():
+            try:
+                raw = cand.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                raw = ""
+            mode = (raw.splitlines() or [""])[0].strip()
+            if mode not in KILL_MODES:
+                raise ValueError(
+                    "CORRUPT decision-engine mode store: %s holds %r (expected one of %s). "
+                    "Nothing was written." % (cand, mode, "|".join(KILL_MODES)))
+            return mode, "file:%s" % (cand,)
+    return KILL_DEFAULT, "default"
+
+
+def _kill_active(paths: dict) -> tuple[bool, str, str]:
+    """(engaged, mode, source). Engaged = mode off or legacy."""
+    mode, source = _resolve_kill_mode(paths)
+    return mode in ("off", "legacy"), mode, source
 
 
 def _has_loaded_marker(text) -> bool:
@@ -682,6 +728,12 @@ def _verify_loaded(
     carry the (V4.3) heading. A box left on a bare V4/V3 marker reports
     loaded=False.
 
+    KIL-001: a SUPPORTED kill (mode off/legacy, resolved by _resolve_kill_mode)
+    flips the verdict — SUPPORTED means honoured, never REQUIRED. Off-path the
+    stamps must NOT carry operative instructions (presence NOT required), so a
+    box whose markers are cleanly stripped reports loaded=True with
+    kill_mode set. Corrupt store raises (fail loud).
+
     Fallback (proxy): if no systemPromptReport RPC exists on this gateway
     version, fall back to:
         - disk: workspace/SOUL.md contains the marker (Layer-3 proof)
@@ -717,14 +769,38 @@ def _verify_loaded(
     # box, not only the injected SOUL.md text: the workspace AGENTS.md must
     # carry CEO_ROUTING_NO_LOOPHOLES_V4_3 and the installed plugin dist must
     # carry the (V4.3) heading. A box left on a bare V4/V3 marker is NOT loaded.
-    artifacts = {"soul_md": marker_present}
-    _art_paths = _loaded_artifact_paths(paths)
-    artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
-    artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
-    for _name, _ok in artifacts.items():
-        if not _ok:
-            _warn(f"  loaded check: {_name} does not carry the current policy marker")
-    marker_present = all(artifacts.values())
+    # KIL-001: kill switch SUPPORTED, never REQUIRED. Off-path the stamps
+    # must NOT carry operative instructions: presence NOT required there — a
+    # cleanly stripped box (no V4.3 anywhere) reports loaded=True with
+    # kill_mode set. Corrupt store raises (fail loud), never re-enables.
+    # CHAIN STEP: variable-name presence only — this branch tests the
+    # _kill_active() return, never a marker string.
+    try:
+        _kill_engaged, _kill_mode, _kill_source = _kill_active(paths)
+    except ValueError as exc:
+        _warn(f"  loaded check: {exc}")
+        raise
+    if _kill_engaged:
+        _info(f"  loaded check: kill switch SUPPORTED (mode={_kill_mode}, source={_kill_source}) — "
+              "V4.3 presence NOT required; operative instructions must be ABSENT")
+        artifacts = {
+            "soul_md": not _file_has_marker(_art_paths_soul(paths, shared_utils), LOADED_MARKER),
+            "agents_md": not _file_has_marker(_loaded_artifact_paths(paths)["agents_md"], AGENTS_LOADED_MARKER),
+            "plugin": True,  # plugin dist carries BOTH paths; prompt-time switch picks
+        }
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check (kill on): {_art_name} still carries operative V4.3 instructions")
+        marker_present = all(artifacts.values())
+    else:
+        artifacts = {"soul_md": marker_present}
+        _art_paths = _loaded_artifact_paths(paths)
+        artifacts["agents_md"] = _file_has_marker(_art_paths["agents_md"], AGENTS_LOADED_MARKER)
+        artifacts["plugin"] = _file_has_marker(_art_paths["plugin"], PLUGIN_LOADED_MARKER)
+        for _art_name, _art_ok in artifacts.items():
+            if not _art_ok:
+                _warn(f"  loaded check: {_art_name} does not carry the current policy marker")
+        marker_present = all(artifacts.values())
 
     # ── Board state ──────────────────────────────────────────────────────────
     cc_healthy = _check_cc_health(paths)
@@ -741,6 +817,8 @@ def _verify_loaded(
         "artifacts":         artifacts,
         "loaded_confidence": confidence,
         "ceo_session_key":   ceo_session_key or "unresolved",
+        "kill_mode":         _kill_mode,
+        "kill_source":       _kill_source,
     }
 
     if marker_present:
@@ -861,6 +939,23 @@ def _query_gateway_prompt(session_key: str, method: str) -> tuple[bool, Optional
     except Exception as e:
         _warn(f"Gateway call {method} failed: {e}")
         return False, None
+
+
+def _art_paths_soul(paths: dict, shared_utils: Optional[Path] = None) -> Path:
+    """SOUL.md path for the kill-on absence check (same file the proxy reads).
+
+    Same order as _proxy_verify_loaded: injected resolution first, bare
+    workspace fallback only when the helper is unavailable.
+    """
+    if shared_utils is not None:
+        sys.path.insert(0, str(shared_utils))
+        try:
+            from resolve_injected_core_files import resolve_injected_core_files  # type: ignore
+        except ImportError:
+            pass
+        else:
+            return resolve_injected_core_files("main")["soul_md"]
+    return Path(paths["workspace"]) / "SOUL.md"
 
 
 def _proxy_verify_loaded(
@@ -2606,6 +2701,212 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
     res.step_ok("update-999")
 
 
+# ── Agnes 3.0 upgrade (AGN-001) ───────────────────────────────────────────────
+#
+# The fleet's registered Agnes TEXT model moves 2.x -> `agnes-3.0-flash` (the
+# same id shared-utils/llm_score.py pins). This step converges a box that
+# ALREADY carries Agnes; it NEVER adds Agnes to a box that does not have it.
+#
+# SAFETY: every write goes through the validated CLI writer
+# `openclaw config patch --stdin` (never a root file edit of openclaw.json --
+# writing the config as root freezes the box -- and never `openclaw config set`
+# on a path with a quoted/keyed segment, which is a measured silent no-op, which
+# is why patch is used for the model-keyed maps). A box whose agnes provider has
+# NO key is FLAGGED and left alone. openclaw.json is backed up immediately
+# before the write and the backup path is emitted in the run's receipt.
+# Idempotent: nothing to change -> no backup, no CLI call, no write.
+# NON-GATING: a refused write is recorded and the roll continues (the box simply
+# stays on its current Agnes id).
+#
+# What moves (only these): (a) models.providers.agnes.models[].id (and the
+# entry's versioned display name), (b) the agents.defaults.models entry -- the
+# object moves to the `agnes/agnes-3.0-flash` key, the old key is removed, the
+# version-bearing alias moves with it, (c) every `agnes/agnes-2.x` REFERENCE in
+# agents.defaults.subagents.model and agents.entries.<agent>.model (primary and
+# fallbacks -- a primary left pinned to a key that was just moved would be a
+# dangling pin, the silent-death class install.sh warns about). No other model,
+# key or provider is read, reordered or written.
+
+_AGNES_ID_30 = "agnes-3.0-flash"
+_AGNES_REF_30 = "agnes/" + _AGNES_ID_30
+_AGNES_REFS_2X = ("agnes/agnes-2.5-flash", "agnes/agnes-2.0-flash")
+_AGNES_IDS_2X = ("agnes-2.5-flash", "agnes-2.0-flash")
+
+
+def _agnes30_swap_ref(x):
+    """agnes/agnes-2.x -> agnes/agnes-3.0-flash for one model reference."""
+    return _AGNES_REF_30 if x in _AGNES_REFS_2X else x
+
+
+def _agnes30_swap_refs(lst):
+    """Swap + dedupe a fallback list, order kept. None = nothing to change
+    (the idempotence guard uses this)."""
+    if not isinstance(lst, list):
+        return None
+    out: list = []
+    changed = False
+    for x in lst:
+        y = _agnes30_swap_ref(x)
+        changed = changed or y != x
+        if y not in out:
+            out.append(y)
+    return out if changed else None
+
+
+def _agnes30_model_refs(model) -> dict:
+    """Patch fragment for one {primary, fallbacks} model block, or {}."""
+    if not isinstance(model, dict):
+        return {}
+    frag: dict = {}
+    prim = model.get("primary")
+    if isinstance(prim, str) and _agnes30_swap_ref(prim) != prim:
+        frag["primary"] = _AGNES_REF_30
+    fb = _agnes30_swap_refs(model.get("fallbacks"))
+    if fb:
+        frag["fallbacks"] = fb
+    return frag
+
+
+def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
+    """Converge the Agnes TEXT model on a box that is already on Agnes."""
+    name = "agnes-30-upgrade"
+    if dry_run:
+        res.step_skip(name)
+        return
+    cfg = _read_openclaw_json(paths)
+    prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
+    if not isinstance(prov, dict):
+        # NEVER add Agnes where absent: a box without the provider is left alone.
+        res.step_skip(name, "no agnes provider on this box — nothing to upgrade")
+        return
+    if not prov.get("apiKey"):
+        # FLAG, never change: no key -> Agnes is not wired here.
+        res.step_skip(name, "FLAGGED: agnes provider has no key — nothing changed")
+        return
+
+    patch: dict = {}
+
+    # (a) provider model list: arrays REPLACE on patch, so the whole list is
+    # rebuilt with every other field of each entry preserved.
+    models = prov.get("models")
+    if isinstance(models, list):
+        rebuilt: list = []
+        seen_30 = False
+        changed = False
+        for m in models:
+            if isinstance(m, dict) and str(m.get("id") or "") in _AGNES_IDS_2X:
+                m = {**m, "id": _AGNES_ID_30}
+                if isinstance(m.get("name"), str):
+                    m["name"] = m["name"].replace("2.5", "3.0").replace("2.0", "3.0")
+                changed = True
+            if isinstance(m, dict) and m.get("id") == _AGNES_ID_30:
+                if seen_30:   # 2.0 and 2.5 both present -> one 3.0 entry
+                    changed = True
+                    continue
+                seen_30 = True
+            rebuilt.append(m)
+        if changed:
+            patch["models"] = {"providers": {"agnes": {"models": rebuilt}}}
+
+    defaults = (cfg.get("agents") or {}).get("defaults") or {}
+    defaults_patch: dict = {}
+
+    # (b) the registered entry: same object under the 3.0 key, old key removed,
+    # the version-bearing alias moved with it.
+    allow = defaults.get("models")
+    if isinstance(allow, dict):
+        moved: dict = {}
+        for old in _AGNES_REFS_2X:
+            if old not in allow:
+                continue
+            entry = allow.get(old)
+            entry = dict(entry) if isinstance(entry, dict) else {}
+            if isinstance(entry.get("alias"), str):
+                entry["alias"] = entry["alias"].replace("2.5", "3.0").replace("2.0", "3.0")
+            moved[old] = None
+            moved[_AGNES_REF_30] = entry
+        if moved:
+            defaults_patch["models"] = moved
+
+    # (c) primary/fallback references in the model blocks.
+    sub = (defaults.get("subagents") or {}).get("model")
+    sub_frag = _agnes30_model_refs(sub)
+    if sub_frag:
+        defaults_patch.setdefault("subagents", {}).setdefault("model", {}).update(sub_frag)
+    entries = (cfg.get("agents") or {}).get("entries")
+    entries_patch: dict = {}
+    if isinstance(entries, dict):
+        for aid, agent in entries.items():
+            frag = _agnes30_model_refs(agent.get("model") if isinstance(agent, dict) else None)
+            if frag:
+                entries_patch.setdefault(aid, {}).setdefault("model", {}).update(frag)
+
+    agents_patch: dict = {}
+    if defaults_patch:
+        agents_patch["defaults"] = defaults_patch
+    if entries_patch:
+        agents_patch["entries"] = entries_patch
+    if agents_patch:
+        patch["agents"] = agents_patch
+
+    if not patch:
+        res.steps[name] = "ok:already at agnes-3.0-flash (no change)"
+        _ok(f"  step {name}: ok — already at agnes-3.0-flash (no change)")
+        return
+
+    oc_json = Path(paths["root"]) / "openclaw.json"
+    bak = oc_json.parent / (oc_json.name
+                            + time.strftime(".bak.agnes-30-%Y%m%dT%H%M%SZ", time.gmtime()))
+    body = json.dumps(patch)
+
+    def _run_patch(*extra: str):
+        try:
+            return subprocess.run(["openclaw", "config", "patch", "--stdin", *extra],
+                                  input=body, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            return e
+
+    def _why(r) -> str:
+        return " ".join(((r.stderr or "") + " " + (r.stdout or "")).split())[:160]
+
+    # Validate with --dry-run first; it changes nothing.
+    dry = _run_patch("--dry-run")
+    if isinstance(dry, Exception):
+        res.step_skip(name, f"openclaw config patch unavailable ({dry}) — nothing changed")
+        return
+    if dry.returncode != 0:
+        res.step_skip(name, f"config patch refused at validation ({_why(dry) or f'exit {dry.returncode}'})"
+                            " — nothing changed")
+        return
+
+    # Back up the live config immediately before the write; the path goes to
+    # the receipt.
+    try:
+        shutil.copy2(oc_json, bak)
+        os.chmod(bak, 0o600)
+    except OSError as e:
+        res.step_skip(name, f"cannot back up {oc_json.name} before writing ({e}) — nothing changed")
+        return
+    real = _run_patch()
+    if isinstance(real, Exception) or real.returncode != 0:
+        why = real if isinstance(real, Exception) else (_why(real) or f"exit {real.returncode}")
+        try:
+            bak.unlink()   # nothing was written; do not leave a stray identical copy
+        except OSError:
+            pass
+        res.step_skip(name, f"config patch refused ({why}) — nothing changed")
+        return
+
+    # Read the file back — the write's exit code is never trusted (a refused
+    # keyed write can still exit 0).
+    note = f"agnes 2.x -> agnes-3.0-flash applied (backup: {bak})"
+    left = [t for t in _AGNES_IDS_2X if t in json.dumps(_read_openclaw_json(paths))]
+    if left:
+        note += f"; read-back still shows {', '.join(left)}"
+    res.steps[name] = "ok:" + note
+    _ok(f"  step {name}: ok — {note}")
+
+
 # ── Snapshot / health gate / rollback ─────────────────────────────────────────
 #
 # Before a box is touched we record what it was (onboarding stamp + clone SHA,
@@ -3750,6 +4051,12 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             step_update_999(res, dry_run)
         except Exception as e:
             res.step_fail("update-999", str(e))
+
+        # Step 2c: Agnes 3.0 upgrade, only where Agnes is already wired
+        try:
+            step_agnes_30_upgrade(paths, res, dry_run)
+        except Exception as e:
+            res.step_fail("agnes-30-upgrade", str(e))
 
         # Step 3: pull-cc
         try:

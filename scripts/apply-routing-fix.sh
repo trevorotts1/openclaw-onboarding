@@ -235,7 +235,7 @@ for _ceo_policy_candidate in "${ONBOARDING_DIR:-}/shared-utils/ceo_execution_pol
 done
 if [ -z "$CEO_POLICY_HELPER" ]; then echo "Missing ceo_execution_policy.py" >&2; exit 1; fi
 if [ "$DRY_RUN" != "1" ]; then
-  python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE" --kind CEO_ROUTING_NO_LOOPHOLES
+  python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE" --kind CEO_ROUTING_NO_LOOPHOLES --oc-config "$OC_ROOT"
 fi
 
 # --- AGENTS.md: PRESENTATION_ROUTING_REFLEX_V2 (signed-route pre-response gate) ---
@@ -1773,7 +1773,7 @@ fi
 
 # --- SOUL.md: managed V1/V2 -> V3, preserving owner content ---
 if [ "$DRY_RUN" != "1" ]; then
-  python3 "$CEO_POLICY_HELPER" "$SOUL_FILE"
+  python3 "$CEO_POLICY_HELPER" "$SOUL_FILE" --oc-config "$OC_ROOT"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
