@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-09-29T15:03:52Z",
+  "generated_at": "2026-10-01T02:36:57Z",
   "file_count": 113,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -57,8 +57,8 @@
       "bytes": 9265
     },
     "avatar-craft/SOP-AVATAR-01-BRAND-INTELLIGENCE-PACKAGE.md": {
-      "sha256": "eec6156aca0dd93864cbee774aacb6427aee5e817230befa1e18ac951ddcc336",
-      "bytes": 11210
+      "sha256": "65f2f94e81f9a15545f0e9dc69dab72bf2451c94e13d1f23e8436bb5f3e85cbf",
+      "bytes": 11531
     },
     "book-writer-craft/README.md": {
       "sha256": "2b2f7b8f69f0a89470596906bd0855381305968e3c27c5f8a28ad221416c89cb",
