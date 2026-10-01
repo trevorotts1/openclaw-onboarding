@@ -293,8 +293,9 @@ process.stdout.write(JSON.stringify(out));})();'''
                     self.assertEqual(upgrade(upgrade(old, kind), kind), upgrade(old, kind))
 
     def test_fleet_runner_loaded_marker_tracks_current_policy_marker(self):
-        # Landmine 8: the runner's loaded check must look for the marker block()
-        # stamps today (V4.3), accept V4.2/V4.1/V4/V3 only for the transition, never V2.
+        # Landmine 8: the runner's loaded check must require the marker block()
+        # stamps today (V4.3). v25.2.22 fix 3 removed the V4.2/V4.1/V4/V3
+        # transition acceptances: a box left on V4 or V3 must NOT report loaded.
         src = (ROOT / 'shared-utils/fleet_refresh_runner.py').read_text()
         consts = {}
         for node in ast.parse(src).body:
@@ -305,10 +306,13 @@ process.stdout.write(JSON.stringify(out));})();'''
         self.assertIn(f'<!-- {current} -->', block())
         names = [current if isinstance(e, ast.Name) else ast.literal_eval(e)
                  for e in consts['LOADED_MARKERS'].elts]
-        self.assertEqual(names, ['CEO_ORCHESTRATOR_RULE_V4_3', 'CEO_ORCHESTRATOR_RULE_V4_2',
-                                 'CEO_ORCHESTRATOR_RULE_V4_1',
-                                 'CEO_ORCHESTRATOR_RULE_V4', 'CEO_ORCHESTRATOR_RULE_V3'])
+        self.assertEqual(names, ['CEO_ORCHESTRATOR_RULE_V4_3'])
         self.assertNotIn('CEO_ORCHESTRATOR_RULE_V2', src)
+        # Fix 3 also requires the AGENTS.md no-loopholes marker and the plugin
+        # dist (V4.3) heading before the runner reports a box loaded.
+        self.assertIn('AGENTS_LOADED_MARKER = "CEO_ROUTING_NO_LOOPHOLES_V4_3"', src)
+        self.assertIn('PLUGIN_LOADED_MARKER = "(V4.3)"', src)
+        self.assertIn('marker_present = all(artifacts.values())', src)
 
     def test_every_grep_listed_v4_3_carrier_contains_exact_policy(self):
         # The same discovery command JGT103 uses to find every byte-identical

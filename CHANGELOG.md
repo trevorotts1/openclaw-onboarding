@@ -1,3 +1,22 @@
+## [v25.2.22]  -  2026-09-30  -  JEV intake routing fixes 1-11: one-door intake via mc-route.sh task; exact-match update/cancel; NO_LOOPHOLES V4_3; fail-closed verbs; status honesty; harness aligned real script; housekeeping
+
+#### Why
+Review of the v25.2.21 intake routing stack surfaced eleven faults across doctrine, the router, and the harness: department-first intake paths still existed beside the task door, existing-mode matched on raw substrings with a partial score, the NO_LOOPHOLES block lagged across carriers, a failed task call re-routed into duplicate cards, unreadable Command Center replies reported NOT_FOUND, archived cards read as missing, three helpers depended on a department slug, the acceptance harness did not mirror the real script, and release housekeeping lagged. This release fixes all eleven. The Command Center pin is unchanged, so no Command Center change ships with it.
+
+#### What changed
+- Fix 1, one-door intake: new work goes ONLY through `mc-route.sh task`; Command Center creates the card and picks the department (General Task when nothing fits). The older presentation-routing reflex and department-first forms are superseded across AGENTS.md, SOP-00, `shared-utils/ceo_execution_policy.py`, the plugin dist build, and both stampers.
+- Fix 2, exact-match existing-mode: `existing status|update|cancel` matches by exact id, exact title, or whole-word only. The raw-substring match and the 0.5 partial score are gone. Several differently-titled matches answer AMBIGUOUS. Same-title cards are one job carded twice: the newest is acted on, and cancel archives every one of them.
+- Fix 3, NO_LOOPHOLES V4_3: the block is carried identically across AGENTS.md, SOP-00, the plugin dist build, and both stamper copies. The runner and `verify-routing.sh` accept exactly V4_3 (new G3b checks the plugin dist heading); a box left on V4 or V3 reports not loaded.
+- Fix 4, escalate never re-route: if the task call fails or prints no ROUTED line, tell the owner an escalation to the operator is underway, then stop. No second route through ingest, through general-task, or by any other path, and no retry in the same turn.
+- Fix 5, fail-closed verbs: an unreadable or empty task or department list exits 1 with FAILED plus ESCALATE_TO_OPERATOR, never NOT_FOUND. NOT_FOUND is said only of a list that loaded successfully and genuinely holds no match.
+- Fix 6, status honesty: existing-mode reads with includeArchived=true, so an archived card is not reported missing. At the page limit the reply says the board page was full instead of implying the whole board was read.
+- Fix 7, off the department slug: `scripts/ghl-mcp-probe.sh`, the avatar SOP, and the brand-positioning role now open cards via `mc-route.sh task` with no department named, so a card opens even where no marketing department exists. The probe's failed-card-route warning keeps a durable probe.log trace, with the count emitted only when greater than zero, so the happy path stays byte-identical.
+- Fix 8, harness mirrors the script: `tests/acceptance/intake/run_intake_acceptance.py` now answers the real per-subcommand NOT_FOUND texts, AMBIGUOUS, and whole-word matching, with the paid sweep still requiring Trevor's go.
+- Fix 9, housekeeping: `release-cohort.json` onb_sha bound to the v25.2.21 tip (275bf5ae); cc_sha unchanged.
+- Fix 10, housekeeping: stale CEO_ROUTING_NO_LOOPHOLES_V2 marker comments removed; `mc-route.sh` command words are case-insensitive (titles and slugs stay exact).
+- Fix 11, housekeeping: both stampers' embedded `mc-route.sh` copies are byte-identical to `scripts/mc-route.sh`.
+- `scripts/bump-version.sh` v25.2.22 (10 markers; Skill 23 skill-version.txt in lockstep). Command Center pin unchanged at v7.6.90.
+
 ## [v25.2.21]  -  2026-09-30  -  JEV intake V4.3: mc-route.sh existing status/update/cancel; unknown first words never create cards; per-command NOT_FOUND; CEO intake policy V4.3; intake test kit fixes
 
 #### Why

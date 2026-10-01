@@ -328,6 +328,89 @@ else
   fail "(18) the card that was filed does not carry the DOWN title"
 fi
 
+# ── JEV-118: a failed card route must leave a DURABLE trace ───────────────────
+# say() prints nothing under --quiet and the sole quiet caller
+# (ghl-mcp-autostart.sh) discards both streams, so a WARNING via say() alone
+# used to vanish while the streak file still recorded escalated=1 and
+# suppressed every later attempt. This case runs the exact quiet-tick shape
+# (--quiet, both streams to /dev/null) against a route hook that always fails,
+# then asserts the WARNING is on disk in probe.log anyway.
+JEV118_DIR="$(mktemp -d)"
+cat > "$JEV118_DIR/fail-route.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$JEV118_DIR/fail-route.sh"
+JEV118_LOG_DIR="$(mktemp -d)"
+for _ in 1 2 3; do
+  GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
+    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+done
+if grep -q 'WARNING — the operator alert card was NOT created' "$JEV118_LOG_DIR/probe.log" 2>/dev/null; then
+  pass "(18b) a failed card route under --quiet still leaves a WARNING in probe.log"
+else
+  fail "(18b) a failed card route under --quiet left no WARNING in probe.log — the swallow is back"
+fi
+# ── JEV-124: the durable record names the attempted target ──────────────────
+# Spec clause 3: timestamp + title + reason were already on disk; the attempted
+# target was not. The record must carry target= so the next reader knows WHICH
+# route hook failed without guessing.
+if grep 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | grep -q 'fail-route.sh'; then
+  pass "(18c) the card-route-failure record names the attempted route target"
+else
+  fail "(18c) the card-route-failure record does not name the attempted target — target field missing"
+fi
+# ── JEV-124 (JEV-127 repair): STATUS surfaces the TRUE count ────────────────
+# The old assertion (one STATUS line matching card-route-failures=1) PASSED on
+# the defective code by arithmetic coincidence: the phantom counter counted its
+# own STATUS lines, so tick 2 emitted `=1` with zero real failures on disk.
+# Assert semantics, not the digit: count the genuine failure records first.
+# One more quiet tick (streak now 4, already escalated, so no second warning):
+# report() must surface card-route-failures=N_REAL on its latest STATUS line.
+GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
+  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+N_REAL="$(grep -c 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null)"
+case "$N_REAL" in ''|*[!0-9]*) N_REAL=0 ;; esac
+LAST_STATUS="$(grep 'STATUS: ghl-mcp-probe=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | tail -1)"
+if [ "$N_REAL" = "1" ]; then
+  pass "(18d) positive control: exactly one real card-route-failure record on disk"
+else
+  fail "(18d) positive control FAILED — expected 1 real card-route-failure record, found N_REAL=$N_REAL"
+fi
+case "$LAST_STATUS" in
+  *"card-route-failures=${N_REAL}") pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
+  *"card-route-failures=${N_REAL} "*) pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
+  *) fail "(18d) latest STATUS does not surface card-route-failures=${N_REAL} — N_REAL=${N_REAL}, last line: ${LAST_STATUS}" ;;
+esac
+# ── JEV-127 (18e): zero failures ⇒ byte-identical STATUS, no count token ────
+# QC evidence: on the defective code three quiet dead-port ticks wrote
+# `card-route-failures=0`, then `=1`, then `=2` with ZERO real failure records
+# on disk. Fresh isolated log; the file-global route stub exits 0, so the card
+# routes SUCCEED and no failure record is ever written.
+JEV127_LOG_DIR="$(mktemp -d)"
+for _ in 1 2 3; do
+  GHL_MCP_LOG_DIR="$JEV127_LOG_DIR" FLEET_STANDING_BOX_SLUG="unit-test-box" \
+    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+done
+JEV127_STATUS_N="$(grep -c 'STATUS: ghl-mcp-probe=NO_LISTENER' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+JEV127_REAL_N="$(grep -c 'card-route-failure target=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+JEV127_TOKEN_N="$(grep -c 'card-route-failures=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+case "$JEV127_STATUS_N" in ''|*[!0-9]*) JEV127_STATUS_N=0 ;; esac
+case "$JEV127_REAL_N" in ''|*[!0-9]*) JEV127_REAL_N=0 ;; esac
+case "$JEV127_TOKEN_N" in ''|*[!0-9]*) JEV127_TOKEN_N=0 ;; esac
+if [ "$JEV127_STATUS_N" = "3" ]; then
+  pass "(18e) positive control: 3 NO_LISTENER STATUS lines in the fresh log"
+else
+  fail "(18e) positive control FAILED — expected 3 NO_LISTENER STATUS lines, found $JEV127_STATUS_N"
+fi
+if [ "$JEV127_REAL_N" = "0" ] && [ "$JEV127_TOKEN_N" = "0" ]; then
+  pass "(18e) zero failures ⇒ no card-route-failures= token anywhere (STATUS byte-identical)"
+else
+  fail "(18e) count token leaked with zero real failures — real=$JEV127_REAL_N token_lines=$JEV127_TOKEN_N"
+fi
+rm -rf "$JEV127_LOG_DIR"
+rm -rf "$JEV118_DIR" "$JEV118_LOG_DIR"
+
 # ── v25.1.10: --heal needs a STREAK; one slow check must never restart ────────
 # The restart is stubbed (GHL_MCP_PROBE_HEAL_CMD) so this test can never
 # kickstart the box's real com.clawd.ghl-mcp service.

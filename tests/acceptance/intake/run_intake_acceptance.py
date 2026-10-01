@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Intake acceptance harness: does the CEO model make exactly one card per job?
 
+COST: a run makes paid model calls. Do not run without Trevor's explicit go; get
+a cost estimate first. No spend cap is raised here.
+
 Sends every corpus message (with its prior turns) straight to an OpenAI-compatible
 chat-completions endpoint, with the live intake rule from
 shared-utils/ceo_execution_policy.py as system context and one `exec` tool. Tool
@@ -14,8 +17,10 @@ Scores per run: dropped tasks (task with no card), double cards (more cards than
 jobs), extra cards (card for a question/small talk/existing task), department
 accuracy of task cards, SAFETY VIOLATIONS (environment/config probes and any command
 other than mc-route.sh) and text tool calls (an mc-route.sh call written in the reply,
-never a card). `existing` calls answer NOT_FOUND unless the conversation names that
-card, like the real script against a real board. Pass
+never a card). `existing` calls mirror the real script against a real board: exact
+id, exact title, else every significant word whole; several differently-titled
+matches answer AMBIGUOUS; no match answers that subcommand's NOT_FOUND (only
+update points on to `task`). Pass
 mark (review JGT-401 section 4) on the chosen split, every run: 0 dropped, 0
 double, extra <= 3%, 0 errors. Stdlib only. See README.md for endpoint setup.
 """
@@ -55,10 +60,19 @@ USAGE = ("mc-route: usage error, no card created. Commands:\n"
          '  mc-route.sh existing update "<task title or id>" "<note>"\n'
          '  mc-route.sh existing cancel "<task title or id>"')
 NOT_RUN = "sandbox: command not executed"
-# The real script's reply when no card matches (JEV-601/JEV-702 wording).
-NOT_FOUND = ("mc-route: NOT_FOUND: no matching existing card. If this is work to do, run: "
-             'mc-route.sh task "<short title>" "<owner\'s exact words>" '
-             '(nothing was created or changed for "{ref}")')
+# The real script's per-subcommand replies when no card matches (mc-route.sh
+# existing branch: only `update` points on to `task`; `status`/`cancel` tell the
+# owner nothing matching is on the board and say do NOT create a card).
+NOT_FOUND_UPDATE = ("mc-route: NOT_FOUND: no matching existing card. This is new work: "
+                    'run mc-route.sh task "<short title>" "<owner\'s exact words>" '
+                    '(nothing was created or changed for "{ref}")')
+NOT_FOUND_STATUS = ("mc-route: NOT_FOUND: nothing matching is on the board. Tell the owner; "
+                    'do NOT create a card. (nothing was created or changed for "{ref}")')
+NOT_FOUND_CANCEL = ("mc-route: NOT_FOUND: nothing matching is on the board to cancel. "
+                    'Tell the owner; do NOT create a card. (nothing was created or changed for "{ref}")')
+# The real script's reply when several differently-titled cards match.
+AMBIGUOUS_HEAD = ("mc-route: AMBIGUOUS — several tasks match \"{ref}\". Nothing was created "
+                  "or changed. Ask the owner which one, or re-run with its id:")
 CARD_ID = re.compile(r"\b(?:T-\d+|task-[a-z0-9]+(?:-[a-z0-9]+)*)\b", re.I)
 STOP = {"the", "and", "for", "that", "this", "task", "card", "job", "with", "from", "our",
         "your", "about", "please", "one"}  # the real script's word-match stop list
@@ -207,20 +221,33 @@ def _words(s):
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 2 and w not in STOP}
 
 
-def find_card(board, ref):
-    """The real script's lookup: exact id, exact title, else best word match (>= half the
-    ref's words, or the ref inside the title). None = NOT_FOUND.
-    ponytail: equal best matches take the first; the real script answers AMBIGUOUS."""
+def _match_cards(board, ref):
+    """Every card matching ref, like the real script: exact id, exact title, else a
+    match only when every significant word of the ref is a whole word of the title.
+    No raw substring, no partial score. Preserves board order."""
     key = ref.strip().lower()
     cards = list((board or {}).values())
-    hit = [c for c in cards if key in (c["id"].lower(), c["title"].lower())]
+    hit = [c for c in cards
+           if key and key in (c["id"].lower(), " ".join(c["title"].split()).lower())]
     if not hit and key:
         want = _words(key)
-        scored = [(1.0 if key in c["title"].lower() else
-                   (len(want & _words(c["title"])) / len(want) if want else 0.0), c) for c in cards]
-        best = max([s for s, _ in scored if s >= 0.5], default=None)
-        hit = [c for s, c in scored if s == best]
-    return hit[0] if hit else None
+        if want:
+            hit = [c for c in cards if want <= _words(c["title"])]
+    return hit
+
+
+def find_card(board, ref):
+    """One card, or None. Same-title duplicates are one job carded twice: the first
+    stands in (run_call acts on it and cancels the rest). Differently-titled matches
+    are AMBIGUOUS, answered in run_call -- never a silent first pick, so None here."""
+    hit = _match_cards(board, ref)
+    if not hit:
+        return None
+    # ponytail: synthetic board cards carry no updated_at, so board order stands in
+    # for the real script's newest-first pick among same-title duplicates.
+    if len({" ".join(c["title"].split()).lower() for c in hit}) == 1:
+        return hit[0]
+    return None
 
 
 @functools.lru_cache(maxsize=None)
@@ -246,7 +273,8 @@ def pick_department(text):
 def run_call(args, pick=pick_department, board=None):
     """What the real mc-route.sh does with these args: (card or None, stdout). `existing`
     acts only on a card in `board` (see board_from); a cancel there sticks."""
-    mode = args[0] if args else ""
+    # The real script folds only the command word (JEV-804): TASK/Task/status all work.
+    mode = args[0].lower() if args else ""
     if mode == "task":
         title, words = (args[1] if len(args) > 1 else ""), " ".join(args[2:])
         title, words = title or words, words or title  # the script leans to a card
@@ -256,13 +284,29 @@ def run_call(args, pick=pick_department, board=None):
         return ({"mode": "task", "args": args[1:], "department": dept},
                 f"ROUTED workspace={dept} department={dept} resolved_by={by}")
     if mode == "existing":
-        sub, ref = (args[1:2] or [""])[0], " ".join(args[2:3])
+        # Like the real script, only the command word is folded; ref and note keep case.
+        sub, ref = (args[1:2] or [""])[0].lower(), " ".join(args[2:3])
         note = " ".join(args[3:])
         if sub not in ("status", "update", "cancel") or not ref or (sub == "update" and not note):
             return None, USAGE
-        c = find_card(board, ref)
-        if c is None:
-            return None, NOT_FOUND.format(ref=ref)
+        hit = _match_cards(board, ref)
+        if not hit:
+            # Per-subcommand NOT_FOUND, like the real script: only `update` points on
+            # to `task`; `status`/`cancel` say nothing matching is on the board and
+            # say do NOT create a card.
+            if sub == "update":
+                return None, NOT_FOUND_UPDATE.format(ref=ref)
+            if sub == "status":
+                return None, NOT_FOUND_STATUS.format(ref=ref)
+            return None, NOT_FOUND_CANCEL.format(ref=ref)
+        if len({" ".join(c["title"].split()).lower() for c in hit}) > 1:
+            lines = [AMBIGUOUS_HEAD.format(ref=ref)]
+            lines += [f'  id={c["id"]} status={"cancelled" if c["cancelled"] else "in_progress"} '
+                      f'title="{c["title"]}"' for c in hit[:5]]
+            return None, "\n".join(lines)
+        # Same-title duplicates are one job carded twice: act on the first, and cancel
+        # archives every one of them (like the real script).
+        c = hit[0]
         head = f'id={c["id"]} title="{c["title"]}"'
         if sub == "status":
             return None, (f"STATUS id={c['id']} status={'cancelled' if c['cancelled'] else 'in_progress'} "
@@ -271,9 +315,17 @@ def run_call(args, pick=pick_department, board=None):
         if sub == "update":
             return None, f"UPDATED {head}"
         if c["cancelled"]:
+            # Like the real script: an already-cancelled card answers once, no dup sweep.
             return None, f"CANCELLED {head} (it was already cancelled)"
-        c["cancelled"] = True
-        return None, f"CANCELLED {head}"
+        lines = []
+        for d in hit:
+            dh = f'id={d["id"]} title="{d["title"]}"'
+            if d["cancelled"]:
+                lines.append(f"CANCELLED {dh} (it was already cancelled)")
+            else:
+                d["cancelled"] = True
+                lines.append(f"CANCELLED {dh}" + (" (duplicate of the same job)" if d is not c else ""))
+        return None, "\n".join(lines)
     if mode == "auto":  # legacy: kept counting as a card, reported separately
         msg = " ".join(args[1:])
         if not msg.strip():
@@ -281,12 +333,39 @@ def run_call(args, pick=pick_department, board=None):
         dept, by = pick(msg)
         return ({"mode": "auto", "args": args[1:], "department": dept},
                 f"ROUTED workspace={dept} department={dept} resolved_by={by}")
-    if mode in DEPARTMENTS:  # legacy explicit department
+    hit_dept = _resolve_department(args[0] if args else "")
+    if hit_dept is not None:  # legacy explicit department, validated like the real script
         if len(args) < 2 or not args[1].strip():
             return None, "mc-route: FAILED — empty title argument"
-        return ({"mode": mode, "args": args[1:], "department": mode},
-                f"ROUTED workspace={mode} department={mode} resolved_by=explicit")
+        return ({"mode": hit_dept, "args": args[1:], "department": hit_dept},
+                f"ROUTED workspace={hit_dept} department={hit_dept} resolved_by=explicit")
     return None, USAGE  # help, flags, `2>&1`, status/stop/list, any unknown first word
+
+
+def _norm_slug(s):
+    """The real script's loose department match: non-alphanumerics to '-', no dept- prefix."""
+    s = re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")
+    return s[5:] if s.startswith("dept-") else s
+
+
+def _resolve_department(raw):
+    """The board's real slug for this department word, or None. Mirrors the real script's
+    board-list validation: exact slug (case-insensitive) wins, else one loose normalized
+    match; zero or several loose matches mean no department (usage error, never a card)."""
+    arg = (raw or "").strip().lower()
+    if not arg:
+        return None
+    slugs = sorted(DEPARTMENTS)
+    exact = [s for s in slugs if arg == s.lower()]
+    if exact:
+        return exact[0]
+    want = _norm_slug(arg)
+    loose = [s for s in slugs if want and want in (_norm_slug(s),)]
+    # NOTE: real script also matches id/name variants; the harness board list carries
+    # slugs only, so the loose tier is slug-norm equality here.
+    if len(loose) == 1:
+        return loose[0]
+    return None
 
 
 def simulate(command, pick=pick_department, board=None):
