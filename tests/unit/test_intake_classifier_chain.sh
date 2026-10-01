@@ -111,7 +111,7 @@ for case in "${CASES[@]}"; do
   case_no=$((case_no + 1))
   home="$WORK/case$case_no"
   make_box "$home" "$providers"
-  if [ -n "$envline" ]; then printf '%s\n' "$envline" > "$home/.openclaw/secrets/.env"; fi
+  if [ -n "$envline" ]; then printf '%s\n' "$envline" > "$home/.openclaw/secrets/.env"; chmod 600 "$home/.openclaw/secrets/.env"; fi
 
   run_chain "$home"
   out="$(cat "$WORK/out.txt")"
