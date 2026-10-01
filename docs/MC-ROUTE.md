@@ -170,8 +170,30 @@ An id that isn't in the open list, such as a cancelled card, is read with
 | Action | Command Center calls | stdout on success |
 |---|---|---|
 | `status` | GETs only (strictly read-only) | `STATUS id=<id> status=<s> department=<slug> updated=<t> cancelled=<yes\|no> title="<title>"` |
-| `update` | `POST /api/tasks/<id>/messages` `{content: <note>, sender: "owner"}` (an `owner_message` on the card) | `UPDATED id=<id> title="<title>"` |
-| `cancel` | `POST /api/tasks/<id>/archive`, then an owner note "Cancelled by the owner." | `CANCELLED id=<id> title="<title>"` |
+| `update` | `POST /api/tasks/<id>/messages` `{content: <note>, sender: "owner"}` (an `owner_message` on the card) | `UPDATED id=<id> title="<title>"` + one delivery line (see below) |
+| `cancel` | `POST /api/tasks/<id>/archive`, then an owner note "Cancelled by the owner." | `CANCELLED id=<id> title="<title>"` + one kill line + one run line (see below) |
+
+**What the extra reply lines mean (never bare `CANCELLED` / `UPDATED` alone).**
+
+Cancel, after the `CANCELLED` line — one kill line, then one run line:
+
+- `kill set (<killed_at>)` — new Command Center archived the card and fenced the
+  runner. `kill NOT set by Command Center` — archived, but the runner was not
+  fenced. `kill field: response did not report it (older CC)` — older Command
+  Center, field absent. Either way the running agent is fenced from further dispatch.
+- `in-flight run notified to stop` (a live run was found and told to stop);
+  `in-flight run NOT notified: <notice_error> (kill fence set; gateway has no
+  abort RPC so a live run can only be asked to stop)`; `no in-flight run was
+  active`; or `in-flight run: response did not report it (older CC)`.
+- A trailing `[response fields missing — older CC?]` means the archive response
+  lacked the new fields — parsed backward-compatibly, nothing invented.
+
+Update, after the `UPDATED` line — exactly one delivery line:
+
+- `note delivered live to running agent [(<delivery_target>)]`; `note recorded —
+  NOT delivered live: <delivery_error>`; `note recorded — no running agent
+  session; seen on next turn/dispatch`; or `delivery: response did not report
+  live-delivery (older CC) — note recorded on the card` + the missing-fields note.
 
 Command Center v7.6.90 has no "cancelled" status. Soft-archive is its way to
 cancel: the card leaves the board, auto-dispatch skips it, its pending dispatch
