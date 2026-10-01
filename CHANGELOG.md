@@ -1,3 +1,13 @@
+## [v25.2.25]  -  2026-10-01  -  Command Center pin v7.6.92 (cancel/update reach in-flight runs)
+
+#### Why
+Command Center v7.6.92 shipped cancel/update reaching in-flight runs plus a security dependency bump, so the onboarding pin moves one step to stay paired with the tested cohort.
+
+#### What changed
+- CC pin v7.6.91 to v7.6.92 via scripts/pin-cc-tag.py (cc-compat.json + release-cohort.json in lockstep).
+- Reason: PR 475 merge (cancel archives + kills in-flight run through real route; owner notes delivered live with honest fallbacks) plus dependencies next 16.3.8 (GHSA-vcvr-r3jv-pc5j remote code execution in next/og ImageResponse).
+- `scripts/bump-version.sh` v25.2.25 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.25 / v7.6.92.
+
 ## [v25.2.24]  -  2026-10-01  -  Command Center pin v7.6.91 (intake chain + Agnes 3.0 + next 16.3.6 security)
 
 #### Why
