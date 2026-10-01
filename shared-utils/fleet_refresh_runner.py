@@ -2606,6 +2606,212 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
     res.step_ok("update-999")
 
 
+# ── Agnes 3.0 upgrade (AGN-001) ───────────────────────────────────────────────
+#
+# The fleet's registered Agnes TEXT model moves 2.x -> `agnes-3.0-flash` (the
+# same id shared-utils/llm_score.py pins). This step converges a box that
+# ALREADY carries Agnes; it NEVER adds Agnes to a box that does not have it.
+#
+# SAFETY: every write goes through the validated CLI writer
+# `openclaw config patch --stdin` (never a root file edit of openclaw.json --
+# writing the config as root freezes the box -- and never `openclaw config set`
+# on a path with a quoted/keyed segment, which is a measured silent no-op, which
+# is why patch is used for the model-keyed maps). A box whose agnes provider has
+# NO key is FLAGGED and left alone. openclaw.json is backed up immediately
+# before the write and the backup path is emitted in the run's receipt.
+# Idempotent: nothing to change -> no backup, no CLI call, no write.
+# NON-GATING: a refused write is recorded and the roll continues (the box simply
+# stays on its current Agnes id).
+#
+# What moves (only these): (a) models.providers.agnes.models[].id (and the
+# entry's versioned display name), (b) the agents.defaults.models entry -- the
+# object moves to the `agnes/agnes-3.0-flash` key, the old key is removed, the
+# version-bearing alias moves with it, (c) every `agnes/agnes-2.x` REFERENCE in
+# agents.defaults.subagents.model and agents.entries.<agent>.model (primary and
+# fallbacks -- a primary left pinned to a key that was just moved would be a
+# dangling pin, the silent-death class install.sh warns about). No other model,
+# key or provider is read, reordered or written.
+
+_AGNES_ID_30 = "agnes-3.0-flash"
+_AGNES_REF_30 = "agnes/" + _AGNES_ID_30
+_AGNES_REFS_2X = ("agnes/agnes-2.5-flash", "agnes/agnes-2.0-flash")
+_AGNES_IDS_2X = ("agnes-2.5-flash", "agnes-2.0-flash")
+
+
+def _agnes30_swap_ref(x):
+    """agnes/agnes-2.x -> agnes/agnes-3.0-flash for one model reference."""
+    return _AGNES_REF_30 if x in _AGNES_REFS_2X else x
+
+
+def _agnes30_swap_refs(lst):
+    """Swap + dedupe a fallback list, order kept. None = nothing to change
+    (the idempotence guard uses this)."""
+    if not isinstance(lst, list):
+        return None
+    out: list = []
+    changed = False
+    for x in lst:
+        y = _agnes30_swap_ref(x)
+        changed = changed or y != x
+        if y not in out:
+            out.append(y)
+    return out if changed else None
+
+
+def _agnes30_model_refs(model) -> dict:
+    """Patch fragment for one {primary, fallbacks} model block, or {}."""
+    if not isinstance(model, dict):
+        return {}
+    frag: dict = {}
+    prim = model.get("primary")
+    if isinstance(prim, str) and _agnes30_swap_ref(prim) != prim:
+        frag["primary"] = _AGNES_REF_30
+    fb = _agnes30_swap_refs(model.get("fallbacks"))
+    if fb:
+        frag["fallbacks"] = fb
+    return frag
+
+
+def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
+    """Converge the Agnes TEXT model on a box that is already on Agnes."""
+    name = "agnes-30-upgrade"
+    if dry_run:
+        res.step_skip(name)
+        return
+    cfg = _read_openclaw_json(paths)
+    prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
+    if not isinstance(prov, dict):
+        # NEVER add Agnes where absent: a box without the provider is left alone.
+        res.step_skip(name, "no agnes provider on this box — nothing to upgrade")
+        return
+    if not prov.get("apiKey"):
+        # FLAG, never change: no key -> Agnes is not wired here.
+        res.step_skip(name, "FLAGGED: agnes provider has no key — nothing changed")
+        return
+
+    patch: dict = {}
+
+    # (a) provider model list: arrays REPLACE on patch, so the whole list is
+    # rebuilt with every other field of each entry preserved.
+    models = prov.get("models")
+    if isinstance(models, list):
+        rebuilt: list = []
+        seen_30 = False
+        changed = False
+        for m in models:
+            if isinstance(m, dict) and str(m.get("id") or "") in _AGNES_IDS_2X:
+                m = {**m, "id": _AGNES_ID_30}
+                if isinstance(m.get("name"), str):
+                    m["name"] = m["name"].replace("2.5", "3.0").replace("2.0", "3.0")
+                changed = True
+            if isinstance(m, dict) and m.get("id") == _AGNES_ID_30:
+                if seen_30:   # 2.0 and 2.5 both present -> one 3.0 entry
+                    changed = True
+                    continue
+                seen_30 = True
+            rebuilt.append(m)
+        if changed:
+            patch["models"] = {"providers": {"agnes": {"models": rebuilt}}}
+
+    defaults = (cfg.get("agents") or {}).get("defaults") or {}
+    defaults_patch: dict = {}
+
+    # (b) the registered entry: same object under the 3.0 key, old key removed,
+    # the version-bearing alias moved with it.
+    allow = defaults.get("models")
+    if isinstance(allow, dict):
+        moved: dict = {}
+        for old in _AGNES_REFS_2X:
+            if old not in allow:
+                continue
+            entry = allow.get(old)
+            entry = dict(entry) if isinstance(entry, dict) else {}
+            if isinstance(entry.get("alias"), str):
+                entry["alias"] = entry["alias"].replace("2.5", "3.0").replace("2.0", "3.0")
+            moved[old] = None
+            moved[_AGNES_REF_30] = entry
+        if moved:
+            defaults_patch["models"] = moved
+
+    # (c) primary/fallback references in the model blocks.
+    sub = (defaults.get("subagents") or {}).get("model")
+    sub_frag = _agnes30_model_refs(sub)
+    if sub_frag:
+        defaults_patch.setdefault("subagents", {}).setdefault("model", {}).update(sub_frag)
+    entries = (cfg.get("agents") or {}).get("entries")
+    entries_patch: dict = {}
+    if isinstance(entries, dict):
+        for aid, agent in entries.items():
+            frag = _agnes30_model_refs(agent.get("model") if isinstance(agent, dict) else None)
+            if frag:
+                entries_patch.setdefault(aid, {}).setdefault("model", {}).update(frag)
+
+    agents_patch: dict = {}
+    if defaults_patch:
+        agents_patch["defaults"] = defaults_patch
+    if entries_patch:
+        agents_patch["entries"] = entries_patch
+    if agents_patch:
+        patch["agents"] = agents_patch
+
+    if not patch:
+        res.steps[name] = "ok:already at agnes-3.0-flash (no change)"
+        _ok(f"  step {name}: ok — already at agnes-3.0-flash (no change)")
+        return
+
+    oc_json = Path(paths["root"]) / "openclaw.json"
+    bak = oc_json.parent / (oc_json.name
+                            + time.strftime(".bak.agnes-30-%Y%m%dT%H%M%SZ", time.gmtime()))
+    body = json.dumps(patch)
+
+    def _run_patch(*extra: str):
+        try:
+            return subprocess.run(["openclaw", "config", "patch", "--stdin", *extra],
+                                  input=body, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            return e
+
+    def _why(r) -> str:
+        return " ".join(((r.stderr or "") + " " + (r.stdout or "")).split())[:160]
+
+    # Validate with --dry-run first; it changes nothing.
+    dry = _run_patch("--dry-run")
+    if isinstance(dry, Exception):
+        res.step_skip(name, f"openclaw config patch unavailable ({dry}) — nothing changed")
+        return
+    if dry.returncode != 0:
+        res.step_skip(name, f"config patch refused at validation ({_why(dry) or f'exit {dry.returncode}'})"
+                            " — nothing changed")
+        return
+
+    # Back up the live config immediately before the write; the path goes to
+    # the receipt.
+    try:
+        shutil.copy2(oc_json, bak)
+        os.chmod(bak, 0o600)
+    except OSError as e:
+        res.step_skip(name, f"cannot back up {oc_json.name} before writing ({e}) — nothing changed")
+        return
+    real = _run_patch()
+    if isinstance(real, Exception) or real.returncode != 0:
+        why = real if isinstance(real, Exception) else (_why(real) or f"exit {real.returncode}")
+        try:
+            bak.unlink()   # nothing was written; do not leave a stray identical copy
+        except OSError:
+            pass
+        res.step_skip(name, f"config patch refused ({why}) — nothing changed")
+        return
+
+    # Read the file back — the write's exit code is never trusted (a refused
+    # keyed write can still exit 0).
+    note = f"agnes 2.x -> agnes-3.0-flash applied (backup: {bak})"
+    left = [t for t in _AGNES_IDS_2X if t in json.dumps(_read_openclaw_json(paths))]
+    if left:
+        note += f"; read-back still shows {', '.join(left)}"
+    res.steps[name] = "ok:" + note
+    _ok(f"  step {name}: ok — {note}")
+
+
 # ── Snapshot / health gate / rollback ─────────────────────────────────────────
 #
 # Before a box is touched we record what it was (onboarding stamp + clone SHA,
@@ -3750,6 +3956,12 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             step_update_999(res, dry_run)
         except Exception as e:
             res.step_fail("update-999", str(e))
+
+        # Step 2c: Agnes 3.0 upgrade, only where Agnes is already wired
+        try:
+            step_agnes_30_upgrade(paths, res, dry_run)
+        except Exception as e:
+            res.step_fail("agnes-30-upgrade", str(e))
 
         # Step 3: pull-cc
         try:

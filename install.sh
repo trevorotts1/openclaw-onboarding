@@ -3453,7 +3453,7 @@ if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
     # ALWAYS end on a NON-Ollama provider. An Ollama Cloud weekly cap / 429 is
     # ACCOUNT-level, so an all-Ollama chain fails as a single unit and takes the
     # client's entire company down at once.
-    _seed.append(_pick('openrouter/deepseek/deepseek-v4-flash', 'agnes/agnes-2.5-flash'))
+    _seed.append(_pick('openrouter/deepseek/deepseek-v4-flash', 'agnes/agnes-3.0-flash'))
 
     _seed = [m for i, m in enumerate(_seed) if m and m not in _seed[:i]]
 

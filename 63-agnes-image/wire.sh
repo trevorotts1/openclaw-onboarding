@@ -113,7 +113,7 @@ TOOLS_BODY="## Agnes Image API
 - Full reference: $REF_DEST"
 
 MEMORY_BODY="## Agnes Image 2.1 Flash — installed
-- Uses the existing AGNES_AI_API_KEY (same key as the agnes / agnes-2.5-flash model).
+- Uses the existing AGNES_AI_API_KEY (same key as the agnes / agnes-3.0-flash model).
 - Synchronous image endpoint: POST /v1/images/generations — no task polling.
 - response_format in extra_body; image-to-image via extra_body.image, no tags.
 - Full reference: $REF_DEST"
