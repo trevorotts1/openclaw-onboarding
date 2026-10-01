@@ -164,9 +164,10 @@ You never have to know these by name or type a command. Just say what you want i
 | If you say something like… | This department will… |
 |---|---|
 | "build me a form in GHL" · "build me a page in GHL" · "publish this page" · "install this funnel in GHL" | Delivery rail that installs/publishes forms and pages into GHL |
-| "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" · "a full funnel" | Builds a Signature Funnel |
+| "build my funnel" · "signature funnel" · "3/5/7 step funnel" · "an opt-in and upsell chain" | Builds a Signature Funnel |
 | "a sales page" · "upsell and downsell copy" · "a high-ticket page" · "write my sales page" | Builds a Direct-Response sales-page asset stack from one survey (the DR sibling of Skill 49) |
 | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" · "build an immersive funnel" | Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels |
+| "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" | Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->

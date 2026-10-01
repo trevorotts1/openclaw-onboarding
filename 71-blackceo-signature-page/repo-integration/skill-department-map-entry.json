@@ -1,0 +1,34 @@
+{
+  "skill": "71",
+  "slug": "blackceo-signature-page",
+  "name": "blackceo-signature-page",
+  "client_facing": true,
+  "description": "Builds BlackCEO Signature single-page conversion experiences using the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence/prompts, image QC, responsive implementation, and target-environment handoff. Owns landing/opt-in/squeeze/event/registration/challenge/booking/focused single-page requests; delegates image execution to the installed image-provider skills and GHL delivery to Skill 6.",
+  "departments": [
+    "web-development"
+  ],
+  "roles": [
+    {
+      "dept": "web-development",
+      "slug": "landing-page-specialist",
+      "primary": true
+    }
+  ],
+  "intent_triggers": [
+    "build me a landing page",
+    "build my landing page",
+    "create a BlackCEO landing page",
+    "create a signature landing page",
+    "build an opt-in page",
+    "build a squeeze page",
+    "build an event registration page",
+    "build a challenge page",
+    "build a booking page",
+    "build a lead generation page",
+    "use the BlackCEO standard landing page",
+    "use the BlackCEO long-form landing page"
+  ],
+  "execution_sops": [
+    "signature-page-craft"
+  ]
+}

@@ -105,7 +105,8 @@ changes. Never change the law to make a gate pass.
 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
-| **49** signature-funnel | "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
+| **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -185,7 +186,8 @@ ever edits copy or a prompt by hand.
 **Inputs:** The client's plain-language request (Skill 38 conversation, CMO brief, or direct ask), `06-ghl-install-pages/funnel-engines/registry.json`, `tools/funnel_engine_selector.py`, `49-signature-funnel/MASTERDOC.md` §0 and §3, and `56-sales-page-assets/MASTERDOC.md` §1 for the sibling engine's signals.
 **Steps:**
 1. **Run the STEP-0 selector rather than eyeballing the request:** the shared funnel-engine selector reads the registry and returns either `ROUTE_TO_ENGINE` with an engine id or `NO_ENGINE_MATCH`. The selector's decision is the record; your read of the request is not.
-2. **Recognize the signature signals:** "signature funnel", "signature landing page", a 12-section Hero page, a 3/5/7 step chain with accept/decline branching, per-section long-form image prompts, a founder heartfelt letter close. That is this door.
+1a. **Single-page family resolves to Skill 71 first:** a request for ONE focused BlackCEO page (landing / opt-in / squeeze / event-registration / challenge / booking / lead-generation) routes to Skill 71 `blackceo-signature-page` under `universal-sops/signature-page-craft/`; this door takes only multi-step work (3/5/7 chain, checkout, upsell/downsell, OTO, branching).
+2. **Recognize the signature signals:** "signature funnel", a 12-section Hero page, a 3/5/7 step chain with accept/decline branching, per-section long-form image prompts, a founder heartfelt letter close. That is this door.
 3. **Recognize the sibling's anti-signals:** an 8-section direct-response main page, an order bump, a high-ticket long-form ascension page, A/B upsell variants, a countdown timer. Those route to Skill 56 and the Sales Page Assets Specialist. The two engines are siblings on one delivery rail (Skill 6) with one reciprocal labeling grammar, and they are NEVER merged.
 4. **On `NO_ENGINE_MATCH`, route out instead of forcing a fit:** hand the request to the Funnel Strategist and the template-first path. Pushing a generic marketing funnel through the SACRED engine produces a long fight with bands written for a different artifact, and the owner pays for the fight in elapsed days.
 5. **Confirm the route back to the requester in one line** — which engine, which page set, and which approval sits at the end — before you open SOP 9.1, so nobody discovers the shape of the deliverable at preview time.

@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2.5 prompts, GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the 5,000-19,000-char image-prompt two-floor gate, and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: v2.0.1
+version: v2.0.2
 ---
 
 # Signature Funnel (Skill 49)
@@ -104,7 +104,7 @@ Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everythin
 
 ## Discoverability, routing, and labeling
 
-- **Routing (STEP-0):** a "signature funnel" / "signature landing page" request routes here through the
+- **Routing (STEP-0):** a "signature funnel" / 12-section 3/5/7-step funnel request routes here through the
   shared **STEP-0 funnel-engine selector** in Skill 6 — `06-ghl-install-pages/funnel-engines/registry.json`
   (this skill is the first registered engine) + `tools/funnel_engine_selector.py`. `NO_ENGINE_MATCH`
   falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) is the 2nd

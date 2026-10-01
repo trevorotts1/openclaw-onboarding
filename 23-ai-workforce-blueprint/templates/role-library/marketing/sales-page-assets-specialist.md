@@ -116,6 +116,7 @@ changes. Never change the rule to make a gate pass.
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -198,6 +199,7 @@ provers; nothing in this section edits copy or a prompt by hand.
 1. **Run the STEP-0 selector rather than eyeballing the request:** it reads the registry and returns `ROUTE_TO_ENGINE` with an engine id or `NO_ENGINE_MATCH`. The selector's `anti_signals` exist precisely because the two engines sound alike in a client's words; the selector's decision is the record, not your read.
 2. **Recognize the Direct-Response signals:** "a sales page", "direct-response sales page", a VSL, an order bump, upsell/downsell A/B copy, a countdown timer, a high-ticket long-form page. That is this door.
 3. **Recognize the signature engine's signals:** "signature funnel", "signature landing page", a 12-section Hero page, a 3/5/7 step chain with accept/decline branching. That is Skill 49 and the Signature Funnel Specialist. The two are siblings on one delivery rail with one reciprocal labeling grammar, and they are NEVER merged into a hybrid.
+3a. **Single-page BlackCEO requests route to Skill 71 first:** ONE focused BlackCEO single page (landing / opt-in / squeeze / event-registration / challenge / booking / lead-generation) is Skill 71 `blackceo-signature-page` -- not this stack. This door takes the Direct-Response asset family only (main A/B + countdown, upsell, downsell, high-ticket, order bump).
 4. **On `NO_ENGINE_MATCH`, route out instead of forcing a fit:** hand the request to the Funnel Strategist and the template-first path. A generic marketing page pushed through this engine fights bands written for a different artifact, and the owner pays for the fight in elapsed days.
 5. **Confirm the route back to the requester in one line** — which engine, which seven assets (or which subset), and which approval sits at the end — before opening SOP 9.1.
 **Outputs:** A recorded routing decision (engine id or `NO_ENGINE_MATCH`), the one-line confirmation to the requester, and — when it routes here — an opened build slot ready for the SOP 9.1 intake.
@@ -278,7 +280,7 @@ Honor the owner's explicit offer choices; the engine still enforces the section 
 regardless of the offer content.
 
 ### Edge Case 17.3 — A signature (12-section) funnel request
-If the STEP-0 selector routes to `signature-funnel` (Skill 49), hand it to the Signature Funnel Specialist.
+If it is ONE focused BlackCEO page, hand it to Skill 71 `blackceo-signature-page`. If the STEP-0 selector routes to `signature-funnel` (Skill 49), hand it to the Signature Funnel Specialist.
 If it returns NO_ENGINE_MATCH, route to the Funnel Strategist / template-first path, not this engine.
 
 ## 18. Update Triggers (When to Revise This Document)

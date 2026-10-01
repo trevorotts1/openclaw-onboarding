@@ -2984,21 +2984,26 @@ reuse another client's chat id — pass ONLY the real originating chat id of the
 | "make me Facebook/Instagram ads", "ad creatives", "10 ad variations" | `paid-advertisement` |
 | "make/produce a video", "plan/storyboard my video", "add captions/subtitles", "cut/trim/edit this clip", "a cinematic reel" | `video` |
 | "run my social", "post my content this week", "a week of content end-to-end" | `social-media` |
-| "build my funnel", "a landing page / opt-in", "build me a form or page in GHL" | `web-development` |
+| "build my funnel", "an opt-in and upsell chain", "a 3/5/7-step Signature Funnel", "build me a form or page in GHL" | `web-development` |
+| "build me a landing page", "build an opt-in page", "build a squeeze page", "build a webinar/event registration page", "build a 5-day challenge page", "build a booking page", "build a lead-generation page", "use the BlackCEO standard/long-form landing page" | `web-development` |
 | "write my email/nurture sequence", "build my brand/avatar", "write my book/anthology", "make this sound human / less AI-sounding" | `marketing` |
 | "match this brand style", "on-brand images", "a style card" | `graphics` |
-| "write my product bio", "a sales page / upsell copy", "a master brain for my product" | `sales` |
+| "write my product bio", "a master brain for my product" | `marketing` |
+| "a sales page / upsell copy", "a high-ticket page", "write my sales page", "a direct-response/VSL page" | `marketing` |
 | "build a workflow", "automate this", "an order-bump" | `crm` |
 | "summarize this YouTube", "what does this video say", "pull the transcript" | `research` |
 | "set up a booking bot", "a conversational qualifier / lead responder" | `communications` |
+| "look up a property", "qualify a real estate lead", "schedule a showing" | `sales` |
 | "answer my customers automatically", "a live-chat / support bot" | `customer-support` |
 | "a signature talk / keynote deck / 100-slide presentation" — handled by REFLEX 0 above (do not double-route) | `presentations` |
 | "map/graph my workforce", "graph my company" | `openclaw-maintenance` |
 | "produce a podcast episode", "turn this intake into a published episode", "run the podcast production engine", "generate this week's episode" | `podcast` |
+| "close out a funnel build in GHL", "QA the funnel before it ships", "test the checkout / order-bump / upsell path" | `funnels` |
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.
 - Dept-scoped: the dispatched specialist is handed ONLY its department's skills (the Command Center ContextPack `matched_skills`). Rule-Zero paid-call approval (USD announce + budget cap) still applies.
+- Single-page vs multi-step: a focused BlackCEO single page (landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation) is Skill 71 `blackceo-signature-page`; a multi-step 3/5/7 Signature Funnel with checkout/upsell/downsell/OTO is Skill 49 `signature-funnel`; a direct-response/VSL/high-ticket/order-bump stack is Skill 56 `sales-page-assets`; a cinematic/scroll/animated page is Skill 62 `cinematic-web-funnel-engine`. A 'webinar page' / 'event registration page' / '5-day challenge page' / 'squeeze page' is a PAGE (Skill 71), never a deck and never REFLEX 0.
 - If the owner explicitly names a skill or types its slash command, that still works — this reflex is for plain-language intent the owner did NOT name.
 - Binding (source of truth): `~/.openclaw/skills/23-ai-workforce-blueprint/skill-department-map.json`. Doctrine: `~/.openclaw/skills/universal-sops/native-skill-invocation.md`.
 <!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->

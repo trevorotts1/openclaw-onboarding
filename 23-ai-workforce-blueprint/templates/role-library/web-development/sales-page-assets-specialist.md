@@ -127,6 +127,7 @@ role) if a band or section rule changes. Never change the rule to make a gate pa
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -476,6 +477,7 @@ style-only guard; references are logged on the certificate. Never re-host throug
 If the STEP-0 selector routes to `signature-funnel` (Skill 49) rather than `sales-page-assets`, this is not
 your build — hand it to the Signature Funnel Specialist. If it returns NO_ENGINE_MATCH, it falls through to
 the template-first funnel matcher and the generic Skill-6 build (Funnel Builder Specialist).
+A focused single-page BlackCEO landing / opt-in / squeeze / event / challenge / booking request is Skill 71 `blackceo-signature-page` (Landing Page Specialist's routing gate) — not a Direct-Response asset stack and not a template-first funnel build.
 
 ## 18. Update Triggers (When to Revise This Document)
 
