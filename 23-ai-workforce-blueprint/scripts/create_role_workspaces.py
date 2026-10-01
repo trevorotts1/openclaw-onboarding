@@ -2960,6 +2960,41 @@ def verify_scripts_materialization(lib_scripts_root, scripts_target,
         dst_hash = _hashlib.sha256(dest_file.read_bytes()).hexdigest()
         if src_hash != dst_hash:
             problems.append({"path": str(rel_path), "issue": "hash-mismatch"})
+        # FIX-201 (v25.2.27) — ghl_media.py's co-located _skill48_ghl_media.py
+        # is the ONE library path whose dept copy legitimately comes from a
+        # SIBLING skill, not from the library: BOTH copiers
+        # (scaffold_department and refresh-dept-scripts._mirror_skill48_ghl_media)
+        # deliberately overwrite the dept copy from
+        # <skills_root>/48-facebook-ad-generator/tools/ghl_media.py so a
+        # deployed department is self-contained, and
+        # presentations/scripts/ghl_media.py resolves that co-located copy
+        # FIRST (ghl_media._find_canonical_ghl_media). Comparing the dept copy
+        # against the LIBRARY's stale pre-Fix-32 bytes failed every roll:
+        # refresh-dept-scripts rc 3 "hash-mismatch: _skill48_ghl_media.py" ->
+        # updater exit 1 -> version stamp withheld (measured on the v25.2.26
+        # operator roll 2026-10-01). Verify against the pair that is genuinely
+        # supposed to match — the same source the copiers use. When that
+        # source is not resolvable the library copy remains the intended bytes
+        # and the strict comparison above stands (fail-closed).
+        if rel_path.name == "_skill48_ghl_media.py":
+            try:
+                _ghl_sibling = (_resolve_skill_dir().parent
+                                / "48-facebook-ad-generator" / "tools"
+                                / "ghl_media.py")
+            except OSError:
+                _ghl_sibling = None
+            if _ghl_sibling is not None and _ghl_sibling.is_file():
+                _sib_hash = _hashlib.sha256(_ghl_sibling.read_bytes()).hexdigest()
+                problems = [p for p in problems
+                            if not (p["path"] == str(rel_path)
+                                    and p["issue"] in ("missing", "hash-mismatch"))]
+                if dest_file.is_file():
+                    _dst_hash = _hashlib.sha256(dest_file.read_bytes()).hexdigest()
+                else:
+                    _dst_hash = None
+                if _dst_hash != _sib_hash:
+                    problems.append({"path": str(rel_path),
+                                     "issue": "hash-mismatch"})
     return problems
 
 def scaffold_department(dept_path, dept_slug, dry_run=False):

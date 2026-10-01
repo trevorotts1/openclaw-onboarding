@@ -1,3 +1,16 @@
+## [v25.3.1]  -  2026-10-01  -  Fix-55: content-completeness gate compared the wrong pair (unblocked v25.2.26 version stamp) + sync _skill48_ghl_media.py copies
+
+#### Why
+The v25.2.26 release update was withheld on the operator box: the post-materialization content-completeness gate (`verify_scripts_materialization`) compared the department copy of `_skill48_ghl_media.py` against the LIBRARY's copy, instead of the sibling source the two department copiers actually mirror from (`48-facebook-ad-generator/tools/ghl_media.py`). The library copy still held pre-Fix-32 bytes, so every roll failed closed with `hash-mismatch: _skill48_ghl_media.py`, the refresh step exited 3, the updater exited 1, and the version stamp never landed.
+
+#### What changed
+- `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`: `verify_scripts_materialization` now verifies `_skill48_ghl_media.py` against the pair that is genuinely supposed to match — the sibling `48-facebook-ad-generator/tools/ghl_media.py` source both copiers (`scaffold_department` and `refresh-dept-scripts._mirror_skill48_ghl_media`) use. When that source is not resolvable the strict library comparison above stands (fail-closed). All other library paths keep the original strict comparison.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/_skill48_ghl_media.py`: library copy rolled to be byte-identical with the skill-48 source (`sha256 1bcf435f4439fdbfc43fbb59f73f01230b1e1c4c3879bc77f03417b55c974483`), carrying the Fix-32 retry-safety changes (non-retryable OS errors and transport timeouts during upload are re-raised immediately instead of retried).
+- `scripts/bump-version.sh` v25.3.1 (all markers in lockstep).
+
+#### Risk
+The carve-out is scoped to the single `_skill48_ghl_media.py` basename and only relaxes the comparison when the sibling source file exists; the failure direction stays closed. No other gate behavior changes.
+
 ## [v25.3.0]  -  2026-10-01  -  Skill 71 BlackCEO Signature Page: single-page landing engine + repo registration
 
 #### Why
