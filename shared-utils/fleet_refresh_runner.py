@@ -2767,28 +2767,21 @@ def _agnes30_model_refs(model) -> dict:
     return frag
 
 
-def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
-    """Converge the Agnes TEXT model on a box that is already on Agnes."""
-    name = "agnes-30-upgrade"
-    if dry_run:
-        res.step_skip(name)
-        return
-    cfg = _read_openclaw_json(paths)
-    prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
-    if not isinstance(prov, dict):
-        # NEVER add Agnes where absent: a box without the provider is left alone.
-        res.step_skip(name, "no agnes provider on this box — nothing to upgrade")
-        return
-    if not prov.get("apiKey"):
-        # FLAG, never change: no key -> Agnes is not wired here.
-        res.step_skip(name, "FLAGGED: agnes provider has no key — nothing changed")
-        return
+def _agnes30_build_patch(cfg: dict) -> dict:
+    """Pure 2.x -> 3.0 patch-dict computation: no reads, no writes, no CLI.
 
+    Shared by the report-only (dry-run) path and the apply path so both see
+    the SAME patch. The patch only ever carries models.providers.agnes.models
+    / agents.defaults.models / agents.defaults.subagents /
+    agents.entries.*.model fragments — nothing else may be added by this change.
+    """
     patch: dict = {}
+
+    prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
 
     # (a) provider model list: arrays REPLACE on patch, so the whole list is
     # rebuilt with every other field of each entry preserved.
-    models = prov.get("models")
+    models = prov.get("models") if isinstance(prov, dict) else None
     if isinstance(models, list):
         rebuilt: list = []
         seen_30 = False
@@ -2849,6 +2842,76 @@ def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
     if agents_patch:
         patch["agents"] = agents_patch
 
+    return patch
+
+
+def _agnes30_report_lines(cfg: dict, patch: dict) -> list:
+    """One WOULD-change summary line per converged fragment (report-only)."""
+    lines: list = []
+    models_frag = ((patch.get("models") or {}).get("providers") or {}).get("agnes", {}).get("models")
+    if isinstance(models_frag, list):
+        old_ids = [m.get("id") for m in
+                   ((((cfg.get("models") or {}).get("providers") or {}).get("agnes") or {}).get("models") or [])
+                   if isinstance(m, dict)]
+        moved = sorted({o for o in old_ids if o in _AGNES_IDS_2X})
+        lines.append("providers.agnes.models: %s -> %s (%d entries rebuilt, every other entry field preserved)"
+                     % (", ".join(moved) if moved else "2.x entries", _AGNES_ID_30, len(models_frag)))
+    agents = patch.get("agents") or {}
+    defaults = agents.get("defaults") or {}
+    for key, entry in (defaults.get("models") or {}).items():
+        if entry is None:
+            lines.append(f"agents.defaults.models: {key} key removed (entry moved to {_AGNES_REF_30})")
+        elif key == _AGNES_REF_30:
+            lines.append(f"agents.defaults.models: entry registered under {_AGNES_REF_30} (alias carried over)")
+    sub_model = (defaults.get("subagents") or {}).get("model") or {}
+    for field, val in sub_model.items():
+        lines.append(f"agents.defaults.subagents.model.{field} -> {val}")
+    for aid, afrag in (agents.get("entries") or {}).items():
+        for field, val in (afrag.get("model") or {}).items():
+            lines.append(f"agents.entries.{aid}.model.{field} -> {val}")
+    return lines
+
+
+def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
+    """Converge the Agnes TEXT model on a box that is already on Agnes."""
+    name = "agnes-30-upgrade"
+    if dry_run:
+        # REPORT-ONLY: pure patch-dict computation in-process. No backup file,
+        # no `openclaw config patch` subprocess — not even --dry-run validation,
+        # which needs the CLI present (pre-runtime boxes have none).
+        cfg = _read_openclaw_json(paths)
+        prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
+        if not isinstance(prov, dict):
+            # NEVER add Agnes where absent: a box without the provider is left alone.
+            res.step_skip(name, "no agnes provider on this box — nothing to upgrade")
+            return
+        if not prov.get("apiKey"):
+            # FLAG, never change: no key -> Agnes is not wired here.
+            res.step_skip(name, "FLAGGED: agnes provider has no key — nothing changed")
+            return
+        patch = _agnes30_build_patch(cfg)
+        if not patch:
+            res.step_skip(name, "already at agnes-3.0-flash — no change (report mode; nothing written)")
+            return
+        lines = _agnes30_report_lines(cfg, patch)
+        for line in lines:
+            _info(f"  step {name}: WOULD change {line}")
+        _info(f"  step {name}: would back up openclaw.json first; nothing written in report mode")
+        res.step_skip(name)
+        return
+    cfg = _read_openclaw_json(paths)
+    prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
+    if not isinstance(prov, dict):
+        # NEVER add Agnes where absent: a box without the provider is left alone.
+        res.step_skip(name, "no agnes provider on this box — nothing to upgrade")
+        return
+    if not prov.get("apiKey"):
+        # FLAG, never change: no key -> Agnes is not wired here.
+        res.step_skip(name, "FLAGGED: agnes provider has no key — nothing changed")
+        return
+
+    # Apply path: SAME patch as report-only computes (single source).
+    patch = _agnes30_build_patch(cfg)
     if not patch:
         res.steps[name] = "ok:already at agnes-3.0-flash (no change)"
         _ok(f"  step {name}: ok — already at agnes-3.0-flash (no change)")
