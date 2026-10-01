@@ -1,9 +1,21 @@
-## [v25.2.25]  -  2026-10-01  -  Command Center pin v7.6.92 (cancel/update reach in-flight runs)
+## [v25.2.25]  -  2026-10-01  -  Merge train: #1414 AGN-201: Agnes 3.0 step report-only mode (would-change per box); #1415 MCR-202: mc-route.sh cancel/update honest replies (matches CANC-101…; #1416 Release v25.2.25: Command Center pin v7.6.92 (cancel/update reach…
 
-#### Why
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1414 — AGN-201: Agnes 3.0 step report-only mode (would-change per box)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1415 — MCR-202: mc-route.sh cancel/update honest replies (matches CANC-101 CC contract)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1416 — [v25.2.25]  -  2026-10-01  -  Command Center pin v7.6.92 (cancel/update reach in-flight runs)
+
+##### Why
 Command Center v7.6.92 shipped cancel/update reaching in-flight runs plus a security dependency bump, so the onboarding pin moves one step to stay paired with the tested cohort.
 
-#### What changed
+##### What changed
 - CC pin v7.6.91 to v7.6.92 via scripts/pin-cc-tag.py (cc-compat.json + release-cohort.json in lockstep).
 - Reason: PR 475 merge (cancel archives + kills in-flight run through real route; owner notes delivered live with honest fallbacks) plus dependencies next 16.3.8 (GHSA-vcvr-r3jv-pc5j remote code execution in next/og ImageResponse).
 - `scripts/bump-version.sh` v25.2.25 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.25 / v7.6.92.
