@@ -1,3 +1,18 @@
+## [v25.3.2]  -  2026-10-01  -  Skill 71 QC fixes: page-family resolution path, signature-landing-page ownership sweep, docs alignment
+
+#### Why
+QC of the Skill 71 batch found routing and text defects that let a single BlackCEO page request fall through the STEP-0 funnel-engine selector (NO_ENGINE_MATCH) into a template-first hand-author path that SOP-07 forbids, and left the phrase "signature landing page" claiming Skill 49 ownership in several role and doc files, contradicting the merged Skill 71 wiring.
+
+#### What changed
+- SOP-07 P4 STEP-0 amended: single focused BlackCEO page families resolve via the native skill catalog (skill-department-map.json skill 71) and the Landing Page Specialist SOP 9.0 Page-Family Routing Gate; the funnel-engine selector + registry stays the STEP-0 instrument for multi-step families only (49 / 56 / 62); a NO_ENGINE_MATCH on a single-page request confirms Skill 71 ownership, never a hand-author path.
+- universal-sops/sales-page-craft/README.md routing disambiguation narrowed: the 12-section multi-step chain is Skill 49; a standalone BlackCEO landing page (Standard or Long-Form) is Skill 71. Intent-triggers block region unchanged.
+- funnel-strategist.md Skill 49 tools-table row narrowed to "signature funnel" + multi-step 3/5/7 wording, with the single-page Skill 71 carve-out (mirrors SOP 9.5 step 1.6).
+- signature-funnel-specialist.md (marketing) role-identity prose reworded to "signature funnel" + multi-step qualifier, agreeing with step 1a and the web-development sibling.
+- sales-page-assets-specialist.md signal list drops the bare "signature landing page" trigger and qualifies the 12-section multi-step case.
+- web-development-suggested-roles.md Signature Funnel Specialist entry reworded with the multi-step qualifier and the Skill 71 carve-out.
+- Start Here.md Skill 49 engine bullet reworded: multi-step chain routes via the STEP-0 selector; a standalone BlackCEO landing page routes to Skill 71.
+- 71-blackceo-signature-page/repo-integration/skill-department-map-entry.json snapshot refreshed to equal the live skill-department-map.json skill 71 entry (departments web-development + marketing + funnels, all 10 roles, 13 intent_triggers, execution_sops signature-page-craft); verified equal by JSON comparison.
+
 ## [v25.3.0]  -  2026-10-01  -  Skill 71 BlackCEO Signature Page: single-page landing engine + repo registration
 
 #### Why
