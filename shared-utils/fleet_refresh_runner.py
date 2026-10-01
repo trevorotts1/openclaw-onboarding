@@ -2891,13 +2891,14 @@ def step_agnes_30_upgrade(paths: dict, res: BoxResult, dry_run: bool) -> None:
             return
         patch = _agnes30_build_patch(cfg)
         if not patch:
-            res.step_skip(name, "already at agnes-3.0-flash — no change (report mode; nothing written)")
+            res.step_skip(name, "ok:already at agnes-3.0-flash (no change)")
             return
         lines = _agnes30_report_lines(cfg, patch)
         for line in lines:
             _info(f"  step {name}: WOULD change {line}")
         _info(f"  step {name}: would back up openclaw.json first; nothing written in report mode")
-        res.step_skip(name)
+        summary = "; ".join(lines + ["would back up openclaw.json first; nothing written in report mode"])
+        res.step_skip(name, summary)
         return
     cfg = _read_openclaw_json(paths)
     prov = ((cfg.get("models") or {}).get("providers") or {}).get("agnes")
