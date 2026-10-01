@@ -8,6 +8,7 @@ It calls models, and each call can cost money. **Run it only when Trevor gives t
 
 `messages.json` is a separate, small set: one owner message per failure class, 15 exactly, each carrying the decision this repo's rules say it must get. Every row quotes the rule it encodes, by file and line — classes 7 and 13 are pinned to the real `scripts/mc-route.sh` contract (same-title cards are one job carded twice, not ambiguity; an empty/unreadable board fails closed), not a guess. It is DATA only: this set is not run by `run_intake_acceptance.py` (whose `SPLITS` dict reads `corpus_train.json` / `corpus_frozen.json` only, lines 46-47), and no runner in this folder executes it.
 
+- **English-only replies — every test:** this one rule applies to EVERY test in the set: the agent's reply must always be in English; any reply that is not in English is a FAIL for that test. All 15 messages are in English — the set has no non-English input messages.
 - **Run it ONLY with Trevor's explicit go.** Nothing here runs by itself.
 - **It runs on the OPERATOR BOX**, against the operator's own model account and a test board — never a client box, never a client's chat or feed.
 - **It sends about 15 messages, ONCE.** One run, no repeats.

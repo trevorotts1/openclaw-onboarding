@@ -1,6 +1,7 @@
 {
   "set": "operator-box intake acceptance — 15 failure classes (unit ACC-001, v25.2.23)",
   "note": "One message per failure class, 15 exactly. DATA ONLY: nothing here executes. Running this set makes LIVE paid model calls on the OPERATOR BOX — only with Trevor's explicit go, and the cost figure must be stated FIRST (see README.md, 'The 15-message operator-box set'). run_intake_acceptance.py does NOT read this file (its SPLITS dict lists only corpus_train.json / corpus_frozen.json, lines 46-47), so adding it changes nothing about that harness. Every 'rule' below is a verbatim quote from this repo at branch v25.2.23-cc-pin-and-intake-tests; file:line per quote.",
+  "reply_language": "English only — this rule applies to EVERY item in this set: the agent's reply must always be in English; any reply that is not in English is a FAIL for that test. No non-English input messages.",
   "decision_vocabulary": [
     "answer_no_card — the CEO answers directly; no call, no card",
     "one_card — exactly one mc-route.sh task call; exactly one card",
