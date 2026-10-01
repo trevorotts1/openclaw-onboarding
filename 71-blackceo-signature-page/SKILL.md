@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Builds BlackCEO Signature single-page conversion experiences using the Standard or Long-Form BlackCEO page system, full copy-to-wireframe-to-mockup-to-image-to-responsive-build workflow, Secret Super Sauce visual intelligence, and deterministic QC helpers. Use for landing pages, opt-in/squeeze pages, event or registration pages, challenge pages, booking pages, lead-generation pages, and other focused single-page conversion requests. Do not use for Skill 49 multi-step 3/5/7 funnels, Skill 56 direct-response/VSL sales-page stacks, or Skill 62 cinematic scroll experiences.
-version: 1.0.0
+version: 1.0.1
 ---
 
 # BlackCEO Signature Page — Skill 71
