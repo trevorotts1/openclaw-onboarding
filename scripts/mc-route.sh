@@ -29,8 +29,12 @@
 #       status  read-only (GETs only). Prints
 #               STATUS id=<id> status=<s> department=<d> updated=<t> cancelled=<yes|no> title="<title>"
 #       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
+#               plus one live-delivery line read from the response (delivered_live).
 #       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
 #               never dispatched again, row kept) + an owner note -> CANCELLED id=...
+#               plus one kill line (killed/killed_at) and one in-flight-run line
+#               (execution{found,notice_delivered,notice_error}). Missing fields on
+#               older CC print '[response fields missing]'; nothing invented.
 #     Same-title cards are ONE job carded twice, not ambiguity: the newest is
 #     acted on, and cancel archives every one of them.
 #     FAIL-CLOSED (JEV-802): if the task list or the department list cannot be
@@ -468,6 +472,62 @@ PYFIND
     NOTE="$1" "$PYTHON" -c 'import json, os, sys; sys.stdout.write(json.dumps({"content": os.environ["NOTE"], "sender": "owner"}))' >"$BODY_FILE"
     _api POST "$_T_PATH/messages" "$BODY_FILE"
   }
+  _cancel_truth() {  # $1 = archive POST response JSON -> kill + in-flight-run lines (one known fact each, never JSON)
+    CANCEL_RESP="$1" "$PYTHON" - <<'PYCANCEL'
+import json, os
+try:
+    d = json.loads(os.environ.get("CANCEL_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+missing = False
+killed, killed_at = d.get("killed"), d.get("killed_at")
+if killed_at or killed is True:
+    print("kill set (%s) — running agent fenced from further dispatch" % (killed_at or "no timestamp reported"))
+elif "killed" in d or "killed_at" in d:
+    print("kill NOT set by Command Center — running agent fenced from further dispatch either way")
+else:
+    print("kill field: response did not report it (older CC) — running agent fenced from further dispatch either way")
+    missing = True
+ex = d.get("execution")
+if isinstance(ex, dict):
+    if ex.get("found"):
+        if ex.get("notice_delivered"):
+            print("in-flight run notified to stop")
+        else:
+            print("in-flight run NOT notified: %s (kill fence set; gateway no abort RPC so live run can only be asked to stop)" % (ex.get("notice_error") or "no reason reported"))
+    else:
+        print("no in-flight run was active")
+else:
+    print("in-flight run: response did not report it (older CC)")
+    missing = True
+if missing:
+    print("[response fields missing — older CC?]")
+PYCANCEL
+  }
+  _update_truth() {  # $1 = messages POST response JSON -> live-delivery line (one known fact, never JSON)
+    UPDATE_RESP="$1" "$PYTHON" - <<'PYUPDATE'
+import json, os
+try:
+    d = json.loads(os.environ.get("UPDATE_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+if "delivered_live" in d:
+    if d.get("delivered_live") is True:
+        tgt = d.get("delivery_target")
+        print("note delivered live to running agent" + (" (%s)" % tgt if tgt else ""))
+    elif d.get("delivery_error"):
+        print("note recorded — NOT delivered live: %s" % d.get("delivery_error"))
+    else:
+        print("note recorded — no running agent session; seen on next turn/dispatch")
+else:
+    print("delivery: response did not report live-delivery (older CC) — note recorded on the card")
+    print("[response fields missing — older CC?]")
+PYUPDATE
+  }
   case "$EXISTING_ACTION" in
     status)
       echo "STATUS id=$_T_ID status=$_T_STATUS department=$_T_DEPT updated=$_T_UPDATED cancelled=$_T_CANCELLED title=\"$_T_TITLE\""
@@ -475,7 +535,9 @@ PYFIND
     update)
       _note "$EXISTING_NOTE"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not add the note to task $_T_ID (HTTP $API_CODE)" ;; esac
+      _UPDATE_RESP="$API_OUT"
       echo "UPDATED id=$_T_ID title=\"$_T_TITLE\""
+      _update_truth "$_UPDATE_RESP"
       ;;
     cancel)
       if [ "$_T_CANCELLED" = "yes" ]; then
@@ -484,9 +546,11 @@ PYFIND
       fi
       _api POST "$_T_PATH/archive"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not cancel task $_T_ID (HTTP $API_CODE)" ;; esac
+      _CANCEL_RESP="$API_OUT"
       _note "Cancelled by the owner.${EXISTING_NOTE:+ $EXISTING_NOTE}"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) echo "mc-route: WARNING — task $_T_ID is cancelled but the cancel note was not saved (HTTP $API_CODE)." >&2 ;; esac
       echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\""
+      _cancel_truth "$_CANCEL_RESP"
       # JEV-802: same-title duplicates are the same job carded twice. Cancelling
       # the job cancels all of them, or the survivors keep the work alive on the
       # board after the owner was told it was cancelled.
@@ -498,7 +562,7 @@ PYFIND
         fi
         _api POST "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_DID")/archive"
         case "$API_CODE" in
-          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)" ;;
+          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)"; _cancel_truth "$API_OUT" ;;
           *) echo "mc-route: WARNING — duplicate card $_DID of the same job was NOT cancelled (HTTP $API_CODE); the owner should be told." >&2 ;;
         esac
       done
