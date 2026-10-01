@@ -1,3 +1,13 @@
+## [v25.2.24]  -  2026-10-01  -  Command Center pin v7.6.91 (intake chain + Agnes 3.0 + next 16.3.6 security)
+
+#### Why
+Command Center v7.6.91 shipped the merged intake chain and Agnes catalog connector plus a security dependency bump, so the onboarding pin moves one step to stay paired with the tested cohort.
+
+#### What changed
+- CC pin v7.6.90 to v7.6.91 via scripts/pin-cc-tag.py (cc-compat.json + release-cohort.json in lockstep).
+- Reason: PR 473 merge (intake classifier chain + Agnes catalog connector) plus dependencies next 16.3.6 (GHSA-vcvr-r3jv-pc5j remote code execution in next/og ImageResponse) and brace-expansion audit fix.
+- `scripts/bump-version.sh` v25.2.24 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.24 / v7.6.91.
+
 ## [v25.2.23]  -  2026-10-01  -  Intake classifier chain, Agnes 3.0 Flash upgrade, decision-engine kill switch, Command Center pin helper, intake acceptance set
 
 #### Why
