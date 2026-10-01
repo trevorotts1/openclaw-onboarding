@@ -326,7 +326,7 @@ This role contributes to the company revenue cascade by: **converting audience a
 
 | Condition in the brief | Routing verdict | Rationale |
 |---|---|---|
-| Brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | These are unambiguous audience-deck keywords; text-in-image is THE rule |
+| Deck brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | These are unambiguous audience-deck keywords; text-in-image is THE rule |
 | Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept | Audience-composition capture = audience deck; DIU does not govern audience casting |
 | Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept | Archetype match is deterministic |
 | Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline - PPT-ANALYSIS-SOP + Rotation Engine | Named style card = DIU scope |
@@ -359,7 +359,9 @@ This role contributes to the company revenue cascade by: **converting audience a
 3. The Prompt QC Specialist grades the prompt against `diu_validator.py prompt-band` (the deterministic band + quality gate) and the ten-element structural standard, and writes `working/qc/gip_prompt_qc_report.json`.
 4. On a Prompt-QC PASS: forward the prompt + report to the Generation Operator. The Operator's own SOP-DIU-601 preflight independently re-runs the same mechanical band gate as the final backstop before any paid API call -- this is intentional belt-and-suspenders, not redundant duplication.
 5. On a Prompt-QC FAIL: the report returns to the Prompt Author (never to the original producing role) for remediation of only the failing elements. The CDO is notified on any loop exceeding 3 cycles for the same asset.
-6. This dispatch order is fixed: producing role -> Prompt Author -> Prompt QC Specialist -> Generation Operator. No step may be skipped, and no producing role may hand a raw prompt directly to the Generation Operator.
+6. This dispatch order is fixed: producing role -> Prompt Author -> Prompt QC Specialist -> Generation Operator. No step may be skipped, and no producing role may hand a raw prompt directly to the Generation Operator. The Skill-71 page-pipeline carve-in below is the one documented shape in which authoring happens upstream; it never skips the independent Prompt-QC step.
+
+**Page-pipeline carve-in (Skill 71 `blackceo-signature-page`):** funnel-page and landing-page imagery is the one documented exception to the step-1 authoring split: Skill 71's page pipeline authors each per-image prompt under its Image Intelligence and Prompt Creation guide (the page pipeline writes the prompt text -- Graphics never re-authors it), so that prompt set enters this SOP at the independent Prompt-QC step (step 3), proceeds to the Generation Operator on PASS (step 4), and runs SOP-GIP-02 image QC after generation. Graphics owns imagery craft execution and image QC for these assets on the established image rails (no forked provider path). The SOP 9.8 routing arbiter governs deck briefs only -- a page is not a deck; page imagery never routes through SOP 9.8.
 
 **Outputs:** A band-compliant, independently-graded prompt at `working/prompts/<asset-id>.txt` plus a PASS `gip_prompt_qc_report.json`, ready for the Generation Operator's preflight.
 **Hand to:** Prompt Author (step 1); Generation Operator (step 4, on PASS).

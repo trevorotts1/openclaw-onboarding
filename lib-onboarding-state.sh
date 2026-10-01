@@ -712,7 +712,7 @@ oc_onboarding_complete() {
 #   (11 and 21 were archived in v12.26.0 — see "ARCHIVED skills" note below.)
 #   Wave 4 (INFRASTRUCTURE):31,36
 #   Wave 5 (USER-INTERACT): 22,23,32,35
-#   Wave 6 (EXTENSIONS):    44,45,47,48,49,50,51,52,53,54,55,56,57,69,70
+#   Wave 6 (EXTENSIONS):    44,45,47,48,49,50,51,52,53,54,55,56,57,69,70,71
 #   (46 and 58-62 are deliberately NOT gated — see the OC_WAVE6_SKILLS note.)
 #
 # PER-WAVE GOAL DEFINITION (all must hold for wave to pass):
@@ -745,7 +745,7 @@ OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improv
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 
-# Wave 6: EXTENSIONS & DOMAIN VERTICALS (skills 44-62, plus 69-archify and 70-lean-core-file-system).
+# Wave 6: EXTENSIONS & DOMAIN VERTICALS (skills 44-62, plus 69-archify, 70-lean-core-file-system and 71-blackceo-signature-page).
 #
 # WHY A SIXTH WAVE, AND WHY IT IS TERMINAL
 # ----------------------------------------
@@ -841,7 +841,15 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # deliberately NOT part of qc-passed: a box whose model list lacks one of the
 # two DeepSeek V4.1 Flash identifiers gets a named refusal (wire.sh exit 4,
 # retried next roll), never a wedged wave.
-OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify 70-lean-core-file-system"
+#
+# 71-blackceo-signature-page (added with skill 71 v1.0.0) sorts after 70 and
+# changes no existing entry's position. GATED because it satisfies the same
+# test: CORE_UPDATES.md ships with no target sections, so the
+# update-skills.sh merger stamps its sentinel unconditionally (no mergeable
+# section, WARN only); it ships no qc-*.sh and no wire.sh, so no box-side
+# installer or model dependency can wedge the wave. Reaches qc-passed on any
+# ordinary client box whose skills registry lists blackceo-signature-page.
+OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify 70-lean-core-file-system 71-blackceo-signature-page"
 
 # ------------------------------------------------------------
 # oc_wave_state_init
