@@ -1,3 +1,5 @@
+## [v25.3.3]  -  2026-10-02  -  Skill 71 methodology fixes: authority-map delegation seams + SOP v1 Stage 8 image-routing line (both owner-authorized, 2026-10-01)
+
 ## [v25.3.2]  -  2026-10-01  -  Merge train: #1424 Release v25.3.1: fix Fix-55 content gate wrong-pair comparison, sync…; #1425 Skill 71 QC fixes: routing resolution path + signature-landing-page…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
