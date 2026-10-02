@@ -550,13 +550,122 @@ for role, pinned in sorted(owner_pins.items()):
     resolved_tiers[role]["chain"] = new_chain
     print("  owner pin honored: %s -> %s" % (role, pin))
 
+# --------------------------------------------------------------------------
+# THE JUDGE FALLBACK CHAIN (never refuse on a box with one main model).
+#
+# A judge may not grade its own draft, so the JUDGE tier must not resolve to the
+# same model as HEAVY-WRITER. On a box whose ONLY configured model is its one
+# main model, the old resolution-time invariant below failed closed (exit 2,
+# AF-AE-JUDGE-INDEPENDENCE) and the skill refused to install at all.
+#
+# Instead, when the automatically resolved JUDGE primary collides with the
+# HEAVY-WRITER primary, prepend the ordered JUDGE-fallback providers the client
+# has BOTH configured (a model in their own inventory) AND keyed (the
+# provider's credential label resolves), in this exact order:
+#     1) DeepSeek Flash on Ollama Cloud, 2) DeepSeek Flash on OpenRouter,
+#     3) DeepSeek Direct (deepseek-flash), 4) Agnes.
+# First one that is configured and ANSWERS wins (model_router advances the
+# chain at call time); the previous links stay behind it as ordered fallbacks,
+# and the strict independence invariant below still runs on the FINAL primary
+# (equal-provider-or-model chain heads, and a single-provider box carrying no
+# key for any of the four, remain a fail-closed refusal -- never a silent
+# same-model map).
+# --------------------------------------------------------------------------
+_PROVIDER_KEY_LABEL = {
+    "ollama-cloud": "OLLAMA_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "agnes": "AGNES_AI_API_KEY",
+}
+
+# (provider, id-prefix, model pattern, credential labels) in STRICT order per the
+# standing order. The DeepSeek patterns are the fleet's OWN classifier from
+# shared-utils/select_model.py (imported above as `sm`) -- never a reinvented
+# pattern; the prefix check keeps each rung on its own provider surface.
+_JUDGE_FALLBACK_ORDER = (
+    ("ollama-cloud", ("ollama/", "ollama-cloud/"), sm.DEEPSEEK_FLASH_OLLAMA["pattern"],
+     ("OLLAMA_API_KEY",)),
+    ("openrouter", ("openrouter/",), sm.DEEPSEEK_FLASH_OPENROUTER["pattern"],
+     ("OPENROUTER_API_KEY",)),
+    ("deepseek", ("deepseek/",), re.compile(r"^(?:deepseek/)?deepseek-flash$"),
+     ("DEEPSEEK_API_KEY",)),
+    ("agnes", ("agnes/",), re.compile(r"^(?:agnes/)?agnes-(\d+(?:\.\d+)*)-flash$"),
+     ("AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY")),
+)
+
+
+def _ver_key(_mid):
+    _m = re.search(r"-v?(\d+(?:\.\d+)*)", _mid)
+    return tuple(int(x) for x in _m.group(1).split(".")) if _m else ()
+
+
+def judge_fallback_link(exclude_ids=frozenset()):
+    """First fallback provider (strict order) the client has BOTH configured in
+    their OWN inventory AND keyed, AND whose model is not the writer's own
+    (a judge may never be the draft's model, so a rung that IS the writer is
+    skipped and the walk continues). Returns an order-less chain link, or None.
+    Keys are asked by LABEL only; no value is ever read or printed here."""
+    for _prov, _prefixes, _rx, _labels in _JUDGE_FALLBACK_ORDER:
+        _hits = [m for m in inventory
+                 if m.strip().lower().startswith(_prefixes)
+                 and _rx.match(m.strip().lower())]
+        if not _hits:
+            continue
+        if not any(os.environ.get(l, "").strip() for l in _labels):
+            continue
+        _mid = max(_hits, key=_ver_key) if any(_ver_key(m) for m in _hits) else sorted(_hits)[0]
+        if _prov == "ollama-cloud":
+            _link = {"provider": _prov, "model": _mid.split("/", 1)[1],
+                     "credential_label": _labels[0], "slotting": "baseUrl",
+                     "baseUrl": "https://ollama.com/v1"}
+        else:
+            _link = {"provider": _prov, "model": _mid.split("/", 1)[1] if "/" in _mid else _mid,
+                     "credential_label": _labels[0], "slotting": "apiKey"}
+        if _link_identity(_link) in exclude_ids:
+            continue  # this rung IS (or normalizes to) the writer; keep walking
+        return _link
+    return None
+
+
+# Deduped against ALL providers: a box whose inventory carries the same DeepSeek
+# Flash SKU under two provider prefixes (e.g. ollama/ and ollama-cloud/ -- two
+# distinct STRINGS, one model) must not get two links the judge harness would
+# read as genuinely independent resolutions.
+def _link_identity(link):
+    model = str(link.get("model", "")).lower()
+    if model.endswith(":cloud"):
+        model = model[:-len(":cloud")]
+    return model
+
+
+_hw_chain_all = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
+_jg_chain_all = resolved_tiers.get("JUDGE", {}).get("chain", [])
+_hw_ids = {_link_identity(l) for l in _hw_chain_all}
+# An EXPLICIT owner pin is never silently dropped or rewritten (pin doctrine
+# above), so the judge-fallback pass only auto-repairs the AUTO-resolved case.
+# A pin that collapses JUDGE onto HEAVY-WRITER still fails closed below.
+_jg_pinned = any(str(_r).strip().upper() == "JUDGE" for _r in owner_pins)
+if _hw_chain_all and _jg_chain_all and not _jg_pinned:
+    _hw0, _jg0 = _hw_chain_all[0], _jg_chain_all[0]
+    if _link_identity(_hw0) == _link_identity(_jg0):
+        _fb = judge_fallback_link(exclude_ids=_hw_ids)
+        if _fb is not None:
+            _jg_chain_all[:] = [_fb] + [l for l in _jg_chain_all
+                                        if _link_identity(l) != _link_identity(_fb)]
+            for _i, _l in enumerate(_jg_chain_all):
+                _l["order"] = _i + 1
+            resolved_tiers["JUDGE"]["chain"] = _jg_chain_all
+            print("  JUDGE fallback chain: primary -> %s/%s (first configured + keyed "
+                  "provider in the standing order; previous links kept as ordered fallbacks)"
+                  % (_fb.get("provider"), _fb.get("model")))
+
 # Resolution-time JUDGE independence invariant (AF-AE-JUDGE-INDEPENDENCE). A judge
 # may not grade its own draft, so the JUDGE tier must NOT resolve to the same primary
-# model as HEAVY-WRITER. For a THIN single-model client the REQUIRED-tier fallback
-# (client_best) resolves both tiers to the one configured model -- that passes tier
-# resolution but trips judge_harness.enforce_independence mid-run at S9 Gate B. Make
-# it a fail-closed resolution-time invariant so the box is flagged now (at resolve /
-# GATE 1b), not deep in the run. Compare the resolved PRIMARY provider+model.
+# model as HEAVY-WRITER. After the fallback pass above this only fires when no
+# distinct fallback provider is both configured and keyed on this box (a
+# single-provider box with no key for any of the four) -- still flagged now (at
+# resolve / GATE 1b), never deep in the run. Compare the resolved PRIMARY
+# provider+model.
 hw_chain = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
 jg_chain = resolved_tiers.get("JUDGE", {}).get("chain", [])
 if hw_chain and jg_chain:
@@ -564,9 +673,10 @@ if hw_chain and jg_chain:
     if (hw0.get("provider"), hw0.get("model")) == (jg0.get("provider"), jg0.get("model")):
         print("AF-AE-JUDGE-INDEPENDENCE: the JUDGE tier resolved to the SAME model as "
               "HEAVY-WRITER (%s/%s); a judge cannot grade its own draft and the QC step would "
-              "fail closed mid-run at S9 Gate B. The client has no second distinct (non-Anthropic) "
-              "model for independent QC. Configure at least one additional client model and re-run. "
-              "Client models discovered: %s"
+              "fail closed mid-run at S9 Gate B. No judge fallback provider (DeepSeek Flash on "
+              "Ollama Cloud, DeepSeek Flash on OpenRouter, DeepSeek Direct, Agnes) is both "
+              "configured in the client's OWN inventory and keyed on this box. Configure at least "
+              "one of those for the client and re-run. Client models discovered: %s"
               % (jg0.get("provider"), jg0.get("model"), ", ".join(inventory) or "(none)"),
               file=sys.stderr)
         sys.exit(2)
