@@ -1,3 +1,15 @@
+## [v25.3.6]  -  2026-10-02  -  chore(cc-compat): repin Command Center v7.6.95 (intake ACC-001-09: a change request is never dropped, whatever verdict the classifier chain returns) — version bump in the SAME pull request so the release is actually cut
+
+#### Why
+The v7.6.94 repin (#1433) merged through batch automation WITHOUT a version bump of its own, so no v25.3.5 release was cut from it: boxes received nothing from that repin until a separate release-cut PR (#1435) corrected it. This repin carries its own version bump in the same pull request, so the merge cuts the release in one step — the shape required after today's missing-release incident.
+
+#### What changed
+- Command Center v7.6.95 carries the ACC-001-09 never-drop intake fix: a change request is never dropped, whatever verdict the classifier chain returns.
+- `cc-compat.json` `commandCenter.pinnedTag` v7.6.94 → v7.6.95, and `release-cohort.json` `cc_version` in lockstep (rolled by `scripts/pin-cc-tag.py`; `minVersion` v7.4.0 untouched).
+- Version bump v25.3.5 → v25.3.6 via `scripts/bump-version.sh` (all 10 markers in lockstep), in the same pull request.
+- `README.md` paired Command Center token rolled to v7.6.95; `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` pairs line and `docs/interview-launch-recovery.md` "Paired releases" line rolled to v25.3.6 / v7.6.95.
+- `tests/unit/cc-runtime-preflight.test.py` `CC_PIN` v7.6.95.
+
 ## [v25.3.5]  -  2026-10-02  -  Merge train: #1431 fix(59-anthology-engine): ordered JUDGE fallback chain (one-main-model boxes install); #1433 chore(cc-compat): repin Command Center v7.6.94 (ACC-001-09 question-phrased change updates its card; ACC-001-11 two jobs make two cards)
 
 ## [v25.3.4]  -  2026-10-01  -  Merge train: #1427 chore(cc-compat): repin Command Center v7.6.93 (cc-health-check no…
