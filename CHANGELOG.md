@@ -1,3 +1,5 @@
+## [v25.3.5]  -  2026-10-02  -  Merge train: #1431 fix(59-anthology-engine): ordered JUDGE fallback chain (one-main-model boxes install); #1433 chore(cc-compat): repin Command Center v7.6.94 (ACC-001-09 question-phrased change updates its card; ACC-001-11 two jobs make two cards)
+
 ## [v25.3.4]  -  2026-10-01  -  Merge train: #1427 chore(cc-compat): repin Command Center v7.6.93 (cc-health-check no…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
