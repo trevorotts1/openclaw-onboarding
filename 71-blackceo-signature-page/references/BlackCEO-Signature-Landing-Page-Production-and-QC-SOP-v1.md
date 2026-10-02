@@ -207,6 +207,8 @@ Repair only failed prompts. No routine human approval is required. A prompt that
 
 ## Stage 8 - Generate the images through the selected KIE route
 
+In OpenClaw, run image generation through Skill 66 (Kie) or Skill 63 (Agnes) per the client's configured engine, using the client's own keys and the job's image cap; do not call image providers directly.
+
 ### A. Verify and pin the available GPT image model
 
 Use the latest suitable supported GPT image model through KIE as requested. Verify its actual endpoint, reference fields, ratios, resolution options and prompt capacity at the start of the job, then record the pin. A model name in an older document is not guaranteed to remain latest. Do not silently substitute another generator, including a native chat image tool, when the task requires KIE.
