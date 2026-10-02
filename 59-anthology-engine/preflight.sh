@@ -571,13 +571,6 @@ for role, pinned in sorted(owner_pins.items()):
 # key for any of the four, remain a fail-closed refusal -- never a silent
 # same-model map).
 # --------------------------------------------------------------------------
-_PROVIDER_KEY_LABEL = {
-    "ollama-cloud": "OLLAMA_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "agnes": "AGNES_AI_API_KEY",
-}
-
 # (provider, id-prefix, model pattern, credential labels) in STRICT order per the
 # standing order. The DeepSeek patterns are the fleet's OWN classifier from
 # shared-utils/select_model.py (imported above as `sm`) -- never a reinvented
