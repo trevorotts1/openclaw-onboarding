@@ -4,9 +4,13 @@ Skill 72 chunked voiceover via Fish Audio TTS.
 
 One request per scene (2,000-4,000 chars, split at scene/paragraph
 boundaries, never mid-sentence). Same reference_id on every request,
-temperature 0.3-0.5, sequential requests with exponential backoff on 429.
-Chunks are joined with short crossfades. AUDIO-FIRST TIMING: each chunk's
-measured duration sets its scene's timeline (written to durations.json).
+temperature 0.3-0.5. Requests fire CONCURRENTLY with bounded parallelism
+(default 5, the starter-tier concurrent-request limit; tune with
+--max-workers), each with exponential backoff on 429, and results are
+reassembled in scene order. Chunks are joined with short crossfades.
+AUDIO-FIRST TIMING: each chunk's measured duration sets its scene's
+timeline (written to durations.json). Concurrency only changes how the
+chunks are fetched; timing is unchanged.
 
 Model rules (see references/fish-audio-tts.md):
 - Default model is s2.1-pro.
@@ -20,12 +24,14 @@ Model rules (see references/fish-audio-tts.md):
 Key from FISH_AUDIO_API_KEY env. Never write it to disk.
 
 Usage:
-  python3 scripts/tts.py --manifest run/manifest.json --outdir work/audio
+  python3 scripts/tts.py --manifest run/manifest.json --outdir work/audio [--max-workers 5]
 """
 import argparse, json, os, subprocess, sys, time, urllib.request, urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 API = "https://api.fish.audio/v1/tts"
 CROSSFADE = 0.25  # seconds between chunks
+DEFAULT_MAX_WORKERS = 5  # starter-tier concurrent-request limit
 
 
 def fail(msg):
@@ -53,6 +59,9 @@ def served_model(resp):
 
 
 def tts_request(api_key, model, reference_id, temperature, text):
+    """One TTS request with exponential backoff on 429. Raises
+    RuntimeError on failure (the caller runs this in worker threads,
+    where sys.exit would only kill the thread)."""
     payload = json.dumps({
         "text": text,
         "model": model,
@@ -79,10 +88,10 @@ def tts_request(api_key, model, reference_id, temperature, text):
                 time.sleep(backoff)
                 backoff *= 2
                 continue
-            fail("HTTP %d: %s" % (e.code, e.read().decode()[:500]))
+            raise RuntimeError("HTTP %d: %s" % (e.code, e.read().decode()[:500]))
         except Exception as e:
-            fail("request failed: %s" % e)
-    fail("exhausted retries")
+            raise RuntimeError("request failed: %s" % e)
+    raise RuntimeError("exhausted retries")
 
 
 def probe_duration(path):
@@ -96,6 +105,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--outdir", required=True)
+    ap.add_argument("--max-workers", type=int, default=None,
+                    help="concurrent TTS requests (default: manifest tts.max_concurrent, else 5)")
     ap.add_argument("--allow-unverified", action="store_true",
                     help="continue when the served model cannot be read from response metadata")
     args = ap.parse_args()
@@ -114,35 +125,57 @@ def main():
     if not (0.3 <= temperature <= 0.5):
         print("TTS WARNING: temperature %s outside 0.3-0.5 delivery-consistency band" % temperature,
               file=sys.stderr)
+    max_workers = args.max_workers or tts.get("max_concurrent") or DEFAULT_MAX_WORKERS
+    if max_workers < 1:
+        fail("--max-workers must be at least 1")
 
     os.makedirs(args.outdir, exist_ok=True)
-    chunks = []
-    durations = {}
-    for scene in manifest["scenes"]:
+    scenes = manifest["scenes"]
+    print("fetching %d voiceover chunks with up to %d concurrent requests (model %s)"
+          % (len(scenes), max_workers, model), file=sys.stderr)
+
+    def fetch(scene):
         text = scene["voiceover_text"].strip()
         if not (2000 <= len(text) <= 4000):
             print("TTS WARNING: scene %s text is %d chars (target 2,000-4,000)" % (scene["id"], len(text)),
                   file=sys.stderr)
-        print("requesting voiceover for %s (%d chars, model %s)" % (scene["id"], len(text), model), file=sys.stderr)
         audio, served = tts_request(api_key, model, reference_id, temperature, text)
+        return scene["id"], audio, served
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_to_id = {pool.submit(fetch, s): s["id"] for s in scenes}
+        for fut, sid in future_to_id.items():
+            try:
+                rid, audio, served = fut.result()
+            except RuntimeError as e:
+                fail("scene %s: %s" % (sid, e))
+            results[rid] = (audio, served)
+            print("  fetched %s (served_model=%s)" % (rid, served or "unverified"), file=sys.stderr)
+
+    # Reassemble in manifest scene order; verify the served model per chunk.
+    chunks = []
+    durations = {}
+    for scene in scenes:
+        sid = scene["id"]
+        audio, served = results[sid]
         if served and served != model:
             fail("MODEL MISMATCH on %s: requested '%s' but the API served '%s'. "
                  "The request silently fell back. Stopping; fix model access and rerun."
-                 % (scene["id"], model, served))
+                 % (sid, model, served))
         if not served and not args.allow_unverified:
             fail("could not determine the served model for %s from response metadata. "
                  "Refusing to silently accept a possible fallback. Rerun with --allow-unverified "
-                 "only if you accept this risk." % scene["id"])
+                 "only if you accept this risk." % sid)
         if not served:
             print("TTS WARNING: served model unverifiable for %s; continuing per --allow-unverified"
-                  % scene["id"], file=sys.stderr)
-        chunk_path = os.path.join(args.outdir, scene["id"] + ".mp3")
+                  % sid, file=sys.stderr)
+        chunk_path = os.path.join(args.outdir, sid + ".mp3")
         open(chunk_path, "wb").write(audio)
         dur = probe_duration(chunk_path)
-        durations[scene["id"]] = dur
+        durations[sid] = dur
         chunks.append(chunk_path)
-        print("  -> %s  %.2fs  served_model=%s" % (chunk_path, dur, served or "unverified"), file=sys.stderr)
-        time.sleep(1)  # sequential by design; be gentle with the rate limiter
+        print("  -> %s  %.2fs" % (chunk_path, dur), file=sys.stderr)
 
     # Join chunks with short crossfades.
     if len(chunks) == 1:

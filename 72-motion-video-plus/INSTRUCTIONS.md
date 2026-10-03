@@ -10,6 +10,10 @@ Do not use Skill 72 when the request clearly names AI video-model generation (Sk
 
 Follow these stages in order. Do not skip the four hard gates.
 
+### What parallelizes and what stays sequential
+
+Parallelize every stage; the units inside each stage are independent. Scene animation files build in parallel once the brief is locked (stage 5). Spot-check stills render for all scenes concurrently (stage 6). TTS chunks fetch concurrently with bounded parallelism (stage 9). Score and SFX synthesis overlaps the frame render (stage 13). What STAYS sequential is the decision chain: script, then voiceover durations, then scene timing, then animation. Never start a stage that depends on a decision an earlier stage has not made yet.
+
 ### 1. Pre-production
 
 Work through `references/pre-production/` in order:
@@ -39,7 +43,11 @@ ASK the operator which model writes the animation code: their current model, GLM
 
 ### 5. Scene animation code (grammar-constrained)
 
-One HTML file per scene honoring `references/animation-contract.md` AND `references/motion-grammar.md`: `window.__setTime(t)` as a pure function of t, no CSS transitions, no timer-driven motion, seeded randomness only, springs-only motion using the named presets, visual hits 2 frames before the beat, masked-word typography, all assets local. Then lint every scene file:
+Build all scene files in parallel once the director's brief (stage 1) is approved and art direction is locked: scenes are independent units, so draft them concurrently and unify afterward. One HTML file per scene honoring `references/animation-contract.md` AND `references/motion-grammar.md`: `window.__setTime(t)` as a pure function of t, no CSS transitions, no timer-driven motion, seeded randomness only, springs-only motion using the named presets, visual hits 2 frames before the beat, masked-word typography, all assets local.
+
+Lock the BPM in the director's brief now (manifest `music_bpm`, default 120). The beat grid is pure BPM math: `scripts/beat-grid.py` derives it from the synthesis parameters, so animation authoring proceeds against the theoretical grid WITHOUT waiting for the synthesized WAV. Audio synthesis and animation are parallel branches off the locked BPM, not sequential steps.
+
+Then lint every scene file:
 
 ```bash
 python3 scripts/lint-grammar.py scenes/scene-01.html
@@ -49,10 +57,22 @@ The linter flags violations; it never auto-fixes. Fix what it flags before movin
 
 ### 6. Preview gate (HARD GATE)
 
-Render every scene at 960x540, 15fps:
+Render every scene at 960x540, 15fps, all scenes concurrently (one render.js process per scene, backgrounded up to the preflight worker count):
 
 ```bash
-node scripts/render.js --manifest run/manifest.json --scene scene-01 --outdir work/preview/scene-01 --preview
+for s in scene-01 scene-02 scene-03 scene-04 scene-05 scene-06; do
+  node scripts/render.js --manifest run/manifest.json --scene $s --outdir work/preview/$s --preview &
+done
+wait
+```
+
+Render spot-check stills for all scenes concurrently the same way:
+
+```bash
+for s in scene-01 scene-02 scene-03 scene-04 scene-05 scene-06; do
+  node scripts/render.js --still 2.0 --manifest run/manifest.json --scene $s --outdir work/review &
+done
+wait
 ```
 
 Assemble a rough preview cut and get the operator's explicit approval per scene. Nobody iterates on a full render. Changes go back to step 5.
@@ -87,7 +107,7 @@ export FISH_AUDIO_API_KEY=...
 python3 scripts/tts.py --manifest run/manifest.json --outdir work/audio
 ```
 
-Default model `s2.1-pro`. `drama-3-preview` is opt-in only; `tts.py` verifies the served model from response metadata and stops on mismatch (see `references/fish-audio-tts.md`). Sequential requests, exponential backoff on 429.
+Default model `s2.1-pro`. `drama-3-preview` is opt-in only; `tts.py` verifies the served model from response metadata and stops on mismatch (see `references/fish-audio-tts.md`). Requests fire concurrently (default 5 at a time, the starter-tier limit; tune with `--max-workers`), each with exponential backoff on 429; chunks are reassembled in scene order. Audio-first timing is unchanged: the measured durations still set scene timing, concurrency only changes how the chunks are fetched.
 
 ### 10. Audio-first timing
 
@@ -113,12 +133,27 @@ Segments encode per scene; PNGs are deleted right after each segment encodes.
 
 ### 13. Synthesized sound and assembly
 
-Unless the manifest names a supplied `music_bed` track, `assemble.sh` synthesizes an original score and the UI sounds itself, derives the beat grid, and mixes everything:
+Kick off score and SFX synthesis as soon as the BPM is locked and scene durations are known (end of stage 10), overlapping the frame render (stage 12). They do not depend on the frames:
+
+```bash
+DUR=$(python3 -c "import json; print(sum(json.load(open('work/audio/durations.json')).values()))")
+BPM=$(python3 -c "import json; print(json.load(open('run/manifest.json')).get('music_bpm', 120))")
+python3 scripts/synth-score.py --bpm $BPM --duration $DUR --seed 7 --outdir work/audio &
+python3 scripts/synth-sfx.py --seed 7 --outdir work/audio/sfx &
+wait
+python3 scripts/beat-grid.py --params work/audio/score-params.json --out work/audio/beats.json
+```
+
+Then pass the pre-synthesized inputs to `assemble.sh` so it reuses them instead of re-synthesizing:
 
 ```bash
 bash scripts/assemble.sh --manifest run/manifest.json --workdir work \
-  --voiceover work/audio/voiceover.mp3 --out <storage-root>/<video-name>/<video-name>.mp4
+  --voiceover work/audio/voiceover.mp3 \
+  --score work/audio/score.wav --beats work/audio/beats.json --sfx-dir work/audio/sfx \
+  --out <storage-root>/<video-name>/<video-name>.mp4
 ```
+
+If you skip the early synthesis, `assemble.sh` synthesizes the same deterministic outputs itself. Unless the manifest names a supplied `music_bed` track, the score and UI sounds are synthesized originals either way.
 
 Crossfaded joins, one continuous score over the final assembly, sidechain ducking under the voiceover, beat-synced UI sounds, finished at -14 LUFS integrated. If only the mix changes later, re-mux without re-rendering:
 

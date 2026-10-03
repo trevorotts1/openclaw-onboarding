@@ -12,6 +12,8 @@ This is the canonical motion-graphics video production skill. It turns a script 
 
 A model writes deterministic HTML/JS animation for each scene. Every animation exposes `window.__setTime(t)`, a pure function of time t in seconds that sets every element's style, with no CSS transitions and no timer-driven motion. Headless Chromium opens the page, seeks to each frame time, calls `__setTime(t)`, and screenshots at 30 frames per second. FFmpeg encodes each scene's frames, joins scenes with crossfades, lays one continuous synthesized music bed over the final assembly with sidechain ducking under the voiceover, adds beat-synced synthesized UI sounds, finishes at -14 LUFS, and delivers the MP4. No AI video model is involved at any step.
 
+Parallelize every stage, not just the frame render: scene animation files are built in parallel once the brief is locked, TTS chunks are fetched concurrently, spot-check stills render for all scenes at once, and the score and SFX synthesize while frames render. What stays sequential is the decision chain: script, voiceover durations, scene timing, animation. Measured on the reference box (12 CPU, 24GB RAM), a 5-minute video ran 85 minutes with only the frame render parallelized. With every stage parallelized the warm-pipeline target is about 30 minutes: script 5, TTS plus animation 7, render 10 to 11 at 8 workers (measured 0.56 seconds per frame per worker), assembly plus QC plus mux 5. Add about 4 minutes in a fresh environment.
+
 ## Route boundaries first
 
 Use this skill when the request is a motion-graphics video: kinetic typography, animated explainers, brand promos, product films built from code-driven animation.
@@ -67,14 +69,14 @@ Each stage's detail lives in `INSTRUCTIONS.md`. The four hard gates:
 4. **Parallel chunked rendering with auto-resume.** `scripts/render.js`: fresh headless browser every few hundred frames (Chromium died at frame 809 of 909 in testing from memory exhaustion), resumes from the last completed frame, never restarts a finished chunk.
 5. **Per-scene frame cleanup.** `scripts/render.js` and `scripts/assemble.sh` delete each scene's PNGs right after its segment encodes, in a finally/trap so cleanup runs even on failure. 30 seconds produced 359MB of PNGs; a 2-hour video would need about 86GB without cleanup.
 6. **Segments.** 5-minute segments are the standard; preflight upgrades to 15-minute segments on strong systems only. `scripts/assemble.sh` joins segments with crossfades and lays ONE continuous music bed over the final assembly, never per-segment music.
-7. **Chunked voiceover.** `scripts/tts.py`: one Fish Audio request per scene (2,000 to 4,000 chars, split at scene or paragraph boundaries, never mid-sentence), same reference voice on every request, temperature 0.3 to 0.5, sequential requests with exponential backoff on 429. Audio-first timing: each chunk's measured duration sets its scene's timeline. Default model `s2.1-pro`; `drama-3-preview` is opt-in with a served-model verification check (see `references/fish-audio-tts.md`).
+7. **Chunked voiceover.** `scripts/tts.py`: one Fish Audio request per scene (2,000 to 4,000 chars, split at scene or paragraph boundaries, never mid-sentence), same reference voice on every request, temperature 0.3 to 0.5, requests fired CONCURRENTLY with bounded parallelism (default 5, the starter-tier concurrent limit, tunable with `--max-workers`), exponential backoff on 429 per request, results reassembled in scene order. Audio-first timing is unchanged: each chunk's measured duration still sets its scene's timeline. Default model `s2.1-pro`; `drama-3-preview` is opt-in with a served-model verification check (see `references/fish-audio-tts.md`).
 8. **Fast low-res previews.** `scripts/render.js --preview`; required gate in `INSTRUCTIONS.md`.
 9. **Three-layer sound design from the first draft.** `scripts/assemble.sh`: voiceover, music bed ducked via FFmpeg sidechain compression, beat-synced UI sounds. The music bed and UI sounds are synthesized in code by default (`scripts/synth-score.py`, `scripts/synth-sfx.py`); a supplied track is the only exception. Final mix lands at -14 LUFS integrated.
 10. **Automated QC plus contact sheet.** `scripts/qc.sh`.
 11. **Brand bible per brand.** `references/brand-bible-template.md`, loaded on every run.
 12. **Per-environment storage root.** Resolved in `scripts/render.js` and `INSTRUCTIONS.md`: Mac uses `~/Downloads/openclaw-master-files/motion-videos/`; Docker VPS uses a persistent volume such as `/data/motion-videos`, never ephemeral container storage. Layout `motion-videos/<video-name>/` keeps the final MP4, animation sources, voiceover audio, script text, and manifest. Frame PNGs are always deleted.
 13. **Headless only.** Every script launches Chromium headless; browsers close in finally blocks; `scripts/sweep-chromium.sh` kills orphans and reports memory freed at the end of every run.
-14. **Preflight.** `scripts/preflight.js`: cores, free RAM, free disk, 20-frame calibration render for the true per-frame rate, workers = min(cores minus 2, RAM budget at about 500MB per browser, scene count), wall-clock and peak-disk estimates; says plainly when the segment route is required instead of dying halfway.
+14. **Preflight.** `scripts/preflight.js`: cores, free RAM, free disk, 20-frame calibration render for the true per-frame rate (reference baseline 0.56s per frame per worker on the 12-CPU/24GB box, refined per machine), workers = min(cores minus 2, RAM budget at about 500MB per browser, scene count, load-proven cap). The calibration measures system load with one browser active and caps workers before projected load goes critical; a worker count is never recommended from core count alone. Wall-clock and peak-disk estimates; says plainly when the segment route is required instead of dying halfway.
 15. **Bright, human design defaults.** No dark-style designs, no generic AI-polished look. Real brand assets, real typography. Encoded here, in `INSTRUCTIONS.md`, and in the brand bible template.
 
 ## Adapted systems (borrowed concepts, original implementation)
@@ -87,6 +89,10 @@ Six systems were adapted from an analysis of a third-party motion-reel kit. The 
 4. **Determinism verification.** `scripts/verify-determinism.js`: probe frames rendered cold versus after seeking elsewhere; fails the gate on pixel drift.
 5. **Review tooling.** In `scripts/render.js`: `--still`, `--cliprange`, `--mux` (re-mux audio without re-rendering), `--beatsheet` (per-beat contact sheet). Bundled for critics by `scripts/critique-bundle.sh`.
 6. **Pre-production workflow.** `references/pre-production/` (six chapters: studio setup, house rules, brand assets, one-liner, steal-the-grammar, director's brief) plus `references/directors-brief-template.md`, wired as the first stages of `INSTRUCTIONS.md`.
+
+## Fleet rendering is frontier, not a promise
+
+Frame ranges are independent units, so splitting a render across multiple machines is architecturally free: 4 boxes at 8 workers each is roughly a 3-minute frame render, about 20 minutes total for a 5-minute video. This has never been tested. It is future work, not a capability the skill offers today. Never present it as one. See `references/untested-alternatives.md`.
 
 ## What the operator provides
 

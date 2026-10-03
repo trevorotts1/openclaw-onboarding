@@ -18,17 +18,23 @@
 # Usage:
 #   bash scripts/assemble.sh --manifest run/manifest.json --workdir work \
 #     --voiceover work/audio/voiceover.mp3 --out final.mp4
+#   Optional: --score/--beats/--sfx-dir reuse pre-synthesized inputs (e.g.
+#   synthesized in parallel with the frame render). When absent, assemble.sh
+#   synthesizes the same deterministic outputs itself.
 set -euo pipefail
 
-MANIFEST=""; WORKDIR=""; VOICEOVER=""; OUT=""
+MANIFEST=""; WORKDIR=""; VOICEOVER=""; OUT=""; SCORE=""; BEATS=""; SFXDIR=""
 while [ $# -gt 0 ]; do case "$1" in
   --manifest) MANIFEST="$2"; shift 2;;
   --workdir) WORKDIR="$2"; shift 2;;
   --voiceover) VOICEOVER="$2"; shift 2;;
   --out) OUT="$2"; shift 2;;
+  --score) SCORE="$2"; shift 2;;
+  --beats) BEATS="$2"; shift 2;;
+  --sfx-dir) SFXDIR="$2"; shift 2;;
   *) echo "unknown arg $1" >&2; exit 2;;
 esac; done
-[ -n "$MANIFEST" ] && [ -n "$WORKDIR" ] && [ -n "$OUT" ] || { echo "usage: assemble.sh --manifest M --workdir W --voiceover V --out O" >&2; exit 2; }
+[ -n "$MANIFEST" ] && [ -n "$WORKDIR" ] && [ -n "$OUT" ] || { echo "usage: assemble.sh --manifest M --workdir W --voiceover V --out O [--score S --beats B --sfx-dir D]" >&2; exit 2; }
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found" >&2; exit 2; }
 command -v ffprobe >/dev/null || { echo "ffprobe not found" >&2; exit 2; }
@@ -43,10 +49,13 @@ export MVPLUS_SCRIPTS="$SDIR"
 # One python pass builds: the (possibly synthesized) music bed and beat
 # grid, the sfx file map, ordered segment files, absolute sfx event times,
 # the xfade video chain, and the audio graph. Shell just runs ffmpeg.
-python3 - "$MANIFEST" "$WORKDIR" "$VOICEOVER" "$OUT" "$TMP" <<'PY'
+python3 - "$MANIFEST" "$WORKDIR" "$VOICEOVER" "$OUT" "$TMP" "$SCORE" "$BEATS" "$SFXDIR" <<'PY'
 import json, os, subprocess, shlex, sys
 
 manifest_p, work, voiceover, out, tmp = sys.argv[1:6]
+pre_score = sys.argv[6] if len(sys.argv) > 6 else ""
+pre_beats = sys.argv[7] if len(sys.argv) > 7 else ""
+pre_sfxdir = sys.argv[8] if len(sys.argv) > 8 else ""
 sdir = os.environ["MVPLUS_SCRIPTS"]
 m = json.load(open(manifest_p))
 FADE = 0.5
@@ -68,32 +77,53 @@ for s in m["scenes"]:
 
 # 1b. music bed: a supplied track wins; otherwise synthesize an original
 # score (royalty-free by construction) and derive its beat grid.
+# Pre-synthesized --score/--beats are reused when passed (they must have
+# been built with the same music_bpm/music_seed; synthesis is deterministic).
 music = m.get("music_bed", "")
 beats_json = ""
 if not music:
-    total_dur = sum(d for _, _, d in segs)
-    bpm = float(m.get("music_bpm", 120))
-    seed = int(m.get("music_seed", 7))
-    adir = work + "/audio"
-    os.makedirs(adir, exist_ok=True)
-    subprocess.run(["python3", sdir + "/synth-score.py",
-                    "--bpm", str(bpm), "--duration", str(total_dur),
-                    "--seed", str(seed), "--outdir", adir], check=True)
-    subprocess.run(["python3", sdir + "/beat-grid.py",
-                    "--params", adir + "/score-params.json",
-                    "--out", adir + "/beats.json"], check=True)
-    music = adir + "/score.wav"
-    beats_json = adir + "/beats.json"
+    if pre_score:
+        for label, p in (("score", pre_score), ("beats", pre_beats)):
+            try:
+                open(p, "rb").close()
+            except OSError:
+                sys.exit("pre-synthesized %s not found: %s" % (label, p))
+        music = pre_score
+        beats_json = pre_beats
+    else:
+        total_dur = sum(d for _, _, d in segs)
+        bpm = float(m.get("music_bpm", 120))
+        seed = int(m.get("music_seed", 7))
+        adir = work + "/audio"
+        os.makedirs(adir, exist_ok=True)
+        subprocess.run(["python3", sdir + "/synth-score.py",
+                        "--bpm", str(bpm), "--duration", str(total_dur),
+                        "--seed", str(seed), "--outdir", adir], check=True)
+        subprocess.run(["python3", sdir + "/beat-grid.py",
+                        "--params", adir + "/score-params.json",
+                        "--out", adir + "/beats.json"], check=True)
+        music = adir + "/score.wav"
+        beats_json = adir + "/beats.json"
 
 # 1c. sfx map: synthesized UI sounds by default; manifest "sfx" map only
 # when the manifest explicitly sets "synth_sfx": false.
+# A pre-synthesized --sfx-dir is reused when passed.
 sfxmap = m.get("sfx", {})
 if m.get("synth_sfx", True):
-    sfxdir = tmp + "/sfx"
-    subprocess.run(["python3", sdir + "/synth-sfx.py",
-                    "--outdir", sfxdir], check=True)
-    sfxmap = {"pop": sfxdir + "/pop.wav", "click": sfxdir + "/click.wav",
-              "whoosh": sfxdir + "/whoosh.wav", "thump": sfxdir + "/thump.wav"}
+    if pre_sfxdir:
+        for name in ("pop", "click", "whoosh", "thump"):
+            try:
+                open(pre_sfxdir + "/" + name + ".wav", "rb").close()
+            except OSError:
+                sys.exit("pre-synthesized sfx not found: %s/%s.wav" % (pre_sfxdir, name))
+        sfxmap = {"pop": pre_sfxdir + "/pop.wav", "click": pre_sfxdir + "/click.wav",
+                  "whoosh": pre_sfxdir + "/whoosh.wav", "thump": pre_sfxdir + "/thump.wav"}
+    else:
+        sfxdir = tmp + "/sfx"
+        subprocess.run(["python3", sdir + "/synth-sfx.py",
+                        "--outdir", sfxdir], check=True)
+        sfxmap = {"pop": sfxdir + "/pop.wav", "click": sfxdir + "/click.wav",
+                  "whoosh": sfxdir + "/whoosh.wav", "thump": sfxdir + "/thump.wav"}
 
 # 2. video: xfade chain across segments
 vfilt = ""
