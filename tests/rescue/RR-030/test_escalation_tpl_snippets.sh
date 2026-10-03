@@ -10,8 +10,9 @@
 #   F49: the escalate block captures the HTTP status and prints ONE state line
 #        (rescue_rangers_state=...) for each canned answer, so an agent can tell
 #        accepted from refused; returnTo is described as audit-only; the 25/day
-#        promise is now the notificationCapped rule; the two lines that send agents
-#        to Trevor's personal chat 5252140759 are UNCHANGED (they need Trevor's GO, D13).
+#        promise is now the notificationCapped rule; no line sends agents to Trevor's
+#        personal chat any more (Trevor approved D13 on 2026-10-03): the chat id
+#        5252140759 must appear in NEITHER template copy.
 #   Also: role-library copy is byte-identical to the canonical template.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -154,7 +155,10 @@ grep -q 'Audit only' "$TPL" && ok "F49: returnTo described as audit-only" || bad
 grep -q 'must be posted' "$TPL" && bad "F49: stale 'answer must be posted' wording remains" || ok "F49: no 'answer must be posted' promise remains"
 grep -q 'Hard cap: 25 exchanges' "$TPL" && bad "F49: old 25-exchange promise remains" || ok "F49: old 25-exchange promise removed"
 grep -q 'notificationCapped' "$TPL" && ok "F49: notificationCapped rule present" || bad "F49: notificationCapped rule missing"
-[ "$(grep -c '5252140759' "$TPL")" = 2 ] && ok "F49: the two 5252140759 lines are untouched (Trevor's GO, D13)" || bad "F49: 5252140759 line count changed ($(grep -c '5252140759' "$TPL"))"
+grep -q '5252140759' "$TPL" && bad "F49/D13: 5252140759 still appears in the canonical template" || ok "F49/D13: 5252140759 absent from the canonical template"
+grep -q '5252140759' "$MIRROR" && bad "F49/D13: 5252140759 still appears in the role-library template" || ok "F49/D13: 5252140759 absent from the role-library template"
+grep -q "Trevor's chat" "$TPL" && bad "F49/D13: a 'Trevor's chat' routing line remains" || ok "F49/D13: no line routes agents to Trevor's chat"
+grep -q 'do NOT message any personal chat' "$TPL" && ok "F49/D13: missing-env guidance points to the owner, not a personal chat" || bad "F49/D13: missing-env guidance wording absent"
 
 echo; echo "RR-030 escalation-template snippets: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

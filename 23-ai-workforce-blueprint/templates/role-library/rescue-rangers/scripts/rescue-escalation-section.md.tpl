@@ -138,9 +138,9 @@ Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED h
 | `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
 | `returnTo` | Audit only: recorded on the ticket. Rescue Rangers does NOT post the answer here; the answer reaches you as a new message. |
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If missing, report to Trevor's chat `5252140759`.
+- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If it is missing, you cannot reach Rescue Rangers: tell your owner it is a setup problem (the same as `secret_problem` in the table above) and do NOT message any personal chat.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL. The array pattern above skips the header when unset.
-- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and report the gap to Trevor's chat `5252140759`.
+- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and tell your owner about the setup gap (state `secret_problem`); do NOT message any personal chat.
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
 
 **When the fix works**, POST the resolution signal and STOP escalating:

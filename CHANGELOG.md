@@ -1,6 +1,7 @@
 ## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
 
 Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.
+Re-bumped to v25.3.10 because main already released v25.3.9 (Command Center v7.6.98 repin); main was merged into this branch (no rebase).
 
 #### What changed
 - **F47** `scripts/lib/rescue_admission.py`: a 429 whose body is a JSON object is the intake's own rate-limit answer, and RR-01 has already
@@ -11,9 +12,10 @@ Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave
   HTTP status and prints one `rescue_rangers_state=` line from the answer; a short table says what the agent does for each state
   (accepted, already being worked, relay the message and stop, not an incident, secret problem, fix the payload, retry once in 2 minutes,
   unknown). `returnTo` is described as audit-only (no workflow posts an answer there). The "25 exchanges, ping Trevor's chat" line is
-  replaced by the `notificationCapped` rule. **The two lines that send agents to Trevor's personal chat (`5252140759`) are unchanged;
-  they need Trevor's GO (plan decision D13).** No marker bump: the stamper replaces by content inside the existing
-  `RESCUE_ESCALATION_BOXNAME_V3` pair.
+  replaced by the `notificationCapped` rule. **Trevor approved plan decision D13 (2026-10-03): the two lines that sent agents to his personal
+  chat are gone from BOTH template copies (a missing `RESCUE_RANGERS_WEBHOOK_URL` or `FLEET_STANDING_BOX_SLUG` now means "tell your owner it
+  is a setup problem", the `secret_problem` state), and the chat id appears in neither copy.** No marker bump: the stamper replaces by
+  content inside the existing `RESCUE_ESCALATION_BOXNAME_V3` pair.
 - **F50** `scripts/disk-usage-alert.sh`, `scripts/pre-july14-embedding-migration-check.sh` and the circuit-breaker trip in
   `06-ghl-install-pages/tools/browser_manager.sh` posted `client=$(hostname)` with no `boxName`, so RR-01 answered 400 "unresolvable
   box" and `|| true` hid it. They now send `boxName` from `FLEET_STANDING_BOX_SLUG` (and `clientName` from
