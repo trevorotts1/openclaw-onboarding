@@ -4,12 +4,14 @@ on:
     branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
       - .github/workflows/presentation-intake-miniapp-guard.yml
   pull_request:
     branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
       - .github/workflows/presentation-intake-miniapp-guard.yml
 jobs:

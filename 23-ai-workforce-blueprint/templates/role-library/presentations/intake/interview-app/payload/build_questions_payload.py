@@ -303,9 +303,10 @@ def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
     rm_id = RUN_MODE_APP_COPY["id"]
     if rm_id in curated_ids and rm_id not in by_id:
         by_id[rm_id] = _project_run_mode_question(specs.get("questions", []))
-    # FIX 61.2: project the model-pick subfields, same pattern as run_mode.
+    # FIX 61.2/62: project the model-pick subfields, same pattern as run_mode.
     for _copy, _sub in ((DEEPSEEK_VARIANT_APP_COPY, "deepseek_variant"),
-                        (OPENROUTER_MODEL_APP_COPY, "openrouter_model")):
+                        (OPENROUTER_MODEL_APP_COPY, "openrouter_model"),
+                        (OLLAMA_PLAN_APP_COPY, "ollama_plan")):
         _id = _copy["id"]
         if _id in curated_ids and _id not in by_id:
             by_id[_id] = _project_subfield_question(
