@@ -2,6 +2,8 @@
 
 A fresh critic reviews every video before the full render. Fresh means a separate agent that did NOT write the animation. If no separate agent is available, the operator runs the critique themselves but keeps the critic's voice: evidence first, no defending the code. Judge only what is on screen and in the speakers, never intentions or code.
 
+The fresh critic MUST be vision-capable: all 8 criteria are scored off images (contact sheets, stills, strips), so a critic that cannot see images cannot do the job. If the operator's model cannot do vision, the human operator performs each round's review using the same 8 criteria and the same evidence format; the gate still requires a minimum of 3 rounds.
+
 ## Inputs
 
 The animation author hands the critic:
@@ -48,7 +50,9 @@ Score each 1 to 10. A score of 8 means shippable to a demanding client. Every sc
 
 ## Rounds and the gate
 
-Minimum 3 rounds. After each round the critic writes the review log (see below), the animation author fixes the 3 worst problems, and a new preview renders. The gate opens only when every criterion scores 8 or higher AND at least 3 rounds have run. There is no skipping the gate: a video that has not passed critique does not render at full quality.
+Minimum 3 rounds, MAXIMUM 5 rounds. After each round the critic writes the review log (see below), the animation author fixes the 3 worst problems, and a new preview renders. The gate opens only when every criterion scores 8 or higher AND at least 3 rounds have run. There is no skipping the gate: a video that has not passed critique does not render at full quality.
+
+If there is no SHIP verdict by the end of round 5, the author stops and escalates to the operator with the full review log. The operator decides: ship as-is, authorize more rounds, or stop the video. The gate can never loop forever.
 
 ## Review log format
 
@@ -71,7 +75,7 @@ Fixes for round N+1 (concrete and testable: what changes, where, how to verify):
 1. ...
 2. ...
 
-Verdict: SHIP (every score 8+ and round 3 or later) or ANOTHER ROUND
+Verdict: SHIP (every score 8+ and round 3 or later), ANOTHER ROUND, or ESCALATE (round 5 with no SHIP: stop and hand the full log to the operator)
 ```
 
 Scores must be earned. A problem the critic noted last round that is still visible keeps its old score or goes lower, never higher.

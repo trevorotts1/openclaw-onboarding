@@ -10,10 +10,10 @@ inside `openclaw-onboarding` and be installed/updated by the repository's existi
 
 ## Prerequisites (host)
 
-- Node.js 18 or newer, with `playwright-core` installed and a Chromium build available to it.
+- Node.js 18 or newer, with `playwright-core` installed. `playwright-core` ships no browser: acquire Chromium once with `npx -y playwright@latest install --with-deps chromium` (browsers land in `~/.cache/ms-playwright`, where `playwright-core` finds them; or set `PLAYWRIGHT_BROWSERS_PATH` to a custom location). Without this step, `scripts/render.js` fails on `chromium.launch()` and the client is stranded before step one.
 - FFmpeg with libx264 (for encode, concat, xfade, sidechaincompress, blackdetect, freezedetect).
-- Python 3 for `scripts/tts.py`.
-- A Fish Audio API key in `FISH_AUDIO_API_KEY` (asked at install with a skip option; voiceover cannot run without it).
+- Python 3 for `scripts/tts.py`, plus `numpy` (`pip install numpy` or `pip3 install numpy`) for `scripts/synth-score.py` and `scripts/synth-sfx.py`.
+- The client's OWN Fish Audio API key, collected by the client's agent at first use into the client environment (`export FISH_AUDIO_API_KEY=...`). It is never written into the repo or the skill files. Voiceover cannot run without it.
 - Disk headroom: the preflight script measures and refuses plainly when the run does not fit.
 
 ## Required repository wiring
