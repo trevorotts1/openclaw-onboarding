@@ -22,7 +22,7 @@ proposal (Tier 2); no approval gate is added (no `requireApproval`); zero model 
   --active 1440 --json` (per-session token delta, never lifetime); D3, D4 wedge, D5 and D6 read
   `openclaw audit --kind agent_run|tool_action --after <cursor> --json` with the cursor kept in the ledger offsets table
   (`loop-audit:<kind>`); D7 is retired pending Fix 9. Adds a feed-health control: recent sessions but zero collector
-  rows raises a P2 "watchdog blind: <collector>" finding. Where: `scripts/loop_watchdog.py` collectors,
+  rows raises a P2 "watchdog blind: <collector>" finding (new class `LP-WD1`, never escalated to Rescue Rangers). Where: `scripts/loop_watchdog.py` collectors,
   `verify.sh --live`, `config/thresholds.json` `tick.max_tick_seconds`, new fixtures (`LOOP_NO_PROBES=1`).
 - **Fix 2 - stop the false "orphan gateway" P1 (D4 / LP-B3).** The supervisor pid now comes from the supervisor itself
   (`launchctl list` table on Mac, `systemctl --user show -p MainPID` on Linux), never from the stale handoff file.
@@ -38,8 +38,8 @@ proposal (Tier 2); no approval gate is added (no `requireApproval`); zero model 
 - **Fix 5 - use and verify OpenClaw's own tool-loop guard on every agent.** New daily read-only "native guard off"
   check over `tools.loopDetection` and each `agents.entries.<id>.tools.loopDetection`, WARN when the effective value is
   not `enabled: true`. The fix is Tier 2, prepared only (`openclaw config set tools.loopDetection.enabled true
-  --strict-json`, revert = prior value); never applied by the unattended run. Where: `scripts/loop_watchdog.py`,
-  `config/fix-classes.json`.
+  --strict-json`, revert = prior value); never applied by the unattended run. Finding class `NATIVE-GUARD-OFF`.
+  Where: new `scripts/check_native_loop_guard.py` (run through `loop-companion.sh`), `tests/native-loop-guard-test.sh`.
 
 ### Medium
 

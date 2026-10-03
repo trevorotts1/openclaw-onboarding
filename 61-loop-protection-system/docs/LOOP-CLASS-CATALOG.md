@@ -27,7 +27,7 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 |---|---|---|---|---|
 | LP-B1 | F5 | supervisor restart storm; app dies faster than the stability window | D1 | LF-6 stop unit -> capture boot log -> fix cause -> single start -> stability watch |
 | LP-B2 | F4 | `*/2` watchdog racing launchd; two supervisors fight one port | D1 | disable the RACING supervisor (one owner per process) -> single clean restart |
-| LP-B3 | F5-adj | zombie orphan holds :18789 outside launchd + stale handoff marker | D4 | LF-3 archive marker -> kill orphan on :18789 -> kickstart -> pid-stability verify |
+| LP-B3 | F5-adj | a stray process holds :18789 while the LIVE supervisor (launchd / systemd) owns a different, alive pid. The legacy handoff file is ignored (October keeps it in SQLite); supervisor unreadable or docker = UNDETERMINED, no finding | D4 | LF-3 prepared proposal only: kill ONLY the stray listener pid (never the supervisor's own), revert = restart through the supervisor |
 | LP-B4 | F6 | daemon started inside a session; SIGTERMed at teardown; autostart resurrects it | D1 | disable the in-session autostart -> install a host-level watchdog |
 | LP-B5 | F13-adj | one illegal key freezes the WHOLE cron engine (incl. self-heal jobs) | D4 | LF-7 restore last-good snapshot as box user -> validate -> sanctioned restart |
 
@@ -89,6 +89,13 @@ route to the same blocked thing.
 **The fix is doctrine, not detection.** D6 runs on a 15-minute watchdog tick and reports
 after the loop is over. N40 (`AGENTS.md`) is what stops it while it is happening: at most
 2 attempts against a fail-closed dependency, then ONE message, and never a narrated hunt.
+
+## Family W - THE WATCHDOG ITSELF (instrument faults, never client-facing, never escalated to Rescue Rangers)
+
+| Class | F# | Signature (short) | Detector | Kill card / fix |
+|---|---|---|---|---|
+| LP-WD1 | Fix 1 | a collector returned zero rows while `openclaw sessions --active 60 --json` shows recent activity: the instrument is blind, and an empty result is a broken check, not a healthy box (P2) | feed-health control, every run and `verify.sh --live` (D-FEED-HEALTH) | none - fix the feed (CLI version, shape change); finding stays open until the feed returns rows |
+| NATIVE-GUARD-OFF | Fix 5 | OpenClaw's own tool-loop guard is not `enabled: true` for the global config or for an agent override at `agents.entries.<id>.tools.loopDetection` (WARN, checked once a day, read-only) | `scripts/check_native_loop_guard.py` | Tier 2 prepared proposal only: `openclaw config set tools.loopDetection.enabled true --strict-json`, revert = the prior value; never applied by the unattended run, never touches models or keys |
 
 ## Two deliberate non-classes (stated so nobody adds them)
 
