@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.3.13"
+ONBOARDING_VERSION="v25.3.14"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -427,7 +427,7 @@ OC_LOGS = os.path.join(OC_CONFIG, "logs")
 # owner-chat target — doing so routes every cron delivery to the operator
 # instead of the client.  Confirmed live misrouting on multiple client boxes
 # (all crons wired to the operator ID instead of the client).
-# The operator's Mac env may export TELEGRAM_CHAT_ID=5252140759 (or equivalent)
+# The operator's Mac env may export TELEGRAM_CHAT_ID=<operator chat id> (or equivalent)
 # and the SSH session that runs install.sh inherits it, causing S20 to resolve
 # the operator ID instead of the client owner ID.
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}

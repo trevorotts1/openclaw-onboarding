@@ -57,7 +57,9 @@ done
 REQUESTED_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
 
 # Authorized operator identities. Preserved by every run, never removed.
-OPERATOR_IDS="${RR_OPERATOR_IDS:-5252140759 6663821679 6771245262}"
+# Operator ids come from the single authority; RR_OPERATOR_IDS overrides.
+source "$REPO_ROOT/shared-utils/resolve-owner-chat.sh"
+OPERATOR_IDS="${RR_OPERATOR_IDS:-$OPERATOR_CHAT_IDS_SH}"
 
 # ---------------------------------------------------------------------------
 # Resolve the VERIFIED OpenClaw root (Docker /data/.openclaw first, then HOME).

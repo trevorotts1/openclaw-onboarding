@@ -2,9 +2,9 @@ It's Sunday — time for the weekly OpenClaw update check. Follow these rules ex
 
 RULE 1 — Detect platform first, then resolve the CLIENT OWNER chat ONCE:
   if [ -d "/data/.openclaw" ]; then PLATFORM=vps; OC_ROOT=/data/.openclaw; else PLATFORM=mac; OC_ROOT=$HOME/.openclaw; fi
-  Resolve the recipient for EVERY client-facing message below with the operator-rejecting resolver. Do NOT use bare telegram allowFrom[0]: on a client box the OPERATOR id (Trevor, 5252140759) is FIRST in allowFrom, so allowFrom[0] would misroute every client-facing message to the operator — the exact leak this rule exists to prevent.
+  Resolve the recipient for EVERY client-facing message below with the operator-rejecting resolver. Do NOT use bare telegram allowFrom[0]: on a client box the OPERATOR id (Trevor) is FIRST in allowFrom, so allowFrom[0] would misroute every client-facing message to the operator — the exact leak this rule exists to prevent.
     source "$OC_ROOT/skills/shared-utils/resolve-owner-chat.sh"
-    CLIENT_CHAT="$(resolve_owner_chat_id)"   # first NON-operator allowFrom entry; rejects operator IDs 5252140759/6663821679/6771245262; honors OPENCLAW_OWNER_CHAT_ID
+    CLIENT_CHAT="$(resolve_owner_chat_id)"   # first NON-operator allowFrom entry; rejects the operator IDs listed in resolve-owner-chat.sh; honors OPENCLAW_OWNER_CHAT_ID
   If CLIENT_CHAT is EMPTY (only operator IDs are present, no client owner resolved), do NOT fall back to allowFrom[0] or the operator. Log "weekly-update: no client owner chat resolved — skipping client send (log-only)" and SKIP every client-facing send (the AGENTS.md UPDATE flag from RULE 5.5 still surfaces the pending update). An operator chat id must NEVER receive a client-facing weekly-update message.
 
 RULE 2 — Run the check-updates scripts. These are READ-ONLY and never install anything. They emit JSON.
@@ -127,7 +127,7 @@ RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this 
 
 RULE 7 — If ANY repo has HIGH risk, automatically add this line at the bottom of the summary: "⚠️ This update is HIGH risk. I recommend you reply 'ping the operator' so I can confirm with the operator (Trevor by default) before doing anything destructive."
 
-RULE 8 — Send the summary as a single Telegram message to CLIENT_CHAT (the operator-rejecting client owner chat resolved in RULE 1 — the first NON-operator allowFrom entry; NEVER bare allowFrom[0]). An OPERATOR chat id (5252140759 / 6663821679 / 6771245262) must NEVER receive this client-facing summary:
+RULE 8 — Send the summary as a single Telegram message to CLIENT_CHAT (the operator-rejecting client owner chat resolved in RULE 1 — the first NON-operator allowFrom entry; NEVER bare allowFrom[0]). An OPERATOR chat id (OPERATOR_CHAT_IDS_SH in resolve-owner-chat.sh) must NEVER receive this client-facing summary:
   openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "<the summary composed in RULE 6>"
   (If CLIENT_CHAT is empty per RULE 1, do NOT send — log-only; the AGENTS.md UPDATE flag still surfaces the pending update.)
 

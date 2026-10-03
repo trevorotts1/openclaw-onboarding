@@ -1,3 +1,18 @@
+## [v25.3.14] - 2026-10-03 - Operator personal chat id scrub: deterministic script + CI guard
+
+The operator's personal Telegram chat id was still written into agent-facing text that a fleet roll copies to every client box. D13 already removed it from the agent escalation template. This release removes the rest and guards it so it cannot return.
+
+#### What changed
+- **New** `scripts/scrub-operator-chat-id.py` (Python 3, stdlib only, no model calls). `--report` lists every occurrence as KEEP or FIX, `--apply` rewrites only FIX lines from an explicit rule table and is idempotent, `--check` exits 1 if any FIX-class occurrence exists. Classification is a reviewed path-glob table in the script, never a runtime guess. An unclassified new occurrence counts as FIX and fails the guard.
+- **FIX (15 files, 30 occurrences)**: the Rescue Rangers role-library files (director, SOP-RR-01, ticket clerk, QC and postmortem specialist) now say "Operator" and route escalation through the Rescue Rangers escalation section instead of naming a personal chat. `cron-prompt.txt`, `23-ai-workforce-blueprint/resume-prompt.txt`, `15-blackceo-team-management/` (`INSTALL.md`, `QC.md`, `qc-blackceo-team-management.sh`, `scripts/install-remote-rescue.sh`), `platform/vps/VPS-ENVIRONMENT-SETUP.md`, `scripts/u126-remediate.sh` and the comments in `install.sh` and `shared-utils/nudge-incomplete-interviews.py` no longer carry the literal. Where a script needs the operator id list it reads `OPERATOR_CHAT_IDS_SH` from `shared-utils/resolve-owner-chat.sh`, the single authority. `scripts/u126-remediate.sh` now skips the disk alert re-registration when no operator escalation chat is configured, instead of falling back to a literal.
+- **KEEP (operator-only files, tests, deny-list guards)**: `shared-utils/resolve-owner-chat.sh`, `scripts/configure-operator-telegram.sh`, `scripts/diagnose-telegram-config.sh`, `scripts/ensure-pipeline-crons.sh`, `docs/OPERATOR-MAINTENANCE.md`, `**/qc-no-personal-data.sh`, `tests/**`, the deny-list sets in `install.sh` and `shared-utils/nudge-incomplete-interviews.py`, and the CI guard patterns. Each is justified in the script's rule table.
+- **Guard**: `.github/workflows/qc-static.yml` runs `--check` and the new unit test `tests/unit/scrub-operator-chat-id.test.sh` on every push and pull request.
+
+- **Required side effects of editing those files**: `15-blackceo-team-management/skill-version.txt` v7.1.2 to v7.1.3 (the skill-version gate); `docs/interview-launch-recovery.md` paired onboarding version rolled to v25.3.14 (the doc-currency gate); `hash-content-manifest.py` re-stamp of `templates/role-library/_index.json` (content hash, render hash and content version for 3 roles, 1 SOP and the rescue-rangers department; every entry's timestamp also moves, which is why that file shows a large line count).
+
+#### Not changed
+Operator-side behavior on the operator box is unchanged. No client box, credential, model or provider setting is touched.
+
 ## [v25.3.13]  -  2026-10-03  -  Merge train: #1448 Skill 72: motion-video-plus (deterministic motion-graphics video…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

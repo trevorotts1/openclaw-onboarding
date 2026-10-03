@@ -98,7 +98,7 @@ Use two different approved senders.
 
 ## 6. Operator completion message check
 
-INSTALL.md requires a completion confirmation back to the operator's DM. The operator chat ID is resolved at runtime via `shared-utils/operator-chat-id.sh` (reads `env.vars.OPERATOR_TELEGRAM_CHAT_ID`, default `5252140759` for Trevor Otts).
+INSTALL.md requires a completion confirmation back to the operator's DM. The operator chat ID is resolved at runtime via `shared-utils/operator-chat-id.sh` (reads `env.vars.OPERATOR_TELEGRAM_CHAT_ID`; no hardcoded default, when unset the escalation is skipped).
 
 ```bash
 # Confirm config key is set
@@ -106,7 +106,7 @@ openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID
 ```
 
 - [ ] `env.vars.OPERATOR_TELEGRAM_CHAT_ID` is set in openclaw.json
-- [ ] Confirmation message was sent to the resolved operator Telegram chat (default `5252140759` if not overridden)
+- [ ] Confirmation message was sent to the resolved operator Telegram chat (skipped when no operator escalation chat is configured)
 - [ ] Message listed the exact IDs read back from `allowFrom`
 - [ ] Message confirmed placeholders were removed
 
@@ -136,7 +136,7 @@ openclaw config validate
 
 ### 7B. Group-session collision gate (HARD FAIL if violated)
 
-- [ ] `channels.telegram.groupAllowFrom` does NOT contain `5252140759`, `6663821679`, or `6771245262`
+- [ ] `channels.telegram.groupAllowFrom` does NOT contain any operator chat id (`OPERATOR_CHAT_IDS_SH` in `shared-utils/resolve-owner-chat.sh`)
   - If any are present: run `bash scripts/install-remote-rescue.sh --repair` then re-validate
 
 ### 7C. AgentId collision gate (HARD FAIL if violated)

@@ -3,6 +3,9 @@
 # v2.0.0: HARD auto-fail gates for operator/owner session isolation.
 # A rule not auto-failed at this gate does not exist.
 set -u
+_QC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_QC_DIR/../shared-utils/resolve-owner-chat.sh" || { echo "FATAL: shared-utils/resolve-owner-chat.sh missing" >&2; exit 2; }
+export OPERATOR_CHAT_IDS_SH
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
@@ -75,7 +78,7 @@ assert "every operator DM has a real bindings route to remote-rescue (not field 
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-op_ids = {'5252140759', '6663821679', '6771245262'}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 routed = set()
 for b in (cfg.get('bindings') or []):
     if not isinstance(b, dict) or b.get('agentId') != 'remote-rescue':
@@ -103,7 +106,7 @@ assert rr and rr.get('workspace'), 'no workspace'
 GATE4_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
-op_ids = {"5252140759", "6663821679", "6771245262"}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 group_allow = set(cfg.get("channels", {}).get("telegram", {}).get("groupAllowFrom") or [])
 leak = op_ids & group_allow
 if leak:
@@ -124,7 +127,7 @@ fi
 GATE5_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
-op_ids = {"5252140759", "6663821679", "6771245262"}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 # RR-032: the previous version of this gate read main["telegram"]["allowFrom"],
 # a key that does not exist — so the set was always empty and the gate passed
 # vacuously. What actually routes an operator DM is a top-level bindings entry.
@@ -156,7 +159,7 @@ assert "operator IDs present in channels.telegram.allowFrom" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-op_ids = {'5252140759','6663821679','6771245262'}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 allow = set(cfg.get('channels',{}).get('telegram',{}).get('allowFrom') or [])
 missing = op_ids - allow
 assert not missing, f'missing: {missing}'
@@ -181,7 +184,7 @@ echo ""
 if [ "${IS_OPERATOR_BOX:-0}" = "1" ]; then
   yellow "  SKIP -- IS_OPERATOR_BOX=1: operator dispatcher roster is allowed on the operator box"
 else
-  OP_IDS_RE='5252140759|6663821679|6771245262'
+  OP_IDS_RE="${OPERATOR_CHAT_IDS_SH// /|}"
   ROUTING_FILES=(
     "$SKILLS_DIR_DEFAULT/15-blackceo-team-management/TEAM_CONFIG.md"
     "$WORKSPACE/WORKFLOW_AUTO.md"
