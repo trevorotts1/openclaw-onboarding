@@ -61,10 +61,23 @@ except Exception: pass'
 
 do_install() {
     local cron_state="unknown"
+    # RR plan F17: the box name is the canonical fleet slug, never a hostname (a
+    # hostname matches no client at Rescue Rangers). Refuse rather than guess.
+    if [ -z "$BOX" ]; then
+        BOX="$(python3 "$SCRIPTS/loop_identity.py" resolve)" || {
+            echo "$TAG REFUSED: cannot name this box. Set FLEET_STANDING_BOX_SLUG (or RR_BOX_SLUG) to the box's fleet slug, or pass --box <slug>, then re-run. Nothing was installed." >&2
+            return $EX_REFUSED
+        }
+    else
+        python3 "$SCRIPTS/loop_identity.py" check "$BOX" || {
+            echo "$TAG REFUSED: --box must be the fleet slug, not a hostname or container id. Nothing was installed." >&2
+            return $EX_REFUSED
+        }
+    fi
+
     echo "$TAG preflight..."
     bash "$SELF_DIR/preflight.sh" --check || return $?
 
-    [ -z "$BOX" ] && BOX="$(hostname 2>/dev/null || echo box)"
 
     echo "$TAG initializing ledger (armed=false: 7-day DRY_RUN observe-only burn-in)..."
     py loop_ledger.py init >/dev/null || return $EX_ERR

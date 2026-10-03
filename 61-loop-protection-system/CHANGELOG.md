@@ -3,6 +3,28 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [1.0.1] - 2026-10-03
+
+### Fix - the box is named by its fleet slug, never its hostname (RR plan F17)
+
+`install.sh` defaulted the box name to `hostname`, and `loop_escalate.build_payload` sent only that as
+`box`. A hostname is not a join key at Rescue Rangers, so these escalations matched no client, could not
+be coached, paged the operator, and two clients' boxes could fold into one ticket (970 of about 2,600
+pre-clear tickets came from this skill).
+
+- New `scripts/loop_identity.py`: the name is `FLEET_STANDING_BOX_SLUG`, then `RR_BOX_SLUG`, then
+  `openclaw.json` `env.vars.FLEET_STANDING_BOX_SLUG` (read only; the secrets file is never read).
+  A name that looks like a hostname (a dot, `.local`, `.lan`, `.home`), a docker container id, or a
+  placeholder (`TBD`, `unknown`, `n/a`, blank) is REFUSED, never guessed.
+- `install.sh` checks identity FIRST (before preflight creates the ledger) and refuses with exit 4 and a
+  plain message when it cannot name the box, or when `--box` is hostname-shaped. Nothing is installed.
+  The existing watchdog cron is matched by its `loop-tick-*` prefix, so a re-install keeps the running job.
+- `build_payload` now also sends `boxName` (the canonical slug) and `clientName`
+  (`FLEET_STANDING_CLIENT_LABEL` when set, else the slug). `box`, `message` and `finding` are unchanged.
+- Fleet impact: identity keys change once (new dedup buckets). Reaches boxes only through a fleet roll.
+
+Test: `tests/rescue/RR-030/test_loop_escalate_identity.py`.
+
 ## [1.0.0] - 2026-08-26
 
 **What 0.6.5 got wrong about other people's decisions.** 0.6.5 shipped the idempotent

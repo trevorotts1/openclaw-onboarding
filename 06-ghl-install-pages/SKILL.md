@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v25.3.7"
+  version: "v25.3.8"
   priority: HIGH
 ---
 
