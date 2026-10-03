@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-01T17:03:26Z",
+  "generated_at": "2026-10-03T20:58:59Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -409,8 +409,8 @@
       "bytes": 7365
     },
     "video-pipeline-craft/README.md": {
-      "sha256": "55dc995bb423868047bdeb7d00b984a121353aa9f4e80a27db282ee92e262adc",
-      "bytes": 2233
+      "sha256": "db173b597b8ab8a4689cac8b5f69c15b4d816520707861a8f72353d33ea14df1",
+      "bytes": 2444
     },
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
       "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",

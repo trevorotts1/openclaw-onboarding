@@ -175,6 +175,7 @@ You never have to know these by name or type a command. Just say what you want i
 | "cut this video" · "trim this clip" · "resize this clip for social" · "edit this footage" | Local video editing (FFmpeg/yt-dlp/Whisper/PySceneDetect) |
 | "make a cinematic ad" · "make a cinematic reel" · "produce a polished video" · "a high-end branded video" | End-to-end AI video production concept-to-upload (VEO via KIE.ai, ElevenLabs/Suno audio, FFmpeg assembly) |
 | "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" · "make me a whole video end to end" | Autonomous multi-pipeline video production (OpenMontage) |
+| "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" · "produce a kinetic typography video" | Deterministic motion-graphics video production |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->
