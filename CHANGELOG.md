@@ -1,4 +1,4 @@
-## [v25.3.9]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
+## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
 
 Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.
 
@@ -29,6 +29,21 @@ previous code and pass with the fix.
 #### Fleet impact
 Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skills 06 and 23 are rolled to this version by
 `scripts/bump-version.sh`.
+
+## [v25.3.9]  -  2026-10-03  -  Repin Command Center v7.6.98 (escalations use the fleet box slug; Rescue Rangers allow-list)
+
+### Why
+Command Center v7.6.98 (PR #481, merge 1b4f095be) carries two Rescue Rangers fixes:
+- **F18** - an escalation named the box by hostname, which matches no `fleet_standing` row, so the intake marked it unmatched and
+  paged the operator. The box now identifies itself by its fleet box slug.
+- **F51** - rung 1 of `notifySystem()` becomes an allow-list: only a genuine `escalate` outage reaches Rescue Rangers; board
+  housekeeping stays on the box.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.97 -> **v7.6.98**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN -> v7.6.98; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pair line,
+  docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.9`: all ten version markers agree.
 
 ## [v25.3.8]  -  2026-10-03  -  Rescue Rangers wave 1 (repo): agent template safety, skill-61 identity, reconciler duplicate slug, no-op receipts
 
