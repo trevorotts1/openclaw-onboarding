@@ -887,6 +887,32 @@ else
     grep 'FAIL' /tmp/loop-verify-oct.$$ >&2 | head -20
 fi
 rm -f /tmp/loop-verify-oct.$$ 2>/dev/null || true
+# SKS-010 integrator: the remaining October-fix tests, so no fix is covered by a test
+# that verify.sh never runs. All hermetic: stub binaries, scratch dirs, LOOP_NO_PROBES=1.
+_vt() {  # _vt <label> <cmd...> : run, PASS/FAIL, show the failing lines
+    _lbl="$1"; shift
+    if "$@" >/tmp/loop-verify-sks010.$$ 2>&1; then
+        ok "$_lbl"
+    else
+        bad "$_lbl (see below)"
+        grep -E 'FAIL|Error|error' /tmp/loop-verify-sks010.$$ >&2 | head -20
+    fi
+    rm -f /tmp/loop-verify-sks010.$$ 2>/dev/null || true
+}
+_vt "D-FIX-CLASSES-PLAN (Fix 12/13: LF-8 exact commands, LF-9/10 re-point, LF-11 retired)" \
+    python3 "$SELF_DIR/tests/test_fix_classes_plan.py"
+_vt "D-NATIVE-GUARD (Fix 5: read-only check of OpenClaw's own tool-loop guard)" \
+    bash "$SELF_DIR/tests/native-loop-guard-test.sh"
+_RW="$(mktemp -d "${TMPDIR:-/tmp}/loop-verify-restore.XXXXXX")"
+_vt "D-RESTORE (Fix 8: restore script sections 1 and 6 against stub openclaw)" \
+    bash "$SELF_DIR/tests/restore-s1-s6-test.sh" "$SELF_DIR/scripts/openclaw-loop-protection-restore.sh" "$_RW"
+rm -rf "$_RW" 2>/dev/null || true
+if command -v node >/dev/null 2>&1; then
+    _vt "D-LOOP-BRAKE (Fix 9: third identical resend and third fail-closed call blocked, fan-out never)" \
+        bash -c 'cd "$1/loop-brake" && node --test tests/brake.test.mjs' _ "$SELF_DIR"
+else
+    echo "  UNDETERMINED: D-LOOP-BRAKE not run - node is not on PATH (this is NOT a pass)"
+fi
 fi   # RUN_OFFLINE
 
 # ---- 4. THE STANDING GATE: this box, right now (v0.6.5) ---------------------
