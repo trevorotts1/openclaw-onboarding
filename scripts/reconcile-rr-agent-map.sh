@@ -389,10 +389,13 @@ py plan "$ROSTER_FILE" "$BOXES_FILE" "$NSNAP" "$PLAN" "$TABLE_ID" "$PENDING_OWNE
 
 DUPCOUNT="$(py get "$PLAN" duplicates_count)"
 if [ "$DUPCOUNT" -gt 0 ]; then
-  echo "$SCRIPT_TAG: DUPLICATE rows for the same box_slug — the n8n data-table API exposes no row delete, so a unique mapping cannot be reconciled automatically. ABORTING with zero writes." >&2
+  # RR plan F37: one duplicated slug must NOT stop the whole fleet. The n8n data-table
+  # API exposes no row delete, so THAT slug cannot be reconciled automatically: it is
+  # reported (named, with its row count), left untouched, and recorded as PENDING with
+  # an owner (reason duplicate_rows) by `py merge`. Every other slug is still planned
+  # and written. The run still ends complete=0 and exits 1.
+  echo "$SCRIPT_TAG: DUPLICATE rows for the same box_slug ($DUPCOUNT slug(s)) - n8n has no row delete, so these are NOT touched and are recorded PENDING (reason duplicate_rows); all other slugs continue." >&2
   py dupes "$PLAN" >&2
-  py emit "$PLAN" "aborted=1"
-  exit 1
 fi
 
 probe_runtime() {   # probe_runtime <slug> -> one JSON object on stdout
@@ -507,9 +510,9 @@ fi
 COMPLETE=1
 [ "$PENDING" -eq 0 ] && [ "$FAILED" -eq 0 ] && [ "$RC" -eq 0 ] && [ "$VRC" -eq 0 ] || COMPLETE=0
 if [ "$MODE" = "dry" ]; then
-  py emit "$FINAL" "aborted=0 duplicates=0 complete=$COMPLETE pages=$PAGES_READ"
+  py emit "$FINAL" "aborted=0 complete=$COMPLETE pages=$PAGES_READ"
 else
-  py emit "$FINAL" "aborted=0 duplicates=0 rows_inserted=$INS rows_updated=$UPD failed=$FAILED complete=$COMPLETE pages=$PAGES_READ identity_source=$IDENTITY_SOURCE"
+  py emit "$FINAL" "aborted=0 rows_inserted=$INS rows_updated=$UPD failed=$FAILED complete=$COMPLETE pages=$PAGES_READ identity_source=$IDENTITY_SOURCE"
 fi
 [ "$COMPLETE" -eq 1 ] || RC=1
 exit "$RC"

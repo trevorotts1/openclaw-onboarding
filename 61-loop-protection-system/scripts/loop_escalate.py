@@ -40,6 +40,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from loop_ledger import openclaw_root  # noqa: E402
+from loop_identity import canonical_box, client_label  # noqa: E402
 
 WEBHOOK_ENV = "RESCUE_RANGERS_WEBHOOK_URL"
 SECRET_ENV = "RESCUE_RANGERS_WEBHOOK_SECRET"
@@ -64,11 +65,15 @@ def build_payload(box, loop_class, finding, evidence_path, proposed_fix,
     requires one of message|problem|problem_text|problemText and this payload
     only ever carried `finding`, so a correctly-detected loop was refused at the
     door. `finding` is KEPT so nothing downstream that reads it breaks."""
+    # RR plan F17: the intake joins on the canonical fleet slug, never a hostname.
+    box = canonical_box(box)
     return {
         "action": "escalate",
         "source": "skill-61-loop-protection",
         "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "box": box,
+        "boxName": box,
+        "clientName": client_label(box),
         "role": role,
         "driver": loop_class,
         "finding": finding,

@@ -81,7 +81,7 @@
 # contract: public receiver changes pair with additive server support FIRST;
 # old servers that omit the fields keep working because the fields simply echo
 # as empty strings).
-RECEIVER_VERSION="1.7.1"
+RECEIVER_VERSION="1.7.2"
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -1736,6 +1736,22 @@ _receipt_match() {
     _rm_rev=$(_json_get "$_rm_body" "receipt.state_revision")
     _rm_rev_type=$(_json_type "$_rm_body" "receipt.state_revision")
     [ -n "$_rm_op_seen" ]    || { printf 'no_receipt_operation_id'; return 0; }
+    # RR plan F63: a 2xx JSON with recorded:false and reason already_terminal or
+    # unknown_instruction, carrying THIS operation's receipt, means the server
+    # recorded NOTHING (ticket already closed/cleared, or instruction unknown).
+    # That ends the retry loop but is NOT a delivery: print noop:<reason>, never
+    # "match". It carries no state_revision, so it is decided BEFORE the revision
+    # requirement below. Any other recorded:false stays unconfirmed.
+    _rm_recorded=$(_json_get "$_rm_body" "recorded")
+    _rm_reason=$(_json_get "$_rm_body" "reason")
+    if [ "$_rm_recorded" = "false" ]; then
+        case "$_rm_reason" in
+            already_terminal|unknown_instruction)
+                if [ -n "$_rm_op" ] && [ "$_rm_op_seen" = "$_rm_op" ]; then
+                    printf 'noop:%s' "$_rm_reason"; return 0
+                fi ;;
+        esac
+    fi
     [ -n "$_rm_rev" ]        || { printf 'no_receipt_state_revision'; return 0; }
     [ "$_rm_rev_type" = "number" ] || { printf 'invalid_receipt_state_revision'; return 0; }
     case "$_rm_rev" in
@@ -1789,6 +1805,8 @@ _ack_send() {
     _as_reason=$(_receipt_match "$_as_out" "$_as_op" "$_as_attempt")
     if [ "$_as_reason" = "match" ]; then
         printf 'confirmed:%s' "$(_json_get "$_as_out" "receipt.state_revision")"
+    elif [ "${_as_reason%%:*}" = "noop" ]; then
+        printf '%s' "$_as_reason"            # RR plan F63: settled with no delivery
     else
         printf 'ok_json:%s' "$_as_reason"
     fi
@@ -1823,6 +1841,14 @@ _resend_pending() {
                 rm -f "$_rp_path" 2>/dev/null || true
                 _log "ack-resend CONFIRMED op=$_rp_op rev=${_rp_verdict#confirmed:}"
                 ;;
+            noop:*)
+                # RR plan F63: the server answered recorded:false (already_terminal /
+                # unknown_instruction) with this op's receipt. Stop resending, but it is NOT
+                # a delivery: journal ack_settled_noop, never ack_confirmed.
+                _journal_put "$_rp_op" "ack_settled_noop" "{\"resend\":true,\"reason\":\"$(_json_str "${_rp_verdict#noop:}")\"}" 2>/dev/null || true
+                rm -f "$_rp_path" 2>/dev/null || true
+                _log "ack-resend SETTLED_NOOP op=$_rp_op reason=${_rp_verdict#noop:} (server recorded nothing; not a delivery)"
+                ;;
             *)
                 _journal_put "$_rp_op" "ack_pending" "{\"resend\":true,\"last_class\":\"$(_json_str "$_rp_verdict")\"}" 2>/dev/null || true
                 _log "ack-resend UNCONFIRMED op=$_rp_op class=$_rp_verdict (retained, identical body)"
@@ -1843,7 +1869,7 @@ _gc_journal() {
         find "$_JOURNAL" -type f -name 'op_*' -mtime +14 2>/dev/null | while IFS= read -r _gj_f; do
             _gj_phase=$(_json_field "$(cat "$_gj_f" 2>/dev/null)" "phase")
             case "$_gj_phase" in
-                ack_confirmed) rm -f "$_gj_f" 2>/dev/null || true ;;
+                ack_confirmed|ack_settled_noop) rm -f "$_gj_f" 2>/dev/null || true ;;
             esac
         done
     fi
@@ -1972,6 +1998,13 @@ _ack() {
 
     _ack_verdict_token=$(_ack_send "$_ack_body" "$_op_id" "${ATTEMPT_ID:-}" "ack")
     case "$_ack_verdict_token" in
+        noop:*)
+            # RR plan F63: no-op receipt (recorded:false, already_terminal / unknown_instruction).
+            # Retire the pending ack, but never call it delivered.
+            _journal_put "$_op_id" "ack_settled_noop" "{\"reason\":\"$(_json_str "${_ack_verdict_token#noop:}")\"}" 2>/dev/null || true
+            rm -f "$_PENDING/$_op_id" 2>/dev/null || true
+            _log "ack_verdict=$_ack_verdict receipt=SETTLED_NOOP reason=${_ack_verdict_token#noop:} op=$_op_id (server recorded nothing; not a delivery)"
+            ;;
         confirmed:*)
             _journal_put "$_op_id" "ack_confirmed" "{\"state_revision\":\"$(_json_str "${_ack_verdict_token#confirmed:}")\"}" 2>/dev/null || true
             rm -f "$_PENDING/$_op_id" 2>/dev/null || true

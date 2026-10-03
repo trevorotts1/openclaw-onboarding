@@ -8,7 +8,7 @@ description: >
   tooling — never announces itself to the client, never touches client models
   or credentials.
 metadata:
-  version: "v23.5.2"
+  version: "v23.5.3"
   priority: HIGH
 ---
 

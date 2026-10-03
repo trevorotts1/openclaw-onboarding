@@ -24,21 +24,38 @@ An escalation that arrives with the wrong `boxName` cannot be attributed to you,
 ```
 _RR_SECRET_ARGS=()
 [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-cat > /tmp/rr-escalation.json <<JSON
-{
-  "action":          "escalate",
-  "person":          "<real name of the owner or end user this agent serves>",
-  "clientName":      "{{CLIENT}}",
-  "agentName":       "{{AGENT}}",
-  "boxName":         "$_RR_BOX",
-  "boxType":         "{{BOX_TYPE}}",
-  "openclawVersion": "<run: openclaw --version>",
-  "problem":         "<one paragraph, plain text, no double-quote characters>",
-  "alreadyTried":    "<numbered list, plain text, no double-quote characters>",
-  "returnTo":        "{{RETURN_TO}}"
+export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
+# Free text goes in QUOTED heredocs (<<'TXT'): nothing you paste there is ever
+# expanded or run. Replace each <...> line with your own words; leave the
+# IFS=/read and TXT lines exactly as they are.
+IFS= read -r -d '' _RR_PERSON <<'TXT' || true
+<real name of the owner or end user this agent serves>
+TXT
+IFS= read -r -d '' _RR_PROBLEM <<'TXT' || true
+<one paragraph, plain text; quotes, backticks and dollar signs are safe here>
+TXT
+IFS= read -r -d '' _RR_TRIED <<'TXT' || true
+<numbered list of everything you already tried, plain text>
+TXT
+export _RR_PERSON _RR_PROBLEM _RR_TRIED
+python3 - <<'PY'
+import json, os
+e = os.environ
+body = {
+    "action": "escalate",
+    "person": e["_RR_PERSON"].strip(),
+    "clientName": "{{CLIENT}}",
+    "agentName": "{{AGENT}}",
+    "boxName": e["_RR_BOX"],
+    "boxType": "{{BOX_TYPE}}",
+    "openclawVersion": "<run: openclaw --version>",
+    "problem": e["_RR_PROBLEM"].strip(),
+    "alreadyTried": e["_RR_TRIED"].strip(),
+    "returnTo": "{{RETURN_TO}}",
 }
-JSON
+with open("/tmp/rr-escalation.json", "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(body))
+PY
 _RR_RESP="$(curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
@@ -57,7 +74,7 @@ if [ -n "$_RR_TICKET" ]; then
 fi
 ```
 
-The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$_RR_BOX` expands to the real slug. Do not quote it. Do not inline the JSON into `-d '...'` single quotes -- the variable would not expand and you would send the literal text `$_RR_BOX`.
+Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED heredocs above and python3 turns it into valid JSON. Never paste it into an unquoted heredoc or into `-d '...'`: a quote would break the JSON, and `$VAR`, backticks or `$(...)` in pasted error output would be expanded or RUN on this box (that can leak secrets into the ticket). Only `$_RR_BOX` is a shell variable. Do not hand-write the JSON.
 
 **Field guide:**
 
@@ -81,30 +98,46 @@ The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$
 **When the fix works**, POST the resolution signal and STOP escalating:
 
 ```
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-_RR_INCIDENT="<the incident_id you journalled from the escalation response>"
-_RR_ATTEMPT="<the attempt id that produced this fix>"
-_RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
-_RR_DIGEST="sha256-$(printf '%s' "RESOLVED: <one-line what fixed it>" | shasum -a 256 | cut -d' ' -f1)"
-cat > /tmp/rr-resolved.json <<JSON
-{
-  "action":        "escalate",
-  "clientName":    "{{CLIENT}}",
-  "agentName":     "{{AGENT}}",
-  "boxName":       "$_RR_BOX",
-  "runtime_id":    "$_RR_BOX",
-  "incident_id":   "$_RR_INCIDENT",
-  "operation_id":  "$_RR_OP",
-  "attempt_id":    "$_RR_ATTEMPT",
-  "result_digest": "$_RR_DIGEST",
-  "problem":       "RESOLVED: <one-line what fixed it>"
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
+export _RR_INCIDENT='<the incident_id journalled from the escalation response>'
+export _RR_ATTEMPT='<the attempt id that produced the fix>'
+IFS= read -r -d '' _RR_FIXED <<'TXT' || true
+<one line: what fixed it>
+TXT
+_RR_FIXED="${_RR_FIXED%$'\n'}"
+export _RR_FIXED
+export _RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
+export _RR_DIGEST="sha256-$(printf '%s' "RESOLVED: $_RR_FIXED" | shasum -a 256 | cut -d' ' -f1)"
+python3 - <<'PY'
+import json, os
+e = os.environ
+body = {
+    "action": "escalate",
+    "clientName": "{{CLIENT}}",
+    "agentName": "{{AGENT}}",
+    "boxName": e["_RR_BOX"],
+    "runtime_id": e["_RR_BOX"],
+    "incident_id": e["_RR_INCIDENT"],
+    "operation_id": e["_RR_OP"],
+    "attempt_id": e["_RR_ATTEMPT"],
+    "result_digest": e["_RR_DIGEST"],
+    "problem": "RESOLVED: " + e["_RR_FIXED"],
 }
-JSON
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+with open("/tmp/rr-resolved.json", "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(body))
+PY
+_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-resolved.json
+  --data-binary @/tmp/rr-resolved.json)"
 rm -f /tmp/rr-resolved.json
+# The last line is the HTTP status. 200 = recorded. 403 = the X-Rescue-Secret
+# header was missing or wrong (the ticket is STILL OPEN). 409 = the incident_id
+# did not match. Anything else: the ticket is still open -- do not tell the end
+# user it is closed.
+printf '%s\n' "$_RR_RESP"
 ```
 
 **A resolution MUST name the incident it closes.** `incident_id` is the ticket
