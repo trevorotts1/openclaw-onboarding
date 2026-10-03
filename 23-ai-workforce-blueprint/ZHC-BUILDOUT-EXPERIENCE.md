@@ -83,7 +83,9 @@ reduced workforce.
   335-role library + SOP library** (335 roles / 23 departments as of v12.6.0) -- minimal token burn, identical
   across clients. **Do NOT regenerate a doc with an LLM when a template exists.**
   LLM/free-form writing is reserved ONLY for roles with no comparable template
-  (and those are tracked — see Stage 3, PENDING-SOPS.md).
+  (and those are tracked — see Stage 3, SOP-NEEDED.json; v25.4.0: PENDING stubs
+  are never written — a library miss routes the role's work to general-task and
+  emits a machine-readable SOP-needed record).
 
 ---
 
@@ -111,10 +113,14 @@ The build now emits all three:
    > covers the task, do NOT guess — fire the department SOP-Writer
    > (INSTRUCTIONS.md Moment 3.7).
 
-4. **`PENDING-SOPS.md`** at the company root — every role whose `how-to.md` is a
-   PENDING stub (no library template matched) is collected here with a one-shot
-   token-fill instruction. A missing template is **never** a silent empty stub;
-   the orchestrator works PENDING-SOPS.md to zero before declaring complete.
+4. **`SOP-NEEDED.json`** at the company root (+ the human-readable
+   `SOP-NEEDED.md` companion) — every role with no library template match is
+   recorded here as a machine-readable record (role, department, reason). No
+   PENDING stub is written: the role's `how-to.md` is a routing notice sending
+   its work to the `general-task` department until its SOP is authored. A
+   missing template is **never** a silent empty stub; the orchestrator runs
+   `author-missing-sops.py --apply` and works SOP-NEEDED.json to zero open
+   records before declaring complete (the library gate fails otherwise).
 
 ---
 
@@ -176,7 +182,7 @@ Follow top to bottom; QC your build against the same list.
 - [ ] Every department has a `ROSTER.md` (When-to Reference Map)
 - [ ] `universal-sops/00-ROUTING.md` generated
 - [ ] Read-the-SOP protocol present in directors, specialists, and master orchestrator
-- [ ] `PENDING-SOPS.md` exists and is worked to ZERO (no silent stubs)
+- [ ] `SOP-NEEDED.json` exists with ZERO open records (no silent stubs; the library gate fails otherwise)
 
 **Stage 4 — Closeout**
 - [ ] Telegram celebration sequence sent, incl. Command Center link
