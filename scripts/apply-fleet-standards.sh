@@ -1512,8 +1512,12 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #       status  read-only (GETs only). Prints
 #               STATUS id=<id> status=<s> department=<d> updated=<t> cancelled=<yes|no> title="<title>"
 #       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
+#               plus one live-delivery line read from the response (delivered_live).
 #       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
 #               never dispatched again, row kept) + an owner note -> CANCELLED id=...
+#               plus one kill line (killed/killed_at) and one in-flight-run line
+#               (execution{found,notice_delivered,notice_error}). Missing fields on
+#               older CC print '[response fields missing]'; nothing invented.
 #     Same-title cards are ONE job carded twice, not ambiguity: the newest is
 #     acted on, and cancel archives every one of them.
 #     FAIL-CLOSED (JEV-802): if the task list or the department list cannot be
@@ -1597,6 +1601,12 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 # MC_ROUTE_EVENT_ID: stable originating event (reuse on retry).
 # MC_ROUTE_OPERATION_ID: explicit operation fallback; otherwise allocated once per invocation.
 # MC_ROUTE_COMPANY_ID scopes the operation at the receiver.
+# MC_ROUTE_RR_ESCALATE=1: RR plan F71. When routing FAILS, also file ONE Rescue Rangers
+#   admission from this box (background, bounded, fail-soft) so the "escalating to the operator"
+#   the CEO tells the owner is true. Off unless set. The admission names the box by
+#   FLEET_STANDING_BOX_SLUG (nothing is sent without it), carries a fixed reason class (NEVER the
+#   owner's words), and uses <reason-class>:<UTC hour> as the event id so an outage folds into one
+#   ticket per class per hour instead of one per message.
 set -uo pipefail
 
 INGEST_URL="${MC_ROUTE_INGEST_URL:-http://127.0.0.1:4000/api/tasks/ingest}"
@@ -1653,7 +1663,48 @@ else
   fi
 fi
 
+# RR plan F71: file a Rescue Rangers admission for a routing failure. Never blocks, never fails
+# the caller: every guard returns 0 and the admission runs in the background.
+_rr_escalate_admission() {
+  [ "${MC_ROUTE_RR_ESCALATE:-0}" = "1" ] || return 0
+  _rr_slug="${FLEET_STANDING_BOX_SLUG:-}"
+  [ -n "$_rr_slug" ] || return 0      # no canonical slug -> no identity -> send nothing (never the hostname)
+  _rr_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  _rr_lib="${OC_ROOT:-$_rr_self/..}/scripts/lib/rescue_admission.py"
+  [ -f "$_rr_lib" ] || return 0
+  # Reason CLASS from a fixed set. $1 can carry the owner's own words (a task title), so the
+  # message text never leaves this function; only the class word does.
+  case "$1" in
+    "empty "*)                     _rr_class="empty-task";           _rr_plain="the task was empty" ;;
+    *"department list"*)           _rr_class="departments-unreadable"; _rr_plain="the department list could not be read" ;;
+    *"task list"*|*"/api/tasks HTTP"*|*"task record"*) _rr_class="tasks-unreadable"; _rr_plain="the task list could not be read" ;;
+    "transport failed"*)           _rr_class="transport-failed";     _rr_plain="the Command Center could not be reached" ;;
+    *"ingest POST returned"*|*"ingest returned"*) _rr_class="ingest-rejected"; _rr_plain="the Command Center did not accept the task" ;;
+    *"could not build request body"*) _rr_class="request-build-failed"; _rr_plain="the task request could not be built" ;;
+    *"could not add note"*|*"could not cancel"*) _rr_class="task-update-failed"; _rr_plain="a task update was not accepted" ;;
+    *)                             _rr_class="other";                _rr_plain="routing failed for another reason" ;;
+  esac
+  _rr_hour="$(date -u +%Y%m%d%H)"
+  # one launch per class per hour per box; the intake folds the rest by event id as well
+  _rr_dir="${MC_ROUTE_STATE_DIR:-${TMPDIR:-/tmp}/mc-route-task-$(id -u)}"
+  mkdir -p "$_rr_dir" 2>/dev/null || return 0
+  _rr_mark="$_rr_dir/rr-escalated-$_rr_class-$_rr_hour"
+  [ -e "$_rr_mark" ] && return 0
+  : > "$_rr_mark" 2>/dev/null || return 0
+  # ponytail: no wall-clock kill unless timeout/gtimeout exists; the client's own socket timeout
+  # (EWS_RESCUE_ADMISSION_TIMEOUT=20) bounds the one request. Add a watchdog if a platform lacks both.
+  _rr_to=""
+  command -v timeout >/dev/null 2>&1 && _rr_to="timeout 45"
+  [ -z "$_rr_to" ] && command -v gtimeout >/dev/null 2>&1 && _rr_to="gtimeout 45"
+  ( EWS_RESCUE_ADMISSION_TIMEOUT=20 $_rr_to "$PYTHON" "$_rr_lib" --source mc-route --box "$_rr_slug" \
+      --event-id "$_rr_class:$_rr_hour" \
+      --problem "Command Center task routing failed on this box: $_rr_plain" \
+      </dev/null >/dev/null 2>&1 & ) >/dev/null 2>&1
+  return 0
+}
+
 _escalate() {
+  _rr_escalate_admission "$1" || true
   echo "mc-route: FAILED — $1" >&2
   echo "ESCALATE_TO_OPERATOR: task routing failed. The CEO must tell the owner it is escalating this to the operator. Do NOT self-intake, do NOT ask intake questions, do NOT retry." >&2
   exit 1
@@ -1951,6 +2002,62 @@ PYFIND
     NOTE="$1" "$PYTHON" -c 'import json, os, sys; sys.stdout.write(json.dumps({"content": os.environ["NOTE"], "sender": "owner"}))' >"$BODY_FILE"
     _api POST "$_T_PATH/messages" "$BODY_FILE"
   }
+  _cancel_truth() {  # $1 = archive POST response JSON -> kill + in-flight-run lines (one known fact each, never JSON)
+    CANCEL_RESP="$1" "$PYTHON" - <<'PYCANCEL'
+import json, os
+try:
+    d = json.loads(os.environ.get("CANCEL_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+missing = False
+killed, killed_at = d.get("killed"), d.get("killed_at")
+if killed_at or killed is True:
+    print("kill set (%s) — running agent fenced from further dispatch" % (killed_at or "no timestamp reported"))
+elif "killed" in d or "killed_at" in d:
+    print("kill NOT set by Command Center — running agent fenced from further dispatch either way")
+else:
+    print("kill field: response did not report it (older CC) — running agent fenced from further dispatch either way")
+    missing = True
+ex = d.get("execution")
+if isinstance(ex, dict):
+    if ex.get("found"):
+        if ex.get("notice_delivered"):
+            print("in-flight run notified to stop")
+        else:
+            print("in-flight run NOT notified: %s (kill fence set; gateway no abort RPC so live run can only be asked to stop)" % (ex.get("notice_error") or "no reason reported"))
+    else:
+        print("no in-flight run was active")
+else:
+    print("in-flight run: response did not report it (older CC)")
+    missing = True
+if missing:
+    print("[response fields missing — older CC?]")
+PYCANCEL
+  }
+  _update_truth() {  # $1 = messages POST response JSON -> live-delivery line (one known fact, never JSON)
+    UPDATE_RESP="$1" "$PYTHON" - <<'PYUPDATE'
+import json, os
+try:
+    d = json.loads(os.environ.get("UPDATE_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+if "delivered_live" in d:
+    if d.get("delivered_live") is True:
+        tgt = d.get("delivery_target")
+        print("note delivered live to running agent" + (" (%s)" % tgt if tgt else ""))
+    elif d.get("delivery_error"):
+        print("note recorded — NOT delivered live: %s" % d.get("delivery_error"))
+    else:
+        print("note recorded — no running agent session; seen on next turn/dispatch")
+else:
+    print("delivery: response did not report live-delivery (older CC) — note recorded on the card")
+    print("[response fields missing — older CC?]")
+PYUPDATE
+  }
   case "$EXISTING_ACTION" in
     status)
       echo "STATUS id=$_T_ID status=$_T_STATUS department=$_T_DEPT updated=$_T_UPDATED cancelled=$_T_CANCELLED title=\"$_T_TITLE\""
@@ -1958,7 +2065,9 @@ PYFIND
     update)
       _note "$EXISTING_NOTE"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not add the note to task $_T_ID (HTTP $API_CODE)" ;; esac
+      _UPDATE_RESP="$API_OUT"
       echo "UPDATED id=$_T_ID title=\"$_T_TITLE\""
+      _update_truth "$_UPDATE_RESP"
       ;;
     cancel)
       if [ "$_T_CANCELLED" = "yes" ]; then
@@ -1967,9 +2076,11 @@ PYFIND
       fi
       _api POST "$_T_PATH/archive"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not cancel task $_T_ID (HTTP $API_CODE)" ;; esac
+      _CANCEL_RESP="$API_OUT"
       _note "Cancelled by the owner.${EXISTING_NOTE:+ $EXISTING_NOTE}"
       case "$API_CODE" in 2[0-9][0-9]) ;; *) echo "mc-route: WARNING — task $_T_ID is cancelled but the cancel note was not saved (HTTP $API_CODE)." >&2 ;; esac
       echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\""
+      _cancel_truth "$_CANCEL_RESP"
       # JEV-802: same-title duplicates are the same job carded twice. Cancelling
       # the job cancels all of them, or the survivors keep the work alive on the
       # board after the owner was told it was cancelled.
@@ -1981,7 +2092,7 @@ PYFIND
         fi
         _api POST "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_DID")/archive"
         case "$API_CODE" in
-          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)" ;;
+          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)"; _cancel_truth "$API_OUT" ;;
           *) echo "mc-route: WARNING — duplicate card $_DID of the same job was NOT cancelled (HTTP $API_CODE); the owner should be told." >&2 ;;
         esac
       done

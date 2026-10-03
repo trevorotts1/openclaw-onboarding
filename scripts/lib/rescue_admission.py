@@ -94,6 +94,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import hashlib
 import json
 import os
@@ -153,6 +154,13 @@ SECRET_ENV = "RESCUE_RANGERS_WEBHOOK_SECRET"          # v1 shared fleet secret
 BOX_CRED_ENV = "RR_BOX_CRED"                          # v2 per-enrollment credential
 BOX_ID_ENV = "RR_BOX_ID"                              # v2 public enrollment id
 BOX_SLUG_ENV = "FLEET_STANDING_BOX_SLUG"              # canonical per-box slug
+# RR plan F89. Optional identity fields, read from the SAME box env names the other repo
+# senders already use (loop_identity.py / disk-usage-alert.sh read FLEET_STANDING_CLIENT_LABEL;
+# ghl-mcp-probe.sh reads RESCUE_RANGERS_PERSON and RESCUE_RANGERS_RETURN_TO). They only fill
+# fields the payload would otherwise send empty, and they never enter operation_id.
+CLIENT_LABEL_ENV = "FLEET_STANDING_CLIENT_LABEL"
+PERSON_ENV = "RESCUE_RANGERS_PERSON"
+RETURN_TO_ENV = "RESCUE_RANGERS_RETURN_TO"
 TIMEOUT_ENV = "EWS_RESCUE_ADMISSION_TIMEOUT"
 DEFAULT_TIMEOUT = 120.0
 BODY_READ_LIMIT = 65536
@@ -286,6 +294,10 @@ def operation_id(box, source, dedup_key, event_id, signal=""):
         str(dedup_key or ""), str(event_id or ""),
     ]))[:32]
 
+
+def _env_text(name, limit=200):
+    """A trimmed, single-line value of an optional env var ('' when unset)."""
+    return " ".join(_unquote_env(os.environ.get(name, "")).split())[:limit]
 
 def admission_url() -> str:
     return _unquote_env(os.environ.get(WEBHOOK_URL_ENV, "")) or DEFAULT_WEBHOOK_URL
@@ -524,7 +536,8 @@ def urllib_transport(url, payload_bytes, timeout=None):
 def admit(state_dir=None, box="", problem_text="", *,
           source="skill-60-ews", signal="", key_path="", dedup_key="",
           event_id=None, tick_ts="", transport=None, url=None,
-          dry_run=False, ledger=None, meta_box=None):
+          dry_run=False, ledger=None, meta_box=None,
+          client="", person="", return_to=None):
     """Attempt rescue admission. Returns a STRUCTURED RECEIPT dict:
         {
           "status": "admitted"|"replay"|"refused"|"failed"|"dry_run"|
@@ -539,6 +552,11 @@ def admit(state_dir=None, box="", problem_text="", *,
           "reply_digest": sha256 of the verified reply body (never the body),
           "attempted_at": iso,
         }
+    F89: optional `client`, `person` and `return_to` fill the clientName / person /
+    returnTo payload fields; each falls back to the box env (FLEET_STANDING_CLIENT_LABEL,
+    RESCUE_RANGERS_PERSON, RESCUE_RANGERS_RETURN_TO), then to the old empty value. clientName
+    falls back to the box slug last, like every other repo sender. None of the three enters
+    operation_id, so the same event keeps the same identity with or without them.
     Journaling: every NON-dry-run attempt writes a durable row in the EWS
     ledger rescue_admissions table (the ledger is the sole EWS state writer).
     Failure/uncertainty NEVER consumes an incident: the caller decides state
@@ -584,7 +602,10 @@ def admit(state_dir=None, box="", problem_text="", *,
         # 2. validate the payload BEFORE posting (caller-error vs refusal).
         payload = build_payload(box, problem_text, source=source, signal=signal,
                                 key_path=key_path, dedup_key=dedup_key,
-                                event_id=event_id, tick_ts=tick_ts)
+                                event_id=event_id, tick_ts=tick_ts,
+                                client=(client or _env_text(CLIENT_LABEL_ENV) or box),
+                                person=(person or _env_text(PERSON_ENV)),
+                                return_to=(return_to if return_to else (_env_text(RETURN_TO_ENV) or None)))
         problems = validate_payload(payload)
         if problems:
             receipt["status"] = "failed"
@@ -1015,6 +1036,59 @@ def self_test():
             else:
                 os.environ["EWS_STATE_DIR"] = prev
 
+    # F89: client / person / return_to come from the box env when the caller passes none,
+    # the explicit argument wins over the env, and operation_id never depends on any of them.
+    _f89_env = (CLIENT_LABEL_ENV, PERSON_ENV, RETURN_TO_ENV)
+    _f89_saved = {k: os.environ.pop(k, None) for k in _f89_env}
+    try:
+        def _f89_post(**kw):
+            seen = []
+            def tx(url, body):
+                seen.append(json.loads(body.decode("utf-8")))
+                return '{"accepted":true,"ticketId":"T-F89"}'
+            with tempfile.TemporaryDirectory(prefix="rescue-admission-f89-") as td89:
+                receipt = admit(td89, box="box-f89", problem_text="f89 fixture",
+                                source="skill-60-ews", signal="S6", dedup_key="k89",
+                                event_id=89, transport=tx,
+                                url="https://intake.invalid/x", **kw)
+            return seen[0], receipt
+        _p0, _r0 = _f89_post()
+        check(_p0["clientName"] == "box-f89" and _p0["person"] == "" and _p0["returnTo"] is None,
+              "F89 no env: clientName falls back to the box slug, person empty, returnTo None", _p0)
+        os.environ[CLIENT_LABEL_ENV] = "Example Client Co"
+        os.environ[PERSON_ENV] = "Example Owner"
+        os.environ[RETURN_TO_ENV] = "telegram:example-room"
+        _p1, _r1 = _f89_post()
+        check(_p1["clientName"] == "Example Client Co" and _p1["person"] == "Example Owner"
+              and _p1["returnTo"] == "telegram:example-room",
+              "F89 env set: clientName / person / returnTo filled from the box env", _p1)
+        _p2, _r2 = _f89_post(client="Explicit Client", person="Explicit Person", return_to="x:y")
+        check(_p2["clientName"] == "Explicit Client" and _p2["person"] == "Explicit Person"
+              and _p2["returnTo"] == "x:y",
+              "F89 explicit arguments win over the env", _p2)
+        check(_r0["operation_id"] == _r1["operation_id"] == _r2["operation_id"],
+              "F89 operation_id is identical with and without the identity fields",
+              (_r0["operation_id"], _r1["operation_id"], _r2["operation_id"]))
+        check(_p1["operation_id"] == _p0["operation_id"] and _p1["machine"]["source_op_id"] == _p0["machine"]["source_op_id"],
+              "F89 payload operation ids unchanged by the identity fields")
+    finally:
+        for _k, _v in _f89_saved.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+
+    # F71: --event-id is part of the CLI and feeds operation_id (same event id -> same
+    # operation, a different hour/class -> a different one).
+    _e1 = operation_id("box-f71", "mc-route", "", "transport-failed:2026100312")
+    check(_e1 == operation_id("box-f71", "mc-route", "", "transport-failed:2026100312"),
+          "F71 same event id -> same operation_id (folds at the intake)")
+    check(_e1 != operation_id("box-f71", "mc-route", "", "transport-failed:2026100313")
+          and _e1 != operation_id("box-f71", "mc-route", "", "ingest-rejected:2026100312"),
+          "F71 a different hour or reason class -> a different operation_id")
+    _cli_help = subprocess.run([sys.executable, __file__, "--help"], capture_output=True, text=True, timeout=30).stdout
+    check("--event-id" in _cli_help, "F71 the CLI exposes --event-id")
+
     print("[rescue_admission] self-test: %s checks done" % n)
     # A failed check MUST fail the gate (exit 1), or a mutant passes the
     # aggregate gate green. fail() recorded every failure above.
@@ -1029,11 +1103,14 @@ def _cli(argv=None):
     ap.add_argument("--box", default="")
     ap.add_argument("--problem", default="")
     ap.add_argument("--source", default="skill-60-ews")
+    # F71: a stable event identity so a repeat of the SAME event (same reason class, same UTC
+    # hour) folds at the intake instead of minting a ticket per message.
+    ap.add_argument("--event-id", default=None)
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
     r = admit(None, box=args.box, problem_text=args.problem,
-              source=args.source, dry_run=args.dry_run)
+              source=args.source, event_id=args.event_id, dry_run=args.dry_run)
     sys.stdout.write(json.dumps(r, sort_keys=True) + "\n")
     return 0 if r["status"] in ("admitted", "replay", "dry_run") else (
         3 if r["status"] == "refused" else 1)

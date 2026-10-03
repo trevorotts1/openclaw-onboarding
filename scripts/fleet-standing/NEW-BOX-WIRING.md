@@ -257,9 +257,13 @@ Run from the **operator** box. Never run a live escalation test from a client bo
 
 1. POST one `action:escalate` to the rescue webhook with:
    - `boxName` = the new canonical slug
-   - a **suppressed test marker** so nothing reaches the live ops group: put `[synthetic]`
-     (or `[smoke test]`, or `__authtest__`) anywhere in the body, **or** prefix `clientName`
-     with `ROUTING-TEST`.
+   - a **suppressed test marker** so nothing reaches the live ops group: start the `problem`
+     text with `[synthetic]` (or `[smoke test]`), **or** send `clientName` `__AUTHTEST__`,
+     **or** prefix `clientName` with `ROUTING-TEST`. Put the marker at the START. A marker
+     quoted deeper inside a real incident (a pasted log, an `alreadyTried` note) must never
+     silence it. RR plan F79: today's intake still matches the markers anywhere in the body,
+     which drops real incidents that quote one. The stricter intake matching is a separate
+     n8n lane; start-of-text markers work under both the current and the stricter matching.
 2. Read the newest row of the `rescue_request_ledger` data table (`ePHwQvG8xxzlcrWC`).
 
 **PASS, all three:**

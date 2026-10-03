@@ -710,6 +710,48 @@ with tempfile.TemporaryDirectory(prefix="rr015-c11-") as td:
         clear_state()
 
 # --------------------------------------------------------------------------
+# 12. RR plan F89: early-warning escalations arrive with a client name and a
+#     reply destination. admit() fills clientName / person / returnTo from the
+#     box env the other repo senders already use, an explicit argument wins,
+#     and none of the three can change the operation identity (a replay of the
+#     same event must still fold at the intake).
+# --------------------------------------------------------------------------
+F89_ENVS = ("FLEET_STANDING_CLIENT_LABEL", "RESCUE_RANGERS_PERSON", "RESCUE_RANGERS_RETURN_TO")
+f89_saved = {k: os.environ.pop(k, None) for k in F89_ENVS}
+with tempfile.TemporaryDirectory(prefix="rr015-c12-") as td:
+    creds("v1")
+    os.environ["EWS_STATE_DIR"] = td
+    f89_posts = []
+    f89_client = admission_client(f89_posts)
+    f89_admit = f89_client["admit"]
+
+    r_plain = f89_admit(td, box="box-rr015-f89", problem_text="f89 fixture",
+                        signal="S6", dedup_key="k-f89", event_id=1201)
+    plain = f89_posts[-1]["body"]
+    check(plain["clientName"] == "box-rr015-f89" and plain["person"] == "" and plain["returnTo"] is None,
+          "F89 no env: clientName falls back to the box slug, person empty, returnTo null", plain)
+
+    os.environ["FLEET_STANDING_CLIENT_LABEL"] = "Example Client Co"
+    os.environ["RESCUE_RANGERS_PERSON"] = "Example Owner"
+    os.environ["RESCUE_RANGERS_RETURN_TO"] = "telegram:example-room"
+    r_env = f89_admit(td, box="box-rr015-f89", problem_text="f89 fixture",
+                      signal="S6", dedup_key="k-f89", event_id=1201)
+    withenv = f89_posts[-1]["body"]
+    check(withenv["clientName"] == "Example Client Co" and withenv["person"] == "Example Owner"
+          and withenv["returnTo"] == "telegram:example-room",
+          "F89 env set: clientName / person / returnTo carried on the wire", withenv)
+    check(r_plain["operation_id"] == r_env["operation_id"] and plain["operation_id"] == withenv["operation_id"],
+          "F89 operation_id identical with and without the identity fields", (r_plain["operation_id"], r_env["operation_id"]))
+    check("Example Owner" not in json.dumps(r_env) and "telegram:example-room" not in json.dumps(r_env),
+          "F89 the receipt (journaled detail) does not echo the person or reply destination")
+    for k in F89_ENVS:
+        os.environ.pop(k, None)
+    clear_state()
+for k, v in f89_saved.items():
+    if v is not None:
+        os.environ[k] = v
+
+# --------------------------------------------------------------------------
 # clean up env and summarize
 # --------------------------------------------------------------------------
 clear_state()
