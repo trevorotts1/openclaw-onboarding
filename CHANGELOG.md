@@ -1,3 +1,28 @@
+## [v25.3.11]  -  2026-10-03  -  Skill 61 (Loop Protection System) v1.1.0: October OpenClaw update, 13 fixes
+
+Skill 61's July-era detectors read conversation and trajectory files that OpenClaw stopped writing in `v2026.7.2-beta.1` (conversations now live in a per-agent SQLite database). Five of seven detectors were blind, the "orphan gateway" alarm was false on every run, weekly crons were flagged as over-firing, and "park" changed nothing outside the ledger. This release ships all 13 fixes from `skill-61-october-openclaw-update-spec-20261003.md` (5 High, 4 Medium, 4 Low) in ONE branch. Re-bumped to v25.3.11 because main already released v25.3.10 (Rescue Rangers wave 3 repo lane).
+
+**Rollout posture is unchanged.** `61-loop-protection-system/config/rollout.json` stays `fleet_rollout_enabled: false`. The new `loop-brake` plugin ships DISABLED behind that gate. Turning on OpenClaw's own loop guard on client boxes is a prepared Tier 2 proposal, never applied by the unattended run. No approval gate was added (no `requireApproval`). Zero model calls (`guard-no-anthropic-runtime.py` passes). Nothing was deleted: what stopped being used is disabled or retired.
+
+#### What changed (skill 61, v1.0.1 -> v1.1.0; full detail in `61-loop-protection-system/CHANGELOG.md`)
+- **Fix 1 (High)** D2, D3, D4-wedge, D5 and D6 now read `openclaw sessions --json` and `openclaw audit --json` (content-free, read-only) instead of dead files, with a feed-health control that raises a P2 "watchdog blind" finding when a feed is empty while sessions are active. D7 is named UNDETERMINED and covered by the loop-brake plugin.
+- **Fix 2 (High)** The orphan-gateway check compares the listener pid with the supervisor's own pid (launchd or systemd), never the legacy handoff file. Unreadable supervisor or docker is UNDETERMINED and raises nothing.
+- **Fix 3 (High)** The cron over-fire bound is floored at one fire per day, so a weekly job firing once is silent.
+- **Fix 4 (High)** LF-6 really runs `pm2 stop` on a pm2 unit (gateway is alert-only); with no real stop the state is `parked-flag` and the finding stays open. LF-12 sends `sessions.abort` with `clearQueued: true`.
+- **Fix 5 (High)** New read-only daily check `scripts/check_native_loop_guard.py` warns when OpenClaw's built-in tool-loop guard is off; the fix is a prepared proposal only.
+- **Fix 6 (Medium)** D1 no longer runs the pm2 JSON listing that dumps process environments; it parses the `pm2 list` table, the `launchctl list` table and a format-limited `docker inspect`.
+- **Fix 7 (Medium)** The fleet slug wins over a stored dotless hostname at run time; the escalation payload carries `identity: unresolved` when no slug resolves. `loop_escalate.py --self-test` now sandboxes its state directory so it can never write the real ledger.
+- **Fix 8 (Medium)** The restore script skips the built-file patch on OpenClaw 2026.7.2 and later and checks only `tools.loopDetection.enabled` and `agents.entries.<id>`; it never writes an unknown config key.
+- **Fix 9 (Medium)** New `loop-brake` plugin (block only): third identical `sessions_send` in 300 seconds, and third failed-with-auth-refusal call to one tool in one run. Disabled behind the rollout gate.
+- **Fix 10 (Low)** `signatures.json` paid tiers split into metered, subscription_capped (Ollama Cloud, WARN only) and local.
+- **Fix 11 (Low)** D4 records, and does not escalate, a cron the scheduler already auto-disabled or is backing off; `hasMore` makes unseen jobs UNDETERMINED.
+- **Fix 12 (Low)** LF-8 prepared proposal is `agents.defaults.heartbeat.isolatedSession=true` plus `lightContext=true` (never the heartbeat model).
+- **Fix 13 (Low)** Docs and fix classes corrected to October behavior; LF-9 re-pointed to `sessions.abort`, LF-10 to `sessions.reset` (Tier 2), LF-11 retired.
+
+#### Integration notes
+- Nine lane branches (`s61/SKS-001` .. `s61/SKS-009`) merged clean in id order; the integrator then applied the cross-lane hunks the lane receipts named (LF-10 Tier 2 self-tests, Fix 10 test fixtures, hermetic `pm2` stub in `verify.sh`, `identity` payload field, LF-3 and LF-6 wording).
+- `docs/interview-launch-recovery.md` paired-release line moved to v25.3.11 to satisfy `scripts/check-doc-currency-guards.sh`.
+
 ## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
 
 Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.

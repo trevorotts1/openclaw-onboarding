@@ -5,7 +5,18 @@
     "cadence_minutes": 15,
     "jitter_seconds": 90,
     "max_tick_seconds": 5,
-    "_locked": "T5/Section 3: every 15 minutes, jittered. Zero model calls; cadence costs CPU only. The system that hunts furnaces must be structurally incapable of being one."
+    "_locked": "T5/Section 3: every 15 minutes, jittered. Zero model calls; cadence costs CPU only. The system that hunts furnaces must be structurally incapable of being one.",
+    "_runtime_budget": "max_tick_seconds=5 CONFIRMED, unchanged. This is the tick's own budget (a July tick measured 1.7 s). The October feeds add three `openclaw` CLI calls (sessions, audit agent_run, audit tool_action) plus `cron list`; each starts a Node.js process, so the feeds are bounded by the `feeds` block below. MEASURED on the operator box (2026-10-03, 10 live `tick --dry-run --no-send` runs, 13 sessions, ~500 audit records per kind): wall-clock 3.6-4.7 s, CPU (user+sys) 4.4-5.0 s, so the 5 s cap holds on wall-clock but the CPU margin is under 0.1 s - treat it as at the edge. The cap is a documented budget, not enforced by code. If a box with more sessions or jobs measures over 5 s, raise this value to the measured one; never drop a collector to fit under it. If a measured live tick exceeds 5 s, raise this cap to the measured value; never drop a collector to fit under it."
+  },
+  "feeds": {
+    "_source": "Fix 1 (October feed rebuild). Bounds for the two supported read-only feeds (`openclaw sessions --all-agents --active <min> --json`, `openclaw audit --kind agent_run|tool_action --after <iso8601> --json`). sessions_active_minutes=1440 matches the 24h D2 window. blind_control_active_minutes=60 is the known-good control: sessions updated in the last hour while a collector returned zero rows = P2 watchdog-blind finding. audit_lookback_minutes=60 and audit_first_sight_minutes=20 bound the audit window read (a first run never replays an hour of history into D3). audit_page_limit=500 is the CLI maximum; audit_max_pages=4 caps paging per run (more pages = UNDETERMINED for the older records, never silently partial). cli_timeout_seconds=20 per call.",
+    "sessions_active_minutes": 1440,
+    "blind_control_active_minutes": 60,
+    "audit_lookback_minutes": 60,
+    "audit_first_sight_minutes": 20,
+    "audit_page_limit": 500,
+    "audit_max_pages": 4,
+    "cli_timeout_seconds": 20
   },
   "burn_in": {
     "dry_run_days": 7,
@@ -16,7 +27,7 @@
     "p1_per_tick": 10,
     "p1_per_day": 40,
     "warn_consecutive_ticks_to_p1": 4,
-    "_source": "Box A ~56,050 restarts; Box F 4,528-in-10h. pm2 jlist restarts / launchctl runs / docker RestartCount, delta per unit per tick. NEVER an env dump (name/status/pid/restarts ONLY)."
+    "_source": "Box A ~56,050 restarts; Box F 4,528-in-10h. Delta per unit per tick from ENVIRONMENT-FREE sources only: the `pm2 list` TABLE form parsed by header name (name/pid/restarts/status; an unparseable table is UNDETERMINED, never zero restarts); on Mac the `launchctl list` TABLE (PID/Status/Label) rows for each ai.openclaw.* label, where a live pid replaced by a different live pid counts as one restart; on a VPS host `docker inspect -f '{{.Name}} {{.RestartCount}}'` (format-limited, never a full inspect). NEVER the pm2 JSON listing or describe commands, `launchctl print`, `ps eww` or any other environment dump. Gateway findings are ALERT-ONLY: nothing stops or kills the gateway."
   },
   "d2_token_burn_rate": {
     "idle_window_minutes": 60,
@@ -36,7 +47,7 @@
     "wedge_no_progress_ticks": 3,
     "handoff_file_age_hours": 6,
     "gateway_port": 18789,
-    "_source": "Cron fires > 2x declared cadence = P1; healthy-probe-but-no-progress 3 ticks = P1 wedge; any orphan listener on :18789 = P1 (Box E deferral deadlock)."
+    "_source": "Cron fires > 2x declared cadence = P1 (a job OpenClaw's own scheduler has already auto-disabled or is backing off is evidence only, never a finding); healthy-probe-but-no-progress 3 ticks = P1 wedge (agent.run.started with zero agent.run.finished from `openclaw audit --kind agent_run`); an orphan listener on :18789 = P1 ONLY when the listener pid differs from the pid the gateway's own supervisor reports (macOS `launchctl list` label ai.openclaw.gateway; Linux `systemctl --user show -p MainPID`) AND that supervisor pid is alive. NEVER read from gateway-supervisor-restart-handoff.json: October keeps the handoff in SQLite, and a leftover July file named a dead pid and raised a false P1 every 15 minutes. Inside docker, or with the supervisor pid unreadable: UNDETERMINED, nothing raised. handoff_file_age_hours is retained for config compatibility and is no longer read."
   },
   "d5_transcript_poison": {
     "gap_records": 3,
@@ -50,7 +61,7 @@
     "roll_min_idle_minutes": 10,
     "max_session_files": 40,
     "tail_bytes": 2000000,
-    "_source": "Derived from ONE archived operator-box incident transcript (4,607,807 bytes / 3,506 lines / 3,393 message records / 1,135 runtime tool-loop blocks) measured against a 70-file same-box healthy corpus. NOT round numbers: p1_blocks_per_burst=8 is the SMALLEST burst observed in that incident (bursts, gap<=3: 275,171,156,143,122,122,76,50,11,8,1), so firing at 8 catches 11/11 historical bursts while landing ~6.5% into the median burst - seconds to ~1 minute in, far before the ten-minute lane occupancy the incident cost. warn=3 sits one below the runtime's own identical-call guard. The ratio is a TRAILING window, never cumulative: the measured cumulative share was still only 0.122 at record 1250 while the local rate was already 0.244, so a whole-file ratio detector stays silent for thousands of records (a flow detector's false all-clear). Measured max trailing-200 share: poisoned 0.50, healthy corpus 0.0000 - warn 0.20 / P1 0.40 sit inside that gap. p1_poisoned_checkpoints=1 because a compaction summary that captured loop text verbatim is RE-INJECTED on resume and SURVIVES a session roll (measured: 7 of 16 checkpoint summaries poisoned, 163 block-signature hits) - the control archive carried 14 checkpoints and 0 hits, so 1 is safe. rearm_risk_bytes=2097152 is the OpenClaw memoryFlush forceFlushTranscriptBytes default (2 MiB), past which every compaction re-arms a forced flush; it is a SEVERITY MODIFIER ONLY and never fires alone - the control archive is 17,160,766 bytes (8x over it) with zero blocks and MUST stay silent. tail_bytes=2000000 matches the existing D3 slice bound and covered all 7 poisoned checkpoints (deepest at 1,617,348 bytes from end)."
+    "_source": "Derived from ONE archived operator-box incident transcript (4,607,807 bytes / 3,506 lines / 3,393 message records / 1,135 runtime tool-loop blocks) measured against a 70-file same-box healthy corpus. NOT round numbers: p1_blocks_per_burst=8 is the SMALLEST burst observed in that incident (bursts, gap<=3: 275,171,156,143,122,122,76,50,11,8,1), so firing at 8 catches 11/11 historical bursts while landing ~6.5% into the median burst - seconds to ~1 minute in, far before the ten-minute lane occupancy the incident cost. warn=3 sits one below the runtime's own identical-call guard. The ratio is a TRAILING window, never cumulative: the measured cumulative share was still only 0.122 at record 1250 while the local rate was already 0.244, so a whole-file ratio detector stays silent for thousands of records (a flow detector's false all-clear). Measured max trailing-200 share: poisoned 0.50, healthy corpus 0.0000 - warn 0.20 / P1 0.40 sit inside that gap. p1_poisoned_checkpoints=1 because a compaction summary that captured loop text verbatim is RE-INJECTED on resume and SURVIVES a session roll (measured: 7 of 16 checkpoint summaries poisoned, 163 block-signature hits) - the control archive carried 14 checkpoints and 0 hits, so 1 is safe. rearm_risk_bytes=2097152 (2 MiB) was the OpenClaw memoryFlush forceFlushTranscriptBytes default in the July builds, past which every compaction re-armed a forced flush. October builds set agents.defaults.compaction.memoryFlush.forceFlushTranscriptBytes to 0 (observed on the operator box), so 2 MiB is now this skill's own conservative size marker rather than a mirror of an OpenClaw default; the VALUE is deliberately unchanged. It is a SEVERITY MODIFIER ONLY and never fires alone - the control archive is 17,160,766 bytes (8x over it) with zero blocks and MUST stay silent. tail_bytes=2000000 matches the existing D3 slice bound and covered all 7 poisoned checkpoints (deepest at 1,617,348 bytes from end)."
   },
   "d6_futile_retry_burst": {
     "window_seconds": 60,

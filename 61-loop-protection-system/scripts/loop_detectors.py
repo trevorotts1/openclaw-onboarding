@@ -186,6 +186,11 @@ def d4_timer_refire(crons, wedge, thresholds):
     for c in crons:
         name = c.get("name") or "<cron>"
         declared = C.fires_per_day_bound(c.get("declared_schedule"))
+        # FLOOR the expected bound at 1 fire/day BEFORE comparing: a 24h window always holds
+        # one fire of any cadence >= once/day, so a weekly job (bound 0.14/day) firing once
+        # is normal, not a 7x over-fire (73 false LP-A4 escalations in Sept).
+        if declared:
+            declared = max(declared, 1.0)
         actual = c.get("actual_fires_per_day")
         if declared and actual and actual > declared * t["cron_overfire_multiple"]:
             out.append(_finding("LP-C2" if c.get("announce") else "LP-A4", P1, name,
@@ -200,7 +205,7 @@ def d4_timer_refire(crons, wedge, thresholds):
     supervisor = wedge.get("supervisor_pid")
     if orphan and orphan != supervisor:
         age = wedge.get("handoff_age_hours")
-        detail = ("orphan listener pid %s on :%d NOT owned by the declared supervisor pid %s"
+        detail = ("orphan listener pid %s on :%d differs from the live supervisor pid %s"
                   % (orphan, t["gateway_port"], supervisor))
         if age is not None and age >= t["handoff_file_age_hours"]:
             detail += " + stale handoff marker (%.1fh >= %dh)" % (age, t["handoff_file_age_hours"])
@@ -556,6 +561,35 @@ def self_test():
     assert "LP-A4" in classes and "LP-B5" in classes and "LP-B3" in classes
     assert not any(x["unit"] == "healthy" for x in f4)  # firing at its declared rate
     print("  D4 case: PASS (over-fire + wedge + orphan each P1; healthy cron silent)")
+
+    # D4 floor (SKS-002 / Fix 3): a weekly `everyMs` job is "604800s" -> bound 0.14/day,
+    # so ONE normal fire in a 24h window read as 7x over-fire (73 false LP-A4 escalations
+    # in Sept). The bound is floored at 1/day before comparing.
+    def _d4(sched, fires):
+        return [x for x in d4_timer_refire(
+            [{"name": "job", "declared_schedule": sched, "actual_fires_per_day": fires}],
+            {}, th) if x["loop_class"] == "LP-A4"]
+    assert C.fires_per_day_bound("604800s") < 0.15       # the premise: weekly bound < 1
+    assert not _d4("604800s", 1), "weekly job with 1 fire in 24h must be silent"
+    assert not _d4("@daily", 1), "daily job with 1 fire must be silent"
+    assert not _d4("@daily", 2), "daily job at the 2x ceiling must stay silent (> not >=)"
+    assert _d4("@daily", 3), "daily job at 3 fires/day is still a real over-fire"
+    assert _d4("60s", 3000), "every-60s job with 3000 fires (bound 1440/day) must be P1"
+    assert not _d4("60s", 2880), "every-60s job at exactly 2x must stay silent"
+    assert _d4("604800s", 3), "a weekly job firing 3x in a day is a real over-fire"
+    # MUTATION CHECK: delete the REAL floor line from this module's own source and re-run
+    # the weekly case. It MUST fire again - proof the silent assertions above can fail.
+    _line = "            declared = max(declared, 1.0)\n"
+    _src = Path(__file__).read_text(encoding="utf-8")
+    assert _src.count(_line) == 1, "floor line moved; update the mutation check"
+    _ns = {"__name__": "d4_mutant", "__file__": __file__}
+    exec(compile(_src.replace(_line, "            pass  # MUTANT: floor removed\n"), __file__, "exec"), _ns)
+    _mut = [x for x in _ns["d4_timer_refire"](
+        [{"name": "job", "declared_schedule": "604800s", "actual_fires_per_day": 1}], {}, th)
+        if x["loop_class"] == "LP-A4"]
+    assert _mut, "mutation (floor removed) must re-introduce the weekly false P1"
+    print("  D4 floor case: PASS (weekly@1 silent; daily@1 silent; 60s@3000 P1; "
+          "mutation: floor removed => weekly false P1 returns)")
 
     # D5: the STOCK detector. Values below are the MEASURED shape of one archived
     # operator-box incident vs its healthy control, not invented numbers.
