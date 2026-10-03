@@ -23,11 +23,15 @@
 # D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP,
 # D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT,
 # D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*),
-# plus section 4's two LIVE checks: D-CRON-ONE (exactly one enabled loop-tick job,
+# plus section 4's three LIVE checks: D-CRON-ONE (exactly one enabled loop-tick job,
 # proven through `openclaw cron list --all`) and D-TICK-FRESH (the watchdog
 # COMPLETED a tick within 45 minutes, read from ledger meta last_tick_ts - NOT
 # from MAX(findings.tick_ts), which measures whether the box HAS a loop and so
 # calls a healthy box dead).
+# D-FEED-HEALTH (Fix 1) is the third LIVE check: `loop_watchdog.py feed-health` reads
+# `openclaw sessions --active 60 --json` as the known-good control against the agent_run
+# audit feed - recent activity with zero audit rows = a BLIND collector (exit 4), an
+# unreadable feed = UNDETERMINED (exit 5). D-OCTOBER-FEEDS (offline) holds the drills.
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
@@ -514,11 +518,11 @@ with tempfile.TemporaryDirectory() as td:
     with open(os.path.join(sess, "s1.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
     led = Ledger()
-    ev = W.collect_evidence(led)
+    ev = W._legacy_file_evidence(led)  # legacy file reader: proves the D2/D3 arithmetic
     fnd = W.run_detectors(ev, th, C.load_signatures())
     d2_p1 = [x for x in fnd if x["detector"] == "D2" and x["severity"] == "P1"]
     d3_p1 = [x for x in fnd if x["detector"] == "D3" and x["severity"] == "P1"]
-    ev2 = W.collect_evidence(led)
+    ev2 = W._legacy_file_evidence(led)
     led.close()
     for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
         os.environ.pop(k, None)
@@ -834,6 +838,19 @@ print("  all fixture drills PASS")
 sys.exit(0)
 PY
 [ $? -eq 0 ] || bad "fixture drills"
+
+# D-OCTOBER-FEEDS (SKS-001: Fixes 1, 2, 4-sliver, 6, 11). Fixture-driven, stub binaries,
+# LOOP_NO_PROBES=1: sessions/audit shape drills, zero-rows-while-active BLIND control,
+# audit cursor persistence, the three orphan-gateway cases, scheduler-managed + hasMore
+# cron fixtures, pm2-list/launchctl/docker environment-free parsers, and the secret-leak
+# drill proving no tracer from a poisoned stub environment reaches ledger or stdout.
+if python3 "$SELF_DIR/tests/test_october_feeds.py" >/tmp/loop-verify-oct.$$ 2>&1; then
+    ok "D-OCTOBER-FEEDS ($(grep -c 'PASS:' /tmp/loop-verify-oct.$$) cases: feeds, blind control, orphan x3, cron hasMore, D1 sources, secret-leak)"
+else
+    bad "D-OCTOBER-FEEDS (see below)"
+    grep 'FAIL' /tmp/loop-verify-oct.$$ >&2 | head -20
+fi
+rm -f /tmp/loop-verify-oct.$$ 2>/dev/null || true
 fi   # RUN_OFFLINE
 
 # ---- 4. THE STANDING GATE: this box, right now (v0.6.5) ---------------------
@@ -859,7 +876,7 @@ fi   # RUN_OFFLINE
 # because this is a source checkout - none of those are evidence that the box is
 # fine, and none are evidence that it is broken.
 if [ "$RUN_LIVE" -eq 1 ]; then
-    step "4/4 STANDING GATE (this box): D-CRON-ONE, D-TICK-FRESH"
+    step "4/4 STANDING GATE (this box): D-CRON-ONE, D-FEED-HEALTH, D-TICK-FRESH"
     _cron_out="$(python3 "$SCRIPTS/loop_cron.py" status --json 2>&1)"; _cron_rc=$?
     case "$_cron_rc" in
         0) ok "D-CRON-ONE exactly ONE loop-tick job: enabled, ours, on */15 * * * *"
@@ -869,6 +886,22 @@ if [ "$RUN_LIVE" -eq 1 ]; then
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
         *) bad "D-CRON-ONE this box does NOT carry exactly ONE enabled loop-tick job on */15 (exactly one - never >= 1, which is how 2-12 duplicates per box passed for healthy)"
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
+    esac
+
+    # D-FEED-HEALTH (Fix 1): the watchdog's own instruments. `openclaw sessions --active 60
+    # --json` is the known-good CONTROL; if it shows recent activity while the audit feed
+    # returned zero rows, a collector is BLIND - and a blind detector reads as "healthy",
+    # the exact failure that went unnoticed for 40 days. READ-ONLY: opens no ledger,
+    # advances no cursor, writes nothing. An unreadable feed is UNDETERMINED, never a pass.
+    _feed_out="$(python3 "$SCRIPTS/loop_watchdog.py" feed-health 2>&1)"; _feed_rc=$?
+    case "$_feed_rc" in
+        0) ok "D-FEED-HEALTH collectors are NOT blind (sessions control vs audit feed)"
+           echo "      $(printf '%s' "$_feed_out" | tail -1)" ;;
+        3) UNDET=$((UNDET+1))
+           echo "  UNDETERMINED: D-FEED-HEALTH could not READ the sessions/audit feed (CLI down, in maintenance or absent)." >&2
+           printf '%s\n' "$_feed_out" | sed 's/^/      /' >&2 ;;
+        *) bad "D-FEED-HEALTH a collector returned ZERO rows while sessions are active - the watchdog is BLIND (an empty instrument is a broken check, not a healthy box)"
+           printf '%s\n' "$_feed_out" | sed 's/^/      /' >&2 ;;
     esac
 
     _live_out="$(python3 "$SCRIPTS/loop_ledger.py" liveness --max-age-minutes 45 2>&1)"; _live_rc=$?
