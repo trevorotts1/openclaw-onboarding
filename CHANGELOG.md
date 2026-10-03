@@ -8,6 +8,8 @@ The operator's personal Telegram chat id was still written into agent-facing tex
 - **KEEP (operator-only files, tests, deny-list guards)**: `shared-utils/resolve-owner-chat.sh`, `scripts/configure-operator-telegram.sh`, `scripts/diagnose-telegram-config.sh`, `scripts/ensure-pipeline-crons.sh`, `docs/OPERATOR-MAINTENANCE.md`, `**/qc-no-personal-data.sh`, `tests/**`, the deny-list sets in `install.sh` and `shared-utils/nudge-incomplete-interviews.py`, and the CI guard patterns. Each is justified in the script's rule table.
 - **Guard**: `.github/workflows/qc-static.yml` runs `--check` and the new unit test `tests/unit/scrub-operator-chat-id.test.sh` on every push and pull request.
 
+- **Required side effects of editing those files**: `15-blackceo-team-management/skill-version.txt` v7.1.2 to v7.1.3 (the skill-version gate); `docs/interview-launch-recovery.md` paired onboarding version rolled to v25.3.14 (the doc-currency gate); `hash-content-manifest.py` re-stamp of `templates/role-library/_index.json` (content hash, render hash and content version for 3 roles, 1 SOP and the rescue-rangers department; every entry's timestamp also moves, which is why that file shows a large line count).
+
 #### Not changed
 Operator-side behavior on the operator box is unchanged. No client box, credential, model or provider setting is touched.
 
