@@ -158,11 +158,47 @@ def confirm(args):
         item["report_state"]="confirmed"; item["report_confirmed_at"]=now(); atomic(p,item)
     print(canon({"operation_id":args.operation_id,"report_state":"confirmed"}))
 
+# RR plan F88: client-facing final update. Three plain sentences, never machine fields.
+#   repaired + verified              -> "Fixed and checked."
+#   still open, owner is a person    -> "A specialist will follow up."
+#   anything else still open         -> "We are still working on this: <reason in plain words>."
+# repair_status, verification_status, owner and next_action stay in the ack and the done
+# record; they are never copied into text an end user reads.
+_PLAIN_REASON = {
+    "repair_not_verified": "we have not been able to confirm the fix yet",
+    "structured_result_missing": "we are still waiting for a confirmed result",
+    "repaired_claim_missing_verification": "the fix has not been checked yet",
+    "advice_delivered": "we sent guidance and are waiting to confirm it worked",
+}
+_PERSON_OWNERS = ("operator", "human", "specialist", "support")
+def plain_reason(blocker):
+    raw = str((blocker or {}).get("reason") or "").strip()
+    if raw in _PLAIN_REASON: return _PLAIN_REASON[raw]
+    # a bare code like snake_case_reason is internal vocabulary: never show it to a client
+    if not raw or re.fullmatch(r"[a-z0-9_.:-]+", raw): return "we have not confirmed the fix yet"
+    one = " ".join(raw.split()).rstrip(".")[:160]
+    return one[:1].lower() + one[1:]
+def final_body_text(result):
+    r = result if isinstance(result, dict) else {}
+    blocker = r.get("remaining_blocker") if isinstance(r.get("remaining_blocker"), dict) else {}
+    if r.get("repair_status") == "repaired" and r.get("verification_status") == "verified":
+        return "Fixed and checked."
+    if str(blocker.get("owner") or "").lower() in _PERSON_OWNERS:
+        return "A specialist will follow up."
+    return "We are still working on this: %s." % plain_reason(blocker)
+def final_body(args):
+    result = {}
+    try:
+        with open(args.result_json, encoding="utf-8") as fh: result = json.load(fh)
+    except Exception: pass
+    print(final_body_text(result))
+
 def main():
     ap=argparse.ArgumentParser(); sub=ap.add_subparsers(dest="command",required=True)
     e=sub.add_parser("enqueue"); e.add_argument("--state-dir",required=True); e.add_argument("--origin-json",required=True); e.add_argument("--incident-id",required=True); e.add_argument("--instruction-id",required=True); e.add_argument("--attempt-id",required=True); e.add_argument("--attempt-generation",required=True); e.add_argument("--idempotency-key",required=True); e.add_argument("--stage",required=True,choices=("initial","final")); e.set_defaults(func=enqueue)
     t=sub.add_parser("tick"); t.add_argument("--state-dir",required=True); t.add_argument("--openclaw-bin",required=True); t.add_argument("--timeout-seconds",type=float,default=15); t.add_argument("--max-retries",type=int,default=MAX_RETRIES); t.set_defaults(func=tick)
     c=sub.add_parser("report-confirm"); c.add_argument("--state-dir",required=True); c.add_argument("--operation-id",required=True); c.set_defaults(func=confirm)
+    f=sub.add_parser("final-body"); f.add_argument("--result-json",default=""); f.set_defaults(func=final_body)
     args=ap.parse_args()
     # Notification text enters from stdin so the poll's enqueue command does
     # not expose it in argv. The downstream trusted OpenClaw CLI still uses
