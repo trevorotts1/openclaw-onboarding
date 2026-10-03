@@ -170,7 +170,7 @@ This is the **unified repo** for both platforms (PRD 2.1). Platform-specific fil
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **71 numbered skill folders (01–71)**: 66 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **72 numbered skill folders (01–72)**: 67 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -293,7 +293,7 @@ That file is the master instruction file. It contains:
 | 71-blackceo-signature-page | **BlackCEO Signature Page (v1.0.0)** — canonical BlackCEO single-page landing-page production skill: Standard or Long-Form copy, wireframes, mockups, image intelligence/prompts, QC, responsive HTML, GHL install/test; delegates image execution to Skill 66 kie-image / Skill 63 agnes-image and GHL build to Skill 6; routes multi-step funnels to Skill 49, DR/VSL to Skill 56, cinematic to Skill 62. Deployed by Skill 23 web-development / landing-page-specialist; SOP cluster universal-sops/signature-page-craft/. |
 | 72-motion-video-plus | **Motion Video Plus (v1.0.0)**: deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume and per-scene frame cleanup, Fish Audio chunked voiceover (s2.1-pro default, drama-3-preview opt-in) with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours. Proven stack only (FFmpeg, Chromium, playwright-core, Fish Audio); Diffusion Studio, Hyperframes, Remotion documented as untested. |
 
-**Total: 71 numbered skill folders** (01–71): **66 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 72 numbered skill folders** (01–72): **67 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
