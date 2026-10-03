@@ -1,3 +1,11 @@
+## [v25.3.13]  -  2026-10-03  -  Merge train: #1448 Skill 72: motion-video-plus (deterministic motion-graphics video…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1448 — Skill 72: motion-video-plus (deterministic motion-graphics video pipeline)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v25.3.12]  -  2026-10-03  -  Merge train: #1450 fix(rescue): wave 4 repo lane - unauthorized-claim trace,…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
