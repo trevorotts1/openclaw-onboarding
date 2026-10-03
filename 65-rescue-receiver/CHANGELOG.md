@@ -16,7 +16,7 @@ Test: `tests/rescue/RR-030/test_journal_reconcile.sh`.
 
 **F66. Gateway-down fixes were delivered through the gateway.**
 THE DEFECT. `openclaw agent` runs through the Gateway unless `--local` is given, so the RR-03 fix for a closed gateway port had to travel through the thing it was fixing.
-THE FIX. An `instruction_id` starting `rr03-` runs the agent turn with `--local`, in both the supervised and the degraded path. Every other instruction is unchanged. Canary on the operator box before the fleet roll.
+THE FIX. An `instruction_id` starting `rr03-` runs the agent turn with `--local`, in both the supervised and the degraded path. Every other instruction is unchanged. Try it on the operator box first, before the fleet roll.
 Test: `tests/rescue/RR-030/test_rr03_local_flag.sh`.
 
 **F88. The client-facing final update was a raw status dump.**
