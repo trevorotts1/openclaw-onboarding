@@ -88,9 +88,47 @@
   ],
   "anthropic_family_deny_note": "The watchdog makes ZERO model calls, so this rule is satisfied vacuously at runtime AND enforced statically over every shipped file by guard-no-anthropic-runtime.py. These are deny-list prefixes, never runtime ids; client skills never use Anthropic models.",
   "paid_tier_markers": {
-    "suffix_deny": [":cloud"],
-    "metered_provider_slugs": ["openrouter", "openai", "fish_audio", "kie"],
-    "note": "D2 treats a model/provider carrying one of these markers in an idle window as paid-idle burn. A :cloud suffix on a heartbeat model is the classic idle-burn furnace (LP-A2)."
+    "_source": "TIER STRUCTURE (Fix 10, schema 2) - the D2 reader binds to THIS shape. Three tiers live under `tiers`: `metered` (per-token billing; counts_as_paid=true; idle burn raises up to P1), `subscription_capped` (Ollama Cloud, and the :cloud / -cloud name suffix above all; counts_as_paid=false; idle burn raises AT MOST WARN, labelled usage-window burn because it eats the plan usage window and ends in 402/429 - never counted paid, never silent-as-local), `local` (ollama-local and the unrouted local ollama daemon; counts_as_paid=false; never flagged). RESOLUTION, first match wins, DATA ONLY - no network call, no runtime lookup: (1) normalise the id: lowercase, strip leading '/', drop ONE trailing '(qualifier)' such as '(max)', drop ONE leading router prefix (`normalize.router_prefix`) and remember it was present; (2) an id starting with any anthropic_family_deny_prefixes entry is metered; (3) provider segment = the text before the first '/'; (4) provider in local.providers -> local; (5) provider in metered.providers, or starting with a metered.provider_prefixes entry -> metered; (6) provider in subscription_capped.providers, OR router prefix present and provider in subscription_capped.providers_when_router_prefixed, OR the model name ends with a subscription_capped.name_suffixes entry -> subscription_capped; (7) provider in local.providers_when_not_router_prefixed -> local; (8) anything else is unclassified and never counts paid (the pre-tier behaviour). MATCH THE PROVIDER SEGMENT, NEVER A SUBSTRING: a substring test would call ollama/deepseek-v4.1-flash:cloud metered because it contains the word deepseek. D2 EXPECTATION FOR THE REBUILD (Fix 1): feed provider + '/' + model (the join `_paid_event` builds today, or modelProvider + '/' + model from `openclaw sessions --json`) through the resolution above; route metered tokens to paid_tokens, subscription_capped tokens to a SEPARATE subscription_tokens bucket that can raise WARN only, local tokens to local_tokens. LEGACY MIRROR: `suffix_deny` and `metered_provider_slugs` below are a flat compatibility mirror so the pre-tier substring reader (model_id_flags in loop_common.py) still parses this file. suffix_deny is empty ON PURPOSE - a :cloud suffix is NOT paid - and the mirror lists only slugs that cannot occur inside a subscription or local id. Drop the mirror when the D2 rebuild lands. Fixtures: tests/fixtures/paid-tier.rows.json. Test: tests/test_paid_tiers.py (also holds the reference resolver the rebuild can copy).",
+    "schema": 2,
+    "normalize": {
+      "lowercase": true,
+      "strip_leading_slashes": true,
+      "strip_one_trailing_parenthesized_qualifier": true,
+      "router_prefix": "9router/"
+    },
+    "tiers": {
+      "metered": {
+        "label": "metered",
+        "billing": "per-token",
+        "counts_as_paid": true,
+        "idle_burn_severity_max": "P1",
+        "include_anthropic_family": true,
+        "providers": ["openrouter", "openai", "fish_audio", "kie", "deepseek", "ds", "alibaba", "dashscope", "qwen", "moonshot", "moonshotai", "google", "gemini"],
+        "provider_prefixes": ["atp-"]
+      },
+      "subscription_capped": {
+        "label": "usage-window burn",
+        "billing": "subscription (never priced)",
+        "counts_as_paid": false,
+        "idle_burn_severity_max": "WARN",
+        "never_silent": true,
+        "semantics": "usage-window exhaustion; HTTP 402 / 429 follow",
+        "providers": ["ollama-cloud"],
+        "providers_when_router_prefixed": ["ollama"],
+        "name_suffixes": [":cloud", "-cloud"]
+      },
+      "local": {
+        "label": "local",
+        "billing": "none",
+        "counts_as_paid": false,
+        "idle_burn_severity_max": null,
+        "providers": ["ollama-local"],
+        "providers_when_not_router_prefixed": ["ollama"]
+      }
+    },
+    "suffix_deny": [],
+    "metered_provider_slugs": ["openrouter", "openai", "fish_audio", "kie", "moonshot", "alibaba", "dashscope", "gemini"],
+    "note": "D2 idle-window burn is classified per tier. metered = paid burn, P1 path. subscription_capped (Ollama Cloud, a :cloud suffix on a heartbeat model) = usage-window burn, WARN at most, never priced, never counted paid. local = never flagged. Standing note: Ollama Cloud is a subscription."
   },
   "process_manager_fields": {
     "allowed_pm2_fields": ["name", "pm_id", "pid", "status", "restart_time"],
