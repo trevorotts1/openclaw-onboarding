@@ -1,3 +1,37 @@
+## [v25.3.7]  -  2026-10-02  -  Repin Command Center v7.6.97 (operator-relay mute + board reminders stop filing Rescue Rangers tickets)
+
+### Why
+Two Command Center fixes ride the paired release together:
+1. **v7.6.96 (0c66db809)** — the 2026-10-02 "boards boards boards" Telegram flood: since v7.6.77 every client
+   box forwarded every `notifySystem()` board alert to the fleet-standing-operator-alert n8n webhook. A
+   gate-configured client box now ends at the durable record + its own board; the relay carries only the
+   fleet-roll stream. Rescue Rangers AGENT escalation untouched.
+2. **v7.6.97 (PR #480, merge cb5c3db2)** — the same sweeps' board reminders (stale-task-sweep, board
+   hygiene and similar automated system chatter) no longer FILE Rescue Rangers tickets: board noise is
+   the box's own concern, not a range-wide incident. Rescue escalation for a client's real AGENT
+   distress remains the one lane into Rangers.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.96 → **v7.6.97**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN → v7.6.97; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md
+  pair line, docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.7`: all ten version markers agree (bump already applied this release train).
+
+## [v25.3.7-history]  -  2026-10-02  -  (superseded head entry: see the v7.6.97 entry above)
+
+### Why
+The 2026-10-02 operator Telegram flood ("boards boards boards"): since Command Center v7.6.77 every
+client box forwarded every `notifySystem()` board alert ([BOARD-HYGIENE], [stopped], persona-grounding,
+QC starvation, dispatch holds) to the fleet-standing-operator-alert n8n webhook — one DM to Trevor per
+box per minute. Fixed at Command Center source (v7.6.96, its 0c66db809): gate-configured client boxes
+end at the durable record + their own board; the n8n relay carries only the fleet-roll stream. Rescue
+Rangers agent escalation untouched.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.95 → **v7.6.96**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN → v7.6.96; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pair line, docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.7`: all 10 version markers agree.
+
 ## [v25.3.6]  -  2026-10-02  -  chore(cc-compat): repin Command Center v7.6.95 (intake ACC-001-09: a change request is never dropped, whatever verdict the classifier chain returns) — version bump in the SAME pull request so the release is actually cut
 
 #### Why
