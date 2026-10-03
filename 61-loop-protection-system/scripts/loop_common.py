@@ -393,7 +393,7 @@ def self_test():
     fam_id = ("clau" + "de") + "-3-opus"  # fragment-assembled: source carries no literal
     assert model_id_flags(fam_id)["family"] is True
     assert model_id_flags("glm-5.2")["family"] is False
-    assert model_id_flags("minimax-m3:cloud")["paid"] is True
+    assert model_id_flags("minimax-m3:cloud")["paid"] is False  # Fix 10: Ollama Cloud is a subscription, never paid
     assert model_id_flags("openrouter/glm-5.2")["paid"] is True
     print("  model-flags case: PASS (family + paid from signatures data)")
 

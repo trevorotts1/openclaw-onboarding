@@ -16,9 +16,9 @@
     },
     {
       "id": "LF-3", "loop_class": "LP-B3", "tier": 1,
-      "title": "orphan-gateway clear + kickstart (marker archive -> port kill -> kickstart -> stability watch)",
-      "reversible_in": "restore the archived handoff marker",
-      "proof": "the Box E verified 4-step procedure; kill-list contains ONLY the orphan pid"
+      "title": "orphan-gateway clear: acts ONLY on a STRAY listener (listener pid differs from the LIVE supervisor pid read from the supervisor itself); prepared proposal, applied only by an explicit operator fix; must NEVER name or kill the supervisor's own pid",
+      "reversible_in": "restart the gateway through its supervisor (Mac: launchctl kickstart ai.openclaw.gateway)",
+      "proof": "October update (spec Fix 2): the handoff marker file is no longer read or written (October keeps it in SQLite), so there is no marker-archive step and no archived marker to restore. The kill-list contains ONLY the stray listener pid, and only when the supervisor pid is readable and alive."
     },
     {
       "id": "LF-4", "loop_class": "LP-A4/LP-A6/LP-C2/LP-D3", "tier": 1,
@@ -34,9 +34,9 @@
     },
     {
       "id": "LF-6", "loop_class": "LP-B1/LP-B2", "tier": 1,
-      "title": "process-unit park on process-breaker trip + boot-log capture",
-      "reversible_in": "unpark the unit (single start + stability watch)",
-      "proof": "stop-and-flag is strictly safer than the status quo (infinite respawn)"
+      "title": "process-unit STOP on process-breaker trip + boot-log capture: a pm2 unit is REALLY stopped (pm2 stop <name>); the OpenClaw gateway is alert-only; a unit with no real stop is recorded as parked-flag and its finding stays OPEN",
+      "reversible_in": "pm2 start <name> (single start + stability watch); unpark also clears the ledger flag",
+      "proof": "October update (spec Fix 4): the old park only wrote a ledger flag yet marked the finding fixed. A real stop is strictly safer than the status quo (infinite respawn); where no real stop exists the state is parked-flag, never fixed."
     },
     {
       "id": "LF-7", "loop_class": "LP-B5", "tier": 1,
@@ -46,33 +46,99 @@
     },
     {
       "id": "LF-8", "loop_class": "LP-A2", "tier": 2,
-      "title": "heartbeat allowlist flip on a confirmed idle-burn P1",
-      "reversible_in": "restore the prior heartbeat block (snapshot revert line)",
-      "proof": "applied twice (operator box, Box C). STARTS as Tier 2 on client boxes; graduates to Tier 1 per box AFTER the operator stamps it once (Open Decision T4)."
+      "title": "heartbeat isolation on a confirmed idle-burn P1: isolatedSession=true + lightContext=true (PREPARED PROPOSAL - never applied by the unattended tick)",
+      "commands": [
+        "openclaw config set agents.defaults.heartbeat.isolatedSession true --strict-json",
+        "openclaw config set agents.defaults.heartbeat.lightContext true --strict-json"
+      ],
+      "snapshot_before": [
+        "openclaw config get agents.defaults.heartbeat.isolatedSession",
+        "openclaw config get agents.defaults.heartbeat.lightContext"
+      ],
+      "revert_commands": [
+        "openclaw config set agents.defaults.heartbeat.isolatedSession <PRIOR_isolatedSession> --strict-json",
+        "openclaw config set agents.defaults.heartbeat.lightContext <PRIOR_lightContext> --strict-json"
+      ],
+      "revert_commands_if_prior_unset": [
+        "openclaw config unset agents.defaults.heartbeat.isolatedSession",
+        "openclaw config unset agents.defaults.heartbeat.lightContext"
+      ],
+      "touches_only": [
+        "agents.defaults.heartbeat.isolatedSession",
+        "agents.defaults.heartbeat.lightContext"
+      ],
+      "reversible_in": "restore the PRIOR values of agents.defaults.heartbeat.isolatedSession and agents.defaults.heartbeat.lightContext (read them with the snapshot_before commands first; set them back with --strict-json, or `openclaw config unset <path>` when they were unset)",
+      "proof": "Source: OpenClaw docs gateway/config-agents/heartbeat-compaction-and-streaming.md lines 22-49. isolatedSession=true runs each heartbeat in a fresh session with no conversation history; the doc says it reduces per-heartbeat token cost from ~100K to ~2-5K tokens. lightContext=true makes heartbeat runs skip the workspace bootstrap files. Separate operator choice, NOT part of this proposal: every: \"0m\" stops the recurring heartbeat cadence (event-driven wakes can still run one turn). Tier 2 STAYS Tier 2: the watchdog prepares the two commands + the revert and sends them to the OPERATOR for an `approve <finding-id>`; the unattended tick never applies them, and no client box is changed without that stamp. The proposal touches only the two keys listed in touches_only - no provider, no credential, nothing the client chose.",
+      "superseded_text": {
+        "title": "heartbeat allowlist flip on a confirmed idle-burn P1",
+        "reversible_in": "restore the prior heartbeat block (snapshot revert line)",
+        "proof": "applied twice (operator box, Box C). STARTS as Tier 2 on client boxes; graduates to Tier 1 per box AFTER the operator stamps it once (Open Decision T4)."
+      }
     },
     {
       "id": "LF-9", "loop_class": "LP-A8-abort", "tier": 2,
-      "title": "abort the self-blocking run to free the conversation lane",
-      "reversible_in": "nothing to revert - aborting a doomed run starts no new state",
-      "proof": "NOT AUTO. As of OpenClaw 2026.7.1-2 no supported run-abort CLI was found (`openclaw sessions` offers cleanup/compact/export-trajectory/list only), so this class PREPARES the operator action and never executes one. The harm it addresses is measured: a blocked run holds the conversation lane for its whole life (observed bursts up to 275 blocks) while the user's messages queue behind it, and the runtime - not the model - ended 7 of 10 observed bursts by aborting. The model does not talk its own way out."
+      "title": "abort the self-blocking run through the native sessions.abort RPC to free the conversation lane (PREPARED PROPOSAL - never applied by the unattended tick)",
+      "commands": [
+        "openclaw gateway call sessions.abort --params '{\"key\":\"<SESSION_KEY>\",\"agentId\":\"<AGENT_ID>\"}'"
+      ],
+      "do_not_set": "clearQueued - the user's own follow-up messages are queued behind the blocked run and must keep their place; clearQueued:true would discard them",
+      "reversible_in": "nothing to revert - aborting a doomed run starts no new state; a call with no active run returns a no-active-run result and changes nothing",
+      "proof": "NOT AUTO (Tier 2 stays Tier 2: the watchdog PREPARES the operator action and the unattended tick never executes it). Re-pointed for OpenClaw 2026.9.x: sessions.abort and chat.abort now exist as gateway-mediated RPCs (docs web/control-ui/chat.md, Stop button section; docs gateway/protocol/rpc-session-control.md line 41 gives the params: key, optional runId, agentId, clearQueued). The call goes through the running gateway and touches no file. A session-wide sessions.abort also requests cancellation of the session's descendant runs (docs tools/subagents/operations.md). The harm it addresses is unchanged: a blocked run holds the conversation lane for its whole life while the user's messages queue behind it. On OpenClaw 2026.9.x the built-in tool-loop guard (docs tools/loop-detection.md) ends a run after the second critical loop in the same run when the guard is enabled; this class is the after-the-fact abort for a box where that guard is off or the run is stuck anyway.",
+      "superseded_text": {
+        "title": "abort the self-blocking run to free the conversation lane",
+        "reversible_in": "nothing to revert - aborting a doomed run starts no new state",
+        "proof": "NOT AUTO. As of OpenClaw 2026.7.1-2 no supported run-abort CLI was found (`openclaw sessions` offers cleanup/compact/export-trajectory/list only), so this class PREPARES the operator action and never executes one. The harm it addresses is measured: a blocked run holds the conversation lane for its whole life (observed bursts up to 275 blocks) while the user's messages queue behind it, and the runtime - not the model - ended 7 of 10 observed bursts by aborting. The model does not talk its own way out."
+      }
     },
     {
-      "id": "LF-10", "loop_class": "LP-A8", "tier": 1,
-      "title": "archive the poisoned session transcript and roll to a fresh one (move, never delete)",
-      "reversible_in": "move the archived transcript back to its original path",
-      "proof": "config-FREE and blast-radius-of-one: it moves ONE session transcript aside so the next turn starts clean, touching no client config, no model, and no credential. Guarded by a live-session check (refuses a transcript still being written) so it can never yank a file from under a running gateway. The same move was performed by hand on the operator box during the incident and is the reason a fresh session answered normally."
+      "id": "LF-10", "loop_class": "LP-A8", "tier": 2,
+      "title": "reset the loop-poisoned session through the running gateway (sessions.reset, history preserved) - PREPARED PROPOSAL; never moves a file",
+      "commands": [
+        "openclaw gateway call sessions.reset --params '{\"key\":\"<SESSION_KEY>\",\"agentId\":\"<AGENT_ID>\",\"reason\":\"reset\",\"expectedSessionId\":\"<SESSION_ID>\"}'"
+      ],
+      "alternative_commands": [
+        "openclaw sessions archive <SESSION_KEY> --agent <AGENT_ID> --dry-run",
+        "openclaw sessions archive <SESSION_KEY> --agent <AGENT_ID>"
+      ],
+      "preconditions": [
+        "the session has NO active run: a reset interrupts work, so it is never applied to a session with an active run (abort it first via LF-9, or do nothing)",
+        "expectedSessionId is the session's CURRENT id from sessions.list or sessions.describe, so the gateway refuses the reset with session-changed if the session moved on (docs gateway/protocol/rpc-session-control.md line 44)"
+      ],
+      "graduates_to_tier_1": "only after sessions.reset has been proven on the operator box (spec Fix 13 item 3); until then it is a prepared proposal",
+      "reversible_in": "nothing is deleted: sessions.reset preserves transcript history (docs tools/progress-card.md, reset section); there is no un-reset, the fresh conversation start is the intended effect. For the archive alternative run it with --dry-run first.",
+      "proof": "OpenClaw 2026.9.x keeps conversations in a per-agent database (docs concepts/session.md), not in files, so there is no transcript file to move and a direct file move is forbidden: both commands go through the RUNNING gateway. Config-FREE and blast-radius-of-one: it touches the one named session, no client config, no model, no credential. Tier 2: KC.apply() never runs an executor for a non-Tier-1 class, so the old file-move executor is not reachable through this class; it only PREPARES the command for an operator `approve <finding-id>`.",
+      "superseded_text": {
+        "title": "archive the poisoned session transcript and roll to a fresh one (move, never delete)",
+        "reversible_in": "move the archived transcript back to its original path",
+        "proof": "config-FREE and blast-radius-of-one: it moves ONE session transcript aside so the next turn starts clean, touching no client config, no model, and no credential. Guarded by a live-session check (refuses a transcript still being written) so it can never yank a file from under a running gateway. The same move was performed by hand on the operator box during the incident and is the reason a fresh session answered normally."
+      }
     },
     {
       "id": "LF-11", "loop_class": "LP-A8-checkpoints", "tier": 2,
-      "title": "prune compaction checkpoint summaries that captured loop text verbatim",
-      "reversible_in": "restore the snapshotted session store",
-      "proof": "NOT AUTO, deliberately. Poisoned checkpoints are re-injected on resume and SURVIVE a transcript roll (measured: 7 of 16 summaries poisoned), so LF-10 alone does not clear them - but the LIVE gateway rewrites the session store, so an in-place edit without a restart is clobbered. This class prepares the exact prune + its revert for the maintenance path; it is never applied by the unattended tick."
+      "retired": true,
+      "title": "RETIRED - prune compaction checkpoint summaries (OpenClaw 2026.9.x keeps no checkpoint records or files, so there is nothing left to prune)",
+      "commands": [],
+      "reversible_in": "n/a - retired, no action exists",
+      "proof": "RETIRED (Skill 61 October update, spec Fix 13 item 4). docs concepts/compaction.md states 'OpenClaw does not create compaction checkpoint records or snapshot copies' (line 227 on 2026.9.8) and that legacy checkpoint files are 'not the active compaction target' (line 167). No supported file-free prune path exists, so this class has no action to prepare. It is kept as a record (disable, never delete) so older findings and ledger rows that name LF-11 still resolve. For a poisoned conversation the supported lever is LF-10.",
+      "superseded_text": {
+        "title": "prune compaction checkpoint summaries that captured loop text verbatim",
+        "reversible_in": "restore the snapshotted session store",
+        "proof": "NOT AUTO, deliberately. Poisoned checkpoints are re-injected on resume and SURVIVE a transcript roll (measured: 7 of 16 summaries poisoned), so LF-10 alone does not clear them - but the LIVE gateway rewrites the session store, so an in-place edit without a restart is clobbered. This class prepares the exact prune + its revert for the maintenance path; it is never applied by the unattended tick."
+      }
     },
     {
       "id": "LF-12", "loop_class": "LP-A10", "tier": 1,
-      "title": "abort the resending session via the native sessions.abort RPC (no-op-safe when nothing is active) + park the source unit",
-      "reversible_in": "unpark the source unit; sessions.abort has nothing to undo - a no-active-run call is already a documented safe no-op (ok=true, abortedRunId=null, status='no-active-run')",
-      "proof": "the 2026-08-04 incident: sessions_send's hardcoded 30000ms fallback timeout (no timeoutSeconds passed) was misread as delivery failure and resent byte-identical as a brand-new top-level run 6-8x ~34s apart, past 154,000 input tokens with zero brake; config-free (touches no client config, only the one named session), so it applies for real in-tick like LF-6 - never pkill node, never a gateway restart"
+      "title": "abort the resending session via the native sessions.abort RPC with clearQueued:true (no-op-safe when nothing is active) + ledger park flag on the source unit (a visible-red marker only; it stops nothing by itself)",
+      "commands": [
+        "openclaw gateway call sessions.abort --params '{\"key\":\"<SOURCE_SESSION_KEY>\",\"agentId\":\"<AGENT_ID>\",\"clearQueued\":true}'"
+      ],
+      "reversible_in": "unpark the source unit (clears the ledger flag); sessions.abort has nothing to undo - a call with no active run is a safe no-op. clearQueued:true DISCARDS the source session's queued follow-ups and they cannot be restored; that is intended, so a queued resend cannot restart the work.",
+      "proof": "the 2026-08-04 incident: sessions_send's hardcoded 30000ms fallback timeout (no timeoutSeconds passed) was misread as delivery failure and resent byte-identical as a brand-new top-level run 6-8x ~34s apart, past 154,000 input tokens with zero brake; config-free (touches no client config, only the one named session), so it applies for real in-tick like LF-6 - never pkill node, never a gateway restart. clearQueued:true is REQUIRED (docs gateway/protocol/rpc-session-control.md line 41 and docs tools/subagents/operations.md): session-wide sessions.abort cancels descendants, but queued follow-ups survive unless clearQueued:true, and without it a queued resend can restart the work. The ledger park flag changes nothing outside Skill 61's own ledger; the abort with clearQueued is what stops the recurrence.",
+      "superseded_text": {
+        "title": "abort the resending session via the native sessions.abort RPC (no-op-safe when nothing is active) + park the source unit",
+        "reversible_in": "unpark the source unit; sessions.abort has nothing to undo - a no-active-run call is already a documented safe no-op (ok=true, abortedRunId=null, status='no-active-run')",
+        "proof": "the 2026-08-04 incident: sessions_send's hardcoded 30000ms fallback timeout (no timeoutSeconds passed) was misread as delivery failure and resent byte-identical as a brand-new top-level run 6-8x ~34s apart, past 154,000 input tokens with zero brake; config-free (touches no client config, only the one named session), so it applies for real in-tick like LF-6 - never pkill node, never a gateway restart"
+      }
     }
   ],
   "tier_notes": {
