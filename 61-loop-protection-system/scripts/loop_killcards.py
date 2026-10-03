@@ -631,10 +631,10 @@ def _self_test_body():
     p3 = plan({"loop_class": "LP-D1", "finding_id": 9})   # empty-prompt cron = propose-and-hold
     assert p3["fix_class"] is None and p3["tier"] == 3
     p4 = plan({"loop_class": "LP-A8", "finding_id": 11})  # D5 transcript poison
-    assert p4["fix_class"] == "LF-10" and p4["tier"] == 1
+    assert p4["fix_class"] == "LF-10" and p4["tier"] == 2   # Tier 2 since SKS-008: sessions.reset proposal
     p5 = plan({"loop_class": "LP-A10", "finding_id": 12})  # cross-run resend = LF-12 tier1
     assert p5["fix_class"] == "LF-12" and p5["tier"] == 1 and "unpark --finding 12" in p5["revert_cmd"]
-    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-A8->LF-10 tier1; LP-D1->hold tier3; "
+    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-A8->LF-10 tier2; LP-D1->hold tier3; "
           "LP-A10->LF-12 tier1)")
 
     with tempfile.TemporaryDirectory() as td:

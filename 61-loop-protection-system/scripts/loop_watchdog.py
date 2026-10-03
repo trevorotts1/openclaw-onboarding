@@ -2858,13 +2858,13 @@ def self_test():
         t0 = (now - timedelta(minutes=90)).replace(microsecond=0)
         rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "s1",
                  "sessionKey": "agent:main:main", "runId": "r0",
-                 "modelId": "minimax-m3:cloud", "provider": "ollama",
+                 "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                  "data": {"trigger": "cron"}}]
         for i in range(12):  # 12 identical SUCCESSFUL runs, 300k paid tokens each
             common = {"ts": (t0 + timedelta(minutes=2 * i)).isoformat(),
                       "sessionId": "s1", "sessionKey": "agent:main:main",
                       "runId": "r%d" % (i + 1), "seq": i,
-                      "modelId": "minimax-m3:cloud", "provider": "ollama"}
+                      "modelId": "z-ai/glm-5.3", "provider": "openrouter"}
             rows.append(dict(common, type="model.completed",
                              data={"usage": {"input": 250000, "output": 50000,
                                              "total": 300000}}))
@@ -2922,7 +2922,7 @@ def self_test():
             drows = [{"type": "model.completed",
                       "ts": (base + timedelta(minutes=i + 1)).isoformat(),
                       "sessionKey": "agent:main:main", "runId": "rDELTA", "seq": i,
-                      "modelId": "minimax-m3:cloud", "provider": "ollama",
+                      "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                       "data": {"usage": {"input": 100000 * (i + 1)}}} for i in range(8)]
             (sdir / "sD.trajectory.jsonl").write_text(
                 "\n".join(json.dumps(r) for r in drows) + "\n", encoding="utf-8")
@@ -3085,6 +3085,27 @@ def self_test():
         print("  D5 collect case: PASS (poisoned transcript=P1 LP-A8 incl. the "
               "checkpoint carrier; LARGER clean transcript SILENT)")
 
+        # SKS-008: with the shipped config LF-10 is Tier 2 (sessions.reset proposal), so
+        # an ARMED tick must only PREPARE it and never move a transcript file.
+        led = Ledger()
+        _t0 = __import__("time").time() - 3600
+        for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+            os.utime(str(sdir / _n), (_t0, _t0))
+        s_t2 = tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                     "sessions": collect_sessions()}, led, armed=True, box="box-example")
+        led.close()
+        assert s_t2["applied"] == 0 and s_t2["planned"] >= 1, s_t2
+        assert (sdir / "loop-blocked-session.jsonl").is_file()
+        print("  LF-10 tier-2 case: PASS (armed tick PREPARES sessions.reset, moves no file)")
+        # The cases below keep covering the retained legacy file-move executor and the
+        # D5 re-roll/containment guards, pinned to a TEST-LOCAL Tier-1 view of LF-10.
+        _orig_fcf = KC.fix_class_for
+
+        def _lf10_tier1_for_legacy_tests(loop_class):
+            fc = _orig_fcf(loop_class)
+            return dict(fc, tier=1) if fc and fc.get("id") == "LF-10" else fc
+        KC.fix_class_for = _lf10_tier1_for_legacy_tests
+
         # An ARMED tick archives the poisoned transcript (move, never delete) and
         # leaves the clean one untouched; DRY_RUN mutates nothing.
         led = Ledger()
@@ -3193,6 +3214,7 @@ def self_test():
         assert not (sdir / "good-session.jsonl").exists()   # the one behind it ran
         print("  tick-containment case: PASS (an exception escaping a kill card is "
               "counted in errors and the tick still processes the finding behind it)")
+        KC.fix_class_for = _orig_fcf   # end of the legacy Tier-1 pin
 
         # D1 restart BASELINE: pm2 reports a unit's LIFETIME restart count, so the
         # first sight of any long-lived unit must read as delta 0, never as a storm.

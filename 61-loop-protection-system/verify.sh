@@ -85,6 +85,15 @@ else
 fi
 rm -f /tmp/loop-verify-selftest.$$ 2>/dev/null || true
 
+# Fix 10 / SKS-007: three-tier D2 paid-model classification (offline fixture test).
+if python3 "$SELF_DIR/tests/test_paid_tiers.py" >/tmp/loop-verify-paidtier.$$ 2>&1; then
+    ok "paid-tier fixtures (metered P1 / subscription WARN / local silent / 9router forms)"
+else
+    bad "paid-tier fixture test failed (see below)"
+    tail -25 /tmp/loop-verify-paidtier.$$ >&2
+fi
+rm -f /tmp/loop-verify-paidtier.$$ 2>/dev/null || true
+
 # ---- 2. four merge-gate scanners CLEAN over the tree ------------------------
 step "2/4 four merge-gate scanners CLEAN over the skill tree"
 python3 "$SCRIPTS/guard-no-anthropic-runtime.py" >/dev/null 2>&1 && ok "guard-no-anthropic (0)" || bad "guard-no-anthropic"
@@ -93,7 +102,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/4 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
+step "3/4 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-LF10-PREPARE, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -108,6 +117,12 @@ import loop_watchdog as W
 from datetime import datetime, timedelta, timezone
 from loop_ledger import Ledger
 os.environ["LOOP_ALLOW_ROOT"] = "1"  # allow config-touching kill cards in a CI/root sandbox
+# HERMETIC pm2 (SKS-002): LF-6 now REALLY runs `pm2 stop <unit>`. The drills use the
+# fixture unit name `cc-app`, so a drill must NEVER reach a real pm2 on the box.
+import tempfile as _tf
+_pm2_stub = os.path.join(_tf.mkdtemp(prefix="loop-verify-pm2-"), "pm2")
+open(_pm2_stub, "w").write("#!/bin/sh\nexit 0\n"); os.chmod(_pm2_stub, 0o755)
+os.environ["LOOP_PM2_BIN"] = _pm2_stub
 
 th = C.load_skill_config("thresholds.json")
 brs = BR.load_breakers()
@@ -501,13 +516,13 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=90)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "s1",
              "sessionKey": "agent:main:main", "runId": "r0",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}}]
     for i in range(12):
         common = {"ts": (t0 + timedelta(minutes=2 * i)).isoformat(),
                   "sessionId": "s1", "sessionKey": "agent:main:main",
                   "runId": "r%d" % (i + 1), "seq": i,
-                  "modelId": "minimax-m3:cloud", "provider": "ollama"}
+                  "modelId": "z-ai/glm-5.3", "provider": "openrouter"}
         rows.append(dict(common, type="model.completed",
                          data={"usage": {"input": 250000, "output": 50000,
                                          "total": 300000}}))
@@ -547,7 +562,7 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=60)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sD",
              "sessionKey": "agent:main:main", "runId": "rDELTA",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}}]
     for i in range(8):  # cumulative 100k, 200k, ... 800k under ONE runId
         cum = 100000 * (i + 1)
@@ -555,7 +570,7 @@ with tempfile.TemporaryDirectory() as td:
                      "ts": (t0 + timedelta(minutes=i + 1)).isoformat(),
                      "sessionId": "sD", "sessionKey": "agent:main:main",
                      "runId": "rDELTA", "seq": i,
-                     "modelId": "minimax-m3:cloud", "provider": "ollama",
+                     "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                      "data": {"usage": {"input": cum}}})  # buckets only, no `total`
     with open(os.path.join(sess, "sD.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -579,11 +594,11 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=30)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sF",
              "sessionKey": "agent:main:main", "runId": "rF0",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}},
             {"type": "model.completed", "ts": t0.isoformat(), "sessionId": "sF",
              "sessionKey": "agent:main:main", "runId": "rF1", "seq": 0,
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"usage": {"total_tokens": 500000}}}]  # alias only, no `total`
     with open(os.path.join(sess, "sF.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -646,6 +661,26 @@ with tempfile.TemporaryDirectory() as td:
     _past = __import__("time").time() - 3600
     for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
         os.utime(os.path.join(sess, _n), (_past, _past))
+    # D-POISON-LF10-PREPARE (SKS-008 / Fix 13): on the SHIPPED config LF-10 is Tier 2 (a
+    # prepared sessions.reset proposal). An ARMED tick must PREPARE it and move NO file.
+    _led = Ledger()
+    _prep = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                    "sessions": W.collect_sessions()}, _led, armed=True,
+                   escalate_transport=lambda u, b: True, box="box-example")
+    _led.close()
+    check("D-POISON-LF10-PREPARE armed tick on the shipped config only PREPARES LF-10 "
+          "(applied==0, planned>=1); the poisoned transcript is not moved",
+          _prep["applied"] == 0 and _prep.get("planned", 0) >= 1
+          and os.path.isfile(os.path.join(sess, "loop-blocked-session.jsonl")))
+    # The drills below keep covering the RETAINED legacy file-move executor and the D5
+    # re-roll / containment guards (disable, never delete), pinned to a TEST-LOCAL
+    # Tier-1 view of LF-10. Restored at the end of this block.
+    _orig_fcf = KC.fix_class_for
+
+    def _lf10_tier1_for_legacy_drills(loop_class):
+        _fc = _orig_fcf(loop_class)
+        return dict(_fc, tier=1) if _fc and _fc.get("id") == "LF-10" else _fc
+    KC.fix_class_for = _lf10_tier1_for_legacy_drills
     _led = Ledger()
     _sum = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
                    "sessions": W.collect_sessions()}, _led, armed=True,
@@ -827,6 +862,7 @@ with tempfile.TemporaryDirectory() as td:
           and "good-session.jsonl" not in _after
           and len([n for n in _after if n.startswith("good-session")
                    and KC.ARCHIVE_MARKER in n]) == 1)
+    KC.fix_class_for = _orig_fcf   # end of the legacy Tier-1 pin
     for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
         os.environ.pop(k, None)
 
