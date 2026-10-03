@@ -454,6 +454,19 @@
             "openrouter model"
           ],
           "note": "FIX 61: client picks their OpenRouter model (free text, e.g. z-ai/glm-5.3-flash). In ultra it replaces any Ollama-routed step."
+        },
+        "ollama_plan": {
+          "storeOn": "OLLAMA_PLAN",
+          "enum": [
+            "$20/month",
+            "$100/month"
+          ],
+          "labels": [
+            "ollama plan",
+            "ollama_plan",
+            "ollama cloud plan"
+          ],
+          "note": "FIX 62: client picks their Ollama Cloud plan tier ($20/month = 3 concurrent, $100/month = 8 concurrent). Recorded via resource_profile.record_plan_answer into the provider's cap-table entry; governs concurrency on Ollama-routed steps. Tier names match capacity.PLANS_BY_PROVIDER exactly."
         }
       },
       "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- the resource profile is THE store for this answer, and after it is recorded there the provider entry is marked locked and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator.",
