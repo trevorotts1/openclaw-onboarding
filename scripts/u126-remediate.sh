@@ -224,10 +224,11 @@ dv=disk[0].get('delivery',{}) or {}; print(json.dumps({'id':disk[0].get('id','')
     if [[ "$_APPLY" -eq 1 ]]; then
       local script_path; script_path="$(_find_health_script "disk-usage-alert.sh")" || true
       if [[ -z "${script_path:-}" ]]; then _finding "F3" "FAILED" "disk-usage-alert.sh not found"; return 0; fi
+      if [[ -z "${OPERATOR_IDS:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ]]; then _finding "F3" "SKIP" "no operator escalation chat configured (set OPERATOR_TELEGRAM_CHAT_ID)"; return 0; fi
       if openclaw cron rm "$jid" >/dev/null 2>&1; then _fix "F3: removed broken cron ${jid}"; fi
       if openclaw cron add --name "disk-usage-alert" --cron "47 * * * *" \
            --command "bash ${script_path}" --channel telegram \
-           --to "${OPERATOR_IDS:-5252140759}" >/dev/null 2>&1; then
+           --to "${OPERATOR_IDS:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" >/dev/null 2>&1; then
         _finding "F3" "FIXED" "rewired with explicit --channel telegram"
       else _finding "F3" "FAILED" "re-registration failed"; fi
     fi

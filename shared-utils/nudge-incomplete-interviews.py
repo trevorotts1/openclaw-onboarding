@@ -40,7 +40,7 @@ from interview_completion import prompt_status
 # (v12.3.8/fix/v12.3.8-cron-resolver-parity)
 # These IDs must NEVER receive a client-owner nudge. The env fallback
 # TELEGRAM_CHAT_ID can carry an operator ID (e.g. when the SSH session that
-# runs the nudge cron inherits TELEGRAM_CHAT_ID=5252140759 from the operator's
+# runs the nudge cron inherits TELEGRAM_CHAT_ID=<operator chat id> from the operator's
 # shell). A corrupted build-state can also carry an operator ID in owner_chat.
 # Any such value is rejected below — skip-and-warn instead of nudging operator.
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}

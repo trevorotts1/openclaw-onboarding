@@ -1,0 +1,2 @@
+FIXTURE (KEEP class): a test asserting the operator id must not leak.
+assert "5252140759" not in client_agent_text
