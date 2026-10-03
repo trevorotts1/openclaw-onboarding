@@ -40,7 +40,7 @@ aggregate_self_test() {
     local rc=0 f s
     for f in loop_ledger.py loop_common.py loop_detectors.py loop_backoff.py \
              loop_breaker.py loop_killcards.py loop_escalate.py loop_cron.py \
-             loop_watchdog.py; do
+             loop_watchdog.py check_native_loop_guard.py; do
         echo "--- $f ---"; python3 "$SCRIPTS/$f" --self-test || rc=1
     done
     for s in scan-no-secrets.sh scan-no-client-identifiers.sh scan-no-json-exports.sh; do
@@ -58,7 +58,11 @@ aggregate_self_test() {
 
 CMD="${1:-}"; shift || true
 case "$CMD" in
-    tick)         py loop_watchdog.py tick "$@" ;;
+    tick)         py loop_watchdog.py tick "$@"; rc=$?
+                  # Daily read-only "native guard off" check (SKS-003). Rides this tick
+                  # (no new cron); self-gates to once per 24h; never alters the tick's rc.
+                  py check_native_loop_guard.py tick-hook || true
+                  exit "$rc" ;;
     audit)        bash "$SCRIPTS/loop_companion.sh" audit "$@" ;;
     status)       bash "$SCRIPTS/loop_companion.sh" status "$@" ;;
     troubleshoot) bash "$SCRIPTS/loop_companion.sh" troubleshoot "$@" ;;
