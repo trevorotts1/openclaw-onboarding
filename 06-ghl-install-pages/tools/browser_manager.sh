@@ -58,7 +58,7 @@
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v25.3.9"
+BROWSER_MANAGER_VERSION="v25.3.10"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -445,11 +445,30 @@ bm_breaker_check() {
     if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
       local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh."
       local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
-      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-        -H 'Content-Type: application/json' \
-        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
-        --max-time 15 >/dev/null 2>&1 || true
+      # F47/F50: identify the box by its canonical fleet slug, NEVER the hostname --
+      # RR-01 answers 400 "unresolvable box" to a post with no boxName, and a hostname
+      # matches no client. No slug = nothing the intake can accept, so say so loudly
+      # instead of posting a request that is rejected and hidden.
+      # Declare first, assign after: bash 3.2 (macOS) brace-expands the JSON in
+      # `local x="$(curl ... -d "{...,...}")"` into several separate curl calls.
+      local _esc_box _esc_client _esc_code
+      _esc_box="${FLEET_STANDING_BOX_SLUG:-}"
+      if [[ -z "$_esc_box" ]]; then
+        echo "WARN: FLEET_STANDING_BOX_SLUG is not set - Rescue Rangers escalation NOT sent (the intake rejects a post with no boxName)" >&2
+      else
+        _esc_client="${FLEET_STANDING_CLIENT_LABEL:-$_esc_box}"
+        _esc_box="${_esc_box//\\/\\\\}"; _esc_box="${_esc_box//\"/\\\"}"
+        _esc_client="${_esc_client//\\/\\\\}"; _esc_client="${_esc_client//\"/\\\"}"
+        _esc_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+          -H 'Content-Type: application/json' \
+          ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
+          -d "{\"action\":\"escalate\",\"boxName\":\"${_esc_box}\",\"clientName\":\"${_esc_client}\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
+          --max-time 15 2>/dev/null || true)"
+        case "$_esc_code" in
+          2??) : ;;
+          *) echo "WARN: rescue-rangers escalation not accepted (HTTP ${_esc_code:-none}); this alarm did NOT reach Rescue Rangers" >&2 ;;
+        esac
+      fi
     fi
     echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Escalated to Rescue Rangers. STOP." >&2
     exit 75
