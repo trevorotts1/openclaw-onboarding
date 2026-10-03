@@ -1,3 +1,31 @@
+## [v25.3.8]  -  2026-10-03  -  Rescue Rangers wave 1 (repo): agent template safety, skill-61 identity, reconciler duplicate slug, no-op receipts
+
+Rescue Rangers n8n plan, wave 1, repo lane. Five fixes; the n8n side of wave 1 lands separately in n8n and is not in this PR.
+
+#### What changed
+- **F15** The agent's "it is fixed" post never sent the `X-Rescue-Secret` header, so the intake answered 403 and the ticket stayed open
+  while the agent believed it had reported success. The resolution block of `scripts/rescue-escalation-section.md.tpl` now builds the
+  header itself and prints the HTTP status (200 recorded, 403 header, 409 incident id).
+- **F16** The escalation recipe built its JSON with an unquoted heredoc, so text the agent pasted ran on the client box (backticks,
+  `$(...)`) and `$RESCUE_RANGERS_WEBHOOK_SECRET` in a problem text was posted as its value. Free text now goes through quoted heredocs
+  and python3 `json.dumps`; only the box slug is a shell variable. Role-library copy is byte-identical. No marker bump: the stamper
+  replaces by content inside the existing `RESCUE_ESCALATION_BOXNAME_V3` pair.
+- **F17** Skill 61 (v1.0.1) named the box by hostname. It now uses the fleet slug and refuses a hostname-shaped name; escalations
+  carry `boxName` and `clientName`.
+- **F37** `reconcile-rr-agent-map.sh` aborted the whole fleet when one slug had duplicate rows. A duplicated slug is now PENDING
+  (reason `duplicate_rows rows=N`, with an owner), never written; every other slug still reconciles. The run still ends
+  `complete=0`, exit 1.
+- **F63** Skill 65 (v23.5.3, receiver 1.7.2) treated a `recorded:false` receipt for a closed or unknown ticket like a delivery
+  receipt. It now settles as journal phase `ack_settled_noop` (pending ack removed, resend loop ends), never `ack_confirmed`.
+
+#### Tests
+New `tests/rescue/RR-030/`: `test_escalation_tpl_snippets.sh` (15), `test_loop_escalate_identity.py` (9),
+`test_reconcile_duplicate_slug.sh` (15), `test_receipt_noop.sh` (12). The F37 and F63 tests fail against the previous code
+(8 of 15 and 5 of 12 fail) and pass with the fix.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skill 61 identity keys change once (new dedup buckets).
+
 ## [v25.3.7]  -  2026-10-02  -  Merge train: #1439 [DRAFT] v25.3.7 — repin Command Center v7.6.96 (operator-relay mute)
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

@@ -1,5 +1,19 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.5.3] - 2026-10-03 - a no-op receipt is not a delivery receipt (RR plan F63)
+
+THE DEFECT. After the receipt contract landed, the server answers an ack for a ticket that is already
+closed or cleared with `recorded:false` and reason `already_terminal` or `unknown_instruction`. The box
+could not tell that apart from a delivery, so either it kept resending the same ack forever, or a reader
+could mistake the settled ack for proof the work was delivered.
+
+THE FIX. `_receipt_match` now recognises a 2xx JSON with `recorded:false`, one of those two reasons, and a
+receipt carrying THIS operation id. The ack is retired (the pending copy is removed, the resend loop ends)
+and the journal phase is `ack_settled_noop`, never `ack_confirmed`; the log says `SETTLED_NOOP`. Any other
+`recorded:false` (for example `row_write_missed`), a receipt for a different operation, or no receipt at all
+stays UNCONFIRMED and is resent. The journal GC reaps `ack_settled_noop` like a confirmed record.
+`RECEIVER_VERSION` 1.7.1 to 1.7.2. Test: `tests/rescue/RR-030/test_receipt_noop.sh`.
+
 ## [23.5.1] - 2026-09-19 - a receipt revision string could settle an acknowledgement
 
 THE DEFECT. `_receipt_match` required the receipt's operation ID and attempt

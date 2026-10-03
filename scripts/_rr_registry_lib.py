@@ -313,6 +313,12 @@ def cmd_merge(plan_path, runtimes_path, out_path):
     for slug in plan["slugs"]:
         rt = rts.get(slug) or {"status": "unreachable", "reason": "runtime-not-probed"}
         existing = plan["rows_by_slug"].get(slug) or []
+        if len(existing) > 1:
+            # RR plan F37: a duplicated slug cannot be reconciled (no row delete in
+            # the n8n API). Pending with an owner, never guessed, never written.
+            pending.append({"box_slug": slug, "owner": owner,
+                            "reason": "duplicate_rows rows=%d" % len(existing)})
+            continue
         if rt.get("status") != "ok" or not rt.get("agent"):
             pending.append({"box_slug": slug, "owner": owner,
                             "reason": rt.get("reason") or rt.get("status") or "unresolved"})
@@ -454,7 +460,7 @@ def cmd_verify(final_path, snap_path):
             by_slug.setdefault(slug, []).append(r)
     want = {}
     for slug, ex in d["rows_by_slug"].items():
-        if ex:
+        if ex and len(ex) == 1:      # RR plan F37: duplicated slugs are pending, not "verified"
             want[slug] = str(ex[0].get("local_agent_id") or "")
     for o in d.get("ops", []):
         want[o["box_slug"]] = o["local_agent_id"]
