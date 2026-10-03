@@ -657,6 +657,59 @@ with tempfile.TemporaryDirectory(prefix="rr015-c10b-") as td:
     clear_state()
 
 # --------------------------------------------------------------------------
+# CASE 11 (RR plan F47): the 429 contract is no longer split. RR-01 answers a
+# rate-limited request with HTTP 429 AND a JSON body, and has already minted a
+# shed ticket by then. The client used to treat every 429 as retryable, which
+# re-posted into the burst that caused the shed. Now a 429 whose body is a JSON
+# object is TERMINAL for the attempt (journaled `shed`, one post), while a 429
+# with a non-JSON body (a proxy in front of the intake) stays retryable.
+# --------------------------------------------------------------------------
+with tempfile.TemporaryDirectory(prefix="rr015-c11-") as td:
+    import io
+    import urllib.error
+    import urllib.request
+
+    creds("v1")
+    calls = []
+    answers = {"body": b'{"accepted":false,"status":"rate_limited","retryAfterSeconds":60}'}
+
+    def _urlopen_429(req, timeout=None):
+        calls.append(1)
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {},
+                                     io.BytesIO(answers["body"]))
+
+    _real_urlopen = urllib.request.urlopen
+    urllib.request.urlopen = _urlopen_429
+    try:
+        os.environ["EWS_STATE_DIR"] = td
+        r = client.admit(td, box="box-rr015-shed", problem_text="shed fixture",
+                         source="skill-60-ews", signal="S6", dedup_key="k-shed",
+                         event_id=1101, url="https://intake.invalid/rr-v2-intake")
+        check(len(calls) == 1, "JSON 429 is posted exactly once (not retried)", len(calls))
+        check(r["status"] == "refused" and r.get("shed") is True,
+              "JSON 429 -> terminal refused receipt flagged shed", r)
+        with Ledger(td) as led:
+            rows = [dict(x) for x in led.conn.execute(
+                "SELECT status FROM rescue_admissions WHERE event_id=1101").fetchall()]
+        check(rows and rows[-1]["status"] == "shed", "JSON 429 journaled as shed", rows)
+
+        # the escalation sweep must treat it as terminal (not retry-eligible)
+        check(A._escalation_outcome(r["status"]) == "failed",
+              "EWS outcome for a shed receipt is terminal (failed), not attempted")
+
+        # non-JSON 429 (a proxy, not RR-01): no shed ticket exists -> retryable
+        calls.clear()
+        answers["body"] = b"<html>429 Too Many Requests</html>"
+        r2 = client.admit(td, box="box-rr015-shed", problem_text="proxy fixture",
+                          source="skill-60-ews", signal="S6", dedup_key="k-proxy",
+                          event_id=1102, url="https://intake.invalid/rr-v2-intake")
+        check(r2["status"] == "failed" and not r2.get("shed"),
+              "non-JSON 429 stays failed/retryable (not a shed)", r2)
+    finally:
+        urllib.request.urlopen = _real_urlopen
+        clear_state()
+
+# --------------------------------------------------------------------------
 # clean up env and summarize
 # --------------------------------------------------------------------------
 clear_state()

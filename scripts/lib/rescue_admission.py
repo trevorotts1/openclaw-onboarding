@@ -189,6 +189,14 @@ class AdmissionRefused(Exception):
     this attempt; distinct from a transport failure."""
 
 
+class AdmissionShed(AdmissionRefused):
+    """RR plan F47. The intake was REACHED and answered a JSON-bodied 429: the
+    rate limiter shed this request, and RR-01 mints a shed ticket for every
+    shed ('Prepare Shed Ticket Mint'), so the incident EXISTS. The sender
+    contract is that this is TERMINAL for the attempt -- an immediate retry
+    only adds load to the burst that caused the shed. Subclass of
+    AdmissionRefused so every existing `except AdmissionRefused` stays correct."""
+
 class AdmissionTransportError(Exception):
     """The intake was NOT reached (network, timeout, non-2xx). Retryable."""
 
@@ -405,14 +413,26 @@ def _ticket_id(doc):
     return None
 
 
+def _is_json_object(text) -> bool:
+    try:
+        return isinstance(json.loads(text), dict)
+    except (TypeError, ValueError):
+        return False
+
 def _handle_http_error(exc):
-    """Classify a urllib HTTPError: 5xx/429 = transport/retryable, other 4xx =
-    explicit refusal (terminal for this attempt)."""
+    """Classify a urllib HTTPError: 5xx = transport/retryable, a 429 whose body
+    is a JSON object = the intake's own shed answer (AdmissionShed, terminal,
+    F47), any other 4xx = explicit refusal (terminal for this attempt). A 429
+    with a non-JSON body came from a proxy in front of the intake, not from
+    RR-01, so no shed ticket exists and it stays retryable."""
     code = int(getattr(exc, "code", 0) or 0)
     try:
         detail = exc.read(BODY_READ_LIMIT).decode("utf-8", "replace")
     except Exception:  # noqa: BLE001
         detail = ""
+    if code == 429 and _is_json_object(detail):
+        raise AdmissionShed(
+            "intake HTTP 429: %s" % trim(detail)) from exc
     if code == 429 or code >= 500:
         raise AdmissionTransportError(
             "intake HTTP %d: %s" % (code, trim(detail))) from exc
@@ -509,6 +529,9 @@ def admit(state_dir=None, box="", problem_text="", *,
         {
           "status": "admitted"|"replay"|"refused"|"failed"|"dry_run"|
                     "no_enrollment"|"client_unavailable",
+          ("shed": True is added to a "refused" receipt when the intake
+           answered a JSON 429 -- journaled as status `shed`, never retried
+           in-attempt, because RR-01 already minted a shed ticket (F47))
           "operation_id": str,
           "ticket_id": str|None,
           "admission_schema": "v2"|"v1"|"none",
@@ -579,6 +602,15 @@ def admit(state_dir=None, box="", problem_text="", *,
         except AdmissionRefused as exc:
             receipt["detail"] = trim(str(exc))
             receipt["detail_sanitized"] = True
+            # F47: the intake shed this request (JSON 429) and minted a shed
+            # ticket. Terminal for this attempt, journaled as `shed`, never
+            # retried here. The receipt status stays `refused` so the EWS
+            # callers (which switch on it) treat it as terminal too.
+            if isinstance(exc, AdmissionShed):
+                receipt["status"] = "refused"
+                receipt["shed"] = True
+                journal("shed", receipt["detail"], None)
+                return receipt
             # RR-015: "Record missing enrollment as pending repair with owner;
             # do not report admission because a group send succeeded." An auth
             # refusal is an OWNED SETUP REPAIR of this box's enrollment, NOT a
@@ -882,6 +914,47 @@ def self_test():
             check(r3["status"] == "refused", "policy refusal classified refused", r3)
             check("no_enrollment" != r3["status"],
                   "a policy refusal is NOT misclassified as a pending repair")
+
+            # F47: a JSON-bodied 429 is the intake's own shed answer -> terminal,
+            # journaled `shed`, never retried; a non-JSON 429 (proxy) stays retryable.
+            import io as _io
+            import urllib.error as _ue
+            def _http429(body):
+                return _ue.HTTPError("https://intake.invalid/x", 429, "Too Many",
+                                     {}, _io.BytesIO(body))
+            try:
+                _handle_http_error(_http429(b'{"accepted":false,"status":"rate_limited"}'))
+                check(False, "JSON 429 raises AdmissionShed")
+            except AdmissionShed:
+                check(True, "JSON 429 raises AdmissionShed (terminal)")
+            try:
+                _handle_http_error(_http429(b"<html>429</html>"))
+                check(False, "non-JSON 429 raises AdmissionTransportError")
+            except AdmissionTransportError:
+                check(True, "non-JSON 429 stays retryable (proxy, not RR-01)")
+            _shed_calls = []
+            def shed_transport(url, body):
+                _shed_calls.append(1)
+                raise AdmissionShed('intake HTTP 429: {"status":"rate_limited"}')
+            _saved_secret = os.environ.get(SECRET_ENV)
+            os.environ[SECRET_ENV] = "fixture-v1-shared-secret-not-real"
+            try:
+                r3s = admit(td, box="box-admission-example",
+                            problem_text="fixture problem 1234 5678",
+                            source="skill-60-ews", signal="S6",
+                            dedup_key="S6|config.owner", event_id=11,
+                            transport=shed_transport, url="https://intake.invalid/x")
+            finally:
+                if _saved_secret is None:
+                    os.environ.pop(SECRET_ENV, None)
+                else:
+                    os.environ[SECRET_ENV] = _saved_secret
+            check(len(_shed_calls) == 1 and r3s["status"] == "refused" and r3s.get("shed") is True,
+                  "shed receipt is terminal: one post, status refused, shed flag", r3s)
+            with _led.Ledger(td) as led:
+                _shed_row = led.latest_admission(r3s["operation_id"])
+            check(_shed_row is not None and _shed_row["status"] == "shed",
+                  "shed journaled under its own status", _shed_row)
 
             # RR-015: a missing/unaccepted ENROLLMENT is a PENDING REPAIR with an
             # owner -- not an admission, and not a policy refusal either.
