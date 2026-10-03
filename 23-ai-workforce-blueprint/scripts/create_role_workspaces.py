@@ -3531,6 +3531,9 @@ def ensure_director_role(roles, dept_slug, dept_name=""):
             f"SCAFFOLDED BY THE INSTALLER — no director was named in the "
             f"install spec. Human review required."
         ),
+        "sops": [],
+        "persona_traits": "",
+        "is_qc": False,
         "_scaffolded_director": True,
         "_needs_human_review": True,
     }
