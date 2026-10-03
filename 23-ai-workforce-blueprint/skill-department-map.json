@@ -1393,6 +1393,44 @@
    "execution_sops": [
     "signature-page-craft"
    ]
+  },
+  {
+   "client_facing": true,
+   "departments": [
+    "video"
+   ],
+   "description": "Deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume, per-scene frame cleanup, Fish Audio chunked voiceover with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours.",
+   "execution_sops": [
+    "video-pipeline-craft"
+   ],
+   "intent_triggers": [
+    "make me a motion graphics video",
+    "make me an animated promo video",
+    "make me an animated explainer video",
+    "produce a kinetic typography video",
+    "animate my brand video",
+    "render my video from the animation code"
+   ],
+   "name": "motion-video-plus",
+   "roles": [
+    {
+     "dept": "video",
+     "primary": true,
+     "slug": "video-editor"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "storyboard-pre-production-specialist"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "head-of-video-production"
+    }
+   ],
+   "skill": "72",
+   "slug": "motion-video-plus"
   }
  ]
 }
