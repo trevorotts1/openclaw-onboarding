@@ -427,8 +427,9 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
     kc["unit"] = f.get("unit")
     # Route by tier. Tier-1 auto-applies ONLY when armed; else it plans. Tier 2/3
     # never auto-apply. The ONE safe in-tick mechanical act is parking a crash-
-    # looping PROCESS unit via the process breaker (LF-6: STOP + park, visible-red,
-    # never respawns) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
+    # looping PROCESS unit via the process breaker (LF-6: a pm2 unit is REALLY stopped;
+    # the gateway is alert-only; no real stop => state parked-flag, finding stays open,
+    # never marked fixed) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
     # finding, which is exactly a process-breaker trip: >=10/tick or >=40/day) parks
     # in-tick; a WARN plans only. Every config-touching kill card (LF-1/2/4/5/7)
     # stays plan-only in the unattended tick and is applied SOLELY by an explicit

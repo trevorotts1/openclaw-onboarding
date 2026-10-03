@@ -205,7 +205,7 @@ def d4_timer_refire(crons, wedge, thresholds):
     supervisor = wedge.get("supervisor_pid")
     if orphan and orphan != supervisor:
         age = wedge.get("handoff_age_hours")
-        detail = ("orphan listener pid %s on :%d NOT owned by the declared supervisor pid %s"
+        detail = ("orphan listener pid %s on :%d differs from the live supervisor pid %s"
                   % (orphan, t["gateway_port"], supervisor))
         if age is not None and age >= t["handoff_file_age_hours"]:
             detail += " + stale handoff marker (%.1fh >= %dh)" % (age, t["handoff_file_age_hours"])

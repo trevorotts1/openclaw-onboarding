@@ -42,19 +42,23 @@ escalated), and never client-facing.
 4. **CONFIG WRITES RUN AS THE BOX USER, never root** (`node` on VPS, wrapped in
    `docker exec -u node`). A root-owned config write is the LP-B5 freeze - the fix
    must never cause the disease. Every config-touching path refuses to run as root.
-5. **DISABLE, NEVER DELETE. PARK, NEVER KILL-IN-A-LOOP.** Feature-bearing crons are
-   sacred (the furnace-watch three-tier rule). A tripped breaker parks its unit
-   visible-red; it never silently respawns.
+5. **DISABLE, NEVER DELETE. STOP, NEVER KILL-IN-A-LOOP.** Feature-bearing crons are
+   sacred (the furnace-watch three-tier rule). A tripped process breaker really
+   stops a pm2 unit (`pm2 stop`, revert `pm2 start`); the gateway is alert-only.
+   Where no real stop exists the state is `parked-flag` and the finding stays open,
+   never `fixed`.
 6. **NOTIFY-ON-CHANGE-ONLY.** Silence is healthy. A watchdog that spams is itself a
    loop (the F7 / session-health lesson).
 7. **DRY_RUN, THEN ARM.** Observe-only is the default for the first 7 days on any
    box (`armed=false`); Tier-1 arms only on the operator's word. Tier-2 stays
    proposal-only everywhere until a per-box stamp. A healer that loops is stopped by
    its OWN breaker, never by discovering the damage later. **Burn-in exit gate:**
-   before any `arm`, confirm `collect_windows` yields non-zero `paid_tokens` on the
-   operator box's real trajectory — a silently-zero token feed (a schema field-name
-   drift the multi-candidate reader did not cover) would make D2 blind again, the exact
-   Star-furnace blind spot, so a live non-zero reading is the arming precondition.
+   before any `arm`, confirm the October token feed is live: `loop_watchdog.py tick --dry-run --no-send`
+   on the operator box must show D2 reading real sessions from `openclaw sessions --json` (token
+   DELTAS are non-zero from the second run on), and `verify.sh --live` D-FEED-HEALTH must pass. A
+   silently-empty feed would make D2 blind again, the exact Star-furnace blind spot - so the feed-health
+   control re-checks it on EVERY run, not only once before arming: sessions active while a collector
+   returned zero rows raises a P2 `watchdog blind: <collector>` finding (LP-WD1).
 8. **PROVE ON THE OPERATOR BOX, THEN HOLD.** The full install plus drill battery is
    proven on the OPERATOR box first; fleet rollout is HELD at repo-only until the
    operator's explicit word. The system obeys the laws it enforces.
@@ -80,9 +84,9 @@ as Skill 60 signals S11-S17 (Open Decision T2) so the fleet keeps ONE vocabulary
 | # | Detector | Source (all local, deterministic, zero model calls) | Feeds |
 |---|---|---|---|
 | D1 | **Restart velocity** | D1 reads pm2 `pm2 list` table form (header-validated), launchctl table row for `ai.openclaw.*` labels (pid-change per tick = one restart), format-limited `docker inspect -f '{{.Name}} {{.RestartCount}}'` delta per unit per tick, never an environment dump. BASELINED per unit so first sight reads 0; a table that does not parse is UNDETERMINED, never zero restarts | LP-B1..B4, the process breaker |
-| D2 | **Token-burn rate** | trajectory usage per window, paid vs local, correlated with initiated-session presence | LP-A2/A5/A6/A7 |
-| D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
-| D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
+| D2 | **Token-burn rate** | D2 reads `openclaw sessions --all-agents --active 1440 --json` (content-free, read-only): per-session `totalTokens` DELTA per run (never lifetime; first sight charges 0), tiered by `config/signatures.json` `paid_tier_markers.tiers` - metered = P1 on idle burn, subscription_capped (Ollama Cloud) = WARN labelled usage-window burn, local = never flagged; a model whose tier cannot be resolved is UNDETERMINED and fires nothing | LP-A2/A5/A6/A7 |
+| D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) per finished run from `openclaw audit --kind agent_run --after <cursor> --json` (cursor kept in the ledger offsets table as `loop-audit:agent_run`); a SUCCESSFUL run hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
+| D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence from `openclaw cron list --json` (floored at one fire per day, so a weekly job firing once is silent; a job the scheduler already auto-disabled or is backing off is evidence only; `hasMore` makes the unseen jobs UNDETERMINED); hung-but-alive = `agent_run` started with no finished while the gateway is up; orphan listener = the :18789 listener pid differs from the LIVE supervisor pid read from the supervisor itself (launchd `launchctl list` table / `systemctl --user show -p MainPID`), reported only when the supervisor pid is alive, UNDETERMINED inside docker or when unreadable - the legacy handoff file is ignored, never deleted | LP-B2/B3/B5, LP-C1/C2 |
 | D5 | **Self-blocking run / transcript poison** | D5 reads `tool_action status=blocked` bursts per `runId` from the `openclaw audit` stream (Fix 1): content-free `metadata_only` events, paged by a cursor kept in the ledger, longest block burst per run. It no longer reads conversation JSON Lines files; October OpenClaw keeps conversations in a per-agent SQLite database. That a built-in tool-loop block shows up as `status=blocked` still needs one controlled operator-box test | LP-A8, the session breaker |
 | D6 | **Futile retry burst (SEMANTIC repetition, ARGUMENT-BLIND)** | failing-burst face from the `openclaw audit` stream: failed `tool_action` counts per (session, tool) in the heaviest sliding 60s window. The auth-marker face needs result text, which audit does not carry; that face is the `loop-brake` plugin (Fix 9, ships disabled behind the rollout gate) | LP-A9 |
 | D7 | **Cross-run resend (provenance-stamped)** | retired pending the `loop-brake` plugin (Fix 9). The conversation-file provenance source it read is gone and no content-free October source is verified (`openclaw audit --kind message` returned 0 events on the operator box). Retired means it stops claiming coverage; nothing is deleted | LP-A10, no detector until Fix 9 |

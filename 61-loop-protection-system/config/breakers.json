@@ -8,7 +8,7 @@
       "max_events_per_window": 10,
       "max_events_per_day": 40,
       "trip_action": "stop_and_park_unit",
-      "note": "STOP + park the unit (supervisor-native: max-restarts + exponential backoff restart delay) + P1 with last boot-log excerpt. A parked unit is visible-red until fixed; it never silently respawns. Feeds LP-B1/LP-B2 (LF-6)."
+      "note": "STOP the unit (a pm2 unit is REALLY stopped with `pm2 stop <name>`; the OpenClaw gateway is alert-only, because October already suppresses channel auto-start after 3 unclean boots in 5 minutes) + P1 with last boot-log excerpt. Where no real stop exists the state is `parked-flag` (a ledger flag only) and the finding stays OPEN, never `fixed`. Feeds LP-B1/LP-B2 (LF-6)."
     },
     "turn": {
       "watches": "D2 paid-token velocity",
@@ -50,7 +50,7 @@
       "max_events_per_window": 3,
       "action_cooldown_seconds": 600,
       "trip_action": "abort_source_session_and_park",
-      "note": "The 2026-08-04 incident: a sessions_send caller that omitted timeoutSeconds hit the tool's hardcoded 30000ms fallback, misread the local timeout as a delivery failure, and resent the byte-identical message as a brand-new top-level run 6-8x, ~34s apart - each resend a FRESH run id, so OpenClaw's own tools.loopDetection (within-run) and session.agentToAgent.maxPingPongTurns (inner ping-pong of one sessions_send call) both reset every time and never fired. Aborts the SOURCE session's in-flight run via the native sessions.abort RPC (calling it with no active run is a documented safe no-op: ok=true, abortedRunId=null, status='no-active-run') - NEVER pkill node, NEVER a gateway restart - then parks the source unit visible-red so it cannot immediately re-fire; an operator unpark lifts the pause. action_cooldown_seconds bounds how often the breaker may re-fire on the SAME source. Feeds LP-A10 (LF-12)."
+      "note": "The 2026-08-04 incident: a sessions_send caller that omitted timeoutSeconds hit the tool's hardcoded 30000ms fallback, misread the local timeout as a delivery failure, and resent the byte-identical message as a brand-new top-level run 6-8x, ~34s apart - each resend a FRESH run id, so OpenClaw's own tools.loopDetection (within-run) and session.agentToAgent.maxPingPongTurns (inner ping-pong of one sessions_send call) both reset every time and never fired. Aborts the SOURCE session's in-flight run via the native sessions.abort RPC (calling it with no active run is a documented safe no-op: ok=true, abortedRunId=null, status='no-active-run') - NEVER pkill node, NEVER a gateway restart - with clearQueued:true so a queued resend cannot restart the work. The ledger park flag on the source unit is a status marker only and stops nothing by itself; an operator unpark clears the flag. action_cooldown_seconds bounds how often the breaker may re-fire on the SAME source. Feeds LP-A10 (LF-12)."
     }
   }
 }

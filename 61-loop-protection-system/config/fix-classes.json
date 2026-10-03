@@ -16,9 +16,9 @@
     },
     {
       "id": "LF-3", "loop_class": "LP-B3", "tier": 1,
-      "title": "orphan-gateway clear + kickstart (marker archive -> port kill -> kickstart -> stability watch)",
-      "reversible_in": "restore the archived handoff marker",
-      "proof": "the Box E verified 4-step procedure; kill-list contains ONLY the orphan pid"
+      "title": "orphan-gateway clear: acts ONLY on a STRAY listener (listener pid differs from the LIVE supervisor pid read from the supervisor itself); prepared proposal, applied only by an explicit operator fix; must NEVER name or kill the supervisor's own pid",
+      "reversible_in": "restart the gateway through its supervisor (Mac: launchctl kickstart ai.openclaw.gateway)",
+      "proof": "October update (spec Fix 2): the handoff marker file is no longer read or written (October keeps it in SQLite), so there is no marker-archive step and no archived marker to restore. The kill-list contains ONLY the stray listener pid, and only when the supervisor pid is readable and alive."
     },
     {
       "id": "LF-4", "loop_class": "LP-A4/LP-A6/LP-C2/LP-D3", "tier": 1,
@@ -34,9 +34,9 @@
     },
     {
       "id": "LF-6", "loop_class": "LP-B1/LP-B2", "tier": 1,
-      "title": "process-unit park on process-breaker trip + boot-log capture",
-      "reversible_in": "unpark the unit (single start + stability watch)",
-      "proof": "stop-and-flag is strictly safer than the status quo (infinite respawn)"
+      "title": "process-unit STOP on process-breaker trip + boot-log capture: a pm2 unit is REALLY stopped (pm2 stop <name>); the OpenClaw gateway is alert-only; a unit with no real stop is recorded as parked-flag and its finding stays OPEN",
+      "reversible_in": "pm2 start <name> (single start + stability watch); unpark also clears the ledger flag",
+      "proof": "October update (spec Fix 4): the old park only wrote a ledger flag yet marked the finding fixed. A real stop is strictly safer than the status quo (infinite respawn); where no real stop exists the state is parked-flag, never fixed."
     },
     {
       "id": "LF-7", "loop_class": "LP-B5", "tier": 1,
