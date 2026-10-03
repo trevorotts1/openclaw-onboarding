@@ -178,6 +178,7 @@ This role contributes to the company revenue cascade by: **producing video conte
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **47** movie-producer | "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" | `~/.openclaw/skills/47-movie-producer/` | `universal-sops/video-pipeline-craft/` |
+| **72** motion-video-plus | "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" | `~/.openclaw/skills/72-motion-video-plus/` | `universal-sops/video-pipeline-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures
