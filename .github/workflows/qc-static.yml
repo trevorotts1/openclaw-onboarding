@@ -1340,6 +1340,17 @@ jobs:
           bash tests/unit/cron-owner-chat-guard.test.sh
           echo "✓ cron-owner-chat-guard.test.sh (incl. section 5 command-mode) all pass"
 
+      - name: "Operator personal chat id must not reach agent-facing files (scrub-operator-chat-id)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Fails the build if any FIX-class (agent-facing, client-installed) file
+          # carries the operator's personal Telegram chat id. KEEP-class files
+          # (operator-only, tests, guards) are classified in the script's RULES table.
+          python3 scripts/scrub-operator-chat-id.py --check
+          bash tests/unit/scrub-operator-chat-id.test.sh
+          echo "✓ scrub-operator-chat-id --check and its unit test pass"
+
       - name: "Command Center done-degraded / retry gate regression lock (Issue #12)"
         shell: bash
         run: |

@@ -221,7 +221,7 @@ any doc), then page only if the AI cannot fix it, with what was tried and why.
 
 ## 6. Escalation & Boundaries
 
-Escalate to the Operator (`5252140759`) exactly per §3 and the §4 table — which
+Escalate to the Operator exactly per §3 and the §4 table — which
 means the three-tier order is BINDING: (1) instruct the client's agent (outcome
 b), (2) the rescue AI fixes it using our access, (3) only then escalate, WITH
 what was tried and why. Never speak to a client directly. Never drive a browser
@@ -293,7 +293,7 @@ the ledger.
    context and name the thin fields in the dispatch note.
 2. **Cap-check before anything else.** `python3 rescue_ledger.py count-today
    --client <client> --cap 25` (exit 3 = at/over). At cap, stop looping immediately:
-   instruct the client agent to ping the Operator (`5252140759`) directly, and page
+   instruct the client agent to escalate through the Rescue Rangers escalation section (never a personal chat), and page
    the Operator yourself. The 25/day cap is a furnace guard, not a courtesy — a
    client at the cap is almost always in a loop, and one more "quick" exchange is
    how a billing furnace gets fed. If the ledger cannot be reached you cannot
@@ -437,7 +437,7 @@ radius classification, and the record of what the rescue AI already tried and wh
 it failed (steps 1-2 of the three-tier order).
 **Steps:**
 1. **Page immediately once the tiers are exhausted, and treat the page as an
-   outcome.** Operator `5252140759`. Paging the human is a first-class result of
+   outcome.** Operator (resolved at runtime on the operator box only). Paging the human is a first-class result of
    dispatch, not an admission of failure. A ticket held back because you hoped to
    solve it yourself is a ticket that ages while the client stays down — but a
    ticket paged BEFORE the rescue AI tried to fix what it can reach is a page that

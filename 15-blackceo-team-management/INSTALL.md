@@ -208,7 +208,7 @@ The operator box (and ONLY the operator box) routes the BlackCEO management team
 
 | Telegram ID | Name | Role | Type | Worker Label |
 |-------------|------|------|------|--------------|
-| 5252140759 | Trevor Otts | CEO | Worker | trevor-worker |
+| {{OPERATOR_CHAT_ID}} | Trevor Otts | CEO | Worker | trevor-worker |
 | {{TEAM_MEMBER_CHAT_ID}} | A Client | Client | Client | client-worker |
 | {{TEAM_MEMBER_CHAT_ID}} | Chief of Operations | Chief of Operations | Worker | ops-worker |
 
@@ -235,7 +235,7 @@ resolved at runtime via `shared-utils/operator-chat-id.sh`. **There is NO
 hardcoded personal-chat default** — if no escalation chat is configured, every
 escalation NO-OPs (logs only). A client box installed without one therefore
 never proactively messages any operator. (This is the v12.4.0 co-mingling fix —
-the old hardcoded `5252140759` default was the leakage vector.)
+the old hardcoded personal-chat default was the leakage vector.)
 
 ### ISOLATION GUARANTEE
 
@@ -326,11 +326,13 @@ Read-only: inspects and reports, writes nothing.
 NONINTERACTIVE=1 bash 15-blackceo-team-management/scripts/install-remote-rescue.sh --check
 openclaw config validate
 
+OC_ROOT="$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo "$HOME/.openclaw"; fi)"
+source "$OC_ROOT/skills/shared-utils/resolve-owner-chat.sh"; export OPERATOR_CHAT_IDS_SH
 python3 -c "
 import json, os
 root = '/data/.openclaw' if os.path.isdir('/data/.openclaw') else os.path.expanduser('~/.openclaw')
 cfg = json.load(open(os.path.join(root, 'openclaw.json')))
-op_ids = {'5252140759','6663821679','6771245262'}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 leak = op_ids & set(cfg.get('channels',{}).get('telegram',{}).get('groupAllowFrom') or [])
 print('FAIL groupAllowFrom leak:', leak) if leak else print('PASS groupAllowFrom clean')
 allow = set(cfg.get('channels',{}).get('telegram',{}).get('allowFrom') or [])
@@ -641,6 +643,8 @@ Confirm:
 ### 13B: Operator-owner session isolation (HARD gate -- must pass before calling skill complete)
 
 ```bash
+OC_ROOT="$(if [ -d /data/.openclaw ]; then echo /data/.openclaw; else echo "$HOME/.openclaw"; fi)"
+source "$OC_ROOT/skills/shared-utils/resolve-owner-chat.sh"; export OPERATOR_CHAT_IDS_SH
 python3 - <<'EOF'
 import json, os
 cfg_candidates = [os.path.expanduser("~/.openclaw/openclaw.json"), "/data/.openclaw/openclaw.json"]
@@ -648,7 +652,8 @@ cfg_path = next((p for p in cfg_candidates if os.path.exists(p)), None)
 if not cfg_path:
     print("FAIL -- cannot locate openclaw.json"); raise SystemExit(1)
 cfg = json.load(open(cfg_path))
-op_ids = {"5252140759", "6663821679", "6771245262"}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
+assert op_ids, 'operator id list unavailable'
 group_allow = set(cfg.get("channels", {}).get("telegram", {}).get("groupAllowFrom") or [])
 leak = op_ids & group_allow
 if leak:

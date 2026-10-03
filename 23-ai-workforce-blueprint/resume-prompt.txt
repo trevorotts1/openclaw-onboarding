@@ -165,7 +165,7 @@ The build is done. The owner has heard NOTHING from you since the interview. The
    - The script has already written `closeoutStatus = "failed"` + `closeoutFailureReason`.
    - Don't message the owner. The next cron fire will retry.
 
-4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to the operator's Telegram chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID, default 5252140759) AND to Rescue Rangers by POSTing to the n8n webhook $RESCUE_RANGERS_WEBHOOK_URL (NOT a bot-to-bot Telegram group post - bots cannot read other bots) with the state file path and the failure reason. Then KEEP RETRYING (Rule 8) - do NOT abandon the closeout. Back off ~2h between heavy retries; the next cron fire continues. The build is only "done" when verify-zhc-standard.sh exits 0.
+4. If the closeout has been retried 3+ times unsuccessfully (check `resumeAttempts` trend and `closeoutFailureReason` not changing), send a single escalation to the operator's Telegram chat (env.vars.OPERATOR_TELEGRAM_CHAT_ID; no hardcoded default, if unset skip this operator step) AND to Rescue Rangers by POSTing to the n8n webhook $RESCUE_RANGERS_WEBHOOK_URL (NOT a bot-to-bot Telegram group post - bots cannot read other bots) with the state file path and the failure reason. Then KEEP RETRYING (Rule 8) - do NOT abandon the closeout. Back off ~2h between heavy retries; the next cron fire continues. The build is only "done" when verify-zhc-standard.sh exits 0.
 
    Resolve the chat ID at the shell:
    ```bash
