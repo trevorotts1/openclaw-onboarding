@@ -1,3 +1,35 @@
+## [v25.3.9]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
+
+Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.
+
+#### What changed
+- **F47** `scripts/lib/rescue_admission.py`: a 429 whose body is a JSON object is the intake's own rate-limit answer, and RR-01 has already
+  minted a shed ticket for it. The client now treats it as TERMINAL for the attempt (new `AdmissionShed`, receipt status `refused` with
+  `shed: true`, journaled as `shed`) instead of retrying into the burst. A 429 with a non-JSON body (a proxy in front of the intake) and
+  every 5xx stay retryable. The per-box rate limit and the plain 429 message live in RR-01 (n8n lane W3-RR01), not here.
+- **F49** `scripts/rescue-escalation-section.md.tpl` (and the byte-identical role-library copy): the escalation recipe now captures the
+  HTTP status and prints one `rescue_rangers_state=` line from the answer; a short table says what the agent does for each state
+  (accepted, already being worked, relay the message and stop, not an incident, secret problem, fix the payload, retry once in 2 minutes,
+  unknown). `returnTo` is described as audit-only (no workflow posts an answer there). The "25 exchanges, ping Trevor's chat" line is
+  replaced by the `notificationCapped` rule. **The two lines that send agents to Trevor's personal chat (`5252140759`) are unchanged;
+  they need Trevor's GO (plan decision D13).** No marker bump: the stamper replaces by content inside the existing
+  `RESCUE_ESCALATION_BOXNAME_V3` pair.
+- **F50** `scripts/disk-usage-alert.sh`, `scripts/pre-july14-embedding-migration-check.sh` and the circuit-breaker trip in
+  `06-ghl-install-pages/tools/browser_manager.sh` posted `client=$(hostname)` with no `boxName`, so RR-01 answered 400 "unresolvable
+  box" and `|| true` hid it. They now send `boxName` from `FLEET_STANDING_BOX_SLUG` (and `clientName` from
+  `FLEET_STANDING_CLIENT_LABEL`, default the slug), never the hostname; with no slug they log a WARN and send nothing; a non-2xx answer
+  logs a WARN instead of staying silent.
+
+#### Tests
+`tests/rescue/RR-015/test_rescue_admission_client.py` case 11 (JSON 429 posted once, journaled `shed`, terminal; non-JSON 429 retryable);
+`tests/rescue/RR-030/test_escalation_tpl_snippets.sh` grows from 15 to 34 checks (every canned answer prints the right state line);
+new `tests/rescue/RR-030/test_alarm_senders.sh` (33 checks, loopback stub only). The new F47, F49 and F50 checks fail against the
+previous code and pass with the fix.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skills 06 and 23 are rolled to this version by
+`scripts/bump-version.sh`.
+
 ## [v25.3.8]  -  2026-10-03  -  Rescue Rangers wave 1 (repo): agent template safety, skill-61 identity, reconciler duplicate slug, no-op receipts
 
 Rescue Rangers n8n plan, wave 1, repo lane. Five fixes; the n8n side of wave 1 lands separately in n8n and is not in this PR.

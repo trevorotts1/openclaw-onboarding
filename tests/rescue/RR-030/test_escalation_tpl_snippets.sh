@@ -7,6 +7,11 @@
 #        resolve block prints the HTTP status line.
 #   F16: hostile free text (backtick, $(...), $SECRET, double quote, newline) stays literal,
 #        is never executed or expanded, and the posted file is valid JSON.
+#   F49: the escalate block captures the HTTP status and prints ONE state line
+#        (rescue_rangers_state=...) for each canned answer, so an agent can tell
+#        accepted from refused; returnTo is described as audit-only; the 25/day
+#        promise is now the notificationCapped rule; the two lines that send agents
+#        to Trevor's personal chat 5252140759 are UNCHANGED (they need Trevor's GO, D13).
 #   Also: role-library copy is byte-identical to the canonical template.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -116,6 +121,40 @@ jcheck resolve 2>"$W/jerr" && ok "resolve: file is valid JSON; hostile text lite
 run_block "$W/resolve.sh" "" '{"accepted":true}' 200
 [ "$(hdr_count)" = 0 ] && ok "resolve: no header when secret unset" || bad "resolve: header sent with no secret"
 tail -n 1 "$W/out" | grep -qx 200 && ok "resolve: prints HTTP status 200" || bad "resolve: 200 status line missing"
+
+echo "== escalate block (F49 answer table: canned body + status -> printed state line) =="
+state_of() { # state_of <body> <code>  -> first rescue_rangers_state line (or empty)
+  run_block "$W/escalate.sh" "$SECRET" "$1" "$2"
+  grep -m1 '^rescue_rangers_state=' "$W/out" || true
+}
+expect_state() { # expect_state <label> <body> <code> <state> <ticket-or-none>
+  local got; got="$(state_of "$2" "$3")"
+  [ "$got" = "rescue_rangers_state=$4 http=$3 ticket=$5" ] && ok "F49: $1 -> $4" || bad "F49: $1 -> got '$got'"
+}
+expect_state "200 + ticketId"                  '{"accepted":true,"ticketId":"TEST-T-1","status":"accepted"}' 200 accepted TEST-T-1
+expect_state "200 duplicate_ignored"           '{"accepted":true,"ticketId":"TEST-T-1","status":"duplicate_ignored"}' 200 already_being_worked TEST-T-1
+expect_state "200 accepted_human_followup"     '{"accepted":true,"ticketId":"TEST-T-2","status":"accepted_human_followup","message":"A person will follow up."}' 200 relay_message_and_stop TEST-T-2
+expect_state "200 held_account_standing"       '{"accepted":true,"ticketId":"TEST-T-3","status":"held_account_standing","message":"Account on hold."}' 200 relay_message_and_stop TEST-T-3
+expect_state "200 non_incident"                '{"accepted":true,"ticketId":null,"status":"non_incident"}' 200 not_an_incident none
+expect_state "403 unauthorized (no ticketId)"  '{"status":"unauthorized"}' 403 secret_problem none
+expect_state "400 invalid_payload"             '{"accepted":false,"status":"invalid_payload"}' 400 fix_payload none
+expect_state "429 rate_limited"                '{"accepted":false,"status":"rate_limited","retryAfterSeconds":60}' 429 retry_once_in_2_minutes none
+expect_state "503 admission_unavailable"       '{"accepted":false,"status":"admission_unavailable"}' 503 retry_once_in_2_minutes none
+expect_state "200 with an unparseable body"    '<html>oops</html>' 200 unknown_do_not_assume_accepted none
+run_block "$W/escalate.sh" "$SECRET" '{"accepted":true,"ticketId":"TEST-T-4","status":"accepted","notificationCapped":true}' 200
+grep -qx 'rescue_rangers_capped=true' "$W/out" && ok "F49: notificationCapped:true prints rescue_rangers_capped=true" || bad "F49: capped line missing"
+run_block "$W/escalate.sh" "$SECRET" '{"accepted":true,"ticketId":"TEST-T-5","status":"accepted_human_followup","message":"A person will follow up."}' 200
+grep -qx 'rescue_rangers_message=A person will follow up.' "$W/out" && ok "F49: server message is relayed verbatim" || bad "F49: message line missing"
+grep -qx 'incident_id=TEST-T-5' "$W/out" && ok "F49: incident_id still journalled for human-followup tickets" || bad "F49: incident_id line missing"
+# the curl invocation asked for the status code
+grep -q 'http_code' "$W/argv" && ok "F49: escalate curl captures the HTTP status (-w http_code)" || bad "F49: escalate curl does not capture the status"
+
+echo "== template wording (F49) =="
+grep -q 'Audit only' "$TPL" && ok "F49: returnTo described as audit-only" || bad "F49: returnTo still described as an answer channel"
+grep -q 'must be posted' "$TPL" && bad "F49: stale 'answer must be posted' wording remains" || ok "F49: no 'answer must be posted' promise remains"
+grep -q 'Hard cap: 25 exchanges' "$TPL" && bad "F49: old 25-exchange promise remains" || ok "F49: old 25-exchange promise removed"
+grep -q 'notificationCapped' "$TPL" && ok "F49: notificationCapped rule present" || bad "F49: notificationCapped rule missing"
+[ "$(grep -c '5252140759' "$TPL")" = 2 ] && ok "F49: the two 5252140759 lines are untouched (Trevor's GO, D13)" || bad "F49: 5252140759 line count changed ($(grep -c '5252140759' "$TPL"))"
 
 echo; echo "RR-030 escalation-template snippets: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

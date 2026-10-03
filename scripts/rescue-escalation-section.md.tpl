@@ -56,7 +56,7 @@ body = {
 with open("/tmp/rr-escalation.json", "w", encoding="utf-8") as fh:
     fh.write(json.dumps(body))
 PY
-_RR_RESP="$(curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
   --data-binary @/tmp/rr-escalation.json)"
@@ -67,14 +67,62 @@ rm -f /tmp/rr-escalation.json
 # your task journal (and anywhere you keep this incident's state) as
 # `incident_id`. A resolution that does not carry it cannot be correlated and
 # will NOT close anything automatically.
-printf '%s\n' "$_RR_RESP"
-_RR_TICKET="$(printf '%s' "$_RR_RESP" | sed -n 's/.*"ticketId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-if [ -n "$_RR_TICKET" ]; then
-  printf 'incident_id=%s\n' "$_RR_TICKET"   # <-- journal this against the incident
-fi
+# The last line of the reply is the HTTP status; the rest is the JSON answer.
+# Read the printed rescue_rangers_state= line and follow the table below.
+# Never assume the escalation was accepted just because curl ran.
+export _RR_CODE="${_RR_RESP##*$'\n'}"
+export _RR_BODY="${_RR_RESP%$'\n'*}"
+python3 - <<'PY'
+import json, os
+code = os.environ.get("_RR_CODE", "").strip()
+try:
+    doc = json.loads(os.environ.get("_RR_BODY", ""))
+except ValueError:
+    doc = {}
+if not isinstance(doc, dict):
+    doc = {}
+status = str(doc.get("status") or "")
+ticket = str(doc.get("ticketId") or "")
+if code in ("000", "429", "503"):
+    state = "retry_once_in_2_minutes"
+elif code == "403":
+    state = "secret_problem"
+elif code == "400":
+    state = "fix_payload"
+elif code == "200" and status == "duplicate_ignored":
+    state = "already_being_worked"
+elif code == "200" and status in ("accepted_human_followup", "held_account_standing"):
+    state = "relay_message_and_stop"
+elif code == "200" and status == "non_incident":
+    state = "not_an_incident"
+elif code == "200" and ticket:
+    state = "accepted"
+else:
+    state = "unknown_do_not_assume_accepted"
+print("rescue_rangers_state=%s http=%s ticket=%s" % (state, code or "none", ticket or "none"))
+if doc.get("message"):
+    print("rescue_rangers_message=" + str(doc["message"]).replace("\n", " "))
+if doc.get("notificationCapped") is True:
+    print("rescue_rangers_capped=true")
+if ticket:
+    print("incident_id=" + ticket)   # <-- journal this against the incident
+PY
 ```
 
 Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED heredocs above and python3 turns it into valid JSON. Never paste it into an unquoted heredoc or into `-d '...'`: a quote would break the JSON, and `$VAR`, backticks or `$(...)` in pasted error output would be expanded or RUN on this box (that can leak secrets into the ticket). Only `$_RR_BOX` is a shell variable. Do not hand-write the JSON.
+
+**What the `rescue_rangers_state=` line means -- do exactly this:**
+
+| `rescue_rangers_state` | What you do |
+|-------|-------------|
+| `accepted` | Tell your owner: "I asked Rescue Rangers for help, ticket `<ticket>`." Journal the `incident_id`. The answer arrives later as a NEW message to you; it is not posted anywhere you can poll. |
+| `already_being_worked` | This problem already has a ticket. Do NOT send it again. |
+| `relay_message_and_stop` | Relay `rescue_rangers_message` to your owner in your own words and STOP re-sending this problem. |
+| `not_an_incident` | Rescue Rangers decided this is not an incident. Do NOT re-send it. |
+| `secret_problem` | HTTP 403: the secret is missing or wrong. Tell your owner it is a setup problem. Do NOT retry in a loop. |
+| `fix_payload` | HTTP 400: a required field is missing or empty. Fix the payload and send it once more. |
+| `retry_once_in_2_minutes` | HTTP 429, 503 or no answer: wait 2 minutes and send once more. If it fails again, tell your owner and stop. |
+| `unknown_do_not_assume_accepted` | No usable answer. Do NOT tell your owner help is coming. |
 
 **Field guide:**
 
@@ -88,7 +136,7 @@ Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED h
 | `openclawVersion` | Exact string from `openclaw --version` -- no paraphrasing |
 | `problem` | Short, self-contained description of what is happening |
 | `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
-| `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted |
+| `returnTo` | Audit only: recorded on the ticket. Rescue Rangers does NOT post the answer here; the answer reaches you as a new message. |
 
 - `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If missing, report to Trevor's chat `5252140759`.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL. The array pattern above skips the header when unset.
@@ -157,7 +205,7 @@ substitute a different ticket id or invent one.
 - **(c) Here is the answer** -- relay the Rescue Rangers response verbatim if it is informational.
 Never leave the end user in the dark about what happened or what comes next. This is non-negotiable.
 
-**Hard cap: 25 exchanges per client per day.** Do not loop endlessly; if unresolved after several exchanges, ping Trevor's chat `5252140759` directly.
+**Daily cap.** Rescue Rangers takes up to 25 escalations per client per day. When the reply sets `notificationCapped` (you will see `rescue_rangers_capped=true`), the ticket still exists and a person sees it, but you will get no more automatic help today: stop sending new escalations for that problem and tell your owner a person on the Rescue Rangers team will follow up. Do not loop endlessly.
 
 > DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
 <!-- END RESCUE_ESCALATION_BOXNAME_V3 -->
