@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "onboardingVersion": "v25.3.8",
+  "onboardingVersion": "v25.3.9",
   "commandCenter": {
     "minVersion": "v7.4.0",
     "maxVersion": null,
     "repo": "trevorotts1/blackceo-command-center",
-    "pinnedTag": "v7.6.97"
+    "pinnedTag": "v7.6.98"
   },
   "decisionEngine": {
     "onboardingMainSha": "48db9f54eb551086563168e38f67731e1d52b6a2",
