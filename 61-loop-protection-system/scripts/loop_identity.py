@@ -68,14 +68,49 @@ def resolve_slug():
     return None, "FLEET_STANDING_BOX_SLUG / RR_BOX_SLUG not set in the environment or openclaw.json"
 
 
+def _sync_ledger_box(slug):
+    """Keep Skill 61's OWN ledger meta `box` equal to the canonical slug.
+
+    Fix 7 (October update spec): installs made before the fleet-slug fix keep a
+    hostname in meta `box`, and the run reads that stored name. Once a slug
+    resolves, the ledger is corrected here so the box converges on its slug.
+    Touches only an EXISTING ledger (never creates one as a side effect),
+    never runs as root (state writes are the box user's),
+    and never raises: identity housekeeping must not break an escalation.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import loop_ledger as _ll
+        if _ll.is_root() or not _ll.db_path().exists():
+            return
+        with _ll.Ledger() as led:
+            if led.get_meta("box") != slug:
+                led.set_meta("box", slug)
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write("WARN [loop_identity]: could not sync ledger box meta (%s)\n"
+                         % type(exc).__name__)
+
+
 def canonical_box(box):
-    """The name to put on the wire. A usable explicit `box` wins (callers and
-    self-tests that pass one keep it); a missing or hostname-shaped one is
-    replaced by the box's canonical slug when there is one."""
+    """The name to put on the wire. The canonical slug is resolved FIRST and
+    wins over any stored/explicit name (a dotless hostname such as
+    `TrevelynsMini2` passes problem(), so the stored name must never beat a
+    resolvable slug). On a hit the ledger meta `box` is corrected too. Only when
+    NO slug resolves does the stored name fall back (see identity_state())."""
+    slug, _why = resolve_slug()
+    if slug:
+        _sync_ledger_box(slug)
+        return slug
     if box and problem(box) is None:
         return box.strip()
-    slug, _why = resolve_slug()
-    return slug or (box or "")
+    return box or ""
+
+
+def identity_state():
+    """Return 'resolved' when a canonical slug is known, else 'unresolved'
+    (the wire name is then the stored fallback). Rescue Rangers tells the two
+    apart through the escalation payload's `identity` field."""
+    return "resolved" if resolve_slug()[0] else "unresolved"
 
 
 def client_label(box_name):

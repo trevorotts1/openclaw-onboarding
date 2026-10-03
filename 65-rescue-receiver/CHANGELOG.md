@@ -1,5 +1,29 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.6.0] - 2026-10-03 - wave 4 box-side receiver hardening (RR plan F61, F62, F66, F88)
+
+`RECEIVER_VERSION` 1.7.2 to 1.8.0.
+
+**F61. A box with a wrong slug or token polled forever and logged nothing.**
+THE DEFECT. `CLAIM_RESP=$(_post ...) || exit 0` threw away the HTTP class, so a 401 looked exactly like an empty queue. On the receiver side one unenrolled box made 9 unauthorized claims in 16 minutes; on the box there was no trace.
+THE FIX. The claim now runs in the poll's own shell (the response class lives in shell globals), and an unauthorized answer (HTTP 401/403, or a 2xx body whose status is `unauthorized`) writes `state/rr-receiver/claim-unauthorized.json` (slug, HTTP code, first and last time, count; never the token) and logs one `claim-unauthorized slug=...` line per hour. The first claim the receiver accepts again removes the file. `rr-readiness.sh` reports `claim_unauthorized` and `slug_mismatch` (RR_BOX_SLUG differs from the canonical FLEET_STANDING_BOX_SLUG, the split one box had) as FLAG lines in the human report and a `flags` object in `--json`. Flags never change the readiness state or exit code.
+Test: `tests/rescue/RR-030/test_claim_unauthorized.sh`.
+
+**F62. A poll killed mid-turn re-ran the work blind.**
+THE DEFECT. The journal wrote `effect_started` before the agent turn, but nothing ever read it, so a poll killed mid-turn started the same instruction again.
+THE FIX. Before the initial notification, the poll looks for a journal row with exactly this `instruction_id` still at `effect_started` or `effect_executed` that no done record carries. If one exists the turn is not run: the claim is acked `failed` with the new reason `interrupted_prior_attempt` (added to the ack allow-list) so the ticket reaches a human. `_gc_journal` moves such orphan rows older than 30 days to `reconcile/` as `journal-<op>` (never deleted). The matching RR-07 `Parse Request` allow-list change ships with the n8n wave-4 lane; boxes only send the reason after the next fleet roll.
+Test: `tests/rescue/RR-030/test_journal_reconcile.sh`.
+
+**F66. Gateway-down fixes were delivered through the gateway.**
+THE DEFECT. `openclaw agent` runs through the Gateway unless `--local` is given, so the RR-03 fix for a closed gateway port had to travel through the thing it was fixing.
+THE FIX. An `instruction_id` starting `rr03-` runs the agent turn with `--local`, in both the supervised and the degraded path. Every other instruction is unchanged. Try it on the operator box first, before the fleet roll.
+Test: `tests/rescue/RR-030/test_rr03_local_flag.sh`.
+
+**F88. The client-facing final update was a raw status dump.**
+THE DEFECT. The final notification body read `<reply> Repair status: partial. Verification: unverified. Remaining blocker: repair_not_verified. Owner: assigned_agent. Next action: ...`.
+THE FIX. `rescue-notification.py final-body` builds three plain sentences: `Fixed and checked.` (repaired and verified), `We are still working on this: <reason in plain words>.`, or `A specialist will follow up.` (blocker owned by a person). Internal reason codes are never shown. The machine fields stay in the ack and the done record only.
+Test: `tests/rescue/RR-030/test_final_body.py`.
+
 ## [23.5.3] - 2026-10-03 - a no-op receipt is not a delivery receipt (RR plan F63)
 
 THE DEFECT. After the receipt contract landed, the server answers an ack for a ticket that is already

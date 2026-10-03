@@ -17,9 +17,9 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 | LP-A5 | F9-adj | rapid retries against a 429/dead provider; paid-fallback drain | D3 | full stop -> honor retry window -> exactly one scheduled resume |
 | LP-A6 | F3 | resume cron without light-context: huge input, zero tool calls | D2 | LF-5 set `lightContext:true` |
 | LP-A7 | F2 | dreaming / re-embed under the sanctioned interval; per-agent shared-corpus re-embed | D2 | pin interval >= floor; point at the single shared index |
-| LP-A8 | F15 | a run blocked by the runtime's own identical-call guard, over and over, inside one run; the transcript (and its compaction summaries) fill with the refusals | D5 | LF-10 archive the transcript + roll (move, never delete, never while live); LF-9 abort the run to free the lane (Tier 2); LF-11 prune poisoned checkpoints (Tier 2) |
+| LP-A8 | F15 | a run blocked by the runtime's own identical-call guard, over and over, inside one run; the transcript (and its compaction summaries) fill with the refusals | D5 (`openclaw audit` `tool_action status=blocked` bursts per `runId`; no conversation files) | LF-9 `sessions.abort` RPC to free the lane (Tier 2); LF-10 `sessions.reset` through the running gateway (keeps history, never applied to a session with an active run; Tier 1 only after it is proven on the operator box); LF-11 retired (October keeps no checkpoint files to prune) |
 | LP-A9 | F16 | an agent REWORDS a failing intent: many calls to one tool in a short window, all with DIFFERENT arguments, against a dependency that is refusing on purpose (auth-class). Every args-keyed guard is silent by construction | D6 | doctrine N40 is the live fix (stop at 2, one message, never narrate); the watchdog reports after the fact — Tier 2, escalate, never auto-fix an auth failure |
-| LP-A10 | F15 | orchestrator resends a byte-identical `sessions_send` payload as a NEW top-level run after the tool's own hardcoded 30s fallback timeout (caller omitted `timeoutSeconds`); each resend is a FRESH run id so OpenClaw's own `tools.loopDetection` (within-run) and `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one `sessions_send` call) both reset and never fire | D7 | LF-12 `sessions.abort` (native RPC, no-op-safe when nothing is active) on the source's in-flight run + park source, never pkill/gateway-restart |
+| LP-A10 | F15 | orchestrator resends a byte-identical `sessions_send` payload as a NEW top-level run after the tool's own hardcoded 30s fallback timeout (caller omitted `timeoutSeconds`); each resend is a FRESH run id so OpenClaw's own `tools.loopDetection` (within-run) and `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one `sessions_send` call) both reset and never fire | D7 retired pending the `loop-brake` plugin (Fix 9); the conversation-file provenance source is gone and no content-free October source is verified | LF-12 `sessions.abort` with `clearQueued: true` (native RPC, no-op-safe when nothing is active) on the source's in-flight run; the ledger park flag is a status marker only and stops nothing; never pkill/gateway-restart |
 
 ## Family B - PROCESS / SUPERVISOR LOOPS (restart storms: churn + outage, no model call)
 
@@ -27,7 +27,7 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 |---|---|---|---|---|
 | LP-B1 | F5 | supervisor restart storm; app dies faster than the stability window | D1 | LF-6 stop unit -> capture boot log -> fix cause -> single start -> stability watch |
 | LP-B2 | F4 | `*/2` watchdog racing launchd; two supervisors fight one port | D1 | disable the RACING supervisor (one owner per process) -> single clean restart |
-| LP-B3 | F5-adj | zombie orphan holds :18789 outside launchd + stale handoff marker | D4 | LF-3 archive marker -> kill orphan on :18789 -> kickstart -> pid-stability verify |
+| LP-B3 | F5-adj | a stray process holds :18789 while the LIVE supervisor (launchd / systemd) owns a different, alive pid. The legacy handoff file is ignored (October keeps it in SQLite); supervisor unreadable or docker = UNDETERMINED, no finding | D4 | LF-3 prepared proposal only: kill ONLY the stray listener pid (never the supervisor's own), revert = restart through the supervisor |
 | LP-B4 | F6 | daemon started inside a session; SIGTERMed at teardown; autostart resurrects it | D1 | disable the in-session autostart -> install a host-level watchdog |
 | LP-B5 | F13-adj | one illegal key freezes the WHOLE cron engine (incl. self-heal jobs) | D4 | LF-7 restore last-good snapshot as box user -> validate -> sanctioned restart |
 
@@ -89,6 +89,13 @@ route to the same blocked thing.
 **The fix is doctrine, not detection.** D6 runs on a 15-minute watchdog tick and reports
 after the loop is over. N40 (`AGENTS.md`) is what stops it while it is happening: at most
 2 attempts against a fail-closed dependency, then ONE message, and never a narrated hunt.
+
+## Family W - THE WATCHDOG ITSELF (instrument faults, never client-facing, never escalated to Rescue Rangers)
+
+| Class | F# | Signature (short) | Detector | Kill card / fix |
+|---|---|---|---|---|
+| LP-WD1 | Fix 1 | a collector returned zero rows while `openclaw sessions --active 60 --json` shows recent activity: the instrument is blind, and an empty result is a broken check, not a healthy box (P2) | feed-health control, every run and `verify.sh --live` (D-FEED-HEALTH) | none - fix the feed (CLI version, shape change); finding stays open until the feed returns rows |
+| NATIVE-GUARD-OFF | Fix 5 | OpenClaw's own tool-loop guard is not `enabled: true` for the global config or for an agent override at `agents.entries.<id>.tools.loopDetection` (WARN, checked once a day, read-only) | `scripts/check_native_loop_guard.py` | Tier 2 prepared proposal only: `openclaw config set tools.loopDetection.enabled true --strict-json`, revert = the prior value; never applied by the unattended run, never touches models or keys |
 
 ## Two deliberate non-classes (stated so nobody adds them)
 

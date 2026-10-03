@@ -1,0 +1,9 @@
+{
+  "id": "loop-brake",
+  "name": "Loop Brake",
+  "description": "Real-time brake for repeated sessions_send resends and repeated fail-closed refusals (Skill 61). Ships DISABLED: no enabledByDefault, and the Skill 61 rollout gate holds it too.",
+  "version": "0.1.0",
+  "categories": ["security"],
+  "activation": { "onStartup": true },
+  "configSchema": { "type": "object", "additionalProperties": false }
+}

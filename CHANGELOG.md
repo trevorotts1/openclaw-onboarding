@@ -1,3 +1,86 @@
+## [v25.3.12]  -  2026-10-03  -  Merge train: #1450 fix(rescue): wave 4 repo lane - unauthorized-claim trace,…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1450 — [v25.3.11] - 2026-10-03 - Rescue Rangers wave 4 (repo): unauthorized-claim trace, interrupted-attempt guard, rr03 --local, plain final update, EWS identity fields, mc-route escalation
+
+Rescue Rangers n8n plan, wave 4, repo lane (F61, F62, F66, F71, F78, F79, F88, F89). The n8n side of wave 4 lands separately in n8n and is not in this PR.
+
+##### What changed
+- **F61** `65-rescue-receiver/rescue-poll.sh`: a claim the receiver refuses as unauthorized (401/403, or a 2xx body `status:"unauthorized"`) now writes `state/rr-receiver/claim-unauthorized.json` (slug, HTTP code, first/last time, count; never the token) and logs ONE `claim-unauthorized slug=...` line per hour; the first accepted claim clears it. `rr-readiness.sh` reports `claim_unauthorized` and `slug_mismatch` (RR_BOX_SLUG differs from FLEET_STANDING_BOX_SLUG) as FLAG lines and a `flags` object in `--json`; flags never change the state or exit code.
+- **F62** `rescue-poll.sh`: an instruction whose journal already holds an `effect_started` / `effect_executed` row for the same `instruction_id` with no done record is not run again; it is acked `failed` / `interrupted_prior_attempt` (new ack reason). Orphan rows older than 30 days move to `reconcile/` (never deleted). **Boxes only send the new reason after the next fleet roll; the RR-07 `Parse Request` allow-list that accepts it ships in the n8n wave 4.**
+- **F66** `rescue-poll.sh`: an `rr03-` instruction runs `openclaw agent ... --local`, so a gateway-down fix is not delivered through the dead gateway. Other instructions are unchanged. Try it on the operator box first, before the fleet roll.
+- **F88** `65-rescue-receiver/rescue-notification.py final-body` (used by `rescue-poll.sh`): the client-facing final update is three plain sentences ("Fixed and checked." / "We are still working on this: ..." / "A specialist will follow up."). Machine fields stay in the ack only.
+- **F89** `scripts/lib/rescue_admission.py`: `admit()` takes optional `client`, `person`, `return_to`, falling back to the box env (`FLEET_STANDING_CLIENT_LABEL`, `RESCUE_RANGERS_PERSON`, `RESCUE_RANGERS_RETURN_TO`, the names the other repo senders already use; clientName last falls back to the slug). They never enter `operation_id`.
+- **F71** `scripts/mc-route.sh` (and the two byte-identical stamper copies in `apply-fleet-standards.sh` and `apply-routing-fix.sh`): with `MC_ROUTE_RR_ESCALATE=1` a failed routing also files one Rescue Rangers admission from the box (background, bounded, fail-soft). It names the box by `FLEET_STANDING_BOX_SLUG` (nothing is sent without it), carries a fixed reason class in plain words (never the owner's words), and uses `<reason-class>:<UTC hour>` as the event id, so an outage is one ticket per class per hour, not one per message. `rescue_admission.py` gains `--event-id`. **Off unless the flag is set; enable on the operator box first. Needs the n8n F45 operation-id dedupe live.**
+- **F78** Already satisfied on main: `cc-compat.json` `pinnedTag` is `v7.6.98` (released tag `v7.6.98` contains Command Center PR #481, the F18/F51 fixes) since v25.3.9. No pin edit in this PR.
+- **F79** `scripts/fleet-standing/NEW-BOX-WIRING.md`: the new-box test step now says to put the suppress marker at the START of the problem text (or `clientName` `__AUTHTEST__` / `ROUTING-TEST...`), which works under today's anywhere-in-body matching and the stricter matching the n8n lane will bring.
+- **Test fix (not a product change)** `tests/unit/mc-route-heredoc-sync.test.sh` grepped for the pre-JEV-804 spelling `"${1:-}" = "task"`; the helper has tested `$_CMD` since v25.2.22, so the stamped-helper check failed on main. It now accepts both spellings. The embedded copies had also drifted (missing the cancel-truth block); they are re-stamped from `scripts/mc-route.sh` and the sync test passes 7/7.
+
+##### Tests
+New under `tests/rescue/RR-030/` (all hermetic: loopback stubs, dead-port proxies, synthetic ids): `test_claim_unauthorized.sh` (17), `test_journal_reconcile.sh` (9), `test_rr03_local_flag.sh` (8), `test_final_body.py` (15), `test_mc_route_escalation.sh` (13), plus `lib-w4-poll-harness.sh`. `tests/rescue/RR-015/test_rescue_admission_client.py` case 12 (F89); `rescue_admission.py --self-test` 47 -> 55 checks. Each new test fails against the previous source files.
+
+##### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO (D19). Nothing here touches a client box. Skill 65 `v23.5.3` -> `v23.6.0` (receiver 1.7.2 -> 1.8.0); skills 06 and 23 rolled to the repo version by `scripts/bump-version.sh`.
+
+## [v25.3.11]  -  2026-10-03  -  Skill 61 (Loop Protection System) v1.1.0: October OpenClaw update, 13 fixes
+
+Skill 61's July-era detectors read conversation and trajectory files that OpenClaw stopped writing in `v2026.7.2-beta.1` (conversations now live in a per-agent SQLite database). Five of seven detectors were blind, the "orphan gateway" alarm was false on every run, weekly crons were flagged as over-firing, and "park" changed nothing outside the ledger. This release ships all 13 fixes from `skill-61-october-openclaw-update-spec-20261003.md` (5 High, 4 Medium, 4 Low) in ONE branch. Re-bumped to v25.3.11 because main already released v25.3.10 (Rescue Rangers wave 3 repo lane).
+
+**Rollout posture is unchanged.** `61-loop-protection-system/config/rollout.json` stays `fleet_rollout_enabled: false`. The new `loop-brake` plugin ships DISABLED behind that gate. Turning on OpenClaw's own loop guard on client boxes is a prepared Tier 2 proposal, never applied by the unattended run. No approval gate was added (no `requireApproval`). Zero model calls (`guard-no-anthropic-runtime.py` passes). Nothing was deleted: what stopped being used is disabled or retired.
+
+#### What changed (skill 61, v1.0.1 -> v1.1.0; full detail in `61-loop-protection-system/CHANGELOG.md`)
+- **Fix 1 (High)** D2, D3, D4-wedge, D5 and D6 now read `openclaw sessions --json` and `openclaw audit --json` (content-free, read-only) instead of dead files, with a feed-health control that raises a P2 "watchdog blind" finding when a feed is empty while sessions are active. D7 is named UNDETERMINED and covered by the loop-brake plugin.
+- **Fix 2 (High)** The orphan-gateway check compares the listener pid with the supervisor's own pid (launchd or systemd), never the legacy handoff file. Unreadable supervisor or docker is UNDETERMINED and raises nothing.
+- **Fix 3 (High)** The cron over-fire bound is floored at one fire per day, so a weekly job firing once is silent.
+- **Fix 4 (High)** LF-6 really runs `pm2 stop` on a pm2 unit (gateway is alert-only); with no real stop the state is `parked-flag` and the finding stays open. LF-12 sends `sessions.abort` with `clearQueued: true`.
+- **Fix 5 (High)** New read-only daily check `scripts/check_native_loop_guard.py` warns when OpenClaw's built-in tool-loop guard is off; the fix is a prepared proposal only.
+- **Fix 6 (Medium)** D1 no longer runs the pm2 JSON listing that dumps process environments; it parses the `pm2 list` table, the `launchctl list` table and a format-limited `docker inspect`.
+- **Fix 7 (Medium)** The fleet slug wins over a stored dotless hostname at run time; the escalation payload carries `identity: unresolved` when no slug resolves. `loop_escalate.py --self-test` now sandboxes its state directory so it can never write the real ledger.
+- **Fix 8 (Medium)** The restore script skips the built-file patch on OpenClaw 2026.7.2 and later and checks only `tools.loopDetection.enabled` and `agents.entries.<id>`; it never writes an unknown config key.
+- **Fix 9 (Medium)** New `loop-brake` plugin (block only): third identical `sessions_send` in 300 seconds, and third failed-with-auth-refusal call to one tool in one run. Disabled behind the rollout gate.
+- **Fix 10 (Low)** `signatures.json` paid tiers split into metered, subscription_capped (Ollama Cloud, WARN only) and local.
+- **Fix 11 (Low)** D4 records, and does not escalate, a cron the scheduler already auto-disabled or is backing off; `hasMore` makes unseen jobs UNDETERMINED.
+- **Fix 12 (Low)** LF-8 prepared proposal is `agents.defaults.heartbeat.isolatedSession=true` plus `lightContext=true` (never the heartbeat model).
+- **Fix 13 (Low)** Docs and fix classes corrected to October behavior; LF-9 re-pointed to `sessions.abort`, LF-10 to `sessions.reset` (Tier 2), LF-11 retired.
+
+#### Integration notes
+- Nine lane branches (`s61/SKS-001` .. `s61/SKS-009`) merged clean in id order; the integrator then applied the cross-lane hunks the lane receipts named (LF-10 Tier 2 self-tests, Fix 10 test fixtures, hermetic `pm2` stub in `verify.sh`, `identity` payload field, LF-3 and LF-6 wording).
+- `docs/interview-launch-recovery.md` paired-release line moved to v25.3.11 to satisfy `scripts/check-doc-currency-guards.sh`.
+## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
+
+Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.
+Re-bumped to v25.3.10 because main already released v25.3.9 (Command Center v7.6.98 repin); main was merged into this branch (no rebase).
+
+#### What changed
+- **F47** `scripts/lib/rescue_admission.py`: a 429 whose body is a JSON object is the intake's own rate-limit answer, and RR-01 has already
+  minted a shed ticket for it. The client now treats it as TERMINAL for the attempt (new `AdmissionShed`, receipt status `refused` with
+  `shed: true`, journaled as `shed`) instead of retrying into the burst. A 429 with a non-JSON body (a proxy in front of the intake) and
+  every 5xx stay retryable. The per-box rate limit and the plain 429 message live in RR-01 (n8n lane W3-RR01), not here.
+- **F49** `scripts/rescue-escalation-section.md.tpl` (and the byte-identical role-library copy): the escalation recipe now captures the
+  HTTP status and prints one `rescue_rangers_state=` line from the answer; a short table says what the agent does for each state
+  (accepted, already being worked, relay the message and stop, not an incident, secret problem, fix the payload, retry once in 2 minutes,
+  unknown). `returnTo` is described as audit-only (no workflow posts an answer there). The "25 exchanges, ping Trevor's chat" line is
+  replaced by the `notificationCapped` rule. **Trevor approved plan decision D13 (2026-10-03): the two lines that sent agents to his personal
+  chat are gone from BOTH template copies (a missing `RESCUE_RANGERS_WEBHOOK_URL` or `FLEET_STANDING_BOX_SLUG` now means "tell your owner it
+  is a setup problem", the `secret_problem` state), and the chat id appears in neither copy.** No marker bump: the stamper replaces by
+  content inside the existing `RESCUE_ESCALATION_BOXNAME_V3` pair.
+- **F50** `scripts/disk-usage-alert.sh`, `scripts/pre-july14-embedding-migration-check.sh` and the circuit-breaker trip in
+  `06-ghl-install-pages/tools/browser_manager.sh` posted `client=$(hostname)` with no `boxName`, so RR-01 answered 400 "unresolvable
+  box" and `|| true` hid it. They now send `boxName` from `FLEET_STANDING_BOX_SLUG` (and `clientName` from
+  `FLEET_STANDING_CLIENT_LABEL`, default the slug), never the hostname; with no slug they log a WARN and send nothing; a non-2xx answer
+  logs a WARN instead of staying silent.
+
+#### Tests
+`tests/rescue/RR-015/test_rescue_admission_client.py` case 11 (JSON 429 posted once, journaled `shed`, terminal; non-JSON 429 retryable);
+`tests/rescue/RR-030/test_escalation_tpl_snippets.sh` grows from 15 to 34 checks (every canned answer prints the right state line);
+new `tests/rescue/RR-030/test_alarm_senders.sh` (33 checks, loopback stub only). The new F47, F49 and F50 checks fail against the
+previous code and pass with the fix.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skills 06 and 23 are rolled to this version by
+`scripts/bump-version.sh`.
+
 ## [v25.3.9]  -  2026-10-03  -  Repin Command Center v7.6.98 (escalations use the fleet box slug; Rescue Rangers allow-list)
 
 ### Why

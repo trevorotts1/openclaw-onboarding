@@ -36,8 +36,9 @@ the burn-in. Tier-2/3 never auto-apply regardless.
 
 ## 4. A unit is parked and will not come back
 
-By design: a tripped process breaker parks the unit visible-red so it cannot silently
-respawn into the same crash. Fix the boot cause (stale build / missing env / root-owned
+By design: a tripped process breaker really stops a pm2 unit (`pm2 stop <unit>`) so it
+cannot silently respawn into the same crash. (The gateway is alert-only; a unit with no
+real stop is only flagged `parked-flag` and its finding stays open.) Fix the boot cause (stale build / missing env / root-owned
 files / port conflict), THEN `loop-companion.sh unpark <unit>` and watch the stability
 window (pid stable at t+15/35/65s).
 

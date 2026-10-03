@@ -657,6 +657,101 @@ with tempfile.TemporaryDirectory(prefix="rr015-c10b-") as td:
     clear_state()
 
 # --------------------------------------------------------------------------
+# CASE 11 (RR plan F47): the 429 contract is no longer split. RR-01 answers a
+# rate-limited request with HTTP 429 AND a JSON body, and has already minted a
+# shed ticket by then. The client used to treat every 429 as retryable, which
+# re-posted into the burst that caused the shed. Now a 429 whose body is a JSON
+# object is TERMINAL for the attempt (journaled `shed`, one post), while a 429
+# with a non-JSON body (a proxy in front of the intake) stays retryable.
+# --------------------------------------------------------------------------
+with tempfile.TemporaryDirectory(prefix="rr015-c11-") as td:
+    import io
+    import urllib.error
+    import urllib.request
+
+    creds("v1")
+    calls = []
+    answers = {"body": b'{"accepted":false,"status":"rate_limited","retryAfterSeconds":60}'}
+
+    def _urlopen_429(req, timeout=None):
+        calls.append(1)
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {},
+                                     io.BytesIO(answers["body"]))
+
+    _real_urlopen = urllib.request.urlopen
+    urllib.request.urlopen = _urlopen_429
+    try:
+        os.environ["EWS_STATE_DIR"] = td
+        r = client.admit(td, box="box-rr015-shed", problem_text="shed fixture",
+                         source="skill-60-ews", signal="S6", dedup_key="k-shed",
+                         event_id=1101, url="https://intake.invalid/rr-v2-intake")
+        check(len(calls) == 1, "JSON 429 is posted exactly once (not retried)", len(calls))
+        check(r["status"] == "refused" and r.get("shed") is True,
+              "JSON 429 -> terminal refused receipt flagged shed", r)
+        with Ledger(td) as led:
+            rows = [dict(x) for x in led.conn.execute(
+                "SELECT status FROM rescue_admissions WHERE event_id=1101").fetchall()]
+        check(rows and rows[-1]["status"] == "shed", "JSON 429 journaled as shed", rows)
+
+        # the escalation sweep must treat it as terminal (not retry-eligible)
+        check(A._escalation_outcome(r["status"]) == "failed",
+              "EWS outcome for a shed receipt is terminal (failed), not attempted")
+
+        # non-JSON 429 (a proxy, not RR-01): no shed ticket exists -> retryable
+        calls.clear()
+        answers["body"] = b"<html>429 Too Many Requests</html>"
+        r2 = client.admit(td, box="box-rr015-shed", problem_text="proxy fixture",
+                          source="skill-60-ews", signal="S6", dedup_key="k-proxy",
+                          event_id=1102, url="https://intake.invalid/rr-v2-intake")
+        check(r2["status"] == "failed" and not r2.get("shed"),
+              "non-JSON 429 stays failed/retryable (not a shed)", r2)
+    finally:
+        urllib.request.urlopen = _real_urlopen
+        clear_state()
+
+# --------------------------------------------------------------------------
+# 12. RR plan F89: early-warning escalations arrive with a client name and a
+#     reply destination. admit() fills clientName / person / returnTo from the
+#     box env the other repo senders already use, an explicit argument wins,
+#     and none of the three can change the operation identity (a replay of the
+#     same event must still fold at the intake).
+# --------------------------------------------------------------------------
+F89_ENVS = ("FLEET_STANDING_CLIENT_LABEL", "RESCUE_RANGERS_PERSON", "RESCUE_RANGERS_RETURN_TO")
+f89_saved = {k: os.environ.pop(k, None) for k in F89_ENVS}
+with tempfile.TemporaryDirectory(prefix="rr015-c12-") as td:
+    creds("v1")
+    os.environ["EWS_STATE_DIR"] = td
+    f89_posts = []
+    f89_client = admission_client(f89_posts)
+    f89_admit = f89_client["admit"]
+
+    r_plain = f89_admit(td, box="box-rr015-f89", problem_text="f89 fixture",
+                        signal="S6", dedup_key="k-f89", event_id=1201)
+    plain = f89_posts[-1]["body"]
+    check(plain["clientName"] == "box-rr015-f89" and plain["person"] == "" and plain["returnTo"] is None,
+          "F89 no env: clientName falls back to the box slug, person empty, returnTo null", plain)
+
+    os.environ["FLEET_STANDING_CLIENT_LABEL"] = "Example Client Co"
+    os.environ["RESCUE_RANGERS_PERSON"] = "Example Owner"
+    os.environ["RESCUE_RANGERS_RETURN_TO"] = "telegram:example-room"
+    r_env = f89_admit(td, box="box-rr015-f89", problem_text="f89 fixture",
+                      signal="S6", dedup_key="k-f89", event_id=1201)
+    withenv = f89_posts[-1]["body"]
+    check(withenv["clientName"] == "Example Client Co" and withenv["person"] == "Example Owner"
+          and withenv["returnTo"] == "telegram:example-room",
+          "F89 env set: clientName / person / returnTo carried on the wire", withenv)
+    check(r_plain["operation_id"] == r_env["operation_id"] and plain["operation_id"] == withenv["operation_id"],
+          "F89 operation_id identical with and without the identity fields", (r_plain["operation_id"], r_env["operation_id"]))
+    check("Example Owner" not in json.dumps(r_env) and "telegram:example-room" not in json.dumps(r_env),
+          "F89 the receipt (journaled detail) does not echo the person or reply destination")
+    for k in F89_ENVS:
+        os.environ.pop(k, None)
+    clear_state()
+for k, v in f89_saved.items():
+    if v is not None:
+        os.environ[k] = v
+
+# --------------------------------------------------------------------------
 # clean up env and summarize
 # --------------------------------------------------------------------------
 clear_state()
