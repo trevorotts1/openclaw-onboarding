@@ -22,6 +22,26 @@ Skill 61's July-era detectors read conversation and trajectory files that OpenCl
 #### Integration notes
 - Nine lane branches (`s61/SKS-001` .. `s61/SKS-009`) merged clean in id order; the integrator then applied the cross-lane hunks the lane receipts named (LF-10 Tier 2 self-tests, Fix 10 test fixtures, hermetic `pm2` stub in `verify.sh`, `identity` payload field, LF-3 and LF-6 wording).
 - `docs/interview-launch-recovery.md` paired-release line moved to v25.3.11 to satisfy `scripts/check-doc-currency-guards.sh`.
+## [v25.3.11] - 2026-10-03 - Rescue Rangers wave 4 (repo): unauthorized-claim trace, interrupted-attempt guard, rr03 --local, plain final update, EWS identity fields, mc-route escalation
+
+Rescue Rangers n8n plan, wave 4, repo lane (F61, F62, F66, F71, F78, F79, F88, F89). The n8n side of wave 4 lands separately in n8n and is not in this PR.
+
+#### What changed
+- **F61** `65-rescue-receiver/rescue-poll.sh`: a claim the receiver refuses as unauthorized (401/403, or a 2xx body `status:"unauthorized"`) now writes `state/rr-receiver/claim-unauthorized.json` (slug, HTTP code, first/last time, count; never the token) and logs ONE `claim-unauthorized slug=...` line per hour; the first accepted claim clears it. `rr-readiness.sh` reports `claim_unauthorized` and `slug_mismatch` (RR_BOX_SLUG differs from FLEET_STANDING_BOX_SLUG) as FLAG lines and a `flags` object in `--json`; flags never change the state or exit code.
+- **F62** `rescue-poll.sh`: an instruction whose journal already holds an `effect_started` / `effect_executed` row for the same `instruction_id` with no done record is not run again; it is acked `failed` / `interrupted_prior_attempt` (new ack reason). Orphan rows older than 30 days move to `reconcile/` (never deleted). **Boxes only send the new reason after the next fleet roll; the RR-07 `Parse Request` allow-list that accepts it ships in the n8n wave 4.**
+- **F66** `rescue-poll.sh`: an `rr03-` instruction runs `openclaw agent ... --local`, so a gateway-down fix is not delivered through the dead gateway. Other instructions are unchanged. Try it on the operator box first, before the fleet roll.
+- **F88** `65-rescue-receiver/rescue-notification.py final-body` (used by `rescue-poll.sh`): the client-facing final update is three plain sentences ("Fixed and checked." / "We are still working on this: ..." / "A specialist will follow up."). Machine fields stay in the ack only.
+- **F89** `scripts/lib/rescue_admission.py`: `admit()` takes optional `client`, `person`, `return_to`, falling back to the box env (`FLEET_STANDING_CLIENT_LABEL`, `RESCUE_RANGERS_PERSON`, `RESCUE_RANGERS_RETURN_TO`, the names the other repo senders already use; clientName last falls back to the slug). They never enter `operation_id`.
+- **F71** `scripts/mc-route.sh` (and the two byte-identical stamper copies in `apply-fleet-standards.sh` and `apply-routing-fix.sh`): with `MC_ROUTE_RR_ESCALATE=1` a failed routing also files one Rescue Rangers admission from the box (background, bounded, fail-soft). It names the box by `FLEET_STANDING_BOX_SLUG` (nothing is sent without it), carries a fixed reason class in plain words (never the owner's words), and uses `<reason-class>:<UTC hour>` as the event id, so an outage is one ticket per class per hour, not one per message. `rescue_admission.py` gains `--event-id`. **Off unless the flag is set; enable on the operator box first. Needs the n8n F45 operation-id dedupe live.**
+- **F78** Already satisfied on main: `cc-compat.json` `pinnedTag` is `v7.6.98` (released tag `v7.6.98` contains Command Center PR #481, the F18/F51 fixes) since v25.3.9. No pin edit in this PR.
+- **F79** `scripts/fleet-standing/NEW-BOX-WIRING.md`: the new-box test step now says to put the suppress marker at the START of the problem text (or `clientName` `__AUTHTEST__` / `ROUTING-TEST...`), which works under today's anywhere-in-body matching and the stricter matching the n8n lane will bring.
+- **Test fix (not a product change)** `tests/unit/mc-route-heredoc-sync.test.sh` grepped for the pre-JEV-804 spelling `"${1:-}" = "task"`; the helper has tested `$_CMD` since v25.2.22, so the stamped-helper check failed on main. It now accepts both spellings. The embedded copies had also drifted (missing the cancel-truth block); they are re-stamped from `scripts/mc-route.sh` and the sync test passes 7/7.
+
+#### Tests
+New under `tests/rescue/RR-030/` (all hermetic: loopback stubs, dead-port proxies, synthetic ids): `test_claim_unauthorized.sh` (17), `test_journal_reconcile.sh` (9), `test_rr03_local_flag.sh` (8), `test_final_body.py` (15), `test_mc_route_escalation.sh` (13), plus `lib-w4-poll-harness.sh`. `tests/rescue/RR-015/test_rescue_admission_client.py` case 12 (F89); `rescue_admission.py --self-test` 47 -> 55 checks. Each new test fails against the previous source files.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO (D19). Nothing here touches a client box. Skill 65 `v23.5.3` -> `v23.6.0` (receiver 1.7.2 -> 1.8.0); skills 06 and 23 rolled to the repo version by `scripts/bump-version.sh`.
 
 ## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
 

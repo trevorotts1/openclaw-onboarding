@@ -81,7 +81,27 @@
 # contract: public receiver changes pair with additive server support FIRST;
 # old servers that omit the fields keep working because the fields simply echo
 # as empty strings).
-RECEIVER_VERSION="1.7.2"
+#
+# v1.8.0 (RR plan wave 4 repo lane: F61, F62, F66, F88):
+#   * F61  a claim the receiver refuses as unauthorized (HTTP 401/403, or a 2xx
+#          body status "unauthorized") is no longer silent: state/rr-receiver/
+#          claim-unauthorized.json records it (names only, never the token) and
+#          the log gets ONE "claim-unauthorized slug=..." line per hour.
+#          rr-readiness.sh reports the file as claim_unauthorized. The file is
+#          removed on the first claim the receiver accepts again.
+#   * F62  an instruction whose journal already holds an effect_started /
+#          effect_executed row (exact instruction_id) with no done record was
+#          interrupted mid-turn. The agent turn is NOT run again; the claim is
+#          acked failed / interrupted_prior_attempt so the ticket reaches a
+#          human instead of repeating client-visible actions. Orphan rows older
+#          than 30 days move (never deleted) to reconcile/.
+#   * F66  an instruction_id starting "rr03-" runs the agent turn with --local
+#          (embedded agent) so a fix for a dead gateway is not delivered
+#          THROUGH the dead gateway.
+#   * F88  the client-facing final notification body is three plain sentences
+#          built by rescue-notification.py final-body; machine fields stay in
+#          the ack only.
+RECEIVER_VERSION="1.8.0"
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -1872,6 +1892,21 @@ _gc_journal() {
                 ack_confirmed|ack_settled_noop) rm -f "$_gj_f" 2>/dev/null || true ;;
             esac
         done
+        # RR plan F62: a row still at effect_started / effect_executed after 30 days is an
+        # interrupted attempt nobody reconciled. Move it (never delete) to reconcile/ under a
+        # journal- prefix so it cannot collide with a pending-ack file of the same operation id.
+        find "$_JOURNAL" -type f -name 'op_*' -mtime +30 2>/dev/null | head -20 | while IFS= read -r _gj_o; do
+            [ -f "$_gj_o" ] || continue
+            case "$(_json_field "$(cat "$_gj_o" 2>/dev/null)" "phase")" in
+                effect_started|effect_executed)
+                    mkdir -p "$_RECONCILE" 2>/dev/null || true
+                    chmod 700 "$_RECONCILE" 2>/dev/null || true
+                    if mv "$_gj_o" "$_RECONCILE/journal-$(basename "$_gj_o")" 2>/dev/null; then
+                        _log "journal-reconcile OBLIGATION is now owned by operator: interrupted attempt older than 30d moved to reconcile/ ($(basename "$_gj_o"))"
+                    fi
+                    ;;
+            esac
+        done
     fi
     if [ -d "$_PENDING" ]; then
         _gj_old=$(find "$_PENDING" -type f -name 'op_*' -mtime +30 2>/dev/null | head -20)
@@ -1920,7 +1955,7 @@ _ack() {
 
     # fail-closed reason validation.
     case "$_ack_reason" in
-        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|escalation_language)
+        failed_nonzero_exit|failed_empty_reply|failed_timeout|failed_no_parser|dry_run|escalation_language|interrupted_prior_attempt)
             _fr_json="\"$(_json_str "$_ack_reason")\""
             ;;
         "")
@@ -2331,6 +2366,12 @@ _rr_supervised_agent() {
     AGENT_OUT=""
     AGENT_RC=1
     AGENT_ERR_CLASS=""
+    # RR plan F66: an RR-03 fix is delivered to a box whose gateway may be the very
+    # thing that is down. "openclaw agent" goes THROUGH the gateway unless --local
+    # (embedded agent) is given, so rr03- instructions run locally. Every other
+    # instruction is unchanged. The value is a fixed token or empty (never data).
+    _sa_local=""
+    case "${INSTRUCTION_ID:-}" in rr03-*) _sa_local="--local" ;; esac
 
     if [ -z "$_RR_SUPERVISE" ]; then
         # Degraded: the shared supervisor is not on this box yet (the roll
@@ -2342,7 +2383,7 @@ _rr_supervised_agent() {
         [ "$_sa_secs" -gt 1 ] 2>/dev/null || _sa_secs=1
         rescue_env_scrub "$_OC_BIN" agent \
             --agent "$_sa_agent" --session-key "$SESSION_KEY" --message "$MSG" \
-            --json --timeout "$_sa_secs" >"$_sa_out" 2>"$_sa_err"
+            --json --timeout "$_sa_secs" $_sa_local >"$_sa_out" 2>"$_sa_err"
         AGENT_RC=$?
     else
         rescue_env_scrub python3 "$_RR_SUPERVISE" run \
@@ -2350,7 +2391,7 @@ _rr_supervised_agent() {
             --grace-ms 5000 \
             --out "$_sa_out" --err "$_sa_err" --result-json "$_sa_res" \
             -- "$_OC_BIN" agent --agent "$_sa_agent" --session-key "$SESSION_KEY" \
-            --message "$MSG" --json >/dev/null 2>&1
+            --message "$MSG" --json $_sa_local >/dev/null 2>&1
         AGENT_RC=$?
 
         # The supervisor's own receipt is authoritative about what physically
@@ -2399,6 +2440,79 @@ _rr_stop_without_turn() {
     _rr_persist_outcome "timeout" "operator" "$1"
     _log "lease-budget-exhausted reason=$1 remaining=$(_rr_budget_remaining_s)s instruction=${INSTRUCTION_ID:-none} acked=false next_owner=operator"
     exit 0
+}
+
+# ---------------------------------------------------------------------------
+# RR plan F61: an unauthorized claim must leave a trace on the box.
+#
+# A wrong slug or token made this poll exit silently every 2 minutes forever
+# (an unenrolled box produced 9 unauthorized claims in 16 minutes on the
+# receiver side and nothing on the box side). Now: one small state file with
+# names only (slug, HTTP code, timestamps, count; never the token, never a
+# header) and ONE log line per hour. rr-readiness.sh reads the file.
+# ---------------------------------------------------------------------------
+_rr_claim_unauthorized() {
+    _cu_code="${1:-}"
+    _cu_file="$_STATE/claim-unauthorized.json"
+    _cu_mark="$_STATE/claim-unauthorized.logged"
+    _cu_now=$(_now_iso)
+    _cu_first="$_cu_now"
+    _cu_count=1
+    if [ -f "$_cu_file" ]; then
+        _cu_prev=$(cat "$_cu_file" 2>/dev/null)
+        _cu_f=$(_json_field "$_cu_prev" "first_at")
+        [ -n "$_cu_f" ] && _cu_first="$_cu_f"
+        _cu_c=$(_json_field "$_cu_prev" "count")
+        case "$_cu_c" in ''|*[!0-9]*) _cu_c=0 ;; esac
+        _cu_count=$(( _cu_c + 1 ))
+    fi
+    _cu_tmp=$(mktemp "$_STATE/.tmp-cu-XXXXXX" 2>/dev/null) || return 0
+    chmod 600 "$_cu_tmp" 2>/dev/null
+    if printf '{"schema_version":1,"class":"claim_unauthorized","box_slug":"%s","http":"%s","first_at":"%s","at":"%s","count":%s,"receiver_version":"%s"}\n' \
+        "$(_json_str "$RR_BOX_SLUG")" "$(_json_str "$_cu_code")" "$_cu_first" "$_cu_now" "$_cu_count" \
+        "$(_json_str "$RECEIVER_VERSION")" > "$_cu_tmp" 2>/dev/null; then
+        mv "$_cu_tmp" "$_cu_file" 2>/dev/null || rm -f "$_cu_tmp"
+    else
+        rm -f "$_cu_tmp"
+    fi
+    if [ ! -f "$_cu_mark" ] || [ -z "$(find "$_cu_mark" -mmin -60 2>/dev/null)" ]; then
+        _log "claim-unauthorized slug=$(_json_str "$RR_BOX_SLUG") http=${_cu_code:-none} (the receiver refused this box's credential; check RR_BOX_SLUG and RR_BOX_TOKEN with the operator; the token is never logged)"
+        : > "$_cu_mark" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# The first claim the receiver accepts again clears the unauthorized record.
+_rr_claim_recovered() {
+    rm -f "$_STATE/claim-unauthorized.json" "$_STATE/claim-unauthorized.logged" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# RR plan F62: was this instruction interrupted mid-turn on a previous run?
+#
+# Prints the operation id of a journal row for EXACTLY this instruction_id that
+# is still at effect_started / effect_executed (the effect began, nothing after
+# it was recorded) and that no done record carries. Returns 1 when there is none.
+# Exact instruction_id match only: a different instruction never matches.
+# ---------------------------------------------------------------------------
+_rr_prior_interrupted() {
+    [ -d "$_JOURNAL" ] && [ -n "${INSTRUCTION_ID:-}" ] || return 1
+    _pi_needle="\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\""
+    for _pi_f in $(grep -lF -- "$_pi_needle" "$_JOURNAL"/op_* 2>/dev/null); do
+        [ -f "$_pi_f" ] || continue
+        case "$(_json_field "$(cat "$_pi_f" 2>/dev/null)" "phase")" in
+            effect_started|effect_executed) ;;
+            *) continue ;;
+        esac
+        _pi_op=$(basename "$_pi_f")
+        # a done record carrying this operation id means the outcome was recorded
+        if grep -lF -- "\"operation_id\":\"$_pi_op\"" "$_DONE"/* >/dev/null 2>&1; then
+            continue
+        fi
+        printf '%s' "$_pi_op"
+        return 0
+    done
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -2466,8 +2580,27 @@ _claim_body="{\"action\":\"claim\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",
 
 # Claim at most one instruction. Transport failure / empty / disabled / 401 => a
 # clean silent no-op (next fire retries).
-CLAIM_RESP=$(_post "$_claim_body") || exit 0
+# RR plan F61: _post publishes its response class in shell globals, so it runs in THIS
+# shell (body captured through a file, as _ack_send does), not in a $( ) subshell.
+_POST_CODE=""; _POST_CT=""; _POST_BODY=""
+_claim_out="$_TMP/rr-poll-claim.out"
+_post "$_claim_body" > "$_claim_out" 2>/dev/null
+_claim_rc=$?
+CLAIM_RESP=""
+if [ -f "$_claim_out" ]; then
+    CLAIM_RESP=$(cat "$_claim_out" 2>/dev/null)
+    rm -f "$_claim_out" 2>/dev/null
+fi
+if [ "$_claim_rc" -ne 0 ]; then
+    [ "$(_post_class 2>/dev/null)" = "unauthorized" ] && _rr_claim_unauthorized "${_POST_CODE:-}"
+    exit 0
+fi
 [ -n "$CLAIM_RESP" ] || exit 0
+if [ "$(_json_field "$CLAIM_RESP" "status")" = "unauthorized" ]; then
+    _rr_claim_unauthorized "${_POST_CODE:-}"
+    exit 0
+fi
+_rr_claim_recovered
 
 _parse_claim "$CLAIM_RESP" || {
     # A malformed / hostile / unknown claim executes NOTHING. The rejection is
@@ -2532,6 +2665,15 @@ fi
 # Live: if a done-file already exists for this canonical key, re-ack the cached
 # verdict and stop — the same instruction seen twice must not act twice.
 if _reack_cached "$RR_CACHE_KEY"; then
+    exit 0
+fi
+
+# RR plan F62: a poll killed after its effect began must not run the same work again blind.
+if _rr_prior=$(_rr_prior_interrupted); then
+    _log "interrupted-prior-attempt instruction=$INSTRUCTION_ID prior_op=$_rr_prior agent turn NOT started (an earlier run began this instruction's effect and never recorded a result; running it again could repeat client-visible actions)"
+    _rr_persist_outcome "interrupted_prior_attempt" "operator" "an earlier run of this instruction began its effect and never recorded a result ($_rr_prior)"
+    _write_done "failed" 1 0 "interrupted_prior_attempt" "" ""
+    _ack "failed" 1 0 "interrupted_prior_attempt"
     exit 0
 fi
 
@@ -2732,13 +2874,11 @@ fi
 # checked: a done record that did not land means the dedup this box relies on
 # does not exist, so no ack is sent that would let the server settle a
 # delivery the box cannot replay.
-RR_NOTIFICATION_FINAL_BODY=$(python3 -c 'import json,sys
-try:
- r=json.load(open(sys.argv[1])); b=r.get("remaining_blocker") or {}; reply=((r.get("reply") or {}).get("text") or "").replace("\n"," ").replace("\r"," ")[:500]
- status="Repair status: %s. Verification: %s."%(r.get("repair_status") or "not_repaired",r.get("verification_status") or "unverified")
- blocker=" Remaining blocker: %s. Owner: %s. Next action: %s."%(str(b.get("reason") or "none")[:200],str(b.get("owner") or "operator")[:120],str(b.get("next_action") or "review the recovery outcome")[:300])
- print((reply+" " if reply else "")+status+blocker)
-except Exception: print("Recovery outcome is pending verification.")' "$RR_RESULT_JSON" 2>/dev/null)
+# RR plan F88: the client-facing final body is three plain sentences ("Fixed and checked.",
+# "We are still working on this: <reason>.", "A specialist will follow up."). The machine
+# fields (repair_status, verification_status, owner, next_action) stay in the ack only.
+RR_NOTIFICATION_FINAL_BODY=$(python3 "$(dirname "$0")/rescue-notification.py" final-body --result-json "${RR_RESULT_JSON:-}" 2>/dev/null)
+[ -n "$RR_NOTIFICATION_FINAL_BODY" ] || RR_NOTIFICATION_FINAL_BODY="We are still working on this."
 if ! _write_done "$VERDICT" "$AGENT_RC" "$REPLY_CHARS" "$FAIL_REASON" "$_elapsed" "$REPLY_EXCERPT"; then
     _log "DONE-WRITE FAILED op=$_op_id instruction=$INSTRUCTION_ID — ack HELD (no dedup proof; journal retained)"
     exit 0
