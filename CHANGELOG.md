@@ -1,3 +1,18 @@
+## [v25.3.7]  -  2026-10-02  -  Repin Command Center v7.6.96 (operator-relay mute: client boards never page the fleet operator)
+
+### Why
+The 2026-10-02 operator Telegram flood ("boards boards boards"): since Command Center v7.6.77 every
+client box forwarded every `notifySystem()` board alert ([BOARD-HYGIENE], [stopped], persona-grounding,
+QC starvation, dispatch holds) to the fleet-standing-operator-alert n8n webhook — one DM to Trevor per
+box per minute. Fixed at Command Center source (v7.6.96, its 0c66db809): gate-configured client boxes
+end at the durable record + their own board; the n8n relay carries only the fleet-roll stream. Rescue
+Rangers agent escalation untouched.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.95 → **v7.6.96**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN → v7.6.96; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pair line, docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.7`: all 10 version markers agree.
+
 ## [v25.3.6]  -  2026-10-02  -  chore(cc-compat): repin Command Center v7.6.95 (intake ACC-001-09: a change request is never dropped, whatever verdict the classifier chain returns) — version bump in the SAME pull request so the release is actually cut
 
 #### Why
