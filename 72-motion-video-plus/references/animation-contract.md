@@ -19,6 +19,11 @@ window.__setTime = function (t) { /* ... */ };
 3. **No unseeded randomness.** If a scene needs randomness (particle scatter, texture), use a seeded PRNG keyed off t or the frame number so the same t always renders identically.
 4. **No network fetches during the timeline.** Load all fonts, images, and assets before frame 0. The driver waits for `document.fonts.ready` and network idle once, then starts seeking.
 5. **No layout that depends on viewport size at screenshot time.** The driver sets the viewport to the manifest resolution before loading. Use fixed pixel geometry or fractions of the known stage size.
+6. **No GPU-layer tricks.** `translate3d`, `translateZ(0)`, and `will-change` make the browser cache a raster layer, so the same t can paint differently depending on which frame came before. Fake depth in 2D (skew, scale, shadow) or draw it on a canvas.
+
+## Motion grammar
+
+Motion must follow `references/motion-grammar.md`: springs only, using the named presets (`weighty`, `panel`, `snap`, `drift`); visual hits scheduled 2 frames before the beat so they read on it; masked-word typography rules; the banned-cliche list. Run `scripts/lint-grammar.py` on every scene file before the preview gate. The linter flags violations; it never auto-fixes.
 
 ## Required structure
 
@@ -31,6 +36,7 @@ window.__setTime = function (t) { /* ... */ };
 
 - [ ] Scrubbing t from 0 to duration forward and backward shows the same frames at the same t values.
 - [ ] Two consecutive full renders produce byte-identical PNG sequences.
+- [ ] `scripts/verify-determinism.js` passes: probe frames rendered cold match the same frames rendered after seeking elsewhere (no pixel drift).
 - [ ] No element keeps moving after its last keyframe (frozen end states are explicit).
 - [ ] Text is set from the approved script; no lorem ipsum survives into a preview.
 

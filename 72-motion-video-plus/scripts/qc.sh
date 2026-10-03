@@ -9,6 +9,8 @@
 #   5. audio duration equals video duration (within 0.2s)
 #   6. contact sheet: 2-3 frames per scene tiled into one image for the
 #      human 30-second review
+#   7. determinism re-check per scene (verify-determinism.js)
+#   8. per-beat contact sheet when work/audio/beats.json exists
 #
 # Usage:
 #   bash scripts/qc.sh --manifest run/manifest.json --workdir work --final final.mp4
@@ -88,6 +90,36 @@ for t in tiles:
 print("contact sheet: %s (%d tiles)" % (sheet, len(tiles)))
 PY
 say PASS "contact sheet written: $SHEET"
+
+# 7. determinism re-check: each scene's animation must still be a pure
+# function of t (cold render vs seeked render must match pixel for pixel).
+# The pre-render run of verify-determinism.js is the real gate; this is the
+# backstop in case a scene file changed after the full render.
+SDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while read -r sid; do
+  if node "$SDIR/verify-determinism.js" --manifest "$MANIFEST" --scene "$sid" --probes 6 2>&1 | tail -1 | grep -q "determinism OK"; then
+    say PASS "determinism $sid"
+  else
+    say FAIL "determinism drift in $sid (see log above)"; fail=1
+  fi
+done < <(python3 -c "
+import json
+m = json.load(open('$MANIFEST'))
+for s in m['scenes']:
+    print(s['id'])
+")
+
+# 8. per-beat contact sheet, when a beat grid exists
+if [ -f "$WORKDIR/audio/beats.json" ] && [ -f "$FINAL" ]; then
+  if node "$SDIR/render.js" --beatsheet --beats "$WORKDIR/audio/beats.json" \
+      --video "$FINAL" --out "$WORKDIR/beats-sheet.jpg" 2>/dev/null; then
+    say PASS "per-beat sheet: $WORKDIR/beats-sheet.jpg"
+  else
+    say FAIL "per-beat sheet failed"; fail=1
+  fi
+else
+  say PASS "per-beat sheet skipped (no beats.json)"
+fi
 
 if [ "$fail" -eq 0 ]; then echo "SKILL 72 QC PASS"; exit 0; fi
 echo "SKILL 72 QC FAIL" >&2; exit 1

@@ -17,12 +17,25 @@ for f in \
   SKILL.md skill-version.txt MASTERDOC.md INSTRUCTIONS.md INSTALL.md QC.md REPO-INTEGRATION.md CORE_UPDATES.md \
   references/authority-map.md \
   references/animation-contract.md \
+  references/motion-grammar.md \
+  references/critique-protocol.md \
+  references/directors-brief-template.md \
   references/manifest-schema.json \
+  references/beats-schema.json \
   references/brand-bible-template.md \
   references/fish-audio-tts.md \
   references/untested-alternatives.md \
+  references/pre-production/01-studio-setup.md \
+  references/pre-production/02-house-rules.md \
+  references/pre-production/03-brand-assets.md \
+  references/pre-production/04-the-one-liner.md \
+  references/pre-production/05-steal-the-grammar.md \
+  references/pre-production/06-directors-brief.md \
   assets/example-manifest.json \
   scripts/render.js scripts/preflight.js scripts/tts.py \
+  scripts/verify-determinism.js scripts/lint-grammar.py \
+  scripts/synth-score.py scripts/beat-grid.py scripts/synth-sfx.py \
+  scripts/critique-bundle.sh \
   scripts/assemble.sh scripts/qc.sh scripts/sweep-chromium.sh \
   repo-integration/skill-department-map-entry.json; do
   need_file "$f"
@@ -74,7 +87,7 @@ for f in "$ROOT"/scripts/*.py; do
   fi
 done
 
-for f in "$ROOT"/references/manifest-schema.json "$ROOT"/assets/example-manifest.json "$ROOT"/repo-integration/skill-department-map-entry.json; do
+for f in "$ROOT"/references/manifest-schema.json "$ROOT"/references/beats-schema.json "$ROOT"/assets/example-manifest.json "$ROOT"/repo-integration/skill-department-map-entry.json; do
   if python3 -c "import json; json.load(open('$f'))" 2>/dev/null; then
     echo "[PASS] json valid $(basename "$f")"
   else

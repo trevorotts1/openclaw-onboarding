@@ -3,8 +3,14 @@
 #
 # Joins scene segments with crossfaded joins, lays ONE continuous music bed
 # over the final assembly (never per-segment music, to avoid seams), ducks
-# the bed under the voiceover with FFmpeg sidechain compression, and mixes
-# in beat-synced UI sounds from the manifest sfx_events.
+# the bed under the voiceover with FFmpeg sidechain compression, mixes in
+# beat-synced UI sounds, and finishes at -14 LUFS integrated loudness.
+#
+# Sound is SYNTHESIZED by default: unless the manifest names a supplied
+# music_bed track, scripts/synth-score.py writes an original royalty-free
+# score (no licensing to clear) and scripts/synth-sfx.py writes the UI
+# sounds. The beat grid is derived from the synthesis parameters.
+# Set "synth_sfx": false in the manifest to use the legacy "sfx" file map.
 #
 # Cleanup: each scene's PNGs were already deleted by render.js after its
 # segment encoded. This script deletes nothing but its temp dir (trap).
@@ -31,13 +37,17 @@ command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 2; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+SDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export MVPLUS_SCRIPTS="$SDIR"
 
-# One python pass builds: ordered segment files, absolute sfx event times,
+# One python pass builds: the (possibly synthesized) music bed and beat
+# grid, the sfx file map, ordered segment files, absolute sfx event times,
 # the xfade video chain, and the audio graph. Shell just runs ffmpeg.
 python3 - "$MANIFEST" "$WORKDIR" "$VOICEOVER" "$OUT" "$TMP" <<'PY'
-import json, subprocess, shlex, sys
+import json, os, subprocess, shlex, sys
 
 manifest_p, work, voiceover, out, tmp = sys.argv[1:6]
+sdir = os.environ["MVPLUS_SCRIPTS"]
 m = json.load(open(manifest_p))
 FADE = 0.5
 
@@ -56,6 +66,35 @@ for s in m["scenes"]:
         sys.exit("missing segment %s (render it first)" % p)
     segs.append((s["id"], p, dur(p)))
 
+# 1b. music bed: a supplied track wins; otherwise synthesize an original
+# score (royalty-free by construction) and derive its beat grid.
+music = m.get("music_bed", "")
+beats_json = ""
+if not music:
+    total_dur = sum(d for _, _, d in segs)
+    bpm = float(m.get("music_bpm", 120))
+    seed = int(m.get("music_seed", 7))
+    adir = work + "/audio"
+    os.makedirs(adir, exist_ok=True)
+    subprocess.run(["python3", sdir + "/synth-score.py",
+                    "--bpm", str(bpm), "--duration", str(total_dur),
+                    "--seed", str(seed), "--outdir", adir], check=True)
+    subprocess.run(["python3", sdir + "/beat-grid.py",
+                    "--params", adir + "/score-params.json",
+                    "--out", adir + "/beats.json"], check=True)
+    music = adir + "/score.wav"
+    beats_json = adir + "/beats.json"
+
+# 1c. sfx map: synthesized UI sounds by default; manifest "sfx" map only
+# when the manifest explicitly sets "synth_sfx": false.
+sfxmap = m.get("sfx", {})
+if m.get("synth_sfx", True):
+    sfxdir = tmp + "/sfx"
+    subprocess.run(["python3", sdir + "/synth-sfx.py",
+                    "--outdir", sfxdir], check=True)
+    sfxmap = {"pop": sfxdir + "/pop.wav", "click": sfxdir + "/click.wav",
+              "whoosh": sfxdir + "/whoosh.wav", "thump": sfxdir + "/thump.wav"}
+
 # 2. video: xfade chain across segments
 vfilt = ""
 off = 0.0
@@ -68,7 +107,6 @@ for i in range(1, len(segs)):
 vfilt += prev + "[vout];"
 
 # 3. audio inputs: voiceover, then one input per sfx event
-sfxmap = m.get("sfx", {})
 inputs = [voiceover]
 events = []  # (absolute_seconds, soundfile)
 t = 0.0
@@ -109,14 +147,20 @@ for p in inputs:
 cmd += ["-filter_complex", filter_complex,
         "-map", "[vout]", "-map", "[aout]",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
-        "-c:a", "aac", "-b:a", "192k", "-shortest", out]
+        "-c:a", "aac", "-b:a", "192k", "-shortest", tmp + "/assembled.mp4"]
 
 with open(tmp + "/run-ffmpeg.sh", "w") as f:
     f.write("#!/usr/bin/env bash\nset -euo pipefail\n")
     f.write(" ".join(shlex.quote(c) for c in cmd) + "\n")
-print("assembling %d segments, %d sfx events, music bed %s"
-      % (len(segs), len(events), "on" if music else "off"))
+print("assembling %d segments, %d sfx events, music %s"
+      % (len(segs), len(events),
+         "supplied track" if m.get("music_bed") else "synthesized"))
+if beats_json:
+    print("beat grid: %s" % beats_json)
 PY
 
 bash "$TMP/run-ffmpeg.sh"
-echo "assembled: $OUT"
+# Finish at -14 LUFS integrated, true peak -1 dBTP (single loudnorm pass).
+ffmpeg -hide_banner -loglevel error -y -i "$TMP/assembled.mp4" \
+  -af "loudnorm=I=-14:TP=-1:LRA=11" -c:v copy -c:a aac -b:a 192k "$OUT"
+echo "assembled: $OUT (-14 LUFS)"
