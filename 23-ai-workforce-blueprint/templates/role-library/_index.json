@@ -461,7 +461,7 @@
     "personal-assistant": {
       "count": 39,
       "roles": [
-        "brainstorming-ideation-partner",
+        "brainstorming-ideation-specialist",
         "calendar-scheduling-manager",
         "celebration-agent",
         "christian-spiritual-life-companion",
@@ -491,7 +491,7 @@
         "relationships-important-dates-concierge",
         "research-answers-specialist-phase2",
         "sop-writer",
-        "study-partner-daily-learning",
+        "study-daily-learning-specialist",
         "superwoman-syndrome-specialist",
         "task-priority-manager",
         "the-challenger",
@@ -501,8 +501,8 @@
         "travel-logistics-specialist",
         "youtube-teacher-curator"
       ],
-      "content_sha": "sha256:96f492d0af3e5eaa2bb486ac72a5379cbb28f35dd3a679899af5eafc12d54a1a",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_sha": "sha256:d5d5d3ef787cb189fc55e24077c0bb20ad7819d53241dca68111a5172473347e",
+      "content_hashed_at": "2026-10-04T22:48:56.735527+00:00"
     },
     "podcast": {
       "count": 4,
@@ -8668,20 +8668,20 @@
       "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
     },
     {
-      "slug": "brainstorming-ideation-partner",
+      "slug": "brainstorming-ideation-specialist",
       "dept": "personal-assistant",
-      "title": "Brainstorming Ideation Partner",
+      "title": "Brainstorming Ideation Specialist",
       "role_type": "specialist",
       "word_count": 5436,
       "sop_count": 7,
       "sop_min": 1,
-      "path": "templates/role-library/personal-assistant/brainstorming-ideation-partner.md",
+      "path": "templates/role-library/personal-assistant/brainstorming-ideation-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
       "content_sha": "sha256:f552650bb9701c096c73d0232ed99d0fe8f89519c053c077478bec65c73aabe3",
-      "render_sha": "sha256:4810d652e024b383faafb3135d5b670c8c212187952f305ad386d909247e78b7",
+      "render_sha": "sha256:0127ee8d04be7f6a31be9ce9334df920c8f039a2af863f45608bdcb6f362b9ca",
       "content_version": "1.0.0",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_hashed_at": "2026-10-04T22:48:56.735527+00:00"
     },
     {
       "slug": "celebration-agent",
@@ -8988,20 +8988,20 @@
       "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
     },
     {
-      "slug": "study-partner-daily-learning",
+      "slug": "study-daily-learning-specialist",
       "dept": "personal-assistant",
-      "title": "Study Partner Daily Learning",
+      "title": "Study Daily Learning Specialist",
       "role_type": "specialist",
       "word_count": 5431,
       "sop_count": 7,
       "sop_min": 1,
-      "path": "templates/role-library/personal-assistant/study-partner-daily-learning.md",
+      "path": "templates/role-library/personal-assistant/study-daily-learning-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
       "content_sha": "sha256:6cd5f34df839637fa221187a3eff1f8b697c8a4a0ef432d3fb1d7d2b13d17cf3",
-      "render_sha": "sha256:fc31bf990e0a436e686535135e5ab32e13488e091e8d1eae3ba70024ea6d311c",
+      "render_sha": "sha256:ad8e9f9dbfa8f292820efcc323c6c3d6d602df3fefecf8f832207d56db5e2b4a",
       "content_version": "1.0.0",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_hashed_at": "2026-10-04T22:48:56.735527+00:00"
     },
     {
       "slug": "superwoman-syndrome-specialist",
