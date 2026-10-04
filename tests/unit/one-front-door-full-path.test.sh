@@ -114,6 +114,9 @@ grep -q 'repair-directors-doctrine.py' "$FD_PY" \
 grep -q 'ensure-revenue-goal.py' "$FD_PY" \
   && ok "stage invokes ensure-revenue-goal.py (#9)" \
   || bad "stage missing repair #9 callee"
+grep -q 'ensure-general-task-dept.py' "$FD_PY" \
+  && ok "stage invokes ensure-general-task-dept.py (#13)" \
+  || bad "stage missing repair #13 callee"
 grep -q 'author-missing-sops.py' "$FD_PY" \
   && ok "stage invokes author-missing-sops.py for the remaining gaps (#1)" \
   || bad "stage missing the author callee"
@@ -183,6 +186,7 @@ declare -a CONTRACT=(
   "$REPAIR_DIR/repair-placeholder-sops.py"
   "$REPAIR_DIR/repair-userlinks.py"
   "$REPAIR_DIR/repair-directors-doctrine.py"
+  "$REPAIR_DIR/ensure-general-task-dept.py"
   "$REPAIR_DIR/ensure-revenue-goal.py"
   "$REPO_ROOT/23-ai-workforce-blueprint/scripts/author-missing-sops.py"
   "$GATE_SH"
