@@ -31,7 +31,7 @@ import re
 POLICY_VERSION = "decision-policy-v1"
 DEFAULT_CONFIG_REVISION = "cfgrev-1"
 
-CONFIGURED_MODES = ("auto", "shadow", "legacy", "off")
+CONFIGURED_MODES = ("auto", "shadow", "legacy", "off", "model")
 SKIP_REASONS = (
     "jev_unavailable",
     "not_authorized",
