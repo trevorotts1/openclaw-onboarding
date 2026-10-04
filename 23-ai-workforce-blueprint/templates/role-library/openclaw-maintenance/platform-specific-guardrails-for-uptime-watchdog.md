@@ -262,10 +262,10 @@ probes:
 **Steps:**
 1. Version the change. Every spec carries a monotonically increasing `spec_version` plus a per-change line in the guardrail changelog: `platform | probe_id | field | old -> new | basis | author | date`. A change with no changelog line is a change nobody can audit later.
 2. Dry-run before signing: replay the last 72 hours through the proposed spec and record the would-have-fired count for each severity.
-3. Roll out to the lowest-blast-radius box first. If the platform applies to more than one box, sign for one canary box, let it run a full day, and compare live fires to the dry-run prediction before widening the `applies_to` list.
-4. Widen or roll back within the cycle. If live fires exceed the prediction by more than roughly 20%, roll back to the previous `spec_version` immediately from the history directory and re-baseline. A noisy guardrail trains the operator to ignore real pages — a control nobody reads is worse than no control, the operational-culture argument in Section 16, Harvard Business Review, Technology and Analytics. Report the canary result to the dispatcher in the same message as the announcement.
-5. Announce: platform, probe, old value to new value, effective time, and canary result. The dispatcher must know when a boundary moves under it, because its page volume changes.
-**Outputs:** A new `spec_version`; a changelog entry; a canary result; a proven rollback path.
+3. Roll out to the lowest-blast-radius box first. If the platform applies to more than one box, sign for one pilot box, let it run a full day, and compare live fires to the dry-run prediction before widening the `applies_to` list.
+4. Widen or roll back within the cycle. If live fires exceed the prediction by more than roughly 20%, roll back to the previous `spec_version` immediately from the history directory and re-baseline. A noisy guardrail trains the operator to ignore real pages — a control nobody reads is worse than no control, the operational-culture argument in Section 16, Harvard Business Review, Technology and Analytics. Report the pilot-box result to the dispatcher in the same message as the announcement.
+5. Announce: platform, probe, old value to new value, effective time, and pilot-box result. The dispatcher must know when a boundary moves under it, because its page volume changes.
+**Outputs:** A new `spec_version`; a changelog entry; a pilot-box result; a proven rollback path.
 **Hand to:** The watchdog operator to reload. The dispatcher for awareness.
 **Failure mode:** IF a change was made directly to a live spec outside this procedure (discovered in the weekly audit) → revert to the last signed version from the history directory, then re-run the change properly. Never leave an unsigned change live.
 
@@ -325,7 +325,7 @@ probes:
 
 **When to run:** On every new probe, every re-baselined threshold, and every quarter for a rotating sample of the fleet's guardrails.
 **Frequency:** Per change; quarterly sample.
-**Inputs:** The guardrail identifier under test; the watchdog's dry-run or injection mode; a canary box that tolerates a controlled fake.
+**Inputs:** The guardrail identifier under test; the watchdog's dry-run or injection mode; a pilot box that tolerates a controlled fake.
 **Steps:**
 1. Inject a controlled value. Feed the watchdog a synthetic reading at `alert + 1` and one at `page + 1` for the guardrail under test, through the injection path — never by forcing a real box into failure in production.
 2. Assert the escalation path fires end-to-end: warn to info, alert to ticket, page to dispatch page, and a missed-probe escalation when readings stop for the configured count. Verify the dispatcher receives the right rung, not merely that a log line appeared. The rung ladder follows the severity practice in Section 16, Atlassian Incident Management.
@@ -456,7 +456,7 @@ probes:
 | 3 | Treating a probe that stopped reporting as silence rather than an outage | No missed-probe escalation configured | `on_missed_probe` is mandatory on every probe. |
 | 4 | Raising a threshold to quiet a noisy guardrail until it can no longer catch its failure | Alert fatigue answered with suppression | SOP 9.6 diagnoses the cause and forbids widening past the failure-catching region; the fix is a time window or a probe replacement. |
 | 5 | Letting an automated action exist with no guardrail behind it | Remediation added faster than guardrails | The weekly boundary diff (SOP 9.4) reports every unguarded action the same day. |
-| 6 | Rolling a changed threshold to the whole fleet at once | Skipping the canary step | SOP 9.5 requires one canary box through a full day before widening. |
+| 6 | Rolling a changed threshold to the whole fleet at once | Skipping the pilot-box step | SOP 9.5 requires one pilot box through a full day before widening. |
 
 ---
 
@@ -466,7 +466,7 @@ probes:
 - [Google Site Reliability Engineering — full table of contents](https://sre.google/sre-book/table-of-contents/) — the canonical treatment of what to alert on, symptom-based alerting, and why cause-based alerting fails. Used for the warn/alert/page boundary model in SOP 9.2 and the escalation-rung model in SOP 9.9.
 - [Google Site Reliability Engineering Workbook — table of contents](https://sre.google/workbook/table-of-contents/) — service-level objectives, error budgets, and measuring user-visible health. Used for the coverage definition in SOP 9.1 and the KPI set in Section 7.
 - [Atlassian Incident Management](https://www.atlassian.com/incident-management) — severity ladders and escalation practice. Used for the escalation rungs referenced in SOP 9.3 and SOP 9.8.
-- [Harvard Business Review — Technology and Analytics](https://hbr.org/topic/subject/technology-and-analytics) — operational data, monitoring culture, and where a control quietly stops being read. Used for the change-control and canary-rollout discipline in SOP 9.5 and the fatigue loop in SOP 9.6.
+- [Harvard Business Review — Technology and Analytics](https://hbr.org/topic/subject/technology-and-analytics) — operational data, monitoring culture, and where a control quietly stops being read. Used for the change-control and pilot-rollout discipline in SOP 9.5 and the fatigue loop in SOP 9.6.
 
 **Tier 2 — Strategic and industry data:**
 - [IBISWorld](https://www.ibisworld.com/) — sector sizing and operating norms used when choosing which platform families matter most to {{COMPANY_INDUSTRY}}.

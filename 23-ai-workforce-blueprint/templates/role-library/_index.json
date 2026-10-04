@@ -423,8 +423,8 @@
         "uptime-connectivity-watchdog-specialist",
         "version-and-upgrade-manager-specialist"
       ],
-      "content_sha": "sha256:f8ae7d2075f6f5a4f2dd41a8dddfff9b9b0972528ace338dacca4780e7c6438c",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_sha": "sha256:9d0af0ba21de87a3a2d029ac257bae7d8e6188ad8c1b168131c8d2fd6d2563db",
+      "content_hashed_at": "2026-10-04T23:08:01.547804+00:00"
     },
     "paid-advertisement": {
       "count": 25,
@@ -901,8 +901,8 @@
       "roles": [
         "director-of-podcast-sandbox-canary-phase2"
       ],
-      "content_sha": "sha256:af913d0385f1dbaa6394873d4c9ca60af62e21c9465f24b9c7f5ea553440d746",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_sha": "sha256:1eca89e64114f93498a99d6e37f9f33f432f2a6c088b1d55fbac1c85eec8bf74",
+      "content_hashed_at": "2026-10-04T23:08:01.547804+00:00"
     },
     "product-development": {
       "count": 1,
@@ -8646,10 +8646,10 @@
       "path": "templates/role-library/openclaw-maintenance/platform-specific-guardrails-for-uptime-watchdog.md",
       "capability_class": "MECHANICAL",
       "vision_flag": false,
-      "content_sha": "sha256:25952dd38967c1a73e34ddd270eb68a8a98433b1c5b1e9a3b9e167b95539841f",
-      "render_sha": "sha256:98c889f66caba19bb31d31d5ab3d65addd473f4cebfeb21488713c70e7009f52",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_sha": "sha256:6e2546abfc456d7a611ea0496d99d8989f3faa8d5d453ca623976c1d3baf9deb",
+      "render_sha": "sha256:8d2e01bb2d15ef2093e413b656ef7b48601298e5d651750bae2cc2ba4d647a1a",
+      "content_version": "1.0.1",
+      "content_hashed_at": "2026-10-04T23:08:01.547804+00:00"
     },
     {
       "slug": "rescue-rangers-escalation-lead-phase2",
@@ -9110,10 +9110,10 @@
       "path": "templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:f3e80c6406da4bea64da8e9a1d4bca64ce36c207fa8746d5137c9379cf28c83b",
-      "render_sha": "sha256:f15e34addd9e1c102e5326b4e5a9185ea6235be2051c654ce2781d629a8ad6b0",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-04T22:39:50.483517+00:00"
+      "content_sha": "sha256:8fac2af9254bc5b4ef90fd0a51616b680635cb5e655bc16b67c504355b276eca",
+      "render_sha": "sha256:a688e63b99f231b8e78f8196c8d71154cf37ada1942c555be0ba49c2d3908057",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-04T23:08:01.547804+00:00"
     },
     {
       "slug": "scripts-specialist",
@@ -10785,7 +10785,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-04T22:39:50.483517+00:00",
+    "generated_at": "2026-10-04T23:08:01.547804+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
