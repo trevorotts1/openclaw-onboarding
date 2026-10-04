@@ -9,9 +9,15 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHECK="$HERE/../../scripts/health/library-gate-check.sh"
 T="$(mktemp -d "${TMPDIR:-/tmp}/library-gate-check-test.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
+# The gate finds general-task-check.sh next to itself, so run a COPY of the gate beside a
+# stub sibling whose exit code the test controls (the real sibling ships in a different change).
+GATE_DIR="$T/gate"; mkdir -p "$GATE_DIR"
+cp "$HERE/../../scripts/health/library-gate-check.sh" "$GATE_DIR/"
+CHECK="$GATE_DIR/library-gate-check.sh"
+gt_stub() { printf '#!/usr/bin/env bash\necho "[general-task-check] stub verdict"\nexit %s\n' "$1" > "$GATE_DIR/general-task-check.sh"; }
+gt_stub 0
 fails=0
 ok()  { echo "ok   - $1"; }
 bad() { echo "FAIL - $1"; fails=$((fails + 1)); }
@@ -102,6 +108,27 @@ expect "no departments is undetermined (exit 5), not a pass" 5 'UNDETERMINED'
 B="$T/ro"; build_box "$B"; before="$(find "$B" -type f -o -type l | sort | xargs ls -ld 2>/dev/null | cksum)"; run "$B"
 after="$(find "$B" -type f -o -type l | sort | xargs ls -ld 2>/dev/null | cksum)"
 [ "$before" = "$after" ] && ok "check writes nothing" || bad "check modified the box"
+
+# 15. general-task item: pass line present on a good box
+gt_stub 0; B="$T/gt-pass"; build_box "$B"; run "$B"
+expect "general-task check exit 0 passes the item" 0 'general-task: PASS'
+
+# 16. general-task check fails -> gate fails (exit 1)
+gt_stub 1; B="$T/gt-fail"; build_box "$B"; run "$B"
+expect "general-task check exit 1 fails the gate" 1 'general-task: FAIL'
+
+# 17. general-task check cannot tell -> gate cannot tell (exit 5), never a pass
+gt_stub 5; B="$T/gt-cant"; build_box "$B"; run "$B"
+expect "general-task check exit 5 is undetermined, not a pass" 5 'general-task: UNDETERMINED'
+
+# 18. a real failure wins over cannot-tell
+gt_stub 5; B="$T/gt-both"; build_box "$B"; rm -rf "$B/departments/support/00-director-of-support"; run "$B"
+expect "failed item wins over cannot-tell" 1 'RESULT: FAIL'
+
+# 19. check script missing -> HARD FAIL (never downgraded to WARN or skipped)
+rm -f "$GATE_DIR/general-task-check.sh"; B="$T/gt-missing"; build_box "$B"; run "$B"
+expect "missing general-task-check.sh hard-fails" 1 'general-task: FAIL - check script not found'
+printf '%s' "$OUT" | /usr/bin/grep -q 'general-task: WARN' && bad "missing check must not downgrade to WARN"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "library-gate-check: all tests passed"; exit 0; fi

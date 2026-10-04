@@ -7,6 +7,10 @@
 #   directors          every department has a director (the AI CEO department's
 #                      director is the AI CEO)
 #   user-md-links      0 broken USER.md symlinks under the departments tree
+#   general-task       the general-task catch-all department is present with a real
+#                      playbook (runs scripts/health/general-task-check.sh next to
+#                      this file; if that script is missing the item FAILS -- a gate
+#                      that cannot run its own check never reads as a pass)
 # Missing yearly revenue goal is a WARNING, never a failure:
 #   revenue-goal       company-config.json carries yearlyRevenueGoal
 #
@@ -18,12 +22,16 @@
 # A health check must change nothing. This one writes nothing and sends nothing.
 #
 # Exit: 0 = pass (warnings allowed)  1 = at least one item failed
-#       2 = bad usage               5 = cannot tell (no departments tree / no python3)
-#       "cannot tell" is never a pass.
+#       2 = bad usage               5 = cannot tell (no departments tree / no python3 /
+#                                       general-task check could not give a verdict)
+#       "cannot tell" is never a pass; a failed item (1) wins over cannot-tell (5).
 #
 # Usage: library-gate-check.sh [--departments-dir DIR] [--workspace DIR]
 #                              [--company-config FILE]
 set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GT_CHECK="$HERE/general-task-check.sh"
 
 PY="${WORKFORCE_PYTHON:-$(command -v python3 || true)}"
 if [ -z "$PY" ] || ! "$PY" -c 'import sys' >/dev/null 2>&1; then
@@ -32,7 +40,7 @@ if [ -z "$PY" ] || ! "$PY" -c 'import sys' >/dev/null 2>&1; then
 fi
 
 exec "$PY" - "$@" <<'PYEOF'
-import argparse, json, os, re, sys
+import argparse, json, os, re, subprocess, sys
 from pathlib import Path
 
 MIN_BYTES = 3072   # = LIBRARY_MIN_BYTES in qc-completeness.sh / HOW_TO_MIN_BYTES in verify-wiring.sh
@@ -186,6 +194,29 @@ else:
         goal_msg = "cannot read %s" % cfg
 
 
+# ---- 5. general-task department (hard item: a missing check script FAILS, never WARNs) ----
+# general-task-check.sh exits 0 pass / 1 fail / 2 usage / 5 cannot tell. Only 0 passes.
+gt_check = os.environ["GT_CHECK"]
+gt_verdict, gt_msg, gt_out = "FAIL", "", ""
+if not os.path.isfile(gt_check):
+    gt_msg = "check script not found: %s (the general-task department cannot be verified)" % gt_check
+else:
+    try:
+        r = subprocess.run(["bash", gt_check, "--departments-dir", str(dd), "--workspace", str(ws)],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           timeout=120)
+        gt_out = r.stdout.decode("utf-8", "ignore").strip()
+        if r.returncode == 0:
+            gt_verdict, gt_msg = "PASS", "general-task department is present with a real playbook"
+        elif r.returncode == 1:
+            gt_msg = "general-task department is missing or has no real playbook"
+        else:
+            gt_verdict = "UNDETERMINED"
+            gt_msg = "general-task check exited %d (cannot tell -- never a pass)" % r.returncode
+    except (OSError, subprocess.SubprocessError) as e:
+        gt_verdict, gt_msg = "UNDETERMINED", "general-task check could not run: %s" % type(e).__name__
+
+
 def show(items, fmt):
     for it in items[:SHOW]:
         print("    - " + fmt(it))
@@ -218,6 +249,16 @@ if broken:
     show(broken_list, lambda p: os.path.relpath(p, str(dd)))
 else:
     line("user-md-links", "PASS", "0 of %d USER.md links are broken" % links)
+undetermined = 0
+if gt_verdict == "PASS":
+    line("general-task", "PASS", gt_msg)
+else:
+    if gt_verdict == "FAIL":
+        failed += 1
+    else:
+        undetermined += 1
+    line("general-task", gt_verdict, gt_msg)
+    show([l for l in gt_out.splitlines() if l.strip()], str)
 if goal_msg:
     warned += 1
     line("revenue-goal", "WARN", goal_msg + " (warning only; the box's own agent asks its owner)")
@@ -230,5 +271,8 @@ if residue:
 if failed:
     print("[library-gate-check] RESULT: FAIL (%d item%s failed, %d warning%s)" % (failed, "" if failed == 1 else "s", warned, "" if warned == 1 else "s"))
     sys.exit(1)
+if undetermined:
+    print("[library-gate-check] RESULT: UNDETERMINED (general-task check gave no verdict, %d warning%s) -- exit 5" % (warned, "" if warned == 1 else "s"))
+    sys.exit(5)
 print("[library-gate-check] RESULT: PASS (%d warning%s)" % (warned, "" if warned == 1 else "s"))
 PYEOF
