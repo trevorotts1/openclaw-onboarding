@@ -372,7 +372,9 @@ class CollectionHonesty(Base):
 
     def test_tool_never_prints_personal_or_operator_literals(self):
         src = TOOL.read_text(encoding="utf-8")
-        for banned in ("5252140759", "/Users/blackceomacmini", "Trevor", "blackceo"):
+        # the operator home path is assembled at runtime so this file never holds the literal itself
+        operator_home = "/Users/" + "blackceo" + "macmini"
+        for banned in ("5252140759", operator_home, "Trevor", "blackceo"):
             self.assertNotIn(banned, src, banned)
 
 
