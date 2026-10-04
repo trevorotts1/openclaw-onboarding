@@ -1159,8 +1159,8 @@ cc_verify_db_parity() {
 # unreadable database logs a WARN and returns 0 — the install continues, and the
 # flag stays UNSET rather than being written on a guess.
 #
-# Test seam: HQ_CAPABILITY_DB / HQ_CAPABILITY_LOG overrides, so
-# tests/unit/hq/B32/run-full-install-hq-flag.test.sh drives the REAL function
+# Test seam: HQ_CAPABILITY_DB override, so
+# tests/unit/hq/B32/headquarters-docker.test.sh drives the REAL function
 # against a temp database.
 cc_hq_capability_check() {
   local envf="$DASHBOARD_DIR/.env.local"
