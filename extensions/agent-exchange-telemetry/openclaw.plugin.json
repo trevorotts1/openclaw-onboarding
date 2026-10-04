@@ -1,0 +1,49 @@
+{
+  "id": "agent-exchange-telemetry",
+  "name": "Agent Exchange Telemetry",
+  "description": "Passive observer of the native sessions_send/sessions_spawn exchange path and the run-scoped lifecycle terminal stream. Captures bounded, order-independent joins into a local durable correlation store and outbox. Replaces no tool, edits no parameters, invokes no agent, changes no model, synthesizes no dialogue. Private or unknown ancestry suppresses text before local persistence and before the outbox.",
+  "version": "1.0.0",
+  "contracts": {
+    "tools": []
+  },
+  "setup": {
+    "providers": []
+  },
+  "main": "./dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "Observer on/off. Defaults to on."
+      },
+      "companyId": {
+        "type": "string",
+        "description": "Trusted company identity from installation config. Never read from tool params or model text."
+      },
+      "installationId": {
+        "type": "string",
+        "description": "Trusted installation identity from installation config. Never read from hook context or result.details (capture-bindings F-1)."
+      },
+      "workspaceDir": {
+        "type": "string",
+        "description": "Persistent workspace root holding hq-telemetry/correlation and hq-telemetry/outbox. Falls back to api.rootDir (capture-bindings F-2)."
+      },
+      "privateSessionKeys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Additional session keys treated as private-owner ancestry."
+      },
+      "publicSessionKeys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Session keys whose ancestry is a trusted public task root. Unknown keys stay unknown, never presumed public."
+      }
+    }
+  }
+}
