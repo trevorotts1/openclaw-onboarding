@@ -337,13 +337,16 @@ def test_an_unwritable_outbox_reports_degraded_instead_of_dropping_silently(tmp_
 
 def test_a_missing_destination_degrades_and_keeps_the_event_queued(tmp_path, clock):
     """No destination configured must not delete pending work: the event is
-    still there, and the health says degraded."""
+    still there, and the health says degraded. It is a standing configuration
+    fault — nothing was lost — so it must not inflate the dropped counter."""
     box = hq.HqOutbox(tmp_path, transport=hq.HqHttpTransport(url=""), clock=lambda: clock[0])
     box.enqueue(_event())
     result = box.flush()
     assert result["captureHealth"] == "degraded"
     assert box.pending_stats()["count"] == 1
-    assert box.capture_health()["dropped"]["reasons"]["no-destination"] == 1
+    health = box.capture_health()
+    assert health["captureHealth"] == "degraded"
+    assert health["dropped"]["count"] == 0, "nothing was dropped"
 
 
 def test_a_clean_flush_reports_ok_again(box):
@@ -620,3 +623,113 @@ def test_envelope_bounds_reports_the_frozen_ceilings():
     assert bounds["pendingMaxCount"] == 1_000
     assert bounds["pendingMaxBytes"] == 8 * 1024 * 1024
     assert bounds["eventBytes"] > 0
+
+
+# ── validator agreement with the frozen P01 shape (mismatch findings) ────────
+
+def test_an_owner_note_text_is_required_like_the_frozen_p01_schema():
+    """S7 owner_note `{text}` is non-nullable, and frozen P01 types it
+    `z.string()` (hqOwnerNotePayloadSchema). Accepting null here would admit an
+    event the receiver refuses — a producer must never be looser than the
+    consumer on a field the SPEC pins."""
+    note = _event(kind="owner_note", phase="recorded", sourceKey="note:n-1",
+                  exchangeId=None, payload={"text": "hello"})
+    assert hq.validate_event(note)["payload"]["text"] == "hello"
+    for bad in (None, 5):
+        with pytest.raises(hq.HqEnvelopeError):
+            hq.validate_event(dict(note, payload={"text": bad}))
+
+
+def test_a_null_decision_fallback_passes_like_the_frozen_p01_schema():
+    """S7 decision payload is "nullable except mode": S5 stores a JEV receipt's
+    "missing fields ... null with reason", and frozen P01 types `fallback` as
+    `z.boolean().nullable()`. Refusing null here would hard-reject a legal
+    receipt the receiver accepts."""
+    decision = _event(kind="decision", phase="applied", sourceKey="decision:c:applied",
+                      exchangeId=None, payload={
+                          "intent": None, "routeAction": None, "departmentSlug": None,
+                          "confidenceBps": None, "fallback": None, "mode": "live",
+                          "resolvedBy": None})
+    assert hq.validate_event(decision)["payload"]["fallback"] is None
+    with pytest.raises(hq.HqEnvelopeError):          # a non-boolean still refuses
+        hq.validate_event(dict(decision, payload=dict(decision["payload"], fallback="yes")))
+
+
+def test_an_unsurveyed_decision_mode_is_carried_not_invented_away():
+    """S7 and frozen P01 both type `mode` as a plain string. An enum local to
+    this module would hard-refuse a mode value the receiver accepts, so an
+    unseen mode must pass — while a missing one still refuses."""
+    decision = _event(kind="decision", phase="applied", sourceKey="decision:c:applied",
+                      exchangeId=None, payload={
+                          "intent": None, "routeAction": None, "departmentSlug": None,
+                          "confidenceBps": None, "fallback": False, "mode": "auto",
+                          "resolvedBy": None})
+    assert hq.validate_event(decision)["payload"]["mode"] == "auto"
+    with pytest.raises(hq.HqEnvelopeError):
+        hq.validate_event(dict(decision, payload=dict(decision["payload"], mode=None)))
+
+
+def test_the_spec_named_activity_source_key_family_is_accepted():
+    """S5's own first-named task-activity family is `activity:<existingId>`.
+    A source-key regex that refuses the family the SPEC names would reject the
+    producer's primary task event."""
+    event = _event(sourceKey="activity:abc123")
+    assert hq.validate_event(event)["sourceKey"] == "activity:abc123"
+    with pytest.raises(hq.HqEnvelopeError):          # still not a blank id
+        hq.validate_event(_event(sourceKey="activity:"))
+
+
+def test_an_unparseable_issued_at_is_refused_before_it_can_disable_expiry():
+    """S7's 24-hour producer expiry reads `issuedAt`. `_parse_iso` returns None
+    for anything it cannot read, and the expiry branch treats None as "no
+    horizon" — so a producer emitting `helloZ` would silently switch the bound
+    off and the outbox could grow without limit. The validator, which runs
+    first, must refuse what the expiry path cannot measure."""
+    with pytest.raises(hq.HqEnvelopeError):
+        hq.validate_event(_event(issuedAt="helloZ"))
+    assert hq._parse_iso("helloZ") is None
+    # The known-good control: a real instant still parses and still expires.
+    assert hq._parse_iso(_event()["issuedAt"]) is not None
+
+
+# ── standing faults must not inflate the per-event drop counter ──────────────
+
+def test_repeated_no_destination_flushes_never_inflate_dropped(tmp_path, clock):
+    """S5's dropped-count counts EVENTS LOST. A missing destination drops
+    nothing — the pending file is still there — so five flushes of one pending
+    event must not read as five losses."""
+    box = hq.HqOutbox(tmp_path, transport=hq.HqHttpTransport(url=""), clock=lambda: clock[0])
+    box.enqueue(_event())
+    for _ in range(5):
+        assert box.flush()["captureHealth"] == "degraded"
+    health = box.capture_health()
+    assert box.pending_stats()["count"] == 1
+    assert health["dropped"]["count"] == 0
+    assert health["dropped"]["reasons"].get("no-destination") is None
+    assert health["captureHealth"] == "degraded"
+
+
+def test_a_permanent_409_conflict_is_not_reposted_on_every_flush(tmp_path, clock):
+    """S5: "30-second retry minimum ... no busy loop." A 409 is permanent, but
+    without a persisted nextAttemptAtUnix every flush re-POSTs it — four flushes
+    at one clock reading must be ONE transport call, and the file must stay put
+    as the conflict evidence."""
+    calls = []
+
+    def conflict(body, envelope):
+        calls.append(clock[0])
+        return 409, "{}"
+
+    box = hq.HqOutbox(tmp_path, transport=conflict, clock=lambda: clock[0])
+    box.enqueue(_event())
+    outcomes = [box.flush()["rejected"] for _ in range(4)]
+    assert outcomes == [1, 0, 0, 0], outcomes
+    assert len(calls) == 1, "a permanent conflict was re-POSTed %d times" % len(calls)
+    path = next((box.root / "hq-telemetry" / "outbox").glob("*.json"))
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    assert stored["nextAttemptAtUnix"] == clock[0] + hq.hq_retry_delay(1)
+    assert box.capture_health()["conflicts"]["count"] == 1
+    clock[0] += 60                                    # one step past the minimum
+    assert box.flush()["rejected"] == 1
+    assert len(calls) == 2
+
