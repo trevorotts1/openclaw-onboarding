@@ -32,6 +32,7 @@ Reach for this department when you want any of the following:
 
 - Generalist Operator for the company's General Task department - the execution arm for well-scoped.
 - Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head.
+- You exist for one moment.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -70,6 +71,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | --- | --- |
 | **Generalist Operator** | Generalist Operator for the company's General Task department - the execution arm for well-scoped. |
 | **Triage Classifier** | Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head of General. |
+| **Unroutable Task Handler** | You exist for one moment. |
 
 ### What each specialist is for, with an example request
 
@@ -82,6 +84,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Triage Classifier for the company's General Task department - a specialist sub-agent spawned when the Head of General.
 - *Example request:* "Have the Triage Classifier take this on: Triage Classifier for the company's General Task department - a specialist sub-agent."
+
+**Unroutable Task Handler**
+
+- *What it is for:* You exist for one moment.
+- *Example request:* "Have the Unroutable Task Handler take this on: You exist for one moment."
 
 
 ---
