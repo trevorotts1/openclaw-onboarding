@@ -49,6 +49,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install pytest (runner python lacks it)
+        run: python3 -m pip install --quiet pytest || python3 -m pip install --user --quiet pytest
+
       - name: Syntax gates (both shells)
         run: |
           set -euo pipefail
