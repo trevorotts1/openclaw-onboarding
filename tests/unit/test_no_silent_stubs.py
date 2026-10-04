@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """No-silent-stub installer rules (v25.4.0).
 
-Covers Trevor's 5 installer rules:
+Covers the 5 installer rules:
   1. DIRECTOR REQUIRED — a department cannot complete without a director role;
      missing directors are scaffolded from the director template + flagged.
   2. NO SILENT PLACEHOLDERS — library miss => routing notice to general-task +
