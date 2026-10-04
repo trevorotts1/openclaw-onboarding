@@ -1330,10 +1330,11 @@ if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   # per dept automatically, but run regenerate-dept-roster.py inline here as a
   # deterministic backstop so a partial/resume materialization can NEVER leave a
   # stale roster that under-reports the roles the agent actually has on disk.
-  # PENDING-SOPS.md runner: token-fill every PENDING role how-to.md that has a
-  # comparable role-library template (deterministic, no model, never touches a
-  # filled file). Roles with no comparable template stay PENDING for SOP
-  # authoring (populate-sops-from-manifest.py queues them).
+  # v25.4.0: SOP-NEEDED.json runner — deterministically fill every ROUTED role
+  # how-to.md (work sent to general-task, no library match) that has a
+  # comparable role-library template (no model, never touches a filled file).
+  # Also fills legacy PENDING stubs. Roles with no comparable template stay
+  # routed for SOP authoring (author-missing-sops.py --apply).
   _fill_script="$SCRIPT_DIR/fill-pending-howtos.py"
   if [[ -f "$_fill_script" ]]; then
     log "[PENDING-FILL-RESUME] token-filling PENDING role how-to.md files from the nearest library template"

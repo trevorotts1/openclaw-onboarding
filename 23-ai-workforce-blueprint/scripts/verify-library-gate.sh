@@ -29,9 +29,12 @@ fi
 # marker alone.  qc-completeness.sh now requires BOTH the marker AND file size >= 3072 B
 # before counting a role as library-filled (library_pct).  build-workforce.py and
 # create_role_workspaces.py also refuse to stamp the marker on thin output (< 3072 B),
-# returning None instead so the caller falls back to the PENDING-stub path.
-# This closes the gap where a thin stub carrying the marker passed rfilled=True here
-# while verify-wiring.sh correctly failed the same file.
+# returning None instead so the caller takes the no-stub path (v25.4.0: route the
+# role's work to general-task + emit a SOP-needed record; PENDING stubs are never
+# written). This closes the gap where a thin stub carrying the marker passed
+# rfilled=True here while verify-wiring.sh correctly failed the same file.
+# v25.4.0: adds the SOP-NEEDED GATE (rc=10) — SOP-NEEDED.json must have zero
+# open records before the build can complete.
 #
 # ENFORCED build gate for the ROLE LIBRARY + SOP LIBRARY auto-pull.
 #
@@ -97,6 +100,9 @@ fi
 #             zheStatus + plan W1.2; doctrine: ZERO-HUMAN-EXPERIENCE.md).
 #             zheStatus="standard-ready" is PASS-equivalent (no rc 9) for a box the
 #             standard prebuild landed cleanly on while the interview is incomplete.
+#        10 = SOP-NEEDED GATE FAIL — SOP-NEEDED.json has un-authored records
+#             (a role-library miss was routed to general-task but its SOP was
+#             never authored). Run scripts/author-missing-sops.py --apply.
 #
 # The master orchestrator MUST run this BEFORE writing buildCompletedAt /
 # closeoutStatus=pending. The resume cron (resume-workforce-build.sh) also calls
@@ -427,6 +433,44 @@ if [ "$BOUNDARY_STATUS" != "done" ]; then
   FAIL_REASON="${FAIL_REASON}boundary: ${BOUNDARY_GAPS:-canonical dept(s) in authoring manifest}"
 fi
 
+# ---- SOP-NEEDED GATE (v25.4.0): no silent placeholders -----------------------
+# The installer never writes PENDING stubs. A role-library miss routes the
+# role's work to general-task and emits a machine-readable record in
+# SOP-NEEDED.json. This gate fails while any record is un-authored: the build
+# is not complete until scripts/author-missing-sops.py (or the deterministic
+# fill-pending-howtos.py) closes every gap. Run it, then re-run this gate.
+SOPNEEDED_STATUS="done"
+SOPNEEDED_GAPS=""
+SOPNEEDED_PATH=""
+if [ -d /data/.openclaw/workspace ]; then
+  SOPNEEDED_PATH="$(ls /data/.openclaw/workspace/*/SOP-NEEDED.json 2>/dev/null | head -1)"
+elif [ -d "$HOME/.openclaw/workspace" ]; then
+  SOPNEEDED_PATH="$(ls "$HOME/.openclaw/workspace"/*/SOP-NEEDED.json 2>/dev/null | head -1)"
+fi
+
+if [ -z "$SOPNEEDED_PATH" ] || [ ! -f "$SOPNEEDED_PATH" ]; then
+  echo "[verify-library-gate] SOP-NEEDED GATE: no SOP-NEEDED.json found — skipping (pre-v25.4.0 build or manifest not yet written)" >&2
+elif ! _SN_OPEN="$(jq -r '.open_count // 0' "$SOPNEEDED_PATH" 2>/dev/null)"; then
+  echo "[verify-library-gate] SOP-NEEDED GATE: cannot parse $SOPNEEDED_PATH — treating as failed" >&2
+  SOPNEEDED_STATUS="failed"
+  SOPNEEDED_GAPS="unparseable SOP-NEEDED.json at $SOPNEEDED_PATH"
+else
+  if [ "$_SN_OPEN" -gt 0 ] 2>/dev/null; then
+    SOPNEEDED_STATUS="failed"
+    SOPNEEDED_GAPS="$(jq -r '.records[] | select(.status != "authored") | "\(.id) \(.role) (\(.department))"' "$SOPNEEDED_PATH" 2>/dev/null | head -10 | tr '\n' '; ')"
+    echo "[verify-library-gate] SOP-NEEDED GATE FAIL (rc=10): $_SN_OPEN record(s) still open in $SOPNEEDED_PATH." >&2
+    echo "[verify-library-gate] Run scripts/author-missing-sops.py --apply, then re-run this gate." >&2
+  else
+    echo "[verify-library-gate] SOP-NEEDED GATE PASS: all records authored." >&2
+  fi
+fi
+unset _SN_OPEN
+
+if [ "$SOPNEEDED_STATUS" != "done" ]; then
+  [ -n "$FAIL_REASON" ] && FAIL_REASON="$FAIL_REASON | "
+  FAIL_REASON="${FAIL_REASON}sop-needed: ${SOPNEEDED_GAPS:-open records}"
+fi
+
 # ---- ZHE GATE (plan W1.2): ZERO HUMAN EXPERIENCE acceptance prover -----------
 # The highest-priority verdict. prove-zhe.py asserts the WHOLE post-interview ZHE
 # landed for an interview-completed box: floor depts present AND registered as
@@ -496,6 +540,8 @@ elif [ "$BOUNDARY_STATUS" != "done" ]; then
   GATE_RC=7
 elif [ "$TRIO_STATUS" != "done" ]; then
   GATE_RC=6
+elif [ "$SOPNEEDED_STATUS" != "done" ]; then
+  GATE_RC=10
 elif [ "$ROLE_STATUS" = "done" ] && [ "$SOP_STATUS" = "done" ]; then
   GATE_RC=0
 elif [ "$ROLE_STATUS" != "done" ] && [ "$SOP_STATUS" != "done" ]; then

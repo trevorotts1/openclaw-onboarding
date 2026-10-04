@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""fill-pending-howtos.py -- the scripted runner for PENDING-SOPS.md.
+"""fill-pending-howtos.py -- the scripted runner for SOP-NEEDED.json (and legacy PENDING-SOPS.md).
 
-Every role whose how-to.md is a PENDING stub (no role-library template matched
-its exact title at build time) carries a one-shot instruction: copy the NEAREST
-role-library template family and token-fill it. Nothing ran that instruction, so
-the stubs sat forever. This does, deterministically (no model call):
+v25.4.0: the installer no longer writes PENDING stubs. A role-library miss now
+produces a ROUTING how-to.md (work sent to the general-task department) plus a
+machine-readable record in SOP-NEEDED.json. This script deterministically (no
+model call) fills those routed roles:
 
   1. exact library match (the library may have gained the role since the build)
   2. nearest template by role title in the SAME library department
@@ -15,17 +15,21 @@ A match must clear the title-similarity cutoff (--cutoff 0.6 within the
 department; the much stricter --library-cutoff 0.85 across departments, because a
 loose cross-department match -- "Buyer Agent" -> a QC agent -- would plant the
 wrong SOPs) and the same 3072-byte substance floor create_role_workspaces.try_library_fill enforces; otherwise
-the role stays PENDING and is reported as needing authoring (populate-sops-from-
-manifest.py queues it). Only a how-to.md that is STILL a PENDING stub is ever
+the role stays routed and is reported as needing authoring (author-missing-sops.py
+queues it). Only a how-to.md that is STILL a routing notice is ever
 written -- filled content is never touched. Idempotent.
+
+Legacy: still fills old-style PENDING stubs left by pre-v25.4.0 installs
+(the PENDING markers are detected the same way as before).
 
 Usage:
   fill-pending-howtos.py [--departments-dir DIR] [--dept SLUG ...] [--cutoff 0.6]
-                         [--library-cutoff 0.85] [--apply]
-Dry run by default. Exit 0 = nothing left pending; 3 = roles still pending.
+                         [--library-cutoff 0.85] [--sop-needed PATH] [--apply]
+Dry run by default. Exit 0 = nothing left open; 3 = roles still need authoring.
 """
 import argparse
 import difflib
+import json
 import os
 import re
 import sys
@@ -37,6 +41,8 @@ sys.path.insert(0, str(HERE))
 import create_role_workspaces as crw  # noqa: E402
 
 PENDING_MARKERS = ("PENDING - FILL FROM LIBRARY", "how-to.md (stub)")
+# v25.4.0: the routing notice written instead of a PENDING stub.
+ROUTED_MARKER = "[ROUTED — WORK HANDLED BY GENERAL-TASK]"
 MIN_BYTES = 3072  # same floor as create_role_workspaces.try_library_fill
 SKIP_DIRS = {"memory", "devils-advocate"}
 
@@ -47,6 +53,34 @@ def is_pending(how_to):
     except OSError:
         return False
     return any(m in head for m in PENDING_MARKERS)
+
+
+def is_routed(how_to):
+    """True when how-to.md is still the v25.4.0+ routing notice (not yet filled)."""
+    try:
+        head = how_to.read_text(encoding="utf-8", errors="replace")[:600]
+    except OSError:
+        return False
+    return ROUTED_MARKER in head
+
+
+def load_sop_needed(path):
+    """Load SOP-NEEDED.json records, or [] when missing/unreadable."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    recs = data.get("records")
+    return recs if isinstance(recs, list) else []
+
+
+def save_sop_needed(path, records):
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data["records"] = records
+    data["open_count"] = sum(1 for r in records if r.get("status") != "authored")
+    tmp = Path(str(path) + f".tmp-{os.getpid()}")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def role_title(role_dir):
@@ -102,8 +136,8 @@ def nearest_template(title, dept_slug, cutoff, library_cutoff=0.85):
     return (doc, entry, how) if doc.is_file() else (None, None, "template file missing")
 
 
-def fill_one(dept_dir, role_dir, cutoff, apply, library_cutoff=0.85):
-    title = role_title(role_dir)
+def fill_one(dept_dir, role_dir, cutoff, apply, library_cutoff=0.85, title=None):
+    title = title or role_title(role_dir)
     doc, entry, how = nearest_template(title, dept_dir.name, cutoff, library_cutoff)
     if not doc:
         return False, how
@@ -118,12 +152,46 @@ def fill_one(dept_dir, role_dir, cutoff, apply, library_cutoff=0.85):
               f"generator=fill-pending-howtos.py match={how} filled-for={role_dir.name} -->\n")
     if apply:
         how_to = role_dir / "how-to.md"
-        if not is_pending(how_to):  # filled meanwhile: never overwrite real content
-            return False, "no longer pending"
+        if not (is_pending(how_to) or is_routed(how_to)):
+            # filled meanwhile: never overwrite real content
+            return False, "no longer pending/routed"
         tmp = how_to.with_name(f".how-to.md.tmp-{os.getpid()}")
         tmp.write_text(header + filled, encoding="utf-8")
         os.replace(tmp, how_to)
     return True, f"{how}: {entry['dept']}/{entry['slug']}"
+
+
+def routed_role_dirs(sop_needed_path, departments_dir, depts=None):
+    """Yield (record, dept_dir, role_dir) for open SOP-NEEDED.json records.
+
+    Resolves each record's role folder from the record's role_folder field,
+    falling back to a slug glob under departments_dir.
+    """
+    records = load_sop_needed(sop_needed_path)
+    if records is None:
+        return [], []
+    out = []
+    for rec in records:
+        if rec.get("status") == "authored":
+            continue
+        dept_slug = rec.get("department", "")
+        if depts and dept_slug not in depts:
+            continue
+        role_dir = None
+        rf = rec.get("role_folder", "")
+        if rf and Path(rf).is_dir():
+            role_dir = Path(rf)
+        elif departments_dir:
+            cands = sorted(Path(departments_dir).glob(
+                f"{dept_slug}/*{crw.slugify(rec.get('role', ''))}*"))
+            role_dir = cands[0] if cands else None
+        if not role_dir:
+            continue
+        dept_dir = role_dir.parent
+        how_to = role_dir / "how-to.md"
+        if how_to.is_file() and is_routed(how_to):
+            out.append((rec, dept_dir, role_dir))
+    return out, records
 
 
 def default_departments_dir():
@@ -141,13 +209,28 @@ def main(argv=None):
     ap.add_argument("--dept", action="append", help="only these department folders (repeatable)")
     ap.add_argument("--cutoff", type=float, default=0.6)
     ap.add_argument("--library-cutoff", type=float, default=0.85)
+    ap.add_argument("--sop-needed",
+                    help="path to SOP-NEEDED.json (default: <company>/SOP-NEEDED.json)")
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args(argv)
     ddir = Path(a.departments_dir) if a.departments_dir else default_departments_dir()
     if not ddir or not ddir.is_dir():
         print("ERROR: departments dir not found (pass --departments-dir)", file=sys.stderr)
         return 2
+
+    # v25.4.0: primary input is SOP-NEEDED.json (routed records).
+    sop_needed_path = a.sop_needed
+    if not sop_needed_path:
+        _company = ddir.parent
+        _cand = _company / "SOP-NEEDED.json"
+        if _cand.is_file():
+            sop_needed_path = str(_cand)
+    routed, records = ([], [])
+    if sop_needed_path and Path(sop_needed_path).is_file():
+        routed, records = routed_role_dirs(sop_needed_path, ddir, set(a.dept or []))
+
     left = 0
+    # Legacy PENDING stubs (pre-v25.4.0 installs) — unchanged behavior.
     roles = pending_roles(ddir, set(a.dept or []))
     for dept_dir, role_dir in roles:
         ok, why = fill_one(dept_dir, role_dir, a.cutoff, a.apply, a.library_cutoff)
@@ -155,8 +238,30 @@ def main(argv=None):
             left += 1
         verb = ("FILLED" if a.apply else "WOULD FILL") if ok else "STILL PENDING"
         print(f"[fill-pending-howtos] {verb} {dept_dir.name}/{role_dir.name} ({why})")
-    print(f"[fill-pending-howtos] {len(roles)} pending role(s); {len(roles) - left} "
-          f"{'filled' if a.apply else 'fillable'}; {left} need authoring"
+
+    # Routed records from SOP-NEEDED.json — fill + mark authored.
+    for rec, dept_dir, role_dir in routed:
+        ok, why = fill_one(dept_dir, role_dir, a.cutoff, a.apply,
+                           a.library_cutoff, title=rec.get("role", ""))
+        if not ok:
+            left += 1
+        else:
+            if a.apply:
+                rec["status"] = "authored"
+                rec["authored_at"] = datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ")
+                rec["authored_via"] = "deterministic-fill"
+        verb = ("FILLED" if a.apply else "WOULD FILL") if ok else "STILL ROUTED"
+        print(f"[fill-pending-howtos] {verb} {rec.get('id')} "
+              f"{dept_dir.name}/{role_dir.name} ({why})")
+    if a.apply and sop_needed_path and records:
+        save_sop_needed(sop_needed_path, records)
+
+    total = len(roles) + len(routed)
+    print(f"[fill-pending-howtos] {total} open role(s) "
+          f"({len(roles)} legacy-pending, {len(routed)} routed); "
+          f"{total - left} {'filled' if a.apply else 'fillable'}; "
+          f"{left} need authoring"
           + ("" if a.apply else " -- DRY RUN, nothing written (use --apply)"))
     return 3 if left else 0
 
