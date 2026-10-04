@@ -13,7 +13,7 @@ name: one-front-door-full-path-guard
 #
 # tests/unit/one-front-door-full-path.test.sh pins that mechanically and is
 # mutation-proven: removing any stage from any route turns the suite RED.
-# It also asserts the retired scripts/update-skills.sh shim stays DELETED
+# It also asserts that the retired scripts-path updater shim stays DELETED
 # (OCT4 issue #10) — no route may rediscover "my own little updater".
 #
 # Security note: consumes only repo file content (no untrusted GitHub event

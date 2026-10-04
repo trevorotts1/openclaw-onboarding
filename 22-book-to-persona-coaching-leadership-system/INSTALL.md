@@ -604,8 +604,7 @@ fi
 
 Run this command now - the agent executes it autonomously (`scripts/setup-weekly-update.sh`
 is the cron INSTALLER; there is no `--setup-cron` flag on any updater — do not invoke
-`scripts/update-skills.sh` — retired, then deleted outright (OCT4 issue #10); that path
-no longer exists):
+`scripts/update-skills.sh`, which is a retired, loud-failing shim, not the updater):
 
 ```bash
 mkdir -p ~/.openclaw/skills/scripts
@@ -629,8 +628,7 @@ fi
 
 **What this does:** Installs a cron job that runs every Sunday at 3:00 AM. It curls the
 LATEST repo-root `update-skills.sh` from GitHub (never a stale local copy, never
-the repo-root updater — the retired `scripts/update-skills.sh` copy was deleted, OCT4
-issue #10), which verifies installed content (not just the version
+`scripts/update-skills.sh`), which verifies installed content (not just the version
 stamp), applies drift, and writes a silent UPDATE PENDING flag to AGENTS.md for the
 agent's next session — no gateway restart, no client-facing auto-notify.
 
