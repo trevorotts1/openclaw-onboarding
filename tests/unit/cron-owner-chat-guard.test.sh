@@ -696,35 +696,13 @@ else
     fail "8b: force-update.sh not found"
 fi
 
-# 8c: legacy scripts/update-skills.sh must be operator-routed / log-only too:
-# no direct api.telegram.org send, no allowFrom-derived client target.
+# 8c: the legacy scripts/update-skills.sh path is GONE (OCT4 issue #10 deleted
+# the retired shim outright). Assert the deletion holds — the shim must never
+# come back, because the two-updaters-same-name fleet-wide fatal returns with it.
 if [ -f "$REPO_ROOT/scripts/update-skills.sh" ]; then
-    if grep -vE '^\s*#' "$REPO_ROOT/scripts/update-skills.sh" | grep -q 'api\.telegram\.org'; then
-        fail "8c: scripts/update-skills.sh calls api.telegram.org directly (gateway-bypass client send)"
-    else
-        pass "8c: scripts/update-skills.sh has no direct api.telegram.org call"
-    fi
-    legacy_notify=$(awk '/Update notification|Telegram notification/,/^fi$/' "$REPO_ROOT/scripts/update-skills.sh" 2>/dev/null | grep -vE '^\s*#' || true)
-    if [ -z "$legacy_notify" ]; then
-        # v21.7.x: scripts/update-skills.sh was retired to a loud-failing shim
-        # (the two-updaters-same-name fleet-wide defect) -- it carries NO
-        # update or notification logic at all, so there is nothing that could
-        # leak a client-facing Telegram DM. Absence of any notification code
-        # is a strictly stronger guarantee than "the notification code that
-        # exists happens to be operator-routed".
-        pass "8c-2: scripts/update-skills.sh carries no update/notification logic at all (retired shim — nothing to leak)"
-    elif echo "$legacy_notify" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|--account operator'; then
-        pass "8c-2: scripts/update-skills.sh update notification is operator-routed"
-    else
-        fail "8c-2: scripts/update-skills.sh update notification is not operator-routed"
-    fi
-    if echo "$legacy_notify" | grep -qE "allowFrom',\s*\[\]\)|allowFrom\b.*\[0\]"; then
-        fail "8c-3: scripts/update-skills.sh notification still reads allowFrom[0] (client target)"
-    else
-        pass "8c-3: scripts/update-skills.sh notification does not target client allowFrom"
-    fi
+    fail "8c: scripts/update-skills.sh is back — the retired shim must stay deleted (OCT4 issue #10)"
 else
-    pass "8c: scripts/update-skills.sh not present (nothing to check)"
+    pass "8c: scripts/update-skills.sh deleted (single updater entrypoint holds)"
 fi
 
 # 8d: BEHAVIORAL — the operator-only resolver used by every silenced emitter

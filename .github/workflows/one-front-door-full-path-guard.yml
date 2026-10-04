@@ -1,0 +1,72 @@
+name: one-front-door-full-path-guard
+
+# OCT4 issue #10 — ONE FRONT DOOR. Four routes reach an update (the root
+# update-skills.sh run on its own, force-update.sh, the Sunday update, the
+# operator's roll) and routes used to drift, silently skipping stages.
+# The updater now carries a shared tail on every route:
+#
+#   onboarding update -> 999-setup (only when already installed)
+#   -> Command Center at its pinned tag
+#   -> repair runner (OCT4 #5/#6/#7/#9 + author-missing-sops for remaining gaps)
+#   -> library-standard health gate (OCT4 #11)
+#   -> rollback on regression (route-owned; the updater declares exit 2)
+#
+# tests/unit/one-front-door-full-path.test.sh pins that mechanically and is
+# mutation-proven: removing any stage from any route turns the suite RED.
+# It also asserts the retired scripts/update-skills.sh shim stays DELETED
+# (OCT4 issue #10) — no route may rediscover "my own little updater".
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "force-update.sh"
+      - "scripts/weekly-full-update.sh"
+      - "scripts/fleet-refresh.sh"
+      - "shared-utils/oct4_frontdoor.py"
+      - "shared-utils/lib-frontdoor.sh"
+      - "tests/unit/one-front-door-full-path.test.sh"
+      - ".github/workflows/one-front-door-full-path-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "force-update.sh"
+      - "scripts/weekly-full-update.sh"
+      - "scripts/fleet-refresh.sh"
+      - "shared-utils/oct4_frontdoor.py"
+      - "shared-utils/lib-frontdoor.sh"
+      - "tests/unit/one-front-door-full-path.test.sh"
+      - ".github/workflows/one-front-door-full-path-guard.yml"
+
+jobs:
+  one-front-door-full-path-guard:
+    name: every update route runs onboarding + 999 + CC + repair runner + health gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the blast radius
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n update-skills.sh
+          bash -n force-update.sh
+          bash -n scripts/weekly-full-update.sh
+          bash -n scripts/fleet-refresh.sh
+          bash -n shared-utils/lib-frontdoor.sh
+          bash -n tests/unit/one-front-door-full-path.test.sh
+          python3 -m py_compile shared-utils/oct4_frontdoor.py
+
+      - name: Run the one-front-door full-path suite (includes the stage self-test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/one-front-door-full-path.test.sh
+          python3 shared-utils/oct4_frontdoor.py --selftest
+          echo "one-front-door-full-path-guard: PASS"
