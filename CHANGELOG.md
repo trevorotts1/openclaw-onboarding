@@ -1,3 +1,5 @@
+## [v25.3.15]  -  2026-10-04  -  fix(installer): no silent placeholders — the 5 installer rules (director required, SOP-needed routing, self-healing authoring, doctrine in templates, no empty departments)
+
 ## [v25.3.14] - 2026-10-03 - Operator personal chat id scrub: deterministic script + CI guard
 
 The operator's personal Telegram chat id was still written into agent-facing text that a fleet roll copies to every client box. D13 already removed it from the agent escalation template. This release removes the rest and guards it so it cannot return.
