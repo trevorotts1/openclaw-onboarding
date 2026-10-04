@@ -177,7 +177,7 @@ Schema failure blocks Headquarters writes and returns failed health. It does
 ## 7. What this target does not authorize
 
 * No new container, image, service, compose file, framework or dependency.
-* No customer-facing rollout. Operator canary first; client mutation needs an
+* No customer-facing rollout. Operator probe box first; client mutation needs an
   explicit fleet/client go.
 * No database restore. Rollback switches to the previous tested code while
   retaining additive rows and every message written since the upgrade; restoring
