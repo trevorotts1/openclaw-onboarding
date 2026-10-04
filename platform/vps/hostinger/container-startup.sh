@@ -36,6 +36,44 @@ LOGS="$DATA/.openclaw/logs"
 CC_DIR="$DATA/projects/command-center"
 mkdir -p "$LOGS" 2>/dev/null || true
 
+# Headquarters persistent roots (SPEC S10: "Outbox and bridge identity use
+# existing persistent workspace locations. Verify container replacement retains
+# them"). These are exactly the vps-docker paths in CC src/lib/platform.ts:
+#   /data/.openclaw/workspace           -> vault/scratch AND the telemetry roots
+#                                          hq-telemetry/correlation + /outbox
+#   /data/.openclaw/mission-control/identity -> the paired bridge keypair
+#   /data/.openclaw/extensions          -> path-loaded plugins (origin:"config")
+# They sit under $DATA, the persistent mount, so a `--force-recreate` keeps
+# them. This block only CREATES what is missing — mkdir -p, never a delete, a
+# move or a truncate — and it runs as node (the root pass re-execs above, and
+# the image's own /entrypoint.sh has already fixed /data ownership), so a
+# directory created here is node-owned and the telemetry plugin's own mkdir
+# succeeds. Idempotent by construction.
+HQ_ROOT="$DATA/.openclaw"
+for _hq_dir in "$HQ_ROOT/workspace" "$HQ_ROOT/workspace/hq-telemetry/correlation" \
+               "$HQ_ROOT/workspace/hq-telemetry/outbox" \
+               "$HQ_ROOT/mission-control/identity" "$HQ_ROOT/extensions"; do
+  mkdir -p "$_hq_dir" 2>/dev/null || true
+done
+
+# Headquarters availability flag written by vps-docker-bootstrap.sh step 8d /
+# run-full-install.sh phase 6k. Report the box's own recorded value; absent
+# means the capability check has not run yet, which is NOT "enabled". One line
+# per start, always written, so the box's own view is never silent.
+_HQ_FLAG=""
+if [ -f "$HQ_ROOT/.env" ]; then
+  # The value is written by the shared service-env encoder, which may quote it
+  # (`HEADQUARTERS_ENABLED='1'`), so surrounding single/double quotes are
+  # stripped here. Reader-side tolerance only — the writer stays the one
+  # canonical encoder.
+  _HQ_FLAG="$(sed -n 's/^[[:space:]]*\(export[[:space:]]*\)\{0,1\}HEADQUARTERS_ENABLED[[:space:]]*=[[:space:]]*//p' "$HQ_ROOT/.env" | tail -1 | sed -e "s/^'\(.*\)'$/\1/" -e 's/^"\(.*\)"$/\1/')"
+fi
+case "$_HQ_FLAG" in
+  1) echo "[hq] HEADQUARTERS_ENABLED=1 (capture advertised)" >> "$LOGS/container-startup.log" ;;
+  0) echo "[hq] HEADQUARTERS_ENABLED=0 (capability unavailable; see $HQ_ROOT/.env)" >> "$LOGS/container-startup.log" ;;
+  *) echo "[hq] HEADQUARTERS_ENABLED unset — capability check has not run on this box" >> "$LOGS/container-startup.log" ;;
+esac
+
 if command -v pm2 >/dev/null 2>&1; then
   (
     sleep "${PM2_RESURRECT_DELAY:-45}"

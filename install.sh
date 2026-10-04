@@ -9471,6 +9471,119 @@ else
 fi
 echo ""
 
+# ----------------------------------------------------------
+# Agent Exchange Telemetry plugin (Headquarters capture, 2026-10-04).
+# The passive observer of the native sessions_send/sessions_spawn exchange path
+# and the run-scoped lifecycle terminal stream. It replaces no tool, edits no
+# parameters, invokes no agent, changes no model and synthesizes no dialogue.
+#
+# WHY IT IS INSTALLED EXPLICITLY HERE. This extension is path-loaded from
+# ~/.openclaw/extensions (origin:"config", never "bundled"), so nothing
+# discovers it by sibling scan: an unregistered copy on disk is a copy that
+# never loads, and Headquarters capture silently reports zero exchanges. The
+# install must therefore deploy the directory AND register the id, exactly as
+# the CEO Routing Doctrine block above does.
+#
+# THE SAME THREE DEFECTS THE DOCTRINE BLOCK DOCUMENTS APPLY HERE, for the same
+# reasons (read that block's comments before editing this one):
+#   • `cp -R "$_TE_SRC/." "$_TE_DST/"` — the "/." form, or run 2 nests a second
+#     copy and every later roll adds another.
+#   • `plugins.entries.<id>` gets `enabled` ONLY. `hooks` on an entries id is
+#     additionalProperties:false and `allowPromptInjection` there made
+#     `openclaw config validate` FAIL — a failed validate is fatal at gateway
+#     startup (gateway never starts, cron freezes forever, silently).
+#   • `plugins.load.paths` is appended ONLY if absent and `plugins.allow` is
+#     EXTENDED only when it already exists and lacks the id. Never create an
+#     allowlist where none existed: that disables every other plugin on the box.
+#
+# ADDITIVE, unlike the doctrine block in one place: the entry is merged with
+# setdefault and only `enabled` is forced. An operator (or a later target
+# capability check) may have written the extension's own `config` block
+# (companyId / installationId / workspaceDir — the trusted identity the plugin
+# may NOT read from hook context). Overwriting that object would silently blank
+# the box's capture identity, so it is preserved. No credentials or provider
+# settings are touched: only plugins.entries / load.paths / allow, key NAMES
+# only, no key VALUE is ever printed.
+#
+# KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO update-skills.sh.
+# ----------------------------------------------------------
+note "Installing Agent Exchange Telemetry plugin (Headquarters capture)..."
+_TE_SRC="$ONBOARDING_DIR/extensions/agent-exchange-telemetry"
+_TE_DST="$HOME/.openclaw/extensions/agent-exchange-telemetry"
+if [ -d "$_TE_SRC" ]; then
+    mkdir -p "$_TE_DST"
+    # Errors are NOT swallowed (no 2>/dev/null || true): a real copy failure
+    # must be visible instead of shipping a box whose Headquarters feed is
+    # permanently empty with a green install log.
+    if ! cp -R "$_TE_SRC/." "$_TE_DST/"; then
+        warn "FAILED to copy agent-exchange-telemetry into $_TE_DST — plugin NOT installed"
+    else
+        python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    # ADDITIVE merge, deliberately NOT the doctrine block's whole-object
+    # assignment: this entry has a configSchema, so an existing `config` object
+    # (companyId / installationId / workspaceDir — the plugin's ONLY trusted
+    # source for those, per capture-bindings F-1/F-2) must survive the install.
+    # Only `enabled` is forced true; every other key is left exactly as written.
+    _entry = cfg.setdefault("plugins", {}).setdefault("entries", {}).setdefault("agent-exchange-telemetry", {})
+    _entry["enabled"] = True
+    # TARGET CAPABILITY CHECK (the binding's third clause). The plugin may NOT
+    # read the caller's installation identity from hook context or from tool
+    # params (capture-bindings F-1: no installationId exists on that surface),
+    # so the trusted pair has to come from the box's OWN configuration. Derive
+    # it from what this box already recorded — openclaw.json env.vars first,
+    # then the installer's own environment — and write ONLY what is actually
+    # present: an absent value stays absent (the plugin then records honest
+    # uncorrelated capture health rather than a guessed company). Never
+    # overwrite an operator-set config block.
+    _config = _entry.setdefault("config", {})
+    _vars = cfg.get("env", {}).get("vars", {}) if isinstance(cfg.get("env"), dict) else {}
+    for _key, _env in (("companyId", "MC_COMPANY_ID"), ("installationId", "MC_INSTALLATION_ID")):
+        if _config.get(_key):
+            continue                                   # operator value wins
+        _val = _vars.get(_env) or os.environ.get(_env) or ""
+        if isinstance(_val, str) and _val.strip():
+            _config[_key] = _val.strip()
+    if not _config:
+        _entry.pop("config", None)                     # never leave an empty block behind
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never a "/Users/%s" literal — the /Users prefix
+    # is macOS-only and would point every Linux box (VPS + Contabo) at a
+    # directory that does not exist, so the extension would never load.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED ids and runs EARLIER in a roll than
+    # this installer, so without this the telemetry plugin is silently dropped
+    # from the allowlist on a later roll. Only EXTEND an existing allowlist.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "agent-exchange-telemetry" not in _allow:
+        _allow.append("agent-exchange-telemetry")
+    # ATOMIC WRITE + timestamped backup: a signal or full disk mid-write would
+    # TRUNCATE openclaw.json and the gateway would not start.
+    _bak = "%s.bak.xet-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.xet"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("agent-exchange-telemetry enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+        success "Agent Exchange Telemetry plugin installed + enabled (passive Headquarters capture)"
+    fi
+else
+    warn "agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
+fi
+echo ""
+
 # U006 — Co-locate the canonical presentation entry script + guard into the
 # materialized department's scripts/ directory.
 colocate_presentation_entry
