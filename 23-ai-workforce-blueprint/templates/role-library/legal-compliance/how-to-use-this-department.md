@@ -82,6 +82,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **IP Trademark Specialist** | Trademark applications, copyright management, IP infringement responses, DMCA takedowns. |
 | **Terms Privacy Policy Specialist** | Website Terms of Service, Privacy Policy, Cookie Policy, Acceptable Use Policy. |
 | **Vendor Contract Specialist** | Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers. |
+| **Contract Drafter Phase2** | **** for the company's department. |
 
 ### What each specialist is for, with an example request
 
@@ -134,6 +135,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers.
 - *Example request:* "Have the Vendor Contract Specialist take this on: Vendor-side contracts - SaaS subscriptions, freelance contractors, service providers."
+
+**Contract Drafter Phase2**
+
+- *What it is for:* **** for the company's department.
+- *Example request:* "Have the Contract Drafter Phase2 take this on: **** for the company's department."
 
 
 ---

@@ -85,6 +85,9 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Token Manager Furnace Watch Specialist** | Token Manager / Furnace Watch Specialist for the company, the primary budget defender of the OpenClaw AI workforce. |
 | **Uptime Connectivity Watchdog Specialist** | Uptime / Connectivity Watchdog Specialist for the company, the guardian of the box's connection to the world. |
 | **Version And Upgrade Manager Specialist** | OpenClaw Version & Upgrade Manager Specialist for the company, the guardian of the platform's upgrade lifecycle. |
+| **Furnace Watch Mandate Phase2** | Layer that exists **before** the spend cap is hit. |
+| **Platform Specific Guardrails For Uptime Watchdog** | Engineer who answers one question, per platform, in writing. |
+| **Rescue Rangers Escalation Lead Phase2** | For - the top of the escalation chain that keeps every client's workforce running. |
 
 ### What each specialist is for, with an example request
 
@@ -152,6 +155,21 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* OpenClaw Version & Upgrade Manager Specialist for the company, the guardian of the platform's upgrade lifecycle.
 - *Example request:* "Have the Version And Upgrade Manager Specialist take this on: OpenClaw Version & Upgrade Manager Specialist for the company."
+
+**Furnace Watch Mandate Phase2**
+
+- *What it is for:* Layer that exists **before** the spend cap is hit.
+- *Example request:* "Have the Furnace Watch Mandate Phase2 take this on: Layer that exists **before** the spend cap is hit."
+
+**Platform Specific Guardrails For Uptime Watchdog**
+
+- *What it is for:* Engineer who answers one question, per platform, in writing.
+- *Example request:* "Have the Platform Specific Guardrails For Uptime Watchdog take this on: Engineer who answers one question, per platform, in writing."
+
+**Rescue Rangers Escalation Lead Phase2**
+
+- *What it is for:* For - the top of the escalation chain that keeps every client's workforce running.
+- *Example request:* "Have the Rescue Rangers Escalation Lead Phase2 take this on: For - the top of the escalation chain that keeps every client's workforce running."
 
 
 ---

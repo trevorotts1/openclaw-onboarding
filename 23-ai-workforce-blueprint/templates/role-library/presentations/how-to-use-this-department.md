@@ -95,6 +95,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 | **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
 | **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
+| **Scripts Specialist** | You write the words the audience hears and reads. |
 
 ### What each specialist is for, with an example request
 
@@ -212,6 +213,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* You own one question end to end.
 - *Example request:* "Have the Per-Client Representation and Casting Director ("The Mirror") take this on: You own one question end to end."
+
+**Scripts Specialist**
+
+- *What it is for:* You write the words the audience hears and reads.
+- *Example request:* "Have the Scripts Specialist take this on: You write the words the audience hears and reads."
 
 
 ---
