@@ -1135,6 +1135,91 @@ cc_verify_db_parity() {
   return "$rc"
 }
 
+# cc_hq_capability_check — Headquarters availability flag after capability checks.
+#
+# SPEC S10: "Feature availability flag proposed HEADQUARTERS_ENABLED=1 after
+# capability checks; default enabled in tested updated cohort, disabled if
+# schema unavailable with descriptive setup status. Flag is operational
+# fallback, not customer activation approval." and "Startup schema failure
+# returns failed health and blocks Headquarters writes, not a deceptive empty
+# office."
+#
+# Two capabilities are proved, read-only, against the database this box's Command
+# Center ACTUALLY serves ($DASHBOARD_DIR/mission-control.db — the path Phase 6
+# just migrated, and the one cc_verify_db_parity proved the app resolves):
+#   (1) SCHEMA — the additive HQ tables of SPEC S6 are present. Absent tables
+#       mean Headquarters cannot write, so the flag is written 0 WITH the missing
+#       names and a remedy, never silently 1.
+#   (2) IDENTITY — MC_COMPANY_ID is present. Without it the producer envelope's
+#       company binding cannot be proven, so capture would be unattributable.
+#
+# ADDITIVE: an existing HEADQUARTERS_ENABLED is preserved (cc_env_set_if_absent
+# returns 2 and writes nothing), so an operator's deliberate 0 is never rotated
+# back on by a routine update. Non-fatal by design: a missing python3 or an
+# unreadable database logs a WARN and returns 0 — the install continues, and the
+# flag stays UNSET rather than being written on a guess.
+#
+# Test seam: HQ_CAPABILITY_DB override, so
+# tests/unit/hq/B32/headquarters-docker.test.sh drives the REAL function
+# against a temp database.
+cc_hq_capability_check() {
+  local envf="$DASHBOARD_DIR/.env.local"
+  local db="${HQ_CAPABILITY_DB:-$DASHBOARD_DIR/mission-control.db}"
+  if [[ -f "$envf" ]] && cc_env_has_nonempty "$envf" HEADQUARTERS_ENABLED; then
+    log "INFO" "phase=6k hq-capability: HEADQUARTERS_ENABLED preserved(existing) — operator value wins"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    log "WARN" "phase=6k hq-capability: python3 not found — flag left UNSET (unproven, never guessed)"
+    return 0
+  fi
+  local out rc
+  out="$(python3 - "$db" <<'PYHQ' 2>&1
+import sqlite3, sys
+REQUIRED = ("hq_activity", "hq_activity_state", "hq_activity_receipts",
+            "hq_run_bindings", "hq_chat_sessions", "hq_chat_turns",
+            "hq_owner_login_uses")
+try:
+    con = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True)
+    have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    con.close()
+except sqlite3.Error as exc:
+    print("UNREADABLE:%s" % exc)
+    raise SystemExit(0)
+missing = [t for t in REQUIRED if t not in have]
+print("OK" if not missing else "MISSING:" + ",".join(missing))
+PYHQ
+)"; rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    log "WARN" "phase=6k hq-capability: schema probe could not run (rc=$rc) — flag left UNSET"
+    return 0
+  fi
+  local company
+  company="$(cc_env_get "$envf" MC_COMPANY_ID)"
+  case "$out" in
+    OK)
+      if [[ -z "$company" ]]; then
+        cc_env_set_if_absent "$envf" HEADQUARTERS_ENABLED "0" >/dev/null
+        log "WARN" "phase=6k hq-capability: schema present but MC_COMPANY_ID is unset — HEADQUARTERS_ENABLED=0 (capture would be unattributable; complete tenant configuration, then re-run)"
+        [[ -f "$STATE_FILE" ]] && state_set '.commandCenterHqEnabled = false | .commandCenterHqStatus = "company-unbound"' 2>/dev/null || true
+      else
+        cc_env_set_if_absent "$envf" HEADQUARTERS_ENABLED "1" >/dev/null
+        log "INFO" "phase=6k hq-capability: schema present + company bound — HEADQUARTERS_ENABLED=1 (operational fallback, not customer activation approval)"
+        [[ -f "$STATE_FILE" ]] && state_set '.commandCenterHqEnabled = true | .commandCenterHqStatus = "capable"' 2>/dev/null || true
+      fi
+      ;;
+    MISSING:*)
+      cc_env_set_if_absent "$envf" HEADQUARTERS_ENABLED "0" >/dev/null
+      log "WARN" "phase=6k hq-capability: HQ schema unavailable (missing ${out#MISSING:}) — HEADQUARTERS_ENABLED=0. Run the Command Center migration (scripts/repair-command-center.sh) then re-run this installer."
+      [[ -f "$STATE_FILE" ]] && state_set_arg '.commandCenterHqEnabled = false | .commandCenterHqStatus = ("schema-unavailable: " + $val)' "${out#MISSING:}" 2>/dev/null || true
+      ;;
+    *)
+      log "WARN" "phase=6k hq-capability: $out — flag left UNSET (descriptive setup status; not a claim of capability)"
+      ;;
+  esac
+  return 0
+}
+
 # ---- P1-07: single canonical CC update path ----
 #
 # Problem this closes (P1-07 / BUILD-05 tail): the old --update-only path built
@@ -2172,6 +2257,16 @@ else
   state_set '.commandCenterPhase6Done = true'
   log "INFO" "phase=6 dashboard-deploy: done"
 fi
+
+# ----------------------------------------------------------------------
+# PHASE 6k — Headquarters availability flag (capability checks)
+# ----------------------------------------------------------------------
+# DELIBERATELY OUTSIDE the phase-6 if/elif/else above, like 6j: every path
+# (--update-only, already-done skip, full install) converges here, because the
+# flag must describe the box that EXISTS NOW, not the box a first install left.
+# Additive: an operator-set HEADQUARTERS_ENABLED is preserved, never rotated.
+log "INFO" "phase=6k hq-capability: starting"
+cc_hq_capability_check
 
 # ----------------------------------------------------------------------
 # PHASE 6j - Command Center self-heal watchdog cron (ISSUE-04)
