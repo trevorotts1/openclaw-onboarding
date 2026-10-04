@@ -8,11 +8,33 @@
 // Assert-based, no framework, no network, no provider, no client box.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import registerPlugin, { createTelemetry, mintExchangeId, BOUNDS, TOOL_MATCHER } from './dist/index.js';
+import registerPlugin, { createTelemetry, mintExchangeId, BOUNDS, TOOL_MATCHER, MESSAGE_MAX_CHARS } from './dist/index.js';
+
+/**
+ * Independent restatement of SPEC S7 line 293's canonical bytes, and of the
+ * digest B07's route recomputes with: "SHA-256 of UTF-8 serialization of `event`
+ * only: lexicographically sorted ASCII keys at every object level; no extra
+ * whitespace; UTF-8 Unicode emitted directly; JSON control/quote/backslash
+ * escapes". Written here so the envelope is checked against the CONTRACT, not
+ * against the plugin's own implementation of it.
+ */
+function referenceCanonical(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return `[${value.map(referenceCanonical).join(',')}]`;
+  return `{${Object.keys(value).sort()
+    .map((k) => `${referenceCanonical(k)}:${referenceCanonical(value[k])}`).join(',')}}`;
+}
+function referenceContentHash(event) {
+  return createHash('sha256').update(referenceCanonical(event), 'utf8').digest('hex');
+}
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-b-B19-'));
 const COMPANY = 'company-test';
@@ -144,8 +166,11 @@ check('Q06 synchronous ok/reply: requested then replied, one envelope each', () 
   assert.equal(outboxFiles(l, id, 'replied').length, 1);
   const replied = readOutbox(l, id, 'replied');
   assert.equal(replied.event.sourceKey, `exchange:${id}:replied`);
-  assert.equal(replied.event.phase, undefined); // phase is carried by sourceKey, not a duplicate field
+  assert.equal(replied.event.phase, 'replied'); // SPEC S7 line 291: phase is a required event key
   assert.equal(replied.event.kind, 'exchange');
+  assert.match(replied.contentHash, /^[0-9a-f]{64}$/); // S7 line 291: envelope carries contentHash
+  assert.equal(replied.schemaVersion, 1);
+  assert.equal(Object.keys(replied).sort().join(','), 'contentHash,event,schemaVersion,sentAt');
   assert.equal(replied.event.payload.message, 'report sent');
   assert.equal(replied.event.payload.nativeStatus, 'ok');
   assert.equal(replied.event.payload.correlationStatus, 'linked');
@@ -740,6 +765,136 @@ check('executionSettled absent on a terminal-shaped phase is not treated as term
   assert.deepEqual(res, { ok: false, reason: 'not-settled' });
   const id = mintExchangeId([INSTALL, CALLER, 'run-se', 'call-se']);
   assert.equal(outboxFiles(l, id, 'replied').length, 0);
+});
+
+// ── 15. Frozen receiver contract (fixLoop round 1: F1-F4 regression) ────
+
+check('F1 envelope carries phase and a canonical contentHash over the event only', () => {
+  const l = lane('frozen-envelope');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-h', 'call-h', 'sessions_send', 'hash me'));
+  t.afterToolCall(...afterEvent(CALLER, 'run-h', 'call-h', 'sessions_send', {
+    status: 'ok', runId: 'run-h', sessionKey: TARGET, reply: 'hashed reply',
+  }));
+  const id = mintExchangeId([INSTALL, CALLER, 'run-h', 'call-h']);
+  for (const phase of ['requested', 'replied']) {
+    const envelope = readOutbox(l, id, phase);
+    assert.equal(envelope.event.phase, phase);
+    assert.deepEqual(Object.keys(envelope).sort(), ['contentHash', 'event', 'schemaVersion', 'sentAt']);
+    // S7 line 293: SHA-256 over the canonical serialization of `event` ONLY.
+    // Recomputed from the SPEC formula by this file's own independent
+    // implementation, never read back from the plugin.
+    assert.equal(envelope.contentHash, referenceContentHash(envelope.event));
+    assert.match(envelope.contentHash, /^[0-9a-f]{64}$/);
+    // The hash covers `event` and nothing else: the outer sentAt is excluded.
+    assert.notEqual(envelope.contentHash, referenceContentHash(envelope));
+  }
+});
+
+check('F1 canonical bytes match the SPEC formula on ordering, escapes and Unicode', () => {
+  // Same shape the receiver recomputes with: sorted ASCII keys at every level,
+  // no whitespace, UTF-8 emitted directly, JSON control/quote/backslash escapes.
+  const a = { b: 1, a: 'x"y\\z', c: '\u0007 é 日', d: null, e: [true, 2] };
+  const b = { e: [true, 2], d: null, c: '\u0007 é 日', a: 'x"y\\z', b: 1 };
+  // Sorted keys, no whitespace, quote/backslash escaped, control char escaped,
+  // and non-ASCII emitted directly as UTF-8 (a literal é/日, never an escape).
+  assert.equal(
+    referenceCanonical(a),
+    '{"a":"x\\"y\\\\z","b":1,"c":' + JSON.stringify('\u0007 é 日') + ',"d":null,"e":[true,2]}',
+  );
+  assert.equal(referenceContentHash(a), referenceContentHash(b), 'key order must not change the hash');
+  assert.notEqual(referenceContentHash(a), referenceContentHash({ ...a, b: 2 }));
+  // The plugin agrees with that literal on a real emitted event.
+  const l = lane('canonical-bytes');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  const tricky = 'quote " backslash \\ ctrl \u0007 accented é cjk 日';
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-cb', 'call-cb', 'sessions_send', tricky));
+  const envelope = readOutbox(l, mintExchangeId([INSTALL, CALLER, 'run-cb', 'call-cb']), 'requested');
+  assert.equal(envelope.contentHash, referenceContentHash(envelope.event));
+});
+
+check('F2 request and reply text are clamped to the S5 caps before payload construction', () => {
+  const l = lane('clamp');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  const big = `${'a'.repeat(MESSAGE_MAX_CHARS + 1000)}TAIL`;
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-cl', 'call-cl', 'sessions_send', big));
+  const id = mintExchangeId([INSTALL, CALLER, 'run-cl', 'call-cl']);
+  const requested = readOutbox(l, id, 'requested');
+  assert.equal(requested.event.payload.message.length, MESSAGE_MAX_CHARS);
+  assert.equal(requested.event.payload.message.endsWith('TAIL'), false, 'oversize text must be truncated');
+  t.afterToolCall(...afterEvent(CALLER, 'run-cl', 'call-cl', 'sessions_send', {
+    status: 'ok', runId: 'run-cl', sessionKey: TARGET, reply: big,
+  }));
+  assert.equal(readOutbox(l, id, 'replied').event.payload.message.length, MESSAGE_MAX_CHARS);
+  // A truncation must never split a surrogate pair into a lone surrogate.
+  const l2 = lane('clamp-surrogate');
+  const t2 = makeTelemetry(l2, { config: { publicSessionKeys: [CALLER] } });
+  const astral = `${'b'.repeat(MESSAGE_MAX_CHARS - 1)}\u{1f680}\u{1f680}`;
+  t2.beforeToolCall(...beforeEvent(CALLER, 'run-cs', 'call-cs', 'sessions_send', astral));
+  const id2 = mintExchangeId([INSTALL, CALLER, 'run-cs', 'call-cs']);
+  const clamped = readOutbox(l2, id2, 'requested').event.payload.message;
+  // 7,999 'b' + two astral rockets: an unguarded slice(0, 8000) would end on a
+  // dangling high surrogate, so the clamp must back off one code unit.
+  assert.equal(clamped.length, MESSAGE_MAX_CHARS - 1);
+  const lastCode = clamped.charCodeAt(clamped.length - 1);
+  assert.equal(lastCode >= 0xd800 && lastCode <= 0xdbff, false, 'clamped text ends in a lone high surrogate');
+});
+
+check('F3 same reply from both sources corroborates instead of degrading capture', () => {
+  const l = lane('corroborate');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-co', 'call-co', 'sessions_send', 'x'));
+  t.afterToolCall(...afterEvent(CALLER, 'run-co', 'call-co', 'sessions_send', {
+    status: 'ok', runId: 'run-co', sessionKey: TARGET, reply: 'same reply',
+  }));
+  const id = mintExchangeId([INSTALL, CALLER, 'run-co', 'call-co']);
+  const before = outboxFiles(l, id, 'replied').length;
+  const res = t.handleAgentEvent(lifecycleEvent('run-co', TARGET, {
+    phase: 'end', executionSettled: true, terminalReply: { disposition: 'visible', text: 'same reply' },
+  }));
+  assert.equal(res.outcome, 'corroboration'); // S5 line 184: emit once, record the second source
+  assert.equal(outboxFiles(l, id, 'replied').length, before, 'corroboration must not append a second payload');
+  const rec = t.records()[0];
+  assert.equal(rec.corroborations.length, 1);
+  assert.equal(rec.conflicts.length, 0, 'the SPEC corroboration case must not be reported as a conflict');
+  assert.equal(t.health.conflicts, 0);
+  assert.equal(t.health.degraded, false, 'normal pairing must not degrade capture health');
+});
+
+check('F3 a genuinely different lifecycle reply stays a conflict', () => {
+  const l = lane('corroborate-mismatch');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-cm', 'call-cm', 'sessions_send', 'x'));
+  t.afterToolCall(...afterEvent(CALLER, 'run-cm', 'call-cm', 'sessions_send', {
+    status: 'ok', runId: 'run-cm', sessionKey: TARGET, reply: 'the synced reply',
+  }));
+  const id = mintExchangeId([INSTALL, CALLER, 'run-cm', 'call-cm']);
+  const res = t.handleAgentEvent(lifecycleEvent('run-cm', TARGET, {
+    phase: 'end', executionSettled: true, terminalReply: { disposition: 'visible', text: 'a different reply' },
+  }));
+  assert.equal(res.outcome, 'conflict');
+  assert.equal(t.records()[0].conflicts.length, 1);
+  assert.equal(t.records()[0].corroborations.length, 0);
+  assert.equal(readOutbox(l, id, 'replied').event.payload.message, 'the synced reply');
+});
+
+check('F4 a conflict is durable on disk and survives a fresh process', () => {
+  const l = lane('conflict-durable');
+  const t = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  t.beforeToolCall(...beforeEvent(CALLER, 'run-cd', 'call-cd', 'sessions_send', 'x'));
+  t.afterToolCall(...afterEvent(CALLER, 'run-cd', 'call-cd', 'sessions_send', {
+    status: 'ok', runId: 'run-cd', sessionKey: TARGET, reply: 'first content',
+  }));
+  t.afterToolCall(...afterEvent(CALLER, 'run-cd', 'call-cd', 'sessions_send', {
+    status: 'ok', runId: 'run-cd', sessionKey: TARGET, reply: 'different content',
+  }));
+  const id = mintExchangeId([INSTALL, CALLER, 'run-cd', 'call-cd']);
+  const onDisk = JSON.parse(fs.readFileSync(path.join(l.dir, `${id}.json`), 'utf8'));
+  assert.equal(onDisk.conflicts.length, 1, 'the diagnostic must be persisted, not memory-only');
+  assert.equal(onDisk.conflicts[0].phase, 'replied');
+  const fresh = makeTelemetry(l, { config: { publicSessionKeys: [CALLER] } });
+  assert.equal(fresh.records()[0].conflicts.length, 1, 'a restart must not lose the conflict record');
+  assert.equal(readOutbox(l, id, 'replied').event.payload.message, 'first content', 'never an overwrite');
 });
 
 // ── Report ──────────────────────────────────────────────────────────────

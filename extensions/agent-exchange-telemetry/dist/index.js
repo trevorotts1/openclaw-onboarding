@@ -31,6 +31,10 @@ export const NATIVE_STATUSES = ['accepted', 'ok', 'timeout', 'error', 'forbidden
 export const TARGET_DISPOSITIONS = ['queued', 'steered'];
 export const CORRELATION_STATUSES = ['linked', 'unresolved', 'unsupported'];
 
+/** S5 safe content: full captured exchange message 8,000 chars, summary 2,000. */
+export const MESSAGE_MAX_CHARS = 8000;
+const SUMMARY_MAX_CHARS = 2000;
+
 /** S5 frozen pending-join bounds and S5 outbox bounds. */
 export const BOUNDS = {
   maxEntries: 1000,
@@ -60,6 +64,53 @@ export function mintExchangeId(tuple) {
   const preimage = exchangePreimage(tuple);
   if (preimage === null) return null;
   return createHash('sha256').update(preimage, 'utf8').digest('hex');
+}
+
+// ── S7 semantic hash: contentHash over the event only ────────────────────
+// SPEC S7 line 293: "Semantic hash is SHA-256 of UTF-8 serialization of `event`
+// only: lexicographically sorted ASCII keys at every object level; no extra
+// whitespace; UTF-8 Unicode emitted directly; JSON control/quote/backslash
+// escapes; reject lone surrogates, NaN, duplicate keys and non-integer numbers."
+// Byte-identical to P01 `hqSemanticSerialize` (the receiver's own copy, which
+// B07 route gate 9 recomputes with) and to Python
+// `json.dumps(event,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)`.
+function assertNoLoneSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+      if (next < 0xdc00 || next > 0xdfff) throw new Error('semantic value contains a lone surrogate');
+      i += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new Error('semantic value contains a lone surrogate');
+    }
+  }
+}
+
+function semanticSerialize(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') {
+    assertNoLoneSurrogate(value);
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) throw new Error('semantic value has a non-integer or unsafe number');
+    return String(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(semanticSerialize).join(',')}]`;
+  if (typeof value === 'object') {
+    const parts = Object.keys(value)
+      .sort()
+      .map((key) => `${semanticSerialize(key)}:${semanticSerialize(value[key])}`);
+    return `{${parts.join(',')}}`;
+  }
+  throw new Error(`semantic value has unsupported type ${typeof value}`);
+}
+
+/** Lowercase hex SHA-256 of the canonical event bytes (S7 line 293). */
+function contentHashFor(event) {
+  return createHash('sha256').update(semanticSerialize(event), 'utf8').digest('hex');
 }
 
 // ── Ancestry: private / public / unknown (S5 step 1 + step 5 transitivity) ──
@@ -330,13 +381,22 @@ export function slugFor(exchangeId, phase) {
   return `exchange_${exchangeId}_${phase}`;
 }
 
+/** S5 safe content caps: message 8,000 chars, summary 2,000 (never split a surrogate pair). */
+function clampText(value, maxChars) {
+  if (value.length <= maxChars) return value;
+  let end = maxChars;
+  const last = value.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return value.slice(0, end);
+}
+
 function buildPayload(rec, phase, extra) {
   // The privacy gate lives HERE, at the single construction point, so a
   // private/unknown text value cannot be persisted or enqueued by any caller.
   const visible = rec.privacy === 'public';
   return {
-    message: visible && typeof extra.message === 'string' ? extra.message : null,
-    summary: visible && typeof extra.summary === 'string' ? extra.summary : '',
+    message: visible && typeof extra.message === 'string' ? clampText(extra.message, MESSAGE_MAX_CHARS) : null,
+    summary: visible && typeof extra.summary === 'string' ? clampText(extra.summary, SUMMARY_MAX_CHARS) : '',
     toolName: rec.toolName ?? null,
     toolCallId: rec.toolCallId ?? null,
     callerRunId: rec.callerRunId ?? null,
@@ -354,6 +414,8 @@ function buildEvent(rec, phase, payload, meta) {
   return {
     eventId: meta.eventId,
     sourceKey: `exchange:${rec.exchangeId}:${phase}`,
+    // S7 line 291: `phase` is a required event key (kinds/phases pairing).
+    phase,
     installationId: rec.installationId ?? null,
     companyId: rec.companyId ?? null,
     issuedAt: meta.issuedAt,
@@ -464,6 +526,7 @@ export function createTelemetry(options = {}) {
       phases: {},
       emits: {},
       conflicts: [],
+      corroborations: [],
       createdAt: at,
       updatedAt: at,
     };
@@ -483,21 +546,42 @@ export function createTelemetry(options = {}) {
     const payload = buildPayload(rec, phase, extra);
     const fingerprint = JSON.stringify(payload);
     const prior = rec.emits[phase];
+    // Only a comparable (non-suppressed) equal reply proves corroboration; the
+    // text itself never enters the correlation store, only its hash.
+    const replyHash = typeof payload.message === 'string'
+      ? createHash('sha256').update(payload.message, 'utf8').digest('hex') : null;
     let meta;
     if (prior) {
       if (prior.fingerprint !== fingerprint) {
+        // S5 line 184: a differing fingerprint is not automatically a conflict.
+        // The synchronous result and the lifecycle terminal are different
+        // sources for the SAME reply, so compare observed reply content across
+        // sources first: equal = corroboration (no second payload), differing =
+        // conflict diagnostic, never an overwrite.
+        // Only a comparable (non-suppressed) equal reply PROVES corroboration
+        // (S5 line 184): two nulls prove nothing, so that pair stays a conflict.
+        if (phase === 'replied' && replyHash !== null && prior.replyHash === replyHash) {
+          rec.corroborations.push({ phase, at: iso(now()), sourceHook: payload.sourceHook ?? null });
+          persist(rec);
+          return 'corroboration';
+        }
         rec.conflicts.push({ phase, at: iso(now()), reason: 'same-phase-different-content' });
         health.conflicts += 1;
         markDegraded('same-phase-conflict');
+        // "Conflict recorded diagnostically, never an overwrite" must survive a
+        // restart, so the diagnostic is durable, not memory-only.
+        persist(rec);
         return 'conflict';
       }
       meta = { eventId: prior.eventId, issuedAt: prior.issuedAt, occurredAt: rec.occurredAt ?? null };
     } else {
       const at = iso(now());
       meta = { eventId: randomUUID(), issuedAt: at, occurredAt: rec.occurredAt ?? null };
-      rec.emits[phase] = { fingerprint, eventId: meta.eventId, issuedAt: meta.issuedAt };
+      rec.emits[phase] = { fingerprint, replyHash, eventId: meta.eventId, issuedAt: meta.issuedAt };
     }
-    const envelope = { schemaVersion: 1, sentAt: meta.issuedAt, event: buildEvent(rec, phase, payload, meta) };
+    const event = buildEvent(rec, phase, payload, meta);
+    // S7 line 291: the envelope carries schemaVersion, sentAt, event, contentHash.
+    const envelope = { schemaVersion: 1, sentAt: meta.issuedAt, event, contentHash: contentHashFor(event) };
     // Durable identity first: a crash between this write and the outbox write
     // leaves a retry with the SAME bytes, which the outbox reports as duplicate.
     const persisted = store.put(rec);
