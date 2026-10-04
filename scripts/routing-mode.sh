@@ -159,7 +159,9 @@ if cmd == "status":
               (" -- " + str(le.get("reason"))) if le.get("reason") else ""))
     if st["mode"] in ("legacy", "off"):
         print("reminder      : JEV is NOT routing on this box; tasks land via the old path. turn it back on: routing-mode.sh set auto")
-    sys.exit(0)
+    # A corrupt store is REPORTED here, but it cannot pass: the same rc 3 contract
+    # as every other subcommand ("cannot tell" is never a pass).
+    sys.exit(0 if st["valid"] else 3)
 
 if not st["valid"]:
     print("routing-mode: the mode store is CORRUPT (%r) -- refusing to act on an unknown value." % st["mode"], file=sys.stderr)

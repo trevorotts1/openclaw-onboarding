@@ -443,6 +443,10 @@ B="$(BOX h-corrupt)"; printf 'turbo\n' > "$B/decision-engine-mode.conf"
 OC_CONFIG="$B" OPENCLAW_ROUTING_NO_RECORD=1 bash "$HC" --oc-config "$B" >"$T/hc4.out" 2>&1; HRC=$?
 [ "$HRC" = 1 ] && grep -q "routing-mode: FAIL" "$T/hc4.out" \
   && ok "a corrupt mode store FAILS the health check" || bad "corrupt: $(cat "$T/hc4.out")"
+B="$(BOX h-corrupt2)"; printf 'turbo\n' > "$B/decision-engine-mode.conf"
+S "$B" status
+[ "$RC" = 3 ] && grep -q "CORRUPT" <<<"$OUT" \
+  && ok "status on a corrupt store cannot pass (rc 3: cannot tell is never a pass)" || bad "status corrupt rc=$RC"
 
 B="$(BOX h-md)"; printf 'model\n' > "$B/decision-engine-mode.conf"
 printf '{"agents":{"defaults":{"model":{"primary":"anthropic/claude-x"}}}}' > "$B/openclaw.json"
