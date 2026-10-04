@@ -118,7 +118,6 @@ _SOURCE_HOOKS = ("before_tool_call", "after_tool_call", "lifecycle", "task_dispa
 _NATIVE_STATUSES = ("accepted", "ok", "timeout", "error", "forbidden", "no_reply", "queued", "end")
 _TARGET_DISPOSITIONS = ("queued", "steered")
 _CORRELATION_STATUSES = ("linked", "unresolved", "unsupported")
-_DECISION_MODES = ("live", "shadow", "unavailable", "off", "legacy")
 
 # All keys present; null is not omission.  Unknown keys rejected (S7).
 _EVENT_KEYS = (
@@ -141,7 +140,9 @@ _EXCHANGE_PAYLOAD_KEYS = (
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                       r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _SOURCE_KEY_RE = re.compile(
-    r"^(task|transition|decision|exchange|note):[^\s:]+(:[a-z_]+)?$")
+    # SPEC S5 names `activity:<existingId>` as the FIRST task-activity family;
+    # `note:` carries the owner_note kind, which S5's list does not cover.
+    r"^(task|activity|transition|decision|exchange|note):[^\s:]+(:[a-z_]+)?$")
 _PENDING_PREFIX = "evt-"
 
 
@@ -316,6 +317,11 @@ def validate_event(event) -> dict:
                  "%s must be a non-empty string" % field)
     _require(isinstance(event["issuedAt"], str) and event["issuedAt"].endswith("Z"),
              "issuedAt must be a UTC ISO string ending in Z")
+    # S7's 24-hour producer expiry reads this timestamp; an unparseable one
+    # would return None there and silently switch the bound off, so it is
+    # refused here — the one place the producer's own clock can be checked.
+    _require(_parse_iso(event["issuedAt"]) is not None,
+             "issuedAt must be a parseable UTC ISO instant")
     if event["occurredAt"] is not None:
         _require(isinstance(event["occurredAt"], str) and event["occurredAt"].endswith("Z"),
                  "occurredAt must be null or a UTC ISO string ending in Z")
@@ -347,7 +353,11 @@ def validate_payload(kind: str, payload) -> dict:
     elif kind == "owner_note":
         _require(set(payload) == set(_OWNER_NOTE_PAYLOAD_KEYS),
                  "owner_note payload keys must be exactly ['text']")
+        # S7: owner_note `{text}` — non-nullable, exactly as the frozen P01
+        # schema (`text: z.string()`) types it. Accepting null here would
+        # admit an event the receiver's validator refuses.
         _str_or_none(payload["text"], "payload.text")
+        _require(payload["text"] is not None, "payload.text must be a string")
     elif kind == "decision":
         _require(set(payload) == set(_DECISION_PAYLOAD_KEYS),
                  "decision payload keys must be exactly %s" % (list(_DECISION_PAYLOAD_KEYS),))
@@ -358,10 +368,17 @@ def validate_payload(kind: str, payload) -> dict:
             _require(isinstance(bps, int) and not isinstance(bps, bool),
                      "payload.confidenceBps must be an integer or null")
             _require(0 <= bps <= 10_000, "payload.confidenceBps must be 0..10000")
-        _require(isinstance(payload["fallback"], bool), "payload.fallback must be a boolean")
+        # S7: decision payload is "nullable except mode". The frozen P01 schema
+        # types fallback `.nullable()`, and S5 requires a JEV receipt to store
+        # "missing fields ... null" — so null is legal here and must pass.
+        fallback = payload["fallback"]
+        if fallback is not None:
+            _require(isinstance(fallback, bool), "payload.fallback must be a boolean or null")
+        # mode stays required and non-null, but its VALUE is open: SPEC S7 and
+        # the frozen P01 validator both type it plain `string`, so an invented
+        # enum here would hard-refuse a mode the receiver accepts.
+        _str_or_none(payload["mode"], "payload.mode")
         _require(payload["mode"] is not None, "payload.mode is required")
-        _require(payload["mode"] in _DECISION_MODES,
-                 "payload.mode has unsupported value %r" % (payload["mode"],))
     elif kind == "exchange":
         _require(set(payload) == set(_EXCHANGE_PAYLOAD_KEYS),
                  "exchange payload keys must be exactly %s" % (list(_EXCHANGE_PAYLOAD_KEYS),))
@@ -539,14 +556,20 @@ class HqOutbox:
     def _degrade(self, health, reason, count=1, at=None):
         """SPEC S5: overflow sets captureHealth=degraded with dropped-count and
         timestamps. Every degradation path goes through here, so a drop is never
-        silent and never merely implied."""
+        silent and never merely implied.
+
+        `count=0` marks a degraded state that has dropped NOTHING — a standing
+        configuration fault (no destination) re-observed on every pass must not
+        inflate a per-event loss counter that no event reached.
+        """
         at = at if at is not None else self.clock()
         health["captureHealth"] = "degraded"
         health.setdefault("since", _iso(at))
-        health["dropped"]["count"] += count
-        health["dropped"]["lastDroppedAt"] = _iso(at)
-        reasons = health["dropped"].setdefault("reasons", {})
-        reasons[reason] = reasons.get(reason, 0) + count
+        if count:
+            health["dropped"]["count"] += count
+            health["dropped"]["lastDroppedAt"] = _iso(at)
+            reasons = health["dropped"].setdefault("reasons", {})
+            reasons[reason] = reasons.get(reason, 0) + count
         return health
 
     def capture_health(self):
@@ -778,7 +801,10 @@ class HqOutbox:
         if transport is None:
             transport = HqHttpTransport()
         if not getattr(transport, "configured", lambda: True)():
-            health = self._degrade(health, "no-destination", at=now)
+            # A missing destination is a standing fault, not a per-event loss:
+            # nothing was dropped and the pending files are untouched, so this
+            # degrades WITHOUT incrementing the dropped counter or its reasons.
+            health = self._degrade(health, "no-destination", at=now, count=0)
             health["lastDeliveryFailure"] = {"at": _iso(now), "error": "no destination configured"}
             self._write_health(health)
             result["skipped"] = len(self._pending())
@@ -848,7 +874,23 @@ class HqOutbox:
                 continue
             if status == 409:         # same key / different content
                 # Left in place on purpose: overwriting would destroy the very
-                # evidence an operator needs. Diagnosed, not resolved.
+                # evidence an operator needs. Diagnosed, not resolved, and — per
+                # SPEC S5's "30-second retry minimum ... no busy loop" — the
+                # attempt is still persisted: without a nextAttemptAtUnix every
+                # flush would re-POST the same permanent conflict forever.
+                # (Unlike the 4xx branch below, this file is NOT unlinked.)
+                attempts += 1
+                envelope["attempts"] = attempts
+                envelope["lastAttemptAt"] = _iso(now)
+                envelope["nextAttemptAtUnix"] = now + hq_retry_delay(attempts)
+                envelope["lastError"] = "http-409"
+                try:
+                    _atomic_write_bytes(
+                        path,
+                        (json.dumps(envelope, ensure_ascii=False, sort_keys=True,
+                                    separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8"))
+                except OSError:
+                    pass
                 health["conflicts"]["count"] += 1
                 health["conflicts"]["lastConflictAt"] = _iso(now)
                 result["rejected"] += 1
@@ -1002,6 +1044,19 @@ def golden_vectors():
                          payload=dict(base["payload"], summary="é☃ \U0001f600"))
     rejected = dict(base, kind="task", phase="created", sourceKey="task:t-1",
                     exchangeId=None, payload={"status": "open", "previousStatus": None})
+    # The three validator surfaces the differential sweep found uncovered:
+    # a null on a NON-nullable field, a null on a "nullable except mode" field,
+    # and a decision mode value this producer has never surveyed. The frozen
+    # P01 validator is the reference for all three, so the fixture now pins
+    # them cross-language instead of leaving the disagreement to a sweep.
+    note_null = dict(base, kind="owner_note", phase="recorded",
+                     sourceKey="note:n-3", exchangeId=None, payload={"text": None})
+    decision_null_fallback = dict(base, kind="decision", phase="applied",
+                                  sourceKey="decision:corr-2:applied", exchangeId=None,
+                                  payload=dict(decision["payload"], fallback=None,
+                                               confidenceBps=None))
+    decision_unfamiliar_mode = dict(decision, sourceKey="decision:corr-3:applied",
+                                    payload=dict(decision["payload"], mode="auto"))
     vectors = [
         {"id": "unicode", "note": "UTF-8 Unicode emitted directly, not escaped", "event": unicode_event},
         {"id": "control", "note": "control/quote/backslash escapes", "event": control},
@@ -1009,6 +1064,12 @@ def golden_vectors():
         {"id": "owner_note", "note": "kind/phase pairing owner_note/recorded", "event": owner_note},
         {"id": "decision_bps", "note": "integer basis points, never a float", "event": decision},
         {"id": "kind_phase_mismatch", "note": "must be refused", "event": rejected, "expectError": True},
+        {"id": "owner_note_text_null", "note": "text is non-nullable (P01 z.string())",
+         "event": note_null, "expectError": True},
+        {"id": "decision_null_fallback", "note": "decision payload nullable except mode",
+         "event": decision_null_fallback},
+        {"id": "decision_unfamiliar_mode", "note": "mode value is an open string, not an enum",
+         "event": decision_unfamiliar_mode},
     ]
     for vector in vectors:
         canonical = None
