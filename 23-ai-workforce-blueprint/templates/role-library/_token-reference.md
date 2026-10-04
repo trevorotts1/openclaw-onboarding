@@ -15,6 +15,7 @@ All tokens use double-brace, uppercase, underscore-separated form: `{{TOKEN_NAME
 | `{{INDUSTRY_VERTICAL}}` | Industry slug | "personal-pro-dev" |
 | `{{COMPANY_MISSION_ONE_LINE}}` | From workspace SOUL.md | "Help solo founders build Fortune-500-scale AI workforces" |
 | `{{OWNER_NAME}}` | Owner first name | "Trevor" |
+| `{{AI_CEO_NAME}}` | AI CEO name — a config token, never hardcoded. From company config (`aiCeoName` / `ai_ceo_name`); defaults to "AI CEO". Every install may name its AI CEO differently; the chain-of-command pattern is structural. | "Stephanie" |
 | `{{OWNER_VOICE_SAMPLE}}` | From USER.md Behavioral B-4 answer | "We build AI teams for solo entrepreneurs" |
 | `{{OWNER_COMMUNICATION_STYLE}}` | From behavioral profile | "direct, no jargon" |
 | `{{YEARLY_GOAL}}` | Owner's stated yearly revenue goal | "$2,000,000" |

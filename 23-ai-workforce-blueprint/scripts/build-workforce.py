@@ -140,12 +140,30 @@ try:
         library_lookup as _crw_library_lookup,
         fill_tokens as _crw_fill_tokens,
         normalize_dept as _crw_normalize_dept,
+        record_sop_needed as _crw_record_sop_needed,
+        routing_how_to as _crw_routing_how_to,
+        write_sop_needed_manifest as _crw_write_sop_needed_manifest,
+        ensure_director_role as _crw_ensure_director_role,
+        get_sop_needed_records as _crw_get_sop_needed_records,
     )
     _LIBRARY_FILL_AVAILABLE = True
 except Exception as _e:  # pragma: no cover - defensive
     _LIBRARY_FILL_AVAILABLE = False
     print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
           f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
+    # v25.4.0: the no-stub path needs these names to exist even when the
+    # engine import fails — the fallbacks below refuse loudly rather than
+    # writing a silent placeholder.
+    def _crw_record_sop_needed(*a, **k):
+        raise RuntimeError("create_role_workspaces unavailable: cannot record SOP-needed")
+    def _crw_routing_how_to(*a, **k):
+        raise RuntimeError("create_role_workspaces unavailable: cannot build routing doc")
+    def _crw_write_sop_needed_manifest(*a, **k):
+        return None
+    def _crw_ensure_director_role(roles, dept_slug, dept_name=""):
+        return list(roles or [])
+    def _crw_get_sop_needed_records():
+        return []
 
 # v13.8.14 PROVER-ALIGNMENT (single source of truth): per-role folder creation
 # routes through the SAME engine floor-fill-driver.py uses —
@@ -202,7 +220,8 @@ def _resolve_build_state_path():
     return None
 
 # WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
-_LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
+_LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0,
+                       "routed_to_general_task": 0}
 # Set of role folder names (absolute paths) instantiated from the library, so
 # write_sop_research_manifest() can SKIP them (their SOPs are already authored
 # inside how-to.md - no LLM regeneration needed).
@@ -2558,6 +2577,29 @@ def verify_interview_complete(answers_path=None):
     return result
 
 
+def _guarantee_general_task(selected_departments, floor):
+    """v25.4.0 — general-task is the mandatory catch-all routing target.
+
+    The no-stub installer routes every library-miss role's work to the
+    general-task department. That routing is only valid if the department
+    EXISTS, so general-task is never declinable: even an explicit decline is
+    overridden here with a loud log (the decline stays recorded; it is simply
+    not honored for this one department — the fail-safe-to-the-LARGER-floor
+    posture: visibly over-provisioned beats silently under-routed).
+    """
+    if _canonical_present("general-task", selected_departments):
+        return
+    info = (floor or {}).get("general-task", {}).copy()
+    if not info:
+        info = {"name": "General Task",
+                "description": "Catch-all routing fallback department.",
+                "emoji": "🔀"}
+    selected_departments["general-task"] = info
+    print("[CANONICAL] general-task is the mandatory catch-all routing target "
+          "— force-included even if declined. Routed work must always have a "
+          "department to land in.", file=sys.stderr)
+
+
 def reconcile_canonical_floor(selected_departments, core_answers, departments_config):
     """
     Enforce the canonical floor on the client's selected departments.
@@ -2618,6 +2660,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
               f"{len(selected_departments)} departments carried forward, "
               f"{len(declined)} provenanced decline(s) retired, "
               f"0 re-added.", file=sys.stderr)
+        _guarantee_general_task(selected_departments, floor)
         return selected_departments
 
     industry = core_answers.get("industry", "") or ""
@@ -2685,6 +2728,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     print(f"[CANONICAL] Floor reconciled: {len(selected_departments)} departments "
           f"({len(auto_included)} auto-included, {len(client_customs)} client customs, "
           f"{len(declined)} declined).", file=sys.stderr)
+    _guarantee_general_task(selected_departments, floor)
     return selected_departments
 
 
@@ -3206,30 +3250,39 @@ def materialize_custom_roles(dept_id, dept_info, dept_config, interview_answers)
         os.makedirs(role_dir, exist_ok=True)
         how_to_path = os.path.join(role_dir, "how-to.md")
         if not os.path.isfile(how_to_path):
-            with open(how_to_path, "w") as f:
-                f.write(f"""# {title} - how-to.md  [PENDING - OWNER-REQUESTED CUSTOM ROLE - FILL FROM LIBRARY]
-
-**Department:** {dept_info['name']} ({dept_info.get('emoji', '')})
-**Company:** {company_name}
-**Industry:** {industry}
-**Staffing:** {"permanent specialist" if permanent else "on-call specialist"}
-**Owner request:** {summary or "(owner asked for this role during the interview; no extra detail captured)"}
-**Status:** PENDING - owner-requested custom role; fill from the nearest role-library template family.
-
-> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
-> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
->    nearest template family (closest role title). If none, use the closest dept family.
-> 2. Copy that template and TOKEN-FILL: company = `{company_name}`, role = `{title}`,
->    department = `{dept_info['name']}`, industry = `{industry}`.
-> 3. Keep the template's Section-9 SOP structure intact. If the owner gave a
->    specific procedure for this role (see the dept's owner-procedures.md), fold it
->    into the relevant SOP step.
-> 4. Once filled, remove this PENDING header - the role drops off PENDING-SOPS.md.
-
-## What This Role Does
-
-{summary or f"Owner-requested specialist in the {dept_info['name']} department. Materialized as a build decision (Capability 3)."}
-""")
+            # v25.4.0: NO PENDING stubs — not even for owner-requested custom
+            # roles. Library fill first; on a miss, the routing notice sends
+            # the role's work to general-task and a SOP-needed record tracks
+            # the gap for the authoring step.
+            _custom_filled = None
+            if _LIBRARY_FILL_AVAILABLE:
+                try:
+                    _doc, _entry = _crw_library_lookup(slug, dept_id)
+                    if _doc:
+                        _custom_filled = _crw_fill_tokens(
+                            _doc.read_text(encoding="utf-8"), title,
+                            dept_info["name"], False, role_entry=_entry)
+                        if len(_custom_filled.encode("utf-8")) < 3072:
+                            _custom_filled = None
+                except Exception as _e:  # noqa: BLE001 — lookup never breaks the build
+                    print(f"[CUSTOM-ROLE] library lookup failed for '{title}': {_e}",
+                          file=sys.stderr)
+            if _custom_filled is not None:
+                with open(how_to_path, "w") as f:
+                    f.write(_custom_filled)
+                print(f"[CUSTOM-ROLE] '{title}' library-filled.", file=sys.stderr)
+            else:
+                _rec = _crw_record_sop_needed(
+                    title, dept_id,
+                    "no role-library template matched (owner-requested custom role)",
+                    role_folder=role_dir, how_to_path=how_to_path,
+                    role_description=summary)
+                with open(how_to_path, "w") as f:
+                    f.write(_crw_routing_how_to(
+                        title, dept_info["name"], dept_id, company_name,
+                        industry, _rec["id"], role_description=summary))
+                print(f"[CUSTOM-ROLE] '{title}' no template — routed to general-task "
+                      f"+ SOP-needed record {_rec['id']}.", file=sys.stderr)
         existing_slugs.add(slug)
         created.append(role_dir)
         built_records.append({"dept": dept_id, "title": title, "slug": slug, "permanent": permanent})
@@ -3693,6 +3746,8 @@ def apply_standard_edits(config):
         custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
+        # v25.4.0 — NO EMPTY DEPARTMENTS: final on-disk refusal.
+        _refuse_empty_department_on_disk(dept_id)
         capture_custom_sops(dept_id, dept_info, dept_config, dept_answers)
         specialists, _decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
         specialists_by_dept[dept_id] = specialists
@@ -3707,11 +3762,13 @@ def apply_standard_edits(config):
                       f"{dept_id}: {_pe}", file=sys.stderr)
     _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
     _llm = _LIBRARY_FILL_STATS["llm_generated"]
-    _tot = _inst + _llm
+    _routed = _LIBRARY_FILL_STATS["routed_to_general_task"]
+    _tot = _inst + _llm + _routed
     _pct = (100 * _inst // _tot) if _tot else 0
     print(f"[STANDARD-FIRST ROLE-LIBRARY SUMMARY] Roles touched: {_tot} | "
           f"instantiated-from-library: {_inst} ({_pct}%) | "
-          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          f"routed-to-general-task (no template): {_routed} | "
+          f"LLM-generated (no template): {_llm}",
           file=sys.stderr)
 
     # ── ASSEMBLY (org chart, rosters, routing map, manifests) — mirrors the
@@ -3724,7 +3781,7 @@ def apply_standard_edits(config):
         write_department_roster(dept_id, dept_info)
         write_department_how_to_use(dept_id, dept_info, company_name)
     write_universal_routing_map(selected_departments)
-    write_pending_sops_manifest(selected_departments)
+    write_sop_needed_manifest(selected_departments)
     manifest_path = write_sop_research_manifest(
         company_name=company_name,
         industry=industry,
@@ -4233,6 +4290,8 @@ def build_from_config(config):
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
             print(f"[NON-INTERACTIVE] Added {len(custom_role_folders)} owner-requested custom role(s) to {dept_id}/", file=sys.stderr)
+        # v25.4.0 — NO EMPTY DEPARTMENTS: final on-disk refusal.
+        _refuse_empty_department_on_disk(dept_id)
 
         # CAPABILITY 4 (PRD R2.5): capture this owner's department-specific
         # procedures as a build decision, respecting sop_boundary_gate.py
@@ -4274,11 +4333,13 @@ def build_from_config(config):
     # (deterministic, identical across clients) rather than regenerating SOPs.
     _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
     _llm = _LIBRARY_FILL_STATS["llm_generated"]
-    _tot = _inst + _llm
+    _routed = _LIBRARY_FILL_STATS["routed_to_general_task"]
+    _tot = _inst + _llm + _routed
     _pct = (100 * _inst // _tot) if _tot else 0
     print(f"[ROLE-LIBRARY SUMMARY] Roles staffed: {_tot} | "
           f"instantiated-from-library: {_inst} ({_pct}%) | "
-          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          f"routed-to-general-task (no template): {_routed} | "
+          f"LLM-generated (no template): {_llm}",
           file=sys.stderr)
 
     # Load persona categories and create governing personas
@@ -4314,7 +4375,7 @@ def build_from_config(config):
     # Gap-3: collect every NO_TEMPLATE role (PENDING how-to.md) into a single
     # company-root manifest so the orchestrator knows exactly what to fill - a
     # missing template is never a silent empty stub.
-    write_pending_sops_manifest(selected_departments)
+    write_sop_needed_manifest(selected_departments)
 
     # Issue #9: all department roles are on disk; the org chart, rosters, routing
     # map and persona matrix are being assembled.
@@ -6457,6 +6518,31 @@ def library_floor_roles(dept_id, roles, dept_dir=None):
     return roles
 
 
+def _refuse_empty_department_on_disk(dept_id):
+    """v25.4.0 — NO EMPTY DEPARTMENTS (final on-disk refusal).
+
+    After roster roles + custom roles are materialized, the department must
+    have at least one role folder on disk. A department dir with zero role
+    folders is a shell (N37) — refuse loudly instead of shipping it.
+    """
+    if not DEPARTMENTS_DIR:
+        return
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        return
+    role_dirs = [
+        e for e in os.listdir(dept_dir)
+        if os.path.isdir(os.path.join(dept_dir, e))
+        and os.path.isfile(os.path.join(dept_dir, e, "how-to.md"))
+    ]
+    if not role_dirs:
+        raise ValueError(
+            f"[installer] REFUSING department '{dept_id}': zero role folders "
+            f"on disk after roster + custom-role materialization. A "
+            f"department with no roles is forbidden — remove it from the "
+            f"install spec or give it roles.")
+
+
 def create_role_workspace(dept_id, dept_info, interview_answers):
     """
     Create role subfolders inside a department workspace.
@@ -6483,11 +6569,25 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
 
     # Parse the suggested-roles file, then align it to the role library's floor.
     roles = library_floor_roles(dept_id, parse_suggested_roles(dept_id), dept_dir)
+
+    # v25.4.0 — DIRECTOR REQUIRED: a department without a director is headless.
+    # If the roster + library floor name no director, scaffold one from the
+    # director template (flagged for human review). Same helper the engine
+    # uses, so both instantiation paths agree.
+    if _LIBRARY_FILL_AVAILABLE:
+        roles = _crw_ensure_director_role(
+            roles, dept_id, dept_info.get("name", ""))
+
+    # v25.4.0 — NO EMPTY DEPARTMENTS: refuse to build a department with zero
+    # roles. (Owner-requested custom roles are materialized by the caller right
+    # after this function; the final on-disk refusal lives there. Reaching here
+    # with no roles means the roster, the library floor, AND the director
+    # scaffold all came up empty — a defect, not a quiet skip.)
     if not roles:
-        print(f"[ROLE-WORKSPACE] No roles found for {dept_id}, skipping role workspace creation."
-              f" If roles are expected, check suggested-roles/{DEPT_TO_SUGGESTED_ROLES.get(dept_id, 'unknown')}",
-              file=sys.stderr)
-        return []
+        raise ValueError(
+            f"[installer] REFUSING department '{dept_id}': zero roles after "
+            f"roster parse + library floor + director scaffold. Remove it from "
+            f"the install spec or give it roles.")
 
     company_name = interview_answers.get('company_name', 'the company')
     industry = interview_answers.get('industry', '')
@@ -6522,6 +6622,11 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             "number": _role_number,
             "is_ceo": (_role_number == 0 and (role.get('slug') or '').strip() == "master-orchestrator"),
             "is_qc": bool(role.get('is_qc')),
+            # v25.4.0: passthrough for scaffolded directors — the engine uses
+            # this to fill the generic director scaffold when the department
+            # has no director template of its own.
+            "_director_template_key": role.get("_director_template_key"),
+            "_scaffolded_director": bool(role.get("_scaffolded_director")),
         }
         if _ENGINE_ROLE_WRITER_AVAILABLE:
             try:
@@ -6578,52 +6683,32 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             print(f"[ROLE-LIBRARY] INSTANTIATED {folder_name} ({dept_id}) "
                   f"← role-library (SOPs included, no LLM regen)", file=sys.stderr)
         else:
-            _LIBRARY_FILL_STATS["llm_generated"] += 1
+            _LIBRARY_FILL_STATS["routed_to_general_task"] += 1
             print(f"[ROLE-LIBRARY] NO TEMPLATE for {folder_name} ({dept_id}) "
-                  f"- writing PENDING how-to.md stub (collected in PENDING-SOPS.md)",
-                  file=sys.stderr)
-            # Gap-3: NO_TEMPLATE roles must NOT leave a silent empty stub. Write a
-            # how-to.md clearly headed PENDING, carrying the EXACT one-shot
-            # instruction to populate it FROM the nearest role-library template
-            # family (token-fill, NOT a free-form LLM essay). It is also collected
-            # into the company-root PENDING-SOPS.md manifest so the orchestrator
-            # knows what to fill - never silent.
-            # v13.8.14: the engine (create_role_workspace) already wrote a PENDING
-            # stub how-to.md when no library matched. Overwrite it with
-            # build-workforce's richer PENDING how-to (company/industry tokens +
-            # the company-root PENDING-SOPS.md one-shot fill instruction). Both
-            # carry the [PENDING - FILL FROM LIBRARY] marker the manifest scans for.
+                  f"- routing work to general-task + SOP-needed record "
+                  f"(no PENDING stub written)", file=sys.stderr)
+            # v25.4.0: NO silent placeholders. The engine (create_role_workspace)
+            # already wrote a ROUTING how-to.md + emitted the SOP-needed record
+            # when no library matched. Only the legacy fallback path (engine
+            # unavailable) reaches here without one — write it now so the
+            # no-stub invariant holds on every path.
             how_to_path = os.path.join(role_dir, "how-to.md")
-            if True:
-                pending_how_to = f"""# {role['name']} - how-to.md  [PENDING - FILL FROM LIBRARY]
-
-**Department:** {dept_info['name']} ({dept_info['emoji']})
-**Company:** {company_name}
-**Industry:** {industry}
-**Status:** PENDING - no role-library template matched this role.
-
-> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
-> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
->    nearest template family (same department, closest role title). If this
->    department has no library docs, use the closest department's family.
-> 2. Copy that template and TOKEN-FILL only the placeholders:
->    company = `{company_name}`, role = `{role['name']}`, department =
->    `{dept_info['name']}`, industry = `{industry}`.
-> 3. Keep the template's Section-9 SOP structure intact. Reserve free-form
->    generation ONLY if there is genuinely no comparable template.
-> 4. Once filled, remove this PENDING header and this role drops off PENDING-SOPS.md.
-
-## What This Role Does
-{role['description'] if role['description'] else '(see 00-START-HERE.md)'}
-
-## SOPs (read-first)
-The numbered `0N-*.md` files in this folder are step-by-step instruction sets.
-Read the matching SOP BEFORE executing a task it covers. No improvising. If no
-SOP covers the task, do not guess - escalate to the {dept_info['head']} so the
-SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
-"""
+            _head = ""
+            try:
+                with open(how_to_path, encoding="utf-8", errors="replace") as _f:
+                    _head = _f.read(600)
+            except OSError:
+                pass
+            if "[ROUTED — WORK HANDLED BY GENERAL-TASK]" not in _head:
+                _rec = _crw_record_sop_needed(
+                    role["name"], dept_id, "no role-library template matched",
+                    role_folder=role_dir, how_to_path=how_to_path,
+                    role_description=role.get("description", ""))
                 from generated_context import write_new
-                write_new(how_to_path, pending_how_to)
+                write_new(how_to_path, _crw_routing_how_to(
+                    role["name"], dept_info["name"], dept_id, company_name,
+                    industry, _rec["id"],
+                    role_description=role.get("description", "")))
 
         # 1. Create 00-START-HERE.md
         start_here_path = os.path.join(role_dir, "00-START-HERE.md")
@@ -7472,20 +7557,34 @@ def write_universal_routing_map(departments):
     return routing_path
 
 
-def write_pending_sops_manifest(departments):
-    """Write PENDING-SOPS.md at the company root - the human/orchestrator-readable
-    manifest of every role whose how-to.md is a PENDING stub (no library template
-    matched), so the orchestrator knows exactly what still needs filling.
+def write_sop_needed_manifest(departments):
+    """Flush the installer's SOP-needed records to SOP-NEEDED.json.
 
-    Closes the 'silent empty stub' gap: a NO_TEMPLATE role is no longer a quiet
-    placeholder - it is headed PENDING in its own how-to.md AND collected here.
-    Scans the on-disk role folders for how-to.md files that carry the PENDING
-    marker (written by create_role_workspace / create_role_workspaces.stub_how_to).
+    v25.4.0: replaces write_pending_sops_manifest / PENDING-SOPS.md. The
+    installer no longer writes PENDING stubs — a library miss routes the
+    role's work to general-task and emits a machine-readable record
+    (create_role_workspaces.record_sop_needed). This flushes those records to
+    SOP-NEEDED.json (+ the human-readable SOP-NEEDED.md companion) at the
+    company root. The authoring step (scripts/author-missing-sops.py) consumes
+    the JSON; the library gate fails while any record is un-authored.
+
+    Also sweeps the departments tree for legacy PENDING markers: finding one
+    means pre-v25.4.0 code wrote a stub (or something bypassed the installer).
+    Those are reported loudly — they must be filled or converted, never left.
     """
-    if not COMPANY_DIR or not DEPARTMENTS_DIR:
-        return None
-    pending = []  # (dept_id, role_folder, how_to_path)
-    if os.path.isdir(DEPARTMENTS_DIR):
+    manifest_path = None
+    if _LIBRARY_FILL_AVAILABLE:
+        try:
+            manifest_path = _crw_write_sop_needed_manifest(COMPANY_DIR)
+        except Exception as e:
+            print(f"[SOP-NEEDED] manifest write failed: {e}", file=sys.stderr)
+    else:
+        print("[SOP-NEEDED] engine unavailable; skipping manifest", file=sys.stderr)
+
+    # Legacy sweep: PENDING markers must not exist on disk. If they do, say so
+    # loudly — a stub on disk is a build defect under the no-stub rule.
+    legacy = []
+    if DEPARTMENTS_DIR and os.path.isdir(DEPARTMENTS_DIR):
         for dept_id in sorted(departments.keys()):
             dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
             if not os.path.isdir(dept_dir):
@@ -7498,53 +7597,19 @@ def write_pending_sops_manifest(departments):
                 if not os.path.isfile(how_to):
                     continue
                 try:
-                    head = open(how_to).read(600)
+                    head = open(how_to, encoding="utf-8", errors="replace").read(600)
                 except OSError:
                     continue
                 if "PENDING - FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
-                    pending.append((dept_id, entry, how_to))
-
-    lines = [
-        "# PENDING-SOPS.md - Role how-to.md files awaiting library fill",
-        "",
-        f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
-        "",
-    ]
-    if not pending:
-        lines += [
-            "All role `how-to.md` files were instantiated from the role-library "
-            "(token-fill). Nothing pending. ✅",
-            "",
-        ]
-    else:
-        lines += [
-            f"**{len(pending)} role(s) have a PENDING how-to.md** - no role-library "
-            "template matched, so each carries a PENDING header with a one-shot "
-            "fill instruction. Populate each FROM the nearest library template "
-            "family (token-fill style, NOT a free-form LLM essay). Do NOT mark the "
-            "workforce complete until this list is empty.",
-            "",
-            "| Department | Role folder | how-to.md |",
-            "| --- | --- | --- |",
-        ]
-        for dept_id, role_folder, how_to in pending:
-            lines.append(f"| {dept_id} | `{role_folder}/` | `{how_to}` |")
-        lines += [
-            "",
-            "## How to fill each (one-shot, token-fill)",
-            "For each row: open the role's `how-to.md`, read its PENDING header for "
-            "the exact instruction, find the nearest matching template family in "
-            "`23-ai-workforce-blueprint/templates/role-library/<dept>/`, copy it, "
-            "and token-fill the company/role/industry placeholders. Reserve "
-            "free-form generation only for roles with NO comparable template.",
-            "",
-        ]
-    manifest_path = os.path.join(COMPANY_DIR, "PENDING-SOPS.md")
-    with open(manifest_path, 'w') as f:
-        f.write("\n".join(lines))
-    print(f"[PENDING-SOPS] Wrote {manifest_path} ({len(pending)} pending)", file=sys.stderr)
+                    legacy.append((dept_id, entry, how_to))
+    if legacy:
+        print(f"[SOP-NEEDED] DEFECT: {len(legacy)} legacy PENDING stub(s) found on "
+              f"disk — PENDING stubs are never written by this installer. Fill them "
+              f"via scripts/fill-pending-howtos.py --apply or convert them; they "
+              f"must not ship:", file=sys.stderr)
+        for dept_id, entry, how_to in legacy:
+            print(f"  [SOP-NEEDED] LEGACY STUB: {dept_id}/{entry}/how-to.md", file=sys.stderr)
     return manifest_path
-
 
 # ============================================================
 # COMMAND CENTER CONFIG GENERATION
