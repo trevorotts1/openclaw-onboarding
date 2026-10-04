@@ -847,6 +847,101 @@ fi
 
 [ "$curl_rc" -eq 0 ] || _escalate "transport failed (curl=$curl_rc) after bounded retry budget"
 
+# ── B18 / SPEC S5: hand the GENUINE task event to the outbox adapter ─────────
+# After this helper's own Command Center write is recorded (2xx), the SAME
+# OBSERVED fields (task id, workspace, department, status) go to ONB
+# shared-utils/hq_activity.py (B17, frozen contract) on a 2-second clock — one
+# source key per task, never a second writer inside CC. Nothing here can change
+# routing, IDs, approval behavior or exit codes: every telemetry failure is
+# swallowed and the card outcome above stands unchanged (SPEC S5: "never blocks
+# the underlying business work or silently claims completeness"). The adapter's
+# own capture-health file is the honest record of any degradation it handles;
+# this helper's stdout/stderr contract is untouched.
+# Producer identity comes from TRUSTED config — MC_INSTALLATION_ID +
+# MC_ROUTE_COMPANY_ID — never from a model-supplied or response-supplied value,
+# and a missing identity sends nothing rather than inventing one (SPEC S7:
+# "request body cannot elevate it"). This is deliberately the ONLY event wired
+# here: native exchange capture is B19's `sessions_send`/`sessions_spawn`
+# extension — this shell script never observes a department exchange, and
+# fabricating one from a card creation would be a false event.
+# Recorded coverage: task created (resolved source key `task:<taskId>`), plus
+# the owner-note/status/cancel events this same task already produces through
+# its own CC writers — not duplicated here because a second writer per source
+# action is forbidden by the same SPEC line.
+_hq_record_task_event() {  # $1 observed task id, $2 workspace, $3 department, $4 status
+  [ -n "${1:-}" ] || return 0
+  local _adapter _root
+  _adapter="${OC_ROOT:-}/shared-utils/hq_activity.py"
+  [ -f "$_adapter" ] || _adapter="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/shared-utils/hq_activity.py"
+  [ -f "$_adapter" ] || return 0
+  _root="${HQ_TENANT_WORKSPACE_ROOT:-${OC_ROOT:-$HOME}}"
+  HQ_ADAPTER="$_adapter" HQ_ROOT="$_root" HQ_TASK_ID="$1" \
+  HQ_TASK_WS="${2:-}" HQ_TASK_DEPT="${3:-}" HQ_TASK_STATUS="${4:-}" \
+    "$PYTHON" - <<'PYHQ' 2>/dev/null || true
+import importlib.util, json, os, sys, time, uuid
+
+
+def _s(value):
+    return None if not isinstance(value, str) or value == "" else value[:512]
+
+
+try:
+    spec = importlib.util.spec_from_file_location("hq_activity", os.environ["HQ_ADAPTER"])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    installation = _s(os.environ.get("MC_INSTALLATION_ID"))
+    company = _s(os.environ.get("MC_ROUTE_COMPANY_ID"))
+    task_id = _s(os.environ.get("HQ_TASK_ID"))
+    if installation is None or company is None or task_id is None:
+        sys.exit(0)  # no trusted identity -> send nothing, never invent one
+    outbox = module.HqOutbox(os.environ["HQ_ROOT"])
+    if outbox.capture_health().get("captureHealth") != "ok":
+        sys.exit(0)  # already-degraded capture stays the honest record, not a flood
+    source_key = ("task:" + task_id)[:512]
+    if not module._SOURCE_KEY_RE.match(source_key):
+        sys.exit(0)  # a task id this adapter cannot key -> dropped, not mangled
+    # SPEC S5: "Mint eventId and issuedAt once with the first durable source
+    # envelope and reuse exact semantic bytes across all retries/backfill. Do not
+    # assign fresh eventId/issuedAt while replaying same source key." A retried
+    # card route therefore reuses the pending envelope's OBSERVED identity (and
+    # reuses the whole event when the observed status has not moved, so the
+    # adapter sees a clean duplicate instead of a same-key conflict). Only a
+    # genuinely different observed status is a new, diagnostic event.
+    event_id, issued_at, pending = str(uuid.uuid4()), \
+        module._iso(time.time()), outbox._find_by_source_key(source_key)
+    if pending is not None:
+        try:
+            previous = module._read_json(pending)["event"]
+            event_id, issued_at = previous["eventId"], previous["issuedAt"]
+            payload = {"status": _s(os.environ.get("HQ_TASK_STATUS")), "previousStatus": None}
+            if previous["payload"] == payload:
+                outbox.enqueue(previous)  # proven retry: complete duplicate, no new bytes
+                sys.exit(0)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    outbox.enqueue({
+        "eventId": event_id,
+        "sourceKey": source_key,
+        "installationId": installation,
+        "companyId": company,
+        "issuedAt": issued_at,
+        "occurredAt": None,
+        "kind": "task",
+        "phase": "created",
+        "taskId": task_id,
+        "actorRuntimeId": "mc-route",
+        "recipientRuntimeId": _s(os.environ.get("HQ_TASK_DEPT")),
+        "fromWorkspaceId": None,
+        "toWorkspaceId": _s(os.environ.get("HQ_TASK_WS")),
+        "exchangeId": None,
+        "payload": {"status": _s(os.environ.get("HQ_TASK_STATUS")),
+                    "previousStatus": None},
+    })
+except BaseException:
+    sys.exit(0)  # telemetry never changes the caller's exit-code contract
+PYHQ
+}
+
 case "$http_code" in
   2[0-9][0-9])
     if [ "$ROUTE_MODE" = "task" ]; then
@@ -864,13 +959,15 @@ if not dept and rb.startswith("auto-route:"):
     dept = rb[len("auto-route:"):]
     if dept == "general-task-fallback":
         dept = "general-task"
-for v in (d.get("task_id"), d.get("workspace_id"), dept or d.get("workspace_id"), rb):
+for v in (d.get("task_id"), d.get("workspace_id"), dept or d.get("workspace_id"), rb, d.get("status")):
     print("" if v is None else str(v))' 2>/dev/null || true)"
       _TASK_ID="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '1p')"
       _TASK_WORKSPACE="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '2p')"
       _TASK_DEPARTMENT="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '3p')"
       _TASK_RESOLVED_BY="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '4p')"
+      _TASK_STATUS="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '5p')"
       [ -n "$_TASK_ID" ] || _escalate "ingest returned HTTP $http_code but no task_id — the card was NOT confirmed"
+      _hq_record_task_event "$_TASK_ID" "$_TASK_WORKSPACE" "$_TASK_DEPARTMENT" "$_TASK_STATUS"
       echo "ROUTED workspace=$_TASK_WORKSPACE department=$_TASK_DEPARTMENT resolved_by=$_TASK_RESOLVED_BY"
       case "$_TASK_WORKSPACE:$_TASK_RESOLVED_BY" in
         :*|*'->ceo'|*'->unrouted')
@@ -945,6 +1042,18 @@ except Exception:
         echo "ESCALATE_TO_OPERATOR: the '$DEPARTMENT_SLUG' department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
       fi
     fi
+    # B18: the same observed card is handed to the outbox adapter in slug mode too
+    # — a legacy department route is a genuine task creation like any other. The
+    # task id is read from the SAME response that was already printed above; a
+    # response without a task id records nothing (never a fabricated id).
+    _SLUG_TASK_ID="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("task_id", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+    _hq_record_task_event "$_SLUG_TASK_ID" "$WS" "$DEPARTMENT_SLUG" ""
     exit 0
     ;;
   403)

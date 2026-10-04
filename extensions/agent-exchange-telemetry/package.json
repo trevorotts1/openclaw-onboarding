@@ -1,0 +1,29 @@
+{
+  "name": "agent-exchange-telemetry",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Passive Headquarters exchange telemetry: before_tool_call/after_tool_call observers plus a run-scoped lifecycle terminal subscription, bounded order-independent joins, privacy-suppressed text, no tool replacement.",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "openclaw.plugin.json"
+  ],
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "dependencies": {},
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.28",
+      "minGatewayVersion": ">=2026.3.28"
+    },
+    "build": {
+      "openclawVersion": "2026.9.8",
+      "pluginSdkVersion": "2026.9.8"
+    }
+  }
+}
