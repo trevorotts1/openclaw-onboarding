@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.3.17"
+ONBOARDING_VERSION="v25.3.18"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1996,7 +1996,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.3.17 - safe_json_edit
+# v25.3.18 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4401,6 +4401,11 @@ main() {
   #                             release that ships them lands through THIS
   #                             same updater)
   # ============================================================
+  # SKILLS_DIR must exist before the front-door block expands it: under
+  # `set -u` an unassigned SKILLS_DIR aborted every run right after
+  # "[lock] acquired" (v25.3.17). Re-resolved below once the front door has
+  # exported OPENCLAW_ROOT, exactly as before.
+  SKILLS_DIR=$(discover_skills_dir)
   if [ "${ONBOARDING_ONLY:-0}" = "1" ]; then
     echo "  [--onboarding-only] skipping the shared tail (repair runner + health gate)"
     fd_rc=0
