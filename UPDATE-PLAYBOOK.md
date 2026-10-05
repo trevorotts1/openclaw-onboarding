@@ -14,7 +14,9 @@ curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/mai
 ```
 This downloads the latest update script directly from GitHub and runs it. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
 
-> **Use the REPO-ROOT `update-skills.sh` — never `scripts/update-skills.sh`.**
+> **Use the REPO-ROOT `update-skills.sh` — there is no other updater.**
+> (The retired `scripts/update-skills.sh` shim was deleted outright, OCT4 issue #10; a
+> stale reference to it fails loudly.)
 > The path differs by one segment. The root script is the canonical updater: it
 > copies every skill unconditionally, syncs `shared-utils` and `universal-sops`,
 > and carries the wiring, state machine, A3 content-gate and manifest/stamp

@@ -26,7 +26,8 @@ LOG_FILE="$HOME/.openclaw/skills/.update-log"
 #   The crontab line is always "0 3 * * 0 $HOME/.openclaw/skills/.update-restart-
 #   if-needed". It never contains the UPDATE_SCRIPT_URL that the referenced
 #   script points at. So a box whose .update-restart-if-needed still pointed at
-#   the LEGACY updater (main/scripts/update-skills.sh -- the version-gated one
+#   the LEGACY updater URL (main/scripts/update-skills.sh -- the retired copy,
+#   since deleted outright from the repo, OCT4 issue #10 -- was the version-gated one
 #   that skips skills and never syncs shared-utils/universal-sops, yet stamps
 #   the version anyway) looked perfectly healthy to this check, and re-running
 #   this installer to "fix" it silently changed nothing.
