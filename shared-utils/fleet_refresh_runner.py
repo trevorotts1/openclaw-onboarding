@@ -42,6 +42,7 @@ from departments_payload import (  # noqa: E402  (same-dir shared helper)
     MalformedDepartmentsError,
     normalize_departments,
 )
+import nine_router_guard  # noqa: E402  (999 skills-only + checksum guard on 9Router boxes)
 
 # The checks a roll reports run AFTER a rollback, and rollback_box resets this
 # very clone to the box's pre-roll commit. Imported lazily, they then ran the
@@ -215,6 +216,7 @@ class BoxResult:
         self.health: dict = {}
         self.rollback: dict = {}
         self.update_999: dict = {}
+        self.nine_router_guard_failed: str = ""   # set when the checksum guard saw a 9Router file change
         self.heal: dict = {}
         # One-word verdict for the fleet summary:
         # UPDATED | ROLLED_BACK | FAILED | SKIPPED  (+ outcome_detail).
@@ -2677,8 +2679,14 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
     if _git(repo, "status", "--porcelain", "--untracked-files=no"):
         res.step_skip("update-999", "999 has local changes, not updated")   # the owner's work is never overwritten
         return
+    # A box that already runs 9Router never takes the link/installer path below:
+    # it gets the installer's `--skills-only` and nothing else, between two
+    # checksum snapshots (see shared-utils/nine_router_guard.py).
+    nr = nine_router_guard.detect(_999_home(), probe=not os.environ.get("FLEET_REFRESH_ROOT"))   # fixture home: never the live port
+    res.update_999["9router"] = {"class": nr["class"], "signals": nr["signals"]}
     if dry_run:
-        res.step_skip("update-999", f"dry-run (999 at {repo})")
+        res.step_skip("update-999", f"dry-run (999 at {repo}"
+                      + ("; 9Router box: would run --skills-only only" if nr["skills_only"] else "") + ")")
         return
     pull = subprocess.run(["git", "-C", str(repo), "pull", "--ff-only", "--quiet"],
                           capture_output=True, text=True, timeout=180)
@@ -2687,6 +2695,23 @@ def step_update_999(res: BoxResult, dry_run: bool) -> None:
         return
     res.update_999["to_sha"] = _git(repo, "rev-parse", "HEAD")
     bash = _bash4() or "bash"
+    if nr["skills_only"]:
+        g = nine_router_guard.skills_only_guarded(repo, _999_home(), bash=bash)
+        res.update_999["skills_only"] = {k: g[k] for k in ("status", "rc", "match", "mismatch", "mismatched", "argv") if k in g}
+        res.update_999["installer"] = (g.get("output") or g.get("detail") or "")[-400:]
+        if g["status"] == "mismatch":
+            # Checksum guard tripped: a 9Router config/database/launcher file
+            # changed. Mark the box FAIL and roll it back (heal_and_gate reads this).
+            res.nine_router_guard_failed = (f"{g['mismatch']} MISMATCH / {g['match']} MATCH: "
+                                            + ", ".join(g["mismatched"])[:200])
+            res.step_fail("update-999", f"9Router guard: {res.nine_router_guard_failed}")
+        elif g["status"] == "failed":
+            res.step_fail("update-999", f"--skills-only exited {g['rc']}: {g['output'][-200:]}")
+        elif g["status"] == "unavailable":
+            res.step_skip("update-999", f"9Router box: {g['detail']}")
+        else:
+            res.step_ok("update-999")
+        return
     link = subprocess.run([bash, "-c", _999_LINK_SCRIPT, "update-999", str(repo)],
                           capture_output=True, text=True, timeout=300,
                           env={**os.environ, "HOME": str(_999_home())})
@@ -4097,6 +4122,12 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             res.outcome_detail = f"not updated: {res.snapshot.get('error')}"
             return res
 
+        # Marker the updater's front door appends 9Router checksum MISMATCH labels to
+        # (labels only, never values); read back after pull-onboarding below.
+        if not dry_run:
+            _fd, _mark = tempfile.mkstemp(prefix="nine-router-guard-")
+            os.close(_fd)
+            os.environ["NINE_ROUTER_GUARD_MARK"] = _mark
         # Step 2: pull-onboarding
         try:
             pinned_onboarding_tag = step_pull_onboarding(paths, repo_root, pinned_onboarding_tag, res, dry_run)
@@ -4110,11 +4141,36 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", UPDATE_HELD
             return res
 
+        # The updater's own front door also runs a 999 step; a 9Router checksum
+        # MISMATCH inside it comes back through this marker file (labels only).
+        mark = Path(os.environ.pop("NINE_ROUTER_GUARD_MARK", "") or "/nonexistent")
+        if mark.is_file():
+            if mark.read_text().strip() and not res.nine_router_guard_failed:
+                res.nine_router_guard_failed = "updater front door: " + mark.read_text().strip().replace("\n", "; ")[:200]
+            mark.unlink()
         # Step 2b: 999-setup, only where it is already installed
         try:
-            step_update_999(res, dry_run)
+            if res.nine_router_guard_failed:   # the updater's front door already tripped the guard: run nothing more
+                res.step_fail("update-999", f"9Router guard: {res.nine_router_guard_failed}")
+            else:
+                step_update_999(res, dry_run)
         except Exception as e:
             res.step_fail("update-999", str(e))
+
+        # 9Router checksum guard tripped: a router config/database/launcher file
+        # changed during the 999 step. No fix attempt can undo that, so roll the
+        # box back now and mark it FAILED; nothing after this step runs.
+        if res.nine_router_guard_failed and not dry_run:
+            reason = f"9Router guard: {res.nine_router_guard_failed}"
+            restored = rollback_box(paths, repo_root, res, [reason])
+            for step in ("pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
+                res.step_skip(step, "9Router guard failed")
+            res.steps["rollback"] = "ok" if restored else "failed:" + "; ".join(res.rollback["errors"])[:200]
+            res.result, res.outcome = "failed", "FAILED"
+            res.outcome_detail = (f"{reason}; box rolled back" if restored
+                                  else f"{reason}; ROLLBACK INCOMPLETE ({'; '.join(res.rollback['errors'])[:160]})")[:400]
+            _err(f"  FAILED: {res.outcome_detail}")
+            return res
 
         # Step 2c: Agnes 3.0 upgrade, only where Agnes is already wired
         try:

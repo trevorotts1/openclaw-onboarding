@@ -528,12 +528,30 @@ $cmd"
   # shellcheck disable=SC2086
   local client_json
   client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
-  copied=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+  # The ssh exit status is kept (not swallowed by the pipe): 255 = ssh itself
+  # could not connect, which is an UNREACHABLE box, not a failed update.
+  local copy_raw ssh_rc=0
+  copy_raw="$(mktemp)"
+  env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
     "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json") FLEET_ROLL_SHA=$(sq "$ROLL_SHA")
 $(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
-    2>>"$RUN_LOG_DIR/${box}.log" | grep -E '^(COPY|COPYFAIL) ' | tail -1 | tr -d '\r' || true)
+    >"$copy_raw" 2>>"$RUN_LOG_DIR/${box}.log" || ssh_rc=$?
+  copied=$(grep -E '^(COPY|COPYFAIL) ' "$copy_raw" | tail -1 | tr -d '\r' || true)
+  rm -f "$copy_raw"
+  if [ -z "$copied" ] && [ "$ssh_rc" -eq 255 ]; then
+    # Unreachable: skip it, change nothing, and list it (UNREACHABLE table below).
+    python3 - "$box" "$result_file" <<'PY'
+import json, sys
+box, out = sys.argv[1:3]
+why = "unreachable: ssh could not connect (exit 255); skipped, nothing changed on the box"
+json.dump({"box": box, "result": "failed", "outcome": "SKIPPED", "unreachable": True,
+           "outcome_detail": why, "errors": [why]}, open(out, "w"))
+PY
+    echo "[fleet-refresh]   $(label_of "$box") — UNREACHABLE (ssh exit 255): skipped" >&2
+    return 2
+  fi
   if [ -z "$copied" ]; then
-    finish_result "$box" 255 /dev/null "$result_file" "ssh (roll copy)"
+    finish_result "$box" "$ssh_rc" /dev/null "$result_file" "ssh (roll copy)"
     return 2
   fi
   if [ "${copied%% *}" = "COPYFAIL" ]; then
@@ -1074,6 +1092,17 @@ for r in rows:
 print("-" * 78)
 print(" " + "   ".join(f"{k}={counts.get(k, 0)}" for k in ("UPDATED", "ROLLED_BACK", "FAILED", "SKIPPED")))
 print("=" * 78)
+PY
+# Unreachable boxes were skipped (nothing changed on them): list them by name so
+# they are never lost inside the table.
+python3 - "$SUMMARY_FILE" <<'PY' || true
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1]))
+except Exception:
+    rows = []
+un = [str(r.get("label") or r.get("box")) for r in rows if r.get("unreachable")]
+print(f" UNREACHABLE (skipped, not updated): {len(un)}" + (" - " + "; ".join(sorted(un)) if un else ""))
 PY
 echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 
