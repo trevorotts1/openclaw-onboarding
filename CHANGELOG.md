@@ -1,3 +1,19 @@
+## [v25.3.17]  -  2026-10-05  -  9Router boxes: the 999 step in a fleet roll now runs only the skills-only path behind a checksum guard
+
+A fleet roll used to run the 999 installer's link path on every box. On a box that already runs 9Router, that path replaces the installed `nine-router-setup` skill and can touch the `claude-nine` launcher. This release makes the roll safe for those boxes.
+
+#### What changed
+- **9Router boxes get skills-only.** The roll detects a 9Router box (the `~/.9router` folder, the `claude-nine` launcher, and the health endpoint answering) and hands the 999 installer exactly `--skills-only`, never the link or full-install path.
+- **Checksum guard.** `shared-utils/nine_router_guard.py` takes a checksum snapshot of the router config, the router database and the launcher files before and after the 999 step. Any difference fails that box and rolls it back.
+- **Unreachable boxes are skipped, not failed.** An unreachable box (ssh exit 255) is now listed as SKIPPED instead of FAILED.
+- **Wiring and tests.** `scripts/fleet-refresh.sh`, `shared-utils/fleet_refresh_runner.py` and `shared-utils/lib-frontdoor.sh` carry the new path. `tests/unit/nine-router-skills-only-roll.test.py` is the regression test and `.github/workflows/nine-router-skills-only-roll-guard.yml` runs it on every push and pull request.
+
+#### Version
+- All 10 version markers move from v25.3.16 to v25.3.17.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself.
+
 ## [v25.3.16] - 2026-10-05 - Repair and library batch: 14 fixes so existing boxes get the same quality as new installs
 
 This release closes the gap between a fresh install and a box that was installed earlier. New installs already got the five installer rules in v25.3.15. Boxes installed before that now get repaired by the same update that brings them current, through one shared front door, and the role library grows to cover the departments that were still thin.

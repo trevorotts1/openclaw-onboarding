@@ -166,6 +166,32 @@ frontdoor_update_999() {
   after="$(git -C "$repo" rev-parse HEAD || true)"
   [ "$after" = "$before" ] && echo "[front-door] 999-setup: already current (${after:0:12})" \
                            || echo "[front-door] 999-setup: ${before:0:12} -> ${after:0:12}"
+  # A box that already runs 9Router NEVER takes the link/installer path below
+  # (it replaces ~/.claude/skills/nine-router-setup and can touch the launcher).
+  # It gets the 999 installer's `--skills-only` between two checksum snapshots
+  # (shared-utils/nine_router_guard.py). Cheap bash-only signals first, so a
+  # missing python3/guard file still keeps the box off the link path.
+  local _nr_guard _nr_here
+  _nr_here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  _nr_guard="$_nr_here/nine_router_guard.py"
+  if [ -d "$HOME/.9router" ] || [ -f "$HOME/.local/bin/claude-nine" ] \
+     || { [ -f "$_nr_guard" ] && python3 "$_nr_guard" detect >/dev/null 2>&1; }; then
+    if [ ! -f "$_nr_guard" ] || ! command -v python3 >/dev/null 2>&1; then
+      echo "[front-door] 999-setup: 9Router box but the guard module/python3 is missing — skill step NOT run (the full installer is never used here)"
+      return 0
+    fi
+    local _nr_out _nr_rc=0
+    _nr_out="$(python3 "$_nr_guard" skills-only --repo "$repo" 2>&1)" || _nr_rc=$?
+    printf '%s\n' "$_nr_out" | sed 's/^/[front-door]   /'
+    case "$_nr_rc" in
+      0) echo "[front-door] 999-setup: 9Router box — skills-only done, checksums MATCH"; return 0 ;;
+      4) echo "[front-door] 999-setup: 9Router box — installer predates --skills-only, skill step NOT run"; return 0 ;;
+      3) # a router/launcher file changed: tell the roll's runner (labels only), fail loudly
+         [ -n "${NINE_ROUTER_GUARD_MARK:-}" ] && printf '%s\n' "$_nr_out" | sed -n 's/^\[9router-guard\] MISMATCH: //p' >> "$NINE_ROUTER_GUARD_MARK" 2>/dev/null
+         echo "[front-door] 999-setup: 9Router guard MISMATCH — a router/launcher file changed" >&2; return 3 ;;
+      *) echo "[front-door] 999-setup: 9Router skills-only failed (rc=$_nr_rc)" >&2; return 1 ;;
+    esac
+  fi
   # Re-link the skills the SAME WAY the roll's installer step does — the
   # runner's _999_LINK_SCRIPT, run verbatim in its own bash so the installer's
   # `set -euo pipefail` can never leak into this shell. The link script
