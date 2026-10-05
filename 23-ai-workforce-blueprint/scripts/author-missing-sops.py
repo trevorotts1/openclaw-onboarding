@@ -81,10 +81,11 @@ BOILERPLATE_MARKERS = (
 )
 
 HOME = Path.home()
-SELECTOR_CANDIDATES = [
-    HOME / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py",
-    Path(os.path.expanduser("~/Downloads/openclaw-master-files/shared-utils/select_model.py")),
-]
+
+# Client sovereignty: the authoring model is ALWAYS the box's own default model.
+# Anthropic routes stay forbidden (same markers as shared-utils/select_model.py
+# FORBIDDEN_PREFIXES); a forbidden default is a recorded gap, never swapped out.
+FORBIDDEN_MODEL_MARKERS = ("anthropic/", "anthropic.", "openrouter/anthropic/", "claude-")
 
 
 def log(msg):
@@ -129,29 +130,49 @@ def save_manifest(path, data):
 
 # ─── MODEL RESOLUTION + SUB-AGENT SPAWN (mirrors populate-sops-from-manifest) ─
 
-def selector_path():
-    for c in SELECTOR_CANDIDATES:
-        if c.is_file():
-            return c
-    return None
+def _config_candidates(explicit=None):
+    """openclaw.json locations, same order shared-utils/select_model.py uses."""
+    env = os.environ.get("OPENCLAW_CONFIG")
+    return [explicit,
+            env if env and os.path.isfile(env) else None,
+            str(HOME / ".openclaw" / "openclaw.json"),
+            "/data/.openclaw/openclaw.json"]
+
+
+def resolve_box_default_model(config_path=None):
+    """Return (model_id, gap_reason) for the BOX'S OWN default model.
+
+    Reads agents.defaults.model (string, or {"primary": ...}) from the box's
+    openclaw.json. Never returns a hardcoded id: when no default can be
+    resolved, or it is a forbidden (Anthropic) route, returns (None, reason).
+    """
+    path = next((c for c in _config_candidates(config_path)
+                 if c and os.path.isfile(c)), None)
+    if not path:
+        return None, "no openclaw.json found on this box"
+    try:
+        cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"cannot read {path}: {e}"
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    defaults = agents.get("defaults") if isinstance(agents, dict) else None
+    field = defaults.get("model") if isinstance(defaults, dict) else None
+    if isinstance(field, dict):
+        field = field.get("primary") or field.get("model")
+    if not isinstance(field, str) or not field.strip():
+        return None, f"{path} has no agents.defaults.model"
+    mid = field.strip()
+    if any(m in mid.lower() for m in FORBIDDEN_MODEL_MARKERS):
+        return None, "box default model is a forbidden (Anthropic) route"
+    return mid, ""
 
 
 def resolve_model():
-    sel = selector_path()
-    if not sel:
-        return "ollama/kimi-k2.6:cloud"
-    cmd = ["python3", str(sel), "--skill", "23-ai-workforce-blueprint",
-           "--purpose-tier", "heavy", "--format", "id"]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        mid = r.stdout.strip()
-        if mid and "anthropic/" not in mid.lower() and "claude-" not in mid.lower():
-            return mid
-        if r.returncode == 2:
-            return None  # Tier 5 — owner input required
-    except Exception as e:
-        log(f"selector error: {e}")
-    return "ollama/kimi-k2.6:cloud"
+    """Box default model id, or None when unresolvable (caller records the gap)."""
+    mid, why = resolve_box_default_model()
+    if mid is None:
+        log(f"no box default model: {why}")
+    return mid
 
 
 def find_openclaw():
@@ -433,7 +454,7 @@ def author_one_inline_queue(record, prompt, model_id, timeout, queue_dir):
 
 **Role:** {record.get('role', '')} (department `{record.get('department', '')}`)
 **Status:** PENDING — pick this up and execute the instructions below.
-**Model to use:** `{model_id}` (heavy tier; never Anthropic).
+**Model to use:** `{model_id}` (this box's own default model).
 **Timeout budget:** {timeout} seconds.
 **How-to path to write:** `{record.get('how_to_path', '')}`
 **Record id:** `{record.get('id', '')}`
@@ -544,11 +565,12 @@ def main(argv=None):
         return 0
 
     rubric = load_rubric()
-    model_id = resolve_model()
+    model_id, model_gap = resolve_box_default_model()
     if model_id is None:
-        log("model selector returned Tier 5 (owner-input-required) — cannot author")
-        return 2
-    log(f"authoring model: {model_id}")
+        log(f"no box default model ({model_gap}) — roles needing authoring are "
+            "recorded as a gap and skipped; nothing is guessed")
+    else:
+        log(f"authoring model: {model_id} (box default)")
     use_subagents = openclaw_available()
     log(f"sub-agent spawn: {'available' if use_subagents else 'UNAVAILABLE — inline queue mode'}")
     queue_dir = Path(manifest_path).parent / ".sop-author-queue"
@@ -567,6 +589,13 @@ def main(argv=None):
             log(f"{rid}: {why} → authored")
             continue
         log(f"{rid}: deterministic fill not possible ({why}) — LLM authoring")
+        if model_id is None:
+            r["model_gap"] = model_gap
+            save_manifest(manifest_path, data)
+            log(f"{rid}: no box default model — gap recorded, role stopped")
+            failures += 1
+            continue
+        r.pop("model_gap", None)
         # Step 2: LLM authoring.
         prompt = build_author_prompt(r, rubric, company_name, industry)
         if use_subagents:
