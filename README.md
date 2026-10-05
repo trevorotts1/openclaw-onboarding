@@ -1,15 +1,15 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.3.15 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.98**.
+> **v25.3.16 — Presentations pipeline hardening and interview reliability land on main.** Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches have all landed since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.98**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.3.15.
+> **Version:** see `/version` - this repo at v25.3.16.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v25.3.15
+## Current release: v25.3.16
 
 Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
@@ -163,7 +163,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.3.15** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.3.16** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
@@ -407,3 +407,25 @@ Modern validation never falls back to the legacy lane.
 Repository updates and live workflow activation are separate operations. Verify
 actual Google create/append receipts and readback after deployment; a workflow
 being active or a local doctor report does not establish successful posting.
+
+## Harvesting new role playbooks from the fleet (`scripts/fleet-roll/harvest-sop-drafts.py`)
+
+An operator tool. It is not installed on client boxes.
+
+When a box has a role the shared role library does not cover, that box writes its own playbook (a standard operating procedure) and files a copy, with no company details in it, in its `sop-harvest/` folder. This tool gathers those copies from the fleet, throws out the weak or unsafe ones, and prepares the good ones as a proposed change to the library. A person reviews that change. The tool never merges, never pushes, and never opens the pull request.
+
+What it does, in order:
+
+1. **Collect.** It asks the fleet-access tool (`~/.claude/tools/fleet-access.sh`) which boxes answer, then reads each box's `sop-harvest/` folder over headless SSH. It only reads. A box that cannot be read is reported as undetermined, never as empty. If no box answers at all, the run fails instead of reporting "nothing found". `--from-dir DIR` reads a folder you gathered by hand (`DIR/<box>/<department>/<role>.<8 characters>.draft.md` plus the matching `.sop-needed.json`).
+2. **Check.** Each draft is held to the rubric in `templates/role-library/_sop-writer.md`: at least 7,000 bytes of real content, all 18 sections, every playbook block complete, concrete steps, sourced API calls, and a weighted score of at least 8.5 out of 10. Anything with personal data is rejected outright: emails, phone numbers, long account numbers, IP addresses, home folders, private web addresses, keys, and any name on the client-name roster (`~/.openclaw/client-roster.txt`). The report names the kind of problem and the line number, never the text itself. There is no setting that lowers the bar.
+3. **De-duplicate.** If two boxes wrote the same role, the higher score wins. A role already in the library is never replaced and never overwritten.
+4. **Stage.** With `--stage` it creates a new branch from `origin/main`, adds one new file per surviving role, registers each in `_index.json` with its content hash, runs the library's own consistency checks, and makes one commit. It does not touch the version file or the changelog. Without `--stage` it only writes a report.
+
+```bash
+# See what the fleet has, change nothing in the repo
+python3 scripts/fleet-roll/harvest-sop-drafts.py
+# Prepare a reviewable branch (needs a clean checkout)
+python3 scripts/fleet-roll/harvest-sop-drafts.py --stage
+```
+
+The report (`report.md` and `report.json`) is written to `~/Downloads/sop-harvest-<time>/` unless `--out-dir` says otherwise. Staging refuses to run without a client-name roster unless you pass `--allow-no-roster`; the other personal-data checks still run in that case, but a human must then check the draft for client names. Tests: `python3 tests/unit/test_harvest_sop_drafts.py`.

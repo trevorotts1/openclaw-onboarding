@@ -101,11 +101,11 @@ if [ -z "$KILL_MODE" ]; then
   fi
 fi
 case "$KILL_MODE" in
-  auto|shadow|legacy|off)
+  auto|shadow|legacy|off|model)
     _info "decision-engine mode: $KILL_MODE (source=$KILL_SOURCE)"
     ;;
   *)
-    _fail "decision-engine mode store is CORRUPT: '$KILL_MODE' (source=$KILL_SOURCE, expected one of auto|shadow|legacy|off). Nothing was written; write one word to $OC_ROOT/decision-engine-mode.conf or unset \$OPENCLAW_DECISION_ENGINE_MODE."
+    _fail "decision-engine mode store is CORRUPT: '$KILL_MODE' (source=$KILL_SOURCE, expected one of auto|shadow|legacy|off|model). Nothing was written; write one word to $OC_ROOT/decision-engine-mode.conf or unset \$OPENCLAW_DECISION_ENGINE_MODE."
     FAILURES=$((FAILURES + 1))
     ;;
 esac

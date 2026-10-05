@@ -12,9 +12,43 @@
 #    bash ~/.openclaw/skills/force-update.sh
 #
 #  v10.8.0 — P0-6 fix for Sunday Update regression.
+#
+#  OCT4 issue #10 — ONE FRONT DOOR. force-update.sh no longer stops after
+#  firing the triple-fire trigger: with --apply it APPLIES the full update
+#  path itself (the root update-skills.sh — which carries the shared tail:
+#  999-setup refresh when installed, the repair runner, the library-standard
+#  health gate). Flags:
+#    --apply            apply the update now via the canonical root updater
+#    --onboarding-only  with --apply: run ONLY the onboarding stage
+#    (no flag)          historical behavior: detect + fire the trigger only
+#  The apply path runs through the same entrypoint every other route uses, so
+#  no route can drift into "my own little updater" again.
 # ============================================================
 set -u
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
+
+# ----------------------------------------------------------
+# CLI: --apply / --onboarding-only (OCT4 issue #10 one front door)
+# ----------------------------------------------------------
+FU_APPLY=0
+FU_ONBOARDING_ONLY=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --apply) FU_APPLY=1; shift ;;
+    --onboarding-only) FU_ONBOARDING_ONLY=1; shift ;;
+    --help|-h)
+      echo "Usage: force-update.sh [--apply] [--onboarding-only]"
+      echo "  (no flag)          Detect updates + fire the triple-fire trigger only"
+      echo "  --apply            Apply the update now via the root update-skills.sh"
+      echo "                     (full path: onboarding + 999-setup if installed +"
+      echo "                     Command Center + repair runner + health gate)"
+      echo "  --onboarding-only  With --apply: run ONLY the onboarding stage"
+      exit 0 ;;
+    *)
+      echo "[force-update] Unknown flag: $1 (try --help)" >&2
+      exit 2 ;;
+  esac
+done
 
 # ----------------------------------------------------------
 # Detect platform
@@ -205,8 +239,10 @@ update process:
      - Follow INSTALL.md and CORE_UPDATES.md step-by-step
      - Run qc-*.sh and ensure exit 0
      - Independent QC sub-agent scores against QC.md rubric (gate ≥ 8.5)
-  5. Run: bash ${SKILLS_DIR}/update-skills.sh
-     This applies the merge AND writes the verified stamp + content manifest.
+  5. Run: bash ${SKILLS_DIR}/force-update.sh --apply
+     This applies the merge through the root update-skills.sh (the same entry
+     point, which also carries the shared tail: 999-setup refresh, repair
+     runner, health gate) AND writes the verified stamp + content manifest.
      Do NOT hand-edit .onboarding-version — the stamp is only valid when
      written by update-skills.sh after the A3 content gate passes.
   6. Reply with a one-paragraph summary of what changed and any
@@ -258,7 +294,46 @@ Run --apply to migrate: bash ~/.openclaw/skills/scripts/migrate-zhc-to-master-fi
 fi
 
 # ----------------------------------------------------------
-# 4. Emit the final JSON status (for the cron / dispatcher to parse)
+# 4. OCT4 issue #10 — APPLY PATH (the front door): only with --apply.
+#    Runs the canonical root updater (update-skills.sh), fetched fresh from
+#    main the same way check-updates.sh was fetched — never a stale local
+#    copy. The updater carries the FULL path now (onboarding -> 999-setup if
+#    installed -> Command Center at the pinned tag -> repair runner -> health
+#    gate); --onboarding-only is passed through unchanged. The apply result
+#    replaces this script's own final JSON verdict.
+# ----------------------------------------------------------
+if [ "$FU_APPLY" = "1" ]; then
+  _FU_UPDATER="$(mktemp /tmp/openclaw-update-skills-XXXXXX.sh)"
+  trap 'rm -f "$_CHECK_SCRIPT_TMP" "$_FU_UPDATER"' EXIT
+  if ! curl -fsSL --max-time 60 "${GH_RAW}/update-skills.sh" -o "$_FU_UPDATER" 2>/dev/null; then
+    echo "[force-update] ERROR: failed to download update-skills.sh — nothing applied" >&2
+    echo '{"ok": false, "action": "apply-failed", "applied": false, "error": "update-skills.sh download failed"}'
+    exit 1
+  fi
+  _FU_FLAGS=""
+  [ "$FU_ONBOARDING_ONLY" = "1" ] && _FU_FLAGS="--onboarding-only"
+  echo "[force-update] applying via canonical updater (full path) with flags: ${_FU_FLAGS:-none}" >&2
+  bash "$_FU_UPDATER" $_FU_FLAGS
+  _FU_RC=$?
+  echo "[force-update] updater exited $_FU_RC (0 = full path clean incl. health gate; 2 = content current, infrastructure needs attention; 1 = failure)" >&2
+  cat <<EOF
+{
+  "ok": $([ "$_FU_RC" -eq 0 ] && echo true || echo false),
+  "action": "apply",
+  "applied": true,
+  "updater_exit": $_FU_RC,
+  "platform": "$PLATFORM",
+  "local_version": "$LOCAL_VERSION",
+  "latest_version": "$LATEST_VERSION",
+  "note": "apply ran through the canonical root updater; updater_exit 2 = content current, infrastructure needs attention (the health gate verdict is in the updater log)"
+}
+EOF
+  exit "$_FU_RC"
+fi
+
+# ----------------------------------------------------------
+# 5. Emit the historical trigger-only JSON status (no --apply; the cron /
+#    dispatcher contract is unchanged)
 # ----------------------------------------------------------
 cat <<EOF
 
@@ -276,7 +351,7 @@ cat <<EOF
     "terminal_fallback": true
   },
   "note": "ok:true means the trigger fired, NOT that the update was applied. Verification happens in update-skills.sh content gate (A3) and check-updates.sh content_verified field (A4).",
-  "next_step": "Apply the update by pasting the instruction block above to your agent, OR run: bash ${SKILLS_DIR}/update-skills.sh"
+  "next_step": "Apply now with: bash ${SKILLS_DIR}/force-update.sh --apply — or run the updater itself: bash ${SKILLS_DIR}/update-skills.sh (both are the same full path now)"
 }
 EOF
 

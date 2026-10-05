@@ -1,8 +1,8 @@
 # Suggested Roles -- presentations-dept
 **Version:** 2.1 | 2026-07-29
-**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`), the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`), and the **2 image-grounding + representation roles** (`image-grounding-steward`, `representation-casting-director`) -> **34 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
+**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`), the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`), the **2 image-grounding + representation roles** (`image-grounding-steward`, `representation-casting-director`), and the **text-layer Scripts Specialist** (`scripts-specialist`) -> **35 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
 
-## Canonical Role Count: 34
+## Canonical Role Count: 35
 The canonical set is one role per role-library `.md` file under
 `templates/role-library/presentations/` (excluding the `00-START-HERE.md` meta
 doc, `BUILDER-PROMPT.md`, `how-to-use-this-department.md`, `IDENTITY.md`,
@@ -361,6 +361,21 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - 02-Per-Prompt-Representation-Assignment.md
 - 03-Image-Stage-Deck-Wide-Representation-Tally.md
 - 04-Final-Deck-Representation-Tally-The-Audience-As-Mirror-Gate.md
+**Role type:** specialist
+
+### 34. Scripts Specialist
+**Slug:** scripts-specialist
+**What it does:** Owns the text layer of every deck: the word-for-word narration track, the headline and body copy on each slide, and the speaker notes. Does the timing math before writing a word, builds the per-slide copy map in a shape the deck builder can drop in without translation, runs the priority-shift check (five questions) before handoff, works review feedback through a revision loop, audits runtime against the target duration, and maintains the phrase bank. Does not own the slide-data file, does not run the final render, and does not register the finished deck. Usually executed by an ephemeral sub-agent spawned by the Director.
+**Core SOPs to build:**
+- 01-Intake-Load-the-Brief-and-the-Doctrine.md
+- 02-Timing-Math-Before-Writing-a-Word.md
+- 03-Write-the-Narration-Track.md
+- 04-Build-the-Copy-Map.md
+- 05-The-Priority-Shift-Check.md
+- 06-Revision-Loop-on-Review-Feedback.md
+- 07-Runtime-Audit-and-Archive-Reconciliation.md
+- 08-Phrase-Bank-Maintenance.md
+- 09-Handoff-to-the-Deck-Builder.md
 **Role type:** specialist
 
 ---

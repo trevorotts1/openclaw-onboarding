@@ -88,7 +88,7 @@ FORBIDDEN_ASSIGNMENT_KEYS = {
     "status_transition", "statusTransition", "persona_pin", "personaPin",
 }
 
-VALID_MODES = {"auto", "shadow", "legacy", "off"}
+VALID_MODES = {"auto", "shadow", "legacy", "off", "model"}
 BRIDGE_TIMEOUT_S = 15
 REQUEST_SCHEMA_VERSION = "1.1.0"
 CONFIG_REVISION = "p209-probe"

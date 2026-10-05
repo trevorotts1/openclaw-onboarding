@@ -39,7 +39,7 @@ import path from 'path';
 // both get the card-for-everything fallback instead. A corrupt/unknown value
 // THROWS (fail loud, inject nothing) — silently re-enabling is the worst
 // outcome, so it is impossible, not merely unlikely.
-const DECISION_ENGINE_MODES = ['auto', 'shadow', 'legacy', 'off'];
+const DECISION_ENGINE_MODES = ['auto', 'shadow', 'legacy', 'off', 'model'];
 const DECISION_ENGINE_DEFAULT = 'auto';
 const DECISION_ENGINE_STORE = 'decision-engine-mode.conf';
 
