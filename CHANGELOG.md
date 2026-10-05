@@ -1,3 +1,18 @@
+## [v25.3.19]  -  2026-10-05  -  Paired-release prep (R03): Command Center pin moves to v7.6.99; release cohort names the frozen pair
+
+Prepared release for the Company Headquarters paired release. Content is release plumbing only: the Command Center pin, the dependency cohort and the version markers move together so the fleet roll deploys the Command Center this onboarding release was tested against.
+
+#### What changed
+- **Command Center pin moves to v7.6.99.** `cc-compat.json` `commandCenter.pinnedTag` and `release-cohort.json` `cc_version` both move from v7.6.98 to v7.6.99 (both files written by `scripts/pin-cc-tag.py`, so the pair can never split). minVersion is unchanged at v7.4.0: v7.6.99 adds no endpoint and no mission-control.db schema change. fleet-refresh and Skill 32 resolve the pin as the deploy target, so the roll ships the Command Center carrying the Headquarters merge wave.
+- **Release cohort names the frozen pair.** `release-cohort.json` now binds `onb_sha` c14ed614670cbe28304fbbda5ee1bba2075edd4b to `cc_sha` 2c4e2e8d052c99a7581f0bd3ac416adbe66302f5 (candidate freeze-20261005-03) with `contract` 1.1.0, so the decision-engine trainer's `check_release_cohort()`/`promote()` gate the exact tested pair.
+- **Version markers.** All 10 tracked version markers move from v25.3.18 to v25.3.19, and the two hand-authored paired-release lines follow the pin: `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` "pairs with Command Center v7.6.99" and `docs/interview-launch-recovery.md` "Paired releases: onboarding v25.3.19 / Command Center v7.6.99".
+
+#### Version
+- All 10 version markers move from v25.3.18 to v25.3.19.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself. The Command Center onboarding release is tagged only after the release council votes; this branch carries the prepared release, not a mint.
+
 ## [v25.3.18]  -  2026-10-05  -  Update fix: the updater no longer stops with "SKILLS_DIR: unbound variable" right after taking its lock
 
 Release v25.3.17 could not complete an update. On a box it printed `line 4409: SKILLS_DIR: unbound variable` straight after `[lock] acquired` and exited 1 before changing anything. This release fixes that, so the update runs through again.
