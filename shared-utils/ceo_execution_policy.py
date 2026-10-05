@@ -22,7 +22,7 @@ from pathlib import Path
 # (RELEASE_DEFAULT WRITES NOTHING — preserve-by-construction). off/legacy
 # share the same improved no-JEV engine; both emit zero JEV traffic. A
 # corrupt/unknown value is never reset and never rewritten — it raises, loud.
-KIL_MODES = ("auto", "shadow", "legacy", "off")
+KIL_MODES = ("auto", "shadow", "legacy", "off", "model")
 KIL_DEFAULT = "auto"
 KIL_STORE = "decision-engine-mode.conf"
 KIL_ENV = "OPENCLAW_DECISION_ENGINE_MODE"

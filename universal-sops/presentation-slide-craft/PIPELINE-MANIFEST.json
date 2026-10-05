@@ -4374,6 +4374,10 @@
       "id": "infographic-checklist",
       "owns_phase": null,
       "description": "FIX 112 infographic-checklist QC unit: independent reviewer of the rendered infographic (working/deliverables/infographic.png + working/checkpoints/infographic_status.json). Writes working/qc/infographic_checklist_verdict.json — the verdict file P-STYLE-PREVIEW-era bundle table always named and nothing implemented."
+    },
+    {
+      "id": "scripts-specialist",
+      "owns_phase": null
     }
   ]
 }

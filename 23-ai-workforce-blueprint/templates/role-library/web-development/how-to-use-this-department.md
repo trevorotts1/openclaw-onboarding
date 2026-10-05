@@ -85,6 +85,9 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **WordPress Specialist** | WordPress-specific work - theme customization, plugin selection, plugin conflicts, WooCommerce, security hardening. |
 | **Signature Funnel Specialist** | The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49). |
 | **Sales Page Assets Specialist** | The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56). |
+| **Conversion Rate Optimization Specialist Phase2** | **** for the department of the company, reporting to the . |
+| **SEO Specialist Phase2** | **** for the department of the company, reporting to the . |
+| **Web Accessibility A11Y Specialist Phase2** | Accessibility gate for every web surface ships to a client of the vertical. |
 
 ### What each specialist is for, with an example request
 
@@ -152,6 +155,21 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56).
 - *Example request:* "Have the Sales Page Assets Specialist take this on: The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine."
+
+**Conversion Rate Optimization Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Conversion Rate Optimization Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
+
+**SEO Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the SEO Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
+
+**Web Accessibility A11Y Specialist Phase2**
+
+- *What it is for:* Accessibility gate for every web surface ships to a client of the vertical.
+- *Example request:* "Have the Web Accessibility A11Y Specialist Phase2 take this on: Accessibility gate for every web surface ships to a client of the vertical."
 
 
 ---

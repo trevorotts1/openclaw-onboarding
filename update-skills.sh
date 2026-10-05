@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v25.3.15"
+ONBOARDING_VERSION="v25.3.16"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1996,7 +1996,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v25.3.15 - safe_json_edit
+# v25.3.16 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4269,6 +4269,9 @@ main() {
   # (number prefix matches skill folder name prefix)
   # ----------------------------------------------------------
   ONLY_SKILLS=""
+  # OCT4 issue #10: default FULL path (shared tail runs); --onboarding-only
+  # narrows to onboarding alone (see the flag's help entry below).
+  ONBOARDING_ONLY="${ONBOARDING_ONLY:-0}"
   # TRAP 1: the 2026.7.1 relic pre-clear is OPT-IN ONLY (see preclear_2026_7_1
   # above for why: this updater performs no OpenClaw binary upgrade).
   PRECLEAR_MODE=""
@@ -4303,6 +4306,17 @@ main() {
       --agents-list-migrate)
         AGENTS_LIST_STANDALONE="migrate"
         ;;
+      # OCT4 issue #10: run ONLY the onboarding part of this updater and skip
+      # the shared tail (repair runner + health gate). The narrow case: a roll
+      # driver that runs the repairs as its own explicit stage, or an operator
+      # debugging one layer. The DEFAULT (no flag) is the FULL path — every
+      # route (this updater run on its own, force-update.sh, the Sunday update,
+      # the operator roll) runs onboarding -> 999-setup (if installed) ->
+      # Command Center at its pinned tag -> repair runner -> health gate, so a
+      # one-front-door update can never quietly skip a stage again.
+      --onboarding-only)
+        ONBOARDING_ONLY=1
+        ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
         echo "                        [--agents-list-check | --agents-list-migrate]"
@@ -4328,6 +4342,12 @@ main() {
         echo "                         Measured on 12 boxes: config SHA-256 identical before and after."
         echo "                         (The detector also runs automatically on every normal update run,"
         echo "                         where it reports and does not block.)"
+        echo ""
+        echo "  --onboarding-only      Run ONLY the onboarding stage: skip the shared tail this"
+        echo "                         updater runs by default after onboarding converges (999-setup"
+        echo "                         refresh if installed, the repair runner, the library-standard"
+        echo "                         health gate). The rare narrow case for a roll driver that runs"
+        echo "                         those stages itself. The DEFAULT runs the FULL path."
         echo ""
         echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
         echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
@@ -4358,6 +4378,108 @@ main() {
     agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
     exit "$_al_rc"
   fi
+
+  # ============================================================
+  # OCT4 issue #10 — ONE FRONT DOOR: the shared tail. Every route runs
+  # onboarding (this script) -> 999-setup (if installed) -> Command Center at
+  # its pinned tag -> repair runner -> health gate. The Command Center refresh
+  # below (run-full-install.sh --update-only / bootstrap, per cc-compat.json)
+  # already runs inside this updater; the stage this file ADDS is the shared
+  # repair-runner + health-gate tail from shared-utils/lib-frontdoor.sh, which
+  # runs AFTER everything above has converged (content current, stamp written,
+  # latches settled). --onboarding-only skips exactly that tail.
+  # Failure semantics: the tail is reported on the updater's own exit codes —
+  #   health-gate FAIL       -> exit 2 (content current, infrastructure needs
+  #                             attention: the box was updated; the operator
+  #                             sees the gate verdict in the roll summary and
+  #                             the route's snapshot/rollback is the Sunday +
+  #                             operator rolls' own machinery)
+  #   tail could not RUN at  -> exit 1 (the front door itself is broken; never
+  #                             report a half-gated run as success)
+  #   incomplete-gaps /      -> exit 0 (reported loudly in the log; the callee
+  #   ran-with-notes            scripts simply are not on this box yet — the
+  #                             release that ships them lands through THIS
+  #                             same updater)
+  # ============================================================
+  if [ "${ONBOARDING_ONLY:-0}" = "1" ]; then
+    echo "  [--onboarding-only] skipping the shared tail (repair runner + health gate)"
+    fd_rc=0
+  else
+    _FRONTDOOR_LIB=""
+    for _fd_cand in "$_SCRIPT_DIR/shared-utils/lib-frontdoor.sh" \
+                    "$SKILLS_DIR/shared-utils/lib-frontdoor.sh"; do
+      if [ -f "$_fd_cand" ]; then _FRONTDOOR_LIB="$_fd_cand"; break; fi
+    done
+    _FRONTDOOR_STAGE_PY=""
+    for _fd_cand in "$_SCRIPT_DIR/shared-utils/oct4_frontdoor.py" \
+                    "$SKILLS_DIR/shared-utils/oct4_frontdoor.py"; do
+      if [ -f "$_fd_cand" ]; then _FRONTDOOR_STAGE_PY="$_fd_cand"; break; fi
+    done
+    if [ -z "$_FRONTDOOR_LIB" ] || [ -z "$_FRONTDOOR_STAGE_PY" ]; then
+      echo "FATAL: the one-front-door shared stage is missing from this checkout" >&2
+      echo "       (looked for shared-utils/lib-frontdoor.sh + shared-utils/oct4_frontdoor.py" >&2
+      echo "       beside this script and in $SKILLS_DIR/shared-utils)." >&2
+      echo "       Refusing to report an ungated update as success. Re-run from a complete" >&2
+      echo "       release bundle (curl -fsSL <main>/update-skills.sh | bash)." >&2
+      fd_rc=1
+    else
+      # OpenClaw root for the callee scripts' platform resolution: the SAME
+      # shared /data-else-HOME resolver the other repo scripts reuse (sourced
+      # from the freshly-installed tree when available), with the identical
+      # inline fallback so behavior is unchanged either way.
+      for _fd_cand in "$_SCRIPT_DIR/shared-utils/resolve-oc-root.sh" \
+                      "$SKILLS_DIR/shared-utils/resolve-oc-root.sh"; do
+        if [ -f "$_fd_cand" ]; then source "$_fd_cand"; break; fi
+      done
+      declare -F resolve_oc_root >/dev/null 2>&1 && OC_ROOT="$(resolve_oc_root)" || true
+      OC_ROOT="${OC_ROOT:-$HOME/.openclaw}"; [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+      export OPENCLAW_ROOT="$OC_ROOT"
+      source "$_FRONTDOOR_LIB"
+      # 999-setup first where it is already installed: the same guard-fenced
+      # refresh the roll's runner performs (pull --ff-only in a checkout whose
+      # origin is trevorotts1/999-setup, local changes never overwritten), then
+      # its skill links. Never installs 999 on a box that does not have it.
+      _FD_999_NOTE=""
+      if declare -F frontdoor_update_999 >/dev/null 2>&1; then
+        frontdoor_update_999 || _FD_999_NOTE=" (999 refresh reported a failure — see above)"
+      fi
+      if frontdoor_run_stage "$_FRONTDOOR_STAGE_PY"; then
+        case "$FRONTDOOR_STATUS" in
+          ok)          echo "  ✓ [FRONT DOOR] repairs + health gate: clean" ;;
+          ran-with-notes) echo "  ⚠ [FRONT DOOR] repairs + health gate: ran with notes (see above)" ;;
+          incomplete-gaps) echo "  ℹ [FRONT DOOR] stage scripts not installed on this box yet (known gap, reported — not a failure)" ;;
+        esac
+        echo "${FRONTDOOR_JSON:-{\"frontdoor\":{\"status\":\"$FRONTDOOR_STATUS\"}}}" \
+          > "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+        fd_rc=0
+      else
+        case "$FRONTDOOR_STATUS" in
+          gate-failed)
+            echo "" >&2
+            echo "  ============================================================" >&2
+            echo "  FRONT DOOR: THE HEALTH GATE FAILED on this box." >&2
+            echo "  Onboarding skills content IS current (the stamp stands); the" >&2
+            echo "  box does NOT meet the library standard yet. Per-item verdicts" >&2
+            echo "  are printed above. Nothing here was auto-rolled back: the" >&2
+            echo "  Sunday and operator routes hold the snapshot/rollback machinery" >&2
+            echo "  for this route; a manual route repairs by hand." >&2
+            echo "  Exiting 2 = content current, infrastructure needs attention." >&2
+            echo "  ============================================================" >&2
+            echo "" >&2
+            ;;
+          gate-undetermined)
+            echo "  ✗ [FRONT DOOR] the health gate could not decide this box (undetermined) — never read as a pass" >&2
+            ;;
+          failed)
+            echo "  ✗ [FRONT DOOR] the shared stage itself failed to run — refusing to report success" >&2
+            ;;
+        esac
+        rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+        fd_rc=2
+      fi
+    fi
+  fi
+  if [ "$fd_rc" -ne 0 ]; then exit "$fd_rc"; fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -11124,7 +11246,8 @@ except Exception:
   # pres_deps_verify_rows itself, and the operator notification -- AFTER the
   # version stamp had already been written. Every box therefore reported the new
   # version while never running its verification gate: a hollow update that looks
-  # like a clean exit, the exact failure mode scripts/update-skills.sh was retired
+  # like a clean exit, the exact failure mode the retired scripts/update-skills.sh
+# shim (deleted outright, OCT4 issue #10) was retired for
   # to prevent.
   #
   # These helpers supply the missing bodies. They read the SAME canon file, in the

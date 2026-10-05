@@ -29,7 +29,10 @@ import copy
 
 # Mirrors D02 CONFIGURED_MODE_ENUM (contracts/schema.py). Parity is locked
 # by test; this module stays import-standalone for the offline convention.
-MODES = ("auto", "shadow", "legacy", "off")
+# "model" (RF-014): JEV-eligible exactly like auto (resolve_effective_path and
+# jev_traffic_permitted need no special case); when rules and JEV cannot place a
+# task the CALLER asks the box's own default model (decision_engine.model_route).
+MODES = ("auto", "shadow", "legacy", "off", "model")
 
 # Effective-path values. "jev" means the ladder may attempt eligible JEV
 # routes; provider choice among them stays the ladder's job (D07).

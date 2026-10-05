@@ -2529,7 +2529,8 @@ crontab -l | grep update-skills
 **IMPORTANT:** The update script will NEVER overwrite anything inside `my AI company departments/`. That folder contains client-built content and is always protected.
 
 To force a manual check: `bash ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding/update-skills.sh`
-(repo root — NOT `scripts/update-skills.sh`, which is a retired, loud-failing shim.)
+(repo root — the retired `scripts/update-skills.sh` shim was deleted outright, OCT4
+issue #10; a stale reference to it fails loudly.)
 To check update logs: `cat ~/.openclaw/skills/.update-log`
 
 ---

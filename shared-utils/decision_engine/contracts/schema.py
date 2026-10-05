@@ -40,7 +40,7 @@ EXECUTION_MODE_ENUM = (
     "named_worker",
     "existing_execution",
 )
-CONFIGURED_MODE_ENUM = ("auto", "shadow", "legacy", "off")
+CONFIGURED_MODE_ENUM = ("auto", "shadow", "legacy", "off", "model")
 # Spec section 4.1 message-intent values.
 INTENT_ENUM = (
     "answer_only",

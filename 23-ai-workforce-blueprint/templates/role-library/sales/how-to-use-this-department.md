@@ -82,6 +82,10 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Proposal And Quote Specialist** | Professional voice that translates a sales conversation into a compelling, accurate, and closeable business document. |
 | **Sales Operations Pipeline Specialist** | CRM hygiene, pipeline reporting, lead routing rules, sales tool stack maintenance. |
 | **SDR Sales Development Rep** | Top-of-funnel outreach. |
+| **Account Executive Full Cycle Phase2** | You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client. |
+| **Account Manager Post Sale Phase2** | Installs and operates a governed AI workforce for each client. |
+| **CRM Specialist Phase2** | You own the customer relationship platform end-to-end. |
+| **SDR Sales Development Rep Phase2** | Top of the funnel that keeps the installation pipeline flowing into of annual revenue. |
 
 ### What each specialist is for, with an example request
 
@@ -134,6 +138,26 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Top-of-funnel outreach.
 - *Example request:* "Have the SDR Sales Development Rep take this on: Top-of-funnel outreach."
+
+**Account Executive Full Cycle Phase2**
+
+- *What it is for:* You own every dollar in the deals you are handed - from qualified lead to signed install - and you own the client.
+- *Example request:* "Have the Account Executive Full Cycle Phase2 take this on: You own every dollar in the deals you are handed - from qualified lead to signed install."
+
+**Account Manager Post Sale Phase2**
+
+- *What it is for:* Installs and operates a governed AI workforce for each client.
+- *Example request:* "Have the Account Manager Post Sale Phase2 take this on: Installs and operates a governed AI workforce for each client."
+
+**CRM Specialist Phase2**
+
+- *What it is for:* You own the customer relationship platform end-to-end.
+- *Example request:* "Have the CRM Specialist Phase2 take this on: You own the customer relationship platform end-to-end."
+
+**SDR Sales Development Rep Phase2**
+
+- *What it is for:* Top of the funnel that keeps the installation pipeline flowing into of annual revenue.
+- *Example request:* "Have the SDR Sales Development Rep Phase2 take this on: Top of the funnel that keeps the installation pipeline flowing into of annual revenue."
 
 
 ---

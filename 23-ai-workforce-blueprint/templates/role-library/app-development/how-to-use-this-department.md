@@ -82,6 +82,9 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **PWA Progressive Web App Specialist** | Builds PWAs - installable web apps that work offline. |
 | **QA Tester App** | Manual and automated app testing. |
 | **UX UI Specialist** | App-specific design (different from web design). |
+| **App Store Optimization Specialist Phase2** | You sit at the point where a finished build becomes a discoverable product. |
+| **PWA Specialist Phase2** | **** for the department of the company, a company whose mission is "". |
+| **QA Tester Phase2** | Last line of defense between a half-finished build and a founder's public brand. |
 
 ### What each specialist is for, with an example request
 
@@ -134,6 +137,21 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* App-specific design (different from web design).
 - *Example request:* "Have the UX UI Specialist take this on: App-specific design (different from web design)."
+
+**App Store Optimization Specialist Phase2**
+
+- *What it is for:* You sit at the point where a finished build becomes a discoverable product.
+- *Example request:* "Have the App Store Optimization Specialist Phase2 take this on: You sit at the point where a finished build becomes a discoverable product."
+
+**PWA Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, a company whose mission is "".
+- *Example request:* "Have the PWA Specialist Phase2 take this on: **** for the department of the company, a company whose mission is ""."
+
+**QA Tester Phase2**
+
+- *What it is for:* Last line of defense between a half-finished build and a founder's public brand.
+- *Example request:* "Have the QA Tester Phase2 take this on: Last line of defense between a half-finished build and a founder's public brand."
 
 
 ---

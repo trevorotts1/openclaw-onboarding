@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.3.15"
+ONBOARDING_VERSION="v25.3.16"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -6037,7 +6037,7 @@ if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" = "1" ] && command -v oc_stat
     # obs_* seed + resume cron then had to do all the work). Correct order below.
     SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
-        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
@@ -7029,7 +7029,7 @@ if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" = "1" ]; then
 else
     warn "lib-onboarding-resume-cron.sh NOT FOUND — the onboarding-resume cron was NOT installed."
     warn "  This box will NOT auto-resume onboarding; skills can stall at pending with nothing to drive them."
-    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 fi
 
 # ----------------------------------------------------------

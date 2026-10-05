@@ -137,13 +137,12 @@ assert_clean "$OH/.openclaw/openclaw.json" "configure-operator-telegram.sh produ
 
 echo "== 6. static source invariants (write-sites cannot emit a bad shape) =="
 # B1: no write-site DELETES active-memory; the writers nest under config.
-for f in install.sh scripts/update-skills.sh scripts/fix-active-memory-bug.sh; do
+for f in install.sh scripts/fix-active-memory-bug.sh; do
   if grep -Eq "del[[:space:]]+entries\[[\"']active-memory[\"']\]" "$REPO_ROOT/$f"; then
     nope "$f still DELETES active-memory"; else ok "$f does not delete active-memory"; fi
 done
-if grep -Eq '"enabled": True, "agents"' "$REPO_ROOT/scripts/update-skills.sh"; then
-  nope "scripts/update-skills.sh still writes the flat active-memory literal"
-else ok "scripts/update-skills.sh has no flat active-memory literal"; fi
+# scripts/update-skills.sh: retired shim deleted outright (OCT4 issue #10);
+# its absence is asserted by scripts/test-single-update-skills-entrypoint.sh.
 # B2: operator-telegram script never WRITES helpChatId (pop/strip is allowed).
 if grep -Eq 'helpChatId"?\][[:space:]]*=|setdefault\("helpChatId"' "$REPO_ROOT/scripts/configure-operator-telegram.sh"; then
   nope "configure-operator-telegram.sh still WRITES helpChatId"
