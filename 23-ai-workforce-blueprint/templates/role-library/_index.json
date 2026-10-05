@@ -896,13 +896,13 @@
       "content_sha": "sha256:2232979dc28e0e0970bdb8da27f389cb5df591cbcf777af6b87187c054f3b2fb",
       "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
     },
-    "podcast-sandbox-canary": {
+    "podcast-sandbox-pilot": {
       "count": 1,
       "roles": [
-        "director-of-podcast-sandbox-canary-phase2"
+        "director-of-podcast-sandbox-pilot-phase2"
       ],
-      "content_sha": "sha256:3c2f7b0f0c6f9761a00a0f293c35da71b76d0430b78d8bb1c7b04db4a0713b6e",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:a5915237295a952495a1eb30722235e37a024e7728ce4e752cb2cc0be3009224",
+      "content_hashed_at": "2026-10-05T03:39:34.267759+00:00"
     },
     "product-development": {
       "count": 1,
@@ -9100,20 +9100,20 @@
       "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
     },
     {
-      "slug": "director-of-podcast-sandbox-canary-phase2",
-      "dept": "podcast-sandbox-canary",
-      "title": "Director Of Podcast Sandbox Canary Phase2",
+      "slug": "director-of-podcast-sandbox-pilot-phase2",
+      "dept": "podcast-sandbox-pilot",
+      "title": "Director Of Podcast Sandbox Pilot Phase2",
       "role_type": "director",
       "word_count": 7563,
       "sop_count": 9,
       "sop_min": 1,
-      "path": "templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
+      "path": "templates/role-library/podcast-sandbox-pilot/director-of-podcast-sandbox-pilot-phase2.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
       "content_sha": "sha256:d36734e56c605bf33e95dee689c311d89a4feab56a4254d22b3d238b226856ea",
-      "render_sha": "sha256:0d0faeb1c58fabd2d412c23683b181c764ecc5de0b17693e6b948c5f2071b259",
+      "render_sha": "sha256:1c36249d277758157f4f0e22925c313c1880e1a82dfeac77a283a377bf8cf5aa",
       "content_version": "1.0.3",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-05T03:39:34.267759+00:00"
     },
     {
       "slug": "scripts-specialist",

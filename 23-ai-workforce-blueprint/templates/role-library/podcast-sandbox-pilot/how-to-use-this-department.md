@@ -1,27 +1,27 @@
-# How to Use the Podcast Sandbox Canary Department 
+# How to Use the Podcast Sandbox Pilot Department 
 
-**Department:** Podcast Sandbox Canary
-**Department head:** Director of Podcast Sandbox Canary
-**Folder:** `departments/podcast-sandbox-canary/`
+**Department:** Podcast Sandbox Pilot
+**Department head:** Director of Podcast Sandbox Pilot
+**Folder:** `departments/podcast-sandbox-pilot/`
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
-> This is the plain-language guide to the Podcast Sandbox Canary department. Most
+> This is the plain-language guide to the Podcast Sandbox Pilot department. Most
 > people never realize this department exists or know how to put it to work.
-> This document fixes that. When you ask "how do I use the Podcast Sandbox Canary
-> department?" or "how do I use the Podcast Sandbox Canary specialist?", this is the
+> This document fixes that. When you ask "how do I use the Podcast Sandbox Pilot
+> department?" or "how do I use the Podcast Sandbox Pilot specialist?", this is the
 > document your agent reads to answer you.
 
 ---
 
 ## 1. What This Department Does (in plain language)
 
-The Podcast Sandbox Canary department owns all podcast sandbox canary work for your business.
+The Podcast Sandbox Pilot department owns all podcast sandbox pilot work for your business.
 
-In one sentence: **Work owned by the Podcast Sandbox Canary department**
+In one sentence: **Work owned by the Podcast Sandbox Pilot department**
 
 You do not need to know which specialist does what. You just tell the department
-what you want in plain English, and the department head (Director of Podcast Sandbox Canary)
+what you want in plain English, and the department head (Director of Podcast Sandbox Pilot)
 figures out who handles it and routes it for you.
 
 ---
@@ -30,7 +30,7 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Anything in the Podcast Sandbox Canary area of your business.
+- Anything in the Podcast Sandbox Pilot area of your business.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -43,13 +43,13 @@ get the routing right yourself.
 You have three ways to put this department to work. All of them are fine.
 
 1. **Just say it in plain English.** Message your agent like you would a
-   teammate: "I need help with something from the podcast sandbox canary team." That is enough to start.
+   teammate: "I need help with something from the podcast sandbox pilot team." That is enough to start.
 2. **Name the department if you want to be specific.** "Have the
-   Podcast Sandbox Canary department handle something from the podcast sandbox canary team." This routes
-   it straight to Director of Podcast Sandbox Canary.
+   Podcast Sandbox Pilot department handle something from the podcast sandbox pilot team." This routes
+   it straight to Director of Podcast Sandbox Pilot.
 3. **Name a specialist if you know exactly who you want.** See the specialist
-   list in Section 4 and ask for them by role: "Get the Podcast Sandbox Canary specialist
-   to take on a podcast sandbox canary task for you."
+   list in Section 4 and ask for them by role: "Get the Podcast Sandbox Pilot specialist
+   to take on a podcast sandbox pilot task for you."
 
 A good request includes, where it applies: **what** you want, **who or what it
 is for**, **when you need it**, and any **must-haves or limits**. You do not have
@@ -67,11 +67,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| _(specialists are assigned based on your workload)_ | The Director of Podcast Sandbox Canary staffs this department as work comes in. |
+| _(specialists are assigned based on your workload)_ | The Director of Podcast Sandbox Pilot staffs this department as work comes in. |
 
 ### What each specialist is for, with an example request
 
-The Director of Podcast Sandbox Canary staffs specialists in this department as your workload requires. Ask the department for what you need and the right specialist is assigned for you.
+The Director of Podcast Sandbox Pilot staffs specialists in this department as your workload requires. Ask the department for what you need and the right specialist is assigned for you.
 
 
 ---
@@ -80,14 +80,14 @@ The Director of Podcast Sandbox Canary staffs specialists in this department as 
 
 When you ask this department for something, here is the normal flow:
 
-1. **Acknowledgment.** Director of Podcast Sandbox Canary confirms the request landed and, if
+1. **Acknowledgment.** Director of Podcast Sandbox Pilot confirms the request landed and, if
    anything important is unclear, asks one focused question at a time (never a wall of questions).
 2. **Routing.** The work is matched to the right specialist and the relevant
    procedure (its SOP). Nobody guesses; if there is no procedure for your
    request, one is written before the work starts.
 3. **The work itself.** The specialist does the job and it is checked by the
    department's quality-control review before it reaches you.
-4. **Delivery.** You get the finished result: the finished podcast sandbox canary work you asked for.
+4. **Delivery.** You get the finished result: the finished podcast sandbox pilot work you asked for.
    Anything that needs your sign-off before it goes live is flagged for your
    approval first.
 
@@ -115,11 +115,11 @@ same working session; larger projects come back with a clear estimate up front.
 You can ask your agent any of these at any time and it will answer from this
 document:
 
-- "How do I use the Podcast Sandbox Canary department?"
-- "What can the Podcast Sandbox Canary department do for me?"
-- "How do I use the Podcast Sandbox Canary specialist?"
-- "Who handles something from the podcast sandbox canary team?"
-- "What do I get back if I ask Podcast Sandbox Canary for something from the podcast sandbox canary team?"
+- "How do I use the Podcast Sandbox Pilot department?"
+- "What can the Podcast Sandbox Pilot department do for me?"
+- "How do I use the Podcast Sandbox Pilot specialist?"
+- "Who handles something from the podcast sandbox pilot team?"
+- "What do I get back if I ask Podcast Sandbox Pilot for something from the podcast sandbox pilot team?"
 
 ---
 
