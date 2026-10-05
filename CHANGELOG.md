@@ -1,3 +1,17 @@
+## [v25.3.18]  -  2026-10-05  -  Update fix: the updater no longer stops with "SKILLS_DIR: unbound variable" right after taking its lock
+
+Release v25.3.17 could not complete an update. On a box it printed `line 4409: SKILLS_DIR: unbound variable` straight after `[lock] acquired` and exited 1 before changing anything. This release fixes that, so the update runs through again.
+
+#### What changed
+- **Skills folder is resolved before the front door uses it.** The one-front-door step looks for `lib-frontdoor.sh` and `oct4_frontdoor.py` in the installed `shared-utils` folder, but the updater only worked out that folder later in the run. It now resolves the skills folder first, and still resolves it again afterwards exactly as before. No other use of the variable ran before its assignment.
+- **Regression test.** `tests/unit/update-skills-skillsdir-before-frontdoor.test.sh` runs the real front-door lookup text from `update-skills.sh` with the skills folder unset and checks it finds the installed copy. It fails on v25.3.17 and passes on this release.
+
+#### Version
+- All 10 version markers move from v25.3.17 to v25.3.18.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself.
+
 ## [v25.3.17]  -  2026-10-05  -  9Router boxes: the 999 step in a fleet roll now runs only the skills-only path behind a checksum guard
 
 A fleet roll used to run the 999 installer's link path on every box. On a box that already runs 9Router, that path replaces the installed `nine-router-setup` skill and can touch the `claude-nine` launcher. This release makes the roll safe for those boxes.
