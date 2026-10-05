@@ -45,7 +45,9 @@ import base64
 import hashlib
 import json
 import re
+import shutil
 import sys
+import tempfile
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -666,9 +668,17 @@ def main():
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch()
-            page = browser.new_page(viewport={"width": widths[0], "height": VIEWPORT_H})
+            # launch_persistent_context (NOT a bare launch()) — headless, D6-safe
+            # (guard-agent-browser-managed section 5).
+            udd = tempfile.mkdtemp(prefix="skill71-validate-")
+            context = None
             try:
+                context = pw.chromium.launch_persistent_context(
+                    udd,
+                    headless=True,
+                    viewport={"width": widths[0], "height": VIEWPORT_H},
+                )
+                page = context.pages[0] if context.pages else context.new_page()
                 for width in widths:
                     page.set_viewport_size({"width": width, "height": VIEWPORT_H})
                     page.goto(page_url, wait_until="load", timeout=LOAD_TIMEOUT_MS)
@@ -850,7 +860,12 @@ def main():
                     if width == max_width:
                         inner_text_max = page.evaluate(INNERTEXT_JS) or ""
             finally:
-                browser.close()
+                if context is not None:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+                shutil.rmtree(udd, ignore_errors=True)
     except Exception as exc:
         die2(f"Playwright failure while validating {html_path}: {exc}")
 

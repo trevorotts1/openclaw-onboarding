@@ -23,7 +23,9 @@ Exit codes: 0 ok; 1 page failures (images that never loaded);
 Playwright/Chromium unavailable).
 """
 import argparse
+import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -140,42 +142,56 @@ def main(argv=None):
 
     try:
         with sync_playwright() as p:
+            # launch_persistent_context (NOT a bare launch()) — headless, D6-safe
+            # (guard-agent-browser-managed section 5).
+            udd = tempfile.mkdtemp(prefix="skill71-render-")
             try:
-                browser = p.chromium.launch(headless=True)
-            except Exception as exc:
-                print(f"ERROR: Chromium launch failed: {exc}", file=sys.stderr)
-                return 2
-            try:
-                context = browser.new_context(
-                    viewport={"width": widths[0], "height": VIEWPORT_HEIGHT},
-                    device_scale_factor=1,
-                )
-                page = context.new_page()
-                page.goto(html_path.resolve().as_uri(), wait_until="load")
-                for width in widths:
-                    page.set_viewport_size(
-                        {"width": width, "height": VIEWPORT_HEIGHT}
+                try:
+                    context = p.chromium.launch_persistent_context(
+                        udd,
+                        headless=True,
+                        viewport={"width": widths[0], "height": VIEWPORT_HEIGHT},
+                        device_scale_factor=1,
                     )
-                    page.reload(wait_until="load")
-                    failures = eager_scroll_wait(page)
-                    if failures:
-                        for img in failures:
-                            print(
-                                f"IMG NEVER LOADED: {img['src']}"
-                                + (f" (alt: {img['alt']})" if img["alt"] else "")
-                            )
-                        return 1
-                    page.evaluate(FONTS_READY_JS)
-                    full_path = out_dir / f"{width}.png"
-                    page.screenshot(path=str(full_path), full_page=True)
-                    parts_dir = out_dir if len(widths) == 1 else out_dir / str(width)
-                    parts = split_parts(full_path, parts_dir)
+                except Exception as exc:
                     print(
-                        f"RENDER OK: {width}px -> {full_path}"
-                        f" + {len(parts)} part file(s) in {parts_dir}"
+                        f"ERROR: Chromium launch failed: {exc}", file=sys.stderr
                     )
+                    return 2
+                try:
+                    try:
+                        page = context.pages[0]
+                    except IndexError:
+                        page = context.new_page()
+                    page.goto(
+                        html_path.resolve().as_uri(), wait_until="load"
+                    )
+                    for width in widths:
+                        page.set_viewport_size(
+                            {"width": width, "height": VIEWPORT_HEIGHT}
+                        )
+                        page.reload(wait_until="load")
+                        failures = eager_scroll_wait(page)
+                        if failures:
+                            for img in failures:
+                                print(
+                                    f"IMG NEVER LOADED: {img['src']}"
+                                    + (f" (alt: {img['alt']})" if img["alt"] else "")
+                                )
+                            return 1
+                        page.evaluate(FONTS_READY_JS)
+                        full_path = out_dir / f"{width}.png"
+                        page.screenshot(path=str(full_path), full_page=True)
+                        parts_dir = out_dir if len(widths) == 1 else out_dir / str(width)
+                        parts = split_parts(full_path, parts_dir)
+                        print(
+                            f"RENDER OK: {width}px -> {full_path}"
+                            f" + {len(parts)} part file(s) in {parts_dir}"
+                        )
+                finally:
+                    context.close()
             finally:
-                browser.close()
+                shutil.rmtree(udd, ignore_errors=True)
     except Exception as exc:
         print(f"ERROR: render failed: {exc}", file=sys.stderr)
         return 2

@@ -37,9 +37,15 @@ except ImportError:
 try:
     from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as p:
-        _probe = p.chromium.launch(headless=True)
-        _probe.close()
+    _probe_dir = tempfile.mkdtemp(prefix="skill71-probe-")
+    try:
+        with sync_playwright() as p:
+            # launch_persistent_context (NOT a bare launch()) — headless, D6-safe
+            # (guard-agent-browser-managed section 5).
+            _probe = p.chromium.launch_persistent_context(_probe_dir, headless=True)
+            _probe.close()
+    finally:
+        shutil.rmtree(_probe_dir, ignore_errors=True)
     PLAYWRIGHT_OK = True
 except Exception:
     PLAYWRIGHT_OK = False
