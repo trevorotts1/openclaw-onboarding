@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-10-05T03:43:19.663495+00:00",
-  "source_ref": "600a998976ffb8d97ee19801467b54b2c207e3d9",
+  "generated_at": "2026-10-05T03:46:18.399374+00:00",
+  "source_ref": "3316bac923d71cc62a5ad567d6754767a7dd3bd4",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -589,8 +589,8 @@
         "sha256:4abca49b59bbcb7e8c91f337365ec65aab0927ebe26f54f47932ff38e3b92271",
         "sha256:d36734e56c605bf33e95dee689c311d89a4feab56a4254d22b3d238b226856ea"
       ],
-      "retired_in": "600a998976ffb8d97ee19801467b54b2c207e3d9",
-      "retired_at": "2026-10-04T23:41:44-04:00"
+      "retired_in": "62210e178e6d22f6646b51da9e7b0c5379be3cad",
+      "retired_at": "2026-10-04T23:45:38-04:00"
     },
     {
       "lib_path": "templates/role-library/podcast-sandbox-canary/how-to-use-this-department.md",
@@ -601,8 +601,8 @@
       "content_shas": [
         "sha256:b3fbfb096db87c6a40506fd828b59421614ae4fbef87857ec8d8e5725e0b37c3"
       ],
-      "retired_in": "600a998976ffb8d97ee19801467b54b2c207e3d9",
-      "retired_at": "2026-10-04T23:41:44-04:00"
+      "retired_in": "62210e178e6d22f6646b51da9e7b0c5379be3cad",
+      "retired_at": "2026-10-04T23:45:38-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/deck-discovery-strategist.md",
