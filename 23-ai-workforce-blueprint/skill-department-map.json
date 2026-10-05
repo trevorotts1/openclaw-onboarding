@@ -1431,6 +1431,16 @@
    ],
    "skill": "72",
    "slug": "motion-video-plus"
+  },
+  {
+   "skill": "73",
+   "slug": "diagnose-explain-fix",
+   "name": "diagnose-explain-fix",
+   "client_facing": false,
+   "description": "Operator command (/def): finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks one question (which model performs the fix) and never asks whether to fix. Runs for the agent itself, not routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }

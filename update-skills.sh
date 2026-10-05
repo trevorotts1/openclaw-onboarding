@@ -6148,6 +6148,24 @@ print(state + " " + str(len(headers)))
   done
 
   # ----------------------------------------------------------
+  # SKILL-NUMBER COLLISION CLEANUP (2026-10-05). /def (diagnose-explain-fix) was
+  # hand-installed at slot 70, which belongs to 70-lean-core-file-system, and
+  # now ships as 73-diagnose-explain-fix. The copy loop above only adds and
+  # replaces, so a box that carries the old hand-installed folder keeps two
+  # skills labelled 70. Remove ONLY that exact folder, ONLY once 73 is on disk,
+  # and ONLY if it really is the /def skill (frontmatter name check). Never
+  # touches 70-lean-core-file-system. Guarded removal, so a blocked tree is
+  # refused whole instead of half-deleted.
+  # ----------------------------------------------------------
+  _STRAY_DEF="$SKILLS_DIR/70-diagnose-explain-fix"
+  if [ -d "$_STRAY_DEF" ] && [ -f "$SKILLS_DIR/73-diagnose-explain-fix/SKILL.md" ] \
+     && grep -q '^name: diagnose-explain-fix' "$_STRAY_DEF/SKILL.md" 2>/dev/null; then
+    oc_remove_tree_guarded "$_STRAY_DEF" "skill" || true
+    echo "    Retired stray duplicate: 70-diagnose-explain-fix (now 73-diagnose-explain-fix)"
+  fi
+  unset _STRAY_DEF
+
+  # ----------------------------------------------------------
   # v14.24.0: Refresh shared-utils/ on every update so PR-delivered helpers
   # (adaptive_weights.py, prebuilt-index manifest) reach update-only boxes.
   # Mirrors install.sh:2876-2882.
