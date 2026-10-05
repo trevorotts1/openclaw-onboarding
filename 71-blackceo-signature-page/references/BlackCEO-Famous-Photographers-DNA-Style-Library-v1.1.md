@@ -3937,7 +3937,7 @@ Do not reduce a style to its branded name plus three adjectives. The descriptive
 
 ---
 
-# 6. HYBRID STYLE RULE
+# 6. HYBRID STYLE RULE — Not used by Skill 71 — one style per page
 
 Only create a hybrid when the user explicitly requests one.
 

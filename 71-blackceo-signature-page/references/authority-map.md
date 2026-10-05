@@ -5,13 +5,14 @@ Use this map before loading detailed references.
 ## Authority order
 
 1. Latest explicit user/client instruction for the current assignment.
-2. `BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md` for production sequence, gates, repair, implementation, and handoff.
-3. The selected writing guide for copy architecture:
+2. `references/BlackCEO-Page-Brand-Law.md` plus the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages) are the top authority for page colors, fonts, logo/masthead, and founder imagery. An agent never proposes page tokens.
+3. `BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md` for production sequence, gates, repair, implementation, and handoff.
+4. The selected writing guide for copy architecture:
    - `BlackCEO-Signature-Landing-Page-Standard-v6.md`, or
    - `BlackCEO-Signature-Landing-Page-Long-Form-v6.md`.
-4. `BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md` for current image planning, art direction, Secret Super Sauce, representation, prompt construction, and visual QC.
-5. When an external page-level Creative Direction is active, the one selected family library and the one selected branded style block.
-6. OpenClaw repository/runtime constraints and current client-tool capabilities.
+5. `BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md` for current image planning, art direction, Secret Super Sauce, representation, prompt construction, and visual QC.
+6. When an external page-level Creative Direction is active, the one selected family library and the one selected branded style block.
+7. OpenClaw repository/runtime constraints and current client-tool capabilities.
 
 If a lower authority conflicts with a higher authority, preserve the higher authority and record the conflict rather than silently blending them.
 
@@ -32,7 +33,11 @@ The BlackCEO Secret Super Sauce is not a second family. It is an adaptive house 
 
 ## Visual reference status
 
-`../assets/BlackCEO-Master-Visual-Reference-Guide.png` is a visual aid. Written style IDs, names, and descriptive execution rules remain authoritative if a visual shorthand or label differs.
+`../assets/BlackCEO-Master-Visual-Reference-Guide.png` is an image-style menu only. It is not a page-layout or page-color reference. Written style IDs, names, and descriptive execution rules remain authoritative if a visual shorthand or label differs.
+
+## Prompt and image QC thresholds
+
+For prompts and images, `qc-contract.md` thresholds win over any style library: average >=8.5, each applicable criterion >=8, maximum 3 repair attempts.
 
 ## Prompt-length compatibility
 

@@ -1,0 +1,1 @@
+A short image prompt that is intentionally below the house minimum.

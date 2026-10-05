@@ -9,7 +9,7 @@
 
 ## Version 6 - Shared production rules and public-copy separation
 
-**Use this writing guide for its selected copy structure. Use the [BlackCEO Signature Landing Page Production and QC SOP](BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md) for the sequence, QC and repair, current-version handoffs, wireframes, mockups, implementation and delivery. Before image planning/prompt authoring, read the [BlackCEO Signature Image Prompt Creation Guide](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md).** These are linked responsibilities, not duplicated manuals.
+**Use this writing guide for its selected copy structure. Use the [BlackCEO Signature Landing Page Production and QC SOP](BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md) for the sequence, QC and repair, current-version handoffs, wireframes, mockups, implementation and delivery. Before image planning/prompt authoring, read the [BlackCEO Signature Image Prompt Creation Guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md).** These are linked responsibilities, not duplicated manuals.
 
 This is a universal funnel-page writing system. Set for Life is one application, not the default event, duration, founder, palette, image count, form or subject. The intake confirms the page type and desired visitor action using only missing information. A client's explicit opening and intended positioning must not be replaced by an AI-selected angle. The examples remain fictional teaching material, not client facts.
 
