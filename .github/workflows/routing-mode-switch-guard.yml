@@ -1,0 +1,86 @@
+name: routing-mode-switch guard (RF-014)
+
+# The routing safety switch must never regress unnoticed:
+#   - the `model` mode exists in EVERY reader of decision-engine-mode.conf
+#     (modes.py, schema, fallback, plugin dist, ceo_execution_policy,
+#     fleet_refresh_runner, verify-routing.sh, the p209 probe);
+#   - the tripwire flips an unpinned box to legacy after N failures in a row
+#     and writes the flag/events the health check and Rescue Rangers read;
+#   - a box whose owner pinned a mode is never flipped;
+#   - routing-mode.sh writes THROUGH the existing rules (the receipt in
+#     scripts/decision-engine-mode.py stays authoritative).
+#
+# Anti-vacuity pair: a planted defect (corrupt store, dead-pid marker) must
+# flip the verdict red, so a pass is never vacuous.
+
+on:
+  push:
+    paths:
+      - shared-utils/routing_switch.py
+      - shared-utils/model_route.py
+      - shared-utils/decision-engine.py
+      - shared-utils/decision_engine/modes/modes.py
+      - shared-utils/decision_engine/contracts/schema.py
+      - shared-utils/decision_engine/fallback/__init__.py
+      - scripts/routing-mode.sh
+      - scripts/health/routing-check.sh
+      - tests/unit/routing-mode-switch.test.sh
+      - tests/unit/test_rf014_model_mode.py
+      - .github/workflows/routing-mode-switch-guard.yml
+  pull_request:
+    paths:
+      - shared-utils/routing_switch.py
+      - shared-utils/model_route.py
+      - shared-utils/decision-engine.py
+      - shared-utils/decision_engine/modes/modes.py
+      - shared-utils/decision_engine/contracts/schema.py
+      - shared-utils/decision_engine/fallback/__init__.py
+      - scripts/routing-mode.sh
+      - scripts/health/routing-check.sh
+      - tests/unit/routing-mode-switch.test.sh
+      - tests/unit/test_rf014_model_mode.py
+      - .github/workflows/routing-mode-switch-guard.yml
+
+jobs:
+  switch-suite:
+    name: switch + tripwire + model mode (real modules, fixture boxes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pytest (runner python lacks it)
+        run: python3 -m pip install --quiet pytest || python3 -m pip install --user --quiet pytest
+
+      - name: Syntax gates (both shells)
+        run: |
+          set -euo pipefail
+          bash -n scripts/routing-mode.sh
+          bash -n scripts/health/routing-check.sh
+          python3 -m py_compile shared-utils/routing_switch.py shared-utils/model_route.py shared-utils/decision-engine.py
+          node --check extensions/ceo-routing-doctrine/dist/index.js
+
+      - name: Mode-store round trip, tripwire, model pick (shell suite)
+        run: bash tests/unit/routing-mode-switch.test.sh
+
+      - name: Bridge seams in-process (pytest companion)
+        run: python3 -m pytest tests/unit/test_rf014_model_mode.py -q
+
+      - name: Existing mode/decision suites still green (regression floor)
+        run: |
+          python3 -m pytest tests/unit/test_d34_modes_cohort.py \
+            tests/unit/test_nojev_fallback.py \
+            tests/unit/test_a62_mode_survives_install_update.py \
+            tests/unit/test_d34_wiring.py tests/unit/test_direct_first_ladder.py \
+            tests/unit/test_rep054_bridge_wire.py \
+            tests/unit/test_jev_live_decision.py -q
+
+      - name: Anti-vacuity — a planted corrupt store must turn status red
+        run: |
+          set -euo pipefail
+          T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+          printf 'garbage\n' > "$T/decision-engine-mode.conf"
+          if OC_CONFIG="$T" bash scripts/routing-mode.sh status >/dev/null 2>&1; then
+            echo "a corrupt mode store did NOT fail status — the check cannot fire"; exit 1
+          fi
+          echo "planted corrupt store correctly rejected (non-zero)"
