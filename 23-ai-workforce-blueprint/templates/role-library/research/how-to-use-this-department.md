@@ -79,6 +79,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Market Trends Specialist** | Tracks emerging trends - technology, consumer behavior, regulatory. |
 | **Persona Research Specialist** | Builds the ideal-customer-profile docs that Marketing, Sales, and CRM use. |
 | **Survey And Polling Specialist** | Survey and Polling Specialist for the company, the person who designs, deploys. |
+| **Industry Analysis Specialist Phase2** | **** for the department of the company, reporting to the . |
 
 ### What each specialist is for, with an example request
 
@@ -116,6 +117,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Survey and Polling Specialist for the company, the person who designs, deploys.
 - *Example request:* "Have the Survey And Polling Specialist take this on: Survey and Polling Specialist for the company, the person who designs, deploys."
+
+**Industry Analysis Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Industry Analysis Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

@@ -83,6 +83,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Speech Writing Specialist** | Writes keynotes, podcast guest scripts, talking points for the owner, voiceover scripts. |
 | **Transcription Specialist** | Generates and cleans up transcripts - podcast, video, interview, course content. |
 | **Voice Agent Builder** | Builds AI voice agents - phone bots, voice assistants, IVR systems. |
+| **AI Voice Specialist** | For the department of the company, which exists to . |
+| **CRM Specialist (Audio Department)** | For the department of the company, which exists to . |
 
 ### What each specialist is for, with an example request
 
@@ -140,6 +142,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Builds AI voice agents - phone bots, voice assistants, IVR systems.
 - *Example request:* "Have the Voice Agent Builder take this on: Builds AI voice agents - phone bots, voice assistants, IVR systems."
+
+**AI Voice Specialist**
+
+- *What it is for:* For the department of the company, which exists to .
+- *Example request:* "Have the AI Voice Specialist take this on: For the department of the company, which exists to ."
+
+**CRM Specialist (Audio Department)**
+
+- *What it is for:* For the department of the company, which exists to .
+- *Example request:* "Have the CRM Specialist (Audio Department) take this on: For the department of the company, which exists to ."
 
 
 ---
