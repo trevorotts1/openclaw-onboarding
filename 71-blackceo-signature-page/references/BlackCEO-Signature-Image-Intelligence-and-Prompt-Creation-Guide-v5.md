@@ -98,7 +98,7 @@ Use the following order. Do not jump to style selection before understanding the
 1. **Lock the page facts.** Read the QC-passed copy, audience, offer, brand, image inventory, wireframe, required people/objects, identity references, typography needs and intended action.
 2. **Honor an explicit choice.** If the user supplies a branded style or a source reference that maps to one of the libraries, use the corresponding branded system. The downstream image prompt receives the branded system and descriptive grammar, not the human source name.
 3. **Honor an explicit family.** If the user says photographic, cinematic/directorial, or visual-artist but does not name a style, select only inside that family.
-4. **If choice is delegated, choose the family first.** Decide whether the page's strongest organizing idea is photographic credibility, cinematic world/story, or visual-art/material/concept language.
+4. **If the owner explicitly writes that the choice is delegated** (intake field `creative_direction: "delegated"`), choose the family first. Decide whether the page's strongest organizing idea is photographic credibility, cinematic world/story, or visual-art/material/concept language. Absent that explicit delegation, no external style is selected and the page is `SECRET_SAUCE_ONLY`.
 5. **Choose one branded style.** Compare candidates by page-story fit, brand fit, audience fit, emotional-arc fit, section versatility, representation compatibility, typography compatibility, engine feasibility, and ability to remain distinctive across the whole page.
 6. **Lock the style for the page.** Once selected, do not switch style systems by section simply because another style seems convenient.
 7. **Compile the Page Visual Bible.** Record the style's non-negotiable visual anchors, the Secret Sauce blend profile, continuity rules, allowed variation and anti-drift rules before authoring any production prompt.
@@ -1953,7 +1953,7 @@ A model or agent given this document should treat the style as a complete visual
 6. The earlier legacy Midjourney landing-page prompt document contributes section-storytelling, emotional sequencing, fashion-editorial presence, varied camera treatment, and audience-specific casting. It is not a current API guide. [L1]
 7. The new creative recipes and examples in this manual translate those principles into explicit language. They are implementation guidance, not claims that the sources supplied these exact fictional scenes.
 
-No repository file is changed merely because this manual was written. Do not report that live gates have been upgraded when only documentation has changed. **For signature-page work, this v4 master overrides companion-library hybrid permissions and retry counts:** one external style only; no cross-family or multi-style blend; failed work receives at most three focused repair attempts under the existing page workflow.
+No repository file is changed merely because this manual was written. Do not report that live gates have been upgraded when only documentation has changed. **For signature-page work, this v5 master overrides companion-library hybrid permissions and retry counts:** one external style only; no cross-family or multi-style blend; failed work receives at most three focused repair attempts under the existing page workflow.
 
 ### B. Two source differences that must remain explicit
 
@@ -2382,6 +2382,8 @@ For each illustrative human asset, track: age band, face shape, skin-tone label,
 
 
 ## 8. Color correction and deliberate oversaturated color grading
+
+In `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim.
 
 **Color correction** establishes believable exposure and color balance. **Color grading** establishes the creative look and mood. In `SECRET_SAUCE_ONLY`, the default look is the full BlackCEO Secret Super Sauce: selective hyperchroma, deep black-point architecture, controlled highlight energy, protected natural skin/material color, rich chromatic depth, focal microcontrast, and sculptural separation. When an external Creative Direction is active, **its palette/tonal system governs first** and the Secret Sauce contributes only the FULL/ADAPT dimensions recorded in the Page Visual Bible. Do not force hyperchroma, deep blacks, warm skin, a LUT-like grade or beauty separation into a style whose defining logic requires something else.
 

@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
-description: Builds BlackCEO Signature single-page conversion experiences using the Standard or Long-Form BlackCEO page system, full copy-to-wireframe-to-mockup-to-image-to-responsive-build workflow, Secret Super Sauce visual intelligence, and deterministic QC helpers. Use for landing pages, opt-in/squeeze pages, event or registration pages, challenge pages, booking pages, lead-generation pages, and other focused single-page conversion requests. Do not use for Skill 49 multi-step 3/5/7 funnels, Skill 56 direct-response/VSL sales-page stacks, or Skill 62 cinematic scroll experiences.
-version: 1.0.2
+description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
+version: 1.1.0
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -35,8 +35,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 
 ## Read only what the current stage needs
 
-Start with `references/authority-map.md`, then use:
-
+- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages).
 - Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
 - Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
 - Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
@@ -44,18 +43,25 @@ Start with `references/authority-map.md`, then use:
 - Photographic direction: `references/BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md`
 - Cinematic/directorial direction: `references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md`
 - Visual-artist direction: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
-- Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png`
-- Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`
+- Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png` — an image-style menu only, never a page-layout or page-color reference
+- Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`, `references/stage-contract.json`, `references/html-qc-rubric.md`
+- Swarm plan: `references/swarm-plan.md`
 
-Do not load all three style libraries at once. Load only the selected family/style when needed.
+Do not load all three style libraries at once. Load only the selected family/style when needed. The exact per-stage reading list is the `reads` field of `references/stage-contract.json` — agents carry only what their stage names, never the full 100-400 KB guides.
+
+### Design / wireframes / mockups
+
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens.
 
 ## Governing production order
 
-Use the Production/QC SOP as authority. The normal state machine is:
+Use the Production/QC SOP as authority. `scripts/stage_gate.py` is mandatory. Before starting any stage run `stage_gate.py check <run_dir> <stage>`; a stage ends only when `stage_gate.py close <run_dir> <stage>` exits 0. A run order or prompt cannot remove or rename stages. If a run order lists fewer stages than `references/stage-contract.json`, follow the contract and record the order's omission in the report.
 
-`intake -> copy -> font/action plan -> desktop wireframe -> mobile/tablet -> visual mockup -> image inventory/prompts -> image generation/QC -> image map/upload -> final mockups -> responsive HTML -> target install/test -> publish/verify when authorized`
+Stage IDs (canonical, from `references/stage-contract.json`):
 
-Use `scripts/validate_state.py` for deterministic state checks when a workflow-state JSON is maintained.
+`intake, copy, font-action-plan, desktop-wireframe, mobile-tablet, visual-mockup, image-inventory-prompts, image-generation-qc, image-map-upload, final-mockups, responsive-html, ghl-install-test, publish-verify`
+
+Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the private workflow-state JSON; `scripts/validate_state.py` remains available for that file (back-compat). The gate's receipts under `private/receipts/` are what actually close stages.
 
 ### Copy
 
@@ -68,7 +74,7 @@ Use `scripts/validate_state.py` for deterministic state checks when a workflow-s
 
 ### Design / wireframes / mockups
 
-- Establish font intelligence and visitor-action plan before full wireframes.
+- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens.
 - Build complete desktop first, then intentionally reflow mobile/tablet; do not merely shrink desktop.
 - Resist generic AI-page patterns: repetitive cards, identical section geometry, generic SaaS gradients, sterile stock-office scenes, repeated center alignment, and same-ratio imagery everywhere.
 - Use varied visual rhythm, negative space, typography, asymmetry, scale, image shape, and intentional interruptions.
@@ -85,11 +91,13 @@ A page may use exactly one external Creative Direction family/style, or Secret-S
 - one Visual-Artist Direction; or
 - no external direction, with the BlackCEO Secret Super Sauce primary.
 
+If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
+
 Never mix external families on one page. The Secret Super Sauce is the adaptive BlackCEO house layer, not a second external style. Where a Sauce dimension conflicts with a defining trait of the selected style, the selected style wins for that dimension and compatible BlackCEO qualities remain active.
 
 ## Image planning and generation
 
-Read the full v5 image-intelligence guide before production prompt authoring.
+Read only what the stage contract's `reads` field names for image stages (the v5 image guide sections needed, brand law, the grade block), never the whole library bundle.
 
 Non-negotiables:
 
@@ -97,13 +105,14 @@ Non-negotiables:
 - production prompts: **5,000–20,000 meaningful characters** under the BlackCEO house rule;
 - default working target: **8,000–14,000 useful characters** because the current referenced runtime compatibility ceiling is 19,000;
 - never silently truncate a prompt or disable validation;
+- in `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim (`scripts/validate_prompt.py --sauce-only` enforces it);
 - use camera, lens, aperture/depth, composition, subject placement, lighting, posture/expression, fashion, skin/hair, color-grade, typography-as-image, and negative-space intelligence where applicable;
 - preserve real-person identity and recurring-character continuity;
 - use the Black representation intelligence in the image guide when Black/African-descended subjects are present;
 - keep one page-level Art Direction coherent while varying shot/view scale, ratio, environment, posture, scene type, and intensity;
 - never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 
-Run `scripts/validate_prompt.py` on final prompts and `scripts/validate_image_manifest.py` on the image map.
+Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map.
 
 ### Image engine routing
 
@@ -115,11 +124,15 @@ Ask whether the owner/client has an explicit image-engine preference when genera
 
 Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
 
+## Swarm execution
+
+Run stages as `references/swarm-plan.md` defines: one agent per item, reviewers start when their item lands, never fixed-size chunks. Every agent writes its receipt to `private/receipts/` and its files to the run folder. The orchestrator learns results only from `stage_gate.py check/close` output, never from an agent's chat reply. No re-read or recovery lanes.
+
 ## QC and repair
 
 Read `references/qc-contract.md`.
 
-- General page-stage criteria: each applicable criterion >=8/10 with no auto-fail.
+- General page-stage criteria: each applicable criterion >=8/10 with no auto-fail (responsive-html is scored on `references/html-qc-rubric.md`).
 - Prompt/generated-image work: retain the stricter average >=8.5, each applicable criterion >=8, zero auto-fails where the governing references require it.
 - A failed artifact is repaired and rechecked before downstream use.
 - Do not rework passing artifacts without a dependency reason.
@@ -127,10 +140,14 @@ Read `references/qc-contract.md`.
 
 ## Delivery
 
-- Build only from current QC-passed copy, visual plan, approved assets, image map, and action plan.
+- Build only from current QC-passed copy, visual plan, approved assets, image map, and action plan. The final mockups are the visual target; the HTML must match them section by section.
 - Preserve real forms, checkout, booking, URLs, embeds, and workflows; do not invent substitutes.
 - For GHL, hand the delivery bundle to Skill 6 rather than bypassing its rail.
 - Publish only when authorization is present under the current OpenClaw policy; otherwise deliver preview/staging artifacts and exact remaining action.
+
+## Reporting
+
+Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED.
 
 ## Installation / maintenance boundary
 

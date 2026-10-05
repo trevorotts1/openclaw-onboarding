@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "brand.schema.json",
+  "title": "Skill 71 page brand file",
+  "type": "object",
+  "required": [
+    "brand_id", "source", "palette", "logo_only_colors", "color_tolerance",
+    "fonts", "banned_fonts", "logo", "founder_photos", "people_rule",
+    "default_creative_direction", "grade", "page_design_rules", "banned_page_patterns"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "brand_id": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gold", "navy", "cream"],
+      "properties": {
+        "gold": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
+        "navy": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
+        "cream": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"}
+      }
+    },
+    "logo_only_colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["black", "white"],
+      "properties": {
+        "black": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"},
+        "white": {"type": "string", "pattern": "^(#[0-9A-Fa-f]{6}|TREVOR_MUST_SUPPLY|CLIENT_MUST_SUPPLY)$"}
+      }
+    },
+    "color_tolerance": {"type": "integer", "minimum": 0, "maximum": 255},
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display", "body", "accent"],
+      "properties": {
+        "display": {"type": "string", "minLength": 1},
+        "body": {"type": "string", "minLength": 1},
+        "accent": {"type": "string", "minLength": 1}
+      }
+    },
+    "banned_fonts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "logo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "masthead_files"],
+      "properties": {
+        "files": {"type": "string", "minLength": 1},
+        "masthead_files": {"type": "string", "minLength": 1}
+      }
+    },
+    "founder_photos": {"type": "string", "minLength": 1},
+    "people_rule": {"type": "string", "minLength": 1},
+    "default_creative_direction": {"type": "string", "enum": ["SECRET_SAUCE_ONLY"]},
+    "grade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_file", "min_mean_saturation", "min_luma_std"],
+      "properties": {
+        "block_file": {"type": "string", "minLength": 1},
+        "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "min_luma_std": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "page_design_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "banned_page_patterns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

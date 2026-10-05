@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "description": "Skill 71 mandatory stage contract. scripts/stage_gate.py is the only enforcer: no stage starts until check exits 0, no stage closes until close exits 0. Stage IDs are canonical; a run order or prompt cannot remove or rename them.",
+  "stage_order": [
+    "intake",
+    "copy",
+    "font-action-plan",
+    "desktop-wireframe",
+    "mobile-tablet",
+    "visual-mockup",
+    "image-inventory-prompts",
+    "image-generation-qc",
+    "image-map-upload",
+    "final-mockups",
+    "responsive-html",
+    "ghl-install-test",
+    "publish-verify"
+  ],
+  "stages": {
+    "intake": {
+      "depends_on": [],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "intake.json", "min_count": 1 }
+      ],
+      "validators": [
+        "gate:must_supply --brand {brand}"
+      ],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Page-Brand-Law.md",
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md"
+      ],
+      "may_be_not_authorized": false
+    },
+    "copy": {
+      "depends_on": ["intake"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "copy/internal-manuscript.md", "min_count": 1 },
+        { "glob": "copy/public-copy.md", "min_count": 1 },
+        { "glob": "copy/copy-manifest.json", "min_count": 1 }
+      ],
+      "validators": [
+        "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md"
+      ],
+      "review_required": true,
+      "min_scores": { "each": 8 },
+      "reads": [
+        "references/BlackCEO-Page-Brand-Law.md",
+        "references/BlackCEO-Signature-Landing-Page-Standard-v6.md",
+        "references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md"
+      ],
+      "may_be_not_authorized": false
+    },
+    "font-action-plan": {
+      "depends_on": ["copy"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "font-action-plan/font-map.json", "min_count": 1 },
+        { "glob": "font-action-plan/action-plan.md", "min_count": 1 }
+      ],
+      "validators": [
+        "gate:brand_fonts --font-map {run_dir}/font-action-plan/font-map.json --brand {brand}"
+      ],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json"
+      ],
+      "may_be_not_authorized": false
+    },
+    "desktop-wireframe": {
+      "depends_on": ["font-action-plan"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "desktop-wireframe/part-*.png", "min_count": 1 },
+        { "glob": "desktop-wireframe/image-inventory.json", "min_count": 1 }
+      ],
+      "validators": [],
+      "review_required": true,
+      "min_scores": { "each": 8 },
+      "reads": [
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "font-action-plan/font-map.json"
+      ],
+      "may_be_not_authorized": false
+    },
+    "mobile-tablet": {
+      "depends_on": ["desktop-wireframe"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "mobile-tablet/part-*.png", "min_count": 1 },
+        { "glob": "mobile-tablet/tablet-rules.md", "min_count": 1 }
+      ],
+      "validators": [],
+      "review_required": true,
+      "min_scores": { "each": 8 },
+      "reads": [
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "font-action-plan/font-map.json"
+      ],
+      "may_be_not_authorized": false
+    },
+    "visual-mockup": {
+      "depends_on": ["mobile-tablet"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "visual-mockup/page-visual-bible.json", "min_count": 1 },
+        { "glob": "visual-mockup/mockup.html", "min_count": 1 },
+        { "glob": "visual-mockup/desktop/part-*.png", "min_count": 1 },
+        { "glob": "visual-mockup/mobile/part-*.png", "min_count": 1 }
+      ],
+      "validators": [
+        "python3 scripts/validate_visual_direction.py {run_dir}",
+        "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
+      ],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json",
+        "assets/brand/signature-grade-block.txt",
+        "desktop-wireframe/",
+        "mobile-tablet/"
+      ],
+      "may_be_not_authorized": false
+    },
+    "image-inventory-prompts": {
+      "depends_on": ["mobile-tablet"],
+      "requires_artifacts": ["visual-mockup/page-visual-bible.json"],
+      "artifacts": [
+        { "glob": "image-inventory-prompts/IMG-*.txt", "min_count": 1 },
+        { "glob": "image-inventory-prompts/prompt-manifest.json", "min_count": 1 }
+      ],
+      "per_file_glob": "image-inventory-prompts/IMG-*.txt",
+      "count_of": "desktop-wireframe/image-inventory.json",
+      "count_glob": "image-inventory-prompts/IMG-*.txt",
+      "validators": [
+        "python3 scripts/validate_prompt.py {file} {sauce}"
+      ],
+      "review_required": true,
+      "min_scores": { "each": 8, "average": 8.5 },
+      "reads": [
+        "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json",
+        "assets/brand/signature-grade-block.txt"
+      ],
+      "may_be_not_authorized": false
+    },
+    "image-generation-qc": {
+      "depends_on": ["image-inventory-prompts"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "image-generation-qc/Image-*.png", "min_count": 1 },
+        { "glob": "image-generation-qc/image-qc.json", "min_count": 1 }
+      ],
+      "per_file_glob": "image-generation-qc/Image-*.png",
+      "count_of": "desktop-wireframe/image-inventory.json",
+      "count_glob": "image-generation-qc/Image-*.png",
+      "cost_required": true,
+      "validators": [
+        "python3 scripts/validate_image_grade.py {file} --brand {brand}"
+      ],
+      "review_required": true,
+      "min_scores": { "each": 8, "average": 8.5 },
+      "reads": [
+        "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json"
+      ],
+      "may_be_not_authorized": false
+    },
+    "image-map-upload": {
+      "depends_on": ["image-generation-qc"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "image-map-upload/image-map.json", "min_count": 1 },
+        { "glob": "image-map-upload/image-map.md", "min_count": 1 }
+      ],
+      "validators": [
+        "python3 scripts/validate_image_manifest.py {run_dir}/image-map-upload/image-map.json --inventory {run_dir}/desktop-wireframe/image-inventory.json --measure --check-files"
+      ],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/artifact-contracts.md",
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md"
+      ],
+      "may_be_not_authorized": false
+    },
+    "final-mockups": {
+      "depends_on": ["visual-mockup", "image-map-upload"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "final-mockups/mockup.html", "min_count": 1 },
+        { "glob": "final-mockups/desktop/part-*.png", "min_count": 1 },
+        { "glob": "final-mockups/mobile/part-*.png", "min_count": 1 }
+      ],
+      "validators": [
+        "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
+      ],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json",
+        "visual-mockup/mockup.html",
+        "image-map-upload/image-map.json"
+      ],
+      "may_be_not_authorized": false
+    },
+    "responsive-html": {
+      "depends_on": ["final-mockups"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "responsive-html/index.html", "min_count": 1 },
+        { "glob": "responsive-html/page.txt", "min_count": 1 },
+        { "glob": "responsive-html/compare/*.png", "min_count": 1 }
+      ],
+      "validators": [
+        "python3 scripts/validate_page.py {run_dir}/responsive-html/index.html --brand {brand} --mode page --run-dir {run_dir}",
+        "python3 scripts/compare_sheet.py {run_dir}"
+      ],
+      "review_required": true,
+      "review_covers": "responsive-html/compare/*.png",
+      "min_scores": { "each": 8 },
+      "reads": [
+        "references/BlackCEO-Page-Brand-Law.md",
+        "assets/brand/blackceo-brand.json",
+        "final-mockups/mockup.html",
+        "image-map-upload/image-map.json",
+        "copy/public-copy.md",
+        "font-action-plan/font-map.json",
+        "references/html-qc-rubric.md"
+      ],
+      "may_be_not_authorized": false
+    },
+    "ghl-install-test": {
+      "depends_on": ["responsive-html"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "ghl-install-test/install-steps.md", "min_count": 1 }
+      ],
+      "validators": [],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
+        "responsive-html/page.txt"
+      ],
+      "may_be_not_authorized": true
+    },
+    "publish-verify": {
+      "depends_on": ["ghl-install-test"],
+      "requires_artifacts": [],
+      "artifacts": [
+        { "glob": "publish-verify/receipts/*", "min_count": 1 }
+      ],
+      "validators": [],
+      "review_required": false,
+      "min_scores": null,
+      "reads": [
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md"
+      ],
+      "may_be_not_authorized": true
+    }
+  }
+}

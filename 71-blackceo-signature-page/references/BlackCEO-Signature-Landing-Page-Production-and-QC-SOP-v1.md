@@ -2,7 +2,7 @@
 
 **Version:** 1.0 | **Date:** September 30, 2026  
 **Owner:** Trevor Otts / BlackCEO  
-**Scope:** A universal process for funnel-type pages: landing pages, opt-in/squeeze pages, event/registration pages, challenge pages, sales pages, booking pages and comparable focused visitor journeys.  
+**Scope:** A universal process for funnel-type pages: landing pages, opt-in/squeeze pages, event/registration pages, challenge pages, sales pages, booking pages and comparable focused visitor journeys. In OpenClaw, direct-response / VSL sales-page stacks route to Skill 56; this SOP's sales-page notes apply only to a single BlackCEO Signature page the owner explicitly assigns here.  
 **Status:** Production instructions. Creating this document does not publish a page, update GitHub, authorize payment, or certify a live implementation.
 
 ## Start here: the four connected documents
@@ -12,7 +12,7 @@
 | [Standard writing guide v6](BlackCEO-Signature-Landing-Page-Standard-v6.md) | The original twelve-section writing system and its compact length/CTA rules. |
 | [Long-form writing guide v6](BlackCEO-Signature-Landing-Page-Long-Form-v6.md) | Expanded writing with the three inserted solution sections and the long-form CTA map. |
 | **This production and QC SOP** | The order of work, checks, repairs, current-version handoffs, implementation and delivery. |
-| [Image Prompt Creation Guide v1](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md) | Repository-led prompt anatomy plus section-based camera, face, hair, tone, composition and color-grade intelligence. |
+| [Image Prompt Creation Guide v1](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md) | Repository-led prompt anatomy plus section-based camera, face, hair, tone, composition and color-grade intelligence. |
 
 Choose the writing guide for the requested page. Do not build both standard and long form by default. The image guide is required reading before image planning is finalized and before any image prompt is authored. The two writing guides point here so they do not carry competing copies of the entire production process.
 
@@ -125,7 +125,7 @@ Keep an internal review manuscript with exact framework labels, counts and priva
 
 ### A. Map the fonts before full wireframes
 
-Use Google Fonts by default, or a deliberately selected Google Fonts equivalent for an otherwise unavailable/proprietary face. Match the client's visual direction; do not claim the substitute is the original font detected in a raster mockup. Existing logos remain artwork.
+Use the fonts in the run's brand file (`intake.json` -> `brand_file`) exactly — display, body, and accent roles come from `references/BlackCEO-Page-Brand-Law.md` and that file, never from an agent's proposal. Google Fonts by default supplies those faces, or a deliberately selected Google Fonts equivalent for an otherwise unavailable/proprietary face; do not claim the substitute is the original font detected in a raster mockup. Existing logos remain artwork.
 
 Map actual family names, real weights/italics, role, desktop/tablet/mobile size and line height, emphasis, readable colors, wrapping, margins and fallback behavior. Use the actual longest copy and CTA wording. Avoid forcing one client's four font choices onto every future client. Google Fonts supports requesting named families and selected variants. [W1]
 
@@ -151,7 +151,7 @@ Create a creative composition through meaningful hierarchy, mixed image proporti
 
 ### B. Start the image inventory
 
-Assign every requested generated image its stable ID, intended role, dimensions/aspect, desktop slot and expected mobile role. Identify existing logo/product/identity assets separately. Zero-image panels remain valid. Read the Image Prompt Creation Guide during this planning so crop, face, hair and scene requirements are not discovered after the layout is locked.
+Assign every requested generated image its stable ID, intended role, dimensions/aspect, desktop slot and expected mobile role. Identify existing logo/product/identity assets separately. Zero-image panels remain valid. Read only the image guide's crop/face/hair requirements section during this planning so crop, face, hair and scene requirements are not discovered after the layout is locked.
 
 ### C. Export without shrinking or cutting
 
@@ -181,19 +181,19 @@ Use as many consecutive PNG parts as needed. Confirm that stitching them in orde
 
 ### A. Apply the visual system to the passed layouts
 
-Use brand colors, actual typography, frames/backgrounds and the full copy. Keep the wireframes' structural decisions and image slots. Use deliberate temporary references or placeholders where final imagery does not yet exist. Record their temporary status privately; do not put "image goes here" inside customer-facing copy.
+Use the fonts and palette in the run's brand file (`intake.json` -> `brand_file`) exactly — never tokens an agent proposes. Apply actual typography, frames/backgrounds and the full copy. Keep the wireframes' structural decisions and image slots. Use deliberate temporary references or placeholders where final imagery does not yet exist. Record their temporary status privately; do not put "image goes here" inside customer-facing copy.
 
 ### B. Avoid double image production
 
 Do not generate throwaway campaign photography just to fill this first mockup. Establish each image's visual direction through the layout and image plan. The same mockup will later receive the final passed images; this is not two independent design projects.
 
-**Output:** full desktop/mobile visual-direction mockups and current image inventory. **QC/repair:** brand, typography, composition, continuity, readable full copy and no unapproved additions. No new testimonials, offers, FAQs, badges or extra CTAs invented to make the mockup look complete.
+**Output:** `visual-mockup/page-visual-bible.json` and its human-readable `.md`; `visual-mockup/mockup.html` (static, full public copy, brand fonts and palette only, image slots as solid blocks marked `data-image-slot="IMG-###"` at the wireframe's exact sizes); `visual-mockup/desktop/part-*.png` (1440px) and `visual-mockup/mobile/part-*.png` (390px) rendered from `mockup.html` by `scripts/render_page.py`. **QC/repair:** brand file, typography, composition, continuity, readable full copy and no unapproved additions. No new testimonials, offers, FAQs, badges or extra CTAs invented to make the mockup look complete.
 
 ## Stage 7 - Write and QC the image prompts
 
 ### A. Use the image guide, not remembered shortcuts
 
-Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md). For every actual generated-asset entry, author one complete ten-element prompt, 5,000-20,000 characters each. Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
+Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md). For every actual generated-asset entry, author one complete ten-element prompt, 5,000-20,000 characters each. Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
 
 Keep numeric technical ratio/dimension fields in the request/manifest, matched to the prompt's composition. Put all actual rendering instructions, reference directives and negatives inside the counted prompt. Resolve alternatives before submission. No Midjourney flags, spintax, obsolete reference links, shortened generator summaries or blanket ratios.
 
@@ -275,13 +275,13 @@ Install the actual passed images in their assigned positions. Keep the approved 
 
 Review desktop and mobile separately and the tablet reflow specification. Actual faces, hair, words on props and focal points must survive the intended crops. Do not redesign a page solely because the generator delivered a different composition; repair the image or obtain an authorized layout decision.
 
-**Output:** final desktop/mobile mockups using the current assets and maps. **QC/repair:** full copy and image parity, intended visual hierarchy, correct fonts, usable action state, no private labels. This is an update of the original mockup, not another unrelated creative round.
+**Output:** `final-mockups/mockup.html` = the Stage 6 mock with real images in the slots; `final-mockups/desktop/part-*.png` and `final-mockups/mobile/part-*.png` rendered by `scripts/render_page.py`. **QC/repair:** full copy and image parity, intended visual hierarchy, correct fonts, usable action state, no private labels. This is an update of the original mockup, not another unrelated creative round.
 
 ## Stage 12 - Build the responsive HTML and repair it before installation
 
 ### A. Read the current inputs
 
-Use the clean public copy, font map, wireframes, final mockups, Image Map, form/checkout information and action plan. Use only current QC-passed versions. Keep the exact button labels and their version-specific placement. No live page receives private framework names in body text, image alt/title, data content, CSS class names describing secret steps, or comments.
+Use the clean public copy, font map, wireframes, final mockups, Image Map, form/checkout information and action plan. The final mockups are the visual target; the HTML must match them section by section. Use only current QC-passed versions. Keep the exact button labels and their version-specific placement. No live page receives private framework names in body text, image alt/title, data content, CSS class names describing secret steps, or comments.
 
 ### B. Implement the selected route
 
@@ -299,7 +299,7 @@ Use progressive animation so unsupported or delayed scripts do not hide copy. Re
 
 Compare customer-facing text with the approved copy, compare all image URLs/placements, scan for private labels/placeholders, and render desktop/tablet/mobile widths. Check actual font faces loaded, overflow, image crops, full steps/letter, action behavior and reduced motion. A regex scan alone is not proof of visual correctness. Test the passed code after repairs without changing unrelated passing content.
 
-**Output:** current responsive code-only TXT, appropriate HTML preview/deployment files, separate form CSS where required, minimal install notes and real check results. **QC/repair:** every required criterion >=8, no hard failures. Local tests are explicitly local; never mark them as completed GHL tests.
+**Output:** current responsive code-only TXT, appropriate HTML preview/deployment files, separate form CSS where required, minimal install notes and real check results. **QC/repair:** every required criterion >=8 under `references/html-qc-rubric.md`, no hard failures. Local tests are explicitly local; never mark them as completed GHL tests.
 
 ## Stage 13 - Install in GHL and test the actual visitor journey
 
@@ -395,7 +395,7 @@ A later repair updates the current artifact and only affected references. It doe
 
 The production order, universal scope, below-8 repair rule, failed-only three-attempt allowance, 5,000-20,000 per-image prompt requirement, Google Fonts preference, image naming, shared 20-per-15-second submission ceiling, and no-private-label rule are Trevor's current instructions. The specific action templates and stage deliverables implement those instructions.
 
-The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Prompt-Creation-Guide-v1.md#15-source-record-and-translation-boundaries). Those sources retain their separate independent roles, stricter 8.5 averages and current 19,000-character runtime cap. The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
+The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md#15-source-record-and-translation-boundaries). Those sources retain their separate independent roles, stricter 8.5 averages and current 19,000-character runtime cap. The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
 
 Public technical references checked September 30, 2026:
 
