@@ -6,7 +6,7 @@ A fleet roll used to run the 999 installer's link path on every box. On a box th
 - **9Router boxes get skills-only.** The roll detects a 9Router box (the `~/.9router` folder, the `claude-nine` launcher, and the health endpoint answering) and hands the 999 installer exactly `--skills-only`, never the link or full-install path.
 - **Checksum guard.** `shared-utils/nine_router_guard.py` takes a checksum snapshot of the router config, the router database and the launcher files before and after the 999 step. Any difference fails that box and rolls it back.
 - **Unreachable boxes are skipped, not failed.** An unreachable box (ssh exit 255) is now listed as SKIPPED instead of FAILED.
-- **Wiring and tests.** `scripts/fleet-refresh.sh`, `shared-utils/fleet_refresh_runner.py` and `shared-utils/lib-frontdoor.sh` carry the new path. `tests/unit/nine-router-skills-only-roll.test.py` is the regression test and `.github/workflows/nine-router-skills-only-roll-guard.yml` runs it on every push and pull request.
+- **Wiring and tests.** `scripts/fleet-refresh.sh`, `shared-utils/fleet_refresh_runner.py` and `shared-utils/lib-frontdoor.sh` carry the new path. `tests/unit/nine-router-skills-only-roll.test.py` is the regression test for this change.
 
 #### Version
 - All 10 version markers move from v25.3.16 to v25.3.17.
