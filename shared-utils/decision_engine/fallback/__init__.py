@@ -39,6 +39,8 @@ SKIP_REASONS = (
     "budget_exhausted",
 )
 
+CATCH_ALL_IDS = ("general-task", "dept-general-task")  # no-match target; "general-task" wins
+
 EFFECTIVE_PATH_NOJEV = "non_jev"
 EFFECTIVE_PATH_JEV = "jev"
 
@@ -204,6 +206,16 @@ def select(
     ]
     ranking = _lexical_rank(entries, query)
     selected = ranking[0]["id"] if ranking else None
+    # No match -> general-task. A catalog carrying the catch-all department
+    # never lets a zero-overlap query land on whichever entry happens to be
+    # first; the catch-all itself is not ranked as a lexical winner (same rule
+    # as the JEV bridge, which excludes it from ranking and falls back to it).
+    catch_all = next((c for c in CATCH_ALL_IDS if any(e["id"] == c for e in entries)), None)
+    no_match_catch_all = False
+    if catch_all is not None:
+        best = next((r for r in ranking if r["id"] != catch_all and r["score"] > 0.0), None)
+        selected = best["id"] if best else catch_all
+        no_match_catch_all = best is None
 
     capability_path = route_capability(jev_available, embeddings_available)
     reason_codes = ["nojev_lexical_rule_rank"]
@@ -211,6 +223,8 @@ def select(
         reason_codes.append("empty_catalog_truthful_fallback")
     elif ranking[0]["score"] == 0.0:
         reason_codes.append("zero_overlap_truthful_rank")
+    if no_match_catch_all:
+        reason_codes.append("no_match_general_task")
     if fallback_model is not None:
         reason_codes.append("caller_fallback_model_noted")
 
@@ -221,11 +235,12 @@ def select(
         },
     ]
     if ranking:
+        win = next(r for r in ranking if r["id"] == selected)
         evidence.append(
             {
                 "source": "lexical",
                 "detail": (
-                    f"winner {selected!r}: {ranking[0]['overlap']} "
+                    f"winner {selected!r}: {win['overlap']} "
                     "overlapping token(s)"
                 ),
             }

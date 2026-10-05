@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
   "version": "25.3.15",
-  "total_roles": 438,
+  "total_roles": 439,
   "total_departments": 36,
   "departments": {
     "account-management": {
@@ -216,7 +216,7 @@
       "content_hashed_at": "2026-10-03T23:41:53.977462+00:00"
     },
     "general-task": {
-      "count": 8,
+      "count": 9,
       "roles": [
         "deep-research-specialist-general-task",
         "devils-advocate--general-task",
@@ -225,10 +225,11 @@
         "healer-general-task",
         "qc-specialist-general-task",
         "sop-writer",
-        "triage-classifier"
+        "triage-classifier",
+        "unroutable-task-handler"
       ],
-      "content_sha": "sha256:0af582cb422585d07c8a674de7c9cddaf3d1c0bc958088887bea01bc51866ce8",
-      "content_hashed_at": "2026-10-03T23:41:53.977462+00:00"
+      "content_sha": "sha256:f0cccd9a93c390212e9a7abc722f1bc9f131cea18461c3ed55a7b5681751b13f",
+      "content_hashed_at": "2026-10-04T12:44:45.277387+00:00"
     },
     "graphics": {
       "count": 33,
@@ -2807,6 +2808,22 @@
       "render_sha": "sha256:134d0f000f80daba858b12ee8455a44ccdfcb8a25bbcb30d90c67a3bffc32453",
       "content_version": "1.0.2",
       "content_hashed_at": "2026-10-03T23:41:53.977462+00:00"
+    },
+    {
+      "slug": "unroutable-task-handler",
+      "dept": "general-task",
+      "title": "Unroutable Task Handler",
+      "role_type": "specialist",
+      "word_count": 3245,
+      "sop_count": 4,
+      "sop_min": 1,
+      "path": "templates/role-library/general-task/unroutable-task-handler.md",
+      "capability_class": "WRITING",
+      "vision_flag": false,
+      "content_sha": "sha256:441364c9cae41f8112438b0760779293cef8769592bc40546f6d6aac4e93fff2",
+      "render_sha": "sha256:c9f42bf33075d80cbb89a81a344545daaa16aec133ebd737b1bc792803559617",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-10-04T12:44:45.277387+00:00"
     },
     {
       "slug": "ad-creative-specialist",
