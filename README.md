@@ -407,3 +407,25 @@ Modern validation never falls back to the legacy lane.
 Repository updates and live workflow activation are separate operations. Verify
 actual Google create/append receipts and readback after deployment; a workflow
 being active or a local doctor report does not establish successful posting.
+
+## Harvesting new role playbooks from the fleet (`scripts/fleet-roll/harvest-sop-drafts.py`)
+
+An operator tool. It is not installed on client boxes.
+
+When a box has a role the shared role library does not cover, that box writes its own playbook (a standard operating procedure) and files a copy, with no company details in it, in its `sop-harvest/` folder. This tool gathers those copies from the fleet, throws out the weak or unsafe ones, and prepares the good ones as a proposed change to the library. A person reviews that change. The tool never merges, never pushes, and never opens the pull request.
+
+What it does, in order:
+
+1. **Collect.** It asks the fleet-access tool (`~/.claude/tools/fleet-access.sh`) which boxes answer, then reads each box's `sop-harvest/` folder over headless SSH. It only reads. A box that cannot be read is reported as undetermined, never as empty. If no box answers at all, the run fails instead of reporting "nothing found". `--from-dir DIR` reads a folder you gathered by hand (`DIR/<box>/<department>/<role>.<8 characters>.draft.md` plus the matching `.sop-needed.json`).
+2. **Check.** Each draft is held to the rubric in `templates/role-library/_sop-writer.md`: at least 7,000 bytes of real content, all 18 sections, every playbook block complete, concrete steps, sourced API calls, and a weighted score of at least 8.5 out of 10. Anything with personal data is rejected outright: emails, phone numbers, long account numbers, IP addresses, home folders, private web addresses, keys, and any name on the client-name roster (`~/.openclaw/client-roster.txt`). The report names the kind of problem and the line number, never the text itself. There is no setting that lowers the bar.
+3. **De-duplicate.** If two boxes wrote the same role, the higher score wins. A role already in the library is never replaced and never overwritten.
+4. **Stage.** With `--stage` it creates a new branch from `origin/main`, adds one new file per surviving role, registers each in `_index.json` with its content hash, runs the library's own consistency checks, and makes one commit. It does not touch the version file or the changelog. Without `--stage` it only writes a report.
+
+```bash
+# See what the fleet has, change nothing in the repo
+python3 scripts/fleet-roll/harvest-sop-drafts.py
+# Prepare a reviewable branch (needs a clean checkout)
+python3 scripts/fleet-roll/harvest-sop-drafts.py --stage
+```
+
+The report (`report.md` and `report.json`) is written to `~/Downloads/sop-harvest-<time>/` unless `--out-dir` says otherwise. Staging refuses to run without a client-name roster unless you pass `--allow-no-roster`; the other personal-data checks still run in that case, but a human must then check the draft for client names. Tests: `python3 tests/unit/test_harvest_sop_drafts.py`.
