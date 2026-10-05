@@ -1,0 +1,32 @@
+{
+  "images": [
+    {
+      "id": "IMG-001",
+      "source_passage": "Hero promise",
+      "job": "Hero authority",
+      "scene": "Specific hero scene",
+      "people": "Fictional subject",
+      "shot_plan": "Portrait",
+      "style_grade": "Page style",
+      "text_mode": "none",
+      "references": [],
+      "technical_plan": "Wide",
+      "filename": "same.png",
+      "status": "ready"
+    },
+    {
+      "id": "IMG-001",
+      "source_passage": "Second passage",
+      "job": "Second job",
+      "scene": "Second scene",
+      "people": "Fictional subject",
+      "shot_plan": "Wide",
+      "style_grade": "Page style",
+      "text_mode": "none",
+      "references": [],
+      "technical_plan": "Wide",
+      "filename": "same.png",
+      "status": "planned"
+    }
+  ]
+}

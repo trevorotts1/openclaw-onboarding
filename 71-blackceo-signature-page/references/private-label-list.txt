@@ -1,0 +1,27 @@
+# Private framework labels — Standard v6 + Long-Form v6
+# Extracted from references/BlackCEO-Signature-Landing-Page-Standard-v6.md and
+# references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md (section headings,
+# founder-letter part labels, and long-form solution headings).
+# One phrase per line. Blank lines and lines starting with '#' are ignored.
+# Matched case-insensitively as whole phrases in visible text, attribute values,
+# and class names by scripts/validate_public_copy.py.
+Big Bold Claim
+Big Bold Pain 1
+Big Bold Pain 2
+Big Bold Pain 3
+Solution to Big Bold Pain 1
+Solution to Big Bold Pain 2
+Solution to Big Bold Pain 3
+Big Bold Why
+Big Bold Who
+Big Bold What
+Big Bold Benefits 1
+Big Bold Benefits 2
+Big Bold Benefits 3
+Big How To
+Big Bold Heartfelt Message
+Big Struggle
+Big Decision
+Big Reason
+Big Invite
+Big Passionate Close

@@ -34,7 +34,7 @@ project/
 
 ## Workflow-state JSON
 
-Use the exact ordered stage names defined in `SKILL.md`.
+Use the exact ordered stage IDs defined in `references/stage-contract.json` (enforced by `scripts/stage_gate.py`).
 
 ```json
 {

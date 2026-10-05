@@ -1,0 +1,29 @@
+{
+  "brand_id": "blackceo",
+  "source": "departments/graphics/roles/blackceo-brand-law-steward.md + graphics TOOLS.md:1073 + archived SOURCE-FRAMEWORK.md:99-141",
+  "palette": {"gold": "#C9A227", "navy": "#1A1A2E", "cream": "#F5F0E8"},
+  "logo_only_colors": {"black": "#000000", "white": "#FFFFFF"},
+  "color_tolerance": 3,
+  "fonts": {"display": "TREVOR_MUST_SUPPLY", "body": "TREVOR_MUST_SUPPLY", "accent": "TREVOR_MUST_SUPPLY"},
+  "banned_fonts": ["Inter", "Arial", "Helvetica", "Helvetica Neue", "Roboto", "Open Sans", "system-ui",
+                   "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif-only"],
+  "logo": {"files": "TREVOR_MUST_SUPPLY", "masthead_files": "TREVOR_MUST_SUPPLY"},
+  "founder_photos": "TREVOR_MUST_SUPPLY",
+  "people_rule": "All people depicted are Black.",
+  "default_creative_direction": "SECRET_SAUCE_ONLY",
+  "grade": {"block_file": "assets/brand/signature-grade-block.txt",
+            "min_mean_saturation": null, "min_luma_std": null},
+  "page_design_rules": [
+    "High-contrast color use: alternate Navy and Cream grounds; Gold is the accent and CTA color.",
+    "Each section is its own piece of art, like a fashion show: no two consecutive sections share a composition.",
+    "Image-led sections use the image at the wireframe's full slot width; no shrunken images floating in empty space.",
+    "The B masthead / CEO logo appears in the first viewport."
+  ],
+  "banned_page_patterns": [
+    "beige or off-white minimalism outside the Cream token", "Inter or system fonts",
+    "small identical black rectangular buttons on every CTA", "40% or more of a section's width left empty at 1440px",
+    "numbered black circles on a thin rail", "repeated identical card grids", "purple/blue SaaS gradients",
+    "glassmorphism", "emoji icons", "every section centered", "same image ratio everywhere",
+    "warm amber 'cozy shop' stock look (wood counters, Edison bulbs, kraft boxes, coffee-and-keys flat-lays)"
+  ]
+}
