@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-10-04T23:04:20.962678+00:00",
-  "source_ref": "08b4b4105270e14b9200f3966c31ccd1607fa1f5",
+  "generated_at": "2026-10-05T03:43:19.663495+00:00",
+  "source_ref": "600a998976ffb8d97ee19801467b54b2c207e3d9",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,10 +9,10 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 50,
+    "artifacts": 52,
     "sops": 8,
-    "roles": 42,
-    "departments": 16
+    "roles": 44,
+    "departments": 17
   },
   "artifacts": [
     {
@@ -577,6 +577,32 @@
       ],
       "retired_in": "08b4b4105270e14b9200f3966c31ccd1607fa1f5",
       "retired_at": "2026-10-04T18:48:59-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
+      "dept": "podcast-sandbox-canary",
+      "file": "director-of-podcast-sandbox-canary-phase2.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:f3e80c6406da4bea64da8e9a1d4bca64ce36c207fa8746d5137c9379cf28c83b",
+        "sha256:4abca49b59bbcb7e8c91f337365ec65aab0927ebe26f54f47932ff38e3b92271",
+        "sha256:d36734e56c605bf33e95dee689c311d89a4feab56a4254d22b3d238b226856ea"
+      ],
+      "retired_in": "600a998976ffb8d97ee19801467b54b2c207e3d9",
+      "retired_at": "2026-10-04T23:41:44-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/podcast-sandbox-canary/how-to-use-this-department.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/podcast-sandbox-canary/how-to-use-this-department.md",
+      "dept": "podcast-sandbox-canary",
+      "file": "how-to-use-this-department.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:b3fbfb096db87c6a40506fd828b59421614ae4fbef87857ec8d8e5725e0b37c3"
+      ],
+      "retired_in": "600a998976ffb8d97ee19801467b54b2c207e3d9",
+      "retired_at": "2026-10-04T23:41:44-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/deck-discovery-strategist.md",
