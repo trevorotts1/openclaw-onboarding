@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-09-11T21:17:40.427405+00:00",
-  "source_ref": "e90ba152303d3e552b1388dab8c0ec8ab846635d",
+  "generated_at": "2026-10-05T03:46:18.399374+00:00",
+  "source_ref": "3316bac923d71cc62a5ad567d6754767a7dd3bd4",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,10 +9,10 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 41,
+    "artifacts": 52,
     "sops": 8,
-    "roles": 33,
-    "departments": 11
+    "roles": 44,
+    "departments": 17
   },
   "artifacts": [
     {
@@ -38,6 +38,42 @@
       ],
       "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
       "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/billing-finance/crm-specialist-phase2.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/billing-finance/crm-specialist-phase2.md",
+      "dept": "billing-finance",
+      "file": "crm-specialist-phase2.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:95ec440aae8d248163e6438397824c159cbe9e6a7cfb68c73d8ad3619f0df8a0"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/billing-finance/director-of-billing-finance.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/billing-finance/director-of-billing-finance.md",
+      "dept": "billing-finance",
+      "file": "director-of-billing-finance.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:7ab6832b443605e729fc6ce46368e755b501c1d3f281f8865bed5dec86d8ffa7"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/billing-finance/fp-a-forecasting-analyst-phase2.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/billing-finance/fp-a-forecasting-analyst-phase2.md",
+      "dept": "billing-finance",
+      "file": "fp-a-forecasting-analyst-phase2.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:cd1c56f49325cb61328f0e35b42049613b44236d16a868726a0cd7f0a8a7dfde"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
     },
     {
       "lib_path": "templates/role-library/client-experience-booking/booking-coordinator.md",
@@ -459,6 +495,30 @@
       "retired_at": "2026-06-19T03:23:57-04:00"
     },
     {
+      "lib_path": "templates/role-library/legal/contract-drafter-phase2.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/legal/contract-drafter-phase2.md",
+      "dept": "legal",
+      "file": "contract-drafter-phase2.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:3c6c26d7ee732d7bf1e1b2cdebce182605f028157b26c3817af9aba63abffe52"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/legal/director-of-legal.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/legal/director-of-legal.md",
+      "dept": "legal",
+      "file": "director-of-legal.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:8fc62c74a4113de587155d0c750ef6b9d481554429f42fc3250aa6404d3387e5"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
+    },
+    {
       "lib_path": "templates/role-library/listings/director-of-listings.md",
       "repo_path": "23-ai-workforce-blueprint/templates/role-library/listings/director-of-listings.md",
       "dept": "listings",
@@ -481,6 +541,68 @@
       ],
       "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
       "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/no-script-dept/director-of-no-script-dept.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/no-script-dept/director-of-no-script-dept.md",
+      "dept": "no-script-dept",
+      "file": "director-of-no-script-dept.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:cabbf1f8b3b92eccc9d4f1b21e6056620389d1844c984984cc15642cb04f5b69"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/personal-assistant/brainstorming-ideation-partner.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/personal-assistant/brainstorming-ideation-partner.md",
+      "dept": "personal-assistant",
+      "file": "brainstorming-ideation-partner.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:f552650bb9701c096c73d0232ed99d0fe8f89519c053c077478bec65c73aabe3"
+      ],
+      "retired_in": "08b4b4105270e14b9200f3966c31ccd1607fa1f5",
+      "retired_at": "2026-10-04T18:48:59-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/personal-assistant/study-partner-daily-learning.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/personal-assistant/study-partner-daily-learning.md",
+      "dept": "personal-assistant",
+      "file": "study-partner-daily-learning.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:6cd5f34df839637fa221187a3eff1f8b697c8a4a0ef432d3fb1d7d2b13d17cf3"
+      ],
+      "retired_in": "08b4b4105270e14b9200f3966c31ccd1607fa1f5",
+      "retired_at": "2026-10-04T18:48:59-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/podcast-sandbox-canary/director-of-podcast-sandbox-canary-phase2.md",
+      "dept": "podcast-sandbox-canary",
+      "file": "director-of-podcast-sandbox-canary-phase2.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:f3e80c6406da4bea64da8e9a1d4bca64ce36c207fa8746d5137c9379cf28c83b",
+        "sha256:4abca49b59bbcb7e8c91f337365ec65aab0927ebe26f54f47932ff38e3b92271",
+        "sha256:d36734e56c605bf33e95dee689c311d89a4feab56a4254d22b3d238b226856ea"
+      ],
+      "retired_in": "62210e178e6d22f6646b51da9e7b0c5379be3cad",
+      "retired_at": "2026-10-04T23:45:38-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/podcast-sandbox-canary/how-to-use-this-department.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/podcast-sandbox-canary/how-to-use-this-department.md",
+      "dept": "podcast-sandbox-canary",
+      "file": "how-to-use-this-department.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:b3fbfb096db87c6a40506fd828b59421614ae4fbef87857ec8d8e5725e0b37c3"
+      ],
+      "retired_in": "62210e178e6d22f6646b51da9e7b0c5379be3cad",
+      "retired_at": "2026-10-04T23:45:38-04:00"
     },
     {
       "lib_path": "templates/role-library/presentations/deck-discovery-strategist.md",
@@ -517,6 +639,18 @@
       ],
       "retired_in": "f5942a6867316b41cda71111a5a5e79ec1be081a",
       "retired_at": "2026-06-12T14:00:15-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/school-of-ai-dept/director-of-school-of-ai-dept.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/school-of-ai-dept/director-of-school-of-ai-dept.md",
+      "dept": "school-of-ai-dept",
+      "file": "director-of-school-of-ai-dept.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:c6387bcf738a1ea8cfa9d06a6f54cd53d8df064be5dd7835bf10d80921d0c416"
+      ],
+      "retired_in": "b71f4da017cf049f618048fbbfd2b075bf3fbee3",
+      "retired_at": "2026-10-04T18:42:50-04:00"
     }
   ]
 }

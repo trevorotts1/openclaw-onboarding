@@ -77,6 +77,15 @@ except Exception as exc:  # noqa: BLE001
     _NONE_SUITABLE = "none_suitable"
     _CORE_ERROR = f"{type(exc).__name__}: {exc}"
 
+# RF-014: routing safety switch + `model` mode. Optional siblings: a bridge copied
+# alone (or an older shared-utils) simply has no tripwire and no model pick.
+try:
+    import routing_switch as _switch
+    import model_route as _model_route
+except Exception:  # noqa: BLE001
+    _switch = None
+    _model_route = None
+
 # --- C2/CONTRACT: live intent + route (additive; BRIDGE_SCHEMA_VERSION 1.1.0) ---
 
 # Spec 4.1 / D03 pack INTENT_ENUM mirror (kept local so this module has no
@@ -89,6 +98,10 @@ _INTENT_NONE = ("existing_task_control", "clarification_response", "unresolved")
 # ponytail: lexical overlap is a ceiling, not a semantic judgment -- the
 # upgrade path is embeddings or the LLM ladder, not a bigger stopword list.
 ROUTE_THRESHOLD = 0.34
+
+# `model` mode (RF-014): a model pick has no calibrated score. The owner chose this
+# mode, so a pick is treated as decisive: exactly Command Center's JEV_MIN_CONFIDENCE.
+_MODEL_PICK_CONFIDENCE = 0.9
 
 _EXCLUDED_DEPARTMENT_SLUGS = frozenset(
     {"general-task", "dept-general-task", "general", "master-orchestrator", "ceo", "default"}
@@ -649,8 +662,63 @@ def _utc_now() -> str:
     return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
+def _routing_state():
+    """(oc_root, mode) or (None, 'auto'). Never raises; an unknown mode word counts as
+    'auto' here (the readers that must fail loud on a corrupt store already do)."""
+    if _switch is None:
+        return None, "auto"
+    try:
+        root = _switch.oc_root()
+        mode = _switch.resolve_mode(root)["mode"]
+        return root, (mode if mode in _switch.mode_names() else "auto")
+    except Exception:  # noqa: BLE001
+        return None, "auto"
+
+
+def _begin() -> None:
+    root, mode = _routing_state()
+    if root is not None and mode in ("auto", "model"):
+        _switch.begin(root)
+
+
+def _count(ok: bool, reason: str = "") -> None:
+    """Report one JEV routing outcome to the tripwire. Only modes that actually use
+    JEV for routing (auto, model) are counted. Never raises, never changes rc."""
+    root, mode = _routing_state()
+    if root is None or mode not in ("auto", "model"):
+        return
+    try:
+        _switch.record_outcome(root, ok, reason)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _model_place(task, route, catalog_entries):
+    """`model` mode only: when the rules could not place the task, the box's OWN default
+    model picks the department. Mutates `route`; returns nothing."""
+    root, mode = _routing_state()
+    if mode != "model" or _model_route is None or not route.get("fallback") or not catalog_entries:
+        return
+    picked = _model_route.pick(task, catalog_entries, root / "openclaw.json")
+    route["method"] = "model"
+    if picked["status"] == "no_default_model":
+        # Fall back to legacy behaviour for this task (no model pick) and log it.
+        route["method"] = "legacy_no_default_model"
+        _switch.log_event(root, "model_mode_fallback_legacy", dedupe_s=3600,
+                          reason="no_default_model")
+        return
+    if picked["status"] != "ok":
+        _switch.log_event(root, "model_mode_pick_failed", dedupe_s=300,
+                          reason=_switch._clean(picked.get("detail")))
+        return
+    route["department"] = picked["department"]
+    route["fallback"] = picked["department"] == _model_route.GENERAL
+    route["confidence"] = 0.0 if route["fallback"] else _MODEL_PICK_CONFIDENCE
+
+
 def _capability() -> int:
     if _policies is None:
+        _count(False, "core_unusable")
         print(
             "decision-engine: canonical core unusable beside this bridge: "
             f"{_CORE_ERROR}",
@@ -663,6 +731,7 @@ def _capability() -> int:
 
 def _evaluate() -> int:
     if _policies is None:
+        _count(False, "core_unusable")
         print(
             "decision-engine: canonical core unusable beside this bridge: "
             f"{_CORE_ERROR}",
@@ -754,9 +823,13 @@ def _evaluate() -> int:
                 }
             )
 
+    # Request is well-formed (a malformed one is the caller's fault, never counted).
+    # From here a process that dies without answering is a routing failure.
+    _begin()
     try:
         packs = _policies.iter_packs()
     except Exception as exc:  # noqa: BLE001
+        _count(False, "policy_packs_unreadable")
         print(
             f"decision-engine: released policy packs unreadable: {exc}",
             file=sys.stderr,
@@ -769,6 +842,7 @@ def _evaluate() -> int:
         if not ok
     ]
     if problems:
+        _count(False, "policy_packs_invalid")
         print(
             "decision-engine: released policy pack(s) invalid: "
             f"{' | '.join(problems)}",
@@ -857,6 +931,10 @@ def _evaluate() -> int:
         route["fallback"] = fb
     # else: existing_task_control / clarification_response / unresolved ->
     # stays action 'none', department None (the caller's existing handling).
+    # RF-014 `model` mode: the rules could not place it, so the box's own default
+    # model picks (no-op in every other mode).
+    if route["action"] == "route":
+        _model_place(task, route, catalog_entries)
 
     response = {
         "schemaVersion": BRIDGE_SCHEMA_VERSION,
@@ -872,6 +950,7 @@ def _evaluate() -> int:
         "route": route,
     }
     print(json.dumps(response, ensure_ascii=False))
+    _count(True)  # a full evaluation answered: reset the consecutive-failure count
     return 0
 
 

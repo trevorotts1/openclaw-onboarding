@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.3.15"
+ONBOARDING_VERSION="v25.3.17"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -857,7 +857,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/72-... (67 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/73-... (68 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -6037,7 +6037,7 @@ if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" = "1" ] && command -v oc_stat
     # obs_* seed + resume cron then had to do all the work). Correct order below.
     SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
-        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
@@ -6112,9 +6112,9 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 67 active skills install in 6 dependency-aware waves, not by number order.
+The 68 active skills install in 6 dependency-aware waves, not by number order.
 The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
-gating 50 of the 67 active skills; the remaining 17 are copied to every box by the installer's
+gating 50 of the 68 active skills; the remaining 18 are copied to every box by the installer's
 [0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
 that cannot reach qc-passed on a client box). The per-wave rosters printed below document Waves 1-5;
 Wave 6 (extensions & domain verticals) is defined in that library and must be read from there.
@@ -7029,7 +7029,7 @@ if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" = "1" ]; then
 else
     warn "lib-onboarding-resume-cron.sh NOT FOUND — the onboarding-resume cron was NOT installed."
     warn "  This box will NOT auto-resume onboarding; skills can stall at pending with nothing to drive them."
-    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 fi
 
 # ----------------------------------------------------------

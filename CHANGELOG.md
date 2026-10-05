@@ -1,3 +1,37 @@
+## [v25.3.17]  -  2026-10-05  -  9Router boxes: the 999 step in a fleet roll now runs only the skills-only path behind a checksum guard
+
+A fleet roll used to run the 999 installer's link path on every box. On a box that already runs 9Router, that path replaces the installed `nine-router-setup` skill and can touch the `claude-nine` launcher. This release makes the roll safe for those boxes.
+
+#### What changed
+- **9Router boxes get skills-only.** The roll detects a 9Router box (the `~/.9router` folder, the `claude-nine` launcher, and the health endpoint answering) and hands the 999 installer exactly `--skills-only`, never the link or full-install path.
+- **Checksum guard.** `shared-utils/nine_router_guard.py` takes a checksum snapshot of the router config, the router database and the launcher files before and after the 999 step. Any difference fails that box and rolls it back.
+- **Unreachable boxes are skipped, not failed.** An unreachable box (ssh exit 255) is now listed as SKIPPED instead of FAILED.
+- **Wiring and tests.** `scripts/fleet-refresh.sh`, `shared-utils/fleet_refresh_runner.py` and `shared-utils/lib-frontdoor.sh` carry the new path. `tests/unit/nine-router-skills-only-roll.test.py` is the regression test and `.github/workflows/nine-router-skills-only-roll-guard.yml` runs it on every push and pull request.
+
+#### Version
+- All 10 version markers move from v25.3.16 to v25.3.17.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself.
+
+## [v25.3.16] - 2026-10-05 - Repair and library batch: 14 fixes so existing boxes get the same quality as new installs
+
+This release closes the gap between a fresh install and a box that was installed earlier. New installs already got the five installer rules in v25.3.15. Boxes installed before that now get repaired by the same update that brings them current, through one shared front door, and the role library grows to cover the departments that were still thin.
+
+#### What changed
+- **SOP authoring no longer writes into the installed library.** Newly authored SOPs go to a separate harvest folder, so the shipped library stays exactly as released. Authoring now uses the box's own default model instead of a hard-coded one.
+- **Repair scripts for existing boxes.** `repair-placeholder-sops.py` replaces placeholder how-to files with real content, `repair-userlinks.py` fixes broken user links, `repair-directors-doctrine.py` puts the director doctrine back where it is missing, and `ensure-revenue-goal.py` asks the owner once for the yearly revenue goal. All four are safe to run twice.
+- **General Task department.** `ensure-general-task-dept.py` creates the department on boxes that lack it, `general-task-check.sh` verifies it has a real playbook, and a task that matches no other department now lands there in every routing mode (auto, shadow, legacy, off) instead of being dropped.
+- **One front door for updates.** The shared updater (`update-skills.sh`) now runs one repair stage, then the library health gate, in a fixed order. The force update and the weekly update both run that updater, so they get the same stage. A repair script that is missing on a box is reported as a gap, never skipped silently and never counted as a pass. The health gate now also runs the General Task check.
+- **Library health gate.** `scripts/health/library-gate-check.sh` fails a box whose library, director files, revenue goal or General Task department are incomplete.
+- **Harvest and reporting tools.** `harvest-sop-drafts.py` collects authored SOP drafts from boxes, and `report-missing-999.sh` gives a read-only list of boxes that do not have the 999 setup installed.
+- **Routing safety switch.** `scripts/routing-mode.sh` lets an operator switch routing mode safely, with a status check that treats a corrupt mode store as "cannot tell", never as a pass. A CI guard covers every mode.
+- **Role library.** The library grows from 438 to 538 roles and from 36 to 68 departments, with the index, content hashes and per-department counts regenerated in lockstep. The reconciliation test fixture now uses a different custom department name so the canonical school-of-ai department stays canonical. No test or guard was loosened.
+- **Wording.** The role-library token reference now uses a neutral example name.
+
+#### Version
+- All 10 version markers move from v25.3.15 to v25.3.16.
+
 ## [v25.3.15]  -  2026-10-04  -  fix(installer): no silent placeholders — the 5 installer rules (director required, SOP-needed routing, self-healing authoring, doctrine in templates, no empty departments)
 
 ## [v25.3.14] - 2026-10-03 - Operator personal chat id scrub: deterministic script + CI guard

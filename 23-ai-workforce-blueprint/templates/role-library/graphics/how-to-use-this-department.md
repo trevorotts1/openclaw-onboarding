@@ -97,6 +97,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Style Steward** | Style Steward - "The Broker" - for the company's Design Intelligence Unit inside the Graphics department. |
 | **Thumbnail Cover Designer** | Thumbnail / Cover Designer of the company, the specialist responsible for the small-scale visual assets that determine. |
 | **Prompt Author** | Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation. |
+| **Brand Identity Specialist Phase2** | **** for the department of the company, reporting to the . |
+| **Presentation Designer Phase2** | **** for the department of the company, reporting to the . |
 
 ### What each specialist is for, with an example request
 
@@ -224,6 +226,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Prompt Author for the company's Graphics department  -  the ONE role that assembles every final AI-image-generation.
 - *Example request:* "Have the Prompt Author take this on: Prompt Author for the company's Graphics department  -  the ONE role that assembles."
+
+**Brand Identity Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Brand Identity Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
+
+**Presentation Designer Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Presentation Designer Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

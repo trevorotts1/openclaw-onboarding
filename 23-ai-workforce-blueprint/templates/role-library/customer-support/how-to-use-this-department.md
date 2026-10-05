@@ -82,6 +82,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Tier 1 Support Specialist** | First line of customer inquiries. |
 | **Tier 2 Support Specialist** | Handles complex/escalated issues. |
 | **Voice Phone Support Specialist** | Handles phone inbound + outbound support. |
+| **Account Health Monitor Phase2** | For the department of - the company whose mission is one line. |
 
 ### What each specialist is for, with an example request
 
@@ -134,6 +135,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Handles phone inbound + outbound support.
 - *Example request:* "Have the Voice Phone Support Specialist take this on: Handles phone inbound + outbound support."
+
+**Account Health Monitor Phase2**
+
+- *What it is for:* For the department of - the company whose mission is one line.
+- *Example request:* "Have the Account Health Monitor Phase2 take this on: For the department of - the company whose mission is one line."
 
 
 ---

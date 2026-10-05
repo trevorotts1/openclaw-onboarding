@@ -13,10 +13,15 @@ permanently:
      templates/role-library/_sop-writer.md (≥3072 bytes, no boilerplate, real
      DMAIC SOP structure), via `openclaw subagents spawn` when available,
      otherwise an inline work-file the operating agent picks up.
-  3. Upstream: every authored SOP is written as the role's how-to.md (token-
-     filled) AND added back into templates/role-library/<dept>/ as a token
-     template + registered in _index.json — so the NEXT install matches and
-     the gap never reopens.
+  3. Harvest: every authored SOP is written as the role's own how-to.md (token-
+     filled). A client-neutral token draft + a machine-readable SOP-NEEDED
+     record are ALSO written to the NEW collection folder
+     <OpenClaw root>/workforce/sop-harvest/ so the operator can review the
+     draft and propose it into the shared library. This script NEVER writes
+     into the installed templates/role-library/ or its _index.json: that
+     directory is repo-owned content whose hashes the update content check
+     verifies, so a box-side write there would be reported as drift on the
+     very next update.
   4. The record is marked "authored" in SOP-NEEDED.json.
 
 A build with un-authored records fails the library gate (verify-library-gate.sh),
@@ -24,8 +29,9 @@ so gaps can never go quiet.
 
 Boundary note: unlike populate-sops-from-manifest.py (which refuses canonical
 depts because they should resolve by copy), a record here exists PRECISELY
-because the copy path already failed for this role. Authoring ADDS a new
-template for a missing role; it never rewrites an existing canonical template.
+because the copy path already failed for this role. Authoring fills ONLY this
+role's own how-to.md; it never rewrites an existing canonical template and
+never touches the installed role library.
 The boundary status is still logged per record for audit.
 
 Usage:
@@ -75,10 +81,11 @@ BOILERPLATE_MARKERS = (
 )
 
 HOME = Path.home()
-SELECTOR_CANDIDATES = [
-    HOME / "Downloads" / "openclaw-master-files" / "shared-utils" / "select_model.py",
-    Path(os.path.expanduser("~/Downloads/openclaw-master-files/shared-utils/select_model.py")),
-]
+
+# Client sovereignty: the authoring model is ALWAYS the box's own default model.
+# Anthropic routes stay forbidden (same markers as shared-utils/select_model.py
+# FORBIDDEN_PREFIXES); a forbidden default is a recorded gap, never swapped out.
+FORBIDDEN_MODEL_MARKERS = ("anthropic/", "anthropic.", "openrouter/anthropic/", "claude-")
 
 
 def log(msg):
@@ -123,29 +130,49 @@ def save_manifest(path, data):
 
 # ─── MODEL RESOLUTION + SUB-AGENT SPAWN (mirrors populate-sops-from-manifest) ─
 
-def selector_path():
-    for c in SELECTOR_CANDIDATES:
-        if c.is_file():
-            return c
-    return None
+def _config_candidates(explicit=None):
+    """openclaw.json locations, same order shared-utils/select_model.py uses."""
+    env = os.environ.get("OPENCLAW_CONFIG")
+    return [explicit,
+            env if env and os.path.isfile(env) else None,
+            str(HOME / ".openclaw" / "openclaw.json"),
+            "/data/.openclaw/openclaw.json"]
+
+
+def resolve_box_default_model(config_path=None):
+    """Return (model_id, gap_reason) for the BOX'S OWN default model.
+
+    Reads agents.defaults.model (string, or {"primary": ...}) from the box's
+    openclaw.json. Never returns a hardcoded id: when no default can be
+    resolved, or it is a forbidden (Anthropic) route, returns (None, reason).
+    """
+    path = next((c for c in _config_candidates(config_path)
+                 if c and os.path.isfile(c)), None)
+    if not path:
+        return None, "no openclaw.json found on this box"
+    try:
+        cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"cannot read {path}: {e}"
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    defaults = agents.get("defaults") if isinstance(agents, dict) else None
+    field = defaults.get("model") if isinstance(defaults, dict) else None
+    if isinstance(field, dict):
+        field = field.get("primary") or field.get("model")
+    if not isinstance(field, str) or not field.strip():
+        return None, f"{path} has no agents.defaults.model"
+    mid = field.strip()
+    if any(m in mid.lower() for m in FORBIDDEN_MODEL_MARKERS):
+        return None, "box default model is a forbidden (Anthropic) route"
+    return mid, ""
 
 
 def resolve_model():
-    sel = selector_path()
-    if not sel:
-        return "ollama/kimi-k2.6:cloud"
-    cmd = ["python3", str(sel), "--skill", "23-ai-workforce-blueprint",
-           "--purpose-tier", "heavy", "--format", "id"]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        mid = r.stdout.strip()
-        if mid and "anthropic/" not in mid.lower() and "claude-" not in mid.lower():
-            return mid
-        if r.returncode == 2:
-            return None  # Tier 5 — owner input required
-    except Exception as e:
-        log(f"selector error: {e}")
-    return "ollama/kimi-k2.6:cloud"
+    """Box default model id, or None when unresolvable (caller records the gap)."""
+    mid, why = resolve_box_default_model()
+    if mid is None:
+        log(f"no box default model: {why}")
+    return mid
 
 
 def find_openclaw():
@@ -309,71 +336,90 @@ def deterministic_fill(record, departments_dir):
     return True, f"deterministic fill via {how}: {entry.get('dept')}/{entry.get('slug')}"
 
 
-# ─── UPSTREAM TO ROLE-LIBRARY ─────────────────────────────────────────────────
+# ─── HARVEST (collection folder; NEVER the installed role library) ────────────
+
+HARVEST_SCHEMA = "sop-needed-harvest/1"
+
 
 def slugify(text):
     return crw.slugify(text)
 
 
-def upstream_to_library(record, token_text):
-    """Add the authored SOP back into templates/role-library/ + _index.json.
+def harvest_dir():
+    """<OpenClaw root>/workforce/sop-harvest/ (created on first write), or None."""
+    try:
+        root = crw.get_openclaw_paths().get("root")
+    except Exception as e:
+        log(f"cannot resolve OpenClaw root: {e}")
+        return None
+    return Path(root) / "workforce" / "sop-harvest" if root else None
 
-    token_text MUST be the token version ({{TOKENS}}, no literal client data).
+
+def neutralize(text, cfg):
+    """Swap any literal company / owner / AI CEO name for its token.
+
+    The draft leaves the box, so it must be client-neutral even if the author
+    model echoed a literal name instead of the token.
+    """
+    pairs = (
+        (cfg.get("companyName") or cfg.get("company_name") or cfg.get("name"), "{{COMPANY_NAME}}"),
+        (cfg.get("ownerName") or cfg.get("owner_name") or cfg.get("ownerFirstName"), "{{OWNER_NAME}}"),
+        (cfg.get("aiCeoName") or cfg.get("ai_ceo_name") or cfg.get("aiCEOName"), "{{AI_CEO_NAME}}"),
+    )
+    for value, token in pairs:
+        value = (value or "").strip() if isinstance(value, str) else ""
+        if len(value) >= 3 and value != "AI CEO":
+            text = re.sub(r"(?<!\w)" + re.escape(value) + r"(?!\w)", token, text)
+    return text
+
+
+def upstream_to_library(record, token_text):
+    """Collect the authored SOP for operator review. NEVER writes the library.
+
+    Writes two NEW files under <OpenClaw root>/workforce/sop-harvest/<dept>/:
+      <role>.<sha8>.draft.md          client-neutral token draft
+      <role>.<sha8>.sop-needed.json   machine-readable SOP-NEEDED record
+    The sha8 in the name makes a re-run of identical content a no-op and keeps
+    different content from ever overwriting an earlier draft.
     Returns (ok, detail).
     """
-    skill_dir = crw._resolve_skill_dir()
-    lib_dir = skill_dir / "templates" / "role-library"
-    dept_slug = record.get("department", "") or "general"
-    role_slug = slugify(record.get("role", "unnamed-role"))
-    dept_dir = lib_dir / dept_slug
+    out = harvest_dir()
+    if out is None:
+        return False, "no OpenClaw root — nothing harvested"
+    draft = neutralize(token_text.rstrip("\n"), crw._load_company_config()) + "\n"
+    sha = hashlib.sha256(draft.encode("utf-8")).hexdigest()
+    dept_slug = slugify(record.get("department", "") or "general") or "general"
+    role_slug = slugify(record.get("role", "unnamed-role")) or "unnamed-role"
+    dept_dir = out / dept_slug
+    stem = f"{role_slug}.{sha[:8]}"
+    draft_path, rec_path = dept_dir / f"{stem}.draft.md", dept_dir / f"{stem}.sop-needed.json"
+    if draft_path.exists() and rec_path.exists():
+        return True, f"already harvested: {draft_path}"
+    rec = {
+        "schema": HARVEST_SCHEMA,
+        "id": record.get("id", ""),
+        "status": "SOP-NEEDED",
+        "role": record.get("role", role_slug),
+        "role_slug": role_slug,
+        "department": dept_slug,
+        "draft_file": draft_path.name,
+        "content_sha": "sha256:" + sha,
+        "bytes": len(draft.encode("utf-8")),
+        "word_count": len(draft.split()),
+        "sop_count": len(re.findall(r"(?m)^###?\s+SOP\s+9\.", draft)),
+        "min_bytes": MIN_BYTES,
+        "authored_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "authored_via": record.get("_authored_via", "llm"),
+    }
     try:
         dept_dir.mkdir(parents=True, exist_ok=True)
+        for path, body in ((draft_path, draft), (rec_path, json.dumps(rec, indent=2) + "\n")):
+            tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+            tmp.write_text(body, encoding="utf-8")
+            os.replace(tmp, path)
     except OSError as e:
-        return False, f"cannot create {dept_dir}: {e}"
-    dest = dept_dir / f"{role_slug}.md"
-    if dest.exists():
-        return False, f"library template already exists: {dest} (refusing overwrite)"
-    dest.write_text(token_text.rstrip("\n") + "\n", encoding="utf-8")
-
-    # Register in _index.json.
-    index_path = lib_dir / "_index.json"
-    try:
-        index = json.loads(index_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        return False, f"cannot read _index.json: {e}"
-    sha = "sha256:" + hashlib.sha256(token_text.encode("utf-8")).hexdigest()
-    word_count = len(token_text.split())
-    sop_count = len(re.findall(r"(?m)^###?\s+SOP\s+9\.", token_text))
-    entry = {
-        "slug": role_slug,
-        "dept": dept_slug,
-        "title": record.get("role", role_slug),
-        "role_type": "specialist",
-        "word_count": word_count,
-        "sop_count": sop_count,
-        "sop_min": 1,
-        "path": f"templates/role-library/{dept_slug}/{role_slug}.md",
-        "content_sha": sha,
-        "content_version": "1.0.0",
-        "content_hashed_at": datetime.now(timezone.utc).isoformat(),
-        "authored_from": record.get("id", ""),
-    }
-    roles = index.setdefault("roles", [])
-    if any(r.get("slug") == role_slug and r.get("dept") == dept_slug for r in roles):
-        return False, "role already indexed (refusing duplicate)"
-    roles.append(entry)
-    depts = index.setdefault("departments", {})
-    d = depts.setdefault(dept_slug, {"count": 0, "roles": []})
-    if role_slug not in d.get("roles", []):
-        d.setdefault("roles", []).append(role_slug)
-    d["count"] = len(d["roles"])
-    index["total_roles"] = len(roles)
-    index["total_departments"] = len(depts)
-    index["generated_at"] = datetime.now(timezone.utc).isoformat()
-    tmp = index_path.with_name(f"._index.json.tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(index, indent=2), encoding="utf-8")
-    os.replace(tmp, index_path)
-    return True, f"upstreamed to {entry['path']} + _index.json"
+        return False, f"cannot write {dept_dir}: {e}"
+    return True, f"harvested {draft_path}"
 
 
 # ─── AUTHORING RUN ────────────────────────────────────────────────────────────
@@ -408,7 +454,7 @@ def author_one_inline_queue(record, prompt, model_id, timeout, queue_dir):
 
 **Role:** {record.get('role', '')} (department `{record.get('department', '')}`)
 **Status:** PENDING — pick this up and execute the instructions below.
-**Model to use:** `{model_id}` (heavy tier; never Anthropic).
+**Model to use:** `{model_id}` (this box's own default model).
 **Timeout budget:** {timeout} seconds.
 **How-to path to write:** `{record.get('how_to_path', '')}`
 **Record id:** `{record.get('id', '')}`
@@ -420,7 +466,7 @@ def author_one_inline_queue(record, prompt, model_id, timeout, queue_dir):
 ## When done
 
 1. Write the DELIMITED SOP to the how-to path above (replacing the routing notice).
-2. Run `python3 author-missing-sops.py --sop-needed <path> --apply --finalize <this-file>` so the record is QC'd, upstreamed to the role-library, and marked authored.
+2. Run `python3 author-missing-sops.py --sop-needed <path> --apply --finalize <this-file>` so the record is QC'd, harvested to sop-harvest/, and marked authored.
 3. Move this file to `{queue_dir}/done/`.
 """
     work_file.write_text(body, encoding="utf-8")
@@ -429,7 +475,7 @@ def author_one_inline_queue(record, prompt, model_id, timeout, queue_dir):
 
 
 def finalize_record(record, sop_token_text, manifest_path, data):
-    """QC → write how-to.md → upstream → mark authored. Returns (ok, detail)."""
+    """QC → write how-to.md → harvest → mark authored. Returns (ok, detail)."""
     ok, why = qc_authored(sop_token_text)
     if not ok:
         return False, f"QC failed: {why}"
@@ -459,13 +505,16 @@ def finalize_record(record, sop_token_text, manifest_path, data):
         os.replace(tmp, p)
     ok, why = upstream_to_library(record, sop_token_text)
     if not ok:
-        return False, f"upstream failed: {why}"
+        # The role already has its real how-to.md; a harvest miss only delays
+        # sharing the draft, so record it and keep going.
+        log(f"{record.get('id', '?')}: harvest skipped — {why}")
+        record["harvest"] = f"skipped: {why}"
     record["status"] = "authored"
     record["authored_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     record["authored_via"] = record.get("_authored_via", "llm")
     record.pop("_authored_via", None)
     save_manifest(manifest_path, data)
-    return True, f"authored + upstreamed ({why})"
+    return True, f"authored; harvest: {why}"
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
@@ -477,7 +526,7 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true", help="perform the work (default: dry run)")
     ap.add_argument("--timeout-seconds", type=int, default=1800)
     ap.add_argument("--finalize", metavar="WORKFILE",
-                    help="finalize one inline work file: read its SOP, QC, upstream, mark authored")
+                    help="finalize one inline work file: read its SOP, QC, harvest, mark authored")
     a = ap.parse_args(argv)
 
     manifest_path = find_sop_needed(a.sop_needed)
@@ -516,11 +565,12 @@ def main(argv=None):
         return 0
 
     rubric = load_rubric()
-    model_id = resolve_model()
+    model_id, model_gap = resolve_box_default_model()
     if model_id is None:
-        log("model selector returned Tier 5 (owner-input-required) — cannot author")
-        return 2
-    log(f"authoring model: {model_id}")
+        log(f"no box default model ({model_gap}) — roles needing authoring are "
+            "recorded as a gap and skipped; nothing is guessed")
+    else:
+        log(f"authoring model: {model_id} (box default)")
     use_subagents = openclaw_available()
     log(f"sub-agent spawn: {'available' if use_subagents else 'UNAVAILABLE — inline queue mode'}")
     queue_dir = Path(manifest_path).parent / ".sop-author-queue"
@@ -539,6 +589,13 @@ def main(argv=None):
             log(f"{rid}: {why} → authored")
             continue
         log(f"{rid}: deterministic fill not possible ({why}) — LLM authoring")
+        if model_id is None:
+            r["model_gap"] = model_gap
+            save_manifest(manifest_path, data)
+            log(f"{rid}: no box default model — gap recorded, role stopped")
+            failures += 1
+            continue
+        r.pop("model_gap", None)
         # Step 2: LLM authoring.
         prompt = build_author_prompt(r, rubric, company_name, industry)
         if use_subagents:

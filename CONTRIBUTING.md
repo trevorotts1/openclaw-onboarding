@@ -39,8 +39,8 @@ Every time a new skill folder is added, ALL of these files must be updated:
    - What skill was added and what it does
    - Any dependencies on other skills
 
-6. **update-skills.sh** (repo root — NOT `scripts/update-skills.sh`, which is a
-   retired, loud-failing shim) - No edit needed: the skill directory scan uses a
+6. **update-skills.sh** (repo root — there is no other updater; the retired
+   `scripts/update-skills.sh` shim was deleted outright, OCT4 issue #10) - No edit needed: the skill directory scan uses a
    pure `[0-9]*/` glob (no `seq` range to extend). Verify it picks up new skills
    with `bash update-skills.sh --dry-run` (or the installed-skill listing).
 
@@ -93,7 +93,8 @@ Every push that changes skill behavior must have a CHANGELOG entry:
 ### How the Weekly Update Script Works
 
 Every Sunday at 3 AM, the client's machine runs the REPO-ROOT `update-skills.sh`
-(never `scripts/update-skills.sh` — that path is a retired, loud-failing shim). It:
+(never a copy at another path — the retired `scripts/update-skills.sh` shim was deleted
+ outright, OCT4 issue #10). It:
 1. Fetches CHANGELOG.md from GitHub
 2. Compares the remote version against the local installed version
 3. Generates a gap report and impact analysis

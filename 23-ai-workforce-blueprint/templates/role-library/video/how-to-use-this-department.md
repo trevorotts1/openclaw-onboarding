@@ -86,6 +86,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Video SEO Specialist** | YouTube metadata, titles, descriptions, tags, end screens, chapters. |
 | **VSL Video Sales Letter Specialist** | Long-form sales videos that convert cold to customer. |
 | **Automated Video Production Specialist (OpenMontage Pipeline Operator)** | You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video. |
+| **Animation Specialist Phase2** | You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work. |
+| **CRM Specialist Phase2** | For the department of the company, working in the workspace toward the company mission (). |
+| **Long Form Video Specialist Phase2** | You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics. |
+| **Short Form Video Specialist Phase2** | For the department of the company, reporting to the . |
+| **VSL Specialist Phase2** | For the department of the company, reporting to the . |
 
 ### What each specialist is for, with an example request
 
@@ -158,6 +163,31 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video.
 - *Example request:* "Have the Automated Video Production Specialist (OpenMontage Pipeline Operator) take this on: You own the end-to-end operation of the OpenMontage agentic video production system."
+
+**Animation Specialist Phase2**
+
+- *What it is for:* You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work.
+- *Example request:* "Have the Animation Specialist Phase2 take this on: You take a locked motion brief and produce the moving asset that carries the client's."
+
+**CRM Specialist Phase2**
+
+- *What it is for:* For the department of the company, working in the workspace toward the company mission ().
+- *Example request:* "Have the CRM Specialist Phase2 take this on: For the department of the company, working in the workspace toward the company mission ()."
+
+**Long Form Video Specialist Phase2**
+
+- *What it is for:* You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics.
+- *Example request:* "Have the Long Form Video Specialist Phase2 take this on: You own the entire pipeline of a long-form asset from the beat-spine brief."
+
+**Short Form Video Specialist Phase2**
+
+- *What it is for:* For the department of the company, reporting to the .
+- *Example request:* "Have the Short Form Video Specialist Phase2 take this on: For the department of the company, reporting to the ."
+
+**VSL Specialist Phase2**
+
+- *What it is for:* For the department of the company, reporting to the .
+- *Example request:* "Have the VSL Specialist Phase2 take this on: For the department of the company, reporting to the ."
 
 
 ---
