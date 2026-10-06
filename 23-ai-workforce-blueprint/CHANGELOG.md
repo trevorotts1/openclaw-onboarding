@@ -2,10 +2,6 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
-## [v25.3.20] - 2026-10-06 - fix(departments): remove KIE/media contradictions in role libraries
-
-Graphics, Video, Audio, and Presentations role files, SOP mirrors, and connection manifests now reference the canonical KIE rules (`07-kie-setup/references/kie-common-rules.md`) instead of restating them: live endpoints (`recordInfo`, `chat/credit`), KIE task states, rate limits, credit preflight (estimate x 1.30), and the live `pricingDesc` as the only price authority. Manifests name the KIE alias family by reference and `verify-wiring.sh` expands `alias_source`. Full list in the repo-root CHANGELOG.
-
 ## [v25.2.16] - 2026-09-29 - SOP-00 NEW INTAKE goes through the decision engine (mc-route.sh auto)
 
 `SOP-00-Owner-Task-Routing.md` carries the CEO_EXECUTION_POLICY_V3 mirror, so its

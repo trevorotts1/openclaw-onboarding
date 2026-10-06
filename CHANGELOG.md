@@ -1,24 +1,3 @@
-## [v25.3.20]  -  2026-10-06  -  fix(departments): remove KIE/media contradictions in Graphics, Video, Audio, Presentations role libraries, SOPs, and connection manifests
-
-Owner order: remove every KIE and media contradiction in the department role libraries so no role, SOP, or manifest can be read two ways. KIE lifecycle rules are now referenced from `07-kie-setup/references/kie-common-rules.md` instead of restated; model policy stays with Skills 66, 67, 68; live catalog and live `pricingDesc` come through Skill 74; the image pin stays AGENTS.md N43.
-
-#### What changed
-- **Graphics (Generation Operator, Render Dispatcher, Asset Provenance Librarian, SOP-DIU-601/602/603 and the SOP mirror):** dead or invented call names (`getTaskInfo`, `getResultInfo`, `/api/task/record-info`, `/account`, `/modelList`) replaced by `recordInfo` and `GET /api/v1/chat/credit`; KIE task states are `success` / `fail` (not `completed` / `failed`); rate limits and concurrency now point at the canonical rules because MODEL-SPECS carries none; the two failure ladders (Operator and Dispatcher) now use one 5xx wait and one 429 threshold; `_local/PRICING.md` is a billed-actuals ledger and the live `pricingDesc` is the only price authority, with a credit preflight of estimate x 1.30; Seedream 3,000 characters is labelled a DIU house ceiling (the Skill 66 registry lists the vendor cap as NOT_PUBLISHED); GPT-Image band text follows N43; Motion Systems and Deck Systems follow the same sources.
-- **Video:** the 84-model "ground truth" is now a dated 2026-07-13 snapshot (live catalog via Skill 74, policy via Skill 67); the Sora prohibition is kept and the two roles that still listed Sora (Head of Video Production, Long-Form Video Specialist) no longer do; the Movie Producer role and SOP use the live price source, the Veo dedicated endpoints, `data.state`, and `input_urls` for GPT-Image-2.5 reference images; the Rule-Zero SOP adds the credit preflight.
-- **Audio:** the AI Voice Specialist's ElevenLabs row is Kie-first through Skill 68, matching the Video department.
-- **Presentations:** Slide Submitter and Capacity and Reliability Engineer (role and SOP mirrors) drop the hard-coded `$0.03` per image for `per_image_usd` from the live `pricingDesc`, add the credit preflight, name the live credit endpoint, fix the 15,000 versus 18,000 authoring ceiling, and flag the legacy ratio list.
-- **Connection manifests:** Graphics and Presentations name the KIE alias family by reference (`alias_source`: `shared-utils/secret_names.json`), Video gains an advisory KIE row, and the Graphics prompt-cap note now states which family each cap belongs to (GPT-Image-2.5 20,000; retained legacy GPT-Image-2 25,000).
-- **`verify-wiring.sh`:** a hook may carry `alias_source`; the aliases are expanded from that one file. A missing file leaves the canonical key check in place (fail-closed).
-
-#### Migration Notes
-- Role-library templates only; boxes pick the changes up on the next role refresh. Risk level: LOW.
-
-#### Version
-- All 10 version markers move from v25.3.19 to v25.3.20.
-
-#### Not changed
-No client box, credential, model pin, or provider setting. SOP-IMG-01 to 04, `skill-department-map.json`, the Presentations canonical renderer, its pins, and its guards are untouched.
-
 ## [v25.3.19]  -  2026-10-05  -  Paired-release prep (R03): Command Center pin moves to v7.6.99; release cohort names the frozen pair
 
 Prepared release for the Company Headquarters paired release. Content is release plumbing only: the Command Center pin, the dependency cohort and the version markers move together so the fleet roll deploys the Command Center this onboarding release was tested against.
