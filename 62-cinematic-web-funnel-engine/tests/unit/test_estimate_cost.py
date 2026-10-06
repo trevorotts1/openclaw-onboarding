@@ -120,7 +120,7 @@ class EstimateSceneRealRegistryTests(unittest.TestCase):
         self.assertTrue(forecast.resolved)
         self.assertTrue(forecast.verified)
         self.assertEqual(forecast.estimated_cost_usd, 0.40)
-        self.assertEqual(forecast.provider_model_slug, "veo3_fast")
+        self.assertEqual(forecast.provider_model_slug, "veo-3-1")
 
     def test_unverified_unpriced_model_fails_closed_not_free(self) -> None:
         forecast = ec.estimate_scene(

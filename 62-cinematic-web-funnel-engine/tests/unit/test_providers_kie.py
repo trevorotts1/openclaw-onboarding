@@ -21,7 +21,7 @@ Covers:
     kie_image.py) -> download -> write to disk.
   - estimate_cost() resolves through ModelRegistry.estimate(strict=False):
     an unpriced model (Seedance) comes back honestly unverified; a verified
-    model (veo3_fast) comes back with a real total.
+    model (veo, usd_per_clip) comes back with a real total.
   - Secrets resolved by NAME only: a missing KIE_API_KEY raises with the
     env-var NAME in the message, never a value.
   - 46-kie-callback-relay wiring:
@@ -230,6 +230,83 @@ class GenerateVideoSeedanceFramePinningTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Veo 3.1 on createTask: model id + input shape pinned to the LIVE KIE schema
+# (GET /api/v1/models/veo-3-1/schema, 2026-10-05). The legacy ids veo3 /
+# veo3_fast are NOT supported on createTask (schema lookup answers code 404).
+# ---------------------------------------------------------------------------
+
+
+class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.transport = FakeTransport()
+        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.provider = kie.KieProvider(transport=self.transport)
+
+    def _submit(self, model_id: str = "kie-veo3-fast", **kw: Any) -> Dict[str, Any]:
+        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
+        self.provider.generate_video(
+            base.VideoGenerationRequest(model_id=model_id, prompt="a dog in a park", **kw),
+            use_callback=False,
+        )
+        call = self.transport.post_calls[-1]
+        self.assertTrue(call["url"].endswith("/api/v1/jobs/createTask"))
+        return call["body"]
+
+    def test_registry_never_resolves_legacy_veo_ids_for_createtask(self) -> None:
+        for model_id in ("kie-veo3-fast", "kie-veo3-quality"):
+            self.assertEqual(self.provider.registry.slug_for(model_id), "veo-3-1")
+
+    def test_text_to_video_body_matches_live_schema(self) -> None:
+        body = self._submit(duration_seconds=8, aspect_ratio="9:16", resolution="1080p")
+        self.assertEqual(body["model"], "veo-3-1")
+        self.assertEqual(
+            body["input"],
+            {
+                "prompt": "a dog in a park",
+                "aspect_ratio": "9:16",
+                "resolution": "1080p",
+                "duration": 8,
+                "generation_type": "TEXT_2_VIDEO",
+            },
+        )
+        self.assertIsInstance(body["input"]["duration"], int)  # integer enum, not the string other models use
+        self.assertNotIn("generate_audio", body["input"])  # no such field on veo-3-1
+        self.assertNotIn("input_urls", body["input"])
+
+    def test_two_frames_use_image_urls_in_order_not_input_urls(self) -> None:
+        first, last = "https://fixtures.example/a.png", "https://fixtures.example/b.png"
+        body = self._submit(duration_seconds=6, input_urls=(first, last))
+        self.assertEqual(body["input"]["image_urls"], [first, last])
+        self.assertNotIn("input_urls", body["input"])
+        self.assertEqual(body["input"]["generation_type"], "FIRST_AND_LAST_FRAMES_2_VIDEO")
+
+    def test_resolution_is_lowercased_for_4k(self) -> None:
+        body = self._submit(model_id="kie-veo3-quality", duration_seconds=4, resolution="4K")
+        self.assertEqual(body["input"]["resolution"], "4k")
+
+    def test_out_of_schema_values_raise_before_any_http_call(self) -> None:
+        for kw in (
+            {"duration_seconds": 5},  # not in 4|6|8
+            {"duration_seconds": 8, "resolution": "480p"},  # not in 720p|1080p|4k
+            {"duration_seconds": 8, "aspect_ratio": "21:9"},  # not in 16:9|9:16|Auto
+        ):
+            with self.assertRaises(base.ProviderTaskError):
+                self.provider.generate_video(
+                    base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", **kw)
+                )
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_veo_info_resultUrls_payload_shape_is_decoded(self) -> None:
+        self.transport.queue_get(
+            _resp(200, {"code": 200, "data": {"state": "success", "info": {"resultUrls": ["https://fixtures.example/veo.mp4"]}}})
+        )
+        self.assertEqual(self.provider._poll_result_url("veo-task", interval=0), "https://fixtures.example/veo.mp4")
+
+
+
+# ---------------------------------------------------------------------------
 # get_task / download_results — poll + resultJson-string decode + download
 # ---------------------------------------------------------------------------
 
@@ -311,9 +388,10 @@ class EstimateCostTests(unittest.TestCase):
         self.assertIsNone(estimate.estimated_total)
 
     def test_veo3_fast_estimate_is_verified_and_priced_per_clip_not_per_second(self) -> None:
-        # veo3_fast is usd_per_clip (07-kie-setup/kie-setup-full.md). An 8s
-        # request must NOT be multiplied by 8 -- that would silently assume
-        # a per-second unit the registry does not declare for this model.
+        # Veo is usd_per_clip (price block deliberately unchanged by the
+        # 2026-10-05 wire fix; see its CATALOG DRIFT note). An 8s request must
+        # NOT be multiplied by 8 -- that would silently assume a per-second
+        # unit the registry does not declare for this model.
         estimate = self.provider.estimate_cost(
             base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8)
         )

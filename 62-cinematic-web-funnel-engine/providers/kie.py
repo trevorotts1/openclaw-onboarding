@@ -4,20 +4,27 @@
 
 Implements spec §10.1's mandate: "Implement providers/kie.py first. Reuse the
 existing canonical Kie setup, secret resolution, callback infrastructure, and
-image/video adapters where possible. Do not create a third divergent Kie
-client if the repository already has two that must remain in lockstep."
+image/video adapters where possible."
+
+HONEST STATUS (2026-10-05): this module is a STANDALONE Kie client. It is NOT
+a thin wrapper over the 47-movie-producer adapters; it duplicates their
+createTask/recordInfo plumbing and is kept aligned with them BY HAND, so it
+is a second divergent client until it is consolidated onto Skill 74 (the
+shared KIE live adapter). That consolidation is a staged follow-up and is not
+done here.
 
 This module is SKILL-LOCAL (62-cinematic-web-funnel-engine/providers/) and
 has NO dependency on OpenMontage's ``tools.base_tool`` — unlike
 ``47-movie-producer/kie-adapters/tools/{graphics,video}/kie_*.py`` (the
 OpenMontage-installed adapters, extended for ``bytedance/seedance-1.5-pro``
 frame pinning in this same U5 unit), which only import inside a client's
-cloned OpenMontage tree. Skill 62 must run standalone. This module is kept
-IN LOCKSTEP with those two adapters by construction: identical endpoints
-(``/api/v1/jobs/createTask`` + ``/api/v1/jobs/recordInfo``), identical
-request-body shapes, and the identical ``resultJson``-is-a-JSON-encoded-
-STRING decode contract (see ``_decode_result_json`` below) — never a
-divergent third client (ADR per spec §10.1).
+cloned OpenMontage tree. Skill 62 must run standalone. Shared with those
+adapters: the ``/api/v1/jobs/createTask`` + ``/api/v1/jobs/recordInfo``
+endpoints, and the ``resultJson``-is-a-JSON-encoded-STRING decode contract
+(see ``_decode_result_json`` below). NOT shared: Veo. 47 still uses the
+legacy ``POST /api/v1/veo/generate`` route (``veo3``/``veo3_fast``); this
+module uses the current Veo route on createTask with model ``veo-3-1`` (see
+``_veo_3_1_input``).
 
 Every model is addressed through ``providers.base.ModelRegistry`` by its
 registry ``model_id`` — this file NEVER hardcodes a provider wire slug or a
@@ -83,8 +90,8 @@ from .base import (
 )
 
 # ---------------------------------------------------------------------------
-# Kie.ai API constants (kept in lockstep with 47-movie-producer/kie-adapters/
-# tools/{graphics,video}/kie_*.py — same endpoints, same body shapes).
+# Kie.ai API constants (aligned by hand with 47-movie-producer/kie-adapters/
+# tools/{graphics,video}/kie_*.py — same endpoints; Veo bodies differ, see _veo_3_1_input).
 # ---------------------------------------------------------------------------
 _KIE_API_BASE = "https://api.kie.ai"
 _CREATE_TASK_URL = f"{_KIE_API_BASE}/api/v1/jobs/createTask"
@@ -126,6 +133,49 @@ def _decode_result_json(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+# Veo 3.1 on createTask (live KIE catalog/schema, verified 2026-10-05):
+# GET /api/v1/models?q=veo lists ``veo-3-1`` (and the veo/extend,
+# veo/get-1080p-video, veo/get-4k-video helpers); GET /api/v1/models/veo3 and
+# /veo3_fast answer code 404 "model name ... not supported". The registry flags
+# such models with ``"wire_schema": "veo-3-1"``.
+_VEO_WIRE_SCHEMA = "veo-3-1"
+_VEO_RESOLUTIONS = ("720p", "1080p", "4k")
+_VEO_ASPECT_RATIOS = ("16:9", "9:16", "Auto")
+_VEO_DURATIONS = (4, 6, 8)
+
+
+def _veo_3_1_input(request: VideoGenerationRequest) -> Dict[str, Any]:
+    """Build the createTask ``input`` for model ``veo-3-1`` exactly per its
+    live schema: ``image_urls`` (NOT ``input_urls``), INTEGER ``duration`` in
+    {4,6,8}, lowercase ``resolution`` in {720p,1080p,4k}, ``aspect_ratio`` in
+    {16:9,9:16,Auto}, ``generation_type`` enum. There is no audio field (clips
+    carry audio by default), so ``generate_audio`` is never sent. 1 image =
+    image-to-video, 2 = first/last frame, order significant."""
+    resolution = str(request.resolution).lower()
+    if resolution not in _VEO_RESOLUTIONS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 resolution must be one of {_VEO_RESOLUTIONS}, got {request.resolution!r}"
+        )
+    if request.aspect_ratio not in _VEO_ASPECT_RATIOS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 aspect_ratio must be one of {_VEO_ASPECT_RATIOS}, got {request.aspect_ratio!r}"
+        )
+    if int(request.duration_seconds) not in _VEO_DURATIONS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 duration must be one of {_VEO_DURATIONS}, got {request.duration_seconds!r}"
+        )
+    task_input: Dict[str, Any] = {
+        "prompt": request.prompt,
+        "aspect_ratio": request.aspect_ratio,
+        "resolution": resolution,
+        "duration": int(request.duration_seconds),
+        "generation_type": "FIRST_AND_LAST_FRAMES_2_VIDEO" if request.input_urls else "TEXT_2_VIDEO",
+    }
+    if request.input_urls:
+        task_input["image_urls"] = list(request.input_urls)
+    return task_input
 
 
 def _resolve_secret(env_var_name: str, *, required: bool = True) -> Optional[str]:
@@ -531,18 +581,21 @@ class KieProvider(MediaProvider):
                 f"kie provider: {request.model_id} accepts at most {max_images} "
                 f"input_urls (frame-pin images), got {len(request.input_urls)}"
             )
-        task_input: Dict[str, Any] = {
-            "prompt": request.prompt,
-            "aspect_ratio": request.aspect_ratio,
-            "resolution": request.resolution,
-            "duration": str(request.duration_seconds),  # STRING (422-fix pattern)
-            "generate_audio": request.generate_audio,
-        }
-        if request.input_urls:
-            # ORDER-SIGNIFICANT for frame-pinning models: index 0 = first
-            # frame, index 1 = last frame (spec §10.1/§10.2). Never
-            # re-sorted or de-duplicated — passed through exactly as given.
-            task_input["input_urls"] = list(request.input_urls)
+        if entry.get("wire_schema") == _VEO_WIRE_SCHEMA:
+            task_input = _veo_3_1_input(request)
+        else:
+            task_input = {
+                "prompt": request.prompt,
+                "aspect_ratio": request.aspect_ratio,
+                "resolution": request.resolution,
+                "duration": str(request.duration_seconds),  # STRING (422-fix pattern)
+                "generate_audio": request.generate_audio,
+            }
+            if request.input_urls:
+                # ORDER-SIGNIFICANT for frame-pinning models: index 0 = first
+                # frame, index 1 = last frame (spec §10.1/§10.2). Never
+                # re-sorted or de-duplicated — passed through exactly as given.
+                task_input["input_urls"] = list(request.input_urls)
         body: Dict[str, Any] = {"model": slug, "input": task_input}
         ticket = self._maybe_attach_callback(body, use_callback=use_callback)
         handle = self._submit(body, model_id=request.model_id)
@@ -617,6 +670,10 @@ class KieProvider(MediaProvider):
                 urls = result_json.get("resultUrls") or []
                 if urls:
                     return urls[0]
+                # Veo-style payload shape (callback docs): data.info.resultUrls.
+                info_urls = (data.get("info") or {}).get("resultUrls") or []
+                if info_urls:
+                    return str(info_urls[0])
                 fallback = (
                     result_json.get("videoUrl")
                     or result_json.get("url")

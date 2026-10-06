@@ -7,7 +7,8 @@
 # in order and all fail-closed:
 #
 #   1. DEPS        — python3 present (else abort).
-#   2. VERSION     — skill-version.txt is present + non-empty (pinned major).
+#   2. VERSION     : skill-version.txt is present, vMAJOR.MINOR.PATCH on the pinned
+#                    major (2), and equals the SKILL.md frontmatter version.
 #   3. HASH-PIN    — recompute the sha256 of the enforcement core (provers +
 #                    structure + orchestrator) and compare to SPA-PROVER-PIN.sha256.
 #                    A tampered prover / structure ledger dies here.
@@ -22,6 +23,7 @@
 # Usage:
 #   bash sales-page-assets-entry.sh --run-dir <RUN_DIR>
 #   bash sales-page-assets-entry.sh --self-test
+#   bash sales-page-assets-entry.sh --check-version   (version gate only)
 #   bash sales-page-assets-entry.sh --write-pin   (mint the enforcement-core pin)
 # Exit: 0 = certified / self-test green; nonzero = a fail-closed guard tripped.
 # ==============================================================================
@@ -31,7 +33,9 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS_DIR="$SKILL_DIR/scripts"
 PIN_FILE="$SCRIPTS_DIR/SPA-PROVER-PIN.sha256"
 PY="${PYTHON:-python3}"
-EXPECTED_MAJOR="1"
+# Current contract: skill-version.txt is "vMAJOR.MINOR.PATCH" (see scripts/qc-assert-skill-version-newline.sh)
+# and this skill is on major 2 (SKILL.md frontmatter version: v2.x). Bump only on a breaking 3.0.0 release.
+EXPECTED_MAJOR="2"
 
 # Files whose integrity is pinned (the enforcement core). Order-independent: we hash
 # each file's own sha256, then hash the sorted list of "sha256  name" lines.
@@ -85,10 +89,12 @@ step_version() {
   local vf="$SKILL_DIR/skill-version.txt"
   [ -s "$vf" ] || die "VERSION" "skill-version.txt missing/empty"
   local v; v="$(tr -d '[:space:]' < "$vf")"
-  case "$v" in
-    "$EXPECTED_MAJOR".*) : ;;
-    *) die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x" ;;
-  esac
+  # Anchored: exactly vMAJOR.MINOR.PATCH (rejects suffixes such as v2.0.1-junk and bare numbers).
+  [[ "$v" =~ ^v${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] || die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)"
+  # Lockstep: SKILL.md frontmatter version must equal skill-version.txt.
+  local fm; fm="$(awk '$0=="---"{f++; if(f>=2) exit; next} f==1 && /^version:/{sub(/^version:[ \t]*/,""); print; exit}' "$SKILL_DIR/SKILL.md" | tr -d '[:space:]"'"'"'')"
+  [ -n "$fm" ] || die "VERSION" "SKILL.md has no top-level frontmatter version: field"
+  [ "$fm" = "$v" ] || die "VERSION" "SKILL.md frontmatter version ($fm) != skill-version.txt ($v) - drift"
 }
 
 step_hashpin() {
@@ -207,12 +213,14 @@ main() {
     case "$1" in
       --run-dir) rd="${2:-}"; shift 2 ;;
       --self-test) mode="selftest"; shift ;;
+      --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "USAGE" "unknown arg: $1" ;;
     esac
   done
   case "$mode" in
+    checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
     writepin) write_pin ;;
     *) run_pipeline "$rd" ;;

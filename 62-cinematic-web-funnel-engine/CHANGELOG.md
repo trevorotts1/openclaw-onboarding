@@ -1,5 +1,34 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.0.3 — 2026-10-05
+
+Also fixed in v2.0.3: `cinematic-web-funnel-entry.sh` aborted every run and its `--self-test`
+with `ABORT [VERSION]: skill-version.txt is 'v2.0.2', expected major 1.x` (`EXPECTED_MAJOR`
+was `"1"` and the leading `v` was not parsed). Now expects major 2, accepts
+only `vMAJOR.MINOR.PATCH` (anchored regex `^v2\.[0-9]+\.[0-9]+$`, so `v2.0.1-junk` is rejected), keeps the SKILL.md frontmatter lockstep check, and adds `--check-version`
+(deps + version gate only) plus `scripts/test_entry_version.py` (passes on the shipped version;
+fails on v1.x, v3.x, malformed values, and frontmatter drift). Same pattern as Skills 49/56
+(PR #1505). The entry shell is not hash-pinned.
+
+Fix: Veo model ids and input shape on `POST /api/v1/jobs/createTask` aligned with the live
+KIE catalog and schema. Evidence (free catalog/schema GETs, 2026-10-05): `GET
+/api/v1/models?q=veo` lists `veo-3-1` (plus `veo/extend`, `veo/get-1080p-video`,
+`veo/get-4k-video`) and NO `veo3` / `veo3_fast`; `GET /api/v1/models/veo-3-1/schema` is code
+200 with path `/api/v1/jobs/createTask`, input fields `prompt` (required), `image_urls`,
+`generation_type`, `aspect_ratio` (16:9|9:16|Auto), `resolution` (720p|1080p|4k), `duration`
+(integer 4|6|8), `watermark`, `enable_translation`, `enable_fallback` (deprecated); `GET
+/api/v1/models/veo3/schema` and `/veo3_fast/schema` answer code 404 "model name ... not
+supported". Registry: `kie-veo3-fast` and `kie-veo3-quality` keep their ids and tier policy
+but now both resolve to wire slug `veo-3-1` with `wire_schema: "veo-3-1"`; `providers/kie.py`
+builds the veo-3-1 body (`image_urls`, integer `duration`, lowercase `resolution`,
+`generation_type`, no `generate_audio`) and also reads `data.info.resultUrls`. Offline tests
+with fake transport added. Docs: SKILL.md and INSTRUCTIONS.md no longer claim "never a third
+divergent Kie client"; they state `providers/kie.py` is a standalone client pending
+consolidation onto Skill 74. Not changed: Skills 47 and 37 (the legacy
+`/api/v1/veo/generate` route is still live). UNDETERMINED: which billing mode (Lite, Fast,
+Quality) a `veo-3-1` request uses (the schema has no tier field), the live poll route and
+result shape for veo-3-1 tasks, and the Veo price blocks (left unchanged; catalog differs).
+
 ## 1.0.2 — 2026-07-18
 
 Fix (carry-forward of PR #602, `ce6aab7a`): `prove_conversion.py` JSON extraction is now

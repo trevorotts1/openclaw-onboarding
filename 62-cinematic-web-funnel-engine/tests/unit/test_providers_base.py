@@ -306,8 +306,10 @@ class SlugAndPriceResolutionTests(unittest.TestCase):
         self.assertNotEqual(slug, "kie-bytedance-seedance-1.5-pro")
 
     def test_slug_for_veo3_variants(self) -> None:
-        self.assertEqual(self.registry.slug_for("kie-veo3-fast"), "veo3_fast")
-        self.assertEqual(self.registry.slug_for("kie-veo3-quality"), "veo3")
+        # Live KIE catalog/schema (2026-10-05): createTask knows only veo-3-1;
+        # the legacy ids veo3 / veo3_fast answer code 404 "not supported".
+        self.assertEqual(self.registry.slug_for("kie-veo3-fast"), "veo-3-1")
+        self.assertEqual(self.registry.slug_for("kie-veo3-quality"), "veo-3-1")
 
     def test_price_for_resolution_keyed_amount(self) -> None:
         # gpt-image-2-5 pricing is unverified in the registry, so strict=False
@@ -386,7 +388,7 @@ class NeverHardcodedProofTests(unittest.TestCase):
             mutated = base.ModelRegistry(path)
             mutated_slug = mutated.slug_for("kie-veo3-fast")
 
-        self.assertEqual(original_slug, "veo3_fast")
+        self.assertEqual(original_slug, "veo-3-1")
         self.assertEqual(mutated_slug, "veo3_fast_MUTATED_FOR_TEST")
         self.assertNotEqual(mutated_slug, original_slug)
         self.assertNotEqual(mutated.snapshot_id, original.snapshot_id)
@@ -423,7 +425,7 @@ class NeverHardcodedProofTests(unittest.TestCase):
                 mutated.slug_for("kie-veo3-fast")
             # explicit opt-in still works
             self.assertEqual(
-                mutated.slug_for("kie-veo3-fast", allow_deprecated=True), "veo3_fast"
+                mutated.slug_for("kie-veo3-fast", allow_deprecated=True), "veo-3-1"
             )
             # and resolve_tier silently excludes it from premium tier now
             candidates = mutated.resolve_tier("premium_photoreal_override")

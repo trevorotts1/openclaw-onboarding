@@ -219,17 +219,18 @@
     {
       "model_id": "kie-veo3-fast",
       "provider": "kie",
-      "provider_model_slug": "veo3_fast",
+      "provider_model_slug": "veo-3-1",
+      "wire_schema": "veo-3-1",
       "status": "active",
       "integration_status": "implemented",
-      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, _FALLBACK_MODEL)",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, _FALLBACK_MODEL) uses the legacy POST /api/v1/veo/generate route with veo3_fast; THIS skill's providers/kie.py uses createTask model veo-3-1 (own wire schema)",
       "capabilities": ["text-to-video", "image-to-video"],
       "reference_image_support": {"supported": true, "max_images": 2, "note": "1 image = single reference frame; 2 images = first/last frame (FIRST_AND_LAST_FRAMES_2_VIDEO generation type)"},
       "first_frame_control": true,
       "first_and_last_frame_control": true,
       "aspect_ratios": ["16:9", "9:16", "Auto"],
-      "output_resolutions": ["1080p", "4K"],
-      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "string", "note": "Veo 3.1 clips are limited to 8 seconds per Kie quickstart FAQ"},
+      "output_resolutions": ["720p", "1080p", "4k"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "integer", "note": "Veo 3.1 clips are limited to 8 seconds; createTask veo-3-1 schema: duration is an INTEGER enum 4|6|8 (live schema 2026-10-05)"},
       "audio": {"supported": true, "default_enabled": true, "note": "background audio included by default; upstream may suppress in sensitive cases"},
       "callback_support": true,
       "price": {
@@ -238,25 +239,26 @@
         "currency": "USD",
         "verified": true,
         "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\" → \"Important pricing note\": \"Veo 3.1 Fast tier: $0.40\".",
-        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested."
+        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested. CATALOG DRIFT (2026-10-05, UNDETERMINED which applies): live GET /api/v1/models?q=veo for veo-3-1 lists Fast per-video prices 720p $0.30, 1080p $0.325, 4k $0.90; the live createTask veo-3-1 schema has NO field that selects Lite/Fast/Quality, so the billed mode of a veo-3-1 request is unproven without a paid call. This price block is intentionally left at the pre-existing (higher, conservative for 720p/1080p) figure pending an operator-approved live probe."
       },
-      "verified_date": "2026-07-14",
-      "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\""
+      "verified_date": "2026-10-05",
+      "source": "Live KIE catalog + schema: GET /api/v1/models?q=veo, GET /api/v1/models/veo-3-1/schema (2026-10-05); GET /api/v1/models/veo3/schema and /veo3_fast/schema return code 404 model not supported"
     },
     {
       "model_id": "kie-veo3-quality",
       "provider": "kie",
-      "provider_model_slug": "veo3",
+      "provider_model_slug": "veo-3-1",
+      "wire_schema": "veo-3-1",
       "status": "active",
       "integration_status": "implemented",
-      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, model=\"veo3\")",
+      "delegate": "47-movie-producer/kie-adapters/tools/video/kie_video.py (KieVideo, model=\"veo3\") uses the legacy POST /api/v1/veo/generate route; THIS skill's providers/kie.py uses createTask model veo-3-1 (own wire schema)",
       "capabilities": ["text-to-video", "image-to-video"],
       "reference_image_support": {"supported": true, "max_images": 2, "note": "1 image = single reference frame; 2 images = first/last frame (FIRST_AND_LAST_FRAMES_2_VIDEO generation type)"},
       "first_frame_control": true,
       "first_and_last_frame_control": true,
       "aspect_ratios": ["16:9", "9:16", "Auto"],
-      "output_resolutions": ["1080p", "4K"],
-      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "string", "note": "Veo 3.1 clips are limited to 8 seconds per Kie quickstart FAQ"},
+      "output_resolutions": ["720p", "1080p", "4k"],
+      "duration_limits": {"unit": "seconds", "min": 4, "max": 8, "valid_values": [4, 6, 8], "value_type": "integer", "note": "Veo 3.1 clips are limited to 8 seconds; createTask veo-3-1 schema: duration is an INTEGER enum 4|6|8 (live schema 2026-10-05)"},
       "audio": {"supported": true, "default_enabled": true, "note": "background audio included by default; upstream may suppress in sensitive cases"},
       "callback_support": true,
       "price": {
@@ -265,10 +267,10 @@
         "currency": "USD",
         "verified": true,
         "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\" → \"Important pricing note\": \"Veo 3.1 Quality tier: $2.00\".",
-        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested. Requires explicit budget-cap approval per capability_tiers.premium_photoreal_override."
+        "note": "4K upgrade costs additional credits (~2x a Fast generation per docs); not itemized separately here — resolve at the pricing endpoint when 4K is requested. Requires explicit budget-cap approval per capability_tiers.premium_photoreal_override. CATALOG DRIFT (2026-10-05, UNDETERMINED which applies): live GET /api/v1/models?q=veo for veo-3-1 lists Quality per-video prices 720p $1.25, 1080p $1.275, 4k $1.85; the live createTask veo-3-1 schema has NO field that selects Lite/Fast/Quality, so the billed mode of a veo-3-1 request is unproven without a paid call. This price block is intentionally left at the pre-existing (higher, conservative for 720p/1080p) figure pending an operator-approved live probe."
       },
-      "verified_date": "2026-07-14",
-      "source": "07-kie-setup/kie-setup-full.md §\"Veo 3.1 API Documentation (KIE.ai)\""
+      "verified_date": "2026-10-05",
+      "source": "Live KIE catalog + schema: GET /api/v1/models?q=veo, GET /api/v1/models/veo-3-1/schema (2026-10-05); GET /api/v1/models/veo3/schema and /veo3_fast/schema return code 404 model not supported"
     }
   ],
 
