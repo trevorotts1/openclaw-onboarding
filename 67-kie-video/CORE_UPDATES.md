@@ -50,7 +50,7 @@ Add:
 - Dedicated APIs: POST https://api.kie.ai/api/v1/runway/generate, POST https://api.kie.ai/api/v1/veo/generate
 - GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state enum: waiting/queuing/generating/success/fail; resultJson.resultUrls on success)
 - Callbacks: callBackUrl field; HMAC-SHA256 scheme base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey)); headers X-Webhook-Timestamp / X-Webhook-Signature; ack {"code":200,"msg":"success"}
-- Rate: 20 new generation requests/10s; 100+ concurrent. Result URLs expire ~24h; media deleted after 14 days.
+- Rate: 20 new generation requests/10s; 100+ concurrent. Retention: KIE documents 14 days for generated media but result URLs typically expire after 24 hours; download/persist immediately.
 - Registry: [MASTER_FILES_FOLDER]/67-kie-video/models.json + [MASTER_FILES_FOLDER]/67-kie-video/references/ (37 models, limits, durations, resolutions, reference caps)
 - Validators: scripts/validate_prompt.py, scripts/validate_payload.py (run before dispatch; never after)
 ```

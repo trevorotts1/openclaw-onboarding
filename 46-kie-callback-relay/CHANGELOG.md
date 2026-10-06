@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.2] - 2026-10-05 - fix: read the real KIE Market result shape (resultJson.resultUrls) and the Suno audio shape
+
+### Fixed
+- Result parsing defect. The Worker (`worker/src/index.js` `extractResultUrls`) read only `data.info.result_urls`, `resultImageUrl` and `originImageUrl`; the box poller (`box-kv-poller.js` `_extractResultJsonUrls`) read only `images[].url`, `resultImageUrl` and `result_urls`. Neither read the live Market success shape documented in the KIE contract and in skills 07, 66 and 67: `data.resultJson` is a JSON STRING `{"resultUrls":[...]}` and `data.response` is the parsed copy. A genuine Market success could therefore be recorded `failed` (EMPTY-RESULT). Both sides now accept `response.resultUrls`, the parsed `resultJson.resultUrls`, Suno `response.data[].audio_url` (callbacks: `data.data[].audio_url`) and the existing `images:[{url}]` and legacy `info.result_urls` shapes, de-duplicated.
+- The poller also re-derives URLs from the callback `rawData` when an older Worker returned `resultUrls: []`, so the box fix works even before the Worker is redeployed.
+- Result-host allowlist: added `file.aiquickdraw.com` (the Veo 4K callback result host in the 07 first-party reference). `tempfile.redpandaai.co`, `tempfile.aiquickdraw.com`, `tempfileb.aiquickdraw.com` and `static.aiquickdraw.com` were already present. Matching is unchanged (exact host or true subdomain); a look-alike such as `file.aiquickdraw.com.evil.com` and bare `redpandaai.co` stay rejected. Suno audio hosts are NOT confirmed; if one is rejected the loud `ALLOWLIST-MISMATCH` log fires and the operator sets `KIE_RESULT_HOSTS`.
+- Version drift: `SKILL.md` frontmatter said 1.1.4 and `skill-version.txt` v2.0.1, so this skill's own QC script failed on the version gate (a real drift, not a stale check). `SKILL.md` now has top-level `version: v2.0.2`; Worker `/healthz` and `worker/package.json` now report 2.0.2 (they said 1.1.0), `SUBMITTER-SOP.md` and `DEPLOY.md` follow. A redeployed Worker is now provable by its `/healthz` version. Live probe 2026-10-05 (known-good and fake-path controls): GET /api/v1/chat/credit, POST /api/v1/jobs/createTask, GET /api/v1/models and GET /api/v1/veo/record-info answered; /api/v1/account/balance, /api/v1/user/credits, /api/v1/jobs/create and /api/v1/veo/task returned HTTP 404.
+
+### Tests
+- `test/security.test.mjs`: 67 assertions before, 86 after (19 new). New fixtures use the real Market shape (resultJson string, response copy, each alone), the Suno `response.data[].audio_url` shape, KV-path recovery from `rawData`, Worker `/cb` extraction (Market, Suno, legacy), and strict-allowlist cases. 12 of the new assertions fail against the pre-fix code. `qc-kie-callback-relay.sh` now passes (was FAIL: 1 gate).
+
+### OWNER ACTION REQUIRED
+- The Worker code changed (`worker/src/index.js`). It must be REDEPLOYED to Cloudflare by the owner (`cd 46-kie-callback-relay/worker && npx wrangler deploy --name kie-callback-relay`, see `DEPLOY.md`). This change set did NOT deploy it. Until then boxes still work through the box-side recovery above, and `/healthz` keeps reporting 1.1.0.
+- Risk level: MEDIUM for the Worker (live edge code), LOW for the box poller.
+
+---
+
 ## [2.0.0] - July 21, 2026
 
 ### Fixed
