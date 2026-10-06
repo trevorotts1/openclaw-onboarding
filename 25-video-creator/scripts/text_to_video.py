@@ -96,8 +96,9 @@ def main():
     parser = argparse.ArgumentParser(description='Generate video from text description')
     parser.add_argument('prompt', help='Text description of the video')
     parser.add_argument('--duration', type=int, default=5, help='Video duration in seconds')
-    parser.add_argument('--resolution', default='1080p', choices=['720p', '1080p', '4k'],
-                       help='Output resolution')
+    parser.add_argument('--resolution', default='1080p',
+                       help='Output resolution. runway/pika/mock: 720p, 1080p, 4k. kieai: any value the '
+                            'model documents (for example 480p, 540p, 720p, 1080p, 2K, 4k); the model decides')
     parser.add_argument('--provider', default='kieai', choices=['kieai', 'runway', 'pika', 'mock'],
                        help='AI provider to use')
     parser.add_argument('--style', default='cinematic', 

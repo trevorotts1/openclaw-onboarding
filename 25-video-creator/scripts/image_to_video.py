@@ -67,7 +67,7 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
         return ai.image_to_video(
             image_path=image_path,
             prompt=f"{motion} motion effect",
-            duration=int(duration),
+            duration=duration,  # raw: per-model coercion (kieai) decides the type
             output=output,
             **extra
         )
@@ -81,9 +81,10 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     # Apply resolution if specified
     if resolution:
         res_map = {'720p': (1280, 720), '1080p': (1920, 1080), '4k': (3840, 2160)}
-        target_size = res_map.get(resolution)
-        if target_size:
-            clip = clip.resize(newsize=target_size)
+        target_size = res_map.get(resolution.lower())
+        if target_size is None:
+            raise ValueError(f"Unsupported resolution {resolution!r} for local mode (supported: 720p, 1080p, 4k)")
+        clip = clip.resize(newsize=target_size)
     
     # Apply motion effect
     if motion == 'zoom':
@@ -288,8 +289,9 @@ def main():
                        help='Motion effect type')
     parser.add_argument('--duration', '-d', type=float, default=5.0,
                        help='Video duration in seconds')
-    parser.add_argument('--resolution', '-r', choices=['720p', '1080p', '4k'],
-                       help='Output resolution')
+    parser.add_argument('--resolution', '-r',
+                       help='Output resolution. local: 720p, 1080p, 4k. kieai: any value the model documents '
+                            '(for example 480p, 540p, 720p, 1080p, 2K, 4k); the model decides')
     parser.add_argument('--zoom-direction', choices=['in', 'out'], default='in',
                        help='Zoom direction (for zoom motion)')
     parser.add_argument('--music', help='Background music file')

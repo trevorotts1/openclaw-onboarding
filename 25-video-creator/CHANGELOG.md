@@ -14,6 +14,14 @@
   pass through unchanged.
 - **`--image-field` no longer guesses the type from a trailing "s".** New `--image-field-type string|array`
   (`image_field_type=` in code); required with `--image-field` unless it names the model's own mapped key.
+- QC nits: Gemini Omni `seed` is limited to 0 to 2147483647; HappyHorse 1.1 `duration` must be integer-valued
+  (5.5 rejected); a model that uses a different key never receives Skill 25's name for it (Pixverse gets `quality`,
+  never `resolution`; both given with different values is an error); `--resolution` on `text_to_video.py` and
+  `image_to_video.py` accepts any value (for example 480p, 540p, 2K) and the model's own table decides, while
+  runway/pika/mock and local mode now reject unsupported values instead of silently ignoring them;
+  `image_to_video.py` no longer int()-casts the duration before per-model validation.
+- Re-verified against fresh docs fetches: kling-3.0-omni/image-to-video (note: its docs allow 16:9, 9:16, 1:1 only with
+  `customize_multi_shots`, otherwise `auto`), happyhorse/image-to-video, wan/3-0-video-prime. No mismatches in the table.
 - CI: the Skill 25 workflow job and step names no longer hard-code a test count (the 93-test anti-vacuity floor stays).
 
 ## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model

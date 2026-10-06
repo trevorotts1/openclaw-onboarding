@@ -481,7 +481,8 @@ DURATION_BAD = [
     ("kling/v2-5-turbo-image-to-video-pro", 7, "one of 5, 10"),
     ("kling-3.0-omni/image-to-video", 16, "3 to 15"), ("kling-3.0/video", 16, "one of 3, 4"),
     ("pixverse-v6/image-to-video", 0, "1 to 15"),
-    ("happyhorse-1-1/image-to-video", 2, "3 to 15"), ("happyhorse/image-to-video", 2.5, "3 to 15"),
+    ("happyhorse-1-1/image-to-video", 2, "3 to 15"), ("happyhorse-1-1/image-to-video", 5.5, "integer 3 to 15"),
+    ("happyhorse/image-to-video", 2.5, "3 to 15"),
     ("gemini-omni-video", 5, "one of 4, 6, 8, 10"),
 ]
 # (model, resolution given, expected sent key, expected sent value)
@@ -522,6 +523,7 @@ def test_resolution_is_mapped_to_the_documented_enum_and_key(env, model, given, 
     inp = sent_input(fake)
     assert inp[key] == expected
     assert key == "quality" or "quality" not in inp
+    assert key == "resolution" or "resolution" not in inp  # pixverse never receives a "resolution" key
 
 
 @pytest.mark.parametrize("model,given,allowed", [
@@ -705,3 +707,173 @@ def test_other_providers_reject_input_extra(tmp_path):
     ai = module.AIProvider("mock", {"mock": {"api_key": "k"}})
     with pytest.raises(ValueError, match="--input-extra"):
         ai.generate_video("x", output=tmp_path / "o.mp4", input_extra={"a": 1})
+
+
+# ---- QC nits: gemini seed, happyhorse integer duration, pixverse key, CLI resolution, raw duration ----
+
+@pytest.mark.parametrize("seed,ok", [(0, True), (2147483647, True), (-1, False), (2147483648, False)])
+def test_gemini_seed_range_is_enforced(env, seed, ok):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    if ok:
+        i2v(env, "gemini-omni-video", seed=seed)
+        assert sent_input(fake)["seed"] == seed
+    else:
+        with pytest.raises(ValueError, match="gemini-omni-video.*seed.*0 to 2147483647"):
+            i2v(env, "gemini-omni-video", seed=seed)
+        assert fake.calls == []
+
+
+def test_happyhorse_11_duration_is_integer_valued(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    with pytest.raises(ValueError, match="happyhorse-1-1/image-to-video.*duration=5.5"):
+        i2v(env, "happyhorse-1-1/image-to-video", duration=5.5)
+    assert fake.calls == []
+    i2v(env, "happyhorse-1-1/image-to-video", duration=5.0)
+    assert sent_input(fake)["duration"] == 5 and type(sent_input(fake)["duration"]) is int
+
+
+def test_pixverse_conflicting_resolution_and_quality_is_rejected_before_http(env):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match="uses 'quality' instead of 'resolution'"):
+        i2v(env, "pixverse-v6/image-to-video", resolution="1080p", input_extra={"quality": "540p"})
+    assert fake.calls == []
+
+
+def test_pixverse_same_resolution_and_quality_sends_only_quality(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, "pixverse-v6/image-to-video", resolution="720P", input_extra={"quality": "720p"})
+    inp = sent_input(fake)
+    assert inp["quality"] == "720p" and "resolution" not in inp
+
+
+def test_pixverse_text_to_video_path_also_renames_resolution(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    env.provider().generate_video("x", duration=5, resolution="1080p", output=env.tmp / "o.mp4",
+                                  model="pixverse-v6/image-to-video")
+    inp = sent_input(fake)
+    assert inp["quality"] == "1080p" and "resolution" not in inp
+
+
+def test_image_to_video_does_not_int_cast_duration_before_per_model_validation(env, monkeypatch):
+    module = load_module()
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_i2v_cli6", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    fake = env.install(FakeKie())
+    monkeypatch.setattr(cli, "AIProvider", lambda name, cfg: env.provider())
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(ValueError, match="happyhorse-1-1/image-to-video.*duration=5.5"):
+        cli.image_to_video(image, output=env.tmp / "o.mp4", duration=5.5, provider="kieai",
+                           model="happyhorse-1-1/image-to-video")  # int(5.5) would have silently become 5
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("script,extra", [("image_to_video", ["x.png"]), ("text_to_video", ["a prompt"])])
+@pytest.mark.parametrize("resolution", ["480p", "540p", "720p", "1080p", "2K", "4k", "768P"])
+def test_cli_resolution_accepts_every_documented_value_and_forwards_it(monkeypatch, tmp_path, script, extra,
+                                                                      resolution):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location(f"skill25_{script}_cli7", SKILL_ROOT / "scripts" / f"{script}.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    seen = {}
+
+    class Recorder:
+        def __init__(self, name, config):
+            pass
+
+        def image_to_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+        def generate_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+    monkeypatch.setattr(cli, "AIProvider", Recorder)
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"x")
+    argv = [str(image)] if script == "image_to_video" else extra
+    monkeypatch.setattr(sys, "argv", [f"{script}.py", *argv, "--provider", "kieai", "--resolution", resolution,
+                                      "--output", str(tmp_path / "o.mp4")])
+    assert cli.main() == 0
+    assert seen["resolution"] == resolution
+
+
+def test_cli_image_duration_is_forwarded_raw(monkeypatch, tmp_path):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_i2v_cli8", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    seen = {}
+
+    class Recorder:
+        def __init__(self, name, config):
+            pass
+
+        def image_to_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+    monkeypatch.setattr(cli, "AIProvider", Recorder)
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"x")
+    monkeypatch.setattr(sys, "argv", ["image_to_video.py", str(image), "--provider", "kieai", "--duration", "5.5",
+                                      "--output", str(tmp_path / "o.mp4")])
+    assert cli.main() == 0
+    assert seen["duration"] == 5.5
+
+
+@pytest.mark.parametrize("provider", ["runway", "pika", "mock"])
+def test_non_kie_providers_reject_resolutions_they_do_not_support(provider, tmp_path):
+    module = load_module()
+    ai = module.AIProvider(provider, {provider: {"api_key": "k"}})
+    with pytest.raises(ValueError, match="does not support resolution '2K'"):
+        ai.generate_video("x", resolution="2K", output=tmp_path / "o.mp4")
+
+
+def test_local_image_mode_rejects_unknown_resolution_instead_of_ignoring_it(monkeypatch, tmp_path):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_i2v_cli9", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    class FakeClip:
+        def resize(self, **kw):
+            return self
+
+    fake_editor = ModuleType("moviepy.editor")
+    fake_editor.ImageClip = lambda path: FakeClip()
+    fake_editor.AudioFileClip = object
+    audio_fx = ModuleType("moviepy.audio.fx.all")
+    for name in ("audio_fadein", "audio_fadeout", "volumex"):
+        setattr(audio_fx, name, lambda *a, **k: None)
+    for name, mod in {"moviepy": ModuleType("moviepy"), "moviepy.editor": fake_editor,
+                      "moviepy.audio": ModuleType("moviepy.audio"), "moviepy.audio.fx": ModuleType("moviepy.audio.fx"),
+                      "moviepy.audio.fx.all": audio_fx}.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(ValueError, match="Unsupported resolution '2K' for local mode"):
+        cli.image_to_video(image, output=tmp_path / "o.mp4", provider="local", resolution="2K")
+
+
+# Specs for the three models re-verified against fresh docs fetches (kling-3.0-omni image-to-video,
+# happyhorse/image-to-video, wan/3-0-video-prime): literal expectations from each page's input schema.
+def test_specs_for_reverified_models_match_their_docs_pages():
+    f = load_module().KIE_INPUT_SPECS
+    omni = f["kling-3.0-omni/image-to-video"]["fields"]
+    assert omni["duration"] == {"kind": "int", "min": 3, "max": 15}
+    assert omni["resolution"]["values"] == ["720p", "1080p", "4k"]
+    assert omni["aspect_ratio"]["values"] == ["16:9", "9:16", "1:1", "auto"]
+    hh = f["happyhorse/image-to-video"]["fields"]
+    assert hh["duration"] == {"kind": "int", "min": 3, "max": 15}
+    assert hh["resolution"]["values"] == ["720p", "1080p"]
+    assert hh["seed"] == {"kind": "int", "min": 0, "max": 2147483647}
+    prime = f["wan/3-0-video-prime"]["fields"]
+    assert prime["duration"] == {"kind": "int", "min": 2, "max": 30, "also": (-1,)}
+    assert prime["resolution"]["values"] == ["480P", "720P", "1080P"]
+    assert prime["aspect_ratio"]["values"] == ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16"]
+    assert prime["seed"] == {"kind": "int", "min": 0, "max": 2147483647}

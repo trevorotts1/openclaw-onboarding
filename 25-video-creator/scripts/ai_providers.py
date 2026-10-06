@@ -118,7 +118,7 @@ KIE_INPUT_SPECS = {
         'quality': {'kind': 'enum', 'values': ['360p', '540p', '720p', '1080p']}, 'seed': _SEED},
         'rename': {'resolution': 'quality'}, 'required': ['quality']},
     'happyhorse-1-1/image-to-video': {'fields': {
-        'duration': {'kind': 'num', 'min': 3, 'max': 15},
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
         'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}}},
     'happyhorse/image-to-video': {'fields': {
         'duration': {'kind': 'int', 'min': 3, 'max': 15},
@@ -126,7 +126,7 @@ KIE_INPUT_SPECS = {
     'gemini-omni-video': {'fields': {
         'duration': {'kind': 'numstr', 'values': ['4', '6', '8', '10']},
         'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16']},
-        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']}, 'seed': {'kind': 'int'}}},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']}, 'seed': _SEED}},
 }
 
 
@@ -186,8 +186,13 @@ def kie_validate_input(model, payload, provided_by_caller=()):
     if not spec:
         return payload
     for old, new in spec.get('rename', {}).items():
-        if old in payload and new not in payload:
-            payload[new] = payload.pop(old)
+        if old not in payload:
+            continue
+        if new in payload and str(payload[new]).lower() != str(payload[old]).lower():
+            raise ValueError(f"KIE model {model} uses '{new}' instead of '{old}': got {old}={payload[old]!r} "
+                             f"and {new}={payload[new]!r}. Give only one (the model's own key is '{new}').")
+        value = payload.pop(old)  # never send the option under the name the model does not have
+        payload.setdefault(new, value)
     for key, value in list(payload.items()):
         field_spec = spec['fields'].get(key)
         if field_spec is not None and value is not None:
@@ -338,6 +343,10 @@ class AIProvider:
             Path to generated video
         """
         if self.provider != 'kieai':
+            if str(resolution).lower() not in ('720p', '1080p', '4k'):
+                raise ValueError(f"Provider '{self.provider}' does not support resolution {resolution!r} "
+                                 "(supported: 720p, 1080p, 4k)")
+            resolution = str(resolution).lower()
             unsupported_options = [
                 option for option in ('seed', 'negative_prompt', 'model', 'input_extra')
                 if kwargs.get(option) is not None
@@ -409,6 +418,9 @@ class AIProvider:
             raise ValueError("KIE_API_KEY not configured (set it in your environment to use provider=kieai)")
 
     def _kie_common_input(self, payload, model, resolution, kwargs, image_field=None):
+        d = payload.get('duration')
+        if isinstance(d, float) and d.is_integer() and model not in KIE_INPUT_SPECS:
+            payload['duration'] = int(d)  # unmapped model: 5.0 -> 5; mapped models coerce per their own docs
         if resolution:
             # mapped models: the docs enum is applied below; others: Skill 67's registry spelling
             payload['resolution'] = resolution if model in KIE_INPUT_SPECS else _kie_resolution(model, resolution)
