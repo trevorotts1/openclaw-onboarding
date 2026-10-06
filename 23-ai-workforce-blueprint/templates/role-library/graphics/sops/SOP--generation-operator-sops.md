@@ -29,7 +29,7 @@
 
 **Outputs:** Receipt file in `_local/receipts/` with state `submitted`; job directory with compiled negatives artifact.
 **Hand to:** CDO/requestor when the Render Dispatcher's poller completes postflight verification and flips the receipt to `complete`. Off-style results after postflight -> Fidelity Tester (SOP 9.5). Hard-rule violations -> quarantine (SOP 9.7).
-**Failure mode:** Any preflight failure returns an itemized failure list to the requestor and logs the rejection in `_local/dispatch-log.md` (no receipt exists before submission). Never submit a failing preflight. Never improvise a fix to a preflight failure -- that is prompt authoring, not operator work.
+**Failure mode:** Any preflight failure returns an itemized failure list to the requestor and appends a `preflight-failed` line to the shared `_local/dispatch-log.md` (no receipt exists before submission). Never submit a failing preflight. Never improvise a fix to a preflight failure -- that is prompt authoring, not operator work.
 
 ---
 
@@ -94,7 +94,7 @@
 5. **Style-reference-only directive:** If `image_input` / `input_urls` / `image_urls` are set, verify `style_reference_only: true` (or equivalent per-endpoint field) is also set per MODEL-SPECS §4. Return "PREFLIGHT FAIL: reference images present but style_reference_only not set" if absent.
 6. **Identity Lock Block presence:** If the job is flagged `likeness: true`, verify the Identity Lock Block is present verbatim at the end of the positive prompt. Return "PREFLIGHT FAIL: likeness job missing Identity Lock Block" if absent.
 7. **Avoid-list contradiction audit:** Confirm the compiled negatives artifact has been produced for this job and the contradiction audit in SOP 9.3 step 5 passed. Return "PREFLIGHT FAIL: compiled negatives missing or contradiction audit not completed" if absent.
-8. **Budget headroom and credit:** Verify estimated job cost (unit price from the live `pricingDesc`) does not exceed remaining budget headroom for this period, and that the live credit balance covers the estimate x 1.30 (credit preflight, see the canonical rules). If within the per-job approval threshold, require producer approval receipt before proceeding.
+8. **Budget headroom and credit:** Verify estimated job cost (unit price from the live `pricingDesc`) does not exceed remaining budget headroom for this period, and that the live credit balance covers the estimate x 1.30 (credit preflight, see the canonical rules). If over the per-job approval threshold, require producer approval receipt before proceeding.
 
 **Postflight checklist (run by the Render Dispatcher's poller immediately on a `success` task result, recorded in the Operator's receipt):**
 
@@ -133,6 +133,7 @@ task_id:              {kie.ai-taskId}
 requestor:            {role-slug or workspace-slug}
 cost_class:           {estimated-cost-dollars}
 budget_cap:           {per-job-cap-dollars}
+actual_cost:          {dollars or null}
 state:                {queued|held|preflight-failed|submitted|polling|complete|failed|postflight-failed|quarantined|hard-stopped|orphaned}
 submitted_at:         {iso8601}
 last_polled:          {iso8601}
@@ -142,10 +143,10 @@ sha256:               {hex or null}
 preflight_passed:     {true|false}
 postflight_verified:  {true|false}
 seed:                 {value or "no-seed-endpoint"}
-filled_prompt_hash:   {sha256 of exact filled positive prompt}
+filled_prompt_hash:   {sha256 of exact filled positive prompt + seed + card_id + card_version + model}
 ```
 
-The Operator creates the receipt at submit time; the Dispatcher only advances lifecycle fields on it. `queued`, `held` and `preflight-failed` happen before any task exists, so the Dispatcher records them in `_local/dispatch-log.md`; they stay in the enum so one vocabulary serves both files.
+The Operator creates the receipt at submit time; the Dispatcher only advances lifecycle fields on it. `queued`, `held` and `preflight-failed` happen before any task exists and are not receipt states: the Operator appends a `preflight-failed` line to the shared `_local/dispatch-log.md` when its own preflight rejects a packet, and the Dispatcher logs `queued`, `held` and its own pre-dispatch failures there; they stay in the enum so one vocabulary serves both files.
 
 **Budget gate (before every new job):**
 1. Estimate cost: `num_tasks x price_per_task` using the live `pricingDesc` for the selected model and tier (the only price authority; `_local/PRICING.md` holds billed actuals and budget config, not authoritative prices).
@@ -156,8 +157,8 @@ The Operator creates the receipt at submit time; the Dispatcher only advances li
 
 **Orphan recovery (owned by the Render Dispatcher, its SOP 9.7; the Operator does not poll):**
 1. List all receipts with `state: submitted` or `state: polling`.
-2. For each: call `recordInfo` for the taskId. If `state: success`: proceed to SOP 9.4 postflight. If `state: fail`: escalate to CDO. Otherwise (`waiting`, `queuing`, `generating`): update `last_polled` and leave for the cron.
-3. Any receipt with `last_polled` older than 24 hours with no completion: escalate to CDO.
+2. For each: call `recordInfo` for the taskId. If `state: success`: proceed to SOP 9.4 postflight. If `state: fail`: flip the receipt to `failed` and escalate to CDO. Otherwise (`waiting`, `queuing`, `generating`): update `last_polled` and leave for the cron.
+3. Any receipt still without a completion state past its max-in-flight window (2 hours standard jobs, 8 hours deck fan-outs): escalate to CDO; a `submitted` receipt older than 30 days is a confirmed orphan (`state: orphaned`).
 
 **Circuit breaker:**
 1. After every completed or failed task, sum all spend for the current deliverable.

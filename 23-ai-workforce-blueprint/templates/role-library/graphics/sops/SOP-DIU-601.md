@@ -11,7 +11,7 @@
 
 ## Role Mission
 
-The Generation Operator runs this SOP as a mandatory gate before every API submission (preflight) and immediately after every completed result download (postflight). Preflight is deterministic lint — zero tokens spent, zero API calls made — that prevents foreseeable failures before they cost money. Postflight verifies that what was paid for was actually received and is usable. Nothing reports success until postflight passes. The Operator never submits with a known preflight failure and never marks a job complete before local files are verified.
+The Generation Operator runs the preflight half of this SOP as a mandatory gate before every API submission; the Render Dispatcher's poller runs the postflight half immediately after every completed result download and records it in the Operator's receipt. Preflight is deterministic lint — zero tokens spent, zero API calls made — that prevents foreseeable failures before they cost money. Postflight verifies that what was paid for was actually received and is usable. Nothing reports success until postflight passes. The Operator never submits with a known preflight failure, and no role marks a job complete before local files are verified.
 
 ---
 
@@ -98,10 +98,10 @@ All checks reference these files at runtime. Do not encode char caps, ratio tabl
 | Output | Location | State at exit |
 |---|---|---|
 | Preflight verdict (pass or itemized failure list) | Returned to caller | Pass or FAIL with itemized list |
-| Receipt `state` flipped to `complete` | `_local/receipts/{receipt-id}.json` | `complete` |
-| Downloaded result files | `_local/results/{job-id}/` | Verified, sha256 recorded |
+| Receipt `state` flipped to `complete` (advanced by the Render Dispatcher's poller) | `_local/receipts/{receipt-id}.json` | `complete` |
+| Downloaded result files (downloaded and verified by the Dispatcher's poller) | `_local/results/{job-id}/` | Verified, sha256 recorded |
 | CDO + requestor notification | Via `openclaw message send` | Sent on postflight completion |
-| Postflight-failed receipt (on failure) | `_local/receipts/{receipt-id}.json` | `postflight-failed` |
+| Postflight-failed receipt (on failure; advanced by the Dispatcher) | `_local/receipts/{receipt-id}.json` | `postflight-failed` |
 
 ---
 

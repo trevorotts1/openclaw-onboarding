@@ -11,7 +11,7 @@
 
 ## Role Mission
 
-The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. It writes a per-task receipt file at the moment of submission, enforces a budget gate before every new job, and trips a circuit breaker when aggregate spend crosses configured thresholds. The Operator is the sole creator of a receipt; the Render Dispatcher only advances lifecycle fields on an existing receipt and does all polling, postflight and orphan recovery (its SOP 9.7). States that exist before submission (`queued`, `held`, `preflight-failed`) are logged by the Dispatcher in `_local/dispatch-log.md`, not in receipts. No generation is invisible; no spend is unaccounted.
+The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. It writes a per-task receipt file at the moment of submission, enforces a budget gate before every new job, and trips a circuit breaker when aggregate spend crosses configured thresholds. The Operator is the sole creator of a receipt; the Render Dispatcher only advances lifecycle fields on an existing receipt and does all polling, postflight and orphan recovery (its SOP 9.7). States that exist before submission (`queued`, `held`, `preflight-failed`) are not receipt states: the Operator appends a `preflight-failed` line to the shared `_local/dispatch-log.md` when its own preflight rejects a packet, and the Dispatcher logs `queued`, `held` and its own pre-dispatch failures there. No generation is invisible; no spend is unaccounted.
 
 ---
 
@@ -70,10 +70,10 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 2. For each orphaned receipt: call `recordInfo` for the taskId (MODEL-SPECS §5).
    - `state: success` → run SOP-DIU-601 postflight immediately; flip receipt to `complete` on pass.
-   - `state: fail` → flip receipt to `postflight-failed`; escalate to CDO with the full receipt.
+   - `state: fail` → flip receipt to `failed`; escalate to CDO with the full receipt.
    - `waiting`, `queuing`, or `generating` → update `last_polled` (ISO 8601); leave for the cron poller.
 
-3. Any receipt with `last_polled` older than 24 hours and no completion state: escalate to CDO. Do not silently discard.
+3. Any receipt still without a completion state past its max-in-flight window (2 hours standard jobs, 8 hours deck fan-outs): escalate to CDO. A `submitted` receipt older than 30 days is a confirmed orphan (`state: orphaned`). Do not silently discard.
 
 ### E. Aggregate circuit breaker — checked after every spend event
 
@@ -102,6 +102,7 @@ task_id:              {kie.ai-taskId}
 requestor:            {role-slug or workspace-slug}
 cost_class:           {estimated-cost-dollars}
 budget_cap:           {per-job-cap-dollars}
+actual_cost:          {dollars or null}
 state:                {queued|held|preflight-failed|submitted|polling|complete|failed|postflight-failed|quarantined|hard-stopped|orphaned}
 submitted_at:         {iso8601}
 last_polled:          {iso8601}
@@ -167,7 +168,7 @@ smoke_test:           {true|false}
 | Per-deliverable cap exceeded mid-job | Halt all remaining tasks for this job. Write circuit-breaker incident receipt. Notify CDO. |
 | Per-day aggregate cap exceeded | Halt all new client submissions. Notify CDO. |
 | Orphaned receipt `state: failed` (raised by the Render Dispatcher) | Escalate to CDO with full receipt. Do not silently retry. |
-| Orphaned receipt `last_polled` > 24 hours, no completion (raised by the Render Dispatcher) | Escalate to CDO. Do not discard or silently abandon. |
+| Orphaned receipt past its max-in-flight window (2 hours standard, 8 hours deck) with no completion (raised by the Render Dispatcher) | Escalate to CDO. Do not discard or silently abandon. |
 | Receipt file write fails (filesystem error) | Hard stop all generation immediately. No task should exist without a receipt. Escalate to CDO. |
 | Smoke test fails (first-ever generation) | Hard stop. Do not proceed to production generation until the smoke test passes. Diagnose key reachability, hosting plumbing, and receipt write path. Escalate to CDO. |
 | Duplicate `filled_prompt_hash` found in `state: submitted` | Do not create a new task. Ask the Render Dispatcher to re-poll the existing `taskId` (the Operator does not poll). Log the dedup event in the existing receipt. |

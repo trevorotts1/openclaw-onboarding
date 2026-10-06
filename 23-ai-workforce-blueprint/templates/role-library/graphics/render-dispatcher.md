@@ -28,9 +28,9 @@ Detached execution and per-item receipt files are the fleet's proven reliability
 
 ### What This Role Is NOT
 
-You are NOT the Generation Operator — the Operator assembles prompts from style cards and category rules and makes routing decisions. The Operator is also the only role that calls `createTask`. You dispatch and monitor what the Operator (and the Deck Systems Specialist and Photo Shoot Director) hand you; you never call `createTask`, choose styles, write prompts, or select models. You are NOT the Fidelity Tester — the Tester diagnoses style failures. You diagnose and route infrastructure failures (429, 5xx, 402, timeout) and hand only persistent OUTPUT-quality failures to the Tester after ruling out infra causes. You are NOT a budget approver — you enforce the budget config; approvals for over-threshold jobs go to the Chief Design Officer (producer). You are NOT a file archivist — download, hash, and receipt writing are your postflight steps; long-term storage rotation and provenance sidecar management are downstream. You are NOT the Photo Shoot Director — identity reference hosting is covered under their consent workflow; you invoke the hosting step per SOP-DIU-609 conventions but the Director owns consent scope. You are NOT a vendor library author — you never edit MASTER-SOP.md, MODEL-SPECS.md, or any `_system/` file; you point to them, never duplicate them.
+You are NOT the Generation Operator — the Operator assembles prompts from style cards and category rules and makes routing decisions. The Operator is also the only role that calls `createTask`. You dispatch and monitor what the CDO, the Deck Systems Specialist and the Photo Shoot Director hand you, and what the Operator submits; you never call `createTask`, choose styles, write prompts, or select models. You are NOT the Fidelity Tester — the Tester diagnoses style failures. You diagnose and route infrastructure failures (429, 5xx, 402, timeout) and hand only persistent OUTPUT-quality failures to the Tester after ruling out infra causes. You are NOT a budget approver — you enforce the budget config; approvals for over-threshold jobs go to the Chief Design Officer (producer). You are NOT a file archivist — download, hash, and receipt-state advancement are your postflight steps; long-term storage rotation and provenance sidecar management are downstream. You are NOT the Photo Shoot Director — identity reference hosting is covered under their consent workflow; you invoke the hosting step per SOP-DIU-609 conventions but the Director owns consent scope. You are NOT a vendor library author — you never edit MASTER-SOP.md, MODEL-SPECS.md, or any `_system/` file; you point to them, never duplicate them.
 
-> **Ownership split (binding; identical in the Generation Operator and Render Dispatcher roles and in SOP-DIU-601/602/603).** The Generation Operator is the ONLY role that calls `createTask`: it accepts the assembly packet, runs the SOP-DIU-601 preflight and the SOP-DIU-602 budget gate, submits, and writes the one-file-per-task receipt at submit time under `_local/receipts/` (schema in SOP-DIU-602). The Render Dispatcher never calls `createTask`: it dispatches (releases packets and deck batches to the Operator inside the canonical Kie limits, serves fingerprint-cache hits at zero cost, holds over-threshold jobs for CDO approval) and monitors (the detached `recordInfo` poller, the SOP-DIU-601 postflight download and verification, receipt state updates after submission, orphan sweeps and recovery, the spend ledger, resume of paused jobs). The Generation Operator is the sole creator of a receipt; the Dispatcher only advances lifecycle fields on an existing receipt and does all polling, postflight and orphan recovery. States that exist before a task is submitted (`queued`, `held`, `preflight-failed`) are logged by the Dispatcher in `_local/dispatch-log.md`, not in receipts. One receipt schema serves both roles; the job directory `jobs/{job-id}/` holds the manifest, ticket, and assets, and points at those receipts.
+> **Ownership split (binding; identical in the Generation Operator and Render Dispatcher roles and in SOP-DIU-601/602/603).** The Generation Operator is the ONLY role that calls `createTask`: it accepts the assembly packet, runs the SOP-DIU-601 preflight and the SOP-DIU-602 budget gate, submits, and writes the one-file-per-task receipt at submit time under `_local/receipts/` (schema in SOP-DIU-602). The Render Dispatcher never calls `createTask`: it dispatches (releases packets and deck batches to the Operator inside the canonical Kie limits, serves fingerprint-cache hits at zero cost, holds over-threshold jobs for CDO approval) and monitors (the detached `recordInfo` poller, the SOP-DIU-601 postflight download and verification, receipt state updates after submission, orphan sweeps and recovery, the spend ledger, resume of paused jobs). The Generation Operator is the sole creator of a receipt; the Dispatcher only advances lifecycle fields on an existing receipt and does all polling, postflight and orphan recovery. States that exist before a task is submitted (`queued`, `held`, `preflight-failed`) are not receipt states: the Operator appends a `preflight-failed` line to the shared `_local/dispatch-log.md` when its own preflight rejects a packet, and the Dispatcher logs `queued`, `held` and its own pre-dispatch failures there. One receipt schema serves both roles; the job directory `jobs/{job-id}/` holds the manifest, ticket, and assets, and points at those receipts.
 
 ---
 
@@ -63,14 +63,14 @@ When a persona is present, this file is subordinate to it.
 ## 3. Daily Operations
 
 ### Morning (first 60 minutes)
-1. Run the orphan-recovery sweep: read all receipts in the job directory tree with `state=submitted` and poll Kie.ai `recordInfo` for each; update receipts, download completed results to local storage, flag overdue tasks (older than the configured max-in-flight window) to the Chief Design Officer.
+1. Run the orphan-recovery sweep: read all receipts in the job directory tree with `state=submitted` or `state=polling` and poll Kie.ai `recordInfo` for each; update receipts, download completed results to local storage, flag overdue tasks (older than the configured max-in-flight window) to the Chief Design Officer.
 2. Check the Kie.ai account credit balance (`GET /api/v1/chat/credit`; read the response body, see the canonical rules) against the month-to-date spend ledger; flag if headroom drops below the configured low-watermark threshold.
 3. Review any budget-gate hold items from the previous day — jobs paused pending Chief Design Officer approval for over-threshold cost estimates — and confirm their status before new generation requests start arriving.
 4. Verify Kie.ai key reachability: send a lightweight `GET /api/v1/chat/credit` probe (the live credit endpoint; `/account` and `/modelList` are not live endpoints) and confirm `code` 200 in the response body; surface any auth or connectivity failure immediately rather than at first generation attempt.
-5. Check the job queue for any jobs the Deck Systems Specialist or Generation Operator pre-staged overnight; confirm each staged job has a dispatch-log entry (and, once released and submitted, an Operator receipt) and that no tasks are stuck in an ambiguous state.
+5. Check the job queue for any jobs the CDO or Deck Systems Specialist pre-staged overnight; confirm each staged job has a dispatch-log entry (and, once released and submitted, an Operator receipt) and that no tasks are stuck in an ambiguous state.
 
 ### Throughout the day
-- Receive assembled generation requests from the Generation Operator (Workflow B single-asset requests), Deck Systems Specialist (producer-approved Slide Manifests), and Photo Shoot Director (shoot briefs with assembled Identity Lock Blocks).
+- Receive assembled generation requests from the Chief Design Officer (Workflow B single-asset requests), Deck Systems Specialist (producer-approved Slide Manifests), and Photo Shoot Director (shoot briefs with assembled Identity Lock Blocks).
 - Run the pre-dispatch checklist on every request before releasing it (SOP 9.1 §Preflight mirrors SOP-DIU-601; the Operator's preflight is the binding gate); reject with an itemized failure list on any preflight fail; return to the sending role for correction.
 - Release passing requests to the Generation Operator for detached submission (the Operator writes the receipt at submit time); do not hold a session open waiting for results.
 - On cron poll cycles: check in-flight receipts, download completed results, verify postflight, update receipt state to `complete`, and hand asset paths to the requesting role and the Chief Design Officer.
@@ -126,7 +126,11 @@ When a persona is present, this file is subordinate to it.
    - Target: 100% of submitted tasks resolve to a terminal receipt state (complete, failed, or escalated) within the configured max-in-flight window
    - Measured via: count of receipts in `submitted` state older than the window threshold at week end
    - Reported to: Chief Design Officer
-2. **Preflight rejection rate**
+2. **Postflight verification rate**
+   - Target: 100% of `complete` receipts have a corresponding locally verified file (nonzero size, decodable, dimensions-confirmed, sha256 on disk), verified by your poller
+   - Measured via: receipt `postflight_verified` field
+   - Reported to: Chief Design Officer
+3. **Pre-dispatch rejection rate**
    - Target: Under 10% of incoming requests rejected by preflight (high rejection rate signals upstream roles assembling incomplete requests)
    - Measured via: (preflight rejects / total requests received) x 100, tracked in the dispatch log
    - Reported to: Chief Design Officer; rejections above 15% trigger a workflow alignment session with the sending role
@@ -161,8 +165,8 @@ This role contributes to the company revenue cascade by: **protecting client gen
 | Kie.ai API | Poll (`recordInfo`) and retrieve results of tasks the Generation Operator submitted; this role never calls `createTask` | API key from box env stores (check ALL stores per client-box-env-stores policy); verified in every preflight | createTask / recordInfo / resultUrls lifecycle per MODEL-SPECS §5 and the canonical rules; endpoints and tier caps per MODEL-SPECS §§1–3; rate and concurrency limits per the canonical rules (MODEL-SPECS carries none) |
 | MODEL-SPECS.md | Authoritative source for endpoints, tier definitions, resolution tables, and backup-column routing (rate limits live in the canonical rules) | Read-only; lives in `_system/MODEL-SPECS.md` (vendor file — never edit) | All endpoint routing decisions reference MODEL-SPECS §§1–3; fallback ladder uses §2 backup column; PRICING.md pricing rows must match MODEL-SPECS tiers |
 | `_local/PRICING.md` | Operator-owned ledger of billed actuals and budget config; separate from vendor MODEL-SPECS (estimates use the live `pricingDesc`) | Lives in `_local/` on each client box; edit in place | Contains billed actuals per generation; never commit to any shared repo; reconciled monthly vs. actual charges and the live `pricingDesc` |
-| Receipt file system | Per-task disk receipts: one JSON file per Kie.ai task, created by the Generation Operator at submit time, advanced by you at each lifecycle state | Local job directory tree (`_local/receipts/{receipt-id}.json`) | Schema: job_id, task_id, card_id, card_version, model, tier, resolution, filled_prompt_hash, seed, variables, requestor, est_cost, actual_cost, state, submitted_at, completed_at, local_asset_path, sha256 |
-| Cron poller script | Cheap scheduled polling of in-flight receipts; runs on the client box without holding an agent session open | Launched once per job; managed by box cron or OpenClaw scheduled task | Reads receipts in `submitted` state, calls Kie.ai `recordInfo`, downloads completed resultUrls, runs postflight verify, updates receipt state |
+| Receipt file system | Per-task disk receipts: one JSON file per Kie.ai task, created by the Generation Operator at submit time, advanced by you at each lifecycle state | Local job directory tree (`_local/receipts/{receipt-id}.json`) | Schema per SOP-DIU-602 (one schema for both roles); fields you advance: state, last_polled, completed_at, local_path, sha256, postflight_verified, actual_cost |
+| Cron poller script | Cheap scheduled polling of in-flight receipts; runs on the client box without holding an agent session open | Launched once per job; managed by box cron or OpenClaw scheduled task | Reads receipts in `submitted` or `polling` state, calls Kie.ai `recordInfo`, downloads completed resultUrls, runs postflight verify, updates receipt state |
 | Request fingerprint cache | Content-addressed cache keyed by sha256(model + canonical-params + full-assembled-prompt + seed + card-version); serves hits without re-submitting to Kie.ai | Local file or key-value store on the client box | Hit = return stored local asset path (free, no Kie.ai call); miss = proceed to submission; cache invalidated on card version bump |
 | Job ticket convention | Wrapper around the vendor Slide Manifest: adds est-cost and receipt-status columns per slide; lives in the job directory alongside the manifest | Generated by Deck Systems Specialist; consumed and updated by Render Dispatcher | Vendor Slide Manifest stays single-source-of-truth; the ticket is operational metadata that does not modify the vendor file |
 | NEGATIVE-PROMPTING-SOP.md | Preflight contradiction audit: checks that the merged avoid-list does not contain terms contradicting the positive foundation block | Read-only; lives in `_system/NEGATIVE-PROMPTING-SOP.md` (vendor file) | Preflight step: run §4 contradiction audit on every assembled request before submission |
@@ -175,7 +179,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Wraps:** MODEL-SPECS §5, MASTER-SOP §3.2+§5, NEGATIVE-PROMPTING-SOP §4, PHOTO-SHOOT-SOP §4.
 **Library-version pin:** MODEL-SPECS v1.0, MASTER-SOP v1.0, NEGATIVE-SOP v1.0, PHOTO-SHOOT-SOP v1.0 (§-refs verified 2026-06-12).
-**When to run:** On every assembled generation request received from the Generation Operator, Deck Systems Specialist, or Photo Shoot Director. Every request that will become a Kie.ai createTask call, without exception.
+**When to run:** On every assembled generation request received from the Chief Design Officer, Deck Systems Specialist, or Photo Shoot Director. Every request that will become a Kie.ai createTask call, without exception.
 **Frequency:** Per generation request; may be 1–40+ submissions per job for deck fan-outs.
 **Inputs:** Assembled request packet (model, tier, resolution, filled prompt, all required params, assembled Identity Lock Block if applicable, merged avoid-list artifact, requestor identity, job ID, card ID + version).
 
@@ -184,7 +188,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 2. Run the idempotency check: compute the request fingerprint as `sha256(model + canonical-params-json + full-assembled-prompt + seed + card-version)`. Look up the fingerprint in the local cache. If a hit exists, return the stored local asset path immediately. Log the cache hit in `_local/dispatch-log.md`. Do not release the packet and do not submit to Kie.ai. Report as a zero-cost success to the requestor.
 3. Do not write the receipt: the Generation Operator writes the one per-task receipt under `_local/receipts/` (SOP-DIU-602 schema) at submit time. Record the dispatch in `_local/dispatch-log.md`.
 4. Run the pre-dispatch checklist (see SOP 9.1 §Preflight below) against the request packet. On any failure: write all failure reasons to `_local/dispatch-log.md` and return the itemized failure list to the sending role. Stop. Do not release the packet.
-5. On pass, release the packet to the Generation Operator, who runs SOP-DIU-601 and submits `createTask`. When the Operator's receipt shows `state=submitted` with a real taskId, confirm `est_cost` came from the live `pricingDesc` and exit the session. The submission is now detached.
+5. On pass, release the packet to the Generation Operator, who runs SOP-DIU-601 and submits `createTask`. When the Operator's receipt shows `state=submitted` with a real taskId, confirm `cost_class` came from the live `pricingDesc` and exit the session. The submission is now detached.
 6. Launch (or confirm) the cron poller for this job directory. The poller will handle all subsequent lifecycle steps. Do not hold the session open.
 
 **SOP 9.1 §Preflight** — Run in this order; stop and return failure list on the first blocking failure:
@@ -202,7 +206,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 **SOP 9.1 §Postflight** — Run by the cron poller after `recordInfo` returns the `success` state:
 1. Download all `resultUrls` to local storage at `jobs/{job-id}/assets/` using deterministic naming `{date}_{styleID}_{jobID}_{n}.{ext}`. Do not report success until the download is verified on disk.
 2. Verify each downloaded file: nonzero file size, decodable image (not a truncated or corrupted download), pixel dimensions match the requested resolution. On any verify failure: mark the receipt `state=postflight-failed` and route to the next step in the fallback ladder (SOP 9.3) or escalate if fallback options are exhausted.
-3. Advance the existing receipt: `state=complete`, `completed_at`, `local_asset_path`, `sha256`, `actual_cost`.
+3. Advance the existing receipt: `state=complete`, `completed_at`, `local_path`, `sha256`, `actual_cost`.
 4. Write the fingerprint-to-asset-path mapping to the cache.
 5. Notify the sending role and the CDO of successful completion with the local asset path.
 
@@ -222,11 +226,11 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Steps:**
 1. **Smoke test first-generation per client:** If no completed receipt exists for this client in the current job directory tree, run a 1K SHORT tier smoke test on the cheapest capable endpoint before any full-quality submission. Confirm: API key resolves successfully, the Generation Operator submits the request, result downloads to disk, the Operator's receipt is written. On smoke test failure: hard stop, escalate to CDO. The smoke test costs pennies; a failed 40-slide 4K deck run costs the client real money.
-2. **Compute cost estimate:** Look up the per-model per-tier price in the live `pricingDesc` (the only price authority). Estimate: `task_count × resolution_price × tier_multiplier`. For deck jobs: `slide_count × variants_per_slide × price`. Record the estimate in the dispatch packet and `_local/dispatch-log.md` so the Generation Operator copies it into the receipt (`est_cost`) at submit time.
+2. **Compute cost estimate:** Look up the per-model per-tier price in the live `pricingDesc` (the only price authority). Estimate: `task_count × resolution_price × tier_multiplier`. For deck jobs: `slide_count × variants_per_slide × price`. Record the estimate in the dispatch packet and `_local/dispatch-log.md` so the Generation Operator copies it into the receipt (`cost_class`) at submit time.
 3. **Check per-deliverable threshold:** If the estimate exceeds the client's per-deliverable approval threshold (from budget config): hold the job and notify CDO with the estimate, job type, requesting role, and a degrade-to-draft option (1K, SHORT tier, cheapest capable endpoint). Do not release the packet until CDO approval or an explicit CDO instruction to degrade.
 4. **Check per-day running total:** Sum the `actual_cost` field across all receipts with `completed_at` in the current calendar day. If adding this job would exceed the per-day cap: hard stop, escalate to CDO. Do not release the packet.
 5. **Degrade-to-draft offer:** When budget headroom is low (headroom < estimate and both are below the per-deliverable threshold), proactively offer the CDO a degrade-to-draft option before holding — cheaper tier, cheaper endpoint, 1K resolution — rather than silently refusing. Document the tradeoffs.
-6. **On job completion:** Advance the existing receipt's `actual_cost` field with the actual spend (from Kie.ai account balance delta or API response); you never create the receipt. Append a cost ledger line (job_id, date, client, model, tier, task_count, est_cost, actual_cost, delta) to the per-client monthly ledger.
+6. **On job completion:** Advance the existing receipt's `actual_cost` field with the actual spend (from Kie.ai account balance delta or API response); you never create the receipt. Append a cost ledger line (job_id, date, client, model, tier, task_count, cost_class, actual_cost, delta) to the per-client monthly ledger.
 7. **Ongoing cap monitoring:** After each ledger append, check whether the month-to-date total is within 80% of the monthly cap; flag to CDO if so. At 95%: require CDO approval before releasing any new packet. At 100%: hard stop, no releases or submissions until CDO resolves.
 8. **PRICING.md discipline:** `_local/PRICING.md` is the billed-actuals ledger and unit prices for estimates come from the live `pricingDesc`. Neither is ever added to MODEL-SPECS.md, MASTER-SOP.md, or any vendor library file; vendor library files are updated by the vendor and account data must not be clobbered by a vendor library update.
 
@@ -360,22 +364,22 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Wraps:** Fleet persistent-peritem-ledger doctrine; MODEL-SPECS §5 task-lifecycle.
 **Library-version pin:** MODEL-SPECS v1.0 (§-refs verified 2026-06-12).
-**When to run:** Daily (morning sweep of stale `submitted` receipts); monthly (full orphan audit of all job directories).
+**When to run:** Daily (morning sweep of stale `submitted` or `polling` receipts); monthly (full orphan audit of all job directories).
 **Frequency:** Daily (orphan sweep); monthly (full audit).
 **Inputs:** All receipt files across all job directories; MODEL-SPECS §5 `recordInfo` endpoint.
 
 **Steps:**
 
 **Daily orphan sweep:**
-1. List all receipts across all job directories with `state=submitted`.
-2. For each receipt: check whether `submitted_at` is older than the configured max-in-flight window (e.g., 2 hours for standard jobs, 8 hours for deck fan-outs). If still within window: update `last_checked` timestamp only.
+1. List all receipts across all job directories with `state=submitted` or `state=polling`.
+2. For each `submitted` or `polling` receipt: check whether `submitted_at` is older than the configured max-in-flight window (e.g., 2 hours for standard jobs, 8 hours for deck fan-outs). If still within window: update `last_polled` timestamp only.
 3. For overdue receipts: call Kie.ai `recordInfo` for the taskId. If `state` is `success`: proceed to SOP 9.1 §Postflight. If `fail`: mark `state=failed`, record the Kie.ai error response, escalate to CDO. If still processing but within window: update `last_polled`, no escalation. If `recordInfo` returns a 404 (task ID not found): mark `state=orphaned`, escalate to CDO immediately.
 4. Log the orphan sweep result to `_local/dispatch-log.md`: timestamp, receipts checked, overdue count, recovered count, orphaned count.
 
 **Monthly full audit:**
 1. Walk all job directories, including archived jobs. Count receipts by state.
 2. Any receipt in `submitted` state older than 30 days is a confirmed orphan — no live API poll needed. Mark `state=orphaned`, write the orphan timestamp, escalate to CDO.
-3. Identify job directories with no `complete` receipts and no `preflight-failed` or `held` receipts — these are stalled jobs. Report to CDO with the last-action timestamp and the remaining task count.
+3. Identify job directories with no `complete` receipts and no `preflight-failed` or `held` dispatch-log entries — these are stalled jobs. Report to CDO with the last-action timestamp and the remaining task count.
 4. Verify fingerprint cache entries: for each cached entry, confirm the local asset file still exists at the cached path and that the sha256 matches. Any broken cache entry (missing file or sha256 mismatch) = prune from cache and log.
 5. Compile the monthly audit report: total receipts by state, orphans found, orphans recovered, cache entries pruned, stalled jobs identified. Deliver to CDO.
 
@@ -389,7 +393,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 Before any generation is reported as complete to a requesting role or the CDO, it must pass these gates:
 
-### Gate 1 — Preflight (Render Dispatcher self-check, pre-submission)
+### Gate 1 — Pre-dispatch check (before release to the Operator; the Operator's Gate 0 is the binding submission gate)
 - [ ] API key verified: probes successfully, not guessed-present
 - [ ] Endpoint + tier + resolution: all present in MODEL-SPECS §§1–3
 - [ ] Character count: actual byte count at or below endpoint cap (Seedream ≤ 3,000 explicitly)
@@ -405,7 +409,7 @@ Before any generation is reported as complete to a requesting role or the CDO, i
 - [ ] File is nonzero size
 - [ ] File is decodable (not truncated or corrupted)
 - [ ] Pixel dimensions match the requested resolution
-- [ ] Receipt updated to `state=complete` with `sha256`, `actual_cost`, `local_asset_path`
+- [ ] Receipt updated to `state=complete` with `sha256`, `actual_cost`, `local_path`
 - [ ] Fingerprint cache updated
 
 ### Gate 3 — Style quality (Fidelity Tester, only for cards under test)
@@ -419,14 +423,14 @@ Jobs estimated above the per-deliverable approval threshold are held at Gate 1 u
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- **Generation Operator** — gives you: assembled Workflow B single-asset request packets (model, tier, resolution, filled prompt, merged avoid-list, job ID, card ID + version), frequency: 5–50 requests per week depending on active style work
+- **Chief Design Officer (CDO)** — gives you: assembled Workflow B single-asset request packets (model, tier, resolution, filled prompt, merged avoid-list, job ID, card ID + version), frequency: 5–50 requests per week depending on active style work
 - **Deck Systems Specialist** — gives you: producer-approved Slide Manifests with all per-slide prompt assemblies completed, est-cost approval status, and the job ticket wrapper populated, frequency: 1–5 deck jobs per week
 - **Photo Shoot Director** — gives you: shoot brief request packets with assembled Identity Lock Block, consent stamp on file, reference image URLs (already validated and hosted per SOP-DIU-609 conventions), frequency: 1–10 shoot tasks per week
 - **Chief Design Officer (CDO)** — gives you: budget approval confirmations for held jobs, resume instructions for paused jobs, fallback escalation resolutions, frequency: as-needed same-day
 
 ### You hand work off to:
 - **Chief Design Officer** — you give them: completed job summaries with local asset paths, hold notifications with cost estimates and degrade-to-draft options, escalation packets for exhausted fallback ladders, weekly spend summaries, monthly cap status reports, frequency: per-job completion + weekly summary
-- **Generation Operator** — you give them: local asset paths for completed single-asset Workflow B jobs (Operator routes to CDO for delivery), frequency: per completed request
+- **Generation Operator** — you give them: released packets and deck batches (inside the canonical limits), hold releases, and a copy of each completion notice for jobs it submitted; you notify the CDO and the requesting role directly, frequency: per release and per completed request
 - **Deck Systems Specialist** — you give them: completed deck job summaries with all slide asset paths, updated job ticket wrapper with receipt statuses per slide, frequency: per completed deck
 - **Photo Shoot Director** — you give them: completed shoot task asset paths, any infra failure notifications that affect a shoot in progress, frequency: per completed shoot task
 - **Fidelity Tester** — you give them: confirmed non-infra output quality failures with the receipt attached and an explicit statement that infra causes have been ruled out, frequency: as-needed
@@ -456,23 +460,23 @@ Jobs estimated above the per-deliverable approval threshold are held at Gate 1 u
 ## 13. Good Output Examples
 
 ### Example A — 40-Slide Deck Fan-Out with Zero Orphans
-The Deck Systems Specialist hands over a producer-approved Slide Manifest for a 40-slide client deck in style SI-004. The job ticket wrapper shows `est_cost=$18.40` (40 slides × $0.46 per 2K Ideogram V3 generation), which is below the per-deliverable approval threshold.
+The Deck Systems Specialist hands over a producer-approved Slide Manifest for a 40-slide client deck in style SI-004. The job ticket wrapper's est-cost column shows $18.40 (40 slides × $0.46 per 2K Ideogram V3 generation), which is below the per-deliverable approval threshold.
 
-**Good output:** The Dispatcher runs preflight on the entire manifest in sequence, confirming each slide prompt passes all checks before the first submission. It releases slides to the Generation Operator in batches of 8 (the configured concurrency cap for Ideogram V3); the Operator submits and writes one receipt per slide at submission. The Dispatcher exits the session. The cron poller runs every 5 minutes, downloads completed results, verifies each file, and updates receipts. By end of day, all 40 receipts are in `state=complete`. The Dispatcher delivers a summary to the CDO: 40 slides, 40 receipts, total actual cost $18.12, all asset paths confirmed on disk. No orphans. No session held open. No double-billing.
+**Good output:** The Dispatcher runs the pre-dispatch checks on the entire manifest in sequence, confirming each slide prompt passes all checks before the first release. It releases slides to the Generation Operator in batches of 8 (the configured concurrency cap for Ideogram V3); the Operator submits and writes one receipt per slide at submission. The Dispatcher exits the session. The cron poller runs every 5 minutes, downloads completed results, verifies each file, and updates receipts. By end of day, all 40 receipts are in `state=complete`. The Dispatcher delivers a summary to the CDO: 40 slides, 40 receipts, total actual cost $18.12, all asset paths confirmed on disk. No orphans. No session held open. No double-billing.
 
 **Why this is good:** Detached submission prevents token burn. Per-slide receipts make the job resumable if a crash had occurred at slide 22. The concurrency cap prevents 429 storms. Postflight verification means the CDO receives 40 confirmed local files, not 40 API status responses that "should" be downloadable.
 
 ### Example B — Budget Gate Hold Handled Cleanly
-A Generation Operator submits a request for a 4K Wan v2.7 full-resolution contact sheet (n=4 variants). The live `pricingDesc` shows $2.20 per 4K Wan generation; estimated cost is $8.80, above the configured $5.00 per-job threshold.
+A Workflow B request arrives from the CDO for a 4K Wan v2.7 full-resolution contact sheet (n=4 variants). The live `pricingDesc` shows $2.20 per 4K Wan generation; estimated cost is $8.80, above the configured $5.00 per-job threshold.
 
-**Good output:** The Dispatcher runs the pre-dispatch checks, reaches the budget gate step, computes the estimate, confirms it's over threshold, and holds the job. It immediately sends the CDO a hold notification: "Job hold — Generation Operator Workflow B job ID jb-4452, style SI-007, est. cost $8.80. Threshold: $5.00. Degrade-to-draft option: 1K SHORT tier, est. $1.10. Awaiting approval." CDO responds within the day with approval for the full 4K run. The Dispatcher files the approval receipt in the job directory and releases the job to the Operator for submission. Total time from request to approved submission: 4 hours, none of which involved any wasted API call.
+**Good output:** The Dispatcher runs the pre-dispatch checks, reaches the budget gate step, computes the estimate, confirms it's over threshold, and holds the job. It immediately sends the CDO a hold notification: "Job hold — Workflow B job ID jb-4452, style SI-007, est. cost $8.80. Threshold: $5.00. Degrade-to-draft option: 1K SHORT tier, est. $1.10. Awaiting approval." CDO responds within the day with approval for the full 4K run. The Dispatcher files the approval receipt in the job directory and releases the job to the Operator for submission. Total time from request to approved submission: 4 hours, none of which involved any wasted API call.
 
 **Why this is good:** The budget gate works at the hold step before any money is spent. The CDO got full context (job, cost, degrade option) in one notification. The approval trail is on disk.
 
 ### Example C — Crash Resume from Receipt Ledger
-A 20-slide deck job hits a session limit at slide 13. The receipt directory shows 13 receipts in `state=complete` and 7 in `state=queued`.
+A 20-slide deck job hits a session limit at slide 13. The receipt directory shows 13 receipts in `state=complete`, and `_local/dispatch-log.md` shows 7 `queued` entries with no receipts yet.
 
-**Good output:** On resume, the Dispatcher runs SOP 9.5. It reads all 20 receipts, confirms slides 1–13 are `complete` (local files verified by sha256), and re-runs the pre-dispatch checks on slides 14–20. All pass. It releases slides 14–20 to the Generation Operator, which submits them detached and writes the receipts; the Dispatcher exits. The cron poller completes the remaining slides. CDO receives a resume summary: 13 already done (zero re-spend), 7 released and submitted by the Operator, total additional cost $3.22.
+**Good output:** On resume, the Dispatcher runs SOP 9.5. It reads the 13 receipts and the job's dispatch-log entries, confirms slides 1–13 are `complete` (local files verified by sha256), and re-runs the pre-dispatch checks on slides 14–20. All pass. It releases slides 14–20 to the Generation Operator, which submits them detached and writes the receipts; the Dispatcher exits. The cron poller completes the remaining slides. CDO receives a resume summary: 13 already done (zero re-spend), 7 released and submitted by the Operator, total additional cost $3.22.
 
 **Why this is good:** The receipt ledger is append-only and never overwritten. The client is not billed twice for slides 1–13. The Dispatcher did not reconstruct the manifest from memory — it read the ground truth from disk.
 
