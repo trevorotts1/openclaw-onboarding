@@ -10,7 +10,8 @@
  *   3. Verify HMAC-SHA256(taskId + "." + timestamp, webhookHmacKey) in constant time
  *   4. Check replay window (300 seconds -- policy choice; Kie does not define one)
  *   5. Check idempotency in KV (key: "idem:<taskId>", short TTL)
- *   6. Normalize result (handles 4o result_urls array OR Flux resultImageUrl/originImageUrl)
+ *   6. Normalize result (handles 4o result_urls array, Flux resultImageUrl/originImageUrl,
+ *      Market resultJson.resultUrls / response.resultUrls, Suno data[].audio_url)
  *   7. Return 200 to Kie immediately (within the 15-second deadline)
  *   8. Write verified result to KV (key: "result:<clientSlug>:<submitId>") in waitUntil
  *      NOTE: KV stores perTaskSecretHmac (a hash), never the plaintext perTaskSecret.
@@ -168,7 +169,30 @@ function extractResultUrls(data) {
   const urls = [];
   if (info.resultImageUrl) urls.push(info.resultImageUrl);
   if (info.originImageUrl) urls.push(info.originImageUrl);
+  if (urls.length > 0) return urls;
+  // Market success shape (live 2026-10-05): data.resultJson is a JSON STRING
+  // {"resultUrls":[...]} and data.response is the parsed copy. Suno audio tasks carry
+  // tracks at response.data[].audio_url (callbacks: data.data[].audio_url).
+  for (const src of [data?.response, data?.resultJson, data?.info, data]) {
+    for (const u of urlsFromResultObject(src)) if (!urls.includes(u)) urls.push(u);
+  }
   return urls;
+}
+
+/** URLs from one result object (or its JSON-string form): resultUrls, result_urls, data[].audio_url. */
+function urlsFromResultObject(v) {
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch (_) { return []; }
+  }
+  if (!v || typeof v !== 'object') return [];
+  const out = [];
+  for (const k of ['resultUrls', 'result_urls']) {
+    if (Array.isArray(v[k])) out.push(...v[k].filter(u => typeof u === 'string' && u));
+  }
+  if (Array.isArray(v.data)) {
+    for (const t of v.data) if (t && typeof t.audio_url === 'string' && t.audio_url) out.push(t.audio_url);
+  }
+  return out;
 }
 
 /**
@@ -266,7 +290,7 @@ function handleHealth() {
   return new Response(JSON.stringify({
     status: 'ok',
     worker: 'kie-callback-relay',
-    version: '1.1.0',
+    version: '2.0.3',
     timestamp: new Date().toISOString()
   }), {
     status: 200,

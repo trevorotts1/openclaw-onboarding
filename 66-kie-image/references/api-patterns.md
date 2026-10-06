@@ -48,7 +48,9 @@ Authorization: Bearer <KIE_API_KEY>
 
 Response `data` fields: `taskId`, `model`, `state` (enum `waiting`, `queuing`,
 `generating`, `success`, `fail`), `param` (original request JSON), `resultJson`
-(only on success; images: `{"resultUrls": []}`), `failCode`/`failMsg` (empty on
+(only on success; a JSON STRING, images: `{"resultUrls": []}`), `response` (the
+same content already parsed, e.g. `{"resultUrls": [...]}`; Suno audio tasks use
+`response.data[].audio_url`), `failCode`/`failMsg` (empty on
 success), `costTime` ms, `completeTime`/`createTime`/`updateTime` Unix ms,
 `creditsConsumed`.
 
@@ -62,7 +64,7 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 - Initial delay 2–3s; then stepped/exponential backoff (spec 6.3).
 - Respect 429 (rejected requests do not enter the queue); back off.
 - Cap total wait by modality/model; stop after 10–15 min (docs verbatim).
-- Download results immediately — result URLs expire after ~24h.
+- Download results immediately. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## 4. Callbacks
 
@@ -87,7 +89,7 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 - Limits per account. Excess → HTTP 429, rejected before queueing.
 - "Generated media files: stored for 14 days, then automatically deleted" —
   persist final media into durable storage immediately when long-term access is
-  needed (spec 6.4). Result URLs expire ~24h.
+  needed (spec 6.4). Result URL retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## 6. Per-family request schemas (verbatim from research)
 
@@ -161,7 +163,7 @@ t2i model `gpt-image-2-5-sunburst-text-to-image`; i2i model
   formats: JPEG, PNG, WEBP Maximum file size: 30MB; Maximum files: 10".
 - Lite: `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image`; refs
   14 @ 30 MB.
-- 4.5: `seedream/4.5-text-to-image`, `seedream/4-5-edit`; refs 14 @ 30 MB
+- 4.5: `seedream/4.5-text-to-image`, `seedream/4.5-edit`; refs 14 @ 30 MB
   (playground editor; README says 10 — UNDETERMINED); NO `output_format` field.
 - `quality`: `Basic` | `High` | `Ultra` (Lite only for Ultra). Pro: Basic=1K /
   High=2K. Lite: Basic=2K / High=3K / Ultra=4K. 4.5: Basic=2K / High=4K.

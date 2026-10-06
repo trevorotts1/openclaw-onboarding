@@ -50,8 +50,8 @@ The KIE.ai Market API is CREATE-THEN-POLL:
 3. Wait: callBackUrl (Skill 46 relay) or recordInfo polling:
    GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID>
 4. state enum: waiting -> queuing -> generating -> success | fail.
-5. On success, resultJson.resultUrls holds the image URLs. Download IMMEDIATELY
-   (URLs expire ~24h; provider deletes media after 14 days).
+5. On success, `data.resultJson` (a JSON STRING) holds {"resultUrls":[...]}; `data.response.resultUrls`
+   is the same list already parsed (prefer it). Download IMMEDIATELY. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 6. Visually QC the downloaded asset. See references/qc.md.
 
 Do not write "the image is at data[0].url" after createTask — that is the Agnes
@@ -153,11 +153,15 @@ creative INTENT and compose at execution time (spec 5.5).
 STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  python3 scripts/validate_prompt.py <model-id> <prompt-file-or-text> [--strict]
-  python3 scripts/validate_payload.py <model-id> <payload.json> [--strict]
+  python3 scripts/validate_prompt.py "<prompt text>" --model <model-id> [--strict]
+  python3 scripts/validate_prompt.py --prompt-file <file> --model <model-id> [--strict]
+  python3 scripts/validate_payload.py <payload.json> [--model <model-id>]
+  (validate_prompt reads stdin with "-" as the prompt; validate_payload reads
+  stdin with "-" as the payload and takes the model from payload.model unless
+  --model overrides it. validate_payload has no --strict flag.)
 
-- validate_prompt: exit 0 acceptable; exit 1 invalid (below the 80% floor, unknown
-  model, or a --strict warning); exit 2 above the max.
+- validate_prompt: exit 0 acceptable; exit 1 soft-fail (house band/status;
+  --strict promotes to error); exit 2 hard-fail (VERIFIED cap exceeded).
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
   for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
@@ -213,7 +217,7 @@ PRACTICAL NUMBERS (from models.json, verified 2026-08-26)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 - Rate: 20 new generation requests / 10 seconds; 100+ concurrent per account.
-- Result URLs expire ~24h; media deleted after 14 days.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - GPT Image 2 / GPT Image 2.5 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
   forward unchanged on 2.5); resolution 1K/2K/4K.
 - Qwen refs: max 3, 10MB each, six formats; resolution 1K/2K only.

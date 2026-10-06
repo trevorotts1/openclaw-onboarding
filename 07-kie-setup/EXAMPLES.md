@@ -180,7 +180,7 @@ Expected response:
 
 Step 2: Check status (VEO uses a different status endpoint)
 
-curl -s "https://api.kie.ai/api/v1/veo/task?taskId=veo_task_xyz789" \
+curl -s "https://api.kie.ai/api/v1/veo/record-info?taskId=veo_task_xyz789" \
   -H "Authorization: Bearer YOUR_API_KEY"
 
 VEO videos take longer than images. Wait 30 seconds to a few minutes
@@ -335,10 +335,10 @@ MISTAKE 1: Using OpenAI endpoints instead of KIE.ai endpoints
 
 MISTAKE 2: Checking VEO video status with the regular endpoint
   WRONG: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=veo_task
-  RIGHT: GET https://api.kie.ai/api/v1/veo/task?taskId=veo_task
+  RIGHT: GET https://api.kie.ai/api/v1/veo/record-info?taskId=veo_task
 
 MISTAKE 3: Forgetting to download results before they expire
-  Generated URLs expire after about 24 hours. Download immediately.
+  KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 MISTAKE 4: Polling too fast
   Do NOT check status more than 10 times per second. Recommended: every

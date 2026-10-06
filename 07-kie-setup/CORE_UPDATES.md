@@ -23,7 +23,7 @@ Add:
 - Pattern: POST to create task -> get task_id -> poll query endpoint or use callback until complete
 - Generic Market API: POST /api/v1/jobs/createTask, GET /api/v1/jobs/recordInfo?taskId=<id>
 - Rate limits: 20 new requests per 10 seconds per account, 100+ concurrent running tasks
-- Media retention: Generated media retained 14 days on KIE servers; persist promptly
+- Media retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately
 - Modality routing:
   - generic image -> provider router -> Agnes Image (63) or KIE Image (66)
   - generic video -> provider router -> Agnes Video (64) or KIE Video (67)

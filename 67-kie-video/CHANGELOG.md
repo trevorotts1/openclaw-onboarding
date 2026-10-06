@@ -4,6 +4,33 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.3] - 2026-10-05 - docs: record the sync flag change truthfully
+
+### Corrected record
+- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but the release notes and PR text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
+- How `sync` is consumed: none of the four scripts in this skill (`select_video_model.py`, `validate_payload.py`, `validate_prompt.py`, `normalize_alias.py`) reads the field, and no 67 document depends on it, so the flip changes registry data only and no behaviour here. Consumers elsewhere in the repo could not be searched, so they are undetermined.
+- Why `false` is correct: every KIE video route in this registry (Market `createTask`, Runway `generate`, Veo `generate`) is asynchronous (create, then poll or callback), which `SKILL.md`, `INSTRUCTIONS.md` and `references/api-patterns.md` all state. The sibling registries use `false` for asynchronous work (66: 32 of 32; Agnes Video: 2 of 2). `true` would mean "result in the create response", which none of these models does. Verified: 37 of 37 entries are `false`.
+- Version roll to v2.0.3 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.
+- The prebuilt `67-kie-video-1.0.0.skill` archive is not rebuilt (no packaging script in `scripts/`, archive already stale).
+
+---
+
+## [v2.0.2] - 2026-10-05 - fix: version drift, registry sync flag, api_family spelling, retention prose
+
+### Fixed
+- Version drift: `SKILL.md` carried a nested `metadata.version` of 1.0.0 and `QC.md` asserted v1.1.1 while `skill-version.txt` said v2.0.1. `SKILL.md` now has top-level `version: v2.0.2` (nested rolled), `QC.md` asserts v2.0.2, and the `VERSION` constants in the three validator scripts follow.
+- Registry data defect: all 37 `models.json` entries had `sync: true`, yet every KIE video task is asynchronous (SKILL.md, INSTRUCTIONS.md, api-patterns.md) and the sibling registries use `sync: false` for asynchronous work (66: 32 of 32; Agnes Video 64: 2 of 2). No script in this skill reads the field, so the change is data only; all 37 are now `sync: false`.
+- Docs said `api_family: "veo-dedicated"` (`INSTRUCTIONS.md`, `references/api-patterns.md`); the registry and validator use `veo3-dedicated`. Docs corrected.
+- `references/api-patterns.md` success example used a result host (`file.aiquick.net`) that is not a documented KIE result host; it now uses `tempfile.aiquickdraw.com` and shows the parsed `response.resultUrls` copy next to the `resultJson` string.
+- Retention: Result retention prose now reads: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately. Edited in `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `CORE_UPDATES.md`, `wire.sh`, `references/api-patterns.md`.
+
+### Migration Notes
+- `CORE_UPDATES.md` and the `wire.sh` TOOLS block changed (retention line); re-run `bash wire.sh` on existing boxes (idempotent).
+- The prebuilt `67-kie-video-1.0.0.skill` archive was not regenerated here.
+- Risk level: LOW.
+
+---
+
 ## [2.0.0] - 2026-08-31 - fix: QC.md version expectation matches skill-version.txt after media-limits repack
 
 - `QC.md` checklist no longer asserts `skill-version.txt` reads `v1.0.0` (it

@@ -8,8 +8,9 @@ description: >
   crash-safe on-disk task registry. Applies to large decks (above configurable
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
+version: v2.0.3
 metadata:
-  version: "1.1.4"
+  version: "v2.0.3"
   skill_number: 46
   requires_skills: [07]
   priority: HIGH
@@ -173,7 +174,9 @@ Then verify with `caf doctor` (Skill 44) before any workflow write.
 
 ## Unverified Items (do not present as fact)
 
-- Exact Kie CDN hostname(s) for the result URL allowlist -- must confirm from a
-  real callback before locking the allowlist in box-kv-poller.js KIE_RESULT_HOSTS
+- Exact Kie CDN hostname(s) for the result URL allowlist -- the list now carries every
+  KIE result host documented in 07-kie-setup (tempfile.redpandaai.co,
+  tempfile.aiquickdraw.com, tempfileb.aiquickdraw.com, static.aiquickdraw.com, file.aiquickdraw.com); Suno audio hosts are not confirmed. Confirm from a real
+  callback and override via the KIE_RESULT_HOSTS env var if a host is rejected
 - Replay window: Kie does not document one; 300s is our policy
 - Kie retry interval/backoff between the ~3 callback retries: not documented

@@ -11,6 +11,35 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.5] - 2026-10-05 - fix: Seedream 4.5 edit model id is seedream/4.5-edit
+
+### Fixed
+- The registry, selector, alias map, payload validator and docs recorded the Seedream 4.5 edit model as `seedream/4-5-edit`. KIE's own page (https://docs.kie.ai/market/seedream/4-5-edit.md, fetched 2026-10-05) declares the model enum and default as `seedream/4.5-edit` (the `4-5-edit` form is only the docs URL slug and the operationId). Corrected in `models.json`, `scripts/select_image_model.py` (registry and self-test), `scripts/normalize_alias.py`, `scripts/validate_payload.py` (reference-count warning and four self-test cases), `references/api-patterns.md` and `references/models.md`. The `source_url` keeps the real docs slug. A payload using the old id is now rejected as not in the registry, which is correct because KIE would not accept it.
+- Version roll to v2.0.5 (`SKILL.md`, `QC.md`, three script `VERSION` constants).
+- Self-tests unchanged in count: select 24/24, `validate_prompt` 21/21, `validate_payload` 49/49, normalize PASS.
+- The prebuilt `66-kie-image-1.0.0.skill` archive is not rebuilt (no packaging script in `scripts/`, archive already stale, and its filename carries the 1.0.0 it shipped with).
+
+---
+
+## [v2.0.4] - 2026-10-05 - fix: version drift, registry and doc counts, validator CLI docs, retention prose
+
+### Fixed
+- Version drift: `SKILL.md` carried a nested `metadata.version` of 1.0.0 and `QC.md` asserted `skill-version.txt` reads v1.0.0 while `skill-version.txt` said v2.0.3. `SKILL.md` now has top-level `version: v2.0.4` (nested rolled), `QC.md` asserts v2.0.4, and the `VERSION` constants in `select_image_model.py`, `validate_payload.py` and `validate_prompt.py` follow.
+- Registry count: `SKILL.md` (twice) and `references/models.md` said 30 entries; `models.json` has 32. Prose corrected to 32. (The 2.0.0 entry below records the count at first release.)
+- Validator CLI docs follow the code: `INSTRUCTIONS.md` showed `validate_prompt.py <model-id> <prompt-file-or-text>` and `validate_payload.py <model-id> <payload.json> [--strict]`. The scripts take `validate_prompt.py "<prompt>" --model <id> [--prompt-file F] [--strict]` and `validate_payload.py <payload.json|-> [--model <id>]` (no `--strict`). `INSTALL.md` self-test counts corrected to the real 24/24 (selector), 21/21 (prompt) and 49/49 (payload).
+- Result shape prose: `INSTRUCTIONS.md`, `EXAMPLES.md`, `references/qc.md` and `references/api-patterns.md` now say `data.resultJson` is a JSON string and `data.response.resultUrls` is the parsed copy (live shape, KIE contract), and Suno-style audio uses `response.data[].audio_url`.
+- Retention: Result retention prose now reads: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately. Edited in `SKILL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `QC.md`, `CORE_UPDATES.md`, `wire.sh`, `references/api-patterns.md`, `references/qc.md`.
+
+### Investigated, not changed
+- `select_image_model.py` maps the aliases `kling` and `cling` to `ideogram-v3` (introduced in the first release, commit 68d80c831, never revisited). Intent is not provable from history (the 2.0.0 notes say Cling->Kling, a video family), and the right behaviour (refuse with an alternative, or route elsewhere) is a design decision, so it is left for the owner.
+
+### Migration Notes
+- `CORE_UPDATES.md` and the `wire.sh` TOOLS block changed (retention line); re-run `bash wire.sh` on existing boxes (idempotent).
+- The prebuilt `66-kie-image-1.0.0.skill` archive was not regenerated here.
+- Risk level: LOW.
+
+---
+
 ## [2.0.0] - 2026-08-26 - feat: new KIE Image skill (Skill 66) — model selection, validation, async dispatch, and real visual QC for KIE.ai Market API image families
 
 ### Added

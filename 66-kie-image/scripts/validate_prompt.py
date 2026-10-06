@@ -31,7 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
 
-VERSION = "1.1.0"
+VERSION = "2.1.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 

@@ -61,7 +61,7 @@
       "source_url": "https://docs.kie.ai/market/wan/3-0-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -104,7 +104,7 @@
       "source_url": "https://docs.kie.ai/market/wan/3-0-video-prime",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -149,7 +149,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v3-omni-text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -197,7 +197,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v3-omni-image-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -241,7 +241,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v3-omni-transformation",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -287,7 +287,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v3-omni-reference-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -335,7 +335,7 @@
       "source_url": "https://docs.kie.ai/market/kling/kling-3-0",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -373,7 +373,7 @@
       "source_url": "https://docs.kie.ai/market/kling/motion-control-v3",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -411,7 +411,7 @@
       "source_url": "https://docs.kie.ai/market/kling/motion-control",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -446,7 +446,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -484,7 +484,7 @@
       "source_url": "https://docs.kie.ai/market/kling/v25-turbo-image-to-video-pro",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -527,7 +527,7 @@
       "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -572,7 +572,7 @@
       "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-mini",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -614,7 +614,7 @@
       "source_url": "https://docs.kie.ai/market/pixverse/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -656,7 +656,7 @@
       "source_url": "https://docs.kie.ai/market/pixverse/image-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -702,7 +702,7 @@
       "source_url": "https://docs.kie.ai/market/pixverse/transition",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -744,7 +744,7 @@
       "source_url": "https://docs.kie.ai/market/pixverse/extend",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -786,7 +786,7 @@
       "source_url": "https://docs.kie.ai/market/pixverse/reference-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -824,7 +824,7 @@
       "source_url": "https://docs.kie.ai/market/minimax-h3/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -865,7 +865,7 @@
       "source_url": "https://docs.kie.ai/market/minimax-h3/image-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -904,7 +904,7 @@
       "source_url": "https://docs.kie.ai/market/minimax-h3/reference-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -944,7 +944,7 @@
       "source_url": "https://docs.kie.ai/market/wan/2-7-r2v",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -986,7 +986,7 @@
       "source_url": "https://docs.kie.ai/market/wan/2-7-videoedit",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1026,7 +1026,7 @@
       "source_url": "https://docs.kie.ai/market/wan/2-7-text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1068,7 +1068,7 @@
       "source_url": "https://docs.kie.ai/market/wan/2-7-image-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1109,7 +1109,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1150,7 +1150,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/image-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1192,7 +1192,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse-1-1/reference-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1233,7 +1233,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1274,7 +1274,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1315,7 +1315,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1359,7 +1359,7 @@
       "source_url": "https://docs.kie.ai/market/happyhorse/text-to-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1402,7 +1402,7 @@
       "source_url": "https://docs.kie.ai/market/gemini-omni-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1446,7 +1446,7 @@
       "source_url": "https://docs.kie.ai/runway-api/generate-ai-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1489,7 +1489,7 @@
       "source_url": "https://docs.kie.ai/veo3-api/generate-veo-3-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1532,7 +1532,7 @@
       "source_url": "https://docs.kie.ai/veo3-api/generate-veo-3-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     },
     {
       "provider": "kie",
@@ -1575,7 +1575,7 @@
       "source_url": "https://docs.kie.ai/veo3-api/generate-veo-3-video",
       "last_verified_at": "2026-08-26",
       "active": true,
-      "sync": true
+      "sync": false
     }
   ]
 }

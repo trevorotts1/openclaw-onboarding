@@ -16,7 +16,7 @@ recordInfo/callback waiting, and MANDATORY multi-frame visual QC (Frame 0, Midpo
 - [ ] `models.json` parses as valid JSON; exactly 37 models; no duplicate canonical_model_id;
       every entry has `source_url`, `last_verified_at`, and `cap_status`.
 - [ ] The skill package zip does NOT contain `wire.sh` (installers are not shipped in the bundle).
-- [ ] `skill-version.txt` reads `v1.1.1`.
+- [ ] `skill-version.txt` reads `v2.0.3`.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01), BYUP (Skill 02), and KIE Setup (Skill 07) are satisfied (PREREQS.json).
@@ -39,7 +39,7 @@ recordInfo/callback waiting, and MANDATORY multi-frame visual QC (Frame 0, Midpo
 - [ ] Confirm the agent can explain: createTask 200 ≠ done; state enum
       waiting/queuing/generating/success/fail; dedicated endpoints for Runway/Veo;
       Runway 1080p 5s limitation; 429 = rate limited (back off);
-      callbacks are HMAC-SHA256 signed; result URLs expire ~24h, media 14 days.
+      callbacks are HMAC-SHA256 signed; retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately).
 - [ ] Run validator test suites — every one must print PASS and exit 0:
       `python3 scripts/normalize_alias.py --self-test` (PASS)
       `python3 scripts/select_video_model.py --self-test` (PASS)
