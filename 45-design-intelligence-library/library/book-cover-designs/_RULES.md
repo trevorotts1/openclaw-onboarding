@@ -19,5 +19,5 @@
 
 ## Model routing
 - Default: GPT-Image 2.5 LONG (multiple exact text strings demand the 20K budget).
-- Typography-as-art covers → Ideogram V3 DESIGN (portrait preset, expand_prompt false).
+- Typography-as-art covers → Ideogram V3 DESIGN (portrait preset, expand_prompt false). SPECIALTY ROUTE, deliberate, non-social (print cover work needing a true `negative_prompt`); the default stays GPT-Image 2.5 Sunburst LONG.
 - Iterating an approved cover → Seedream 4.5 Edit.
