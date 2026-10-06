@@ -81,7 +81,7 @@ Scan every row of the manifest:
 ### Step 6 — CDO approval gate (decks of 10 or more slides)
 
 For decks of 10 or more slides, present the complete manifest to CDO for approval **before any generation begins**. CDO approval covers:
-- Cost and timeline authorization (include an estimated total generation cost in the manifest header).
+- Cost and timeline authorization (include an estimated total generation cost in the manifest header, computed from the live price with `kie_live_adapter.py price` and checked with `preflight`).
 - Style sign-off (card ID@version confirmed).
 
 Record the CDO approval timestamp in the manifest header row. Do not proceed to Step 7 until the approval timestamp is recorded.
@@ -93,7 +93,7 @@ Write the manifest to the job directory:
 _local/jobs/{job-id}/SLIDE-MANIFEST.md
 ```
 
-Hand the approved manifest to the Generation Operator with:
+Hand the approved manifest to the Render Dispatcher, which releases it in batches to the Generation Operator (the only role that submits to Kie.ai, through Skill 74), with:
 - Card ID@version
 - Manifest file path
 - Budget ceiling
@@ -101,7 +101,7 @@ Hand the approved manifest to the Generation Operator with:
 - Deadline
 - Identity involvement flag (true/false — if true, Photo Shoot Director must complete identity rows first)
 
-Manifest ownership transfers to the Generation Operator at this point. The Deck Systems Specialist does not re-enter the generation lane unless a cohesion review (SOP 9.4 in the role file) flags slides for regeneration.
+Manifest ownership transfers to the Generation Operator at this point (released through the Render Dispatcher). The Deck Systems Specialist does not re-enter the generation lane unless a cohesion review (SOP 9.4 in the role file) flags slides for regeneration.
 
 ---
 
@@ -137,7 +137,7 @@ The handoff to the Generation Operator is valid only when ALL of the following a
 4. Text strategy is recorded in the manifest header (not blank).
 5. CDO approval timestamp is present (required for 10+ slide decks; for decks under 10 slides, the manifest completion itself serves as authorization).
 6. Identity-locked rows have the Identity Lock Block attached and the Photo Shoot Director's consent confirmation on record.
-7. Estimated generation cost is recorded in the manifest header.
+7. Estimated generation cost (computed from the live price, `kie_live_adapter.py price`) is recorded in the manifest header.
 
 The Generation Operator may not begin generation if any of the above conditions is unmet. The Deck Systems Specialist is responsible for ensuring all conditions are satisfied before handing off.
 

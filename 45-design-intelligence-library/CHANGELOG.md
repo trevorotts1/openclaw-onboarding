@@ -1,5 +1,15 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [2.2.1] - 2026-10-06 - QC follow-up: no restated band figures, consent self-test wording
+
+- SOP-DIU-101, SOP-DIU-615, healer-graphics (SOP 9.13 check 4) and the graphics connection-manifest prose point to rule 12 of `07-kie-setup/references/kie-common-rules.md` with no figures; the validator-read manifest fields are unchanged. `diu_validator.py` self-test wording says CONSENT file.
+
+## [2.2.0] - 2026-10-06 - consent gate reads CONSENT.md; Kie transport via Skill 74
+
+### Changed
+- `diu_validator.py consent-check` reads the SOP-DIU-608 `CONSENT.md` record (`--consent-file`); `--identity-file` stays as a legacy alias and must also point at a `CONSENT.md`. `IDENTITY.md` holds the identity profile only. New `scripts/test_consent_check_cli.py`; the QC script fixtures use the CONSENT.md shape.
+- SKILL.md, INSTRUCTIONS.md, INSTALL.md, CORE_UPDATES.md, README, MASTER-SOP, PHOTO-SHOOT-SOP, personal-photo-shoot `_RULES.md`: generation goes Prompt Author, Prompt QC, Render Dispatcher, Generation Operator (Skill 74); the Style Librarian is the single INDEX writer. Prompt-length targets point to rule 12 of `07-kie-setup/references/kie-common-rules.md`; no band number was changed here.
+
 ## v2.1.9 - 2026-10-06 - No Nano Banana fallback for social or ad images
 
 - `social-media-designs`, `facebook-ad-designs`, `advertisement-designs` `_RULES.md`: Nano Banana is never used (labeled or not); the 4:5 "only on the Nano Banana fallback" clauses are replaced by "request 3:4, crop to 4:5". The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules.

@@ -55,7 +55,7 @@ Execute PPT-ANALYSIS-SOP §2 Step 4: identify what ALL families share — master
 Execute PPT-ANALYSIS-SOP §2 Step 5 (cross-reference MASTER-SOP §4 for the 12-dimension protocol): for each family, analyze 2–3 representative slides and record ONLY what differs from or specializes the Shared Foundation. Family cards are deltas, not full repeats.
 
 ### Step 7 — Write family prompt templates
-Execute PPT-ANALYSIS-SOP §2 Step 6: for each family write SHORT and MEDIUM prompt templates (each = foundation block + family delta). Write LONG templates only for families designated for standalone hero image generation (typically Family A). Measure actual character lengths for each template tier; record character counts explicitly in the card. Flag any tier exceeding 2,800 characters — Seedream hard cap is 3,000 characters.
+Execute PPT-ANALYSIS-SOP §2 Step 6: for each family write SHORT and MEDIUM prompt templates (each = foundation block + family delta). Write LONG templates only for families designated for standalone hero image generation (typically Family A). Measure actual character lengths for each template tier; record character counts explicitly in the card. Never exceed a tier's ceiling — Seedream hard cap is 3,000 characters; the prompt actually submitted is sized to the model's budget at generation time (rule 12 of `07-kie-setup/references/kie-common-rules.md`).
 
 ### Step 8 — Write Usage Rules
 Execute PPT-ANALYSIS-SOP §2 Step 7: document the family-to-purpose mapping, rhythm rules, source-observed proportions, and transition logic. These rules are the intelligence layer that prevents a generated deck from looking stamped. Do not skip or abbreviate.

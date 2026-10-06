@@ -110,9 +110,9 @@ Standard clause: an assigned persona governs HOW you work for that task; this fi
 
 ---
 
-## 9. Standard Operating Procedures: SOPs 9.1 to 9.12
+## 9. Standard Operating Procedures: SOPs 9.1 to 9.13
 
-The SOP suite is the heart of this role. All 12 SOPs are reproduced verbatim below and ship to the SOP library.
+The SOP suite is the heart of this role. All 13 SOPs (the 12 base healer SOPs plus the DIU integrity sweep, SOP-DIU-615 at SOP 9.13) are reproduced verbatim below and ship to the SOP library; the sops/ mirror carries the identical set.
 
 ---
 
@@ -191,7 +191,7 @@ The SOP suite is the heart of this role. All 12 SOPs are reproduced verbatim bel
 
 **When to run:** Monthly (department-wide), and targeted on any incident where model behavior is the suspected layer.
 
-**Steps:** 1. Build the model inventory from the department's routing table and MODEL MANIFEST: every text model, QC model, image model/platform, with the version currently pinned (example inventory: Kimi 2.6 writer, Minimax 3 QC with 2.7 fallback, DeepSeek v4 Pro/Flash, GPT-Image-2.5 on Kie.ai). 2. Dispatch the Deep Research Specialist per model: latest available version on our actual providers (Ollama Cloud catalog, OpenRouter, Kie.ai docs), release notes, pricing deltas (always expressed per million tokens), deprecation notices, breaking changes. 3. For each model produce a verdict: CURRENT (pinned = latest), STALE (newer exists), DEPRECATED (shutoff announced: flag URGENT with the date). 4. For every STALE/DEPRECATED entry, write a Tier 3 upgrade proposal: the case (what improves), the cost delta, the risk, the staged rollout plan (smoke test on one low-stakes run before fleet-wide), and the rollback line (the exact manifest revert). 5. NEVER change a manifest or swap a model yourself, and NEVER mid-run. Proposals go to the operator via SOP 9.7 and wait for written approval. 6. Record the census date per model; the freshness KPI reads from here.
+**Steps:** 1. Build the model inventory from the department's routing table and MODEL MANIFEST: every text model, QC model, image model/platform, with the version currently pinned (example inventory: Kimi 2.6 writer, Minimax 3 QC with 2.7 fallback, DeepSeek v4 Pro/Flash, GPT-Image-2.5 on Kie.ai). 2. Dispatch the Deep Research Specialist per model: latest available version on our actual providers (Ollama Cloud catalog, OpenRouter, Kie.ai through Skill 74 `discover` and `latest-family`, plus docs.kie.ai), release notes, pricing deltas (always expressed per million tokens), deprecation notices, breaking changes. 3. For each model produce a verdict: CURRENT (pinned = latest), STALE (newer exists), DEPRECATED (shutoff announced: flag URGENT with the date). 4. For every STALE/DEPRECATED entry, write a Tier 3 upgrade proposal: the case (what improves), the cost delta, the risk, the staged rollout plan (smoke test on one low-stakes run before fleet-wide), and the rollback line (the exact manifest revert). 5. NEVER change a manifest or swap a model yourself, and NEVER mid-run. Proposals go to the operator via SOP 9.7 and wait for written approval. The one standing exception is not yours to execute: the GPT Image default follows `kie_live_adapter.py latest-family --family gpt-image` automatically by owner order (rule 13 of `07-kie-setup/references/kie-common-rules.md`); you only confirm that each automatic switch left a promotion receipt and was reported, and flag one that did not. 6. Record the census date per model; the freshness KPI reads from here.
 
 **Outputs:** census report, Tier 3 proposals. **Hand to:** Operator (decision), Chief Healer (global census sync). **Failure mode:** provider docs unreachable: log the attempt, retry next cycle, never infer a version from rumor.
 
@@ -262,6 +262,39 @@ The SOP suite is the heart of this role. All 12 SOPs are reproduced verbatim bel
 **Steps:** 1. Identify every file changed by this heal (from the incident ledger). 2. Run the repo's documented embedding/index refresh for exactly those files: role/SOP markdown changed on a box -> run `32-command-center-setup/scripts/sync-extensions.sh --converge`. The CC converge endpoint re-imports the materialized workspace/departments tree and storeEmbeddingForSOP re-embeds exactly the inserted/updated rows in the CC SOP index (gemini-embedding-2 @3072 or OpenAI fallback). That is the per-file refresh this SOP demands. Never build a second pipeline. 3. Verify: run one retrieval probe using `shared-utils/embedding_health.py --json` (all three indexes must PASS) and confirm the NEW content returns for a query that previously surfaced the old content. 4. Record refresh time and verification result in the ledger. 5. If no embedding pipeline exists for this deployment, note "n/a, no retrieval layer" once in the ledger and skip in future heals for this client.
 
 **Outputs:** refreshed index, verified retrieval, ledger entry. **Hand to:** SOP 9.7 (the heal may now close). **Failure mode:** retrieval still returns stale content after refresh: treat as its own P1 bug ticket against the embedding pipeline.
+
+---
+
+### SOP 9.13 -- [SOP-DIU-615] DIU Integrity Sweep
+
+**ZHC SOP.** Wraps INDEX.md header rules; STYLE-CARD-TEMPLATE filling instruction 3; DEPARTMENT-BUILD-BRIEF §4 drift warning; MODEL-SPECS header.
+**Library-version pin:** INDEX.md v1.0, STYLE-CARD-TEMPLATE v1.0, MODEL-SPECS v1.0, DEPARTMENT-BUILD-BRIEF v1.0 (§-refs verified 2026-06-12).
+**When to run:** On a scheduled cron basis (weekly minimum) and on-demand when the CDO or an operator requests an integrity check.
+**HEARTBEAT POLICY: notify-on-change-only, heartbeat stays OFF.** This SOP MUST NOT be wired into a heartbeat or session-keepalive loop. It fires, checks, reports if anything changed, and exits. Violations of this policy create owner-session spam (fleet incident: 48,780 messages cleared 2026-06-12) and constitute a token furnace.
+**Frequency:** Weekly scheduled; on-demand by CDO or operator.
+**Inputs:** Read-only access to: INDEX.md, all card files under `_system/library/`, `_local/receipts/`, `_local/quarantine/`, all 6xx SOP files in `sops/`, MODEL-SPECS.md, the embedding index manifest.
+
+**Checks (run all; report ONLY findings that changed since the last sweep):**
+
+1. **INDEX bijection:** Every INDEX.md row must have a corresponding card file on disk; every card file on disk must have a corresponding INDEX.md row. Report any row without a file (orphaned index row) or file without a row (unregistered card) as FAIL.
+2. **No duplicate IDs:** grep the INDEX.md and the card files for any SOP-DIU tag or card ID that appears more than once. Any duplicate is a FAIL. This check covers the repo-wide `[SOP-DIU-` tag uniqueness requirement.
+3. **Card schema completeness lint:** Each card file must have no empty sections, no "TBD" markers, and no unfilled `{VARIABLE}` tokens in any of its prompt tier blocks. Flag incomplete cards as WARN (they should be in draft status; a production card with empties is FAIL).
+4. **ACTUAL char count vs declared:** For every card with a declared character-count annotation line, recount the actual characters in each prompt tier block and compare to the declaration. A discrepancy of more than 5 characters is a FAIL. Seedream tier: any tier over 3,000 characters (the Seedream 4.5 and 5.0 Lite silent fail zone) is FAIL; a count just under the ceiling is not a warning, because rule 12 of `07-kie-setup/references/kie-common-rules.md` defines the target (a tier below the rule 12 floor for its endpoint is a WARN for the Style Analyst). Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS section 1 states a per-model value for the card's endpoint.
+5. **6xx SOP version pins:** For every SOP file in `sops/` that begins with a `Library-version pin:` line, compare the pinned version to the current file version header of the referenced library file. Any mismatch is FAIL -- flag LOUDLY: "SOP-DIU-[NNN] version pin STALE: pinned [version], current [version]. Re-pin required before this SOP can be trusted."
+6. **Quarantine folder empty or escalated:** If `_local/quarantine/` contains any asset files, verify that each has a corresponding incident.json with a CDO-notified timestamp and a non-null `resolution` field. Any quarantined asset without a logged incident or without a resolution is FAIL.
+7. **Embedding coverage:** Count cards with status "production" or "tested" in INDEX.md. Count embedding entries in the index manifest. If they differ (coverage != card count), flag as WARN and trigger a rebuild notification to the Style Analyst: "Embedding coverage [actual] != card count [expected]. SOP-DIU-606 rebuild required."
+8. **Receipt age -- stuck jobs:** List all receipt files in `_local/receipts/` with state `submitted` or `polling`. Any receipt with `last_polled` older than 24 hours is FAIL -- flag with receipt_id and last_polled timestamp for CDO attention. This is a stuck-job check: Healer gets ground truth without touching the image API; the Render Dispatcher owns polling and orphan recovery and executes any CDO-directed re-poll.
+9. **MODEL-SPECS staleness:** Read the MODEL-SPECS.md header date. If more than 90 days old, flag as FAIL: "MODEL-SPECS.md header date is [date] -- over 90 days. CDO should trigger a Healer model-currency census (SOP 9.6)."
+10. **Kie.ai key/endpoint reachability:** Verify the canonical `KIE_API_KEY` or an alias listed in `shared-utils/secret_names.json` is present in at least one env store (check all stores per the client-box-env-stores policy; report SET or NOT-SET only, never the value). Verify the Kie.ai endpoint is reachable with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py credits` (it reads `GET /api/v1/chat/credit`, checks the JSON body `code` and not only the HTTP status, and consumes no credits). Report FAIL if no key name is present in any store or the body `code` is not 200. A 401 or 403 is one attempt only (canonical rule 9): report once, do not retry. This check never submits a job.
+11. **Registrar activation counter:** Count the total production + tested card rows in INDEX.md. If count >= 50, flag: "Registrar activation threshold reached ([N] production+tested cards). CDO should activate the Library Registrar role per SOP-DIU-606 step 9."
+
+**Reporting:**
+- If ALL checks pass and nothing changed since the last sweep: output NOTHING. Suppress the "all clear" message (heartbeat-suppression policy -- one silent pass costs no tokens, one "all clear" per sweep creates a session log entry every scheduled fire).
+- If ANY check returns WARN or FAIL: emit a concise report via `openclaw message send` to the CDO listing only the changed/new findings, the check name, severity, and the exact file/path implicated.
+
+**Outputs:** Findings report (on changes/failures only); no output on a clean sweep.
+**Hand to:** CDO (findings report); Style Analyst (embedding rebuild trigger if coverage check fails); Render Dispatcher (stuck-job alert); no handoff on a clean sweep.
+**Failure mode:** If the Healer cannot read any of the required files (permissions, disk error), emit a single FAIL report: "SOP-DIU-615 sweep aborted -- cannot read [path]. No sweep completed. CDO action required." Never claim a clean sweep if the sweep could not complete.
 
 ---
 

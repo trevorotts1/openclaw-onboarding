@@ -102,7 +102,7 @@ For each cluster that cleared the dedupe gate, author a style card following SOP
 
 - Execute the 12-Dimension Protocol per MASTER-SOP §§3–4 on 2–3 representative slides from the cluster. Record only what differs from or specializes any identified shared foundation (see PPT-ANALYSIS-SOP §2 Step 4).
 - Fill every section of STYLE-CARD-TEMPLATE.md. No section may be left blank or marked "TBD."
-- Count actual prompt characters for each tier block; annotate explicitly. Flag any tier exceeding 2,800 characters (Seedream hard cap: 3,000 chars).
+- Count actual prompt characters for each tier block; annotate explicitly. Never exceed a tier's ceiling (Seedream hard cap: 3,000 chars); the prompt actually submitted is sized to the model's budget at generation time (rule 12 of `07-kie-setup/references/kie-common-rules.md`).
 - Set card status = "draft."
 - Emit a per-card receipt file: `{CARD-ID}.json` with fields: id, name, category, status, version, authored-by, authored-date, similarity-scores-at-creation, provenance-class, batch-id.
 

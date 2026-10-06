@@ -36,7 +36,7 @@ This procedure runs in strict sequence. Do not skip or reorder steps. Steps 1–
 ### Phase 1: Consent & Identity Gate (PHOTO-SHOOT-SOP §§1–3)
 
 **Step 1 — Locate the consent record.**  
-Read `personal-photo-shoot/{client-slug}/CONSENT.md`. If the file does not exist, the shoot cannot proceed: create a `pending` record and route to the producer for consent collection. Do NOT advance to Step 2.
+Read `personal-photo-shoot/{client-slug}/CONSENT.md` and run the coded gate `python3 45-design-intelligence-library/scripts/diu_validator.py consent-check --consent-file personal-photo-shoot/{client-slug}/CONSENT.md` (exit 4, `AF-DIU-CONSENT`, means halt; the gate reads only CONSENT.md, never IDENTITY.md). If the file does not exist, the shoot cannot proceed: create a `pending` record and route to the producer for consent collection. Do NOT advance to Step 2.
 
 **Step 2 — Check consent status machine.**  
 Status must be `active`. If `expired` or `revoked`, halt immediately and notify producer. If `pending`, halt and notify producer that collection is outstanding.
@@ -75,7 +75,7 @@ Route to the correct mode workflow per PHOTO-SHOOT-SOP §5. Model routing assign
 Combine: Identity Lock Block + mode-appropriate context descriptors + applicable constraints from `personal-photo-shoot/_RULES.md` + negative prompt assembled per NEGATIVE-PROMPTING-SOP §§1–3 layer merge (plus the universal Identity Lock negative: no other recognizable real persons in scene). Fill all Workflow-B variables per MASTER-SOP §3.2 (`{SUBJECT_NAME}`, `{SETTING}`, `{MOOD}`, `{BRAND_COLOR_1}/{BRAND_COLOR_2}` if applicable, `{LOGO_NOTE}` if applicable). Zero unfilled `{VARIABLE}` tokens may remain.
 
 **Step 12 — Finalize shoot brief and hand to Generation Operator.**  
-Confirm endpoint assignment, aspect ratio, resolution tier, and all required params per the MODEL-SPECS §5 JSON template for the selected mode. Confirm reference image URLs are live-verified per SOP-DIU-609. Pass the complete shoot brief (Identity Lock Block + sourced refs + mode record + endpoint + params) to the Generation Operator for Kie.ai execution.
+Confirm endpoint assignment, aspect ratio, resolution tier, and all required params per the MODEL-SPECS §5 JSON template for the selected mode. Confirm reference image URLs are live-verified per SOP-DIU-609. Pass the complete shoot brief (Identity Lock Block + sourced refs + mode record + endpoint + params) to the Render Dispatcher for release to the Generation Operator, the only role that submits to Kie.ai (through Skill 74).
 
 **Step 13 — Receive and verify results.**  
 Review completed outputs from the Generation Operator against the hard-rule checks from PHOTO-SHOOT-SOP §10: no lightened skin, no text on face, no identity drift, no unauthorized persons in scene, no consent-gap content. Any hard-rule failure routes to SOP-DIU-604 quarantine immediately — the output is not delivered and is not reused.
@@ -100,7 +100,7 @@ Write all shoot session data to the per-client folder per PHOTO-SHOOT-SOP §8. A
 - Consent-verified, Identity-Lock-annotated shoot brief (handed to Generation Operator)
 - Verified deliverable asset (after Operator returns results)
 - Shoot record entry (per-client folder, PHOTO-SHOOT-SOP §8)
-- Rights Manifest receipt entry (SOP-DIU-610) — per-item, append-only
+- Rights Manifest entry (SOP-DIU-610) — one entry block per delivered output, appended to the client's `RIGHTS-MANIFEST.md`, never edited
 - Synthetic-media disclosure applied to deliverable where required
 
 OR (on gate failure):
@@ -114,8 +114,8 @@ OR (on gate failure):
 | From → To | Condition |
 |---|---|
 | Chief Design Officer → Photo Shoot Director | Shoot request received with brief and reference images |
-| Photo Shoot Director → Generation Operator | Consent gate passed (Steps 1–7), shoot brief fully compiled (Steps 8–12) |
-| Generation Operator → Photo Shoot Director | Results returned; Director runs Steps 13–14 |
+| Photo Shoot Director → Render Dispatcher → Generation Operator | Consent gate passed (Steps 1–7), shoot brief fully compiled (Steps 8–12); the Dispatcher releases it to the Operator |
+| Generation Operator (receipt) + Render Dispatcher (postflight-verified file) → Photo Shoot Director | Result verified locally; Director runs Steps 13–14 |
 | Photo Shoot Director → Chief Design Officer | Verified deliverable + closed shoot record + manifest entry confirmed |
 | Photo Shoot Director → Chief Design Officer (halt) | Any halt condition: gate failure, quarantine trigger, ambiguous endpoint routing |
 

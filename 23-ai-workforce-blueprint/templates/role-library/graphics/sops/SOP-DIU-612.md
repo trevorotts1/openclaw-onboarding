@@ -3,6 +3,7 @@
 **ID:** SOP-DIU-612
 **Classification:** ZHC SOP — thin wrapper
 **Owner Role:** Chief Design Officer
+**Section 9 slot:** 9.11
 **Version:** 1.0 | **Date:** 2026-06-12
 **Status:** CANONICAL
 **Library-version pin:** MASTER-SOP v1.0, MODEL-SPECS v1.0, PHOTO-SHOOT-SOP v1.0 (§-refs verified 2026-06-12)
@@ -66,13 +67,13 @@ All ID resolution, consent-gate details, assembly packet field requirements, and
    - Client budget cap reference (pointer to `budget_config` — not a dollar value in this packet)
    - `likeness: false` OR the Photo Shoot Director's consent-verified shoot brief (if likeness involved)
 
-8. **Dispatch the assembly packet to the Generation Operator.** The Generation Operator does not accept raw cross-department briefs directly — the CDO is the only intake source. Include the requesting department's Job ID so the Generation Operator's receipt links back to the originating request.
+8. **Dispatch the assembly packet to the Render Dispatcher, which releases it to the Generation Operator** (cache check, pre-dispatch checks and holds happen at the release; the Operator is the only role that submits to Kie.ai). The Generation Operator does not accept raw cross-department briefs directly — the CDO is the only intake source. Include the requesting department's Job ID so the Generation Operator's receipt links back to the originating request.
 
 9. **Record the campaign version pin** if the requesting department is running a multi-asset campaign. Write the resolved ID@version and the requesting department's Job ID to `_local/campaign-pins/{job-id}.json`. The pinned version governs all assets in this campaign until the campaign closes.
 
 ### D. Deliver and close
 
-10. **On receipt of the verified output from the Generation Operator** (after SOP-DIU-601 postflight passes and the receipt is `state: complete`): compile the return bundle.
+10. **On receipt of the verified output** (the Render Dispatcher's completion notice after the SOP-DIU-601 postflight passes and the Generation Operator's receipt is `state: complete`): compile the return bundle.
 
 11. **Return the delivery bundle to the requesting department** via the cross-department template delivery format, including:
     - The delivered asset (local path or hosted URL if the department requires one)
@@ -97,7 +98,7 @@ All ID resolution, consent-gate details, assembly packet field requirements, and
 | INDEX.md (current, production-status rows) | Yes | `_system/INDEX.md` |
 | Photo Shoot Director consent-verified shoot brief | Conditional | SOP-DIU-608 + SOP-DIU-609 output (required when `likeness_present: true`) |
 | Client `budget_config` block | Yes | Client box config — referenced in the assembly packet |
-| Verified output + receipt (`state: complete`) | Yes | Generation Operator via SOP-DIU-601 postflight |
+| Verified output + receipt (`state: complete`) | Yes | Generation Operator's receipt, verified by the Render Dispatcher's SOP-DIU-601 postflight |
 
 ---
 
@@ -107,7 +108,7 @@ All ID resolution, consent-gate details, assembly packet field requirements, and
 |---|---|---|
 | STYLE block validation verdict (pass or itemized failure list) | Returned to requesting department | Pass or FAIL with itemized list |
 | Shoot-brief routing packet to Photo Shoot Director | Cross-department template | Sent (if `likeness_present: true`) |
-| Generation assembly packet to Generation Operator | Direct CDO→Operator handoff | Written |
+| Generation assembly packet to the Render Dispatcher (released to the Generation Operator) | CDO→Dispatcher→Operator handoff | Written |
 | Campaign version pin record | `_local/campaign-pins/{job-id}.json` | Written (for campaign requests) |
 | Delivery bundle to requesting department | Cross-department template delivery format | Delivered on postflight `state: complete` |
 | Campaign version bump notification | Requesting department (via `openclaw message send`) | Sent on card version increment or retirement |
@@ -118,7 +119,7 @@ All ID resolution, consent-gate details, assembly packet field requirements, and
 
 - **STYLE block incomplete or STYLE_ID unresolved:** Request returned to sender with itemized failure list. No generation proceeds. CDO offers to schedule a calibration run (SOP-DIU-613) if the department has no library-registered styles.
 - **`likeness_present: true`:** Entire request handed to Photo Shoot Director. CDO holds; no assembly packet built until consent-verified shoot brief returns.
-- **`likeness_present: false`, ID confirmed, assembly packet complete:** Assembly packet handed to Generation Operator. CDO waits for postflight-verified receipt.
+- **`likeness_present: false`, ID confirmed, assembly packet complete:** Assembly packet handed to the Render Dispatcher for release to the Generation Operator. CDO waits for the postflight-verified receipt.
 - **Output delivered:** Return bundle (asset + generation log + provenance) sent to requesting department. Campaign pin recorded (if applicable).
 - **Card version bump or retirement:** Departments with active campaign pins notified before new version default is applied.
 
