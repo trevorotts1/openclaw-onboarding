@@ -1,0 +1,17 @@
+{
+  "story_id": "demo-missing-failed_solutions",
+  "beats": [
+    "ordinary_world",
+    "humiliation",
+    "wound_deepens",
+    "frozen",
+    "seeing_it_too",
+    "mentor",
+    "product_intro",
+    "doubt",
+    "climb",
+    "vindication",
+    "return_cta"
+  ],
+  "product_reveal": 8
+}

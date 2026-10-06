@@ -1,0 +1,1 @@
+{"body": {"actor": "song-runner", "reason": "song mastered", "stage_slug": "m6-master", "status": "review"}, "expect": "PATCH moves card to review via transition(); blocked/done-only keys absent", "method": "PATCH", "path": "/api/ad-campaigns/job-song-001", "route": "src/app/api/ad-campaigns/[id]/route.ts:54 moveAdStage(id, validation.data)"}
