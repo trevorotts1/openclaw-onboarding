@@ -35,6 +35,28 @@ import sys
 LITERAL = "5252140759"
 KEEP, FIX = "KEEP", "FIX"
 
+
+def _operator_literals():
+    """Every operator chat-id literal the guard scans for.
+
+    Sourced from the single authority, shared-utils/resolve-owner-chat.sh
+    (OPERATOR_CHAT_IDS_SH), so adding an operator id there automatically
+    widens the guard. Falls back to the primary LITERAL when the authority
+    is unreadable. Never a second hardcoded list.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "shared-utils", "resolve-owner-chat.sh")
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            m = re.search(r'OPERATOR_CHAT_IDS_SH="([^"]*)"', fh.read())
+    except OSError:
+        m = None
+    ids = [t for t in (m.group(1).split() if m else []) if t.isdigit()]
+    return ids or [LITERAL]
+
+
+LITERALS = _operator_literals()
+
 # (path glob, optional line regex, class, reason). First match wins.
 RULES = [
     ("scripts/scrub-operator-chat-id.py", None, KEEP,
@@ -178,7 +200,7 @@ def read_text(full):
         data = open(full, "rb").read()
     except OSError:
         return None
-    if b"\0" in data or LITERAL.encode() not in data:
+    if b"\0" in data or not any(lit.encode() in data for lit in LITERALS):
         return None
     return data.decode("utf-8", "surrogateescape")
 
@@ -190,7 +212,7 @@ def scan(root):
         if text is None:
             continue
         for n, line in enumerate(text.split("\n"), 1):
-            if LITERAL in line:
+            if any(lit in line for lit in LITERALS):
                 cls, why = classify(path, line)
                 hits.append((path, n, cls, why, line.strip()))
     return hits
@@ -218,7 +240,7 @@ def apply(root):
                 first = text.count("\n", 0, m.start())
                 last = text.count("\n", 0, m.end())
                 for i in range(first, last + 1):
-                    if LITERAL in lines[i] and classify(path, lines[i])[0] != FIX:
+                    if any(lit in lines[i] for lit in LITERALS) and classify(path, lines[i])[0] != FIX:
                         problems.append(f"{path}:{i + 1}: rewrite would touch a KEEP line")
                         ok = False
             if ok:

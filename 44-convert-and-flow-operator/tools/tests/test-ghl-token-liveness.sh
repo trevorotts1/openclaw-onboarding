@@ -28,13 +28,22 @@ TARGET="${GHL_LIVENESS_TARGET:-$SELF_DIR/../check-ghl-token-liveness.sh}"
 [ -f "$TARGET" ] || { echo "ABORT: script under test not found: $TARGET"; exit 9; }
 SB="$(mktemp -d "${TMPDIR:-/tmp}/ghl-liveness-test.XXXXXX")"
 trap 'rm -rf "$SB"' EXIT
-mkdir -p "$SB/home/.openclaw/secrets" "$SB/home/.openclaw/workspace" "$SB/state" "$SB/fakebin"
+mkdir -p "$SB/home/.openclaw/secrets" "$SB/home/.openclaw/workspace" "$SB/state" "$SB/fakebin" "$SB/home/.openclaw/skills/shared-utils"
 printf '{"channels":{"telegram":{"allowFrom":["123456789"]}}}\n' > "$SB/home/.openclaw/openclaw.json"
 SEC="$SB/home/.openclaw/secrets/.env"
 [ -d /data/.openclaw ] && { echo "ABORT: /data/.openclaw exists locally"; exit 9; }
-# Use a synthetic operator ID in the sandbox copy and the rejection probe.
-# Production exclusion rules are unchanged; no real recipient is a fixture target.
-sed -e 's/5252140759/990000001/g' \
+# The production operator id is derived AT RUN TIME from the single authority
+# (shared-utils/resolve-owner-chat.sh OPERATOR_CHAT_IDS_SH), seeded into the
+# sandbox at the box path with its first id swapped for the synthetic rejection
+# probe. Production exclusion rules are unchanged; no real recipient is a
+# fixture target and no literal id is committed here.
+RESOLVER_REL="$SELF_DIR/../../../shared-utils/resolve-owner-chat.sh"
+[ -r "$RESOLVER_REL" ] || { echo "ABORT: operator id authority unreadable: $RESOLVER_REL"; exit 9; }
+SB_RESOLVER="$SB/home/.openclaw/skills/shared-utils/resolve-owner-chat.sh"
+OP_ID="$(sed -nE 's/^OPERATOR_CHAT_IDS_SH="([^"]*)".*/\1/p' "$RESOLVER_REL" | head -1 | cut -d' ' -f1)"
+[ -n "$OP_ID" ] || { echo "ABORT: no operator id in resolver"; exit 9; }
+sed "s/$OP_ID/990000001/g" "$RESOLVER_REL" > "$SB_RESOLVER"
+sed -e "s/$OP_ID/990000001/g" \
     -e 's|^if openclaw message send|if echo STUB \&\& false; then :; elif false|' \
     -e "s|^STATE_DIR=.*|STATE_DIR=\"$SB/state\"|" "$TARGET" > "$SB/prop.sh"
 echo "neutered: live-send-lines=$(/usr/bin/grep -c '^if openclaw message send' "$SB/prop.sh") stub=$(/usr/bin/grep -c '^if echo STUB' "$SB/prop.sh") state=$(/usr/bin/grep -c "^STATE_DIR=\"$SB/state\"" "$SB/prop.sh")"

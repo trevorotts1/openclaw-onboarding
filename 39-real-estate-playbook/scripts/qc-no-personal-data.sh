@@ -10,7 +10,31 @@ while [ $# -gt 0 ]; do
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
-OPERATOR_BANNED='blackceo|5252140759|trevelynotts|Trevor|/Users/christy|/Users/blackceomacmini|/Users/client'
+# Operator chat ids — loaded from the single authority (id-removal v25.3.19):
+# shared-utils/resolve-owner-chat.sh declares OPERATOR_CHAT_IDS_SH; never
+# hardcode ids here.
+_operator_chat_ids_sh() {
+  local resolver="" d t
+  if [ -d /data/.openclaw ]; then resolver="/data/.openclaw/skills/shared-utils/resolve-owner-chat.sh"
+  else resolver="${HOME:-/root}/.openclaw/skills/shared-utils/resolve-owner-chat.sh"; fi
+  if [ ! -r "$resolver" ]; then
+    d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || true)"
+    for t in "$d/../../shared-utils/resolve-owner-chat.sh" \
+             "$d/../../../shared-utils/resolve-owner-chat.sh"; do
+      if [ -r "$t" ]; then resolver="$t"; break; fi
+    done
+  fi
+  [ -r "$resolver" ] || return 1
+  sed -nE 's/^OPERATOR_CHAT_IDS_SH="([^"]*)".*/\1/p' "$resolver" | head -1
+}
+OPERATOR_CHAT_IDS_SH="$(_operator_chat_ids_sh || true)"
+OPERATOR_BANNED='blackceo|trevelynotts|Trevor|/Users/christy|/Users/blackceomacmini|/Users/client'
+if [ -n "${OPERATOR_CHAT_IDS_SH:-}" ]; then
+  OPERATOR_BANNED="$OPERATOR_BANNED|$(printf '%s' "$OPERATOR_CHAT_IDS_SH" | tr ' ' '|')"
+else
+  echo "WARNING: operator chat-id authority (shared-utils/resolve-owner-chat.sh) not readable; the operator chat ids are NOT scanned this run." >&2
+fi
+
 PLACEHOLDER_BANNED='ExampleClientAlpha|ExampleClientBeta|PlaceholderCo|Testclient Sentinel'
 _roster_path() {
   if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
