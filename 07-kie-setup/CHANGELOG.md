@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.0.5] - 2026-10-05 - fix: credit check in qc-kie-setup.sh no longer depends on shell quote stripping
+
+### Fixed
+- `qc-kie-setup.sh` passed its credit check only by accident: the inner `'"code" *: *200'` lost its quotes inside the outer double-quoted eval string, so the grep that ran was `code *: *200`. The response is now tested with a plain `case "$RESP" in *'"code":200'*|*'"code": 200'*)` outside the eval, and the check reads that flag. Proven offline with a stub `curl`: body `{"code":200,...}` and `{"code": 200,...}` pass; body `{"code":401,...}` fails (warning).
+- The prebuilt `kie-setup.skill` archive is not rebuilt: no packaging script exists in `scripts/` (checked by listing), the archive was already out of date with its source before this change, and the updater copies skill folders wholesale.
+
+---
+
 ## [v7.0.4] - 2026-10-05 - fix: dead KIE endpoints, key printing, version drift, retention prose
 
 ### Fixed
