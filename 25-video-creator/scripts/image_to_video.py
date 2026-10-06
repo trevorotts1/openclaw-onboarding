@@ -5,6 +5,7 @@ Animate static images into video with various motion effects.
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -20,7 +21,9 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
                   resolution: Optional[str] = None, zoom_direction: str = 'in',
                   music: Optional[str] = None, provider: str = 'local',
                   model: Optional[str] = None,
-                  image_field: Optional[str] = None) -> Path:
+                  image_field: Optional[str] = None,
+                  image_field_type: Optional[str] = None,
+                  input_extra: Optional[dict] = None) -> Path:
     """
     Convert image to video with motion effects.
     
@@ -35,6 +38,8 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
         provider: AI provider (local uses MoviePy)
         model: Explicit KIE model id (kieai only; default comes from Skill 67)
         image_field: KIE input key for the image (kieai only; overrides the per-model mapping)
+        image_field_type: 'string' or 'array' (required with image_field unless it matches the mapped key)
+        input_extra: extra model-specific KIE input fields (kieai only)
         
     Returns:
         Path to generated video
@@ -57,7 +62,8 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     if provider != 'local':
         config = load_config()
         ai = AIProvider(provider, config.get('video_providers', {}))
-        extra = {k: v for k, v in (('model', model), ('resolution', resolution), ('image_field', image_field)) if v}
+        extra = {k: v for k, v in (('model', model), ('resolution', resolution), ('image_field', image_field),
+                                                 ('image_field_type', image_field_type), ('input_extra', input_extra)) if v}
         return ai.image_to_video(
             image_path=image_path,
             prompt=f"{motion} motion effect",
@@ -262,6 +268,16 @@ def load_config():
     return {}
 
 
+def _json_object(text):
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not valid JSON: {exc}")
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object, for example '{\"quality\": \"720p\"}'")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description='Convert image to video with motion')
     parser.add_argument('image', type=Path, help='Input image file')
@@ -282,6 +298,12 @@ def main():
                        help='AI provider for generation')
     parser.add_argument('--model', help='Explicit KIE model id (kieai only); default comes from Skill 67')
     parser.add_argument('--image-field', help='KIE input key for the image (kieai only); overrides the per-model mapping')
+    parser.add_argument('--image-field-type', choices=['string', 'array'],
+                       help='Type of --image-field: string (single URL) or array (list of URLs). '
+                            'Required with --image-field for a model that is not mapped; never guessed from the name.')
+    parser.add_argument('--input-extra', type=_json_object, metavar='JSON',
+                       help='JSON object of extra model-specific KIE input fields (kieai only), '
+                            'for example \'{"quality": "720p"}\'. Documented-required fields for a model go here.')
     
     args = parser.parse_args()
     
@@ -300,7 +322,9 @@ def main():
             music=args.music,
             provider=args.provider,
             model=args.model,
-            image_field=args.image_field
+            image_field=args.image_field,
+            image_field_type=args.image_field_type,
+            input_extra=args.input_extra
         )
         print(f"\n🎥 Video ready: {result}")
         return 0

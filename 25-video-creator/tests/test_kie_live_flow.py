@@ -251,7 +251,7 @@ def test_explicit_model_passes_through_unchanged_for_text_and_image(env, monkeyp
     image = env.tmp / "pic.jpg"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="Other/Model-2",
-                                  image_field="image_url")
+                                  image_field="image_url", image_field_type="string")
     t2v, i2v = [c[2]["json"] for c in fake.of(CREATE)]
     assert t2v["model"] == "Some/Model-9.1" and t2v["input"]["resolution"] == "4k"
     assert i2v["model"] == "Other/Model-2"
@@ -331,6 +331,12 @@ def test_other_providers_reject_kie_only_model_option(provider, tmp_path):
 
 
 # Expected mapping, written out independently of the implementation (docs.kie.ai/market/<page>.md).
+# models whose docs pin extra required inputs: supplied here so the happy path reaches HTTP
+EXTRA_FOR = {"kling-3.0/video": {"sound": False, "mode": "pro", "multi_shots": False, "multi_prompt": [],
+                            "aspect_ratio": "16:9"},
+             "pixverse-v6/image-to-video": {"quality": "720p"}}
+
+
 EXPECTED_I2V_FIELDS = [
     ("wan/3-0-video", "first_frame_url", str),
     ("wan/3-0-video-prime", "first_frame_url", str),
@@ -353,7 +359,7 @@ def test_each_mapped_model_sends_its_documented_image_field_and_type(env, model,
     fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
-    env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model=model)
+    i2v(env, model, input_extra=EXTRA_FOR.get(model))
     inp = fake.of(CREATE)[0][2]["json"]["input"]
     url = "https://tempfile.example/in.png"
     assert inp[field] == (url if kind is str else [url])
@@ -405,11 +411,12 @@ def test_cli_image_field_flag_is_forwarded_and_unblocks_unknown_model(monkeypatc
     image = tmp_path / "pic.png"
     image.write_bytes(b"x")
     monkeypatch.setattr(sys, "argv", ["image_to_video.py", str(image), "--provider", "kieai",
-                                      "--model", "brand/new-model", "--image-field", "start_image",
+                                      "--model", "brand/new-model", "--image-field", "start_image", "--image-field-type", "string",
                                       "--output", str(tmp_path / "o.mp4")])
     assert cli.main() == 0
     assert seen["provider"] == "kieai"
     assert seen["model"] == "brand/new-model" and seen["image_field"] == "start_image"
+    assert seen["image_field_type"] == "string"
 
 
 def test_cli_image_field_reaches_payload_end_to_end(env):
@@ -417,7 +424,7 @@ def test_cli_image_field_reaches_payload_end_to_end(env):
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="brand/new-model",
-                                  image_field="start_image")
+                                  image_field="start_image", image_field_type="string")
     assert fake.of(CREATE)[0][2]["json"]["input"]["start_image"] == "https://tempfile.example/in.png"
 
 
@@ -435,7 +442,266 @@ def test_image_field_override_wins_over_model_mapping(env):
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video",
-                                  image_field="reference_image_urls")
+                                  image_field="reference_image_urls", image_field_type="array")
     inp = fake.of(CREATE)[0][2]["json"]["input"]
     assert inp["reference_image_urls"] == ["https://tempfile.example/in.png"]
     assert "first_frame_url" not in inp
+
+
+# ---- per-model input types (docs.kie.ai/market/<page>.md input schemas) ----
+
+def i2v(env, model, **kw):
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    return env.provider().image_to_video(image, kw.pop("prompt", "m"),
+                                         kw.pop("duration", 4 if model == "gemini-omni-video" else 5),
+                                         output=env.tmp / "i.mp4", model=model, **kw)
+
+
+def sent_input(fake):
+    return fake.of(CREATE)[0][2]["json"]["input"]
+
+
+# (model, duration given, expected sent duration)
+DURATION_OK = [
+    ("wan/3-0-video", "7", 7), ("wan/3-0-video", -1, -1), ("wan/3-0-video-prime", 30.0, 30),
+    ("wan/2-7-image-to-video", 15, 15), ("bytedance/seedance-2-5", 30, 30),
+    ("bytedance/seedance-2-mini", -1, -1), ("minimax-h3/image-to-video", 4, 4),
+    ("kling/v2-5-turbo-image-to-video-pro", 5, "5"), ("kling/v2-5-turbo-image-to-video-pro", "10", "10"),
+    ("kling-3.0-omni/image-to-video", 3, 3), ("kling-3.0/video", 6, "6"),
+    ("pixverse-v6/image-to-video", 1, 1),
+    ("happyhorse-1-1/image-to-video", 3, 3), ("happyhorse/image-to-video", 15, 15),
+    ("gemini-omni-video", 8, "8"),
+]
+# (model, bad duration, text the error must contain)
+DURATION_BAD = [
+    ("wan/3-0-video", 31, "2 to 30 or -1"), ("wan/3-0-video-prime", 1, "2 to 30 or -1"),
+    ("wan/2-7-image-to-video", 16, "2 to 15"), ("bytedance/seedance-2-5", 3, "4 to 30 or -1"),
+    ("bytedance/seedance-2-mini", 16, "4 to 15 or -1"), ("minimax-h3/image-to-video", 3, "4 to 15"),
+    ("kling/v2-5-turbo-image-to-video-pro", 7, "one of 5, 10"),
+    ("kling-3.0-omni/image-to-video", 16, "3 to 15"), ("kling-3.0/video", 16, "one of 3, 4"),
+    ("pixverse-v6/image-to-video", 0, "1 to 15"),
+    ("happyhorse-1-1/image-to-video", 2, "3 to 15"), ("happyhorse/image-to-video", 2.5, "3 to 15"),
+    ("gemini-omni-video", 5, "one of 4, 6, 8, 10"),
+]
+# (model, resolution given, expected sent key, expected sent value)
+RES_OK = [
+    ("wan/3-0-video", "1080p", "resolution", "1080P"), ("wan/3-0-video-prime", "720p", "resolution", "720P"),
+    ("wan/2-7-image-to-video", "720P", "resolution", "720p"),
+    ("bytedance/seedance-2-5", "1080P", "resolution", "1080p"),
+    ("bytedance/seedance-2-mini", "480p", "resolution", "480p"),
+    ("minimax-h3/image-to-video", "2k", "resolution", "2K"),
+    ("kling-3.0-omni/image-to-video", "4K", "resolution", "4k"),
+    ("pixverse-v6/image-to-video", "1080P", "quality", "1080p"),
+    ("happyhorse-1-1/image-to-video", "1080P", "resolution", "1080p"),
+    ("happyhorse/image-to-video", "720P", "resolution", "720p"),
+    ("gemini-omni-video", "4K", "resolution", "4k"),
+]
+
+
+@pytest.mark.parametrize("model,given,expected", DURATION_OK)
+def test_duration_is_coerced_to_documented_type(env, model, given, expected):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, model, duration=given, input_extra=EXTRA_FOR.get(model))
+    sent = sent_input(fake)["duration"]
+    assert sent == expected and type(sent) is type(expected)
+
+
+@pytest.mark.parametrize("model,given,allowed", DURATION_BAD)
+def test_invalid_duration_fails_before_any_http_naming_allowed_values(env, model, given, allowed):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match=f"{model}.*duration.*{allowed}"):
+        i2v(env, model, duration=given, input_extra=EXTRA_FOR.get(model))
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("model,given,key,expected", RES_OK)
+def test_resolution_is_mapped_to_the_documented_enum_and_key(env, model, given, key, expected):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, model, resolution=given)
+    inp = sent_input(fake)
+    assert inp[key] == expected
+    assert key == "quality" or "quality" not in inp
+
+
+@pytest.mark.parametrize("model,given,allowed", [
+    ("wan/3-0-video", "4k", "480P, 720P, 1080P"), ("wan/2-7-image-to-video", "4k", "720p, 1080p"),
+    ("bytedance/seedance-2-mini", "1080p", "480p, 720p"), ("minimax-h3/image-to-video", "1080p", "768P, 2K"),
+    ("kling-3.0-omni/image-to-video", "480p", "720p, 1080p, 4k"),
+    ("pixverse-v6/image-to-video", "4k", "360p, 540p, 720p, 1080p"),
+    ("happyhorse-1-1/image-to-video", "4k", "720p, 1080p"), ("happyhorse/image-to-video", "480p", "720p, 1080p"),
+    ("gemini-omni-video", "480p", "720p, 1080p, 4k"), ("bytedance/seedance-2-5", "4k", "480p, 720p, 1080p")])
+def test_invalid_resolution_fails_before_any_http_naming_allowed_values(env, model, given, allowed):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match=f"{model}.*{allowed}"):
+        i2v(env, model, resolution=given)
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("model,given,expected,bad", [
+    ("wan/3-0-video", "ADAPTIVE", "adaptive", "5:4"), ("bytedance/seedance-2-5", "21:9", "21:9", "2:1"),
+    ("kling-3.0-omni/image-to-video", "AUTO", "auto", "4:3"), ("gemini-omni-video", "9:16", "9:16", "1:1")])
+def test_aspect_ratio_enum(env, model, given, expected, bad):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, model, aspect_ratio=given)
+    assert sent_input(fake)["aspect_ratio"] == expected
+    with pytest.raises(ValueError, match=f"aspect_ratio.*{bad}"):
+        i2v(env, model, aspect_ratio=bad)
+
+
+def test_seed_must_be_an_in_range_integer_and_string_digits_are_coerced(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, "wan/3-0-video", seed="42")
+    assert sent_input(fake)["seed"] == 42
+    for bad in (-1, 2147483648, "abc", True):
+        with pytest.raises(ValueError, match="seed"):
+            i2v(env, "wan/3-0-video", seed=bad)
+
+
+def test_kling_30_requires_documented_inputs_before_http_and_accepts_them_via_input_extra(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    with pytest.raises(ValueError, match=r"kling-3.0/video requires .*mode.*input_extra.*--input-extra"):
+        i2v(env, "kling-3.0/video")
+    assert fake.calls == []
+    i2v(env, "kling-3.0/video", duration=6,
+        input_extra={"sound": True, "mode": "std", "multi_shots": False, "multi_prompt": [],
+                     "aspect_ratio": "16:9"})
+    inp = sent_input(fake)
+    assert inp["duration"] == "6" and inp["mode"] == "std" and inp["image_urls"] == ["https://tempfile.example/in.png"]
+
+
+def test_kling_30_mode_enum_checked_in_input_extra(env):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match="mode.*std, pro, 4K"):
+        i2v(env, "kling-3.0/video",
+            input_extra={"sound": True, "mode": "ultra", "multi_shots": False, "multi_prompt": [],
+                         "aspect_ratio": "16:9"})
+    assert fake.calls == []
+
+
+def test_pixverse_requires_quality_and_resolution_option_fills_it(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    with pytest.raises(ValueError, match="pixverse-v6/image-to-video requires quality"):
+        i2v(env, "pixverse-v6/image-to-video")
+    assert fake.calls == []
+    i2v(env, "pixverse-v6/image-to-video", input_extra={"quality": "540P"})
+    assert sent_input(fake)["quality"] == "540p"
+
+
+def test_unmapped_explicit_model_input_passes_through_unchanged(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
+    env.provider().generate_video("x", duration=7, output=env.tmp / "o.mp4", model="Some/Model-9.1",
+                                  resolution="4k", input_extra={"weird": [1]})
+    assert sent_input(fake) == {"prompt": "x", "duration": 7, "resolution": "4k", "weird": [1]}
+
+
+def test_text_to_video_path_validates_mapped_model_before_http(env):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match="wan/3-0-video.*duration.*2 to 30 or -1"):
+        env.provider().generate_video("x", duration=99, output=env.tmp / "o.mp4", model="wan/3-0-video")
+    with pytest.raises(ValueError, match="resolution.*480P, 720P, 1080P"):
+        env.provider().generate_video("x", resolution="4k", output=env.tmp / "o.mp4", model="wan/3-0-video")
+    assert fake.calls == []
+
+
+def test_every_mapped_image_model_has_an_input_spec_with_a_duration_rule():
+    module = load_module()
+    assert set(module.KIE_INPUT_SPECS) == set(module.KIE_I2V_IMAGE_FIELD)
+    assert all("duration" in v["fields"] for v in module.KIE_INPUT_SPECS.values())
+
+
+# ---- explicit image field type ----
+
+def test_image_field_without_type_is_rejected_for_unmapped_model_before_http(env):
+    fake = env.install(FakeKie())
+    with pytest.raises(ValueError, match=r"--image-field-type string\|array.*never guessed"):
+        i2v(env, "brand/new-model", image_field="start_images")  # trailing s is NOT used to guess
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize("kind,expected", [("string", "https://tempfile.example/in.png"),
+                                           ("array", ["https://tempfile.example/in.png"])])
+def test_image_field_type_is_honoured_regardless_of_the_name(env, kind, expected):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, "brand/new-model", image_field="start_images", image_field_type=kind)
+    assert sent_input(fake)["start_images"] == expected
+
+
+def test_image_field_matching_the_mapped_key_needs_no_type(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    i2v(env, "wan/3-0-video", image_field="first_frame_url")
+    assert sent_input(fake)["first_frame_url"] == "https://tempfile.example/in.png"
+
+
+def test_invalid_image_field_type_value_is_rejected_by_the_cli(monkeypatch, tmp_path, capsys):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_i2v_cli2", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(sys, "argv", ["image_to_video.py", "x.png", "--image-field-type", "list"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+    assert "string,array" in capsys.readouterr().err.replace("'", "").replace(" ", "")
+
+
+def test_cli_help_documents_image_field_type_and_input_extra(monkeypatch, capsys):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_i2v_cli3", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(sys, "argv", ["image_to_video.py", "--help"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    text = " ".join(capsys.readouterr().out.split())
+    assert "--image-field-type {string,array}" in text and "never guessed from the name" in text
+    assert "--input-extra JSON" in text
+
+
+@pytest.mark.parametrize("script,argv_extra", [("image_to_video", ["x.png"]), ("text_to_video", ["a prompt"])])
+def test_cli_input_extra_json_is_parsed_and_forwarded(monkeypatch, tmp_path, script, argv_extra):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location(f"skill25_{script}_cli4", SKILL_ROOT / "scripts" / f"{script}.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    seen = {}
+
+    class Recorder:
+        def __init__(self, name, config):
+            pass
+
+        def image_to_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+        def generate_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+    monkeypatch.setattr(cli, "AIProvider", Recorder)
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"x")
+    argv = [str(image)] if script == "image_to_video" else argv_extra
+    monkeypatch.setattr(sys, "argv", [f"{script}.py", *argv, "--provider", "kieai", "--output",
+                                      str(tmp_path / "o.mp4"), "--input-extra", '{"quality": "720p", "n": 2}'])
+    assert cli.main() == 0
+    assert seen["input_extra"] == {"quality": "720p", "n": 2}
+
+
+@pytest.mark.parametrize("bad", ["not json", "[1, 2]"])
+def test_cli_input_extra_rejects_non_object_json(monkeypatch, bad):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location("skill25_t2v_cli5", SKILL_ROOT / "scripts" / "text_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(sys, "argv", ["text_to_video.py", "p", "--input-extra", bad])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+
+
+def test_other_providers_reject_input_extra(tmp_path):
+    module = load_module()
+    ai = module.AIProvider("mock", {"mock": {"api_key": "k"}})
+    with pytest.raises(ValueError, match="--input-extra"):
+        ai.generate_video("x", output=tmp_path / "o.mp4", input_extra={"a": 1})
