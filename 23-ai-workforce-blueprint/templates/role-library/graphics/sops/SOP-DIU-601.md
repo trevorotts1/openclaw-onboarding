@@ -19,11 +19,12 @@ The Generation Operator runs this SOP as a mandatory gate before every API submi
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` | §1 (endpoint roster, aspect-ratio table, char caps per endpoint), §3 (tier compatibility + LONG-to-MEDIUM rule), §4 (endpoint prompting notes, style_reference_only), §5 (JSON templates + required params per endpoint) | Char-count caps, aspect-ratio support, required params, Seedream 3,000-char silent-fail ceiling, GPT-Image-2.5/NB2 filter note |
+| `_system/MODEL-SPECS.md` | §1 (endpoint roster, aspect-ratio table, char caps per endpoint), §3 (tier compatibility + LONG-to-MEDIUM rule), §4 (endpoint prompting notes, style_reference_only), §5 (JSON templates + required params per endpoint) | Char-count caps, aspect-ratio support, required params, Seedream 3,000-char DIU house ceiling (the Skill 66 registry lists the vendor cap as NOT_PUBLISHED), GPT-Image-2.5/NB2 filter note |
 | `_system/prompt-bands.json` | all bands | GIP per-asset-class prompt bands: MIN floor (`AF-GIP-PROMPT-FLOOR`) + MAX cap + distinct-word density floor. Enforced by `diu_validator.py prompt-band` (preflight step 2) and SOP-GIP-01. |
 | `_system/MASTER-SOP.md` | §3.2 (assembly packet requirements), §5 (submit-and-exit discipline) | What a valid assembly packet must contain; exit-after-submit rule |
 | `_system/NEGATIVE-PROMPTING-SOP.md` | §4 (contradiction audit) | Compiled-negatives artifact must exist and pass contradiction audit before preflight clears |
 | `_system/PHOTO-SHOOT-SOP.md` | §4 (Identity Lock Block verbatim requirement on likeness jobs) | Identity Lock Block presence check on `likeness: true` jobs |
+| `07-kie-setup/references/kie-common-rules.md` | whole file | Live endpoints, Bearer-only auth, rate limits, credit preflight, persist-immediately; wins over any restatement in this SOP |
 
 All checks reference these files at runtime. Do not encode char caps, ratio tables, or required-param lists directly in this SOP — MODEL-SPECS is the single source of truth and changes independently.
 
@@ -33,11 +34,11 @@ All checks reference these files at runtime. Do not encode char caps, ratio tabl
 
 ### Preflight (run before every `createTask` call — any failure = halt, return itemized list to sender, do not submit)
 
-1. **Verify API key across all env stores.** Check every env store (secrets/.env, openclaw.json, ~/.openclaw/workspace/.env, ~/clawd/secrets/.env, and the running gateway process env) for `KIE_API_KEY` before any other check. A key absent from all stores is a hard stop — do not proceed and do not guess at key location.
+1. **Verify API key across all env stores.** Check every env store (secrets/.env, openclaw.json, ~/.openclaw/workspace/.env, ~/clawd/secrets/.env, and the running gateway process env) for `KIE_API_KEY` (or any alias in the KIE family in `shared-utils/secret_names.json`) before any other check. A key absent from all stores is a hard stop — do not proceed and do not guess at key location.
 
 2. **Prompt BAND check (floor + cap + quality).** Run the Graphics Image Protocol band gate on the fully assembled positive prompt (after variable fill, after Identity Lock Block append if present):
    `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <band-id> --prompt-file <assembled.txt> [--copy "<verbatim string>" ...] [--style-ref]`.
-   The band (`text_bearing_long` / `text_bearing_medium` / `visual_long` / `medium` / `short_draft`, declared on the prompt's first line per SOP-GIP-01) sets BOTH the MIN floor and the MAX cap from `_system/prompt-bands.json`, plus the length-independent quality teeth. Exit **3** = `AF-GIP-PROMPT-FLOOR` (under the band MIN — the prompt is too thin to carry the spec; do NOT submit, do NOT pad up to the floor) or `AF-DIU-PROMPT-CAP` (over the band MAX; Seedream hard ceiling is 3,000 characters — silent fail above this with no API error). Exit **6** = `AF-GIP-PROMPT-QUALITY` (8-class negative block / spelling-lock / verbatim copy / density / style-reference-only). Any non-zero exit = HALT; return the itemized problem list to the author. Do NOT truncate — return to author. (This supersedes the former cap-only check; `prompt-caps` remains for a bare tier-cap check where no band applies.)
+   The band (`text_bearing_long` / `text_bearing_medium` / `visual_long` / `medium` / `short_draft`, declared on the prompt's first line per SOP-GIP-01) sets BOTH the MIN floor and the MAX cap from `_system/prompt-bands.json`, plus the length-independent quality teeth. The character target itself is the rule 12 budget (`kie-common-rules.md`; run `kie_live_adapter.py prompt-budget --model <id>` first, target 95 to 100 percent of maxLength, floor 80 percent); the per-band numbers in `prompt-bands.json` are code thresholds that a follow-up lane changes. Exit **3** = `AF-GIP-PROMPT-FLOOR` (under the band MIN — the prompt is too thin to carry the spec; do NOT submit, do NOT pad up to the floor) or `AF-DIU-PROMPT-CAP` (over the band MAX; the Seedream house ceiling is 3,000 characters per MODEL-SPECS §1, a conservative limit because the Skill 66 registry lists the vendor cap as NOT_PUBLISHED). Exit **6** = `AF-GIP-PROMPT-QUALITY` (8-class negative block / spelling-lock / verbatim copy / density / style-reference-only). Any non-zero exit = HALT; return the itemized problem list to the author. Do NOT truncate — return to author. (This supersedes the former cap-only check; `prompt-caps` remains for a bare tier-cap check where no band applies.)
 
 3. **Unfilled variable tokens.** Grep the assembled prompt for any remaining `{[A-Z_]+}` pattern. A match means a variable was not filled. Return `PREFLIGHT FAIL: unfilled variables: {list}` if any found.
 
@@ -55,13 +56,13 @@ All checks reference these files at runtime. Do not encode char caps, ratio tabl
 
 8. **Compiled negatives and contradiction audit.** Confirm the compiled negatives artifact exists for this job (written by SOP-DIU-303) and that the contradiction audit (NEGATIVE-PROMPTING-SOP §4) completed with a clean pass. Return `PREFLIGHT FAIL: compiled negatives artifact missing or contradiction audit not completed` if absent.
 
-9. **Budget headroom.** Estimate job cost from `_local/PRICING.md` for the selected model and tier. Verify `current_period_spend + estimated_cost` does not exceed the client's monthly cap. If the estimated cost exceeds the per-job approval threshold, require a producer approval receipt before proceeding. If no `budget_config` block exists for the client, halt all generation and ask CDO to provide it.
+9. **Budget headroom and credit.** Estimate job cost from the live `pricingDesc` for the selected model and tier (`_local/PRICING.md` holds billed actuals, not authoritative prices), and verify the live credit balance covers the estimate x 1.30 (credit preflight). Verify `current_period_spend + estimated_cost` does not exceed the client's monthly cap. If the estimated cost exceeds the per-job approval threshold, require a producer approval receipt before proceeding. If no `budget_config` block exists for the client, halt all generation and ask CDO to provide it.
 
 10. **Exploratory mode tag.** If the requestor has flagged `mode: exploratory` (non-production `expand_prompt: true` or thinking-mode run), verify the assembly packet carries the exploratory tag so the receipt records this output as non-production and never writes it to the style library.
 
-### Postflight (run immediately when the cron poller detects `state: completed`)
+### Postflight (run immediately when the cron poller detects `state: success`)
 
-1. **Download immediately.** Call `getResultInfo` and download all `resultUrls` to `_local/results/{job-id}/`. Do not log anything as complete before local files exist on disk. Result URLs are perishable.
+1. **Download immediately.** Read `resultUrls` from the `recordInfo` response (`data.resultJson` is a JSON string) and download all of them to `_local/results/{job-id}/`. Do not log anything as complete before local files exist on disk. Result URLs are perishable.
 
 2. **Nonzero file size.** Verify each downloaded file has size > 0 bytes. A zero-byte file means a failed or truncated transfer.
 
@@ -85,10 +86,10 @@ All checks reference these files at runtime. Do not encode char caps, ratio tabl
 | `likeness: true` or `false` flag | Yes | Assembly packet from CDO or Photo Shoot Director |
 | Identity Lock Block (if `likeness: true`) | Conditional | Photo Shoot Director via SOP-DIU-608 |
 | Compiled negatives artifact + contradiction-audit pass | Yes | SOP-DIU-303 |
-| `_local/PRICING.md` | Yes | Box-owned pricing file |
+| Live `pricingDesc` (unit price); `_local/PRICING.md` (billed actuals) | Yes | Live catalog (Skill 74); box-owned ledger |
 | Client `budget_config` block | Yes | Client box config |
 | `KIE_API_KEY` verified across all env stores | Yes | Client box env stores |
-| Completed task `resultUrls` (postflight) | Yes | Kie.ai `getResultInfo` response |
+| Completed task `resultUrls` (postflight) | Yes | Kie.ai `recordInfo` response |
 
 ---
 

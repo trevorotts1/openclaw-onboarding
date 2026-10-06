@@ -20,7 +20,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
 - **LAYER A — THE AUTHORING PIPELINE.** The multi-phase, multi-role pipeline
   (`PIPELINE-MANIFEST.json`). Intake, priority-shift diagnosis, arc allocation,
   research, copywriting, copy-QC, typography, and — critically — **hand-authoring the
-  9,000–18,000-character RICH per-slide image prompt** for every slide
+  RICH per-slide image prompt** (sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent)) for every slide
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
 - **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
@@ -153,10 +153,7 @@ code) — **never silently, never by your own choice.**
 
 ### PROMPT CHAR-COUNT (the script enforces it)
 
-Every per-slide rich prompt you (or the Slide Image Creator role) author is fail-loud
-gated: below the **9,000-character HARD floor** (a thin/stub prompt, AF-P1) or above the
-**18,000-character HARD ceiling** (a 2,000-char safety margin below the GPT-Image-2.5 API
-ceiling of 20,000, AF-P2) is refused, not rendered. The mandatory English/Latin-only pin
+Every per-slide rich prompt you (or the Slide Image Creator role) author is sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent). The render step's code gate (AF-P1 floor, AF-P2 ceiling in `build_deck.py`) still applies until a follow-up lane aligns it with rule 12. The mandatory English/Latin-only pin
 the render step appends to EVERY prompt (if the authored prompt does not already carry
 it) is, verbatim:
 

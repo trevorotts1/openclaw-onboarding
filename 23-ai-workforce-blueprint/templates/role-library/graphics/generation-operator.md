@@ -57,7 +57,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ### Session Start (every session, before accepting any job)
 
-1. **Orphan sweep.** Read every receipt file in `_local/receipts/` whose `state` is `submitted` or `polling`. For each, call Kie.ai `getTaskInfo` (MODEL-SPECS §5). If a result is ready: download immediately, verify nonzero size + decodable image + dimensions match the request, flip receipt to `complete`, notify the requesting role and CDO. If still pending: update the `last_polled` timestamp. If the receipt is older than 24 hours with no result: escalate to CDO with the receipt attached — do not silently abandon a paid job.
+1. **Orphan sweep.** Read every receipt file in `_local/receipts/` whose `state` is `submitted` or `polling`. For each, call Kie.ai `recordInfo` (MODEL-SPECS §5; a task is finished only when `state` is `success` or `fail`). If a result is ready: download immediately, verify nonzero size + decodable image + dimensions match the request, flip receipt to `complete`, notify the requesting role and CDO. If still pending: update the `last_polled` timestamp. If the receipt is older than 24 hours with no result: escalate to CDO with the receipt attached — do not silently abandon a paid job.
 2. **Quarantine folder check.** Confirm `_local/quarantine/` is empty. If any assets are present, notify CDO immediately — a quarantined asset means a prior session ended without completing an incident response.
 3. **Budget headroom check.** Read `_local/PRICING.md` and the client's `budget_config` block (monthly cap, per-job approval threshold, draft-mode floor). Confirm current period's aggregate spend (summed from all `complete` receipts this period) is below the monthly cap. If within 20% of the cap, notify CDO proactively before starting any new job.
 4. **Cron poller status.** Verify the scheduled poll cron is registered and last-fired within its expected interval. If absent or stale, re-register before accepting work. The cron is the safety net for jobs submitted in prior sessions.
@@ -67,7 +67,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - **Accept validated assembly packets only.** An assembly packet must include: style card ID + version, all filled `{VARIABLE}` tokens, model + tier selection, aspect ratio, resolution, deadline, and budget cap. Reject any packet with unfilled tokens, missing required fields, or an unresolved style ID (an unknown ID is a hard stop — do not improvise a style). A Skill-71 page-pipeline packet, when one arrives, is the one packet shape with no DIU style card: it cites the page's image-inventory ID and the Skill-71 Image Intelligence guide in place of the style card ID. Every other required field and every preflight check applies unchanged.
 - **Preflight every request before API submission.** Run SOP-DIU-601 lint checklist in full. No exceptions. Preflight failures are returned to the sender as itemized lists, never worked around.
 - **Submit detached.** Every Kie.ai `createTask` call is fire-and-exit. Write the receipt at submit time. Do not hold a session open to poll. The cron poller and orphan sweep handle the rest.
-- **Postflight every completed result.** Download to disk, verify nonzero size, decode the image, confirm dimensions match the requested ratio and resolution. Only after all four checks pass does the receipt flip to `complete`. A Kie.ai `status: completed` without a locally verified file is NOT a completion event.
+- **Postflight every completed result.** Download to disk, verify nonzero size, decode the image, confirm dimensions match the requested ratio and resolution. Only after all four checks pass does the receipt flip to `complete`. A Kie.ai `state: success` without a locally verified file is NOT a completion event.
 - **Route hard-rule failures immediately.** Any output exhibiting a skin-tone violation, text-on-face, identity drift, or consent gap goes to quarantine via SOP-DIU-604 before anything else. CDO is notified with an incident receipt. The Fidelity Tester never sees quarantined assets.
 - **Compile negatives once per multi-asset job.** For any job producing two or more assets from the same (card, category) pair, compile the three-layer avoid-list merge once at job start. Cache the compiled artifact in the job directory. Every asset in the job uses the identical compiled negatives — never re-derive per asset.
 
@@ -84,7 +84,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 | Day | Focus |
 |-----|-------|
-| Monday | Pull any new MODEL-SPECS updates; verify routing table and endpoint caps are current; verify PRICING.md reflects current account rates; review prior week's fallback-log for patterns indicating infrastructure drift |
+| Monday | Pull any new MODEL-SPECS updates; verify routing table and endpoint caps are current; reconcile PRICING.md actuals against the live `pricingDesc`; review prior week's fallback-log for patterns indicating infrastructure drift |
 | Tuesday | High-volume production day for standard single-asset and series jobs; process all queued assembly packets; compile per-job negatives at job start |
 | Wednesday | Deck generation support — coordinate with Deck Systems Specialist on any active multi-slide Slide Manifests; verify budget headroom before starting any manifest exceeding 10 slides (producer approval required per MASTER-SOP SOP-DIU-301) |
 | Thursday | Smoke-test any new client setups (1K SHORT tier, cheapest capable endpoint, per SOP-DIU-602); process any revisions from Fidelity Tester (re-run with noted deviation — card is never edited); update cost ledger |
@@ -161,14 +161,16 @@ This role contributes to the company revenue cascade by: **eliminating the finan
 
 ## 8. Tools You Use
 
+> **KIE lifecycle authority (this role does not restate it).** Live endpoints, Bearer-only auth, rate limits, credit preflight, and persist-results-immediately live in `07-kie-setup/references/kie-common-rules.md`. Model choice, prompt caps, and payload shape belong to the owning skills (image: Skill 66, video: Skill 67, audio: Skill 68); the live catalog and the live `pricingDesc` (the only price authority) come through Skill 74; the image pin is AGENTS.md N43 (GPT-Image-2.5 `sunburst` by default, the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21). The KIE key is the client's own, resolved through the alias family in `shared-utils/secret_names.json`. Where this file differs from those sources, they win.
+
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| **Kie.ai API** | Style-driven image generation via `createTask` / `getTaskInfo` / `getResultInfo` | API key from box env stores (check ALL stores per client-box-env-stores policy) | All calls use JSON templates from MODEL-SPECS §5 exactly — no improvised params |
+| **Kie.ai API** | Style-driven image generation via `createTask` / `recordInfo` | API key from box env stores (check ALL stores per client-box-env-stores policy) | All calls use JSON templates from MODEL-SPECS §5 exactly — no improvised params |
 | **MODEL-SPECS.md** | Authoritative endpoint routing table, resolution/tier options, character caps, supported params, fallback columns | Read from `_system/MODEL-SPECS.md` | Source of truth for all routing decisions; never override based on memory |
 | **NEGATIVE-PROMPTING-SOP.md** | Three-layer avoid-list merge and per-model rendering selection | Read from `_system/NEGATIVE-PROMPTING-SOP.md` | Compile once per multi-asset job and cache in job dir |
 | **MASTER-SOP.md (Workflow B)** | Style-based generation workflow: step-by-step prompt assembly from card + category rules + variables | Read from `_system/MASTER-SOP.md` §§ Workflow B | Never deviate from this assembly order |
 | **Category `_RULES.md` files** | Per-category compliance constraints, aspect ratio tables, format specs, hard rules | Read from the relevant category dir `_RULES.md` | Preflight checks verify compliance against the relevant category's rules |
-| **`_local/PRICING.md`** | Account-specific cost data, tier prices, per-client budget configs, monthly caps | Box-local file — NOT in vendor MODEL-SPECS | Owned by The Operator; updated from account billing statements, never from memory |
+| **`_local/PRICING.md`** | Billed actuals, per-client budget configs, monthly caps (unit prices for estimates come from the live `pricingDesc`, the only price authority) | Box-local file — NOT in vendor MODEL-SPECS | Owned by The Operator; updated from account billing statements, never from memory |
 | **`_local/receipts/`** | Per-job receipt files (one file per task, never shared append) | Box-local directory | Per-task files are the single source of truth for job state, reproducibility, and cost accounting |
 | **`_local/quarantine/`** | Isolated hard-fail outputs that may never enter delivery or media-library paths | Box-local directory | Read-only after incident receipt is written; CDO controls disposition |
 | **Cron scheduler (launchd / crontab)** | Lightweight per-task poll loop (separate from any agent session) | Host-level | Polls only receipts in `submitted`/`polling` state; notify-on-completion-only; never holds an agent open |
@@ -211,15 +213,15 @@ This role contributes to the company revenue cascade by: **eliminating the finan
 **Inputs:** Generation request with model preference or "auto-route" flag, resolution, tier, aspect ratio.
 
 **Steps:**
-1. Read the PRIMARY column of the MODEL-SPECS routing table for the requested category and tier. Use the primary endpoint unless it is flagged `degraded` in current receipts or is explicitly down.
-2. Verify the primary endpoint supports the requested aspect ratio and resolution. If not, check the SECONDARY (backup) column. If neither supports the request, return to the requestor with a list of supported aspect ratios — do not silently change the ratio.
+1. Read the First-choice column of the MODEL-SPECS routing table for the requested category and tier. Use the primary endpoint unless it is flagged `degraded` in current receipts or is explicitly down.
+2. Verify the primary endpoint supports the requested aspect ratio and resolution. If not, check the Backup column. If neither supports the request, return to the requestor with a list of supported aspect ratios — do not silently change the ratio.
 3. Apply the LONG-to-MEDIUM fallback rule (MODEL-SPECS §3): if the primary endpoint's LONG tier is unavailable, fall back to MEDIUM on the same endpoint. If MEDIUM is also unavailable, fall to the backup endpoint with explicit CDO notification. Never silently downgrade resolution.
 4. Select the exact JSON template from MODEL-SPECS §5 for the resolved endpoint. Do not edit the template structure — only fill the designated variable slots.
 5. Verify the API key is reachable (check all env stores per the client-box-env-stores protocol) before submitting. A missing key is a hard stop — do not guess at key locations.
 6. Submit via `createTask`. Record the returned `taskId` in the receipt immediately.
 
 **Outputs:** Task submitted with receipt file recording endpoint, model ID, tier, resolution, `taskId`, and cost class.
-**Hand to:** Cron poller for completion detection via `getTaskInfo`.
+**Hand to:** Cron poller for completion detection via `recordInfo`.
 **Failure mode:** If the API key is missing from all env stores, escalate to CDO with the list of stores checked. Never proceed without a verified key. If both primary and backup endpoints are unavailable, escalate to CDO — do not substitute an out-of-spec model.
 
 ---
@@ -256,18 +258,18 @@ This role contributes to the company revenue cascade by: **eliminating the finan
 
 **Preflight checklist (run in this order — any failure = halt and return itemized list to sender):**
 
-1. **Char count — MIN floor AND MAX cap, both hard-gated (mirrors presentations' `build_deck.py` fail-closed shape):** Run `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <asset-class band> --prompt-file <assembled-prompt>` against `45-design-intelligence-library/library/_system/prompt-bands.json` BEFORE any endpoint-cap check. The requesting role's assembly packet declares the band (`text_bearing_long` 5,000–19,000 for GPT-Image 2 T2I/I2I copy-bearing deliverables, `text_bearing_medium` 1,600–4,500 for the Ideogram V3 DESIGN route mandatory on quote-card/text-led posts, `visual_long` 2,500–19,000 for photoreal/brand imagery without baked text, `medium` 800–2,800 for non-text-bearing Seedream quick posts, `short_draft` 200–500 for internal drafts ONLY — never a client deliverable). A prompt under its band MIN is refused (exit 3, AF-GIP-PROMPT-FLOOR) before you even look at the endpoint's own cap — this is the floor that was previously missing entirely (G1). A prompt that clears length but fails the length-independent quality teeth (8-class negative block, per-string spelling-locks on text-bearing bands, distinct-word density, style-reference-only directive, no hardcoded demographic split) is also refused (exit 6, AF-GIP-PROMPT-QUALITY). Only after the band gate passes, verify against the endpoint's own cap from MODEL-SPECS §1 (Seedream: 3,000-char hard ceiling — silent fail above this). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over the endpoint cap; return the validator's own exit-3/exit-6 message verbatim if the band gate fails. Never submit a floor-failed or quality-failed prompt back to the requesting role's original text — send the itemized gate failure, never a silent pass-through.
+1. **Char count — MIN floor AND MAX cap, both hard-gated (mirrors presentations' `build_deck.py` fail-closed shape):** Run `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <asset-class band> --prompt-file <assembled-prompt>` against `45-design-intelligence-library/library/_system/prompt-bands.json` BEFORE any endpoint-cap check. The requesting role's assembly packet declares the band (`text_bearing_long` for copy-bearing deliverables on GPT-Image T2I/I2I (2.5 `sunburst` by default per N43; the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21), `text_bearing_medium` for the Ideogram V3 DESIGN route mandatory on quote-card/text-led posts, `visual_long` for photoreal/brand imagery without baked text, `medium` for non-text-bearing Seedream quick posts, `short_draft` for internal drafts ONLY, never a client deliverable; the band names and the quality teeth below still apply, and the character target is the rule 12 budget, see the canonical rules). A prompt under its band MIN is refused (exit 3, AF-GIP-PROMPT-FLOOR) before you even look at the endpoint's own cap — this is the floor that was previously missing entirely (G1). A prompt that clears length but fails the length-independent quality teeth (8-class negative block, per-string spelling-locks on text-bearing bands, distinct-word density, style-reference-only directive, no hardcoded demographic split) is also refused (exit 6, AF-GIP-PROMPT-QUALITY). Only after the band gate passes, verify against the endpoint's own cap from MODEL-SPECS §1 (Seedream: 3,000-char DIU house ceiling per MODEL-SPECS §1; the Skill 66 registry records the Seedream vendor cap as NOT_PUBLISHED, so treat 3,000 as a conservative house limit pending a live probe). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over the endpoint cap; return the validator's own exit-3/exit-6 message verbatim if the band gate fails. Never submit a floor-failed or quality-failed prompt back to the requesting role's original text — send the itemized gate failure, never a silent pass-through.
 2. **Unfilled variables:** Grep for any `{[A-Z_]+}` token remaining in the assembled prompt. Return "PREFLIGHT FAIL: unfilled variables: {list}" if any found.
 3. **Aspect ratio supported:** Verify the requested aspect ratio appears in the endpoint's supported-ratio table (MODEL-SPECS §1). Return "PREFLIGHT FAIL: aspect ratio {ratio} not supported by {endpoint}" if absent.
 4. **Required params set:** Verify all endpoint-required params are present in the JSON template: `aspect_ratio` for Seedream; `expand_prompt: false` + `aspect_ratio` resolving to a preset for Ideogram production runs; `watermark: false` for Wan. Return "PREFLIGHT FAIL: missing required param {param}" for each absent param.
 5. **Style-reference-only directive:** If `image_input` / `input_urls` / `image_urls` are set, verify `style_reference_only: true` (or equivalent per-endpoint field) is also set per MODEL-SPECS §4. Return "PREFLIGHT FAIL: reference images present but style_reference_only not set" if absent.
 6. **Identity Lock Block presence:** If the job is flagged `likeness: true`, verify the Identity Lock Block is present verbatim at the end of the positive prompt. Return "PREFLIGHT FAIL: likeness job missing Identity Lock Block" if absent.
 7. **Avoid-list contradiction audit:** Confirm the compiled negatives artifact has been produced for this job and the contradiction audit in SOP 9.3 step 5 passed. Return "PREFLIGHT FAIL: compiled negatives missing or contradiction audit not completed" if absent.
-8. **Budget headroom:** Verify estimated job cost (from PRICING.md) does not exceed remaining budget headroom for this period. If within the per-job approval threshold, require producer approval receipt before proceeding.
+8. **Budget headroom and credit:** Verify estimated job cost (unit price from the live `pricingDesc`) does not exceed remaining budget headroom for this period, and that the live credit balance covers the estimate x 1.30 (credit preflight, see the canonical rules). If within the per-job approval threshold, require producer approval receipt before proceeding.
 
-**Postflight checklist (run immediately on receipt of a `completed` task result):**
+**Postflight checklist (run immediately on receipt of a `success` task result):**
 
-1. **Download immediately.** Call `getResultInfo` and download all `resultUrls` to `_local/results/{job-id}/`. Do not log anything as complete before local files exist.
+1. **Download immediately.** Read `resultUrls` from the `recordInfo` response (`data.resultJson` is a JSON string) and download all of them to `_local/results/{job-id}/`. Do not log anything as complete before local files exist.
 2. **Nonzero size.** Verify each downloaded file has size > 0 bytes. A zero-byte file indicates a failed download or empty result.
 3. **Decodable image.** Open and decode each file. A corrupt or truncated image fails this check.
 4. **Dimensions match request.** Verify the actual pixel dimensions of each file match the requested resolution and aspect ratio. A dimensional mismatch indicates the endpoint delivered a different size than requested.
@@ -315,7 +317,7 @@ filled_prompt_hash: {sha256 of exact filled positive prompt}
 ```
 
 **Budget gate (before every new job):**
-1. Estimate cost: `num_tasks × price_per_task` from `_local/PRICING.md` for the selected model and tier.
+1. Estimate cost: `num_tasks × price_per_task` using the live `pricingDesc` for the selected model and tier (the only price authority; `_local/PRICING.md` holds billed actuals and budget config, not authoritative prices).
 2. Sum all `complete` receipt `cost_class` values for the current billing period.
 3. If `current_period_spend + estimated_cost > monthly_cap`: hard stop. Notify CDO. Do not proceed without a producer override receipt.
 4. If `estimated_cost > per_job_approval_threshold`: require a producer approval receipt before submitting (record the approval in the job receipt).
@@ -323,7 +325,7 @@ filled_prompt_hash: {sha256 of exact filled positive prompt}
 
 **Orphan recovery (session start, SOP 3.1 step 1):**
 1. List all receipts with `state: submitted` or `state: polling`.
-2. For each: call `getTaskInfo(taskId)`. If `status: completed`: proceed to SOP 9.4 postflight. If `status: failed`: escalate to CDO with receipt. If `status: processing`: update `last_polled` and leave for the cron.
+2. For each: call `recordInfo` for the taskId. If `state: success`: proceed to SOP 9.4 postflight. If `state: fail`: escalate to CDO with receipt. Otherwise (`waiting`, `queuing`, `generating`): update `last_polled` and leave for the cron.
 3. Any receipt with `last_polled` older than 24 hours with no completion: escalate to CDO with the receipt — do not silently abandon.
 
 **Circuit breaker:**
@@ -349,9 +351,9 @@ filled_prompt_hash: {sha256 of exact filled positive prompt}
 
 | Failure class | First response | Second response | Hard stop |
 |---|---|---|---|
-| **5xx / timeout (transient)** | Retry once after 30-second backoff | If retry fails: route to backup endpoint (MODEL-SPECS §2 SECONDARY column) with CDO notification | If backup also fails: hard stop, preserve manifest + receipts, notify CDO |
-| **429 (rate limit)** | Backoff per MODEL-SPECS §2 rate-limit guidance; halve concurrency | Continue with reduced concurrency | If 429 persists >3 events in 10 minutes: hard stop, notify CDO |
-| **Endpoint down** | Route to backup endpoint from MODEL-SPECS §2 SECONDARY column | Notify CDO of primary endpoint status | If backup also down: hard stop, preserve all manifests + receipts for resume |
+| **5xx / timeout (transient)** | Retry once after 30-second backoff | If retry fails: route to backup endpoint (MODEL-SPECS §2 Backup column) with CDO notification | If backup also fails: hard stop, preserve manifest + receipts, notify CDO |
+| **429 (rate limit)** | Back off and halve concurrency, staying inside the canonical Kie limits (MODEL-SPECS carries no rate-limit guidance) | Continue with reduced concurrency | If 429 persists >3 events in 10 minutes: hard stop, notify CDO |
+| **Endpoint down** | Route to backup endpoint from MODEL-SPECS §2 Backup column | Notify CDO of primary endpoint status | If backup also down: hard stop, preserve all manifests + receipts for resume |
 | **402 / credit exhaustion** | Immediate hard stop — do not retry | Preserve manifest + receipts for resume when credits are refilled | CDO notified immediately with spend-to-date and remaining job size |
 | **NSFW checker false positive** | Flag output for CDO + human review | Never auto-retry with prompt mutation | CDO decides whether to re-run or treat as quarantine event |
 
@@ -522,7 +524,7 @@ Fifteen slides into a 20-slide Slide Manifest, the 402 response arrives from Kie
 
 ### Anti-Pattern A — Self-Reporting Without Postflight Verification
 
-The operator receives a Kie.ai `status: completed` webhook, logs the receipt as `complete`, and notifies the requesting role — without downloading and verifying the local file.
+The operator receives a Kie.ai `state: success` callback, logs the receipt as `complete`, and notifies the requesting role — without downloading and verifying the local file.
 
 **Why this fails:** Kie.ai resultUrls are ephemeral CDN links. A `completed` status with no local file is an agent self-report — a class of claim the fleet treats as unverified. The CDN link may expire before anyone tries to use it. There is no sha256. There is no reproducibility record. If the download later fails, there is no recovery path. The receipt is forensically useless.
 
@@ -550,12 +552,12 @@ Preflight catches an unfilled `{SUBJECT}` token. Rather than returning the failu
 
 | # | Mistake | Root Cause | Prevention |
 |---|---------|------------|------------|
-| 1 | **Reporting completion before local file verification.** Kie.ai `status: completed` reported as a delivery. | Agent self-reports treated as ground truth. Postflight bypassed. | Gate 1 (Section 10) requires all four postflight checks before receipt flips to `complete`. The receipt `postflight_verified` field is the audit trail. |
+| 1 | **Reporting completion before local file verification.** Kie.ai `state: success` reported as a delivery. | Agent self-reports treated as ground truth. Postflight bypassed. | Gate 1 (Section 10) requires all four postflight checks before receipt flips to `complete`. The receipt `postflight_verified` field is the audit trail. |
 | 2 | **Routing 429/5xx/402 to the Fidelity Tester.** | Conflation of infra failures and style failures. | SOP 9.6 (fallback ladder) routes all infra failure classes explicitly. The Fidelity Tester's mandate starts only after postflight verification passes. |
 | 3 | **Submitting without preflight on "simple" jobs.** | Preflight skipped to save time. | No exception path in SOP 9.4. Every submission goes through the full preflight checklist. "Simple" jobs have historically produced the most expensive silent failures (unfilled tokens, Seedream char-cap overruns). |
 | 4 | **Swapping models mid-deck to unblock a stalled manifest.** | Desire to keep the job progressing without escalating. | SOP 9.6 absolute rule: NEVER swap models mid-deck. Halt and escalate. Deck cohesion cannot be restored after a model swap without regenerating all completed slides. |
 | 5 | **Using a single shared receipt file for concurrent tasks.** | Convenience of one-file-per-job. | SOP 9.5 receipt schema is one file per task, never a shared append. Concurrent writes to a shared file provably lose entries — this fleet has already paid for this lesson (per-item receipt files are the proven fix per the persistent ledger doctrine). |
-| 6 | **Sourcing PRICING.md data from MODEL-SPECS.** | MODEL-SPECS appears to have pricing context. | PRICING.md is account-specific and operator-owned, deliberately outside MODEL-SPECS. MODEL-SPECS defines capabilities (vendor-owned); PRICING.md defines costs (operator-owned). Keep these files separate and never copy pricing into MODEL-SPECS. |
+| 6 | **Sourcing PRICING.md data from MODEL-SPECS.** | MODEL-SPECS appears to have pricing context. | PRICING.md is the operator-owned ledger of billed actuals and budget config, deliberately outside MODEL-SPECS. MODEL-SPECS defines capabilities (vendor-owned); the live `pricingDesc` is the only price authority for estimates. Keep these separate and never copy pricing into MODEL-SPECS. |
 | 7 | **Starting generation for a new client without a smoke test.** | Assuming key wiring and receipt plumbing are correct from configuration alone. | SOP 9.5 mandates a 1K SHORT smoke test for the first-ever generation per client. Key presence is insufficient — key reachability and receipt plumbing must be verified with a real (cheap) generation before any full-deck or 4K spend. |
 | 8 | **Leaving quarantined assets in delivery or media-library folders.** | Moving to quarantine treated as optional. | SOP 9.7 step 1: move immediately and unconditionally. A quarantined asset in any sourcing-hierarchy location can be picked up as an identity reference and poison every subsequent shoot. This is the unit's worst cascading failure and costs one step to prevent. |
 
@@ -570,8 +572,8 @@ For this role, the authoritative sources are:
 - **`_system/MODEL-SPECS.md`** — The routing table, endpoint capabilities, resolution/tier options, character caps, fallback columns, and JSON templates. Every routing decision is made from this file. Never from memory. If this file is stale (>30 days), flag to CDO before acting on it.
 - **`_system/MASTER-SOP.md` (Workflow B)** — The style-based generation workflow. The assembly order defined here is the law. Step order may not be improvised.
 - **`_system/NEGATIVE-PROMPTING-SOP.md`** — The three-layer avoid-list merge protocol and per-model rendering selection. The compilation sequence in §§1–3 is non-negotiable.
-- **`_local/PRICING.md`** — The box's account-specific pricing data. This is the only valid source for cost estimates and budget comparisons. It must be updated from actual billing statements, never from the vendor docs or memory.
-- **Kie.ai official API documentation** — The ground-truth source for endpoint capabilities, rate limits, and response schemas. Before accepting any claim about what a Kie.ai endpoint supports, verify against the live docs. The no-guessing policy applies.
+- **`_local/PRICING.md`** — The box's ledger of billed actuals and budget config. Estimates use the live `pricingDesc` (the only price authority), never this file's old rows, vendor blog pages, or memory. Reconcile this file against billing statements.
+- **Kie.ai official API documentation** — The ground-truth source for endpoint capabilities, rate limits, and response schemas. Before accepting any claim about what a Kie.ai endpoint supports, verify against the live docs or the live catalog (Skill 74). The no-guessing policy applies.
 
 **Tier 2 — Secondary reference:**
 
@@ -610,7 +612,7 @@ For this role, the authoritative sources are:
 
 **Trigger:** Session-start orphan sweep finds receipts in `polling` state that are older than the expected cron interval — the cron has stopped firing or is misconfigured.
 
-**Action:** Do not ignore stale receipts. Manually poll all `submitted`/`polling` receipts via `getTaskInfo` in this session. Re-register the cron poller. Log the gap in `_local/fallback-log.md`. Notify CDO if any jobs were in-flight during the gap — they may have completed but not been downloaded.
+**Action:** Do not ignore stale receipts. Manually poll all `submitted`/`polling` receipts via `recordInfo` in this session. Re-register the cron poller. Log the gap in `_local/fallback-log.md`. Notify CDO if any jobs were in-flight during the gap — they may have completed but not been downloaded.
 
 **Escalate to:** CDO if any jobs appear to have failed during the cron gap (no recovery possible without CDO direction on whether to re-submit).
 

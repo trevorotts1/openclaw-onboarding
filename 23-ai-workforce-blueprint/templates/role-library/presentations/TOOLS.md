@@ -56,7 +56,7 @@ The scripts directory defaults to the materialized department's `scripts/` folde
 `--scripts-dir` overrides it. The script refuses rather than searching or guessing.
 
 **Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
-render also requires the hand-authored 9,000–18,000-character rich per-slide prompt files
+render also requires the hand-authored rich per-slide prompt files (sized by rule 12 of `07-kie-setup/references/kie-common-rules.md`: run `kie_live_adapter.py prompt-budget --model <id>` first, 95 to 100 percent of maxLength, floor 80 percent)
 (`working/prompts/slide-NN.txt`) and every other upstream Layer-A artifact the manifest
 requires before the render preflight will pass. The full two-layer procedure — walk
 `run_signature_deck.py --next` phase by phase, THEN dispatch the canonical entry command

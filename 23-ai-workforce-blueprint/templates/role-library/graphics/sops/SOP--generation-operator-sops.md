@@ -42,15 +42,15 @@
 **Inputs:** Generation request with model preference or "auto-route" flag, resolution, tier, aspect ratio.
 
 **Steps:**
-1. Read the PRIMARY column of the MODEL-SPECS routing table for the requested category and tier. Use the primary endpoint unless it is flagged `degraded` in current receipts or is explicitly down.
-2. Verify the primary endpoint supports the requested aspect ratio and resolution. If not, check the SECONDARY (backup) column. If neither supports the request, return to the requestor with a list of supported aspect ratios -- do not silently change the ratio.
+1. Read the First-choice column of the MODEL-SPECS routing table for the requested category and tier. Use the primary endpoint unless it is flagged `degraded` in current receipts or is explicitly down.
+2. Verify the primary endpoint supports the requested aspect ratio and resolution. If not, check the Backup column. If neither supports the request, return to the requestor with a list of supported aspect ratios -- do not silently change the ratio.
 3. Apply the LONG-to-MEDIUM fallback rule (MODEL-SPECS §3): if the primary endpoint's LONG tier is unavailable, fall back to MEDIUM on the same endpoint. If MEDIUM is also unavailable, fall to the backup endpoint with explicit CDO notification. Never silently downgrade resolution.
 4. Select the exact JSON template from MODEL-SPECS §5 for the resolved endpoint. Do not edit the template structure -- only fill the designated variable slots.
 5. Verify the API key is reachable (check all env stores per the client-box-env-stores protocol) before submitting. A missing key is a hard stop -- do not guess at key locations.
 6. Submit via `createTask`. Record the returned `taskId` in the receipt immediately.
 
 **Outputs:** Task submitted with receipt file recording endpoint, model ID, tier, resolution, `taskId`, and cost class.
-**Hand to:** Cron poller for completion detection via `getTaskInfo`.
+**Hand to:** Cron poller for completion detection via `recordInfo`.
 **Failure mode:** If the API key is missing from all env stores, escalate to CDO with the list of stores checked. Never proceed without a verified key. If both primary and backup endpoints are unavailable, escalate to CDO -- do not substitute an out-of-spec model.
 
 ---
@@ -87,18 +87,18 @@
 
 **Preflight checklist (run in this order -- any failure = halt and return itemized list to sender):**
 
-1. **Char count:** Count actual characters in the fully assembled positive prompt. Verify against the endpoint's cap from MODEL-SPECS §1 (Seedream: 3,000-char hard ceiling -- silent fail above this). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over.
+1. **Char count:** Count actual characters in the fully assembled positive prompt. Verify against the endpoint's cap from MODEL-SPECS §1 (Seedream: 3,000-char DIU house ceiling per MODEL-SPECS §1; the Skill 66 registry records the Seedream vendor cap as NOT_PUBLISHED, so treat 3,000 as a conservative house limit pending a live probe). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over.
 2. **Unfilled variables:** Grep for any `{[A-Z_]+}` token remaining in the assembled prompt. Return "PREFLIGHT FAIL: unfilled variables: {list}" if any found.
 3. **Aspect ratio supported:** Verify the requested aspect ratio appears in the endpoint's supported-ratio table (MODEL-SPECS §1). Return "PREFLIGHT FAIL: aspect ratio {ratio} not supported by {endpoint}" if absent.
 4. **Required params set:** Verify all endpoint-required params are present in the JSON template: `aspect_ratio` for Seedream; `expand_prompt: false` + `aspect_ratio` resolving to a preset for Ideogram production runs; `watermark: false` for Wan. Return "PREFLIGHT FAIL: missing required param {param}" for each absent param.
 5. **Style-reference-only directive:** If `image_input` / `input_urls` / `image_urls` are set, verify `style_reference_only: true` (or equivalent per-endpoint field) is also set per MODEL-SPECS §4. Return "PREFLIGHT FAIL: reference images present but style_reference_only not set" if absent.
 6. **Identity Lock Block presence:** If the job is flagged `likeness: true`, verify the Identity Lock Block is present verbatim at the end of the positive prompt. Return "PREFLIGHT FAIL: likeness job missing Identity Lock Block" if absent.
 7. **Avoid-list contradiction audit:** Confirm the compiled negatives artifact has been produced for this job and the contradiction audit in SOP 9.3 step 5 passed. Return "PREFLIGHT FAIL: compiled negatives missing or contradiction audit not completed" if absent.
-8. **Budget headroom:** Verify estimated job cost (from PRICING.md) does not exceed remaining budget headroom for this period. If within the per-job approval threshold, require producer approval receipt before proceeding.
+8. **Budget headroom and credit:** Verify estimated job cost (unit price from the live `pricingDesc`) does not exceed remaining budget headroom for this period, and that the live credit balance covers the estimate x 1.30 (credit preflight, see the canonical rules). If within the per-job approval threshold, require producer approval receipt before proceeding.
 
-**Postflight checklist (run immediately on receipt of a `completed` task result):**
+**Postflight checklist (run immediately on receipt of a `success` task result):**
 
-1. **Download immediately.** Call `getResultInfo` and download all `resultUrls` to `_local/results/{job-id}/`. Do not log anything as complete before local files exist.
+1. **Download immediately.** Read `resultUrls` from the `recordInfo` response (`data.resultJson` is a JSON string) and download all of them to `_local/results/{job-id}/`. Do not log anything as complete before local files exist.
 2. **Nonzero size.** Verify each downloaded file has size > 0 bytes.
 3. **Decodable image.** Open and decode each file.
 4. **Dimensions match request.** Verify the actual pixel dimensions match the requested resolution and aspect ratio.
@@ -146,7 +146,7 @@ filled_prompt_hash:   {sha256 of exact filled positive prompt}
 ```
 
 **Budget gate (before every new job):**
-1. Estimate cost: `num_tasks x price_per_task` from `_local/PRICING.md` for the selected model and tier.
+1. Estimate cost: `num_tasks x price_per_task` using the live `pricingDesc` for the selected model and tier (the only price authority; `_local/PRICING.md` holds billed actuals and budget config, not authoritative prices).
 2. Sum all `complete` receipt `cost_class` values for the current billing period.
 3. If `current_period_spend + estimated_cost > monthly_cap`: hard stop. Notify CDO. Do not proceed without a producer override receipt.
 4. If `estimated_cost > per_job_approval_threshold`: require a producer approval receipt before submitting.
@@ -154,7 +154,7 @@ filled_prompt_hash:   {sha256 of exact filled positive prompt}
 
 **Orphan recovery (session start):**
 1. List all receipts with `state: submitted` or `state: polling`.
-2. For each: call `getTaskInfo(taskId)`. If `status: completed`: proceed to SOP 9.4 postflight. If `status: failed`: escalate to CDO. If `status: processing`: update `last_polled` and leave for the cron.
+2. For each: call `recordInfo` for the taskId. If `state: success`: proceed to SOP 9.4 postflight. If `state: fail`: escalate to CDO. Otherwise (`waiting`, `queuing`, `generating`): update `last_polled` and leave for the cron.
 3. Any receipt with `last_polled` older than 24 hours with no completion: escalate to CDO.
 
 **Circuit breaker:**
@@ -180,9 +180,9 @@ filled_prompt_hash:   {sha256 of exact filled positive prompt}
 
 | Failure class | First response | Second response | Hard stop |
 |---|---|---|---|
-| **5xx / timeout (transient)** | Retry once after 30-second backoff | Route to backup endpoint (MODEL-SPECS §2 SECONDARY column) with CDO notification | If backup also fails: hard stop, preserve manifest + receipts, notify CDO |
-| **429 (rate limit)** | Backoff per MODEL-SPECS §2 rate-limit guidance; halve concurrency | Continue with reduced concurrency | If 429 persists >3 events in 10 minutes: hard stop, notify CDO |
-| **Endpoint down** | Route to backup endpoint from MODEL-SPECS §2 SECONDARY column; notify CDO | -- | If backup also down: hard stop, preserve all manifests + receipts |
+| **5xx / timeout (transient)** | Retry once after 30-second backoff | Route to backup endpoint (MODEL-SPECS §2 Backup column) with CDO notification | If backup also fails: hard stop, preserve manifest + receipts, notify CDO |
+| **429 (rate limit)** | Back off and halve concurrency, staying inside the canonical Kie limits (MODEL-SPECS carries no rate-limit guidance) | Continue with reduced concurrency | If 429 persists >3 events in 10 minutes: hard stop, notify CDO |
+| **Endpoint down** | Route to backup endpoint from MODEL-SPECS §2 Backup column; notify CDO | -- | If backup also down: hard stop, preserve all manifests + receipts |
 | **402 / credit exhaustion** | Immediate hard stop -- do not retry | Preserve manifest + receipts for resume; notify CDO | -- |
 | **NSFW checker false positive** | Flag for CDO + human review; never auto-retry with prompt mutation | -- | CDO decides |
 

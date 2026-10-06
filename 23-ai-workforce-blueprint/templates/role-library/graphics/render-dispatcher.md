@@ -62,9 +62,9 @@ When a persona is present, this file is subordinate to it.
 
 ### Morning (first 60 minutes)
 1. Run the orphan-recovery sweep: read all receipts in the job directory tree with `state=submitted` and poll Kie.ai `recordInfo` for each; update receipts, download completed results to local storage, flag overdue tasks (older than the configured max-in-flight window) to the Chief Design Officer.
-2. Check the Kie.ai account credit balance against the month-to-date spend ledger; flag if headroom drops below the configured low-watermark threshold.
+2. Check the Kie.ai account credit balance (`GET /api/v1/chat/credit`; read the response body, see the canonical rules) against the month-to-date spend ledger; flag if headroom drops below the configured low-watermark threshold.
 3. Review any budget-gate hold items from the previous day — jobs paused pending Chief Design Officer approval for over-threshold cost estimates — and confirm their status before new generation requests start arriving.
-4. Verify Kie.ai key reachability: send a lightweight `/account` or `/modelList` probe (per 07-kie-setup patterns) and confirm a valid response; surface any auth or connectivity failure immediately rather than at first generation attempt.
+4. Verify Kie.ai key reachability: send a lightweight `GET /api/v1/chat/credit` probe (the live credit endpoint; `/account` and `/modelList` are not live endpoints) and confirm `code` 200 in the response body; surface any auth or connectivity failure immediately rather than at first generation attempt.
 5. Check the job queue for any jobs the Deck Systems Specialist or Generation Operator pre-staged overnight; confirm receipt files exist for each staged job and no tasks are stuck in an ambiguous state.
 
 ### Throughout the day
@@ -152,11 +152,13 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 ## 8. Tools You Use
 
+> **KIE lifecycle authority (this role does not restate it).** Live endpoints, Bearer-only auth, rate limits, credit preflight, and persist-results-immediately live in `07-kie-setup/references/kie-common-rules.md`. Model choice, prompt caps, and payload shape belong to the owning skills (image: Skill 66, video: Skill 67, audio: Skill 68); the live catalog and the live `pricingDesc` (the only price authority) come through Skill 74; the image pin is AGENTS.md N43 (GPT-Image-2.5 `sunburst` by default, the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21). The KIE key is the client's own, resolved through the alias family in `shared-utils/secret_names.json`. Where this file differs from those sources, they win.
+
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| Kie.ai API | Submit, poll, and retrieve all metered generation tasks | API key from box env stores (check ALL stores per client-box-env-stores policy); verified in every preflight | createTask / recordInfo / resultUrls lifecycle per MODEL-SPECS §5; endpoints, concurrency limits, and tier caps per MODEL-SPECS §§1–3 |
-| MODEL-SPECS.md | Authoritative source for endpoints, tier definitions, resolution tables, backup-column routing, and rate-limit guidance | Read-only; lives in `_system/MODEL-SPECS.md` (vendor file — never edit) | All endpoint routing decisions reference MODEL-SPECS §§1–3; fallback ladder uses §2 backup column; PRICING.md pricing rows must match MODEL-SPECS tiers |
-| `_local/PRICING.md` | Operator-owned account-specific price table; separate from vendor MODEL-SPECS | Lives in `_local/` on each client box; edit in place | Contains per-model per-tier price per generation; never commit to any shared repo; updated monthly vs. actual charges |
+| Kie.ai API | Submit, poll, and retrieve all metered generation tasks | API key from box env stores (check ALL stores per client-box-env-stores policy); verified in every preflight | createTask / recordInfo / resultUrls lifecycle per MODEL-SPECS §5 and the canonical rules; endpoints and tier caps per MODEL-SPECS §§1–3; rate and concurrency limits per the canonical rules (MODEL-SPECS carries none) |
+| MODEL-SPECS.md | Authoritative source for endpoints, tier definitions, resolution tables, and backup-column routing (rate limits live in the canonical rules) | Read-only; lives in `_system/MODEL-SPECS.md` (vendor file — never edit) | All endpoint routing decisions reference MODEL-SPECS §§1–3; fallback ladder uses §2 backup column; PRICING.md pricing rows must match MODEL-SPECS tiers |
+| `_local/PRICING.md` | Operator-owned ledger of billed actuals and budget config; separate from vendor MODEL-SPECS (estimates use the live `pricingDesc`) | Lives in `_local/` on each client box; edit in place | Contains billed actuals per generation; never commit to any shared repo; reconciled monthly vs. actual charges and the live `pricingDesc` |
 | Receipt file system | Per-task disk receipts: one JSON file per Kie.ai task, written at submit time, updated at each lifecycle state | Local job directory tree (`jobs/{job-id}/receipts/{task-id}.json`) | Schema: job_id, task_id, card_id, card_version, model, tier, resolution, filled_prompt_hash, seed, variables, requestor, est_cost, actual_cost, state, submitted_at, completed_at, local_asset_path, sha256 |
 | Cron poller script | Cheap scheduled polling of in-flight receipts; runs on the client box without holding an agent session open | Launched once per job; managed by box cron or OpenClaw scheduled task | Reads receipts in `submitted` state, calls Kie.ai `recordInfo`, downloads completed resultUrls, runs postflight verify, updates receipt state |
 | Request fingerprint cache | Content-addressed cache keyed by sha256(model + canonical-params + full-assembled-prompt + seed + card-version); serves hits without re-submitting to Kie.ai | Local file or key-value store on the client box | Hit = return stored local asset path (free, no Kie.ai call); miss = proceed to submission; cache invalidated on card version bump |
@@ -180,22 +182,22 @@ This role contributes to the company revenue cascade by: **protecting client gen
 2. Run the idempotency check: compute the request fingerprint as `sha256(model + canonical-params-json + full-assembled-prompt + seed + card-version)`. Look up the fingerprint in the local cache. If a hit exists, return the stored local asset path immediately. Log the cache hit in the receipt. Do not submit to Kie.ai. Report as a zero-cost success to the requestor.
 3. Write the initial receipt file to `jobs/{job-id}/receipts/{task-id}.json` with `state=preflight`. The task ID at this point is provisional (use fingerprint hash as task_id placeholder). Do not proceed past this step without a receipt file on disk.
 4. Run the full preflight checklist (see SOP 9.1 §Preflight below) against the request packet. On any preflight failure: update the receipt to `state=preflight_failed`, write all failure reasons to the receipt, and return the itemized failure list to the sending role. Stop. Do not submit to Kie.ai.
-5. On preflight pass: submit the request to Kie.ai `createTask`. Capture the returned `taskId`. Update the receipt immediately: set `task_id` to the real taskId, `state=submitted`, `submitted_at` to current timestamp, `est_cost` to the cost estimate from PRICING.md. Exit the session. The submission is now detached.
+5. On preflight pass: submit the request to Kie.ai `createTask`. Capture the returned `taskId`. Update the receipt immediately: set `task_id` to the real taskId, `state=submitted`, `submitted_at` to current timestamp, `est_cost` to the cost estimate from the live `pricingDesc`. Exit the session. The submission is now detached.
 6. Launch (or confirm) the cron poller for this job directory. The poller will handle all subsequent lifecycle steps. Do not hold the session open.
 
 **SOP 9.1 §Preflight** — Run in this order; stop and return failure list on the first blocking failure:
-- **API key wired:** Confirm the Kie.ai API key resolves from the box's env stores (check all standard env stores per the fleet env-store search order before claiming missing). Confirm a `/account` or `/modelList` probe returns a valid response.
+- **API key wired:** Confirm the Kie.ai API key resolves from the box's env stores (check all standard env stores per the fleet env-store search order before claiming missing). Confirm a `GET /api/v1/chat/credit` probe returns `code` 200 in the response body.
 - **Endpoint exists in MODEL-SPECS:** Confirm the requested model and tier appear in MODEL-SPECS §§1–3. Any model or tier not listed in MODEL-SPECS = hard stop. No guessing, no improvising.
 - **Resolution and ratio compatible:** Confirm the requested resolution is in the endpoint's supported resolution table (MODEL-SPECS §1). Confirm the aspect ratio is in the endpoint's supported ratio list. For Seedream: `aspect_ratio` param must be present. For Ideogram: `expand_prompt` must be `false`, ratio must be preset-mappable.
-- **Character count within endpoint cap:** Compute the actual byte count of the fully assembled prompt (not an estimate). Compare against the endpoint's character cap in MODEL-SPECS §1 (Seedream cap: 3,000 chars — silent failure above this; never exceed). Reject if over cap; return the actual count and the cap.
+- **Character count within endpoint cap:** Compute the actual byte count of the fully assembled prompt (not an estimate). Compare against the endpoint's character cap in MODEL-SPECS §1 (Seedream: 3,000-char DIU house ceiling per MODEL-SPECS §1; the Skill 66 registry records the Seedream vendor cap as NOT_PUBLISHED, so never exceed the house limit pending a live probe). Reject if over cap; return the actual count and the cap.
 - **No unfilled variable tokens:** Run a grep for `{[A-Z_]+}` in the assembled prompt. Any match = preflight fail with the matched tokens listed. The sending role must resolve all variables before resubmission.
 - **Required params set:** Check that all params required by the endpoint's MODEL-SPECS §5 JSON template are present in the request. Flag any missing.
 - **Style-reference-only directive present when refs attached:** If the request includes any `input_urls` / `image_input` / `image_urls`, confirm the style-reference-only directive is present in the prompt per MODEL-SPECS §4.
 - **Identity Lock Block present on likeness jobs:** If the requestor flagged `likeness_present=true`, confirm the Identity Lock Block is present verbatim in the request, and that the Photo Shoot Director's consent stamp is present in the request packet. Missing consent stamp = hard stop regardless of other fields.
 - **Avoid-list contradiction audit:** Run the §4 contradiction audit from NEGATIVE-PROMPTING-SOP.md against the assembled positive prompt + merged avoid-list. Any contradiction = preflight fail with the conflicting terms listed.
-- **Budget headroom:** Compute the estimated cost using PRICING.md. Check against the client's per-deliverable cap and per-day cap from budget config. If over per-deliverable threshold: hold the job and notify CDO for approval; do not submit until approval is confirmed. If over per-day cap: hard stop with escalation packet to CDO.
+- **Budget headroom and credit:** Compute the estimated cost using the live `pricingDesc` and confirm the live credit balance covers it x 1.30 (credit preflight, see the canonical rules). Check against the client's per-deliverable cap and per-day cap from budget config. If over per-deliverable threshold: hold the job and notify CDO for approval; do not submit until approval is confirmed. If over per-day cap: hard stop with escalation packet to CDO.
 
-**SOP 9.1 §Postflight** — Run by the cron poller after `recordInfo` returns a completed state:
+**SOP 9.1 §Postflight** — Run by the cron poller after `recordInfo` returns the `success` state:
 1. Download all `resultUrls` to local storage at `jobs/{job-id}/assets/` using deterministic naming `{date}_{styleID}_{jobID}_{n}.{ext}`. Do not report success until the download is verified on disk.
 2. Verify each downloaded file: nonzero file size, decodable image (not a truncated or corrupted download), pixel dimensions match the requested resolution. On any verify failure: mark the receipt `state=postflight_failed` and route to the next step in the fallback ladder (SOP 9.3) or escalate if fallback options are exhausted.
 3. Update the receipt: `state=done`, `completed_at`, `local_asset_path`, `sha256`, `actual_cost`.
@@ -218,17 +220,17 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Steps:**
 1. **Smoke test first-generation per client:** If no completed receipt exists for this client in the current job directory tree, run a 1K SHORT tier smoke test on the cheapest capable endpoint before any full-quality submission. Confirm: API key resolves successfully, request submits, result downloads to disk, receipt writes. On smoke test failure: hard stop, escalate to CDO. The smoke test costs pennies; a failed 40-slide 4K deck run costs the client real money.
-2. **Compute cost estimate:** Look up the per-model per-tier price in `_local/PRICING.md`. Estimate: `task_count × resolution_price × tier_multiplier`. For deck jobs: `slide_count × variants_per_slide × price`. Record the estimate in the receipt before submission.
+2. **Compute cost estimate:** Look up the per-model per-tier price in the live `pricingDesc` (the only price authority). Estimate: `task_count × resolution_price × tier_multiplier`. For deck jobs: `slide_count × variants_per_slide × price`. Record the estimate in the receipt before submission.
 3. **Check per-deliverable threshold:** If the estimate exceeds the client's per-deliverable approval threshold (from budget config): hold the job and notify CDO with the estimate, job type, requesting role, and a degrade-to-draft option (1K, SHORT tier, cheapest capable endpoint). Do not submit until CDO approval or an explicit CDO instruction to degrade.
 4. **Check per-day running total:** Sum the `actual_cost` field across all receipts with `completed_at` in the current calendar day. If adding this job would exceed the per-day cap: hard stop, escalate to CDO. Do not submit.
 5. **Degrade-to-draft offer:** When budget headroom is low (headroom < estimate and both are below the per-deliverable threshold), proactively offer the CDO a degrade-to-draft option before holding — cheaper tier, cheaper endpoint, 1K resolution — rather than silently refusing. Document the tradeoffs.
 6. **On job completion:** Write the actual spend (from Kie.ai account balance delta or API response) to the receipt's `actual_cost` field. Append a cost ledger line (job_id, date, client, model, tier, task_count, est_cost, actual_cost, delta) to the per-client monthly ledger.
 7. **Ongoing cap monitoring:** After each ledger append, check whether the month-to-date total is within 80% of the monthly cap; flag to CDO if so. At 95%: require CDO approval for any new submission. At 100%: hard stop, no submissions until CDO resolves.
-8. **PRICING.md discipline:** Pricing data lives ONLY in `_local/PRICING.md`. It must never be added to MODEL-SPECS.md, MASTER-SOP.md, or any vendor library file. Vendor library files are updated by the vendor; price data is account-specific and must not be clobbered by a vendor library update.
+8. **PRICING.md discipline:** `_local/PRICING.md` is the billed-actuals ledger and unit prices for estimates come from the live `pricingDesc`. Neither is ever added to MODEL-SPECS.md, MASTER-SOP.md, or any vendor library file; vendor library files are updated by the vendor and account data must not be clobbered by a vendor library update.
 
 **Outputs:** Cost estimate recorded in receipt before submission; spend receipt appended to ledger on completion; CDO hold notifications with full context; monthly running total.
 **Hand to:** CDO for any hold or cap-breach notification. Sending role receives the approval/hold status immediately.
-**Failure mode:** If PRICING.md contains no price for the requested model+tier combination: halt and notify CDO immediately. Do not use a guessed price or a price from MODEL-SPECS. A missing price line is a configuration gap that requires a human update to PRICING.md.
+**Failure mode:** If the live `pricingDesc` is unavailable or lists no price for the requested model+tier combination: halt and notify CDO immediately. Do not use a guessed price, a stale PRICING.md row, or a price from MODEL-SPECS. A missing price is a data gap that requires the live catalog (Skill 74) to be reachable or a human decision.
 
 ---
 
@@ -243,7 +245,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 **Steps:**
 
 **Transient 5xx / timeout:**
-1. Wait exponentially (base 5 seconds, multiplied by attempt count, capped at 120 seconds).
+1. Wait 30 seconds (the SOP-DIU-603 ladder value; one ladder, one number).
 2. Retry the same task once (one retry only). Write the retry attempt to the receipt.
 3. If the retry succeeds: proceed to postflight. If the retry also fails with 5xx: treat as endpoint-down (next rung).
 
@@ -251,7 +253,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 1. Record the 429 response in the receipt with timestamp.
 2. Wait: use the `Retry-After` header value if present; otherwise wait exponentially (base 30 seconds, ×2 per attempt).
 3. Halve the active concurrency cap for this model for the remainder of the session.
-4. Retry the same task. On retry success: proceed to postflight. On second 429: escalate to CDO with the concurrency data; do not continue hammering the API.
+4. Retry the same task. On retry success: proceed to postflight. If 429 persists for more than 3 events within any 10-minute window (the SOP-DIU-603 threshold): escalate to CDO with the concurrency data; do not continue hammering the API.
 
 **Endpoint down (consistent 5xx after retry, or explicit Kie.ai status page outage):**
 1. Check MODEL-SPECS §2 backup column for the endpoint's designated fallback.
@@ -333,22 +335,22 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 ### SOP 9.6 — Concurrency Cap Management & Rate-Limit Governance
 
-**Wraps:** MODEL-SPECS §§2–3 (rate-limit and concurrency guidance).
+**Wraps:** the canonical Kie rate limits (`07-kie-setup/references/kie-common-rules.md`); MODEL-SPECS §§2–3 for routing only (it carries no rate or concurrency guidance).
 **Library-version pin:** MODEL-SPECS v1.0 (§-refs verified 2026-06-12).
 **When to run:** At job start (set concurrency cap), on each 429 event (adaptive cap reduction), and weekly (cap review against observed 429 frequency).
 **Frequency:** Per job (initial cap-set); on-demand (adaptive reduction); weekly (cap review).
-**Inputs:** MODEL-SPECS §2 rate-limit guidance for the selected endpoint; prior-week 429 event count from fallback-log.md.
+**Inputs:** the canonical rate limits for the selected endpoint family; prior-week 429 event count from fallback-log.md.
 
 **Steps:**
-1. **Initial cap-set at job start:** Look up the per-model concurrency guidance from MODEL-SPECS §2. Set the active concurrency cap for the job to that value. Write it to the job ticket wrapper.
+1. **Initial cap-set at job start:** Take the createTask limit from the canonical rules. Set the active concurrency cap for the job inside that limit. Write it to the job ticket wrapper.
 2. **Adaptive reduction on 429:** On every 429 event (per SOP 9.3 §429 rung), halve the active concurrency cap for the affected model. Write the updated cap to the job ticket wrapper alongside the 429 timestamp. Do not restore the cap during the same job — a 429 is evidence that the current level exceeded the endpoint's limit.
-3. **Between-job cap carry-over:** At the end of each job, record the terminal concurrency cap and 429 event count in the client's fallback-log.md entry for the model. Use this as the starting cap for the next job on the same model (rather than resetting to MODEL-SPECS guidance), unless a day has passed without any 429 events (in which case reset to MODEL-SPECS guidance).
-4. **Weekly cap review:** Count 429 events per model from fallback-log.md for the week. If any model had >3 429 events: recommend reducing the cap in MODEL-SPECS default guidance to CDO (do not edit MODEL-SPECS unilaterally — propose the change). If zero 429 events for 4+ consecutive weeks: propose restoring cap to MODEL-SPECS guidance.
-5. **Deck fan-out concurrency:** For a Slide Manifest fan-out, the concurrency cap governs how many slides are submitted simultaneously. Start batches at the MODEL-SPECS guidance value. Never exceed it. Write the batch size to the job ticket.
+3. **Between-job cap carry-over:** At the end of each job, record the terminal concurrency cap and 429 event count in the client's fallback-log.md entry for the model. Use this as the starting cap for the next job on the same model (rather than resetting to the canonical limit), unless a day has passed without any 429 events (in which case reset to the canonical limit).
+4. **Weekly cap review:** Count 429 events per model from fallback-log.md for the week. If any model had >3 429 events: recommend a lower default cap to CDO (do not edit any vendor or canonical file unilaterally — propose the change). If zero 429 events for 4+ consecutive weeks: propose restoring the cap to the canonical limit.
+5. **Deck fan-out concurrency:** For a Slide Manifest fan-out, the concurrency cap governs how many slides are submitted simultaneously. Start batches at the canonical createTask limit. Never exceed it. Write the batch size to the job ticket.
 
 **Outputs:** Job ticket with initial concurrency cap, adaptive-cap history, weekly cap-review recommendation to CDO.
 **Hand to:** CDO for all cap-change proposals; SOP 9.3 for 429 handling at the rung level.
-**Failure mode:** If MODEL-SPECS §2 contains no concurrency guidance for a model: default to concurrency-1 (serial) until the CDO provides a confirmed cap. Never guess a concurrency level for a new endpoint.
+**Failure mode:** If the canonical rules list no limit for an endpoint family: default to concurrency-1 (serial) until the CDO provides a confirmed cap. Never guess a concurrency level for a new endpoint.
 
 ---
 
@@ -365,7 +367,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 **Daily orphan sweep:**
 1. List all receipts across all job directories with `state=submitted`.
 2. For each receipt: check whether `submitted_at` is older than the configured max-in-flight window (e.g., 2 hours for standard jobs, 8 hours for deck fan-outs). If still within window: update `last_checked` timestamp only.
-3. For overdue receipts: call Kie.ai `recordInfo` for the taskId. If completed: proceed to SOP 9.1 §Postflight. If failed: mark `state=failed`, record the Kie.ai error response, escalate to CDO. If still processing but within window: update `last_polled`, no escalation. If `recordInfo` returns a 404 (task ID not found): mark `state=orphaned`, escalate to CDO immediately.
+3. For overdue receipts: call Kie.ai `recordInfo` for the taskId. If `state` is `success`: proceed to SOP 9.1 §Postflight. If `fail`: mark `state=failed`, record the Kie.ai error response, escalate to CDO. If still processing but within window: update `last_polled`, no escalation. If `recordInfo` returns a 404 (task ID not found): mark `state=orphaned`, escalate to CDO immediately.
 4. Log the orphan sweep result to `_local/dispatch-log.md`: timestamp, receipts checked, overdue count, recovered count, orphaned count.
 
 **Monthly full audit:**

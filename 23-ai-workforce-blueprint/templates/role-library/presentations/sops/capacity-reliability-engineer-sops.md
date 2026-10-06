@@ -33,9 +33,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
    - `free_disk_gb`: available disk on the home partition
 3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the `kimi-k2.6:cloud` model. Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
-4. Check Kie.ai credit balance: call the Kie.ai balance endpoint with the client's KIE_API_KEY. Record: `kie_credits_remaining`.
-5. Calculate image generation budget: SLIDE_COUNT x 2 x $0.03. Record as `budget_ceiling`.
-6. Compare `kie_credits_remaining` to `budget_ceiling`. If credits < budget_ceiling: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
+4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
+5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
+6. Compare `kie_credits_remaining` to `budget_ceiling` x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`). If credits < budget_ceiling x 1.30: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
 7. Apply the fleet sizing table:
    | Free RAM at probe | Max concurrent sub-agents (total) | QC agents | Writer agents |
    |---|---|---|---|
@@ -57,6 +57,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "free_disk_gb": N,
      "ollama_cloud_reachable": true,
      "kie_credits_remaining": N,
+     "per_image_usd": N,
      "budget_ceiling": N,
      "budget_ok": true,
      "model_location": "cloud|local",

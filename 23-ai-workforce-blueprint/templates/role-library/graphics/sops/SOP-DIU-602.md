@@ -22,7 +22,8 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 | `_system/MODEL-SPECS.md` | §5 (JSON templates + taskId response contract; resultUrls perishability) | API task schema; taskId extraction; result URL lifetime |
 | `_system/TEST-PROTOCOL.md` | §4 (cost estimate + test-run accounting), §7 (regression re-check fingerprint reuse) | Cost attribution for test runs; fingerprint-cache rule for free regression re-checks |
 | `_system/PPT-ANALYSIS-SOP.md` | §3B (Slide Manifest as the job work-list) | Manifest-as-deliverable-work-list, per-slide receipt accounting |
-| `_local/PRICING.md` | Full file (per-client, volatile; authoritative for dollar estimates) | Prices per model/tier; NEVER duplicated into vendor MODEL-SPECS |
+| `_local/PRICING.md` | Full file (per-client, volatile; a ledger of billed actuals, not a price authority) | Billed actuals; unit prices for estimates come from the live `pricingDesc`; NEVER duplicated into vendor MODEL-SPECS |
+| `07-kie-setup/references/kie-common-rules.md` | whole file | Live endpoints, rate limits, credit preflight, persist-immediately; wins over any restatement in this SOP |
 | Client `budget_config` block | `monthly_cap`, `per_job_approval_threshold`, `per_deliverable_cap`, `per_day_cap` | All dollar thresholds; never hardcoded in this SOP |
 
 ---
@@ -41,7 +42,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 ### B. Budget gate — before every new job
 
-1. Read `_local/PRICING.md` for the selected model and tier. Compute `estimated_cost = num_tasks × price_per_task`.
+1. Read the live `pricingDesc` for the selected model and tier (the only price authority). Compute `estimated_cost = num_tasks × price_per_task`; the live credit balance must cover `estimated_cost` x 1.30 (credit preflight).
 
 2. Sum all `cost_class` values from receipts in `state: complete` for the current billing period.
 
@@ -59,7 +60,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 3. If found and `state: complete`: return the existing result. Do not resubmit. Regression re-checks use this path — cost is zero.
 
-4. If found and `state: submitted|polling`: re-poll the recorded `taskId` via `getTaskInfo`. Do not create a duplicate task.
+4. If found and `state: submitted|polling`: re-poll the recorded `taskId` via `recordInfo`. Do not create a duplicate task.
 
 5. Only if no matching fingerprint exists: proceed to create a new task and write a new receipt.
 
@@ -67,10 +68,10 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 1. List all receipt files with `state: submitted` or `state: polling`.
 
-2. For each orphaned receipt: call `getTaskInfo(taskId)` from MODEL-SPECS §5.
-   - `status: completed` → run SOP-DIU-601 postflight immediately; flip receipt to `complete` on pass.
-   - `status: failed` → flip receipt to `postflight-failed`; escalate to CDO with the full receipt.
-   - `status: processing` → update `last_polled` (ISO 8601); leave for the cron poller.
+2. For each orphaned receipt: call `recordInfo` for the taskId (MODEL-SPECS §5).
+   - `state: success` → run SOP-DIU-601 postflight immediately; flip receipt to `complete` on pass.
+   - `state: fail` → flip receipt to `postflight-failed`; escalate to CDO with the full receipt.
+   - `waiting`, `queuing`, or `generating` → update `last_polled` (ISO 8601); leave for the cron poller.
 
 3. Any receipt with `last_polled` older than 24 hours and no completion state: escalate to CDO. Do not silently discard.
 
@@ -126,7 +127,7 @@ smoke_test:           {true|false}
 | Style card ID + version | Yes | Assembly packet |
 | Filled positive prompt (complete, post-preflight) | Yes | SOP-DIU-601 output |
 | Model ID + endpoint slug + tier | Yes | SOP-DIU-302 routing decision |
-| `PRICING.md` row for selected model + tier | Yes | `_local/PRICING.md` (client-owned file) |
+| Live `pricingDesc` for selected model + tier | Yes | Live catalog (Skill 74); `_local/PRICING.md` records billed actuals |
 | Client `budget_config` block | Yes | Client box config — halt if absent |
 | Slide Manifest (for deck jobs) | Conditional | PPT-ANALYSIS-SOP §3B — used to enumerate per-slide receipt scope |
 | Producer approval receipt ID | Conditional | Required when `estimated_cost > per_job_approval_threshold` |
@@ -147,7 +148,7 @@ smoke_test:           {true|false}
 
 ## Handoff Conditions
 
-- **Normal submission:** Receipt written with `state: submitted`; Operator exits; cron poller handles `getTaskInfo` polling until completion; SOP-DIU-601 postflight runs on completion and flips receipt to `complete`.
+- **Normal submission:** Receipt written with `state: submitted`; Operator exits; cron poller handles `recordInfo` polling until completion; SOP-DIU-601 postflight runs on completion and flips receipt to `complete`.
 - **Budget gate trip:** Hard stop before submission; CDO receives spend summary; job paused until CDO issues a producer override receipt.
 - **Circuit-breaker trip (per-deliverable):** All remaining tasks for this `job_id` halted; CDO receives incident receipt; resume requires CDO direction with explicit per-task re-authorization.
 - **Circuit-breaker trip (per-day):** All new submissions for this client halted; CDO receives escalation; no resume without CDO reset.

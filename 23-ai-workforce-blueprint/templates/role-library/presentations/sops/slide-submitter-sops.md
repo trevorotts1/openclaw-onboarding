@@ -55,7 +55,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Build the submission queue: list all slide-NN-prompt.txt files in order. Remove any slides already in phase4_checkpoint.json with status "submitted" or "success". This is the PENDING list.
-2. Check the generation budget BEFORE starting: SLIDE_COUNT x 2 x $0.03 = budget ceiling. If the Kie.ai account balance is < budget ceiling, notify the Director BEFORE submitting the first slide.
+2. Check the generation budget BEFORE starting: SLIDE_COUNT x 2 x `per_image_usd` = budget ceiling (`per_image_usd` is recorded in capacity_plan.json from the live `pricingDesc`). If the Kie.ai account balance is < budget ceiling x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`), notify the Director BEFORE submitting the first slide.
 3. Submit slides in WAVES of 20:
    a. Take the first 20 slides from the PENDING list.
    b. Submit each as a separate API call to Kie.ai with the appropriate model_variant.
@@ -89,7 +89,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    d. After submitting all 20 in the wave: sleep for 10 seconds (the documented window) before starting the next wave. Any retries issued during the wave count against the cap, so let the full 10-second window elapse before the next wave.
 4. Repeat step 3 until all slides are submitted.
 5. Pacing: each wave is 20 submissions followed by a 10-second window, so the submission rate stays at or below the documented 20 requests / 10 seconds (source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Do not collapse the sleep below the window; do not submit more than 20 in a wave.
-6. Update the generation budget tracker in phase4_checkpoint.json: `{ "slides_submitted": N, "estimated_cost_so_far": N * 0.03 }`. If estimated_cost_so_far > 1.5 x budget ceiling: warn the Director. If estimated_cost_so_far > 2 x SLIDE_COUNT x $0.03: stop and escalate. Never exceed 2x the slide count in API calls without explicit operator authorization.
+6. Update the generation budget tracker in phase4_checkpoint.json: `{ "slides_submitted": N, "estimated_cost_so_far": N * per_image_usd }`. If estimated_cost_so_far > 1.5 x budget ceiling: warn the Director. If estimated_cost_so_far > 2 x SLIDE_COUNT x per_image_usd: stop and escalate. Never exceed 2x the slide count in API calls without explicit operator authorization.
 
 **Prompt-must-state-references rule:** Every i2i prompt must state what each reference is. Specifically: "the first reference image is the brand logo, place it per the LOGO element; and on A5, the second reference is the founder, whose likeness drives the portrait." This description must appear in the prompt body so the model understands the role of each URL. If a prompt is missing this statement and the slide uses i2i, add it at the end of the prompt before submitting (log the addition in phase4_checkpoint.json).
 
@@ -153,16 +153,16 @@ The following table is copied verbatim from Appendix A of the master SOP (univer
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` |
-| Prompt ceiling | 20,000 characters in `input.prompt` (SOP authoring max: 18,000) |
+| Prompt ceiling | 20,000 characters in `input.prompt` (authoring size per rule 12 of the canonical rules) |
 | Reference images | `input.input_urls`, public https URLs, max 16 |
-| Aspect ratios | auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, **16:9**, 9:16, 2:1, 1:2, 3:1, 1:3, 21:9, 9:21 (this SOP pins 16:9) |
+| Aspect ratios | auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, **16:9**, 9:16, 2:1, 1:2, 3:1, 1:3, 21:9, 9:21 (this SOP pins 16:9; this is the legacy GPT-Image-2 list, and the exact ratio set of the 2.5 default is in AGENTS.md N43, which wins) |
 | Resolutions | 1K, 2K, 4K (this SOP pins 2K unless intake says otherwise) |
 | Create response | `{ "code": 200, "data": { "taskId": "..." } }` |
 | Task states | `waiting`, `success`, `fail` (treat fail/failed/error/cancelled as terminal) |
 | Success payload | `data.resultJson` is a JSON STRING containing `{"resultUrls": ["https://..."]}`; download `resultUrls[0]` |
 | Failure fields | `data.failCode`, `data.failMsg` (log both) |
 | Optional | `callBackUrl` webhook on createTask (this SOP polls instead) |
-| Cost benchmark | ~3 cents per image at 2K |
+| Cost benchmark | The live `pricingDesc` (Skill 74); the Presentations model catalog `unit_costs` is the dated fallback snapshot, never a price authority |
 
 Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. Every hard external constant here is sourced from the live docs (https://docs.kie.ai/, verified 2026-06-14). On the NEXT MODEL MANIFEST version bump, re-fetch the live docs, re-confirm each constant, and update the verification date; if a constant changed, update the MODEL MANIFEST and this appendix with operator sign-off, refresh the citation, and log the change. Do NOT leave a bare "verify later" note on an un-cited number; that pattern is an AF-SRC auto-fail.
 
@@ -177,21 +177,21 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 - working/copy/capacity_plan.json (budget estimate from Capacity & Reliability Engineer)
 
 **Steps:**
-1. After every 10 successful downloads: calculate actual cost. Formula: submissions_sent x $0.03 = estimated actual cost.
+1. After every 10 successful downloads: calculate actual cost. Formula: submissions_sent x per_image_usd = estimated actual cost.
 2. Compare actual cost to budget_ceiling from capacity_plan.json.
 3. Budget warnings and stops:
    - At 1.0x budget_ceiling: log "Budget at 100% -- proceeding within budget."
    - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
    - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
 4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Truncation check: if the prompt file for a slide exceeds 18,000 characters (this should have been caught by Phase 3 QC, but check again before submission), truncate the prompt at the 18,000-character boundary by removing content from the end of the AVOID block. Log the truncation: `{ "slide_number": N, "original_chars": N, "truncated_to": 18000, "truncation_applied": true }`. Notify the Slide Image Creator.
+5. Length check: confirm each slide prompt is sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent) (the Slide Image Creator owns the sizing). The render step's code gate (AF-P1 floor, AF-P2 ceiling in `build_deck.py`) still applies until a follow-up lane aligns it with rule 12. Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
 
 **Outputs:**
 - phase4_checkpoint.json (budget events and truncation log)
 
 **Hand to:** Director (budget warnings and stops), Slide Image Creator (truncation notifications)
 
-**Failure mode:** If the budget ceiling calculation is impossible (capacity_plan.json missing or has no budget_ceiling field), use the default formula: SLIDE_COUNT x 2 x $0.03. Never skip the budget check.
+**Failure mode:** If the budget ceiling calculation is impossible (capacity_plan.json missing or has no budget_ceiling field), use the default formula: SLIDE_COUNT x 2 x per_image_usd read from the live `pricingDesc`. Never skip the budget check.
 
 ---
 
@@ -199,7 +199,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 
 **When to run:** Before wave 1 of any run, immediately after model variant is confirmed (SOP 9.1). This test runs once per Phase 4 invocation, never skipped.
 
-**Purpose:** Verify the client's KIE_API_KEY is live, the createTask endpoint is reachable, and resultUrls parsing works end-to-end. A failed smoke test costs ~3 cents and stops Phase 4 before 75 real slides burn.
+**Purpose:** Verify the client's KIE_API_KEY is live, the createTask endpoint is reachable, and resultUrls parsing works end-to-end. A failed smoke test costs one cheap 1K task and stops Phase 4 before 75 real slides burn.
 
 **Inputs:**
 - Client's KIE_API_KEY (from client's env store)
@@ -209,7 +209,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 1. Submit ONE cheap test task using the client's key:
    - Model: `gpt-image-2-5-sunburst-text-to-image` (use t2i for the smoke test regardless of run variant -- it is cheaper and tests the key and endpoint equally well).
    - Prompt: `"test slide, white background, the word TEST centered"`
-   - Resolution: `1K` (cheapest; ~3 cents).
+   - Resolution: `1K` (the cheapest tier).
    - Aspect ratio: `16:9`.
    - POST to `https://api.kie.ai/api/v1/jobs/createTask` with `Authorization: Bearer <CLIENT_KIE_API_KEY>`.
 
@@ -240,7 +240,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
 
 **Hand to:** SOP 9.2 (wave submission) on pass only. Director on fail or timeout.
 
-**Failure mode:** A smoke test that cannot complete (network error, auth error, timeout) always halts the run. There is no bypass. The ~3 cent cost is mandatory insurance against burning 75 slides on a broken key or a degraded platform.
+**Failure mode:** A smoke test that cannot complete (network error, auth error, timeout) always halts the run. There is no bypass. The cost of one cheap 1K task is mandatory insurance against burning 75 slides on a broken key or a degraded platform.
 
 ---
 
