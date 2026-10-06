@@ -1,5 +1,43 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.0.4] - 2026-10-06 — fix: enforce per-model KIE input types; explicit image field type
+
+### Fixed
+- **Per-model input types** (`KIE_INPUT_SPECS` in `ai_providers.py`, from each mapped model's KIE docs page input
+  schema): `duration`, `resolution`, `aspect_ratio`, `seed`, `mode`, `quality` are coerced to the documented type and
+  enum before sending. Examples: Kling v2.5 turbo and Gemini Omni `duration` is a string (`"5"`), MiniMax H3 `duration`
+  is an integer 4 to 15, `resolution` uses each model's own spelling (`1080P`, `2K`, `4k`), and Pixverse takes
+  `quality` (Skill 25's resolution option is renamed). Invalid values fail BEFORE any HTTP call (including before the
+  image upload) with a message naming the allowed values. Documented-required inputs the client cannot know (for
+  example `mode`/`sound`/`multi_shots` on kling-3.0/video, `quality` on Pixverse) fail the same way and are supplied
+  with `input_extra` / new CLI `--input-extra '{"key": value}'` (also on `text_to_video.py`). Models not in the table
+  pass through unchanged.
+- **`--image-field` no longer guesses the type from a trailing "s".** New `--image-field-type string|array`
+  (`image_field_type=` in code); required with `--image-field` unless it names the model's own mapped key.
+- QC nits: Gemini Omni `seed` is limited to 0 to 2147483647; HappyHorse 1.1 `duration` must be integer-valued
+  (5.5 rejected); a model that uses a different key never receives Skill 25's name for it (Pixverse gets `quality`,
+  never `resolution`; both given with different values is an error); `--resolution` on `text_to_video.py` and
+  `image_to_video.py` accepts any value (for example 480p, 540p, 2K) and the model's own table decides, while
+  runway/pika/mock and local mode now reject unsupported values instead of silently ignoring them;
+  `image_to_video.py` no longer int()-casts the duration before per-model validation.
+- Re-verified against fresh docs fetches: kling-3.0-omni/image-to-video (note: its docs allow 16:9, 9:16, 1:1 only with
+  `customize_multi_shots`, otherwise `auto`), happyhorse/image-to-video, wan/3-0-video-prime. No mismatches in the table.
+- CI: the Skill 25 workflow job and step names no longer hard-code a test count (the 93-test anti-vacuity floor stays).
+
+## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model
+
+### Fixed
+- Image-to-video sent `input.image_urls`, which is not an input of the default model `wan/3-0-video` (its schema at
+  docs.kie.ai/market/wan/3-0-video takes `first_frame_url` as a single string, plus `last_frame_url` and
+  `reference_image_urls[]`). The image field is now chosen per model from what Skill 67 and the KIE docs establish:
+  `first_frame_url` (string): wan/3-0-video, wan/3-0-video-prime, wan/2-7-image-to-video, bytedance/seedance-2-5,
+  bytedance/seedance-2-mini, minimax-h3/image-to-video. `image_url` (string): kling/v2-5-turbo-image-to-video-pro.
+  `image_urls` (list): kling-3.0-omni/image-to-video, kling-3.0/video, pixverse-v6/image-to-video,
+  happyhorse-1-1/image-to-video, happyhorse/image-to-video, gemini-omni-video. Each is read from the model's KIE docs
+  page (source table in `ai_providers.py`). runway and veo3* use dedicated APIs and fail with a clear error; any other
+  model fails before any HTTP call with an error naming the model. `image_field` (CLI `--image-field`) overrides.
+- Tests updated and extended (established models, unknown model, override wins).
+
 ## [7.0.2] - 2026-10-05 — fix: replace dead KIE video endpoint with live createTask flow
 
 ### Fixed (root cause — the default `kieai` video path could never work)

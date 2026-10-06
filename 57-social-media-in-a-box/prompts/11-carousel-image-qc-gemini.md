@@ -5,7 +5,7 @@
 - **Purpose:** Vision QC gate: verifies textOnImage fidelity (missing/extra/double/wrong/misspelled/garbled words), readability, text-over-face, extreme anatomy, coherence. Outputs 'Good' or a structured fix (fix_type / edit_instructions / negative_prompt_additions / issue_summary) fed to SeedDream edit.
 - **Anonymization:** verified clean — no client names or secrets in this prompt text. Client-identifying data in this workflow family lives ONLY in raw-export `pinData` (see ANALYSIS.md `client_name_locations`); it is excluded here.
 
-> Identical text is used verbatim in BOTH `Gemini QC 1` (post-Nano-Banana) and `Gemini QC 2` (post-SeedDream-edit); the only runtime difference is the expression source of REQUIRED TEXT.
+> Identical text is used verbatim in BOTH `Gemini QC 1` (post-generation, GPT Image 2.5) and `Gemini QC 2` (post-SeedDream-edit); the only runtime difference is the expression source of REQUIRED TEXT.
 
 ## User
 

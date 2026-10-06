@@ -63,7 +63,7 @@ python3 scripts/text_to_video.py "A serene mountain landscape at sunset, cinemat
 Positional argument: `prompt` (the text description, in quotes).
 Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`, `--model`.
 
-**KIE (`--provider kieai`, the default) runs on KIE's live job API** (`POST /api/v1/jobs/createTask`, then polls `GET /api/v1/jobs/recordInfo` for up to 15 minutes, then downloads the result). The model is chosen by Skill 67 (`67-kie-video`, its `select_video_model.py`); if Skill 67 is not installed the command stops with a clear error instead of guessing. `--model <KIE model id>` always wins and is sent unchanged. `--resolution` is mapped to the spelling Skill 67's registry lists for that model (for example `1080p` becomes `1080P`); a resolution the model does not offer (for example `4k` on Wan 3.0) is rejected. `--style` is not a KIE input and is ignored by KIE. `--model` is KIE-only like `--seed`. Skill 74 (`74-kie-live-adapter`, landing separately) is the future shared KIE transport; Skill 25 does not import it yet.
+**KIE (`--provider kieai`, the default) runs on KIE's live job API** (`POST /api/v1/jobs/createTask`, then polls `GET /api/v1/jobs/recordInfo` for up to 15 minutes, then downloads the result). The model is chosen by Skill 67 (`67-kie-video`, its `select_video_model.py`); if Skill 67 is not installed the command stops with a clear error instead of guessing. `--model <KIE model id>` always wins and is sent unchanged. `--resolution` accepts any value; for a mapped model it is checked against that model's documented values (for example `1080p` becomes `1080P` on Wan 3.0, `4k` on Wan 3.0 is rejected, Pixverse receives it as `quality`). `--style` is not a KIE input and is ignored by KIE. `--model` is KIE-only like `--seed`. Skill 74 (`74-kie-live-adapter`, landing separately) is the future shared KIE transport; Skill 25 does not import it yet.
 
 `--seed` and `--negative-prompt` are KIE-only options. Supplying either with Runway, Pika, or mock is rejected with a nonzero exit; those providers never silently discard the option.
 
@@ -91,9 +91,11 @@ python3 scripts/image_to_video.py photo.jpg \
 ```
 
 Positional argument: `image` (path to image file).
-Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`.
+Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`, `--image-field`.
 
-With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask, and the result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
+With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask in the model's own input field (13 createTask models are mapped from the KIE docs, for example `first_frame_url` as a single string for `wan/3-0-video`, `image_urls` as a list for `pixverse-v6/image-to-video`; the full table is in `scripts/ai_providers.py`). Any other model stops with an error naming it unless you pass `--image-field <input key> --image-field-type string|array` (the type is never guessed); `runway` and `veo3*` use dedicated KIE APIs this client does not support. The result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
+
+For the 13 mapped models, `--duration`, `--resolution`, aspect ratio and seed are checked against the model's documented type and allowed values before any request is sent (for example Kling v2.5 turbo takes duration `"5"` or `"10"` as a string, Pixverse calls resolution `quality`). A bad value stops with a message listing the allowed values. Inputs a model documents as required but this client cannot know (for example `mode`/`sound` on `kling-3.0/video`, `quality` on Pixverse) are passed as JSON: `--input-extra '{"mode": "pro", "sound": false}'` (available on `image_to_video.py` and `text_to_video.py`, KIE only).
 
 ### Add Music
 

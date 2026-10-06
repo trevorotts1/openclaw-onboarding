@@ -74,6 +74,14 @@ class StoryboardFailureContract(unittest.TestCase):
         self.assertFalse((self.work / "sb0.json").exists(),
                          "no empty storyboard artifact may be emitted")
 
+    def test_sora_is_refused_with_the_department_prohibition(self):
+        for m in ("sora-10s", "sora-25s"):
+            r = run(self.work, "--duration", "30", "--model", m, "--topic", "t", "--output", "sbs")
+            self.assertNotEqual(r.returncode, 0, m)
+            self.assertIn("AF-STORYBOARD-PROHIBITED-MODEL", r.stderr)
+            self.assertIn("Video department", r.stderr)
+            self.assertFalse((self.work / "sbs.json").exists(), "no storyboard may be written for Sora")
+
     # --- anti-false-fail control --------------------------------------------
 
     def test_real_request_still_succeeds_with_segments(self):

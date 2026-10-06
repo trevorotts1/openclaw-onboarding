@@ -26,6 +26,43 @@ KIE_UPLOAD_PATH = 'video-creator/inputs'  # no leading/trailing slash (KIE requi
 KIE_AUTH_CODES = (401, 403)
 KIE_POLL_DEADLINE = 900  # seconds; video jobs are slow
 KIE_VIDEO_SKILL = '67-kie-video'
+# Image-to-video input key per model, from each model's KIE docs page input schema (read 2026-10-05;
+# page URL = https://docs.kie.ai/market/<path>.md, listed in docs.kie.ai/llms.txt) cross-checked with
+# Skill 67 models.json / validate_payload.py. Value: (input key, 'str' single URL | 'list' array of URLs).
+#   model id                              | key              | type | source (docs.kie.ai/market/...)
+#   wan/3-0-video                         | first_frame_url  | str  | wan/3-0-video
+#   wan/3-0-video-prime                   | first_frame_url  | str  | wan/3-0-video-prime
+#   wan/2-7-image-to-video                | first_frame_url  | str  | wan/2-7-image-to-video
+#   bytedance/seedance-2-5                | first_frame_url  | str  | bytedance/seedance-2-5
+#   bytedance/seedance-2-mini             | first_frame_url  | str  | bytedance/seedance-2-mini
+#   minimax-h3/image-to-video             | first_frame_url  | str  | minimax-h3/image-to-video
+#   kling/v2-5-turbo-image-to-video-pro   | image_url        | str  | kling/v25-turbo-image-to-video-pro
+#       (page text: "Must be kling/v2-5-turbo-image-to-video-pro"; its enum shows v2-1-master, a docs copy error)
+#   kling-3.0-omni/image-to-video         | image_urls       | list | kling/v3-omni-image-to-video (both oneOf branches)
+#   kling-3.0/video                       | image_urls       | list | kling/kling-3-0 (first and last frame)
+#   pixverse-v6/image-to-video            | image_urls       | list | pixverse/image-to-video
+#   happyhorse-1-1/image-to-video         | image_urls       | list | happyhorse-1-1/image-to-video
+#   happyhorse/image-to-video             | image_urls       | list | happyhorse/image-to-video
+#   gemini-omni-video                     | image_urls       | list | gemini-omni-video
+# Required fields other than the image (for example mode/sound, quality, string durations) are the
+# caller's to supply through input_extra; KIE answers a missing one with a body code, surfaced as an error.
+KIE_I2V_IMAGE_FIELD = {
+    'wan/3-0-video': ('first_frame_url', 'str'),
+    'wan/3-0-video-prime': ('first_frame_url', 'str'),
+    'wan/2-7-image-to-video': ('first_frame_url', 'str'),
+    'bytedance/seedance-2-5': ('first_frame_url', 'str'),
+    'bytedance/seedance-2-mini': ('first_frame_url', 'str'),
+    'minimax-h3/image-to-video': ('first_frame_url', 'str'),
+    'kling/v2-5-turbo-image-to-video-pro': ('image_url', 'str'),
+    'kling-3.0-omni/image-to-video': ('image_urls', 'list'),
+    'kling-3.0/video': ('image_urls', 'list'),
+    'pixverse-v6/image-to-video': ('image_urls', 'list'),
+    'happyhorse-1-1/image-to-video': ('image_urls', 'list'),
+    'happyhorse/image-to-video': ('image_urls', 'list'),
+    'gemini-omni-video': ('image_urls', 'list'),
+}
+# Dedicated KIE APIs (not createTask): unsupported by this client.
+KIE_DEDICATED_MODELS = ('runway', 'veo3', 'veo3_fast', 'veo3_lite')
 
 
 class KieAPIError(RuntimeError):
@@ -34,6 +71,140 @@ class KieAPIError(RuntimeError):
     def __init__(self, message, code=None):
         super().__init__(message)
         self.code = code
+
+
+# Per-model input TYPES and allowed values, read from each model's KIE docs page input schema (the same
+# pages as the image-field table above, 2026-10-05; durations that the schema only describes in prose
+# use the stated range). Values are coerced to the documented type before sending and invalid values
+# fail BEFORE any HTTP call. Fields not listed here pass through unchanged. 'rename' maps Skill 25's
+# option name to the model's own key (pixverse calls resolution "quality"). 'required' lists the
+# documented required inputs other than prompt/duration/the image field; supply them with input_extra.
+_DUR_30 = {'kind': 'int', 'min': 2, 'max': 30, 'also': (-1,)}
+_SEED = {'kind': 'int', 'min': 0, 'max': 2147483647}
+_ASPECT_SEEDANCE = ['1:1', '4:3', '3:4', '16:9', '9:16', '21:9', 'adaptive']
+_WAN3 = {'duration': _DUR_30, 'resolution': {'kind': 'enum', 'values': ['480P', '720P', '1080P']},
+         'aspect_ratio': {'kind': 'enum', 'values': ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16']},
+         'seed': _SEED}
+KIE_INPUT_SPECS = {
+    'wan/3-0-video': {'fields': _WAN3},
+    'wan/3-0-video-prime': {'fields': _WAN3},
+    'wan/2-7-image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 2, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}, 'seed': _SEED}},
+    'bytedance/seedance-2-5': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 30, 'also': (-1,)},
+        'resolution': {'kind': 'enum', 'values': ['480p', '720p', '1080p']},
+        'aspect_ratio': {'kind': 'enum', 'values': _ASPECT_SEEDANCE}}},
+    'bytedance/seedance-2-mini': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 15, 'also': (-1,)},
+        'resolution': {'kind': 'enum', 'values': ['480p', '720p']},
+        'aspect_ratio': {'kind': 'enum', 'values': _ASPECT_SEEDANCE}}},
+    'minimax-h3/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['768P', '2K']}}},
+    'kling/v2-5-turbo-image-to-video-pro': {'fields': {
+        'duration': {'kind': 'numstr', 'values': ['5', '10']}}},
+    'kling-3.0-omni/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16', '1:1', 'auto']}}},
+    'kling-3.0/video': {'fields': {
+        'duration': {'kind': 'numstr', 'values': [str(n) for n in range(3, 16)]},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16', '1:1']},
+        'mode': {'kind': 'enum', 'values': ['std', 'pro', '4K']}},
+        'required': ['sound', 'aspect_ratio', 'mode', 'multi_shots', 'multi_prompt']},
+    'pixverse-v6/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 1, 'max': 15},
+        'quality': {'kind': 'enum', 'values': ['360p', '540p', '720p', '1080p']}, 'seed': _SEED},
+        'rename': {'resolution': 'quality'}, 'required': ['quality']},
+    'happyhorse-1-1/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}}},
+    'happyhorse/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}, 'seed': _SEED}},
+    'gemini-omni-video': {'fields': {
+        'duration': {'kind': 'numstr', 'values': ['4', '6', '8', '10']},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16']},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']}, 'seed': _SEED}},
+}
+
+
+def _kie_number(value):
+    """Parse int/float/numeric string to a number, rejecting bool and junk. Returns None if not numeric."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            try:
+                return float(value.strip())
+            except ValueError:
+                return None
+    return None
+
+
+def _kie_coerce(model, key, value, spec):
+    """Coerce one value to the documented type, or raise ValueError naming the allowed values."""
+    kind = spec['kind']
+    lo, hi = spec.get('min'), spec.get('max')
+    also = tuple(spec.get('also', ()))
+
+    def bad(allowed):
+        return ValueError(f"KIE model {model}: {key}={value!r} is not valid; allowed: {allowed}")
+
+    if kind == 'enum':
+        for allowed in spec['values']:
+            if isinstance(value, str) and value.strip().lower() == allowed.lower():
+                return allowed
+        raise bad('one of ' + ', '.join(spec['values']))
+    num = _kie_number(value)
+    if kind == 'numstr':  # documented as a string enum of numbers, for example "5"
+        if num is not None and float(num) == int(num) and str(int(num)) in spec['values']:
+            return str(int(num))
+        raise bad('one of ' + ', '.join(spec['values']) + ' (sent as a string)')
+    rng = ('' if lo is None else f"{'integer ' if kind == 'int' else ''}{lo} to {hi}") + \
+          (' or ' + ', '.join(str(a) for a in also) if also else '')
+    if num is None or (kind == 'int' and float(num) != int(num)):
+        raise bad(rng or 'an integer')
+    num = int(num) if kind == 'int' else num
+    if num in also:
+        return num
+    if (lo is not None and num < lo) or (hi is not None and num > hi):
+        raise bad(rng)
+    return num
+
+
+def kie_validate_input(model, payload, provided_by_caller=()):
+    """Rename, coerce, and check the createTask input for a mapped model, in place. No-op for other models.
+
+    `provided_by_caller` names inputs that will be added later (the image field)."""
+    spec = KIE_INPUT_SPECS.get(model)
+    if not spec:
+        return payload
+    for old, new in spec.get('rename', {}).items():
+        if old not in payload:
+            continue
+        if new in payload and str(payload[new]).lower() != str(payload[old]).lower():
+            raise ValueError(f"KIE model {model} uses '{new}' instead of '{old}': got {old}={payload[old]!r} "
+                             f"and {new}={payload[new]!r}. Give only one (the model's own key is '{new}').")
+        value = payload.pop(old)  # never send the option under the name the model does not have
+        payload.setdefault(new, value)
+    for key, value in list(payload.items()):
+        field_spec = spec['fields'].get(key)
+        if field_spec is not None and value is not None:
+            payload[key] = _kie_coerce(model, key, value, field_spec)
+    missing = [r for r in spec.get('required', []) if r not in payload and r not in provided_by_caller]
+    if missing:
+        hints = {k: v for k, v in spec['fields'].items() if k in missing}
+        allowed = '; '.join(f"{k}: {v.get('values')}" for k, v in hints.items() if v.get('values'))
+        raise ValueError(
+            f"KIE model {model} requires {', '.join(missing)} (documented required inputs). Supply them with "
+            "input_extra (CLI --input-extra '{\"key\": value}')" + (f"; allowed values: {allowed}" if allowed else ''))
+    return payload
 
 
 def _skills_dirs():
@@ -172,8 +343,12 @@ class AIProvider:
             Path to generated video
         """
         if self.provider != 'kieai':
+            if str(resolution).lower() not in ('720p', '1080p', '4k'):
+                raise ValueError(f"Provider '{self.provider}' does not support resolution {resolution!r} "
+                                 "(supported: 720p, 1080p, 4k)")
+            resolution = str(resolution).lower()
             unsupported_options = [
-                option for option in ('seed', 'negative_prompt', 'model')
+                option for option in ('seed', 'negative_prompt', 'model', 'input_extra')
                 if kwargs.get(option) is not None
             ]
             if unsupported_options:
@@ -206,11 +381,35 @@ class AIProvider:
         self._require_kie_key()
         image_path = Path(image_path)
         model = kwargs.get('model') or select_kie_video_model('image to video', duration)
+        override = kwargs.get('image_field')
+        if override:
+            kind = {'string': 'str', 'array': 'list'}.get(kwargs.get('image_field_type'))
+            field = override
+            if kind is None:
+                if model in KIE_I2V_IMAGE_FIELD and KIE_I2V_IMAGE_FIELD[model][0] == override:
+                    kind = KIE_I2V_IMAGE_FIELD[model][1]
+                else:
+                    raise ValueError(
+                        f"image_field '{override}' needs an explicit type: pass --image-field-type string|array "
+                        "(image_field_type='string'|'array' in code); the type is never guessed from the name.")
+        elif model in KIE_DEDICATED_MODELS:
+            raise RuntimeError(
+                f"KIE model '{model}' uses a dedicated KIE API (not createTask), which this client does "
+                "not support. Choose a createTask model with --model, one of: "
+                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+        elif model in KIE_I2V_IMAGE_FIELD:
+            field, kind = KIE_I2V_IMAGE_FIELD[model]
+        else:
+            raise RuntimeError(
+                f"Image field for KIE model '{model}' is not established (Skill 67 and the KIE docs "
+                "do not pin it here), so no guess is sent. Pass --image-field <input key> with "
+                "--image-field-type string|array (image_field=..., image_field_type=... in code; see "
+                "https://docs.kie.ai/llms.txt for the model's page) or choose a supported model: "
+                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+        payload = {'prompt': prompt or '', 'duration': duration}
+        self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs, image_field=field)  # validates before any HTTP
         image_url = self._kie_upload(image_path)
-        field = kwargs.get('image_field') or 'image_urls'  # Skill 67 registry convention
-        payload = {'prompt': prompt or '', 'duration': duration,
-                   field: [image_url] if field.endswith('s') else image_url}
-        self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs)
+        payload[field] = [image_url] if kind == 'list' else image_url
         output = kwargs.get('output') or image_path.with_suffix('.mp4')
         return self._kie_run(model, payload, output, kwargs)
 
@@ -218,14 +417,18 @@ class AIProvider:
         if not self.api_key:
             raise ValueError("KIE_API_KEY not configured (set it in your environment to use provider=kieai)")
 
-    def _kie_common_input(self, payload, model, resolution, kwargs):
-        res = _kie_resolution(model, resolution)
-        if res:
-            payload['resolution'] = res
+    def _kie_common_input(self, payload, model, resolution, kwargs, image_field=None):
+        d = payload.get('duration')
+        if isinstance(d, float) and d.is_integer() and model not in KIE_INPUT_SPECS:
+            payload['duration'] = int(d)  # unmapped model: 5.0 -> 5; mapped models coerce per their own docs
+        if resolution:
+            # mapped models: the docs enum is applied below; others: Skill 67's registry spelling
+            payload['resolution'] = resolution if model in KIE_INPUT_SPECS else _kie_resolution(model, resolution)
         for key in ('aspect_ratio', 'seed', 'negative_prompt'):
             if kwargs.get(key) is not None:
                 payload[key] = kwargs[key]
-        payload.update(kwargs.get('input_extra') or {})  # model-specific fields, passed unchanged
+        payload.update(kwargs.get('input_extra') or {})  # model-specific fields (validated if the model is mapped)
+        kie_validate_input(model, payload, provided_by_caller=(image_field,) if image_field else ())
 
     def _kie_call(self, method, url, **request_kwargs):
         """One KIE request. Checks the body `code`, not just the HTTP status."""

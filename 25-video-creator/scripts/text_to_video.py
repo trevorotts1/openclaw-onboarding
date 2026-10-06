@@ -82,12 +82,23 @@ def text_to_video(prompt, duration=5, resolution="1080p", provider="kieai",
         raise RuntimeError(f"{provider} generation failed: {e}") from e
 
 
+def _json_object(text):
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not valid JSON: {exc}")
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object, for example '{\"quality\": \"720p\"}'")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate video from text description')
     parser.add_argument('prompt', help='Text description of the video')
     parser.add_argument('--duration', type=int, default=5, help='Video duration in seconds')
-    parser.add_argument('--resolution', default='1080p', choices=['720p', '1080p', '4k'],
-                       help='Output resolution')
+    parser.add_argument('--resolution', default='1080p',
+                       help='Output resolution. runway/pika/mock: 720p, 1080p, 4k. kieai: any value the '
+                            'model documents (for example 480p, 540p, 720p, 1080p, 2K, 4k); the model decides')
     parser.add_argument('--provider', default='kieai', choices=['kieai', 'runway', 'pika', 'mock'],
                        help='AI provider to use')
     parser.add_argument('--style', default='cinematic', 
@@ -97,6 +108,9 @@ def main():
     parser.add_argument('--seed', type=int, help='Random seed for reproducibility')
     parser.add_argument('--negative-prompt', help='What to avoid in generation')
     parser.add_argument('--model', help='Explicit KIE model id (kieai only); default comes from Skill 67')
+    parser.add_argument('--input-extra', type=_json_object, metavar='JSON',
+                       help='JSON object of extra model-specific KIE input fields (kieai only), '
+                            'for example \'{"quality": "720p"}\'. Documented-required fields for a model go here.')
     
     args = parser.parse_args()
     
@@ -110,7 +124,8 @@ def main():
             output=args.output,
             seed=args.seed,
             negative_prompt=args.negative_prompt,
-            model=args.model
+            model=args.model,
+            input_extra=args.input_extra
         )
     except Exception as e:
         print(f"✗ Error: {e}")

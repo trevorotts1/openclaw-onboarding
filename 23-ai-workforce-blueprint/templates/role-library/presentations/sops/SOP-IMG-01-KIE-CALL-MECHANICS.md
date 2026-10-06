@@ -3,8 +3,9 @@
 **Cluster:** Image-Gen Mechanics + Design-Library (skill 45) Integration
 **Status:** Reference SOP - extends the live Presentations pipeline; does not replace it. The logo-on-every-slide image-to-image path this SOP teaches is already mandated in the live slide-image-creator.md (the gpt-image-2-5-sunburst-image-to-image path with LOGO_URL in input.input_urls) and the rendered-logo-identity check is the live AF-F7 (logo drift) auto-fail; this SOP is the authored mode-selection reference behind them.
 **Owner role (Presentations):** Slide Submitter (primary), Slide Image Creator (secondary, for which-mode declaration)
-**Master authority extended:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §9 (Phase 4) and Appendix A; `45-design-intelligence-library/library/_system/MODEL-SPECS.md` (the single source of truth for model IDs and limits)
-**Library-version pin:** CLIENT-WEBINAR-DECK-SOP §9.0 model manifest; MODEL-SPECS v1.2
+**Master authority extended:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §9 (Phase 4) and Appendix A; `45-design-intelligence-library/library/_system/MODEL-SPECS.md` (the Design Intelligence Library reference for endpoint behavior; it is NOT the authority for the model ids a Presentations deck uses)
+**Model authority:** the model ids a Presentations deck uses are named in exactly one file, `presentation_job/model_catalog.json` (aliases `image.t2i` and `image.i2i`, beside `build_deck.py`). Limits and rates shared by every KIE skill are in `07-kie-setup/references/kie-common-rules.md`.
+**Library-version pin:** `presentation_job/model_catalog.json` (model ids); MODEL-SPECS v1.2
 
 ---
 
@@ -14,7 +15,7 @@ Concern 20 (verbatim): "Kie.ai text-to-image vs image-to-image vs image-to-text/
 
 The forensic reference deck (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, a generic monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
 
-This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
+This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model catalog (`presentation_job/model_catalog.json`, aliases `image.i2i` and `image.t2i`) currently names `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`; the ids written in this SOP are illustrations of those current values, and if they ever differ the catalog wins. This SOP makes the choice between the two modes, and the body for each, mechanical.
 
 **Why GPT-Image-2.5 is the pinned model (the WORLD INTELLIGENCE rationale, SOP-ENGINE-00 Engine 5).** The pin is not arbitrary. GPT-Image-2.5 is mandated specifically because of its strong REAL-WORLD GROUNDING: it knows what an actual office, kitchen table, empty classroom at 6am, or a roughly 15-year-old's normal bedroom actually looks like, and it renders believable people, props, and scale for THIS character rather than a generic studio fantasy. That grounding is exactly what the WORLD ENGINE depends on (slide-image-creator-sops.md element 11 / SOP 9.3, the "would this exact person actually be in this exact room?" believability rule). A model with weaker real-world grounding would force the World Intelligence gate to fight the renderer; GPT-Image-2.5 makes grounded, believable scenes the default. This is the load-bearing reason the model is pinned, stated here so the pin is a defensible doctrine, not a bare config value.
 
@@ -32,8 +33,8 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
 
-- **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json` (its only creative output) and runs the script; the script composes each prompt MECHANICALLY (scene + the agent's EXACT copy verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits `gpt-image-2-5-sunburst-text-to-image`, polls, downloads + verifies each PNG, and assembles the `.pptx`. No model decides wording at runtime.
-- **`kie_generate.py`** — the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below).
+- **`build_deck.py`** - the single-command deterministic path. The builder writes `slides.json`, and the Slide Image Creator authors one RICH prompt file per slide (`working/prompts/slide-NN.txt` or `slide-NN-prompt.txt`, sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`). The script does NOT compose prompts. It loads each authored prompt VERBATIM, gates it (character band, quality floor, no hard-coded demographic default), appends the mandatory English/Latin-only pin only when the authored prompt does not already carry it, and submits it with the text-to-image model, or with the image-to-image model and the logo URL in `input_urls` when a logo URL is supplied (both models resolve from the catalog aliases `image.t2i` and `image.i2i`). It then polls, downloads + verifies each PNG, and assembles the `.pptx`. A slide with no authored prompt file fails loudly; the script never falls back to a thin composed prompt. No model decides wording at runtime.
+- **`kie_generate.py`** - the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below). It submits the `prompt` it is given and never composes one. A second, older copy of this helper lives at `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`; only Skill 06 (GHL media) runs it, and it is not a Presentations renderer (its header says how it differs).
 
 **The mandated flow is:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai (createTask → recordInfo → `resultUrls[0]`) is the ONLY render call → register the `.pptx` the script produced. **FORBIDDEN, each an auto-fail (AF-I14 / AF-RENDERER / AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS):** generating any image with a native/built-in tool (`image_generate`, `openai`, etc.); writing an inline hand-typed KIE.ai HTTP call instead of the script; the dead endpoint `/api/v1/image/gpt-image`; hand-editing PNGs or substituting stock/placeholder images; **fabricating any slide canvas locally with Pillow/PIL `Image.new` / `ImageDraw` (a flat cream or color typography card) or a PowerPoint-rendered card**; running any per-deck/hand-rolled renderer or assembler in `working/*.py` instead of the canonical `build_deck.py` / `run_signature_deck.py` path. A non-zero exit means the deck is NOT built — never fake a deliverable.
 
@@ -43,7 +44,7 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 
 > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text.
 
-`build_deck.py` appends this pin to every prompt automatically. Any prompt authored by hand for a Mode A or Mode B call below (or at the Phase 2/3 prompt-writing stage) MUST include this pin verbatim. A prompt missing the pin, or a render carrying CJK / non-Latin glyphs or garbled/misspelled text, is an auto-fail (see check 10 in Section 7).
+`build_deck.py` appends this pin to any prompt that does not already carry it. Any prompt authored by hand for a Mode A or Mode B call below (or at the Phase 2/3 prompt-writing stage) MUST include this pin verbatim. A prompt missing the pin, or a render carrying CJK / non-Latin glyphs or garbled/misspelled text, is an auto-fail (see check 10 in Section 7).
 
 ---
 
@@ -63,18 +64,68 @@ There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to
 
 ---
 
+## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 - TWO-MODEL SYSTEM, operator ruling 2026-09-09)
+
+As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT-Image-2.5. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
+
+**DEFAULT - GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+- Mode A: `gpt-image-2-5-sunburst-text-to-image`
+- Mode B: `gpt-image-2-5-sunburst-image-to-image`
+
+**2.5 supported aspect ratios - EXACTLY these 13, nothing else:**
+`auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`
+- **1K-ONLY (2K and 4K REJECTED for these four):** `27:16`, `16:27`, `9:8`, `8:9`.
+- 2K and 4K are available for every other ratio in the list.
+
+**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY - see the legacy-route cap below, which is a different number.
+
+**APPROVED SUBSTITUTIONS - these four route to 2.5 under a substitute ratio (operator-blessed):**
+
+| Requested | Renders on 2.5 as |
+|---|---|
+| `5:4` | `4:3` |
+| `4:5` | `3:4` |
+| `2:1` | `16:9` |
+| `1:2` | `9:16` |
+
+**LEGACY ROUTE - MANDATORY for these three ratios, no exceptions:**
+
+| Ratio | Model (Mode A / Mode B) |
+|---|---|
+| `3:1` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `1:3` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `9:21` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+
+The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three - each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
+
+**Legacy-route prompt cap: 25,000 chars - OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
+
+**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL - reject outright, no warn-only, no silent substitution.
+
+**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) - never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
+
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape - same endpoints, same headers, same envelope, same `input_urls` mechanics - with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
+
+---
+
 ## 3. SHARED CALL LIFECYCLE (identical for Mode A and Mode B)
 
-Every generation call, regardless of mode, follows this lifecycle. This is verbatim from CLIENT-WEBINAR-DECK-SOP §9.3-9.4 and MODEL-SPECS §5; reproduced here so the modes can be contrasted side by side.
+Every generation call, regardless of mode, follows this lifecycle. The shipped scripts perform it; an agent never types these calls by hand (Section 1A). This section describes what the scripts do today, so the document and the code agree. The limits and rates shared by every KIE skill (createTask rate, recordInfo rate, prompt caps, credit endpoint) are kept in one place, `07-kie-setup/references/kie-common-rules.md`; this SOP does not restate them as rules.
 
 1. **Submit (async):** `POST https://api.kie.ai/api/v1/jobs/createTask`
    - Headers: `Authorization: Bearer $KIE_API_KEY` (the CLIENT's own key - never a shared key), `Content-Type: application/json`
    - Body: see §4 (Mode A) or §5 (Mode B).
-2. **Capture the task id:** on `{ "code": 200, "data": { "taskId": "..." } }`, append `{ "slide_NN": "<taskId>" }` to `working/checkpoints/kie_task_ids.json` immediately, before submitting the next slide.
-3. **Rate cap:** never more than 20 new generation requests / 10 seconds, per account (source: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14). Submit in waves of 20, then sleep 10s (the documented window). Retries count against the cap. If the governor is running, its per-provider Kie plan (`presentation_job/governor.py` + `presentation_job/providers.yaml`: rps 1.33, burst 13, rolling 15s window (FIX 61.6)) is the binding pace and this manual pacing defers to it.
-4. **Poll:** after the LAST submit, wait 5 minutes, then `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` (same Bearer) every 60s. Parse `data.state`  in  {`waiting`,`success`,`fail`}. Treat `fail`/`failed`/`error`/`cancelled` as terminal failure; log `data.failCode` + `data.failMsg`.
-5. **Download:** on `success`, `data.resultJson` is a JSON STRING; parse it -> `resultUrls` (an ARRAY) -> download `resultUrls[0]` to `working/renders/slide-NN.png`. It is `resultUrls`, NOT `.url` - the old runbook had this wrong.
-6. **Poll cap:** 100 poll passes max. At 100 with tasks still `waiting`, STOP, checkpoint, escalate the stuck task ids. Never loop forever.
+2. **Capture the task id:** on `{ "code": 200, "data": { "taskId": "..." } }` the renderer records the id immediately, before it polls. `build_deck.py` writes it to `working/checkpoints/pending_tasks.json` in the run directory (and replaces the entry with the verified PNG's sha256 once the slide is downloaded). `kie_generate.py` writes it, through `kie_tasks.py`, to `<renders_dir>/.kie-tasks/kie_tasks.json`. After a restart, `kie_generate.py` (through `kie_tasks.py`) re-polls a known id instead of paying for a second createTask. `build_deck.py` batch reuses only slides already downloaded, verified and recorded complete in `pending_tasks.json`; a slide whose task was still in flight is submitted again.
+3. **Submit pacing (the createTask rate limit is in kie-common-rules.md):**
+   - `build_deck.py` (the batch path every deck uses) submits every slide once, 0.6 seconds apart, so at most 17 createTask calls land in any 10 second window. Each createTask also takes a slot from the governor (`presentation_job/governor.py`, per-provider plan in `presentation_job/providers.yaml`, `kie` row: 1.33 per second, at most 13 per rolling 10 seconds, 100 tasks in flight). Whichever is slower sets the pace, and both stay inside the KIE limit. On HTTP 429 it sleeps 20 seconds and retries the same slide, at most 15 times in a row, then that slide fails.
+   - `kie_generate.py` submits through `kie_tasks.py`, which allows at most 20 createTask calls per rolling 10 seconds (and also takes governor slots when the governor module is importable). Polling does not count toward the createTask rate.
+4. **Poll:** `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` (same Bearer). Read `data.state`: `success` is done; `fail` (also `failed`, `error`, `cancelled`) is a terminal failure, and the renderer logs `data.failCode` + `data.failMsg`; any other state (`waiting`, `queuing`, `generating`, and so on) means still in flight. Cadence by script:
+   - `build_deck.py` batch path: there is NO initial wait. After the last submit it polls every pending task, one pass every 10 seconds, and downloads each slide the moment its own task succeeds, so a fast slide never waits for a slow one. A 429 on a poll just retries that task on the next pass.
+   - `build_deck.py` single-task path (`poll_task`, used for sample renders): sleeps 10 seconds between polls for the first 120 seconds, 20 seconds for the next 180 seconds, then 40 seconds.
+   - `kie_generate.py`: NO initial wait. `kie_tasks.py` polls every pending task round-robin every 60 seconds (environment variable `KIE_ROUND_POLL_S`) and downloads and verifies each task the moment it succeeds.
+   - The older Skill 06 copy of `kie_generate.py` (`templates/presentation-render/`) still waits 5 minutes after the last submit, then polls one task at a time every 60 seconds for up to 100 passes. That wait-then-poll pattern belongs to that copy only; it is not how a Presentations deck renders.
+5. **Download:** on `success`, `data.resultJson` is a JSON STRING; parse it -> `resultUrls` (an ARRAY) -> download `resultUrls[0]` to the renders directory as `slide-NN.png`. It is `resultUrls`, NOT `.url` - the old runbook had this wrong. Each renderer performs the download itself and checks it is a real PNG.
+6. **Poll cap (a time limit, not a pass count):** `build_deck.py` gives up on a task that is still not finished 900 seconds (15 minutes) after polling began (`BUILD_DECK_POLL_MAX_SECONDS`, `BATCH_MAX_POLL_SECONDS`). `kie_generate.py` gives up at 6,000 seconds (`KIE_DEADLINE_S`, which is 100 polls of 60 seconds). At the cap the renderer records a terminal timeout for the stuck task, does NOT re-submit it, and the run reports the stuck task ids for escalation. Never loop forever.
 
 The ONLY thing that differs between Mode A and Mode B is the `model` string and the presence/absence of `input_urls`. Everything else above is identical.
 
@@ -113,8 +164,9 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
+- Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. `build_deck.py` currently enforces a 9,000 to 18,000 character band; the follow-up prompt-budget change moves it to rule 12 (95 to 100 percent of the model maximum, floor 80 percent).
 - Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
-- The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you.)
+- The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
 ---
 
@@ -224,7 +276,7 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 | P3 | Scene + layout present | AF-P9 + AF-P11 | Concrete scene/moment; archetype declared line 1; zone percentages + thirds placement for every element | "Just a background with text"; no archetype; no layout | Add scene + layout direction; re-QC |
 | P4 | Logo text correct (image-to-image) | AF-P15 (= Section 7 checks 1-3) | `LOGO_ON_SLIDES = true` slide declares Mode B with locked `LOGO_URL` first in `input_urls`, carries "place, do not redraw" + "do not invent any mark" | Logo in words only; Mode A on a logo slide; missing "do not redraw" | Switch to Mode B, name the reference, add directive |
 | P5 | 16:9 + 2K stated | AF-P (format line) | Both "16:9" and "2K" present | Either missing | Add the format line |
-| P6 | Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | `9000 <= len(prompt) <= 18000`; record exact integer; target 9000-18000 | `len < 9000` (AF-P1) OR `len > 18000` (AF-P2) | Expand with defect-preventing specificity (under) or condense front-loaded + log (over) |
+| P6 | Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | length inside the prompt budget in rule 12 of `07-kie-setup/references/kie-common-rules.md`; record the exact integer (`build_deck.py` currently enforces a 9,000 to 18,000 character band; the follow-up prompt-budget change moves it to rule 12 (95 to 100 percent of the model maximum, floor 80 percent)) | length under the floor (AF-P1) or over the ceiling (AF-P2) set by rule 12 | Expand with defect-preventing specificity (under) or condense front-loaded + log (over) |
 | P7 | Audience-matched representation | AF-P-REP | People match the slide's captured `REPRESENTATION_MIX` group; OR NO PEOPLE + operator flag when uncaptured | Person specified against no/uncaptured mix assignment | Re-cast to captured mix, or NO PEOPLE + flag |
 | P8 | NO hardcoded demographic default | AF-P-REP / AF-R3 (the 60/30/10 landmine) | No invented racial/demographic percentage; uncaptured -> NO PEOPLE + flag | The "60% Black/Brown, 30% other POC, 10% white" default OR ANY invented split the client did not supply | Strip the default; NO PEOPLE + flag operator until client confirms |
 | P9 | Currency correct | AF-P-CURRENCY | Every price/anchor/struck/stack value uses the client's currency symbol (default `$`), locked verbatim | Wrong symbol; missing symbol where required; localized/auto-translated currency | Correct the currency string, re-lock |
@@ -255,7 +307,7 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 | A slide was submitted T2I when it should have been I2I (check 1) | Image QC fails the slide; Slide Submitter re-submits that slide as I2I with the logo reference. Counts against the per-slide 3-attempt cap. | After 3 loops: Director |
 | Rendered logo differs from locked asset on >=1 slide (check 9) | Re-submit the affected slides via I2I with the locked `LOGO_URL` and the "place, do not redraw" sentence. If the logo still garbles after 2 attempts, composite the REAL logo IMAGE onto the rendered PNG via the PIL image-composite path (SOP-IMG-05), baked into the image BEFORE assembly. This is an IMAGE composite of the real mark, NOT a native text run — NEVER write `pptx_text_overlays.json` (its presence at assembly is AF-OVERLAY-DELIVERED, Decision 5C). | Director |
 | Agent claims it used a Kie "image-to-text" endpoint (check 7) | Reject the report. The analysis must be redone as an agent multimodal read. | Director |
-| Kie outage (no model available) | Per the master SOP: PAUSE and escalate. Never substitute a different model mid-run. | Operator updates the manifest in writing |
+| Kie outage (no model available) | Per the master SOP: PAUSE and escalate. Never substitute a different model mid-run. | Operator updates the model catalog (`presentation_job/model_catalog.json`) in writing |
 
 ---
 
@@ -273,4 +325,4 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 
 ---
 
-*End of SOP-IMG-01. This SOP teaches the call per mode; it changes no model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) remains the only place a model is named.*
+*End of SOP-IMG-01. This SOP teaches the call per mode; it changes no model. Model ids are decided in one place only, `presentation_job/model_catalog.json`; the ids quoted in this SOP are illustrations of its current values, and the catalog wins if they ever differ.*

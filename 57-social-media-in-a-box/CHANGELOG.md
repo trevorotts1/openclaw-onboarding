@@ -1,5 +1,24 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.7 - 2026-10-06 - SKILL.md model wording, prompts 12 and 14 payloads
+
+- `SKILL.md` frontmatter description: Midjourney and Nano-Banana carousel wording replaced with GPT Image 2.5 Sunburst; the video render is routed to the Skill 67 (kie-video) model selector, and "Kie.ai Sora" is no longer named in `SKILL.md`, `MASTERDOC.md` or `modules/3-media-core/README.md`. Remaining Sora labels on the 25.0s lane (modes.md, prove_bands.py, publisher submodes, config) are a separate follow-up, not changed here.
+- Prompts 12 and 14: removed the undeclared `"output_format": "png"` line from the payloads (the sunburst schema declares prompt, aspect_ratio, resolution, background and input_urls only). Nothing else in either prompt changed. `PROMPT-HASHES.json` re-recorded for 12 and 14; `ENGINE-PIN.sha256` unchanged and still matches.
+
+## v1.7.6 - 2026-10-05 - prompts 09 and 10 aspect ratio statements match N43
+
+- Prompts 09 and 10: only the aspect-ratio statements changed, 4:5 (1080x1350) to 3:4 (1080x1440), matching prompt 12 and the N43 4:5 to 3:4 substitution (09: universal canvas lines, 14 style templates, the worked example and the required-components line; 10: canvas size line). No other content touched. `PROMPT-HASHES.json` re-recorded; prompt hashes and engine hash match.
+
+## v1.7.5 - 2026-10-05 - close open items on the image consumers PR
+
+- Prompts 09 and 10 were read end to end: no image-model primary wording (no Nano Banana, no Midjourney) exists there, so they are unchanged. Re-pin confirmed: prompt hashes and engine hash match.
+
+## v1.7.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- `scripts/preflight_gate.py`: credit rule is now max(estimate x 1.30, 200), with 200 kept and documented as this skill's absolute floor; `_live_kie_credits` checks the BODY `code`; shortfall reported. New `scripts/test_kie_credit_rule.py`. `ENGINE-PIN.sha256` re-recorded.
+- Social images are GPT Image 2.5 sunburst everywhere (owner order): prompt 12 moved from `nano-banana-pro` to `gpt-image-2-5-sunburst-text-to-image` at 3:4 (N43 substitute for 4:5); SKILL.md, MASTERDOC.md, module 3 README and SOCIAL-MANIFEST labels no longer name Midjourney or Nano Banana; prompt 05 routing lists GPT Image 2.5 first, prompt 11 note updated. `PROMPT-HASHES.json` re-recorded. New `_live_kie_credits` body-code test in `test_kie_credit_rule.py`.
+- Prompts: 14 `google/nano-banana` (legacy per Skill 66) -> `gpt-image-2-5-sunburst-text-to-image` 1:1 2K png, the same id and payload Skill 58 `generate_cover.sh` sends; 12 `nano-banana-pro` and 13 `seedream/4.5-edit` kept and documented (12 matches Skill 66; 13 matches the live KIE docs enum); 06/07 stale Midjourney wording removed. `PROMPT-HASHES.json` re-recorded for every prompt (01, 05 and 16 were already drifted from the pin before this change).
+
 ## v1.5.1 - 2026-09-09 - release fold: changelog entry for the v1.5.0 producer adapter bump (F05)
 
 Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee). Version bump

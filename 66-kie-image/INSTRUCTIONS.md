@@ -160,8 +160,8 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
   stdin with "-" as the payload and takes the model from payload.model unless
   --model overrides it. validate_payload has no --strict flag.)
 
-- validate_prompt: exit 0 acceptable; exit 1 soft-fail (house band/status;
-  --strict promotes to error); exit 2 hard-fail (VERIFIED cap exceeded).
+- validate_prompt: exit 0 acceptable; exit 1 invalid (below the 80% floor, unknown
+  model, or a --strict warning); exit 2 above the max.
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
   for the retained legacy route; GPT Image 2.5's own separate, NOT merged,

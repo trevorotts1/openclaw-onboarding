@@ -343,6 +343,7 @@ def _normalize_pinned_provider(name, spec):
             "url": url,
             "method": str(method.get("http_method", "GET")).upper(),
             "ok_status": method.get("ok_status", [200]),
+            "body_code_ok": method.get("body_code_ok"),
             "timeout_s": float(method.get("timeout_seconds", 15)),
             "optional": optional,
         }
@@ -400,21 +401,40 @@ def load_endpoints(endpoints_path):
 # ---------------------------------------------------------------------------
 # Probing (free GET or HEAD only; never a model turn)
 # ---------------------------------------------------------------------------
-def _http_probe(url, method, headers, timeout_s):
-    """Return an int HTTP status if the host answered, else None (unreachable)."""
+def _http_probe(url, method, headers, timeout_s, want_body=False):
+    """Return an int HTTP status if the host answered, else None (unreachable).
+
+    With want_body=True return (status, body_text) instead, so a balance probe can
+    check the BODY code (an HTTP 200 can carry an error envelope such as
+    {"code": 401}). body_text is "" when there is no readable body."""
     req = urllib.request.Request(url, method=method.upper())
     for hk, hv in (headers or {}).items():
         req.add_header(hk, hv)
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            return int(resp.getcode())
+            code = int(resp.getcode())
+            if want_body:
+                return code, resp.read(65536).decode("utf-8", errors="replace")
+            return code
     except urllib.error.HTTPError as exc:
         # The host answered with an HTTP error; that still proves reachability.
-        return int(exc.code)
+        return (int(exc.code), "") if want_body else int(exc.code)
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError):
-        return None
+        return (None, "") if want_body else None
     except Exception:  # pragma: no cover - defensive
+        return (None, "") if want_body else None
+
+
+def _body_code(body_text):
+    """The integer `code` field of a JSON object body, or None when the body is not
+    a JSON object carrying an integer `code`."""
+    try:
+        obj = json.loads(body_text)
+    except (TypeError, ValueError):
         return None
+    if isinstance(obj, dict) and isinstance(obj.get("code"), int):
+        return obj["code"]
+    return None
 
 
 def probe_provider(name, spec, offline=False):
@@ -471,7 +491,14 @@ def probe_provider(name, spec, offline=False):
             header_name = spec.get("header_name", "Authorization")
             headers[header_name] = secret
 
-    code = _http_probe(url, method, headers, timeout_s)
+    # A balance probe may pin `body_code_ok` (KIE: [200]): then HTTP 200 alone is NOT a
+    # pass, the JSON body `code` must also be in that list (fail closed otherwise).
+    body_code_ok = spec.get("body_code_ok") if probe_type == "balance" else None
+    body = ""
+    if body_code_ok:
+        code, body = _http_probe(url, method, headers, timeout_s, want_body=True)
+    else:
+        code = _http_probe(url, method, headers, timeout_s)
 
     if probe_type == "reachability":
         if code is not None:
@@ -487,8 +514,14 @@ def probe_provider(name, spec, offline=False):
         result["status"] = "FAIL"
         result["detail"] = "unreachable"
     elif code in ok_status:
-        result["status"] = "PASS"
-        result["detail"] = "balance ok (http %d)" % code
+        bcode = _body_code(body) if body_code_ok else None
+        if body_code_ok and bcode not in body_code_ok:
+            result["status"] = "FAIL"
+            result["detail"] = "http %d but body code %s (expected %s)" % (
+                code, "absent" if bcode is None else bcode, body_code_ok)
+        else:
+            result["status"] = "PASS"
+            result["detail"] = "balance ok (http %d)" % code
     else:
         result["status"] = "FAIL"
         result["detail"] = "http %d" % code

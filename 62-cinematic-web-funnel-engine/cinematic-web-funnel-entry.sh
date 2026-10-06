@@ -28,13 +28,16 @@
 # Usage:
 #   bash cinematic-web-funnel-entry.sh --run-dir <RUN_DIR>
 #   bash cinematic-web-funnel-entry.sh --self-test
+#   bash cinematic-web-funnel-entry.sh --check-version   (deps + version gate only)
 # Exit: 0 = certified / self-test green; nonzero = a fail-closed guard tripped.
 # ==============================================================================
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PY="${PYTHON:-python3}"
-EXPECTED_MAJOR="1"
+# Current contract: skill-version.txt is "vMAJOR.MINOR.PATCH" (see scripts/qc-assert-skill-version-newline.sh)
+# and this skill is on major 2 (SKILL.md frontmatter version: v2.x). Bump only on a breaking 3.0.0 release.
+EXPECTED_MAJOR="2"
 
 die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; exit 1; }
 
@@ -63,10 +66,8 @@ step_version() {
   local vf="$SKILL_DIR/skill-version.txt"
   [ -s "$vf" ] || die "VERSION" "skill-version.txt missing/empty"
   local sv; sv="$(tr -d '[:space:]' < "$vf")"
-  case "$sv" in
-    "$EXPECTED_MAJOR".*) : ;;
-    *) die "VERSION" "skill-version.txt is '$sv', expected major $EXPECTED_MAJOR.x" ;;
-  esac
+  # Anchored: exactly vMAJOR.MINOR.PATCH (rejects suffixes such as v2.0.1-junk and bare numbers).
+  [[ "$sv" =~ ^v${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] || die "VERSION" "skill-version.txt is '$sv', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)"
   local fm; fm="$(frontmatter_version | tr -d '[:space:]"'"'"'')"
   [ -n "$fm" ] || die "VERSION" "SKILL.md has no top-level frontmatter version: field"
   [ "$fm" = "$sv" ] || die "VERSION" "SKILL.md frontmatter version ($fm) != skill-version.txt ($sv) — drift"
@@ -162,11 +163,13 @@ main() {
     case "$1" in
       --run-dir) rd="${2:-}"; shift 2 ;;
       --self-test) mode="selftest"; shift ;;
+      --check-version) mode="checkversion"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "USAGE" "unknown arg: $1" ;;
     esac
   done
   case "$mode" in
+    checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
     *) run_pipeline "$rd" ;;
   esac

@@ -24,6 +24,6 @@ Record the resolution in the Slide Manifest. If unspecified, producer asks the c
 - Client document standards recorded in the workspace's brand notes apply — confirm the audience and brand guidelines before choosing a deck style.
 
 ## Model routing
-- Slide backgrounds/imagery (strategy b): Nano Banana 2 or GPT-Image 2.5.
+- Slide backgrounds/imagery (strategy b): GPT-Image 2.5 (Nano Banana 2 fallback only).
 - Full slides with rendered text (strategy a): GPT-Image 2.5 LONG.
 - Variant exploration for one slide: Wan 2.7 n=4.

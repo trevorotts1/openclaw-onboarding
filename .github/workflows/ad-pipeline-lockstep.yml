@@ -31,6 +31,7 @@ on:
       - "48-facebook-ad-generator/scripts/test_cc_board.py"
       - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
+      - "48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
       - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
       - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
       - "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
@@ -51,6 +52,7 @@ on:
       - "48-facebook-ad-generator/scripts/test_cc_board.py"
       - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
+      - "48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
       - "48-facebook-ad-generator/qc-facebook-ad-generator.sh"
       - "universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
       - "universal-sops/fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md"
@@ -124,9 +126,11 @@ jobs:
           set -euo pipefail
           RUN="$RUNNER_TEMP/adfix/good-run"
           DRV="48-facebook-ad-generator/scripts/ad_director.py"
+          # Paid fixtures need a synthetic key + stubbed balance (a keyless paid run aborts, exit 4).
+          STUB="48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
           for ph in S0-INTAKE S1-OVERLAYS PICK-10 S2-PRIMARY-TEXT S3-HEADLINES S4-IMAGE-PROMPTS S5-IMAGE-GEN S6-TARGETING S7-DELIVER PUBLISH; do
             set +e
-            python3 "$DRV" --run-dir "$RUN" --phase "$ph"
+            python3 "$STUB" "$RUN" "$ph"
             rc=$?
             set -e
             echo "GOOD $ph foreman exit: $rc"
@@ -143,8 +147,10 @@ jobs:
           set -euo pipefail
           RUN="$RUNNER_TEMP/adfix/bad-run"
           DRV="48-facebook-ad-generator/scripts/ad_director.py"
+          # Paid fixtures need a synthetic key + stubbed balance (a keyless paid run aborts, exit 4).
+          STUB="48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
           set +e
-          python3 "$DRV" --run-dir "$RUN" --phase S5-IMAGE-GEN
+          python3 "$STUB" "$RUN" S5-IMAGE-GEN
           rc=$?
           set -e
           echo "BAD S5-IMAGE-GEN foreman exit: $rc"

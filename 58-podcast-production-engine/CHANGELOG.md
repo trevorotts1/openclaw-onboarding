@@ -1,5 +1,10 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.13 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- `scripts/podcast-smoke-test.py`: the KIE credit probe now also requires the BODY `code` to be 200 (`body_code_ok` in `config/smoke-endpoints.json`); HTTP 200 alone no longer passes. New `scripts/tests/test_smoke_body_code.py`.
+- `config/cost-model.json`: image prices are runtime fallback constants naming the price authority (`kie_live_adapter.py price`), same values as Skill 47. SKILL.md Step 10 names the Skill 66 id.
+
 ## [1.0.6] - 2026-09-17 - Step 12 document delivery gains a Notion fallback, so a box without Google Workspace still delivers
 
 Google Drive delivery (v1.0.5) only helps a box that has Skill 14 installed. Nearly every client box already has Notion connected, so document delivery is now a two-tier chain and a box without Google Workspace stops falling through to intent-only.
