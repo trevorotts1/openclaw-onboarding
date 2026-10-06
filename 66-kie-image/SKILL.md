@@ -7,8 +7,9 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
+version: v2.0.4
 metadata:
-  version: "1.0.0"
+  version: "2.0.4"
   priority: HIGH
 ---
 
@@ -72,7 +73,7 @@ wait (callback or poll), and visually QC the result.
 
 ## Registry (machine-readable source of truth)
 
-`models.json` — 30 entries covering all spec 7.2 families and their routes,
+`models.json` — 32 entries covering all spec 7.2 families and their routes,
 each with `source_url`, `last_verified_at`, `cap_status`, prompt caps, house
 band, reference limits, resolutions, ratios, and known inconsistencies. Every
 numeric limit is traceable to a quoted first-party value fetched 2026-08-26.
@@ -118,7 +119,7 @@ Key cap facts (full matrix: `references/models.md`):
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** — you are here.
-2. **models.json** — machine-readable capability registry (30 entries).
+2. **models.json** — machine-readable capability registry (32 entries).
 3. **references/models.md** — human golden matrix + per-family guidance.
 4. **references/prompt-policy.md** — prompt rules A–E, per-family bands.
 5. **references/api-patterns.md** — generic createTask/recordInfo conventions
@@ -155,8 +156,7 @@ Key cap facts (full matrix: `references/models.md`):
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.
 - **Credential:** `KIE_API_KEY` env var; never echo/cat/log the value.
 - **Rate limits:** 20 new generation requests/10 seconds, 100+ concurrent per
-  account; 429 = rejected before queueing — back off. Media deleted after 14
-  days; result URLs expire ~24h — persist immediately when needed.
+  account; 429 = rejected before queueing — back off. Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - **Logo I2I rule:** any client logo/brand-mark generation MUST be image-to-
   image with the logo as a reference, never text-to-image; style-reference
   attachments carry the mandatory style-reference-only directive.

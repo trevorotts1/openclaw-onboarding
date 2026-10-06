@@ -20,4 +20,4 @@
 
 ## Model routing
 - Default: GPT-Image 2.5 (layout + multiple text strings).
-- People-led brand ads → Nano Banana 2. Offer/typography-led → Ideogram V3 DESIGN.
+- People-led brand ads → GPT-Image 2.5 (Nano Banana 2 only as the fallback). Offer/typography-led → Ideogram V3 DESIGN.

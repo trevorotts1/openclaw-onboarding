@@ -131,7 +131,7 @@ class ForecastGateTests(ProveBudgetTestCase):
         self._write_scene_plan()
         passed, detail = pb.evaluate_forecast(self.tmp)
         self.assertTrue(passed)
-        self.assertIn("total_estimated_usd=0.4", detail)
+        self.assertIn("total_estimated_usd=0.3", detail)
 
     def test_fails_when_a_scene_targets_an_unpriced_model(self) -> None:
         self._write_scene_plan(model_id="kie-bytedance-seedance-1.5-pro")
@@ -321,7 +321,7 @@ class PaidCallGateEightPreconditionsTests(ProveBudgetTestCase):
         result = self._call()
         self.assertTrue(result.passed)
         self.assertTrue(all(result_check.passed for result_check in result.checks))
-        self.assertEqual(result.estimated_cost_usd, 0.40)
+        self.assertEqual(result.estimated_cost_usd, 0.30)
         self.assertIsNotNone(result.request_hash)
 
     def test_paid_call_gate_log_is_append_only_evidence_trail(self) -> None:
@@ -343,7 +343,7 @@ class BreakItOverspendTests(ProveBudgetTestCase):
     def test_begin_task_hard_stops_when_estimated_cost_exceeds_cap(self) -> None:
         self._lock_intake()
         self._write_scene_plan()
-        self._approve(cap_usd=0.10)  # far below the $0.40 veo3_fast estimate
+        self._approve(cap_usd=0.10)  # far below the $0.30 veo (Fast, default 720p) estimate
 
         result = pb.evaluate_paid_call_preconditions(
             self.tmp,
@@ -358,7 +358,7 @@ class BreakItOverspendTests(ProveBudgetTestCase):
         # against cap sufficiency (see prove_budget.py's design note) — the
         # actual hard-stop lives in state_engine.begin_task().
         self.assertTrue(result.passed)
-        self.assertEqual(result.estimated_cost_usd, 0.40)
+        self.assertEqual(result.estimated_cost_usd, 0.30)
 
         with self.assertRaises(se.BudgetExceeded):
             self.state.begin_task(
@@ -629,7 +629,7 @@ class CliTests(ProveBudgetTestCase):
         self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["passed"])
-        self.assertEqual(payload["estimated_cost_usd"], 0.40)
+        self.assertEqual(payload["estimated_cost_usd"], 0.30)
 
 
 if __name__ == "__main__":

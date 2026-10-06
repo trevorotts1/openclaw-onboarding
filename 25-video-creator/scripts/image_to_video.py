@@ -18,7 +18,8 @@ from ai_providers import AIProvider
 def image_to_video(image_path: Path, output: Optional[Path] = None,
                   motion: str = 'ken_burns', duration: float = 5.0,
                   resolution: Optional[str] = None, zoom_direction: str = 'in',
-                  music: Optional[str] = None, provider: str = 'local') -> Path:
+                  music: Optional[str] = None, provider: str = 'local',
+                  model: Optional[str] = None) -> Path:
     """
     Convert image to video with motion effects.
     
@@ -31,6 +32,7 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
         zoom_direction: 'in' or 'out' for zoom effect
         music: Background music file
         provider: AI provider (local uses MoviePy)
+        model: Explicit KIE model id (kieai only; default comes from Skill 67)
         
     Returns:
         Path to generated video
@@ -53,11 +55,13 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     if provider != 'local':
         config = load_config()
         ai = AIProvider(provider, config.get('video_providers', {}))
+        extra = {k: v for k, v in (('model', model), ('resolution', resolution)) if v}
         return ai.image_to_video(
             image_path=image_path,
             prompt=f"{motion} motion effect",
             duration=int(duration),
-            output=output
+            output=output,
+            **extra
         )
 
     from moviepy.editor import ImageClip, AudioFileClip
@@ -274,6 +278,7 @@ def main():
     parser.add_argument('--provider', default='local',
                        choices=['local', 'kieai', 'runway', 'pika'],
                        help='AI provider for generation')
+    parser.add_argument('--model', help='Explicit KIE model id (kieai only); default comes from Skill 67')
     
     args = parser.parse_args()
     
@@ -290,7 +295,8 @@ def main():
             resolution=args.resolution,
             zoom_direction=args.zoom_direction,
             music=args.music,
-            provider=args.provider
+            provider=args.provider,
+            model=args.model
         )
         print(f"\n🎥 Video ready: {result}")
         return 0

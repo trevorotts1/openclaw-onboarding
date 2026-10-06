@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "25.3.19",
+  "version": "25.3.21",
   "total_roles": 538,
   "total_departments": 68,
   "departments": {
@@ -10090,25 +10090,25 @@
       "slug": "SOP-IMG-00-CLUSTER-INDEX-AND-WIRING",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-00-CLUSTER-INDEX-AND-WIRING.md",
-      "content_sha": "sha256:41565170706b95c73859da5215e94377c9faf64888d451eff81c851e17b62073",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:4ba7432da64b9642215959f086f5b28a5263bbab3d6c111f740136d5a756bff5",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-01-KIE-CALL-MECHANICS",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "content_sha": "sha256:3ae138c4b9ae2520e0c9f2258ef49a4958e050abf597259951144dc2f5516b0a",
-      "content_version": "1.0.9",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:9b0fc4428e515eb6205a00f5bf2499732837a554061128954a95d0ee599c2a65",
+      "content_version": "1.0.14",
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
-      "content_sha": "sha256:e17e857844244de621a200ecb5e00f15c446b20f26323f752fc0630ec511ab0e",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:3a387463fda48e66b798998ec8485b5a4679b61c95963e5d6dad152f327352cb",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION",
@@ -10122,9 +10122,9 @@
       "slug": "SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "content_sha": "sha256:d7b111235812917e1111c01f2b65626f5f3fea9c383a742ec9713c865a1399f7",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:195b204fbded412d601525c727a262d4a9d1aafcf29160a67c55fb4553ad69f6",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-05-PIL-LOGO-COMPOSITE",
@@ -10802,7 +10802,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-04T23:48:08.324617+00:00",
+    "generated_at": "2026-10-06T04:06:06.266926+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

@@ -9,10 +9,109 @@ import time
 import json
 import math
 import subprocess
+import sys
 import tempfile
+import importlib.util
+import mimetypes
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+
+# KIE.ai live unified job API (Skill 74 kie-live-adapter will become the shared
+# transport for all KIE skills; Skill 25 deliberately does NOT import it yet).
+KIE_API_BASE = 'https://api.kie.ai/api/v1'
+KIE_UPLOAD_URL = 'https://kieai.redpandaai.co/api/file-stream-upload'
+KIE_UPLOAD_PATH = 'video-creator/inputs'  # no leading/trailing slash (KIE requirement)
+KIE_AUTH_CODES = (401, 403)
+KIE_POLL_DEADLINE = 900  # seconds; video jobs are slow
+KIE_VIDEO_SKILL = '67-kie-video'
+
+
+class KieAPIError(RuntimeError):
+    """KIE returned a non-200 body `code` (HTTP 200 does not mean success)."""
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+def _skills_dirs():
+    """Skill roots to search for sibling skills / shared-utils.
+
+    The directory two levels above this file is the skills dir for both the
+    numbered source (<skills>/25-video-creator/scripts) and the runtime copy
+    (<skills>/video-creator/scripts). Well-known box paths are the fallback.
+    """
+    dirs = [Path(__file__).resolve().parents[2],
+            Path.home() / '.openclaw' / 'skills',
+            Path('/data/.openclaw/skills')]
+    return [d for i, d in enumerate(dirs) if d not in dirs[:i]]
+
+
+def _resolve_kie_key() -> Optional[str]:
+    """KIE key via the shared canon (shared-utils/key_resolver.py), else env."""
+    for skills in _skills_dirs():
+        shared = skills / 'shared-utils'
+        if (shared / 'key_resolver.py').is_file():
+            if str(shared) not in sys.path:
+                sys.path.append(str(shared))
+            try:
+                from key_resolver import resolve_key
+                key = resolve_key('kie')
+                if key:
+                    return key
+            except Exception:
+                pass
+            break
+    return os.getenv('KIE_API_KEY') or os.getenv('KIEAI_API_KEY')
+
+
+def _find_kie_video_skill() -> Optional[Path]:
+    for skills in _skills_dirs():
+        root = skills / KIE_VIDEO_SKILL
+        if (root / 'scripts' / 'select_video_model.py').is_file() and (root / 'models.json').is_file():
+            return root
+    return None
+
+
+def select_kie_video_model(task: str, duration=None) -> str:
+    """Ask Skill 67's selector for the model id. Never guesses a model."""
+    root = _find_kie_video_skill()
+    if root is None:
+        raise RuntimeError(
+            f"Skill {KIE_VIDEO_SKILL} (KIE Video) is not installed, so no KIE video model can be "
+            "chosen. Install/update it (run update-skills.sh), or pass an explicit KIE model id "
+            "(--model <id>, e.g. one listed by https://api.kie.ai/api/v1/models)."
+        )
+    spec = importlib.util.spec_from_file_location('kie67_select_video_model',
+                                                  root / 'scripts' / 'select_video_model.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    request = f"{task} {int(duration)} seconds" if duration else task
+    choice = module.select(request)
+    if not choice.get('valid') or not choice.get('selected_model_id'):
+        raise RuntimeError(f"Skill {KIE_VIDEO_SKILL} could not select a model for '{request}': "
+                           f"{choice.get('reason')}")
+    return choice['selected_model_id']
+
+
+def _kie_resolution(model: str, resolution: Optional[str]) -> Optional[str]:
+    """Use Skill 67's registry spelling for the model (e.g. 1080p -> 1080P)."""
+    if not resolution:
+        return None
+    root = _find_kie_video_skill()
+    if root is None:
+        return resolution
+    with open(root / 'models.json', encoding='utf-8') as fh:
+        entry = next((m for m in json.load(fh)['models'] if m['canonical_model_id'] == model), None)
+    if entry is None or not entry.get('resolutions'):
+        return resolution
+    for allowed in entry['resolutions']:
+        if allowed.lower() == resolution.lower():
+            return allowed
+    raise ValueError(f"Resolution '{resolution}' is not supported by KIE model {model} "
+                     f"(supported: {', '.join(entry['resolutions'])})")
 
 
 class AIProvider:
@@ -35,16 +134,19 @@ class AIProvider:
         self.api_key = self.config.get('api_key')
         if not self.api_key:
             if self.provider == 'kieai':
-                self.api_key = os.getenv('KIE_API_KEY') or os.getenv('KIEAI_API_KEY')
+                self.api_key = _resolve_kie_key()
             else:
                 self.api_key = os.getenv(f'{provider_name.upper()}_API_KEY')
 
         self.endpoint = self.config.get('endpoint', self._default_endpoint())
+        if self.provider == 'kieai' and self.endpoint.rstrip('/') == 'https://api.kie.ai/v1':
+            # Legacy endpoint from old configs: dead (HTTP 404). Use the live unified job API.
+            self.endpoint = KIE_API_BASE
         
     def _default_endpoint(self) -> str:
         """Get default endpoint for provider."""
         endpoints = {
-            'kieai': 'https://api.kie.ai/v1',
+            'kieai': KIE_API_BASE,
             'runway': 'https://api.runwayml.com/v1',
             'pika': 'https://api.pika.art/v1',
             'stability': 'https://api.stability.ai/v2beta',
@@ -71,7 +173,7 @@ class AIProvider:
         """
         if self.provider != 'kieai':
             unsupported_options = [
-                option for option in ('seed', 'negative_prompt')
+                option for option in ('seed', 'negative_prompt', 'model')
                 if kwargs.get(option) is not None
             ]
             if unsupported_options:
@@ -92,52 +194,118 @@ class AIProvider:
             raise ValueError(f"Unknown provider: {self.provider}")
     
     def _generate_kieai(self, prompt, duration, resolution, style, output, **kwargs):
-        """Generate video using KIE.AI API."""
+        """Text-to-video on KIE's live unified job API (createTask + recordInfo)."""
+        self._require_kie_key()
+        model = kwargs.get('model') or select_kie_video_model('text to video', duration)
+        payload = {'prompt': prompt, 'duration': duration}
+        self._kie_common_input(payload, model, resolution, kwargs)
+        return self._kie_run(model, payload, output, kwargs)
+
+    def _image_to_video_kieai(self, image_path, prompt, duration, **kwargs):
+        """Image-to-video: upload the local image, then createTask with its URL."""
+        self._require_kie_key()
+        image_path = Path(image_path)
+        model = kwargs.get('model') or select_kie_video_model('image to video', duration)
+        image_url = self._kie_upload(image_path)
+        field = kwargs.get('image_field') or 'image_urls'  # Skill 67 registry convention
+        payload = {'prompt': prompt or '', 'duration': duration,
+                   field: [image_url] if field.endswith('s') else image_url}
+        self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs)
+        output = kwargs.get('output') or image_path.with_suffix('.mp4')
+        return self._kie_run(model, payload, output, kwargs)
+
+    def _require_kie_key(self):
         if not self.api_key:
             raise ValueError("KIE_API_KEY not configured (set it in your environment to use provider=kieai)")
-        
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        }
-        
-        # Map resolution to dimensions
-        res_map = {"720p": (1280, 720), "1080p": (1920, 1080), "4k": (3840, 2160)}
-        width, height = res_map.get(resolution, (1920, 1080))
-        
-        payload = {
-            'prompt': prompt,
-            'duration': duration,
-            'width': width,
-            'height': height,
-            'style': style,
-            'seed': kwargs.get('seed'),
-            'negative_prompt': kwargs.get('negative_prompt')
-        }
-        
-        # Remove None values
-        payload = {k: v for k, v in payload.items() if v is not None}
-        
+
+    def _kie_common_input(self, payload, model, resolution, kwargs):
+        res = _kie_resolution(model, resolution)
+        if res:
+            payload['resolution'] = res
+        for key in ('aspect_ratio', 'seed', 'negative_prompt'):
+            if kwargs.get(key) is not None:
+                payload[key] = kwargs[key]
+        payload.update(kwargs.get('input_extra') or {})  # model-specific fields, passed unchanged
+
+    def _kie_call(self, method, url, **request_kwargs):
+        """One KIE request. Checks the body `code`, not just the HTTP status."""
+        request_kwargs.setdefault('headers', {})['Authorization'] = f'Bearer {self.api_key}'
         try:
-            # Submit generation job
-            response = requests.post(
-                f"{self.endpoint}/video/generate",
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            job_id = result.get('job_id') or result.get('id')
-            print(f"   Job submitted: {job_id}")
-            
-            # Poll for completion
-            return self._poll_job(job_id, headers, output)
-            
-        except requests.RequestException as e:
-            raise RuntimeError(f"KIE.AI API error: {e}")
-    
+            response = getattr(requests, method)(url, **request_kwargs)
+        except requests.RequestException as exc:
+            raise RuntimeError(f"KIE.AI network error: {exc}") from exc
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        code = body.get('code', getattr(response, 'status_code', None))
+        if getattr(response, 'status_code', 200) in KIE_AUTH_CODES:
+            code = response.status_code
+        if code in KIE_AUTH_CODES:
+            # Fail closed (AGENTS.md N40): never loop on an unauthorized/forbidden key.
+            raise KieAPIError(f"KIE.AI rejected the API key (code {code}): {body.get('msg', '')}. "
+                              "Stopping; do not retry. Check KIE_API_KEY.", code)
+        if code != 200:
+            raise KieAPIError(f"KIE.AI error code {code}: {body.get('msg') or 'no message'}", code)
+        return body.get('data')
+
+    def _kie_upload(self, image_path: Path) -> str:
+        """Upload a local file to KIE's temp file service; return its download URL."""
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+        mime = mimetypes.guess_type(image_path.name)[0] or 'application/octet-stream'
+        with open(image_path, 'rb') as fh:
+            data = self._kie_call(
+                'post', KIE_UPLOAD_URL,
+                files={'file': (image_path.name, fh, mime)},
+                data={'uploadPath': KIE_UPLOAD_PATH, 'fileName': image_path.name},
+                timeout=120)
+        url = (data or {}).get('downloadUrl')
+        if not url:
+            raise RuntimeError("KIE.AI upload returned no downloadUrl")
+        return url
+
+    def _kie_run(self, model, payload, output, kwargs) -> Path:
+        """createTask -> poll recordInfo -> download the result immediately."""
+        body = {'model': model, 'input': payload}
+        if kwargs.get('callback_url'):
+            body['callBackUrl'] = kwargs['callback_url']
+        data = self._kie_call('post', f"{self.endpoint}/jobs/createTask", json=body, timeout=30)
+        task_id = (data or {}).get('taskId')
+        if not task_id:
+            raise RuntimeError("KIE.AI createTask returned no taskId")
+        print(f"   KIE task submitted: {task_id} (model {model})")
+        deadline = time.monotonic() + kwargs.get('timeout', KIE_POLL_DEADLINE)
+        delay = 3.0
+        while True:
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15.0)
+            try:
+                info = self._kie_call('get', f"{self.endpoint}/jobs/recordInfo",
+                                      params={'taskId': task_id}, timeout=30) or {}
+            except KieAPIError as exc:
+                if exc.code != 429:  # rate-limited polls are retried; auth/other codes stop here
+                    raise
+                info = {}
+            except RuntimeError as exc:  # transient network error: keep polling until the deadline
+                print(f"   Poll error: {exc}")
+                info = {}
+            state = info.get('state')
+            if state:
+                print(f"   KIE state: {state}")
+            if state == 'success':
+                urls = (info.get('response') or {}).get('resultUrls')
+                if not urls and info.get('resultJson'):
+                    urls = json.loads(info['resultJson']).get('resultUrls')
+                if not urls:
+                    raise RuntimeError(f"KIE task {task_id} succeeded but returned no resultUrls")
+                return self._download_video(urls[0], output or Path(f"kie_{task_id}.mp4"))
+            if state == 'fail':
+                raise RuntimeError(f"KIE task {task_id} failed: {info.get('failCode')} {info.get('failMsg')}")
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"KIE task {task_id} timed out after "
+                                   f"{kwargs.get('timeout', KIE_POLL_DEADLINE)}s (last state: {state})")
+
     def _generate_runway(self, prompt, duration, resolution, style, output, **kwargs):
         """Generate video using Runway ML API."""
         if not self.api_key:

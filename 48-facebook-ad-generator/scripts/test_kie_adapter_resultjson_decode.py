@@ -22,7 +22,7 @@ is stubbed so the adapters import standalone):
 Covers all three shipped poll paths:
   - video gemini-omni-video  createTask -> /jobs/recordInfo   (KieVideo._poll_gemini_omni)
   - video veo3_fast          generate   -> /veo/record-info   (KieVideo._poll_veo)
-  - image gpt-image-2        createTask -> /jobs/recordInfo   (KieImage._poll_task)
+  - image gpt-image-2.5      createTask -> /jobs/recordInfo   (KieImage._poll_task)
 
 Run:  python3 47-movie-producer/scripts/test_kie_adapter_resultjson_decode.py
 Exit: 0 = all pass; 1 = a failure.
@@ -234,7 +234,7 @@ def main() -> int:
 
     kind, res = run_poll(img, "_poll_task",
                          _image_recordinfo_resultjson_as_string(), KieImage())
-    check("image gpt-image-2: poll returns the result URL (createTask->recordInfo)",
+    check("image gpt-image-2.5: poll returns the result URL (createTask->recordInfo)",
           kind == "ok" and res == RESULT_IMG_URL, detail=f"got {kind}={res!r}")
 
     print("== regression guard: the OLD (pre-fix) code path would have crashed ==")

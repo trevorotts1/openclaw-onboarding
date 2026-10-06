@@ -73,7 +73,7 @@ Response (accepted, NOT complete):
 { "code": 200, "msg": "success", "data": { "taskId": "task_1765185282276" } }
 
 Callback when done: POST to callBackUrl, success code:200 / fail code:501,
-data.state "success" / "fail", audio in data.resultJson.resultUrls[0].
+data.state "success" / "fail", audio in data.resultJson.resultUrls[0] (data.response.resultUrls is the same list already parsed).
 
 Voice options (30): Achernar, Achird, Algenib, Algieba, Alnilam, Aoede, Autonoe,
 Callirrhoe, Charon, Despina, Enceladus, Erinome, Fenrir, Gacrux, Iapetus, Kore,

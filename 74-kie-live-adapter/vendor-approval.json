@@ -1,0 +1,29 @@
+{
+  "approved_on": "2026-10-05",
+  "policy": "probe-box-only",
+  "source": "https://kie.ai/.well-known/agent-skills/index.json",
+  "installer": "skills 1.7.0",
+  "install_command": "npx -y skills add https://kie.ai -y --copy",
+  "treeHash_algorithm": "sha256 over the sorted list of unique file sha256 values, joined with newline, with one trailing newline",
+  "treeHash_sha256": "3871a62792085f6492652f57ae814c9cd3638bba32d3b4c685effbd2e51509ac",
+  "files": {
+    "kie-chat-agents/SKILL.md": "5556de70d4c8fee28bd597a3e9e980a8d93f59260632e2363f74bb244e3dca4b",
+    "kie-chat-agents/references/en.md": "82975b3de17c5a4a2421dcf0284d0a0c3ebe15e619fe0a8adb0638b39c10397d",
+    "kie-models/SKILL.md": "0ff50cb3ccedcedf86935ffc74bd94f208238150e894a90805af2d2af453f91a",
+    "kie-models/references/en.md": "42e830b7c1355a3ad90852b958424f6ec22e1c882e792bb74c3395e4d3d54118"
+  },
+  "archiveDigests": {
+    "kie-chat-agents": "sha256:f1cbf185af32ff7162dd67d9d257cd527e79846d94cae804e2bb83e08a47e8b0",
+    "kie-models": "sha256:f6247b734033fad6ba75e0875bc105e2307c9b7e7790317a26c1b68838209f22"
+  },
+  "lockComputedHash": {
+    "kie-chat-agents": "806c6840866c2665edb2b54785406728185913db288e0b567ff9f586bff4c13c",
+    "kie-models": "9a8ed0bc28ef13ce38f33572ff7930104c23d343f94e0867ae222ff238fa9533"
+  },
+  "notes": [
+    "Vendor skills are instruction-only markdown (no scripts, no binaries).",
+    "The vendor package is never a runtime dependency and is never installed on client boxes or fleet-wide.",
+    "Only vendor_skill_probe.sh installs it, into a disposable temp HOME, to detect upstream drift.",
+    "State on mismatch is UNKNOWN-DRIFT until a human re-reviews and re-approves; see references/integration-policy.md."
+  ]
+}
