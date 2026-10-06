@@ -1,10 +1,15 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
-## v2.0.5 - 2026-10-06 - feat: image prompt richness uses the rule 12 band
+## v2.0.6 - 2026-10-06 - feat: image prompt richness uses the rule 12 band
 
 - `ad_build_check._chk_prompt_richness` no longer carries `PROMPT_MIN_CHARS` 3500 and `PROMPT_MAX_CHARS` 18000. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Each prompt in the S4 receipt is measured for its image model (`IMAGE_MODEL_DEFAULT` when the receipt names none).
 - `AD-PIPELINE-MANIFEST.json` manifest_version 3, the MASTER-AD ruleset row and SOP-FBAD-06 restate the rule; the S4 receipt example carries a rule 12 sized `char_count`.
 
+## v2.0.5 - 2026-10-06 - follow Skill 47's adapters onto the Skill 74 transport
+
+- `scripts/test_kie_adapter_resultjson_decode.py` still imported `_decode_result_json` and the old poll methods (`_poll_gemini_omni`, `_poll_veo`, `_poll_task`), which Skill 47 v15.1.0 removed when its adapters moved onto Skill 74. It is now the same test as Skill 47's updated copy: it proves the result file comes out of a recordInfo response whose `resultJson` is a JSON string (image, gemini-omni-video, the veo3_fast legacy route) and that malformed or empty `resultJson` fails cleanly, over a fake Skill 74 transport (no network, no key).
+- `qc-facebook-ad-generator.sh` now runs that test, so a future change to the Skill 47 adapters cannot silently break Skill 48 again.
+- No other Skill 48 code or test uses a removed Skill 47 symbol (checked by parsing every Python file in the skill for imports, attributes, names and definitions of the removed names).
 ## v2.0.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - Credit preflight: `_fetch_kie_balance` checks the BODY `code`; a short balance now reports the shortfall in credits; a paid run with no real `KIE_API_KEY` (unset or placeholder) now FAILS like Skill 47: `phase0_preflight` exits 4 and `kie_balance_preflight` returns the fatal AF-FBAD-KIE-BALANCE string so `--recover` parks it. Recovery fixtures use a stub key plus a stubbed `_fetch_kie_balance`; CI GOOD/BAD runs go through `test-fixtures/run-foreman-stubbed.py`. Credits per USD is 200 (verified kie.ai/pricing "1 credit ~= $0.005"), placeholder keys are rejected via the shared secret canon. New probe in `test_ad_preflight.py`.
