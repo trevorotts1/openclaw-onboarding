@@ -211,7 +211,7 @@ def test_image_to_video_uploads_then_creates_task_with_download_url(env):
     image = env.tmp / "pic.png"
     image.write_bytes(b"png-bytes")
     out = env.tmp / "i.mp4"
-    result = env.provider().image_to_video(image, "pan left", 5, output=out)
+    result = env.provider().image_to_video(image, "pan left", 5, output=out, model="wan/3-0-video")
 
     (_, _, up), = fake.of(UPLOAD)
     assert up["headers"] == {"Authorization": "Bearer test-only-key"}
@@ -219,9 +219,11 @@ def test_image_to_video_uploads_then_creates_task_with_download_url(env):
     assert not up["data"]["uploadPath"].startswith("/") and not up["data"]["uploadPath"].endswith("/")
     assert up["files"]["file"][0] == "pic.png" and up["files"]["file"][2] == "image/png"
     (_, _, kw), = fake.of(CREATE)
-    assert kw["json"]["model"] == "stub/model-x"
+    assert kw["json"]["model"] == "wan/3-0-video"
     assert kw["json"]["input"] == {"prompt": "pan left", "duration": 5,
-                                   "image_urls": ["https://tempfile.example/in.png"]}
+                                   "first_frame_url": "https://tempfile.example/in.png"}
+    assert isinstance(kw["json"]["input"]["first_frame_url"], str)
+    assert "image_urls" not in kw["json"]["input"]
     assert result == out
 
 
@@ -230,14 +232,14 @@ def test_upload_error_body_code_raises_before_any_task(env):
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     with pytest.raises(env.module.KieAPIError, match="400"):
-        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4")
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video")
     assert not fake.of(CREATE)
 
 
 def test_missing_local_image_fails_before_any_http(env):
     fake = env.install(FakeKie())
     with pytest.raises(FileNotFoundError):
-        env.provider().image_to_video(env.tmp / "absent.png", "m", 5, output=env.tmp / "i.mp4")
+        env.provider().image_to_video(env.tmp / "absent.png", "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video")
     assert fake.calls == []
 
 
@@ -326,3 +328,114 @@ def test_other_providers_reject_kie_only_model_option(provider, tmp_path):
     ai = module.AIProvider(provider, {provider: {"api_key": "k"}})
     with pytest.raises(ValueError, match="--model"):
         ai.generate_video("x", output=tmp_path / "o.mp4", model="a/b")
+
+
+# Expected mapping, written out independently of the implementation (docs.kie.ai/market/<page>.md).
+EXPECTED_I2V_FIELDS = [
+    ("wan/3-0-video", "first_frame_url", str),
+    ("wan/3-0-video-prime", "first_frame_url", str),
+    ("wan/2-7-image-to-video", "first_frame_url", str),
+    ("bytedance/seedance-2-5", "first_frame_url", str),
+    ("bytedance/seedance-2-mini", "first_frame_url", str),
+    ("minimax-h3/image-to-video", "first_frame_url", str),
+    ("kling/v2-5-turbo-image-to-video-pro", "image_url", str),
+    ("kling-3.0-omni/image-to-video", "image_urls", list),
+    ("kling-3.0/video", "image_urls", list),
+    ("pixverse-v6/image-to-video", "image_urls", list),
+    ("happyhorse-1-1/image-to-video", "image_urls", list),
+    ("happyhorse/image-to-video", "image_urls", list),
+    ("gemini-omni-video", "image_urls", list),
+]
+
+
+@pytest.mark.parametrize("model,field,kind", EXPECTED_I2V_FIELDS)
+def test_each_mapped_model_sends_its_documented_image_field_and_type(env, model, field, kind):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model=model)
+    inp = fake.of(CREATE)[0][2]["json"]["input"]
+    url = "https://tempfile.example/in.png"
+    assert inp[field] == (url if kind is str else [url])
+    assert type(inp[field]) is kind
+    assert {"image_url", "image_urls", "first_frame_url"} & set(inp) == {field}
+
+
+def test_mapping_table_has_exactly_the_documented_models():
+    module = load_module()
+    assert set(module.KIE_I2V_IMAGE_FIELD) == {m for m, _, _ in EXPECTED_I2V_FIELDS}
+
+
+@pytest.mark.parametrize("model", ["runway", "veo3", "veo3_fast", "veo3_lite"])
+def test_dedicated_api_models_fail_clearly_before_any_http(env, model):
+    fake = env.install(FakeKie())
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match=f"'{model}' uses a dedicated KIE API"):
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model=model)
+    assert fake.calls == []
+
+
+def test_unknown_model_error_names_model_and_points_to_image_field_flag(env):
+    fake = env.install(FakeKie())
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match=r"'brand/new-model'.*not established.*--image-field"):
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="brand/new-model")
+    assert fake.calls == []
+
+
+def test_cli_image_field_flag_is_forwarded_and_unblocks_unknown_model(monkeypatch, tmp_path):
+    sys.modules.pop("ai_providers", None)
+    spec = importlib.util.spec_from_file_location(
+        "skill25_image_to_video_cli", SKILL_ROOT / "scripts" / "image_to_video.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    seen = {}
+
+    class Recorder:
+        def __init__(self, name, config):
+            seen["provider"] = name
+
+        def image_to_video(self, **kwargs):
+            seen.update(kwargs)
+            return kwargs["output"]
+
+    monkeypatch.setattr(cli, "AIProvider", Recorder)
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"x")
+    monkeypatch.setattr(sys, "argv", ["image_to_video.py", str(image), "--provider", "kieai",
+                                      "--model", "brand/new-model", "--image-field", "start_image",
+                                      "--output", str(tmp_path / "o.mp4")])
+    assert cli.main() == 0
+    assert seen["provider"] == "kieai"
+    assert seen["model"] == "brand/new-model" and seen["image_field"] == "start_image"
+
+
+def test_cli_image_field_reaches_payload_end_to_end(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="brand/new-model",
+                                  image_field="start_image")
+    assert fake.of(CREATE)[0][2]["json"]["input"]["start_image"] == "https://tempfile.example/in.png"
+
+
+def test_default_selector_model_without_established_field_fails_before_any_http(env):
+    fake = env.install(FakeKie())  # stub Skill 67 selects stub/model-x, whose field is unknown
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match="stub/model-x.*not established"):
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4")
+    assert fake.calls == []
+
+
+def test_image_field_override_wins_over_model_mapping(env):
+    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video",
+                                  image_field="reference_image_urls")
+    inp = fake.of(CREATE)[0][2]["json"]["input"]
+    assert inp["reference_image_urls"] == ["https://tempfile.example/in.png"]
+    assert "first_frame_url" not in inp

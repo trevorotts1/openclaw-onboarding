@@ -112,7 +112,7 @@ registry.discover()
 "
 ```
 
-Budget cap: set `total_usd: 1.00` in `config.yaml` for the free path (stock sources are free; only narration TTS has cost if you use a cloud TTS instead of Piper).
+Budget cap: set `total_usd: 1.00` in `config.yaml` for the free path (stock sources are free; only narration TTS has cost, because cloud TTS is the default and Piper is opt-in).
 
 ---
 
@@ -151,11 +151,17 @@ When `KIE_API_KEY` is in `.env`:
 **Kie image models:**
 - `gpt-image-2-5-sunburst-image-to-image` — when source images are provided (edit mode)
 - `gpt-image-2-5-sunburst-text-to-image` — when no source image (text-to-image)
-- Output: 16:9 aspect ratio, 2K resolution, PNG
+- Output: 16:9 aspect ratio, 2K resolution (only schema-declared fields are sent; `output_format` is not one, so the saved file type follows `output_path`)
 
 **Kie video models:**
 - `gemini-omni-video` (default) — image-to-video, accepts reference image URLs, duration as STRING (e.g. `"8"`), `generate_audio: true`
 - `veo3` / `veo3_fast` (fallback) — text-to-video, POST `/api/v1/veo/generate`
+
+**Model ids and prices:** the image ids above are the same ids Skill 66 (`66-kie-image/models.json`) lists, and AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`. Skill 66 is authoritative for image model ids. Prices are not stated in this document: read the live price with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`, snapshot fallback `74-kie-live-adapter/references/kie-model-registry.json`). The constants in `kie_image.py` `estimate_cost` are only the runtime fallback. Canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
+
+### Credit preflight (Phase-0, AF-VID-KIE-BALANCE)
+
+Before any paid dispatch, `executive_producer.py` checks the live balance with `GET https://api.kie.ai/api/v1/chat/credit` (Bearer `KIE_API_KEY`). Required balance = estimated cost x 200 credits per USD (1 credit is about $0.005, kie.ai/pricing) x **1.30** (the fleet-wide rule; this skill used 1.25 before v15.0.2). The BODY `code` must be 200: an HTTP 200 whose body carries another code (for example 401) is an unverifiable balance, not "enough". A paid job with no `KIE_API_KEY`, or with a balance below the floor or unverifiable, HARD-ABORTS with exit 4. Skill 48 applies the same 1.30 rule but PARKS the run (recoverable) instead of aborting; both name the shortfall in credits.
 
 ---
 
@@ -187,11 +193,9 @@ If validation fails (zero duration, no video stream, corrupt format): do NOT del
 
 ---
 
-## TTS (narration) — Piper first, cloud fallback
+## TTS (narration) - Fish Audio primary, cloud fallbacks, Piper optional
 
-Piper is the free, offline, zero-key TTS engine installed by `make setup`. Use it by default for all narration.
-
-If Piper is unavailable (soft-fail at install), the pipeline falls back to the cloud TTS providers installed in `tools/audio/`. For premium TTS, hand off to Skill 30 (`fish-audio-api-reference`) instead of adding new API keys here.
+Per `SKILL.md` and the v14.3.0 change: the primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`); Gemini TTS, OpenAI TTS and MiniMax (Mimo) are the cloud fallbacks; Piper is an OPTIONAL, opt-in (`SKILL47_INSTALL_PIPER=1`), offline-only fallback that is NOT installed by default. OpenMontage's TTS auto-discovery uses the cloud providers installed in `tools/audio/` when Piper is absent. For premium TTS, hand off to Skill 30 (`fish-audio-api-reference`) instead of adding new API keys here.
 
 ---
 
@@ -222,4 +226,4 @@ checkpoint:
 preferred_provider: kie             # belt-and-suspenders Kie routing
 ```
 
-For the free documentary-montage path, set `total_usd: 1.00` — the only potential cost is cloud TTS if Piper is unavailable.
+For the free documentary-montage path, set `total_usd: 1.00` - the only potential cost is cloud TTS (the default narrator path; Piper is opt-in).

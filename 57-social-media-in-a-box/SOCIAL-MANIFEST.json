@@ -89,14 +89,14 @@
     {
       "id": "P4-MEDIA",
       "order": 4,
-      "name": "Media core (image grid+judge / Sora 25s video / carousel QC loop / podcast cover) via local SQLite ledger",
+      "name": "Media core (image generate+QC / Sora 25s video / carousel QC loop / podcast cover) via local SQLite ledger",
       "module": "3-media-core",
       "owning_role": "brand-designer",
       "produces_artifact": "working/media/media_ledger.json",
       "preflight": {
         "required": true,
         "checker": "_chk_media_ledger",
-        "label": "ledger.py drove the media jobs (Nano-Banana generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
+        "label": "ledger.py drove the media jobs (GPT Image 2.5 sunburst generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
       },
       "gate_codes": ["AF-SM-MEDIA-LEDGER", "AF-SM-CAROUSEL-FLOOR"]
     },

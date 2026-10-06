@@ -35,7 +35,7 @@ The image-model gate accepts ANY id beginning `gpt-image-`:
 ```
 python3 - <<'PY'
 import sys; sys.path.insert(0, "scripts"); import ad_build_check as abc
-for m in ("gpt-image-2-text-to-image", "gpt-image-3", "gpt-image-4-image-to-image"):
+for m in ("gpt-image-2-5-sunburst-text-to-image", "gpt-image-3", "gpt-image-4-image-to-image"):
     print(m, "->", "accepted" if m.startswith(abc.GPT_IMAGE_MODEL_PREFIX) else "REJECTED")
 PY
 ```

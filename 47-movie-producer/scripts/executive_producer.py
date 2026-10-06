@@ -424,7 +424,8 @@ def _estimated_cost(run_dir: Path) -> float:
 
 def _load_kie_api_key() -> str:
     import os
-    return os.environ.get("KIE_API_KEY", "") or ""
+    # A placeholder (the installer writes YOUR_CLIENT_KIE_API_KEY_HERE) is NOT-SET.
+    return vbc.real_kie_key(os.environ.get("KIE_API_KEY", "")) or ""
 
 
 def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:

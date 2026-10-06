@@ -64,6 +64,6 @@ detection (v10.14.17+).
 
 **Env vars required:** KIE_API_KEY, NOTION_API_TOKEN.
 
-**Cost cap:** ~$0.60 in KIE credits per client closeout. No Notion or Telegram
+**Cost:** no price is stated here; read it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`. No Notion or Telegram
 cost.
 ```

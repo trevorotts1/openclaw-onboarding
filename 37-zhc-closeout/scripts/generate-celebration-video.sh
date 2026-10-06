@@ -19,7 +19,7 @@
 # Env overrides:
 #   ZHC_CELEBRATION_VIDEO_MODEL  default: gemini-omni-video
 #                                accepts:  gemini-omni-video | veo3 | veo3_fast
-#   ZHC_VIDEO_DURATION           default: 4 (Gemini) or 8 (Veo)
+#   ZHC_VIDEO_DURATION           default: 8 (Gemini Omni and Veo)
 #                                Gemini Omni typically supports 4-8s.
 #                                Veo3 supports 4, 6, or 8s.
 #   ZHC_CELEBRATION_VIDEO_ASPECT default: 16:9. Accepts 16:9 or 9:16.
