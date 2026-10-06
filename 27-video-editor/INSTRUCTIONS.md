@@ -96,7 +96,7 @@ Important notes about analysis:
 
 ## Workflow D: Merge B-roll into a talking-head video
 
-1. Make sure you have your B-roll clips as separate files (MP4 recommended).
+1. Make sure you have your B-roll clips as separate files (MP4 recommended). Generate them through Skill 67 (`67-kie-video`); see `BROLL-WORKFLOW.md` Step 9 for model choice and approval.
 2. Choose insertion times in seconds.
 3. Run the merge.
 

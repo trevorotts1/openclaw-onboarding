@@ -335,7 +335,7 @@ class KieKvPoller {
     if (!resultJson || typeof resultJson !== 'object') return [];
     // Standard images array: resultJson.images[].url
     if (Array.isArray(resultJson.images) && resultJson.images.length > 0) {
-      return resultJson.images.map(i => i.url).filter(Boolean);
+      return resultJson.images.map(i => i && i.url).filter(Boolean);
     }
     const urls = [];
     // Market success shape: resultJson.resultUrls

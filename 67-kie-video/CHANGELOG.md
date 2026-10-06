@@ -4,6 +4,17 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.3] - 2026-10-05 - docs: record the sync flag change truthfully
+
+### Corrected record
+- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but the release notes and PR text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
+- How `sync` is consumed: none of the four scripts in this skill (`select_video_model.py`, `validate_payload.py`, `validate_prompt.py`, `normalize_alias.py`) reads the field, and no 67 document depends on it, so the flip changes registry data only and no behaviour here. Consumers elsewhere in the repo could not be searched, so they are undetermined.
+- Why `false` is correct: every KIE video route in this registry (Market `createTask`, Runway `generate`, Veo `generate`) is asynchronous (create, then poll or callback), which `SKILL.md`, `INSTRUCTIONS.md` and `references/api-patterns.md` all state. The sibling registries use `false` for asynchronous work (66: 32 of 32; Agnes Video: 2 of 2). `true` would mean "result in the create response", which none of these models does. Verified: 37 of 37 entries are `false`.
+- Version roll to v2.0.3 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.
+- The prebuilt `67-kie-video-1.0.0.skill` archive is not rebuilt (no packaging script in `scripts/`, archive already stale).
+
+---
+
 ## [v2.0.2] - 2026-10-05 - fix: version drift, registry sync flag, api_family spelling, retention prose
 
 ### Fixed

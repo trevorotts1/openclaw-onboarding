@@ -11,7 +11,12 @@ THE RULE (decision GK-D2, extended to Agnes via skills 63/64):
   For image prompts generated for GPT-image-2.5 OR Agnes Image 2.1 Flash:
   NEVER BELOW 5,000 characters AND NEVER ABOVE 19,000 characters.
   Valid range: 5,000-19,000.
-  Max API capacity is 25,000; 19,000 gives ~6,000 chars headroom.
+  GPT-image-2.5 publishes a 20,000-char cap (AGENTS.md N43; KIE model page);
+  19,000 leaves ~1,000 chars headroom. The 25,000 figure belongs ONLY to the
+  legacy gpt-image-2-* entries (owner-confirmed cap, N43; ratios 3:1, 1:3,
+  9:21), not to the 2.5 family this gate covers. Agnes Image
+  publishes no hard cap (63-agnes-image/references/prompt-policy.md); the same
+  5,000-19,000 house band governs it.
   5,000 is the HARD FLOOR -- a prompt below 5,000 is a thin stub, NOT submitted.
 
 IMAGE-TO-IMAGE FOR LOGOS: When a prompt involves the client's LOGO or existing
@@ -48,8 +53,9 @@ EXIT_FAILCLOSED = 3
 # The SACRED band: 5,000-19,000 stripped characters.
 PROMPT_FLOOR = 5000
 PROMPT_CEILING = 19000
-# Full API capacity (GPT-image-2 / Agnes): 25,000 chars.
-API_CAP = 25000
+# GPT-image-2.5 vendor cap: 20,000 chars (N43). Legacy GPT-image-2 is 25,000
+# and Agnes has no published cap, so neither belongs in this constant.
+API_CAP = 20000
 
 # Logo-related tokens -- a prompt containing any of these + NOT declaring I2I intent
 # is a violation of the "image-to-image for logos" rule.
@@ -101,8 +107,8 @@ def check_length(prompt_text: str) -> List[Tuple[str, str]]:
     if n > PROMPT_CEILING:
         problems.append(("AF-QC-PROMPT-CEILING",
                          f"prompt is {n} chars, OVER the 19,000-char MAX. "
-                         f"The API accepts up to {API_CAP} chars; the 19,000 cap "
-                         f"preserves ~6,000 chars headroom. Trim to <= {PROMPT_CEILING} chars "
+                         f"GPT-image-2.5 accepts up to {API_CAP} chars; the 19,000 cap "
+                         f"preserves ~{API_CAP - PROMPT_CEILING:,} chars headroom. Trim to <= {PROMPT_CEILING} chars "
                          f"(remove {n - PROMPT_CEILING} chars)."))
     return problems
 
@@ -214,6 +220,13 @@ def _rich_prompt(n_sentences: int = 40, with_style_ref: bool = True) -> str:
 
 def _self_test() -> int:
     failures: List[str] = []
+
+    # --- CAP LABEL (N43: GPT-image-2.5 cap is 20,000, not the legacy 25,000) ---
+    if API_CAP != 20000:
+        failures.append(f"[api-cap] expected 20000 (N43), got {API_CAP}")
+    _, over_probs = gate_prompt(_rich_prompt(250))
+    if not any("20000" in m and "25000" not in m for _, m in over_probs):
+        failures.append("[ceiling-msg] ceiling message must cite the 20000 cap")
 
     # --- LENGTH TESTS ---
     ok = _rich_prompt(40)

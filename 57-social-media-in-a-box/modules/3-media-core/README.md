@@ -7,23 +7,24 @@
 ## Lanes (parallel; no shared dependency until publish)
 
 ### Image
-Visual Prompt Architect (05) → Kie.ai Midjourney → **Prompt-Doctor** retry on 422 (06, shorten /
-remove banned words, preserve intent) → **Gemini 4-grid vision judge** picks best of 4 (07, returns
-a single digit 0–3; `AF-SM-GRID-DIGIT`) → winner staged → SeedDream resizes 9:16 / 16:9 when a
-Reel/Story/TikTok/Short post type demands.
+Visual Prompt Architect (05) → Kie.ai GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`, Skill 66 id, AGENTS.md N43) → **Prompt-Doctor** retry on 422 (06, shorten /
+remove banned words, preserve intent) → vision QC → winner staged → SeedDream resizes 9:16 / 16:9
+when a Reel/Story/TikTok/Short post type demands. The Gemini grid selector (07, returns a single
+digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-image collage; GPT Image
+2.5 returns one image, so it is normally skipped. Midjourney is no longer used (F29).
 
 ### Video
 Storyboard Architect (08; **3–7 scenes, sum EXACTLY 25.0s**, max 1.5 spoken words/sec) →
 deterministic math validator (`AF-SM-STORYBOARD`) → Kie.ai Sora → poll → download.
 
 ### Carousel image (the QC loop)
-Nano-Banana Pro generate (12; 4:5, 2K, typographic `textOnImage`) → **Gemini QC bot** casual-viewer
+GPT Image 2.5 sunburst generate (12; 3:4, 2K, typographic `textOnImage`; 3:4 is the N43 substitution for 4:5) → **Gemini QC bot** casual-viewer
 test (11; verbatim in both QC 1 and QC 2) → FAIL → **SeedDream 4.5 edit** from the QC feedback (13,
 Instagram center-crop safety) → **QC 2** → final fallback strips ALL text (13 fallback) → ledger
 update. The QC output is `Good` or the JSON-safe 4-field fix set (`AF-SM-QC-JSON`).
 
 ### Podcast cover + audio (C3, v0.2.0)
-1:1 art (14; 1400×1400 JPEG, `AF-SM-PODCAST-COVER`), one retry, fail → notification + empty-URL
+1:1 art (14; GPT Image 2.5 sunburst, same id and payload as Skill 58 `generate_cover.sh`; 1400×1400 JPEG, `AF-SM-PODCAST-COVER`), one retry, fail → notification + empty-URL
 return. **v0.2.0 folds the AUDIO episode in** (merge plan C3): `--mode podcast` runs prompt 17
 (1,500–2,000-word `[emotion]`-tagged script) → Fish-Audio S2 TTS → ffprobe 600–900 s / ≥128 kbps
 (`AF-SM-PODCAST-SCRIPT` / `AF-SM-PODCAST-DURATION`) → local Podbean API call (no n8n), with the

@@ -112,8 +112,8 @@ the script. RECORD the exact model id that Skill 66 returned in the run manifest
 and `registry.md`. If Skill 66 cannot dispatch, ship the Mermaid truth diagram alone and flag
 the hero PENDING.
 
-The live Kie catalog check is provided by Skill 74 (`74-kie-live-adapter`) in shadow mode;
-Skill 66 remains the decision authority. Until a hero job actually runs,
+Once installed, the live Kie catalog check is provided by Skill 74 (`74-kie-live-adapter`) in
+shadow mode; Skill 66 remains the decision authority. Until a hero job actually runs,
 `scripts/31-generate-workflow-visual.sh` is a stub that records no model id (`model_id` is null
 in `visual.json`).
 
@@ -194,15 +194,16 @@ populated, its per-playbook section MUST embed the visual.
 - `scripts/31-generate-workflow-visual.sh` - parses via the engine, emits `diagram.mmd`, renders the
   PNG via `npx mermaid-cli`, writes `visual.json` and the `registry.md` Visual column. The Kie
   hero dispatch is delegated to Skill 66 and is a stub in this script today (no Kie call, no model
-  recorded); upload, manifest, and `kie-image-events.jsonl` logging happen when a real hero job runs. Idempotent via the structure hash;
-  `--force` overrides.
+  recorded); upload, manifest, and `kie-image-events.jsonl` logging happen when a real hero job
+  runs. Idempotent via the structure hash; `--force` overrides.
 - `scripts/09-install-conversation-workflows.sh` - invokes the generator after doc creation and
   records the Visual column.
 - `scripts/qc-workflow-visual.sh` (+ `qc-workflow-visual.test.sh`) - FAILS a registered playbook
   with no recorded `diagram.png`, FAILS a stale structure hash, WARNS (not FAILS) on a missing
   `hero.png` (a budget or Kie outage must never block handoff), and FAILS if this protocol file or
   the seeded `kie-image-events.jsonl` sink is missing.
-- `PREREQS.json` - Skill 07 (kie-setup) required, Skill 46 (kie-callback-relay) recommended.
+- `PREREQS.json` - Skill 07 (kie-setup) required for the Kie account and key; Skill 66 (kie-image, the
+  image policy owner) and Skill 46 (kie-callback-relay) recommended.
 - `scripts/00-verify-prerequisites.sh` STEP G - preflights `KIE_API_KEY` and reports whether the
   hero visual path is ACTIVE or Mermaid-only.
 - MEMORY Rule 39.

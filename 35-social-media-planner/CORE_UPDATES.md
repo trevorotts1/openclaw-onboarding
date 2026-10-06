@@ -43,7 +43,7 @@ The agent produces every 55-60s Reel end-to-end. It NEVER asks the client to rec
 **Full pipeline (mandatory primary path):**
 
 1. **Storyboard:** compute `scene_count = ceil(target_seconds / 8)` (e.g. ceil(60/8) = 8 scenes). For each scene write a visual prompt with continuity cues (consistent subject, wardrobe, setting, color grade, camera style). Mark each scene's incoming transition as `cut` or `crossfade`.
-2. **Generate clips:** one clip per scene via kie.ai (`video_generate model=google/veo-3.1-lite-preview durationSeconds=8`), 9:16 vertical. Retry any failed clip up to 3 times before marking it failed.
+2. **Generate clips:** one clip per scene through Skill 67 (`67-kie-video`) on kie.ai: default request Veo 3.1 Lite, which Skill 67's registry names `veo3_lite` (dedicated route `POST /api/v1/veo/generate`), 8 seconds, 9:16 vertical. Name `veo3_lite` explicitly, because an unqualified request to Skill 67's selector resolves to `veo3_fast`. An explicit client or manifest pick wins; OpenAI Sora is prohibited. Retry any failed clip up to 3 times before marking it failed. KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 3. **Voiceover:** generate ONE continuous 55-60s VO from the full script via Fish Audio (`sag --voice [from secrets/.env: FISH_AUDIO_VOICE_ID]`). Save as `voiceover.mp3`.
 4. **Normalize every clip** (mandatory before concat — prevents codec/resolution mismatch failures):
    ```bash
@@ -100,7 +100,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 6. **On failure: diagnose and retry** — the script diagnoses common causes (invalid API key, invalid voice ID, network error, rate limit, model unavailable) and retries up to 3x. After 3 failures: notify operator via Telegram with diagnostic output, then (only then) offer client the self-record fallback.
 
-7. **Generate 1,400x1,400 cover JPEG** via kie.ai Nano Banana 2 (2K resolution required for Podbean minimum). JPEG only — never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
+7. **Generate 1,400x1,400 cover JPEG** via kie.ai, with KIE GPT Image 2.5 Sunburst per playbook Section 8 (1:1 at 2K; 1400x1400 minimum for Podbean). JPEG only, never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
 
 8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
 
@@ -138,7 +138,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 | Tool | Purpose | Credentials |
 |------|---------|-------------|
 | GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across every channel connected in GHL (live-queried — not a fixed list) | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
-| kie.ai API | Image generation (Nano Banana 2) at 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Video generation (Veo 3.1 Lite) | KIE_API_KEY |
+| kie.ai API | Image generation at 4:5, 2:3, 9:16, 16:9, 1:1 ratios (KIE GPT Image 2.5 Sunburst, `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, per playbook Section 8; Nano Banana only as an explicitly labeled non-text fallback). Video generation through Skill 67 (default request Veo 3.1 Lite, `veo3_lite`). Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |
 | FFmpeg | Video segment merging (audio + video, 192 kbps, H.264, 30fps) | Installed locally |

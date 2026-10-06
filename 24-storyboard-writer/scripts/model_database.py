@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """model_database.py - AI video model specifications
 
-Canonical source of truth:
-- scripts/model-database.json
+Data source: scripts/model-database.json, a DATED, NON-AUTHORITATIVE SNAPSHOT
+(last verified 2024-01-15). It is used for storyboard clip-length math only.
+Model policy is owned by Skill 67 (67-kie-video); the live KIE catalog and
+live prices come from `kie_live_adapter.py price --model <id>` (Skill 74).
+The cost_per_video / tier numbers read below are FALLBACK CONSTANTS for the
+local estimate only, not a price authority.
 
 This module loads the JSON database and exposes a small API:
 - get_model(model_id)

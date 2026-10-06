@@ -37,9 +37,16 @@ If this exists, models routed via OpenRouter are available. This can substitute 
 If ANY of these exist, the credential is satisfied. GoHighLevel, GHL, and Convert and Flow are the same system. The correct modern term is Private Integration Token (PIT).
 
 ## KIE.ai API Key
-**Required by:** Skill 7, Skill 25, Skill 28
-**Check ALL of these names:**
-- KIE_API_KEY
+**Required by (KIE is the media provider these skills call):**
+- Skill 7 (KIE setup and HTTP structure) and the KIE family: Skill 46 (callback relay), Skill 66 (image), Skill 67 (video), Skill 68 (audio), Skill 74 (live adapter: live model discovery, live schema read, submit and poll; ships separately)
+- Video and image producers: Skill 25, Skill 28, Skill 47 (movie producer; Skills 49 and 56 reach KIE through Skill 47's image adapter)
+- Content skills: Skill 37 (closeout infographics and celebration video), Skill 45 (design library, requires Skill 7 and the key), Skill 48 (Facebook ads), Skill 49 (signature funnel), Skill 56 (sales page assets), Skill 57 (social media in a box), Skill 58 (podcast cover art), Skill 59 (anthology covers), Skill 62 (cinematic web funnel)
+- Skill 6 (GHL install pages): its image step generates page images through KIE
+- The Presentations, Graphics, and Video departments (they generate slides, graphics, and video through KIE)
+- Skill 38 only records a KIE model id for its optional workflow hero visual (a stub; it makes no KIE call yet) and checks that the key is present
+**Whose key:** on a client box the KIE key is the client's own. Operator keys are never used for client work.
+**Check ALL of these names:** the alias list lives in `shared-utils/secret_names.json` under `KIE_API_KEY` (the one secret-name canon). Check every name listed there; do not copy the list into other files. If ANY alias exists, the credential is satisfied.
+**Shared KIE rules:** `07-kie-setup/references/kie-common-rules.md`.
 
 ## Vercel Token
 **Required by:** Skill 8

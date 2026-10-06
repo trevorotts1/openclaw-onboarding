@@ -56,7 +56,7 @@ See `INSTALL.md` for step-by-step setup.
 └── references/
     ├── platform-specs.md
     ├── ffmpeg-vs-moviepy.md
-    └── kie-ai-models.md
+    └── kie-ai-models.md      # dated snapshot, NOT authoritative (model policy: Skill 67; live catalog: Skill 74)
 ```
 
 ## Quick start (most common workflow)
@@ -96,6 +96,7 @@ See `INSTALL.md` for step-by-step setup.
 
 - Read `BROLL-WORKFLOW.md` for the full, detailed SOP.
 - Use `./scripts/broll-workflow.sh` to stage a project folder, analyze the video, extract audio, and print suggested insertion points.
+- B-roll clips are generated through **Skill 67 (`67-kie-video`)**, which owns model choice, dispatch and QC. This skill ships no KIE client and no model or price list. Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74). KIE rules (endpoints, rate limit, credit preflight, saving results, client's own key): `07-kie-setup/references/kie-common-rules.md`. Sora is prohibited by the Video department.
 
 ### Merge inputs are probed before anything renders
 

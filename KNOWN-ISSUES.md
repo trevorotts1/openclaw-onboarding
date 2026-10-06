@@ -114,14 +114,26 @@ account, so a request that is valid on one account returns 422 on another.
 This is a KIE provisioning behavior, not a slug typo.
 
 **Workaround (already wired into the repo):**
-`37-zhc-closeout/scripts/generate-infographics.sh` keeps `nano-banana-2` as
-the PRIMARY model and falls back to `gpt-image-2-5-sunburst-text-to-image` (the proven
-safety net) when the primary is rejected. As of v10.X.8 the retry loop also
-detects a `model name not supported` / 422 submit error and switches to the
-fallback EARLY instead of burning both primary attempts. Override the primary
-explicitly with `ZHC_IMAGE_MODEL` if a given account has a different preferred
-slug. Do NOT remove `nano-banana-2` as the primary; it works on most accounts
-and renders text better than the fallback.
+`37-zhc-closeout/scripts/generate-infographics.sh` and
+`generate-visual-intelligence.sh` both use `gpt-image-2-5-sunburst-text-to-image`
+as the PRIMARY (AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`) and
+`nano-banana-2` as the FALLBACK. The retry loop detects a `model name not
+supported` / 422 submit error on the primary and switches to the fallback EARLY
+instead of burning both primary attempts. Override the primary explicitly with
+`ZHC_IMAGE_MODEL` if a given account has a different preferred slug.
+
+**Per-account availability remedy:** Skill 74 (`74-kie-live-adapter`) live
+model discovery is the path that answers "which KIE models does THIS account
+actually have?" at run time, so a 422 like this is reported from the account's
+own live model list instead of being found by a failed submit. Discovery
+reports; it never silently registers or swaps a model (see AGENTS.md N43 for the
+pinned image models). Until a box runs Skill 74, the fallback chain above stays
+the safety net.
+
+**KIE consumers:** Skill 37 is a KIE consumer (it generates the closeout
+infographics and the celebration video), alongside the other KIE skills listed
+in `CREDENTIALS.md` under "KIE.ai API Key". Shared KIE rules:
+`07-kie-setup/references/kie-common-rules.md`.
 
 **Upstream ask:** none (KIE account provisioning, not an OpenClaw defect).
 The fallback chain is the durable fix.

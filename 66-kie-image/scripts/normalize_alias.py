@@ -69,7 +69,7 @@ FAMILY_OF = {
         "seedream/5-lite-text-to-image",
         "seedream/5-lite-image-to-image",
         "seedream/4.5-text-to-image",
-        "seedream/4-5-edit",
+        "seedream/4.5-edit",
     ],
     "nano banana 2": ["nano-banana-2"],
     "nano banana 2 lite": ["nano-banana-2-lite"],

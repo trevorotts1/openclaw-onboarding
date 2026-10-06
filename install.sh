@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.3.19"
+ONBOARDING_VERSION="v25.3.21"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -857,7 +857,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/73-... (68 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/74-... (69 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -1647,6 +1647,13 @@ looks_like_real_key() {
         *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
         *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
         *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
+        # 2026-10: installer-written env placeholders (YOUR_CLIENT_KIE_API_KEY_HERE).
+        # Kept in step with shared-utils/secret_helper.py _PLACEHOLDER_SUBSTRINGS.
+        *your_client*|*key_here*|*token_here*) return 1 ;;
+        # Parity with shared-utils/secret_helper.py: the python-only patterns, so both
+        # twins reject exactly the same placeholder set.
+        *test-key*|*fake-key*|*fill-in*|*paste-real*|*paste_real*|*pastereal*) return 1 ;;
+        *insert-your*|*enter-your*|*set-your*|*nokey*|*not_set*|*not-set*|*unset*|*missing*) return 1 ;;
         # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
         *EXAMPLE|*example) return 1 ;;
     esac
@@ -6112,9 +6119,9 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 68 active skills install in 6 dependency-aware waves, not by number order.
+The 69 active skills install in 6 dependency-aware waves, not by number order.
 The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
-gating 50 of the 68 active skills; the remaining 18 are copied to every box by the installer's
+gating 50 of the 69 active skills; the remaining 19 are copied to every box by the installer's
 [0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
 that cannot reach qc-passed on a client box). The per-wave rosters printed below document Waves 1-5;
 Wave 6 (extensions & domain verticals) is defined in that library and must be read from there.
