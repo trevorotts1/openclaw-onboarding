@@ -119,7 +119,10 @@ HANDOFF_TARGETS = [
 
 # Phase-0 Kie balance pre-flight constants (AF-VID-KIE-BALANCE).
 VID_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
-VID_KIE_BALANCE_FLOOR_MULTIPLIER = 1.25  # headroom over the bare estimate (retries)
+# Owner rule (fleet-wide, 2026-10): required balance = estimated cost x 1.30. Same value in
+# Skill 48 (FBAD_KIE_BALANCE_FLOOR_MULTIPLIER). Canonical rule text:
+# 07-kie-setup/references/kie-common-rules.md. Was 1.25 before v15.0.2.
+VID_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (retries)
 # Kie credits are denominated per-call; a job's estimated_cost_usd is in USD, so the
 # balance floor is expressed in credits via this conservative USD->credit factor.
 VID_CREDIT_PER_USD = 100
@@ -623,6 +626,12 @@ def _fetch_kie_balance(api_key: str, url: str = VID_KIE_CREDIT_URL,
         obj = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Kie credit response is not JSON: {exc}; body={raw[:200]!r}")
+    # KIE can answer HTTP 200 with an error envelope ({"code": 401, "msg": ...}); the
+    # body `code` is the truth, never the HTTP status alone. An envelope whose code is
+    # not 200 is an unverifiable balance (fail LOUD, never "enough").
+    if isinstance(obj, dict) and "code" in obj and obj.get("code") != 200:
+        raise RuntimeError(f"Kie credit endpoint returned body code {obj.get('code')!r}: "
+                           f"{str(obj.get('msg', ''))[:200]!r}")
     candidates = []
     if isinstance(obj, (int, float)):
         candidates.append(obj)

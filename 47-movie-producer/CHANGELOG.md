@@ -1,5 +1,11 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.0.2 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- Credit preflight: `VID_KIE_BALANCE_FLOOR_MULTIPLIER` 1.25 -> 1.30 (fleet-wide rule: required balance = estimated cost x 1.30). `_fetch_kie_balance` now checks the response BODY `code` (HTTP 200 with a non-200 body code is an unverifiable balance). New probe in `test_video_preflight.py`.
+- `kie_image.py` `estimate_cost`: one fallback constant set (2K 0.05, other 0.04; was 0.03) mirrored by Skill 58, with a docstring naming the price authority (`kie_live_adapter.py price`). Prices removed from prose.
+- Docs: INSTRUCTIONS credit-preflight section; TTS section now matches SKILL.md (Fish Audio primary, Piper opt-in); EXAMPLES no longer claims veo3_fast is used when no image is supplied and reads result key `model`. Adapter files still exactly two `.py`.
+
 ## v14.3.0 — 2026-07-13 — Piper demoted to OPTIONAL/opt-in (Fish Audio 2.1 Pro is the primary narrator)
 
 Demotes Piper to an **optional, opt-in, offline-only** TTS fallback that is **OFF by default**.

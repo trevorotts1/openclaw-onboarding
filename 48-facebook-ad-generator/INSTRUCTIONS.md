@@ -71,8 +71,11 @@ relaxes them. The foreman validates their receipts even under `--adhoc`.
 ## Money
 The producer estimates cost up front, gates it against the per-job ceiling BEFORE any
 spend, watches the cheap LOCAL running tally during S5 (stops before crossing), and runs
-the single balance preflight once at start. The run-id namespaces every receipt so a
-retry never re-spends or double-uploads.
+the single balance preflight once at start (required balance = estimated cost x 100
+credits per USD x 1.30; the endpoint's BODY `code` must be 200; a shortfall is reported in
+credits, never silently passed; a box with no `KIE_API_KEY` prints a loud "balance NOT
+verified" notice). The run-id namespaces every receipt so a retry never re-spends or
+double-uploads. Canonical rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ## Independent QC
 Each scored gate (Words / Image Prompts / Images / Targeting / Package) needs an 8.5+
