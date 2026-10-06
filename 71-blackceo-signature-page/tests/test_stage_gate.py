@@ -79,6 +79,16 @@ def kie_transport(files, **over):
     return t
 
 
+def kie_receipts(run, transport):
+    """Write the receipts/kie74 result file each Skill 74 task points to."""
+    for x in transport.get("tasks", []):
+        if "task_id" in x:
+            write(run / "receipts" / "kie74" / f"{x['task_id']}.json", json.dumps({
+                "provider": "kie", "adapter": "74-kie-live-adapter", "adapter_mode": "active",
+                "backend": "native-live", "model_id": x.get("model_id"), "task_id": x["task_id"],
+                "state": "success", "saved_paths": [x["file"]], "warnings": [], "data": {}}))
+
+
 KIE_COST = {"provider": "kie", "credits_before": 100.0, "credits_after": 88.0}
 KIE_FILES = ["image-generation-qc/Image-001.png", "image-generation-qc/Image-002.png"]
 
@@ -304,6 +314,7 @@ class StageGateTest(unittest.TestCase):
                         "image-inventory-prompts/IMG-002.txt",
                     ]})
         gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
+        kie_receipts(run, kie_transport(KIE_FILES))
         put_receipt(run, "image-generation-qc", author="image-gen",
                     reviewer="image-reviewer", scores={"grade": 9},
                     extra={"cost": dict(KIE_COST),
@@ -334,7 +345,7 @@ class StageGateTest(unittest.TestCase):
         self.assertIn("Missing Signature Grade Block", combined)
 
     # ---- (i) Skill 74 transport gate on image-generation-qc (owner order: one approved KIE path)
-    def close_image_qc(self, **extra):
+    def close_image_qc(self, no_files=False, agnes=False, **extra):
         run = self.td / "run-transport"
         env, gate = self.build_image_stage_chain(
             run, (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8"))
@@ -345,6 +356,12 @@ class StageGateTest(unittest.TestCase):
         gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
         base = {"cost": dict(KIE_COST), "validator_files": KIE_FILES}
         base.update(extra)
+        if not no_files and isinstance(extra.get("transport"), dict):
+            kie_receipts(run, extra["transport"])
+        if agnes:
+            write(run / "intake.json", json.dumps({"page_version": "standard", "brand_owner": "blackceo",
+                  "brand_file": "private/brand.json", "creative_direction": None, "image_cap": 2,
+                  "test_run": True, "image_engine": "agnes"}))
         put_receipt(run, "image-generation-qc", author="image-gen", reviewer="image-reviewer",
                     scores={"grade": 9}, extra=base)
         return run_gate("close", str(run), "image-generation-qc", env=env)
@@ -405,8 +422,54 @@ class StageGateTest(unittest.TestCase):
     def test_i9_agnes_route_when_selected(self):
         t = {"skill": "63-agnes-image", "policy": "63-agnes-image",
              "tasks": [{"file": f} for f in KIE_FILES]}
-        proc = self.close_image_qc(transport=t,
+        proc = self.close_image_qc(agnes=True, transport=t,
                                    cost={"provider": "agnes", "credits_before": 5, "credits_after": 3})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_i10_agnes_without_client_selection_refused(self):
+        t = {"skill": "63-agnes-image", "policy": "63-agnes-image",
+             "tasks": [{"file": f} for f in KIE_FILES]}
+        proc = self.close_image_qc(transport=t, cost={"provider": "agnes", "credits_before": 5, "credits_after": 3})
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("client must have selected Agnes", proc.stdout + proc.stderr)
+
+    def test_i11_task_id_without_result_file_refused(self):
+        proc = self.close_image_qc(no_files=True, transport=kie_transport(KIE_FILES))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no readable receipts/kie74", proc.stdout + proc.stderr)
+
+    def test_i12_duplicate_task_id_refused(self):
+        t = kie_transport(KIE_FILES)
+        t["tasks"][1]["task_id"] = t["tasks"][0]["task_id"]
+        proc = self.close_image_qc(transport=t)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("is used for both", proc.stdout + proc.stderr)
+
+    def test_i13_two_result_files_with_one_task_id_refused(self):
+        t = kie_transport(KIE_FILES)
+        run = self.td / "run-transport"
+        proc_run = None
+        orig = kie_receipts
+
+        def dup(run_, transport):
+            orig(run_, transport)
+            write(run_ / "receipts" / "kie74" / "copy.json", (run_ / "receipts" / "kie74" / "task-001.json").read_text())
+        globals()["kie_receipts"] = dup
+        try:
+            proc = self.close_image_qc(transport=t)
+        finally:
+            globals()["kie_receipts"] = orig
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("carry the same task_id", proc.stdout + proc.stderr)
+
+    def test_i14_explicit_request_needs_evidence(self):
+        t = kie_transport(KIE_FILES)
+        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="4:5", model_source="explicit-request")
+        proc = self.close_image_qc(transport=t)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("needs evidence", proc.stdout + proc.stderr)
+        t["tasks"][0]["evidence"] = "client asked for the legacy model by name in the intake"
+        proc = self.close_image_qc(transport=t)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_h_empty_validator_command_clean_failure(self):
@@ -482,6 +545,7 @@ class StageGateTest(unittest.TestCase):
             "image-inventory-prompts": {"fidelity": 9},
             "image-generation-qc": {"grade": 9},
         }
+        kie_receipts(run, kie_transport(KIE_FILES))
         costs = {"image-generation-qc": {"provider": "kie", "credits_before": 100.0,
                                           "credits_after": 88.0,
                                           "transport": kie_transport(KIE_FILES)}}

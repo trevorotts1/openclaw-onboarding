@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.2.1 - 2026-10-06
+
+QC fixes on the KIE integration (PR 1527).
+
+- **M2** `stage_gate.py` transport check no longer trusts the receipt alone: each Skill 74 `task_id` must be unique and have its own successful, active result file in `receipts/kie74/`; two result files may not share a task id; the Agnes route requires `intake.json` `image_engine: "agnes"`; an `explicit-request` or `department-pin` model source needs `evidence`. Tests i10 to i14 added.
+- Version bumped to 1.2.1 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.2.0 - 2026-10-06
 
 KIE integration (owner order: the landing page skill must work flawlessly with the KIE rules, and Skill 74 is the one approved KIE path).

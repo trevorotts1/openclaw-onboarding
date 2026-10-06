@@ -96,11 +96,9 @@ step_version() {
   local vf="$SKILL_DIR/skill-version.txt"
   [ -s "$vf" ] || die "VERSION" "skill-version.txt missing/empty"
   local v; v="$(tr -d '[:space:]' < "$vf")"
-  # Accept the shipped form vMAJOR.MINOR.PATCH (a bare MAJOR.MINOR.PATCH is tolerated too).
-  case "$v" in
-    v"$EXPECTED_MAJOR".[0-9]*.[0-9]*|"$EXPECTED_MAJOR".[0-9]*.[0-9]*) : ;;
-    *) die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)" ;;
-  esac
+  # Accept the shipped form vMAJOR.MINOR.PATCH (a bare MAJOR.MINOR.PATCH is tolerated too); anchored.
+  [[ "$v" =~ ^v?${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] \
+    || die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)"
   # Lockstep: SKILL.md frontmatter version must equal skill-version.txt.
   local fm; fm="$(awk '$0=="---"{f++; if(f>=2) exit; next} f==1 && /^version:/{sub(/^version:[ \t]*/,""); print; exit}' "$SKILL_DIR/SKILL.md" | tr -d '[:space:]"'"'"'')"
   [ -n "$fm" ] || die "VERSION" "SKILL.md has no top-level frontmatter version: field"
@@ -241,6 +239,7 @@ main() {
       --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
       --scan-only) mode="scanonly"; shift ;;
+      --version-only) mode="versiononly"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "USAGE" "unknown arg: $1" ;;
     esac
@@ -249,6 +248,7 @@ main() {
     checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
     writepin) write_pin ;;
+    versiononly) step_version; echo "VERSION ok" ;;
     scanonly)
       [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "--scan-only needs an existing --run-dir"
       rd="$(cd "$rd" && pwd)"; step_deps; step_bypass_scan "$rd"; echo "BYPASS-SCAN clean: $rd" ;;

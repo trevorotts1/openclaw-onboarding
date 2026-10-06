@@ -97,6 +97,33 @@ class BypassScan(unittest.TestCase):
         (d / "x.json").write_text(json.dumps(adapter_result(), indent=2), encoding="utf-8")
         self.assertNotEqual(scan(self.rd).returncode, 0)
 
+    def _plant(self, obj):
+        d = self.rd / "receipts" / "kie74"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "x.json").write_text(json.dumps(obj, indent=2), encoding="utf-8")
+
+    def test_adapter_shape_plus_smuggled_keys_is_refused(self):
+        self._plant(adapter_result(cmd="curl https://api.kie.ai" + CREATETASK, x="kie_generate.py"))
+        self.assertNotEqual(scan(self.rd).returncode, 0)
+
+    def test_adapter_file_without_a_real_task_id_or_state_is_refused(self):
+        self._plant(adapter_result(task_id="placeholder"))
+        self.assertNotEqual(scan(self.rd).returncode, 0)
+        bad = adapter_result(state="bogus")
+        self._plant(bad)
+        self.assertNotEqual(scan(self.rd).returncode, 0)
+
+    def test_version_check_is_anchored(self):
+        import shutil
+        for text, ok in (("v2.1.0", True), ("2.1.0", True), ("v2.0.1-junk", False), ("2.x", False),
+                         ("v2.", False), ("v20.0.0", False), ("v2.junk", False), ("v1.9.0", False)):
+            with tempfile.TemporaryDirectory() as td:
+                shutil.copy(ENTRY, td)
+                (Path(td) / "skill-version.txt").write_text(text + "\n", encoding="utf-8")
+                p = subprocess.run(["bash", str(Path(td) / ENTRY.name), "--version-only"],
+                                   text=True, capture_output=True)
+                self.assertEqual(p.returncode == 0, ok, f"{text!r}: {p.stdout}{p.stderr}")
+
     def test_shadow_result_is_not_recorded(self):
         res = self.rd / "result.json"
         res.write_text(json.dumps(adapter_result(adapter_mode="shadow", state="skipped", fallback_used=True)),

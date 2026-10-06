@@ -48,6 +48,14 @@ def _real(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() not in BAD_IDS
 
 
+# Every top-level key kie_live_adapter.py result() can emit. Anything else is not an adapter result.
+ADAPTER_KEYS = frozenset({
+    "provider", "adapter", "adapter_mode", "backend", "model_id", "capability", "schema_source",
+    "schema_fetched_at", "task_id", "state", "result_urls", "saved_paths", "credits_consumed",
+    "warnings", "fallback_used", "raw_family", "error", "data"})
+ADAPTER_STATES = frozenset({"validated", "queued", "running", "success", "fail", "skipped"})
+
+
 def adapter_file_problems(obj: Any, text: str) -> List[str]:
     """Problems that disqualify a file from the bypass-scan allow-list (any state, any mode)."""
     problems: List[str] = []
@@ -55,6 +63,17 @@ def adapter_file_problems(obj: Any, text: str) -> List[str]:
         return ["not a JSON object"]
     if obj.get("adapter") != ADAPTER or obj.get("backend") != "native-live" or obj.get("provider") != "kie":
         problems.append("not a Skill 74 adapter result (adapter/backend/provider mismatch)")
+    extra = sorted(set(obj) - ADAPTER_KEYS)
+    if extra:
+        problems.append(f"unknown top-level key(s) {extra[:3]}: not an adapter result")
+    if obj.get("adapter_mode") not in ("active", "shadow", "off"):
+        problems.append("adapter_mode is not active, shadow or off")
+    if obj.get("state") not in ADAPTER_STATES:
+        problems.append(f"state {obj.get('state')!r} is not an adapter state")
+    if not _real(obj.get("task_id")):
+        problems.append(f"task_id {obj.get('task_id')!r} is missing or a placeholder")
+    if not (isinstance(obj.get("saved_paths"), list) or isinstance(obj.get("result_urls"), list)):
+        problems.append("neither saved_paths nor result_urls is a list")
     if _LEAK.search(text):
         problems.append("contains an unredacted bearer token")
     return problems
