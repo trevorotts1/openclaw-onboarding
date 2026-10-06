@@ -27,6 +27,25 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 ---
 
+## 1A. THE DETERMINISTIC RENDER PATH IS MANDATORY (no self-generate, no native image tool)
+
+Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
+
+- **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json`, and the Slide Image Creator authors one RICH prompt file per slide (`working/prompts/slide-NN.txt` or `slide-NN-prompt.txt`, sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`). The script does NOT compose prompts. It loads each authored prompt VERBATIM, gates it (character band, quality floor, no hard-coded demographic default), appends the mandatory English/Latin-only pin only when the authored prompt does not already carry it, and submits it with the text-to-image model, or with the image-to-image model and the logo URL in `input_urls` when a logo URL is supplied (both models resolve from the catalog aliases `image.t2i` and `image.i2i`). It then polls, downloads + verifies each PNG, and assembles the `.pptx`. A slide with no authored prompt file fails loudly; the script never falls back to a thin composed prompt. No model decides wording at runtime.
+- **`kie_generate.py`** — the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below). It submits the `prompt` it is given and never composes one. A second, older copy of this helper lives at `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`; only Skill 06 (GHL media) runs it, and it is not a Presentations renderer (its header says how it differs).
+
+**The mandated flow is:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai (createTask → recordInfo → `resultUrls[0]`) is the ONLY render call → register the `.pptx` the script produced. **FORBIDDEN, each an auto-fail (AF-I14 / AF-RENDERER / AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS):** generating any image with a native/built-in tool (`image_generate`, `openai`, etc.); writing an inline hand-typed KIE.ai HTTP call instead of the script; the dead endpoint `/api/v1/image/gpt-image`; hand-editing PNGs or substituting stock/placeholder images; **fabricating any slide canvas locally with Pillow/PIL `Image.new` / `ImageDraw` (a flat cream or color typography card) or a PowerPoint-rendered card**; running any per-deck/hand-rolled renderer or assembler in `working/*.py` instead of the canonical `build_deck.py` / `run_signature_deck.py` path. A non-zero exit means the deck is NOT built — never fake a deliverable.
+
+**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai gpt-image-2.5 like every other slide — Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) — never a slide canvas, never any text.
+
+**MANDATORY ENGLISH / LATIN-ONLY PIN — every image prompt carries this verbatim (every slide, every mode):**
+
+> All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text.
+
+`build_deck.py` appends this pin to any prompt that does not already carry it. Any prompt authored by hand for a Mode A or Mode B call below (or at the Phase 2/3 prompt-writing stage) MUST include this pin verbatim. A prompt missing the pin, or a render carrying CJK / non-Latin glyphs or garbled/misspelled text, is an auto-fail (see check 10 in Section 7).
+
+---
+
 ## 2. THE THREE MODES (what each is FOR)
 
 | Mode | Kie.ai endpoint family | What it does | When the Presentations pipeline uses it |
@@ -145,6 +164,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
 - Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file; get the number for the model with `kie_live_adapter.py prompt-budget --model <id>`. This SOP does not restate it.
 - Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the reference-case logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
+- The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
 ---
 
@@ -203,6 +223,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 3. **Logo reference = "place, do not redraw."** The logo reference sentence always instructs the model to PLACE the supplied mark, never to redraw/recolor/restyle it. This is the anti-mutation instruction.
 4. **Style-reference frame requires the style-reference-only directive.** If a reference is passed for STYLE (not the logo, not the face) - e.g. a frame from an analyzed reference deck - the prompt MUST include, verbatim (MODEL-SPECS §4): *"Use the attached style-reference image only as style reference for color grading, lighting, and composition - do not copy its subjects, faces, or text."* Without this sentence the model copies the reference's subjects verbatim. Omitting it when a style frame is attached = auto-fail.
 5. **The logo reference is NOT a style-reference.** Never apply the style-reference-only directive to the logo URL (that would tell the model to ignore the logo's shape - the opposite of what we want). The two reference types get opposite instructions; keep them distinct and named.
+6. **English/Latin-only pin is mandatory.** The `prompt` MUST carry the pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* Omitting it is an auto-fail (check 10).
 
 ---
 
@@ -232,6 +253,9 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 | 7 | **No analysis-as-Kie-call.** No `createTask` body whose intent is "read/extract/analyze." | Analysis done by agent read | An "image-to-text"/"extract JSON" job POSTed to Kie |
 | 8 | **resultUrls parse.** Download reads `JSON.parse(data.resultJson).resultUrls[0]`, not `data.url`. | Correct field | Reads `.url` (the old-runbook bug) |
 | 9 | **Logo identity (image QC).** The rendered logo on the slide is the SAME mark as the locked `LOGO_URL` asset (shape, color, lockup), on every slide. | Identical mark | A different mark than the locked asset on any slide (the reference-case logo-mutation defect) - see SOP-IMG-04 lock |
+| 10 | **English/Latin-only pin + render (write + read).** WRITE-time: every submitted `prompt` carries the mandatory pin verbatim (Section 1A). READ-time (image QC): the rendered slide shows only English Latin-alphabet text, spelled correctly letter-for-letter. | Pin present in prompt AND render is clean English | Pin missing from any prompt, OR any rendered slide carries CJK / non-Latin glyphs or garbled/misspelled text |
+
+Check 10 is the close of the garbled-text loop: the pin in the prompt (WRITE-time) is the guard; the clean-English render (READ-time) is the verification. `build_deck.py` appends the pin automatically, so a deterministic deck satisfies the WRITE-time half by construction.
 
 Check 9 is the closing of the reference-case logo-mutation loop: passing the logo via I2I (checks 1–3) is the WRITE-time guard; the rendered-logo-matches-locked-asset comparison is the READ-time guard. Both are required. A deck that passes checks 1–8 but renders a mutated logo still fails check 9.
 

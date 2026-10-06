@@ -10098,9 +10098,9 @@
       "slug": "SOP-IMG-01-KIE-CALL-MECHANICS",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "content_sha": "sha256:ee12010728cb1bd56aaf6268786637304a535e201295d8137da18691a148b400",
-      "content_version": "1.0.11",
-      "content_hashed_at": "2026-10-06T03:17:46.899321+00:00"
+      "content_sha": "sha256:baebfbfebd5cd8853642bf5e15aa6468f72d43226329a4c8c6469d33a9b11d28",
+      "content_version": "1.0.12",
+      "content_hashed_at": "2026-10-06T03:35:40.816147+00:00"
     },
     {
       "slug": "SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING",
@@ -10802,7 +10802,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-06T03:17:46.899321+00:00",
+    "generated_at": "2026-10-06T03:35:40.816147+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

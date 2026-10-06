@@ -64,6 +64,50 @@ There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to
 
 ---
 
+## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 — TWO-MODEL SYSTEM, operator ruling 2026-09-09)
+
+As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT-Image-2.5. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
+
+**DEFAULT — GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+- Mode A: `gpt-image-2-5-sunburst-text-to-image`
+- Mode B: `gpt-image-2-5-sunburst-image-to-image`
+
+**2.5 supported aspect ratios — EXACTLY these 13, nothing else:**
+`auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`
+- **1K-ONLY (2K and 4K REJECTED for these four):** `27:16`, `16:27`, `9:8`, `8:9`.
+- 2K and 4K are available for every other ratio in the list.
+
+**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY — see the legacy-route cap below, which is a different number.
+
+**APPROVED SUBSTITUTIONS — these four route to 2.5 under a substitute ratio (operator-blessed):**
+
+| Requested | Renders on 2.5 as |
+|---|---|
+| `5:4` | `4:3` |
+| `4:5` | `3:4` |
+| `2:1` | `16:9` |
+| `1:2` | `9:16` |
+
+**LEGACY ROUTE — MANDATORY for these three ratios, no exceptions:**
+
+| Ratio | Model (Mode A / Mode B) |
+|---|---|
+| `3:1` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `1:3` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+| `9:21` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+
+The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three — each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
+
+**Legacy-route prompt cap: 25,000 chars — OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
+
+**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL — reject outright, no warn-only, no silent substitution.
+
+**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
+
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
+
+---
+
 ## 3. SHARED CALL LIFECYCLE (identical for Mode A and Mode B)
 
 Every generation call, regardless of mode, follows this lifecycle. The shipped scripts perform it; an agent never types these calls by hand (Section 1A). This section describes what the scripts do today, so the document and the code agree. The limits and rates shared by every KIE skill (createTask rate, recordInfo rate, prompt caps, credit endpoint) are kept in one place, `07-kie-setup/references/kie-common-rules.md`; this SOP does not restate them as rules.
