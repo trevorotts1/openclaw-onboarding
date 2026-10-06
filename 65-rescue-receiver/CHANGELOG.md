@@ -1,5 +1,11 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.6.1] - 2026-10-06 - the daily intake auth check ran under dash and died
+
+THE DEFECT. `wire.sh` registered the daily `rr-intake-auth-check` cron as `sh <script>`, but the script is bash-only (`set -o pipefail`, `BASH_SOURCE`). Cron payloads run as `sh -lc`, and on Linux (every VPS and docker box) `sh` is dash, which exits 2 before doing anything: the cron errored daily and the self-check never ran. macOS is unaffected (`sh` is bash). Separately, the presence checks for all three cron names used `cron list --json` without `--all`, which hides disabled jobs, so a job an operator disabled was re-added as a duplicate on the next roll.
+THE FIX. The script re-execs itself under bash when started by another shell (exit 78 with an ENVIRONMENT line when bash is absent), which repairs boxes whose cron still says `sh`. `wire.sh` now registers with `bash`, and a `_cron_count` helper reads `cron list --json --all` and matches the exact name on parsed JSON, so a disabled job counts as present and is never re-added or re-enabled; more than one match prints a warning and deletes nothing. CI now runs the script under dash.
+Test: `65-rescue-receiver/tests/test_intake_auth_check.sh` section 9.
+
 ## [23.6.0] - 2026-10-03 - wave 4 box-side receiver hardening (RR plan F61, F62, F66, F88)
 
 `RECEIVER_VERSION` 1.7.2 to 1.8.0.
