@@ -7,9 +7,9 @@ instead of restating these rules. If another file disagrees with this one, this 
 Sources: https://docs.kie.ai (market, rate-limit, task-detail, file-upload, common API pages),
 live endpoint probes on 2026-10-05, and AGENTS.md section N43.
 
-Note: `kie_live_adapter.py` (commands `price`, `validate`, `prompt-budget`, `latest-family`) and
-`74-kie-live-adapter/references/kie-model-registry.json` land in a follow-up Skill 74 change.
-Reference them by these exact names.
+Note: `kie_live_adapter.py` (commands `price`, `preflight`, `validate`, `prompt-budget`, `latest-family`, and
+`submit --callback-url` for the Skill 46 relay) and `74-kie-live-adapter/references/kie-model-registry.json`
+ship in Skill 74 v1.1 and later.
 
 ## 1. Authority order (highest first)
 
@@ -78,7 +78,6 @@ One authority: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --
 (live catalog `pricingDesc`, falling back to the generated snapshot
 `74-kie-live-adapter/references/kie-model-registry.json`). No skill may keep its own price
 table. Any price table elsewhere in the repo is a dated snapshot and not authoritative.
-(The adapter and registry land in a follow-up Skill 74 change; reference them by these names.)
 
 ## 8. Retention
 

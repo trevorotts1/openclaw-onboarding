@@ -1,5 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.1] - 2026-10-06
+- `submit` and `run` accept `--callback-url URL` (overrides `callBackUrl` in the request file; still http or https only). This is the production route for Skill 46 (`kie-callback-relay`): the relay's signed URL is passed on the command line and the normalized result (`task_id`, `model_id`, `data.callback_url`) is what Skill 46 `adoptAdapterTask` consumes. New test `test_callback_url_flag_overrides_request_file`.
+
 ## [1.1.0] - 2026-10-05
 - Model registry: `scripts/build_model_registry.py` writes `references/kie-model-registry.json` for every model in KIE's live catalog (limits, enums, required fields, prompt field and max, verbatim fields, raw and parsed price). Source live-api, or public-docs when no key resolves.
 - One price authority: `price` and `preflight` (balance against price x 1.30). The unit parser is built from every real video, audio and image `pricingDesc` phrasing in the live catalog (credits/s, credits / sec, credits per video second, per 1,000 characters, per image, duration prices such as "A 5-second video costs N credits" stay per-job); registry-wide tests keep per-second models from being labeled per-job.

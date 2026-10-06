@@ -1,4 +1,4 @@
-# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v2.0.4)
+# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v2.1.0)
 
 This SOP replaces the sequential per-image polling loop that was in Skill 07.
 It applies to any role or agent that submits images to Kie.ai for slide decks.
@@ -233,6 +233,41 @@ On restart the submitter scans `.kie/registry/` by `label` (fix 37i):
 - If the winning row has no `taskId`: re-submit (the prior submit crashed before
   Kie returned a taskId).
 - If no registry row: first-time submit.
+
+---
+
+## Production Route via Skill 74 (callback mode)
+
+Skill 74 (`74-kie-live-adapter`) is the production submit path; this skill keeps the signed
+callback, the Worker KV wait and the file-on-disk rule. `submitDeck` (above) still submits
+directly and is unchanged. Use the Skill 74 route when the policy skill (66, 67 or 68) has
+already run `validate` and `preflight` and the batch is large enough for callbacks.
+
+Per task, in order:
+
+1. **Prepare.** `submitter.prepareCallback({deckId, slideId, targetPath, model})` generates the
+   128-bit `submitId` and per-task secret, writes the registry row (status `submitting`, `via`
+   `skill-74`) BEFORE any submit, and returns `{submitId, callBackUrl}`. The URL has the same
+   hardened shape as above. Requires `callbackHmacKey` and `kvReadToken`.
+2. **Submit via Skill 74.** Write `req.json` as `{"model": "<id>", "input": {...}}` and run
+   `python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py submit --request req.json --callback-url "<callBackUrl>" --mode active --json`.
+   The adapter validates against the live schema, sends the URL as `callBackUrl` on createTask,
+   and prints the normalized result: `task_id`, `model_id`, `state`, `data.callback_url`,
+   `data.callback_sent`. It never retries createTask after a network error and never changes the
+   model. Shadow or off mode returns `skipped` with no task.
+3. **Adopt.** `await submitter.adoptAdapterTask(result)` (the parsed JSON from step 2, or the flat
+   `{task_id, model_id, callback_url}`):
+   - the `callback_url` must carry a `j=` submitId whose registry row stores exactly that URL for
+     this client; otherwise it throws and nothing is polled (confused-deputy guard);
+   - no `task_id`, or state `skipped` or `fail`: the row becomes `failed-submit` and a `failed`
+     result is returned without waiting;
+   - otherwise the taskId is recorded in the registry and the `taskId -> submitId` index, then the
+     task waits through the KV poller (callback first, single reconciling Kie poll as fallback),
+     downloads, and reports `done` only when the file exists on disk (same rule as Step 4a).
+4. The policy skill's own QC runs on the saved file.
+
+Skill 74 `submit` accepts `--callback-url` (also on `run`); it overrides any `callBackUrl` in the
+request file and must be http or https.
 
 ---
 

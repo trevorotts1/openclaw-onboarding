@@ -1,5 +1,15 @@
 # Changelog - kie-image
 
+## [2.2.0] - 2026-10-06 - feat: dispatch runs through Skill 74 (validate, preflight, submit), registry is the curated policy
+
+- `INSTRUCTIONS.md` Step 5 and `SKILL.md`: every dispatch path first runs `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight` (balance must cover price x 1.30), then submits through Skill 74 (`submit --mode active`, production batches add `--callback-url` of the Skill 46 relay), then this skill's own QC. If submit returns `skipped` (adapter off or shadow) the curl path is used unchanged; if the adapter is absent steps 1 and 2 are skipped with a note.
+- `models.json` and `SKILL.md` now describe the registry as the CURATED POLICY and verified-override registry, not the exhaustive catalog and not the live source of limits or prices (`registry_policy.role`). A model missing from it is DISCOVERED, never an automatic default; the only auto-follow stays GPT Image `latest-family` (owner order 2026-10-05).
+- Merged PR #1510 (v2.0.5 line) and PR #1514 conflict-free except version markers; version roll to v2.2.0 (`SKILL.md`, `QC.md`, `skill-version.txt`, three script `VERSION` constants).
+- Self-tests unchanged in count: select 38/38, `validate_prompt` 30/30, `validate_payload` 49/49, normalize PASS.
+- Policy ownership did not move: no model choice, cap or ratio rule was changed.
+
+---
+
 ## [2.1.0] - 2026-10-05 - feat: GPT Image auto-latest default and 80-100% prompt budget
 
 - The GPT Image default follows the newest GPT Image generation in KIE's live catalog (owner order 2026-10-05), resolved through Skill 74 `latest-family` by `select_image_model.py`; falls back to the models.json default (GPT Image 2.5 Sunburst) when the adapter is absent or unreachable. Explicit model/alias pins ("gpt image 2.5", "sunburst", canonical ids) and department pins never move. Names that carry version 2 ("gpt image 2", "gpt-image-2", "gpt-img2", "gpt image 2.0") now route to the LEGACY gpt-image-2 family (owner correction 2026-10-06); only version-less names ("gpt image", "gpt-image", "openai image") follow latest-family. Legacy GPT Image 2 routing for 3:1, 1:3, 9:21 and the N43 ratio substitutions are unchanged. The result carries `default_source` and `fallback_default` (the previous default, for a retry when a newly promoted model fails dispatch or validation).

@@ -13,9 +13,9 @@ python3 scripts/kie_live_adapter.py discover --modality image --json        (ima
 python3 scripts/kie_live_adapter.py schema --model MODEL_ID --json
 python3 scripts/kie_live_adapter.py validate --model MODEL_ID --payload input.json --json
 python3 scripts/kie_live_adapter.py upload --file PATH [--upload-path images/in] --json   (or --url https://...)
-python3 scripts/kie_live_adapter.py submit --request req.json [--dry-run] --json
+python3 scripts/kie_live_adapter.py submit --request req.json [--dry-run] [--callback-url https://<46 relay>/cb?...] --json
 python3 scripts/kie_live_adapter.py wait --task-id ID [--timeout 300] --json
-python3 scripts/kie_live_adapter.py run --request req.json --save-dir DIR --json
+python3 scripts/kie_live_adapter.py run --request req.json --save-dir DIR [--callback-url URL] --json
 python3 scripts/kie_live_adapter.py save --task-id ID --save-dir DIR --json
 python3 scripts/kie_live_adapter.py price --model ID [--units N] --json
 python3 scripts/kie_live_adapter.py preflight --model ID [--units N] --json
@@ -29,7 +29,7 @@ Any command takes `--mode off|shadow|active` to override the mode for that call 
 
 Exit codes: 0 ok, 1 state fail. `prompt-budget --check` only: 3 below the 80 percent floor (message gives the exact characters to add), 4 above the max (exact characters to cut).
 
-`req.json` is `{"model": "<exact id>", "input": {...}, "callBackUrl": "optional", "timeout": 300}`. A `callBackUrl` (Skill 46 relay, http or https) is sent on createTask and recorded in the result as `data.callback_url` and `data.callback_sent`; synchronous endpoints have no callback, so it is not sent and a warning says so. For models whose schema declares a path other than `/api/v1/jobs/createTask` (the synchronous chat and Gemini models), `input` is the request body and the result comes back in `data.response`.
+`req.json` is `{"model": "<exact id>", "input": {...}, "callBackUrl": "optional", "timeout": 300}`. `--callback-url URL` on `submit` and `run` sets (overrides) the request's `callBackUrl`; the Skill 46 production route mints that URL first (46-kie-callback-relay SUBMITTER-SOP.md, "Production route via Skill 74"). A `callBackUrl` (Skill 46 relay, http or https) is sent on createTask and recorded in the result as `data.callback_url` and `data.callback_sent`; synchronous endpoints have no callback, so it is not sent and a warning says so. For models whose schema declares a path other than `/api/v1/jobs/createTask` (the synchronous chat and Gemini models), `input` is the request body and the result comes back in `data.response`.
 
 ## Typical flow (operator turned on active mode)
 

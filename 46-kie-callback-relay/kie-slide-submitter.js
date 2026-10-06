@@ -151,6 +151,21 @@ function gateSlidePrompt(slide, model) {
 }
 
 
+/**
+ * Skill 74 normalized task metadata -> {taskId, modelId, callbackUrl, state}. Reads the adapter's result
+ * JSON (task_id, model_id, state, data.callback_url) or the flat {task_id, model_id, callback_url}.
+ */
+function normalizeAdapterTask(r) {
+  const o = (r && typeof r === 'object') ? r : {};
+  const d = (o.data && typeof o.data === 'object') ? o.data : {};
+  return {
+    taskId:      typeof o.task_id === 'string' && o.task_id ? o.task_id : null,
+    modelId:     typeof o.model_id === 'string' && o.model_id ? o.model_id : null,
+    callbackUrl: o.callback_url || d.callback_url || null,
+    state:       o.state || null
+  };
+}
+
 class KieSlideSubmitter {
   /**
    * @param {object} opts
@@ -274,24 +289,7 @@ class KieSlideSubmitter {
       let perTaskSecret = null;
       let callBackUrl   = null;
       if (useCallbacks) {
-        perTaskSecret = crypto.randomBytes(32).toString('hex');
-        // Fix D: callback validator = HMAC-SHA256(clientSlug + ":" + submitId, callbackHmacKey)
-        //   Nothing secret in the URL; the Worker recomputes and verifies.
-        // Fix C: perTaskSecretHmac = HMAC-SHA256(perTaskSecret, callbackHmacKey)
-        //   A hash of the secret, safe to pass through Kie logs. Stored in KV by Worker.
-        // NOTE (fix F): this.callbackHmacKey is the PER-CLIENT derived key (not the fleet
-        //   master); the Worker re-derives the same value from the master + slug.
-        const callbackValidator = crypto
-          .createHmac('sha256', this.callbackHmacKey)
-          .update(`${this.clientSlug}:${submitId}`)
-          .digest('hex');
-        const perTaskSecretHmac = crypto
-          .createHmac('sha256', this.callbackHmacKey)
-          .update(perTaskSecret)
-          .digest('hex');
-        // Fix C + D: no raw secret in URL; s= is the callback validator, h= is the secret HMAC
-        callBackUrl = `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}` +
-          `&j=${encodeURIComponent(submitId)}&s=${callbackValidator}&h=${perTaskSecretHmac}`;
+        ({ perTaskSecret, callBackUrl } = this._makeCallback(submitId));
       }
 
       // Write registry BEFORE submitting (crash-safe: write first, then submit).
@@ -418,6 +416,87 @@ class KieSlideSubmitter {
     console.log(`[kie-submit] deck complete: ${success} done, ${failed} failed/timeout`);
 
     return allResults;
+  }
+
+  /**
+   * Build one task's callback: a fresh per-task secret and the signed /cb URL (fixes C + D).
+   * Shared by submitDeck and the Skill 74 route (prepareCallback), so both mint the same URL shape.
+   *   s= HMAC-SHA256(clientSlug:submitId, callbackHmacKey); h= HMAC-SHA256(perTaskSecret, callbackHmacKey).
+   * Nothing secret is in the URL. callbackHmacKey is the PER-CLIENT derived key (fix F).
+   */
+  _makeCallback(submitId) {
+    const perTaskSecret = crypto.randomBytes(32).toString('hex');
+    const callbackValidator = crypto.createHmac('sha256', this.callbackHmacKey)
+      .update(`${this.clientSlug}:${submitId}`).digest('hex');
+    const perTaskSecretHmac = crypto.createHmac('sha256', this.callbackHmacKey)
+      .update(perTaskSecret).digest('hex');
+    const callBackUrl = `${this.kvWorkerUrl}/cb?c=${encodeURIComponent(this.clientSlug)}` +
+      `&j=${encodeURIComponent(submitId)}&s=${callbackValidator}&h=${perTaskSecretHmac}`;
+    return { perTaskSecret, callBackUrl };
+  }
+
+  /**
+   * PRODUCTION ROUTE VIA SKILL 74, step 1. Mint the callback for one slide, write the registry row
+   * (write-before-submit, crash-safe), and return the URL to hand to
+   *   kie_live_adapter.py submit --request req.json --callback-url <callBackUrl> --mode active
+   * Requires callbackHmacKey and kvReadToken (callback mode).
+   * @returns {{submitId: string, callBackUrl: string}}
+   */
+  prepareCallback({ deckId, slideId, targetPath, model }) {
+    if (!this.callbackHmacKey || !this.kvReadToken) {
+      throw new Error('[kie-submit] callbackHmacKey and kvReadToken are required for the Skill 74 route');
+    }
+    const submitId = crypto.randomBytes(16).toString('hex');
+    const { perTaskSecret, callBackUrl } = this._makeCallback(submitId);
+    this._writeRegistry(submitId, {
+      submitId, label: `${deckId}_${slideId}`, clientSlug: this.clientSlug, deckId, slideId,
+      model: model || null, targetPath, perTaskSecret, callBackUrl,
+      submittedAt: new Date().toISOString(), status: 'submitting', taskId: null,
+      fallbackPolledAt: null, via: 'skill-74'
+    });
+    return { submitId, callBackUrl };
+  }
+
+  /**
+   * PRODUCTION ROUTE VIA SKILL 74, step 2. Accept Skill 74's normalized submit result and wait for it.
+   * Input: the JSON Skill 74 printed ({task_id, model_id, state, data.callback_url}) or the flat
+   * {task_id, model_id, callback_url}. The callback URL must be one prepareCallback minted on this box
+   * (its j= submitId must have a registry row whose stored URL matches exactly), so a foreign or
+   * tampered result is refused rather than polled. A skipped or failed submit (no task_id) is returned
+   * as failed with no wait. Reconciles through the same download/QC rule as submitDeck.
+   * @returns {Promise<{slideId, submitId, taskId, status, resultUrls, localPath, code}>}
+   */
+  async adoptAdapterTask(adapterResult, opts = {}) {
+    const t = normalizeAdapterTask(adapterResult);
+    let submitId = null;
+    try { submitId = new URL(t.callbackUrl).searchParams.get('j'); } catch (_) { /* bad URL handled below */ }
+    const reg = submitId ? this._readRegistry(submitId) : null;
+    if (!reg || reg.callBackUrl !== t.callbackUrl || reg.clientSlug !== this.clientSlug) {
+      throw new Error('[kie-submit] adapter result callback_url does not match a prepared callback on this box; refusing');
+    }
+    const fail = (code) => ({ slideId: reg.slideId, submitId, taskId: t.taskId, status: 'failed', resultUrls: [], localPath: null, code });
+    if (!t.taskId || t.state === 'skipped' || t.state === 'fail') {
+      reg.status = 'failed-submit';
+      this._writeRegistry(submitId, reg);
+      return fail(0);
+    }
+    reg.taskId = t.taskId;
+    reg.model = t.modelId || reg.model;
+    reg.status = 'submitted';
+    this._writeRegistry(submitId, reg);
+    this._writeIndex(t.taskId, submitId);
+    if (!this.poller) {
+      this.poller = new KieKvPoller({ clientSlug: this.clientSlug, kvWorkerUrl: this.kvWorkerUrl,
+        workspaceDir: this.workspaceDir, kvReadToken: this.kvReadToken, callbacksEnabled: true });
+    }
+    const timeoutMs = opts.timeoutMs || MODEL_TIMEOUTS[reg.model] || MODEL_TIMEOUTS.default;
+    const done = await this.poller.waitForTask(submitId, t.taskId, reg.perTaskSecret,
+      { timeoutMs, kieApiKey: this.kieApiKey });
+    const { status, localPath } = await this._resolveSlideOutcome(done, reg.targetPath, reg.slideId, { alwaysDownload: true });
+    reg.status = status;
+    reg.fallbackPolledAt = done.fallbackPolledAt || reg.fallbackPolledAt;
+    this._writeRegistry(submitId, reg);
+    return { slideId: reg.slideId, submitId, taskId: t.taskId, status, resultUrls: done.resultUrls, localPath, code: done.code };
   }
 
   /**
@@ -624,4 +703,4 @@ class KieSlideSubmitter {
   }
 }
 
-module.exports = { KieSlideSubmitter };
+module.exports = { KieSlideSubmitter, normalizeAdapterTask };

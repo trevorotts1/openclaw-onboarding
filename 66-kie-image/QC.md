@@ -17,7 +17,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       every entry has `source_url` and `last_verified_at` and a `cap_status`.
 - [ ] The skill zip does NOT contain `wire.sh` (installers are not shipped in
       the bundle).
-- [ ] `skill-version.txt` reads `v2.1.0`.
+- [ ] `skill-version.txt` reads `v2.2.0`.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first (PREREQS.json).
@@ -51,6 +51,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       `python3 scripts/select_image_model.py --self-test` (PASS)
       `python3 scripts/validate_prompt.py --self-test` (PASS)
       `python3 scripts/validate_payload.py --self-test` (PASS)
+- [ ] Skill 74 wiring: with the adapter folder present, `python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py validate --model <id> --payload input.json --json` and `preflight --model <id> --json` run before submit (INSTRUCTIONS.md Step 5); with the adapter absent the skill still works on `models.json` and curl.
 - [ ] wire.sh run twice against a scratch workspace: second run reports no
       change for all three targets; exactly one BEGIN/END block per target;
       exactly one sentinel.

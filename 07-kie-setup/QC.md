@@ -10,6 +10,10 @@ Enables the agent to use KIE.ai as the unified API for image, video, and audio g
 - [ ] Any optional webhook/HMAC information is stored outside public docs.
 - [ ] No executable helper script is required in the skill folder; curl is required for the verification tests.
 
+- [ ] `references/kie-common-rules.md` exists and `SKILL.md` and `INSTRUCTIONS.md` point to it.
+- [ ] `PREREQS.json` declares Skill 74 (`skill-74-kie-live-adapter`, optional).
+- [ ] Adapter health, hermetic: `qc-kie-setup.sh` reports Skill 74 present and `health --json` naming `74-kie-live-adapter` (placeholder key, localhost dead port, no network). Run offline with `KIE_QC_OFFLINE=1`.
+
 ## 3. Dependency Checks
 - [ ] TYP and BYUP are installed first.
 - [ ] A KIE.ai account exists and has credits loaded.

@@ -12,7 +12,7 @@ description: >
   it observes and records drift but never dispatches a paid job. Submit never
   chooses or changes a model. Infrastructure skill for skills 66, 67 and 68;
   not a client-facing feature.
-version: 1.1.0
+version: 1.1.1
 priority: MEDIUM
 ---
 
