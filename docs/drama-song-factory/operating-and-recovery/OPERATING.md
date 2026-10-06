@@ -54,7 +54,7 @@ Verified live: no auth file → `rejected` / `approval-missing`, rc 4.
 ## 2. Ledger refresh — `build-control/project-bindings/refresh.sh`, 300 s
 
 Watcher calls every 300 s. Atomically renders `LIVE-LEDGER.md` plus
-`packet/claude-nine-swarm/LIVE-LEDGER.md` (temp file + `mv`, then `cp`) from
+the swarm-packet ledger copy (`LIVE-LEDGER.md`; temp file + `mv`, then `cp`) from
 canonical `run/state.json` only — no second state authority.
 Two distinct stamps: Last refresh (render time) vs Last progress (workflow-set
 signature changed, kept in `.refresh-state.json`). Status `STALE` when the source

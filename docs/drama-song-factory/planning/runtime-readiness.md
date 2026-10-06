@@ -82,12 +82,12 @@ Build lane assumption: host ceiling = `cpu_count - 2 = 10`, hard ceiling 10 → 
 
 No `policy.qcRoute` exists for this program yet: `find <build-root> -maxdepth 2 -name .spec-protocol.json` returns nothing (2026-10-06). Bound rule is the packet fallback:
 
-- `<build-root>/packet/CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_BUILD_DIRECTIVE.md:253` — `**QC route:** use the bound project's explicit \`policy.qcRoute\` when present. If absent, follow the current approved technical-QC seat rule (\`sonnet\` alias under Claude-Nine; Sonnet under plain Claude Code), resolving the actual provider/model before the first verdict. ... \`sonnet-chain\` is not automatically independent of \`opus-chain\`. See \`QC-REPAIR.md\` ...`
-- `<build-root>/packet/claude-nine-swarm/QC-REPAIR.md:10` — `| QC/recheck | The bound project's explicit **\`policy.qcRoute\`** when present. Otherwise use the current approved technical-QC seat rule: **\`sonnet\` alias for Claude-Nine; Sonnet for plain Claude Code**. Resolve and record its actual model before the first verdict. |`
+- `<build-root>/packet/CLAUDE_NINE_DRAMA_...:253` (directive) — `**QC route:** use the bound project's explicit \`policy.qcRoute\` when present. If absent, follow the current approved technical-QC seat rule (\`sonnet\` alias under Claude-Nine; Sonnet under plain Claude Code), resolving the actual provider/model before the first verdict. ... \`sonnet-chain\` is not automatically independent of \`opus-chain\`. See \`QC-REPAIR.md\` ...`
+- `<build-root>/packet/QC-REPAIR.md:10` (swarm packet) — `| QC/recheck | The bound project's explicit **\`policy.qcRoute\`** when present. Otherwise use the current approved technical-QC seat rule: **\`sonnet\` alias for Claude-Nine; Sonnet for plain Claude Code**. Resolve and record its actual model before the first verdict. |`
 - `QC-REPAIR.md:12` — no-QC-pin + default-collides path: select approved callable independent seat, bind before use.
 - `QC-REPAIR.md:16` — W0-04 resolves concrete assignments before first verdict.
 
-**Bound route: `sonnet` QC seat under claude-nine** (fallback rule), pending W1-08 pinning. Actual provider/model resolution + independence proof against opus-chain members (§3) due before first verdict.
+**Bound route: `sonnet` QC seat (fallback rule)**, pending W1-08 pinning. Actual provider/model resolution + independence proof against opus-chain members (§3) due before first verdict.
 
 ---
 *ponytail:* live-router combo read skipped (management-API probe); add when a verdict needs it — query combos via 9Router API, never the DB file.
