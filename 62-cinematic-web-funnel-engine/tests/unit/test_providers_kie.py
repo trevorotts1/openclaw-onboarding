@@ -1,40 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_providers_kie.py — offline unit tests for providers/kie.py (Skill 62, U5).
+"""test_providers_kie.py: offline unit tests for providers/kie.py (Skill 62).
 
 NO NETWORK, NO KIE_API_KEY, NO LIVE/PAID CALL. Every HTTP interaction goes
-through a FakeTransport driven by the fixtures in tests/fixtures/kie/ (spec
-§19.2 "Kie adapter against mocked API fixtures") — RequestsTransport (the
-only implementation that ever touches the network) is never instantiated by
-this suite.
+through a FakeTransport (spec §19.2 "Kie adapter against mocked API fixtures")
+that is bridged onto Skill 74's transport interface, so the REAL Skill 74
+client (74-kie-live-adapter, loaded from the sibling skill folder) runs its
+real submit/validate/prompt-budget/upload/wait/save/price code against the
+fake. RequestsTransport is never instantiated by this suite.
 
 Covers:
-  - KieProvider.generate_image / generate_video submit the exact body shape
-    (model slug resolved ONLY through ModelRegistry, never hardcoded).
-  - Seedance two-image `input_urls` FRAME PINNING: order preserved exactly
-    (index 0 = first frame, index 1 = last frame), and the registry's
-    max_images cap (2) is enforced before any HTTP call.
-  - get_task() state mapping (success/fail/pending) against mocked
-    recordInfo fixtures.
-  - download_results() end-to-end: poll -> decode resultJson (JSON-encoded
-    STRING, matching the v14.1.2 fix already shipped in kie_video.py/
-    kie_image.py) -> download -> write to disk.
-  - estimate_cost() resolves through ModelRegistry.estimate(strict=False):
-    an unpriced model (Seedance) comes back honestly unverified; a verified
-    model (veo, usd_per_clip) comes back with a real total.
-  - Secrets resolved by NAME only: a missing KIE_API_KEY raises with the
-    env-var NAME in the message, never a value.
-  - 46-kie-callback-relay wiring:
-      * build_callback_ticket()'s HMAC derivation matches a hand-computed
-        vector (same algorithm as kie-slide-submitter.js).
-      * verify_kie_webhook_signature() true/false against known vectors,
-        matching 46-kie-callback-relay/worker/src/index.js verifyKieSignature.
-      * kv_read() found / not-found / 401 / confused-deputy-submitId-mismatch.
-      * KieProvider(use_callback=True) attaches a callBackUrl built by the
-        SAME derivation, and poll_callback_result() round-trips through
-        kv_read() using the stored ticket.
+  - KieProvider submits through Skill 74 in ``active`` mode and logs
+    ``path=skill74``; without Skill 74 it logs ``path=legacy`` and uses the
+    quarantined fallback client.
+  - generate_image / generate_video submit the exact body shape (model slug
+    resolved ONLY through ModelRegistry); image-to-image sends ``input_urls``
+    and never the undeclared ``output_format``.
+  - Skill 74 schema validation refuses an out-of-schema body before createTask;
+    prompt length comes from Skill 74 prompt-budget (over the maximum is
+    refused, under the floor is reported).
+  - Seedance two-image frame pinning, Veo 3.1 wire shape, quality-tier refusal.
+  - get_task / download_results / upload_asset through Skill 74.
+  - estimate_cost: live catalog price through Skill 74 first, labeled
+    fallback constants otherwise.
+  - 46-kie-callback-relay wiring (HMAC derivation, webhook verification,
+    kv_read, callBackUrl attachment).
 
-stdlib unittest only — no third-party test runner required.
+stdlib unittest only.
 Run: python3 -m unittest discover -s tests/unit -v
      (from the 62-cinematic-web-funnel-engine/ directory)
 """
@@ -42,14 +34,19 @@ Run: python3 -m unittest discover -s tests/unit -v
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
+import io
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _SKILL_DIR = _TESTS_DIR.parent.parent
@@ -62,12 +59,12 @@ _FIXTURES_DIR = _TESTS_DIR.parent / "fixtures" / "kie"
 
 
 _VEO_PRICING_DESC = (
-    "Lite mode (text-to-video / image-to-video/ reference-to-video): 720P \u2014 30 credits (\u2248 $0.15) per video; "
-    "1080P \u2014 35 credits (\u2248 $0.175) per video; 4K \u2014 150 credits (\u2248 $0.75) per video.\n"
-    "Fast mode (text-to-video / image-to-video / reference-to-video): 720P \u2014 60 credits (\u2248 $0.30) per video; "
-    "1080P \u2014 65 credits (\u2248 $0.325) per video; 4K \u2014 180 credits (\u2248 $0.90) per video.\n"
-    "Quality mode (text-to-video / image-to-video): 720P \u2014 250 credits (\u2248 $1.25) per video; "
-    "1080P \u2014 255 credits (\u2248 $1.275) per video; 4K \u2014 370 credits (\u2248 $1.85) per video.\n\n"
+    "Lite mode (text-to-video / image-to-video/ reference-to-video): 720P — 30 credits (≈ $0.15) per video; "
+    "1080P — 35 credits (≈ $0.175) per video; 4K — 150 credits (≈ $0.75) per video.\n"
+    "Fast mode (text-to-video / image-to-video / reference-to-video): 720P — 60 credits (≈ $0.30) per video; "
+    "1080P — 65 credits (≈ $0.325) per video; 4K — 180 credits (≈ $0.90) per video.\n"
+    "Quality mode (text-to-video / image-to-video): 720P — 250 credits (≈ $1.25) per video; "
+    "1080P — 255 credits (≈ $1.275) per video; 4K — 370 credits (≈ $1.85) per video.\n\n"
     "High-tier top-ups (+10% bonus) reduce the effective cost by about 10%."
 )
 
@@ -77,19 +74,32 @@ def _load_fixture(name: str) -> Dict[str, Any]:
         return json.load(fh)
 
 
+def _resp(status_code: int, body: Dict[str, Any]) -> kie.HttpResponse:
+    return kie.HttpResponse(status_code=status_code, json_body=body)
+
+
 # ---------------------------------------------------------------------------
-# FakeTransport — FIFO-queued responses, never touches the network.
+# FakeTransport: routed (catalog / schema / credit answer by path), with
+# FIFO queues for createTask, recordInfo and the kv-read Worker. Never touches
+# the network. ``post_calls`` holds createTask calls only; ``get_calls`` holds
+# every non-discovery GET (recordInfo, kv-read).
 # ---------------------------------------------------------------------------
 
 
 class FakeTransport(kie.KieTransport):
     def __init__(self) -> None:
         self.post_calls: List[Dict[str, Any]] = []
+        self.upload_calls: List[Dict[str, Any]] = []
         self.get_calls: List[Dict[str, Any]] = []
+        self.discovery_paths: List[str] = []
         self.download_calls: List[str] = []
         self._post_queue: List[kie.HttpResponse] = []
         self._get_queue: List[kie.HttpResponse] = []
         self._download_bytes = b"FIXTURE-DOWNLOAD-BYTES"
+        self.catalog_models: List[Dict[str, Any]] = []
+        self.catalog_code = 200
+        self.prompt_max: Optional[int] = None
+        self.input_overrides: Dict[str, Dict[str, Any]] = {}
 
     def queue_post(self, resp: kie.HttpResponse) -> None:
         self._post_queue.append(resp)
@@ -97,13 +107,47 @@ class FakeTransport(kie.KieTransport):
     def queue_get(self, resp: kie.HttpResponse) -> None:
         self._get_queue.append(resp)
 
+    def _schema_body(self, model: str) -> Dict[str, Any]:
+        prompt: Dict[str, Any] = {"type": "string"}
+        if self.prompt_max is not None:
+            prompt["maxLength"] = self.prompt_max
+        props: Dict[str, Any] = {"prompt": prompt}
+        props.update(self.input_overrides.get(model, {}))
+        schema = {
+            "type": "object",
+            "required": ["model", "input"],
+            "properties": {
+                "model": {"type": "string"},
+                "callBackUrl": {"type": "string"},
+                "input": {"type": "object", "properties": props},
+            },
+        }
+        openapi = {
+            "openapi": "3.1.0",
+            "paths": {"/api/v1/jobs/createTask": {"post": {"requestBody": {"content": {"application/json": {"schema": schema}}}}}},
+        }
+        return {"code": 200, "msg": "success", "data": {"openapi": openapi}}
+
     def post_json(self, url, *, headers, body, timeout):
-        self.post_calls.append({"url": url, "headers": headers, "body": body, "timeout": timeout})
-        if not self._post_queue:
-            raise AssertionError(f"FakeTransport: no queued POST response for {url}")
-        return self._post_queue.pop(0)
+        if url.endswith("/createTask"):
+            self.post_calls.append({"url": url, "headers": headers, "body": body, "timeout": timeout})
+            return self._post_queue.pop(0) if self._post_queue else _resp(200, _load_fixture("create_task_success.json"))
+        self.upload_calls.append({"url": url, "headers": headers, "body": body})
+        return _resp(200, {"code": 200, "data": {"downloadUrl": "https://fixtures.example/uploaded-ref.png", "fileName": body.get("fileName")}})
 
     def get_json(self, url, *, headers, params, timeout):
+        path = urlparse(url).path
+        if path == "/api/v1/models":
+            self.discovery_paths.append(path)
+            if self.catalog_code != 200:
+                return _resp(200, {"code": self.catalog_code, "msg": "unauthorized", "data": None})
+            return _resp(200, {"code": 200, "msg": "success", "data": {"total": len(self.catalog_models), "models": self.catalog_models}})
+        if path.startswith("/api/v1/models/") and path.endswith("/schema"):
+            self.discovery_paths.append(path)
+            return _resp(200, self._schema_body(path[len("/api/v1/models/"):-len("/schema")]))
+        if path == "/api/v1/chat/credit":
+            self.discovery_paths.append(path)
+            return _resp(200, {"code": 200, "msg": "success", "data": 100000})
         self.get_calls.append({"url": url, "headers": headers, "params": params, "timeout": timeout})
         if not self._get_queue:
             raise AssertionError(f"FakeTransport: no queued GET response for {url}")
@@ -114,25 +158,136 @@ class FakeTransport(kie.KieTransport):
         return self._download_bytes
 
 
-def _resp(status_code: int, body: Dict[str, Any]) -> kie.HttpResponse:
-    return kie.HttpResponse(status_code=status_code, json_body=body)
+class _ProviderCase(unittest.TestCase):
+    """Common setUp: fake transport + fixture key; stderr captured so the
+    ``path=`` log line can be asserted."""
 
-
-# ---------------------------------------------------------------------------
-# KieProvider.generate_image / generate_video — body shape + registry-only resolution
-# ---------------------------------------------------------------------------
-
-
-class GenerateImageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
+        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY", "KIE_POLICY_ROOT": ""}, clear=False)  # no policy owners: only the fake schema sets limits
         self.env.start()
         self.addCleanup(self.env.stop)
         self.provider = kie.KieProvider(transport=self.transport)
+        self.stderr = io.StringIO()
+        redirect = contextlib.redirect_stderr(self.stderr)
+        redirect.__enter__()
+        self.addCleanup(redirect.__exit__, None, None, None)
 
+
+# ---------------------------------------------------------------------------
+# Skill 74 is the transport (and the legacy fallback is the exception)
+# ---------------------------------------------------------------------------
+
+
+class Skill74TransportTests(_ProviderCase):
+    def test_submit_runs_through_skill74_active_mode_and_logs_the_path(self) -> None:
+        self.provider.generate_image(
+            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
+        )
+        self.assertEqual(self.provider.client_path, "skill74")
+        self.assertIn("path=skill74 mode=active", self.stderr.getvalue())
+        # Skill 74 read the live schema before createTask; the key never appears in a log line.
+        self.assertTrue(any(p.endswith("/schema") for p in self.transport.discovery_paths))
+        self.assertEqual(len(self.transport.post_calls), 1)
+        self.assertNotIn("FIXTURE-KEY", self.stderr.getvalue())
+
+    def test_out_of_schema_body_is_refused_by_skill74_before_createtask(self) -> None:
+        self.transport.input_overrides["gpt-image-2-5-sunburst-text-to-image"] = {
+            "aspect_ratio": {"type": "string", "enum": ["16:9"]}
+        }
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(
+                base.ImageGenerationRequest(
+                    model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn", aspect_ratio="1:1"
+                )
+            )
+        self.assertIn("validation_failed", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_prompt_over_the_model_maximum_is_refused_via_prompt_budget(self) -> None:
+        self.transport.prompt_max = 50
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(
+                base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * 80)
+            )
+        self.assertIn("exceeds the model limit", str(ctx.exception))
+        self.assertIn("CUT exactly 30", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def _img(self, n: int) -> base.ImageGenerationRequest:
+        return base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * n)
+
+    def test_prompt_at_79_percent_is_a_hard_reject_with_the_chars_to_add(self) -> None:
+        self.transport.prompt_max = 1000  # floor 800, target 950
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(self._img(790))
+        self.assertIn("below the 80 percent floor", str(ctx.exception))
+        self.assertIn("ADD at least 10", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_prompt_at_95_percent_passes(self) -> None:
+        self.transport.prompt_max = 1000
+        self.provider.generate_image(self._img(950))
+        self.assertEqual(len(self.transport.post_calls), 1)
+        self.assertNotIn("WARNING", self.stderr.getvalue())
+
+    def test_prompt_at_80_percent_passes_with_no_refusal(self) -> None:
+        self.transport.prompt_max = 1000
+        self.provider.generate_image(self._img(800))
+        self.assertEqual(len(self.transport.post_calls), 1)
+
+    def test_prompt_at_101_percent_is_refused_with_the_chars_to_cut(self) -> None:
+        self.transport.prompt_max = 1000
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(self._img(1010))
+        self.assertIn("CUT exactly 10", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_prompt_budget_method_returns_skill74_numbers(self) -> None:
+        self.transport.prompt_max = 1000
+        b = self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual((b["max"], b["floor"], b["target_min"]), (1000, 800, 950))
+
+    def test_prompt_budget_is_none_without_a_known_limit(self) -> None:
+        self.assertIsNone(self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image"))
+
+    def test_upload_asset_goes_through_skill74_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            png = Path(tmp) / "ref.png"
+            png.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            url = self.provider.upload_asset(base.AssetUploadRequest(path=str(png), purpose="approved_concept_reference"))
+        self.assertEqual(url, "https://fixtures.example/uploaded-ref.png")
+        call = self.transport.upload_calls[0]
+        self.assertTrue(call["url"].endswith("/api/file-base64-upload"))
+        self.assertEqual(call["body"]["uploadPath"], "images/cinematic-web-funnel-engine/approved_concept_reference")
+        self.assertEqual(call["body"]["fileName"], "ref.png")
+        self.assertEqual(call["headers"]["Authorization"], "Bearer FIXTURE-KEY")
+
+    def test_without_skill74_the_quarantined_fallback_runs_and_says_so(self) -> None:
+        with patch.dict("os.environ", {"CWFE_SKILL74_DIR": ""}):
+            provider = kie.KieProvider(transport=self.transport)
+            handle = provider.generate_image(
+                base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
+            )
+        self.assertEqual(provider.client_path, "legacy")
+        self.assertIn("path=legacy", self.stderr.getvalue())
+        self.assertEqual(handle.status, "queued")
+        self.assertEqual(self.transport.discovery_paths, [])  # no schema/catalog reads on the fallback
+        self.assertEqual(self.transport.post_calls[0]["body"]["model"], "gpt-image-2-5-sunburst-text-to-image")
+
+    def test_fallback_download_and_status_use_the_legacy_client(self) -> None:
+        with patch.dict("os.environ", {"CWFE_SKILL74_DIR": ""}):
+            provider = kie.KieProvider(transport=self.transport)
+            self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
+            self.assertEqual(provider.get_task("t").status, "success")
+            self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
+            with tempfile.TemporaryDirectory() as tmp:
+                paths = provider.download_results("t", str(Path(tmp) / "clip.mp4"))
+                self.assertEqual(Path(paths[0]).read_bytes(), b"FIXTURE-DOWNLOAD-BYTES")
+
+
+class GenerateImageTests(_ProviderCase):
     def test_generate_image_resolves_slug_from_registry_not_hardcoded(self) -> None:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         handle = self.provider.generate_image(
             base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
         )
@@ -142,8 +297,7 @@ class GenerateImageTests(unittest.TestCase):
         self.assertEqual(handle.provider, "kie")
         self.assertEqual(handle.model_id, "kie-gpt-image-2-5-sunburst-text-to-image")
 
-    def test_generate_image_includes_reference_urls_as_image_input(self) -> None:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
+    def test_generate_image_sends_only_declared_fields_with_input_urls_for_references(self) -> None:
         self.provider.generate_image(
             base.ImageGenerationRequest(
                 model_id="kie-gpt-image-2-5-sunburst-image-to-image",
@@ -151,21 +305,18 @@ class GenerateImageTests(unittest.TestCase):
                 reference_image_urls=("https://fixtures.example/ref1.png", "https://fixtures.example/ref2.png"),
             )
         )
-        body = self.transport.post_calls[0]["body"]
-        self.assertEqual(
-            body["input"]["image_input"],
-            ["https://fixtures.example/ref1.png", "https://fixtures.example/ref2.png"],
-        )
+        task_input = self.transport.post_calls[0]["body"]["input"]
+        self.assertEqual(task_input["input_urls"], ["https://fixtures.example/ref1.png", "https://fixtures.example/ref2.png"])
+        self.assertNotIn("image_input", task_input)  # the Nano Banana field is not the sunburst field
+        self.assertNotIn("output_format", task_input)  # neither sunburst schema declares it
 
     def test_generate_image_appends_negative_prompt_clause(self) -> None:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         self.provider.generate_image(
             base.ImageGenerationRequest(
                 model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn", negative_prompt="clouds"
             )
         )
-        body = self.transport.post_calls[0]["body"]
-        self.assertIn("Do not include: clouds", body["input"]["prompt"])
+        self.assertIn("Do not include: clouds", self.transport.post_calls[0]["body"]["input"]["prompt"])
 
     def test_missing_api_key_raises_with_env_var_name_never_a_value(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
@@ -178,21 +329,16 @@ class GenerateImageTests(unittest.TestCase):
             self.assertEqual(len(self.transport.post_calls), 0)  # refused before any HTTP call
 
 
-class GenerateVideoSeedanceFramePinningTests(unittest.TestCase):
+class GenerateVideoSeedanceFramePinningTests(_ProviderCase):
     """The central proof for this unit: two-image input_urls frame pinning,
     order preserved, registry-enforced cap."""
 
     def setUp(self) -> None:
-        self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
-        self.env.start()
-        self.addCleanup(self.env.stop)
-        self.provider = kie.KieProvider(transport=self.transport)
+        super().setUp()
         self.first_frame = "https://fixtures.example/scene-04-last-frame.png"
         self.last_frame = "https://fixtures.example/scene-05-first-frame.png"
 
     def test_two_image_input_urls_pins_first_and_last_frame_in_order(self) -> None:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         handle = self.provider.generate_video(
             base.VideoGenerationRequest(
                 model_id="kie-bytedance-seedance-1.5-pro",
@@ -213,16 +359,12 @@ class GenerateVideoSeedanceFramePinningTests(unittest.TestCase):
         self.assertEqual(handle.model_id, "kie-bytedance-seedance-1.5-pro")
 
     def test_text_to_video_omits_input_urls_key_entirely(self) -> None:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         self.provider.generate_video(
             base.VideoGenerationRequest(
-                model_id="kie-bytedance-seedance-1.5-pro",
-                prompt="a boy rides a bike at sunset",
-                duration_seconds=8,
+                model_id="kie-bytedance-seedance-1.5-pro", prompt="a boy rides a bike at sunset", duration_seconds=8
             )
         )
-        body = self.transport.post_calls[0]["body"]
-        self.assertNotIn("input_urls", body["input"])
+        self.assertNotIn("input_urls", self.transport.post_calls[0]["body"]["input"])
 
     def test_exceeding_registry_max_images_raises_before_any_http_call(self) -> None:
         entry = self.provider.registry.get_model("kie-bytedance-seedance-1.5-pro")
@@ -238,6 +380,7 @@ class GenerateVideoSeedanceFramePinningTests(unittest.TestCase):
                 )
             )
         self.assertEqual(len(self.transport.post_calls), 0)
+        self.assertEqual(self.transport.discovery_paths, [])  # refused before Skill 74 was even called
 
 
 # ---------------------------------------------------------------------------
@@ -247,16 +390,8 @@ class GenerateVideoSeedanceFramePinningTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
-        self.env.start()
-        self.addCleanup(self.env.stop)
-        self.provider = kie.KieProvider(transport=self.transport)
-
+class GenerateVideoVeoCreateTaskTests(_ProviderCase):
     def _submit(self, model_id: str = "kie-veo3-fast", **kw: Any) -> Dict[str, Any]:
-        self.transport.queue_post(_resp(200, _load_fixture("create_task_success.json")))
         self.provider.generate_video(
             base.VideoGenerationRequest(model_id=model_id, prompt="a dog in a park", **kw),
             use_callback=False,
@@ -278,6 +413,7 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
             )
         self.assertIn("planned", str(ctx.exception))
         self.assertEqual(len(self.transport.post_calls), 0)
+        self.assertEqual(self.transport.discovery_paths, [])
 
     def test_text_to_video_body_matches_live_schema(self) -> None:
         body = self._submit(duration_seconds=8, aspect_ratio="9:16", resolution="1080p")
@@ -319,12 +455,14 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
                 )
         self.assertEqual(len(self.transport.post_calls), 0)
 
-    def test_documented_recordinfo_resultjson_string_shape_is_decoded(self) -> None:
+    def test_documented_recordinfo_resultjson_string_shape_is_decoded_and_saved(self) -> None:
         # Get Task Details doc: data.resultJson is a JSON STRING {"resultUrls": [...]}, state success|fail.
-        self.transport.queue_get(
-            _resp(200, {"code": 200, "data": {"state": "success", "resultJson": json.dumps({"resultUrls": ["https://fixtures.example/r.mp4"]})}})
-        )
-        self.assertEqual(self.provider._poll_result_url("veo-task", interval=0), "https://fixtures.example/r.mp4")
+        body = {"code": 200, "data": {"state": "success", "resultJson": json.dumps({"resultUrls": ["https://fixtures.example/r.mp4"]})}}
+        self.transport.queue_get(_resp(200, body))
+        self.transport.queue_get(_resp(200, body))
+        with tempfile.TemporaryDirectory() as tmp:
+            self.provider.download_results("veo-task", str(Path(tmp) / "veo.mp4"))
+        self.assertEqual(self.transport.download_calls, ["https://fixtures.example/r.mp4"])
 
     def test_callback_payload_urls_list_and_string_forms(self) -> None:
         ok = {"code": 200, "data": {"taskId": "t", "info": {"resultUrls": ["https://fixtures.example/a.mp4"]}}}
@@ -333,27 +471,13 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
         self.assertEqual(kie.result_urls_from_callback(as_string), ["https://fixtures.example/b.mp4"])
         self.assertEqual(kie.result_urls_from_callback({"code": 501, "data": {"taskId": "t"}}), [])
 
-    def test_veo_info_resultUrls_payload_shape_is_decoded(self) -> None:
-        self.transport.queue_get(
-            _resp(200, {"code": 200, "data": {"state": "success", "info": {"resultUrls": ["https://fixtures.example/veo.mp4"]}}})
-        )
-        self.assertEqual(self.provider._poll_result_url("veo-task", interval=0), "https://fixtures.example/veo.mp4")
-
-
 
 # ---------------------------------------------------------------------------
-# get_task / download_results — poll + resultJson-string decode + download
+# get_task / download_results: Skill 74 wait + save
 # ---------------------------------------------------------------------------
 
 
-class TaskLifecycleTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
-        self.env.start()
-        self.addCleanup(self.env.stop)
-        self.provider = kie.KieProvider(transport=self.transport)
-
+class TaskLifecycleTests(_ProviderCase):
     def test_get_task_maps_success_state(self) -> None:
         self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
         handle = self.provider.get_task("fixture-task-seedance-frame-pin-0001")
@@ -371,82 +495,86 @@ class TaskLifecycleTests(unittest.TestCase):
         handle = self.provider.get_task("fixture-task-unknown")
         self.assertEqual(handle.status, "queued")
 
+    def test_get_task_maps_a_running_state_as_processing(self) -> None:
+        self.transport.queue_get(_resp(200, {"code": 200, "data": {"state": "generating"}}))
+        self.assertEqual(self.provider.get_task("t").status, "processing")
+
+    def test_get_task_raises_on_an_api_error_instead_of_reporting_failed(self) -> None:
+        self.transport.queue_get(_resp(200, {"code": 401, "msg": "unauthorized"}))
+        with self.assertRaises(base.ProviderTaskError):
+            self.provider.get_task("t")
+
     def test_cancel_task_always_returns_false_no_kie_cancel_endpoint(self) -> None:
         self.assertFalse(self.provider.cancel_task("any-task-id"))
 
     def test_download_results_decodes_resultjson_string_and_writes_file(self) -> None:
-        self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
-        with_tmp = _TESTS_DIR / "_tmp_download_results"
-        try:
-            paths = self.provider.download_results("fixture-task-seedance-frame-pin-0001", str(with_tmp / "clip.mp4"))
+        for _ in range(2):  # Skill 74 wait, then save
+            self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.provider.download_results("fixture-task-seedance-frame-pin-0001", str(Path(tmp) / "sub" / "clip.mp4"))
             self.assertEqual(len(paths), 1)
             written = Path(paths[0])
-            self.assertTrue(written.exists())
+            self.assertEqual(written.name, "clip.mp4")
             self.assertEqual(written.read_bytes(), b"FIXTURE-DOWNLOAD-BYTES")
             self.assertEqual(
                 self.transport.download_calls,
                 ["https://tempfile.aiquickdraw.com/s/fixture-seedance-connector-clip.mp4"],
             )
-        finally:
-            import shutil
 
-            if with_tmp.exists():
-                shutil.rmtree(with_tmp)
+    def test_download_results_into_a_directory_names_the_file_after_the_task(self) -> None:
+        for _ in range(2):
+            self.transport.queue_get(_resp(200, _load_fixture("record_info_success_video.json")))
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.provider.download_results("task-1", tmp + "/")
+            self.assertEqual(Path(paths[0]).name, "task-1.mp4")
 
     def test_download_results_raises_on_failed_task(self) -> None:
         self.transport.queue_get(_resp(200, _load_fixture("record_info_failed.json")))
         with self.assertRaises(base.ProviderTaskError) as ctx:
             self.provider.download_results("fixture-task-failed-0001", "/tmp/should-not-be-written.mp4")
         self.assertIn("content policy violation", str(ctx.exception))
+        self.assertEqual(self.transport.download_calls, [])
 
 
 # ---------------------------------------------------------------------------
-# estimate_cost — registry-resolved, honest about unpriced Seedance
+# estimate_cost: registry-resolved, honest about unpriced Seedance; live
+# catalog price through Skill 74 first
 # ---------------------------------------------------------------------------
 
 
-class EstimateCostTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
-        self.env.start()
-        self.addCleanup(self.env.stop)
-        self.provider = kie.KieProvider(transport=self.transport)
-
+class EstimateCostTests(_ProviderCase):
     def test_seedance_estimate_is_honestly_unverified(self) -> None:
         estimate = self.provider.estimate_cost(
-            base.VideoGenerationRequest(
-                model_id="kie-bytedance-seedance-1.5-pro", prompt="x", duration_seconds=8
-            )
+            base.VideoGenerationRequest(model_id="kie-bytedance-seedance-1.5-pro", prompt="x", duration_seconds=8)
         )
         self.assertFalse(estimate.verified)
         self.assertIsNone(estimate.estimated_total)
 
     def test_veo3_fast_estimate_falls_back_to_labeled_dated_constants_when_live_unavailable(self) -> None:
-        # No queued GET -> FakeTransport raises -> live lookup fails soft.
-        # usd_per_clip: an 8s request must NOT be multiplied by 8.
+        self.transport.catalog_code = 401  # live catalog unreadable -> Skill 74 only has its snapshot -> not a live read
         estimate = self.provider.estimate_cost(
             base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="1080p")
         )
+        # usd_per_clip: an 8s request must NOT be multiplied by 8.
         self.assertEqual(estimate.unit, "usd_per_clip")
         self.assertEqual(estimate.unit_price, 0.325)
         self.assertEqual(estimate.estimated_total, 0.325)
         self.assertIn("FALLBACK", estimate.note)
 
-    def test_veo_live_price_is_read_first_and_wins_over_registry_constants(self) -> None:
-        live_body = {"code": 200, "msg": "success", "data": {"model": "veo-3-1", "pricingDesc": _VEO_PRICING_DESC.replace("$0.325", "$0.500")}}
-        self.transport.queue_get(_resp(200, live_body))
+    def test_veo_live_price_is_read_first_through_skill74_and_wins_over_registry_constants(self) -> None:
+        self.transport.catalog_models = [
+            {"model": "veo-3-1", "taskType": ["Text to Video"], "pricingDesc": _VEO_PRICING_DESC.replace("$0.325", "$0.500")}
+        ]
         estimate = self.provider.estimate_cost(
             base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="1080p")
         )
         self.assertEqual(estimate.unit_price, 0.5)
         self.assertTrue(estimate.verified)
         self.assertIn("LIVE", estimate.note)
-        call = self.transport.get_calls[0]
-        self.assertTrue(call["url"].endswith("/api/v1/models/veo-3-1/price"))
+        self.assertEqual(self.transport.discovery_paths[0], "/api/v1/models")
 
     def test_veo_live_price_non_200_body_code_falls_back(self) -> None:
-        self.transport.queue_get(_resp(200, {"code": 401, "msg": "unauthorized", "data": None}))
+        self.transport.catalog_code = 401
         estimate = self.provider.estimate_cost(
             base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="720p")
         )
@@ -476,6 +604,7 @@ class EstimateCostTests(unittest.TestCase):
         self.assertEqual(estimate.estimated_total, 0.80)
 
 
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # 46-kie-callback-relay wiring
 # ---------------------------------------------------------------------------

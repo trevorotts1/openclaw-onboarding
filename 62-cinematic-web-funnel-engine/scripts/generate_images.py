@@ -100,6 +100,7 @@ import prove_budget as pbud  # noqa: E402
 import state_engine as se  # noqa: E402
 from providers import base as providers_base  # noqa: E402
 from providers import kie as kie_provider  # noqa: E402
+from providers import prompt_depth  # noqa: E402
 
 EXIT_OK = 0
 EXIT_FAIL = 2
@@ -198,6 +199,20 @@ def _style_fragment(style_contract: Dict[str, Any]) -> str:
     return "; ".join(p for p in parts if p)
 
 
+def _anchor_scene(state: "se.ProjectState") -> Optional[Dict[str, Any]]:
+    """The scene the project-level stills (concept board, final anchor) are built around: the first scene of the
+    scene plan, because the anchor is the definitive reference of the hero's world (spec 9.3). It carries the
+    planner's production_direction, so the long prompt is about this project's own opening scene instead of
+    generic text. None when no scene plan exists (the neutral defaults then apply)."""
+    try:
+        if state.exists("scene-plan"):
+            scenes = state.load("scene-plan").get("scenes") or []
+            return scenes[0] if scenes else None
+    except se.StateEngineError:
+        return None
+    return None
+
+
 def _concept_prompt(style_contract: Dict[str, Any], label: str) -> str:
     return f"{_style_fragment(style_contract)}; concept art direction: {label}"
 
@@ -245,7 +260,13 @@ def _paid_image_call(
     scene_id: Optional[str],
     destination: Path,
     registry_path: Optional[str],
+    sections: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    # Owner rule 12: the prompt must land in 95-100 percent of the model maximum (never under 80).
+    # Skill 74 prompt-budget supplies the numbers; real production direction (prompt_depth) fills them.
+    budget = provider.prompt_budget(model_id) if hasattr(provider, "prompt_budget") else None
+    reserve = len(f" Do not include: {negative_prompt}") if negative_prompt else 0
+    prompt = prompt_depth.fit_prompt(prompt, sections or [], budget, reserve)
     params: Dict[str, Any] = {
         "purpose": purpose,
         "scene_id": scene_id,
@@ -400,6 +421,7 @@ def run_concept_board(
                 provider,
                 model_id=model_id,
                 prompt=_concept_prompt(style_contract, label),
+                sections=prompt_depth.image_sections(style_contract, _anchor_scene(state)),
                 aspect_ratio=_DEFAULT_ASPECT_RATIO,
                 resolution=_DEFAULT_CONCEPT_RESOLUTION,
                 negative_prompt=style_contract.get("negative_prompt"),
@@ -521,6 +543,7 @@ def generate_final_anchor(
             provider,
             model_id=model_id,
             prompt=_final_anchor_prompt(data["style_contract"]),
+            sections=prompt_depth.image_sections(data["style_contract"], _anchor_scene(state)),
             aspect_ratio=_DEFAULT_ASPECT_RATIO,
             resolution=_DEFAULT_PRODUCTION_RESOLUTION,
             reference_image_urls=(reference_url,),
@@ -702,6 +725,7 @@ def generate_scene_stills(
                     provider,
                     model_id=model_id,
                     prompt=prompt,
+                    sections=prompt_depth.image_sections(style_contract, scene),
                     aspect_ratio=_DEFAULT_ASPECT_RATIO,
                     resolution=_DEFAULT_PRODUCTION_RESOLUTION,
                     reference_image_urls=reference_urls,
@@ -848,6 +872,11 @@ class FixtureKieTransport:
 
     def get_json(self, url, *, headers, params, timeout):
         from providers.kie import HttpResponse  # local import: test-support only
+        from providers._fixture_support import kie_discovery_response  # Skill 74 reads catalog/schema first
+
+        discovery = kie_discovery_response(url)
+        if discovery is not None:
+            return discovery
 
         task_id = (params or {}).get("taskId", "unknown")
         result_url = f"https://fixtures.example/result-{task_id}.png"
