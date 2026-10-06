@@ -178,9 +178,12 @@
       "_P4_COPY_UPSTREAM_MAX_CHARS",
       "budget",
       "len-compare:total + len(txt) > budget"
+    ],
+    "25-video-creator/scripts/ai_providers.py": [
+      "max"
     ]
   },
-  "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths.",
+  "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths; Skill 25's `max` is the integer seed range 0 to 2147483647 in the per-model input-type table, not a prompt length.",
   "exemptions": [
     {
       "path": "62-cinematic-web-funnel-engine/providers/_fixture_support.py",
