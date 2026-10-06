@@ -38,7 +38,7 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 
 **Skill 74 is never part of a deck run.** `74-kie-live-adapter` is mechanics for the other KIE skills; none of its files (`kie_live_adapter.py`, `kie-model-registry.json`, its shell scripts, its receipts) is ever copied into, imported from, or run inside a deck run directory. The canonical render guard blocks any `*.py` in the run directory that mentions `createTask`, `recordInfo` or `api.kie.ai`, and a copy of the adapter does (`AF-CANONICAL-RENDER-BYPASS`). Use the adapter only from the Skill 74 folder, and only for read-only checks such as `prompt-budget`, `price` and `latest-family`.
 
-**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai gpt-image-2.5 like every other slide - Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) - never a slide canvas, never any text.
+**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai GPT Image 2.5 Sunburst like every other slide - Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) - never a slide canvas, never any text.
 
 **MANDATORY ENGLISH / LATIN-ONLY PIN - every image prompt carries this verbatim (every slide, every mode):**
 
@@ -58,7 +58,9 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 
 **The hard mode-selection rule (this is the gate):**
 
-> If a logo asset exists (`LOGO_ON_SLIDES = true`, a `LOGO_URL` is on file) OR the slide is archetype A5 (founder portrait) OR any reference frame is being passed for style → the call MUST be Mode B (I2I) with the reference URL(s) in `input_urls`. A T2I call (Mode A) on any such slide is an AUTO-FAIL.
+> **Scope of the logo rules in this SOP:** they describe URL image-to-image mode (the standalone `kie_generate.py` flow and a direct `build_deck.py --logo <https URL>` run). On the canonical command (`presentation-canonical-entry.sh`, no `--logo`) the logo is a local PNG from `intake.json` `brand.logo_image_path` placed by `assemble_pptx`; the render is text-to-image (Mode A), the prompt draws no logo and keeps the top-right corner clear (SOP-IMG-05 Rule A, AF-P15), and Mode A on that deck is correct, not a defect.
+>
+> If a URL logo asset is in use (`LOGO_ON_SLIDES = true`, a `LOGO_URL` is on file and passed as a reference) OR the slide is archetype A5 (founder portrait) OR any reference frame is being passed for style → the call MUST be Mode B (I2I) with the reference URL(s) in `input_urls`. A T2I call (Mode A) on any such slide is an AUTO-FAIL.
 
 There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to POST an "extract JSON" job to Kie.ai is wrong; analysis is the agent's own multimodal read (§6).
 
@@ -66,9 +68,9 @@ There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to
 
 ## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 — TWO-MODEL SYSTEM, operator ruling 2026-09-09)
 
-As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT-Image-2.5. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
+As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT Image 2.5 Sunburst. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
 
-**DEFAULT — GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+**DEFAULT — GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
 - Mode A: `gpt-image-2-5-sunburst-text-to-image`
 - Mode B: `gpt-image-2-5-sunburst-image-to-image`
 
@@ -164,7 +166,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
-- Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. Measure it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id> --check --prompt-file <slide-NN.txt>` (run from the Skill 74 folder, never from a deck run directory). `build_deck.py` and `prompt_gate.py` currently enforce a 9,000 to 18,000 character band, so until that gate is migrated to rule 12 write 16,000 to 18,000 characters for the current 20,000-character pin: that window passes both the rule 12 floor (16,000) and the renderer ceiling (18,000).
+- Prompt length: the API ceiling for the GPT Image 2.5 Sunburst family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. Measure it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id> --check --prompt-file <slide-NN.txt>` (run from the Skill 74 folder, never from a deck run directory). `build_deck.py` and `prompt_gate.py` currently enforce a 9,000 to 18,000 character band, so until that gate is migrated to rule 12 write 16,000 to 18,000 characters for the current 20,000-character pin: that window passes both the rule 12 floor (16,000) and the renderer ceiling (18,000).
 - Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the reference-case logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
 - The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
@@ -246,7 +248,7 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 
 | # | Check (trigger) | PASS | AUTO-FAIL |
 |---|---|---|---|
-| 1 | **Mode matches assets.** If `LOGO_URL` exists OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-5-sunburst-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
+| 1 | **Mode matches assets.** If a URL logo is in use (URL image-to-image mode) OR slide is A5 OR a style frame is passed, the submitted body's `model` is `gpt-image-2-5-sunburst-image-to-image` and `input_urls` is non-empty. | I2I used, refs present | T2I used on a slide that has a logo/portrait/style frame, OR I2I with an empty `input_urls` |
 | 2 | **Reference naming.** Every URL in `input_urls` is named, in order, in the prompt ("first reference is the logo...", "second is the founder..."). | All refs named in order | A ref URL present with no naming sentence |
 | 3 | **Logo "place, do not redraw."** The logo reference sentence forbids redrawing/recoloring/restyling the logo. | Sentence present | Logo described only in words with no "do not redraw" instruction (the mutation path) |
 | 4 | **Style-frame directive.** If a STYLE reference frame is in `input_urls`, the style-reference-only directive sentence is present verbatim. | Directive present | Style frame attached, directive missing |
@@ -269,7 +271,7 @@ Check 9 is the closing of the reference-case logo-mutation loop: passing the log
 |---|---|---|
 | `LOGO_URL` 404s / needs auth / not https (check 6) | Slide Submitter halts the wave. Notify Brand Steward: re-host the logo to a public https URL (client GHL media library or Drive) and update `LOGO_URL`. Do NOT fall back to T2I to "get unblocked" - that reintroduces logo mutation. | Director; then operator |
 | A slide was submitted T2I when it should have been I2I (check 1) | Image QC fails the slide; Slide Submitter re-submits that slide as I2I with the logo reference. Counts against the per-slide 3-attempt cap. | After 3 loops: Director |
-| Rendered logo differs from locked asset on ≥1 slide (check 9) | Re-submit the affected slides via I2I with the locked `LOGO_URL` and the "place, do not redraw" sentence. If the logo still garbles after 2 attempts, composite the REAL logo IMAGE onto the rendered PNG via the PIL image-composite path (SOP-IMG-05), baked into the image BEFORE assembly. This is an IMAGE composite of the real mark, NOT a native text run — NEVER write `pptx_text_overlays.json` (its presence at assembly is AF-OVERLAY-DELIVERED, Decision 5C). | Director |
+| Rendered logo differs from locked asset on ≥1 slide (check 9) | Re-submit the affected slides via I2I with the locked `LOGO_URL` and the "place, do not redraw" sentence. If the logo still garbles after 2 attempts, escalate to the Director, who may switch the deck to a local logo file placed at assembly (SOP-IMG-05 Rule A mechanism 2); never edit a PNG and never write `pptx_text_overlays.json` (AF-OVERLAY-DELIVERED, Decision 5C). | Director |
 | Agent claims it used a Kie "image-to-text" endpoint (check 7) | Reject the report. The analysis must be redone as an agent multimodal read. | Director |
 | Kie outage (no model available) | Per the master SOP: PAUSE and escalate. Never substitute a different model mid-run. | Operator updates the model catalog (`presentation_job/model_catalog.json`) in writing |
 

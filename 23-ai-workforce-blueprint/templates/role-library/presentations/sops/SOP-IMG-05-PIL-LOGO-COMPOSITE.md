@@ -5,7 +5,7 @@
 > **Decision 5C (AF-OVERLAY-DELIVERED):** the native-text overlay half of this pipeline is ELIMINATED. Garbled or mis-styled HERO TEXT is fixed by the Slide Image Creator's re-prompt and re-seed loop, then human escalation, never an overlay. A `pptx_text_overlays.json`, or any native (non-notes) on-slide text run, is AF-OVERLAY-DELIVERED.
 
 **Cluster:** Image-Design System (pipeline determinism)
-**Version:** v2.0.1 (2026-10-06)
+**Version:** v2.0.2 (2026-10-06)
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; SOP-DESIGN-04-LOGO-CONSISTENCY.md; SOP-IMG-01-KIE-CALL-MECHANICS.md; `07-kie-setup/references/kie-common-rules.md`
 **Owning role at write time:** Slide Image Creator (declares the logo reference in the prompt); Slide Submitter (confirms the local logo file is configured before the render); PPTX Assembly Specialist (the assembly step places a local logo file)
 **Enforced at the gate by:** QC Specialist - Presentations (AF-LOGO, AF-GRAD, AF-TYPE)
@@ -76,7 +76,7 @@ Replace with: flat brand-color hero type (solid brand color, high contrast again
 ## 3. INTEGRATION WITH SOP-DESIGN-04 AND SOP-IMG-01
 
 - SOP-DESIGN-04-LOGO-CONSISTENCY.md describes the logo-consistency goal. Where it mentions a composite after two failed image-to-image attempts, Rule A above governs what actually exists: escalate to the Director, who may supply a local logo file (mechanism 2).
-- SOP-IMG-01-KIE-CALL-MECHANICS.md check 9 (logo identity) is unchanged. The image-to-image prompt directive (AF-P15 at write time) remains required on a URL-logo deck.
+- SOP-IMG-01-KIE-CALL-MECHANICS.md check 9 (logo identity) is unchanged. AF-P15 (write time) requires the prompt to carry the directive of the logo mechanism in use. Rule A is the authority because `build_deck.py` sends the prompt verbatim and never edits it for a logo: on the canonical command (mechanism 2) the prompt must NOT draw, describe or name any logo, declares no reference image, keeps the top-right corner free of type and imagery, and carries the negative twin "Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation" (otherwise the model draws a mark and `assemble_pptx` places a second one on top). In URL image-to-image mode (mechanism 1) the prompt declares image-to-image with LOGO_URL as the first reference and carries "place, do not redraw, recolor, or restyle it" and "do not invent or redesign any mark".
 - The AF-LOGO check in the QC gate reads the rendered slide (and, for mechanism 2, the assembled slide). The SSIM threshold (>= 0.97 on the logo region against LOGO_URL or the local logo file) is the read-time enforcement.
 
 ---

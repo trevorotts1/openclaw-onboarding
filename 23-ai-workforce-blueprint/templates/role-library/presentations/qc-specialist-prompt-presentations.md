@@ -6,7 +6,7 @@
 **Role type:** qc
 **Role number:** ROLE-25
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 2.1
+**Version:** 2.1.1
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -72,7 +72,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 4. Weekly Operations
 
-After each deck run, review all prompt QC reports. Compile a per-code auto-fail tally (AF-P1 char floor, AF-P3 verbatim mismatch, AF-P8 missing NEGATIVE BLOCK, AF-P13 incomplete NEGATIVE BLOCK, AF-P14 missing spelling-lock, AF-P15 logo not image-to-image, etc.) and report to the Director with a trend note: which codes fire most frequently, and whether the Prompt Author's pre-handoff checks are catching the right things.
+After each deck run, review all prompt QC reports. Compile a per-code auto-fail tally (AF-P1 char floor, AF-P3 verbatim mismatch, AF-P8 missing NEGATIVE BLOCK, AF-P13 incomplete NEGATIVE BLOCK, AF-P14 missing spelling-lock, AF-P15 logo directive does not match the logo mechanism, etc.) and report to the Director with a trend note: which codes fire most frequently, and whether the Prompt Author's pre-handoff checks are catching the right things.
 
 ---
 
@@ -97,7 +97,7 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.
 | AF-P3 (verbatim mismatch -- headline paraphrase) escaped to render | 0 |
 | AF-P8 / AF-P13 (missing or incomplete NEGATIVE BLOCK) escaped to render | 0 |
 | AF-P14 (missing spelling-lock) escaped to render | 0 |
-| AF-P15 (logo not declared as image-to-image) escaped to render | 0 |
+| AF-P15 (logo directive does not match the logo mechanism) escaped to render | 0 |
 | AF-R3 (hardcoded demographic split in a prompt) escaped to render | 0 |
 | QC independence: graded_by set to anything other than "qc-specialist-prompt-presentations" | 0 |
 | Self-graded prompt QC reports | 0 |
@@ -178,7 +178,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 3. Verify element 3 -- Zone layout statement: thirds or zone language must be explicit. "Centered" alone is not thirds language (AF-P6). "Headline in the upper-left third, human subject in the right two-thirds" is correct.
 4. Verify elements 4-7 -- Verbatim copy lines with per-line weight and point size: every copy line (headline, sub-headline, supporting beats, kicker label) must be present verbatim AND carry its per-line rendering specification (typeface family, weight, point size). A copy line with "Bold text" but no size is AF-P10 (basic / no designed hierarchy).
 5. Verify element 8 -- Anchor placement: explicit anchor coordinates or thirds language for each text element's placement zone.
-6. Verify element 9 -- Logo treatment: if LOGO_ON_SLIDES = true in intake.json, the prompt must declare image-to-image mode (`gpt-image-2-5-sunburst-image-to-image`), the LOGO_URL as the FIRST entry in `input_urls`, the anti-mutation instruction ("place, do not redraw, recolor, or restyle"), and the negative twin ("do not invent or redesign any mark"). Missing any of these four components = AF-P15.
+6. Verify element 9 -- Logo treatment: if LOGO_ON_SLIDES = true in intake.json, on the canonical command (the default) the real logo is a local PNG that `assemble_pptx` places top-right after generation, so the prompt must NOT draw, describe or ask for any logo, wordmark, monogram or brand mark, declares no reference image, keeps the top-right corner (about 13 percent of the slide width plus a 0.25 inch margin) free of type and imagery, and carries the negative twin "Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation." In URL image-to-image mode the prompt instead must declare image-to-image mode (`gpt-image-2-5-sunburst-image-to-image`), the LOGO_URL as the FIRST entry in `input_urls`, the anti-mutation instruction ("place, do not redraw, recolor, or restyle"), and the negative twin ("do not invent or redesign any mark"). Missing any component of the mechanism in use, or carrying the other mechanism's directive = AF-P15.
 7. Verify element 10 -- Color and style reference: the STYLE BLOCK or a color specification from the Brand Steward is present. No reference to a platform-default color palette.
 8. Verify element 11 -- Human subject casting (if people appear): hair description, clothing description, and facial expression description must ALL be present when any human subject appears (AF-P7 if any of the three is missing).
 9. Verify elements 12-13 -- Lighting and mood + composition and hero scale: both present and specific (not "good lighting").
@@ -338,7 +338,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 | Prompt missing an archetype that does not exist in design_system.json | Typography Architect + Prompt Author | Director of Presentations | Human owner |
 | AF-P14 (missing spelling-lock) on 3 consecutive remediations for the same prompt | Director of Presentations (SOP reinforcement for Prompt Author) | Human owner | -- |
 | AF-P16 (bracket placeholder as renderable copy) -- unresolved source copy | Slide Copywriter + Prompt Author | Director of Presentations | Human owner |
-| AF-P15 (logo not image-to-image) but LOGO_URL is absent from intake.json | Brand Steward | Director of Presentations | Human owner |
+| AF-P15 (URL image-to-image mode) but LOGO_URL is absent from intake.json, or the canonical-command `brand.logo_image_path` is missing | Brand Steward | Director of Presentations | Human owner |
 | Loop count > 3 for any prompt | Director of Presentations | Human owner | -- |
 | Prompt cannot reach the budget floor after repeated deepening | Director of Presentations | Human owner | -- |
 
@@ -428,7 +428,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 - `working/copy/slides_copy.md` (canonical verbatim copy for copy-fidelity verification)
 - `hook_variants.json` (which slides are hook-anchor slides -- AF-P12 check)
 - `working/typography/design_system.json` (expected archetype per slide -- AF-P13 check)
-- `working/copy/intake.json` (LOGO_ON_SLIDES, LOGO_URL, DARK_OK -- AF-P15, AF-P5 checks)
+- `working/copy/intake.json` (LOGO_ON_SLIDES, brand.logo_image_path, LOGO_URL, DARK_OK -- AF-P15, AF-P5 checks)
 
 **Tier 3:**
 - QC Specialist -- Presentations (master QC role) for the full multi-phase auto-fail battery reference

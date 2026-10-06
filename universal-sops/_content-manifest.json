@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T07:57:02Z",
+  "generated_at": "2026-10-06T07:57:05Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -281,24 +281,24 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "d9f797a78f279f9f22446a4376960c4faa14723f501e36492c3351bbeb340516",
-      "bytes": 32427
+      "sha256": "48cb2e56e3def87359c9f9095fa108a21c5f0a332c753151316d0000369c1391",
+      "bytes": 32956
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
-      "sha256": "3216caef752c4139213a6331e0ff43c0d54245151ebabe0ecf129a696315477f",
-      "bytes": 14550
+      "sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
+      "bytes": 14559
     },
     "presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md": {
       "sha256": "42256e79764d4014a29ef5409fed0de5d07b9b3a6e5cc8adad46a34882d398ba",
       "bytes": 13145
     },
     "presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md": {
-      "sha256": "907d99073bd419bd1af0c08dd57874ff2d1376a737b76bfb89620cad87226086",
-      "bytes": 12150
+      "sha256": "5a88394709fa4070fc1036a87bead6bedc2f4113983b440f59134dd14375c0d1",
+      "bytes": 12168
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "31666d96e827b12fa4113ea72963874b6230f30cb8b1ade56955e48ae253deb0",
-      "bytes": 142756
+      "sha256": "37fc1cd8869a7f910262560529372d5ad39627484bdd4cd6f0e92319069609a4",
+      "bytes": 142826
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
       "sha256": "4e69c0d4386fb6a68ea6a0b3ae1d0bd654dce3f45d6bd4b12b68c691e1490799",
@@ -309,8 +309,8 @@
       "bytes": 1383
     },
     "presentation-slide-craft/SOP-CROSS-REFERENCE-MAP.md": {
-      "sha256": "2e1251ae457fe9b7f6bfb578e561216c45b308beb2e31d292199a71dd9ff2606",
-      "bytes": 5942
+      "sha256": "fe96524c9443ed23d54dbe7ea2fa3fe0b934e813523d12775b2713d12ae26049",
+      "bytes": 5951
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
       "sha256": "7edee435b51f69761f4354ff782074620617aec76f6135ed57550b1633232381",
@@ -325,8 +325,8 @@
       "bytes": 11894
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "9ecd71a694736d4efabd61503712117a6e8db100cd93d77d93b1e1c57f2ea9b3",
-      "bytes": 13957
+      "sha256": "64a161fa585917a695237331b1591b98bc451fa8260ed0106d6a2b81e80d9a42",
+      "bytes": 13966
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
       "sha256": "25966a5240c7fa71a5f760f16a09f07fe6cd490e3c378b6d8bb2ae4874488770",

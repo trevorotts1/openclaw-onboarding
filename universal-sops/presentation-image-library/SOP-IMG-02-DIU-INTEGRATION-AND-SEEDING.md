@@ -38,7 +38,7 @@ Per SOP-DIU-611 and the 00-START-HERE T7b mirror, the two pipelines stay separat
 - **Crossing A:** the Brand Steward consumes a PPT-category style card's **Foundation Prompt Block** as the STYLE BLOCK input for a webinar deck, requested via SOP-DIU-612. This is the ONLY way DIU style content enters a Presentations deck.
 - **Crossing B:** for DIU strategy-(b) decks, the DIU delivers text-clear background imagery to Presentations for editable overlay. (Not the webinar-deck path; out of scope here.)
 
-**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT-Image-2.5 only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
+**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT Image 2.5 Sunburst only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
 
 ---
 
