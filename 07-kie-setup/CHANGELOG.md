@@ -4,6 +4,10 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.1.1] - 2026-10-06 - QC reads every credential store
+
+- `qc-kie-setup.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars (lib-shared `oc_fill_from_env_stores`).
+
 ## [v7.1.0] - 2026-10-06 - feat: Skill 74 dependency, adapter health in QC, common rules pointers
 
 - `PREREQS.json` (Rule 16 shape): new `skill-74-kie-live-adapter` entry, severity optional (Skill 74 itself requires Skill 07, so a required entry here would be circular; 66, 67 and 68 fall back to static tables when it is absent).

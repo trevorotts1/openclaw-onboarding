@@ -456,6 +456,7 @@ set -e
 # byte-for-byte backup so a bad edit can never leave the box unbootable, and
 # force a non-clean rc. NO gateway restart/reload here — the caller reloads.
 if [ "$APPLY" = "1" ] && [ -f "$BAK" ]; then
+  [ -f "$(dirname "$0")/prune-openclaw-json-backups.sh" ] && bash "$(dirname "$0")/prune-openclaw-json-backups.sh" "$(dirname "$CONFIG")" >/dev/null 2>&1 || true
   if command -v openclaw >/dev/null 2>&1; then
     if openclaw config validate >/dev/null 2>&1; then
       echo "[repair] openclaw config validate PASS after apply" >&2

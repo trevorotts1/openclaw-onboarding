@@ -27,8 +27,16 @@ echo ""
 # build-rail file set) still cites real, unchanged ground truth on the
 # committed branch. See docs/tools/check_lattice_citation.py.
 REPO_ROOT_LATTICE="$(cd "$(dirname "$0")/.." && pwd)"
-assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
-  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 06-ghl-install-pages -q"
+# LAYOUT NOTE: this is a REPO-integrity check. On a client box the skill lives in
+# ~/.openclaw/skills/, whose parent has no docs/ dir (the updater delivers skills,
+# not repo docs), so the checker is absent there. SKIP VISIBLY, exactly as
+# 35-social-media-planner/qc-skill35.sh does, instead of failing every good box.
+if [ -f "$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py" ]; then
+  assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+    "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 06-ghl-install-pages -q"
+else
+  echo "  SKIP: GK-27 lattice citation tripwire -- checker not present in this layout (installed-skill layout, not a repo checkout)"
+fi
 SK="$SKILLS_DIR_DEFAULT/06-ghl-install-pages"
 assert "Skill 06 folder present" "[ -d \"$SK\" ]"
 

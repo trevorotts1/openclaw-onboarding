@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.0.3"
+ONBOARDING_VERSION="v26.0.4"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1770,6 +1770,7 @@ This update is **NOT complete** until the VERIFICATION GATE passes. Files on dis
 ### What changed in this update
 - Onboarding version: ${version}
 - New skills installed (require ACTIVATION + GATE): ${new_skills:-none -- updates only}
+${UPDATE_SUMMARY_TEXT:-}
 
 ### How to process each skill that is NOT yet qc-passed
 For each such skill folder under \`~/.openclaw/skills/\`:
@@ -1996,7 +1997,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.0.3 - safe_json_edit
+# v26.0.4 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4809,6 +4810,15 @@ if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
     echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
     exit 8
 fi
+# lib-shared.sh is sourced by skill QC scripts as "$SKILL_DIR/../lib-shared.sh"
+# (= $SKILLS_DIR/lib-shared.sh). Nothing delivered it, so boxes kept a stale copy
+# without BACKUP_DIR_DEFAULT that breaks Skill 02 under `set -u`. Refresh it every
+# roll (non-fatal: a failure only degrades the skills that source it).
+if [ -f "$ONBOARDING_DIR/lib-shared.sh" ]; then
+    mkdir -p "$SKILLS_DIR" && cp -p "$ONBOARDING_DIR/lib-shared.sh" "$SKILLS_DIR/lib-shared.sh" 2>/dev/null \
+      && echo "  ✓ lib-shared.sh delivered to $SKILLS_DIR" \
+      || echo "  ⚠ could not deliver lib-shared.sh to $SKILLS_DIR" >&2
+fi
 
   # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
   # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
@@ -6064,6 +6074,44 @@ print(state + " " + str(len(headers)))
 
   # Ensure skills directory exists
   mkdir -p "$SKILLS_DIR"
+
+  # RETIRE ARCHIVED SKILLS' OLD LIVE COPIES. The copy loop below skips *-ARCHIVED
+  # folders, so a skill archived on main (11-superdesign, 21-tavily-search, ...)
+  # kept its old LIVE folder on every box forever. The authority is
+  # docs/archived-skill-tombstones.json: each key "NN-name-ARCHIVED" retires the
+  # live "NN-name" folder. It is MOVED (not deleted) to <root>/retired-skills/,
+  # outside the skills dir, so nothing scans it and it can be put back by hand.
+  # Symlinks and any live folder that is not a plain directory are left alone.
+  # Non-fatal: a failure here never aborts the roll.
+  _TOMB_JSON="$EXTRACTED_DIR/docs/archived-skill-tombstones.json"
+  if [ -f "$_TOMB_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    _RETIRE_DEST="$(dirname "$SKILLS_DIR")/retired-skills"
+    python3 - "$_TOMB_JSON" "$SKILLS_DIR" "$_RETIRE_DEST" <<'PYEOF' || echo "  ⚠ archived-skill retirement skipped (non-fatal)" >&2
+import json, os, shutil, sys, time
+tomb, skills, dest = sys.argv[1:4]
+for key in sorted(json.load(open(tomb)).get("archived", {})):
+    if not key.endswith("-ARCHIVED"):
+        continue
+    live = os.path.join(skills, key[:-len("-ARCHIVED")])
+    if os.path.islink(live) or not os.path.isdir(live):
+        continue
+    os.makedirs(dest, exist_ok=True)
+    target = os.path.join(dest, os.path.basename(live))
+    if os.path.exists(target):
+        target += "-" + time.strftime("%Y%m%d%H%M%S")
+    shutil.move(live, target)
+    print("  ✓ retired archived skill %s -> %s" % (os.path.basename(live), target))
+PYEOF
+  fi
+
+  # PLAIN-WORDS "WHAT CHANGED" for the UPDATE PENDING flag. Computed HERE because
+  # the copy loop below overwrites the live skill-version.txt files and the temp
+  # bundle (with its CHANGELOG) is deleted long before the flag is written.
+  # scripts/update-summary.py never fails; empty output just means no extra lines.
+  UPDATE_SUMMARY_TEXT=""
+  if [ -f "$EXTRACTED_DIR/scripts/update-summary.py" ] && command -v python3 >/dev/null 2>&1; then
+    UPDATE_SUMMARY_TEXT="$(python3 "$EXTRACTED_DIR/scripts/update-summary.py" "${CURRENT_VERSION:-}" "$ONBOARDING_VERSION" "$EXTRACTED_DIR/CHANGELOG.md" "$EXTRACTED_DIR" "$SKILLS_DIR" 2>/dev/null || true)"
+  fi
 
   # Copy new skills
   echo "  Installing skills to $SKILLS_DIR..."
@@ -9229,6 +9277,13 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   #
   # (Array, not a bare word -- keeps this extensible without a shellcheck
   # SC2066 "loop will only run once" false-flag on a single-element list.)
+  # R6: the same legacy master-files dir also holds a CHANGELOG.md copy that no
+  # roll ever refreshed (boxes froze at v11.18.3). Refresh it WHEN the dir
+  # exists (never create the dir); the bundle is still on disk at this point.
+  if [ -d "$HOME/Downloads/openclaw-master-files" ] && [ -f "$ONBOARDING_DIR/CHANGELOG.md" ]; then
+    cp -p "$ONBOARDING_DIR/CHANGELOG.md" "$HOME/Downloads/openclaw-master-files/CHANGELOG.md" 2>/dev/null \
+      && echo "  ✓ CHANGELOG.md refreshed in openclaw-master-files" || true
+  fi
   _LEGACY_MARKERS=(
     "$HOME/Downloads/openclaw-master-files/.onboarding-version"
   )
@@ -10970,6 +11025,15 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
   # above is untouched and still gates its own early exit.
   _cc_currency_probe || true
 
+  # R16: Command Center (v7.4.0+) needs MC_PERSONA_COMPANY_CONTEXTS_JSON in its
+  # PERSISTED service env, or every new task sticks on "Missing: persona". Only a
+  # fresh interview launch wrote it. Write + verify it on EVERY roll (never
+  # overwrites a valid value). Advisory: the "persona-contexts:" line is lifted
+  # into the fleet check; failure here never aborts the update.
+  if cc_is_valid_checkout "$_CC_DIR" && [ -f "$SKILLS_DIR/shared-utils/ensure_persona_contexts.py" ]; then
+    python3 "$SKILLS_DIR/shared-utils/ensure_persona_contexts.py" --app "$_CC_DIR" 2>&1 | sed 's/^/  /' || true
+  fi
+
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
   #
   # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):
@@ -11847,6 +11911,13 @@ PY
   #                               this: exit 0, stamp advanced, AGENTS.md and
   #                               MEMORY.md byte-identical, self-heal never ran.
   # ----------------------------------------------------------
+  # R17: openclaw.json backup pile-up. Every script that edits the config writes its own
+  # timestamped copy and nothing pruned them (102 on one box). Keep openclaw.json,
+  # .last-good and the 3 newest others. Non-fatal.
+  _pj="${_OC_SCRIPTS_DEST:-$HOME/.openclaw/scripts}/prune-openclaw-json-backups.sh"
+  [ -f "$_pj" ] || _pj="$ONBOARDING_DIR/scripts/prune-openclaw-json-backups.sh"
+  if [ -f "$_pj" ]; then bash "$_pj" 2>&1 | sed 's/^/  /' || true; fi
+
   # >>> UPDATE-PENDING-FLAG-LIFECYCLE-BEGIN (extracted verbatim by
   #     tests/unit/update-skills-pending-flag-staleness.test.sh)
   _RESUME_NEEDED="no"

@@ -85,6 +85,7 @@ echo "[apply-fleet-standards] config: $OC_CONFIG"
 # ─── 1. Backup the current config ────────────────────────────────────────────
 cp "$OC_CONFIG" "$OC_BACKUP"
 echo "[apply-fleet-standards] backed up to: $OC_BACKUP"
+[ -f "$(dirname "$0")/prune-openclaw-json-backups.sh" ] && bash "$(dirname "$0")/prune-openclaw-json-backups.sh" "$(dirname "$OC_CONFIG")" >/dev/null 2>&1 || true
 
 # ─── 1b. Detect the running gateway binary version (D1 — schema-aware baseline) ──
 # DEFECT 1 (v13.1.3): OpenClaw 2026.6.8 REJECTS any agents.defaults.tools.* key at
