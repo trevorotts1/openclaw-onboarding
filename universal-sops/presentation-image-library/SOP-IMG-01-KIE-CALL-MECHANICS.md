@@ -3,8 +3,9 @@
 **Cluster:** Image-Gen Mechanics + Design-Library (skill 45) Integration
 **Status:** DRAFT for overhaul - extends the Presentations pipeline; does not replace it
 **Owner role (Presentations):** Slide Submitter (primary), Slide Image Creator (secondary, for which-mode declaration)
-**Master authority extended:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §9 (Phase 4) and Appendix A; `45-design-intelligence-library/library/_system/MODEL-SPECS.md` (the single source of truth for model IDs and limits)
-**Library-version pin:** CLIENT-WEBINAR-DECK-SOP §9.0 model manifest; MODEL-SPECS v1.2
+**Master authority extended:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` §9 (Phase 4) and Appendix A; `45-design-intelligence-library/library/_system/MODEL-SPECS.md` (the Design Intelligence Library reference for endpoint behavior; it is NOT the authority for the model ids a Presentations deck uses)
+**Model authority:** the model ids a Presentations deck uses are named in exactly one file, `presentation_job/model_catalog.json` (aliases `image.t2i` and `image.i2i`, beside `build_deck.py`). Limits and rates shared by every KIE skill are in `07-kie-setup/references/kie-common-rules.md`.
+**Library-version pin:** `presentation_job/model_catalog.json` (model ids); MODEL-SPECS v1.2
 
 ---
 
@@ -14,7 +15,7 @@ Concern 20 (verbatim): "Kie.ai text-to-image vs image-to-image vs image-to-text/
 
 The reference-case forensic (Dimension F) proved the consequence of guessing the mode: the logomark mutated into at least four different marks across the deck (ringed leaf, bare leaf, monogram, mountain peak) because the slides were generated text-to-image per slide instead of composited image-to-image with one locked logo asset passed as a reference. An agent that does not know the exact call structure for each mode WILL default to text-to-image and WILL reinvent the logo.
 
-This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) still pins `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`. This SOP makes the choice between them, and the body for each, mechanical.
+This SOP is a precise reference an agent follows without guessing. It does not introduce a new model. The model catalog (`presentation_job/model_catalog.json`, aliases `image.i2i` and `image.t2i`) currently names `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`; the ids written in this SOP are illustrations of those current values, and if they ever differ the catalog wins. This SOP makes the choice between the two modes, and the body for each, mechanical.
 
 This is a build-mechanics reference. NONE of its content is ever printed on a slide. (Cross-ref the Audience-Facing battery in the slide-craft cluster.)
 
@@ -23,6 +24,25 @@ This is a build-mechanics reference. NONE of its content is ever printed on a sl
 ## 1. PURPOSE
 
 Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON body, polling, result parsing) for each of the three Kie.ai interaction modes a Presentations deck uses, plus a single decision rule for picking the mode per slide. Make the wrong mode a detectable, auto-failable condition rather than a silent default.
+
+---
+
+## 1A. THE DETERMINISTIC RENDER PATH IS MANDATORY (no self-generate, no native image tool)
+
+Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
+
+- **`build_deck.py`** - the single-command deterministic path. The builder writes `slides.json`, and the Slide Image Creator authors one RICH prompt file per slide (`working/prompts/slide-NN.txt` or `slide-NN-prompt.txt`, sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`). The script does NOT compose prompts. It loads each authored prompt VERBATIM, gates it (character band, quality floor, no hard-coded demographic default), appends the mandatory English/Latin-only pin only when the authored prompt does not already carry it, and submits it with the text-to-image model, or with the image-to-image model and the logo URL in `input_urls` when a logo URL is supplied (both models resolve from the catalog aliases `image.t2i` and `image.i2i`). It then polls, downloads + verifies each PNG, and assembles the `.pptx`. A slide with no authored prompt file fails loudly; the script never falls back to a thin composed prompt. No model decides wording at runtime.
+- **`kie_generate.py`** - the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below). It submits the `prompt` it is given and never composes one. A second, older copy of this helper lives at `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`; only Skill 06 (GHL media) runs it, and it is not a Presentations renderer (its header says how it differs).
+
+**The mandated flow is:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai (createTask → recordInfo → `resultUrls[0]`) is the ONLY render call → register the `.pptx` the script produced. **FORBIDDEN, each an auto-fail (AF-I14 / AF-RENDERER / AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS):** generating any image with a native/built-in tool (`image_generate`, `openai`, etc.); writing an inline hand-typed KIE.ai HTTP call instead of the script; the dead endpoint `/api/v1/image/gpt-image`; hand-editing PNGs or substituting stock/placeholder images; **fabricating any slide canvas locally with Pillow/PIL `Image.new` / `ImageDraw` (a flat cream or color typography card) or a PowerPoint-rendered card**; running any per-deck/hand-rolled renderer or assembler in `working/*.py` instead of the canonical `build_deck.py` / `run_signature_deck.py` path. A non-zero exit means the deck is NOT built - never fake a deliverable.
+
+**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai gpt-image-2.5 like every other slide - Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) - never a slide canvas, never any text.
+
+**MANDATORY ENGLISH / LATIN-ONLY PIN - every image prompt carries this verbatim (every slide, every mode):**
+
+> All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text.
+
+`build_deck.py` appends this pin to any prompt that does not already carry it. Any prompt authored by hand for a Mode A or Mode B call below (or at the Phase 2/3 prompt-writing stage) MUST include this pin verbatim. A prompt missing the pin, or a render carrying CJK / non-Latin glyphs or garbled/misspelled text, is an auto-fail (see check 10 in Section 7).
 
 ---
 
@@ -88,16 +108,22 @@ The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A 
 
 ## 3. SHARED CALL LIFECYCLE (identical for Mode A and Mode B)
 
-Every generation call, regardless of mode, follows this lifecycle. This is verbatim from CLIENT-WEBINAR-DECK-SOP §9.3–9.4 and MODEL-SPECS §5; reproduced here so the modes can be contrasted side by side.
+Every generation call, regardless of mode, follows this lifecycle. The shipped scripts perform it (`build_deck.py` and `kie_generate.py`, in the Presentations department's `scripts` directory); an agent never types these calls by hand. This section describes what the scripts do today, so the document and the code agree. The limits and rates shared by every KIE skill (createTask rate, recordInfo rate, prompt caps, credit endpoint) are kept in one place, `07-kie-setup/references/kie-common-rules.md`; this SOP does not restate them as rules.
 
 1. **Submit (async):** `POST https://api.kie.ai/api/v1/jobs/createTask`
    - Headers: `Authorization: Bearer $KIE_API_KEY` (the CLIENT's own key - never a shared key), `Content-Type: application/json`
    - Body: see §4 (Mode A) or §5 (Mode B).
-2. **Capture the task id:** on `{ "code": 200, "data": { "taskId": "..." } }`, append `{ "slide_NN": "<taskId>" }` to `working/checkpoints/kie_task_ids.json` immediately, before submitting the next slide.
-3. **Rate cap:** never more than 20 new generation requests / 10 seconds, per account (source: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14). Submit in waves of 20, then sleep 10s (the documented window). Retries count against the cap. If the governor is running, its per-provider Kie plan (`presentation_job/governor.py` + `presentation_job/providers.yaml`: rps 1.33, burst 13, rolling 15s window (FIX 61.6)) is the binding pace and this manual pacing defers to it.
-4. **Poll:** after the LAST submit, wait 5 minutes, then `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` (same Bearer) every 60s. Parse `data.state` ∈ {`waiting`,`success`,`fail`}. Treat `fail`/`failed`/`error`/`cancelled` as terminal failure; log `data.failCode` + `data.failMsg`.
-5. **Download:** on `success`, `data.resultJson` is a JSON STRING; parse it → `resultUrls` (an ARRAY) → download `resultUrls[0]` to `working/renders/slide-NN.png`. It is `resultUrls`, NOT `.url` - the old runbook had this wrong.
-6. **Poll cap:** 100 poll passes max. At 100 with tasks still `waiting`, STOP, checkpoint, escalate the stuck task ids. Never loop forever.
+2. **Capture the task id:** on `{ "code": 200, "data": { "taskId": "..." } }` the renderer records the id immediately, before it polls. `build_deck.py` writes it to `working/checkpoints/pending_tasks.json` in the run directory (and replaces the entry with the verified PNG's sha256 once the slide is downloaded). `kie_generate.py` writes it, through `kie_tasks.py`, to `<renders_dir>/.kie-tasks/kie_tasks.json`. After a restart, `kie_generate.py` (through `kie_tasks.py`) re-polls a known id instead of paying for a second createTask. `build_deck.py` batch reuses only slides already downloaded, verified and recorded complete in `pending_tasks.json`; a slide whose task was still in flight is submitted again.
+3. **Submit pacing (the createTask rate limit is in kie-common-rules.md):**
+   - `build_deck.py` (the batch path every deck uses) submits every slide once, 0.6 seconds apart, so at most 17 createTask calls land in any 10 second window. Each createTask also takes a slot from the governor (`presentation_job/governor.py`, per-provider plan in `presentation_job/providers.yaml`, `kie` row: 1.33 per second, at most 13 per rolling 10 seconds, 100 tasks in flight). Whichever is slower sets the pace, and both stay inside the KIE limit. On HTTP 429 it sleeps 20 seconds and retries the same slide, at most 15 times in a row, then that slide fails.
+   - `kie_generate.py` submits through `kie_tasks.py`, which allows at most 20 createTask calls per rolling 10 seconds (and also takes governor slots when the governor module is importable). Polling does not count toward the createTask rate.
+4. **Poll:** `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` (same Bearer). Read `data.state`: `success` is done; `fail` (also `failed`, `error`, `cancelled`) is a terminal failure, and the renderer logs `data.failCode` + `data.failMsg`; any other state (`waiting`, `queuing`, `generating`, and so on) means still in flight. Cadence by script:
+   - `build_deck.py` batch path: there is NO initial wait. After the last submit it polls every pending task, one pass every 10 seconds, and downloads each slide the moment its own task succeeds, so a fast slide never waits for a slow one. A 429 on a poll just retries that task on the next pass.
+   - `build_deck.py` single-task path (`poll_task`, used for sample renders): sleeps 10 seconds between polls for the first 120 seconds, 20 seconds for the next 180 seconds, then 40 seconds.
+   - `kie_generate.py`: NO initial wait. `kie_tasks.py` polls every pending task round-robin every 60 seconds (environment variable `KIE_ROUND_POLL_S`) and downloads and verifies each task the moment it succeeds.
+   - The older Skill 06 copy of `kie_generate.py` (`templates/presentation-render/`) still waits 5 minutes after the last submit, then polls one task at a time every 60 seconds for up to 100 passes. That wait-then-poll pattern belongs to that copy only; it is not how a Presentations deck renders.
+5. **Download:** on `success`, `data.resultJson` is a JSON STRING; parse it -> `resultUrls` (an ARRAY) -> download `resultUrls[0]` to the renders directory as `slide-NN.png`. It is `resultUrls`, NOT `.url` - the old runbook had this wrong. Each renderer performs the download itself and checks it is a real PNG.
+6. **Poll cap (a time limit, not a pass count):** `build_deck.py` gives up on a task that is still not finished 900 seconds (15 minutes) after polling began (`BUILD_DECK_POLL_MAX_SECONDS`, `BATCH_MAX_POLL_SECONDS`). `kie_generate.py` gives up at 6,000 seconds (`KIE_DEADLINE_S`, which is 100 polls of 60 seconds). At the cap the renderer records a terminal timeout for the stuck task, does NOT re-submit it, and the run reports the stuck task ids for escalation. Never loop forever.
 
 The ONLY thing that differs between Mode A and Mode B is the `model` string and the presence/absence of `input_urls`. Everything else above is identical.
 
@@ -136,7 +162,9 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
+- Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. `build_deck.py` currently enforces a 9,000 to 18,000 character band; the follow-up prompt-budget change moves it to rule 12 (95 to 100 percent of the model maximum, floor 80 percent).
 - Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the reference-case logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
+- The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
 ---
 
@@ -195,6 +223,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 3. **Logo reference = "place, do not redraw."** The logo reference sentence always instructs the model to PLACE the supplied mark, never to redraw/recolor/restyle it. This is the anti-mutation instruction.
 4. **Style-reference frame requires the style-reference-only directive.** If a reference is passed for STYLE (not the logo, not the face) - e.g. a frame from an analyzed reference deck - the prompt MUST include, verbatim (MODEL-SPECS §4): *"Use the attached style-reference image only as style reference for color grading, lighting, and composition - do not copy its subjects, faces, or text."* Without this sentence the model copies the reference's subjects verbatim. Omitting it when a style frame is attached = auto-fail.
 5. **The logo reference is NOT a style-reference.** Never apply the style-reference-only directive to the logo URL (that would tell the model to ignore the logo's shape - the opposite of what we want). The two reference types get opposite instructions; keep them distinct and named.
+6. **English/Latin-only pin is mandatory.** The `prompt` MUST carry the pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* Omitting it is an auto-fail (check 10).
 
 ---
 
@@ -224,6 +253,9 @@ The Slide Submitter (at submit time) and the QC Specialist (at image QC) enforce
 | 7 | **No analysis-as-Kie-call.** No `createTask` body whose intent is "read/extract/analyze." | Analysis done by agent read | An "image-to-text"/"extract JSON" job POSTed to Kie |
 | 8 | **resultUrls parse.** Download reads `JSON.parse(data.resultJson).resultUrls[0]`, not `data.url`. | Correct field | Reads `.url` (the old-runbook bug) |
 | 9 | **Logo identity (image QC).** The rendered logo on the slide is the SAME mark as the locked `LOGO_URL` asset (shape, color, lockup), on every slide. | Identical mark | A different mark than the locked asset on any slide (the reference-case logo-mutation defect) - see SOP-IMG-04 lock |
+| 10 | **English/Latin-only pin + render (write + read).** WRITE-time: every submitted `prompt` carries the mandatory pin verbatim (Section 1A). READ-time (image QC): the rendered slide shows only English Latin-alphabet text, spelled correctly letter-for-letter. | Pin present in prompt AND render is clean English | Pin missing from any prompt, OR any rendered slide carries CJK / non-Latin glyphs or garbled/misspelled text |
+
+Check 10 is the close of the garbled-text loop: the pin in the prompt (WRITE-time) is the guard; the clean-English render (READ-time) is the verification. `build_deck.py` appends the pin automatically, so a deterministic deck satisfies the WRITE-time half by construction.
 
 Check 9 is the closing of the reference-case logo-mutation loop: passing the logo via I2I (checks 1–3) is the WRITE-time guard; the rendered-logo-matches-locked-asset comparison is the READ-time guard. Both are required. A deck that passes checks 1–8 but renders a mutated logo still fails check 9.
 
@@ -237,7 +269,7 @@ Check 9 is the closing of the reference-case logo-mutation loop: passing the log
 | A slide was submitted T2I when it should have been I2I (check 1) | Image QC fails the slide; Slide Submitter re-submits that slide as I2I with the logo reference. Counts against the per-slide 3-attempt cap. | After 3 loops: Director |
 | Rendered logo differs from locked asset on ≥1 slide (check 9) | Re-submit the affected slides via I2I with the locked `LOGO_URL` and the "place, do not redraw" sentence. If the logo still garbles after 2 attempts, composite the REAL logo IMAGE onto the rendered PNG via the PIL image-composite path (SOP-IMG-05), baked into the image BEFORE assembly. This is an IMAGE composite of the real mark, NOT a native text run — NEVER write `pptx_text_overlays.json` (its presence at assembly is AF-OVERLAY-DELIVERED, Decision 5C). | Director |
 | Agent claims it used a Kie "image-to-text" endpoint (check 7) | Reject the report. The analysis must be redone as an agent multimodal read. | Director |
-| Kie outage (no model available) | Per the master SOP: PAUSE and escalate. Never substitute a different model mid-run. | Operator updates the manifest in writing |
+| Kie outage (no model available) | Per the master SOP: PAUSE and escalate. Never substitute a different model mid-run. | Operator updates the model catalog (`presentation_job/model_catalog.json`) in writing |
 
 ---
 
@@ -255,4 +287,4 @@ Check 9 is the closing of the reference-case logo-mutation loop: passing the log
 
 ---
 
-*End of SOP-IMG-01. This SOP teaches the call per mode; it changes no model. The model manifest (CLIENT-WEBINAR-DECK-SOP §9.0) remains the only place a model is named.*
+*End of SOP-IMG-01. This SOP teaches the call per mode; it changes no model. Model ids are decided in one place only, `presentation_job/model_catalog.json`; the ids quoted in this SOP are illustrations of its current values, and the catalog wins if they ever differ.*

@@ -1,11 +1,37 @@
 #!/usr/bin/env python3
 """
-kie_generate.py — canonical KIE.ai image generation helper for the Presentations pipeline.
+kie_generate.py - the SKILL 06 COPY of the KIE.ai image generation helper (presentation-render twin).
 
-This is the image-to-image / text-to-image submit+poll+download helper used by the full
-webinar pipeline when references (logo, founder portrait, style frame) must be passed.
-For the single-command deterministic text-to-image deck, use build_deck.py in this same
-directory instead — it composes the prompt mechanically and assembles the .pptx for you.
+WHICH COPY IS THIS: this file is the self-contained twin that 06-ghl-install-pages/tools/ghl_media.py
+runs (it shells `python3 <this file> <prompts.json> <renders_dir>` from generate_images()).
+The Presentations department does NOT run this copy. It runs the canonical copy at
+23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py,
+which sits behind the front-door nonce and submits and polls through kie_tasks.py.
+For a deck, use build_deck.py (role-library/presentations/scripts/): it does not compose
+prompts, it renders the authored per-slide prompt verbatim and assembles the .pptx.
+
+INTENTIONAL DIVERGENCE FROM THE CANONICAL COPY (declared 2026-10-05, recorded in
+scripts/shared-script-authority.json; both headers say the same thing):
+  * SAME, ported here (FIX 67): the secret-name canon (shared-utils/secret_helper aliases
+    KIE_AI_API_KEY, KIE_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS all resolve to the one
+    credential) and placeholder-value rejection, in _load_api_key, _import_secret_helper,
+    _kie_alias_names and _is_placeholder_value. These four are byte-for-byte the canonical
+    functions; keep them identical.
+  * DIFFERENT ON PURPOSE - no front-door nonce gate. The canonical copy refuses to run
+    unless presentation-canonical-entry.sh minted the per-run nonce, and it verifies the
+    nonce by importing build_deck.py from its own directory. This twin sits beside
+    render_deck.py, not build_deck.py, and Skill 06 (ghl_media.py, ghl_image_stage.py)
+    calls it for non-deck page images with no Presentations run directory and no nonce.
+    Porting the gate would make every Skill 06 call exit 2, so it is not ported.
+  * DIFFERENT ON PURPOSE - no kie_tasks.py lifecycle. This twin keeps its own wave submit
+    (20 per 10 seconds), waits 5 minutes after the last submit, then polls one task at a
+    time every 60 seconds for up to 100 passes. The canonical copy has no initial wait and
+    polls every pending task round-robin every 60 seconds with a 6,000 second deadline.
+    This twin has no kie_tasks.py beside it, so it stays self-contained.
+  * SAME as build_deck.py (declared 2026-10-05): the result download is an authenticated GET
+    (Bearer + browser User-Agent), because an unauthenticated GET returned HTTP 403 live.
+    The canonical role-library kie_generate.py does the same (identical _download).
+Limits and rates shared by every KIE skill: 07-kie-setup/references/kie-common-rules.md.
 
 USAGE:
     python3 kie_generate.py <prompts.json> <renders_dir>
@@ -25,16 +51,20 @@ USAGE:
 
 ENVIRONMENT:
     KIE_API_KEY — the CLIENT's own KIE.ai key (never the operator's, never shared).
-    Read from env, else from the client's standard secrets stores ($OPENCLAW_SECRETS
-    override if set, then ~/.openclaw/workspace/.env, ~/clawd/secrets/.env,
-    ~/.openclaw/secrets/.env — all HOME-relative, no hardcoded path; HIGH-3).
+    Read from env, else from the selected client's secrets stores resolved by
+    presentation_job.oc_paths ($OPENCLAW_SECRETS must stay inside that client boundary;
+    no hardcoded path; HIGH-3). Any KIE family alias name is accepted and a placeholder
+    value is rejected (FIX 67, see above).
 
 LOCKSTEP NOTE: this helper ships in TWO repo locations —
     23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py
     23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py
-Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
+Keep the logic they SHARE identical when editing either (v17.0.42 re-unified a drift where
 each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
-per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
+per-entry aspect_ratio/resolution + the runtime dead-endpoint guard). The two intentional
+differences (no nonce gate, no kie_tasks.py lifecycle) are listed at the top of this header.
+Both copies are hash-locked by scripts/shared-script-authority.json (checked by
+scripts/check-shared-script-drift.py); after any edit re-record with --record.
 
 ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory pin
     verbatim (the caller embeds it in `prompt`):
@@ -57,10 +87,12 @@ EXIT CODES:
     2 — fatal configuration error (no API key, bad prompts.json, etc.)
 """
 
+import importlib.util
 import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -203,11 +235,23 @@ prompt_gate = _import_prompt_gate()
 
 def _load_api_key() -> str:
     """Read KIE_API_KEY from environment, falling back to the client's standard
-    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3)."""
-    key = os.environ.get("KIE_API_KEY", "").strip()
-    if key:
-        return key.strip("'\"")
+    secrets stores (resolved at runtime - no hardcoded operator home path; HIGH-3).
+    FIX 67: the NAME is resolved through the one secret-name canon
+    (shared-utils/secret_helper: any KIE family alias - KIE_AI_API_KEY,
+    KIE_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS - resolves to the same
+    credential), and a placeholder value (PASTE_REAL_TOKEN / CHANGE_ME / ...)
+    is REJECTED wherever it sits. The canon helper is path-imported from the
+    repo checkout, the installed skills dir, or /data/.openclaw/skills - the
+    same seam _import_prompt_gate/_load_model_catalog use; without it the
+    pre-canon direct-name behavior holds, never a hard break."""
+    _key_from_env = os.environ.get("KIE_API_KEY", "").strip()
+    if _key_from_env:
+        value = _key_from_env.strip("'\"")
+        if value and not _is_placeholder_value(value):
+            return value
     candidates = _secrets_candidates()
+    # FIX 67 canon: accept every alias in the KIE key family.
+    accepted_names = _kie_alias_names()
     # Try each candidate secrets file in priority order.
     for path in candidates:
         env_path = Path(path)
@@ -215,16 +259,82 @@ def _load_api_key() -> str:
             continue
         for line in env_path.read_text().splitlines():
             line = line.strip()
-            if line.startswith("KIE_API_KEY="):
-                value = line[len("KIE_API_KEY="):].strip().strip("'\"")
-                if value:
-                    return value
+            for name in accepted_names:
+                if line.startswith(f"{name}="):
+                    value = line[len(f"{name}="):].strip().strip("'\"")
+                    if value and not _is_placeholder_value(value):
+                        return value
     print("FATAL: KIE_API_KEY not found in environment or in any of:", file=sys.stderr)
     for path in candidates:
         print("   ", path, file=sys.stderr)
     print("   (set KIE_API_KEY in env, or point $OPENCLAW_SECRETS at the client's .env)",
           file=sys.stderr)
     sys.exit(2)
+
+
+def _import_secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it."""
+    import importlib
+    here = Path(__file__).resolve().parent
+    repo_root = None
+    for anc in here.parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    from presentation_job.oc_paths import skills as client_skills
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(client_skills() / "shared-utils")):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                return mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                return None
+    return None
+
+
+def _kie_alias_names() -> list:
+    """The accepted names for the KIE_API_KEY credential: the canonical name
+    plus every canon alias; falls back to the pre-canon direct name."""
+    helper = _import_secret_helper()
+    if helper is None:
+        return ["KIE_API_KEY"]
+    try:
+        return list(helper.alias_list(helper.canonical_for("KIE_API_KEY")))
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return ["KIE_API_KEY"]
+
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value is rejected by every reader. Uses the
+    canon's is_placeholder when the helper is reachable; otherwise the same
+    minimal inline gate so a partial deploy still refuses."""
+    helper = _import_secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001
+            pass
+    if not value:
+        return True
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
 
 
 class AuthError(Exception):
@@ -424,15 +534,25 @@ def _poll_task(task_id: str, api_key: str) -> str:
     )
 
 
-def _download(url: str, dest: Path) -> None:
+def _download(url: str, dest: Path, api_key: str) -> None:
     """
     Download the KIE result image URL to dest path.
-    The result URL is a CDN link (tempfile.aiquickdraw.com or similar) that does NOT
-    require the KIE Bearer token — sending it causes HTTP 403. Plain unauthenticated GET.
+    AUTHENTICATED GET, identical to build_deck.download_image (FIX-4): the result URL
+    needs `Authorization: Bearer <key>` plus a browser User-Agent; a plain GET with
+    neither returned HTTP 403 in the live run (see tests/test_fix4_authenticated_download.py
+    in the role-library presentations scripts, and test_kie_generate_authenticated_download.py
+    beside this file). Only http(s) URLs are opened (SSRF / local-file-read guard).
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "kie_generate/1.0"})
+    scheme = (urllib.parse.urlparse(str(url)).scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"REFUSED: KIE result URL {url!r} has scheme {scheme!r}; only http(s) may be opened.")
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as f:
+        with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
             f.write(resp.read())
     except Exception as exc:
         raise RuntimeError(f"Download failed for {url}: {exc}") from exc
@@ -547,7 +667,7 @@ def main():
         try:
             result_url = _poll_task(task_id, api_key)
             print(f"  SUCCESS state=success, resultUrls[0]={result_url}")
-            _download(result_url, out_path)
+            _download(result_url, out_path, api_key)
 
             # Verify the file is a real PNG (check magic bytes)
             with open(out_path, "rb") as f:
