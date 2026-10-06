@@ -465,9 +465,6 @@ def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:
         return
     est = _estimated_cost(run_dir)
     api_key = _load_kie_api_key()
-    if not api_key:
-        print("=== PHASE-0 — no Kie API key on this box; balance preflight deferred to "
-              "the generation subprocess ===", flush=True)
     reason = abc.kie_balance_preflight(run_dir, est, api_key or None)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)

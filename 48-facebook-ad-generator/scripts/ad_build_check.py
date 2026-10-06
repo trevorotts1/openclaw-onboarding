@@ -40,6 +40,7 @@ Zero third-party deps (stdlib json / re / pathlib / urllib only).
 
 import json
 import re
+import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -86,8 +87,13 @@ PROMPT_MAX_CHARS = 18000
 # Image size (square feed ad) + the model family the generation must stay on.
 IMAGE_EDGE_PX = 1500
 # Auto-adopt any future gpt-image version: a model id must START WITH this prefix.
-# gpt-image-2, gpt-image-3, gpt-image-2-image-to-image, gpt-image-2-text-to-image
-# all pass; "dalle" / "flux" / "" fail. The version digit is NEVER hardcoded.
+# This is a deliberate, documented FAMILY gate (the version is never hardcoded), not
+# the dispatch pin. The id this skill actually sends is Skill 66's registry id
+# `gpt-image-2-5-sunburst-text-to-image` (AGENTS.md N43 pins the fleet to
+# gpt-image-2-5-sunburst-*; legacy gpt-image-2-* is only for ratios 3:1, 1:3, 9:21,
+# which a square 1:1 ad never uses). gpt-image-2-5-sunburst-text-to-image,
+# gpt-image-2-5-sunburst-image-to-image and any future gpt-image-N all pass;
+# "dalle" / "flux" / "" fail.
 GPT_IMAGE_MODEL_PREFIX = "gpt-image-"
 
 # Placeholder / fabricated tokens that are NOT a real Kie task id.
@@ -140,6 +146,9 @@ DELIVERABLES_REQUIRED = [
 
 # Phase-0 Kie balance preflight constants (AF-FBAD-KIE-BALANCE).
 FBAD_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
+# Owner rule (fleet-wide, 2026-10): required balance = estimated cost x 1.30. Same value in
+# Skill 47 (VID_KIE_BALANCE_FLOOR_MULTIPLIER). Canonical rule text:
+# 07-kie-setup/references/kie-common-rules.md.
 FBAD_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (re-dos)
 FBAD_CREDIT_PER_USD = 100                 # conservative USD->credit factor
 
@@ -1131,6 +1140,12 @@ def _fetch_kie_balance(api_key: str, url: str = FBAD_KIE_CREDIT_URL,
         obj = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Kie credit response is not JSON: {exc}; body={raw[:200]!r}")
+    # KIE can answer HTTP 200 with an error envelope ({"code": 401, "msg": ...}); the
+    # body `code` is the truth, never the HTTP status alone. An envelope whose code is
+    # not 200 is an unverifiable balance (fail LOUD, never "enough").
+    if isinstance(obj, dict) and "code" in obj and obj.get("code") != 200:
+        raise RuntimeError(f"Kie credit endpoint returned body code {obj.get('code')!r}: "
+                           f"{str(obj.get('msg', ''))[:200]!r}")
     candidates = []
     if isinstance(obj, (int, float)):
         candidates.append(obj)
@@ -1156,14 +1171,24 @@ def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
     Computes the estimated credit floor (estimated_cost_usd x FBAD_CREDIT_PER_USD x
     FBAD_KIE_BALANCE_FLOOR_MULTIPLIER), fetches the live Kie balance, and returns a
     fatal AF-FBAD-KIE-BALANCE string when balance < floor OR the balance cannot be
-    verified. Defers (passes) for a free job (estimated_cost<=0) or when no API key is
-    available on this box. An UNVERIFIABLE balance is a HARD ABORT."""
+    verified. Passes for a free job (estimated_cost<=0). A PAID job with no API key on
+    this box cannot be checked here: the generation subprocess still fails loud without
+    a key, but this gate NEVER defers silently any more. It prints a loud stderr notice
+    that the balance was NOT verified and names the credits the batch needs. A key that
+    IS present but whose balance is unverifiable or short is a HARD ABORT (the recover
+    path PARKS it as a recoverable money park)."""
     if not estimated_cost_usd or estimated_cost_usd <= 0:
         return ""
-    if not api_key:
-        return ""  # no key to query on this box; deferred to the generation subprocess.
     estimated_floor = (float(estimated_cost_usd) * FBAD_CREDIT_PER_USD
                        * FBAD_KIE_BALANCE_FLOOR_MULTIPLIER)
+    if not api_key:
+        print("WARNING AF-FBAD-KIE-BALANCE: no KIE_API_KEY on this box, so the Kie.ai "
+              "credit balance was NOT verified. This paid batch needs at least "
+              f"{estimated_floor:g} credits (estimated_cost ${estimated_cost_usd:g} x "
+              f"{FBAD_CREDIT_PER_USD} credits/USD x {FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} "
+              "headroom). Verification is deferred to the generation subprocess, which "
+              "cannot run without the client's KIE_API_KEY.", file=sys.stderr, flush=True)
+        return ""
     try:
         balance = _fetch_kie_balance(api_key)
     except RuntimeError as exc:
@@ -1174,7 +1199,8 @@ def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
     if balance < estimated_floor:
         return ("AF-FBAD-KIE-BALANCE: Kie.ai credit balance is below the estimated floor "
                 f"for this batch. balance={balance:g} credits, "
-                f"estimated_floor={estimated_floor:g} (estimated_cost "
+                f"estimated_floor={estimated_floor:g}, shortfall="
+                f"{estimated_floor - balance:g} credits (estimated_cost "
                 f"${estimated_cost_usd:g} x {FBAD_CREDIT_PER_USD} credits/USD x "
                 f"{FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any "
                 "paid dispatch so the batch does not die mid-run. Top up and retry.")

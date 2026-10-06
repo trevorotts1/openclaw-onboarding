@@ -2,6 +2,7 @@
 
 - **Source workflow:** `part6-carousel-image` (Social media in a box part 6: Carousel Image Creator)
 - **Model at export time:** kie.ai `seedream/4.5-edit`
+- **Model id check (2026-10-05):** `seedream/4.5-edit` is the model enum in the live KIE docs request schema (docs.kie.ai/market/seedream/4-5-edit; `4-5-edit` is only the docs URL slug, which Skill 66 models.json currently records as the id). Kept as is. Deliberate pin: Seedream 4.5 Edit is the surgical-edit repair model.
 - **Purpose:** Repair pass: QC feedback becomes the edit prompt (with Instagram center-crop safety instruction). If the edited image fails QC again, the fallback strips ALL text from the image.
 - **Anonymization:** verified clean — no client names or secrets in this prompt text. Client-identifying data in this workflow family lives ONLY in raw-export `pinData` (see ANALYSIS.md `client_name_locations`); it is excluded here.
 

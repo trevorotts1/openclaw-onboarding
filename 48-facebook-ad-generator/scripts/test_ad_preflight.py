@@ -569,6 +569,36 @@ def _probe_dep_skipped() -> bool:
     return "AF-FBAD-DEP-SKIPPED" in reason
 
 
+def _probe_kie_credit_body_code() -> list:
+    """Owner rule: the credit probe checks the BODY code (HTTP 200 with code 401 is NOT
+    a balance) and the required-balance multiplier is 1.30."""
+    import io
+    import urllib.request
+    out = []
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+    real = urllib.request.urlopen
+    try:
+        urllib.request.urlopen = lambda *a, **k: _Resp(
+            b'{"code": 401, "msg": "You do not have access", "data": 5000}')
+        try:
+            abc._fetch_kie_balance("dummy-key-not-real")
+            out.append("credit probe accepted an HTTP 200 whose body code is 401")
+        except RuntimeError:
+            pass
+        urllib.request.urlopen = lambda *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 1234}')
+        if abc._fetch_kie_balance("dummy-key-not-real") != 1234.0:
+            out.append("credit probe did not read data from a code-200 body")
+    finally:
+        urllib.request.urlopen = real
+    if abc.FBAD_KIE_BALANCE_FLOOR_MULTIPLIER != 1.30:
+        out.append("balance floor multiplier is not the fleet-wide 1.30")
+    return out
+
+
 def main():
     triggered = set()
     failures = []
@@ -611,6 +641,8 @@ def main():
     else:
         failures.append("AF-FBAD-DEP-SKIPPED: no-dependency fixture did not trip "
                         "check_dependency_preconditions.")
+
+    failures.extend(_probe_kie_credit_body_code())
 
     AF_COVERAGE.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE.write_text(json.dumps({"triggered": sorted(triggered)}, indent=2))

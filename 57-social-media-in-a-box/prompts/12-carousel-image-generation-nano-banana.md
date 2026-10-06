@@ -2,6 +2,7 @@
 
 - **Source workflow:** `part6-carousel-image` (Social media in a box part 6: Carousel Image Creator)
 - **Model at export time:** kie.ai `nano-banana-pro`
+- **Model id check (Skill 66 registry, 2026-10-05):** `nano-banana-pro` is the canonical Skill 66 id (supports 4:5, 1K/2K/4K, png). Deliberate pin kept: the carousel renderer is a Nano Banana Pro flow. Skill 66 is authoritative for ids; canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 - **Purpose:** Image-generation payload: slide prompt + typographic integration instruction for textOnImage; 4:5, 2K, png via Kie.ai createTask.
 - **Anonymization:** verified clean — no client names or secrets in this prompt text. Client-identifying data in this workflow family lives ONLY in raw-export `pinData` (see ANALYSIS.md `client_name_locations`); it is excluded here.
 

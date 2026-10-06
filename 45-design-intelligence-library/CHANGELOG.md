@@ -1,5 +1,9 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.1.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- `library/_system/MODEL-SPECS.md` v1.6: relabelled a DATED SNAPSHOT. Authority is the Skill 66 policy and registry plus the Skill 74 live catalog (`kie_live_adapter.py validate` / `price`); the "only file that changes" claim removed; owner house rules kept. Documents that the v1.4 changelog row (gpt-image-2 primary for presentations) is historical and superseded by sunburst (Section 2, AGENTS.md N43). No model ids changed: `nano-banana-2` matches Skill 66, and `seedream/4.5-edit` matches the live KIE docs enum.
+
 ## [2.0.0] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
 
 ### Why

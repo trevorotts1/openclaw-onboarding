@@ -1,5 +1,10 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
+## v2.0.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- Credit preflight: `_fetch_kie_balance` checks the BODY `code`; a short balance now reports the shortfall in credits; a paid run with no `KIE_API_KEY` no longer defers silently (loud stderr notice naming the credits required, 1.30x rule). New probe in `test_ad_preflight.py`.
+- `GPT_IMAGE_MODEL_PREFIX` documented as the family gate; the dispatched id is Skill 66 `gpt-image-2-5-sunburst-*` (AGENTS.md N43). Docs and test labels aligned.
+
 ## 1.2.5 — 2026-07-05
 - scripts/ad_build_check.py (FIX-XC-03i): the independent-QC gate no longer lets a scorecard's SELF-DECLARED `average` override the value COMPUTED from its own category scores — the pass test always uses the computed average, and a declared-vs-computed disagreement > 0.05 is itself an autofail (a fabricated top-line, e.g. all categories 7.0 with a declared 9.9, is now caught instead of sailing through). The overlay count/wordcount gates now MEASURE the real `s1-overlays.md` deliverable (new `measure_overlays()`) and fail on any receipt-vs-measured mismatch, so a receipt that lies within-range can no longer pass. Unmeasurable judgment fields (on_mission, audience_wording_preserved, styleblock_ok) intentionally remain boolean.
 - scripts/ad_build_check.py (FIX-S36-45 iii): `_chk_qc_independence` hardened — maker and grader must be REGISTERED role slugs (AD-PIPELINE-MANIFEST `roles[].id`, loaded via the new `registered_role_slugs()`), and the scorecard's `grader_session_id` is cross-checked against the run ledger's independently-recorded `qc_sessions[]` (same gate / session id / grader). A free-text reviewer or a grade the ledger never saw now fails closed.

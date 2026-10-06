@@ -285,11 +285,19 @@ class KieImage(BaseTool):
     # ------------------------------------------------------------------
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        """Approximate KIE image cost (credits, treated as USD equivalent)."""
+        """Runtime FALLBACK constants only, not a price authority.
+
+        Price authority: ``python3 74-kie-live-adapter/scripts/kie_live_adapter.py
+        price --model <id>`` (live pricingDesc, snapshot fallback
+        74-kie-live-adapter/references/kie-model-registry.json). These constants are
+        used only when no live price was read; the same two values (2K, other) are
+        mirrored in Skill 58 config/cost-model.json. Canonical rules:
+        07-kie-setup/references/kie-common-rules.md.
+        """
         resolution = inputs.get("resolution", "2K")
         if resolution == "2K":
             return 0.05
-        return 0.03
+        return 0.04
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         return 30.0
