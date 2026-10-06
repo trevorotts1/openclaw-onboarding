@@ -44,11 +44,13 @@
     },
     {
       "name": "gip-prompt-band-enforcement",
-      "description": "Per decision GK-D2 (extended to Agnes skills 63/64): every GPT-image-2 and Agnes Image prompt must fall within 5,000-19,000 stripped chars (5,000 is the HARD FLOOR, 19,000 is the MAX — stays 6,000 chars clear of the 25,000 API cap). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) — enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
+      "description": "Per decision GK-D2 (extended to Agnes skills 63/64): every GPT-image-2 and Agnes Image prompt must fall within the prompt budget in rule 12 of 07-kie-setup/references/kie-common-rules.md (the 5,000 floor and 19,000 ceiling fields below are code thresholds that a follow-up lane replaces; they stay clear of both API caps: 25,000 characters for the legacy gpt-image-2 entries (owner-confirmed, AGENTS.md N43) and 20,000 characters for the GPT Image 2.5 family (sunburst/flare)). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) - enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
       "cfg_key": "roleLibrary.graphics.gipPromptBand",
       "floor": 5000,
       "ceiling": 19000,
       "api_cap": 25000,
+      "api_cap_note": "api_cap is the legacy gpt-image-2 cap; the GPT Image 2.5 family cap is api_cap_gpt_image_2_5",
+      "api_cap_gpt_image_2_5": 20000,
       "gates": [
         "45-design-intelligence-library/scripts/diu_validator.py prompt-band",
         "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",

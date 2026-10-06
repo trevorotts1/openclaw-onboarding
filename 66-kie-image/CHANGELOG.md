@@ -11,6 +11,16 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.5] - 2026-10-05 - fix: Seedream 4.5 edit model id is seedream/4.5-edit
+
+### Fixed
+- The registry, selector, alias map, payload validator and docs recorded the Seedream 4.5 edit model as `seedream/4-5-edit`. KIE's own page (https://docs.kie.ai/market/seedream/4-5-edit.md, fetched 2026-10-05) declares the model enum and default as `seedream/4.5-edit` (the `4-5-edit` form is only the docs URL slug and the operationId). Corrected in `models.json`, `scripts/select_image_model.py` (registry and self-test), `scripts/normalize_alias.py`, `scripts/validate_payload.py` (reference-count warning and four self-test cases), `references/api-patterns.md` and `references/models.md`. The `source_url` keeps the real docs slug. A payload using the old id is now rejected as not in the registry, which is correct because KIE would not accept it.
+- Version roll to v2.0.5 (`SKILL.md`, `QC.md`, three script `VERSION` constants).
+- Self-tests unchanged in count: select 24/24, `validate_prompt` 21/21, `validate_payload` 49/49, normalize PASS.
+- The prebuilt `66-kie-image-1.0.0.skill` archive is not rebuilt (no packaging script in `scripts/`, archive already stale, and its filename carries the 1.0.0 it shipped with).
+
+---
+
 ## [v2.0.4] - 2026-10-05 - fix: version drift, registry and doc counts, validator CLI docs, retention prose
 
 ### Fixed

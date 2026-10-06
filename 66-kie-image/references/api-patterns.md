@@ -163,7 +163,7 @@ t2i model `gpt-image-2-5-sunburst-text-to-image`; i2i model
   formats: JPEG, PNG, WEBP Maximum file size: 30MB; Maximum files: 10".
 - Lite: `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image`; refs
   14 @ 30 MB.
-- 4.5: `seedream/4.5-text-to-image`, `seedream/4-5-edit`; refs 14 @ 30 MB
+- 4.5: `seedream/4.5-text-to-image`, `seedream/4.5-edit`; refs 14 @ 30 MB
   (playground editor; README says 10 — UNDETERMINED); NO `output_format` field.
 - `quality`: `Basic` | `High` | `Ultra` (Lite only for Ultra). Pro: Basic=1K /
   High=2K. Lite: Basic=2K / High=3K / Ultra=4K. 4.5: Basic=2K / High=4K.

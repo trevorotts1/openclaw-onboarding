@@ -15,7 +15,7 @@
       "canonical": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
       "evidence": [
         "Both copies carry the same prose LOCKSTEP NOTE naming the two paths and instructing 'Keep their LOGIC identical when editing either' — a requirement graded by nobody until this gate.",
-        "The role-library copy's own docstring records which way the port owes: 'FIX 68/67 STATUS (W21b): the role-library copy carries the platform-aware secrets order (presentation_job.oc_paths) AND the FIX 67 secret-name canon ... The presentation-render twin has NOT yet received that port — port the same four functions ... before claiming the two are logic-identical again.'",
+        "FIX 68/67 STATUS (declared 2026-10-05, in both headers): the FIX 67 secret-name canon (_load_api_key, _import_secret_helper, _kie_alias_names, _is_placeholder_value) is ported to the twin and byte-for-byte identical in both copies. The two remaining differences are declared INTENTIONAL in both headers: the twin has no front-door nonce gate (Skill 06 calls it with no run directory or nonce, and the gate imports build_deck.py, which does not sit beside the twin) and no kie_tasks.py lifecycle (it keeps its own wave submit, 5 minute wait, serial 60 second polls).",
         "The presentations engine runs the role-library copy: presentation-canonical-entry.sh resolves --scripts-dir to that tree, and sales_checkout_builder.py / vsl_builder.py both shell `_here() / 'kie_generate.py'` from inside it.",
         "The mirror copy is reached only by Skill 06 (ghl_media.py) — see _why_the_mirror_copy_is_never_deleted."
       ]
@@ -28,17 +28,17 @@
       ]
     }
   },
-  "_waiver_policy": "The 2 divergences below predate this gate. Reconciling two implementations is a code decision that belongs to the operator (the role-library kie_generate.py docstring already names the four functions the mirror twin owes), so this gate records the divergence at its exact current bytes rather than rewriting either copy. Any edit to either side invalidates the pinned pair and FAILS the gate until a human reviews it. A newly duplicated filename that disagrees has no waiver and fails immediately.",
+  "_waiver_policy": "The 2 divergences below predate this gate. Reconciling two implementations is a code decision that belongs to the operator (the kie_generate.py headers now state which differences are intentional), so this gate records the divergence at its exact current bytes rather than rewriting either copy. Any edit to either side invalidates the pinned pair and FAILS the gate until a human reviews it. A newly duplicated filename that disagrees has no waiver and fails immediately.",
   "waivers": [
     {
       "file": "kie_generate.py",
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
-      "canonical_sha256": "e6a2dd73b9abb1fb4b5a9638fcf4d20417df427c023383cd698a0bf7c92eac66",
-      "mirror_sha256": "610dc4d533ccb928ccc8c0d9b7ad1f0a49c95aeb16ce7f35c4dba7ef6cf7104b",
+      "canonical_sha256": "41786105549541a01a40b1189c8992f48158e32807e8cb8179983d2ee2f6c123",
+      "mirror_sha256": "caca5cd1ce41e4f1273f93de42c8171f6532655a5f9c82cce760a94315f8c021",
       "canonical_side": "role-library-scripts",
-      "reason": "Pre-existing divergence recorded, not reconciled (694 vs 613 lines). The mirror twin still owes the FIX 68/67 port the role-library docstring names: the oc_paths _secrets_candidates seam, _import_secret_helper, _kie_alias_names, _is_placeholder_value and the _load_api_key canon loop. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
-      "recorded_at": "2026-09-10"
+      "reason": "Divergence recorded, now declared INTENTIONAL in both file headers (2026-10-05). The FIX 67 secret-name canon is ported to the twin (four functions byte-identical). The twin deliberately has NO front-door nonce gate (Skill 06 ghl_media.py runs it for non-deck page images with no run directory and no nonce, and the gate imports build_deck.py, absent beside the twin; porting it would make every Skill 06 call exit 2) and NO kie_tasks.py lifecycle (own wave submit, 5 minute wait, serial 60 second polls). Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-10-05"
     },
     {
       "file": "slides.schema.json",

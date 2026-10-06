@@ -15,12 +15,12 @@ What you get:
 - a cost estimate based on `scripts/model-database.json`
 - files: `sourdough_tutorial.json`, `sourdough_tutorial.md`
 
-## Example 2: 3-minute promo with Sora (25s clips)
+## Example 2: 3-minute promo with Kling 3.0 (10s clips)
 
 ```bash
 python3 scripts/create_storyboard.py \
   --duration 180 \
-  --model sora-25s \
+  --model kling-3 \
   --topic "Summer Sale Promotion" \
   --output summer_sale
 ```
@@ -34,10 +34,11 @@ What you get:
 ```python
 from scripts.model_database import calculate_cost
 
-for model_id in ["veo-3-1", "sora-10s", "sora-15s", "sora-25s"]:
+for model_id in ["veo-3-1", "kling-3", "seed-dance", "wan-2-6"]:
     cost = calculate_cost(model_id, 300)
     print(model_id, cost)
 ```
 
 Notes:
-- Pricing changes over time. Update `scripts/model-database.json` to keep estimates current.
+- The snapshot prices are indicative only (dated 2024-01-15). Live prices come from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74); which model to use comes from Skill 67. The script's estimate uses fallback constants only.
+- Sora is prohibited by the Video department and is not used in any example.

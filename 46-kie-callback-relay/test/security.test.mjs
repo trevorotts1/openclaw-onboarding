@@ -75,11 +75,11 @@ const WEBHOOK_KEY  = 'kie-webhook-hmac-key-fixture';
 const SLUG         = 'client-alpha';
 
 // =============================================================================
-await section('Worker: /healthz reports version 2.0.2', async () => {
+await section('Worker: /healthz reports version 2.0.3', async () => {
   const res = await worker.fetch(new Request('https://w/healthz'), {}, makeCtx().ctx);
   ok(res.status === 200, 'healthz -> 200');
   const body = await res.json();
-  ok(body.version === '2.0.2', `healthz version == 2.0.2 (got ${body.version})`);
+  ok(body.version === '2.0.3', `healthz version == 2.0.3 (got ${body.version})`);
 });
 
 await section('Worker: /kv-read auth + preimage (fixes B/C/F/G)', async () => {
@@ -303,6 +303,16 @@ await section('box-kv-poller: REAL Market shape (resultJson string + response.re
         resultJson: JSON.stringify({ resultUrls: ['https://evil.example.com/x.png'] }) } });
   marker = await p.waitForTask('sub-m5', 'task-m5', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
   ok(marker.status === 'failed' && marker.reason === 'allowlist-rejected', 'foreign-host Market URL -> failed/allowlist-rejected');
+});
+
+await section('box-kv-poller: images array with null/garbage items does not throw (QC follow-up)', async () => {
+  let p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success', resultJson: { images: [null] } } });
+  let marker = await p.waitForTask('sub-n1', 'task-n1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'failed' && marker.source === 'kie-poll', `images:[null] -> failed via the poll path, not a swallowed TypeError (got ${marker.status}/${marker.source})`);
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success',
+        resultJson: { images: [null, undefined, 5, { url: MARKET_URL }] } } });
+  marker = await p.waitForTask('sub-n2', 'task-n2', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done' && marker.resultUrls.length === 1 && marker.resultUrls[0] === MARKET_URL, 'null items skipped, the real URL still resolves done');
 });
 
 await section('box-kv-poller: Suno shape (response.data[].audio_url) -> done', async () => {
