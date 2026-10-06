@@ -43,7 +43,8 @@ bash 49-signature-funnel/signature-funnel-entry.sh --run-dir <RUN_DIR>
 
 Requests route to this engine through the shared **STEP-0 funnel-engine selector**
 (`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`). A
-hand-rolled GHL REST call, a raw Kie `createTask`, or a `python3 run_signature_funnel.py` without the
+hand-rolled GHL REST call, a raw Kie `createTask` (Skill 74 is the one approved KIE path; its own result
+files under `receipts/kie74/` are allow-listed), or a `python3 run_signature_funnel.py` without the
 front-door nonce is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS` / `AF-FUN-FRONT-DOOR`).
 
 ## Files
@@ -53,7 +54,7 @@ front-door nonce is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS
 | `FUNNEL-PIPELINE-MANIFEST.json` | The shared pipeline manifest (phases, owning roles, SOP refs, gate codes). |
 | `SOP-FUNNEL-01-INTAKE.md` | Lock the brief in ONE block; funnel size (3/5/7); the truth gate; representation never assumed. |
 | `SOP-FUNNEL-02-COPY.md` | Author the SACRED 12-section copy across the six page profiles; the derivation rules. |
-| `SOP-FUNNEL-03-PROMPTS-IMAGES.md` | 8-block image prompts (5,000–19,000 chars) + Kie generation + provenance. |
+| `SOP-FUNNEL-03-PROMPTS-IMAGES.md` | 8-block image prompts (model budget, rule 12) + Kie generation (Skill 66 policy, Skill 74 transport) + provenance. |
 | `SOP-FUNNEL-04-BUILD.md` | GHL media + funnel/page build — DELEGATED to Skill 6; the ONE delivery rail. |
 | `SOP-FUNNEL-05-CERTIFY.md` | No-pitch (clean Thank-You) + signed certificate + preview/approve + the 10-email offer. |
 | `MASTER-FUNNEL-QC-AUTOFAIL-RULESET.md` | The auto-fail table every page/prompt/certificate is measured against. |
@@ -69,7 +70,8 @@ front-door nonce is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS
 - Derived pages **exclude Sections 8–11** and replace Section 12 with the renumbered Section 8
   ("7 Reasons To Commit To Your ____ Future" for upsells; "When Time Runs Out" for downsells; exactly
   7 items). **After Downsell 2 the funnel NEVER pitches again** — the Thank-You page is clean.
-- **Image-prompt band: 5,000–19,000 stripped chars** per prompt; the ~1,290-char Signature Grade Block
+- **Image-prompt length budget:** 95 to 100 percent of the model's character maximum, never below 80 percent
+  (`07-kie-setup/references/kie-common-rules.md` rule 12; replaced the 5,000–19,000 band); the ~1,290-char Signature Grade Block
   is embedded verbatim in block 4 of every prompt; no em dashes.
 - **Truth gate:** every scarcity claim, bonus, founder text, and community is confirmed real at intake.
   The system never fabricates urgency.

@@ -1,5 +1,13 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## v13.2.0 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+- `generate-infographics.sh` (workflow), `generate-visual-intelligence.sh` and `generate-celebration-video.sh` now call Skill 74's CLI for every KIE request (new `scripts/lib-kie74.sh`: submit, wait, upload `--file`, upload `--url`, run). Skill 74 is found as a sibling skill folder; if it is missing the generators stop with a clear message and never fall back to a second client.
+- Policy is unchanged and stays here: sunburst first with `nano-banana-2` as the fallback (and the early switch when the primary is rejected as unsupported), `gemini-omni-video` first with `veo3_fast` on the third attempt, the 8.5 gate, state fields, the public-reference rule and the transient "image fetch failed" re-host and re-submit.
+- Removed (duplicate KIE client): the per-script `submit_job` / `poll_job` curl code in both image generators; `submit_gemini_omni`, `poll_gemini_omni`, `submit_veo`, `poll_veo` and the result `curl` download in the video generator; `_curl_retry_post`, `_mime_for` and the own base64 and URL upload calls. Result files are saved by Skill 74 and moved into place.
+- Test hooks: `KIE_API_BASE` and `KIE_UPLOAD_BASE` still point a test at a local mock (mapped to Skill 74's localhost-only `KIE_LIVE_*` hooks). `test-celebration-video-public-refs.sh` was moved to the Skill 74 transport; new `test-image-generators-kie74.sh` covers sunburst-first, the early switch, the missing-Skill-74 failure and the no-second-client guard.
+- Note: the `veo3` and `veo3_fast` models run on the path their schema declares through Skill 74; if a box's KIE schema cannot be read for them the fallback attempt fails closed with Skill 74's message.
+
 ## v13.1.6 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - **Image order fixed (contradiction):** `scripts/generate-infographics.sh` tried `nano-banana-2` first while `generate-visual-intelligence.sh` tried `gpt-image-2-5-sunburst-text-to-image` first. AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`, so both now use sunburst first and `nano-banana-2` only as the fallback; the per-account 422 `model name not supported` early switch is kept.

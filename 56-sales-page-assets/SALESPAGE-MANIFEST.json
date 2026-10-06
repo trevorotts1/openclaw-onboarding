@@ -1,11 +1,11 @@
 {
   "$schema": "https://openclaw.ai/schemas/sales-page-assets-manifest/v1",
   "manifest": "sales-page-assets-pipeline",
-  "manifest_version": "1.0.1",
+  "manifest_version": "1.1.0",
   "skill": "56-sales-page-assets",
   "funnel_type": "sales_page_assets",
   "sibling_of": "49-signature-funnel",
-  "description": "The deterministic phase spine for the Direct-Response Sales Page Assets engine (the DR sibling of Skill 49; absorbs the n8n 'All In One Sales Page Assets' funnel family). Each P-phase names its produces_artifact, its thin _chk_sp_* preflight wrapper (DEFERS unless funnel_type == sales_page_assets), and its fail-closed gate. The orchestrator run_sales_page_assets.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 47 (kie_image.py) or the client's own image provider; ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py); the bump copy routes to the Skill 44 order-bump seam. CLIENT runtime uses the client's OWN providers, never Anthropic.",
+  "description": "The deterministic phase spine for the Direct-Response Sales Page Assets engine (the DR sibling of Skill 49; absorbs the n8n 'All In One Sales Page Assets' funnel family). Each P-phase names its produces_artifact, its thin _chk_sp_* preflight wrapper (DEFERS unless funnel_type == sales_page_assets), and its fail-closed gate. The orchestrator run_sales_page_assets.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 66 (model policy) then Skill 74 (kie_live_adapter.py, the one approved KIE transport; results recorded by scripts/kie74_receipt.py) or to Skill 63 when the client selected Agnes; ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py); the bump copy routes to the Skill 44 order-bump seam. CLIENT runtime uses the client's OWN providers, never Anthropic.",
   "front_door": {
     "entry": "sales-page-assets-entry.sh",
     "guards": [
@@ -49,9 +49,9 @@
     {
       "id": "P2-IMAGES",
       "order": 2,
-      "name": "Image generation (DELEGATED to Skill 47 / client image provider)",
+      "name": "Image generation (DELEGATED to Skill 66 policy + Skill 74 transport, or Skill 63 Agnes)",
       "produces_artifact": "media_ledger.json (image records)",
-      "delegate": "47-kie-image :: kie_image.py OR the client's OWN image provider key (operator OpenAI Assistant NOT shipped)",
+      "delegate": "66-kie-image (model policy) -> 74-kie-live-adapter :: kie_live_adapter.py OR 63-agnes-image when the client selected Agnes (operator OpenAI Assistant NOT shipped)",
       "gate": "artifact presence (media_ledger.json); taskId + GHL-host provenance and per-stage coverage enforced at P4 (prove_sp_media.py)"
     },
     {
@@ -149,7 +149,7 @@
     }
   },
   "delegation_seams": {
-    "images": "47-kie-image / kie_image.py OR the client's OWN image provider (default image count RAISED to 12 so every slice fills)",
+    "images": "66-kie-image (policy) -> 74-kie-live-adapter / kie_live_adapter.py OR 63-agnes-image (default image count RAISED to 12 so every slice fills)",
     "ghl_media": "06-ghl-install-pages / ghl_media.py (ImgBB removed from the client path)",
     "ghl_build": "06-ghl-install-pages / ghl_rest_canvas.py + ghl_builder.py",
     "bump_order_form": "44-convert-and-flow-operator (order-bump widget; grocery-shopping rule)",
@@ -493,7 +493,7 @@
       "py_symbol": "run_sales_page_assets._check_front_door"
     },
     "AF-SP56-CANONICAL-BYPASS": {
-      "trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / mail sender / Anthropic call",
+      "trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / a KIE client script / mail sender / Anthropic call (Skill 74 result files under receipts/kie74/ are allow-listed)",
       "enforced_by": "front-door",
       "py_symbol": "sales-page-assets-entry.sh:step_bypass_scan"
     },

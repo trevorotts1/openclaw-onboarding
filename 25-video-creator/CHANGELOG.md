@@ -1,5 +1,19 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.1.0] - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+### Changed
+- All KIE traffic (file upload, createTask, recordInfo polling, result download) now goes through Skill 74's CLI (`kie_live_adapter.py upload|run --mode active --json`), found as a sibling skill folder the same way Skill 67 is. The key travels in the child process environment, never on the command line.
+- Skill 25 keeps its own policy: model from Skill 67 (or `--model`), the per-model input table and validation, the 900 second deadline, and the output path with the ffprobe check on the finished file.
+- If Skill 74 is not installed the command fails with a clear message. There is no fallback to a second KIE client.
+
+### Removed (duplicate KIE client)
+- `_kie_call` (own HTTP request, body-code check), the own multipart upload to `kieai.redpandaai.co`, the own createTask and recordInfo polling loop, `KIE_API_BASE`, `KIE_UPLOAD_URL`, and the legacy `https://api.kie.ai/v1` endpoint rewrite. `AIProvider('kieai').endpoint` is now `None`.
+
+### Added
+- Runway and Veo now work: `runway` (`image_url`), `veo-3-1`, `veo3`, `veo3_fast`, `veo3_lite` (`image_urls`) are mapped with per-model input specs; the former "dedicated API, not supported" refusal is gone because Skill 74 submits to the path each model's schema declares. Skill 74 v1.1.1 saves a direct result link from such endpoints.
+- Tests: Skill 74 is stubbed at the `kie74` function (23 flow tests rewritten) plus tests that run the real `kie74` against a stub CLI (argv, key in env only, missing-adapter error) and a guard that `ai_providers.py` contains no KIE host or endpoint.
+
 ## [7.0.4] - 2026-10-06 — fix: enforce per-model KIE input types; explicit image field type
 
 ### Fixed

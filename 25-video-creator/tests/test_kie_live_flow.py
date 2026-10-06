@@ -1,7 +1,8 @@
-"""KIE live createTask/recordInfo flow for Skill 25, against a fake HTTP transport.
+"""KIE flow for Skill 25 through the Skill 74 transport, against a stubbed Skill 74.
 
-No network, no key, no ffmpeg: requests.post/get are replaced by FakeKie and the
-final download is stubbed.
+No network, no key, no ffmpeg: `kie74` (the one function that runs Skill 74's CLI) is replaced by Fake74, which
+records every call and returns scripted Skill 74 results. A second group runs the real `kie74` against a stub
+CLI script to prove the command line, the environment and the missing-adapter error.
 """
 
 from __future__ import annotations
@@ -27,9 +28,9 @@ except ModuleNotFoundError:
     sys.modules["requests"] = stub
 
 SKILL_ROOT = Path(os.environ.get("SKILL25_ROOT", Path(__file__).resolve().parents[1]))
-CREATE = "https://api.kie.ai/api/v1/jobs/createTask"
-RECORD = "https://api.kie.ai/api/v1/jobs/recordInfo"
-UPLOAD = "https://kieai.redpandaai.co/api/file-stream-upload"
+CREATE = "run"      # a Skill 74 `run` call (validate, createTask or the schema's path, poll, save)
+UPLOAD = "upload"
+URL = "https://tempfile.example/in.png"
 
 
 def load_module():
@@ -42,43 +43,39 @@ def load_module():
     return module
 
 
-class Resp:
-    def __init__(self, body, status=200):
-        self.body, self.status_code = body, status
-
-    def json(self):
-        return self.body
+def ok_run(task="t1"):
+    return {"state": "success", "task_id": task, "result_urls": ["https://r/v.mp4"], "data": {}}
 
 
-class FakeKie:
-    """Scripted transport. `create` and `upload` are single replies; `records` is a queue."""
+def fail_run(code, msg, **kw):
+    return {"state": "fail", "task_id": kw.pop("task_id", None), "error": {"code": code, "msg": msg}, **kw}
 
-    def __init__(self, create=None, records=(), upload=None):
-        self.create = create or Resp({"code": 200, "msg": "success", "data": {"taskId": "t1"}})
-        self.records = list(records)
-        self.upload = upload or Resp({"code": 200, "success": True,
-                                      "data": {"downloadUrl": "https://tempfile.example/in.png"}})
+
+class Fake74:
+    """Stands in for kie74(). `run` and `upload` are single scripted replies (dict, or a callable)."""
+
+    def __init__(self, run=None, upload=None):
+        self.run = run or ok_run()
+        self.upload = upload or {"state": "success", "data": {"download_url": URL}}
         self.calls = []
 
-    def post(self, url, **kw):
-        self.calls.append(("post", url, kw))
-        if url == CREATE:
-            return self.create
-        if url == UPLOAD:
+    def __call__(self, command, *args, api_key=None, request=None, timeout=300):
+        self.calls.append((command, args, request, api_key, timeout))
+        if command == "upload":
             return self.upload
-        return Resp({"code": 404, "msg": "not found"}, 404)
+        assert command == "run", command
+        result = dict(self.run)
+        if result.get("state") == "success":  # what Skill 74 does: save the file in --save-dir
+            save_dir = Path(args[args.index("--save-dir") + 1])
+            saved = save_dir / "t1_0.mp4"
+            saved.write_bytes(b"video" * 400)
+            result["saved_paths"] = [str(saved)]
+        return result
 
-    def get(self, url, **kw):
-        self.calls.append(("get", url, kw))
-        assert url == RECORD, url
-        return self.records.pop(0)
-
-    def of(self, url):
-        return [c for c in self.calls if c[1] == url]
-
-
-def rec(state, **data):
-    return Resp({"code": 200, "data": {"taskId": "t1", "state": state, **data}})
+    def of(self, command):
+        """Calls of one kind, shaped like the old HTTP log: (method, command, {'json': request, 'args': args})."""
+        return [("post", c[0], {"json": c[2], "args": c[1], "key": c[3], "timeout": c[4]})
+                for c in self.calls if c[0] == command]
 
 
 @pytest.fixture
@@ -99,27 +96,11 @@ def skills(tmp_path):
 def env(monkeypatch, tmp_path, skills):
     module = load_module()
     monkeypatch.setattr(module, "_skills_dirs", lambda: [skills])
-    sleeps = []
-    clock = [0.0]
-
-    def sleep(seconds):
-        sleeps.append(seconds)
-        clock[0] += seconds
-
-    monkeypatch.setattr(module, "time", SimpleNamespace(sleep=sleep, monotonic=lambda: clock[0]))
-    downloads = []
-
-    def download(self, url, output):
-        downloads.append(url)
-        Path(output).write_bytes(b"video")
-        return Path(output)
-
-    monkeypatch.setattr(module.AIProvider, "_download_video", download)
-    ns = SimpleNamespace(module=module, sleeps=sleeps, downloads=downloads, tmp=tmp_path)
+    monkeypatch.setattr(module.AIProvider, "_validate_downloaded_video", staticmethod(lambda path: None))
+    ns = SimpleNamespace(module=module, tmp=tmp_path)
 
     def install(fake):
-        monkeypatch.setattr(module.requests, "post", fake.post)
-        monkeypatch.setattr(module.requests, "get", fake.get)
+        monkeypatch.setattr(module, "kie74", fake)
         return fake
 
     ns.install = install
@@ -127,48 +108,44 @@ def env(monkeypatch, tmp_path, skills):
     return ns
 
 
-def test_create_task_payload_has_model_and_nested_input(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
+def test_run_request_has_model_and_nested_input_and_the_file_lands_at_output(env):
+    fake = env.install(Fake74())
     out = env.tmp / "o.mp4"
     env.provider().generate_video("a cat", duration=7, resolution="1080p", output=out)
 
-    (_, url, kw), = fake.of(CREATE)
-    assert kw["headers"] == {"Authorization": "Bearer test-only-key"}
-    assert kw["json"] == {"model": "stub/model-x",
-                          "input": {"prompt": "a cat", "duration": 7, "resolution": "1080P"}}
-    assert not [c for c in fake.calls if "video/generate" in c[1]]
-    assert env.downloads == ["https://r/v.mp4"]
-    assert out.read_bytes() == b"video"
+    (_, _, call), = fake.of(CREATE)
+    assert call["json"] == {"model": "stub/model-x",
+                            "input": {"prompt": "a cat", "duration": 7, "resolution": "1080P"}}
+    assert call["key"] == "test-only-key"
+    assert call["args"][call["args"].index("--timeout") + 1] == 900
+    assert out.read_bytes() == b"video" * 400
+    assert not list(env.tmp.glob(".*.part"))
 
 
-def test_poll_backs_off_through_waiting_queuing_generating_then_success(env):
-    fake = env.install(FakeKie(records=[rec("waiting"), rec("queuing"), rec("generating"),
-                                        rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
-    env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert env.sleeps[0] == 3.0
-    assert env.sleeps == sorted(env.sleeps) and env.sleeps[-1] > 3.0
-    assert max(env.sleeps) <= 15.0
-    assert [c[2]["params"] for c in fake.calls if c[1] == RECORD] == [{"taskId": "t1"}] * 4
+def test_callback_url_is_forwarded_as_callBackUrl(env):
+    fake = env.install(Fake74())
+    env.provider().generate_video("x", output=env.tmp / "o.mp4", callback_url="https://relay.example/cb")
+    assert fake.of(CREATE)[0][2]["json"]["callBackUrl"] == "https://relay.example/cb"
 
 
-def test_success_result_urls_read_from_result_json_string(env):
-    env.install(FakeKie(records=[rec("success", resultJson=json.dumps({"resultUrls": ["https://r/j.mp4"]}))]))
-    env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert env.downloads == ["https://r/j.mp4"]
+def test_timeout_option_is_the_run_deadline(env):
+    fake = env.install(Fake74())
+    env.provider().generate_video("x", output=env.tmp / "o.mp4", timeout=1200)
+    args = fake.of(CREATE)[0][2]["args"]
+    assert args[args.index("--timeout") + 1] == 1200
 
 
-def test_fail_state_raises_with_fail_message(env):
-    env.install(FakeKie(records=[rec("generating"), rec("fail", failCode="500", failMsg="content policy")]))
+def test_failed_task_raises_with_fail_message(env):
+    env.install(Fake74(run=fail_run("500", "content policy", task_id="t1", data={"state_raw": "fail"})))
     with pytest.raises(RuntimeError, match="failed: 500 content policy"):
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert env.downloads == []
+    assert not (env.tmp / "o.mp4").exists()
 
 
-def test_poll_times_out_at_deadline(env):
-    env.install(FakeKie(records=[rec("generating")] * 200))
+def test_deadline_reached_raises_timed_out(env):
+    env.install(Fake74(run={"state": "running", "task_id": "t1", "error": {"code": "timeout", "msg": "deadline"}}))
     with pytest.raises(RuntimeError, match="timed out after 900s"):
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert sum(env.sleeps) >= 900
 
 
 def test_default_deadline_is_at_least_900_seconds(env):
@@ -176,59 +153,83 @@ def test_default_deadline_is_at_least_900_seconds(env):
 
 
 @pytest.mark.parametrize("code", [402, 422, 429, 455])
-def test_http_200_with_error_body_code_raises(env, code):
-    fake = env.install(FakeKie(create=Resp({"code": code, "msg": "nope"}, 200)))
+def test_error_body_code_raises_kie_api_error(env, code):
+    fake = env.install(Fake74(run=fail_run(code, "nope")))
     with pytest.raises(env.module.KieAPIError, match=f"code {code}: nope") as err:
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
     assert err.value.code == code
-    assert len(fake.of(CREATE)) == 1 and not fake.of(RECORD)  # no blind retry of a paid call
+    assert len(fake.of(CREATE)) == 1  # one run call; Skill 74 never retries a paid createTask
 
 
-@pytest.mark.parametrize("status,body", [(401, {"code": 401, "msg": "bad key"}), (200, {"code": 403, "msg": "no"}),
-                                         (403, {})])
-def test_auth_failure_stops_after_one_attempt(env, status, body):
-    fake = env.install(FakeKie(create=Resp(body, status)))
+@pytest.mark.parametrize("code", [401, 403])
+def test_auth_failure_stops_after_one_attempt(env, code):
+    fake = env.install(Fake74(run=fail_run(code, "bad key")))
     with pytest.raises(env.module.KieAPIError, match="do not retry"):
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert len(fake.of(CREATE)) == 1 and env.sleeps == []
+    assert len(fake.of(CREATE)) == 1
 
 
-def test_record_info_body_error_code_is_not_treated_as_still_running(env):
-    env.install(FakeKie(records=[Resp({"code": 500, "msg": "server broke"})]))
-    with pytest.raises(env.module.KieAPIError, match="500"):
+def test_validation_failure_from_skill_74_is_an_error_before_any_file(env):
+    env.install(Fake74(run=fail_run("validation_failed", "input.prompt: longer than maxLength 100")))
+    with pytest.raises(env.module.KieAPIError, match="maxLength 100"):
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
 
 
-def test_record_info_429_is_retried(env):
-    env.install(FakeKie(records=[Resp({"code": 429, "msg": "slow"}),
-                                 rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
-    env.provider().generate_video("x", output=env.tmp / "o.mp4")
-    assert env.downloads == ["https://r/v.mp4"]
+def test_success_without_a_saved_file_is_an_error(env):
+    fake = Fake74()
+    fake.run = {"state": "success", "task_id": "t1", "saved_paths": [], "data": {"response": {"taskId": "z"}}}
+    env.install(lambda *a, **k: fake.run)
+    with pytest.raises(RuntimeError, match="returned no result file"):
+        env.provider().generate_video("x", output=env.tmp / "o.mp4")
 
 
-def test_image_to_video_uploads_then_creates_task_with_download_url(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+def test_tiny_or_undecodable_saved_file_is_rejected_and_output_untouched(env, monkeypatch):
+    out = env.tmp / "o.mp4"
+    out.write_bytes(b"existing-good-output")
+
+    def tiny(command, *args, **kw):
+        d = Path(args[args.index("--save-dir") + 1]) / "t.mp4"
+        d.write_bytes(b"x")
+        return {"state": "success", "task_id": "t", "saved_paths": [str(d)]}
+
+    env.install(tiny)
+    with pytest.raises(RuntimeError, match="too small"):
+        env.provider().generate_video("x", output=out)
+    assert out.read_bytes() == b"existing-good-output"
+
+    def undecodable(path):
+        raise RuntimeError("ffprobe could not decode video: bad")
+
+    monkeypatch.setattr(env.module.AIProvider, "_validate_downloaded_video", staticmethod(undecodable))
+    env.install(Fake74())
+    with pytest.raises(RuntimeError, match="ffprobe could not decode"):
+        env.provider().generate_video("x", output=out)
+    assert out.read_bytes() == b"existing-good-output"
+    assert not list(env.tmp.glob(".*.part"))
+
+
+def test_image_to_video_uploads_through_74_then_runs_with_the_download_url(env):
+    fake = env.install(Fake74())
     image = env.tmp / "pic.png"
     image.write_bytes(b"png-bytes")
     out = env.tmp / "i.mp4"
     result = env.provider().image_to_video(image, "pan left", 5, output=out, model="wan/3-0-video")
 
     (_, _, up), = fake.of(UPLOAD)
-    assert up["headers"] == {"Authorization": "Bearer test-only-key"}
-    assert up["data"]["uploadPath"] == "video-creator/inputs"
-    assert not up["data"]["uploadPath"].startswith("/") and not up["data"]["uploadPath"].endswith("/")
-    assert up["files"]["file"][0] == "pic.png" and up["files"]["file"][2] == "image/png"
+    assert up["args"] == ("--file", str(image), "--upload-path", "video-creator/inputs")
+    assert up["key"] == "test-only-key"
+    assert not up["args"][3].startswith("/") and not up["args"][3].endswith("/")
     (_, _, kw), = fake.of(CREATE)
     assert kw["json"]["model"] == "wan/3-0-video"
-    assert kw["json"]["input"] == {"prompt": "pan left", "duration": 5,
-                                   "first_frame_url": "https://tempfile.example/in.png"}
+    assert kw["json"]["input"] == {"prompt": "pan left", "duration": 5, "first_frame_url": URL}
     assert isinstance(kw["json"]["input"]["first_frame_url"], str)
     assert "image_urls" not in kw["json"]["input"]
+    assert [c[0] for c in fake.calls] == ["upload", "run"]  # upload first
     assert result == out
 
 
-def test_upload_error_body_code_raises_before_any_task(env):
-    fake = env.install(FakeKie(upload=Resp({"success": False, "code": 400, "msg": "bad path"})))
+def test_upload_error_raises_before_any_task(env):
+    fake = env.install(Fake74(upload=fail_run(400, "bad path")))
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     with pytest.raises(env.module.KieAPIError, match="400"):
@@ -236,8 +237,16 @@ def test_upload_error_body_code_raises_before_any_task(env):
     assert not fake.of(CREATE)
 
 
-def test_missing_local_image_fails_before_any_http(env):
-    fake = env.install(FakeKie())
+def test_upload_without_a_download_url_is_an_error(env):
+    env.install(Fake74(upload={"state": "success", "data": {}}))
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match="no download URL"):
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video")
+
+
+def test_missing_local_image_fails_before_any_call(env):
+    fake = env.install(Fake74())
     with pytest.raises(FileNotFoundError):
         env.provider().image_to_video(env.tmp / "absent.png", "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video")
     assert fake.calls == []
@@ -246,28 +255,28 @@ def test_missing_local_image_fails_before_any_http(env):
 def test_explicit_model_passes_through_unchanged_for_text_and_image(env, monkeypatch):
     monkeypatch.setattr(env.module, "select_kie_video_model",
                         lambda *a, **k: pytest.fail("selector must not run for an explicit model"))
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/a.mp4"]})] * 2))
+    fake = env.install(Fake74())
     env.provider().generate_video("x", output=env.tmp / "t.mp4", model="Some/Model-9.1", resolution="4k")
     image = env.tmp / "pic.jpg"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="Other/Model-2",
                                   image_field="image_url", image_field_type="string")
-    t2v, i2v = [c[2]["json"] for c in fake.of(CREATE)]
+    t2v, i2v_ = [c[2]["json"] for c in fake.of(CREATE)]
     assert t2v["model"] == "Some/Model-9.1" and t2v["input"]["resolution"] == "4k"
-    assert i2v["model"] == "Other/Model-2"
-    assert i2v["input"]["image_url"] == "https://tempfile.example/in.png"
+    assert i2v_["model"] == "Other/Model-2"
+    assert i2v_["input"]["image_url"] == URL
 
 
 def test_unsupported_resolution_for_registry_model_is_a_clear_error(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="4k.*not supported.*stub/model-x"):
         env.provider().generate_video("x", resolution="4k", output=env.tmp / "o.mp4")
     assert fake.calls == []
 
 
-def test_missing_skill_67_fails_with_actionable_error_and_no_http(env, monkeypatch):
+def test_missing_skill_67_fails_with_actionable_error_and_no_call(env, monkeypatch):
     monkeypatch.setattr(env.module, "_skills_dirs", lambda: [env.tmp / "empty"])
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(RuntimeError, match="67-kie-video.*not installed.*--model"):
         env.provider().generate_video("x", output=env.tmp / "o.mp4")
     assert fake.calls == []
@@ -275,7 +284,7 @@ def test_missing_skill_67_fails_with_actionable_error_and_no_http(env, monkeypat
 
 def test_missing_skill_67_still_allows_explicit_model(env, monkeypatch):
     monkeypatch.setattr(env.module, "_skills_dirs", lambda: [env.tmp / "empty"])
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
+    fake = env.install(Fake74())
     env.provider().generate_video("x", output=env.tmp / "o.mp4", model="Some/Model-9.1")
     assert fake.of(CREATE)[0][2]["json"]["model"] == "Some/Model-9.1"
 
@@ -292,11 +301,74 @@ def test_real_skill_67_selector_supplies_default_model():
         assert module.select_kie_video_model(task, 5) == sel.select(f"{task} 5 seconds")["selected_model_id"]
 
 
-def test_legacy_dead_endpoint_in_old_config_is_replaced():
+# ---- one KIE path: the real kie74() against a stub Skill 74 CLI ----
+
+STUB_CLI = """\
+import json, os, sys
+argv = sys.argv[1:]
+open(os.environ["STUB_LOG"], "w").write(json.dumps({"argv": argv, "key": os.environ.get("KIE_API_KEY")}))
+req = argv[argv.index("--request") + 1] if "--request" in argv else None
+if req:
+    open(os.environ["STUB_LOG"] + ".req", "w").write(open(req).read())
+print(json.dumps({"state": "success", "data": {"download_url": "https://x/y.png"}}))
+"""
+
+
+def stub_74(tmp_path):
+    root = tmp_path / "skills" / "74-kie-live-adapter" / "scripts"
+    root.mkdir(parents=True)
+    (root / "kie_live_adapter.py").write_text(STUB_CLI)
+    return tmp_path / "skills"
+
+
+def test_kie74_runs_the_cli_active_json_with_key_in_env_not_argv(monkeypatch, tmp_path):
     module = load_module()
-    ai = module.AIProvider("kieai", {"kieai": {"api_key": "k", "endpoint": "https://api.kie.ai/v1"}})
-    assert ai.endpoint == "https://api.kie.ai/api/v1"
-    assert module.AIProvider("kieai", {"kieai": {"api_key": "k"}}).endpoint == "https://api.kie.ai/api/v1"
+    monkeypatch.setattr(module, "_skills_dirs", lambda: [stub_74(tmp_path)])
+    log = tmp_path / "log.json"
+    monkeypatch.setenv("STUB_LOG", str(log))
+    res = module.kie74("run", "--save-dir", "/tmp/d", request={"model": "m", "input": {"prompt": "p"}},
+                       api_key="secret-key-value")
+    assert res["state"] == "success"
+    seen = json.loads(log.read_text())
+    assert seen["argv"][:4] == ["run", "--mode", "active", "--json"]
+    assert "--save-dir" in seen["argv"] and "secret-key-value" not in " ".join(seen["argv"])
+    assert seen["key"] == "secret-key-value"
+    assert json.loads(Path(str(log) + ".req").read_text()) == {"model": "m", "input": {"prompt": "p"}}
+
+
+def test_missing_skill_74_fails_clearly_with_no_fallback_client(env, monkeypatch):
+    monkeypatch.setattr(env.module, "_skills_dirs", lambda: [env.tmp / "empty"])
+    image = env.tmp / "pic.png"
+    image.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match=r"74-kie-live-adapter.*not installed.*no KIE client of its own"):
+        env.provider().generate_video("x", output=env.tmp / "o.mp4", model="Some/Model-9.1")
+    with pytest.raises(RuntimeError, match="74-kie-live-adapter.*not installed"):
+        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video")
+
+
+def test_kie74_without_json_output_is_a_clear_error(monkeypatch, tmp_path):
+    module = load_module()
+    root = tmp_path / "skills" / "74-kie-live-adapter" / "scripts"
+    root.mkdir(parents=True)
+    (root / "kie_live_adapter.py").write_text("import sys\nprint('boom', file=sys.stderr)\nsys.exit(3)\n")
+    monkeypatch.setattr(module, "_skills_dirs", lambda: [tmp_path / "skills"])
+    with pytest.raises(RuntimeError, match=r"returned no JSON \(exit 3\): boom"):
+        module.kie74("credits")
+
+
+def test_skill_25_kie_path_has_no_http_client_of_its_own():
+    source = (SKILL_ROOT / "scripts" / "ai_providers.py").read_text(encoding="utf-8")
+    for forbidden in ("api.kie.ai", "kieai.redpandaai", "recordInfo", "/jobs/createTask", "file-stream-upload"):
+        assert forbidden not in source, forbidden
+    module = load_module()
+    assert not hasattr(module, "KIE_API_BASE") and not hasattr(module, "KIE_UPLOAD_URL")
+    assert not hasattr(module.AIProvider, "_kie_call")
+
+
+def test_old_kieai_endpoint_config_is_ignored_not_used():
+    module = load_module()
+    ai = module.AIProvider("kieai", {"kieai": {"api_key": "k"}})
+    assert ai.endpoint is None
 
 
 def test_image_to_video_no_longer_raises_not_implemented(env):
@@ -334,7 +406,8 @@ def test_other_providers_reject_kie_only_model_option(provider, tmp_path):
 # models whose docs pin extra required inputs: supplied here so the happy path reaches HTTP
 EXTRA_FOR = {"kling-3.0/video": {"sound": False, "mode": "pro", "multi_shots": False, "multi_prompt": [],
                             "aspect_ratio": "16:9"},
-             "pixverse-v6/image-to-video": {"quality": "720p"}}
+             "pixverse-v6/image-to-video": {"quality": "720p"},
+             "runway": {"quality": "720p"}}
 
 
 EXPECTED_I2V_FIELDS = [
@@ -351,12 +424,17 @@ EXPECTED_I2V_FIELDS = [
     ("happyhorse-1-1/image-to-video", "image_urls", list),
     ("happyhorse/image-to-video", "image_urls", list),
     ("gemini-omni-video", "image_urls", list),
+    ("runway", "image_url", str),
+    ("veo-3-1", "image_urls", list),
+    ("veo3", "image_urls", list),
+    ("veo3_fast", "image_urls", list),
+    ("veo3_lite", "image_urls", list),
 ]
 
 
 @pytest.mark.parametrize("model,field,kind", EXPECTED_I2V_FIELDS)
 def test_each_mapped_model_sends_its_documented_image_field_and_type(env, model, field, kind):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     i2v(env, model, input_extra=EXTRA_FOR.get(model))
@@ -372,18 +450,25 @@ def test_mapping_table_has_exactly_the_documented_models():
     assert set(module.KIE_I2V_IMAGE_FIELD) == {m for m, _, _ in EXPECTED_I2V_FIELDS}
 
 
-@pytest.mark.parametrize("model", ["runway", "veo3", "veo3_fast", "veo3_lite"])
-def test_dedicated_api_models_fail_clearly_before_any_http(env, model):
-    fake = env.install(FakeKie())
-    image = env.tmp / "pic.png"
-    image.write_bytes(b"x")
-    with pytest.raises(RuntimeError, match=f"'{model}' uses a dedicated KIE API"):
-        env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model=model)
-    assert fake.calls == []
+@pytest.mark.parametrize("model", ["runway", "veo3", "veo3_fast", "veo3_lite", "veo-3-1"])
+def test_runway_and_veo_models_are_routed_through_skill_74_not_refused(env, model):
+    fake = env.install(Fake74())
+    out = i2v(env, model, input_extra=EXTRA_FOR.get(model))
+    assert out == env.tmp / "i.mp4"
+    assert [c[0] for c in fake.calls] == ["upload", "run"]
+    assert fake.of(CREATE)[0][2]["json"]["model"] == model  # Skill 74 picks the path the schema declares
+
+
+@pytest.mark.parametrize("model", ["runway", "veo3_fast"])
+def test_runway_and_veo_text_to_video_goes_through_skill_74(env, model):
+    fake = env.install(Fake74())
+    env.provider().generate_video("x", duration=6 if model != "runway" else 5, resolution="720p",
+                                  output=env.tmp / "t.mp4", model=model, input_extra=EXTRA_FOR.get(model))
+    assert fake.of(CREATE)[0][2]["json"]["model"] == model
 
 
 def test_unknown_model_error_names_model_and_points_to_image_field_flag(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     with pytest.raises(RuntimeError, match=r"'brand/new-model'.*not established.*--image-field"):
@@ -420,7 +505,7 @@ def test_cli_image_field_flag_is_forwarded_and_unblocks_unknown_model(monkeypatc
 
 
 def test_cli_image_field_reaches_payload_end_to_end(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="brand/new-model",
@@ -429,7 +514,7 @@ def test_cli_image_field_reaches_payload_end_to_end(env):
 
 
 def test_default_selector_model_without_established_field_fails_before_any_http(env):
-    fake = env.install(FakeKie())  # stub Skill 67 selects stub/model-x, whose field is unknown
+    fake = env.install(Fake74())  # stub Skill 67 selects stub/model-x, whose field is unknown
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     with pytest.raises(RuntimeError, match="stub/model-x.*not established"):
@@ -438,7 +523,7 @@ def test_default_selector_model_without_established_field_fails_before_any_http(
 
 
 def test_image_field_override_wins_over_model_mapping(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     env.provider().image_to_video(image, "m", 5, output=env.tmp / "i.mp4", model="wan/3-0-video",
@@ -454,7 +539,7 @@ def i2v(env, model, **kw):
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")
     return env.provider().image_to_video(image, kw.pop("prompt", "m"),
-                                         kw.pop("duration", 4 if model == "gemini-omni-video" else 5),
+                                         kw.pop("duration", 4 if model.startswith(("gemini", "veo")) else 5),
                                          output=env.tmp / "i.mp4", model=model, **kw)
 
 
@@ -472,6 +557,7 @@ DURATION_OK = [
     ("pixverse-v6/image-to-video", 1, 1),
     ("happyhorse-1-1/image-to-video", 3, 3), ("happyhorse/image-to-video", 15, 15),
     ("gemini-omni-video", 8, "8"),
+    ("runway", 5, 5), ("runway", "10", 10), ("veo-3-1", 8, 8), ("veo3", "6", 6), ("veo3_lite", 4.0, 4),
 ]
 # (model, bad duration, text the error must contain)
 DURATION_BAD = [
@@ -484,6 +570,7 @@ DURATION_BAD = [
     ("happyhorse-1-1/image-to-video", 2, "3 to 15"), ("happyhorse-1-1/image-to-video", 5.5, "integer 3 to 15"),
     ("happyhorse/image-to-video", 2.5, "3 to 15"),
     ("gemini-omni-video", 5, "one of 4, 6, 8, 10"),
+    ("runway", 11, "5 to 10"), ("veo-3-1", 5, "one of 4, 6, 8"), ("veo3_fast", 10, "one of 4, 6, 8"),
 ]
 # (model, resolution given, expected sent key, expected sent value)
 RES_OK = [
@@ -497,12 +584,13 @@ RES_OK = [
     ("happyhorse-1-1/image-to-video", "1080P", "resolution", "1080p"),
     ("happyhorse/image-to-video", "720P", "resolution", "720p"),
     ("gemini-omni-video", "4K", "resolution", "4k"),
+    ("runway", "1080P", "quality", "1080p"), ("veo3", "4K", "resolution", "4k"),
 ]
 
 
 @pytest.mark.parametrize("model,given,expected", DURATION_OK)
 def test_duration_is_coerced_to_documented_type(env, model, given, expected):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, model, duration=given, input_extra=EXTRA_FOR.get(model))
     sent = sent_input(fake)["duration"]
     assert sent == expected and type(sent) is type(expected)
@@ -510,7 +598,7 @@ def test_duration_is_coerced_to_documented_type(env, model, given, expected):
 
 @pytest.mark.parametrize("model,given,allowed", DURATION_BAD)
 def test_invalid_duration_fails_before_any_http_naming_allowed_values(env, model, given, allowed):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match=f"{model}.*duration.*{allowed}"):
         i2v(env, model, duration=given, input_extra=EXTRA_FOR.get(model))
     assert fake.calls == []
@@ -518,7 +606,7 @@ def test_invalid_duration_fails_before_any_http_naming_allowed_values(env, model
 
 @pytest.mark.parametrize("model,given,key,expected", RES_OK)
 def test_resolution_is_mapped_to_the_documented_enum_and_key(env, model, given, key, expected):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, model, resolution=given)
     inp = sent_input(fake)
     assert inp[key] == expected
@@ -532,9 +620,10 @@ def test_resolution_is_mapped_to_the_documented_enum_and_key(env, model, given, 
     ("kling-3.0-omni/image-to-video", "480p", "720p, 1080p, 4k"),
     ("pixverse-v6/image-to-video", "4k", "360p, 540p, 720p, 1080p"),
     ("happyhorse-1-1/image-to-video", "4k", "720p, 1080p"), ("happyhorse/image-to-video", "480p", "720p, 1080p"),
-    ("gemini-omni-video", "480p", "720p, 1080p, 4k"), ("bytedance/seedance-2-5", "4k", "480p, 720p, 1080p")])
+    ("gemini-omni-video", "480p", "720p, 1080p, 4k"), ("bytedance/seedance-2-5", "4k", "480p, 720p, 1080p"),
+    ("runway", "4k", "720p, 1080p"), ("veo3_fast", "480p", "720p, 1080p, 4k")])
 def test_invalid_resolution_fails_before_any_http_naming_allowed_values(env, model, given, allowed):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match=f"{model}.*{allowed}"):
         i2v(env, model, resolution=given)
     assert fake.calls == []
@@ -544,7 +633,7 @@ def test_invalid_resolution_fails_before_any_http_naming_allowed_values(env, mod
     ("wan/3-0-video", "ADAPTIVE", "adaptive", "5:4"), ("bytedance/seedance-2-5", "21:9", "21:9", "2:1"),
     ("kling-3.0-omni/image-to-video", "AUTO", "auto", "4:3"), ("gemini-omni-video", "9:16", "9:16", "1:1")])
 def test_aspect_ratio_enum(env, model, given, expected, bad):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, model, aspect_ratio=given)
     assert sent_input(fake)["aspect_ratio"] == expected
     with pytest.raises(ValueError, match=f"aspect_ratio.*{bad}"):
@@ -552,7 +641,7 @@ def test_aspect_ratio_enum(env, model, given, expected, bad):
 
 
 def test_seed_must_be_an_in_range_integer_and_string_digits_are_coerced(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, "wan/3-0-video", seed="42")
     assert sent_input(fake)["seed"] == 42
     for bad in (-1, 2147483648, "abc", True):
@@ -561,7 +650,7 @@ def test_seed_must_be_an_in_range_integer_and_string_digits_are_coerced(env):
 
 
 def test_kling_30_requires_documented_inputs_before_http_and_accepts_them_via_input_extra(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match=r"kling-3.0/video requires .*mode.*input_extra.*--input-extra"):
         i2v(env, "kling-3.0/video")
     assert fake.calls == []
@@ -573,7 +662,7 @@ def test_kling_30_requires_documented_inputs_before_http_and_accepts_them_via_in
 
 
 def test_kling_30_mode_enum_checked_in_input_extra(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="mode.*std, pro, 4K"):
         i2v(env, "kling-3.0/video",
             input_extra={"sound": True, "mode": "ultra", "multi_shots": False, "multi_prompt": [],
@@ -582,7 +671,7 @@ def test_kling_30_mode_enum_checked_in_input_extra(env):
 
 
 def test_pixverse_requires_quality_and_resolution_option_fills_it(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="pixverse-v6/image-to-video requires quality"):
         i2v(env, "pixverse-v6/image-to-video")
     assert fake.calls == []
@@ -591,14 +680,14 @@ def test_pixverse_requires_quality_and_resolution_option_fills_it(env):
 
 
 def test_unmapped_explicit_model_input_passes_through_unchanged(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/v.mp4"]})]))
+    fake = env.install(Fake74())
     env.provider().generate_video("x", duration=7, output=env.tmp / "o.mp4", model="Some/Model-9.1",
                                   resolution="4k", input_extra={"weird": [1]})
     assert sent_input(fake) == {"prompt": "x", "duration": 7, "resolution": "4k", "weird": [1]}
 
 
 def test_text_to_video_path_validates_mapped_model_before_http(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="wan/3-0-video.*duration.*2 to 30 or -1"):
         env.provider().generate_video("x", duration=99, output=env.tmp / "o.mp4", model="wan/3-0-video")
     with pytest.raises(ValueError, match="resolution.*480P, 720P, 1080P"):
@@ -615,7 +704,7 @@ def test_every_mapped_image_model_has_an_input_spec_with_a_duration_rule():
 # ---- explicit image field type ----
 
 def test_image_field_without_type_is_rejected_for_unmapped_model_before_http(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match=r"--image-field-type string\|array.*never guessed"):
         i2v(env, "brand/new-model", image_field="start_images")  # trailing s is NOT used to guess
     assert fake.calls == []
@@ -624,13 +713,13 @@ def test_image_field_without_type_is_rejected_for_unmapped_model_before_http(env
 @pytest.mark.parametrize("kind,expected", [("string", "https://tempfile.example/in.png"),
                                            ("array", ["https://tempfile.example/in.png"])])
 def test_image_field_type_is_honoured_regardless_of_the_name(env, kind, expected):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, "brand/new-model", image_field="start_images", image_field_type=kind)
     assert sent_input(fake)["start_images"] == expected
 
 
 def test_image_field_matching_the_mapped_key_needs_no_type(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, "wan/3-0-video", image_field="first_frame_url")
     assert sent_input(fake)["first_frame_url"] == "https://tempfile.example/in.png"
 
@@ -713,7 +802,7 @@ def test_other_providers_reject_input_extra(tmp_path):
 
 @pytest.mark.parametrize("seed,ok", [(0, True), (2147483647, True), (-1, False), (2147483648, False)])
 def test_gemini_seed_range_is_enforced(env, seed, ok):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     if ok:
         i2v(env, "gemini-omni-video", seed=seed)
         assert sent_input(fake)["seed"] == seed
@@ -724,7 +813,7 @@ def test_gemini_seed_range_is_enforced(env, seed, ok):
 
 
 def test_happyhorse_11_duration_is_integer_valued(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="happyhorse-1-1/image-to-video.*duration=5.5"):
         i2v(env, "happyhorse-1-1/image-to-video", duration=5.5)
     assert fake.calls == []
@@ -733,21 +822,21 @@ def test_happyhorse_11_duration_is_integer_valued(env):
 
 
 def test_pixverse_conflicting_resolution_and_quality_is_rejected_before_http(env):
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     with pytest.raises(ValueError, match="uses 'quality' instead of 'resolution'"):
         i2v(env, "pixverse-v6/image-to-video", resolution="1080p", input_extra={"quality": "540p"})
     assert fake.calls == []
 
 
 def test_pixverse_same_resolution_and_quality_sends_only_quality(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     i2v(env, "pixverse-v6/image-to-video", resolution="720P", input_extra={"quality": "720p"})
     inp = sent_input(fake)
     assert inp["quality"] == "720p" and "resolution" not in inp
 
 
 def test_pixverse_text_to_video_path_also_renames_resolution(env):
-    fake = env.install(FakeKie(records=[rec("success", response={"resultUrls": ["https://r/i.mp4"]})]))
+    fake = env.install(Fake74())
     env.provider().generate_video("x", duration=5, resolution="1080p", output=env.tmp / "o.mp4",
                                   model="pixverse-v6/image-to-video")
     inp = sent_input(fake)
@@ -760,7 +849,7 @@ def test_image_to_video_does_not_int_cast_duration_before_per_model_validation(e
     spec = importlib.util.spec_from_file_location("skill25_i2v_cli6", SKILL_ROOT / "scripts" / "image_to_video.py")
     cli = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cli)
-    fake = env.install(FakeKie())
+    fake = env.install(Fake74())
     monkeypatch.setattr(cli, "AIProvider", lambda name, cfg: env.provider())
     image = env.tmp / "pic.png"
     image.write_bytes(b"x")

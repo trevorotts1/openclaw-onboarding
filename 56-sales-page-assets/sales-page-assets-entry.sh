@@ -14,7 +14,11 @@
 #                    A tampered prover / structure ledger dies here.
 #   4. BYPASS-SCAN — refuse a run whose working files hand-roll GHL REST calls,
 #                    ImgBB re-hosting, a raw image createTask, or a mail sender
-#                    instead of delegating to Skill 6 / Skill 47.
+#                    instead of delegating to Skill 6 / Skill 66 + Skill 74.
+#                    Skill 74 (74-kie-live-adapter) is the ONE approved KIE path: its own
+#                    result files under <RUN_DIR>/receipts/kie74/ are allow-listed (each is
+#                    re-checked by scripts/kie74_receipt.py --check); anything else that
+#                    names the createTask route or a KIE client script is a bypass.
 #   5. NONCE       — write a run-scoped 0600 front-door nonce; export SPA_RUN_NONCE.
 #   6. ORCHESTRATE — run_sales_page_assets.py with the nonce (the no-skip state
 #                    machine); it emits the signed PROCESS-CERTIFICATE only on
@@ -24,6 +28,7 @@
 #   bash sales-page-assets-entry.sh --run-dir <RUN_DIR>
 #   bash sales-page-assets-entry.sh --self-test
 #   bash sales-page-assets-entry.sh --check-version   (version gate only)
+#   bash sales-page-assets-entry.sh --scan-only --run-dir <RUN_DIR>   (deps + bypass-scan only)
 #   bash sales-page-assets-entry.sh --write-pin   (mint the enforcement-core pin)
 # Exit: 0 = certified / self-test green; nonzero = a fail-closed guard tripped.
 # ==============================================================================
@@ -58,10 +63,12 @@ PINNED_FILES=(
   # the P-IMAGES/-MEDIA/-DOCS/-DELIVER/-HANDOFF seams call require()/validate_if_present(),
   # so an unpinned copy could be swapped for a permissive one without tripping the pin.
   "scripts/delegation_receipt.py"
+  # Skill 74 evidence writer + allow-list check used by the bypass scan below.
+  "scripts/kie74_receipt.py"
 )
 
 # Forbidden patterns in a run's working files — a hand-rolled GHL / ImgBB / image / sender bypass.
-BYPASS_PATTERNS='services\.leadconnectorhq\.com|rest\.gohighlevel\.com|api\.gohighlevel\.com|api\.imgbb\.com|api\.anthropic\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|api\.kie\.ai.*createtask|createtask.*api\.kie\.ai'
+BYPASS_PATTERNS='services\.leadconnectorhq\.com|rest\.gohighlevel\.com|api\.gohighlevel\.com|api\.imgbb\.com|api\.anthropic\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|jobs/createtask|api\.kie\.ai|kie_generate\.py|kie_image\.py'
 
 die() { printf 'ABORT [%s]: %s\n' "$1" "$2" >&2; exit 1; }
 
@@ -89,11 +96,9 @@ step_version() {
   local vf="$SKILL_DIR/skill-version.txt"
   [ -s "$vf" ] || die "VERSION" "skill-version.txt missing/empty"
   local v; v="$(tr -d '[:space:]' < "$vf")"
-  # Accept the shipped form vMAJOR.MINOR.PATCH (a bare MAJOR.MINOR.PATCH is tolerated too).
-  case "$v" in
-    v"$EXPECTED_MAJOR".[0-9]*.[0-9]*|"$EXPECTED_MAJOR".[0-9]*.[0-9]*) : ;;
-    *) die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)" ;;
-  esac
+  # Accept the shipped form vMAJOR.MINOR.PATCH (a bare MAJOR.MINOR.PATCH is tolerated too); anchored.
+  [[ "$v" =~ ^v?${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] \
+    || die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x (vMAJOR.MINOR.PATCH)"
   # Lockstep: SKILL.md frontmatter version must equal skill-version.txt.
   local fm; fm="$(awk '$0=="---"{f++; if(f>=2) exit; next} f==1 && /^version:/{sub(/^version:[ \t]*/,""); print; exit}' "$SKILL_DIR/SKILL.md" | tr -d '[:space:]"'"'"'')"
   [ -n "$fm" ] || die "VERSION" "SKILL.md has no top-level frontmatter version: field"
@@ -112,12 +117,21 @@ step_hashpin() {
 step_bypass_scan() {
   local rd="$1"
   [ -d "$rd" ] || return 0
-  local hits
-  if hits="$(grep -rIl -E -i "$BYPASS_PATTERNS" "$rd" 2>/dev/null)"; then
-    if [ -n "$hits" ]; then
-      printf 'BYPASS-SCAN hits:\n%s\n' "$hits" >&2
-      die "BYPASS-SCAN" "run working files hand-roll GHL REST / ImgBB / a raw image createTask / a mail sender / an Anthropic call. All GHL build+media go through Skill 6; all image gen goes through Skill 47 or the client's image provider. Delete the hand-rolled path."
+  local hits kept="" f
+  hits="$(grep -rIl -E -i "$BYPASS_PATTERNS" "$rd" 2>/dev/null || true)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    # Allow-list: only Skill 74's own result files, directly inside receipts/kie74/, and only
+    # when kie74_receipt.py --check proves each is a real adapter result (no token, right adapter).
+    if [ "$(dirname "$f")" = "$rd/receipts/kie74" ] && [[ "$f" == *.json ]] \
+       && "$PY" "$SCRIPTS_DIR/kie74_receipt.py" --check "$f" >/dev/null 2>&1; then
+      continue
     fi
+    kept+="$f"$'\n'
+  done <<< "$hits"
+  if [ -n "$kept" ]; then
+    printf 'BYPASS-SCAN hits:\n%s' "$kept" >&2
+    die "BYPASS-SCAN" "run working files hand-roll GHL REST / ImgBB / a raw image createTask / a KIE client script / a mail sender / an Anthropic call. All GHL build+media go through Skill 6; all KIE image and video generation goes through Skill 66 (policy) then Skill 74 (transport), or Skill 63 when the client selected Agnes. Delete the hand-rolled path."
   fi
 }
 
@@ -187,6 +201,12 @@ self_test() {
       echo "  [FAIL] $p.py --self-test"; sed 's/^/         /' "/tmp/spa_$p.log"; fails=$((fails+1))
     fi
   done
+  if "$PY" "$SCRIPTS_DIR/kie74_receipt.py" --self-test >/tmp/spa_kie74.log 2>&1 \
+     && "$PY" "$SCRIPTS_DIR/test_sp_bypass_scan.py" >>/tmp/spa_kie74.log 2>&1; then
+    echo "  [PASS] kie74_receipt.py --self-test + test_sp_bypass_scan.py (Skill 74 is the allow-listed KIE path)"
+  else
+    echo "  [FAIL] kie74_receipt / bypass-scan allow-list"; sed 's/^/         /' /tmp/spa_kie74.log; fails=$((fails+1))
+  fi
   if "$PY" "$SKILL_DIR/run_sales_page_assets.py" --self-test >/tmp/spa_orch.log 2>&1; then
     echo "  [PASS] run_sales_page_assets.py --self-test"
   else
@@ -218,6 +238,8 @@ main() {
       --self-test) mode="selftest"; shift ;;
       --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
+      --scan-only) mode="scanonly"; shift ;;
+      --version-only) mode="versiononly"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "USAGE" "unknown arg: $1" ;;
     esac
@@ -226,6 +248,10 @@ main() {
     checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
     writepin) write_pin ;;
+    versiononly) step_version; echo "VERSION ok" ;;
+    scanonly)
+      [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "--scan-only needs an existing --run-dir"
+      rd="$(cd "$rd" && pwd)"; step_deps; step_bypass_scan "$rd"; echo "BYPASS-SCAN clean: $rd" ;;
     *) run_pipeline "$rd" ;;
   esac
 }

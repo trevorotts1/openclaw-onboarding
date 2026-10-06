@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.1.1
+version: 1.2.3
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -26,7 +26,7 @@ If the owner explicitly asks for this BlackCEO Signature Page skill, use it even
 - **Primary department:** Web Development.
 - **Primary role:** Landing Page Specialist.
 - **Copy collaboration:** Marketing / Conversion Copywriter when the current execution assigns copy work there; this skill's writing references remain the page-specific authority.
-- **Images:** delegate execution to **Skill 66 `kie-image`** when Kie.ai is selected, or **Skill 63 `agnes-image`** when Agnes is explicitly selected/available. Do not hand-roll provider calls here.
+- **Images and video:** every generation request routes policy owner (**Skill 66 `kie-image`** for images, **Skill 67 `kie-video`** for video) then transport (**Skill 74 `kie-live-adapter`**), described in `references/kie-generation-route.md`; **Skill 63 `agnes-image`** when Agnes is explicitly selected/available. Do not hand-roll provider calls here.
 - **GHL delivery:** delegate media/page build to **Skill 6 `ghl-install-pages`**, the existing GHL delivery rail.
 - **Vercel:** use **Skill 8 `vercel-setup`** when that hosting target is selected and configured.
 - **Browser automation:** use the repo's managed browser path / Skill 3 conventions when graphical browser work is required.
@@ -44,6 +44,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 - Cinematic/directorial direction: `references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md`
 - Visual-artist direction: `references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md`
 - Visual companion: `assets/BlackCEO-Master-Visual-Reference-Guide.png` — an image-style menu only, never a page-layout or page-color reference
+- Image and video generation route (KIE): `references/kie-generation-route.md` (policy then transport; read it for any generation stage)
 - Artifact and QC contracts: `references/artifact-contracts.md`, `references/qc-contract.md`, `references/stage-contract.json`, `references/html-qc-rubric.md`
 - Swarm plan: `references/swarm-plan.md`
 
@@ -102,9 +103,8 @@ Read only what the stage contract's `reads` field names for image stages (the v5
 Non-negotiables:
 
 - one image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file;
-- production prompts: **5,000–20,000 meaningful characters** under the BlackCEO house rule;
-- default working target: **8,000–14,000 useful characters** because the current referenced runtime compatibility ceiling is 19,000;
-- never silently truncate a prompt or disable validation;
+- production prompt length follows the KIE prompt budget (`07-kie-setup/references/kie-common-rules.md` rule 12): 95 to 100 percent of the chosen model's character maximum, never below 80 percent, read from Skill 74 `prompt-budget` and never from memory. This supersedes the older 5,000-20,000 house band, the 8,000-14,000 working target and the 19,000 compatibility ceiling;
+- never silently truncate a prompt or disable validation; fix a budget failure by adding or cutting the exact characters `prompt-budget --check` reports;
 - in `SECRET_SAUCE_ONLY`, the prompt's color-grade element starts with the Signature Grade Block from `assets/brand/signature-grade-block.txt`, verbatim (`scripts/validate_prompt.py --sauce-only` enforces it);
 - use camera, lens, aperture/depth, composition, subject placement, lighting, posture/expression, fashion, skin/hair, color-grade, typography-as-image, and negative-space intelligence where applicable;
 - preserve real-person identity and recurring-character continuity;
@@ -112,15 +112,17 @@ Non-negotiables:
 - keep one page-level Art Direction coherent while varying shot/view scale, ratio, environment, posture, scene type, and intensity;
 - never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 
-Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map.
+Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRET_SAUCE_ONLY` pages; it checks anatomy, placeholders, padding and the grade block) and `scripts/validate_image_manifest.py` (with `--inventory` and `--measure`) on the image map. The length budget is decided by Skill 74 `prompt-budget --check` for the chosen model (rule 12); if the validator's own length check ever disagrees with it, the budget wins.
 
-### Image engine routing
+### Image and video engine routing
 
-Ask whether the owner/client has an explicit image-engine preference when generation is in scope.
+Ask whether the owner/client has an explicit image-engine preference when generation is in scope. Record the answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
-- If **Kie.ai** is selected or no preference is given and Kie is available, hand the final prompt/payload requirements to **Skill 66 `kie-image`**, which owns current Kie model selection, payload validation, dispatch, and image QC. Do not hardcode a forever-model here. Skill 66 currently prefers the latest repo-approved GPT Image route when compatible.
+- If **Kie.ai** is selected or no preference is given and Kie is available, every image request follows `references/kie-generation-route.md`: **Skill 66 `kie-image`** (policy: model selection, ratio rules, image QC), then **Skill 74 `kie-live-adapter`** (transport: validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, wait, save immediately). Video requests use **Skill 67 `kie-video`** the same way. Never hardcode a model id, price, endpoint or rate figure in this skill; those come from the policy owner, `price`, and `kie-common-rules.md`.
+- The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13; GPT Image 2.5 Sunburst today). The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
 - If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
+- `stage_gate.py close image-generation-qc` requires the receipt's `transport` block (Skill 74, mode active, task ids, model ids, preflight and budget results, N43 ratios); a hand-rolled createTask has no such receipt and cannot close the stage.
 
 Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
 
