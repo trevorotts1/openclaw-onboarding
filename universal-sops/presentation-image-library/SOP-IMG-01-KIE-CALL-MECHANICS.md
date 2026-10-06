@@ -38,7 +38,7 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 
 **Skill 74 is never part of a deck run.** `74-kie-live-adapter` is mechanics for the other KIE skills; none of its files (`kie_live_adapter.py`, `kie-model-registry.json`, its shell scripts, its receipts) is ever copied into, imported from, or run inside a deck run directory. The canonical render guard blocks any `*.py` in the run directory that mentions `createTask`, `recordInfo` or `api.kie.ai`, and a copy of the adapter does (`AF-CANONICAL-RENDER-BYPASS`). Use the adapter only from the Skill 74 folder, and only for read-only checks such as `prompt-budget`, `price` and `latest-family`.
 
-**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai GPT Image 2.5 Sunburst like every other slide - Mode A (text-to-image) when no logo is composited, Mode B (image-to-image) when the locked logo is composited. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. The only Pillow/PIL step permitted anywhere in the pipeline is the LOCKED LOGO image composite (SOP-IMG-05) - never a slide canvas, never any text.
+**Pure-typography hook slides are NOT an exception to any of the above.** A PURE_TYPE_HOOK slide (a hook line set large over a cream surface or low-opacity wash, per SOP-DESIGN-02) is rendered by kie.ai GPT Image 2.5 Sunburst like every other slide - Mode A (text-to-image) on the canonical command and whenever no URL logo is in use, Mode B (image-to-image) only in URL logo mode. kie.ai bakes the cream/wash AND the verbatim hook type into ONE composed image. "Pure typography" describes the visual (type carries the slide), never the render path. Rendering a hook slide locally because it "has no photo" is the exact `AF-LOCAL-CANVAS` defect; every hook slide carries a real kie.ai `taskId` and a PNG above the 51,200-byte kie-bake floor. No Pillow/PIL step is permitted on a slide: the only logo step in the pipeline is `assemble_pptx` placing the local logo file at assembly (SOP-IMG-05 Rule A mechanism 2), and Pillow never writes or edits a slide PNG (SOP-IMG-05 Rule C) - never a slide canvas, never any text.
 
 **MANDATORY ENGLISH / LATIN-ONLY PIN - every image prompt carries this verbatim (every slide, every mode):**
 
@@ -172,9 +172,9 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 ---
 
-## 5. MODE B - IMAGE-TO-IMAGE (the default; logo + portrait + optional style frame)
+## 5. MODE B - IMAGE-TO-IMAGE (URL logo + portrait + optional style frame; the logo here is URL image-to-image mode only)
 
-**Use when (the default for nearly every slide):** a `LOGO_URL` exists, OR the slide is A5 (founder portrait), OR a style-reference frame is being passed. This is how "logo on every slide" is achieved.
+**Use when:** a URL logo is in use (`LOGO_URL` passed as a reference; URL image-to-image mode only), OR the slide is A5 (founder portrait), OR a style-reference frame is being passed. This is how "logo on every slide" is achieved in URL mode; on the canonical command no logo reference is sent and the logo is placed at assembly (SOP-IMG-05 Rule A).
 
 **curl (logo on a content slide):**
 ```bash
@@ -269,7 +269,7 @@ Check 9 is the closing of the reference-case logo-mutation loop: passing the log
 
 | Condition | First action | If unresolved |
 |---|---|---|
-| `LOGO_URL` 404s / needs auth / not https (check 6) | Slide Submitter halts the wave. Notify Brand Steward: re-host the logo to a public https URL (client GHL media library or Drive) and update `LOGO_URL`. Do NOT fall back to T2I to "get unblocked" - that reintroduces logo mutation. | Director; then operator |
+| (URL mode) `LOGO_URL` 404s / needs auth / not https (check 6) | Slide Submitter halts the wave. Notify Brand Steward: re-host the logo to a public https URL (client GHL media library or Drive) and update `LOGO_URL`. Do NOT fall back to T2I to "get unblocked" - that reintroduces logo mutation. | Director; then operator |
 | A slide was submitted T2I when it should have been I2I (check 1) | Image QC fails the slide; Slide Submitter re-submits that slide as I2I with the logo reference. Counts against the per-slide 3-attempt cap. | After 3 loops: Director |
 | Rendered logo differs from locked asset on ≥1 slide (check 9) | Re-submit the affected slides via I2I with the locked `LOGO_URL` and the "place, do not redraw" sentence. If the logo still garbles after 2 attempts, escalate to the Director, who may switch the deck to a local logo file placed at assembly (SOP-IMG-05 Rule A mechanism 2); never edit a PNG and never write `pptx_text_overlays.json` (AF-OVERLAY-DELIVERED, Decision 5C). | Director |
 | Agent claims it used a Kie "image-to-text" endpoint (check 7) | Reject the report. The analysis must be redone as an agent multimodal read. | Director |

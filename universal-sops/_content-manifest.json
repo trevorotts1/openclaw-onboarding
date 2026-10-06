@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T07:57:07Z",
+  "generated_at": "2026-10-06T07:57:10Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -281,8 +281,8 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "48cb2e56e3def87359c9f9095fa108a21c5f0a332c753151316d0000369c1391",
-      "bytes": 32956
+      "sha256": "a7a599052cc69220a2095b48d665f0960335dd923d3665aa5b6c2b495c64584c",
+      "bytes": 33301
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
       "sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
@@ -297,12 +297,12 @@
       "bytes": 12168
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "37fc1cd8869a7f910262560529372d5ad39627484bdd4cd6f0e92319069609a4",
-      "bytes": 142826
+      "sha256": "c2f2394b11739a532a5d197bff8361a2223a7a17c4d122504c92adf81996b1cd",
+      "bytes": 142915
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "4e69c0d4386fb6a68ea6a0b3ae1d0bd654dce3f45d6bd4b12b68c691e1490799",
-      "bytes": 201402
+      "sha256": "5e97dd55e9adef18c7519202115fb8bf6af9c7ff378997fafaaa9c95b15cc1e7",
+      "bytes": 201524
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",

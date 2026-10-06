@@ -1,7 +1,7 @@
 {
   "catalog_version": "1.3.2",
   "updated": "2026-10-06",
-  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs: deepseek-flash $0.15/$0.60 per M + $0.003 cache-read (live openclaw.json models.providers.deepseek, 2026-09-11; supersedes R12 deepseek-v4-flash $0.22/$0.66 peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, gpt-image-2.5 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
+  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs: deepseek-flash $0.15/$0.60 per M + $0.003 cache-read (live openclaw.json models.providers.deepseek, 2026-09-11; supersedes R12 deepseek-v4-flash $0.22/$0.66 peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, GPT Image 2.5 Sunburst 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
   "compat": {
     "legacy_aliases": {
       "deepseek-v4-flash": "deepseek-flash"
@@ -19,7 +19,7 @@
       "unit_costs": {
         "per_image_usd": 0.05,
         "status": "priced",
-        "basis": "R12: gpt-image-2.5 2K ~= $0.05 per image (Kie)"
+        "basis": "R12: GPT Image 2.5 Sunburst 2K ~= $0.05 per image (Kie)"
       },
       "served_ids": {
         "kie": "gpt-image-2-5-sunburst-text-to-image"
@@ -35,7 +35,7 @@
       "unit_costs": {
         "per_image_usd": 0.05,
         "status": "priced",
-        "basis": "R12: gpt-image-2.5 2K ~= $0.05 per image (Kie)"
+        "basis": "R12: GPT Image 2.5 Sunburst 2K ~= $0.05 per image (Kie)"
       },
       "served_ids": {
         "kie": "gpt-image-2-5-sunburst-image-to-image"
@@ -47,11 +47,11 @@
       "family": "gpt-image",
       "prefer_latest": false,
       "verified_live": "2026-06-16",
-      "note": "Prior healthy gpt-image-2.5 alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves — see 'retired'.",
+      "note": "Prior healthy GPT Image 2.5 Sunburst alias (FIX 7 fallback column). Retired literal nano-banana-2 never resolves — see 'retired'.",
       "unit_costs": {
         "per_image_usd": 0.05,
         "status": "priced",
-        "basis": "R12: gpt-image-2.5 2K ~= $0.05 per image (Kie)"
+        "basis": "R12: GPT Image 2.5 Sunburst 2K ~= $0.05 per image (Kie)"
       },
       "served_ids": {
         "kie": "gpt-image-2-5-sunburst-text-to-image"
@@ -123,6 +123,6 @@
     }
   },
   "retired": {
-    "nano-banana-2": "Retired fallback (FIX 13). Resolving any alias to a retired ID is a hard error; image.fallback now names the prior healthy gpt-image-2.5 alias."
+    "nano-banana-2": "Retired fallback (FIX 13). Resolving any alias to a retired ID is a hard error; image.fallback now names the prior healthy GPT Image 2.5 Sunburst alias."
   }
 }

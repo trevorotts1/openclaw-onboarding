@@ -316,7 +316,7 @@ All image generation MUST route through the canonical module `build_deck.py`. A 
 
 ## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
 
-A slide image MUST be generated via kie.ai GPT-Image-2.5. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+A slide image MUST be generated via kie.ai GPT Image 2.5 Sunburst. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
 
 ---
 

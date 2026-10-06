@@ -6,12 +6,14 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 1.5.2
+**Version:** 1.5.3
 **Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
 ---
+
+> **LOGO MECHANISM NOTE (binding; SOP-IMG-05 Rule A, the renderer is the authority).** `build_deck.py` sends your prompt verbatim and places the logo itself. On the canonical command the real logo is a local PNG that `assemble_pptx` places top-right (about 13 percent of the slide width, 0.25 inch margin, no chip) after generation: the prompt draws no logo, names no reference image, keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15). Every logo chip, lower-right placement, `LOGO_URL`, `input_urls` or image-to-image MODE line in this document, its templates and its exemplars describes URL image-to-image mode only (a direct `build_deck.py --logo <https URL>` run), which the canonical command does not reach today.
 
 ## 1. Role Identity
 
@@ -470,7 +472,7 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 | 5 | Building STYLE BLOCK before intake.json is complete | Gate: check that intake.json has interview_confirmed = true before building. |
 | 6 | Inventing a racial default when representation is unanswered | Default is NO PEOPLE plus operator flag. Never invent percentages the client did not supply. |
 | 7 | Omitting brand grammar devices from the STYLE BLOCK | Every STYLE BLOCK must include the proven grammar: kicker, gold rule, divider, color roles, price tag motif, section banners, logo chip spec, compliance line. |
-| 8 | Setting logo chip to 4% slide width | The proven spec is approximately 9% of slide width with a subtle 1px brand-accent border. 4% is too small. |
+| 8 | Setting logo chip to 4% slide width (URL image-to-image mode only) | The proven spec is approximately 9% of slide width with a subtle 1px brand-accent border. 4% is too small. |
 | 9 | Skipping SOP 9.3 archetype palette and exemplar handoff | SOP 9.3 fires every run, immediately after SOP 9.1. The Slide Image Creator must receive the SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar as required pre-reading before Phase 2. |
 | 10 | Labeling a client hex as "tertiary almost always white" | White is the base layer, listed separately. The three client hexes are PRIMARY/SECONDARY/ACCENT. If a client brand truly uses white as an accent, document it explicitly with a note. |
 | 11 | Defaulting the type to a basic font ("Montserrat Bold" with no size, or Calibri/Arial/Times) | Encode the full TYPOGRAPHY LAW (SOP 9.4): one family, the weight map, the slide-height-relative size scale, the hierarchy stack, and the palette. Basic or default fonts are an AUTO-FAIL at QC. |

@@ -8,6 +8,8 @@
 
 ## 9. Standard Operating Procedures (Numbered)
 
+> **LOGO MECHANISM NOTE (binding; SOP-IMG-05 Rule A, the renderer is the authority).** `build_deck.py` sends your prompt verbatim and places the logo itself. On the canonical command the real logo is a local PNG that `assemble_pptx` places top-right (about 13 percent of the slide width, 0.25 inch margin, no chip) after generation: the prompt draws no logo, names no reference image, keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15). Every logo chip, lower-right placement, `LOGO_URL`, `input_urls` or image-to-image MODE line in this document, its templates and its exemplars describes URL image-to-image mode only (a direct `build_deck.py --logo <https URL>` run), which the canonical command does not reach today.
+
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Shared STYLE BLOCK Authorship
