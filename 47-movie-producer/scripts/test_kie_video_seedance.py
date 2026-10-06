@@ -56,7 +56,10 @@ from typing import Any
 # execute()-level tests below can reach the submit/poll/download path under
 # test; every HTTP call in this file is faked, so the value is never sent
 # anywhere real.
-os.environ.setdefault("KIE_API_KEY", "FIXTURE-NOT-A-REAL-KEY")
+# The adapter now rejects placeholder-shaped keys (shared secret canon), so the fixture
+# value is a synthetic high-entropy string, not a real credential.
+os.environ["KIE_API_KEY"] = "".join(
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"[(i * 37 + 11) % 57] for i in range(32))
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VIDEO_PY = REPO_ROOT / "47-movie-producer" / "kie-adapters" / "tools" / "video" / "kie_video.py"

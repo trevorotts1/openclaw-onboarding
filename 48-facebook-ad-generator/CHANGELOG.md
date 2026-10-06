@@ -2,7 +2,7 @@
 
 ## v2.0.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
-- Credit preflight: `_fetch_kie_balance` checks the BODY `code`; a short balance now reports the shortfall in credits; a paid run with no `KIE_API_KEY` no longer defers silently (loud stderr notice naming the credits required, 1.30x rule). New probe in `test_ad_preflight.py`.
+- Credit preflight: `_fetch_kie_balance` checks the BODY `code`; a short balance now reports the shortfall in credits; a paid run with no real `KIE_API_KEY` (unset or placeholder) now FAILS like Skill 47: `phase0_preflight` exits 4 and `kie_balance_preflight` returns the fatal AF-FBAD-KIE-BALANCE string so `--recover` parks it. Recovery fixtures use a stub key plus a stubbed `_fetch_kie_balance`; CI GOOD/BAD runs go through `test-fixtures/run-foreman-stubbed.py`. Credits per USD is 200 (verified kie.ai/pricing "1 credit ~= $0.005"), placeholder keys are rejected via the shared secret canon. New probe in `test_ad_preflight.py`.
 - `GPT_IMAGE_MODEL_PREFIX` documented as the family gate; the dispatched id is Skill 66 `gpt-image-2-5-sunburst-*` (AGENTS.md N43). Docs and test labels aligned.
 
 ## 1.2.5 — 2026-07-05

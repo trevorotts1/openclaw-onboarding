@@ -161,7 +161,7 @@ When `KIE_API_KEY` is in `.env`:
 
 ### Credit preflight (Phase-0, AF-VID-KIE-BALANCE)
 
-Before any paid dispatch, `executive_producer.py` checks the live balance with `GET https://api.kie.ai/api/v1/chat/credit` (Bearer `KIE_API_KEY`). Required balance = estimated cost x 100 credits per USD x **1.30** (the fleet-wide rule; this skill used 1.25 before v15.0.2). The BODY `code` must be 200: an HTTP 200 whose body carries another code (for example 401) is an unverifiable balance, not "enough". A paid job with no `KIE_API_KEY`, or with a balance below the floor or unverifiable, HARD-ABORTS with exit 4. Skill 48 applies the same 1.30 rule but PARKS the run (recoverable) instead of aborting; both name the shortfall in credits.
+Before any paid dispatch, `executive_producer.py` checks the live balance with `GET https://api.kie.ai/api/v1/chat/credit` (Bearer `KIE_API_KEY`). Required balance = estimated cost x 200 credits per USD (1 credit is about $0.005, kie.ai/pricing) x **1.30** (the fleet-wide rule; this skill used 1.25 before v15.0.2). The BODY `code` must be 200: an HTTP 200 whose body carries another code (for example 401) is an unverifiable balance, not "enough". A paid job with no `KIE_API_KEY`, or with a balance below the floor or unverifiable, HARD-ABORTS with exit 4. Skill 48 applies the same 1.30 rule but PARKS the run (recoverable) instead of aborting; both name the shortfall in credits.
 
 ---
 

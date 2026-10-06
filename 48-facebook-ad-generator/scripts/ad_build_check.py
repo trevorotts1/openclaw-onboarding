@@ -150,7 +150,11 @@ FBAD_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
 # Skill 47 (VID_KIE_BALANCE_FLOOR_MULTIPLIER). Canonical rule text:
 # 07-kie-setup/references/kie-common-rules.md.
 FBAD_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (re-dos)
-FBAD_CREDIT_PER_USD = 100                 # conservative USD->credit factor
+# ONE shared constant: credits per USD = 200. Verified 2026-10-05 from first-party KIE
+# sources: the kie.ai/pricing page header "1 credit ~= $0.005 USD" (200 credits per USD) and
+# the kie-models vendor reference example "160 credits (0.80 USD)" (also 200 per USD). Both
+# agree. The earlier value 100 under-required the balance by half.
+FBAD_CREDIT_PER_USD = 200
 
 # Tolerance between a scorecard's SELF-DECLARED average and the average COMPUTED from
 # its own category scores. A declared number can NEVER override the computed one; a
@@ -1165,30 +1169,57 @@ def _fetch_kie_balance(api_key: str, url: str = FBAD_KIE_CREDIT_URL,
     return float(candidates[0])
 
 
+def real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
+    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    import os
+    if not raw or not str(raw).strip():
+        return None
+    # Nearest copy first (a repo checkout or the installed skills dir that holds this
+    # file), then the explicit override, then the standard install roots.
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "secret_helper.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                from secret_helper import looks_like_real_key
+            except Exception:
+                return None
+            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
+
+
 def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
                           api_key=None) -> str:
     """AF-FBAD-KIE-BALANCE. Phase-0 balance gate for a PAID job, run ONCE at start.
     Computes the estimated credit floor (estimated_cost_usd x FBAD_CREDIT_PER_USD x
     FBAD_KIE_BALANCE_FLOOR_MULTIPLIER), fetches the live Kie balance, and returns a
     fatal AF-FBAD-KIE-BALANCE string when balance < floor OR the balance cannot be
-    verified. Passes for a free job (estimated_cost<=0). A PAID job with no API key on
-    this box cannot be checked here: the generation subprocess still fails loud without
-    a key, but this gate NEVER defers silently any more. It prints a loud stderr notice
-    that the balance was NOT verified and names the credits the batch needs. A key that
-    IS present but whose balance is unverifiable or short is a HARD ABORT (the recover
-    path PARKS it as a recoverable money park)."""
+    verified. Passes only for a free job (estimated_cost<=0). A PAID job with no API key
+    on this box is an UNVERIFIABLE balance and returns the fatal AF-FBAD-KIE-BALANCE
+    string (same rule as Skill 47, SK1-67): the legacy --phase path HARD-ABORTS (exit 4)
+    and the recover path PARKS it as a recoverable money park. A placeholder key counts
+    as no key. An unverifiable or short balance is likewise fatal."""
     if not estimated_cost_usd or estimated_cost_usd <= 0:
         return ""
     estimated_floor = (float(estimated_cost_usd) * FBAD_CREDIT_PER_USD
                        * FBAD_KIE_BALANCE_FLOOR_MULTIPLIER)
     if not api_key:
-        print("WARNING AF-FBAD-KIE-BALANCE: no KIE_API_KEY on this box, so the Kie.ai "
-              "credit balance was NOT verified. This paid batch needs at least "
-              f"{estimated_floor:g} credits (estimated_cost ${estimated_cost_usd:g} x "
-              f"{FBAD_CREDIT_PER_USD} credits/USD x {FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} "
-              "headroom). Verification is deferred to the generation subprocess, which "
-              "cannot run without the client's KIE_API_KEY.", file=sys.stderr, flush=True)
-        return ""
+        return ("AF-FBAD-KIE-BALANCE: this is a PAID Kie batch but KIE_API_KEY is not set "
+                "(or is only a placeholder) on this box, so the credit balance cannot be "
+                f"verified. It needs at least {estimated_floor:g} credits (estimated_cost "
+                f"${estimated_cost_usd:g} x {FBAD_CREDIT_PER_USD} credits/USD x "
+                f"{FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). An unverifiable balance is "
+                "a HARD ABORT: set the client's own KIE_API_KEY, then re-run or --resume.")
     try:
         balance = _fetch_kie_balance(api_key)
     except RuntimeError as exc:

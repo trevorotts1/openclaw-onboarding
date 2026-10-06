@@ -4,6 +4,7 @@
 
 - Credit preflight: `VID_KIE_BALANCE_FLOOR_MULTIPLIER` 1.25 -> 1.30 (fleet-wide rule: required balance = estimated cost x 1.30). `_fetch_kie_balance` now checks the response BODY `code` (HTTP 200 with a non-200 body code is an unverifiable balance). New probe in `test_video_preflight.py`.
 - `kie_image.py` `estimate_cost`: one fallback constant set (2K 0.05, other 0.04; was 0.03) mirrored by Skill 58, with a docstring naming the price authority (`kie_live_adapter.py price`). Prices removed from prose.
+- Placeholder keys (the installer writes `YOUR_CLIENT_KIE_API_KEY_HERE`) are NOT-SET in both adapters and the driver loader via the shared `secret_helper.looks_like_real_key` (shared-utils extended with `your_client`/`key_here`/`token_here`). Credits per USD 100 -> 200 (kie.ai/pricing "1 credit ~= $0.005"; vendor example 160 credits = 0.80 USD). `kie_image.py` sends the documented sunburst image-to-image field `input_urls` (was Nano Banana `image_input`). Balance message names `shortfall=`. New `scripts/test_kie_adapter_key_and_i2i_field.py`; seedance test fixture key made synthetic.
 - Docs: INSTRUCTIONS credit-preflight section; TTS section now matches SKILL.md (Fish Audio primary, Piper opt-in); EXAMPLES no longer claims veo3_fast is used when no image is supplied and reads result key `model`. Adapter files still exactly two `.py`.
 
 ## v14.3.0 — 2026-07-13 — Piper demoted to OPTIONAL/opt-in (Fish Audio 2.1 Pro is the primary narrator)

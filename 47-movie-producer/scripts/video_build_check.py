@@ -34,6 +34,7 @@ when a checker is called directly (e.g. by the negative-test suite).
 
 import json
 import re
+import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -125,7 +126,11 @@ VID_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
 VID_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (retries)
 # Kie credits are denominated per-call; a job's estimated_cost_usd is in USD, so the
 # balance floor is expressed in credits via this conservative USD->credit factor.
-VID_CREDIT_PER_USD = 100
+# ONE shared constant: credits per USD = 200. Verified 2026-10-05 from first-party KIE
+# sources: the kie.ai/pricing page header "1 credit ~= $0.005 USD" (200 credits per USD) and
+# the kie-models vendor reference example "160 credits (0.80 USD)" (also 200 per USD). Both
+# agree. The earlier value 100 under-required the balance by half.
+VID_CREDIT_PER_USD = 200
 
 
 # ---------------------------------------------------------------------------
@@ -651,6 +656,35 @@ def _fetch_kie_balance(api_key: str, url: str = VID_KIE_CREDIT_URL,
     return float(candidates[0])
 
 
+def real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
+    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    import os
+    if not raw or not str(raw).strip():
+        return None
+    # Nearest copy first (a repo checkout or the installed skills dir that holds this
+    # file), then the explicit override, then the standard install roots.
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "secret_helper.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                from secret_helper import looks_like_real_key
+            except Exception:
+                return None
+            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
+
+
 def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
                           api_key=None) -> str:
     """AF-VID-KIE-BALANCE. Phase-0 balance gate for a PAID job. Computes the estimated
@@ -676,7 +710,8 @@ def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
     if balance < estimated_floor:
         return ("AF-VID-KIE-BALANCE: Kie.ai credit balance is below the estimated floor "
                 f"for this job. balance={balance:g} credits, "
-                f"estimated_floor={estimated_floor:g} (estimated_cost "
+                f"estimated_floor={estimated_floor:g}, shortfall="
+                f"{estimated_floor - balance:g} credits (estimated_cost "
                 f"${estimated_cost_usd:g} x {VID_CREDIT_PER_USD} credits/USD x "
                 f"{VID_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any "
                 "paid dispatch so the run does not die mid-production. Top up and retry.")

@@ -223,6 +223,9 @@ _PLACEHOLDER_SUBSTRINGS = (
     "paste-real", "paste_real", "pastereal", "insert_your", "insert-your",
     "enter_your", "enter-your", "set_your", "set-your", "no_key", "nokey",
     "none_yet", "not_set", "not-set", "unset", "missing",
+    # 2026-10: installer-written env placeholders such as YOUR_CLIENT_KIE_API_KEY_HERE
+    # passed every earlier stage (KIE shape + entropy), so Skills 47/48 read them as keys.
+    "your_client", "key_here", "token_here",
 )
 
 # Provider shape regexes (canonical var name -> anchored regex). Mirrors the
@@ -331,6 +334,7 @@ if __name__ == "__main__":
 
     # Placeholders rejected (QC FIX 67: PASTE_REAL_TOKEN rejected by every reader)
     for bad in ("PASTE_REAL_TOKEN", "your_key_here", "CHANGE_ME_LATER",
+                "YOUR_CLIENT_KIE_API_KEY_HERE",
                 "<TODO>", "{{SECRET}}", "sk-example123", "short", "",
                 "BRAVE_TOKEN_REPLACE_ME"):
         check(f"placeholder {bad!r}", is_placeholder(bad), True)

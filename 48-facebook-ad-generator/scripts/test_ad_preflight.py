@@ -596,6 +596,10 @@ def _probe_kie_credit_body_code() -> list:
         urllib.request.urlopen = real
     if abc.FBAD_KIE_BALANCE_FLOOR_MULTIPLIER != 1.30:
         out.append("balance floor multiplier is not the fleet-wide 1.30")
+    if abc.FBAD_CREDIT_PER_USD != 200:
+        out.append("credits per USD is not 200 (1 credit is about $0.005, kie.ai/pricing)")
+    if abc.real_kie_key("YOUR_CLIENT_KIE_API_KEY_HERE") is not None:
+        out.append("installer placeholder key was treated as a real key")
     return out
 
 

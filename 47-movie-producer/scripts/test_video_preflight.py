@@ -400,6 +400,18 @@ def _probe_kie_credit_body_code() -> list:
         urllib.request.urlopen = real
     if vbc.VID_KIE_BALANCE_FLOOR_MULTIPLIER != 1.30:
         out.append("balance floor multiplier is not the fleet-wide 1.30")
+    real_fetch = vbc._fetch_kie_balance
+    try:
+        vbc._fetch_kie_balance = lambda *a, **k: 10.0
+        msg = vbc.kie_balance_preflight(Path("."), 1.0, "ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh")
+        if "shortfall=" not in msg:
+            out.append("47 balance message does not name the shortfall in credits")
+    finally:
+        vbc._fetch_kie_balance = real_fetch
+    if vbc.VID_CREDIT_PER_USD != 200:
+        out.append("credits per USD is not 200 (1 credit is about $0.005, kie.ai/pricing)")
+    if vbc.real_kie_key("YOUR_CLIENT_KIE_API_KEY_HERE") is not None:
+        out.append("installer placeholder key was treated as a real key")
     return out
 
 

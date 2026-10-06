@@ -3,6 +3,7 @@
 ## v1.7.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - `scripts/preflight_gate.py`: credit rule is now max(estimate x 1.30, 200), with 200 kept and documented as this skill's absolute floor; `_live_kie_credits` checks the BODY `code`; shortfall reported. New `scripts/test_kie_credit_rule.py`. `ENGINE-PIN.sha256` re-recorded.
+- Social images are GPT Image 2.5 sunburst everywhere (owner order): prompt 12 moved from `nano-banana-pro` to `gpt-image-2-5-sunburst-text-to-image` at 3:4 (N43 substitute for 4:5); SKILL.md, MASTERDOC.md, module 3 README and SOCIAL-MANIFEST labels no longer name Midjourney or Nano Banana; prompt 05 routing lists GPT Image 2.5 first, prompt 11 note updated. `PROMPT-HASHES.json` re-recorded. New `_live_kie_credits` body-code test in `test_kie_credit_rule.py`.
 - Prompts: 14 `google/nano-banana` (legacy per Skill 66) -> `gpt-image-2-5-sunburst-text-to-image` 1:1 2K png, the same id and payload Skill 58 `generate_cover.sh` sends; 12 `nano-banana-pro` and 13 `seedream/4.5-edit` kept and documented (12 matches Skill 66; 13 matches the live KIE docs enum); 06/07 stale Midjourney wording removed. `PROMPT-HASHES.json` re-recorded for every prompt (01, 05 and 16 were already drifted from the pin before this change).
 
 ## v1.5.1 - 2026-09-09 - release fold: changelog entry for the v1.5.0 producer adapter bump (F05)
