@@ -90,6 +90,12 @@ Each image entry is one intended generated master asset. Crops/exports can point
 
 Required fields are validated by `scripts/validate_image_manifest.py`.
 
+## Intake (`intake.json`)
+
+Written by the intake stage with `scripts/write_intake.py`: `page_version` (standard or long-form), `brand_owner`,
+`brand_file`, `creative_direction` (null means `SECRET_SAUCE_ONLY`), `image_cap`, `image_engine` (`kie` default or
+`agnes`), `test_run`. `stage_gate.py` reads `image_engine` to accept the Agnes image route.
+
 ## Generation receipt (stage `image-generation-qc`)
 
 The stage receipt `private/receipts/image-generation-qc.json` carries a `transport` block and a `cost`

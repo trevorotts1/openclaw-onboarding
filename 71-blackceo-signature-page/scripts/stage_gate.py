@@ -599,8 +599,11 @@ def _ratio_problem(who, task):
             return f"{who}: N43 sends {req} to the legacy route only (generated_ratio {gen!r}, model_source {src!r})"
     elif src in ("explicit-request", "department-pin"):
         # an explicit request or a pin overrides the default's ratio substitutions, with evidence
-        if not (isinstance(task.get("evidence"), str) and task["evidence"].strip()):
-            return f"{who}: model_source {src!r} needs evidence (the request text or the pin id)"
+        ev = task.get("evidence")
+        if not (isinstance(ev, str) and len(ev.strip()) >= 12 and ev.strip().lower() not in BAD_IDS
+                and ev.strip() != task.get("model_id")):
+            return (f"{who}: model_source {src!r} needs evidence naming the request text or the pin id "
+                    f"(at least 12 characters, not a placeholder)")
     elif gen != N43_SUBSTITUTIONS.get(req, req):
         return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
                 f"expected {N43_SUBSTITUTIONS.get(req, req)}")

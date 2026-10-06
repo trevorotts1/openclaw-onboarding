@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.2.2 - 2026-10-06
+
+- `scripts/write_intake.py` writes `intake.json` including `image_engine` (`kie` default, `agnes`), so a real Agnes run satisfies the stage gate; documented in `references/kie-generation-route.md` and `artifact-contracts.md`. Test i15.
+- `stage_gate.py`: `evidence` for an explicit-request or department-pin model source must be at least 12 characters, not a placeholder and not the model id; test i14 extended.
+- Version bumped to 1.2.2 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.2.1 - 2026-10-06
 
 QC fixes on the KIE integration (PR 1527).
