@@ -47,23 +47,30 @@ and has a deadline sized to the media (image about 300 seconds; video and music 
 A department whose code implements a specific ladder (for example Presentations `build_deck.py`)
 is authoritative for that department, and its SOPs must describe that code.
 
-## 5. Prompt length cap
+## 5. Limits authority (prompt length, enums, required fields)
 
-The cap is per model, read from the live schema (Skill 74 `schema`). For the GPT Image 2.5 family
-it is 20,000 characters (N43 and the KIE model page). A 25,000 figure is wrong for 2.5.
-(N43 records 25,000 as the owner-confirmed cap for retained legacy `gpt-image-2-*` entries only;
-never apply either number across generations.) House prompt bands (for example 9,000 to 19,000)
-are owner policy and stay.
+One authority: the live schema, checked with
+`python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` (falls back to the generated
+snapshot `74-kie-live-adapter/references/kie-model-registry.json`). It covers prompt
+maxLength/minLength, enums and required fields per model. Requests outside the limits are
+blocked before dispatch. For the GPT Image 2.5 family the prompt cap is 20,000 characters
+(N43 and the KIE model page); a 25,000 figure is wrong for 2.5. (N43 records 25,000 as the
+owner-confirmed cap for retained legacy `gpt-image-2-*` entries only; never apply either number
+across generations.) Owner house bands (for example 9,000 to 19,000) stay as stricter overlays
+owned by the policy skills.
 
 ## 6. Credit preflight
 
-Required balance = estimated job cost x 1.30. A skill may enforce a stricter documented absolute
+Required balance = price (rule 7) x 1.30. A skill may enforce a stricter documented absolute
 minimum. Read balance only through `/api/v1/chat/credit`.
 
-## 7. Prices
+## 7. Price authority
 
-The live `pricingDesc` from the catalog (Skill 74 `discover`) is the only price authority.
-Any price table in the repo is a dated snapshot, not authoritative.
+One authority: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`
+(live catalog `pricingDesc`, falling back to the generated snapshot
+`74-kie-live-adapter/references/kie-model-registry.json`). No skill may keep its own price
+table. Any price table elsewhere in the repo is a dated snapshot and not authoritative.
+(The adapter and registry land in a follow-up Skill 74 change; reference them by these names.)
 
 ## 8. Retention
 
