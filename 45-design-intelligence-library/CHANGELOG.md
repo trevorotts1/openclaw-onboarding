@@ -1,5 +1,12 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.2.2 - 2026-10-06 - feat: rule 12 on the library bands, merged with the Ideogram alignment
+
+- `prompt-bands.json` v3 holds no length numbers (merged with the GPT Image 2.5 Sunburst default alignment); KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.
+- `prove_gip_prompt_floor.py` derives its fixture sizes from the model max through the validator instead of a literal.
+- `scripts/_kie_prompt_enforcer_embedded.py`: the same embedded, hash-locked fallback for boxes without shared-utils; `diu_validator.py` falls back to it and passes the last-known limit, so `qc-design-intelligence-library.sh` and its fail-closed test (19 of 19) work with only this skill installed.
+
+
 ## [2.2.1] - 2026-10-06 - QC follow-up: no restated band figures, consent self-test wording
 
 - SOP-DIU-101, SOP-DIU-615, healer-graphics (SOP 9.13 check 4) and the graphics connection-manifest prose point to rule 12 of `07-kie-setup/references/kie-common-rules.md` with no figures; the validator-read manifest fields are unchanged. `diu_validator.py` self-test wording says CONSENT file.

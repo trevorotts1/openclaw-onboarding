@@ -39,9 +39,27 @@ Zero third-party deps (stdlib json / re / pathlib / urllib only).
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 # ---------------------------------------------------------------------------
 # Module constants (the secondary_py_symbols the manifest autofails reference).
@@ -81,8 +99,9 @@ PROMPT_BUILD_ORDER = [
     "facial-intelligence",
     "brand-style-block",
 ]
-PROMPT_MIN_CHARS = 3500       # the richness floor (creativity/typography/grade/quality/face)
-PROMPT_MAX_CHARS = 18000
+# Prompt length is KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the model maxLength, hard floor
+# 80 percent, hard ceiling 100 percent, measured by the shared enforcer (Skill 74 prompt-budget). No band lives here.
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"  # the id this skill sends (Skill 66 registry)
 
 # Image size (square feed ad) + the model family the generation must stay on.
 IMAGE_EDGE_PX = 1500
@@ -643,17 +662,25 @@ def _chk_prompt_order(run_dir: Path) -> str:
 
 
 def _chk_prompt_richness(run_dir: Path) -> str:
-    """AF-FBAD-PROMPT-RICHNESS. Every prompt is PROMPT_MIN_CHARS..MAX_CHARS chars."""
+    """AF-FBAD-PROMPT-RICHNESS. Every prompt sits inside the KIE rule 12 length band for its image model
+    (floor 80 percent, ceiling 100 percent of the model maxLength, through the shared enforcer)."""
     prompts = _prompts(run_dir)
     if prompts is None:
         return ("AF-FBAD-PROMPT-RICHNESS: s4-receipt.json absent/invalid or no prompts[].")
-    bad = [i + 1 for i, p in enumerate(prompts)
-           if not isinstance(p, dict) or not isinstance(p.get("char_count"), int)
-           or p["char_count"] < PROMPT_MIN_CHARS or p["char_count"] > PROMPT_MAX_CHARS]
+    bad, notes = [], []
+    for i, p in enumerate(prompts):
+        if not isinstance(p, dict) or not isinstance(p.get("char_count"), int):
+            bad.append(i + 1)
+            notes.append(f"prompt {i + 1}: no integer char_count in the receipt")
+            continue
+        v = KPE.check_count(str(p.get("model") or IMAGE_MODEL_DEFAULT), p["char_count"])
+        if not v["ok"]:
+            bad.append(i + 1)
+            notes.append(f"prompt {i + 1}: {v['message']}")
     if bad:
         return ("AF-FBAD-PROMPT-RICHNESS: prompt(s) "
-                f"{bad[:10]} fall outside {PROMPT_MIN_CHARS}..{PROMPT_MAX_CHARS} chars. "
-                "A thin prompt yields generic art.")
+                f"{bad[:10]} fall outside the rule 12 length band. A thin prompt yields generic art. "
+                + "; ".join(notes[:3]))
     return ""
 
 

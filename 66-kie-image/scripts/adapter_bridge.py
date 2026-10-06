@@ -50,14 +50,6 @@ def latest_family(family, current=None):
     return None
 
 
-def prompt_budget(model, prompt):
-    """Skill 74 `prompt-budget --check` -> the result dict (exit 3/4 included), or None when unavailable."""
-    got = run(["prompt-budget", "--model", model, "--check", "--prompt-file", "-", "--json"], stdin=prompt)
-    if got and isinstance(got[1].get("data"), dict) and got[1]["data"].get("status"):
-        return got[1]
-    return None
-
-
 def validate(model, input_obj):
     """Skill 74 `validate` against the live schema (registry fallback) -> result dict or None."""
     import tempfile

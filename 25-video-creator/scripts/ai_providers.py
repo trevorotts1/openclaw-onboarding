@@ -428,6 +428,31 @@ class AIProvider:
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
     
+    def _check_prompt_budget(self, prompt: str, model: Optional[str]) -> None:
+        """KIE prompt rule 12 (owner order 2026-10-05) before any submit: a descriptive video prompt is
+        95 to 100 percent of the model maxLength, never below 80 percent, never above 100 percent. The
+        shared enforcer (shared-utils/kie_prompt_enforcer.py, Skill 74 prompt-budget) holds the numbers.
+        No model id means no known limit: UNKNOWN, no floor, nothing to enforce."""
+        if not model:
+            print("   Prompt budget: UNKNOWN (no model id given), no floor enforced")
+            return
+        here = Path(__file__).resolve()
+        envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+        dirs = [p / "shared-utils" for p in here.parents]
+        dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+            Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+        for d in dirs:
+            if (d / "kie_prompt_enforcer.py").is_file():
+                import sys
+                sys.path.insert(0, str(d))
+                break
+        else:
+            raise RuntimeError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+        import kie_prompt_enforcer
+        verdict = kie_prompt_enforcer.require(model, prompt)  # raises ValueError naming the chars to add or cut
+        for w in verdict["warnings"]:
+            print(f"   Prompt budget: {w}")
+
     def _generate_kieai(self, prompt, duration, resolution, style, output, **kwargs):
         """Text-to-video through Skill 74, the single KIE transport."""
         self._require_kie_key()
@@ -514,6 +539,8 @@ class AIProvider:
 
     def _kie_run(self, model, payload, output, kwargs) -> Path:
         """Skill 74 `run`: validate, createTask (or the schema's own path), poll, save; then verify the video."""
+        if payload.get('prompt'):  # an image-to-video call may carry no prompt: nothing to measure
+            self._check_prompt_budget(payload['prompt'], model)  # rule 12, before any spend
         request = {'model': model, 'input': payload}
         if kwargs.get('callback_url'):
             request['callBackUrl'] = kwargs['callback_url']

@@ -113,9 +113,10 @@ from presentation_job.oc_paths import skills as _oc_skills, workspace as _oc_wor
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
-# The ONE shared image-prompt gate every image-API path imports. Its char-band constants
-# are an EXTRACTION of build_deck.py's and MUST never silently diverge from them — the same
-# drift class V1 pins for the retired render_deck.py. V3 proves prompt_gate == build_deck.
+# The ONE shared image-prompt gate every image-API path imports. Since the owner order of
+# 2026-10-05 (KIE prompt rule 12) neither it nor build_deck.py keeps a char band: both call the
+# shared enforcer shared-utils/kie_prompt_enforcer.py. V1 proves both import it and define no
+# band constant of their own; V3 proves the density floor still matches between them.
 PROMPT_GATE = HERE / "prompt_gate.py"
 TEST_PREFLIGHT = HERE / "test_preflight.py"
 
@@ -143,17 +144,6 @@ def _cluster_peer_candidates():
     cands.append(Path.home() / "openclaw-onboarding" / "universal-sops"
                  / "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
     return cands
-
-# The RETIRED render module (templates/presentation-render/render_deck.py). It is no
-# longer the canonical renderer, but sync_check still AST-asserts that its
-# PROMPT_CHAR_FLOOR/CEILING band never silently diverges from build_deck.py's — a
-# divergence is exactly the class of drift that let the 1,500-vs-5,000 floor split
-# go unnoticed. Resolved relative to the repo root (repo layout) or, on a deployed
-# client box where the render-template tree may be absent, simply skipped.
-RENDER_DECK = (
-    (_REPO_ROOT / "23-ai-workforce-blueprint" / "templates" / "presentation-render"
-     / "render_deck.py") if _REPO_ROOT else None
-)
 
 MANIFEST, MANIFEST_PROVENANCE = resolve_manifest(HERE)
 MASTER_RULESET, RULESET_PROVENANCE = resolve_ruleset(HERE)
@@ -516,90 +506,69 @@ def _const_int_values(py_path):
     return out
 
 
+_BAND_CONSTANTS = ("PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_CHAR_TARGET_HIGH")
+
+
+def _imports_enforcer(py_path):
+    """True iff the module imports the shared KIE prompt enforcer (any `import kie_prompt_enforcer`, at any depth)."""
+    try:
+        tree = ast.parse(Path(py_path).read_text())
+    except Exception:  # noqa: BLE001
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import) and any(a.name == "kie_prompt_enforcer" for a in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module == "kie_prompt_enforcer":
+            return True
+    return False
+
+
 def value_checks(manifest_text):
-    """V1: render_deck.py's PROMPT_CHAR_FLOOR/CEILING == build_deck.py's (the retired
-    render module must never carry a stale prompt band).
-    V2: every floor/standard/ceiling integer the manifest CITES in prose must equal the
-    corresponding build_deck.py constant (PROMPT_CHAR_FLOOR / PROMPT_CHAR_CEILING).
-    Returns a list of drift dicts (check 'V1'/'V2')."""
+    """V1: build_deck.py and prompt_gate.py take the prompt length band from the shared enforcer
+    (shared-utils/kie_prompt_enforcer.py, KIE prompt rule 12) and define no band constant of their own.
+    V2: the manifest cites no numeric prompt floor or ceiling ("N-char floor / standard / ceiling"): the
+    band is a percentage of the model maxLength, not a number the manifest can restate.
+    V3: the density floor PROMPT_MIN_DISTINCT_WORDS of prompt_gate.py equals build_deck.py's.
+    Returns a list of drift dicts (check 'V1'/'V2'/'V3')."""
     drift = []
 
     def add(check, item, detail):
-        # FIX-23(a) — V-class is render-path (the cited NUMBER must equal the code
-        # constant); fail closed. Same `class` contract as run_checks().
+        # FIX-23(a): V-class is render-path; fail closed. Same `class` contract as run_checks().
         drift.append({"check": check, "item": item, "detail": detail, "class": "render_path"})
 
     bd_vals = _const_int_values(BUILD_DECK)
-    floor = bd_vals.get("PROMPT_CHAR_FLOOR")
-    ceiling = bd_vals.get("PROMPT_CHAR_CEILING")
 
-    if floor is None:
-        add("V2", "PROMPT_CHAR_FLOOR",
-            "build_deck.py has no module-level integer PROMPT_CHAR_FLOOR constant — the "
-            "value-level floor check cannot anchor. Restore the constant.")
-    if ceiling is None:
-        add("V2", "PROMPT_CHAR_CEILING",
-            "build_deck.py has no module-level integer PROMPT_CHAR_CEILING constant — the "
-            "value-level ceiling check cannot anchor. Restore the constant.")
+    # V1 — the canonical renderer and the shared gate use the shared enforcer, and keep no band of their own.
+    for label, path, vals in (("build_deck.py", BUILD_DECK, bd_vals),
+                              ("prompt_gate.py", PROMPT_GATE, _const_int_values(PROMPT_GATE))):
+        if not (path and Path(path).exists()):
+            continue
+        if not _imports_enforcer(path):
+            add("V1", f"{label} kie_prompt_enforcer",
+                f"{label} does not import shared-utils/kie_prompt_enforcer.py. The prompt length band is "
+                f"KIE prompt rule 12 and has ONE enforcer; import it instead of keeping a separate band.")
+        for name in _BAND_CONSTANTS:
+            if name in vals:
+                add("V1", f"{label} {name}",
+                    f"{label} defines {name}={vals[name]}, a separate hard-coded prompt band. Remove it: the band "
+                    f"comes from the shared enforcer (limit from Skill 74 prompt-budget).")
 
-    # V1 — retired render module band == canonical band.
-    if RENDER_DECK and RENDER_DECK.exists():
-        rd_vals = _const_int_values(RENDER_DECK)
-        for name, bdv in (("PROMPT_CHAR_FLOOR", floor), ("PROMPT_CHAR_CEILING", ceiling)):
-            if bdv is None:
-                continue
-            rdv = rd_vals.get(name)
-            if rdv is None:
-                add("V1", name,
-                    f"render_deck.py (retired render module) is missing the {name} "
-                    f"constant; build_deck.py has {name}={bdv}. Keep the constant in "
-                    f"render_deck.py so the bands can be proven equal.")
-            elif rdv != bdv:
-                add("V1", name,
-                    f"render_deck.py {name}={rdv} != build_deck.py {name}={bdv}. The "
-                    f"retired render module's prompt band must never silently diverge "
-                    f"from the canonical renderer's. Reconcile render_deck.py to {bdv}.")
-
-    # V3 — the shared prompt_gate.py band == the canonical build_deck.py band. prompt_gate
-    # is the ONE gate every image-API path (kie_generate.py x2, the relay) imports; its
-    # floor/ceiling/distinct-word constants are an extraction of build_deck.py's and must
-    # never diverge, or a side-door could enforce a stale band. Same class as V1.
+    # V3 — the shared prompt_gate.py density floor == the canonical build_deck.py density floor.
     if PROMPT_GATE and PROMPT_GATE.exists():
         pg_vals = _const_int_values(PROMPT_GATE)
-        for name in ("PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_MIN_DISTINCT_WORDS"):
-            bdv = bd_vals.get(name)
-            pgv = pg_vals.get(name)
-            if bdv is None:
-                continue  # V2 already flags a missing build_deck constant
-            if pgv is None:
-                add("V3", name,
-                    f"prompt_gate.py is missing the {name} constant; build_deck.py has "
-                    f"{name}={bdv}. The shared gate every image-API path imports must carry "
-                    f"the SAME band as the canonical renderer. Add {name}={bdv} to prompt_gate.py.")
-            elif pgv != bdv:
-                add("V3", name,
-                    f"prompt_gate.py {name}={pgv} != build_deck.py {name}={bdv}. The shared "
-                    f"image-prompt gate's band must never silently diverge from the canonical "
-                    f"renderer's (a side-door would enforce a stale floor). Reconcile "
-                    f"prompt_gate.py to {bdv}.")
+        name = "PROMPT_MIN_DISTINCT_WORDS"
+        bdv, pgv = bd_vals.get(name), pg_vals.get(name)
+        if bdv is not None and pgv is None:
+            add("V3", name, f"prompt_gate.py is missing the {name} constant; build_deck.py has {name}={bdv}.")
+        elif bdv is not None and pgv != bdv:
+            add("V3", name, f"prompt_gate.py {name}={pgv} != build_deck.py {name}={bdv}. Reconcile prompt_gate.py to {bdv}.")
 
-    # V2 — manifest-cited floor/standard/ceiling integers == code constants.
-    if floor is not None:
-        for m in re.finditer(r'([0-9][0-9,]*)-char (floor|standard)', manifest_text):
-            n = int(m.group(1).replace(",", ""))
-            if n != floor:
-                add("V2", f"{m.group(0)}",
-                    f"PIPELINE-MANIFEST.json cites a {n}-char {m.group(2)} but "
-                    f"build_deck.py PROMPT_CHAR_FLOOR={floor}. The manifest's cited floor "
-                    f"integer must equal the code constant (this is the exact 1,500-vs-5,000 "
-                    f"drift class). Reconcile the manifest prose to {floor}.")
-    if ceiling is not None:
-        for m in re.finditer(r'([0-9][0-9,]*)-char ceiling', manifest_text):
-            n = int(m.group(1).replace(",", ""))
-            if n != ceiling:
-                add("V2", f"{m.group(0)}",
-                    f"PIPELINE-MANIFEST.json cites a {n}-char ceiling but build_deck.py "
-                    f"PROMPT_CHAR_CEILING={ceiling}. Reconcile the manifest prose to {ceiling}.")
+    # V2 — the manifest restates no numeric prompt floor or ceiling.
+    for m in re.finditer(r'([0-9][0-9,]*)-char (floor|standard|ceiling)', manifest_text):
+        add("V2", f"{m.group(0)}",
+            f"PIPELINE-MANIFEST.json cites a {m.group(1)}-char {m.group(2)}. The prompt length band is KIE prompt "
+            f"rule 12 (95 to 100 percent of the model maxLength, floor 80 percent) enforced by the shared enforcer; "
+            f"cite the rule, not a number.")
     return drift
 
 # ---------------------------------------------------------------------------

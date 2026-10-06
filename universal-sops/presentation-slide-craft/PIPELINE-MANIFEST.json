@@ -1,5 +1,5 @@
 {
-  "manifest_version": 69,
+  "manifest_version": 70,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1059,7 +1059,7 @@
     {
       "id": "P4-PROMPT",
       "order": 4.7,
-      "name": "Prompt Authoring — each slide prompt to the 9,000-char standard",
+      "name": "Prompt Authoring - each slide prompt inside the KIE rule 12 length band (95 to 100 percent of the model max)",
       "owning_role": "prompt-author-presentations",
       "fanout": {
         "by": "slide",
@@ -1077,7 +1077,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_rich_prompts",
-        "label": "rich per-slide prompt — every slide has a >=9,000-char prompt in working/prompts/ (rendered VERBATIM)"
+        "label": "rich per-slide prompt — every slide has a prompt inside the rule 12 length band (80 to 100 percent of the model max) in working/prompts/ (rendered VERBATIM)"
       },
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
@@ -1245,8 +1245,8 @@
       "emits": {
         "self": true,
         "checks": [
-          "PROMPT_CHAR_FLOOR",
-          "PROMPT_CHAR_CEILING",
+          "_length_problems",
+          "_collect_prompt_problems",
           "FORBIDDEN_DEMOGRAPHIC_DEFAULTS"
         ]
       },
@@ -2187,7 +2187,7 @@
       "stage": "Render",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "rich prompt missing, under the reconciled 9,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
+      "trigger": "rich prompt missing, under the KIE rule 12 floor (80 percent of the model maxLength; _length_problems), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rich_prompts"
     },
@@ -2196,9 +2196,9 @@
       "stage": "Render",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "composed prompt over the 18000 ceiling",
+      "trigger": "composed prompt over the model maxLength (KIE rule 12 ceiling)",
       "enforced_by": "build_deck",
-      "py_symbol": "PROMPT_CHAR_CEILING"
+      "py_symbol": "_length_problems"
     },
     {
       "code": "AF-R3",
@@ -2665,9 +2665,9 @@
       "stage": "3",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "image prompt under the reconciled 9,000-char standard (PROMPT_CHAR_FLOOR) or over the 18,000-char ceiling (PROMPT_CHAR_CEILING) or missing required structural blocks",
+      "trigger": "image prompt under the KIE rule 12 floor (80 percent of the model maxLength) or over the model maxLength (_length_problems, shared enforcer) or missing required structural blocks",
       "enforced_by": "build_deck",
-      "py_symbol": "PROMPT_CHAR_FLOOR"
+      "py_symbol": "_length_problems"
     },
     {
       "code": "AF-QC-INDEPENDENCE",
@@ -3329,7 +3329,7 @@
       "stage": "Prompt-QC",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "a slide prompt clears the 9,000-char LENGTH floor but scores below the EXCELLENCE floor (0.55) on the QUALITY dimension: negative-block coverage, spelling-lock richness, anatomy/world-grounding, brand HEX + type SIZE + composition, and lexical richness — two independent floors (length AND excellence); boilerplate-padded prompts route back",
+      "trigger": "a slide prompt clears the rule 12 LENGTH floor but scores below the EXCELLENCE floor (0.55) on the QUALITY dimension: negative-block coverage, spelling-lock richness, anatomy/world-grounding, brand HEX + type SIZE + composition, and lexical richness — two independent floors (length AND excellence); boilerplate-padded prompts route back",
       "enforced_by": "build_deck",
       "py_symbol": "check_prompt_excellence"
     },
@@ -4330,7 +4330,7 @@
     {
       "id": "prompt-author-presentations",
       "owns_phase": "P4-PROMPT",
-      "description": "Writes each slide's rich image prompt to the 9,000-char prompt standard (the 15-element structural spec + negative block + spelling-locks). The Prompt QC Specialist grades the output."
+      "description": "Writes each slide's rich image prompt to the KIE rule 12 prompt length standard (the 15-element structural spec + negative block + spelling-locks). The Prompt QC Specialist grades the output."
     },
     {
       "id": "qc-specialist-typography-presentations",
@@ -4340,7 +4340,7 @@
     {
       "id": "qc-specialist-prompt-presentations",
       "owns_phase": "P-PROMPT-QC",
-      "description": "INDEPENDENT reviewer of the per-slide prompts (AF-PROMPT-QC). Grades against the written 9,000-char prompt-standard rubric; never the Prompt Author who wrote them."
+      "description": "INDEPENDENT reviewer of the per-slide prompts (AF-PROMPT-QC). Grades against the written rule 12 prompt-standard rubric; never the Prompt Author who wrote them."
     },
     {
       "id": "qc-specialist-image-presentations",

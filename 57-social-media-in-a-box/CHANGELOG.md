@@ -1,5 +1,10 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.10 - 2026-10-06 - feat: image prompt bands carry no numbers (rule 12)
+
+- `config/bands.json` v1.1.0: `image_prompt_carousel` and `image_prompt_series` lose min and max (1,000 to 1,700 and 1,800). KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. The authored seed is held non-empty and under the model maximum, because prompt 05 expands it to the band; an expanded prompt carried as `kiePrompt` must clear the full band. Client-exact overrides still win.
+- `scripts/prove_bands.py` self-test proves 79 percent, 95 percent and 101 percent on the expanded prompt. `ENGINE-PIN.sha256` re-recorded (sha256 of `run_social_media.py` plus the nine provers, in the entry's order).
+
 ## v1.7.9 - 2026-10-06 - Review fixes: prompt 05 routing, prompts 09 and 10 ratio wording
 
 - Prompt 05: the "Ideogram V3 DESIGN / Agnes" text-bearing route is removed. Every social image routes to GPT Image 2.5 Sunburst; the only fallback is legacy gpt-image-2 under the N43 ratio rules.

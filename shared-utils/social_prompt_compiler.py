@@ -2,10 +2,13 @@
 """
 social_prompt_compiler.py — F32 social-planner image prompt compiler + validator.
 
-Owner requirement (SPEC "Build contract for detailed image prompts"): every final
-social-planner image prompt for Kie GPT Image 2.5 and Agnes contains 9,000–19,000
-meaningful stripped Unicode characters. The client may supply one short sentence;
-this compiler produces the full brief.
+Owner requirement (SPEC "Build contract for detailed image prompts" and KIE prompt
+rule 12, 2026-10-05): every final social-planner image prompt for a KIE model is 95 to
+100 percent of that model's maxLength, never below 80 percent. The limit and the band
+come from the shared enforcer shared-utils/kie_prompt_enforcer.py (Skill 74
+prompt-budget); this module keeps no floor or ceiling of its own. A model with no known
+limit (Agnes is not a KIE model) has no floor. The client may supply one short sentence;
+this compiler produces the full brief and rewrites it up to 3 times to reach the band.
 
 Contract:
   - count = len(unicodedata.normalize("NFC", final_prompt).strip())  (Python)
@@ -21,8 +24,8 @@ Contract:
     logo-vs-style-reference conflict) BEFORE any paid call.
   - token budget so limits cannot silently truncate: over-budget compiles are
     condensed to fit, never truncated mid-content, never silently sent.
-  - house band 9,000–19,000 is DISTINCT from vendor caps (Kie GPT Image 2.5
-    published maxLength 20000; Agnes publishes no cap — NOT_PUBLISHED).
+  - the band is rule 12 (percentages of the model maxLength), not a fixed house number
+    (Kie GPT Image 2.5 maxLength 20000; Agnes publishes no cap, NOT_PUBLISHED).
 
 Scoped override: social planner ONLY. Unrelated skills keep their own bands.
 Policy data lives in social_prompt_policy.json (same directory).
@@ -37,8 +40,14 @@ import json
 import math
 import os
 import re
+import sys
 import unicodedata
 from typing import Optional
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import kie_prompt_enforcer  # noqa: E402  (the one rule 12 enforcer; sits beside this file)
+
+_DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
 
 _EXIT_OK = 0
 _EXIT_FAIL = 2
@@ -234,11 +243,14 @@ def _dest(brief: dict) -> dict:
     }
 
 
-def expand_sections(brief: dict) -> str:
+def expand_sections(brief: dict, target: Optional[int] = None) -> str:
     """Expand a short brief into the full 8-section structure using useful
     visual decisions derived from the brief's own fields (audience, purpose,
     destination) — never repeated filler. Every section carries REQUIRED info;
-    optional guidance blocks degrade gracefully when absent."""
+    optional guidance blocks degrade gracefully when absent.
+
+    target: characters the writer is aiming for (rule 12 target from the enforcer). None means
+    the model limit is unknown: the first-level decision bank is applied in full, no more."""
     dest = _dest(brief)
     audience = brief.get("audience") or "the client's intended audience"
     focal = (brief.get("composition") or {}).get("focal_message") or \
@@ -305,7 +317,7 @@ def expand_sections(brief: dict) -> str:
         except Exception:  # pragma: no cover — defensive; a broken section is skipped
             continue
 
-    # House band: a short brief is expanded with useful visual decisions, never
+    # Rule 12: a short brief is expanded with useful visual decisions, never
     # repetitive filler. The decision bank below derives additional genuine
     # guidance from the brief's own fields (platform, audience, purpose, copy),
     # following the fifteen expansion dimensions of the house prompt policy
@@ -314,7 +326,7 @@ def expand_sections(brief: dict) -> str:
     # exclusions, output, QC-critical detail) — each block states a DIFFERENT
     # decision the renderer can actually use.
     count_now = count_chars("\n".join(parts))
-    policy_floor = load_policy().get("house_band", {}).get("min_chars", 9000)
+    policy_floor = target if target else float("inf")
     if count_now < policy_floor:
         # Second-pass enrichment: when the base sections plus the whole
         # decision bank still sit under the floor, deepen each decision block
@@ -559,6 +571,138 @@ def token_estimate(final_prompt: str) -> int:
     return math.ceil(count_chars(final_prompt) / max(1, int(est or 4)))
 
 
+# ─── Rule 12 band (from the shared enforcer, never from this file) ───────────
+
+def _band(model: str, text: str, vendor_cap) -> dict:
+    """The enforcer verdict for `text` on `model`: floor, target_min, max and the add/cut counts."""
+    return kie_prompt_enforcer.check(model or _DEFAULT_MODEL, text, "descriptive",
+                                     fallback_max=int(vendor_cap) if vendor_cap else None)
+
+
+def _band_receipt(v: dict) -> dict:
+    # source is reduced to its stable class (live-schema / registry / policy-owner) so a receipt is identical
+    # whether the adapter answered from the live API or from its cache
+    return {"floor": v.get("floor"), "target_min": v.get("target_min"), "max": v.get("max"),
+            "status": v.get("status"), "source": (v.get("source") or "").split(":")[0].split(" (")[0],
+            "rule": "KIE prompt rule 12"}
+
+
+def _length_problems(v: dict) -> list:
+    return [] if v["ok"] else [f"AF-PROMPT-LENGTH: final prompt: {v['message']}"]
+
+
+# ─── Deepening bank (rule 12 writer) ─────────────────────────────────────────
+
+def _deepening_bank(brief: dict) -> list:
+    """Second-level render decisions, each a DIFFERENT decision the renderer can use, derived from the
+    brief's own fields. Appended only while the final prompt sits below the target the shared enforcer
+    reports (95 percent of the model maxLength). Never repeats a sentence of the first-level bank."""
+    dest = _dest(brief)
+    audience = brief.get("audience") or "the client's intended audience"
+    focal = (brief.get("composition") or {}).get("focal_message") or brief.get("theme") or "the campaign's single focal message"
+    palette = _palette_text(brief)
+    keep_in = (brief.get("safe_areas") or {}).get("keep_in", "the central 80%")
+    ratio = (brief.get("composition") or {}).get("ratio") or dest["ratio"]
+    on_image = (brief.get("copy") or {}).get("on_image_text") or ""
+    text_note = ("The exact words are rendered as one deliberate typographic unit: a clear dominant line, a quieter support line "
+                 "if one exists, equal optical margins, and a baseline grid so nothing drifts or tilts by accident."
+                 if on_image else
+                 "With no copy declared, the image stays wordless: any sign, label, screen or page in the scene is blurred "
+                 "or abstracted so no stray letterform can be mistaken for approved text.")
+    return [
+        (f"Narrative moment decision: the frame captures one believable instant that already implies what happened before it and "
+         f"what follows, so that {focal} reads as a story and not a poster. The subject is caught mid-purpose rather than posed "
+         f"at the camera, and the viewer, who is {audience}, can place themselves inside the moment within the first half second."),
+        ("Depth layering decision: the foreground carries a small, softly defocused cue that frames the subject, the midground holds "
+         "the subject and every critical detail in full sharpness, and the background simplifies into two or three large shapes "
+         "of tone and color. Each layer has its own value range, which keeps the image legible when it is shrunk to a thumbnail."),
+        (f"Color relationship decision: the verified palette ({palette}) is arranged so the strongest contrast sits exactly where the "
+         "eye should land, mid-tones carry the supporting forms, and the darkest dark is reserved for a single anchor. Skin, wood, "
+         "metal and fabric keep their natural hue shifts, so brand color shows through accents and environment instead of tinting people."),
+        ("Human detail decision: when people appear, faces show natural asymmetry, believable pores and fine lines, eyes that share "
+         "one focal point, teeth that look like teeth, and hair that has individual strands with a plausible hairline. Hands show "
+         "correct knuckle structure, nails and relaxed tension. Every body part keeps true scale relative to the others."),
+        ("Object fidelity decision: any product, tool or prop is drawn with the proportions, seams, hinges, labels and wear that a real "
+         "item of that kind has. Packaging faces the viewer at its most flattering honest angle, reflections follow the surface "
+         "curvature, and nothing is shown doing something the real object cannot physically do."),
+        (f"Typography rendering decision: {text_note} Letterforms keep consistent stroke contrast, and counters stay open so small "
+         "sizes remain readable on a phone in sunlight."),
+        (f"Negative space decision: empty areas are planned, not leftover. They give the eye a place to rest, hold the safe margin "
+         f"inside {keep_in}, and leave a quiet region that a platform caption or button can cover on a {ratio} crop without hiding "
+         "anything the message depends on. The balance between filled and empty areas feels deliberate from corner to corner."),
+        ("Micro-texture decision: fine surface detail matches the viewing distance. Fabric shows weave only where the camera is "
+         "close, wood shows grain direction that follows the object's shape, glass shows a hint of dust or a clean edge highlight, "
+         "and skin keeps subtle sheen. Texture never turns into noise, and it never smooths away into plastic."),
+        ("Atmosphere decision: air has weight in the frame. Distant elements lose a little contrast and shift slightly cooler, "
+         "close elements stay crisp and warm, and any haze, steam, dust or light shafts are present only when the declared scene "
+         "would plausibly produce them. The time of day stays consistent between sky, shadows and interior light."),
+        (f"Representation decision: people shown are depicted with dignity and specificity, reflecting the real makeup of {audience} "
+         "as stated in the brief, never a stereotype and never a default demographic mix invented by the renderer. Skin tones keep "
+         "their true depth and warmth under the chosen lighting, and clothing, setting and gesture respect the context of the brand."),
+        ("Motion and stillness decision: if movement is implied, it shows as a believable direction of travel, a slight lean, trailing "
+         "fabric or a settling of dust, and the rest of the frame stays calm so the movement is the only dynamic element. Frozen "
+         "motion looks like a fast shutter, not like a cut-out pasted onto a background."),
+        (f"Series cohesion decision: this image sits beside its siblings in the {dest['platform']} grid and carousel, so crop "
+         "anchor, horizon height, subject scale and color grade repeat across the set while the subject and the moment change. A "
+         "viewer scrolling past three images should recognize one brand voice before reading a single word."),
+        ("Compression resilience decision: gradients are wide and smooth enough to survive platform recompression without banding, "
+         "fine diagonal patterns are avoided because they shimmer, and every critical edge keeps at least a few pixels of contrast "
+         "so it holds after the image is resized for different devices and for the feed preview."),
+        (f"Platform convention decision: the composition respects how {dest['platform']} displays content, with the key subject "
+         "away from the corners where rounding and badges appear, the focal point near the upper third where thumbs rarely cover, "
+         "and a clean edge treatment that does not fight the interface chrome that frames the image on the viewer's screen."),
+        ("Accessibility decision: contrast between essential elements and their backgrounds stays high enough to read for people with "
+         "reduced vision, color is never the only carrier of meaning, and the scene description a screen reader would give is "
+         "obvious from the image itself: one subject, one action, one setting, one message."),
+        ("Eye path decision: the viewer's gaze is guided along a clear route, entering at a strong leading line or gesture, "
+         "traveling across the subject and landing on the key detail before leaving toward the supporting element. Lines of "
+         "sight inside the scene point inward, never off the frame, so attention stays with the message instead of escaping."),
+        ("Wardrobe and styling decision: clothing, accessories and surfaces are chosen to suit the audience's real world, with "
+         "believable fit, natural creasing, tidy but lived-in details and no anachronisms. Colors in styling support the palette "
+         "without matching it so exactly that the subject disappears into the background."),
+        ("Surface response decision: reflective and translucent materials show what is actually around them, so a window shows a "
+         "plausible street, a polished table shows a soft inverted hint of the objects on it, and a screen shows a simple, "
+         "generic interface with no readable brand names or invented logos."),
+        ("Edge quality decision: outlines are clean without a cut-out halo, hair and fabric edges blend into the background with "
+         "natural transparency, and overlapping shapes show believable contact shadows where they touch, so every element feels "
+         "physically present in the same space rather than layered in after the fact."),
+        ("Season and context decision: weather, foliage, clothing weight and light quality all agree with the season implied by the "
+         "campaign, and incidental background details stay neutral, so the image does not date quickly and does not conflict with "
+         "the offer, the holiday or the region the post is aimed at."),
+        ("Optics decision: the virtual lens behaves like a real one, with gentle natural vignetting, no oversharpened halos, "
+         "no chromatic fringing on high-contrast edges, controlled highlights that keep detail in bright areas, and shadows "
+         "that keep a little texture instead of collapsing into flat black."),
+        ("Scale and proportion decision: relative sizes follow the real world, so a hand fits the cup it holds, a doorway fits "
+         "the person walking through it, and a product sits at the size a customer would recognize. Where the composition "
+         "needs emphasis, it comes from framing and distance, never from distorting an object past what is believable."),
+        ("Emphasis hierarchy decision: exactly one element receives the strongest saturation, one receives the sharpest "
+         "focus, and one receives the largest scale, and these three advantages belong to the same element wherever possible. "
+         "Competing highlights elsewhere are toned down until they support the message instead of contesting it."),
+        ("Environmental honesty decision: the place shown is a place the audience could actually visit or use, with believable "
+         "clutter levels, wear that suits its age, and fixtures in their usual positions, so the offer feels attainable and "
+         "trustworthy rather than staged for a catalog."),
+        ("Light quality decision: the key light has a clear size and distance, producing shadow edges that are soft where the "
+         "source is large and crisp only where the scene demands it, with a gentle bounce from nearby surfaces filling the "
+         "darkest areas so that detail remains visible in every part of the subject."),
+        (f"Final self-review decision: before the render is accepted, the frame is read three ways, at full size for detail, at "
+         f"thumbnail size for the single dominant read, and in grayscale for value structure. Any failure on {focal}, on exact "
+         "spelling, on mark fidelity or on the declared exclusions sends the prompt back for revision with the same full instruction "
+         "set instead of a shortened one."),
+    ]
+
+
+def deepen(text: str, brief: dict, target: int) -> str:
+    """One rewrite pass for the rule 12 writer loop: append unused deepening blocks until the text reaches
+    `target` characters or the bank is exhausted. Genuine render decisions only, never repeated filler."""
+    out = text
+    for block in _deepening_bank(brief):
+        if count_chars(out) >= target:
+            break
+        if block not in out:
+            out += "\n" + block
+    return out
+
+
 # ─── Compile + validate (the full contract) ─────────────────────────────────
 
 def compile_prompt(brief: dict, provider: str, model: str,
@@ -571,15 +715,16 @@ def compile_prompt(brief: dict, provider: str, model: str,
       3. count/hash the final payload, 4. reject padding/contradictions/
       out-of-band BEFORE spend, 5. token budget so limits cannot silently
       truncate (condense to fit, never truncate mid-content).
+    Length: rule 12 through the shared enforcer. A prompt below the 95 percent target is
+    rewritten (deepen) up to 3 times; one still below the 80 percent floor, or above the
+    model max, is rejected with the exact characters to add or cut.
 
     Returns a receipt dict:
       {ok, final_prompt, count, hash, policy_version, provider, model,
        capability_source, token_estimate, problems[], vendor_cap,
-       vendor_cap_source, house_band}
+       vendor_cap_source, band}
     """
     policy = load_policy(policy_path)
-    band = policy.get("house_band", {})
-    lo, hi = int(band.get("min_chars", 9000)), int(band.get("max_chars", 19000))
     prov = policy.get("providers", {}).get(f"{provider}-{model.split('/')[-1]}") or \
         policy.get("providers", {}).get(f"{provider}-gpt-image-2-5") or \
         policy.get("providers", {}).get("agnes-image-2.1-flash")
@@ -591,11 +736,13 @@ def compile_prompt(brief: dict, provider: str, model: str,
     problems: list = []
     problems.extend(find_contradictions(brief))
     if problems:
-        return _fail(problems, policy, provider, model, vendor_cap,
-                     vendor_cap_source, band)
+        return _fail(problems, policy, provider, model, vendor_cap, vendor_cap_source, {})
 
     refs_blocks = reference_instruction_blocks(brief)
-    base = expand_sections(brief)
+    # the band for this model (the empty probe returns floor, target_min and max)
+    v0 = _band(model, "", vendor_cap)
+    target = v0.get("target_min")
+    base = expand_sections(brief, target)
     for blk in refs_blocks:
         base += "\n" + blk
     if negative_block:
@@ -603,43 +750,28 @@ def compile_prompt(brief: dict, provider: str, model: str,
 
     final = unicodedata.normalize("NFC", base).strip()
 
-    # Token budget FIRST: condense to fit vendor cap headroom if needed —
-    # never silently truncate. (House band condensation happens below.)
-    if vendor_cap and count_chars(final) > int(vendor_cap) - 1000:
+    # Rule 12 writer loop: deepen up to 3 times while below the target. Genuine render decisions only.
+    if target:
+        for _ in range(kie_prompt_enforcer.TRIES):
+            if count_chars(final) >= target:
+                break
+            final = deepen(final, brief, target).strip()
+
+    # Condense an overlong prompt to the model max without losing required meaning; never truncate silently.
+    limit = v0.get("max") or (int(vendor_cap) if vendor_cap else None)
+    if limit and count_chars(final) > int(limit):
         try:
-            final = condense(final, int(vendor_cap) - 1000)
+            final = condense(final, int(limit))
         except OverflowError as e:
             return _fail([f"AF-PROMPT-CANNOT-CONDENSE: {e}"], policy, provider,
-                         model, vendor_cap, vendor_cap_source, band)
+                         model, vendor_cap, vendor_cap_source, v0)
 
     count = count_chars(final)
-
-    # Condense overlong, expand-short handled by expand_sections already
-    # producing the full structure. If still over the house ceiling (very long
-    # client brief), condense without losing required meaning.
-    if count > hi:
-        try:
-            final = condense(final, hi)
-        except OverflowError as e:
-            return _fail([f"AF-PROMPT-CANNOT-CONDENSE: {e}"], policy, provider,
-                         model, vendor_cap, vendor_cap_source, band)
-        count = count_chars(final)
-
-    # Length gate on the FINAL payload: 8999 → fail; 9000 → pass length (semantic
-    # QC still required); 19000 → pass; 19001 → fail (handled by condense above,
-    # kept explicit for direct validation calls).
-    if count < lo:
-        problems.append(
-            f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — "
-            f"below the house floor {lo} (boundary: {lo - 1} fails, {lo} passes).")
-    if count > hi:
-        problems.append(
-            f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — "
-            f"above the house ceiling {hi} (boundary: {hi + 1} fails, {hi} passes).")
-
+    v = _band(model, final, vendor_cap)
+    problems.extend(_length_problems(v))
     problems.extend(find_padding(final))
 
-    receipt = {
+    return {
         "ok": not problems,
         "final_prompt": final,
         "count": count,
@@ -651,30 +783,22 @@ def compile_prompt(brief: dict, provider: str, model: str,
         "vendor_cap_chars": vendor_cap,
         "vendor_cap_source": vendor_cap_source,
         "token_estimate": token_estimate(final),
-        "house_band": {"min": lo, "max": hi},
+        "band": _band_receipt(v),
         "problems": problems,
     }
-    return receipt
 
 
 def validate_final(final_prompt: str, provider: str = "", model: str = "",
                    policy_path: str = _POLICY_PATH) -> dict:
     """Validate an ALREADY-ASSEMBLED final payload (post references + negatives)
-    against the house band, padding and hash-recording rules. Returns the same
-    receipt shape as compile_prompt (without brief-derived fields)."""
+    against rule 12 (shared enforcer), padding and hash-recording rules. Returns the
+    same receipt shape as compile_prompt (without brief-derived fields)."""
     policy = load_policy(policy_path)
-    band = policy.get("house_band", {})
-    lo, hi = int(band.get("min_chars", 9000)), int(band.get("max_chars", 19000))
+    kie = policy.get("providers", {}).get("kie-gpt-image-2-5", {})
+    model = model or kie.get("model_id") or _DEFAULT_MODEL
     count = count_chars(final_prompt)
-    problems = []
-    if count < lo:
-        problems.append(
-            f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — "
-            f"below the house floor {lo} (boundary: {lo - 1} fails, {lo} passes).")
-    if count > hi:
-        problems.append(
-            f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — "
-            f"above the house ceiling {hi} (boundary: {hi + 1} fails, {hi} passes).")
+    v = _band(model, unicodedata.normalize("NFC", final_prompt).strip(), kie.get("vendor_cap_chars"))
+    problems = _length_problems(v)
     problems.extend(find_padding(final_prompt))
     return {
         "ok": not problems,
@@ -685,13 +809,13 @@ def validate_final(final_prompt: str, provider: str = "", model: str = "",
         "provider": provider,
         "model": model,
         "token_estimate": token_estimate(final_prompt),
-        "house_band": {"min": lo, "max": hi},
+        "band": _band_receipt(v),
         "problems": problems,
     }
 
 
 def _fail(problems, policy, provider, model, vendor_cap, vendor_cap_source,
-          band) -> dict:
+          v) -> dict:
     return {
         "ok": False,
         "final_prompt": "",
@@ -704,25 +828,17 @@ def _fail(problems, policy, provider, model, vendor_cap, vendor_cap_source,
         "vendor_cap_chars": vendor_cap,
         "vendor_cap_source": vendor_cap_source,
         "token_estimate": 0,
-        "house_band": {"min": band.get("min_chars"), "max": band.get("max_chars")},
+        "band": _band_receipt(v) if v else {},
         "problems": problems,
     }
 
 
 if __name__ == "__main__":  # pragma: no cover — small CLI for manual runs
-    import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         ok = 0
-        r = compile_prompt({"audience": "test"}, "kie", "gpt-image-2-5-sunburst-text-to-image")
-        ok += 0 if r["ok"] and 9000 <= r["count"] <= 19000 else 1
-        v = validate_final("x" * 8999)
-        ok += 0 if not v["ok"] else 1
-        v = validate_final("x" * 9000)
-        ok += 0 if v["ok"] else 1
-        v = validate_final("x" * 19000)
-        ok += 0 if v["ok"] else 1
-        v = validate_final("x" * 19001)
-        ok += 0 if not v["ok"] else 1
+        r = compile_prompt({"audience": "test"}, "kie", _DEFAULT_MODEL)
+        ok += 0 if r["ok"] and 19000 <= r["count"] <= 20000 else 1
+        for n, want in ((15800, False), (19000, True), (20000, True), (20200, False)):
+            ok += 0 if validate_final("x" * n)["ok"] == want else 1
         print("self-test:", "PASS" if ok == 0 else f"FAIL({ok})")
         sys.exit(0 if ok == 0 else 2)
-    print(__doc__)

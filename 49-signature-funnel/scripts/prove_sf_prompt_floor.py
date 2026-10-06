@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """prove_sf_prompt_floor.py — fail-closed two-floor gate for Signature Funnel image
-prompts (Kie.ai gpt-image-2.5). EXACT clone of the presentations two-floor prompt gate
-(build_deck.py PROMPT_CHAR_FLOOR / PROMPT_CHAR_CEILING / structural-block / density),
-with the constants changed to the funnel band 5,000 / 19,000.
+prompts (Kie.ai gpt-image-2.5). A clone of the presentations two-floor prompt gate
+(structural-block / density), with the LENGTH floor measured by the shared KIE rule 12
+enforcer (shared-utils/kie_prompt_enforcer.py) instead of a band of its own.
 
 THE TWO FLOORS (both must clear or the prompt NEVER reaches a paid Kie call):
-  FLOOR 1 — LENGTH: 5,000 <= stripped chars <= 19,000.        -> AF-FUN-PROMPT-FLOOR / -CEILING
+  FLOOR 1 — LENGTH: 80 percent <= stripped chars <= 100 percent of the model max. -> AF-FUN-PROMPT-FLOOR / -CEILING
   FLOOR 2 — STRUCTURE/EXCELLENCE: a real rich prompt carries the load-bearing blocks:
     * the SIGNATURE GRADE BLOCK fingerprint (the canonical grade paragraph, 2.4). -> AF-FUN-PROMPT-GRADE
     * a final-paragraph NEGATIVE BLOCK with at least one 'Do not ' imperative.     -> AF-FUN-PROMPT-NEGATIVE
@@ -16,8 +16,7 @@ THE TWO FLOORS (both must clear or the prompt NEVER reaches a paid Kie call):
       spelling-lock directive AND the exact baked words; a non-text prompt states
       "no text / no letters / no words".                                          -> AF-FUN-PROMPT-TYPO
 
-CLONE PROVENANCE (cited): build_deck.py:325-327 (PROMPT_CHAR_FLOOR=9000/CEILING=18000),
-build_deck.py:1082-1102 (stripped-length floor+ceiling), build_deck.py REQUIRED_STRUCTURAL_BLOCKS
+CLONE PROVENANCE (cited): build_deck.py REQUIRED_STRUCTURAL_BLOCKS
 + _missing_structural_blocks, PROMPT_MIN_DISTINCT_WORDS density gate. Measured on the SAME
 stripped text the char gate measures; any self-reported length in the ledger is IGNORED.
 
@@ -28,18 +27,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_kie_prompt_enforcer()
+
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
-# --- the funnel band (clone of build_deck.py:325-327, constants changed) -----
-PROMPT_CHAR_FLOOR = 5000       # HARD low end (AF-FUN-PROMPT-FLOOR)
-PROMPT_CHAR_CEILING = 19000    # HARD high end (AF-FUN-PROMPT-CEILING); ~1,000 under the API ceiling
+# --- prompt length: KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer ----------
+# 95 to 100 percent of the model maxLength, hard floor 80 percent (AF-FUN-PROMPT-FLOOR), hard ceiling
+# 100 percent (AF-FUN-PROMPT-CEILING). The limit comes from Skill 74 prompt-budget; no band lives here.
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-FUN-PROMPT-DENSITY: catches paragraph-repeat padding
 
 # The canonical SIGNATURE GRADE BLOCK (SACRED IP) — embedded verbatim in block 4 of
@@ -163,16 +181,12 @@ def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
 
     stripped = _stripped(prompt)
     lc = stripped.lower()
-    length = len(stripped)
 
-    # FLOOR 1 — length band
-    if length < PROMPT_CHAR_FLOOR:
-        fails.append(("AF-FUN-PROMPT-FLOOR",
-                      f"{who}: {length} stripped chars, under the {PROMPT_CHAR_FLOOR} floor — a prompt "
-                      "this short cannot carry the signature specificity; NOT sent to Kie"))
-    if length > PROMPT_CHAR_CEILING:
-        fails.append(("AF-FUN-PROMPT-CEILING",
-                      f"{who}: {length} stripped chars, over the {PROMPT_CHAR_CEILING} ceiling"))
+    # FLOOR 1 — length band (KIE rule 12 through the shared enforcer)
+    verdict = KPE.check(str(record.get("model") or IMAGE_MODEL_DEFAULT), stripped)
+    if not verdict["ok"]:
+        code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
+        fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
 
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
@@ -233,7 +247,7 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
             violations.append(("AF-FUN-PROMPT-FLOOR", "a prompt entry is not an object"))
             continue
         violations.extend(evaluate_prompt(rec))
-    notes.append(f"checked {len(prompts)} image prompt(s) against the {PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} band")
+    notes.append(f"checked {len(prompts)} image prompt(s) against the KIE rule 12 length band")
     return violations, notes
 
 
@@ -440,7 +454,7 @@ def _report(violations, notes) -> None:
     for note in notes:
         print(f"NOTE: {note}")
     if not violations:
-        print(f"PASS: every image prompt clears the two-floor gate ({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING}).")
+        print("PASS: every image prompt clears the two-floor gate (KIE rule 12 length band).")
         return
     print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to Kie.")
     for code, msg in violations:
@@ -467,7 +481,14 @@ _VOCAB = (
 )
 
 
-def _valid_photo_prompt(target: int = 6500) -> str:
+def _target() -> int:
+    """The middle of the rule 12 target band for the default image model (self-test fixtures)."""
+    b = KPE.budget_for(IMAGE_MODEL_DEFAULT)
+    return (b["target_min"] + b["max"]) // 2
+
+
+def _valid_photo_prompt(target: Optional[int] = None) -> str:
+    target = target or _target()
     body = ("A single commanding subject fills the frame in a fashion-show hero portrait. "
             "SUBJECT AND WARDROBE: an editorial figure in brand-color couture. "
             "COMPOSITION AND SHOT: eye level, off center left on rule of thirds. ")
@@ -488,7 +509,8 @@ def _valid_photo_prompt(target: int = 6500) -> str:
     return body
 
 
-def _valid_typography_prompt(target: int = 6500) -> str:
+def _valid_typography_prompt(target: Optional[int] = None) -> str:
+    target = target or _target()
     body = ("An art gallery interior with three framed canvases. TYPOGRAPHY: each canvas "
             "carries one big bold artistic word, spelling-lock each string letter for letter, "
             'the words "DECIDE" and "COMMIT" and "RISE" spelled exactly as written. ')
@@ -521,7 +543,7 @@ def _violation_cases():
     def too_short(led):
         led["prompts"][0]["prompt"] = "short prompt " * 5
     def too_long(led):
-        led["prompts"][0]["prompt"] = _valid_photo_prompt(19100) + _VOCAB * 60
+        led["prompts"][0]["prompt"] = _valid_photo_prompt(KPE.budget_for(IMAGE_MODEL_DEFAULT)["max"] + 200)
     def no_grade(led):
         p = _valid_photo_prompt().replace("140 percent", "a bit more").replace(
             "signature color", "regular color").replace("melanin-true", "even").replace(
@@ -707,7 +729,7 @@ def run_self_test() -> int:
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
         description=f"Fail-closed two-floor gate for Signature Funnel image prompts "
-                    f"({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} chars). Exit 0 pass, 2 violation, 3 usage.")
+                    "(KIE rule 12 length band). Exit 0 pass, 2 violation, 3 usage.")
     ap.add_argument("--ledger", help="path to the image-prompt ledger JSON ('-' reads stdin)")
     # FIX-IMG-05: also accept an optional POSITIONAL ledger path so the SOP-FUNNEL-03
     # verify form (`prove_sf_prompt_floor.py <ledger>`) resolves to a real run instead

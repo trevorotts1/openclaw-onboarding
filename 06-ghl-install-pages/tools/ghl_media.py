@@ -87,6 +87,34 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
+    # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
+    # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
+    import importlib.util
+    here = Path(__file__).resolve().parent / "_kie_prompt_enforcer_embedded.py"
+    if here.is_file():
+        spec = importlib.util.spec_from_file_location("kie_prompt_enforcer", here)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["kie_prompt_enforcer"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    raise ImportError("kie_prompt_enforcer not found (neither shared-utils nor the embedded copy beside this file)")
+
+
+KPE = _load_kie_prompt_enforcer()
+
 logger = logging.getLogger(__name__)
 
 # ── Constants (ported from the PROVEN upload-ghl-media.sh + kie_generate.py) ──
@@ -122,14 +150,15 @@ TEXT_ABSENT_PIN = (
     "text, or typography of any kind anywhere in the image."
 )
 
-# Minimum stripped length (characters, excluding the appended pin) of an image
-# prompt before it may reach a PAID Kie call. FIX-XC-04f (d): Skill 6 previously
-# fabricated a ~200-char generic hero prompt; a prompt that thin can never carry
-# the 8-block, brand-graded direction a real page image needs. ``build_prompts_json``
-# raises ``ValueError`` when ``enforce_floor=True`` and a prompt is below this
-# floor, so a weak prompt physically cannot reach the paid generator. The build
-# path (``ghl_image_stage.run_image_pipeline``) always enforces it.
-PROMPT_CHAR_FLOOR = 1500
+# Image prompt length before a PAID Kie call is KIE prompt rule 12 (owner order 2026-10-05), measured by the shared
+# enforcer: 95 to 100 percent of the image model's maxLength, hard floor 80 percent (measured on the creative
+# content, before the appended pin), hard ceiling 100 percent (measured with the pin). FIX-XC-04f (d): Skill 6
+# previously fabricated a ~200-char generic hero prompt; a prompt that thin can never carry the 8-block,
+# brand-graded direction a real page image needs. ``build_prompts_json`` raises ``ValueError`` when
+# ``enforce_floor=True`` and a prompt is outside the band (the message names the exact characters to add or cut),
+# so a weak prompt physically cannot reach the paid generator. The build path
+# (``ghl_image_stage.run_image_pipeline``) always enforces it. No number lives here: the limit comes from Skill 74.
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 
 # PNG magic bytes — a real raster starts with these. A non-PNG download is a hard
 # FAIL (never stubbed). Mirrors the verify in kie_generate.py.
@@ -522,7 +551,7 @@ def build_prompts_json(
     Raises:
         ValueError: empty specs, a missing/blank ``id`` or ``prompt``, a duplicate
             ``id``, an unknown ``mode``, an ``i2i`` entry without ``input_urls``,
-            or (when ``enforce_floor``) a prompt below ``PROMPT_CHAR_FLOOR``.
+            or (when ``enforce_floor``) a prompt outside the KIE rule 12 length band.
     """
     if not isinstance(copy_specs, list) or not copy_specs:
         raise ValueError("copy_specs must be a non-empty list of image specs")
@@ -553,7 +582,7 @@ def build_prompts_json(
         # BEFORE any boilerplate pin is appended — so the pin can never inflate a
         # thin prompt over the bar. A weak prompt then physically cannot reach a
         # paid Kie call (the build path passes enforce_floor=True).
-        content_len = len(prompt.strip())
+        prompt_content = prompt.strip()
 
         # FIX-IMG-09 (ii): pick the pin by whether the spec renders copy.
         #   * text_bearing spec  → the English/Latin SPELLING pin (render text
@@ -566,14 +595,18 @@ def build_prompts_json(
         if pin not in prompt:
             prompt = f"{prompt} {pin}"
 
-        if enforce_floor and content_len < PROMPT_CHAR_FLOOR:
-            raise ValueError(
-                f"copy_specs[{i}] ({slide_id}): prompt content is {content_len} "
-                f"chars, below the PROMPT_CHAR_FLOOR of {PROMPT_CHAR_FLOOR} "
-                "(measured before the pin). A prompt this thin is refused so it "
-                "can never reach a paid Kie call — build an 8-block, brand-graded "
-                "prompt (see ghl_image_stage._derive_copy_specs)."
-            )
+        if enforce_floor:
+            # The floor (and a first ceiling check) on the creative CONTENT, then the ceiling again with the pin.
+            verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt_content, fallback_max=KPE.last_known(IMAGE_MODEL_DEFAULT))
+            if verdict["ok"]:
+                verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt, fallback_max=KPE.last_known(IMAGE_MODEL_DEFAULT))
+            if not verdict["ok"]:
+                raise ValueError(
+                    f"copy_specs[{i}] ({slide_id}): {verdict['message']} (floor measured before the pin, "
+                    "ceiling with it). A prompt outside the rule 12 band is refused so it can never "
+                    "reach a paid Kie call; build an 8-block, brand-graded prompt (see "
+                    "ghl_image_stage._derive_copy_specs)."
+                )
 
         # Generator-shaped entry (exactly what kie_generate.py consumes).
         gen_entry: dict[str, Any] = {"slide": slide_id, "prompt": prompt, "mode": mode}

@@ -120,9 +120,10 @@ def test_workbook_prompt_clears_band_and_rich_gate():
                              client_name="Test Client", is_i2i=True, page_index=1,
                              page_count_total=3, content=_SAMPLE_CONTENT)
     n = len(p.strip())
-    assert wb.PROMPT_FLOOR <= n <= wb.PROMPT_CEILING, (
-        f"prompt {n} chars outside band {wb.PROMPT_FLOOR}-{wb.PROMPT_CEILING}")
-    assert n >= wb.PROMPT_TARGET_MIN, f"prompt {n} chars below target {wb.PROMPT_TARGET_MIN}"
+    bud = wb.prompt_gate.length_budget()  # KIE rule 12 via the shared enforcer; the 9,000-18,000 constants are retired
+    assert not wb.prompt_gate.length_problems(p.strip()), (
+        f"prompt {n} chars outside the rule 12 band: {wb.prompt_gate.length_problems(p.strip())}")
+    assert n >= bud["target_min"], f"prompt {n} chars below the rule 12 target {bud['target_min']}"
     # The full shared rich gate (what kie_generate.py applies under the
     # presentations context) must also pass — structural blocks + 8-class negative
     # + spelling-lock + density.

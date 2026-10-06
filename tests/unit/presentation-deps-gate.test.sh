@@ -322,6 +322,8 @@ cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/sc
 # GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
 # co-located in SCRIPTS_DIR or it refuses before we ever reach GATE 2 (bypass-scan).
 cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
+# ...with the embedded, hash-locked copy of the KIE prompt enforcer it ships beside it (no shared-utils on this fake box).
+cp "$REPO_ROOT/06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py" "$FAKE_SCRIPTS/_kie_prompt_enforcer_embedded.py" 2>/dev/null || true
 cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
 import os, sys
 print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))

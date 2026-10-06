@@ -1,67 +1,73 @@
 {
-  "_comment": "Graphics Image Protocol (GIP) prompt bands. MIN is a HARD floor (AF-GIP-PROMPT-FLOOR): a prompt under its band floor is NOT submitted. MAX mirrors MODEL-SPECS tier caps (AF-DIU-PROMPT-CAP). Bands are per asset class x tier, because graphics surfaces differ (a photoreal draft is not a text-bearing ad). Numbers are operator-ratifiable (see CROSS-TOPIC open question 5); rationale cited inline. Enforced by 45-design-intelligence-library/scripts/diu_validator.py prompt-band and SOP-GIP-01. GK-20 (P3-05 band<->routing reconciliation, 2026-07-15): a band's 'endpoints' list is the AUTHORITATIVE routing guidance role docs must follow -- an endpoint refused for text everywhere else (Skill 35's pregen_prompt_gate.py NON_TEXT_MODELS / social-media-designs/_RULES.md) must never appear in a text_bearing:true band, and the fleet's mandatory text-rendering route (Ideogram V3 DESIGN) must always resolve to a text_bearing:true band whose MAX is achievable on that endpoint's own verified API cap (MODEL-SPECS.md).",
-  "version": 2,
+  "_comment": "Graphics Image Protocol (GIP) prompt bands, version 3 (owner order 2026-10-05, KIE prompt rule 12). A band is a QUALITY profile per asset class: tier, distinct-word density floor, whether baked text is allowed, applies_to and the routing endpoints. A band holds NO length numbers. Prompt LENGTH is KIE rule 12 (95 to 100 percent of the model's maxLength, hard floor 80 percent, hard ceiling 100 percent), enforced by shared-utils/kie_prompt_enforcer.py, which wraps 74-kie-live-adapter kie_live_adapter.py prompt-budget --check (live schema, registry fallback). diu_validator.py prompt-band checks the length against --model (default: the first endpoint of the band) and rejects below the floor (AF-GIP-PROMPT-FLOOR, prints the characters to add) or above the max (AF-DIU-PROMPT-CAP, prints the characters to cut). A band's 'endpoints' list is the AUTHORITATIVE routing guidance role docs must follow (GK-20): an endpoint refused for text everywhere else (Skill 35 pregen_prompt_gate.py non-text models) never appears in a text_bearing:true band. Ideogram V3 is not a social route; it stays only on the non-social `medium` specialty band below. Enforced by 45-design-intelligence-library/scripts/diu_validator.py prompt-band and SOP-GIP-01.",
+  "version": 3,
+  "length_source": {
+    "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
+    "enforcer": "shared-utils/kie_prompt_enforcer.py",
+    "limit_source": "74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --check",
+    "floor_percent_of_max": 80,
+    "target_percent_of_max": "95 to 100",
+    "ceiling_percent_of_max": 100
+  },
   "bands": {
     "text_bearing_long": {
       "tier": "LONG",
-      "min": 5000,
-      "max": 19000,
       "min_distinct_words": 150,
       "text_bearing": true,
-      "applies_to": ["ad creative", "book cover", "magazine cover", "banner with copy", "infographic", "email hero with copy"],
-      "endpoints": ["gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"],
-      "_rationale": "Skill 49/56 already prove 5,000-19,000-char image prompts under fail-closed provers (social-media how-to:232-233); GPT-Image 2.5 is strongest on long structured prompts (MODEL-SPECS section 4); 19,000 keeps the ~1,000-char safety margin under the 20,000 API cap — the floor is 5,000 (never below 5,000), the ceiling is 19,000 (never above 19,000). GK-20: `nano-banana-2` REMOVED from this band's endpoints (2026-07-15) -- Nano Banana 2/Pro is refused for ANY text-overlay deliverable everywhere else in the fleet (pregen_prompt_gate.py NON_TEXT_MODELS; social-media-designs/_RULES.md model routing) and 20,000-char Nano Banana capacity was never the reason this band existed; `social post graphic with baked text` moved to `text_bearing_medium` below, which is now the ONLY band a text-led social asset can legally target."
-    },
-    "text_bearing_medium": {
-      "tier": "MEDIUM",
-      "min": 1600,
-      "max": 4500,
-      "min_distinct_words": 90,
-      "text_bearing": true,
-      "applies_to": ["social post graphic with baked text", "quote-card / text-led post", "carousel slide with baked headline"],
-      "endpoints": ["ideogram/v3-text-to-image"],
-      "_rationale": "GK-20 fix (P3-05 band<->routing contradiction, 2026-07-15): every quote-card/text-led social post MUST route to Ideogram V3 DESIGN, never Nano Banana (social-media-designs/_RULES.md model routing, enforced mechanically by Skill 35's pregen_prompt_gate.py AF-SM-MODEL-ROUTING) -- but no text_bearing band named an Ideogram endpoint, and text_bearing_long's own floor (5,000) already exceeds Ideogram V3's verified real API prompt cap of 5,000 chars with ZERO margin (MODEL-SPECS.md 'Ideogram V3' row + section-3 TIER<->ENDPOINT table: Ideogram is MEDIUM-compatible only, LONG tier is NOT SUPPORTED on this endpoint). MAX=4,500 keeps the same ~10% safety margin under Ideogram's 5,000-char cap that text_bearing_long/visual_long keep under GPT-Image 2.5/Nano Banana's 20,000-char cap. MIN=1,600 is 2x the non-text-bearing `medium` band's floor (800) -- the same 2x text-bearing/non-text-bearing floor ratio already established between text_bearing_long (5,000) and visual_long (2,500) -- and is a MEASURED floor: a genuinely rich, fully-compliant text-bearing prompt carrying every SOP-GIP-01 element (spelling-lock, verbatim baked copy, style-reference-only directive, the 8-class negative block) with only 4-6 descriptive body sentences already runs 1,600-2,300 characters (measured via `prove_gip_prompt_floor.py`'s own fixture builder), so this floor forces genuine per-asset richness without demanding content the tight 4,500-char ceiling cannot hold."
+      "applies_to": [
+        "ad creative",
+        "book cover",
+        "magazine cover",
+        "banner with copy",
+        "infographic",
+        "email hero with copy",
+        "social post graphic with baked text",
+        "quote-card / text-led post",
+        "carousel slide with baked headline"
+      ],
+      "endpoints": [
+        "gpt-image-2-5-sunburst-text-to-image",
+        "gpt-image-2-5-sunburst-image-to-image",
+        "gpt-image-2-text-to-image",
+        "gpt-image-2-image-to-image"
+      ],
+      "_rationale": "Text-bearing assets (ads, covers, infographics, and social posts with baked text) route to GPT Image 2.5, the strongest on long structured prompts (MODEL-SPECS section 4). Social text-led posts no longer have a separate Ideogram band: Skill 35 routes every social image to GPT Image 2.5 Sunburst (owner order 2026-10-05). GK-20: nano-banana-2 is NOT an endpoint of any text-bearing band."
     },
     "visual_long": {
       "tier": "LONG",
-      "min": 2500,
-      "max": 19000,
       "min_distinct_words": 120,
       "text_bearing": false,
-      "applies_to": ["photoreal scene", "brand imagery without baked text", "thumbnail without text"],
-      "endpoints": ["gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "nano-banana-2"]
+      "applies_to": [
+        "photoreal scene",
+        "brand imagery without baked text",
+        "thumbnail without text"
+      ],
+      "endpoints": [
+        "gpt-image-2-5-sunburst-text-to-image",
+        "gpt-image-2-5-sunburst-image-to-image",
+        "gpt-image-2-text-to-image",
+        "gpt-image-2-image-to-image",
+        "nano-banana-2"
+      ]
     },
     "medium": {
       "tier": "MEDIUM",
-      "min": 800,
-      "max": 2800,
       "min_distinct_words": 60,
       "text_bearing": false,
-      "endpoints": ["seedream/4.5-text-to-image", "seedream/4.5-edit", "ideogram/v3-text-to-image", "wan/2-7-image"],
-      "_rationale": "Seedream hard-fails silently above 3,000 (MODEL-SPECS:14; SOP-DIU-615:77); 2,800 is the existing MEDIUM cap."
+      "endpoints": [
+        "seedream/4.5-text-to-image",
+        "seedream/4.5-edit",
+        "ideogram/v3-text-to-image",
+        "wan/2-7-image"
+      ],
+      "_rationale": "Non-social specialty route. Seedream hard-fails silently above its own maxLength (MODEL-SPECS:14; SOP-DIU-615:77); the limit and the 80 percent floor now come from the model's live schema through the shared enforcer."
     },
     "short_draft": {
       "tier": "SHORT",
-      "min": 200,
-      "max": 500,
       "min_distinct_words": 25,
       "text_bearing": false,
       "client_deliverable": false,
-      "_rationale": "SHORT exists for drafts/ideation only; a SHORT-tier output is NEVER a client deliverable."
-    },
-    "social_planner_image_scoped_override": {
-      "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner / Skill 57 image paths, Kie GPT Image 2.5 via Kie + Agnes adapters). This band does NOT change any band above and does NOT apply to any other skill; the GIP bands above (and GK-20 routing) remain authoritative for Graphics-department work.",
-      "policy_source": "shared-utils/social_prompt_policy.json",
-      "compiler": "shared-utils/social_prompt_compiler.py",
-      "min": 9000,
-      "max": 19000,
-      "hard_fail_closed": true,
-      "boundaries": { "fail_below": 9000, "pass_at": 9000, "pass_at_max": 19000, "fail_above": 19000 },
-      "count_rule": "len(unicodedata.normalize('NFC', final).strip()) — NFC code points of the FINAL payload AFTER reference instructions + negatives; TypeScript parity Array.from(normalized.trim()).length",
-      "text_bearing": true,
-      "endpoints": ["gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "agnes-image-2.1-flash"],
-      "gk20_note": "GK-20 routing preserved: text_bearing social assets still route to Ideogram per existing rules UNLESS the provider is GPT Image 2.5 or Agnes reached via the social planner path (this scoped band). Ideogram's own 5,000-char cap means this 9,000-19,000 band can NEVER target Ideogram — the band is GPT Image 2.5 / Agnes only.",
-      "_rationale": "F32 owner requirement (2026-09-08): every social-planner image prompt for Kie GPT Image 2.5 and Agnes carries 9,000-19,000 meaningful stripped Unicode characters, validated on the FINAL payload with hash+count recorded before spend. Distinct from the vendor caps (Kie GPT Image 2.5 published maxLength 20000; Agnes NOT_PUBLISHED)."
+      "_rationale": "SHORT exists for drafts and ideation only; a SHORT-tier output is NEVER a client deliverable. Any draft that is sent to a KIE model is still checked against rule 12 for that model."
     }
   }
 }

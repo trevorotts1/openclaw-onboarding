@@ -378,7 +378,9 @@ fi
 # Derive the hook route + routing agent id in a way that works across both
 # repo variants (Mac uses ROUTING_AGENT_ID; VPS uses HOOK_NAME/AGENT_ID).
 REF_HOOK_NAME="${HOOK_NAME:-$ROUTE_ID}"
-REF_AGENT_ID="${AGENT_ID:-${ROUTING_AGENT_ID:-main}}"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/lib-docker-tenant.sh"
+REF_AGENT_ID="${AGENT_ID:-$(s38_resolve_routing_agent 2>/dev/null || echo main)}"
 REF_ENDPOINT_URL="https://${PUBLIC_HOSTNAME}/hooks/${REF_HOOK_NAME}"
 
 # Build the LEAD block in spec order, then PREPEND it to SEC1 (the rest of the

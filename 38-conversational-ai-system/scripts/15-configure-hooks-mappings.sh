@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 15-configure-hooks-mappings.sh
-# Step 3 (hooks.mappings) + Step 3.5 (Model Selection Wizard) + Step 4 (E2E test).
+# Step 3 (hooks.mappings) + 3.1 (trusted proxy) + Step 3.5 (Model Selection Wizard) + Step 4 (reachability probe, no agent run).
 # Playbook v5.14 lines 1089-1395. Idempotent.
 # Safe env reader: parses KEY=VALUE, never sources a client-owned file.
 _ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/env-load.sh"
@@ -11,8 +11,10 @@ _env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [
 
 set -euo pipefail
 
-SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
-CONFIG_FILE="${CONFIG_FILE:-$HOME/.openclaw/openclaw.json}"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/lib-docker-tenant.sh"
+SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$(s38_default_secrets_env)}"
+CONFIG_FILE="${CONFIG_FILE:-$(s38_config_path)}"
 GATEWAY_PORT="${GATEWAY_PORT:-18789}"
 
 _env_read "$SECRETS_ENV_FILE" || true
@@ -42,10 +44,20 @@ backup_config() {
   echo "config backup: ${CONFIG_FILE}.bak.${ts}" >&2
 }
 
+# Validate-then-commit: the candidate is validated as its own file BEFORE it
+# replaces the live config, so a key the installed OpenClaw rejects (e.g.
+# 2026.9.x `hooks: Unrecognized key "maxBodyBytes"`) is never left live for
+# the gateway's hot-reload to trip on.
 write_config() {
-  local new="$1"
-  echo "$new" | jq '.' > "${CONFIG_FILE}.tmp"
-  mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  local new="$1" tmp="${CONFIG_FILE}.tmp"
+  echo "$new" | jq '.' > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  if command -v openclaw >/dev/null 2>&1 && ! OPENCLAW_CONFIG_PATH="$tmp" openclaw config validate >&2; then
+    rm -f "$tmp"
+    echo "REFUSED: candidate config failed 'openclaw config validate' — live config left unchanged." >&2
+    exit 5
+  fi
+  mv "$tmp" "$CONFIG_FILE"
 }
 
 # =============================================================================
@@ -53,7 +65,13 @@ write_config() {
 # =============================================================================
 echo "==> Step 3: hooks.mappings for route_id=$ROUTE_ID" >&2
 
-# Generate / reuse HOOKS_TOKEN
+# Routing agent must be a CONFIGURED agent (2026.9.x often has no `main`).
+ROUTING_AGENT_ID="$(s38_resolve_routing_agent "$CONFIG_FILE")" || exit 10
+echo "routing agent: $ROUTING_AGENT_ID" >&2
+
+# Generate / reuse HOOKS_TOKEN (the live hooks.token wins over a fresh one, so
+# a re-run never splits the config token from the one the probe and GHL use).
+HOOKS_TOKEN="${HOOKS_TOKEN:-$(jq -r '.hooks.token // empty' "$CONFIG_FILE" 2>/dev/null || true)}"
 if [[ -z "${HOOKS_TOKEN:-}" ]]; then
   HOOKS_TOKEN="$(openssl rand -base64 32 | tr -d '\n=' | head -c 43)"
   append_secret "HOOKS_TOKEN" "$HOOKS_TOKEN"
@@ -76,7 +94,6 @@ if [[ "$HAS_MAPPING" == "true" ]]; then
   echo "hooks.mappings entry id=$ROUTE_ID already present — skipping merge" >&2
 else
   backup_config
-  ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
   # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on a live client (OpenClaw 2026.5.27):
   #  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
   #    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
@@ -147,19 +164,39 @@ else
      .hooks.enabled = true |
      .hooks.token = $tok |
      .hooks.path = (.hooks.path // "/hooks") |
-     .hooks.maxBodyBytes = (.hooks.maxBodyBytes // 262144) |
      .hooks.defaultSessionKey = (.hooks.defaultSessionKey // "hook:ghl:default") |
      .hooks.allowRequestSessionKey = true |
      .hooks.allowedSessionKeyPrefixes = ((.hooks.allowedSessionKeyPrefixes // []) + ["hook:ghl:"] | unique) |
-     .hooks.allowedAgentIds = ((.hooks.allowedAgentIds // []) + [$agent, "main"] | unique) |
+     .hooks.allowedAgentIds = ((.hooks.allowedAgentIds // []) + [$agent] | unique) |
      .hooks.mappings = ((.hooks.mappings // []) + [$mapping])' "$CONFIG_FILE")"
   write_config "$UPDATED"
   echo "hooks.mappings entry id=$ROUTE_ID merged into config" >&2
 fi
 
-# Validate (best-effort — non-fatal if CLI absent)
-if command -v openclaw >/dev/null 2>&1; then
-  openclaw config validate || { echo "openclaw config validate FAILED — restore from .bak.*" >&2; exit 5; }
+# =============================================================================
+# STEP 3.1 — Trust the tunnel proxy (idempotent, runs even when the mapping exists)
+# =============================================================================
+# cloudflared adds X-Forwarded-For. Without gateway.trustedProxies naming the hop
+# it connects from, OpenClaw 2026.9.x answers EVERY tunneled request with
+# 403 proxy_attribution_required — the hook is unreachable from GHL even though
+# it works on localhost. Docker tenant: the bridge gateway (docker-proxy); host or
+# Mac cloudflared: loopback. Also heals `hooks.maxBodyBytes`, which earlier
+# versions of this script wrote and the 2026.9.x schema rejects.
+PROXIES_JSON="$(s38_trusted_proxies | jq -R . | jq -sc .)" || PROXIES_JSON="[]"
+if [[ "$PROXIES_JSON" == "[]" ]]; then
+  echo "WARN: could not determine the tunnel proxy address — set TRUSTED_PROXIES=<ip> and re-run, or tunneled requests will get 403 proxy_attribution_required." >&2
+fi
+NEEDS_PROXY_FIX="$(jq --argjson p "$PROXIES_JSON" \
+  '((.gateway.trustedProxies // []) as $have | ($p - $have | length) > 0) or (.hooks.maxBodyBytes? != null)' "$CONFIG_FILE")"
+if [[ "$NEEDS_PROXY_FIX" == "true" ]]; then
+  backup_config
+  write_config "$(jq --argjson p "$PROXIES_JSON" \
+    '.gateway = (.gateway // {}) |
+     .gateway.trustedProxies = ((.gateway.trustedProxies // []) + $p | unique) |
+     del(.hooks.maxBodyBytes)' "$CONFIG_FILE")"
+  echo "gateway.trustedProxies now includes $PROXIES_JSON (the gateway restarts itself to apply this; expect a short 502 window)" >&2
+else
+  echo "gateway.trustedProxies already includes $PROXIES_JSON" >&2
 fi
 
 # =============================================================================
@@ -175,7 +212,9 @@ echo "==> Step 3.5: Model Selection Wizard" >&2
 # persisted to SECRETS_ENV_FILE as ASYNC_MODEL / BATCH_MODEL so downstream consumers
 # (e.g. 04-register-crons.sh, which reads $BATCH_MODEL) honor the operator's selection
 # WITHOUT writing an invalid config key.
-RT_SET="$(jq -r '(.agents.entries.main.model? // ((.agents.list // []) | map(select(.id=="main")) | .[0].model)) // empty' "$CONFIG_FILE")"
+# The real-time model is the ROUTING agent's own model (string or {primary,...}).
+RT_SET="$(jq -r --arg a "$ROUTING_AGENT_ID" '(.agents.entries[$a].model? // ((.agents.list // []) | map(select(.id==$a)) | .[0].model)) // empty | if type=="object" then (.primary // empty) else . end' "$CONFIG_FILE")"
+RT_WAS="$RT_SET"
 ASYNC_SET="$( { grep -E '^ASYNC_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
 ASYNC_SET="${ASYNC_SET:-${ASYNC_MODEL:-}}"
 BATCH_SET="$( { grep -E '^BATCH_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- ; } || true)"
@@ -183,6 +222,15 @@ BATCH_SET="${BATCH_SET:-${BATCH_MODEL:-}}"
 
 if [[ -n "$RT_SET" && -n "$ASYNC_SET" && -n "$BATCH_SET" ]]; then
   echo "all three tiers already configured — skipping wizard (rt=$RT_SET async=$ASYNC_SET batch=$BATCH_SET)" >&2
+elif [[ ! -t 0 || -n "${SKILL38_NONINTERACTIVE:-}" ]]; then
+  # No terminal (agent exec, cron, CI): never block on /dev/tty and never change
+  # a client's model unasked. The routing agent keeps its configured model and
+  # async/batch follow it.
+  echo "non-interactive run: model wizard skipped — $ROUTING_AGENT_ID keeps ${RT_SET:-its default model}; async/batch follow it. Re-run in a terminal to choose tiers." >&2
+  if [[ -n "$RT_SET" ]]; then
+    append_secret "ASYNC_MODEL" "${ASYNC_SET:-$RT_SET}"
+    append_secret "BATCH_MODEL" "${BATCH_SET:-$RT_SET}"
+  fi
 else
   pick_model() {
     local tier="$1"; shift
@@ -276,9 +324,9 @@ else
     fi
   done
 
-  backup_config
   # SCHEMA-SAFE WRITE (2026-05-29): only the real-time model goes into openclaw.json
-  # (on the main agent's `agents.list[].model`). We DO NOT write
+  # (on the ROUTING agent's model — never an invented `main`; an object model keeps
+  # its fallbacks and only `primary` changes). Skipped when the model is unchanged. We DO NOT write
   # `agents.defaults.async`/`agents.defaults.batch` — those keys are rejected by the
   # 2026.5.27 .strict() schema and would make `openclaw config validate` FAIL. The
   # async/batch tier choices are persisted to SECRETS_ENV_FILE instead (read by crons).
@@ -287,20 +335,24 @@ else
   # ROSTER SHAPE: OpenClaw 2026.9.x keeps agents in `agents.entries` (keyed by
   # id); writing `agents.list` there is `agents: Unrecognized key "list"` and the
   # gateway will not start. Write into whichever shape the box already has.
+  if [[ "$RT_SET" != "$RT_WAS" ]]; then
+  backup_config
   UPDATED="$(jq \
-    --arg rt "$RT_SET" \
-    '.agents = (.agents // {}) |
+    --arg rt "$RT_SET" --arg a "$ROUTING_AGENT_ID" \
+    'def setm: if (.model | type) == "object" then .model.primary = $rt else .model = $rt end;
+     .agents = (.agents // {}) |
      if (.agents.entries | type) == "object" then
-       .agents.entries.main = ((.agents.entries.main // {}) + {model:$rt})
+       .agents.entries[$a] = ((.agents.entries[$a] // {}) | setm)
      else
        .agents.list = (.agents.list // []) |
-       (if (.agents.list | map(.id == "main") | any) then
-          .agents.list |= map(if .id == "main" then .model = $rt else . end)
+       (if (.agents.list | map(.id == $a) | any) then
+          .agents.list |= map(if .id == $a then setm else . end)
         else
-          .agents.list += [{id:"main", model:$rt}]
+          .agents.list += [{id:$a, model:$rt}]
         end)
      end' "$CONFIG_FILE")"
   write_config "$UPDATED"
+  fi
   # Persist the async + batch tier choices to the secrets env file (NOT to the
   # config) so 04-register-crons.sh and other consumers honor them.
   append_secret "ASYNC_MODEL" "$ASYNC_SET"
@@ -362,10 +414,10 @@ if command -v openclaw >/dev/null 2>&1; then
     _sh_has_flag '--session'    && SH_SILENCE_ARGS+=(--session isolated)
     _sh_msg="Run the Monthly Comprehensive Review per protocols/monthly-comprehensive-review-protocol.md — 30-day audit across playbooks, GHL workflows, knowledge bases, model configs, tune-ups, bug log."
     if openclaw cron add --name system-health-heartbeat --cron "0 9 1 * *" \
-         --agent main --light-context \
+         --agent "$ROUTING_AGENT_ID" --light-context \
          ${SH_SILENCE_ARGS[@]+"${SH_SILENCE_ARGS[@]}"} --message "$_sh_msg" >&2 \
        || openclaw cron add --name system-health-heartbeat --cron "0 9 1 * *" \
-         --agent main --light-context --message "$_sh_msg" >&2; then
+         --agent "$ROUTING_AGENT_ID" --light-context --message "$_sh_msg" >&2; then
       echo "registered cron: system-health-heartbeat (0 9 1 * *) via openclaw cron add [delivery silenced]" >&2
     else
       echo "WARN: 'openclaw cron add system-health-heartbeat' failed — register it manually (cron.jobs JSON is invalid on 2026.5.27)" >&2
@@ -376,30 +428,40 @@ else
 fi
 
 # =============================================================================
-# STEP 4 — End-to-end test through the public tunnel
+# STEP 4 — Reachability probe through the public tunnel (NO agent run)
 # =============================================================================
-echo "==> Step 4: end-to-end test" >&2
-# CORRECTED GHL HOOK STRUCTURE (2026-05-29): FLAT body, no nested objects, ALL 23 keys (owner directive —
-# 23 is the minimum, no stripped bodies). session_key is flat and starts with the allowed "hook:ghl:" prefix;
-# the mapping reads contact_id/message_body/etc. directly. The body's messageTemplate is placeholder-free so
-# GHL never mangles it. 23 keys: id, match, action, agent_id, model, wakeMode, name, session_key,
-# messageTemplate, deliver, timeoutSeconds, channel, to, thinking, contact_id, first_name, last_name, email,
-# phone, subject, message_body, location_id, location_name.
-ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"  # may be unset if the mapping already existed (set -u guard)
-PAYLOAD='{"id":"'"$ROUTE_ID"'","match":"'"$ROUTE_ID"'","action":"agent","agent_id":"'"$ROUTING_AGENT_ID"'","model":"ollama/deepseek-v4-flash:0731-cloud","wakeMode":"now","name":"GHL Sales Inbound","session_key":"hook:ghl:sms:e2e-test-001","messageTemplate":"Respond as the Sales agent and reply to this contact via the GHL Conversations API per TOOLS.md","deliver":false,"timeoutSeconds":300,"channel":"sms","to":"+15555550100","thinking":"medium","contact_id":"e2e-test-001","first_name":"E2E","last_name":"Test","email":"e2e@example.com","phone":"+15555550100","subject":"","message_body":"End-to-end setup verification.","location_id":"e2e-loc-001","location_name":"E2E Test Location"}'
+# This step proves tunnel -> trusted proxy -> hook auth -> mapping match WITHOUT
+# dispatching the agent. (The old step POSTed a full body at a fake contact,
+# which started a real agent run that tried to message a non-existent contact.)
+#   1. no token                                  -> 401 (hooks live behind auth)
+#   2. real token + session_key outside the allowed "hook:ghl:" prefix
+#                                                -> 400 "sessionKey must start with"
+#      i.e. the route matched and the request was refused BEFORE admission.
+# 403 proxy_attribution_required = gateway.trustedProxies is wrong; 502/000 while
+# the gateway restarts to apply it, so those are retried for up to ~5 minutes.
+# The full inbound->reply ground-truth test is scripts/24-self-test-hook.sh.
+echo "==> Step 4: reachability probe (no agent run)" >&2
+URL="https://${PUBLIC_HOSTNAME}/hooks/${ROUTE_ID}"
+probe() {  # $1 = auth header value or "" ; prints "CODE BODY"
+  local out
+  out="$(curl -sS --max-time 20 -X POST "$URL" -H "Content-Type: application/json" \
+    ${1:+-H "Authorization: Bearer $1"} \
+    -d '{"session_key":"skill38-probe:not-allowed","message_body":"probe"}' \
+    -w $'\n%{http_code}' 2>/dev/null)" || out=$'\n000'
+  printf '%s %s' "${out##*$'\n'}" "${out%$'\n'*}"
+}
+for _i in $(seq 1 30); do
+  R1="$(probe "")"
+  case "${R1%% *}" in 000|502|503|403) sleep 10 ;; *) break ;; esac
+done
+R2="$(probe "$HOOKS_TOKEN")"
+if [[ "${R1%% *}" == "401" && "${R2%% *}" == "400" && "$R2" == *"sessionKey must start with"* ]]; then
+  echo "PROBE PASS — no token: 401; real token: 400 (route matched, refused before admission)" >&2
+else
+  echo "PROBE FAIL — no token: ${R1:0:200} | real token: ${R2:0:200}" >&2
+  [[ "$R1" == *proxy_attribution_required* ]] && echo "  fix: gateway.trustedProxies must name the hop cloudflared connects from (TRUSTED_PROXIES=<ip>, re-run)." >&2
+  [[ "${R2%% *}" == "404" ]] && echo "  fix: no hooks mapping matched /hooks/${ROUTE_ID} — hooks.enabled / hooks.mappings not live yet." >&2
+  exit 7
+fi
 
-HTTP_CODE="$(curl -sS -o /tmp/.hooks-e2e-body.$$ -w '%{http_code}' \
-  --max-time 30 \
-  -X POST "https://${PUBLIC_HOSTNAME}/hooks/${ROUTE_ID}" \
-  -H "Authorization: Bearer ${HOOKS_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "$PAYLOAD" || echo "000")"
-BODY="$(cat /tmp/.hooks-e2e-body.$$ 2>/dev/null || true)"
-rm -f /tmp/.hooks-e2e-body.$$
-
-case "$HTTP_CODE" in
-  2*) echo "E2E PASS — HTTP $HTTP_CODE" >&2; echo "$BODY" | head -c 400 >&2; echo >&2 ;;
-  *)  echo "E2E FAIL — HTTP $HTTP_CODE" >&2; echo "$BODY" | head -c 400 >&2; echo >&2; exit 7 ;;
-esac
-
-echo "OK: hooks + models + cron configured; E2E pass." >&2
+echo "OK: hooks + proxy + models + cron configured; probe pass. Next: scripts/24-self-test-hook.sh for the full inbound->reply test." >&2

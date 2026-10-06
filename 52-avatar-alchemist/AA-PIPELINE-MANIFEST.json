@@ -127,8 +127,7 @@
       "36-image-prompts-39",
       "40-landing-image-prompts"
     ],
-    "min_chars": 5000,
-    "max_chars": 19000,
+    "length_rule": "KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the image model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by shared-utils/kie_prompt_enforcer.py from the Skill 74 prompt-budget limit; no character numbers live in this manifest",
     "measure": "stripped",
     "note": "self-reported counts ignored; measured on markdown/whitespace-stripped text."
   },

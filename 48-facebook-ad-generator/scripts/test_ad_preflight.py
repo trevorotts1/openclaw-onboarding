@@ -138,7 +138,7 @@ def _good(rd: Path) -> None:
     _write(rd, "working/s4-image-prompts.md", "# 10 image prompts (fixture)\n")
     _write(rd, "working/checkpoints/s4-receipt.json", {
         "prompt_count": 10,
-        "prompts": [{"char_count": 6000, "sections": list(abc.PROMPT_BUILD_ORDER),
+        "prompts": [{"char_count": abc.KPE.budget_for(abc.IMAGE_MODEL_DEFAULT)["target_min"], "sections": list(abc.PROMPT_BUILD_ORDER),
                      "styleblock_ok": True, "baked_text_present": True}
                     for _ in range(10)],
     })

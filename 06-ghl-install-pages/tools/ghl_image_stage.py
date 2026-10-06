@@ -734,6 +734,80 @@ def _build_section_prompt(
 # copy_specs derivation from page_spec
 # ---------------------------------------------------------------------------
 
+# Real, section-specific art-direction blocks that bring a derived prompt into the KIE rule 12 band (95 to 100 percent
+# of the image model's maxLength). Each block states a distinct decision for THIS section (setting, subject, lens,
+# light, color, copy-safe space and so on) and is filled from the section's own role, page, copy and palette; they are
+# added in order, only as many as the band needs, by the rewrite loop below.
+_DEPTH_BLOCKS = (
+    "Environment and setting: place the subject inside a believable, specific location that suits the {role} section of '{page}', with real architectural or natural detail receding in layers: a near foreground element that frames the shot, a mid-ground where the subject lives, and a far background that is softly separated. Describe the place through its materials, its age, and the way daily use has left small marks, so it reads as lived-in and credible rather than a generic studio. Keep every element consistent with the message \"{context}\" so the scene explains the section at a glance.",
+    "Subject direction: give the main subject one clear action or posture that expresses the section's meaning, with confident, relaxed body language and an engaged, unforced expression. Hands are visible and natural, doing something purposeful, never clasped stiffly or hidden. Wardrobe is polished and modern in the palette {palette}, with fabric texture visible at close range. If a product or object is the hero, show it in use, at a believable scale, with clean edges and honest material finish.",
+    "Lens and camera: shoot as if on a full-frame camera with a 50 to 85 millimeter lens at a moderately wide aperture, giving a gentle falloff that isolates the subject without turning the background into mush. Keep the horizon level, place the eye line on the upper third, and avoid wide-angle distortion on faces. The viewpoint sits at or slightly below eye level to give the subject quiet authority, and the framing leaves breathing room on the side where web copy will overlay.",
+    "Key light: a large soft source from the front-left at roughly forty-five degrees sculpts the face and shoulders with gentle shadow transitions, while a subtle rim light on the opposite edge separates the subject from the background. Highlights stay luminous without clipping, skin shows true dimensional tone, and shadows hold detail instead of crushing to flat black. The light direction is the same on every object in the frame so the scene feels physically coherent.",
+    "Color use: build the frame around the brand palette {palette}, using the primary color for the largest calm area, the secondary color for supporting surfaces, and the accent only for a small number of deliberate focal touches that pull the eye to the subject. Neutral tones fill the gaps. Keep saturation rich and confident but never neon, keep skin tones faithful, and keep color temperature consistent across the whole image so it blends cleanly into a web page that uses the same palette.",
+    "Materials and texture: render surfaces with tactile truth: brushed metal with fine directional grain, matte paper with a visible tooth, wood with open pores, glass with clean reflections, fabric with a readable weave. Each material responds to the key light in its own way, producing believable highlights and soft contact shadows where objects touch. Avoid plastic smoothness, avoid repeated texture patterns, and avoid any surface that looks painted on.",
+    "Depth and layering: separate the image into clear planes using value contrast, atmospheric softness, and scale. The subject carries the strongest local contrast and the sharpest edges, the mid-ground carries moderate contrast, and the background is quieter and slightly lower in contrast. Leading lines in the setting guide the eye toward the subject. Overlap objects so that the scene feels three dimensional, and keep any small bright object away from the borders where it would pull the eye out of the frame.",
+    "Copy-safe space: reserve a calm, low-detail region, about one third of the frame, on the side opposite the subject's gaze, with even tone and no busy texture so overlaid headline and button text stay perfectly legible at desktop and mobile sizes. The subject and the key props sit entirely inside the safe zone for a center crop, so a tighter mobile crop never cuts a face, a hand, or the main object.",
+    "Emotional tone: the image should make a visitor feel the promise of the {role} section within two seconds: calm confidence, momentum, and trust, with warmth in the light and clarity in the composition. Avoid exaggerated, theatrical, or salesy poses. The mood is credible and premium, closer to a quality editorial feature than to an advertisement, and every detail from posture to prop supports that single feeling.",
+    "Background storytelling: let secondary details quietly support the message \"{context}\": a notebook with a plan on a desk, a window showing the morning, a tidy work surface, a visible sign of progress. Each detail is specific, plausible, and small enough not to compete with the subject. Nothing in the background carries readable text unless the typography block calls for it, and nothing repeats like a pattern.",
+    "Finish and polish: the final image looks like a professionally retouched magazine photograph: clean micro-contrast, natural skin texture with no over-smoothing, crisp edges on the hero, and subtle, consistent film-like grain only if it helps cohesion. Dust, lens artifacts, stray hairs, and distracting reflections are cleaned up. Output at 2K resolution with enough sharpness that a full-bleed hero holds up on a large display.",
+    "Page cohesion: this image belongs to one page with several images, so keep the same lighting logic, the same palette weighting, the same level of realism, and the same camera language as its siblings. Vary the subject, the angle, and the setting between images so the set feels designed rather than repeated, while the viewer still senses one brand behind every frame.",
+    "Representation and care: when people appear, show a natural range of ages and backgrounds that fits the brand's audience, with authentic expressions and dignified portrayal; render every skin tone with rich, dimensional accuracy, never ashy, never over-lightened. Faces are symmetrical enough to look natural, eyes have realistic catchlights, teeth and hands are anatomically correct, and no person appears in a way that could embarrass the client.",
+    "Brand integrity: use only the supplied brand colors and the supplied reference material; do not invent a logo, a slogan, a badge, or a mock-up of another company's mark. If a logo reference is supplied it is preserved exactly and placed small and clean; if none is supplied, no logo appears at all. Every visible object stays generic enough to avoid trademark conflicts while still feeling specific and real.",
+    "Typography handling: if lettering is required it is limited to the exact approved words, rendered letter for letter in a clean modern sans-serif with generous spacing, strong contrast against its background, and a clear size hierarchy between headline and supporting line; no extra words, no gibberish glyphs, and no decorative fonts that reduce legibility. If no lettering is required, every surface in the frame is free of readable characters.",
+    "Quality control read: a reviewer who sees only the image should be able to name the section's message, identify the single hero, find the calm copy-safe zone, recognize the brand palette, and see no anatomical, textual, or physical errors. Anything that distracts from those five reads is removed or simplified before the image is considered finished.",
+    "Rendering exclusions: no watermark, no stock-photo cheesiness, no cartoonish illustration unless the style card calls for it, no heavy vignette, no lens flare, no HDR halos, no oversaturated skies, no duplicated limbs or objects, no melted details at the edges of the frame, and no text artifacts anywhere. The result is clean, believable, and ready to place on a live page without further editing.",
+
+    "Time and atmosphere: fix one specific moment of the day for the whole frame, for example soft mid-morning light with clean air, and let the sky, the shadow length, and the color of the air all agree with it. Add only a hint of atmospheric haze in the far distance to sell depth. Nothing in the frame contradicts the chosen hour, and the light in any window, lamp, or screen matches its surroundings.",
+    "Props and scale: choose three to five props that belong to the {role} section and the story of \"{context}\", and give each a believable size relative to the subject and the room. Props are placed with intention, one anchoring the foreground, one near the subject's hands, and one in the distance, never lined up in a row and never cluttering the copy-safe zone. Worn edges and honest wear make them feel owned.",
+    "Gaze and attention: if a person is present the gaze either meets the viewer with calm warmth or travels toward the copy-safe zone to guide the eye there; it never stares past the edge of the frame at nothing. The nearest sharp point in the image is the face or the hero object, the second read is the accent color touch, and the third is the supporting prop, so attention moves through the frame in a clean, intentional order.",
+    "Composition options: favor a rule-of-thirds layout with the subject on a strong vertical third and the copy-safe zone on the other two thirds, or a centered hero framing with symmetrical negative space when the section is a bold statement. Avoid tangents where an edge touches a head or a hand, avoid dead center placement on a wide frame, and keep diagonals gentle so the image feels stable and trustworthy.",
+    "Reflections and surfaces: where glass, polished stone, or a screen appears, reflect the real environment in a muted, believable way, never a perfect mirror and never a blinding glare. Screens show soft, non-readable interface shapes unless exact words are approved. Water or glossy floors carry a soft, partial reflection that adds depth without distracting from the subject.",
+    "Accessibility and contrast: the luminance difference between the subject and its background is strong enough that the image still reads in grayscale, and the copy-safe zone has enough tonal separation from any text color the page will use. Important information is never carried by color alone, and no flicker-prone, high-frequency pattern appears anywhere in the frame.",
+    "Seasonal and cultural neutrality: keep the scene free of holidays, current events, regional symbols, or fashion trends that would date the page within a year or confuse a global audience. The setting, clothing, and props are timeless, modern, and respectful, so the page can stay live for a long time without refreshing the imagery.",
+    "Safe margins and crops: keep every key element at least ten percent inside the edges so wide, square, and tall crops all preserve the story. The most important detail sits within the central sixty percent of the frame. Any element that touches the border is soft and unimportant, so a crop that trims it loses nothing the page needs.",
+    "Edge treatment and noise: edges of the hero are crisp and clean, with no halo, no fringing, and no ragged cutout look. Background edges soften naturally through depth of field. Digital noise is minimal and even, shadows are clean, and no banding appears in smooth gradients such as walls, skies, or soft backdrops.",
+    "Final composite check: before the image is considered complete, confirm one clear hero, one calm copy-safe region, one coherent light direction, one consistent palette, correct anatomy, readable approved words only, a believable setting, and a finish that matches the other images on the page. Resolve any conflict between these checks in favor of clarity and credibility.",
+
+    "Motion and stillness: although the image is a still, imply a calm moment just before or after an action, such as a hand about to turn a page or a person settling into a chair, so the frame feels alive without any blur. No motion smear appears on the hero, and any soft movement in the background, such as curtains or leaves, is subtle and consistent with a single light breeze.",
+    "Human presence rules: show at most two people unless the section's message needs a group, keep them clearly in different planes, and avoid identical poses. Group scenes show natural spacing and varied heights, with the key person nearest the lens and the strongest light. No one looks at the camera in a posed, catalog manner unless the section calls for a direct welcome.",
+    "Surface cleanliness: tables, floors, and walls are tidy but not sterile, with a few honest signs of use. There are no stray cables, no crooked frames, no visible price tags, and no accidental brand marks on devices or clothing. Anything that would force a retouch on a real photo shoot is absent from the frame from the start.",
+    "Light quality details: shadows have soft, believable edges that grow softer the farther they fall from the object, highlights on skin carry a subtle sheen without turning oily, and the transition from light to shadow on rounded forms is smooth. Catchlights appear in the eyes at the same position as the key light, and any practical lamp in the scene adds a small warm pool that does not fight the key.",
+    "Palette harmony: pick one dominant hue family, one supporting family, and one accent family from {palette}, and make sure that no unrelated color enters the frame through props, clothing, or background elements. Where a third-party color is unavoidable, such as a plant or a sky, it is muted and sits in the background. The overall impression is a deliberate, designed color story.",
+    "Resolution and detail budget: spend detail where the eye lands, namely the face, the hands, and the hero object, and keep the rest simpler so the image is rich without being busy. Fine detail is crisp at full resolution, textures stay believable when scaled down, and no region contains so much tiny detail that it shimmers or turns into noise on a phone screen.",
+    "Narrative in one frame: the picture answers three questions without words: who is this for, what is happening, and why does it matter to the visitor reading the {role} section of '{page}'. The answers come from the subject, the setting, and the light, and they agree with \"{context}\" so the image and the copy reinforce each other instead of competing.",
+
+    "Foreground framing: include one soft, out-of-focus foreground element at a corner, such as a plant leaf, a shoulder, or the edge of a table, to frame the subject and add depth. It occupies a small area, stays outside the copy-safe zone, and carries no bright color that would steal attention from the hero.",
+    "Clarity of the hero silhouette: the outline of the main subject reads cleanly against its background through value or color contrast, never blending into a similar tone behind it. Hair, fabric, and object edges are defined naturally, with soft but intentional transitions, so the shape is recognizable even as a small thumbnail on a social card.",
+    "Responsible realism: render everything at photographic realism level, with correct perspective, correct proportions, correct shadows, and correct reflections. Where the style card or the brand asks for a more graphic treatment it is applied to the whole frame consistently, never to part of it, and never at the cost of anatomical accuracy or readable approved text.",
+    "Section-specific emphasis: for a hero section, lead with scale and confidence and a generous open copy-safe field; for a benefits section, show clear, simple evidence of the outcome in use; for a proof section, show credible, human moments with calm light; for a closing section, show resolution, warmth, and an inviting open space that suggests the next step without any arrow or button.",
+    "Delivery notes: the file is a single, flat raster at 2K with no layers, no transparency requirement, no baked border, and no baked mock-up frame. The aspect ratio requested by the page is respected exactly. The image is complete on its own, and the page's own text, buttons, and overlays are added later by the page builder.",
+)
+
+
+def _deepen_to_band(prompt: str, *, page_name: str, role: str, context: str, palette: str) -> str:
+    """Rewrite loop (rule 12): while the prompt is outside the band, add the next section-specific blocks, using the
+    verdict's exact add count, up to 3 tries; then escalate (``ImagePipelineError``). Reserves room for the pin that
+    ``build_prompts_json`` appends after this."""
+    ctx = {"page": page_name, "role": role or "content", "context": context, "palette": palette}
+    queue = [b.format(**ctx) for b in _DEPTH_BLOCKS]
+    reserve = len(ghl_media.ENGLISH_LATIN_PIN) + 2
+
+    def rewriter(text, verdict):
+        mx = verdict["max"]
+        goal = (verdict["target_min"] + mx - reserve) // 2
+        out = text.rstrip()
+        while queue and len(out) + len(queue[0]) + 2 <= goal:
+            out += "\n\n" + queue.pop(0)
+        return out
+
+    try:
+        fitted, _ = ghl_media.KPE.rewrite_to_band(ghl_media.IMAGE_MODEL_DEFAULT, prompt, rewriter,
+                                                 fallback_max=ghl_media.KPE.last_known(ghl_media.IMAGE_MODEL_DEFAULT))
+    except ghl_media.KPE.PromptBudgetError as exc:
+        raise ImagePipelineError(f"section prompt for '{page_name}' could not be brought into the KIE rule 12 length band: {exc}") from exc
+    return fitted
+
+
 def _derive_copy_specs(page_spec: dict) -> list[dict]:
     """Derive the image ``copy_specs`` list from one page specification.
 
@@ -862,6 +936,13 @@ def _derive_copy_specs(page_spec: dict) -> list[dict]:
 
         prompt, text_bearing = _build_section_prompt(
             page_name, section, brand_colors, style_card_text=style_card_text
+        )
+        prompt = _deepen_to_band(
+            prompt, page_name=page_name, role=role,
+            context=" ".join(p for p in (str(section.get("heading") or section.get("title") or "").strip(),
+                                         str(section.get("copy") or section.get("body") or section.get("text") or "").strip())
+                             if p)[:_COPY_CONTEXT_CAP] or f"the {role or 'content'} section of {page_name}",
+            palette=", ".join(brand_colors) if brand_colors else "the approved brand palette",
         )
         alt = str(section.get("alt") or section.get("heading") or section.get("title")
                   or f"{page_name} {role or 'section'} image").strip()

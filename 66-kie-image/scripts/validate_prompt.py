@@ -3,10 +3,12 @@
 """
 validate_prompt.py - Skill 66 kie-image prompt validator (v1.1.0).
 
-Prompt budget (owner order 2026-10-05): a prompt uses 95-100% of the model's character max and is
-never below 80% of it. The limit comes from Skill 74 `prompt-budget` (live schema first, registry
-snapshot second); when that adapter is absent or unreachable the limit is the models.json cap
-(vendor_hard_cap_chars, else owner_observed_cap_chars). Unknown limit -> UNKNOWN warning, no floor.
+Prompt budget (owner order 2026-10-05, KIE prompt rule 12): a prompt uses 95-100% of the model's character
+max and is never below 80% of it. This script keeps no band of its own: it calls the shared enforcer
+shared-utils/kie_prompt_enforcer.py, which wraps Skill 74 `prompt-budget --check` (live schema first, registry
+snapshot second). When that adapter is absent or unreachable the limit is the models.json cap
+(live_schema_cap_chars, else vendor_hard_cap_chars, else owner_observed_cap_chars). Unknown limit -> UNKNOWN
+warning, no floor.
 
   floor = ceil(0.80 * max)   below it  -> invalid (exit 1), prints the exact chars to ADD
   target = 95%..100% of max  80-95%    -> valid with a warning to expand
@@ -27,15 +29,28 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_enforcer()
 
 VERSION = "2.2.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
-
-FLOOR_PCT, TARGET_PCT = 80, 95  # percent of the model max (integer math, no float rounding surprises)
 
 
 def load_registry():
@@ -55,11 +70,6 @@ def token_estimate(chars):
     return int(chars / 4.0)
 
 
-def budget(max_chars):
-    return {"max": max_chars, "floor": -(-max_chars * FLOOR_PCT // 100),
-            "target_min": -(-max_chars * TARGET_PCT // 100), "target_max": max_chars}
-
-
 def _result(model_id, cap_status, chars, **kw):
     r = {"model_id": model_id, "cap_status": cap_status, "chars": chars, "tokens_est": token_estimate(chars),
          "max": None, "floor": None, "target_min": None, "target_max": None, "limit_source": None,
@@ -69,62 +79,38 @@ def _result(model_id, cap_status, chars, **kw):
     return r
 
 
-def _from_budget(model_id, cap_status, chars, d, source, warnings):
-    """Apply the budget to a character count. d: max/floor/target_min (or only max for verbatim fields)."""
-    mx, floor, tmin = d["max"], d.get("floor"), d.get("target_min")
-    errors, status = [], "OK"
-    if chars > mx:
-        status = "ABOVE_MAX"
-        errors.append("prompt is %d chars; max is %d; CUT exactly %d chars" % (chars, mx, chars - mx))
-    elif floor is not None and chars < floor:
-        status = "BELOW_FLOOR"
-        errors.append("prompt is %d chars (%.1f%% of max %d); floor is %d (80%%): ADD at least %d chars "
-                      "(%d to reach the 95%% target of %d)" % (chars, 100.0 * chars / mx, mx, floor, floor - chars,
-                                                               tmin - chars, tmin))
-    elif tmin is not None and chars < tmin:
-        status = "BELOW_TARGET"
-        warnings = warnings + ["prompt is %d chars (%.1f%% of max); target is 95-100%%: add %d chars to reach %d" % (
-            chars, 100.0 * chars / mx, tmin - chars, tmin)]
-    r = _result(model_id, cap_status, chars, max=mx, floor=floor, target_min=tmin, target_max=mx,
-                limit_source=source, status=status, errors=errors, warnings=warnings)
-    if status == "ABOVE_MAX":
-        r["hard_cap_chars"] = mx
+def _from_verdict(model_id, cap_status, chars, v, warnings):
+    """Map a shared-enforcer verdict onto this validator's result shape."""
+    errors = [] if v["ok"] else [v["message"]]
+    r = _result(model_id, cap_status, chars, max=v["max"], floor=v["floor"], target_min=v["target_min"],
+                target_max=v["max"], limit_source=v["source"], status=v["status"], errors=errors,
+                warnings=warnings + list(v["warnings"]))
+    if v["status"] == "ABOVE_MAX":
+        r["hard_cap_chars"] = v["max"]
     return r
 
 
 def validate_body(prompt, model_id, strict):
     chars = char_count(prompt)
-    # 1. Skill 74 prompt-budget (live schema, then registry snapshot, then policy owner)
-    got = adapter_bridge.prompt_budget(model_id, prompt.strip())
-    if got is not None:
-        d = got["data"]
-        w = list(got.get("warnings") or [])
-        entry = by_id_get(model_id)
-        cap = (entry or {}).get("cap_status", "SKILL-74")
-        if d.get("max") is None:
-            r = _result(model_id, cap, chars, status=d.get("status", "UNKNOWN"), limit_source=d.get("limit_source"),
-                        warnings=w)
-        else:
-            r = _from_budget(model_id, cap, chars, d, "skill-74:" + str(d.get("limit_source")), w)
-    else:
-        # 2. models.json fallback: the policy-owner cap recorded for this model
-        entry = by_id_get(model_id)
+    entry = by_id_get(model_id)
+    # the policy owner's recorded limit: KIE's live schema supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
+    fb = ((entry or {}).get("live_schema_cap_chars") or (entry or {}).get("vendor_hard_cap_chars")
+          or (entry or {}).get("owner_observed_cap_chars"))
+    v = KPE.check(model_id, prompt, fallback_max=fb)  # Skill 74 prompt-budget --check: live schema, registry, policy owner
+    cap = (entry or {}).get("cap_status", "SKILL-74")
+    if v["status"] == "ADAPTER_UNAVAILABLE":
         if entry is None:
             return _result(model_id, "UNKNOWN", chars, errors=["model %r not in registry" % model_id], status="UNKNOWN")
         cap = entry.get("cap_status", "NOT_PUBLISHED")
-        # KIE's live schema (20,000 for legacy gpt-image-2) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
-        mx = (entry.get("live_schema_cap_chars") or entry.get("vendor_hard_cap_chars")
-              or entry.get("owner_observed_cap_chars"))
         w = ["Skill 74 adapter unavailable; limit taken from models.json (%s)" % cap]
-        if mx:
-            r = _from_budget(model_id, cap, chars, budget(mx), "models.json:%s" % cap, w)
-        else:
-            tcap = entry.get("vendor_hard_cap_tokens")
-            if tcap and token_estimate(chars) > tcap:
-                w.append("estimated %d tokens (chars/4) exceeds documented %d token cap for %s; the docs cap is TOKENS "
-                         "not chars: trim, and treat as approximate" % (token_estimate(chars), tcap, model_id))
-            w.append("prompt limit UNKNOWN for %s (cap_status %s): no floor enforced; no cap invented" % (model_id, cap))
-            r = _result(model_id, cap, chars, status="UNKNOWN", limit_source="models.json:%s" % cap, warnings=w)
+        tcap = entry.get("vendor_hard_cap_tokens")
+        if tcap and token_estimate(chars) > tcap:
+            w.append("estimated %d tokens (chars/4) exceeds documented %d token cap for %s; the docs cap is TOKENS "
+                     "not chars: trim, and treat as approximate" % (token_estimate(chars), tcap, model_id))
+        w.append("prompt limit UNKNOWN for %s (cap_status %s): no floor enforced; no cap invented" % (model_id, cap))
+        r = _result(model_id, cap, chars, status="UNKNOWN", limit_source="models.json:%s" % cap, warnings=w)
+    else:
+        r = _from_verdict(model_id, cap, chars, v, [])
     if strict:
         r["errors"] += ["strict: " + x for x in r["warnings"]]
         r["warnings"] = []
@@ -183,10 +169,22 @@ STATIC_CASES = [
     ("unknown model fails", 5, "not/a-model", False, "UNKNOWN", False),
 ]
 
-# Bridge on, answered by a fake Skill 74: a model 66 has never heard of (the newest GPT Image generation).
-FAKE_BUDGET = {"state": "validated", "warnings": [], "data": {"status": "OK", "max": 30000, "floor": 24000,
-                                                                "target_min": 28500, "target_max": 30000,
-                                                                "limit_source": "live-schema:live"}}
+# Adapter on, answered by a fake Skill 74 that judges like the real CLI: a model 66 has never heard of (the newest
+# GPT Image generation) with max 30000, floor 24000, target 28500.
+FAKE_ADAPTER = r"""import json, sys
+mx, floor, tmin = 30000, 24000, 28500
+n = len(sys.stdin.read().strip())
+d = {"status": "OK", "max": mx, "floor": floor, "target_min": tmin, "target_max": mx, "limit_source": "live-schema:live", "chars": n}
+rc, err = 0, None
+if n > mx:
+    d.update(status="ABOVE_MAX", exit_code=4, cut=n - mx); rc = 4
+    err = {"code": "prompt_above_max", "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (n, mx, n - mx)}
+elif n < floor:
+    d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=floor - n, add_to_target=tmin - n); rc = 3
+    err = {"code": "prompt_below_floor", "msg": "prompt is %d chars; floor is %d: ADD at least %d chars" % (n, floor, floor - n)}
+print(json.dumps({"state": "fail" if err else "validated", "warnings": [], "error": err, "data": d}))
+sys.exit(rc)
+"""
 ADAPTER_CASES = [
     ("new model 29000 ok via adapter", 29000, "gpt-image-3-aurora-text-to-image", True, "OK", False),
     ("new model 23999 under 80% rejected", 23999, "gpt-image-3-aurora-text-to-image", False, "BELOW_FLOOR", False),
@@ -225,9 +223,7 @@ def selftest():
     with tempfile.TemporaryDirectory() as d:
         script = os.path.join(d, "kie_live_adapter.py")
         with open(script, "w") as fh:
-            fh.write("import os, sys\nsys.stdout.write(open(os.path.join(os.path.dirname(__file__), 'answer.json')).read())\n")
-        with open(os.path.join(d, "answer.json"), "w") as fh:
-            json.dump(FAKE_BUDGET, fh)
+            fh.write(FAKE_ADAPTER)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json

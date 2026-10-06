@@ -67,6 +67,8 @@ SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
 
 import prompt_gate as PG  # noqa: E402
+_PGB = PG.length_budget()  # KIE rule 12 numbers via the shared enforcer; the 9,000/18,000 constants are retired
+PG_PROMPT_CHAR_FLOOR, PG_PROMPT_CHAR_CEILING = _PGB["floor"], _PGB["ceiling"]
 from presentation_job import dispatcher as D  # noqa: E402
 from presentation_job import fanout  # noqa: E402
 
@@ -159,9 +161,9 @@ def test_authoring_instruction_states_the_shared_band(phase, tmp_path):
     _system, user = _compose(phase, order, tmp_path)
     contract = user.split("=== OUTPUT CONTRACT")[-1]
 
-    assert f"{PG.PROMPT_CHAR_FLOOR:,}" in contract, (
+    assert f"{PG_PROMPT_CHAR_FLOOR:,}" in contract, (
         "the design unit's contract must state the shared FLOOR")
-    assert f"{PG.PROMPT_CHAR_CEILING:,}" in contract, (
+    assert f"{PG_PROMPT_CHAR_CEILING:,}" in contract, (
         "the design unit's contract must state the shared CEILING")
 
     floor_share, ceiling_share = D.design_unit_char_budget(DESIRED)
@@ -198,8 +200,8 @@ def test_budget_is_derived_from_prompt_gate_not_hardcoded(monkeypatch):
     """A second copy of 9,000/18,000 in the producer is exactly the drift this
     fix exists to prevent: move the gate's constants and the producer's budget
     must move with them."""
-    monkeypatch.setattr(PG, "PROMPT_CHAR_FLOOR", 12000)
-    monkeypatch.setattr(PG, "PROMPT_CHAR_CEILING", 24000)
+    monkeypatch.setattr(PG, "length_budget", lambda model=None: {
+        "max": 24000, "floor": 12000, "target_min": 22800, "ceiling": 24000, "pin": 0})
     floor_share, ceiling_share = D.design_unit_char_budget(3)
     assert (floor_share, ceiling_share) == ((12000 - 4 + 2) // 3,
                                             (24000 - 4) // 3)
@@ -220,12 +222,12 @@ def test_part_shares_sum_into_the_band(n):
     sep_total = len(D._UNIT_TEXT_SEPARATOR) * (n - 1)
     agg_min = floor_share * n + sep_total
     agg_max = ceiling_share * n + sep_total
-    assert PG.PROMPT_CHAR_FLOOR <= agg_min, (
+    assert PG_PROMPT_CHAR_FLOOR <= agg_min, (
         f"n={n}: all-parts-at-floor assembles to {agg_min}, under the "
-        f"{PG.PROMPT_CHAR_FLOOR} floor")
-    assert agg_max <= PG.PROMPT_CHAR_CEILING, (
+        f"{PG_PROMPT_CHAR_FLOOR} floor")
+    assert agg_max <= PG_PROMPT_CHAR_CEILING, (
         f"n={n}: all-parts-at-ceiling assembles to {agg_max}, over the "
-        f"{PG.PROMPT_CHAR_CEILING} ceiling")
+        f"{PG_PROMPT_CHAR_CEILING} ceiling")
 
 
 def test_reducer_separator_is_the_one_the_budget_charges_for():
@@ -237,7 +239,7 @@ def test_reducer_separator_is_the_one_the_budget_charges_for():
                                                 ["b" * 3000] + ["c" * 3000])
     _, ceiling_share = D.design_unit_char_budget(3)
     assert len(merged) <= ceiling_share * 3 + len(D._UNIT_TEXT_SEPARATOR) * 2
-    assert len(merged) <= PG.PROMPT_CHAR_CEILING
+    assert len(merged) <= PG_PROMPT_CHAR_CEILING
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +355,9 @@ def test_compliant_parts_assemble_into_a_gate_passing_artifact(n):
         assert ok, f"part {i}/{n} of the fixture failed its own share: {problems}"
 
     merged = D._reduce_text_concat([({}, p) for p in parts])
-    assert PG.PROMPT_CHAR_FLOOR <= len(merged) <= PG.PROMPT_CHAR_CEILING, (
+    assert PG_PROMPT_CHAR_FLOOR <= len(merged) <= PG_PROMPT_CHAR_CEILING, (
         f"n={n}: assembled {len(merged)} chars is outside the "
-        f"{PG.PROMPT_CHAR_FLOOR}-{PG.PROMPT_CHAR_CEILING} band")
+        f"{PG_PROMPT_CHAR_FLOOR}-{PG_PROMPT_CHAR_CEILING} band")
     assert PG.prompt_problems(merged, "One Request. One Package.") == [], (
         "a producer-compliant assembly must clear the REAL shared gate")
 
@@ -375,7 +377,7 @@ def test_admitted_count_governs_not_enumerated_count():
     floor_share, _ = D.design_unit_char_budget(
         D.design_part_count({"admitted_count": 3, "unit_count": 8}))
     agg_min = floor_share * 3 + 2 * (3 - 1)
-    assert agg_min >= PG.PROMPT_CHAR_FLOOR, (
+    assert agg_min >= PG_PROMPT_CHAR_FLOOR, (
         "budgeting by the enumerated 8 would assemble under the floor")
 
 
@@ -411,9 +413,9 @@ def test_dispatcher_stamps_admitted_count_from_wanted_items(tmp_path, monkeypatc
     # THE ACCEPTANCE: the producer's own artifact is inside the band the
     # consumer enforces, and clears the real gate.
     artifact = target.read_text(encoding="utf-8").strip()
-    assert PG.PROMPT_CHAR_FLOOR <= len(artifact) <= PG.PROMPT_CHAR_CEILING, (
+    assert PG_PROMPT_CHAR_FLOOR <= len(artifact) <= PG_PROMPT_CHAR_CEILING, (
         f"producer wrote {len(artifact)} chars -- outside the "
-        f"{PG.PROMPT_CHAR_FLOOR}-{PG.PROMPT_CHAR_CEILING} band")
+        f"{PG_PROMPT_CHAR_FLOOR}-{PG_PROMPT_CHAR_CEILING} band")
     assert PG.prompt_problems(artifact, "One Request. One Package.") == []
     for prompt in seen:
         assert "PART" in prompt and "SHARED" in prompt, (
@@ -427,7 +429,7 @@ def test_pre_fix_shape_would_be_refused_by_the_gate():
     live = [({}, "x " * (n // 2)) for n in LIVE_PART_LENGTHS]
     merged = D._reduce_text_concat(live)
     problems = PG.prompt_problems(merged)
-    assert any("AF-P2" in p and "over the hard ceiling" in p for p in problems), (
+    assert any("AF-P2" in p and "CUT exactly" in p for p in problems), (
         "the live shape must still be refused by the gate")
 
 
@@ -491,8 +493,7 @@ def test_reuse_validator_sees_the_admitted_count_not_the_enumerated_one():
     """The mechanism behind the regression above, asserted directly: a part
     sized for the ADMITTED share must validate when the payload carries
     `admitted_count`, and must NOT validate on the enumerated `unit_count`."""
-    part = "p " * 3200                      # 6,400 chars: inside 2,999..5,998? no
-    part = "p " * 2400                      # 4,800 chars: inside the n=3 share
+    part = "p " * 3000                      # 6,000 chars: inside the n=3 share, over the n=8 share
     admitted = {"phase_id": "P-U-DESIGN-SALES", "admitted_count": DESIRED,
                 "unit_count": N_SLIDES, "ordinal": 1}
     assert D._validate_design_page_unit(admitted, part)[0] is True

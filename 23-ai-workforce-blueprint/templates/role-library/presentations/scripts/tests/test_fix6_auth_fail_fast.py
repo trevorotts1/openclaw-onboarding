@@ -108,10 +108,11 @@ def _valid_prompt() -> str:
         "inspiring, actionable, and enduring presentation experience.\n"
     )
     # vocab adds hundreds of DISTINCT words to clear the AF-P-DENSITY floor (220);
-    # filler*28 + vocab keeps the total between 9,000 and 18,000 chars.
-    chunk = scaffold + filler * 28 + vocab
-    assert len(chunk) >= bd.PROMPT_CHAR_FLOOR
-    assert len(chunk) <= bd.PROMPT_CHAR_CEILING
+    # the filler count sizes the total into the middle of the rule 12 target band.
+    _bud = bd.length_budget()
+    _mid = (_bud["target_min"] + _bud["ceiling"]) // 2
+    chunk = scaffold + filler * ((_mid - len(scaffold) - len(vocab)) // len(filler) + 1) + vocab
+    assert not bd._length_problems(chunk)
     return chunk
 
 
