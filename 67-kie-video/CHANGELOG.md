@@ -4,10 +4,17 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.4] - 2026-10-05 - docs: wording fix in the v2.0.3 entry
+
+- The v2.0.3 entry said the `sync` change was listed as investigate-only in the "release notes"; it was the PR #1492 text. Corrected. Version roll to v2.0.4 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.
+- Archive decision (applies to 07, 46, 66, 67, 68): the `NN-*.skill` zips are not rebuilt. See the PR for the evidence: `install.sh` Step 5 (lines 3772-3802) copies every file in each skill folder as a plain file and `update-skills.sh` (line 6148) runs `cp -r` on the whole folder; neither unzips a `.skill`.
+
+---
+
 ## [v2.0.3] - 2026-10-05 - docs: record the sync flag change truthfully
 
 ### Corrected record
-- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but the release notes and PR text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
+- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but PR #1492 text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
 - How `sync` is consumed: none of the four scripts in this skill (`select_video_model.py`, `validate_payload.py`, `validate_prompt.py`, `normalize_alias.py`) reads the field, and no 67 document depends on it, so the flip changes registry data only and no behaviour here. Consumers elsewhere in the repo could not be searched, so they are undetermined.
 - Why `false` is correct: every KIE video route in this registry (Market `createTask`, Runway `generate`, Veo `generate`) is asynchronous (create, then poll or callback), which `SKILL.md`, `INSTRUCTIONS.md` and `references/api-patterns.md` all state. The sibling registries use `false` for asynchronous work (66: 32 of 32; Agnes Video: 2 of 2). `true` would mean "result in the create response", which none of these models does. Verified: 37 of 37 entries are `false`.
 - Version roll to v2.0.3 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.

@@ -1,4 +1,4 @@
-# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v2.0.3)
+# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v2.0.4)
 
 This SOP replaces the sequential per-image polling loop that was in Skill 07.
 It applies to any role or agent that submits images to Kie.ai for slide decks.

@@ -46,7 +46,7 @@ Add:
 - Auth: Bearer <KIE_API_KEY> (referenced, never printed)
 - Endpoints: Generic Market (/api/v1/jobs/*), Runway (/api/v1/runway/*), Veo (/api/v1/veo/*), Suno (/api/v1/*)
 - Models: consult per-modality registries in 66-kie-image, 67-kie-video, 68-kie-audio (catalog updates frequently)
-- Pricing: Credit-based at $0.005/credit
+- Pricing: Credit-based (historical $0.005/credit; live price via GET /api/v1/models pricingDesc or `kie_live_adapter.py price`)
 - Status states: waiting, queuing, generating, success, fail (HTTP 200 = accepted, not complete)
 - Full reference: [MASTER_FILES_FOLDER]/07-kie-setup/kie-setup-full.md
 ```
