@@ -569,7 +569,7 @@ def main():
     # a render that provably covers 100% of the speech (52/52 chunks, tagged-text
     # coverage proof). Calibrate the gate to the rate the synthesizer actually speaks
     # at: effective_wpm = wpm * prosody_speed. Measured on SMOKE-1: Fish at 1.25 spoke
-    # ~193 wpm (chunk-probed), so the 1.38x headroom over wpm*speed stays inside the
+    # ~193 wpm (chunk-probed), so the ~1.10x headroom over wpm*speed (193/175) stays inside the
     # 0.80 floor with margin. When prosody is 1.0 the gate is the unchanged human model.
     effective_wpm = args.wpm * args.prosody_speed
     expected_sec = words / effective_wpm * 60.0

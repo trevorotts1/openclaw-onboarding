@@ -4660,7 +4660,7 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
     # owning_role straight out of the pinned PIPELINE-MANIFEST.
     if not owning_role:
         try:
-            _man = _json_load_manifest_fallback()
+            _man = _json_load_manifest_fallback(run_dir)
             owning_role = next((ph.get("owning_role") for ph in _man.get("phases", [])
                                 if ph.get("id") == phase_id), "") or ""
         except Exception:  # noqa: BLE001 — manifest absence must not crash the sweep
@@ -8401,26 +8401,17 @@ def resolve_scripts_dir_for_run(run_dir: Path) -> Path:
     return _OWN_SCRIPTS_DIR
 
 
-def _json_load_manifest_fallback() -> Dict[str, Any]:
-    """Load the pinned PIPELINE-MANIFEST.json for phase-definition fallbacks.
-    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then the
-    universal-sops repo copy two conventions up from this module. Raises on
-    absence — callers degrade, never crash the sweep."""
-    from pathlib import Path as _P
-    import json as _json
-    candidates = []
-    env_path = os.environ.get("PRESENTATION_MANIFEST")
-    if env_path:
-        candidates.append(_P(env_path))
-    candidates.append(_P.home() / "openclaw-onboarding" / "universal-sops" /
-                      "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
-    for c in candidates:
-        try:
-            if c.is_file():
-                return _json.loads(c.read_text(encoding="utf-8"))
-        except (OSError, _json.JSONDecodeError):
-            continue
-    raise FileNotFoundError("no PIPELINE-MANIFEST.json resolvable for phase fallback")
+def _json_load_manifest_fallback(run_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Load the run's PIPELINE-MANIFEST.json for phase-definition fallbacks.
+    Resolution is delegated to _qc_manifest_for_run (the run's pinned
+    state.json manifest_path, then <dept_root>/sops/, then the repo walk-up),
+    so it works on deployed client boxes. Raises on absence -- callers
+    degrade, never crash the sweep."""
+    cand = _qc_manifest_for_run(run_dir)
+    if cand is None:
+        raise FileNotFoundError("no PIPELINE-MANIFEST.json resolvable for phase fallback")
+    return json.loads(cand.read_text(encoding="utf-8"))
+
 
 def resolve_dept_root(scripts_dir: Path) -> Path:
     return scripts_dir.parent

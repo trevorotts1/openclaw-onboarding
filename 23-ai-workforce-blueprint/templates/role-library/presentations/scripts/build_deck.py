@@ -2935,6 +2935,8 @@ def _notes_pane_exempt_slide_numbers(slides_path: Optional[Path]) -> set:
         slides = json.loads(Path(slides_path).read_text())
     except Exception:  # noqa: BLE001
         return set()
+    if isinstance(slides, dict) and isinstance(slides.get("slides"), list):
+        slides = slides["slides"]
     if not isinstance(slides, list):
         return set()
     exempt_tags = _notes_pane_exempt_tags()
@@ -13290,10 +13292,7 @@ def main():
         sys.exit(2)
 
     # SMOKE-1 F29 (2026-09-01): slides.json is the DECK dict {deck_title, ..., slides:[...]}.
-    # Unwrap the slide list (same fix class as the --sample path at ~11761). Scene field:
-    # the rich prompt files carry scene content authoritatively (load_rich_prompt owns
-    # composition), so a slide without a literal "scene" key is tolerated as empty rather
-    # than failing the legacy schema check.
+    # Unwrap the slide list (same fix class as the --sample path in run_style_preview_samples).
     if isinstance(slides, dict) and isinstance(slides.get("slides"), list):
         slides = slides["slides"]
     if not isinstance(slides, list) or not slides:
@@ -13306,7 +13305,7 @@ def main():
         if not isinstance(s, dict):
             print("FATAL: every slide must be an object.", file=sys.stderr)
             sys.exit(2)
-        for req in ("slide", "copy"):
+        for req in ("slide", "scene", "copy"):
             if req not in s:
                 print(f"FATAL: slide missing required field '{req}': {json.dumps(s)}", file=sys.stderr)
                 sys.exit(2)

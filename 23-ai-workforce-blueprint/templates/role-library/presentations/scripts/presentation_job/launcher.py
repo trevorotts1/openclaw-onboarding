@@ -1643,8 +1643,17 @@ def dispatch(
             _pc_path = run_path / "working" / "copy" / "plan-calls.json"
             if _pc_path.is_file():
                 plan_calls = json.loads(_pc_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            plan_calls = None
+        except (OSError, ValueError) as exc:
+            print(f"launcher: REFUSING to dispatch {run_path} -- {_pc_path} "
+                  f"is unreadable or not valid JSON ({exc}); fix or delete it.",
+                  file=sys.stderr)
+            return DISPATCH_MODE_INVALID
+        if plan_calls is not None and not isinstance(plan_calls, dict):
+            print(f"launcher: REFUSING to dispatch {run_path} -- {_pc_path} must "
+                  f"be a JSON object {{phase_id: n}}, got "
+                  f"{type(plan_calls).__name__}; fix or delete it.",
+                  file=sys.stderr)
+            return DISPATCH_MODE_INVALID
 
     verdict: Any = None
     # FIX 12 CREDIT GATE -- before argv is built, before any process exists.
