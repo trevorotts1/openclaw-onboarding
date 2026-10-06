@@ -64,10 +64,23 @@ done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-if python3 "$ROOT/scripts/validate_prompt.py" "$ROOT/tests/fixtures/prompt_good.txt" --runtime-max 19000 --sauce-only >/dev/null; then
-  echo "[PASS] prompt validator sanity fixture"
+# KIE prompt rule 12 (1.2.4): fixtures are small on purpose and are grown into the
+# model's length band by tests/fit_prompt.py — same as tests/run_tests.py.
+if python3 - "$ROOT" "$TMP" <<'PYEOF' >/dev/null 2>&1
+import sys
+sys.path.insert(0, sys.argv[1] + "/tests")
+import fit_prompt
+fit_prompt.fit_file(sys.argv[1] + "/tests/fixtures/prompt_good.txt", sys.argv[2] + "/prompt_good_fitted.txt")
+PYEOF
+then
+  if python3 "$ROOT/scripts/validate_prompt.py" "$TMP/prompt_good_fitted.txt" --sauce-only >/dev/null; then
+    echo "[PASS] prompt validator sanity fixture"
+  else
+    echo "[FAIL] prompt validator sanity fixture" >&2
+    fail=1
+  fi
 else
-  echo "[FAIL] prompt validator sanity fixture" >&2
+  echo "[FAIL] prompt validator sanity fixture (fit_prompt failed)" >&2
   fail=1
 fi
 

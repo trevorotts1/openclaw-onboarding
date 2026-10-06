@@ -103,7 +103,7 @@ OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
 #: tag deepseek-v4-pro:cloud was deleted out from under this chain on
 #: 2026-08-17 and every scoring call failed silently until someone read a
 #: 404. GET https://ollama.com/api/tags on 2026-09-21 lists exactly
-#: deepseek-v4.1-flash, deepseek-v4-flash:0731 and deepseek-v4-pro:0813;
+#: deepseek-v4.1-flash, deepseek-v4.1-flash and deepseek-v4-pro:0813;
 #: openrouter.ai/api/v1/models lists deepseek/deepseek-v4.1-flash at 1048576
 #: context, $0.15/M prompt and $0.60/M completion. Flash is the scoring
 #: chain's model on both steps: these calls are 200-token judgements, not

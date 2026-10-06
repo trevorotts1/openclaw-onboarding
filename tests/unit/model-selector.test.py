@@ -137,7 +137,7 @@ class TestOllamaCloudIdShapes(unittest.TestCase):
 
     def test_date_tagged_deepseek_flash(self):
         self.assertEqual(
-            self._version(sm.DEEPSEEK_FLASH_OLLAMA, "ollama/deepseek-v4-flash:0731-cloud"), (4,))
+            self._version(sm.DEEPSEEK_FLASH_OLLAMA, "ollama/deepseek-v4.1-flash:cloud"), (4, 1))
 
     def test_ollama_cloud_prefix_minimax(self):
         self.assertEqual(
@@ -174,14 +174,14 @@ class TestOllamaCloudIdShapes(unittest.TestCase):
 
     def test_real_fleet_inventory_resolves_every_tier(self):
         inv = ["ollama/kimi-k2.6:0711-cloud", "ollama/deepseek-v4-pro:0813-cloud",
-               "ollama/deepseek-v4-flash:0731-cloud", "ollama/minimax-m3:cloud",
+               "ollama/deepseek-v4.1-flash:cloud", "ollama/minimax-m3:cloud",
                "ollama/glm-5.3:cloud", "ollama/kimi-k2.7-code:cloud"]
         heavy = sm._best_match_in_position(inv, sm.CHAINS["heavy"]["normal"][0])
         mid = sm._best_match_in_position(inv, sm.CHAINS["mid"]["normal"][0])
         fast = sm._best_match_in_position(inv, sm.CHAINS["fast"]["normal"][0])
         self.assertEqual(heavy, "ollama/deepseek-v4-pro:0813-cloud")
         self.assertEqual(mid, "ollama/minimax-m3:cloud")
-        self.assertEqual(fast, "ollama/deepseek-v4-flash:0731-cloud")
+        self.assertEqual(fast, "ollama/deepseek-v4.1-flash:cloud")
         self.assertNotEqual(heavy, mid)   # HEAVY-WRITER and JUDGE stay independent
 
 

@@ -133,7 +133,7 @@ verification checklist MUST re-confirm each one:
   "match": "ghl-sales",
   "action": "agent",
   "agent_id": "sales",
-  "model": "ollama/deepseek-v4-flash:0731-cloud",
+  "model": "ollama/deepseek-v4.1-flash:cloud",
   "wakeMode": "now",
   "name": "GHL Sales Inbound",
   "session_key": "hook:ghl:sms:{{contact.id}}",

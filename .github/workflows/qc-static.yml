@@ -1409,6 +1409,12 @@ jobs:
           bash tests/unit/prune-openclaw-json-backups.test.sh
           bash tests/unit/qc-env-stores.test.sh
 
+      - name: "retired Ollama deepseek-v4-flash ids stay out of shipped files (R19)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/retired-ollama-deepseek-flash.test.sh
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |

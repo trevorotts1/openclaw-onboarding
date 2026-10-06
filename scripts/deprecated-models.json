@@ -4,7 +4,7 @@
       "model": "openrouter/google/gemini-3.1-flash-lite-preview",
       "reason": "Replaced by gemini-3-flash",
       "removalDate": "2026-06-01",
-      "replacement": "ollama/deepseek-v4-flash:0731-cloud"
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
     },
     {
       "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
@@ -23,7 +23,43 @@
       "reason": "Replaced by mimo-v2.5-pro",
       "removalDate": "2026-06-01",
       "replacement": "xiaomi/mimo-v2.5-pro"
+    },
+    {
+      "model": "ollama/deepseek-v4-flash",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "model": "ollama/deepseek-v4-flash:cloud",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "model": "ollama/deepseek-v4-flash:0731",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "model": "ollama/deepseek-v4-flash:0731-cloud",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "model": "ollama-cloud/deepseek-v4-flash",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+    },
+    {
+      "model": "ollama-cloud/deepseek-v4-flash:0731",
+      "reason": "Retired by Ollama Cloud (HTTP 410)",
+      "removalDate": "2026-09-25",
+      "replacement": "ollama/deepseek-v4.1-flash:cloud"
     }
   ],
-  "lastUpdated": "2026-04-25"
+  "lastUpdated": "2026-10-06"
 }

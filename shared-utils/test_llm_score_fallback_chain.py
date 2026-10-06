@@ -186,8 +186,8 @@ def test_the_ollama_backstop_follows_the_boxs_configured_tag(box, monkeypatch):
     """Step 5 is the one id a box owns. v25.1.55 made it config precisely so a
     retired tag is not a fleet roll, and the chain must honour that rather
     than restate the default."""
-    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4-flash:0731")
-    assert llm_score.scoring_chain()[4] == ("ollama-cloud", "deepseek-v4-flash:0731")
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash")
+    assert llm_score.scoring_chain()[4] == ("ollama-cloud", "deepseek-v4.1-flash")
 
 
 def test_the_backstop_tag_is_read_per_call_not_at_import(box, monkeypatch):
