@@ -35,7 +35,7 @@
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py",
       "canonical_sha256": "f6c186a4e0260992fdd72dcfe1aa0dd2a7179a0559e78f6f1cb6fa96bcb635c0",
-      "mirror_sha256": "29a3e04b7cc53e3723766383cfec8e1d377cd250ab443296da9be61ce8e660f7",
+      "mirror_sha256": "5a8360849c9956f135ef2f768747e4333d602a6f02439abac06d32fed382dff3",
       "canonical_side": "role-library-scripts",
       "reason": "Divergence recorded, now declared INTENTIONAL in both file headers (2026-10-05). The FIX 67 secret-name canon is ported to the twin (four functions byte-identical). The twin deliberately has NO front-door nonce gate (Skill 06 ghl_media.py runs it for non-deck page images with no run directory and no nonce, and the gate imports build_deck.py, absent beside the twin; porting it would make every Skill 06 call exit 2) and NO kie_tasks.py lifecycle (own wave submit, 5 minute wait, serial 60 second polls). Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-10-05"
