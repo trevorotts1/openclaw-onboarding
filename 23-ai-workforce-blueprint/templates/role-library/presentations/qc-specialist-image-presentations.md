@@ -6,7 +6,7 @@
 **Role type:** qc
 **Role number:** ROLE-26
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 3.1
+**Version:** 3.1.1
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -257,7 +257,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Hand to:** SOP 9.4 (AI artifact and representation audit).
 
-**Failure mode:** If the logo is absent from a slide where LOGO_ON_SLIDES = true in intake.json, record AF-LOGO-ABSENT and return the slide to the Slide Image Creator with the specific instruction to re-prompt and re-render in image-to-image mode with LOGO_URL as the first input_url (the renderer does this whenever `--logo` is a public https URL; the Director confirms the run command passed it). The re-render goes through the canonical render command only, which reuses slides recorded complete in `pending_tasks.json`, so the Director releases the slide for re-render.
+**Failure mode:** If the logo is absent from a slide where LOGO_ON_SLIDES = true in intake.json, record AF-LOGO-ABSENT and first check how the logo is supplied (SOP-IMG-05 Rule A). On the canonical command the logo is a local PNG named in `intake.json` `brand.logo_image_path` and placed at assembly (the command has no `--logo` option); an absent logo means that path was not configured or the PPTX Assembly Specialist's placement failed, so return the deck to the Director to fix the path and re-assemble. Only a URL-logo run (`build_deck.py --logo <https URL>`, not reachable through the canonical command today) renders the logo image-to-image, in which case the slide goes back to the Slide Image Creator to re-prompt. Any re-render goes through the canonical render command only, which reuses slides recorded complete in `pending_tasks.json`, so the Director releases the slide for re-render.
 
 ---
 
@@ -343,7 +343,7 @@ Cross-slide logo drift check: if the logo renders differently on any two slides 
 |-----------|---------------|------------------------|-------|
 | Slide image missing (render failed silently) | Slide Image Creator | Director of Presentations | Human owner |
 | A slide fails AF-I1 (garbled text) on 3 consecutive re-renders | Director of Presentations | Human owner | -- |
-| Logo is absent on a LOGO_ON_SLIDES slide across 2 re-renders | Slide Image Creator (confirm image-to-image mode and the `--logo` URL) | Director (may switch the deck to a local logo file, SOP-IMG-05 Rule A) + Prompt Author | Human owner |
+| Logo is absent on a LOGO_ON_SLIDES slide across 2 re-renders | PPTX Assembly Specialist (confirm `brand.logo_image_path` is a local PNG and the placement ran) | Director (may switch the deck to a local logo file, SOP-IMG-05 Rule A) + Prompt Author | Human owner |
 | Rendered string ambiguous (cannot determine PASS/FAIL by vision) | Director (request human visual check) | Human owner | -- |
 | AF-I9 fires on every re-render for the same slide | Prompt Author (check casting language and demographic-lock instruction) | Director | Human owner |
 | Loop count > 3 for any slide | Director of Presentations | Human owner | -- |

@@ -17,14 +17,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - `presentation_job/model_catalog.json` (aliases `image.t2i`, `image.i2i`)
 - `working/checkpoints/model_manifest.json` (the operator-confirmed echo from the Director)
-- `working/copy/intake.json` (LOGO_ON_SLIDES, LOGO_URL) and `working/copy/media_library.json`
+- `working/copy/intake.json` (LOGO_ON_SLIDES, `brand.logo_image_path`) and `working/copy/media_library.json`
 
 **Steps:**
 1. Read the two image aliases from `presentation_job/model_catalog.json`. They must equal the models named in the operator-confirmed `model_manifest.json`. A mismatch is not yours to resolve: halt and tell the Director "model_manifest.json and model_catalog.json disagree." Never guess the model.
-2. Mode rule (what the renderer does): when a logo URL is supplied (`--logo <https URL>`, or `brand.logo_image_path` in `intake.json` set to a URL), EVERY slide is rendered image-to-image with that URL as the reference in `input_urls`. With no logo URL, every slide is rendered text-to-image. A local PNG logo does not change the model: the render stays text-to-image and the exact file is composited at assembly (SOP-IMG-05). The batch renderer sends exactly one reference, the logo. A second reference (a founder portrait on an A5 slide, a style frame) is not supported by the batch path: flag it to the Director, do not hand-submit.
-3. If LOGO_ON_SLIDES = true and a public https LOGO_URL exists, the run command MUST pass it as `--logo`. Rendering a logo deck text-to-image reinvents the mark per slide.
-4. Run the SOP-IMG-01 section 7 preflight on the deck: (1) mode matches assets; (2) the logo reference is named in each prompt and carries "place, do not redraw, recolor, or restyle it"; (3) a style-reference frame, if any, carries the verbatim style-reference-only directive and the logo does not; (4) the LOGO_URL is a reachable public https URL under 30 MB (a 404, auth-required, or local-path logo HALTS the render; never fall back to text-to-image to "get unblocked"); (5) no analysis or "image-to-text" job is ever sent to KIE (there is no such endpoint). A deck failing a check is not rendered until fixed.
-5. Record the pin and mode in `working/checkpoints/phase4_checkpoint.json`: `{ "model_t2i": "...", "model_i2i": "...", "logo_mode": "i2i|t2i", "selected_at": "..." }`, and tell the Director: "Phase 4 starting with models: [t2i/i2i]. Logo mode: [i2i/t2i]."
+2. Mode rule (what the canonical command does): the canonical entry has NO `--logo` option (passing one exits with "unknown argument"). The logo reaches the renderer only through `working/copy/intake.json` `brand.logo_image_path`, which must be a LOCAL PNG file (absolute, or relative to the run directory). With a local logo the render stays text-to-image (alias `image.t2i`) and the renderer places that exact file on every slide at assembly (SOP-IMG-05 Rule A mechanism 2). With no logo configured, every slide is rendered text-to-image and no logo is placed. The URL image-to-image mechanism (SOP-IMG-05 Rule A mechanism 1) is not reachable through the canonical command today; it needs `--logo` to be forwarded by the entry and runner (lane D). The batch renderer sends no reference image. A reference image (a founder portrait on an A5 slide, a style frame) is not supported by the batch path: flag it to the Director, do not hand-submit.
+3. If LOGO_ON_SLIDES = true, `brand.logo_image_path` must name an existing local PNG before the render starts (a missing file or a URL there makes the renderer exit 2). If the client's logo exists only as a hosted LOGO_URL, it is downloaded once to a local PNG in the run directory (for example `working/copy/logo.png`) and `brand.logo_image_path` is pointed at it by the intake owner; you do not edit `intake.json` yourself. If that cannot be done, escalate to the Director before the render. Rendering a logo deck with no logo configured ships slides with no logo.
+4. Run the SOP-IMG-01 section 7 preflight on the deck: (1) mode matches assets; (2) the logo reference is named in each prompt and carries "place, do not redraw, recolor, or restyle it"; (3) a style-reference frame, if any, carries the verbatim style-reference-only directive and the logo does not; (4) the logo file at `brand.logo_image_path` exists, is a PNG, and is under 30 MB (a missing, non-PNG, or URL-valued path HALTS the render; a local path is valid here because the renderer places the file at assembly, and it is invalid only as an image-to-image `input_urls` value, which this command never sends); (5) no analysis or "image-to-text" job is ever sent to KIE (there is no such endpoint). A deck failing a check is not rendered until fixed.
+5. Record the pin and mode in `working/checkpoints/phase4_checkpoint.json`: `{ "model_t2i": "...", "model_i2i": "...", "logo_mode": "t2i", "logo_file": "<path>|none", "selected_at": "..." }`, and tell the Director: "Phase 4 starting with models: [t2i/i2i]. Logo: [local file placed at assembly / none]."
 
 **Outputs:**
 - `phase4_checkpoint.json` updated with the pin and mode
@@ -45,9 +45,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. Run exactly one command:
    ```bash
    bash <SCRIPTS_DIR>/presentation-canonical-entry.sh \
-       --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx [--logo <https LOGO_URL>]
+       --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
    ```
-   The entry runs the deps, bypass-scan and version-pin gates; the runner runs its Phase-0 preflight (OCR engine present, key authenticates, live credit balance via `GET /api/v1/chat/credit` against the script's estimated floor, abort `AF-KIE-AUTH` or `AF-KIE-BALANCE`, exit 4); then `build_deck.py` renders.
+   There is no `--logo` option; the logo comes from `intake.json` `brand.logo_image_path` (SOP 9.1 step 3). The entry runs the deps, bypass-scan and version-pin gates; the runner runs its Phase-0 preflight (OCR engine present, key authenticates, live credit balance via `GET /api/v1/chat/credit` against the script's estimated floor, abort `AF-KIE-AUTH` or `AF-KIE-BALANCE`, exit 4); then `build_deck.py` renders.
 2. You do not sleep, wave, throttle, or retry on your own. The script submits every slide once 0.6 seconds apart, the governor paces the `kie` provider, a submit that gets HTTP 429 sleeps 20 seconds and retries (at most 15 times in a row, then that slide fails), and the poll cadence is the script's.
 3. Never run `build_deck.py` or `run_signature_deck.py` directly to route around the entry gates, never run a per-deck `working/*.py` driver, and never start a smoke-test createTask by hand: a createTask outside the canonical path is `AF-CANONICAL-RENDER-BYPASS`. The built-in auth proof and credit check are the smoke test.
 4. Credit and price questions are answered by Skill 74, read-only and from the Skill 74 folder: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (rule 7). Never copy the adapter into the run directory.
@@ -138,5 +138,7 @@ This table is the API reference for Phase 4 in this role. It follows AGENTS.md N
 **Hand to:** Director (budget warnings and stops), Slide Image Creator (length returns)
 
 **Failure mode:** If `capacity_plan.json` is missing or has no budget ceiling, compute SLIDE_COUNT x price per image from `kie_live_adapter.py price` and continue. Never skip the budget check.
+
+---
 
 ---

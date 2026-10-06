@@ -6,7 +6,7 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 2.0
+**Version:** 2.0.1
 **Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
@@ -90,7 +90,7 @@ Review the model pin with the Director. If `kie_live_adapter.py latest-family --
 | Slides rendered vs. slides in the deck on a completed run (every slide has a verified PNG and a receipt) | 100% |
 | Crash recovery: a re-run bills only slides not already recorded complete in `pending_tasks.json` | 100% |
 | Silent failures (run ends with failures that were never reported to the Director) | 0 |
-| Logo missing from the image-to-image render when LOGO_ON_SLIDES = true | 0 |
+| Logo deck started without a valid local logo PNG in `intake.json` `brand.logo_image_path` when LOGO_ON_SLIDES = true | 0 |
 | Models used that are not the catalog pin | 0 |
 
 ---
@@ -104,7 +104,7 @@ Review the model pin with the Director. If `kie_live_adapter.py latest-family --
 - `working/checkpoints/process_manifest.json` (read -- the render record: model used, task ids)
 - `presentation_job/model_catalog.json` (read -- the model pin)
 - `working/copy/capacity_plan.json` (for the generation budget check)
-- `working/copy/intake.json` and `working/copy/media_library.json` (for LOGO_ON_SLIDES and the public https LOGO_URL)
+- `working/copy/intake.json` (LOGO_ON_SLIDES and `brand.logo_image_path`, the local logo PNG) and `working/copy/media_library.json` (the hosted LOGO_URL, only as the source of a download)
 - The client's own `KIE_API_KEY` is read by the script from the client's env stores; you never handle or print the key.
 
 ---
@@ -120,14 +120,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - `presentation_job/model_catalog.json` (aliases `image.t2i`, `image.i2i`)
 - `working/checkpoints/model_manifest.json` (the operator-confirmed echo from the Director)
-- `working/copy/intake.json` (LOGO_ON_SLIDES, LOGO_URL) and `working/copy/media_library.json`
+- `working/copy/intake.json` (LOGO_ON_SLIDES, `brand.logo_image_path`) and `working/copy/media_library.json`
 
 **Steps:**
 1. Read the two image aliases from `presentation_job/model_catalog.json`. They must equal the models named in the operator-confirmed `model_manifest.json`. A mismatch is not yours to resolve: halt and tell the Director "model_manifest.json and model_catalog.json disagree." Never guess the model.
-2. Mode rule (what the renderer does): when a logo URL is supplied (`--logo <https URL>`, or `brand.logo_image_path` in `intake.json` set to a URL), EVERY slide is rendered image-to-image with that URL as the reference in `input_urls`. With no logo URL, every slide is rendered text-to-image. A local PNG logo does not change the model: the render stays text-to-image and the exact file is composited at assembly (SOP-IMG-05). The batch renderer sends exactly one reference, the logo. A second reference (a founder portrait on an A5 slide, a style frame) is not supported by the batch path: flag it to the Director, do not hand-submit.
-3. If LOGO_ON_SLIDES = true and a public https LOGO_URL exists, the run command MUST pass it as `--logo`. Rendering a logo deck text-to-image reinvents the mark per slide.
-4. Run the SOP-IMG-01 section 7 preflight on the deck: (1) mode matches assets; (2) the logo reference is named in each prompt and carries "place, do not redraw, recolor, or restyle it"; (3) a style-reference frame, if any, carries the verbatim style-reference-only directive and the logo does not; (4) the LOGO_URL is a reachable public https URL under 30 MB (a 404, auth-required, or local-path logo HALTS the render; never fall back to text-to-image to "get unblocked"); (5) no analysis or "image-to-text" job is ever sent to KIE (there is no such endpoint). A deck failing a check is not rendered until fixed.
-5. Record the pin and mode in `working/checkpoints/phase4_checkpoint.json`: `{ "model_t2i": "...", "model_i2i": "...", "logo_mode": "i2i|t2i", "selected_at": "..." }`, and tell the Director: "Phase 4 starting with models: [t2i/i2i]. Logo mode: [i2i/t2i]."
+2. Mode rule (what the canonical command does): the canonical entry has NO `--logo` option (passing one exits with "unknown argument"). The logo reaches the renderer only through `working/copy/intake.json` `brand.logo_image_path`, which must be a LOCAL PNG file (absolute, or relative to the run directory). With a local logo the render stays text-to-image (alias `image.t2i`) and the renderer places that exact file on every slide at assembly (SOP-IMG-05 Rule A mechanism 2). With no logo configured, every slide is rendered text-to-image and no logo is placed. The URL image-to-image mechanism (SOP-IMG-05 Rule A mechanism 1) is not reachable through the canonical command today; it needs `--logo` to be forwarded by the entry and runner (lane D). The batch renderer sends no reference image. A reference image (a founder portrait on an A5 slide, a style frame) is not supported by the batch path: flag it to the Director, do not hand-submit.
+3. If LOGO_ON_SLIDES = true, `brand.logo_image_path` must name an existing local PNG before the render starts (a missing file or a URL there makes the renderer exit 2). If the client's logo exists only as a hosted LOGO_URL, it is downloaded once to a local PNG in the run directory (for example `working/copy/logo.png`) and `brand.logo_image_path` is pointed at it by the intake owner; you do not edit `intake.json` yourself. If that cannot be done, escalate to the Director before the render. Rendering a logo deck with no logo configured ships slides with no logo.
+4. Run the SOP-IMG-01 section 7 preflight on the deck: (1) mode matches assets; (2) the logo reference is named in each prompt and carries "place, do not redraw, recolor, or restyle it"; (3) a style-reference frame, if any, carries the verbatim style-reference-only directive and the logo does not; (4) the logo file at `brand.logo_image_path` exists, is a PNG, and is under 30 MB (a missing, non-PNG, or URL-valued path HALTS the render; a local path is valid here because the renderer places the file at assembly, and it is invalid only as an image-to-image `input_urls` value, which this command never sends); (5) no analysis or "image-to-text" job is ever sent to KIE (there is no such endpoint). A deck failing a check is not rendered until fixed.
+5. Record the pin and mode in `working/checkpoints/phase4_checkpoint.json`: `{ "model_t2i": "...", "model_i2i": "...", "logo_mode": "t2i", "logo_file": "<path>|none", "selected_at": "..." }`, and tell the Director: "Phase 4 starting with models: [t2i/i2i]. Logo: [local file placed at assembly / none]."
 
 **Outputs:**
 - `phase4_checkpoint.json` updated with the pin and mode
@@ -148,9 +148,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. Run exactly one command:
    ```bash
    bash <SCRIPTS_DIR>/presentation-canonical-entry.sh \
-       --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx [--logo <https LOGO_URL>]
+       --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
    ```
-   The entry runs the deps, bypass-scan and version-pin gates; the runner runs its Phase-0 preflight (OCR engine present, key authenticates, live credit balance via `GET /api/v1/chat/credit` against the script's estimated floor, abort `AF-KIE-AUTH` or `AF-KIE-BALANCE`, exit 4); then `build_deck.py` renders.
+   There is no `--logo` option; the logo comes from `intake.json` `brand.logo_image_path` (SOP 9.1 step 3). The entry runs the deps, bypass-scan and version-pin gates; the runner runs its Phase-0 preflight (OCR engine present, key authenticates, live credit balance via `GET /api/v1/chat/credit` against the script's estimated floor, abort `AF-KIE-AUTH` or `AF-KIE-BALANCE`, exit 4); then `build_deck.py` renders.
 2. You do not sleep, wave, throttle, or retry on your own. The script submits every slide once 0.6 seconds apart, the governor paces the `kie` provider, a submit that gets HTTP 429 sleeps 20 seconds and retries (at most 15 times in a row, then that slide fails), and the poll cadence is the script's.
 3. Never run `build_deck.py` or `run_signature_deck.py` directly to route around the entry gates, never run a per-deck `working/*.py` driver, and never start a smoke-test createTask by hand: a createTask outside the canonical path is `AF-CANONICAL-RENDER-BYPASS`. The built-in auth proof and credit check are the smoke test.
 4. Credit and price questions are answered by Skill 74, read-only and from the Skill 74 folder: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (rule 7). Never copy the adapter into the run directory.
@@ -247,7 +247,7 @@ This table is the API reference for Phase 4 in this role. It follows AGENTS.md N
 ## 10. Quality Gates
 
 ### Gate 1 -- Pre-Render Checklist
-Before the render command: model pin confirmed (SOP 9.1), `prompt_qc_report.json` passes, the logo URL is public https (when LOGO_ON_SLIDES = true) and is passed as `--logo`, and the KIE key is the client's own.
+Before the render command: model pin confirmed (SOP 9.1), `prompt_qc_report.json` passes, `brand.logo_image_path` names an existing local logo PNG (when LOGO_ON_SLIDES = true), and the KIE key is the client's own.
 
 ### Gate 2 -- One Path Only
 Every KIE call is made by `build_deck.py` through the canonical entry. No hand-typed call, no run-directory `*.py`, no Skill 74 file in the run directory.
@@ -282,7 +282,7 @@ Only the correct API states are used: `waiting` (in progress), `success` (done),
 
 ### Checkpoint fields the Director expects at handoff:
 - `model_t2i` and `model_i2i`: the pinned models
-- `logo_mode`: `i2i` or `t2i`
+- `logo_mode`: `t2i` (the canonical command renders text-to-image) and `logo_file`: the local logo path or `none`
 - `slides_rendered`: count of verified PNGs
 - `slides_failed`: count with failCode and failMsg logged
 - `task_ids_created`: count of ids in `pending_tasks.json`
@@ -301,14 +301,14 @@ Only the correct API states are used: `waiting` (in progress), `success` (done),
 | Created task ids exceed 2 x slide count | Director immediately | Operator authorization required to continue | Human owner |
 | KIE account credits exhausted | Director immediately | Do NOT switch to another image platform | Human owner |
 | Terminal `fail` on a slide task (failCode and failMsg logged) | Director after 2 consecutive failed runs; ROLE-16 Healer receives the failCode package | Full failCode and failMsg report to Director | Human owner |
-| LOGO_URL is not publicly reachable over https | Director before the render | Upload the logo to GHL or Drive to obtain a public URL, then retry | Human owner |
+| The logo exists only as a hosted URL, or `brand.logo_image_path` is missing, a URL, or not a PNG | Director before the render | Download the logo to a local PNG in the run directory and point `brand.logo_image_path` at it (intake owner), then retry | Human owner |
 
 ---
 
 ## 13. Good Output Examples
 
 ### Example A -- Phase 4 Checkpoint (finished run)
-phase4_checkpoint.json: model_t2i = "gpt-image-2-5-sunburst-text-to-image", model_i2i = "gpt-image-2-5-sunburst-image-to-image", logo_mode = "i2i", slides_rendered = 60, slides_failed = 0, task_ids_created = 60, exit_code = 0, estimated_cost = $3.00 (60 x $0.05), budget_ceiling = $4.50.
+phase4_checkpoint.json: model_t2i = "gpt-image-2-5-sunburst-text-to-image", model_i2i = "gpt-image-2-5-sunburst-image-to-image", logo_mode = "t2i", logo_file = "working/copy/logo.png", slides_rendered = 60, slides_failed = 0, task_ids_created = 60, exit_code = 0, estimated_cost = <60 x the live per-image price from `kie_live_adapter.py price`>, budget_ceiling = <estimate x 1.30>.
 
 ### Example B -- Clean Receipt
 pending_tasks.json entry for slide 23: `{ "task_id": "kie-task-abc123", "completed": true, "output_path": "working/renders/slide-23.png", "sha256": "<64 hex>", "completed_at": "2026-06-11T10:22:45Z" }`; slide-23.ocr.json present; file size 3,847,291 bytes, valid PNG.
@@ -332,8 +332,9 @@ Slide 07: state = "fail", failCode = "INSUFFICIENT_CREDITS", failMsg = "Account 
 - Reporting `TASK_COMPLETE` when the command exited non-zero.
 - Using state string `complete` instead of `success`, or `in_progress` instead of `waiting`.
 - Treating `data.resultJson` as an object instead of a JSON string, or reading `data.url` instead of `resultUrls[0]`.
-- Omitting the `--logo` URL on a logo deck (the logo is then reinvented per slide).
-- Passing a local file path as the logo reference (KIE cannot read it).
+- Passing `--logo` to the canonical command (the entry rejects it) or hand-running `build_deck.py --logo` to reach the URL mode.
+- Starting a logo deck with no local logo PNG in `brand.logo_image_path` (the deck ships with no logo, or the renderer exits 2).
+- Putting a URL in `brand.logo_image_path` (the renderer reads it as a file path and exits 2).
 - Retrying a 401 or 403 (permanent; never retried).
 
 ---
@@ -346,7 +347,7 @@ Slide 07: state = "fail", failCode = "INSUFFICIENT_CREDITS", failMsg = "Account 
 | 2 | Using the operator's KIE API key instead of the client's | The script reads the client's own key; never export an operator key into the run |
 | 3 | Moving renders to the media library before Phase 5 passes | Path is `working/renders/slide-NN.png`; the media library is ONLY for Phase-5-passed images |
 | 4 | Not checking PNG integrity after download | The script verifies magic bytes, size, 16:9 and 2K; confirm the receipts show every slide verified |
-| 5 | Forgetting `--logo` when LOGO_ON_SLIDES = true | Check intake.json; pass the public https LOGO_URL |
+| 5 | Starting a logo deck with no valid local logo file | Check `intake.json` `brand.logo_image_path`: an existing local PNG, never a URL; there is no `--logo` option |
 | 6 | Treating `data.resultJson` as an object | It is a JSON string. Parse it first, then `resultUrls[0]` |
 | 7 | Not logging failCode and failMsg | Both are required in the report for every terminal failure; the Director needs them |
 | 8 | Hand-testing the key with a createTask | The built-in auth proof and balance check are the smoke test; a hand createTask is a bypass |
@@ -376,8 +377,8 @@ When Phase 5 QC fails specific images and the Slide Image Creator has revised th
 ### Edge Case 17.3 -- Result URLs Expire Before Download
 KIE result URLs can expire within about 24 hours (rule 8). The renderer downloads each slide the moment its task succeeds. If a resumed run finds a task whose result link expired, it submits that slide fresh; the extra task id counts in the SOP 9.4 tally.
 
-### Edge Case 17.4 -- Logo URL Goes Private or Expires
-If the LOGO_URL returns a non-200, HALT the render. Notify the Director: "LOGO_URL is unreachable. Cannot render the logo deck without a public logo URL." Do not fall back to text-to-image silently -- the logo requirement is a brand requirement, not a technical convenience.
+### Edge Case 17.4 -- Logo File Missing or Source URL Goes Private
+If the logo file at `brand.logo_image_path` is missing, unreadable, or not a PNG (or the hosted LOGO_URL it was downloaded from has gone private so it cannot be refreshed), HALT the render. Notify the Director: "The logo file is unavailable. Cannot render the logo deck without a local logo PNG." Do not render without the logo silently -- the logo requirement is a brand requirement, not a technical convenience.
 
 ### Edge Case 17.5 -- resultJson Parses to an Unexpected Shape
 If `data.resultJson` parses but has no `resultUrls` (or an empty list), the renderer treats it as a failure for that slide and lists it in `failures`. Report the raw failure text to the Director; never mark a slide complete unless `resultUrls[0]` was fetched and verified.

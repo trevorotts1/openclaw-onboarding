@@ -123,9 +123,9 @@ runtime:
 3. Calls KIE.ai at 16:9 / 2K resolution via the ONLY verified live recipe:
    `POST /api/v1/jobs/createTask` → `GET /api/v1/jobs/recordInfo?taskId=<id>` →
    parse `data.resultJson` (a JSON string) → `resultUrls[0]`. It refuses the dead endpoint.
-   The model id is NEVER a literal here — `build_deck.py` resolves both render classes
-   (text-to-image, and image-to-image for the OFFICIAL-LOGO composite) from the central
-   versioned catalog per submit, so a catalog bump changes the next render without a code
+   The model id is NEVER a literal here — `build_deck.py` resolves its render classes
+   (`image.t2i`, and `image.i2i` for a URL-logo run, which the canonical command does not reach today)
+   from the central versioned catalog per submit, so a catalog bump changes the next render without a code
    edit. The batch path submits every slide once, 0.6 seconds apart (the governor also paces
    the `kie` provider at 1.33 per second, at most 13 starts per rolling 10 seconds), then runs
    one poll pass over all pending tasks every 10 seconds and downloads each slide the moment
@@ -207,14 +207,16 @@ Authoritative schema: `slides.schema.json` (render-template directory). Each ele
 - `layout` — optional placement hint. Omit for a safe default.
 
 The deterministic pipeline renders each slide as **text-to-image by default** — a slide
-with no official logo is a plain t2i generation. When the deck has an OFFICIAL logo,
-`build_deck.py` switches that render to **image-to-image**: pass `--logo <URL>` (or set
-`brand.logo_image_path` in `working/copy/intake.json` to a URL) and the real logo rides
-`input_urls` into the SAME single generation (`gpt-image-2-5-sunburst-image-to-image` class, model
-resolved from the catalog), so KIE composites the actual mark — no AI wordmark. A LOCAL
-PNG logo is different: the render stays t2i and `assemble_pptx` composites the exact PNG
-onto every slide at assembly time (top-right, ~13% of slide width). You never pass logo
-image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
+with no official logo is a plain t2i generation. The canonical command has NO `--logo`
+option (the entry exits with "unknown argument"). When the deck has an OFFICIAL logo, set
+`brand.logo_image_path` in `working/copy/intake.json` to a LOCAL PNG file (absolute, or relative
+to the run directory; a URL there makes the renderer exit 2, so a logo that exists only as a hosted
+URL is downloaded to a local PNG in the run directory first). The render stays t2i and
+`assemble_pptx` places the exact PNG on every slide at assembly time (top-right, ~13% of slide
+width, 0.25 inch margin). The URL image-to-image mode (`build_deck.py --logo <https URL>`, the logo
+riding `input_urls`) exists in the renderer but is not forwarded by the entry or the runner, so it
+is not available to a department agent until lane D plumbs it; never hand-run `build_deck.py` to
+reach it (AF-CANONICAL-RENDER-BYPASS). You never pass logo image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
 no per-slide `mode` choice for a deck build. (The separate `kie_generate.py` helper runs
 standalone i2i jobs for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE
 for `build_deck.py` and you do not invoke it for a standard deterministic deck build.)

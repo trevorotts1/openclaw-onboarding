@@ -5,9 +5,9 @@
 > **Decision 5C (AF-OVERLAY-DELIVERED):** the native-text overlay half of this pipeline is ELIMINATED. Garbled or mis-styled HERO TEXT is fixed by the Slide Image Creator's re-prompt and re-seed loop, then human escalation, never an overlay. A `pptx_text_overlays.json`, or any native (non-notes) on-slide text run, is AF-OVERLAY-DELIVERED.
 
 **Cluster:** Image-Design System (pipeline determinism)
-**Version:** v2.0.0 (2026-10-06)
+**Version:** v2.0.1 (2026-10-06)
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; SOP-DESIGN-04-LOGO-CONSISTENCY.md; SOP-IMG-01-KIE-CALL-MECHANICS.md; `07-kie-setup/references/kie-common-rules.md`
-**Owning role at write time:** Slide Image Creator (declares the logo reference in the prompt); Slide Submitter (passes `--logo`); PPTX Assembly Specialist (the assembly step places a local logo file)
+**Owning role at write time:** Slide Image Creator (declares the logo reference in the prompt); Slide Submitter (confirms the local logo file is configured before the render); PPTX Assembly Specialist (the assembly step places a local logo file)
 **Enforced at the gate by:** QC Specialist - Presentations (AF-LOGO, AF-GRAD, AF-TYPE)
 **Purpose:** Make logo identity deterministic where code can guarantee it, and keep Pillow out of slide creation.
 
@@ -17,22 +17,24 @@
 
 ### Rule A -- Logo identity: the two mechanisms the shipped renderer has
 
-`build_deck.py` reads one `--logo` argument and does exactly one of two things with it. Nothing else touches the logo.
+`build_deck.py` resolves the logo from a `--logo` argument if it is run with one, otherwise from `working/copy/intake.json` `brand.logo_image_path`, and does exactly one of two things with it. Nothing else touches the logo.
 
-1. **`--logo` is a public https URL** (the normal path for a logo deck, LOGO_ON_SLIDES = true with a hosted logo). Every slide is rendered image-to-image with that URL as the single reference in `input.input_urls` (the pinned image-to-image model from `presentation_job/model_catalog.json`, alias `image.i2i`). The model places the mark; the prompt carries the "place, do not redraw, recolor, or restyle it" sentence (SOP-IMG-01 check 3). No local file is composited in this mode.
-2. **`--logo` is a local file path** (or `brand.logo_image_path` in `intake.json` resolves to a local file). The render stays text-to-image (alias `image.t2i`). At assembly, `assemble_pptx` places that exact PNG file on every slide as a PICTURE shape on top of the full-bleed slide image, top-right, about 13 percent of the slide width (`LOGO_WIDTH_FRACTION` 0.13) with a 0.25 inch margin (`LOGO_MARGIN_IN`), the same size and position on every slide, bytes written verbatim so transparency is preserved. A picture shape is not native text, so this is not AF-OVERLAY-DELIVERED.
+**What the canonical command reaches today:** `presentation-canonical-entry.sh` and `run_signature_deck.py` have NO `--logo` option (the entry exits with "unknown argument") and do not forward one to `build_deck.py`. Through the canonical path only mechanism 2 is reachable, fed by `intake.json` `brand.logo_image_path` (a LOCAL PNG file, absolute or relative to the run directory; a URL there makes the renderer exit 2). A logo that exists only as a hosted URL is downloaded once to a local PNG in the run directory and `brand.logo_image_path` is pointed at it, or the Slide Submitter escalates to the Director.
+
+1. **`--logo` is a public https URL.** Reachable today only by invoking `build_deck.py` with `--logo`, which the canonical entry does not forward, so it needs the entry and runner to be changed (lane D) before any agent can use it. Every slide is rendered image-to-image with that URL as the single reference in `input.input_urls` (the pinned image-to-image model from `presentation_job/model_catalog.json`, alias `image.i2i`). The model places the mark; the prompt carries the "place, do not redraw, recolor, or restyle it" sentence (SOP-IMG-01 check 3). No local file is composited in this mode.
+2. **A local file path** (`brand.logo_image_path` in `intake.json`, the canonical route, or a local `--logo` on a direct `build_deck.py` run). The render stays text-to-image (alias `image.t2i`). At assembly, `assemble_pptx` places that exact PNG file on every slide as a PICTURE shape on top of the full-bleed slide image, top-right, about 13 percent of the slide width (`LOGO_WIDTH_FRACTION` 0.13) with a 0.25 inch margin (`LOGO_MARGIN_IN`), the same size and position on every slide, bytes written verbatim so transparency is preserved. A picture shape is not native text, so this is not AF-OVERLAY-DELIVERED.
 
 What the renderer does NOT do (never describe or ask for these as if they existed): a Pillow composite onto `working/renders/slide-NN.png`, a lower-right white chip with a gold border, a `working/checkpoints/logo_composite_log.json`, a post-render logo step on a URL-logo deck, or any automatic fallback from image-to-image to a composite after two failed renders.
 
 **Why this matters:** a logo that must be pixel-exact belongs in the local-file mechanism (the exact file is placed, no model creativity). The image-to-image mechanism conditions the model on the logo but cannot guarantee pixel-perfect reproduction, so QC checks the result (AF-LOGO, AF-F7).
 
-**Failure handling:** if the logo mutates or garbles on a URL-logo deck, tighten the logo sentence and negative twin and re-render through the canonical render command (re-prompt and re-seed, SOP-IMG-01). If it still mutates after two image-to-image attempts, escalate to the Director, who may switch the deck to a local logo file (mechanism 2) by supplying that file as `--logo`. Never hand-edit a PNG, never write a local compositing script into the run directory (Rule C), and never hand-submit to KIE.ai.
+**Failure handling:** if the logo mutates or garbles on a URL-logo deck, tighten the logo sentence and negative twin and re-render through the canonical render command (re-prompt and re-seed, SOP-IMG-01). If it still mutates after two image-to-image attempts, escalate to the Director, who may switch the deck to a local logo file (mechanism 2) by having the intake owner set `brand.logo_image_path` to that file. Never hand-edit a PNG, never write a local compositing script into the run directory (Rule C), and never hand-submit to KIE.ai.
 
 ---
 
 ### Rule B -- ELIMINATED: Native Text Overlay for Hero Strings (Decision 5C, AF-OVERLAY-DELIVERED)
 
-The former native-text overlay rule is REMOVED. ALL text (hero price numbers, callout strings, headlines, gradient-risk strings, struck prices) is baked into the SINGLE composed gpt-image-2.5 image by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
+The former native-text overlay rule is REMOVED. ALL text (hero price numbers, callout strings, headlines, gradient-risk strings, struck prices) is baked into the SINGLE composed image from the pinned model (`image.t2i` in `presentation_job/model_catalog.json`) by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
 
 When a critical verbatim string garbles or mis-styles at render (including the gradient-risk strings the gradient ban in Section 2 targets), the remedy is the Slide Image Creator's RE-PROMPT / RE-SEED loop (tighten the spelling-lock + negative block, new seed, re-render the composed image), then HUMAN ESCALATION if it persists. A native PPTX text box is never the remedy.
 
@@ -81,6 +83,6 @@ Replace with: flat brand-color hero type (solid brand color, high contrast again
 
 ## 4. OUTPUTS PRODUCED
 
-- Mechanism 1 (URL logo): nothing beyond the normal renders; the logo is part of each rendered PNG.
+- Mechanism 1 (URL logo, not reachable through the canonical command today): nothing beyond the normal renders; the logo is part of each rendered PNG.
 - Mechanism 2 (local logo file): the logo picture shape on every slide of the assembled `.pptx`; `working/renders/slide-NN.png` is left exactly as KIE.ai returned it.
 - (NO `pptx_text_overlays.json` and NO `logo_composite_log.json`. The native-text overlay path is eliminated, Decision 5C.)
