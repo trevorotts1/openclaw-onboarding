@@ -97,7 +97,7 @@ Any added/changed FB/IG-ad SOP, role, or gate MUST, in one change:
 | AF-FBAD-BODY-EMOJI | S2-PRIMARY-TEXT | JOB | auto:3 | a body's emoji count is out of band | `_chk_body_emoji`: every body emoji_count in BODY_EMOJI_MIN..BODY_EMOJI_MAX |
 | AF-FBAD-HEADLINE-SHAPE | S3-HEADLINES | JOB | auto:3 | a headline uses a non-locked shape | `_chk_headline_shape`: every headline shape in HEADLINE_SHAPES_LOCKED |
 | AF-FBAD-PROMPT-ORDER | S4-IMAGE-PROMPTS | JOB | auto:3 | a prompt's sections deviate from the fixed build order | `_chk_prompt_order`: every prompt sections == PROMPT_BUILD_ORDER |
-| AF-FBAD-PROMPT-RICHNESS | S4-IMAGE-PROMPTS | JOB | auto:3 | a prompt outside the richness char band | `_chk_prompt_richness`: every prompt char_count in PROMPT_MIN_CHARS..PROMPT_MAX_CHARS |
+| AF-FBAD-PROMPT-RICHNESS | S4-IMAGE-PROMPTS | JOB | auto:3 | a prompt outside the KIE rule 12 length band | `_chk_prompt_richness`: every prompt char_count passes the shared enforcer for its image model (floor 80 percent, ceiling 100 percent of the model maxLength; IMAGE_MODEL_DEFAULT when the receipt names none) |
 | AF-FBAD-PROMPT-STYLEBLOCK | S4-IMAGE-PROMPTS | JOB | auto:3 | a prompt lacks the brand style-block or the exact baked-in words | `_chk_prompt_styleblock`: every prompt styleblock_ok:true AND baked_text_present:true |
 | AF-FBAD-PROMPT-QC | S4-IMAGE-PROMPTS | JOB | auto:2 | Gate B independent prompt scorecard below the line | `_chk_prompt_qc`: prompt-qc avg>=QC_MIN_AVERAGE, no category<QC_MIN_CATEGORY, pass:true |
 | AF-FBAD-IMAGE-TASKID | S5-IMAGE-GEN | JOB | park | an image carries no real (non-placeholder) Kie task id | `_chk_image_taskid` (paid only): every image kie_task_id non-null, not a FABRICATED_TASK_ID_TOKENS member |

@@ -171,6 +171,12 @@ def _check_uncached(model, text, kind, fallback_max):
                     target_min=d.get("target_min"), source=src, warnings=warns)
 
 
+def check_count(model, chars, kind="descriptive", fallback_max=None):
+    """check() for a gate that holds a character COUNT (a receipt field) and not the text. Same verdict as check()
+    on a prompt of exactly `chars` characters."""
+    return check(model, "x" * int(chars), kind, fallback_max)
+
+
 def budget_for(model, fallback_max=None):
     """The rule 12 numbers for a model without judging a prompt: {max, floor, target_min, source}, or None when
     the limit is UNKNOWN (no schema limit and no policy-owner limit) or the adapter is unavailable. A writer uses
