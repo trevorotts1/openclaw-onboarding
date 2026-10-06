@@ -1,7 +1,7 @@
 ---
 name: design-intelligence-library
 description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2.5 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
-version: 2.1.10
+version: 2.2.2
 ---
 
 # Skill 45: Design Intelligence Library
@@ -46,11 +46,13 @@ This boundary is enforced, not advisory: the Deck Systems Specialist's SOP 9.5 [
 
 ## The five specialist roles (live in role-library/graphics after converge)
 
+The department also carries the Prompt Author and independent Prompt QC Specialist (every image prompt is authored and graded before generation), the Render Dispatcher (releases approved prompts, polls, runs postflight, recovers orphans), the Style Librarian (single INDEX writer), the Style Steward, the Likeness Rights Officer (independent verifier of the Photo Shoot Director), and the Asset Provenance Librarian (persists post-postflight files only). Ownership: requesters go through the Prompt Author, Prompt QC, the Dispatcher, then the Operator; the Operator never polls and the Dispatcher never calls `createTask`.
+
 | Role | Slug | Owns |
 |---|---|---|
 | **Style Analyst** ("The Eye") | `style-analyst.md` | MASTER-SOP analysis, style-card creation, batch clustering, Library Registrar duty (dormant; activates at 50+ cards) |
 | **Deck Systems Specialist** ("The Architect") | `deck-systems-specialist.md` | PPT-ANALYSIS-SOP, Style Rotation Engine, Slide Manifest, multi-slide cohesion |
-| **Generation Operator** ("The Operator") | `generation-operator.md` | MASTER-SOP Workflow B (generation), negative prompting, API routing, model selection |
+| **Generation Operator** ("The Operator") | `generation-operator.md` | MASTER-SOP Workflow B (generation), negative prompting, API routing, model selection; the sole Kie.ai `createTask` caller and receipt creator, through Skill 74 (`validate`, `preflight` at price x 1.30, `prompt-budget`, `submit --mode active`) |
 | **Photo Shoot Director** ("The Director") | `photo-shoot-director.md` | PHOTO-SHOOT-SOP (consent, identity lock, retouch), legal escalation, identity-profile maintenance |
 | **Fidelity Tester** ("The Critic") | `fidelity-tester.md` | TEST-PROTOCOL, fidelity testing, patch loops, diagnosis mode, avoid-list growth, status lifecycle |
 
@@ -179,7 +181,7 @@ The gates above are no longer prose-only. `scripts/diu_validator.py` (Python std
 |---|---|---|---|
 | **Prompt-length caps** | `diu_validator.py prompt-caps --tier {SHORT\|MEDIUM\|LONG} --prompt-file P` | SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 chars (MODEL-SPECS tier table). Over-cap ⇒ fall back a tier, never silently truncate. | 3 (`AF-DIU-PROMPT-CAP`) |
 | **DIU routing interlock** | `diu_validator.py route-check --deck-kind K` | SOP-DIU-611 §D.1 coded hard stop: audience/webinar/funnel/sales/virtual-event decks CANNOT run on the Rotation Engine — route to Presentations. | 2 (`AF-DIU-ROUTING-INTERLOCK`) |
-| **Consent + minor + PII gate** | `diu_validator.py consent-check --identity-file IDENTITY.md` | PHOTO-SHOOT-SOP §1 fail-closed: real-person likeness needs documented+dated consent, an attested-adult subject (Minors = HARD NO), and an at-rest-protected biometric store. Unconfirmed ⇒ do not generate. | 4 (`AF-DIU-CONSENT`) |
+| **Consent + minor + PII gate** | `diu_validator.py consent-check --consent-file CONSENT.md` | PHOTO-SHOOT-SOP §1 and SOP-DIU-608 fail-closed: real-person likeness needs documented+dated consent in `CONSENT.md`, an attested-adult subject (Minors = HARD NO), and an at-rest-protected biometric store. Unconfirmed ⇒ do not generate. (`--identity-file` is a legacy alias and now requires a `CONSENT.md`; `IDENTITY.md` holds the identity profile only.) | 4 (`AF-DIU-CONSENT`) |
 | **Fidelity receipt + 3-strike** | `diu_validator.py fidelity --run-dir R --card-id ID --scores-file S` | TEST-PROTOCOL §5: avg ≥4.0 AND no dim <3 AND zero hard-rule violations; appends a receipt; 3 consecutive fails on one dimension ⇒ escalate to CDO. | 3 (fail) / 5 (`AF-DIU-3-STRIKE` escalate) |
 
 Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never deleted — the card's institutional memory). The Generation Operator runs `prompt-caps` before every dispatch; the Deck Systems Specialist runs `route-check` at SOP-DIU-611 step A before any manifest work; the Fidelity Tester runs `fidelity` on every graded PNG. The consent-gate-first rule (PHOTO-SHOOT-SOP §1) is now a coded fail-closed gate (`consent-check`), run before any real-person generation — not prose alone.
@@ -190,13 +192,13 @@ Receipts append to `working/checkpoints/diu_fidelity_receipts.json` (never delet
 
 MODEL-SPECS.md (repo-owned, vendor-asserted) specifies API limits, character tiers (SHORT/MEDIUM/LONG), and per-category routing rules:
 
-- **GPT-Image 2.5** — T2I (layout adherence) / I2I (precise edits). Default general-purpose.
+- **GPT-Image 2.5** — T2I (layout adherence) / I2I (precise edits). Default general-purpose; the live default model comes from Skill 74 `latest-family` (rule 13), the Sunburst ids in MODEL-SPECS are a snapshot.
 - **Nano Banana 2** — people-led creative, faster, great for lifestyle/portrait.
 - **Seedream 4.5** — identity-locked personal photo shoots; surgical retouch (Mode G).
 - **Ideogram V3** — design/typography-heavy; clean graphic elements.
 - **Wan 2.7** — variant exploration, draft-stage testing.
 
-Library _RULES.md per category list preferred models and fallback chains. Generation Operator selects per brief + image type.
+Library _RULES.md per category list preferred models and fallback chains. Generation Operator selects per brief + image type. Prompt length targets are defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md` and read from `kie_live_adapter.py prompt-budget`; the static tier caps in this file are card-authoring tiers, not the generation band.
 
 ---
 

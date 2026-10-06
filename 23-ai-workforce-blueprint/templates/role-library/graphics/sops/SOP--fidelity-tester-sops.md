@@ -30,7 +30,7 @@
    **Per-client REPRESENTATION_MIX counterweight:** The REPRESENTATION_MIX from the client's intake record overrides the universal deep-skin quality default when they would otherwise conflict. Score skin-tone quality for whoever IS cast per the client's REPRESENTATION_MIX. Never fail a card for following a client's actual audience composition.
 5. Record the test as a row in the card's Test Log: date, model, tier, test type, test subject description, per-dimension scores, average, pass/fail verdict, notes.
 6. Issue verdict:
-   - PASS: Update card status to `tested` (first-run pass) or confirm `production` (regression pass). Update INDEX.md status field to match. Notify Style Analyst and Chief Design Officer.
+   - PASS: Update card status to `tested` (first-run pass) or confirm `production` (regression pass). Ask the Style Librarian (single INDEX writer) to sync the INDEX.md status field to match. Notify Style Analyst and Chief Design Officer.
    - FAIL: Enter SOP 9.2 (Patch Loop). Do NOT update the card status. Log the failure clearly in the Test Log before entering the patch loop.
 
 **Outputs:** Test Log row(s), verdict (PASS/FAIL), INDEX.md status update (on PASS), or entry into Patch Loop (on FAIL).
@@ -57,7 +57,7 @@
 3. For confirmed card defects: issue a patch brief to the Style Analyst. The brief must include: the specific dimension(s) that failed, the exact failure mode per TEST-PROTOCOL §6 vocabulary, the recommended patch approach per TEST-PROTOCOL §4 step 2, and the avoid-list addition proposed.
 4. When the Style Analyst returns the patched card: re-run only the failed test(s) per TEST-PROTOCOL §4 step 3 (not the full test set). Score and record the patch-attempt row.
 5. Count consecutive failed patch attempts on the same dimension. On attempt 3 with no passing score: compile the 3-strike escalation packet and deliver to Chief Design Officer per SOP 9.3.
-6. On a passing re-test: update card status to `tested`, update INDEX.md, notify Style Analyst and Chief Design Officer.
+6. On a passing re-test: update card status to `tested`, ask the Style Librarian to update INDEX.md, notify Style Analyst and Chief Design Officer.
 
 **Outputs:** Patch brief to Style Analyst (per failed attempt), Test Log rows (per re-test), 3-strike escalation packet (if limit reached), or PASS verdict.
 **Hand to:** Style Analyst (patch briefs); Chief Design Officer (3-strike escalations and PASS verdicts); Generation Operator (operator error corrections).
@@ -93,7 +93,7 @@
 **Steps:**
 1. Confirm the PASS verdict is on record in the Test Log with complete information: date, model, tier, all 12 dimension scores, average, seed (if the model supports it), and a note confirming zero hard-rule violations.
 2. Bank the regression golden for seed-capable models (Ideogram V3, Wan 2.7, or any model with seed support per MODEL-SPECS.md): record the passing seed, exact full prompt (all variables filled as used in the passing test), model ID, tier, and the TEST-PROTOCOL §7 note in the golden-seed registry. If the model does not support seeds, store the full assembled prompt + model + tier + test scores as the baseline.
-3. Update the card status to `production` in the card file and in INDEX.md. Tag the Changelog entry with the promotion date and the first passing test row reference.
+3. Update the card status to `production` in the card file and ask the Style Librarian to sync it in INDEX.md. Tag the Changelog entry with the promotion date and the first passing test row reference.
 4. Notify the Style Analyst (card is in the library at production status), the Generation Operator (card is available for Workflow B generation requests), and the Chief Design Officer.
 5. Trigger SOP-DIU-606 (via the Style Analyst): the card's one-line summary, mood keywords, and palette descriptors must be embedded in the semantic retrieval index. Confirm the embedding was completed before closing the task.
 
@@ -112,15 +112,15 @@
 **Inputs:** Golden-seed registry (all production card baseline records), MODEL-SPECS.md current version, cost budget for regression sweep (approved by Chief Design Officer before sweep begins).
 
 **Steps:**
-1. Before starting a regression sweep, confirm cost budget approval with Chief Design Officer. A full regression sweep on 10+ production cards at 3 test generations each is real spend; get explicit approval with a dollar estimate before firing.
-2. For seed-capable models: re-run the banked golden seed+prompt pair for each production card on the affected model. Score on all 12 dimensions per SOP 9.1. Compare against the banked baseline scores.
+1. Before starting a regression sweep, confirm cost budget approval with Chief Design Officer. A full regression sweep on 10+ production cards at 3 test generations each is real spend; get explicit approval with a dollar estimate (from the live price, `kie_live_adapter.py price`) before firing.
+2. For seed-capable models: re-run the banked golden seed+prompt pair for each production card on the affected model (handed to the Render Dispatcher for release to the Generation Operator, which submits; you never call `createTask`). Score on all 12 dimensions per SOP 9.1. Compare against the banked baseline scores.
 3. For non-seed models: re-run the banked full prompt at the same model/tier. Score and compare against baseline.
 4. Classify each card result:
    a. Scores within 0.5 of baseline on all dimensions -> PASS, no action; log in the regression sweep record
    b. One or more dimensions dropped by > 0.5 from baseline but card still passes the 4.0/no-dim-below-3 criteria -> WATCH; log drift, flag to CDO, do not re-route yet
    c. Card now fails pass criteria on two consecutive regression test runs -> DEGRADED; proceed to step 5
 5. For DEGRADED cards: mark the model as `degraded` in generation receipts for this card. Re-route: update the card's routing note to use the MODEL-SPECS backup column endpoint until the degradation is cleared or patched.
-6. For rollback (card was patched after production promotion and the patched version now fails regression): revert the card to the last version whose Test Log shows a passing score. Update the card file to the last-known-good version, update the card's status in INDEX.md, and record a Changelog entry: "ROLLBACK: reverted to v[X.Y] -- failure notes from v[X.Z] preserved per MASTER-SOP §8." Never delete failure notes.
+6. For rollback (card was patched after production promotion and the patched version now fails regression): revert the card to the last version whose Test Log shows a passing score. Update the card file to the last-known-good version, ask the Style Librarian to update the card's status in INDEX.md, and record a Changelog entry: "ROLLBACK: reverted to v[X.Y] -- failure notes from v[X.Z] preserved per MASTER-SOP §8." Never delete failure notes.
 7. Deliver the regression sweep report to the Chief Design Officer: cards swept, pass/watch/degraded counts, rollbacks executed, models flagged as degraded, re-routing actions taken, total sweep cost.
 
 **Outputs:** Regression sweep report to Chief Design Officer, degraded-model flags in receipts, routing updates for degraded cards, rollbacks executed (with Changelog entries).

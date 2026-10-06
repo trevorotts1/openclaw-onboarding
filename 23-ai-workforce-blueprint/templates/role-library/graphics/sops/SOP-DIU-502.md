@@ -95,6 +95,7 @@ This SOP is event-driven. It does not run on a fixed schedule except for the qua
 6. Bump MODEL-SPECS version and date; log the change in MODEL-SPECS §7 Changelog.
 7. **Do NOT touch any style card.** Cards are model-agnostic by design. This rule is absolute.
 8. Update the library-version pin in this SOP (SOP-DIU-502) and notify the CDO so all thin-wrapper SOPs that reference MODEL-SPECS can be re-verified and re-pinned.
+9. A newly discovered live model starts as DISCOVERED and is never an automatic default (rule 10 of `07-kie-setup/references/kie-common-rules.md`); the one exception is the GPT Image default, which follows `kie_live_adapter.py latest-family --family gpt-image` (rule 13). Limits and prices for the new row come from the live schema and `price` (rules 5 and 7), with the registry rebuilt by Skill 74 (`build_model_registry.py`).
 
 **Deprecating an existing model:**
 

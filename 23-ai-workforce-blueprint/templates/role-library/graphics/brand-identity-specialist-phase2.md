@@ -117,7 +117,7 @@ When a persona is present, this file is subordinate to it.
 ## 6. Quarterly Operations
 
 - **Q1:** baseline identity-system coverage across the client book (how many clients have a full 5-layer system).
-- **Q2:** AI-generation model review — is the current text-in-image model still best, or has a better one shipped?
+- **Q2:** AI-generation model review — ask the Generation Operator for the live-registry discovery result: is the current text-in-image model still best, or has a better one shipped? (New models are discovered, never auto-defaulted.)
 - **Q3:** cultural-authenticity review with the Brand Strategist — check no identity has drifted into default-trope territory.
 - **Q4:** upstream contribution — archive the strongest 2 identity systems as reusable templates for {{COMPANY_NAME}}'s library.
 
@@ -162,9 +162,7 @@ This role contributes to the {{COMPANY_NAME}} revenue cascade by **producing the
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| **Ideogram API** | Text-in-logo generation (strongest for wordmarks) | `POST https://api.ideogram.ai/generate` — verify endpoint in live docs before use | Cite the doc URL + retrieval date in the SOP step. |
-| **Flux 1.1 Pro** | Photoreal + stylised mark concepts | Replicate / fal.ai endpoint per workspace TOOLS.md | Never write an endpoint from memory. |
-| **DALL·E 3** | Backup concept generation | `POST https://api.openai.com/v1/images/generations` | Fallback only when the primary model produces text garbage. |
+| **Concept generation (through the department pipeline)** | Logo concept images: wordmarks (Ideogram V3 DESIGN for text fidelity), symbols and monograms (the model the live registry names) | You hand a creative brief to the Prompt Author (`prompt-author-graphics.md`); the independent Prompt QC Specialist grades the prompt; the Render Dispatcher releases it; the Generation Operator submits through Skill 74 (`kie_live_adapter.py validate`, `preflight`, `prompt-budget`, `submit --mode active`) | You never call an image provider directly (no direct Ideogram, Replicate, fal.ai, or OpenAI calls) and never write a prompt or an endpoint from memory; model ids are DISCOVERED in the live registry (rules 5 and 10 of `07-kie-setup/references/kie-common-rules.md`). A client logo or brand mark is image-to-image only (text-to-image logo generation is prohibited). |
 | **vtracer** | Raster→SVG vectorization | CLI, local: `--colormode color --hierarchical polygon` | `filter_speckle 4` minimum. |
 | **SVGO** | SVG path optimization | `npx svgo` | Target < 8KB for the primary mark. |
 | **coloraide (Python)** | Palette math, sRGB↔CMYK↔Lab conversion | `pip install coloraide` | Used for the WCAG pair test. |
@@ -210,11 +208,11 @@ This role contributes to the {{COMPANY_NAME}} revenue cascade by **producing the
 **Inputs:** `tokens.json` attributes + thesis; client name (exact spelling + any trademark marks).
 
 **Steps:**
-1. Build a **prompt template** from the thesis: `<mark type>, <thesis direction>, <attribute words>, logo, vector, flat, white background`. Append the model's negative syntax for `gradient, mockup, drop shadow`.
-2. Generate **two passes of 8 concepts**:
-   - Pass A — **wordmark/lockup** via Ideogram (text fidelity).
-   - Pass B — **symbol/monogram** via Flux or DALL·E 3.
-   Save all 16 as `concepts/raw/concept-01.png … concept-16.png`.
+1. Write a **creative brief** from the thesis (mark type, thesis direction, attribute words, logo, vector, flat, white background; exclusions: gradient, mockup, drop shadow; every verbatim wordmark string; the locked style block) and hand it to the Prompt Author. You do not author or certify the raw prompt; the independent Prompt QC Specialist grades it, the Render Dispatcher releases it, and the Generation Operator submits it through Skill 74. Prompt length is defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md`.
+2. Request **two passes of 8 concepts** through that pipeline:
+   - Pass A — **wordmark/lockup** on the text-fidelity route (Ideogram V3 DESIGN).
+   - Pass B — **symbol/monogram** on the route the Prompt Author selects from the live registry.
+   Save all 16 (postflight-verified files handed back by the Dispatcher) as `concepts/raw/concept-01.png … concept-16.png`.
 3. **Curate to 3 finalists** on four criteria, each scored 0–2 (max 8): `legibility@16px`, `thesis-match`, `distinctiveness`, `scalability`. Discard anything scoring **<6**. If fewer than 3 survive, run one regeneration pass with a re-weighted thesis (shift one attribute axis by ±1).
 4. Save finalists as `concepts/final/finalist-{a,b,c}.png` and write their scores to `tokens.json.curation`.
 
@@ -222,7 +220,7 @@ This role contributes to the {{COMPANY_NAME}} revenue cascade by **producing the
 
 **Hand to:** {{DIRECTOR_TITLE}} for the **one** client-facing concept review (finalists only — never show raw passes to the client).
 
-**Failure mode:** Model produces text garbage → re-run with the name spelled phonetically in the prompt, or switch to symbol-only generation and hand-set the type. Never hand a client a wordmark whose letterforms are hallucinated.
+**Failure mode:** Model produces text garbage → ask the Prompt Author to re-author with the name spelled phonetically and the spelling lock, or switch to symbol-only generation and hand-set the type. Never hand a client a wordmark whose letterforms are hallucinated.
 
 ---
 
@@ -369,7 +367,7 @@ Triggered when a shipped identity will appear on legal documents, packaging, or 
 | Brief lacks explicit attributes | Brand Strategist | {{DIRECTOR_TITLE}} | Owner via the Director's channel |
 | Founder demands a font you cannot license | {{DIRECTOR_TITLE}} | Owner (offer licensed alternative) | — |
 | Cultural signifier requested that you cannot render authentically | Brand Strategist → founder | {{DIRECTOR_TITLE}} | Do not ship; escalate |
-| AI generator keeps producing illegible wordmarks | {{DIRECTOR_TITLE}} | Switch to symbol-only + hand-set type | — |
+| AI generator keeps producing illegible wordmarks | {{DIRECTOR_TITLE}} (and the Prompt Author for re-authoring) | Switch to symbol-only + hand-set type | — |
 | Colour fix cannot meet contrast AND thesis | Brand Strategist | {{DIRECTOR_TITLE}} | Owner picks the trade-off on record |
 
 ---

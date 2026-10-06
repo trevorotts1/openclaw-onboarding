@@ -37,6 +37,25 @@ Every Presentations role, SOP and tool document now describes the deck image cha
 #### Not changed
 No code, price table, band threshold or renderer pin changed (`build_deck.py`, `run_signature_deck.py` and `CANONICAL-RENDERER-PIN.sha256` untouched). No client box, credential, model or provider setting is touched. Open owner items found while reading are listed in the pull request.
 
+## [Unreleased] - 2026-10-06 - fix(graphics, audio, video): QC follow-up on the Skill 74 integration
+
+Band figures removed from prose (rule 12 pointer only); Video and Audio Skill 74 sequences now run
+`prompt-budget --check` after `validate` (verbatim TTS script text exempt); example dollar figures replaced with
+placeholders; Likeness Rights Officer uses modes A-F and the 14-day expiry flag-and-continue rule from SOP-DIU-608.
+
+## [Unreleased] - 2026-10-06 - fix(graphics, audio, video): every Kie path runs on Skill 74 with one ownership model
+
+Graphics department: the Generation Operator is the sole `createTask` caller and receipt creator
+(Skill 74: validate, preflight at price x 1.30, prompt-budget, `submit --mode active`); the Render
+Dispatcher polls, runs postflight, and recovers orphans; the Asset Provenance Librarian only persists
+post-postflight files. Producing roles reach the Operator through the Prompt Author, Prompt QC, and the
+Dispatcher. Band numbers are restated nowhere in role prose; every role points at rule 12 of
+`07-kie-setup/references/kie-common-rules.md`. healer-graphics now carries 13 SOPs (mirror reconciled).
+Rights manifest layout follows SOP-DIU-610 (`RIGHTS-MANIFEST.md` plus `disclosure-table.json`, Photo Shoot
+Director sole writer, Likeness Rights Officer verifier). The Style Librarian is the single INDEX writer.
+Video and Audio: AI Video Generator, Movie Producer role and SOPs, and AI Voice Specialist submit through
+Skill 74 instead of hand-rolled endpoints. `_index.json` re-stamped.
+
 ## [v25.2.16] - 2026-09-29 - SOP-00 NEW INTAKE goes through the decision engine (mc-route.sh auto)
 
 `SOP-00-Owner-Task-Routing.md` carries the CEO_EXECUTION_POLICY_V3 mirror, so its

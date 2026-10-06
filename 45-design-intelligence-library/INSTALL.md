@@ -30,7 +30,7 @@ Check that the credential is PRESENT. Never print it — this command reports
 - Run Skill 07 first: `bash $OC_ROOT/skills/07-kie-setup/install.sh`
 - Then return to this installer.
 
-Skill 45 requires Kie.ai credentials for image generation endpoints.
+Skill 45 requires Kie.ai credentials for image generation endpoints. Generation transport is Skill 74 (`kie_live_adapter.py`), driven only by the Generation Operator; the Render Dispatcher polls and runs postflight.
 
 ---
 

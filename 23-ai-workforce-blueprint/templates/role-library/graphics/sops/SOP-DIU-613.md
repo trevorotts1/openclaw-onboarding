@@ -3,6 +3,7 @@
 **ID:** SOP-DIU-613
 **Classification:** ZHC SOP — thin wrapper
 **Owner Role:** Chief Design Officer (orchestrates); Style Analyst + Generation Operator (execute)
+**Section 9 slot:** 9.13
 **Version:** 1.0 | **Date:** 2026-06-12
 **Status:** CANONICAL
 **Library-version pin:** MASTER-SOP v1.0, PPT-ANALYSIS-SOP v1.0, PHOTO-SHOOT-SOP v1.0, TEST-PROTOCOL v1.0 (§-refs verified 2026-06-12)
@@ -68,10 +69,10 @@ All 2–3 draft cards must reach `tested` status — passing the full 12-dimensi
 
 ### Step 6 — 1K calibration contact sheet
 
-For each card that reaches `tested` status: generate a 1K SHORT contact sheet (4 variations, cheapest capable endpoint per MODEL-SPECS §2 routing) using the card and the client's verified brand variables.
+For each card that reaches `tested` status: generate a 1K SHORT contact sheet (4 variations, cheapest capable endpoint per MODEL-SPECS §2 routing) using the card and the client's verified brand variables; each prompt still meets the rule 12 budget of `07-kie-setup/references/kie-common-rules.md` (the contact sheet is cheap because of the 1K resolution and the cheapest capable model, not because of a short prompt).
 
 This step validates:
-- Kie.ai key wiring across all env stores (the canonical `KIE_API_KEY` or any alias in `shared-utils/secret_names.json`) (SOP-DIU-601 preflight)
+- Kie.ai key wiring across all env stores (the canonical `KIE_API_KEY` or any alias in `shared-utils/secret_names.json`; SET or NOT-SET only, never the value) and the live `kie_live_adapter.py preflight` credit check (SOP-DIU-601 preflight)
 - Hosting path (SOP-DIU-609 if any reference images are used)
 - Receipt plumbing (SOP-DIU-602 smoke-test rule: first-ever generation per client must be a 1K SHORT smoke test)
 
