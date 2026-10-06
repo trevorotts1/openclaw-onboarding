@@ -334,14 +334,14 @@ class SlugAndPriceResolutionTests(unittest.TestCase):
             self.registry.price_for("kie-bytedance-seedance-1.5-pro", strict=True)
 
     def test_price_for_strict_succeeds_on_verified_veo3(self) -> None:
-        price = self.registry.price_for("kie-veo3-fast", strict=True)
-        self.assertEqual(price["resolved_amount"], 0.40)
+        price = self.registry.price_for("kie-veo3-fast", resolution="1080p", strict=True)
+        self.assertEqual(price["resolved_amount"], 0.325)  # dated fallback constant (live catalog 2026-10-05)
         self.assertTrue(price["verified"])
 
     def test_estimate_verified_model_computes_total_and_stamps_snapshot(self) -> None:
-        estimate = self.registry.estimate("kie-veo3-fast", quantity=2)
-        self.assertEqual(estimate.unit_price, 0.40)
-        self.assertEqual(estimate.estimated_total, 0.80)
+        estimate = self.registry.estimate("kie-veo3-fast", quantity=2, resolution="1080p")
+        self.assertEqual(estimate.unit_price, 0.325)
+        self.assertEqual(estimate.estimated_total, 0.65)
         self.assertTrue(estimate.verified)
         self.assertEqual(estimate.registry_snapshot_id, self.registry.snapshot_id)
 

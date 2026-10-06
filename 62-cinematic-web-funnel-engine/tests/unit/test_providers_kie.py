@@ -61,6 +61,17 @@ from providers import base, kie  # noqa: E402
 _FIXTURES_DIR = _TESTS_DIR.parent / "fixtures" / "kie"
 
 
+_VEO_PRICING_DESC = (
+    "Lite mode (text-to-video / image-to-video/ reference-to-video): 720P \u2014 30 credits (\u2248 $0.15) per video; "
+    "1080P \u2014 35 credits (\u2248 $0.175) per video; 4K \u2014 150 credits (\u2248 $0.75) per video.\n"
+    "Fast mode (text-to-video / image-to-video / reference-to-video): 720P \u2014 60 credits (\u2248 $0.30) per video; "
+    "1080P \u2014 65 credits (\u2248 $0.325) per video; 4K \u2014 180 credits (\u2248 $0.90) per video.\n"
+    "Quality mode (text-to-video / image-to-video): 720P \u2014 250 credits (\u2248 $1.25) per video; "
+    "1080P \u2014 255 credits (\u2248 $1.275) per video; 4K \u2014 370 credits (\u2248 $1.85) per video.\n\n"
+    "High-tier top-ups (+10% bonus) reduce the effective cost by about 10%."
+)
+
+
 def _load_fixture(name: str) -> Dict[str, Any]:
     with (_FIXTURES_DIR / name).open("r", encoding="utf-8") as fh:
         return json.load(fh)
@@ -258,6 +269,16 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
         for model_id in ("kie-veo3-fast", "kie-veo3-quality"):
             self.assertEqual(self.provider.registry.slug_for(model_id), "veo-3-1")
 
+    def test_quality_id_is_refused_instead_of_silently_sending_the_fast_request(self) -> None:
+        # createTask veo-3-1 documents no tier selector, so Quality would be
+        # byte-identical to Fast. It is status=planned and must not submit.
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_video(
+                base.VideoGenerationRequest(model_id="kie-veo3-quality", prompt="x", duration_seconds=8)
+            )
+        self.assertIn("planned", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
     def test_text_to_video_body_matches_live_schema(self) -> None:
         body = self._submit(duration_seconds=8, aspect_ratio="9:16", resolution="1080p")
         self.assertEqual(body["model"], "veo-3-1")
@@ -283,7 +304,7 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
         self.assertEqual(body["input"]["generation_type"], "FIRST_AND_LAST_FRAMES_2_VIDEO")
 
     def test_resolution_is_lowercased_for_4k(self) -> None:
-        body = self._submit(model_id="kie-veo3-quality", duration_seconds=4, resolution="4K")
+        body = self._submit(model_id="kie-veo3-fast", duration_seconds=4, resolution="4K")
         self.assertEqual(body["input"]["resolution"], "4k")
 
     def test_out_of_schema_values_raise_before_any_http_call(self) -> None:
@@ -297,6 +318,20 @@ class GenerateVideoVeoCreateTaskTests(unittest.TestCase):
                     base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", **kw)
                 )
         self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_documented_recordinfo_resultjson_string_shape_is_decoded(self) -> None:
+        # Get Task Details doc: data.resultJson is a JSON STRING {"resultUrls": [...]}, state success|fail.
+        self.transport.queue_get(
+            _resp(200, {"code": 200, "data": {"state": "success", "resultJson": json.dumps({"resultUrls": ["https://fixtures.example/r.mp4"]})}})
+        )
+        self.assertEqual(self.provider._poll_result_url("veo-task", interval=0), "https://fixtures.example/r.mp4")
+
+    def test_callback_payload_urls_list_and_string_forms(self) -> None:
+        ok = {"code": 200, "data": {"taskId": "t", "info": {"resultUrls": ["https://fixtures.example/a.mp4"]}}}
+        self.assertEqual(kie.result_urls_from_callback(ok), ["https://fixtures.example/a.mp4"])
+        as_string = {"code": 200, "data": {"info": {"resultUrls": "[\"https://fixtures.example/b.mp4\"]"}}}
+        self.assertEqual(kie.result_urls_from_callback(as_string), ["https://fixtures.example/b.mp4"])
+        self.assertEqual(kie.result_urls_from_callback({"code": 501, "data": {"taskId": "t"}}), [])
 
     def test_veo_info_resultUrls_payload_shape_is_decoded(self) -> None:
         self.transport.queue_get(
@@ -387,18 +422,47 @@ class EstimateCostTests(unittest.TestCase):
         self.assertFalse(estimate.verified)
         self.assertIsNone(estimate.estimated_total)
 
-    def test_veo3_fast_estimate_is_verified_and_priced_per_clip_not_per_second(self) -> None:
-        # Veo is usd_per_clip (price block deliberately unchanged by the
-        # 2026-10-05 wire fix; see its CATALOG DRIFT note). An 8s request must
-        # NOT be multiplied by 8 -- that would silently assume a per-second
-        # unit the registry does not declare for this model.
+    def test_veo3_fast_estimate_falls_back_to_labeled_dated_constants_when_live_unavailable(self) -> None:
+        # No queued GET -> FakeTransport raises -> live lookup fails soft.
+        # usd_per_clip: an 8s request must NOT be multiplied by 8.
         estimate = self.provider.estimate_cost(
-            base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8)
+            base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="1080p")
         )
-        self.assertTrue(estimate.verified)
         self.assertEqual(estimate.unit, "usd_per_clip")
-        self.assertEqual(estimate.unit_price, 0.40)
-        self.assertEqual(estimate.estimated_total, 0.40)
+        self.assertEqual(estimate.unit_price, 0.325)
+        self.assertEqual(estimate.estimated_total, 0.325)
+        self.assertIn("FALLBACK", estimate.note)
+
+    def test_veo_live_price_is_read_first_and_wins_over_registry_constants(self) -> None:
+        live_body = {"code": 200, "msg": "success", "data": {"model": "veo-3-1", "pricingDesc": _VEO_PRICING_DESC.replace("$0.325", "$0.500")}}
+        self.transport.queue_get(_resp(200, live_body))
+        estimate = self.provider.estimate_cost(
+            base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="1080p")
+        )
+        self.assertEqual(estimate.unit_price, 0.5)
+        self.assertTrue(estimate.verified)
+        self.assertIn("LIVE", estimate.note)
+        call = self.transport.get_calls[0]
+        self.assertTrue(call["url"].endswith("/api/v1/models/veo-3-1/price"))
+
+    def test_veo_live_price_non_200_body_code_falls_back(self) -> None:
+        self.transport.queue_get(_resp(200, {"code": 401, "msg": "unauthorized", "data": None}))
+        estimate = self.provider.estimate_cost(
+            base.VideoGenerationRequest(model_id="kie-veo3-fast", prompt="x", duration_seconds=8, resolution="720p")
+        )
+        self.assertEqual(estimate.unit_price, 0.30)
+        self.assertIn("FALLBACK", estimate.note)
+
+    def test_parse_pricing_desc_matches_live_numbers(self) -> None:
+        table = kie.parse_pricing_desc(_VEO_PRICING_DESC)
+        self.assertEqual(table["fast"], {"720p": 0.30, "1080p": 0.325, "4k": 0.90})
+        self.assertEqual(table["quality"], {"720p": 1.25, "1080p": 1.275, "4k": 1.85})
+        self.assertEqual(table["lite"], {"720p": 0.15, "1080p": 0.175, "4k": 0.75})
+
+    def test_registry_fallback_constants_equal_live_catalog_numbers(self) -> None:
+        table = kie.parse_pricing_desc(_VEO_PRICING_DESC)
+        for model_id, mode in (("kie-veo3-fast", "fast"), ("kie-veo3-quality", "quality")):
+            self.assertEqual(self.provider.registry.get_model(model_id)["price"]["amount_by_resolution"], table[mode])
 
     def test_gemini_omni_video_estimate_is_priced_per_second(self) -> None:
         # gemini-omni-video IS usd_per_second, so duration_seconds must

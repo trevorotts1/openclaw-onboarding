@@ -63,7 +63,10 @@ work unit, not this skeleton.
   `47-movie-producer/kie-adapters/` (it is a second client, not a wrapper). Veo is
   already divergent on purpose: this skill calls createTask with model `veo-3-1`, while
   47 still uses the legacy `/api/v1/veo/generate` route. Consolidation onto Skill 74
-  (the shared KIE live adapter) is a staged follow-up and is not done yet.
+  (the shared KIE live adapter) is a staged follow-up and is not done yet. Veo price authority is
+  the live catalog (`python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model veo-3-1`);
+  the registry holds dated fallback constants only. Only the Fast id is sendable (no documented
+  tier selector on `veo-3-1`; the Quality id is planned).
 - GHL media/build/workflows → `06-ghl-install-pages` / `44-convert-and-flow-operator`
   (Skill 6 is the one GHL delivery rail).
 - Vercel deployment → `08-vercel-setup`.

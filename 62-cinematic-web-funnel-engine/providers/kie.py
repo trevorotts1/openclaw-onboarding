@@ -66,10 +66,12 @@ this module never requires ``requests`` to be installed.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -176,6 +178,53 @@ def _veo_3_1_input(request: VideoGenerationRequest) -> Dict[str, Any]:
     if request.input_urls:
         task_input["image_urls"] = list(request.input_urls)
     return task_input
+
+
+def _urls_from(value: Any) -> List[str]:
+    """Normalise a ``resultUrls`` value: a list, or (callback docs type it as
+    a string) a JSON-encoded list / single URL string."""
+    if isinstance(value, list):
+        return [str(u) for u in value if u]
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(u) for u in parsed if u]
+        return [text.strip("[]")] if text.startswith("[") else [text]
+    return []
+
+
+def result_urls_from_callback(payload: Dict[str, Any]) -> List[str]:
+    """Result URLs from a veo-3-1 callback body (documented shape:
+    ``{"code":200,"data":{"taskId":...,"info":{"resultUrls":[...]}}}``).
+    Empty list when the callback is not a success."""
+    if not isinstance(payload, dict) or payload.get("code") != 200:
+        return []
+    return _urls_from(((payload.get("data") or {}).get("info") or {}).get("resultUrls"))
+
+
+# Live price authority (2026-10-05): GET /api/v1/models/<id>/price returns
+# data.pricingDesc, one line per mode, e.g.
+#   "Fast mode (...): 720P — 60 credits (≈ $0.30) per video; 1080P — 65 credits (≈ $0.325) per video; ..."
+_PRICE_ENTRY = re.compile(r"(\d+)\s*([PpKk])\s*—\s*[\d.]+\s*credits\s*\(≈\s*\$([0-9.]+)\)")
+
+
+def parse_pricing_desc(text: str) -> Dict[str, Dict[str, float]]:
+    """Parse a KIE ``pricingDesc`` into ``{"fast": {"720p": 0.30, ...}, ...}``
+    keyed by lowercase mode name, then lowercase resolution (720p, 1080p, 4k).
+    Lines that do not start with ``<Mode> mode`` are ignored."""
+    out: Dict[str, Dict[str, float]] = {}
+    for line in str(text or "").splitlines():
+        m = re.match(r"\s*([A-Za-z]+) mode", line)
+        if not m:
+            continue
+        prices = {f"{n}{u.lower()}": float(usd) for n, u, usd in _PRICE_ENTRY.findall(line)}
+        if prices:
+            out[m.group(1).lower()] = prices
+    return out
 
 
 def _resolve_secret(env_var_name: str, *, required: bool = True) -> Optional[str]:
@@ -437,6 +486,7 @@ class KieProvider(MediaProvider):
         callback_hmac_key_env: str = "KIE_CALLBACK_HMAC_KEY",
         kv_read_token_env: str = "KVREAD_TOKEN",
         client_slug_env: str = "KIE_CLIENT_SLUG",
+        live_prices: bool = True,
     ) -> None:
         self.registry = registry or ModelRegistry()
         self.transport: KieTransport = transport or RequestsTransport()
@@ -445,6 +495,7 @@ class KieProvider(MediaProvider):
         self._callback_hmac_key_env = callback_hmac_key_env
         self._kv_read_token_env = kv_read_token_env
         self._client_slug_env = client_slug_env
+        self._live_prices = live_prices
         # task_id -> CallbackTicket, for tasks submitted WITH a callback
         # attached by this instance. Purely in-process bookkeeping; nothing
         # here is persisted (a real run persists via the project's own
@@ -575,6 +626,11 @@ class KieProvider(MediaProvider):
     ) -> TaskHandle:
         slug = self.registry.slug_for(request.model_id)
         entry = self.registry.get_model(request.model_id)
+        if entry.get("status") == "planned":
+            raise ProviderTaskError(
+                f"kie provider: {request.model_id} is status=planned and cannot be submitted: "
+                f"{entry.get('wire_blocked_reason', 'not wired')}"
+            )
         max_images = (entry.get("reference_image_support") or {}).get("max_images")
         if max_images is not None and len(request.input_urls) > max_images:
             raise ProviderTaskError(
@@ -667,13 +723,13 @@ class KieProvider(MediaProvider):
             state = data.get("state", "")
             if state == "success":
                 result_json = _decode_result_json(data.get("resultJson"))
-                urls = result_json.get("resultUrls") or []
+                urls = _urls_from(result_json.get("resultUrls"))
                 if urls:
                     return urls[0]
                 # Veo-style payload shape (callback docs): data.info.resultUrls.
-                info_urls = (data.get("info") or {}).get("resultUrls") or []
+                info_urls = _urls_from((data.get("info") or {}).get("resultUrls"))
                 if info_urls:
-                    return str(info_urls[0])
+                    return info_urls[0]
                 fallback = (
                     result_json.get("videoUrl")
                     or result_json.get("url")
@@ -717,11 +773,59 @@ class KieProvider(MediaProvider):
         multiplied by a clip's duration.
         """
         entry = self.registry.get_model(request.model_id)
+        live = self._live_estimate(entry, request)
+        if live is not None:
+            return live
         price_unit = (entry.get("price") or {}).get("unit", "")
         if isinstance(request, VideoGenerationRequest) and price_unit == "usd_per_second":
             quantity = float(request.duration_seconds)
         else:
             quantity = 1.0
-        return self.registry.estimate(
-            request.model_id, quantity, resolution=request.resolution, strict=False
+        resolution = request.resolution
+        if entry.get("wire_schema") == _VEO_WIRE_SCHEMA:
+            resolution = str(resolution).lower()
+        estimate = self.registry.estimate(
+            request.model_id, quantity, resolution=resolution, strict=False
+        )
+        if (entry.get("price") or {}).get("live"):
+            estimate = dataclasses.replace(
+                estimate,
+                note="FALLBACK registry constant (live catalog price not read; see price.source for its date). "
+                + estimate.note,
+            )
+        return estimate
+
+    def _live_estimate(self, entry: Dict[str, Any], request: Any) -> Optional[CostEstimate]:
+        """Live price first: when the registry entry declares ``price.live``
+        (endpoint + mode), GET it (free) and price from ``pricingDesc``.
+        Returns None on any failure (no key, transport error, non-200 body
+        code, mode/resolution missing) so the caller falls back to the
+        dated registry constants."""
+        live = (entry.get("price") or {}).get("live")
+        if not (self._live_prices and live and isinstance(request, VideoGenerationRequest)):
+            return None
+        try:
+            resp = self.transport.get_json(
+                f"{_KIE_API_BASE}{live['endpoint']}",
+                headers={"Authorization": f"Bearer {self._api_key()}"},
+                params=None,
+                timeout=15,
+            )
+            body = resp.json_body or {}
+            if resp.status_code >= 400 or body.get("code") != 200:
+                return None
+            table = parse_pricing_desc((body.get("data") or {}).get("pricingDesc", ""))
+            unit_price = table[str(live["mode"]).lower()][str(request.resolution).lower()]
+        except Exception:  # fail soft to the labeled fallback constants
+            return None
+        return CostEstimate(
+            model_id=request.model_id,
+            provider_model_slug=entry["provider_model_slug"],
+            unit=(entry.get("price") or {}).get("unit", "usd_per_clip"),
+            unit_price=unit_price,
+            quantity=1.0,
+            estimated_total=round(unit_price, 6),
+            verified=True,
+            registry_snapshot_id=self.registry.snapshot_id,
+            note=f"LIVE catalog price ({live['endpoint']}), {live['mode']} mode, {request.resolution}",
         )
