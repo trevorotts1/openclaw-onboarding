@@ -33,8 +33,8 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
 
-- **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json`, and the Slide Image Creator authors one RICH prompt file per slide (`working/prompts/slide-NN.txt` or `slide-NN-prompt.txt`, sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`). The script does NOT compose prompts. It loads each authored prompt VERBATIM, gates it (character band, quality floor, no hard-coded demographic default), appends the mandatory English/Latin-only pin only when the authored prompt does not already carry it, and submits it with the text-to-image model, or with the image-to-image model and the logo URL in `input_urls` when a logo URL is supplied (both models resolve from the catalog aliases `image.t2i` and `image.i2i`). It then polls, downloads + verifies each PNG, and assembles the `.pptx`. A slide with no authored prompt file fails loudly; the script never falls back to a thin composed prompt. No model decides wording at runtime.
-- **`kie_generate.py`** — the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below). It submits the `prompt` it is given and never composes one. A second, older copy of this helper lives at `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`; only Skill 06 (GHL media) runs it, and it is not a Presentations renderer (its header says how it differs).
+- **`build_deck.py`** - the single-command deterministic path. The builder writes `slides.json`, and the Slide Image Creator authors one RICH prompt file per slide (`working/prompts/slide-NN.txt` or `slide-NN-prompt.txt`, sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`). The script does NOT compose prompts. It loads each authored prompt VERBATIM, gates it (character band, quality floor, no hard-coded demographic default), appends the mandatory English/Latin-only pin only when the authored prompt does not already carry it, and submits it with the text-to-image model, or with the image-to-image model and the logo URL in `input_urls` when a logo URL is supplied (both models resolve from the catalog aliases `image.t2i` and `image.i2i`). It then polls, downloads + verifies each PNG, and assembles the `.pptx`. A slide with no authored prompt file fails loudly; the script never falls back to a thin composed prompt. No model decides wording at runtime.
+- **`kie_generate.py`** - the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below). It submits the `prompt` it is given and never composes one. A second, older copy of this helper lives at `23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py`; only Skill 06 (GHL media) runs it, and it is not a Presentations renderer (its header says how it differs).
 
 **The mandated flow is:** the builder writes `slides.json` → runs `build_deck.py` → KIE.ai (createTask → recordInfo → `resultUrls[0]`) is the ONLY render call → register the `.pptx` the script produced. **FORBIDDEN, each an auto-fail (AF-I14 / AF-RENDERER / AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS):** generating any image with a native/built-in tool (`image_generate`, `openai`, etc.); writing an inline hand-typed KIE.ai HTTP call instead of the script; the dead endpoint `/api/v1/image/gpt-image`; hand-editing PNGs or substituting stock/placeholder images; **fabricating any slide canvas locally with Pillow/PIL `Image.new` / `ImageDraw` (a flat cream or color typography card) or a PowerPoint-rendered card**; running any per-deck/hand-rolled renderer or assembler in `working/*.py` instead of the canonical `build_deck.py` / `run_signature_deck.py` path. A non-zero exit means the deck is NOT built — never fake a deliverable.
 
@@ -64,22 +64,22 @@ There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to
 
 ---
 
-## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 — TWO-MODEL SYSTEM, operator ruling 2026-09-09)
+## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 - TWO-MODEL SYSTEM, operator ruling 2026-09-09)
 
 As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT-Image-2.5. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
 
-**DEFAULT — GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+**DEFAULT - GPT-Image-2.5 (`gpt-image-2-5-sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
 - Mode A: `gpt-image-2-5-sunburst-text-to-image`
 - Mode B: `gpt-image-2-5-sunburst-image-to-image`
 
-**2.5 supported aspect ratios — EXACTLY these 13, nothing else:**
+**2.5 supported aspect ratios - EXACTLY these 13, nothing else:**
 `auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`
 - **1K-ONLY (2K and 4K REJECTED for these four):** `27:16`, `16:27`, `9:8`, `8:9`.
 - 2K and 4K are available for every other ratio in the list.
 
-**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY — see the legacy-route cap below, which is a different number.
+**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY - see the legacy-route cap below, which is a different number.
 
-**APPROVED SUBSTITUTIONS — these four route to 2.5 under a substitute ratio (operator-blessed):**
+**APPROVED SUBSTITUTIONS - these four route to 2.5 under a substitute ratio (operator-blessed):**
 
 | Requested | Renders on 2.5 as |
 |---|---|
@@ -88,7 +88,7 @@ As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-
 | `2:1` | `16:9` |
 | `1:2` | `9:16` |
 
-**LEGACY ROUTE — MANDATORY for these three ratios, no exceptions:**
+**LEGACY ROUTE - MANDATORY for these three ratios, no exceptions:**
 
 | Ratio | Model (Mode A / Mode B) |
 |---|---|
@@ -96,15 +96,15 @@ As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-
 | `1:3` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
 | `9:21` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
 
-The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three — each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
+The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three - each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
 
-**Legacy-route prompt cap: 25,000 chars — OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
+**Legacy-route prompt cap: 25,000 chars - OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
 
-**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL — reject outright, no warn-only, no silent substitution.
+**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL - reject outright, no warn-only, no silent substitution.
 
-**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
+**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) - never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
 
-The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape - same endpoints, same headers, same envelope, same `input_urls` mechanics - with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
 
 ---
 
@@ -164,7 +164,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
-- Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file; get the number for the model with `kie_live_adapter.py prompt-budget --model <id>`. This SOP does not restate it. `build_deck.py`'s gate thresholds are aligned to rule 12 by the Skill 74 v1.1 prompt-budget change in the same release.
+- Prompt length: the API ceiling for the GPT Image 2.5 family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. `build_deck.py` currently enforces a 9,000 to 18,000 character band; the follow-up prompt-budget change moves it to rule 12 (95 to 100 percent of the model maximum, floor 80 percent).
 - Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
 - The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
@@ -276,7 +276,7 @@ SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling
 | P3 | Scene + layout present | AF-P9 + AF-P11 | Concrete scene/moment; archetype declared line 1; zone percentages + thirds placement for every element | "Just a background with text"; no archetype; no layout | Add scene + layout direction; re-QC |
 | P4 | Logo text correct (image-to-image) | AF-P15 (= Section 7 checks 1-3) | `LOGO_ON_SLIDES = true` slide declares Mode B with locked `LOGO_URL` first in `input_urls`, carries "place, do not redraw" + "do not invent any mark" | Logo in words only; Mode A on a logo slide; missing "do not redraw" | Switch to Mode B, name the reference, add directive |
 | P5 | 16:9 + 2K stated | AF-P (format line) | Both "16:9" and "2K" present | Either missing | Add the format line |
-| P6 | Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | length inside the prompt budget in rule 12 of `07-kie-setup/references/kie-common-rules.md`; record the exact integer (`build_deck.py`'s gate thresholds are aligned to rule 12 by the Skill 74 v1.1 prompt-budget change in the same release) | length under the floor (AF-P1) or over the ceiling (AF-P2) set by rule 12 | Expand with defect-preventing specificity (under) or condense front-loaded + log (over) |
+| P6 | Char count within [MIN, MAX] | AF-P1 / AF-P2 (Check 0, run first) | length inside the prompt budget in rule 12 of `07-kie-setup/references/kie-common-rules.md`; record the exact integer (`build_deck.py` currently enforces a 9,000 to 18,000 character band; the follow-up prompt-budget change moves it to rule 12 (95 to 100 percent of the model maximum, floor 80 percent)) | length under the floor (AF-P1) or over the ceiling (AF-P2) set by rule 12 | Expand with defect-preventing specificity (under) or condense front-loaded + log (over) |
 | P7 | Audience-matched representation | AF-P-REP | People match the slide's captured `REPRESENTATION_MIX` group; OR NO PEOPLE + operator flag when uncaptured | Person specified against no/uncaptured mix assignment | Re-cast to captured mix, or NO PEOPLE + flag |
 | P8 | NO hardcoded demographic default | AF-P-REP / AF-R3 (the 60/30/10 landmine) | No invented racial/demographic percentage; uncaptured -> NO PEOPLE + flag | The "60% Black/Brown, 30% other POC, 10% white" default OR ANY invented split the client did not supply | Strip the default; NO PEOPLE + flag operator until client confirms |
 | P9 | Currency correct | AF-P-CURRENCY | Every price/anchor/struck/stack value uses the client's currency symbol (default `$`), locked verbatim | Wrong symbol; missing symbol where required; localized/auto-translated currency | Correct the currency string, re-lock |

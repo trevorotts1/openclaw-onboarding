@@ -212,7 +212,7 @@ source material  ──▶  STEP 1: builder writes slides.json
                               │       (scene + verbatim copy + logo + layout + English pin)
                               │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-text-to-image, 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
-                              │     • parse data.resultJson → resultUrls[0] → download PNG (unauth)
+                              │     • parse data.resultJson → resultUrls[0] → download PNG (authenticated GET)
                               │     • verify PNG magic bytes + size; a slide that fails is recorded as a failure (no automatic re-submit in the batch path)
                               │     • assemble full-bleed .pptx (no text boxes); FAIL LOUD on any gap
                               ▼

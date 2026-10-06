@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kie_generate.py — the SKILL 06 COPY of the KIE.ai image generation helper (presentation-render twin).
+kie_generate.py - the SKILL 06 COPY of the KIE.ai image generation helper (presentation-render twin).
 
 WHICH COPY IS THIS: this file is the self-contained twin that 06-ghl-install-pages/tools/ghl_media.py
 runs (it shells `python3 <this file> <prompts.json> <renders_dir>` from generate_images()).
@@ -235,13 +235,13 @@ prompt_gate = _import_prompt_gate()
 
 def _load_api_key() -> str:
     """Read KIE_API_KEY from environment, falling back to the client's standard
-    secrets stores (resolved at runtime — no hardcoded operator home path; HIGH-3).
+    secrets stores (resolved at runtime - no hardcoded operator home path; HIGH-3).
     FIX 67: the NAME is resolved through the one secret-name canon
-    (shared-utils/secret_helper: any KIE family alias — KIE_AI_API_KEY,
-    KIE_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS — resolves to the same
+    (shared-utils/secret_helper: any KIE family alias - KIE_AI_API_KEY,
+    KIE_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS - resolves to the same
     credential), and a placeholder value (PASTE_REAL_TOKEN / CHANGE_ME / ...)
     is REJECTED wherever it sits. The canon helper is path-imported from the
-    repo checkout, the installed skills dir, or /data/.openclaw/skills — the
+    repo checkout, the installed skills dir, or /data/.openclaw/skills - the
     same seam _import_prompt_gate/_load_model_catalog use; without it the
     pre-canon direct-name behavior holds, never a hard break."""
     _key_from_env = os.environ.get("KIE_API_KEY", "").strip()

@@ -10092,15 +10092,15 @@
       "path": "templates/role-library/presentations/sops/SOP-IMG-00-CLUSTER-INDEX-AND-WIRING.md",
       "content_sha": "sha256:4ba7432da64b9642215959f086f5b28a5263bbab3d6c111f740136d5a756bff5",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T03:43:18.784957+00:00"
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-01-KIE-CALL-MECHANICS",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "content_sha": "sha256:142a04280dfd91c0e32c93ce7fbb174b2907fcd872602e3091912f563192ae47",
-      "content_version": "1.0.13",
-      "content_hashed_at": "2026-10-06T03:43:18.784957+00:00"
+      "content_sha": "sha256:9b0fc4428e515eb6205a00f5bf2499732837a554061128954a95d0ee599c2a65",
+      "content_version": "1.0.14",
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING",
@@ -10108,7 +10108,7 @@
       "path": "templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
       "content_sha": "sha256:3a387463fda48e66b798998ec8485b5a4679b61c95963e5d6dad152f327352cb",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T03:43:18.784957+00:00"
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION",
@@ -10124,7 +10124,7 @@
       "path": "templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
       "content_sha": "sha256:195b204fbded412d601525c727a262d4a9d1aafcf29160a67c55fb4553ad69f6",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T03:43:18.784957+00:00"
+      "content_hashed_at": "2026-10-06T04:06:06.266926+00:00"
     },
     {
       "slug": "SOP-IMG-05-PIL-LOGO-COMPOSITE",
@@ -10802,7 +10802,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-06T03:43:18.784957+00:00",
+    "generated_at": "2026-10-06T04:06:06.266926+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
