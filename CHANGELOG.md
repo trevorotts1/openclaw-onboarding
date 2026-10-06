@@ -1,3 +1,9 @@
+## [v25.3.21]  -  2026-10-06  -  Correct KIE credential docs and Skill 06 key ownership
+
+#### What changed
+- Root docs (CREDENTIALS.md, KNOWN-ISSUES.md, VPS environment setup) now describe the KIE credential and its ownership correctly.
+- Skill 06 (ghl-install-pages) image staging reads the KIE key from its owner location; added test_ghl_image_stage_kie_key.py. Skill 06 and Skill 23 versions roll with the repo version.
+
 ## [v25.3.19]  -  2026-10-05  -  Paired-release prep (R03): Command Center pin moves to v7.6.99; release cohort names the frozen pair
 
 Prepared release for the Company Headquarters paired release. Content is release plumbing only: the Command Center pin, the dependency cohort and the version markers move together so the fleet roll deploys the Command Center this onboarding release was tested against.
