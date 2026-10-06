@@ -1,3 +1,12 @@
+## [2.0.10] - 2026-10-06 - fix: boxes that already installed Skill 38 get the inbound-hooks fix on their next update
+
+The 2.0.9 fix lived in install-time scripts, which never re-run on an installed box. New
+`scripts/repair/repair-inbound-hooks.py` is registered in the shared front door (`skill38-inbound-hooks`),
+so every update route runs it. Only when `hooks.enabled` is already true: removes `hooks.maxBodyBytes`,
+sets `gateway.trustedProxies` when unset (same detection as step 15, via `lib-docker-tenant.sh`), and reports
+(never edits) a mapping `agentId` that is not a configured agent (exit 2). Backs up, validates, restores on
+failure; idempotent; never enables hooks or touches tokens. Test: `tests/repair-inbound-hooks.test.sh`.
+
 ## [2.0.9] - 2026-10-06 - fix: inbound hooks work on docker tenants (operator-managed tunnel); no Cloudflare token demanded
 
 A Contabo/VPS docker tenant could send through GHL but never receive. Four defects, one install path:
