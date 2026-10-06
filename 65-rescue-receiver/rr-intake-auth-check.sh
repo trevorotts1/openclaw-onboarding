@@ -57,6 +57,17 @@
 # RESCUE_RANGERS_WEBHOOK_URL, RESCUE_RANGERS_WEBHOOK_SECRET,
 # RR_INTAKE_AUTH_TIMEOUT.
 # ============================================================================
+# POSIX re-exec guard. This file is bash-only (pipefail, BASH_SOURCE), but cron
+# payloads run as `sh -lc ...` and on Linux `sh` is dash, which dies at the next
+# line with exit 2 before doing anything. Boxes registered with `sh <this file>`
+# are repaired by this guard alone. Must stay valid POSIX sh.
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v bash >/dev/null 2>&1; then
+    exec bash "$0" "$@"
+  fi
+  echo "rr-intake-auth-check.sh: ENVIRONMENT: bash is required and was not found" >&2
+  exit 78
+fi
 set -uo pipefail
 
 MODE="human"

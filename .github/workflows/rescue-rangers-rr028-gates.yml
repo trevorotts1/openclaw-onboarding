@@ -65,6 +65,8 @@ jobs:
           sh -n 65-rescue-receiver/rr-readiness.sh
           bash -n 65-rescue-receiver/rr-intake-auth-check.sh
           sh -n 65-rescue-receiver/rr-intake-auth-check.sh
+          command -v dash >/dev/null || sudo apt-get install -y dash
+          dash -n 65-rescue-receiver/rr-intake-auth-check.sh
           bash -n 65-rescue-receiver/tests/test_intake_auth_check.sh
           python3 -c "import ast; ast.parse(open('65-rescue-receiver/tests/stub-intake.py').read())"
           bash -n tests/rescue/RR-028/lib-readiness-harness.sh
@@ -84,7 +86,7 @@ jobs:
         run: |
           bash tests/rescue/RR-028/test_wire_install_vs_ready.sh
 
-      - name: Escalation INTAKE auth self-check (4 classifications + credential route)
+      - name: Escalation INTAKE auth self-check (4 classifications + credential route + runs under dash)
         run: |
           bash 65-rescue-receiver/tests/test_intake_auth_check.sh
 
