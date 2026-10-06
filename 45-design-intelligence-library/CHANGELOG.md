@@ -1,5 +1,11 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.1.7 - 2026-10-06 - Ideogram leftovers aligned to the GPT Image 2.5 Sunburst default
+
+- `_system/MODEL-SPECS.md` v1.7, `advertisement-designs/_RULES.md`, `facebook-ad-designs/_RULES.md`: no Ideogram route for ads; default is GPT Image 2.5 Sunburst, consistent with `social-media-designs/_RULES.md`.
+- `MODEL-SPECS.md`, `banner-designs/_RULES.md`, `book-cover-designs/_RULES.md`: the remaining Ideogram V3 rows are labeled a deliberate non-social specialty route (true `negative_prompt`).
+- `_system/prompt-bands.json` `text_bearing_medium` is untouched (prompt-budget lane).
+
 ## v2.1.6 - 2026-10-06 - social routing correction: no Ideogram route
 
 - See the corrected `social-media-designs/_RULES.md` entry under v2.1.5 below (same PR). Prompt-length wording there now defers to rule 12 of `07-kie-setup/references/kie-common-rules.md` (the old 9,000-19,000 restatement is removed); `prompt-bands.json` and `diu_validator.py` are migrated by the prompt-budget change, not here.
