@@ -12,7 +12,7 @@ description: >
   it observes and records drift but never dispatches a paid job. Submit never
   chooses or changes a model. Infrastructure skill for skills 66, 67 and 68;
   not a client-facing feature.
-version: 1.1.1
+version: 1.1.2
 priority: MEDIUM
 ---
 
@@ -35,6 +35,17 @@ Commands (all print the same JSON shape, add `--json`; every command accepts `--
 | `success-rate --model ID` | Live 24 hour success rate (average of the non-empty 10 minute buckets). |
 
 `validate` falls back to the registry snapshot when the live schema is unreachable and still enforces required, enum, minimum, maximum and maxLength.
+
+## Consumers (one KIE path)
+
+Skills 25, 37, 58 and 59 call this CLI for every createTask, recordInfo, upload, download and balance check; they keep their own policy (model choice via 66, 67 and 68, fallback order, receipts, output paths) and carry no second KIE client. Options added for them in v1.1.1, all on `save` and `run`:
+
+| Option | What it does |
+|---|---|
+| `--user-agent TEXT` | Replaces the User-Agent on the result download only. The default is a plain product agent (`Mozilla/5.0 (compatible; OpenClaw-KIE-Live-Adapter/1.1)`) because the result CDN returns 403 to urllib's default agent; Skill 59 passes a full browser agent. Never sent to the API host and never with the key. |
+| `--allow-host HOST` | Repeatable. Only result URLs on that host or its subdomains are fetched; others are skipped with a warning, and none left is `host_not_allowed`. |
+
+A synchronous endpoint (a model whose schema declares its own path, for example Runway or Veo) that answers with a result link in `data.resultUrls` or `data.response.resultUrls` is saved by `run` like any other result.
 
 ## Registry
 

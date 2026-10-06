@@ -39,8 +39,8 @@ class FakeTransport:
     def add(self, method, sub, responses):
         self.routes.insert(0, [method, sub, list(responses)])
 
-    def request(self, method, url, headers=None, body=None, timeout=60):
-        self.calls.append({"method": method, "url": url, "headers": dict(headers or {}), "body": body})
+    def request(self, method, url, headers=None, body=None, timeout=60, guard=None):
+        self.calls.append({"method": method, "url": url, "headers": dict(headers or {}), "body": body, "guard": guard})
         for r in self.routes:
             if r[0] == method and r[1] in url:
                 st, obj = r[2].pop(0) if len(r[2]) > 1 else r[2][0]

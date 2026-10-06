@@ -35,6 +35,11 @@ Auth is `Authorization: Bearer` only. A header named apikey returns 401. Dead (4
 - Drift receipts: one JSON line per catalog, schema or validate event in `<cache>/receipts/YYYYMMDD.jsonl`, with a digest and a drift flag against the last digest seen. Redacted.
 - Environment hooks (tests only): KIE_LIVE_API_BASE and KIE_LIVE_UPLOAD_BASE are honored only when they point at localhost. KIE_LIVE_MIN_SPACING and KIE_LIVE_POLL_INITIAL tune timing.
 
+## v1.1.2 consumer options
+
+- `save` and `run` accept `--user-agent` (replaces the default product agent `DOWNLOAD_UA`; header on the result download and its refreshed link only; the API host never receives it) and repeatable `--allow-host` (exact host or subdomain match; others are skipped with a warning, none left fails `host_not_allowed`).
+- `run` on a synchronous endpoint: when the response carries `resultUrls` in `data` or `data.response`, the files are saved and `saved_paths` is filled; with no link the response is returned in `data.response` as before.
+
 ## v1.1 commands
 
 - `price`: `data.pricing_desc`, `credits_min`, `credits_max`, `unit` (per-job, per-second, per-1k-chars, per-image, per-1m-tokens; "free" parses as 0 credits per-job), `units`, `credits_estimate` (highest tier, x units for every unit except per-job), `preflight_required` (estimate x 1.30, rounded up to 0.01), `price_source` (catalog:live, catalog:cache, registry). No numeric price: no estimate and a warning. Unknown model everywhere: fail `price_unavailable`.
