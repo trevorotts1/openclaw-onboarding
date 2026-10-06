@@ -13,11 +13,21 @@ source "$TMPF"
 REAL="$(python3 -c 'a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; print("".join(a[(i*37+11)%57] for i in range(32)))')"
 VALUES=( "YOUR_CLIENT_KIE_API_KEY_HERE" "your_client_key_value_abcdef" "SOMETHING_KEY_HERE_12345" "paste_token_here_please_ok" \
          "your_key_here_please" "PASTE_REAL_TOKEN" "CHANGE_ME_LATER_ok" "<TODO_fill_this_in>" "sk-example1234567890" "short" "$REAL" )
+# Every placeholder pattern, each appended to a key-shaped value that is otherwise accepted:
+# both twins must reject all of them (same set), and agree.
+PATTERNS=( xxxxx your_key your-key your_api your-api yourkey your_token replace_me replace-me replaceme changeme change_me change-me \
+           _here -here placeholder example sample dummy demo test_key test-key fake_key fake-key sk-test sk-xxx sk-example sk-replace \
+           todo tbd fill_in fill-in fillin paste-your paste_your paste-real paste_real pastereal insert_your insert-your enter_your \
+           enter-your set_your set-your no_key nokey none_yet not_set not-set unset missing your_client key_here token_here )
+for pat in "${PATTERNS[@]}"; do VALUES+=( "${REAL}Q${pat}Q" ); done
 FAIL=0
 for v in "${VALUES[@]}"; do
   if looks_like_real_key "$v" KIE_API_KEY; then b=1; else b=0; fi
   p="$(cd "$ROOT/shared-utils" && PYTHONDONTWRITEBYTECODE=1 VAL="$v" python3 -c 'import os,secret_helper as s; print(1 if s.looks_like_real_key(os.environ["VAL"], "KIE_API_KEY") else 0)')"
   if [ "$b" != "$p" ]; then echo "FAIL: verdict differs bash=$b python=$p for a ${#v}-char value"; FAIL=1; fi
+done
+for pat in "${PATTERNS[@]}"; do
+  looks_like_real_key "${REAL}Q${pat}Q" KIE_API_KEY && { echo "FAIL: pattern '$pat' not rejected (bash)"; FAIL=1; }
 done
 # Expected: only the synthetic real-shaped key is accepted.
 looks_like_real_key "YOUR_CLIENT_KIE_API_KEY_HERE" KIE_API_KEY && { echo "FAIL: installer placeholder accepted (bash)"; FAIL=1; }

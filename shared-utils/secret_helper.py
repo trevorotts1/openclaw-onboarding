@@ -226,6 +226,9 @@ _PLACEHOLDER_SUBSTRINGS = (
     # 2026-10: installer-written env placeholders such as YOUR_CLIENT_KIE_API_KEY_HERE
     # passed every earlier stage (KIE shape + entropy), so Skills 47/48 read them as keys.
     "your_client", "key_here", "token_here",
+    # Parity with install.sh looks_like_real_key (same match style: substring of the
+    # lower-cased value): the broader bash patterns.
+    "_here", "-here", "sample", "demo",
 )
 
 # Provider shape regexes (canonical var name -> anchored regex). Mirrors the

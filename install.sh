@@ -1650,6 +1650,10 @@ looks_like_real_key() {
         # 2026-10: installer-written env placeholders (YOUR_CLIENT_KIE_API_KEY_HERE).
         # Kept in step with shared-utils/secret_helper.py _PLACEHOLDER_SUBSTRINGS.
         *your_client*|*key_here*|*token_here*) return 1 ;;
+        # Parity with shared-utils/secret_helper.py: the python-only patterns, so both
+        # twins reject exactly the same placeholder set.
+        *test-key*|*fake-key*|*fill-in*|*paste-real*|*paste_real*|*pastereal*) return 1 ;;
+        *insert-your*|*enter-your*|*set-your*|*nokey*|*not_set*|*not-set*|*unset*|*missing*) return 1 ;;
         # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
         *EXAMPLE|*example) return 1 ;;
     esac

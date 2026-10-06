@@ -1,5 +1,9 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.6 - 2026-10-05 - prompts 09 and 10 aspect ratio statements match N43
+
+- Prompts 09 and 10: only the aspect-ratio statements changed, 4:5 (1080x1350) to 3:4 (1080x1440), matching prompt 12 and the N43 4:5 to 3:4 substitution (09: universal canvas lines, 14 style templates, the worked example and the required-components line; 10: canvas size line). No other content touched. `PROMPT-HASHES.json` re-recorded; prompt hashes and engine hash match.
+
 ## v1.7.5 - 2026-10-05 - close open items on the image consumers PR
 
 - Prompts 09 and 10 were read end to end: no image-model primary wording (no Nano Banana, no Midjourney) exists there, so they are unchanged. Re-pin confirmed: prompt hashes and engine hash match.
