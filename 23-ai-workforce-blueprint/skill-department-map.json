@@ -1451,6 +1451,44 @@
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
+  },
+  {
+   "skill": "75",
+   "slug": "drama-song-ad-factory",
+   "name": "drama-song-ad-factory",
+   "client_facing": true,
+   "description": "End-to-end drama-song advertisement factory: intake preflight envelope, shared canonical core (state/ledger/qc timing/assembler/delivery), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs.",
+   "dept_owner": "video",
+   "intent_triggers": [
+    "make me a drama song ad",
+    "produce a drama-song advertisement",
+    "song ad for my product",
+    "create a music-driven ad campaign",
+    "run a drama song factory job"
+   ],
+   "execution_sops": [
+    "video-pipeline-craft"
+   ],
+   "departments": [
+    "video"
+   ],
+   "roles": [
+    {
+     "dept": "video",
+     "primary": true,
+     "slug": "video-editor"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "head-of-video-production"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "storyboard-pre-production-specialist"
+    }
+   ]
   }
  ]
 }

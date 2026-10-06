@@ -16,7 +16,7 @@
 ## 2. Music QC — after generation
 
 - [ ] Playable file
-- [ ] Requested duration/model behavior (duration only effective for V5_5
+- [ ] Requested duration/model behavior (duration only effective for V5_5/V6-family
       custom; check the returned duration)
 - [ ] Musical genre/style (matches prompt/style intent)
 - [ ] Vocals/instrumental intent (instrumental request returned instrumental;

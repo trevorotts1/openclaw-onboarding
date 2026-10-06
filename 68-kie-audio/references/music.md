@@ -1,7 +1,10 @@
 # KIE Suno Music/Sound Reference (verified 2026-08-26)
 
-Suno is a DEDICATED API family on KIE. It must NEVER be routed through the
-generic `/api/v1/jobs/createTask` Market route (SPEC section 6.5).
+Suno rides TWO routes (W0-02 contract, live docs 2026-10-06). CURRENT:
+`POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (version
+at `input.model`, default V6). LEGACY: the dedicated `/api/v1/generate` family
+below, kept for V4..V5_5 (marked Discontinued on the live pages — accepted with
+a validator warning, never dropped). ONLY `ai-music-api/*` rides createTask.
 
 Server: `https://api.kie.ai`. Auth: `Authorization: Bearer $KIE_API_KEY`.
 
@@ -9,11 +12,15 @@ Facts below are from first-party KIE docs pages fetched 2026-08-26; limits
 quoted verbatim with source URLs. Pricing is NOT published on these pages —
 no numbers are invented here.
 
-## 1. Generate music — `POST /api/v1/generate` — VERIFIED
+## 1. Generate music — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/generate`) + LEGACY `POST /api/v1/generate` — VERIFIED
 
-Source: https://docs.kie.ai/suno-api/generate-music/
+Source: https://docs.kie.ai/suno-api/generate-music/ (live fetch 2026-10-06, W0-02 contract §2)
 
-Models enum: `V4`, `V4_5`, `V4_5PLUS`, `V4_5ALL`, `V5`, `V5_5`.
+Current envelope: top-level `"model": "ai-music-api/generate"`, version at
+`input.model`. Input model enum: `V4`, `V4_5`, `V4_5PLUS`, `V4_5ALL`, `V5`,
+`V5_5`, `V6`, `V6_MINI`, `V6_WILD`; schema default `V6`; `V4`–`V5_5` marked
+Discontinued. Required input: `custom_mode`, `instrumental`, `model`.
+Legacy dedicated route models: `V4`, `V4_5`, `V4_5PLUS`, `V4_5ALL`, `V5`, `V5_5`.
 
 ### Prompt limits
 - Custom mode: V4 "Maximum 3000 characters"; V4_5, V4_5PLUS, V4_5ALL, V5, V5_5
@@ -25,13 +32,26 @@ Models enum: `V4`, `V4_5`, `V4_5PLUS`, `V4_5ALL`, `V5`, `V5_5`.
 ### Style limits (custom mode)
 V4 "Maximum 200 characters"; V4_5/V4_5PLUS/V4_5ALL/V5/V5_5 "Maximum 1000 characters".
 
+### Lyrics (custom mode)
+`lyrics` takes priority over `prompt` as lyrics; max 5,000 characters
+(verbatim field — floor-exempt). Strict-lyrics mode supported in custom mode.
+
 ### Title
 "title length limit: 80 characters (all models)" / "Max length: 80 characters."
 — a SINGLE 80 for all models on generate (80/100 split is EXTEND-only).
 
 ### Duration
-"only effective when custom_mode is true and model is V5_5." Default 20,
-min 10, max 360.
+Effective when custom_mode is true and the model is V5_5 or the V6 family
+(V6/V6_MINI/V6_WILD). Default 20, min 10, max 360.
+
+### Variety / persona
+`variety` 0-4 (default per schema); `persona_id` + `persona_model`
+(`style_persona`/`voice_persona`).
+
+### Body codes
+Sounds/generate responses carry the real status in the JSON body `code` enum
+(200, 401, 402, 404, 422, 429, 433, 455, 500, 501, 505) inside HTTP 200 —
+validate the body code, never the HTTP status alone (W0-02 contract §2/§4).
 
 ### Fields
 Required non-custom: `prompt`, `customMode`, `instrumental`, `model`,
@@ -47,7 +67,28 @@ Optional: `negativeTags`, `vocalGender` ("m"/"f"), `styleWeight` (0-1),
 `id`, `audio_url`, `stream_audio_url`, `image_url`, `prompt`, `model_name`,
 `title`, `tags`, `createTime`, `duration`.
 
-## 2. Extend music — `POST /api/v1/generate/extend` — VERIFIED
+## 1b. Upload-and-extend audio — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/upload-and-extend-audio`) — VERIFIED
+
+Source: https://docs.kie.ai/suno-api/upload-and-extend-audio (live fetch 2026-10-06, W0-02 contract §2)
+
+Same createTask route. Required: top-level `model`, `input` with `upload_url`
+("The URL of the source audio file to extend. Required."). Input keys:
+`upload_url`, `instrumental`, `prompt`, `lyrics` ("Used as lyrics only when
+`lyrics` is not provided" / "Takes priority over `prompt` as lyrics."),
+`style`, `title`, `continue_at` ("The time point (in seconds) from which to
+start extending the music."), `model`, `negative_tags`, `vocal_gender`,
+`style_weight`, `weirdness_constraint`, `audio_weight`, `persona_id`,
+`persona_model`, `variety`. Response `data.taskId`; callback carries
+`audio_url`, `source_audio_url`, `image_url`, `duration`, `title`, `tags`.
+
+## 1c. Generate persona — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/generate-persona`) — VERIFIED
+
+Source: live fetch 2026-10-06, W0-02 contract §2. Required top-level `model`,
+`input` with `task_id`, `audio_id`, `name`, `description`. Window:
+`vocal_start` (default 0), `vocal_end` (default 30); `vocalEnd - vocalStart`
+must be 10-30 seconds.
+
+## 2. Extend music — `POST /api/v1/generate/extend` (LEGACY) — VERIFIED
 
 Source: https://docs.kie.ai/suno-api/extend-music/
 
@@ -78,12 +119,12 @@ example `chirp-v3-5`.
 No `duration` field on extend at all — extension length is implicit;
 `continueAt` marks the start point.
 
-## 3. Sounds — `POST /api/v1/generate/sounds` — VERIFIED
+## 3. Sounds — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/sounds`) + LEGACY `POST /api/v1/generate/sounds` — VERIFIED
 
-Source: https://docs.kie.ai/suno-api/generate-sounds
+Source: https://docs.kie.ai/suno-api/generate-sounds (+ live registry 2026-10-06)
 
 - Required: `prompt` (string, "limit: 500 characters"), `model`
-  (enum `V5`, `V5_5`).
+  (enum `V5`, `V5_5`, `V6`, `V6_WILD`, `V6_MINI`).
 - Optional: `soundLoop` (boolean, default false), `soundTempo` (integer, BPM,
   "minimum: 1 maximum: 300"), `soundKey` (string, default "Any", enum minor
   `Cm`..`Bm` and major `C`..`B`), `grabLyrics` (boolean, default false),

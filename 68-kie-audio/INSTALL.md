@@ -109,12 +109,15 @@ STEP 3: RUN THE VALIDATOR SELF-TEST
   python3 scripts/validate_audio_request.py --self-test
   python3 scripts/normalize_alias.py --self-test
 
-  Both must exit 0. The validator self-test covers: Gemini 10,000-char turn OK /
-  10,001 rejected; ElevenLabs 5,000 combined OK / 5,001 rejected; Suno V4 custom
-  3,000 OK / 3,001 rejected; V5_5 out-of-range duration = advisory warning only;
-  sounds 500 OK / 501 rejected; mashup with 3 URLs rejected; STT dispatch attempt
-  rejected (exit 2); bad accent and speed 1.5 rejected; Suno-via-createTask
-  rejected.
+  Both must exit 0. The validator self-test covers (58 checks): Gemini
+  10,000-char turn OK / 10,001 rejected; ElevenLabs 5,000 combined OK / 5,001
+  rejected; Suno V4 custom 3,000 OK / 3,001 rejected; V5_5 out-of-range duration
+  = advisory warning only; sounds 500 OK / 501 rejected; mashup with 3 URLs
+  rejected; STT dispatch attempt rejected (exit 2); bad accent and speed 1.5
+  rejected; non-ai-music-api Suno via createTask rejected; current envelope
+  (ai-music-api/generate V6, sounds V6, persona, extend, upload-and-extend)
+  passes and its bad shapes reject; legacy V4..V5_5 accepted with a
+  Discontinued warning.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4: WIRE CORE FILES

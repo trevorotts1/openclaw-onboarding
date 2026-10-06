@@ -1,0 +1,1 @@
+{"body": {"actor": "song-runner", "stage_slug": "m6-master", "status": "done"}, "code": "NOT_FOUND", "expect": "404 CARD_NOT_FOUND; cc_sync marks rejected, never auto-creates (update-existing-only, 20.5)", "http": 404, "method": "PATCH", "path": "/api/ad-campaigns/job-nope", "route": "src/lib/ad-campaigns.ts:274-280; src/app/api/ad-campaigns/[id]/route.ts:64-66"}

@@ -2,7 +2,7 @@
 """validate_audio_request.py -- deterministic pre-dispatch validator for KIE audio.
 
 Skill 68 (kie-audio). Validates a payload JSON file against the FIRST-PARTY
-limits frozen in models.json / references (verified 2026-08-26). Offline, except that Skill 74 (optional) is asked to validate a named model missing from models.json and, for stt, to report from a free catalog GET.
+limits frozen in models.json / references (base verified 2026-08-26; Suno current envelope reconciled 2026-10-06 per planning/provider-contracts.md). Offline, except that Skill 74 (optional) is asked to validate a named model missing from models.json and, for stt, to report from a free catalog GET.
 No API side effects. Exit codes:
 
   0 -- valid (or warning-level advisory; see report)
@@ -10,7 +10,9 @@ No API side effects. Exit codes:
 
 Sub-domains:
   tts   -- generic KIE Market createTask (Gemini + ElevenLabs routes)
-  music -- Suno DEDICATED /api/v1/generate* family (never createTask)
+  music -- Suno: CURRENT createTask envelope (ai-music-api/*, V6 default) AND
+           LEGACY dedicated /api/v1/generate* family (V4..V5_5, live-marked
+           Discontinued -- accepted with a warning, never dropped)
   stt   -- ADVERTISED_NOT_YET_VERIFIED: no endpoint, no dispatch (hard error)
 
 Usage:
@@ -19,7 +21,7 @@ Usage:
   python3 validate_audio_request.py --domain stt   --payload req.json
   python3 validate_audio_request.py --self-test
 
-Every numeric limit below is quoted from the 2026-08-26 first-party KIE docs
+Every numeric limit below is quoted from first-party KIE docs (base 2026-08-26; Suno current envelope 2026-10-06)
 (see references/tts.md and references/music.md for the verbatim quotes and
 source URLs). The validator never invents a limit: what is VERIFIED is
 enforced; what is UNDETERMINED is reported as a warning, never hard-rejected.
@@ -99,10 +101,24 @@ EL_TEXT_MAX = 5000                # input.text maxLength 5000 (multilingual-v2, 
 EL_STABILITY_ENUM = (0, 0.5, 1)   # dialogue-v3 only
 EL_SPEED_MIN, EL_SPEED_MAX = 0.7, 1.2
 
-SUNO_MODELS = ("V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5")
+# Layered Suno versions (W0-02 contract, live docs 2026-10-06): the legacy
+# dedicated routes (/api/v1/generate family) keep V4..V5_5; the current createTask
+# envelope (ai-music-api/*) defaults V6 with V6_MINI/V6_WILD live. V4..V5_5 are
+# marked Discontinued on the live pages -- accepted with a warning, never dropped.
+LEGACY_SUNO_MODELS = ("V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5")
+CURRENT_SUNO_MODELS = ("V6", "V6_MINI", "V6_WILD")
+SUNO_MODELS = LEGACY_SUNO_MODELS + CURRENT_SUNO_MODELS
+# Top-level route models for the current envelope: POST /api/v1/jobs/createTask.
+# ONLY ai-music-api/* rides createTask; legacy dedicated routes stay dedicated.
+AI_MUSIC_API_MODELS = ("ai-music-api/generate", "ai-music-api/extend",
+                       "ai-music-api/upload-and-extend-audio",
+                       "ai-music-api/generate-persona", "ai-music-api/sounds")
+# Sounds input.model enum per the live registry snapshot (no V4 family).
+SOUNDS_CURRENT_MODELS = ("V5", "V5_5", "V6", "V6_WILD", "V6_MINI")
 SUNO_CUSTOM_PROMPT_MAX = {
     "V4": 3000,
     "V4_5": 5000, "V4_5PLUS": 5000, "V4_5ALL": 5000, "V5": 5000, "V5_5": 5000,
+    "V6": 5000, "V6_MINI": 5000, "V6_WILD": 5000,
 }
 # Non-custom song description: the generate-music page says 3000, the generate-mashup page says 500, and the
 # conflict is unresolved (UNDETERMINED). Rule 12: an unknown limit has NO floor, and the ceiling is the smallest
@@ -110,9 +126,11 @@ SUNO_CUSTOM_PROMPT_MAX = {
 SUNO_NON_CUSTOM_PROMPT_DOCUMENTED = (500, 3000)
 SUNO_NON_CUSTOM_PROMPT_MAX = min(SUNO_NON_CUSTOM_PROMPT_DOCUMENTED)
 SUNO_CUSTOM_STYLE_MAX = {"V4": 200, "V4_5": 1000, "V4_5PLUS": 1000,
-                         "V4_5ALL": 1000, "V5": 1000, "V5_5": 1000}
+                         "V4_5ALL": 1000, "V5": 1000, "V5_5": 1000,
+                         "V6": 1000, "V6_MINI": 1000, "V6_WILD": 1000}
 SUNO_TITLE_MAX = 80                 # generate: "title length limit: 80 characters (all models)"
-SUNO_V55_DURATION = (10, 360)       # "only effective when custom_mode is true and model is V5_5."
+SUNO_V55_DURATION = (10, 360)       # legacy note said V5_5-only; live docs add the V6 family (custom only)
+SUNO_DURATION_MODELS = ("V5_5", "V6", "V6_MINI", "V6_WILD")  # duration effective: custom_mode true + one of these
 SUNO_SOUNDS_PROMPT_MAX = 500
 SUNO_SOUND_TEMPO = (1, 300)
 SUNO_PERSONA_WINDOW = (10, 30)      # vocalEnd-vocalStart 10-30s
@@ -363,20 +381,34 @@ def _validate_elevenlabs_tts(p, inp):
 # ---------------------------------------------------------------------------
 
 def validate_music(p):
-    # Family guard: Suno NEVER rides createTask.
+    # Two Suno routes (W0-02 contract, live docs 2026-10-06):
+    # CURRENT: POST /api/v1/jobs/createTask with top-level model ai-music-api/*
+    # (version nested at input.model, default V6).
+    # LEGACY: dedicated /api/v1/generate family (V4..V5_5, marked Discontinued
+    # on the live pages -- accepted with a warning, never dropped).
     endpoint = p.get("endpoint") or _infer_endpoint(p)
     if not endpoint:
         _warn("music: no 'endpoint' field in payload; endpoint inferred from required fields")
 
     if "createTask" in endpoint:
-        _err("music: Suno is a DEDICATED family -- payload routes to createTask, "
-             "rejected. Use /api/v1/generate (generate), /api/v1/generate/extend, "
-             "/api/v1/generate/sounds, or a documented operation route.")
-        return
+        return _validate_ai_music_envelope(p)
 
     model = p.get("model")
     if model not in SUNO_MODELS:
         _err(f"music: model must be one of {', '.join(SUNO_MODELS)}, got {model!r}")
+        return
+    if model in LEGACY_SUNO_MODELS:
+        _warn(f"music: model {model} is marked Discontinued on the live KIE pages; "
+              "the current family is V6/V6_MINI/V6_WILD")
+    # Route/model coherence (repair cycle 2, owner policy): the legacy DEDICATED
+    # routes (/api/v1/generate*) accept ONLY the legacy dedicated families
+    # (references/music.md: "Legacy dedicated route models: V4..V5_5"). V6/current
+    # families ride ONLY the market createTask envelope (ai-music-api/* or
+    # input.model on top-level route). Crossing them is a hard reject.
+    if model in CURRENT_SUNO_MODELS and "createTask" not in endpoint:
+        _err("music: current Suno family (V6/V6_MINI/V6_WILD) rides ONLY the market "
+             "createTask envelope (ai-music-api/* ids); the legacy dedicated routes "
+             "/api/v1/generate* accept only V4..V5_5. Route/model mismatch -- rejected.")
         return
 
     op = _infer_operation(endpoint, p)
@@ -412,6 +444,92 @@ def validate_music(p):
         validate_generic_op_checks(p, op)
     else:
         validate_generate(p)
+
+
+def _validate_ai_music_envelope(p):
+    """Current Suno envelope: POST /api/v1/jobs/createTask, top-level model
+    ai-music-api/*, version at input.model (live default V6). ONLY
+    ai-music-api/* rides createTask; any other model on createTask is rejected."""
+    model = p.get("model")
+    if model not in AI_MUSIC_API_MODELS:
+        _err("music: createTask carries Suno ONLY as ai-music-api/* "
+             f"({', '.join(AI_MUSIC_API_MODELS)}), got {model!r}. "
+             "Legacy Suno routes stay on the dedicated /api/v1/generate family.")
+        return
+    inp = p.get("input")
+    if not isinstance(inp, dict):
+        _err("music: createTask Suno envelope requires an 'input' object "
+             "(route model at top-level 'model', version at 'input.model')")
+        return
+    ver = inp.get("model", "V6")  # live schema default
+    if ver not in SUNO_MODELS:
+        _err(f"music: input.model must be one of {', '.join(SUNO_MODELS)} (default V6), got {ver!r}")
+        return
+    if ver in LEGACY_SUNO_MODELS:
+        _warn(f"music: input.model {ver} is marked Discontinued on the live KIE pages; "
+              "the current family is V6/V6_MINI/V6_WILD")
+
+    # Normalize snake_case envelope keys to the legacy camelCase shape and
+    # delegate caps to the existing validators (one transport, one set of caps).
+    norm = dict(inp)
+    for snake, camel in (("custom_mode", "customMode"), ("vocal_gender", "vocalGender"),
+                         ("negative_tags", "negativeTags"), ("style_weight", "styleWeight"),
+                         ("weirdness_constraint", "weirdnessConstraint"),
+                         ("audio_weight", "audioWeight"), ("persona_id", "personaId"),
+                         ("persona_model", "personaModel"), ("continue_at", "continueAt"),
+                         ("upload_url", "uploadUrl"), ("upload_url_list", "uploadUrlList"),
+                         ("audio_id", "audioId"), ("task_id", "taskId"),
+                         ("sound_loop", "soundLoop"), ("sound_tempo", "soundTempo"),
+                         ("sound_key", "soundKey"), ("grab_lyrics", "grabLyrics"),
+                         ("vocal_start", "vocalStart"), ("vocal_end", "vocalEnd"),
+                         ("infill_start_s", "infillStartS"), ("infill_end_s", "infillEndS")):
+        if snake in norm and camel not in norm:
+            norm[camel] = norm[snake]
+    norm["model"] = ver
+    if p.get("callBackUrl") and "callBackUrl" not in norm:
+        norm["callBackUrl"] = p["callBackUrl"]
+
+    if model == "ai-music-api/generate":
+        for f in ("custom_mode", "instrumental"):
+            if f not in inp:
+                _err(f"music: createTask generate requires input.{f} (live registry)")
+                return
+        norm["endpoint"] = "/api/v1/generate"
+        validate_generate(norm)
+    elif model == "ai-music-api/extend":
+        for f in ("audio_id",):
+            if f not in inp and "audioId" not in inp:
+                _err("music: createTask extend requires input.audio_id (live registry)")
+                return
+        norm["endpoint"] = "/api/v1/generate/extend"
+        validate_extend(norm)
+    elif model == "ai-music-api/upload-and-extend-audio":
+        if "upload_url" not in inp and "uploadUrl" not in inp:
+            _err("music: createTask upload-and-extend-audio requires input.upload_url (live registry)")
+            return
+        if "callBackUrl" not in norm:
+            _warn("music: upload-and-extend-audio without callBackUrl -- polling fallback undocumented for Suno")
+        for f, cap in (("title", 100), ("prompt", 5000), ("lyrics", 5000), ("style", 1000)):
+            v = norm.get(f)
+            if v is not None and _txt_len(v) > cap:
+                _err(f"music: upload-and-extend-audio {f} {_txt_len(v)} chars > {cap}")
+    elif model == "ai-music-api/generate-persona":
+        for f in ("task_id", "audio_id", "name", "description"):
+            if f not in inp and f.replace("_", "") not in inp and f not in norm:
+                _err(f"music: createTask generate-persona requires input.{f} (live registry)")
+                return
+        norm.setdefault("vocalStart", 0)  # live defaults
+        norm.setdefault("vocalEnd", 30)
+        validate_persona(norm)
+    elif model == "ai-music-api/sounds":
+        if "prompt" not in inp:
+            _err("music: createTask sounds requires input.prompt (live registry)")
+            return
+        if ver not in SOUNDS_CURRENT_MODELS:
+            _err(f"music: sounds input.model must be one of {', '.join(SOUNDS_CURRENT_MODELS)}, got {ver!r}")
+            return
+        norm["endpoint"] = "/api/v1/generate/sounds"
+        validate_sounds(norm)
 
 
 def _infer_endpoint(p):
@@ -493,12 +611,13 @@ def validate_generate(p):
     dur = p.get("duration")
     if dur is not None:
         lo, hi = SUNO_V55_DURATION
-        if not (custom_mode and model == "V5_5"):
-            _warn(f"music: duration={dur} ignored -- \"only effective when custom_mode is "
-                  f"true and model is V5_5\" (got customMode={custom_mode}, model={model})")
+        if not (custom_mode and model in SUNO_DURATION_MODELS):
+            _warn(f"music: duration={dur} ignored -- effective only when custom_mode is "
+                  f"true and model is one of {', '.join(SUNO_DURATION_MODELS)} "
+                  f"(got customMode={custom_mode}, model={model})")
         elif not (isinstance(dur, (int, float)) and lo <= dur <= hi):
             _warn(f"music: duration={dur} outside {lo}-{hi} (default 20) -- provider ignores "
-                  "out-of-range duration (effective only for V5_5 custom)")
+                  "out-of-range duration (effective only for V5_5/V6-family custom)")
 
     if instrumental is True:
         if prompt:
@@ -508,6 +627,12 @@ def validate_generate(p):
     vg = p.get("vocalGender")
     if vg is not None and vg not in ("m", "f"):
         _err(f"music: vocalGender must be \"m\" or \"f\", got {vg!r}")
+    lyr = p.get("lyrics")
+    if lyr is not None and _txt_len(lyr) > 5000:
+        _err(f"music: lyrics {_txt_len(lyr)} chars > 5000")
+    pm = p.get("personaModel")
+    if pm is not None and pm not in ("style_persona", "voice_persona"):
+        _err(f"music: personaModel must be style_persona or voice_persona, got {pm!r}")
 
 
 def validate_extend(p):
@@ -517,12 +642,11 @@ def validate_extend(p):
     title = p.get("title")
     if title is not None:
         cap = {"V4": 80, "V4_5": 100, "V4_5PLUS": 100, "V4_5ALL": 80,
-               "V5": 100, "V5_5": 100}[model]
+               "V5": 100, "V5_5": 100, "V6": 100, "V6_MINI": 100, "V6_WILD": 100}[model]
         if _txt_len(title) > cap:
             _err(f"music: extend title {_txt_len(title)} chars > {cap} for {model}")
     prompt = p.get("prompt", "")
-    cap_p = {"V4": 3000, "V4_5": 5000, "V4_5PLUS": 5000, "V4_5ALL": 5000,
-             "V5": 5000, "V5_5": 5000}[model]
+    cap_p = SUNO_CUSTOM_PROMPT_MAX[model]
     if _txt_len(prompt) > cap_p:
         _err(f"music: extend prompt {_txt_len(prompt)} chars > {cap_p} for {model}")
     if p.get("instrumental") is True and (prompt or p.get("vocalGender")):
@@ -531,8 +655,8 @@ def validate_extend(p):
 
 def validate_sounds(p):
     model = p["model"]
-    if model not in ("V5", "V5_5"):
-        _err(f"music: sounds model must be V5 or V5_5, got {model!r}")
+    if model not in SOUNDS_CURRENT_MODELS:
+        _err(f"music: sounds model must be one of {', '.join(SOUNDS_CURRENT_MODELS)}, got {model!r}")
     _descriptive("sounds prompt", model, p.get("prompt", ""), SUNO_SOUNDS_PROMPT_MAX)  # descriptive
     tempo = p.get("soundTempo")
     if tempo is not None:
@@ -812,10 +936,85 @@ def self_test():
                 "input": {"text": "hello", "speed": 1.5}}
         _expect_exit(write("bad-speed.json", bad2), "tts", 2)
 
-        # Music payload routed to createTask -> exit 2 (family guard)
+        # Non-ai-music-api model on createTask -> exit 2 (only ai-music-api/* rides createTask)
         bad3 = {"endpoint": "/api/v1/jobs/createTask", "model": "V5",
                 "input": {"prompt": "x"}, "callBackUrl": "https://x/cb"}
         _expect_exit(write("suno-viacreatetask.json", bad3), "music", 2)
+
+        # CURRENT envelope (W0-02 contract): createTask + ai-music-api/generate, V6 default
+        cg = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+              "input": {"custom_mode": True, "instrumental": False, "model": "V6",
+                        "style": "x" * 950, "title": "t",
+                        "lyrics": "verbatim lyrics are exempt from the floor"},
+              "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-gen-ok.json", cg), "music", 0)
+        # Legacy version on the legacy route: accepted with a Discontinued warning, rc 0
+        cg_leg = {"endpoint": "/api/v1/generate", "model": "V4_5", "customMode": True,
+                  "instrumental": False, "prompt": "lyrics are verbatim and exempt from the floor",
+                  "style": "x" * 950, "title": "t", "callBackUrl": "https://x/cb"}
+        _expect_exit(write("legacy-v45-ok.json", cg_leg), "music", 0, expect_out="Discontinued")
+        # Legacy version inside the current envelope: same warning, rc 0
+        cg_leg2 = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+                   "input": {"custom_mode": True, "instrumental": False, "model": "V5_5",
+                             "style": "x" * 950, "title": "t", "duration": 30},
+                   "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-gen-v55-ok.json", cg_leg2), "music", 0, expect_out="Discontinued")
+        # V6 on the legacy dedicated route: REJECTED (route/model coherence, repair cycle 2)
+        cg_v6leg = {"endpoint": "/api/v1/generate", "model": "V6", "customMode": True,
+                    "instrumental": False, "prompt": "lyrics are verbatim and exempt",
+                    "style": "x" * 950, "title": "t", "duration": 30,
+                    "callBackUrl": "https://x/cb"}
+        _expect_exit(write("legacy-route-v6-bad.json", cg_v6leg), "music", 2)
+        # Current envelope missing a required input field -> exit 2
+        cg_bad = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+                  "input": {"instrumental": False, "model": "V6"}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-gen-nocustom.json", cg_bad), "music", 2)
+        # Current envelope unknown version -> exit 2
+        cg_bad2 = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+                   "input": {"custom_mode": True, "instrumental": False, "model": "V9"},
+                   "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-gen-badver.json", cg_bad2), "music", 2)
+        # Current envelope without an input object -> exit 2
+        cg_bad3 = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+                   "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-gen-noinput.json", cg_bad3), "music", 2)
+        # Lyrics over 5000 -> exit 2; bad personaModel -> exit 2
+        cg_bad4 = dict(cg); cg_bad4["input"] = dict(cg["input"]); cg_bad4["input"]["lyrics"] = "x" * 5001
+        _expect_exit(write("cur-gen-biglyrics.json", cg_bad4), "music", 2)
+        cg_bad5 = dict(cg); cg_bad5["input"] = dict(cg["input"]); cg_bad5["input"]["persona_model"] = "dj"
+        _expect_exit(write("cur-gen-badpersona.json", cg_bad5), "music", 2)
+        # Current sounds: V6 passes, V4 rejected (sounds enum has no V4 family)
+        cs = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/sounds",
+              "input": {"model": "V6", "prompt": "x" * 475, "sound_tempo": 120},
+              "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-sounds-ok.json", cs), "music", 0)
+        cs_bad = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/sounds",
+                  "input": {"model": "V4", "prompt": "x" * 475}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-sounds-v4.json", cs_bad), "music", 2)
+        # Current persona: full fields pass (10-30s window), missing fields exit 2
+        cp = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate-persona",
+              "input": {"task_id": "t1", "audio_id": "a1", "name": "n", "description": "d",
+                        "vocal_start": 5, "vocal_end": 25}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-persona-ok.json", cp), "music", 0)
+        cp_bad = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate-persona",
+                  "input": {"name": "n"}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-persona-missing.json", cp_bad), "music", 2)
+        # Current extend: audio_id passes, missing audio_id exits 2
+        ce = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/extend",
+              "input": {"audio_id": "a1", "model": "V6", "continue_at": 32},
+              "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-extend-ok.json", ce), "music", 0)
+        ce_bad = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/extend",
+                  "input": {"model": "V6"}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-extend-missing.json", ce_bad), "music", 2)
+        # Current upload-and-extend: upload_url passes, missing upload_url exits 2
+        cu = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/upload-and-extend-audio",
+              "input": {"upload_url": "https://res.example.com/src.mp3", "model": "V6_WILD",
+                        "title": "t"}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-upext-ok.json", cu), "music", 0)
+        cu_bad = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/upload-and-extend-audio",
+                  "input": {"model": "V6"}, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("cur-upext-missing.json", cu_bad), "music", 2)
 
         # speed non-numeric -> exit 2 (was ValueError traceback rc=1 before the try/except)
         bad4 = {"model": "elevenlabs/text-to-speech-multilingual-v2",
@@ -912,7 +1111,7 @@ def self_test():
         env_none = _fake_adapter_env(td, {"discover": {"state": "validated", "data": {"models": []}}})
         _expect_exit(write("stt-inspect3.json", {}), "stt", 0, env=env_none, expect_out="no speech-to-text model")
 
-        ok = 42
+        ok = 58
     print(f"SELF-TEST PASS: {ok} checks green")
     return 0
 
