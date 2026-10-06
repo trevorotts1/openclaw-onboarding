@@ -1294,7 +1294,7 @@ class LocalOllamaEmbeddingsAreNotOllamaCloud(unittest.TestCase):
     def index1(self, embed_base):
         import embedding_health as eh
         cfg = {"models": {"providers": {"ollama": {"baseUrl": "https://ollama.com"}}},
-               "memory": {"search": {"provider": "ollama", "model": "nomic-embed-text",
+               "memory": {"search": {"provider": "ollama", "model": "embeddinggemma-2:740m",
                                      "remote": {"baseUrl": embed_base}}}}
         with tempfile.TemporaryDirectory() as td, contextlib.redirect_stdout(io.StringIO()), \
              contextlib.redirect_stderr(io.StringIO()):

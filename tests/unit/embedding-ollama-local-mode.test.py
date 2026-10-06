@@ -17,6 +17,11 @@ Proves, offline (a stub Ollama /api/embed server on a random loopback port):
   6. provision-persona-index.sh keeps a provider='ollama' index (no download).
   7. embedding_health.py: persona + cc_sop local mode pass against a loopback
      Ollama and FAIL for a non-loopback URL (Ollama Cloud never embeds).
+  8. OLLAMA_EMBED_MODEL / OLLAMA_EMBED_DIM: default embeddinggemma-2:740m@768;
+     env (and secrets/.env) override it; rows are stamped with the model used,
+     the ollama --verify accepts it and rejects a mismatch or a mixed-model
+     index (with a --reembed-local hint), search() queries with the
+     index's stamped model, and embeddinggemma gets its model-card prefixes.
 
 Every test fails on the pre-change tree (no ollama provider / flags / guards).
 
@@ -44,6 +49,13 @@ from pathlib import Path
 tempfile.tempdir = tempfile.mkdtemp(prefix="onb-test-")
 atexit.register(shutil.rmtree, tempfile.tempdir, True)
 os.environ.setdefault("OPENCLAW_SANDBOX", "1")
+# Pin the local model for the in-process tests so a box whose secrets/.env sets
+# OLLAMA_EMBED_MODEL still sees the default contract (TestModelOverride proves
+# the real default in a clean-HOME subprocess).
+GEMMA = "embeddinggemma-2:740m"
+OTHER = "other-embed-model"  # any non-default local model
+os.environ["OLLAMA_EMBED_MODEL"] = GEMMA
+os.environ["OLLAMA_EMBED_DIM"] = "768"
 
 REPO = Path(__file__).resolve().parent.parent.parent
 SU = REPO / "shared-utils"
@@ -80,9 +92,11 @@ def _bow(text: str, dims: int = 768) -> list:
 
 class _Stub(http.server.BaseHTTPRequestHandler):
     dims = 768
+    last = None  # last request body, for model/prefix assertions
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        _Stub.last = body
         out = json.dumps({"embeddings": [_bow(body["input"], _Stub.dims)]}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -139,7 +153,7 @@ def _quiet(fn, *a, **k):
 
 class TestEngine(unittest.TestCase):
     def test_ollama_only_on_explicit_hint(self):
-        self.assertEqual(ee.get_embedder(provider_hint="ollama"), ("ollama", URL, "nomic-embed-text"))
+        self.assertEqual(ee.get_embedder(provider_hint="ollama"), ("ollama", URL, GEMMA))
         with self.assertRaises(ValueError):
             ee.get_embedder(provider_hint="local")
 
@@ -152,7 +166,7 @@ class TestEngine(unittest.TestCase):
         c.close()
         self.assertEqual({r[0] for r in rows}, {r[0] for r in PERSONA_ROWS})  # ids kept
         for r in rows:
-            self.assertEqual(r[1:5], ("ollama", "nomic-embed-text", 768, 768 * 4))
+            self.assertEqual(r[1:5], ("ollama", GEMMA, 768, 768 * 4))
             self.assertEqual(r[6], "both")  # section metadata untouched
         # resumable: nothing left to do
         rc, out, _ = _quiet(ee.cmd_reembed_local, db_path=db, batch_size=2, pause=0)
@@ -190,6 +204,84 @@ class TestEngine(unittest.TestCase):
         self.assertIn("KEYWORD-HITS", out)
 
 
+def _resolved_model(home: str, **env) -> str:
+    """Import the engine in a clean subprocess (HOME=home, no OLLAMA_EMBED_*)."""
+    e = {k: v for k, v in os.environ.items() if not k.startswith("OLLAMA_EMBED_")}
+    e.update(HOME=home, WORKSPACE_ROOT=os.path.join(home, "ws"), **env)
+    code = ("import importlib.util,sys;sp=importlib.util.spec_from_file_location('e',sys.argv[1]);"
+            "m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m);"
+            "print(m.OLLAMA_EMBED_MODEL, m.OLLAMA_EMBED_DIM)")
+    return subprocess.run([sys.executable, "-c", code, str(SU / "embedding_engine.py")],
+                          env=e, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class TestModelOverride(unittest.TestCase):
+    def test_default_and_env_and_secrets_file(self):
+        home = tempfile.mkdtemp()
+        self.assertEqual(_resolved_model(home), f"{GEMMA} 768")
+        self.assertEqual(_resolved_model(home, OLLAMA_EMBED_MODEL=OTHER, OLLAMA_EMBED_DIM="768"),
+                         f"{OTHER} 768")
+        os.makedirs(os.path.join(home, ".openclaw", "secrets"))
+        Path(home, ".openclaw", "secrets", ".env").write_text(
+            f"OTHER=x\nOLLAMA_EMBED_MODEL={OTHER}\nOLLAMA_EMBED_DIM=768\n")
+        self.assertEqual(_resolved_model(home), f"{OTHER} 768")
+
+    def test_gemma_stamps_and_prefixes(self):
+        db = _gemini_index()
+        rc, out, err = _quiet(ee.cmd_reembed_local, db_path=db, pause=0)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(_Stub.last["model"], GEMMA)
+        self.assertTrue(_Stub.last["input"].startswith("title: none | text: "))
+        rc, out, err = _quiet(ee.search, "negotiation pricing objections", 1, db)
+        self.assertIn("PERSONA: alpha", out)
+        self.assertEqual(_Stub.last["input"],
+                         "task: search result | query: negotiation pricing objections")
+
+    def test_override_stamps_verifies_and_rejects_mismatch(self):
+        db = _gemini_index()
+        old = ee.OLLAMA_EMBED_MODEL
+        ee.OLLAMA_EMBED_MODEL = OTHER
+        try:
+            rc, out, err = _quiet(ee.cmd_reembed_local, db_path=db, pause=0)
+            self.assertEqual(rc, 0, out + err)
+            self.assertEqual(_Stub.last, {"model": OTHER, "input": _Stub.last["input"]})
+            self.assertFalse(_Stub.last["input"].startswith("title:"))  # no gemma prefix
+            c = sqlite3.connect(db)
+            stamps = set(c.execute("SELECT provider, model, dim FROM embeddings").fetchall())
+            c.close()
+            self.assertEqual(stamps, {("ollama", OTHER, 768)})
+            self.assertEqual(_quiet(ee.verify_index_integrity, db, expect_provider="ollama")[0], 0)
+        finally:
+            ee.OLLAMA_EMBED_MODEL = old
+        # default (gemma) contract rejects the other-model index, loudly
+        rc, _, err = _quiet(ee.verify_index_integrity, db, expect_provider="ollama")
+        self.assertEqual(rc, 4)
+        self.assertIn("--reembed-local", err)
+        # ...search warns, and still queries with the index's own stamped model.
+        rc, out, err = _quiet(ee.search, "negotiation pricing objections", 1, db)
+        self.assertIn("PERSONA: alpha", out)
+        self.assertIn("Re-embed with --reembed-local", err)
+        self.assertEqual(_Stub.last["model"], OTHER)
+
+    def test_mixed_model_index_fails_verify_and_keyword_search(self):
+        db = _gemini_index()
+        _quiet(ee.cmd_reembed_local, db_path=db, pause=0)  # all gemma
+        c = sqlite3.connect(db)
+        c.execute("UPDATE embeddings SET model=? WHERE id='beta__section_03'", (OTHER,))
+        c.commit()
+        c.close()
+        rc, _, err = _quiet(ee.verify_index_integrity, db, expect_provider="ollama")
+        self.assertEqual(rc, 4)
+        self.assertIn("1/3 row(s)", err)
+        self.assertIn("--reembed-local", err)
+        rc, out, err = _quiet(ee.search, "negotiation pricing", 1, db)
+        self.assertIn("KEYWORD", err)  # never cross-model cosine
+        # resume converts only the stray row, then verify passes
+        rc, out, _ = _quiet(ee.cmd_reembed_local, db_path=db, pause=0)
+        self.assertEqual(rc, 0)
+        self.assertIn("1 row(s) to embed", out)
+
+
 class TestProvisioningGuards(unittest.TestCase):
     def test_sop_provision_skips_local_mode_db(self):
         db = _tmp(".db")
@@ -201,8 +293,8 @@ class TestProvisioningGuards(unittest.TestCase):
             CREATE TABLE sop_embeddings_local_provider (id INTEGER PRIMARY KEY CHECK (id = 1),
                 provider TEXT NOT NULL, model TEXT NOT NULL, dims INTEGER NOT NULL, updated_at TEXT);
             INSERT INTO sops VALUES ('sop_a', 'a', NULL);
-            INSERT INTO sop_embeddings VALUES ('sop_a', x'00', 'nomic-embed-text', 768, 'now');
-            INSERT INTO sop_embeddings_local_provider VALUES (1, 'ollama', 'nomic-embed-text', 768, 'now');
+            INSERT INTO sop_embeddings VALUES ('sop_a', x'00', 'embeddinggemma-2:740m', 768, 'now');
+            INSERT INTO sop_embeddings_local_provider VALUES (1, 'ollama', 'embeddinggemma-2:740m', 768, 'now');
         """)
         c.commit()
         c.close()
@@ -214,7 +306,7 @@ class TestProvisioningGuards(unittest.TestCase):
         self.assertEqual(r["status"], "SKIP", r)
         self.assertIn("local embedding mode", r["reason"])
         c = sqlite3.connect(db)
-        self.assertEqual(c.execute("SELECT embedding_model FROM sop_embeddings").fetchone()[0], "nomic-embed-text")
+        self.assertEqual(c.execute("SELECT embedding_model FROM sop_embeddings").fetchone()[0], GEMMA)
         c.close()
 
     def test_persona_provision_keeps_local_index(self):
@@ -256,9 +348,9 @@ class TestHealth(unittest.TestCase):
             CREATE TABLE sop_embeddings (sop_id TEXT PRIMARY KEY, embedding_model TEXT, embedding_dims INTEGER);
             CREATE TABLE sop_embeddings_local_provider (id INTEGER PRIMARY KEY, provider TEXT, model TEXT, dims INTEGER);
             INSERT INTO sops VALUES ('a'); INSERT INTO sops VALUES ('b');
-            INSERT INTO sop_embeddings VALUES ('a', 'nomic-embed-text', 768);
-            INSERT INTO sop_embeddings VALUES ('b', 'nomic-embed-text', 768);
-            INSERT INTO sop_embeddings_local_provider VALUES (1, 'ollama', 'nomic-embed-text', 768);
+            INSERT INTO sop_embeddings VALUES ('a', 'embeddinggemma-2:740m', 768);
+            INSERT INTO sop_embeddings VALUES ('b', 'embeddinggemma-2:740m', 768);
+            INSERT INTO sop_embeddings_local_provider VALUES (1, 'ollama', 'embeddinggemma-2:740m', 768);
         """)
         c.commit()
         c.close()
