@@ -47,7 +47,7 @@ timing map, shot plan, character sheets, shot sheets, clips, edit. **Adapt, conc
 reorganize into BlackCEO-owned `references/drama-song-methodology.md`,
 `direct-response-story-arc.md`, `song-vsl-writing-rules.md`, `lyric-to-shot-contract.md`,
 `resilia-mode-qc.md`. Do not copy the giant `SKILL.md`. Do not inherit stale pins (Suno V5.5,
-Seedance 2.0, GPT Image 2, two-song crossfade, Claude-Code-only runtime) — modernize through KIE.
+Seedance 2.0, GPT Image 2, two-song crossfade, Claude-Code-only runtime (999) — modernize through KIE.
 
 ## 3. Commercial Creator (`cxbxmxcx/commercial-creator`) — ad control donor, MIT, adapt
 
@@ -92,7 +92,7 @@ modes and prevention rules. Not the central runtime unless fresh research proves
 
 Root: `app/`, `cli.py`, `main.py`, `webui/` (29 entries). `app/services/`: `subtitle.py`, `voice.py`,
 `video.py`, `bgm.py`, `task.py`, `llm.py`, provider adapters (`volcengine_seedance.py`, `ofox.py`,
-`muapi.py`, `metaso_minimax.py`, `elevenlabs_music.py`, …), `material*.py`, `upload_post.py`.
+`muapi.py`, donor provider-adapter (metaso_*), `elevenlabs_music.py`, …), `material*.py`, `upload_post.py`.
 **Study-only:** provider-adapter shape, batch execution, subtitle handling, audio/TTS routing, Fish Audio
 integration patterns, API/CLI/WebUI separation. Do not replace core architecture. ElevenLabs paths are
 reference only — Fish Audio stays the preferred spoken-voice path.
