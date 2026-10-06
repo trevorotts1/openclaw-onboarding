@@ -7,7 +7,7 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.1.0
+version: v2.1.1
 metadata:
   version: "2.1.1"
   priority: HIGH

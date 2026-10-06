@@ -113,7 +113,18 @@ def _load_enforcer():
             sys.path.insert(0, str(d))
             import kie_prompt_enforcer
             return kie_prompt_enforcer
-    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
+    # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
+    # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
+    import importlib.util
+    here = Path(__file__).resolve().parent / "_kie_prompt_enforcer_embedded.py"
+    if here.is_file():
+        spec = importlib.util.spec_from_file_location("kie_prompt_enforcer", here)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["kie_prompt_enforcer"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    raise ImportError("kie_prompt_enforcer not found (neither shared-utils nor the embedded copy beside this file)")
 
 
 KPE = _load_enforcer()
@@ -142,7 +153,7 @@ def cmd_prompt_caps(args) -> int:
         return 2
 
     # ceiling only: this command never judges the floor (prompt-band does)
-    v = KPE.check(model, prompt, kind="verbatim")
+    v = KPE.check(model, prompt, kind="verbatim", fallback_max=KPE.last_known(model))
     if not v["ok"]:
         print("!" * 78, file=sys.stderr)
         print(f"FATAL AF-DIU-PROMPT-CAP: {v['message']}. Fall back to a model whose limit holds the "
@@ -583,7 +594,7 @@ def band_length_problems(prompt_text: str, band: dict, band_id: str, model=None)
     if not stripped:
         return [("AF-GIP-PROMPT-FLOOR",
                  f"prompt is empty / whitespace-only; it carries none of the mandatory per-asset {band_id} spec.")]
-    v = KPE.check(mdl, prompt_text)
+    v = KPE.check(mdl, prompt_text, fallback_max=KPE.last_known(mdl))
     if v["ok"]:
         return []
     code = "AF-DIU-PROMPT-CAP" if v["status"] == "ABOVE_MAX" else "AF-GIP-PROMPT-FLOOR"

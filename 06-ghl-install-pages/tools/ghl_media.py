@@ -99,7 +99,18 @@ def _load_kie_prompt_enforcer():
                 sys.path.insert(0, str(d))
             import kie_prompt_enforcer
             return kie_prompt_enforcer
-    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
+    # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
+    # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
+    import importlib.util
+    here = Path(__file__).resolve().parent / "_kie_prompt_enforcer_embedded.py"
+    if here.is_file():
+        spec = importlib.util.spec_from_file_location("kie_prompt_enforcer", here)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["kie_prompt_enforcer"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    raise ImportError("kie_prompt_enforcer not found (neither shared-utils nor the embedded copy beside this file)")
 
 
 KPE = _load_kie_prompt_enforcer()
@@ -586,9 +597,9 @@ def build_prompts_json(
 
         if enforce_floor:
             # The floor (and a first ceiling check) on the creative CONTENT, then the ceiling again with the pin.
-            verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt_content)
+            verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt_content, fallback_max=KPE.last_known(IMAGE_MODEL_DEFAULT))
             if verdict["ok"]:
-                verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt)
+                verdict = KPE.check(IMAGE_MODEL_DEFAULT, prompt, fallback_max=KPE.last_known(IMAGE_MODEL_DEFAULT))
             if not verdict["ok"]:
                 raise ValueError(
                     f"copy_specs[{i}] ({slide_id}): {verdict['message']} (floor measured before the pin, "

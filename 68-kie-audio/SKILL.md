@@ -6,7 +6,7 @@ description: >
   generation (DEDICATED /api/v1/generate family — never createTask), supported
   audio processing operations, and speech-to-text CAPABILITY DETECTION
   (ADVERTISED_NOT_YET_VERIFIED — no endpoint, dispatch_enabled false).
-version: v2.0.3
+version: v2.0.4
 metadata:
   version: "2.0.4"
   priority: HIGH

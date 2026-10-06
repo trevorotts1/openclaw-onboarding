@@ -7,7 +7,7 @@ description: >
   Gemini Omni Video, Runway Dedicated, Veo 3.1 Dedicated), payload validation
   against a machine-readable registry, prompt sizing against published limits,
   asynchronous task dispatch with callbacks or polling, and mandatory real visual QC.
-version: v2.0.3
+version: v2.0.4
 metadata:
   version: "2.0.4"
   priority: HIGH

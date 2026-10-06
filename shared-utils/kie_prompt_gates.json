@@ -287,5 +287,10 @@
         ]
       }
     }
-  ]
+  ],
+  "enforcer_copies": [
+    "45-design-intelligence-library/scripts/_kie_prompt_enforcer_embedded.py",
+    "06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py"
+  ],
+  "enforcer_copies_note": "Byte-identical generated copies of shared-utils/kie_prompt_enforcer.py that a standalone gate imports only when shared-utils is absent (scripts/embed-kie-prompt-enforcer.py regenerates them; tests/unit/kie-prompt-enforcer-embedded-lock.test.py locks them)."
 }

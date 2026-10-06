@@ -801,7 +801,8 @@ def _deepen_to_band(prompt: str, *, page_name: str, role: str, context: str, pal
         return out
 
     try:
-        fitted, _ = ghl_media.KPE.rewrite_to_band(ghl_media.IMAGE_MODEL_DEFAULT, prompt, rewriter)
+        fitted, _ = ghl_media.KPE.rewrite_to_band(ghl_media.IMAGE_MODEL_DEFAULT, prompt, rewriter,
+                                                 fallback_max=ghl_media.KPE.last_known(ghl_media.IMAGE_MODEL_DEFAULT))
     except ghl_media.KPE.PromptBudgetError as exc:
         raise ImagePipelineError(f"section prompt for '{page_name}' could not be brought into the KIE rule 12 length band: {exc}") from exc
     return fitted

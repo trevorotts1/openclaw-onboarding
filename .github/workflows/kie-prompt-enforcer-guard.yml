@@ -17,6 +17,9 @@ on:
       - "shared-utils/social_prompt_policy.json"
       - "74-kie-live-adapter/scripts/kie_live_adapter.py"
       - "tests/unit/kie-prompt-enforcer-and-gates.test.py"
+      - "tests/unit/kie-prompt-enforcer-embedded-lock.test.py"
+      - "scripts/embed-kie-prompt-enforcer.py"
+      - "06-ghl-install-pages/tools/**"
       - "scripts/qc_gip_agnes_prompt_band.py"
       - "25-video-creator/scripts/ai_providers.py"
       - "35-social-media-planner/scripts/pregen_prompt_gate.py"
@@ -39,6 +42,8 @@ jobs:
           python-version: "3.11"
       - name: Enforcer behavior + declared gates import it and keep no band
         run: python3 tests/unit/kie-prompt-enforcer-and-gates.test.py
+      - name: Embedded enforcer copies are locked to the source and enforce the same rule without shared-utils
+        run: python3 tests/unit/kie-prompt-enforcer-embedded-lock.test.py
       - name: Every gate self-test passes rule 12 (79 percent rejected, 95 and 100 percent pass, 101 percent rejected)
         run: |
           export HOME="$(mktemp -d)"
