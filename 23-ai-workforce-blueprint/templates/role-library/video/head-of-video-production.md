@@ -162,7 +162,7 @@ This role contributes to the company revenue cascade by: **producing video conte
 | Video Editing (Adobe Premiere Pro, DaVinci Resolve, Final Cut Pro, CapCut) | Timeline editing, color grading, audio mixing, motion graphics, final export |
 | Motion Graphics and Animation (Adobe After Effects, DaVinci Fusion, Blender) | Motion graphics, 2D/3D animation, visual effects, title design, lower thirds |
 | Audio Production (Adobe Audition, Audacity, Descript) | Audio recording, noise reduction, audio mastering, voiceover processing |
-| AI Video Tools (Sora, Runway, Pika, HeyGen, Synthesia) | AI-generated video, avatar-based video, automated editing, text-to-video |
+| AI Video Tools (Kie.ai first through the AI Video Generator Specialist; Runway, Pika, HeyGen, Synthesia only on a client-supplied key; Sora is PROHIBITED and never wired) | AI-generated video, avatar-based video, automated editing, text-to-video |
 | Color Grading (DaVinci Resolve, Adobe Lumetri) | Color correction, color grading, LUT application, look consistency |
 | Captioning and Subtitling (Descript, Rev, Otter.ai, YouTube auto-caption) | Transcription, caption generation, subtitle creation, multi-language subtitles |
 | Live Streaming (StreamYard, OBS Studio, Restream) | Live stream production, multi-platform streaming, live graphics, guest management |

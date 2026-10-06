@@ -51,7 +51,7 @@ on:
 
 jobs:
   skill25-contract-tests:
-    name: "Skill 25 — all 93 video-creator contract tests (PR #686's 16 blockers)"
+    name: "Skill 25 — video-creator contract tests (PR #686's 16 blockers)"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -104,13 +104,13 @@ jobs:
           python3 -m pip install "moviepy==1.0.3" numpy requests pytest
           python3 -c 'from moviepy.editor import ColorClip; print("moviepy.editor import OK")'
 
-      - name: Run the 93 contract tests
+      - name: Run the Skill 25 contract tests
         shell: bash
         run: |
           set -euo pipefail
           python3 -m pytest 25-video-creator/tests -q --junitxml=skill25-report.xml
 
-      - name: "Anti-vacuity — at least 93 tests actually EXECUTED"
+      - name: "Anti-vacuity — the original 93-test floor actually EXECUTED"
         shell: bash
         run: |
           set -euo pipefail

@@ -1000,6 +1000,29 @@ def dept_in_departments_json(path: str, slug: str) -> bool:
                     return True
     return False
 
+def _alias_source_keys(alias_source, cfg_key):
+    """A hook may name its alias canon by REFERENCE (alias_source, e.g.
+    shared-utils/secret_names.json) instead of restating cfg_key_aliases. Expand
+    the cfg_key's leaf name into env.vars.<ALIAS> keys from that one canon file
+    (FIX 67 secret-name canon). Canon file missing/unreadable -> [] (the canonical
+    key is still checked, so a required hook stays fail-closed)."""
+    if not alias_source:
+        return []
+    leaf = (cfg_key or "").split(".")[-1].strip()
+    roots = [*Path(manifest_path).resolve().parents,
+             Path(os.path.expanduser("~/.openclaw/skills")),
+             Path("/data/.openclaw/skills")]
+    for anc in roots:
+        f = anc / alias_source
+        try:
+            if f.is_file():
+                names = json.loads(f.read_text()).get("canonical_names", {}).get(leaf, [])
+                return ["env.vars." + n for n in names if n and n != leaf]
+        except Exception:  # noqa: BLE001 -- unreadable canon degrades to canonical key only
+            return []
+    return []
+
+
 hooks = manifest.get("connection_points", [])
 gaps = []
 all_pass = True
@@ -1008,7 +1031,8 @@ for hook in hooks:
     name = hook.get("name", "unnamed")
     required = hook.get("required", False)
     cfg_key = hook.get("cfg_key", "")
-    aliases = hook.get("cfg_key_aliases", []) or []
+    aliases = list(hook.get("cfg_key_aliases", []) or [])
+    aliases += [k for k in _alias_source_keys(hook.get("alias_source"), cfg_key) if k not in aliases]
     assert_contains_dept = hook.get("assert_contains_dept", False)
     description = hook.get("description", "")
 

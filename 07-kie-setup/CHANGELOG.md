@@ -4,6 +4,18 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.0.7] - 2026-10-05 - fix: price figures marked as historical snapshots; kie-setup-full.md sweep
+
+### Fixed
+- Swept `kie-setup-full.md` (all 6,447 lines read in chunks) for: a dashed Seedream model id used as a model id (none; the file uses `seedream/4.5-edit` and `seedream/4.5-text-to-image`), the dead endpoints `/api/v1/account/balance`, `/api/v1/user/credits`, `/api/v1/jobs/create`, `/api/v1/veo/task`, `/api/v1/video/generate` (none remain; the one `veo/task` was fixed in v7.0.4), and hard-coded prices presented as authoritative (many). The file carries dozens of per-model dollar figures from the 2026-08 research pass. Rather than rewrite each vendor quote, a notice was added under "FULL API REFERENCE BELOW" saying every dollar figure is a historical snapshot and giving the live sources: `GET /api/v1/models` (`pricingDesc` per model) and, when the KIE live adapter (Skill 74) is installed, `kie_live_adapter.py price <model>`. The Veo pricing note and the closing "model pricing" section carry the same caveat. Skill 74 is not in this repository yet, so the adapter reference is conditional; the `/api/v1/models` source is live today.
+- `INSTRUCTIONS.md`, `EXAMPLES.md` and `CORE_UPDATES.md` per-clip and per-credit figures are labelled historical and point to the same live sources.
+
+### Migration Notes
+- `CORE_UPDATES.md` changed (the pricing line); `wire.sh` bodies did not, so no re-wire is needed for the core-file blocks.
+- Risk level: LOW (documentation only).
+
+---
+
 ## [v7.0.6] - 2026-10-05 - fix: credit check in qc-kie-setup.sh no longer depends on shell quote stripping
 
 ### Fixed
