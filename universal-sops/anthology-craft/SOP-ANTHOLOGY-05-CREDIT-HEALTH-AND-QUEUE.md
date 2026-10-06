@@ -25,11 +25,11 @@ FORBIDDEN, and enforced, never merely advised: no heartbeat entry for this skill
 
 `anthology-smoke-test.py` probes ONLY balance and metadata endpoints, never a generation endpoint, so its total spend is provably at or under one cent, every probe a zero-generation-token read:
 
-- Ollama Cloud: `GET https://ollama.com/api/tags`, 200 plus non-empty models means funded.
+- Ollama Cloud: `GET https://ollama.com/api/tags`, 200 plus non-empty models means reachable with a working key (Ollama Cloud exposes no credit balance, so this is reachability, not remaining credit; this engine's probe code does exactly this, and the Podcast engine pins no Ollama probe instead, see SOP-PODCAST-04).
 - OpenRouter: `GET https://openrouter.ai/api/v1/key`, 200 plus a positive or unlimited remaining limit means funded.
 - Gemini: the models list endpoint with the key in a header, 200 plus non-empty models means funded.
 - Minimax: the token-plan-remains endpoint (optional tier), 200 plus a positive remainder means funded.
-- Kie.ai: the chat-credit endpoint, 200 with a positive balance means funded; 402 means unfunded.
+- Kie.ai: the chat-credit endpoint (`GET /api/v1/chat/credit`, Bearer key from the producer's own Kie credential), 200 with a positive balance means funded; 402 means unfunded.
 
 The transport refuses any URL not on the pinned balance-endpoint allowlist, so a generation call cannot happen by accident; a provider with no pinned endpoint is marked UNKNOWN and skipped rather than spent on; a provider that needs a key but has none is reported NOT SET, the value never read into output. The result writes to a daily health record as one status per service (PASS, FAIL, or UNKNOWN) with a checked-at timestamp; the Anthology board reads this record, it never recomputes health. STDLIB ONLY, zero third-party dependencies, calls NO model.
 

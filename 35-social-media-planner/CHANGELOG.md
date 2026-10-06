@@ -1,5 +1,10 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.9] - 2026-10-06 - Fix: proof script early-return crash
+
+### Fixed
+- `scripts/prove_content_conversation_loop.py` leg 1: the two early-return branches (compiler not importable, prompt compile not ok) referenced `qc19_receipt_fixture` and `cta_dm_first` before they were assigned and raised `UnboundLocalError`. Both are now defined before any early return, so every branch returns a defined failure result. Three tests added (both early-return branches fail first against the old script; plus the happy path).
+
 ## [3.6.8] - 2026-10-05 - Fix: video model and price contradictions; defer to Skill 67 and live pricing
 
 ### Owner order
