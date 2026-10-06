@@ -1,3 +1,11 @@
+## [2.0.7] - 2026-10-05 - fix: QC follow-ups to 2.0.6 (Skill 66 prereq, fixtures, comments)
+
+`PREREQS.json` gains an optional `skill-66` entry (the image policy owner) and the Skill 07 entry
+no longer claims to provide an image catalog. `workflow-visual-protocol.md` section 9 matches, and
+its over-long line is wrapped. `qc-workflow-visual.test.sh` fixtures use `mock` instead of
+`mock-gpt-image`. `09-install-conversation-workflows.sh` says hero generation is delegated to
+Skill 66. Skill 74 is referenced as "once installed" because it is not on main yet.
+
 ## [2.0.6] - 2026-10-05 - fix: remove stale Kie model ids from the workflow visual; image policy is Skill 66's
 
 `scripts/31-generate-workflow-visual.sh` recorded `${KIE_IMAGE_MODEL:-gpt-image}` as the hero
