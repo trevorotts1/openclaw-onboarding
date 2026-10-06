@@ -1639,24 +1639,18 @@ looks_like_real_key() {
         # actually a deliberate test string from a tutorial).
     fi
 
-    # ── Stage 2: obvious-placeholder substring rejection ────────────
+    # ── Stage 2: obvious-placeholder WHOLE-TOKEN rejection ──────────
+    # A placeholder word only counts as a whole token: at the start of the value or
+    # after a non-alphanumeric delimiter, and not followed by a letter or digit. It never matches inside a random
+    # alphanumeric run, so real keys that happen to contain demo, todo, sample and so on are not falsely rejected.
+    # Same token list and boundary rule as shared-utils/secret_helper.py
+    # _PLACEHOLDER_TOKENS (parity test: tests/unit/looks-like-real-key-parity.test.sh).
+    local _ph_re='(^|[^a-z0-9])(placeholder|insert_your|insert-your|your_client|your_token|replace_me|replace-me|paste-your|paste_your|paste-real|paste_real|enter_your|enter-your|token_here|replaceme|change_me|change-me|pastereal|your_key|your-key|your_api|your-api|changeme|test_key|test-key|fake_key|fake-key|set_your|set-your|none_yet|key_here|yourkey|example|fill_in|fill-in|not_set|not-set|missing|sample|fillin|no_key|dummy|nokey|unset|here|demo|todo|tbd)([^a-z0-9]|$)|x{5,}'
     case "$lo" in
-        *xxxxx*|*your_key*|*your-key*|*your_api*|*your-api*|*yourkey*|*your_token*) return 1 ;;
-        *replace_me*|*replace-me*|*replaceme*|*changeme*|*change_me*|*change-me*) return 1 ;;
-        *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*) return 1 ;;
-        *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
-        *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
-        *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
-        # 2026-10: installer-written env placeholders (YOUR_CLIENT_KIE_API_KEY_HERE).
-        # Kept in step with shared-utils/secret_helper.py _PLACEHOLDER_SUBSTRINGS.
-        *your_client*|*key_here*|*token_here*) return 1 ;;
-        # Parity with shared-utils/secret_helper.py: the python-only patterns, so both
-        # twins reject exactly the same placeholder set.
-        *test-key*|*fake-key*|*fill-in*|*paste-real*|*paste_real*|*pastereal*) return 1 ;;
-        *insert-your*|*enter-your*|*set-your*|*nokey*|*not_set*|*not-set*|*unset*|*missing*) return 1 ;;
-        # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
-        *EXAMPLE|*example) return 1 ;;
+        sk-test*|sk-xxx*|sk-example*|sk-replace*) return 1 ;;
+        *example) return 1 ;;
     esac
+    if [[ "$lo" =~ $_ph_re ]]; then return 1; fi
     case "$val" in
         \<*\>|\[*\]|\{\{*\}\}) return 1 ;;
     esac
@@ -1888,15 +1882,10 @@ PROVIDER_REGEX = {
     "GOHIGHLEVEL_LOCATION_ID":   r"^[A-Za-z0-9]{20,28}$",
 }
 
-PLACEHOLDER_SUBSTRINGS = (
-    'xxxxx', 'your_key', 'your-key', 'your_api', 'your-api', 'yourkey',
-    'your_token', 'replace_me', 'replace-me', 'replaceme', 'changeme',
-    'change_me', 'change-me', '_here', '-here', 'placeholder',
-    'sample', 'dummy', 'demo', 'test_key', 'fake_key', 'sk-test', 'sk-xxx',
-    'sk-example', 'sk-replace', 'todo', 'tbd', 'fill_in', 'fillin',
-    'paste-your', 'paste_your', 'insert_your', 'enter_your',
-    'set_your', 'no_key', 'none_yet',
-)
+# Whole-token placeholder rule, same as looks_like_real_key and secret_helper.py:
+# a placeholder word counts only at the start or after a non-alphanumeric delimiter,
+# and not before a letter. Never inside a random alphanumeric run.
+PLACEHOLDER_TOKEN_RE = re.compile(r'(?<![a-z0-9])(?:placeholder|insert_your|insert-your|your_client|your_token|replace_me|replace-me|paste-your|paste_your|paste-real|paste_real|enter_your|enter-your|token_here|replaceme|change_me|change-me|pastereal|your_key|your-key|your_api|your-api|changeme|test_key|test-key|fake_key|fake-key|set_your|set-your|none_yet|key_here|yourkey|example|fill_in|fill-in|not_set|not-set|missing|sample|fillin|no_key|dummy|nokey|unset|here|demo|todo|tbd)(?![a-z0-9])|x{5,}')
 
 def shannon_entropy(s):
     if not s: return 0.0
@@ -1923,8 +1912,8 @@ def looks_like_real_key(val, canonical=None):
 
     # Stage 2: placeholder substring rejection (case-insensitive)
     lo = val.lower()
-    for sub in PLACEHOLDER_SUBSTRINGS:
-        if sub in lo: return False
+    if re.match(r'sk-(?:test|xxx|example|replace)', lo) or PLACEHOLDER_TOKEN_RE.search(lo): return False
+    if lo.endswith('example'): return False
     if val.startswith('<') and val.endswith('>'): return False
     if val.startswith('[') and val.endswith(']'): return False
     if val.startswith('{{') and val.endswith('}}'): return False
