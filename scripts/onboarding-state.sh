@@ -40,18 +40,22 @@ fi
 [ -n "$_OBS_SELF" ] || _OBS_SELF="$0"
 _SHIM_SCRIPT_DIR="$(cd "$(dirname "$_OBS_SELF")" 2>/dev/null && pwd)" || _SHIM_SCRIPT_DIR="."
 
-# WHERE IS THE CANONICAL LIB. Box-side layouts, in the order they are likeliest:
-#   ../lib-...            repo / ~/.openclaw/onboarding checkout (scripts/ child)
+# WHERE IS THE CANONICAL LIB. Box-side layouts, in order of authority:
 #   ./lib-...             delivered BESIDE the scripts tree by update-skills.sh
+#                         (~/.openclaw/scripts/lib-onboarding-state.sh) -- the
+#                         copy every roll refreshes, so it MUST win
+#   ../lib-...            repo / ~/.openclaw/onboarding checkout (scripts/ child;
+#                         the repo keeps the lib at its root, not in scripts/)
 #   ~/.openclaw/onboarding, ~/.openclaw/skills, /data/... (VPS)
-# The old code named exactly ONE candidate, ../lib-onboarding-state.sh, which
-# from the delivered ~/.openclaw/scripts resolves to ~/.openclaw/lib-onboarding-state.sh --
-# a path nothing has ever delivered. So every box warned on every source and
-# oc_* was undefined box-side.
+# ORDER MATTERS: from the delivered ~/.openclaw/scripts, "../lib-..." is
+# ~/.openclaw/lib-onboarding-state.sh -- a stale copy left by old installs (it
+# defaults OC_CONFIG to /data/.openclaw, so obs_default_agent returns empty, no
+# --agent is passed and every skill is stamped qc-failed "skills-info:not-visible"
+# on multi-agent boxes). The beside-copy is always current, so it is tried first.
 _OBS_CANONICAL=""
 for _obs_lib_cand in \
-    "${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh" \
     "${_SHIM_SCRIPT_DIR}/lib-onboarding-state.sh" \
+    "${_SHIM_SCRIPT_DIR}/../lib-onboarding-state.sh" \
     "$HOME/.openclaw/onboarding/lib-onboarding-state.sh" \
     "$HOME/.openclaw/skills/lib-onboarding-state.sh" \
     "/data/.openclaw/onboarding/lib-onboarding-state.sh"; do

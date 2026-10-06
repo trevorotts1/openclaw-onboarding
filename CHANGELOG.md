@@ -1,3 +1,10 @@
+## [v26.0.1]  -  2026-10-06  -  Box fixes: onboarding-state shim sources the beside-copy lib first, updater refreshes stale ~/.openclaw/lib-onboarding-state.sh, oc_skill_registered passes --agent
+
+#### What changed
+- **Fix: every skill stamped qc-failed "skills-info:not-visible" on multi-agent boxes.** `scripts/onboarding-state.sh` now sources the library delivered BESIDE it (`~/.openclaw/scripts/lib-onboarding-state.sh`) before `../lib-onboarding-state.sh`. On boxes the parent path was a stale June copy that defaulted OC_CONFIG to /data/.openclaw, so no `--agent` was passed. Repo checkout layout still works. Locked by `tests/unit/onboarding-state-lib-order.test.sh` (fails on the old order).
+- **Hardening:** `update-skills.sh` refreshes (never creates) a stale `~/.openclaw/lib-onboarding-state.sh` so it can never differ from the delivered copy.
+- **Fix:** `oc_skill_registered` (run by `oc_gate_skill`) passes `--agent` when the default agent resolves.
+
 ## [v26.0.0]  -  2026-10-06  -  KIE program: Skill 74 live adapter and the whole KIE consolidation
 
 Major release: one KIE path for the whole fleet. Everything below is already on main (merge-train batches #1512 to #1539); this release gives it a number.

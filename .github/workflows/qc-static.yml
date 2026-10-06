@@ -1385,6 +1385,12 @@ jobs:
           bash tests/unit/onboarding-state-obs-api.test.sh
           echo "✓ onboarding-state-obs-api.test.sh (shim defines obs_seed_state/obs_verify_skill/obs_gate_summary; updater sources it robustly + gate reachable) all pass"
 
+      - name: "onboarding-state lib lookup order + --agent lock"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/onboarding-state-lib-order.test.sh
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |
