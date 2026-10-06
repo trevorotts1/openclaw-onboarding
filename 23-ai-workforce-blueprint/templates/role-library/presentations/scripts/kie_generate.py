@@ -32,19 +32,32 @@ ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory 
 LOCKSTEP NOTE: this helper ships in TWO repo locations —
     23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py
     23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py
-Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
+Keep the logic they SHARE identical when editing either (v17.0.42 re-unified a drift where
 each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
 per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
-FIX 68/67 STATUS (W21b): the role-library copy carries the platform-aware
-secrets order (presentation_job.oc_paths) AND the FIX 67 secret-name canon
-(shared-utils/secret_helper aliases + placeholder rejection). The
-presentation-render twin has NOT yet received that port — port the same four
-functions (_secrets_candidates oc_paths seam, _import_secret_helper,
-_kie_alias_names, _is_placeholder_value, and the _load_api_key canon loop)
-before claiming the two are logic-identical again.
+Both copies are hash-locked by scripts/shared-script-authority.json (checked by
+scripts/check-shared-script-drift.py); after any edit re-record with --record.
 
-RATE CAP: 20 requests / 10 seconds per KIE.ai docs. This script submits in waves of 20
-          with a 10-second sleep between waves.
+FIX 68/67 STATUS (declared 2026-10-05): both copies carry the platform-aware secrets
+order (presentation_job.oc_paths) AND the FIX 67 secret-name canon (shared-utils/
+secret_helper aliases + placeholder rejection). _load_api_key, _import_secret_helper,
+_kie_alias_names and _is_placeholder_value are byte-for-byte identical in the two copies.
+
+INTENTIONAL DIVERGENCE FROM THE PRESENTATION-RENDER TWIN (same text is in the twin's header):
+  * This copy has the front-door nonce gate (_require_entry_nonce). The twin does NOT, on
+    purpose: it is the copy 06-ghl-install-pages/tools/ghl_media.py runs for non-deck page
+    images, with no Presentations run directory and no nonce, and the nonce check imports
+    build_deck.py, which does not sit beside the twin. Porting the gate would make every
+    Skill 06 call exit 2.
+  * This copy submits and polls through kie_tasks.py (no initial wait, round-robin every
+    60 seconds, 6,000 second deadline). The twin keeps its own wave submit, a 5 minute wait
+    after the last submit, then serial 60 second polls for up to 100 passes, because no
+    kie_tasks.py sits beside it.
+Limits and rates shared by every KIE skill: 07-kie-setup/references/kie-common-rules.md.
+
+RATE CAP: at most 20 createTask requests per rolling 10 seconds. This script submits
+          through kie_tasks.py, which spaces submits to that ceiling (the twin submits in
+          waves of 20 with a 10-second sleep between waves).
 
 ENDPOINTS (VERIFIED 2026-06-16, live 200):
     Submit:  POST https://api.kie.ai/api/v1/jobs/createTask
@@ -648,8 +661,9 @@ def main():
     # duplicate createTask calls, and round-robin polls all due tasks so a
     # ready result downloads + QCs immediately instead of waiting behind a
     # slow sibling. Rate sharing: the lifecycle always holds the KIE
-    # 20-submits/10s wave ceiling; shared governor leases are opt-in via
-    # KIE_TASKS_USE_GOVERNOR=1 (same acquire/report seam build_deck.py uses).
+    # 20-submits/10s wave ceiling; governor leases (same acquire/report seam
+    # build_deck.py uses) are taken whenever the governor module is importable,
+    # because the call below passes governor="auto".
     import kie_tasks as _lifecycle
 
     print(f"\n=== KIE.ai generate — {len(slides)} slides ===")

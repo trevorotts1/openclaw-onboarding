@@ -1,3 +1,24 @@
+## [v25.3.20]  -  2026-10-06  -  SOP-IMG and KIE docs now match the code: poll cadence, prompt handling, one model authority, rate and cap numbers, Skill 06 copy of kie_generate.py
+
+The Presentations image SOPs, the provider settings and the Skill 06 copy of `kie_generate.py` said different things about the same KIE.ai behavior. This release makes the documents describe what the code does, so an agent reading any of them gets the same answer. No code behavior changes, except that the Skill 06 copy of `kie_generate.py` now accepts the same KIE key names as the Presentations copy and refuses placeholder keys.
+
+#### What changed
+- **Polling.** SOP-IMG-01 said "wait 5 minutes, then poll every 60 seconds, up to 100 passes". That is only the old Skill 06 copy. It now states what each script does: `build_deck.py` polls every pending task every 10 seconds with no initial wait (15 minute cap; the single-task path backs off 10, 20, then 40 seconds); `kie_generate.py` polls every 60 seconds round-robin with no initial wait (6,000 second cap).
+- **Prompts.** SOP-IMG-01 said `build_deck.py` composes prompts mechanically. It renders the authored per-slide prompt verbatim and fails loudly if there is none. Same fix in the header of the Skill 06 copy.
+- **One model authority.** SOP-IMG-01 and `model_catalog.json` both claimed to be "the only place" a model is named, and SOP-IMG-01 also called MODEL-SPECS the single source of truth. `presentation_job/model_catalog.json` is the one authority; the SOPs point to it. SOP-IMG-02 now points to it instead of a "model manifest" that no longer exists. No model id changed.
+- **Rate numbers.** `providers.yaml` said both "20 per 15 s" and "20 per 10 s". The KIE limit is 20 createTask calls per 10 seconds. The `kie` row paces below it (13 per rolling 10 seconds) and now says so. `kie_tasks.py` comments say the same.
+- **Prompt cap.** `graphics/connection-manifest.json` gave one API cap (25,000) for every model. It now names both: 25,000 for the legacy gpt-image-2 entries (owner-confirmed) and 20,000 for the GPT Image 2.5 family.
+- **Task id file.** SOP-IMG-01 named `kie_task_ids.json`; the scripts write `pending_tasks.json` and `.kie-tasks/kie_tasks.json`.
+- **Logo fallback.** SOP-IMG-04 said "composite the real logo natively in post"; it now says to use the PIL image composite of SOP-IMG-05, never a native text box. It also says GPT-Image-2.5 (not GPT-Image-2) for the 16 reference limit and that Nano Banana 2 is retired for Presentations.
+- **Skill 06 copy of `kie_generate.py`.** It now resolves the KIE key through the shared secret-name canon (same four functions as the Presentations copy). The missing nonce gate and the older wave-and-wait lifecycle are declared intentional in both file headers and in `scripts/shared-script-authority.json`.
+- **Bookkeeping.** `duplicate-sop-authority.json` and `shared-script-authority.json` re-recorded; `universal-sops/_content-manifest.json` and the role-library `_index.json` hashes regenerated.
+
+#### Version
+- All 10 version markers move from v25.3.19 to v25.3.20 (23-ai-workforce-blueprint `skill-version.txt` 25.3.19 to 25.3.20).
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself. `build_deck.py`, `run_signature_deck.py`, the renderer pin and the canonical entry script are untouched.
+
 ## [v25.3.19]  -  2026-10-05  -  Paired-release prep (R03): Command Center pin moves to v7.6.99; release cohort names the frozen pair
 
 Prepared release for the Company Headquarters paired release. Content is release plumbing only: the Command Center pin, the dependency cohort and the version markers move together so the fleet roll deploys the Command Center this onboarding release was tested against.
