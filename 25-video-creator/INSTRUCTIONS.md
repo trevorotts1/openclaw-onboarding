@@ -93,7 +93,7 @@ python3 scripts/image_to_video.py photo.jpg \
 Positional argument: `image` (path to image file).
 Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`.
 
-With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask, and the result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
+With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask in the model's own input field (`first_frame_url`, a single string, for `wan/3-0-video`, `wan/3-0-video-prime`, and `minimax-h3/image-to-video`; any other model stops with an error naming it unless the caller passes `image_field`), and the result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
 
 ### Add Music
 

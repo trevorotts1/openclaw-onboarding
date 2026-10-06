@@ -26,6 +26,15 @@ KIE_UPLOAD_PATH = 'video-creator/inputs'  # no leading/trailing slash (KIE requi
 KIE_AUTH_CODES = (401, 403)
 KIE_POLL_DEADLINE = 900  # seconds; video jobs are slow
 KIE_VIDEO_SKILL = '67-kie-video'
+# Image-to-video input key per model. Only models whose key is established are listed:
+# wan/3-0-video(-prime): first_frame_url, single string (docs.kie.ai/market/wan/3-0-video and
+# /wan/3-0-video-prime input schema; Skill 67 validate_payload.py agrees). minimax-h3: Skill 67
+# models.json control_fields. Anything else fails loudly instead of sending a guessed field.
+KIE_I2V_IMAGE_FIELD = {
+    'wan/3-0-video': 'first_frame_url',
+    'wan/3-0-video-prime': 'first_frame_url',
+    'minimax-h3/image-to-video': 'first_frame_url',
+}
 
 
 class KieAPIError(RuntimeError):
@@ -206,8 +215,14 @@ class AIProvider:
         self._require_kie_key()
         image_path = Path(image_path)
         model = kwargs.get('model') or select_kie_video_model('image to video', duration)
+        field = kwargs.get('image_field') or KIE_I2V_IMAGE_FIELD.get(model)
+        if not field:
+            raise RuntimeError(
+                f"Image field for KIE model '{model}' is not established (Skill 67 and the KIE docs "
+                "do not pin it here), so no guess is sent. Pass image_field=<input key> "
+                "(see https://docs.kie.ai/market/ for the model) or choose a supported model: "
+                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
         image_url = self._kie_upload(image_path)
-        field = kwargs.get('image_field') or 'image_urls'  # Skill 67 registry convention
         payload = {'prompt': prompt or '', 'duration': duration,
                    field: [image_url] if field.endswith('s') else image_url}
         self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs)

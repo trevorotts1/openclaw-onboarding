@@ -1,5 +1,15 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model
+
+### Fixed
+- Image-to-video sent `input.image_urls`, which is not an input of the default model `wan/3-0-video` (its schema at
+  docs.kie.ai/market/wan/3-0-video takes `first_frame_url` as a single string, plus `last_frame_url` and
+  `reference_image_urls[]`). The image field is now chosen per model from what Skill 67 and the KIE docs establish:
+  `wan/3-0-video`, `wan/3-0-video-prime`, `minimax-h3/image-to-video` -> `first_frame_url`. Any other model fails before
+  any HTTP call with an error naming the model, instead of sending a guessed field. `image_field` still overrides.
+- Tests updated and extended (established models, unknown model, override wins).
+
 ## [7.0.2] - 2026-10-05 — fix: replace dead KIE video endpoint with live createTask flow
 
 ### Fixed (root cause — the default `kieai` video path could never work)
