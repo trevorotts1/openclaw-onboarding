@@ -127,7 +127,7 @@ TOOLS_BODY="## KIE Image API (Skill 66)
 - POST https://api.kie.ai/api/v1/jobs/createTask (asynchronous; response 200 = task created with taskId)
 - GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state enum: waiting/queuing/generating/success/fail; resultJson.resultUrls on success)
 - Callbacks: callBackUrl field; HMAC-SHA256 scheme base64(HMAC-SHA256(taskId + \".\" + timestampSeconds, webhookHmacKey)); headers X-Webhook-Timestamp / X-Webhook-Signature; ack {\"code\":200,\"msg\":\"success\"}
-- Rate: 20 new generation requests/10s; 100+ concurrent. Result URLs expire ~24h; media deleted after 14 days.
+- Rate: 20 new generation requests/10s; 100+ concurrent. Retention: KIE documents 14 days for generated media but result URLs typically expire after 24 hours; download/persist immediately.
 - Registry: $REF_DEST/models.json + $REF_DEST/references/ (per-family limits, ratios, resolutions, reference caps)
 - Validators: scripts/validate_prompt.py, scripts/validate_payload.py (run before dispatch; never after)"
 

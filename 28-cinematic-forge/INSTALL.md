@@ -79,9 +79,7 @@ These models must be available on the KIE.ai account:
 |-------|---------|-------------|
 | VEO 3.1 Fast (`veo3_fast`) | Video generation | $0.40/segment |
 | Nano Banana Pro | Image generation | ~$0.10/image |
-| ElevenLabs Multilingual v2 (`eleven_multilingual_v2`) | Voice/dialogue | ~$0.10-0.30/clip |
-| ElevenLabs Sound Effects (`eleven_sound_effects`) | SFX | ~$0.10/clip |
-| Suno v4 (`suno_v4`) | Music generation | ~$0.20-0.50/track |
+| Voice, sound effects and music | Delegated to Skill 68 (`68-kie-audio`), which owns the model ids, routes and validation. It must be installed. | ~$0.10-0.50/clip |
 
 ## Installation Steps
 
