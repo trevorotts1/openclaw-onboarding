@@ -26,6 +26,20 @@ the client's clone — no OpenMontage files are modified.
 
 ---
 
+## One KIE path: Skill 74 transport (v15.1.0)
+
+Both adapters are thin wrappers over Skill 74 (`74-kie-live-adapter`); they contain no HTTP
+client of their own. Because the clone and the Docker image receive only these two files, the
+Skill 74 client travels inside `kie_image.py` as a generated, hash-locked block
+(`# >>> BEGIN EMBEDDED SKILL-74 CLIENT ... # <<< END`), and `kie_video.py` reads it from its
+sibling `tools/graphics/kie_image.py` (same relative layout in the skill and in the clone).
+When Skill 74 is installed beside the skills (`~/.openclaw/skills/74-kie-live-adapter`), the
+adapters use it instead. No installer or Dockerfile change is needed: the two `cp` lines below
+carry everything. After any change to Skill 74's `kie_live_adapter.py`, regenerate the block
+with `python3 47-movie-producer/scripts/embed_kie_client.py`.
+
+---
+
 ## Install step (verbatim; paste into Skill 47 INSTALL.md Step N)
 
 > **When to run:** after `git clone https://github.com/calesthio/OpenMontage`

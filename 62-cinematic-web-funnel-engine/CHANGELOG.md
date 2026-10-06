@@ -1,5 +1,32 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.0 - 2026-10-06
+
+Consolidation: Skill 62 no longer has its own Kie HTTP client. `providers/kie.py` calls Skill 74
+(`74-kie-live-adapter`, the one fleet KIE transport) in `active` mode per call and keeps only this
+skill's policy.
+
+- Removed from `providers/kie.py`: the createTask/recordInfo/upload URLs and polling loop, the
+  `resultJson` decoder, the live `/price` GET, and the hand-rolled upload and download. Skill 74 now
+  does validate (live schema), prompt-budget, upload, createTask, wait, save and price. Prompt length
+  comes from `prompt-budget` (no band is hard-coded): over the model maximum is refused before any
+  paid call; under the 80 percent floor is reported (the floor is enforced by the policy owner Skill 66).
+- Kept in `providers/kie.py`: model registry and tier policy, the Veo 3.1 wire shape, the
+  quality-tier refusal (`kie-veo3-quality` stays `planned`), per-mode/per-resolution price-table
+  parsing (the row is chosen here; the live text comes from Skill 74 `price`, catalog source only),
+  the 46-kie-callback-relay HMAC wiring and the injectable `KieTransport` test seam.
+- Fallback: when Skill 74 is not installed, `providers/_kie_legacy.py` (the old plumbing, quarantined)
+  runs and the provider logs `path=legacy`; every other run logs `path=skill74 mode=active`.
+- `generate_image` now sends the documented sunburst image-to-image field `input_urls` (was Nano Banana
+  `image_input`) and no longer sends the undeclared `output_format`.
+- Tests: `test_providers_kie.py` runs the real Skill 74 client against a routed fake transport
+  (catalog, schema, credit, createTask, recordInfo, upload); new tests cover the path log, schema
+  refusal, prompt-budget refusal and report, upload, and the legacy fallback. The offline fixture
+  transports in `generate_images.py` and `generate_videos.py` answer Skill 74's catalog/schema reads
+  via `providers/_fixture_support.py` (test support only).
+- Not ported: the speculative `data.info.resultUrls`, `videoUrl` and `images[].url` poll fallbacks;
+  the documented recordInfo route returns `resultJson.resultUrls`, which Skill 74 reads.
+
 ## v2.0.3 — 2026-10-05
 
 Fix: Veo on `POST /api/v1/jobs/createTask` aligned with the live KIE catalog and schema.
