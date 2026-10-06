@@ -163,7 +163,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
 | OpenMontage (Skill 47) | Agentic video production system — pipeline orchestration, tool registry, stage-director skills | Cloned to client box at `~/.openclaw/skills/47-movie-producer/` via `install.sh` | `github.com/calesthio/OpenMontage` AGPLv3; 13 pipeline defs, 82+ tools, `make setup` installs all deps |
-| Kie.AI (via `kie_image.py` + `kie_video.py` adapters) | Generative image and video asset production | `KIE_API_KEY` set in client `.env`; adapters auto-discovered by OpenMontage tool registry | Transport is Skill 74 (`kie_live_adapter.py`: `validate`, `price`, `preflight` at price x 1.30, `submit --mode active`, `wait`, `save`); the Skill 47 adapters are thin callers of it, so this role never chooses an endpoint family, a polling route, or a model id by hand. Default image model comes from `latest-family` (rule 13); video model choice follows Skill 67 policy. Image prompt length is governed only by rule 12 (`prompt-budget`). Lifecycle rules: `07-kie-setup/references/kie-common-rules.md` |
+| Kie.AI (via `kie_image.py` + `kie_video.py` adapters) | Generative image and video asset production | `KIE_API_KEY` set in client `.env`; adapters auto-discovered by OpenMontage tool registry | Transport is Skill 74 (`kie_live_adapter.py`: `validate`, `prompt-budget --check`, `price`, `preflight` at price x 1.30, `submit --mode active`, `wait`, `save`); the Skill 47 adapters are thin callers of it, so this role never chooses an endpoint family, a polling route, or a model id by hand. Default image model comes from `latest-family` (rule 13); video model choice follows Skill 67 policy. Prompt length (image, video, and music descriptive prompts) is governed only by rule 12: run `prompt-budget --check` before `price`. Lifecycle rules: `07-kie-setup/references/kie-common-rules.md` |
 | Free Real-Footage Stock Corpus | Zero-cost documentary footage — archive.org, NASA, Wikimedia, Library of Congress, National Archives, NOAA, European Space Agency, JAXA, Pond5 public domain | Built into OpenMontage `tools/video/stock_sources/` | Powers `pipeline_defs/documentary-montage.yaml` at ~$1 budget; no API key required |
 | FFmpeg | Video composition, muxing, stream validation, export | System binary (fail-loud preflight in Skill 47 `install.sh`) | Every compose/stitch path; `ffprobe` for output validation |
 | Remotion (`remotion-composer/`) | Code-driven video composition for template-based sequences | npm; installed by `make setup` → `cd remotion-composer && npm install` | `npx remotion` commands; zero-key demo path via `make demo` |
@@ -338,14 +338,14 @@ Before any rendered video is marked complete and delivered:
 
 **Context:** Head of Video Production requests a 60-second branded promotional video for a {{COMPANY_INDUSTRY}} campaign, requiring original visual imagery that does not exist in the free stock corpus.
 **Pipeline used:** A Kie-powered pipeline; budget `total_usd: 8.00`, `mode: cap`.
-**Pre-run cost announcement:** "This run will call the `latest-family` image model for 6 branded still images and a Skill 67 video model for 2 clips at 8 seconds each. Skill 74 `price` returned the live estimate for each; total estimated (illustrative figures only): $6.80. `preflight` confirmed the live balance covers $6.80 x 1.30. Proceeding with Head of Video Production approval."
+**Pre-run cost announcement:** "This run will call the `latest-family` image model for 6 branded still images and a Skill 67 video model for 2 clips at 8 seconds each. Skill 74 `price` returned the live estimate for each; total estimated: [sum of the Skill 74 `price` results]. `preflight` confirmed the live balance covers [that sum] x 1.30. Proceeding with Head of Video Production approval."
 **Execution:**
 - `KIE_API_KEY` set; all native provider keys absent. `kie_image.py` and `kie_video.py` show `available`; all others show `unavailable`.
-- Image generation: 6 Skill 74 submissions (`validate`, then `submit --mode active`, then `wait` and `save`) with the `latest-family` image model, brand logo as image input, `aspect_ratio: 16:9`, `resolution: 2K`. All 6 `kie_task_id` values recorded. Results saved to `assets/images/`.
+- Image generation: 6 Skill 74 submissions (`validate`, then `prompt-budget --check`, then `price` and `preflight`, then `submit --mode active`, then `wait` and `save`) with the `latest-family` image model, brand logo as image input, `aspect_ratio: 16:9`, `resolution: 2K`. All 6 `kie_task_id` values recorded. Results saved to `assets/images/`.
 - Video generation: 2 Skill 74 submissions with the Skill 67 video model, `duration: "8"` (a string, not an integer; `validate` catches the 422 case before spend), audio on. Both `kie_task_id` values recorded. Results saved to `assets/video/`.
 - FFmpeg composed the final 60-second timeline from generated assets + Piper narration.
 - ffprobe receipt: `duration: 61.3`, `codec_name: h264`, `width: 1920`, `height: 1080`, streams confirmed.
-- Actual cost: $7.20. Within the $8.00 cap.
+- Actual cost: [sum of receipt costs]. Within the approved cap.
 - Kie.AI task receipts: 8 `kie_task_id` + saved-file-path pairs logged to `receipts/kie-task-log.json`.
 
 **Why this is good:**

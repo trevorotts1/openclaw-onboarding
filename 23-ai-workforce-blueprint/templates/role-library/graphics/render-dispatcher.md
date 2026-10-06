@@ -460,16 +460,16 @@ Jobs estimated above the per-deliverable approval threshold are held at the pre-
 ## 13. Good Output Examples
 
 ### Example A — 40-Slide Deck Fan-Out with Zero Orphans
-The Deck Systems Specialist hands over a producer-approved Slide Manifest for a 40-slide client deck in style SI-004. The job ticket wrapper's est-cost column shows $18.40 (40 slides × $0.46 per 2K Ideogram V3 generation), which is below the per-deliverable approval threshold.
+The Deck Systems Specialist hands over a producer-approved Slide Manifest for a 40-slide client deck in style SI-004. The job ticket wrapper shows `est_cost=[total from Skill 74 price]` (40 slides at the per-slide price returned by Skill 74 `price`), which is below the per-deliverable approval threshold.
 
 **Good output:** The Dispatcher runs the pre-dispatch checks on the entire manifest in sequence, confirming each slide prompt passes all checks before the first release. It releases slides to the Generation Operator in batches of 8 (the configured concurrency cap for Ideogram V3); the Operator submits and writes one receipt per slide at submission. The Dispatcher exits the session. The cron poller runs every 5 minutes, downloads completed results, verifies each file, and updates receipts. By end of day, all 40 receipts are in `state=complete`. The Dispatcher delivers a summary to the CDO: 40 slides, 40 receipts, total actual cost $18.12, all asset paths confirmed on disk. No orphans. No session held open. No double-billing.
 
 **Why this is good:** Detached submission prevents token burn. Per-slide receipts make the job resumable if a crash had occurred at slide 22. The concurrency cap prevents 429 storms. Postflight verification means the CDO receives 40 confirmed local files, not 40 API status responses that "should" be downloadable.
 
 ### Example B — Budget Gate Hold Handled Cleanly
-A Workflow B request arrives from the CDO for a 4K Wan v2.7 full-resolution contact sheet (n=4 variants). The live `pricingDesc` shows $2.20 per 4K Wan generation; estimated cost is $8.80, above the configured $5.00 per-job threshold.
+A Workflow B request arrives from the CDO for a 4K Wan v2.7 full-resolution contact sheet (n=4 variants). Skill 74 `price` returns [per-generation price] for a 4K Wan generation; estimated cost is [4 x per-generation price], above the configured [per-job threshold].
 
-**Good output:** The Dispatcher runs the pre-dispatch checks, reaches the budget gate step, computes the estimate, confirms it's over threshold, and holds the job. It immediately sends the CDO a hold notification: "Job hold — Workflow B job ID jb-4452, style SI-007, est. cost $8.80. Threshold: $5.00. Degrade-to-draft option: 1K SHORT tier, est. $1.10. Awaiting approval." CDO responds within the day with approval for the full 4K run. The Dispatcher files the approval receipt in the job directory and releases the job to the Operator for submission. Total time from request to approved submission: 4 hours, none of which involved any wasted API call.
+**Good output:** The Dispatcher runs the pre-dispatch checks, reaches the budget gate step, computes the estimate, confirms it's over threshold, and holds the job. It immediately sends the CDO a hold notification: "Job hold -- Workflow B job ID jb-4452, style SI-007, est. cost [estimate]. Threshold: [threshold]. Degrade-to-draft option: 1K SHORT tier, est. [draft estimate]. Awaiting approval." CDO responds within the day with approval for the full 4K run. The Dispatcher files the approval receipt in the job directory and releases the job to the Operator for submission. Total time from request to approved submission: 4 hours, none of which involved any wasted API call.
 
 **Why this is good:** The budget gate works at the hold step before any money is spent. The CDO got full context (job, cost, degrade option) in one notification. The approval trail is on disk.
 
@@ -499,9 +499,9 @@ At slide 22 of a 40-slide deck, the primary Ideogram V3 endpoint returns a 5xx c
 **How to fix:** SOP 9.3 §Endpoint down step 3 explicitly prohibits mid-deck model switches without CDO authorization. The correct action is to pause the manifest at slide 21 (all done receipts preserved), notify CDO, and resume only after confirmation.
 
 ### Anti-Pattern C — Budget Estimate from Memory
-The Dispatcher receives a large 4K deck request and estimates the cost mentally at "about $12" based on a remembered price, without looking at the live `pricingDesc`.
+The Dispatcher receives a large 4K deck request and estimates the cost mentally at "about [guess]" based on a remembered price, without looking at the live `pricingDesc`.
 
-**Why this fails:** Kie.ai pricing changes. The remembered price may be stale by weeks or months. The actual cost comes in at $22, breaching the per-deliverable cap mid-deck. The CDO is not notified until money is already spent, and there is no approval on file.
+**Why this fails:** Kie.ai pricing changes. The remembered price may be stale by weeks or months. The actual cost comes in well above the guess, breaching the per-deliverable cap mid-deck. The CDO is not notified until money is already spent, and there is no approval on file.
 
 **How to fix:** SOP 9.2 §2 requires computing the cost estimate from the live `pricingDesc` (Skill 74) every time, before every release. PRICING.md is the billed-actuals ledger, reconciled monthly against the live price to catch estimate drift.
 

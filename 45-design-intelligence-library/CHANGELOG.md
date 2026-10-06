@@ -1,5 +1,9 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [2.2.1] - 2026-10-06 - QC follow-up: no restated band figures, consent self-test wording
+
+- SOP-DIU-101, SOP-DIU-615, healer-graphics (SOP 9.13 check 4) and the graphics connection-manifest prose point to rule 12 of `07-kie-setup/references/kie-common-rules.md` with no figures; the validator-read manifest fields are unchanged. `diu_validator.py` self-test wording says CONSENT file.
+
 ## [2.2.0] - 2026-10-06 - consent gate reads CONSENT.md; Kie transport via Skill 74
 
 ### Changed

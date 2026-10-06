@@ -74,7 +74,7 @@ After writing each tier, **count the actual character length** (do not estimate)
 - MEDIUM: must be <= 2,800 characters. This is the default production tier.
 - LONG: must be <= 19,000 characters (GPT-Image-2.5 and Nano Banana 2 only; document model constraint in the card).
 
-Seedream 4.5 hard cap is 3,000 characters per prompt; never exceed it. A tier near that cap is not a defect: the card tiers are authoring ceilings, and the prompt actually submitted is sized to the model's budget at generation time (rule 12 of `07-kie-setup/references/kie-common-rules.md`, `kie_live_adapter.py prompt-budget`: target 95 to 100 percent of the model maximum, floor 80 percent).
+Seedream 4.5 hard cap is 3,000 characters per prompt; never exceed it. A tier near that cap is not a defect: the card tiers are authoring ceilings, and the prompt actually submitted is sized to the model's budget at generation time (rule 12 of `07-kie-setup/references/kie-common-rules.md`; read the target from `kie_live_adapter.py prompt-budget`).
 
 **Step 6 — Set Status and Emit Receipt**
 Set card status field = `"draft"`.

@@ -106,7 +106,7 @@
 
 **Steps:**
 
-1. Retrieve free clips (vertically cropped to 9:16) and/or generate approved Kie assets through Skill 74 (`validate`, `submit --mode active`, `wait`, `save`). For each Kie call, record `kie_task_id` and the saved file path per RZ-4. Kie video uses string `duration` (`"8"`) and an explicit `aspect_ratio` to avoid HTTP 422; `validate` checks both.
+1. Retrieve free clips (vertically cropped to 9:16) and/or generate approved Kie assets through Skill 74 (`validate`, `prompt-budget --check`, `price`, `preflight`, `submit --mode active`, `wait`, `save`). For each Kie call, record `kie_task_id` and the saved file path per RZ-4. Kie video uses string `duration` (`"8"`) and an explicit `aspect_ratio` to avoid HTTP 422; `validate` checks both.
 2. Assemble the hook → payload → CTA structure. Burn the hook text only if the brief specifies on-screen text; otherwise leave captioning to the handoff (Skill 26).
 3. Render with FFmpeg at 9:16, the client's resolution and frame rate. Do not exceed the locked duration.
 4. ffprobe-validate: `format.duration` > 0 and ≤ the locked max; `format_name` mp4/mov; a `codec_type: video` stream; width:height in 9:16 ratio. On fail, retry once; if the second render also fails, halt and escalate with the ffprobe JSON.

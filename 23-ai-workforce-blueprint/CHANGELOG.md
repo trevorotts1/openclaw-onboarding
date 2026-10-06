@@ -37,6 +37,11 @@ Every Presentations role, SOP and tool document now describes the deck image cha
 #### Not changed
 No code, price table, band threshold or renderer pin changed (`build_deck.py`, `run_signature_deck.py` and `CANONICAL-RENDERER-PIN.sha256` untouched). No client box, credential, model or provider setting is touched. Open owner items found while reading are listed in the pull request.
 
+## [Unreleased] - 2026-10-06 - fix(graphics, audio, video): QC follow-up on the Skill 74 integration
+
+Band figures removed from prose (rule 12 pointer only); Video and Audio Skill 74 sequences now run
+`prompt-budget --check` after `validate` (verbatim TTS script text exempt); example dollar figures replaced with
+placeholders; Likeness Rights Officer uses modes A-F and the 14-day expiry flag-and-continue rule from SOP-DIU-608.
 
 ## [Unreleased] - 2026-10-06 - fix(graphics, audio, video): every Kie path runs on Skill 74 with one ownership model
 

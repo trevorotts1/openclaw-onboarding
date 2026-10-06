@@ -74,7 +74,7 @@ For every card that has a declared character-count annotation line (format per S
 2. Compare the actual count to the declared count. A discrepancy of more than 5 characters is a FAIL.
 3. Regardless of declaration, for every card's Seedream prompt tier:
    - Actual count > 3,000 characters: FAIL — `CHAR-FAIL: card {card-id} Seedream tier is {count} chars — EXCEEDS 3,000-char ceiling. This prompt will fail silently on Seedream with no API error.`
-   - A count just under the ceiling is not a warning: rule 12 of `07-kie-setup/references/kie-common-rules.md` makes 95 to 100 percent of the model maximum the target. A tier below the rule 12 floor for the card's endpoint is a WARN for the Style Analyst (`kie_live_adapter.py prompt-budget --model <id>` gives the floor), never a FAIL.
+   - A count just under the ceiling is not a warning: rule 12 of `07-kie-setup/references/kie-common-rules.md` defines the target. A tier below the rule 12 floor for the card's endpoint is a WARN for the Style Analyst (`kie_live_adapter.py prompt-budget --model <id>` gives the floor), never a FAIL.
 
 The 3,000-char ceiling is the Seedream 4.5 (and 5.0 Lite) silent-fail boundary documented in MODEL-SPECS §1; Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS §1 states a per-model value for the card's endpoint. This check must never be omitted even if the card has no declared annotation line.
 

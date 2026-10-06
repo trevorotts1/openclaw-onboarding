@@ -861,9 +861,9 @@ def cmd_self_test(_args) -> int:
         os.unlink(tmpf)
         cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
         if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+            failures.append(f"consent-check: missing CONSENT file should exit 4, got {cc_rc}")
         else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+            print("SELF-TEST OK: consent-check fails closed on missing CONSENT file (exit 4).")
     finally:
         pass
 
@@ -968,9 +968,9 @@ def cmd_self_test(_args) -> int:
         os.unlink(tmpf)
         cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
         if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+            failures.append(f"consent-check: missing CONSENT file should exit 4, got {cc_rc}")
         else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+            print("SELF-TEST OK: consent-check fails closed on missing CONSENT file (exit 4).")
     finally:
         pass
 
@@ -1076,9 +1076,9 @@ def cmd_self_test(_args) -> int:
         _os.unlink(tmpf)
         cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
         if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+            failures.append(f"consent-check: missing CONSENT file should exit 4, got {cc_rc}")
         else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+            print("SELF-TEST OK: consent-check fails closed on missing CONSENT file (exit 4).")
     finally:
         pass
 
