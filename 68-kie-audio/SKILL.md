@@ -6,9 +6,9 @@ description: >
   generation (DEDICATED /api/v1/generate family — never createTask), supported
   audio processing operations, and speech-to-text CAPABILITY DETECTION
   (ADVERTISED_NOT_YET_VERIFIED — no endpoint, dispatch_enabled false).
+version: v2.0.3
 metadata:
-
-  version: "1.0.0"
+  version: "2.0.3"
   priority: HIGH
 ---
 
@@ -115,7 +115,7 @@ charged.
   with initial delay 2-3s then stepped backoff; respect 429; never hammer.
 - Suno: get music details every 30 seconds (sounds page guidance).
 - A 200 on create = accepted, not complete.
-- Media expires after ~14 days — persist when long-term access is needed.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## Audio QC (MANDATORY after completion)
 

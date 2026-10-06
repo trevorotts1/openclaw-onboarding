@@ -126,5 +126,4 @@ Source: https://docs.kie.ai/suno-api/generate-sounds
 
 Stages: `text` → `first` → `complete`. Items: `id`, `audio_url`,
 `stream_audio_url`, `image_url`, `prompt`, `model_name`, `title`, `tags`,
-`createTime`, `duration`. Retention 14 days — persist final media into durable
-storage immediately when long-term access is required.
+`createTime`, `duration`. Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.

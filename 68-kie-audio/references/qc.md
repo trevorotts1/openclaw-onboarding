@@ -56,5 +56,5 @@ is NOT audio QC — the file must be listened to/analyzed per the lists above.
 
 ## 6. Persistence
 
-KIE media commonly expires after 14 days. Persist final audio into durable
-storage immediately when the workflow requires long-term access.
+Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately. Persist final audio into durable
+storage when the workflow requires long-term access.
