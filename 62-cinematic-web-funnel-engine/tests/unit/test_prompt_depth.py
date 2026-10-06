@@ -145,11 +145,68 @@ class SceneSpecificLengthTests(unittest.TestCase):
         self.assertNotIn("{", out)
 
 
+def _no_direction(sec: str, i: int):
+    sc = scene(sec, i)
+    sc.pop("production_direction")
+    return sc
+
+
+def _operator_direction(sec: str, i: int):
+    """An operator-written direction: 60 to 90 characters per field."""
+    sc = scene(sec, i)
+    sc["production_direction"] = {k: v[:75].rsplit(" ", 1)[0] for k, v in sc["production_direction"].items()}
+    return sc
+
+
+class BandForEveryInputShapeTests(unittest.TestCase):
+    """Rule 12 is a 95 to 100 percent target, not just the 80 percent floor: it must hold for a project-level still with no
+    scene (concept board, anchor), a scene with no direction, and a scene with concise operator direction."""
+
+    def _check(self, sections, label):
+        for mx in (20000,):
+            b = budget(mx)
+            out = pd.fit_prompt("base prompt text", sections, b)
+            self.assertGreaterEqual(len(out), 0.95 * mx, (label, len(out)))
+            self.assertLessEqual(len(out), mx, (label, len(out)))
+
+    def test_stills_and_clips_reach_95_percent_without_a_scene(self) -> None:
+        self._check(pd.image_sections(STYLE), "still, no scene")
+        self._check(pd.video_sections(STYLE), "clip, no scene")
+
+    def test_stills_and_clips_reach_95_percent_without_direction(self) -> None:
+        for i, sec in enumerate(SECTIONS):
+            self._check(pd.image_sections(STYLE, _no_direction(sec, i)), f"still, no direction, {sec}")
+            self._check(pd.video_sections(STYLE, _no_direction(sec, i)), f"clip, no direction, {sec}")
+
+    def test_stills_and_clips_reach_95_percent_with_concise_operator_direction(self) -> None:
+        for i, sec in enumerate(SECTIONS):
+            self._check(pd.image_sections(STYLE, _operator_direction(sec, i)), f"still, concise, {sec}")
+            self._check(pd.video_sections(STYLE, _operator_direction(sec, i)), f"clip, concise, {sec}")
+
+    def test_the_project_level_anchor_uses_the_first_scene_of_the_plan(self) -> None:
+        import generate_images as gi
+
+        class FakeState:
+            def exists(self, kind):
+                return kind == "scene-plan"
+
+            def load(self, kind):
+                return {"scenes": [scene("hero", 0), scene("problem", 1)]}
+
+        self.assertEqual(gi._anchor_scene(FakeState())["page_section"], "hero")
+
+        class NoPlan:
+            def exists(self, kind):
+                return False
+
+        self.assertIsNone(gi._anchor_scene(NoPlan()))
+
+
 class MediumAndWorldTests(unittest.TestCase):
     def test_clip_prompts_never_say_image_and_still_prompts_never_say_clip(self) -> None:
         for i, sec in enumerate(SECTIONS):
             text = "\n".join(pd.video_sections(STYLE, scene(sec, i)) + pd.video_sections(STYLE, scene(sec, i), scene("cta", 3)))
-            self.assertIsNone(re.search(r"\bimages?\b|\bphotograph|\bthumbnail", text, re.I), (sec, re.search(r"\bimages?\b|\bphotograph|\bthumbnail", text, re.I)))
+            self.assertIsNone(re.search(r"\bimages?\b|\bimagery\b|\bphotograph|\bthumbnail", text, re.I), (sec, re.search(r"\bimages?\b|\bimagery\b|\bphotograph|\bthumbnail", text, re.I)))
             still = "\n".join(pd.image_sections(STYLE, scene(sec, i)))
             self.assertIsNone(re.search(r"\bclip\b|\bvideo\b", still, re.I), sec)
 
@@ -158,6 +215,23 @@ class MediumAndWorldTests(unittest.TestCase):
         for i, sec in enumerate(SECTIONS):
             text = "\n".join(pd.image_sections(STYLE, scene(sec, i)) + pd.video_sections(STYLE, scene(sec, i)))
             self.assertIsNone(banned.search(text), (sec, banned.search(text)))
+
+    def test_no_outdoor_wording_in_an_indoor_world(self) -> None:
+        indoor = dict(STYLE, visual_world="a family bakery kitchen at the back of a shop", palette=["flour white", "copper", "walnut"],
+                      material_language="stainless steel, flour dust and warm wood", lighting_logic="a warm overhead pendant with a window fill")
+        banned = re.compile(r"\b(sky|skies|horizons?|vegetation|weather|foliage|clouds?|breeze|outdoors?)\b", re.I)
+        for i, sec in enumerate(SECTIONS):
+            text = "\n".join(pd.image_sections(indoor, scene(sec, i)) + pd.video_sections(indoor, scene(sec, i)) + pd.video_sections(indoor, scene(sec, i), scene("cta", 3)))
+            self.assertIsNone(banned.search(text), (sec, banned.search(text)))
+
+    def test_the_setting_is_not_pasted_more_than_twice_per_paragraph(self) -> None:
+        for i, sec in enumerate(SECTIONS):
+            sc = scene(sec, i)
+            pdir = sc["production_direction"]
+            for text in (stills(i, sec), clips(i, sec)):
+                for paragraph in text.split("\n\n"):
+                    self.assertLessEqual(paragraph.count(pdir["setting"]), 2, (sec, paragraph[:80]))
+                    self.assertLessEqual(paragraph.count(pdir["subject"]), 3, (sec, paragraph[:80]))
 
     def test_connector_names_both_scenes(self) -> None:
         a, b = scene("problem", 1), scene("solution", 2)
