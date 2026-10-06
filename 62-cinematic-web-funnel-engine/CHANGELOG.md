@@ -1,5 +1,14 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.3 - 2026-10-06
+
+Delta QC round 3 on the prompt builder.
+
+- Stills reach the 95 to 100 percent target, not just the 80 percent floor. Eight new genuine still topics (depth planes and parallax readiness, micro-detail under the grade, tonal range and exposure latitude, silhouette, figure and ground separation, camera height and perspective, supporting story detail, synthetic artefacts) and three clip topics (shutter and motion rendering, hand-off between depth planes, motion artefacts, ready for web encoding) are applied to each scene's own fields. Measured at the 20000 maximum: stills 19009 or more and clips 19003 or more for the full planner direction, for a scene with no direction, for concise 60 to 90 character operator direction, and for a project-level still with no scene. Tests assert at least 95 percent and at most 100 percent for all three shapes, 13 section types, stills and clips.
+- `generate_images.py`: the concept board and the final anchor now pass the first scene of the scene plan into `image_sections` (new `_anchor_scene`), so the project-level stills are built around the hero scene's own direction instead of generic text.
+- World-neutral wording: sky, horizon, vegetation, weather, foliage and clouds are gone from the shared topics and the planner direction (main horizontal lines, natural materials and any visible daylight, small conditions such as sheen, condensation, dust or haze). A reverse test (an indoor bakery world) now guards against outdoor wording, next to the existing outdoor-world test against indoor props.
+- Medium wording: "stock imagery" is now "stock photography" for stills and "stock footage" for clips (`{stock}`), and the clip test also rejects "imagery".
+- Setting phrase: the long setting text appears at most twice per paragraph (the subject at most three times); other mentions use "that place" or "the place". Test: counts per paragraph for all 13 section types. Cross-scene sentence overlap stays under 50 percent and no sentence repeats inside a prompt.
 ## v2.1.2 - 2026-10-06
 
 Delta QC round 2: the long prompts now carry scene-specific direction, not repeated house text.

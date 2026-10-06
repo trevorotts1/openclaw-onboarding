@@ -104,6 +104,7 @@ def _ctx(style: Dict[str, Any], scene: Optional[Dict[str, Any]], medium: str, pr
         "crop_d": crop.get("desktop") or "16:9 full-bleed",
         "crop_m": crop.get("mobile") or "9:16 crop-safe",
         "medium": medium,
+        "stock": "photography" if medium == "image" else "footage",
     }
     return {prefix + k: v for k, v in c.items()} if prefix else c
 
@@ -124,18 +125,18 @@ _COMMON = {
         "It sits within {setting}, and it exists to {purpose}. "
         "Keep the hero readable at a glance by separating it from {setting} with value contrast and clean edges rather than outlines or glows. "
         "This scene belongs to the {section} section of the page, so the hero should make the visitor feel {mood}. "
-        "Everything else in the {medium} is there only to explain {setting} or to lead the eye back to {subject}."
+        "Everything else in the {medium} is there only to explain that place or to lead the eye back to {subject}."
     ),
     "setting": (
         "Setting and world. Treat the setting as a real place that continues beyond the edges of the {medium}, with evidence of the people or forces that shaped it. "
         "Here the setting is {setting}, rendered in {world}. "
-        "Show how {setting} has been shaped by use, weather or time, using {materials} as the evidence. "
-        "Let the sky, the shadows and the color of the air say that it is {time}, so that {setting} reads as one specific moment. "
-        "Any small sign of life in {setting} must agree with the mood of {mood}. "
+        "Show how that place has been shaped by use, wear or time, using {materials} as the evidence. "
+        "Let the color of the light and the air, and the length of the shadows, say that it is {time}, so that the place reads as one specific moment. "
+        "Any small sign of life there must agree with the mood of {mood}. "
         "Keep the realism level at {realism} in every element of {setting}, including distant structures and background props."
     ),
     "composition": (
-        "Composition. Build the frame on {composition}, keep the horizon level unless the story needs tension, and avoid tangents and bright small objects on the border. "
+        "Composition. Build the frame on {composition}, keep the main horizontal lines level unless the story needs tension, and avoid tangents and bright small objects on the border. "
         "Place {subject} on a strong intersection with open space on the side it faces, and let the framing follow this blocking: {blocking}. "
         "Let the leading lines of {setting} carry the eye toward {subject} rather than away from it. "
         "Keep one calm, low-detail area free for headline copy, on the opposite side from the strongest part of {motion}. "
@@ -158,11 +159,11 @@ _COMMON = {
         "Color and grade. Use the project palette, {palette}, as a structure: a dominant family for calm areas, a supporting family for mid-sized elements and the strongest accent for the hero. "
         "Let {subject} take that accent and let {setting} carry the calm dominant family. "
         "The color of the air and the light at {time} should tint the shadows inside {setting} consistently. "
-        "Grade for the mood of {mood}: keep skin, vegetation, sky and stone within believable ranges, a clean black point and highlights that roll off instead of clipping. "
+        "Grade for the mood of {mood}: keep skin, natural materials and any visible daylight within believable ranges, a clean black point and highlights that roll off instead of clipping. "
         "Keep {materials} true to their own hue under {light} so the grade supports them instead of repainting them."
     ),
     "materials": (
-        "Materials and surfaces. Render every surface as a physically plausible material that reflects, absorbs and weathers the way the real one does. "
+        "Materials and surfaces. Render every surface as a physically plausible material that reflects, absorbs and ages the way the real one does. "
         "The surfaces in this scene are {materials}. "
         "Show how they respond to {light}: where they shine, where they stay matte, and where they pick up dust, scuffs or patina. "
         "Keep the texture scale of {materials} proportional to the distance of the {cam_start} framing, with fine grain near the lens and natural simplification far away. "
@@ -173,7 +174,7 @@ _COMMON = {
         "Atmosphere and depth. Build at least four readable planes: a foreground element, the hero plane, a supporting midground and a background that fades with atmospheric perspective. "
         "In {setting}, make the hero plane of {subject} the sharpest and most contrasty, and let the distance fall away softly at {time}. "
         "Haze, dust or moisture in the air must follow {light} and must never veil the hero. "
-        "Any particles or weather in {setting} must be motivated by {time} and by {motion}, and kept restrained."
+        "Any particles, haze or moisture in {setting} must be motivated by {time} and by {motion}, and kept restrained."
     ),
     "continuity": (
         "Continuity. This {medium} belongs to a sequence that must feel shot on one set by one crew. "
@@ -193,17 +194,17 @@ _COMMON = {
         "Emotional tone. The {medium} should make the visitor feel {mood}, and it should do so through craft, not effects. "
         "Warmer light and open composition invite trust, cooler light and tighter framing create focus, a low camera suggests ambition and a high camera suggests perspective; apply the combination that fits {subject} in {setting}. "
         "Let {light} and the pace of {motion} pull in the same direction as that feeling. "
-        "Keep the tone premium and human: quiet confidence, never hype, never harshness, never the empty gloss of stock imagery. "
+        "Keep the tone premium and human: quiet confidence, never hype, never harshness, never the empty gloss of stock {stock}. "
         "The purpose to {purpose} is served by feeling, not by decoration."
     ),
     "scale": (
         "Scale and proportion. Keep human-scale cues in the {medium} wherever size matters, and keep them consistent relative to {subject} and to the architecture or landscape of {setting}. "
         "Do not let {subject} drift in apparent size between frames of this scene, and do not exaggerate it unless the story calls for a monumental feel. "
         "Maintain correct perspective for the lens: parallel lines converge toward vanishing points that agree across objects, and equal objects shrink by equal ratios with distance. "
-        "Floors, ground planes and horizons in {setting} must recede correctly under {light}."
+        "Ground planes and the main horizontal lines in {setting} must recede correctly under {light}."
     ),
     "wear": (
-        "Wear and imperfection. Perfectly clean, perfectly symmetrical scenes look synthetic, so add tasteful, motivated imperfection to {materials}: tool marks, tracks, fingerprints, weathering, dust or patina where real use or time would leave them. "
+        "Wear and imperfection. Perfectly clean, perfectly symmetrical scenes look synthetic, so add tasteful, motivated imperfection to {materials}: tool marks, tracks, fingerprints, ageing, dust or patina where real use or time would leave them. "
         "Concentrate that wear where {subject} is touched, stepped on or exposed in {setting}. "
         "It must be consistent with the age and care implied by {setting} at {time}, and it must never read as damage that undermines the mood of {mood}."
     ),
@@ -216,18 +217,18 @@ _COMMON = {
     "finish": (
         "Finish and resolution. The {medium} should hold up at full resolution on a large display and when cropped to a tight detail. "
         "Keep detail crisp on {subject} and on the surface of {materials} nearest the lens, and keep transitions into softness smooth, with no halos, no oversharpening rings and no plastic denoise smear. "
-        "Preserve a fine, even, film-like grain so gradients in {setting} do not band; keep edges between {subject} and the background clean, with correct fine detail in hair, foliage and glass. "
+        "Preserve a fine, even, film-like grain so gradients in {setting} do not band; keep edges between {subject} and the background clean, with correct fine detail in hair, fine fibres and glass. "
         "Aim for the look of a carefully lit, professionally graded {medium} of a real place at {time}."
     ),
-    "time_weather": (
-        "Time and weather. Fix one believable moment for the whole {medium} and hold it: it is {time}. "
-        "The angle and color of {light}, the length of the shadows, the state of the sky and the dampness or dryness of {materials} must all agree with that moment. "
-        "Weather evidence in {setting}, such as a sheen on a surface, condensation, a lean in the vegetation or a haze on the horizon, adds truth without drawing attention to itself. "
-        "Keep the emotional temperature of the weather in step with {mood}, and avoid lighting that could be two different hours at once."
+    "time_conditions": (
+        "Time and conditions. Fix one believable moment for the whole {medium} and hold it: it is {time}. "
+        "The angle and color of {light}, the length of the shadows and the dampness or dryness of {materials} must all agree with that moment. "
+        "Small conditions in {setting}, such as a sheen on a surface, condensation, drifting dust or a soft haze, add truth without drawing attention to themselves. "
+        "Keep the emotional temperature of those conditions in step with {mood}, and avoid lighting that could be two different hours at once."
     ),
     "background": (
         "Background and surroundings. Keep the surroundings of {subject} simple enough to support it and detailed enough to feel real. "
-        "{setting} should show correct structure, with visible joints, supports, edges and plausible wear where hands, feet and weather touch it. "
+        "{setting} should show correct structure, with visible joints, supports, edges and plausible wear where hands, feet and the elements touch it. "
         "Distant forms in {setting} simplify into clean shapes with reduced contrast under {light}, not into noise, and nothing repeats like a cloned tile. "
         "The background carries the design vocabulary of {world} quietly, so that it explains {subject} without competing with it."
     ),
@@ -266,6 +267,43 @@ _STILL = {
         "Describe those regions with real material information and let the rest of {setting} simplify gracefully. "
         "One hero with convincing fine detail is worth more than a frame of uniform texture, and detail density must follow optical distance so nothing far away is sharper than something near."
     ),
+    "depth_ready": (
+        "Depth planes and parallax readiness. This still will be animated later, so build clean depth: a foreground element, {subject}, a midground and a far plane, each separated by tone, focus or atmosphere. "
+        "Keep the boundary between {subject} and {setting} crisp enough that a later move can reveal what lies behind it, and keep the nearest surface of {materials} detailed enough to survive a push toward it. "
+        "Avoid flattened lighting that merges the planes, and keep {light} directional so each plane carries its own shading."
+    ),
+    "micro_detail": (
+        "Texture and micro-detail under the grade. Under the {mood} grade, the smallest details still have to read: the grain and edge wear of {materials}, the way {light} breaks across them, and the fine transitions where {subject} meets what is behind it. "
+        "Let micro-contrast fall off smoothly from the focus plane, keep highlights textured and shadows quietly detailed, and never flatten fine structure into smooth blur. "
+        "The detail must look captured at {time}, not painted."
+    ),
+    "silhouette": (
+        "Edge and silhouette treatment. The outline of {subject} is its signature, so keep it clean, believable and distinct from {setting}: a thin natural edge light under {light}, no cut-out halo, no glow and no tangent with a neighbouring shape. "
+        "Check that the shape still reads when the {medium} is seen small, and let the edge soften only where the lens and the distance say it should."
+    ),
+    "camera_height": (
+        "Camera height and perspective. Choose one camera height and hold it: low enough to give {subject} presence, high enough to show how it sits in {setting}, and level enough that verticals stay vertical. "
+        "The {cam_start} framing tells the visitor where they are and the {cam_end} framing tells them what to look at, so the height should serve both. "
+        "Let perspective lines converge honestly under {lens}, and match the height to a mood of {mood}."
+    ),
+    "tonal_range": (
+        "Tonal range and exposure latitude. Expose so the finished picture can be graded later: a true black point that still holds texture in the darkest part of {setting}, a highlight shoulder that lets {light} roll off without clipping, and a midtone placement that keeps {subject} at the brightness a viewer reads as correct. "
+        "Keep the histogram continuous rather than stacked at either end, and make the contrast between {subject} and what is behind it come from tone first and color second, so it survives a desaturated or high-contrast treatment on the page. "
+        "A {mood} feeling lives in the midtones, so do not spend them on empty gradients."
+    ),
+    "separation": (
+        "Figure and ground separation. {subject} must separate from {setting} by at least two of the three tools: a difference in value, a difference in color temperature and a difference in edge sharpness. "
+        "Use the one that suits {light} first, and add a second so the separation holds under compression and on a small screen. "
+        "Never rely on an outline or an artificial glow, and never let a background shape of similar tone touch the edge of {subject}."
+    ),
+    "story_detail": (
+        "Supporting story detail. Add two or three small details that quietly prove the narrative purpose, {purpose}: things a careful viewer notices on a second look and that belong to {setting} and to {materials}. "
+        "Place them off the main reading path so they reward attention without competing with {subject}, keep them consistent with {time}, and make sure none of them introduces text, a logo or a face that was not asked for."
+    ),
+    "artefacts": (
+        "Avoiding synthetic artefacts. Check the places where generated pictures usually fail: hands and fingers, teeth and eyes, repeated or cloned texture in {materials}, text-like marks that are not letters, symmetrical duplicates, melted or fused edges where {subject} meets {setting}, and objects that change scale across the frame. "
+        "Resolve each of these deliberately: vary the repeated pattern, break the symmetry, give every edge a physical reason and keep every object at one consistent scale."
+    ),
     "reference": (
         "Reference fidelity. If reference images are supplied they are binding: reproduce the identity, proportions, palette, finish and design vocabulary of {subject} and {setting} exactly and change only what this prompt asks to change. "
         "Where a reference and this prompt disagree on a detail that matters for continuity, the reference wins; anything new is designed so that it looks photographed on the same set on the same day."
@@ -280,7 +318,7 @@ _MOTION = {
         "Camera path and easing. The camera moves {cam_move} at {cam_speed} speed from the {cam_start} framing to the {cam_end} framing over {duration} seconds. "
         "The specific blocking is: {blocking}. "
         "Describe it as one continuous physical gesture with a smooth start, a steady middle and a smooth settle, with no jitter, hunting zoom or reversal, and with the slight inertia of real dolly, slider, crane or gimbal equipment. "
-        "Keep the horizon stable and verticals vertical, and keep the speed constant, because the clip will be scrubbed by scroll position."
+        "Keep the main horizontals stable and verticals vertical, and keep the speed constant, because the clip will be scrubbed by scroll position."
     ),
     "parallax": (
         "Parallax and depth during the move. As the camera travels, nearer parts of {setting} must slide across the frame faster than distant ones, with correct occlusion and clean disocclusion behind {subject}. "
@@ -296,7 +334,7 @@ _MOTION = {
     ),
     "subject_motion": (
         "Motion inside the scene. {subject} stays the anchor of the shot, and the movement in this clip is: {motion}. "
-        "Any movement has weight and intent, with acceleration that follows physics and fabric, hair or foliage responding with a slight delay. "
+        "Any movement has weight and intent, with acceleration that follows physics and fabric, hair or loose fibres responding with a slight delay. "
         "Add only quiet ambient motion elsewhere in {setting}, at a speed consistent with {time}, and nothing that draws attention from {subject} or from the camera move. "
         "No sudden events, fast cuts inside the shot, flashes or strobing."
     ),
@@ -319,6 +357,22 @@ _MOTION = {
         "Light during the move. The sources stay where they are in the world and only the way they fall on {materials} changes as the camera moves. "
         "Specular highlights slide across surfaces, shadows rotate with the viewpoint and reflections update, all consistent with {light} at {time}. "
         "Do not animate the lights, flicker lamps or pulse the exposure; any rim light on {subject} may gain or lose a little as the angle opens, gradually."
+    ),
+    "shutter": (
+        "Shutter and motion rendering. Render movement with the natural motion blur of a real shutter: enough on {motion} to feel natural, never so much that {subject} smears, and none on the parts of the frame that are meant to be still. "
+        "Keep the blur direction consistent with the {cam_move} move at {cam_speed} speed, and keep {materials} sharp enough that their detail survives playback in either direction."
+    ),
+    "plane_handoff": (
+        "Hand-off between depth planes. During the move, each depth plane takes its turn as the point of interest: first what the {cam_start} framing introduces, then {subject}, then what the {cam_end} framing resolves to. "
+        "Let focus and contrast pass between the planes smoothly, keep {light} constant across them, and never let a plane pop in front of {subject} without a physical reason."
+    ),
+    "motion_artefacts": (
+        "Avoiding motion artefacts. Check the places where generated clips usually fail: melting or rubber-banding edges on {subject}, ghosting trails behind {motion}, textures on {materials} that crawl or swap while the camera moves, and background structure that rebuilds itself between frames. "
+        "Resolve each deliberately: let the geometry of {setting} stay rigid, let only the intended movement change from frame to frame, and keep every edge physically attached to the thing that owns it."
+    ),
+    "encode_ready": (
+        "Ready for web encoding. The clip will be compressed for the page, so keep large gradients in {setting} smooth and free of banding, keep noise and grain even from frame to frame so the encoder does not shimmer, and avoid fine repeating patterns on {materials} that alias when scaled. "
+        "Keep the brightness of {subject} steady under {light}, because a fluctuating level reads as flicker once compressed."
     ),
     "pacing": (
         "Pacing. Divide the {duration} seconds into a gentle opening in which the viewer settles on the {cam_start} framing, a steady middle in which {motion} unfolds, and a calm close in which the {cam_end} framing arrives and holds for the last few frames. "
@@ -349,14 +403,16 @@ _CONNECTOR = {
 _STILL_ORDER = [
     ("c", "subject"), ("c", "setting"), ("s", "pose"), ("c", "composition"), ("c", "light"), ("s", "hierarchy"),
     ("c", "materials"), ("c", "lens"), ("c", "color"), ("s", "boundary"), ("c", "atmosphere"), ("c", "mood"),
-    ("c", "continuity"), ("s", "crop"), ("c", "time_weather"), ("c", "layout"), ("s", "detail"), ("c", "scale"),
-    ("c", "background"), ("c", "wear"), ("c", "finish"), ("s", "reference"), ("c", "people"), ("c", "exclusions"),
+    ("c", "continuity"), ("s", "crop"), ("c", "time_conditions"), ("c", "layout"), ("s", "detail"), ("c", "scale"),
+    ("c", "background"), ("c", "wear"), ("c", "finish"), ("s", "depth_ready"), ("s", "micro_detail"), ("s", "tonal_range"), ("s", "silhouette"), ("s", "separation"), ("s", "camera_height"),
+    ("s", "story_detail"), ("s", "artefacts"),
+    ("s", "reference"), ("c", "people"), ("c", "exclusions"),
 ]
 _VIDEO_ORDER = [
     ("c", "subject"), ("c", "setting"), ("m", "path"), ("c", "composition"), ("c", "light"), ("m", "subject_motion"),
     ("m", "parallax"), ("c", "materials"), ("m", "endpoints"), ("c", "lens"), ("m", "temporal"), ("c", "color"),
-    ("c", "atmosphere"), ("m", "lens_move"), ("c", "mood"), ("m", "light_move"), ("c", "continuity"), ("m", "pacing"),
-    ("c", "time_weather"), ("c", "layout"), ("m", "scrub"), ("c", "scale"), ("c", "background"), ("c", "wear"), ("c", "finish"),
+    ("c", "atmosphere"), ("m", "lens_move"), ("c", "mood"), ("m", "light_move"), ("c", "continuity"), ("m", "shutter"), ("m", "plane_handoff"), ("m", "motion_artefacts"), ("m", "encode_ready"), ("m", "pacing"),
+    ("c", "time_conditions"), ("c", "layout"), ("m", "scrub"), ("c", "scale"), ("c", "background"), ("c", "wear"), ("c", "finish"),
     ("c", "people"), ("c", "exclusions"),
 ]
 _TABLES = {"c": _COMMON, "s": _STILL, "m": _MOTION}

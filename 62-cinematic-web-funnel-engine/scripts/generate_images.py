@@ -199,6 +199,20 @@ def _style_fragment(style_contract: Dict[str, Any]) -> str:
     return "; ".join(p for p in parts if p)
 
 
+def _anchor_scene(state: "se.ProjectState") -> Optional[Dict[str, Any]]:
+    """The scene the project-level stills (concept board, final anchor) are built around: the first scene of the
+    scene plan, because the anchor is the definitive reference of the hero's world (spec 9.3). It carries the
+    planner's production_direction, so the long prompt is about this project's own opening scene instead of
+    generic text. None when no scene plan exists (the neutral defaults then apply)."""
+    try:
+        if state.exists("scene-plan"):
+            scenes = state.load("scene-plan").get("scenes") or []
+            return scenes[0] if scenes else None
+    except se.StateEngineError:
+        return None
+    return None
+
+
 def _concept_prompt(style_contract: Dict[str, Any], label: str) -> str:
     return f"{_style_fragment(style_contract)}; concept art direction: {label}"
 
@@ -407,7 +421,7 @@ def run_concept_board(
                 provider,
                 model_id=model_id,
                 prompt=_concept_prompt(style_contract, label),
-                sections=prompt_depth.image_sections(style_contract),
+                sections=prompt_depth.image_sections(style_contract, _anchor_scene(state)),
                 aspect_ratio=_DEFAULT_ASPECT_RATIO,
                 resolution=_DEFAULT_CONCEPT_RESOLUTION,
                 negative_prompt=style_contract.get("negative_prompt"),
@@ -529,7 +543,7 @@ def generate_final_anchor(
             provider,
             model_id=model_id,
             prompt=_final_anchor_prompt(data["style_contract"]),
-            sections=prompt_depth.image_sections(data["style_contract"]),
+            sections=prompt_depth.image_sections(data["style_contract"], _anchor_scene(state)),
             aspect_ratio=_DEFAULT_ASPECT_RATIO,
             resolution=_DEFAULT_PRODUCTION_RESOLUTION,
             reference_image_urls=(reference_url,),
