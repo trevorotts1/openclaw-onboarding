@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.0.0"
+ONBOARDING_VERSION="v26.0.1"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1996,7 +1996,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.0.0 - safe_json_edit
+# v26.0.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4782,6 +4782,17 @@ main() {
   if [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
     if cp -p "$ONBOARDING_DIR/lib-onboarding-state.sh" "$_OC_SCRIPTS_DEST/lib-onboarding-state.sh" 2>/dev/null; then
       echo "  ✓ lib-onboarding-state.sh delivered to $_OC_SCRIPTS_DEST"
+      # RETIRE-BY-REFRESH the stale parent copy. Old installs left a Jun-11
+      # ~/.openclaw/lib-onboarding-state.sh (OC_CONFIG default /data/.openclaw);
+      # a "../lib" lookup from ~/.openclaw/scripts would land on it. Overwrite it
+      # ONLY if it already exists (never create a new file there) so it can
+      # never again differ from the delivered copy.
+      _OC_PARENT_LIB="$(dirname "$_OC_SCRIPTS_DEST")/lib-onboarding-state.sh"
+      if [ -f "$_OC_PARENT_LIB" ] && ! cmp -s "$_OC_PARENT_LIB" "$_OC_SCRIPTS_DEST/lib-onboarding-state.sh"; then
+        cp -p "$_OC_SCRIPTS_DEST/lib-onboarding-state.sh" "$_OC_PARENT_LIB" 2>/dev/null \
+          && echo "  ✓ refreshed stale $_OC_PARENT_LIB" \
+          || echo "  ⚠ could not refresh stale $_OC_PARENT_LIB (beside-copy still wins)" >&2
+      fi
     else
       echo "  ⚠ could not deliver lib-onboarding-state.sh to $_OC_SCRIPTS_DEST -- the onboarding gate will fall back to its other candidates (~/.openclaw/onboarding, ~/.openclaw/skills)." >&2
     fi
