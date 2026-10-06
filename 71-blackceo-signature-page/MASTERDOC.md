@@ -26,7 +26,7 @@ This uses the repo's existing native-skill invocation architecture; do not creat
 ## Execution seams
 
 - Skill 71 owns page methodology, page copy system, visual plan, image-prompt intelligence, stage/QC rules, and final page artifact contract.
-- Skill 66 owns Kie.ai image-model routing/validation/dispatch/QC.
+- Skill 66 owns Kie.ai image-model policy (selection, ratio rules, image QC) and Skill 67 owns video; Skill 74 is the one KIE transport (validate, preflight, prompt-budget, submit, save), per `references/kie-generation-route.md`.
 - Skill 63 owns Agnes image execution when selected.
 - Skill 6 owns GHL media/page delivery.
 - Skill 8 owns Vercel setup/deployment prerequisites when used.

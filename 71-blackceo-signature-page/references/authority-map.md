@@ -41,15 +41,13 @@ For prompts and images, `qc-contract.md` thresholds win over any style library: 
 
 ## Prompt-length compatibility
 
-House rule: 5,000-20,000 meaningful characters per final production prompt.
-
-Known runtime compatibility note in the image guide: the current referenced repository validator rejects above 19,000. Default to 8,000-14,000 useful characters unless the active runtime has been intentionally updated. Do not disable validation or silently truncate.
+Owner order 2026-10-05 (`07-kie-setup/references/kie-common-rules.md` rule 12) governs: a descriptive prompt uses 95 to 100 percent of the chosen model's character maximum and is never below 80 percent. The maximum comes from Skill 74 `prompt-budget` (live schema, registry fallback), never from memory. This supersedes the older 5,000-20,000 house band, the 8,000-14,000 working target and the 19,000 runtime-compatibility note wherever this skill still states them. Do not disable validation or silently truncate.
 
 ## Delegation seams (OpenClaw)
 
 Route delegation through these seams; do not duplicate the receiving skill's provider client, browser manager, GHL builder, deployment client, or credential storage.
 
-- **Images:** delegate execution to **Skill 66 `kie-image`** when Kie.ai is selected, or **Skill 63 `agnes-image`** when Agnes is explicitly selected/available. Do not hand-roll provider calls here.
+- **Images and video:** policy owner **Skill 66 `kie-image`** (images) or **Skill 67 `kie-video`** (video), then transport **Skill 74 `kie-live-adapter`**, per `references/kie-generation-route.md`; **Skill 63 `agnes-image`** when Agnes is explicitly selected/available. Do not hand-roll provider calls here.
 - **GHL delivery:** delegate media/page build to **Skill 6 `ghl-install-pages`**, the existing GHL delivery rail.
 - **Vercel:** use **Skill 8 `vercel-setup`** when that hosting target is selected and configured.
 - **Browser automation:** use the repo's managed browser path / Skill 3 conventions when graphical browser work is required.

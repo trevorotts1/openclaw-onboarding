@@ -16,7 +16,7 @@ to the run folder. The gate re-runs every validator itself at `close`.
 | `mobile-tablet` | same pattern as desktop |
 | `visual-mockup` | 1 agent writes `page-visual-bible.json` first -> then desktop mock renderer and mobile mock renderer in parallel |
 | `image-inventory-prompts` | starts as soon as `visual-mockup/page-visual-bible.json` exists (stage contract `requires_artifacts`), in parallel with the mock renderers: **1 prompt writer per image**; each prompt's reviewer starts when that prompt passes `scripts/validate_prompt.py` |
-| `image-generation-qc` | **1 generation agent per image** (never fixed-size chunks), shared limiter 20 submissions / 15 s; each image's QC reviewer starts when that image lands |
+| `image-generation-qc` | **1 generation agent per image** (never fixed-size chunks), shared limiter of 20 createTask submissions per 10 seconds per account (rule 3), every submission through Skill 74; each image's QC reviewer starts when that image lands |
 | `image-map-upload` | 1 |
 | `final-mockups` | desktop and mobile in parallel |
 | `responsive-html` | 1 builder -> then in parallel: `validate_page.py` + `compare_sheet.py` (scripts) and 1 independent visual reviewer |

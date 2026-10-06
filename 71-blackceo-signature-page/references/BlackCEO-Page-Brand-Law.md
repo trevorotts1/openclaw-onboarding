@@ -16,6 +16,8 @@ Quoted verbatim from
 > 4. The masthead is a single-letter B. The logo is CEO bold plus BLACK white on a horizontal black bar through the E.
 > 5. Image generation defaults to KIE.ai. Text overlay defaults to PIL. Video defaults to KIE.ai gemini-omni-video. Voice defaults to Fish Audio s2-pro. OpenAI image generation is forbidden without Trevor's express, per-instance permission.
 
+Note on rule 5: the model names behind "Video defaults to KIE.ai ..." and "Voice defaults ..." are the owner's quoted words. Skill 71 never types a model id from them; the policy owners (Skill 66 images, Skill 67 video, Skill 68 audio) resolve the current model, and Skill 74 is the transport (`references/kie-generation-route.md`).
+
 ## Hex values
 
 From `~/.openclaw/workspace/departments/graphics/*/TOOLS.md:1073`:

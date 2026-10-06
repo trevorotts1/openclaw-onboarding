@@ -7,4 +7,4 @@ Before beginning a new landing-page build, resolve the page family using the nat
 - A Direct-Response/VSL/high-ticket/order-bump asset stack uses **Skill 56 `sales-page-assets`**.
 - An animated/cinematic/scroll-controlled experience uses **Skill 62 `cinematic-web-funnel-engine`**.
 
-Once routed to Skill 71, follow its Standard-or-Long-Form production workflow and delegate execution rails rather than recreating them: image generation to the selected installed image skill (Skill 66 Kie by default when applicable; Skill 63 Agnes when selected) and GHL delivery to Skill 6.
+Once routed to Skill 71, follow its Standard-or-Long-Form production workflow and delegate execution rails rather than recreating them: image generation to the selected installed image skill (Skill 66 policy then Skill 74 transport for Kie by default when applicable, per `71-blackceo-signature-page/references/kie-generation-route.md`; Skill 63 Agnes when selected) and GHL delivery to Skill 6.
