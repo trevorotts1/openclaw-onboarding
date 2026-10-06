@@ -5,6 +5,10 @@ description: End-to-end AI video production from concept to finished upload — 
 
 # Cinematic Forge
 
+> Skill 74 ships in the same release; until it is installed, quote prices from the KIE catalog pricingDesc.
+>
+> **Single price authority:** this skill states no dollar or credit price of its own. Every price comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (for the model id Skill 66, 67 or 68 chose), or from the KIE catalog `pricingDesc` until Skill 74 is installed.
+
 > **Skill Name:** cinematic-forge
 > **Version:** 1.0
 > **Author:** (redacted for client-generic distribution)
@@ -110,7 +114,7 @@ When a user triggers this skill, the agent says:
 
 **What you're looking for:** Duration in seconds. This determines how many 8-second segments you'll need. Formula: ceil(duration / 8) segments. The last segment gets trimmed in FFmpeg to hit the exact target length.
 
-**Math note:** VEO 3.1 Fast produces 8-second segments. If someone wants 90 seconds: 11 full segments (88 seconds) + 1 segment trimmed to 2 seconds = 90 seconds exactly. Cost = number of segments x $0.40 (Fast mode).
+**Math note:** VEO 3.1 Fast produces 8-second segments. If someone wants 90 seconds: 11 full segments (88 seconds) + 1 segment trimmed to 2 seconds = 90 seconds exactly. Cost = number of segments x [price per segment from the price command for the video model id].
 
 ### Question 5: Characters
 
@@ -523,7 +527,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
 ### Phase 2: Video Generation
 
 **Model:** VEO 3.1 Fast via KIE.ai (`veo3_fast`)
-**Cost:** $0.40 per 8-second segment
+**Cost:** segments x [price per 8-second segment from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`]
 **Aspect ratio:** 9:16 vertical (primary). 16:9 horizontal created ONLY after 9:16 is approved.
 
 1. **Segment 1:** VEO 3.1 Fast Image-to-Video using Nano Banana Pro start image
@@ -542,7 +546,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    - Poll every 20-30 seconds
 5. **Download completed segments** to the project folder (`segments/segment_N.mp4`)
 6. **Send progress updates to the user** after each segment completes:
-   > "Segment 4 of 12 complete. Estimated 8 minutes remaining. Cost so far: $1.60"
+   > "Segment 4 of 12 complete. Estimated 8 minutes remaining. Cost so far: $[segments done x price per segment]"
    
    Don't leave the user waiting in silence. Every completed segment gets an update.
 7. **Update project-state.json** after each segment (taskId, file path, status)
@@ -907,7 +911,7 @@ cc_return_to_orchestrator() {     # cc_return_to_orchestrator <task_id> <reason>
 
 1. **Narrator and character dialogue NEVER overlap** in the same segment. Period.
 2. **Character consistency is non-negotiable.** Every segment must match the anchor reference images. If a character's face, hair, or skin tone shifts - regenerate.
-3. **VEO 3.1 Fast only.** Do not use VEO 3.1 Quality ($2.00) unless the user explicitly requests it.
+3. **VEO 3.1 Fast only.** Do not use VEO 3.1 Quality (several times the Fast price) unless the user explicitly requests it.
 4. **9:16 vertical is primary.** Never create 16:9 first.
 5. **All VEO audio is discarded.** Replace entirely with voice (via Skill 68) + Suno layers.
 6. **Only provide START image to VEO for Segment 1.** End images constrain generation and produce stiff video.
@@ -938,19 +942,21 @@ If the agent starts a new session and finds an existing project-state.json in a 
 
 | Item | Cost | Notes |
 |------|------|-------|
-| VEO 3.1 Fast (per segment) | $0.40 | 8 seconds per segment |
-| VEO 3.1 Fast Extend (per segment) | $0.40 | Same price as generation |
-| Nano Banana Pro (per image) | ~$0.10 | Reference images, start images |
-| Voice / text-to-speech (per clip, via Skill 68) | ~$0.10-0.30 | Varies by length |
-| Sound effects (per clip, via Skill 68) | ~$0.10 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
-| Suno music (per track, via Skill 68) | ~$0.20-0.50 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
+| VEO 3.1 Fast (per segment) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | 8 seconds per segment; use the model id Skill 67 chose |
+| VEO 3.1 Fast Extend (per segment) | [same price command, extend mode] | Quote what the command returns for extend |
+| Nano Banana Pro (per image) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | Reference images, start images; id chosen by Skill 66 |
+| Voice / text-to-speech (per clip, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | Varies by length; id chosen by Skill 68 |
+| Sound effects (per clip, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | id chosen by Skill 68 |
+| Suno music (per track, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | id chosen by Skill 68 |
 
-**Example: 90-second video**
-- 12 segments x $0.40 = $4.80 (video)
-- ~12 reference images x $0.10 = $1.20 (images)
-- ~12 audio clips x $0.15 = $1.80 (voice/SFX)
-- ~1-2 music tracks x $0.35 = $0.70 (music)
-- **Total: ~$8.50** (before Topaz upscale)
+Until Skill 74 is installed, read each price from the KIE catalog `pricingDesc` for the chosen model.
+
+**Example: 90-second video (structure only; fill in live prices)**
+- 12 segments x [price per segment] (video)
+- ~12 reference images x [price per image] (images)
+- ~12 audio clips x [price per clip] (voice and sound effects)
+- ~1-2 music tracks x [price per track] (music)
+- **Total: sum of the lines above** (before Topaz upscale)
 
 ---
 
