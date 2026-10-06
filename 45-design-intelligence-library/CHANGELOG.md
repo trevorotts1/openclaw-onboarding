@@ -2,7 +2,7 @@
 
 ## v2.1.6 - 2026-10-06 - social routing correction: no Ideogram route
 
-- See the corrected `social-media-designs/_RULES.md` entry under v2.1.5 below (same PR).
+- See the corrected `social-media-designs/_RULES.md` entry under v2.1.5 below (same PR). Prompt-length wording there now defers to rule 12 of `07-kie-setup/references/kie-common-rules.md` (the old 9,000-19,000 restatement is removed); `prompt-bands.json` and `diu_validator.py` are migrated by the prompt-budget change, not here.
 
 ## v2.1.5 - 2026-10-05 - close open items on the image consumers PR
 
