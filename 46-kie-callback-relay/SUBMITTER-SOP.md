@@ -1,4 +1,4 @@
-# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v1.1.0)
+# Slide Submitter SOP -- Webhook-Primary, Poll-Fallback (v2.0.2)
 
 This SOP replaces the sequential per-image polling loop that was in Skill 07.
 It applies to any role or agent that submits images to Kie.ai for slide decks.
@@ -180,7 +180,9 @@ KV. Skip the KV phase entirely and batch-poll Kie directly:
 
 1. Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<taskId>` per slide
    with backoff (2s -> 5s -> 15s -> 30s max), in parallel across the small batch.
-2. On `data.state === 'success'`: parse `data.resultJson`, allowlist-filter,
+2. On `data.state === 'success'`: take the URLs from `data.response.resultUrls` or the
+   `data.resultJson` JSON string (`{"resultUrls":[...]}`), or `response.data[].audio_url`
+   for Suno; allowlist-filter,
    download, write the done-marker.
 3. On `fail`: write a `failed` done-marker with `failCode`/`failMsg`.
 4. Respect the 10-req/s Kie query limit.
@@ -203,7 +205,7 @@ Per-model callback timeouts (ms), from `kie-slide-submitter.js` MODEL_TIMEOUTS:
 
 1. Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<taskId>`.
 2. Inspect `data.state`:
-   - `success`: parse `data.resultJson`, download, write done-marker, done.
+   - `success`: read `resultUrls` as in Step 4b, download, write done-marker, done.
    - `fail`: write done-marker with status `failed`; surface the failure.
    - `waiting | queuing | generating`: backoff and retry (2s -> 5s -> 15s -> 30s max).
    - After 10 minutes of fallback polling: mark the slide `timeout` and surface it.

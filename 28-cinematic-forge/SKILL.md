@@ -24,8 +24,7 @@ If the agent does not know the Teach Yourself Protocol:
 - FFmpeg installed (`ffmpeg -version` to verify)
 - KIE.ai API key (stored in environment or secrets file)
 - GHL/Convert and Flow Private Integration Token (PIT) for media library upload (the canonical env vars are `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID`). An imgBB API key is an optional fallback for reference **images** only — imgBB cannot host the final MP4.
-- ElevenLabs access via KIE.ai (for voice generation)
-- Suno access via KIE.ai (for music generation)
+- Skill 68 (`68-kie-audio`) installed (owns all voice, sound-effect and Suno music generation via KIE.ai)
 - Nano Banana Pro access via KIE.ai (for image generation)
 - VEO 3.1 Fast access via KIE.ai (for video generation)
 
@@ -408,9 +407,12 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
 2. **Check KIE.ai credit balance** (credentials were loaded from `$SECRETS_ENV` in step 0):
    ```bash
-   curl -s "https://api.kie.ai/api/v1/user/credits" \
+   curl -s "https://api.kie.ai/api/v1/chat/credit" \
      -H "Authorization: Bearer $KIE_API_KEY"
+   # -> {"code":200,"msg":"success","data":<credit balance as a number>}
    ```
+   Check the body `code` before reading `data`: HTTP 200 alone does not mean the call succeeded, and only `code` 200 means `data` is a real balance. Any other `code`, or no `data` number, means the balance is UNKNOWN — treat it as "cannot verify", not as sufficient. (`/api/v1/user/credits` is a dead path that returns 404; do not use it.)
+
    If the balance is insufficient for the estimated cost, tell the user BEFORE starting. Do not begin generation and fail at segment 6 because credits ran out.
 
 3. **Calculate and present the budget estimate:**
@@ -420,7 +422,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    > **Video:** [X] segments x $0.40 = $[Y] (VEO 3.1 Fast)
    > **Reference Images:** ~[X] images x $0.10 = $[Y] (Nano Banana Pro)
    > **Voice/Dialogue:** ~[X] clips x $0.15 = $[Y] (ElevenLabs)
-   > **Sound Effects:** ~[X] clips x $0.10 = $[Y] (ElevenLabs SFX)
+   > **Sound Effects:** ~[X] clips x $0.10 = $[Y] (via Skill 68)
    > **Music:** ~[X] tracks x $0.35 = $[Y] (Suno)
    > **Estimated Total: ~$[TOTAL]**
    >
@@ -556,29 +558,46 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
 
 **Why:** VEO generates a different voice every segment. By segment 6, the narrator sounds like a completely different person. Generating audio separately with locked voice IDs ensures consistency.
 
-**Audio Layers:**
+**Skill 68 (`68-kie-audio`) OWNS every KIE audio call in this phase** — text-to-speech, sound effects and Suno music. It is authoritative for model ids, API routes, payload shape, limits and audio QC. Cinematic Forge decides WHAT audio each segment needs (this section); Skill 68 decides HOW it is requested. Do NOT hand-write a KIE audio request here and do NOT name a KIE audio model id from this file (the old `/api/v1/jobs/create` calls, and the `eleven_multilingual_v2`, `eleven_sound_effects` and `suno_v4` ids, were dead or invalid and have been removed).
 
-1. **Character Dialogue** (ElevenLabs Text-to-Speech via KIE.ai)
-   - One locked voice ID per character - same voice every segment
+**The handoff the agent performs for EVERY audio clip below:**
+
+```bash
+AUDIO_SKILL="$(dirname "$SKILL_DIR")/68-kie-audio"     # sibling skill folder; resolved from Phase 0's $SKILL_DIR
+[ -d "$AUDIO_SKILL" ] || { echo "Skill 68 (kie-audio) is not installed - stop audio production and tell the operator" >&2; }
+```
+
+1. Read `$AUDIO_SKILL/SKILL.md`, then `references/tts.md` (speech) or `references/music.md` (sound effects and music), and `INSTRUCTIONS.md`. Pick the model and build the request body exactly as those files specify.
+2. Write the request body to a JSON file and validate it BEFORE any credits are spent:
+   ```bash
+   python3 "$AUDIO_SKILL/scripts/validate_audio_request.py" --domain tts   --payload req.json   # dialogue and narrator
+   python3 "$AUDIO_SKILL/scripts/validate_audio_request.py" --domain music --payload req.json   # sound effects and music
+   ```
+   Exit 0 = legal to dispatch. Exit 2 = do NOT dispatch; fix the payload as the validator says (never bypass it).
+3. Dispatch and wait exactly as Skill 68's `INSTRUCTIONS.md` describes (async: a 200 on create means accepted, not finished; callback or polling per 68).
+4. Run Skill 68's audio QC (`$AUDIO_SKILL/references/qc.md`) on the downloaded file, then save it into the matching `audio/` folder and record the task id, model id (as 68 reported it) and file path in `project-state.json`.
+5. If Skill 68 cannot produce a requested layer, say so to the user and drop or replace that layer with their approval. Never invent a route or model to fill the gap.
+
+**Audio Layers (what Cinematic Forge needs; Skill 68 does the call):**
+
+1. **Character Dialogue** (text-to-speech, domain `tts` in Skill 68)
+   - One locked voice per character, chosen from the voices Skill 68's registry lists - same voice every segment
    - Only in segments where characters speak on screen (lips moving)
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `eleven_multilingual_v2`
 
-2. **Narrator Voiceover** (ElevenLabs Text-to-Speech via KIE.ai)
-   - One locked voice ID for the narrator - never changes
+2. **Narrator Voiceover** (text-to-speech, domain `tts` in Skill 68)
+   - One locked voice for the narrator - never changes
    - Only in segments where NO characters are speaking on screen
    - NEVER overlaps with character dialogue in the same segment
 
-3. **Sound Effects** (ElevenLabs Sound Effects via KIE.ai)
+3. **Sound Effects** (Skill 68's sound-effect route, domain `music` in its validator)
    - Ambient sounds (office noise, beach waves, crowd murmur)
    - Action sounds (footsteps, door opening, pen writing)
    - Transition sounds (swooshes, impacts)
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `eleven_sound_effects`
 
-4. **Background Music** (Suno via KIE.ai)
+4. **Background Music** (Suno policy, owned by Skill 68, domain `music`)
    - Generated based on user's music preferences from Question 8b
    - Plays underneath dialogue/narration at 20-30% volume
    - NOT in every segment - only where appropriate
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `suno_v4`
 
 ### Phase 4: Assembly (FFmpeg)
 
@@ -919,8 +938,8 @@ If the agent starts a new session and finds an existing project-state.json in a 
 | VEO 3.1 Fast Extend (per segment) | $0.40 | Same price as generation |
 | Nano Banana Pro (per image) | ~$0.10 | Reference images, start images |
 | ElevenLabs TTS (per clip) | ~$0.10-0.30 | Varies by length |
-| ElevenLabs SFX (per clip) | ~$0.10 | Sound effects |
-| Suno music (per track) | ~$0.20-0.50 | Background music |
+| Sound effects (per clip, via Skill 68) | ~$0.10 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
+| Suno music (per track, via Skill 68) | ~$0.20-0.50 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
 
 **Example: 90-second video**
 - 12 segments x $0.40 = $4.80 (video)
@@ -944,11 +963,12 @@ If the agent starts a new session and finds an existing project-state.json in a 
 | Generate video (VEO) | POST | `/veo/generate` |
 | Check video status | GET | `/veo/record-info?taskId=XXX` |
 | Extend video (VEO) | POST | `/veo/extend` |
-| Generate image (Nano Banana Pro) | POST | `/jobs/create` |
-| Check job status | GET | `/jobs/query?taskId=XXX` |
-| Generate voice (ElevenLabs) | POST | `/jobs/create` |
-| Generate music (Suno) | POST | `/jobs/create` |
-| Generate sound effects | POST | `/jobs/create` |
+| Check balance | GET | `/chat/credit` (body `{code,msg,data:<number>}`; check `code`) |
+| Generate image (Nano Banana Pro) | POST | `/jobs/createTask` with `{model, input:{...}}` -> `data.taskId`. Skill 66 (`66-kie-image`) is authoritative for the model id and payload. |
+| Check job status (image) | GET | `/jobs/recordInfo?taskId=XXX` |
+| Voice, sound effects, music | - | Not called from this skill. Delegated to Skill 68 (`68-kie-audio`); see Phase 3. |
+
+The old `/jobs/create` and `/jobs/query` paths and the `/user/credits` path return 404 and must not be used.
 
 **Full KIE.ai API Reference:** Check for `kie-ai-api-reference.md` in the master files folder. If it doesn't exist, the agent should flag this to the user and request the API documentation.
 

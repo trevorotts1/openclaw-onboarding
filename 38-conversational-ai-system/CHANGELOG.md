@@ -1,3 +1,22 @@
+## [2.0.7] - 2026-10-05 - fix: QC follow-ups to 2.0.6 (Skill 66 prereq, fixtures, comments)
+
+`PREREQS.json` gains an optional `skill-66` entry (the image policy owner) and the Skill 07 entry
+no longer claims to provide an image catalog. `workflow-visual-protocol.md` section 9 matches, and
+its over-long line is wrapped. `qc-workflow-visual.test.sh` fixtures use `mock` instead of
+`mock-gpt-image`. `09-install-conversation-workflows.sh` says hero generation is delegated to
+Skill 66. Skill 74 is referenced as "once installed" because it is not on main yet.
+
+## [2.0.6] - 2026-10-05 - fix: remove stale Kie model ids from the workflow visual; image policy is Skill 66's
+
+`scripts/31-generate-workflow-visual.sh` recorded `${KIE_IMAGE_MODEL:-gpt-image}` as the hero
+`model_id`; `gpt-image` is not a Kie model id, and the script makes no Kie call (it is a stub).
+It now records no model (null) until a real job runs, and the dry-run mock id is `mock`.
+`protocols/workflow-visual-protocol.md` no longer tells the agent to query the catalog itself,
+no longer falls back to "Flux", and no longer claims Skill 07 documents "GPT Image 1.5". Image
+generation is delegated to Skill 66 (kie-image), the image policy owner, which applies the fleet
+image pin (AGENTS.md N43). The live catalog check is provided by Skill 74 (`74-kie-live-adapter`)
+in shadow mode; Skill 66 remains the decision authority. No non-Kie behavior changed.
+
 ## [2.0.0] - 2026-08-04 - fix: the pointer-stanza rewriter (v1.11.0) is now WIRED IN, and 9 qc gates check the LIVE box instead of the shipped source
 
 v1.11.0 shipped `05-update-agents-md.sh` (the writer) but nothing in the

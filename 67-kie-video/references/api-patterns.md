@@ -44,7 +44,7 @@ All generic KIE video models (Wan, Kling, Seedance, PixVerse, MiniMax, HappyHors
   - `waiting`: Task registered, awaiting execution slot.
   - `queuing`: Queued in provider inference scheduler.
   - `generating`: Active diffusion/rendering.
-  - `success`: Video generation complete; `resultJson` is populated.
+  - `success`: Video generation complete; `resultJson` (a JSON STRING) and `response` (the same content already parsed; prefer it) are populated.
   - `fail`: Job failed; `failCode` and `failMsg` are populated.
 - **Success Response Data Fields:**
   ```json
@@ -56,7 +56,8 @@ All generic KIE video models (Wan, Kling, Seedance, PixVerse, MiniMax, HappyHors
       "model": "wan/3-0-video",
       "state": "success",
       "param": "{\"prompt\":\"...\"}",
-      "resultJson": "{\"resultUrls\":[\"https://file.aiquick.net/videos/20260826/out.mp4\"]}",
+      "resultJson": "{\"resultUrls\":[\"https://tempfile.aiquickdraw.com/v/out.mp4\"]}",
+      "response": { "resultUrls": ["https://tempfile.aiquickdraw.com/v/out.mp4"] },
       "failCode": "",
       "failMsg": "",
       "costTime": 42150,
@@ -94,7 +95,7 @@ Dedicated families **must never be routed through `createTask`**. They employ de
   - `aspectRatio`: Invalid when `imageUrl` is provided (image aspect ratio takes precedence).
   - `model`: No model field in request payload.
 
-### B. Veo 3.1 API (`api_family: "veo-dedicated"`)
+### B. Veo 3.1 API (`api_family: "veo3-dedicated"`)
 - **Endpoints:**
   - Create: `POST https://api.kie.ai/api/v1/veo/generate`
   - Query: `GET https://api.kie.ai/api/v1/veo/record-info?taskId={taskId}`
@@ -161,6 +162,5 @@ When webhooks are unavailable, poll using stepped exponential backoff:
 
 - **Account Rate Limit:** Up to 20 generation requests per 10 seconds; 100+ concurrent running tasks.
 - **Media Retention Policy:**
-  - Generated video files are retained on KIE storage for **14 days**, after which they are permanently deleted (`expireFlag: 1`).
-  - Temporary download URLs expire in **~24 hours**.
+  - KIE documents **14 days** for generated media (after which files are permanently deleted, `expireFlag: 1`), but its task-detail page says result URLs typically expire after **24 hours**; download/persist immediately.
   - **Storage Rule:** Downstream pipelines must immediately download and persist generated media to permanent storage (S3 / R2 / local disk) upon completion.

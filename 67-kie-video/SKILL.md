@@ -7,8 +7,9 @@ description: >
   Gemini Omni Video, Runway Dedicated, Veo 3.1 Dedicated), payload validation
   against a machine-readable registry, prompt sizing against published limits,
   asynchronous task dispatch with callbacks or polling, and mandatory real visual QC.
+version: v2.0.2
 metadata:
-  version: "1.0.0"
+  version: "2.0.2"
   priority: HIGH
 ---
 
@@ -53,7 +54,7 @@ All video tasks are asynchronous: HTTP 200 from createTask or dedicated endpoint
 
 - TYP (Skill 01), BYUP (Skill 02), and KIE Setup (Skill 07) required.
 - Credential: `KIE_API_KEY` (Authorization: Bearer $KIE_API_KEY). Check SET without printing.
-- Retention: Generated media retained for 14 days on KIE; download URLs expire in ~24h. Persist media immediately.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## Files in This Folder
 

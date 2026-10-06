@@ -187,7 +187,8 @@ assembler, and it is the script.
 - The builder writes ONE file — `slides.json` — and runs ONE command — `build_deck.py`.
 - The builder NEVER generates, edits, fetches, or substitutes an image. It has no image tool.
 - The builder NEVER writes an inline KIE.ai HTTP call and NEVER touches `/api/v1/image/gpt-image`.
-- There are NO placeholder/stock slides. A render that fails after the script's retries is a
+- There are NO placeholder/stock slides. A slide that fails to render makes the script exit 1 and list it in `failures`
+  (the batch path does not re-submit it by itself; a re-run re-submits only the slides without a verified PNG). That is a
   build failure to report — never something the builder patches around.
 - The deliverable registered + reported is the EXACT `.pptx` `build_deck.py` produced, and
   ONLY when the script exited 0.
@@ -214,8 +215,8 @@ source material  ──▶  STEP 1: builder writes slides.json
                               │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-image-to-image by default,
                               │         -text-to-image when no reference exists; 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
-                              │     • parse data.resultJson → resultUrls[0] → download PNG (unauth)
-                              │     • verify PNG magic bytes + size; retry a slide up to 3×
+                              │     • parse data.resultJson → resultUrls[0] → download PNG (authenticated GET)
+                              │     • verify PNG magic bytes + size; a slide that fails is recorded as a failure (no automatic re-submit in the batch path)
                               │     • assemble full-bleed .pptx (no text boxes); FAIL LOUD on any gap
                               ▼
                  STEP 3: builder registers the EXACT outputPath (.pptx) from the script summary
