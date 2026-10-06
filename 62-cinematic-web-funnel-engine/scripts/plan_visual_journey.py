@@ -206,8 +206,8 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "hero": {
         "subject": "the hero subject of the project seen whole, large enough to read at a glance and framed with generous space around it",
         "setting": "its native environment, wide enough to show the scale and character of the place and what surrounds it",
-        "time_of_day": "the best light of the day, shortly after sunrise or shortly before sunset, when the air is clear and the light is long",
-        "light": "a low, warm key light raking across the subject from one side with long soft shadows and a gentle cool fill from the open sky",
+        "time_of_day": "the project's best moment of the day, when the light is clean, directional and unhurried",
+        "light": "a low, warm key light raking across the subject from one side with long soft shadows and a gentle cool fill from the open surroundings",
         "materials": "the primary surfaces of the subject and its surroundings, shown with honest wear, edge detail and a believable sheen",
         "motion": "almost nothing moves except slow ambient life in the distance and the camera itself drifting forward",
         "camera_blocking": "the camera starts wide and level, then pushes in on a straight line toward the subject without any lateral wobble",
@@ -217,7 +217,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "problem": {
         "subject": "the point of friction, a specific object or situation that shows the audience's pain in concrete form",
         "setting": "the same world as the hero scene, but at its least comfortable: cramped framing, cluttered or neglected surroundings",
-        "time_of_day": "flat, late-day light when energy is low and the day has gone slightly wrong",
+        "time_of_day": "a flat, low-energy moment late in the project's day, when things have gone slightly wrong",
         "light": "a harder, more directional key with deeper shadows and a cooler tint, so the frame feels tight and tense without becoming dark",
         "materials": "worn, strained or overloaded surfaces, with visible evidence of the problem such as scuffs, tangles, stains or overflow",
         "motion": "small repeating motions that show the problem in action, such as a hand retrying something or a loose part shifting",
@@ -228,8 +228,8 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "solution": {
         "subject": "the product, system or method that resolves the problem, revealed working as intended",
         "setting": "the same world as the problem scene, now orderly, open and arranged around the solution",
-        "time_of_day": "clear mid-morning light that feels fresh and decisive",
-        "light": "a clean, soft key from above and to one side with open shadows and a bright, even fill, as if the weather had cleared",
+        "time_of_day": "a fresh, clear moment, the part of the project's day that feels decisive",
+        "light": "a clean, soft key from above and to one side with open shadows and a bright, even fill, as if a heavy mood had lifted",
         "materials": "crisp, well-finished surfaces on the solution, with polished edges, clean joints and a quality of manufacture you can feel",
         "motion": "the solution doing its job in one smooth, legible motion, with everything else holding still so the cause and effect are obvious",
         "camera_blocking": "the camera starts close on the old friction point, then pulls back and sideways to reveal the solution in context",
@@ -239,7 +239,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "offer": {
         "subject": "the offer made tangible, a small, clear arrangement of what the customer receives, laid out with intention",
         "setting": "a calm, uncluttered stage with generous empty space around the offer where overlay copy can sit",
-        "time_of_day": "steady, neutral daylight with no dramatic time cue, so nothing competes with the offer",
+        "time_of_day": "a steady, neutral moment with no dramatic time cue, so nothing competes with the offer",
         "light": "a broad, soft, shadow-light key that shows every item clearly, with gentle gradient falloff toward the edges of the frame",
         "materials": "premium, tactile surfaces on each item in the offer, with consistent finishing so they read as one family",
         "motion": "a slow lateral drift across the arrangement, items fixed in place, with one subtle ambient movement in the background",
@@ -250,7 +250,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "proof": {
         "subject": "the evidence that the promise is real, shown as a concrete result, a documented outcome or a real person in context",
         "setting": "a believable working environment where the result happened, not a staged studio",
-        "time_of_day": "plain, honest daylight, the look of documentation rather than advertising",
+        "time_of_day": "a plain, honest moment, the look of documentation rather than advertising",
         "light": "natural, slightly diffuse light with believable contrast, close to what a documentary camera would capture without extra rigging",
         "materials": "real-world textures and honest imperfections that make the evidence credible, including small signs of use",
         "motion": "a small, natural action that confirms the result, such as a hand checking a measurement or a person glancing at the outcome",
@@ -261,7 +261,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "testimonial": {
         "subject": "one real-feeling person, shown in an intimate portrait as they speak or reflect about the outcome",
         "setting": "a quiet, personal space that belongs to them, softly out of focus behind the face",
-        "time_of_day": "soft late-morning light, unhurried and private",
+        "time_of_day": "an unhurried, private moment with soft, quiet light",
         "light": "a large soft key from one side at eye level, a faint fill, and a subtle edge light separating the person from the background",
         "materials": "natural skin, fabric and the textures of a lived-in space, none of it glossy or retouched flat",
         "motion": "small, human motions, a breath, a blink, a slight turn of the head, a hand settling, nothing theatrical",
@@ -272,7 +272,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "pricing": {
         "subject": "a clean, simple object or arrangement that stands in for value, with nothing in the frame that suggests cost or clutter",
         "setting": "an open, almost empty space with a plain background and a single calm focal point",
-        "time_of_day": "even, shadowless midday light that feels neutral and fair",
+        "time_of_day": "an even, neutral moment with shadowless, fair light",
         "light": "soft, wide, even illumination with very gentle shadows so that numbers laid over the frame stay perfectly legible",
         "materials": "smooth, matte, low-reflectance surfaces with no sparkle or busy pattern that could fight the typography",
         "motion": "a nearly static frame with a slow, almost imperceptible drift and a faint breath of ambient movement",
@@ -282,8 +282,8 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     },
     "guarantee": {
         "subject": "a steady, protective subject such as a sturdy object, a closed hand or a sheltering structure that signals safety",
-        "setting": "a warm, secure space with solid walls or horizon lines and nothing precarious in view",
-        "time_of_day": "warm late-afternoon light that feels settled and kind",
+        "setting": "a warm, secure space with solid walls or steady, level lines and nothing precarious in view",
+        "time_of_day": "a warm, settled moment late in the project's day that feels kind",
         "light": "a golden, enveloping key with soft shadows and a warm bounce, giving the whole frame a sense of shelter",
         "materials": "solid, weighty textures such as wood grain, stone, heavy fabric or brushed metal that suggest durability",
         "motion": "almost none, a single slow settling movement such as dust drifting or a light shifting gently across a surface",
@@ -294,7 +294,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "faq": {
         "subject": "an orderly arrangement of a few distinct objects, each clearly separated, that suggest questions answered one by one",
         "setting": "a tidy, well-organised space with clear spacing and a simple background",
-        "time_of_day": "calm daylight that does not draw attention to the time",
+        "time_of_day": "a calm moment that does not draw attention to the time",
         "light": "even, neutral illumination that lets each object read separately without drama",
         "materials": "clean, simple surfaces with clear edges and consistent finish across the objects",
         "motion": "minimal, a single object quietly changing state while the others stay still",
@@ -305,10 +305,10 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "urgency": {
         "subject": "a clear signal that time is passing, shown through the subject itself rather than through graphics or text",
         "setting": "the same world as the offer scene, but with the light and the shadows already moving along",
-        "time_of_day": "the last strong light before the day changes, with shadows lengthening noticeably",
+        "time_of_day": "the last strong moment before the project's day changes, with shadows lengthening noticeably",
         "light": "a strong low-angle key that is visibly moving or fading, with colour shifting from warm toward cool at the edges",
         "materials": "the same surfaces as the offer scene, now catching the changing light so their highlights slide and shift",
-        "motion": "purposeful motion with a little more energy, such as clouds, shadows or people moving across the frame at a steady, faster pace",
+        "motion": "purposeful motion with a little more energy, such as shadows, light or people moving across the frame at a steady, faster pace",
         "camera_blocking": "the camera pushes in a little faster than earlier scenes on a straight, confident line",
         "mood": "focus and gentle pressure, never panic",
         "continuity": "same world, subject and palette, with the light direction preserved while its intensity and colour progress"
@@ -316,7 +316,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "cta": {
         "subject": "the single object or gesture that stands for taking the next step, placed unmistakably at the centre of attention",
         "setting": "a clean, focused space where everything leads toward the one action and nothing else competes for attention",
-        "time_of_day": "bright, confident daylight, the clearest moment of the whole journey",
+        "time_of_day": "the clearest, brightest moment of the whole journey, bright and confident",
         "light": "a clean key with a subtle halo of brightness around the focal object and calmer, slightly darker surroundings",
         "materials": "the best-finished surface in the whole project, with a crisp edge and a hint of reflection that invites a click",
         "motion": "a small, inviting movement of the focal object or a hand approaching it, with everything else stationary",
@@ -327,10 +327,10 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "close": {
         "subject": "the hero subject again, now at rest in a resolved, settled pose, as if the journey has arrived",
         "setting": "the opening scene's environment, wide and still, now understood and familiar",
-        "time_of_day": "the same time of day as the opening scene, a little later and a little softer",
+        "time_of_day": "the same moment as the opening scene, a little later and a little softer",
         "light": "the opening scene's key light direction at a gentler intensity with a golden, quiet fill",
         "materials": "the same surfaces as the hero scene, now glowing with the warmth of the closing light",
-        "motion": "a slow exhale of ambient motion, a breeze, drifting light or distant movement, then stillness",
+        "motion": "a slow exhale of ambient motion, drifting light, a soft stir of air or distant movement, then stillness",
         "camera_blocking": "the camera pulls back and rises slightly, revealing the whole world one last time before holding",
         "mood": "resolution and quiet satisfaction, a closing moment worth remembering",
         "continuity": "mirror the hero scene exactly in framing logic and palette so the end visibly answers the beginning"
@@ -338,7 +338,7 @@ _SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
     "footer": {
         "subject": "a simple brand mark or a calm, symbolic object that anchors the page without competing with its copy",
         "setting": "a quiet, neutral space with a shallow depth and a plain background",
-        "time_of_day": "neutral, timeless light",
+        "time_of_day": "a neutral, timeless moment",
         "light": "soft, even and low in contrast so that small text laid over it stays readable",
         "materials": "subtle, matte, low-detail surfaces",
         "motion": "none, a still frame with at most a barely perceptible drift",
