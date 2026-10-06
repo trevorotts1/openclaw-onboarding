@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.0.5 — Skill 38 inbound messaging repairs itself on update.** Boxes that already installed Skill 38 now receive the inbound-hooks fix automatically on their next update: the shared front door runs `skill38-inbound-hooks`, which removes the config key OpenClaw 2026.9.x rejects and sets the trusted proxy so customer messages through the Cloudflare tunnel are no longer refused. Builds on v26.0.2 and the Skill 38 v2.0.9 docker-tenant install fix. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.101**.
+> **v26.0.5 — Skill 38 inbound messaging repairs itself on update.** Boxes that already installed Skill 38 now receive the inbound-hooks fix automatically on their next update: the shared front door runs `skill38-inbound-hooks`, which removes the config key OpenClaw 2026.9.x rejects and sets the trusted proxy so customer messages through the Cloudflare tunnel are no longer refused. Builds on v26.0.2 and the Skill 38 v2.0.9 docker-tenant install fix. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.102**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v26.0.5.
