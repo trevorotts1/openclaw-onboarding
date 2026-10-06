@@ -1,6 +1,6 @@
 """KIE prompt rule 12 before submit: the kieai provider refuses a prompt outside 95-100 percent of the model
 max (hard floor 80 percent) and names the exact characters to add or cut. Hermetic: the real Skill 74 adapter
-answers from its registry snapshot (no key, empty HOME); requests.post is a trap that must not be reached."""
+answers from its registry snapshot (no key, empty HOME); the Skill 74 call (kie74) is a trap that must not be reached out of band."""
 
 from __future__ import annotations
 
@@ -47,11 +47,11 @@ def provider(monkeypatch):
     spec.loader.exec_module(module)
     reached = []
 
-    def trap(*args, **kwargs):
+    def trap(*args, **kwargs):  # every KIE call goes through Skill 74 (module.kie74); a submit is a 'run' call
         reached.append(args)
-        raise module.requests.RequestException("submit reached")
+        raise RuntimeError("submit reached")
 
-    monkeypatch.setattr(module.requests, "post", trap, raising=False)
+    monkeypatch.setattr(module, "kie74", trap)
     ai = module.AIProvider("kieai", {"kieai": {"api_key": "test-only-not-a-key"}})
     return ai, reached
 
