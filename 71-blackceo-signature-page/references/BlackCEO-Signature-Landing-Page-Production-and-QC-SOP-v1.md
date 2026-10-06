@@ -95,6 +95,8 @@ For booking: request the existing booking link or supported booking embed. For a
 
 ### C. Record the outcome and only the needed image questions
 
+Record the image-engine answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
+
 Record what successful action produces: confirmation, download, event access, booking or checkout success. Reuse existing workflows; do not fabricate bonuses, SMS flows or communities. Collect exact founder/brand names and usable logo/identity assets where required.
 
 Use the image guide's short conditional questions for missing visual decisions: who to show, references, real-person identity, tone/hair preferences, grade and image text. Do not make the client select cameras or write prompts.

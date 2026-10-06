@@ -42,7 +42,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:noop"}
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop"}
 
 
 def fail_exit(lines):
@@ -402,6 +402,15 @@ def run_builtin(name, args, run_dir):
         if problems:
             return "gate:must_supply: " + "; ".join(problems)
         return None
+    if name == "gate:intake_engine":
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_engine: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict) or intake.get("image_engine") not in ("kie", "agnes"):
+            return ("gate:intake_engine: intake.json must carry image_engine \"kie\" or \"agnes\" "
+                    "(write it with scripts/write_intake.py)")
+        return None
     if name == "gate:noop":
         # Test-only builtin: always passes.
         return None
@@ -600,10 +609,11 @@ def _ratio_problem(who, task):
     elif src in ("explicit-request", "department-pin"):
         # an explicit request or a pin overrides the default's ratio substitutions, with evidence
         ev = task.get("evidence")
-        if not (isinstance(ev, str) and len(ev.strip()) >= 12 and ev.strip().lower() not in BAD_IDS
-                and ev.strip() != task.get("model_id")):
+        e = ev.strip() if isinstance(ev, str) else ""
+        if not (len(e) >= 12 and len(e.split()) >= 3 and len(set(e.replace(" ", ""))) > 1
+                and e.lower() not in BAD_IDS and e != task.get("model_id")):
             return (f"{who}: model_source {src!r} needs evidence naming the request text or the pin id "
-                    f"(at least 12 characters, not a placeholder)")
+                    f"(at least 12 characters and 3 words, not a placeholder or a repeated character)")
     elif gen != N43_SUBSTITUTIONS.get(req, req):
         return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
                 f"expected {N43_SUBSTITUTIONS.get(req, req)}")

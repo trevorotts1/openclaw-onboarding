@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.2
+version: 1.2.3
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -116,7 +116,7 @@ Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRE
 
 ### Image and video engine routing
 
-Ask whether the owner/client has an explicit image-engine preference when generation is in scope.
+Ask whether the owner/client has an explicit image-engine preference when generation is in scope. Record the answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 - If **Kie.ai** is selected or no preference is given and Kie is available, every image request follows `references/kie-generation-route.md`: **Skill 66 `kie-image`** (policy: model selection, ratio rules, image QC), then **Skill 74 `kie-live-adapter`** (transport: validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, wait, save immediately). Video requests use **Skill 67 `kie-video`** the same way. Never hardcode a model id, price, endpoint or rate figure in this skill; those come from the policy owner, `price`, and `kie-common-rules.md`.
 - The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13; GPT Image 2.5 Sunburst today). The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
