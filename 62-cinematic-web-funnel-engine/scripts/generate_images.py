@@ -848,6 +848,11 @@ class FixtureKieTransport:
 
     def get_json(self, url, *, headers, params, timeout):
         from providers.kie import HttpResponse  # local import: test-support only
+        from providers._fixture_support import kie_discovery_response  # Skill 74 reads catalog/schema first
+
+        discovery = kie_discovery_response(url)
+        if discovery is not None:
+            return discovery
 
         task_id = (params or {}).get("taskId", "unknown")
         result_url = f"https://fixtures.example/result-{task_id}.png"

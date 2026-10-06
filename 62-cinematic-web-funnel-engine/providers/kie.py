@@ -6,31 +6,27 @@ Implements spec §10.1's mandate: "Implement providers/kie.py first. Reuse the
 existing canonical Kie setup, secret resolution, callback infrastructure, and
 image/video adapters where possible."
 
-HONEST STATUS (2026-10-05): this module is a STANDALONE Kie client. It is NOT
-a thin wrapper over the 47-movie-producer adapters; it duplicates their
-createTask/recordInfo plumbing and is kept aligned with them BY HAND, so it
-is a second divergent client until it is consolidated onto Skill 74 (the
-shared KIE live adapter). That consolidation is a staged follow-up and is not
-done here.
+CONSOLIDATED (v2.1.0): this module is NOT a standalone Kie client. Every Kie
+API call (catalog, schema validation, prompt budget, upload, createTask,
+recordInfo, price, save) runs through Skill 74 (74-kie-live-adapter, the one
+fleet KIE transport), loaded from the sibling skill folder and called in
+``active`` mode per call. This file keeps only Skill 62's own policy: the model
+registry, tier selection, the Veo 3.1 wire shape, the quality-tier refusal, the
+per-resolution price-table parsing, and the 46-kie-callback-relay HMAC wiring.
+When Skill 74 is not installed the provider falls back to the quarantined
+``providers/_kie_legacy.py`` client and logs ``path=legacy``; every other run
+logs ``path=skill74``.
 
 This module is SKILL-LOCAL (62-cinematic-web-funnel-engine/providers/) and
-has NO dependency on OpenMontage's ``tools.base_tool`` — unlike
-``47-movie-producer/kie-adapters/tools/{graphics,video}/kie_*.py`` (the
-OpenMontage-installed adapters, extended for ``bytedance/seedance-1.5-pro``
-frame pinning in this same U5 unit), which only import inside a client's
-cloned OpenMontage tree. Skill 62 must run standalone. Shared with those
-adapters: the ``/api/v1/jobs/createTask`` + ``/api/v1/jobs/recordInfo``
-endpoints, and the ``resultJson``-is-a-JSON-encoded-STRING decode contract
-(see ``_decode_result_json`` below). NOT shared: Veo. 47 still uses the
-legacy ``POST /api/v1/veo/generate`` route (``veo3``/``veo3_fast``); this
+has NO dependency on OpenMontage's ``tools.base_tool``. Skill 47's OpenMontage
+adapters ride the same Skill 74 transport. NOT shared with 47: Veo. 47 uses
+the legacy ``POST /api/v1/veo/generate`` route (``veo3``/``veo3_fast``); this
 module uses the current Veo route on createTask with model ``veo-3-1`` (see
 ``_veo_3_1_input``).
 
 Every model is addressed through ``providers.base.ModelRegistry`` by its
 registry ``model_id`` — this file NEVER hardcodes a provider wire slug or a
-price literal (ADR-8; the one exception, by design, is the two fully-
-qualified Kie HTTP endpoints below, which are transport plumbing, not a
-model identity).
+price literal (ADR-8).
 
 CALLBACK RELAY WIRING (spec §10.1, manifest ``delegation_seams.callback_relay``,
 Skill 62 U5 directive): this module also ports the ``46-kie-callback-relay``
@@ -55,12 +51,12 @@ found/not-found.
 
 NO LIVE/PAID CALLS: build+test happen against MOCKED Kie API fixtures
 (spec §19.2 "Kie adapter against mocked API fixtures") via the injectable
-``KieTransport`` seam — ``RequestsTransport`` is the only implementation that
-ever touches the network, and it is never invoked by this unit's tests.
+``KieTransport`` seam (bridged onto Skill 74's transport interface);
+``RequestsTransport`` is the only implementation that ever touches the
+network, and it is never invoked by this unit's tests.
 
 stdlib + optional ``requests`` (imported lazily, only inside
-``RequestsTransport``, exactly like the OpenMontage adapters) — importing
-this module never requires ``requests`` to be installed.
+``RequestsTransport``); importing this module never requires ``requests``.
 """
 
 from __future__ import annotations
@@ -69,16 +65,22 @@ import base64
 import dataclasses
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
 import secrets
-import time
+import shutil
+import sys
+import tempfile
+import weakref
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlparse
+
+from . import _kie_legacy
 
 from .base import (
     AssetUploadRequest,
@@ -91,50 +93,8 @@ from .base import (
     VideoGenerationRequest,
 )
 
-# ---------------------------------------------------------------------------
-# Kie.ai API constants (aligned by hand with 47-movie-producer/kie-adapters/
-# tools/{graphics,video}/kie_*.py — same endpoints; Veo bodies differ, see _veo_3_1_input).
-# ---------------------------------------------------------------------------
-_KIE_API_BASE = "https://api.kie.ai"
-_CREATE_TASK_URL = f"{_KIE_API_BASE}/api/v1/jobs/createTask"
-_RECORD_INFO_URL = f"{_KIE_API_BASE}/api/v1/jobs/recordInfo"
-# Base64 reference-image upload endpoint (verified 07-kie-setup/EXAMPLES.md
-# Example 7; identical to kie_image.py's KieImage._upload_local_image).
-_UPLOAD_URL = "https://kieai.redpandaai.co/api/file-base64-upload"
-
-_POLL_INTERVAL_SECONDS = 5
 _POLL_TIMEOUT_SECONDS = 600  # 10 min ceiling; matches box-kv-poller.js's fallback ceiling
-
-_MIME_BY_SUFFIX = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-}
-
-
-def _decode_result_json(raw: Any) -> Dict[str, Any]:
-    """Normalise Kie's ``resultJson`` field into a parsed dict.
-
-    Kie's poll endpoint (``/api/v1/jobs/recordInfo``) returns ``resultJson``
-    as a JSON-ENCODED STRING, not an already-parsed object (confirmed live
-    against api.kie.ai — see ``47-movie-producer/kie-adapters/tools/video/
-    kie_video.py``'s identically-named helper, whose fix this mirrors
-    exactly so both stay in lockstep). Defensive contract: str -> json.loads
-    (``{}`` on failure); dict -> used as-is; anything else -> ``{}``.
-    """
-    if isinstance(raw, str):
-        text = raw.strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-        except (ValueError, TypeError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    if isinstance(raw, dict):
-        return raw
-    return {}
+_KIE_HOSTS = ("api.kie.ai", "kieai.redpandaai.co")  # hosts that are the KIE API (everything else is a result file)
 
 
 # Veo 3.1 on createTask (live KIE catalog/schema, verified 2026-10-05):
@@ -318,6 +278,78 @@ class RequestsTransport(KieTransport):
 
 
 # ---------------------------------------------------------------------------
+# Skill 74 (74-kie-live-adapter): the one KIE transport. Loaded by file path
+# from the sibling skill folder (installed tree or repo checkout); nothing is
+# written into that folder (no bytecode: the source is compiled in memory).
+# ---------------------------------------------------------------------------
+
+_SKILL74_DIRNAME = "74-kie-live-adapter"
+_SKILL74_MODULES: Dict[str, Any] = {}
+
+
+def _skill74_candidates() -> List[Path]:
+    override = os.environ.get("CWFE_SKILL74_DIR")
+    if override is not None:  # test hook: look only here ("" = Skill 74 not installed)
+        return [Path(override)] if override else []
+    roots = [
+        Path(__file__).resolve().parent.parent.parent,  # sibling of this skill (installed tree or checkout)
+        Path(os.environ.get("OPENCLAW_SKILLS_DIR") or "") if os.environ.get("OPENCLAW_SKILLS_DIR") else None,
+        Path.home() / ".openclaw" / "skills",
+        Path("/data/.openclaw/skills"),
+    ]
+    return [r / _SKILL74_DIRNAME for r in roots if r is not None]
+
+
+def load_skill74() -> Optional[Any]:
+    """Return Skill 74's ``kie_live_adapter`` module, or None when it is not installed."""
+    import types
+
+    for d in _skill74_candidates():
+        f = d / "scripts" / "kie_live_adapter.py"
+        if not f.is_file():
+            continue
+        key = str(f)
+        if key not in _SKILL74_MODULES:
+            mod = types.ModuleType("kie_live_adapter_skill74")
+            mod.__file__ = key
+            exec(compile(f.read_text(encoding="utf-8"), key, "exec"), mod.__dict__)
+            _SKILL74_MODULES[key] = mod
+        return _SKILL74_MODULES[key]
+    return None
+
+
+class _Skill74Transport:
+    """Adapts the injectable ``KieTransport`` test seam (post_json/get_json/
+    download) to Skill 74's ``request(method, url, headers, body, timeout)``
+    interface. Used ONLY when a caller injects a transport (offline fixtures);
+    a real run lets Skill 74 use its own stdlib transport."""
+
+    def __init__(self, transport: "KieTransport", kie_error: Any) -> None:
+        self._t = transport
+        self._err = kie_error
+
+    def request(self, method, url, headers=None, body=None, timeout=60):
+        headers = dict(headers or {})
+        if method == "POST":
+            try:
+                payload = json.loads(body.decode("utf-8")) if body else {}
+            except ValueError:
+                raise self._err("network", "offline fixture transport carries JSON bodies only")
+            r = self._t.post_json(url, headers=headers, body=payload, timeout=timeout)
+            return r.status_code, json.dumps(r.json_body).encode("utf-8")
+        parsed = urlparse(url)
+        if parsed.hostname in _KIE_HOSTS:
+            r = self._t.get_json(
+                url.split("?")[0], headers=headers, params=dict(parse_qsl(parsed.query)) or None, timeout=timeout
+            )
+            return r.status_code, json.dumps(r.json_body).encode("utf-8")
+        try:  # a result file on a CDN host, not the KIE API
+            return 200, self._t.download(url, timeout=timeout)
+        except Exception as exc:  # never leak transport internals; Skill 74 turns a non-200 into download_failed
+            return getattr(getattr(exc, "response", None), "status_code", 502), b""
+
+
+# ---------------------------------------------------------------------------
 # 46-kie-callback-relay wiring — Python port of kie-slide-submitter.js's
 # callBackUrl construction, box-kv-poller.js's /kv-read pull, and
 # worker/src/index.js's verifyKieSignature. Kept algorithmically identical so
@@ -467,6 +499,9 @@ def kv_read(
 # ---------------------------------------------------------------------------
 
 
+_UNSET = object()
+
+
 class KieProvider(MediaProvider):
     """The Kie.ai concrete ``MediaProvider`` for the Cinematic and Web
     Funnel Engine. Every model slug/price is resolved through a
@@ -489,7 +524,11 @@ class KieProvider(MediaProvider):
         live_prices: bool = True,
     ) -> None:
         self.registry = registry or ModelRegistry()
+        self._injected_transport = transport is not None  # offline harness: ephemeral cache, no pacing sleeps
         self.transport: KieTransport = transport or RequestsTransport()
+        self._skill74: Any = _UNSET
+        self._scratch: Optional[str] = None
+        self.client_path: Optional[str] = None  # "skill74" or "legacy" once the first call has chosen
         self._api_key_env = api_key_env
         self._callback_worker_url_env = callback_worker_url_env
         self._callback_hmac_key_env = callback_hmac_key_env
@@ -568,33 +607,74 @@ class KieProvider(MediaProvider):
 
     # -- MediaProvider interface --------------------------------------------
 
+    # -- Skill 74 plumbing ---------------------------------------------------
+
+    def _use_skill74(self) -> bool:
+        if self._skill74 is _UNSET:
+            self._skill74 = load_skill74()
+            self.client_path = "skill74" if self._skill74 is not None else "legacy"
+            if self._skill74 is not None:
+                self._log("path=skill74 mode=active (Skill 74 is the KIE transport)")
+            else:
+                self._log("WARNING path=legacy: Skill 74 (74-kie-live-adapter) is not installed; using the quarantined fallback client")
+        return self._skill74 is not None
+
+    @staticmethod
+    def _log(message: str) -> None:
+        print(f"[cwfe-kie] {message}", file=sys.stderr)
+
+    def _adapter(self) -> Any:
+        """A Skill 74 ``Adapter`` pinned to ``active`` mode for this call (owner order: live)."""
+        mod = self._skill74
+        env = {
+            "KIE_API_KEY": self._api_key(),
+            "KIE_LIVE_ADAPTER_MODE": "active",
+            "HOME": os.environ.get("HOME") or str(Path.home()),
+        }
+        for name in ("KIE_LIVE_CACHE_DIR", "KIE_LIVE_RECEIPT_DIR", "OC_CONFIG"):
+            if os.environ.get(name):
+                env[name] = os.environ[name]
+        kwargs: Dict[str, Any] = {}
+        if self._injected_transport:
+            if self._scratch is None:
+                self._scratch = tempfile.mkdtemp(prefix="cwfe-kie74-")
+                weakref.finalize(self, shutil.rmtree, self._scratch, True)
+            env["KIE_LIVE_CACHE_DIR"] = self._scratch
+            env["KIE_LIVE_MIN_SPACING"] = "0"
+            kwargs = {"transport": _Skill74Transport(self.transport, mod.KieError), "sleep": lambda _s: None}
+        adapter = mod.Adapter(env=env, **kwargs)
+        adapter.mode = "active"
+        return adapter
+
+    def _check_prompt(self, adapter: Any, slug: str, prompt: Any, model_id: str) -> None:
+        """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here): over the model
+        maximum is refused; under the 80 percent floor is reported (this skill's templated prompts are
+        short; the floor is enforced by the policy owner Skill 66)."""
+        if not isinstance(prompt, str):
+            return
+        r = adapter.cmd_prompt_budget(slug, check=True, prompt_text=prompt)
+        err = r.get("error") or {}
+        if err.get("code") == "prompt_above_max":
+            raise ProviderTaskError(f"kie provider: {model_id} prompt exceeds the model limit: {err.get('msg')}")
+        if err.get("code") == "prompt_below_floor":
+            self._log(f"WARNING {model_id} prompt below the prompt-budget floor: {err.get('msg')}")
+
+    # -- MediaProvider interface --------------------------------------------
+
     def upload_asset(self, request: AssetUploadRequest) -> str:
-        """Upload a local file via Kie's authenticated base64-upload
-        endpoint (identical endpoint/shape to
-        ``kie_image.py KieImage._upload_local_image``) and return a
-        publicly reachable Kie-hosted URL."""
+        """Upload a local file through Skill 74 (authenticated, KIE-hosted
+        URL back); the quarantined fallback client is used only without Skill 74."""
         path = Path(request.path)
         if not path.exists():
             raise ProviderTaskError(f"kie provider: local asset not found: {path}")
-        mime = _MIME_BY_SUFFIX.get(path.suffix.lower(), "image/png")
-        b64 = base64.b64encode(path.read_bytes()).decode("ascii")
-        body = {
-            "base64Data": f"data:{mime};base64,{b64}",
-            "uploadPath": f"images/cinematic-web-funnel-engine/{request.purpose}",
-            "fileName": path.name,
-        }
-        resp = self.transport.post_json(
-            _UPLOAD_URL,
-            headers={"Authorization": f"Bearer {self._api_key()}"},
-            body=body,
-            timeout=60,
+        if not self._use_skill74():
+            return _kie_legacy.upload_asset(self.transport, self._api_key(), path, request.purpose)
+        r = self._adapter().cmd_upload(
+            file=str(path), upload_path=f"images/cinematic-web-funnel-engine/{request.purpose}"
         )
-        data = resp.json_body.get("data") or {}
-        url = data.get("downloadUrl") or resp.json_body.get("downloadUrl") or data.get("url")
-        if not url or not str(url).startswith("http"):
-            raise ProviderTaskError(
-                f"kie provider: upload_asset returned no usable URL: {resp.json_body}"
-            )
+        url = (r.get("data") or {}).get("download_url")
+        if r["state"] != "success" or not url or not str(url).startswith("http"):
+            raise ProviderTaskError(f"kie provider: upload_asset failed: {r.get('error') or r.get('data')}")
         return str(url)
 
     def generate_image(
@@ -606,14 +686,15 @@ class KieProvider(MediaProvider):
             # GPT-image-2.5 has no dedicated negative-prompt field (mirrors
             # kie_image.py's FIX-IMG-09 in-prompt exclusion clause).
             prompt = f"{prompt} Do not include: {request.negative_prompt}"
+        # Only fields the sunburst schemas DECLARE are sent: no output_format; the
+        # image-to-image reference field is `input_urls` (not Nano Banana's `image_input`).
         task_input: Dict[str, Any] = {
             "prompt": prompt,
             "aspect_ratio": request.aspect_ratio,
             "resolution": request.resolution,
-            "output_format": request.output_format,
         }
         if request.reference_image_urls:
-            task_input["image_input"] = list(request.reference_image_urls)
+            task_input["input_urls"] = list(request.reference_image_urls)
         body: Dict[str, Any] = {"model": slug, "input": task_input}
         ticket = self._maybe_attach_callback(body, use_callback=use_callback)
         handle = self._submit(body, model_id=request.model_id)
@@ -660,35 +741,29 @@ class KieProvider(MediaProvider):
         return handle
 
     def _submit(self, body: Dict[str, Any], *, model_id: str) -> TaskHandle:
-        resp = self.transport.post_json(
-            _CREATE_TASK_URL, headers=self._auth_headers(), body=body, timeout=30
-        )
-        if resp.status_code >= 400:
+        if not self._use_skill74():
+            task_id = _kie_legacy.submit(self.transport, self._api_key(), body, model_id)
+            return TaskHandle(task_id=task_id, provider=self.name, model_id=model_id, status="queued")
+        adapter = self._adapter()
+        self._check_prompt(adapter, body["model"], (body.get("input") or {}).get("prompt"), model_id)
+        r = adapter.cmd_submit(body)  # validates against the live schema, then createTask (never retried on a network error)
+        if r["state"] != "queued" or not r.get("task_id"):
+            err = r.get("error") or {}
             raise ProviderTaskError(
-                f"kie provider: createTask HTTP {resp.status_code} for {model_id}: {resp.json_body}"
+                f"kie provider: Skill 74 submit for {model_id} did not queue ({r['state']}, {err.get('code')}): {err.get('msg')}"
             )
-        data = resp.json_body.get("data") or {}
-        task_id = data.get("taskId") or resp.json_body.get("taskId")
-        if not task_id:
-            raise ProviderTaskError(
-                f"kie provider: createTask for {model_id} returned no taskId: {resp.json_body}"
-            )
-        return TaskHandle(task_id=task_id, provider=self.name, model_id=model_id, status="queued")
+        return TaskHandle(task_id=r["task_id"], provider=self.name, model_id=model_id, status="queued")
 
     def get_task(self, task_id: str) -> TaskHandle:
-        resp = self.transport.get_json(
-            _RECORD_INFO_URL,
-            headers={"Authorization": f"Bearer {self._api_key()}"},
-            params={"taskId": task_id},
-            timeout=15,
-        )
-        data = resp.json_body.get("data") or {}
-        state = data.get("state", "")
-        status_map = {"success": "success", "fail": "failed", "failed": "failed", "error": "failed"}
-        status = status_map.get(state, "processing" if state else "queued")
-        detail = None
-        if status == "failed":
-            detail = data.get("failMsg") or resp.json_body.get("msg")
+        if not self._use_skill74():
+            status, detail = _kie_legacy.task_state(self.transport, self._api_key(), task_id)
+            return TaskHandle(task_id=task_id, provider=self.name, model_id="", status=status, detail=detail)
+        r = self._adapter().cmd_wait(task_id, timeout=0)  # one poll: a zero deadline returns after the first read
+        data = r.get("data") or {}
+        if r["state"] == "fail" and "state_raw" not in data:  # an API/transport error, not a task verdict
+            raise ProviderTaskError(f"kie provider: status read for {task_id} failed: {r.get('error')}")
+        status = {"success": "success", "fail": "failed"}.get(r["state"]) or ("processing" if data.get("state_raw") else "queued")
+        detail = (r.get("error") or {}).get("msg") if status == "failed" else None
         return TaskHandle(task_id=task_id, provider=self.name, model_id="", status=status, detail=detail)
 
     def cancel_task(self, task_id: str) -> bool:
@@ -699,56 +774,32 @@ class KieProvider(MediaProvider):
         return False
 
     def download_results(self, task_id: str, destination: str) -> List[str]:
-        result_url = self._poll_result_url(task_id)
-        content = self.transport.download(result_url, timeout=180)
         dest = Path(destination)
-        if destination.endswith("/") or (dest.exists() and dest.is_dir()):
+        into_dir = destination.endswith("/") or (dest.exists() and dest.is_dir())
+        if into_dir:
             dest = dest / task_id
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(content)
+        if not self._use_skill74():
+            url = _kie_legacy.poll_result_url(self.transport, self._api_key(), task_id, timeout=_POLL_TIMEOUT_SECONDS)
+            _kie_legacy.download(self.transport, url, dest)
+            return [str(dest)]
+        adapter = self._adapter()
+        waited = adapter.cmd_wait(task_id, timeout=_POLL_TIMEOUT_SECONDS)
+        if waited["state"] != "success":
+            err = waited.get("error") or {}
+            raise ProviderTaskError(f"kie provider: task {task_id} {waited['state']}: {err.get('msg') or err.get('code')}")
+        scratch = tempfile.mkdtemp(prefix="cwfe-kie-save-")
+        try:
+            saved = adapter.cmd_save(task_id, scratch)
+            if saved["state"] != "success" or not saved["saved_paths"]:
+                err = saved.get("error") or {}
+                raise ProviderTaskError(f"kie provider: task {task_id} result could not be saved: {err.get('msg') or saved['warnings']}")
+            if into_dir:
+                dest = dest.with_name(dest.name + Path(saved["saved_paths"][0]).suffix)
+            shutil.move(saved["saved_paths"][0], str(dest))
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
         return [str(dest)]
-
-    def _poll_result_url(
-        self, task_id: str, *, interval: float = _POLL_INTERVAL_SECONDS, timeout: float = _POLL_TIMEOUT_SECONDS
-    ) -> str:
-        elapsed = 0.0
-        while elapsed < timeout:
-            resp = self.transport.get_json(
-                _RECORD_INFO_URL,
-                headers={"Authorization": f"Bearer {self._api_key()}"},
-                params={"taskId": task_id},
-                timeout=15,
-            )
-            data = resp.json_body.get("data") or {}
-            state = data.get("state", "")
-            if state == "success":
-                result_json = _decode_result_json(data.get("resultJson"))
-                urls = _urls_from(result_json.get("resultUrls"))
-                if urls:
-                    return urls[0]
-                # Veo-style payload shape (callback docs): data.info.resultUrls.
-                info_urls = _urls_from((data.get("info") or {}).get("resultUrls"))
-                if info_urls:
-                    return info_urls[0]
-                fallback = (
-                    result_json.get("videoUrl")
-                    or result_json.get("url")
-                    or result_json.get("resultUrl")
-                )
-                if fallback:
-                    return str(fallback)
-                images = result_json.get("images") or []
-                if images:
-                    return str(images[0].get("url", ""))
-                raise ProviderTaskError(
-                    f"kie provider: task {task_id} succeeded but no result URL found: {result_json}"
-                )
-            if state in ("fail", "failed", "error"):
-                fail_msg = data.get("failMsg") or resp.json_body.get("msg") or "unknown"
-                raise ProviderTaskError(f"kie provider: task {task_id} failed: {fail_msg}")
-            time.sleep(interval)
-            elapsed += interval
-        raise ProviderTaskError(f"kie provider: task {task_id} timed out after {timeout}s")
 
     def estimate_cost(
         self, request: "ImageGenerationRequest | VideoGenerationRequest"
@@ -797,24 +848,22 @@ class KieProvider(MediaProvider):
 
     def _live_estimate(self, entry: Dict[str, Any], request: Any) -> Optional[CostEstimate]:
         """Live price first: when the registry entry declares ``price.live``
-        (endpoint + mode), GET it (free) and price from ``pricingDesc``.
-        Returns None on any failure (no key, transport error, non-200 body
-        code, mode/resolution missing) so the caller falls back to the
-        dated registry constants."""
+        (mode), read the model's ``pricingDesc`` through Skill 74 ``price``
+        (live catalog only; its registry snapshot is NOT a live read) and pick
+        this skill's mode/resolution row. Returns None on any failure (no
+        Skill 74, no key, catalog unavailable, mode/resolution missing) so
+        the caller falls back to the dated registry constants."""
         live = (entry.get("price") or {}).get("live")
         if not (self._live_prices and live and isinstance(request, VideoGenerationRequest)):
             return None
+        if not self._use_skill74():
+            return None
         try:
-            resp = self.transport.get_json(
-                f"{_KIE_API_BASE}{live['endpoint']}",
-                headers={"Authorization": f"Bearer {self._api_key()}"},
-                params=None,
-                timeout=15,
-            )
-            body = resp.json_body or {}
-            if resp.status_code >= 400 or body.get("code") != 200:
+            r = self._adapter().cmd_price(entry["provider_model_slug"])
+            data = r.get("data") or {}
+            if r["state"] == "fail" or not str(data.get("price_source", "")).startswith("catalog"):
                 return None
-            table = parse_pricing_desc((body.get("data") or {}).get("pricingDesc", ""))
+            table = parse_pricing_desc(data.get("pricing_desc") or "")
             unit_price = table[str(live["mode"]).lower()][str(request.resolution).lower()]
         except Exception:  # fail soft to the labeled fallback constants
             return None
@@ -827,5 +876,5 @@ class KieProvider(MediaProvider):
             estimated_total=round(unit_price, 6),
             verified=True,
             registry_snapshot_id=self.registry.snapshot_id,
-            note=f"LIVE catalog price ({live['endpoint']}), {live['mode']} mode, {request.resolution}",
+            note=f"LIVE catalog price (Skill 74 price, {live['endpoint']}), {live['mode']} mode, {request.resolution}",
         )
