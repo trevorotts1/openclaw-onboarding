@@ -74,6 +74,7 @@ _log "dry-run: $DRY_RUN"
 if [ "$DRY_RUN" = "0" ]; then
   cp "$OC_CONFIG" "$OC_BACKUP"
   _log "backed up to: $OC_BACKUP"
+  [ -f "$(dirname "$0")/prune-openclaw-json-backups.sh" ] && bash "$(dirname "$0")/prune-openclaw-json-backups.sh" "$(dirname "$OC_CONFIG")" >/dev/null 2>&1 || true
 fi
 
 # ─── Resolve main agent workspace (shared by L1 + L2 + L3) ──────────────────

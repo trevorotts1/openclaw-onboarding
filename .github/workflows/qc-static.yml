@@ -1405,6 +1405,9 @@ jobs:
           bash tests/unit/update-summary.test.sh
           bash tests/unit/frontdoor-999-clone-9router.test.sh
           bash tests/unit/box-fixes-gates.test.sh
+          python3 tests/unit/ensure-persona-contexts.test.py
+          bash tests/unit/prune-openclaw-json-backups.test.sh
+          bash tests/unit/qc-env-stores.test.sh
 
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash

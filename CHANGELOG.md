@@ -7,6 +7,9 @@
 - **999-setup front door:** a 9Router box with no 999-setup checkout now gets one cloned and refreshed through the guarded `--skills-only` path (checksum-guarded; models and credentials untouched).
 - **JEV named** in the V4.3 "Task intake and assigned execution" text (AGENTS.md, SOP-00, ceo_execution_policy, classifier policy, plugin preamble).
 - **Gate fixes:** `author-missing-sops.py` exits 0 when no SOP-NEEDED.json exists; Skill 43 version is `2.0.0` (X.Y.Z); the verification gate skips `qc-built-*.sh` helpers so Skill 44 uses `qc-convert-and-flow.sh`; Skill 06's GK-27 lattice check skips off-repo (as Skill 35 does); `lib-shared.sh` is delivered to the skills dir every roll.
+- **Persona key on every roll (R16).** New `shared-utils/ensure_persona_contexts.py` writes and verifies `MC_PERSONA_COMPANY_CONTEXTS_JSON` in Command Center's persisted `.env.local` on every update (keyed by each company id in use, config id must match, never overwrites a valid value). The roll health checks gain `persona-contexts`, which fails loudly when it is missing. `TENANT-CONFIGURATION.md` no longer tells operators to add it by hand.
+- **Backup pile-up (R17).** New `scripts/prune-openclaw-json-backups.sh` keeps `openclaw.json`, `openclaw.json.last-good` and the 3 newest other copies; run on every update and right after the config-editing scripts write their backup.
+- **QC env stores (R18).** `oc_fill_from_env_stores` (lib-shared.sh) lets Skill 07, 25 and 35 QC read `secrets/.env`, `.env` and `openclaw.json` env.vars for the KIE key.
 
 ## [v26.0.3]  -  2026-10-06  -  Skill 38 v2.0.10: boxes that already installed Skill 38 get the inbound-hooks fix automatically on their next update (front-door repair skill38-inbound-hooks)
 

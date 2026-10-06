@@ -65,6 +65,8 @@ fi
 : "${GOHIGHLEVEL_API_KEY:=}"
 : "${GOHIGHLEVEL_LOCATION_ID:=}"
 : "${KIE_API_KEY:=}"
+# Credential stores: secrets/.env was the only one read; also read ~/.openclaw/.env and openclaw.json env.vars.
+if declare -F oc_fill_from_env_stores >/dev/null 2>&1; then oc_fill_from_env_stores KIE_API_KEY; fi
 : "${FISH_AUDIO_API_KEY:=}"
 : "${FISH_AUDIO_VOICE_ID:=}"
 : "${PODBEAN_PODCAST_ID:=}"

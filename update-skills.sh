@@ -11025,6 +11025,15 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
   # above is untouched and still gates its own early exit.
   _cc_currency_probe || true
 
+  # R16: Command Center (v7.4.0+) needs MC_PERSONA_COMPANY_CONTEXTS_JSON in its
+  # PERSISTED service env, or every new task sticks on "Missing: persona". Only a
+  # fresh interview launch wrote it. Write + verify it on EVERY roll (never
+  # overwrites a valid value). Advisory: the "persona-contexts:" line is lifted
+  # into the fleet check; failure here never aborts the update.
+  if cc_is_valid_checkout "$_CC_DIR" && [ -f "$SKILLS_DIR/shared-utils/ensure_persona_contexts.py" ]; then
+    python3 "$SKILLS_DIR/shared-utils/ensure_persona_contexts.py" --app "$_CC_DIR" 2>&1 | sed 's/^/  /' || true
+  fi
+
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
   #
   # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):
@@ -11902,6 +11911,13 @@ PY
   #                               this: exit 0, stamp advanced, AGENTS.md and
   #                               MEMORY.md byte-identical, self-heal never ran.
   # ----------------------------------------------------------
+  # R17: openclaw.json backup pile-up. Every script that edits the config writes its own
+  # timestamped copy and nothing pruned them (102 on one box). Keep openclaw.json,
+  # .last-good and the 3 newest others. Non-fatal.
+  _pj="${_OC_SCRIPTS_DEST:-$HOME/.openclaw/scripts}/prune-openclaw-json-backups.sh"
+  [ -f "$_pj" ] || _pj="$ONBOARDING_DIR/scripts/prune-openclaw-json-backups.sh"
+  if [ -f "$_pj" ]; then bash "$_pj" 2>&1 | sed 's/^/  /' || true; fi
+
   # >>> UPDATE-PENDING-FLAG-LIFECYCLE-BEGIN (extracted verbatim by
   #     tests/unit/update-skills-pending-flag-staleness.test.sh)
   _RESUME_NEEDED="no"
