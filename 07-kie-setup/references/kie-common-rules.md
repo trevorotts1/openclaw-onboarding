@@ -16,7 +16,7 @@ Reference them by these exact names.
 1. Owner rulings (AGENTS.md N43 and similar).
 2. Department pins (for example the Presentations `model_catalog.json`).
 3. Skill policy owners: Skill 66 (image), Skill 67 (video), Skill 68 (audio).
-4. Skill 74 live adapter: mechanics only. It never chooses models.
+4. Skill 74 live adapter: mechanics only. It never chooses models. Exception: `latest-family` resolves the GPT Image default under rule 13; every other model choice stays with the policy owners.
 5. Static tables in the repo: dated snapshots only.
 
 ## 2. Endpoints (live-verified 2026-10-05)
@@ -92,20 +92,19 @@ returned). Links from download-url last 20 minutes. Task records last 2 months.
 On a client box the KIE key is the client's own. Operator keys are never used for client work.
 Resolve keys only through shared-utils `key_resolver.py` / `secret_names.json`. Print SET or
 NOT-SET only, never the value. Stop on 401 or 403: at most 2 attempts per AGENTS.md N40 (fail-closed dependency: stop at 2,
-report once); Skill 74 makes 1 attempt (stricter).
+report once); Skill 74 makes 1 attempt (stricter; source: `74-kie-live-adapter/SKILL.md`, PR #1493).
 
 ## 10. Model ids
 
 Never write a model id from memory. Use the policy owner's registry or the department pin.
-New live models start as DISCOVERED and are never auto-defaults.
+New live models start as DISCOVERED and are never auto-defaults. Exception: the GPT Image default follows rule 13 (owner order 2026-10-05).
 
 ## 11. Image pin (restated from AGENTS.md N43)
 
 N43 named the sunburst family as the pinned default. Rule 13 makes the default follow the newest
 GPT Image generation (today that is 2.5 sunburst); the N43 ids below are the current resolution.
 Default today: `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`.
-Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21 (rated weak on 2.5; no
-substitute was blessed). Ratio substitutions on 2.5 sunburst: 5:4 becomes 4:3; 4:5 becomes 3:4;
+Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21 (must not use 2.5 per N43). Ratio substitutions on 2.5 sunburst: 5:4 becomes 4:3; 4:5 becomes 3:4;
 2:1 becomes 16:9; 1:2 becomes 9:16. All other requested ratios go to 2.5 sunburst as asked.
 `flare` is not introduced without a new owner ruling (see the variant order in rule 13).
 Constraint sets are per generation and never merged (2.5 prompt cap 20,000; legacy 25,000).
@@ -151,4 +150,4 @@ automatically.
 - The prompt budget (rule 12) uses the new model's own schema maxLength automatically.
 - Every automatic switch writes a receipt and is reported to the operator. If the new model fails
   dispatch or validation, fall back to the previous default for that job and record the fallback.
-- The legacy `gpt-image-2` ratios and substitutions in rule 11 (N43) still apply.
+- The legacy `gpt-image-2` ratios and substitutions in rule 11 (N43) still apply until the owner rules on the new generation's ratios.
