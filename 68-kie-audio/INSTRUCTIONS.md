@@ -128,7 +128,7 @@ Exit 2 = do NOT dispatch. Fix the payload, do not bypass the validator.
 - Suno: poll get music details every 30 seconds.
 - 200 on create = accepted, NOT complete. Callback stages are `text` →
   `first` → `complete` for Suno; only `complete` is finished output.
-- KIE media expires after ~14 days — persist when long-term access is needed.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## STT — never route here
 
