@@ -4,6 +4,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.0.4] - 2026-10-05 - Canonical KIE common rules
+
+### Added
+- `references/kie-common-rules.md`: single source of truth for KIE authority order, endpoints, rate limits, polling, prompt caps, credit preflight, prices, retention, keys, model ids and the N43 image pin.
+
+---
+
 ## [7.0.0] - 2026-08-26 - Modernize KIE provider router, callback policy, and core wiring
 
 ### Changed
