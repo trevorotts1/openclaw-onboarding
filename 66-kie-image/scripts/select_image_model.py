@@ -21,7 +21,7 @@ import os
 import re
 import sys
 
-VERSION = "2.0.4"
+VERSION = "2.0.5"
 
 MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -88,7 +88,7 @@ REGISTRY = {
         "name": "Seedream 4.5",
         "routes": {
             "t2i": {"canonical_model_id": "seedream/4.5-text-to-image", "task": "text-to-image"},
-            "edit": {"canonical_model_id": "seedream/4-5-edit", "task": "image-to-image"},
+            "edit": {"canonical_model_id": "seedream/4.5-edit", "task": "image-to-image"},
         },
         "default": "t2i",
     },
@@ -681,7 +681,7 @@ SELFTEST_CASES = [
     ("z image generate a blue robot", "z-image", True, None),
     ("z image by quinn", "z-image", True, None),
     ("glimblox render something", "gpt-image-2-5-sunburst-text-to-image", True, None),
-    ("seedream 4.5 with five reference images", "seedream/4-5-edit", True, None),
+    ("seedream 4.5 with five reference images", "seedream/4.5-edit", True, None),
     ("seedream 4.5 pure text generation", "seedream/4.5-text-to-image", True, None),
     ("nano banana 2 lite fast poster", "nano-banana-2-lite", True, None),
     ("imagen 4 ultra studio shot", "google/imagen4-ultra", True, None),

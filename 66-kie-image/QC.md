@@ -17,7 +17,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       every entry has `source_url` and `last_verified_at` and a `cap_status`.
 - [ ] The skill zip does NOT contain `wire.sh` (installers are not shipped in
       the bundle).
-- [ ] `skill-version.txt` reads `v2.0.4`.
+- [ ] `skill-version.txt` reads `v2.0.5`.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first (PREREQS.json).

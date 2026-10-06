@@ -26,6 +26,43 @@ KIE_UPLOAD_PATH = 'video-creator/inputs'  # no leading/trailing slash (KIE requi
 KIE_AUTH_CODES = (401, 403)
 KIE_POLL_DEADLINE = 900  # seconds; video jobs are slow
 KIE_VIDEO_SKILL = '67-kie-video'
+# Image-to-video input key per model, from each model's KIE docs page input schema (read 2026-10-05;
+# page URL = https://docs.kie.ai/market/<path>.md, listed in docs.kie.ai/llms.txt) cross-checked with
+# Skill 67 models.json / validate_payload.py. Value: (input key, 'str' single URL | 'list' array of URLs).
+#   model id                              | key              | type | source (docs.kie.ai/market/...)
+#   wan/3-0-video                         | first_frame_url  | str  | wan/3-0-video
+#   wan/3-0-video-prime                   | first_frame_url  | str  | wan/3-0-video-prime
+#   wan/2-7-image-to-video                | first_frame_url  | str  | wan/2-7-image-to-video
+#   bytedance/seedance-2-5                | first_frame_url  | str  | bytedance/seedance-2-5
+#   bytedance/seedance-2-mini             | first_frame_url  | str  | bytedance/seedance-2-mini
+#   minimax-h3/image-to-video             | first_frame_url  | str  | minimax-h3/image-to-video
+#   kling/v2-5-turbo-image-to-video-pro   | image_url        | str  | kling/v25-turbo-image-to-video-pro
+#       (page text: "Must be kling/v2-5-turbo-image-to-video-pro"; its enum shows v2-1-master, a docs copy error)
+#   kling-3.0-omni/image-to-video         | image_urls       | list | kling/v3-omni-image-to-video (both oneOf branches)
+#   kling-3.0/video                       | image_urls       | list | kling/kling-3-0 (first and last frame)
+#   pixverse-v6/image-to-video            | image_urls       | list | pixverse/image-to-video
+#   happyhorse-1-1/image-to-video         | image_urls       | list | happyhorse-1-1/image-to-video
+#   happyhorse/image-to-video             | image_urls       | list | happyhorse/image-to-video
+#   gemini-omni-video                     | image_urls       | list | gemini-omni-video
+# Required fields other than the image (for example mode/sound, quality, string durations) are the
+# caller's to supply through input_extra; KIE answers a missing one with a body code, surfaced as an error.
+KIE_I2V_IMAGE_FIELD = {
+    'wan/3-0-video': ('first_frame_url', 'str'),
+    'wan/3-0-video-prime': ('first_frame_url', 'str'),
+    'wan/2-7-image-to-video': ('first_frame_url', 'str'),
+    'bytedance/seedance-2-5': ('first_frame_url', 'str'),
+    'bytedance/seedance-2-mini': ('first_frame_url', 'str'),
+    'minimax-h3/image-to-video': ('first_frame_url', 'str'),
+    'kling/v2-5-turbo-image-to-video-pro': ('image_url', 'str'),
+    'kling-3.0-omni/image-to-video': ('image_urls', 'list'),
+    'kling-3.0/video': ('image_urls', 'list'),
+    'pixverse-v6/image-to-video': ('image_urls', 'list'),
+    'happyhorse-1-1/image-to-video': ('image_urls', 'list'),
+    'happyhorse/image-to-video': ('image_urls', 'list'),
+    'gemini-omni-video': ('image_urls', 'list'),
+}
+# Dedicated KIE APIs (not createTask): unsupported by this client.
+KIE_DEDICATED_MODELS = ('runway', 'veo3', 'veo3_fast', 'veo3_lite')
 
 
 class KieAPIError(RuntimeError):
@@ -206,10 +243,25 @@ class AIProvider:
         self._require_kie_key()
         image_path = Path(image_path)
         model = kwargs.get('model') or select_kie_video_model('image to video', duration)
+        override = kwargs.get('image_field')
+        if override:
+            field, kind = override, ('list' if override.endswith('s') else 'str')
+        elif model in KIE_DEDICATED_MODELS:
+            raise RuntimeError(
+                f"KIE model '{model}' uses a dedicated KIE API (not createTask), which this client does "
+                "not support. Choose a createTask model with --model, one of: "
+                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+        elif model in KIE_I2V_IMAGE_FIELD:
+            field, kind = KIE_I2V_IMAGE_FIELD[model]
+        else:
+            raise RuntimeError(
+                f"Image field for KIE model '{model}' is not established (Skill 67 and the KIE docs "
+                "do not pin it here), so no guess is sent. Pass --image-field <input key> "
+                "(image_field=... in code; see https://docs.kie.ai/llms.txt for the model's page) or choose "
+                "a supported model: " + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
         image_url = self._kie_upload(image_path)
-        field = kwargs.get('image_field') or 'image_urls'  # Skill 67 registry convention
         payload = {'prompt': prompt or '', 'duration': duration,
-                   field: [image_url] if field.endswith('s') else image_url}
+                   field: [image_url] if kind == 'list' else image_url}
         self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs)
         output = kwargs.get('output') or image_path.with_suffix('.mp4')
         return self._kie_run(model, payload, output, kwargs)
