@@ -359,9 +359,9 @@ class StageGateTest(unittest.TestCase):
         if not no_files and isinstance(extra.get("transport"), dict):
             kie_receipts(run, extra["transport"])
         if agnes:
-            write(run / "intake.json", json.dumps({"page_version": "standard", "brand_owner": "blackceo",
-                  "brand_file": "private/brand.json", "creative_direction": None, "image_cap": 2,
-                  "test_run": True, "image_engine": "agnes"}))
+            subprocess.run([PY, str(ROOT / "scripts" / "write_intake.py"), str(run), "--page-version", "standard",
+                            "--brand-owner", "blackceo", "--brand-file", "private/brand.json",
+                            "--image-cap", "2", "--image-engine", "agnes", "--test-run"], check=True)
         put_receipt(run, "image-generation-qc", author="image-gen", reviewer="image-reviewer",
                     scores={"grade": 9}, extra=base)
         return run_gate("close", str(run), "image-generation-qc", env=env)
@@ -433,6 +433,20 @@ class StageGateTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("client must have selected Agnes", proc.stdout + proc.stderr)
 
+    def test_i15_intake_writer_records_the_engine_choice(self):
+        d = self.td / "intake-run"
+        d.mkdir()
+        w = [PY, str(ROOT / "scripts" / "write_intake.py"), str(d), "--page-version", "long-form",
+             "--brand-owner", "blackceo", "--image-cap", "3"]
+        subprocess.run(w, check=True, capture_output=True)
+        self.assertEqual(json.loads((d / "intake.json").read_text())["image_engine"], "kie")
+        self.assertFalse(stage_gate._agnes_selected(d))
+        subprocess.run(w + ["--image-engine", "agnes"], check=True, capture_output=True)
+        self.assertEqual(json.loads((d / "intake.json").read_text())["image_engine"], "agnes")
+        self.assertTrue(stage_gate._agnes_selected(d))
+        bad = subprocess.run(w + ["--image-engine", "dalle"], capture_output=True)
+        self.assertNotEqual(bad.returncode, 0)
+
     def test_i11_task_id_without_result_file_refused(self):
         proc = self.close_image_qc(no_files=True, transport=kie_transport(KIE_FILES))
         self.assertEqual(proc.returncode, 1)
@@ -468,6 +482,9 @@ class StageGateTest(unittest.TestCase):
         proc = self.close_image_qc(transport=t)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("needs evidence", proc.stdout + proc.stderr)
+        for weak in ("pin", "placeholder", "short one"):
+            t["tasks"][0]["evidence"] = weak
+            self.assertEqual(self.close_image_qc(transport=t).returncode, 1, weak)
         t["tasks"][0]["evidence"] = "client asked for the legacy model by name in the intake"
         proc = self.close_image_qc(transport=t)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
