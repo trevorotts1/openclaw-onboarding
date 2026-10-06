@@ -229,7 +229,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 4. **Kie image generation calls (when in scope):**
 
    Model selection:
-   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated; the API field that carries them is `input_urls`; known defect, tracked for the Skill 47 lane: `kie_image.py` currently sends `image_input`, so reference images from that adapter may be dropped or rejected until it is changed)
+   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated). The API field is `input_urls` (AGENTS.md N43). Skill 47 `kie_image.py` before its `input_urls` fix (PR #1499) sent `image_input`; if the installed helper still does, it is below that fix and must be updated, not worked around here. This SOP describes the required payload.
    - Use `gpt-image-2-5-sunburst-text-to-image` when generating from text prompt only (no source images)
 
    API call shape (must match Skill 66's `references/api-patterns.md` and AGENTS.md N43; the `46-kie-callback-relay/kie-slide-submitter.js` submitter is a worked example, not the authority):

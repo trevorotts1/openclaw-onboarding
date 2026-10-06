@@ -286,7 +286,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
    - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
    - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
 4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Length check: confirm each slide prompt is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds are being aligned to this rule in the same release (the Slide Image Creator owns the sizing). Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
+5. Length check: confirm each slide prompt is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds still enforce the old band until the prompt-budget code change lands (the Slide Image Creator owns the sizing). Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
 
 **Outputs:**
 - phase4_checkpoint.json (budget events and truncation log)

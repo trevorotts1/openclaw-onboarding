@@ -60,7 +60,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 3. If found and `state: complete`: return the existing result. Do not resubmit. Regression re-checks use this path — cost is zero.
 
-4. If found and `state: submitted|polling`: re-poll the recorded `taskId` via `recordInfo`. Do not create a duplicate task.
+4. If found and `state: submitted|polling`: read the receipt state and ask the Render Dispatcher for the current `recordInfo` state of the recorded `taskId` (the Operator does not poll). Do not create a duplicate task.
 
 5. Only if no matching fingerprint exists: proceed to create a new task and write a new receipt.
 
