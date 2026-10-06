@@ -37,7 +37,7 @@
       "id": "kie-credits",
       "type": "manual",
       "label": "Kie.ai Credits (non-zero balance)",
-      "check": { "note": "Operator-verified: a live balance cannot be proven offline. Verify via GET https://api.kie.ai/api/v1/account/balance with Authorization: Bearer $KIE_API_KEY" },
+      "check": { "note": "Operator-verified: a live balance cannot be proven offline. Verify via GET https://api.kie.ai/api/v1/chat/credit with Authorization: Bearer $KIE_API_KEY and check that the response body code is 200 (the body is {code,msg,data:<number>}; HTTP status alone is not enough)" },
       "severity": "optional",
       "satisfy": "Top up credits at https://app.kie.ai/billing. A zero-credit account returns HTTP 402 on all generation tasks. Minimum recommended: $5 for initial setup verification (one smoke-test image ~$0.04–$0.10)."
     }

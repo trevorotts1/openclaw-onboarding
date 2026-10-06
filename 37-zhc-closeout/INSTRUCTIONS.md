@@ -143,11 +143,11 @@ Stylized flow diagram. Less text-heavy than Step 2, so AI image gen is still app
 2. Fill `templates/infographic-2-prompt.md` with the same placeholders + one extra:
    - `{{EXAMPLE_TASK}}` — pulled from `workforce-interview-answers.md`; if not present, use a generic task seeded by the client's industry (e.g. "Launch a new email campaign" for a marketing-heavy client; "Onboard a new patient" for a healthcare client).
 3. Invoke `scripts/generate-infographics.sh workflow`. The script POSTs to KIE.AI `/jobs/createTask` with:
-   - Primary model: `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image) - much better at text rendering than the prior `gpt-image-2.5`. Fallback `gpt-image-2-5-sunburst-text-to-image`. Override via env `ZHC_IMAGE_MODEL`. (The bare `gemini-3-1-flash-image` slug returns HTTP 422 on KIE — the code pins `nano-banana-2`.)
-   - Fallback model (attempt 3): `gpt-image-2-5-sunburst-text-to-image`.
+   - Primary model: `gpt-image-2-5-sunburst-text-to-image` (pinned fleet-wide by AGENTS.md N43; same order as `generate-visual-intelligence.sh`). Override via env `ZHC_IMAGE_MODEL`.
+   - Fallback model (attempt 3, or immediately when the primary returns 422 "model name not supported" on this KIE account): `nano-banana-2`. (The bare `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is never used.)
 4. Write `infographic2Url` to state file.
 
-**Retries:** 3 total (attempts 1-2 primary, attempt 3 fallback). Failure path same as Step 2.
+**Retries:** 3 total (attempts 1-2 primary, attempt 3 fallback; a 422 "not supported" on the primary skips straight to the fallback). Failure path same as Step 2.
 
 ### Step 4 — Generate Celebration Video
 
@@ -162,7 +162,7 @@ Override via env `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`; als
 2. Fill `templates/veo-prompt.txt` with `{{COMPANY_NAME}}`, `{{OWNER_NAME}}`, `{{AGENT_NAME}}`, `{{INDUSTRY}}`.
 3. Invoke `scripts/generate-celebration-video.sh`. The script:
    - Picks the model based on `ZHC_CELEBRATION_VIDEO_MODEL` (default `gemini-omni-video`).
-   - Snaps `ZHC_VIDEO_DURATION` to a valid value for the chosen model (Gemini Omni: 4-8, default 4; Veo: 4/6/8, default 8).
+   - Snaps `ZHC_VIDEO_DURATION` to a valid value for the chosen model (Gemini Omni: 4-8, default 8; Veo: 4/6/8, default 8).
    - If using `gemini-omni-video` AND `infographic1Url` is a real public URL (not `file://`), passes it as `input.image_urls[0]` so brand carries through.
    - Submits the job, polls the appropriate endpoint until success.
    - On attempt 3, if primary was `gemini-omni-video`, falls back to `veo3_fast`.

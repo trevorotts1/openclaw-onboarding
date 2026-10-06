@@ -96,6 +96,7 @@ def main():
     parser.add_argument('--output', '-o', help='Output filename')
     parser.add_argument('--seed', type=int, help='Random seed for reproducibility')
     parser.add_argument('--negative-prompt', help='What to avoid in generation')
+    parser.add_argument('--model', help='Explicit KIE model id (kieai only); default comes from Skill 67')
     
     args = parser.parse_args()
     
@@ -108,7 +109,8 @@ def main():
             style=args.style,
             output=args.output,
             seed=args.seed,
-            negative_prompt=args.negative_prompt
+            negative_prompt=args.negative_prompt,
+            model=args.model
         )
     except Exception as e:
         print(f"✗ Error: {e}")

@@ -41,7 +41,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       taskId answers non-401 (404/400 = key authenticates, endpoint alive).
 - [ ] Confirm the agent can explain: createTask 200 ≠ done; state enum
       waiting/queuing/generating/success/fail; 429 = rate limited (back off);
-      callbacks are HMAC-SHA256 signed; result URLs expire ~24h, media 14 days;
+      callbacks are HMAC-SHA256 signed; retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately);
       GPT Image 2.5 (default) ratio exclusions at 2K/4K (27:16, 16:27, 9:8,
       8:9 — 1K only); GPT Image 2 (legacy, retained for 3:1/1:3/9:21 only)
       ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21), "auto" → 1K only,

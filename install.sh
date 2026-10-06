@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v25.3.19"
+ONBOARDING_VERSION="v25.3.21"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1647,6 +1647,13 @@ looks_like_real_key() {
         *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
         *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
         *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
+        # 2026-10: installer-written env placeholders (YOUR_CLIENT_KIE_API_KEY_HERE).
+        # Kept in step with shared-utils/secret_helper.py _PLACEHOLDER_SUBSTRINGS.
+        *your_client*|*key_here*|*token_here*) return 1 ;;
+        # Parity with shared-utils/secret_helper.py: the python-only patterns, so both
+        # twins reject exactly the same placeholder set.
+        *test-key*|*fake-key*|*fill-in*|*paste-real*|*paste_real*|*pastereal*) return 1 ;;
+        *insert-your*|*enter-your*|*set-your*|*nokey*|*not_set*|*not-set*|*unset*|*missing*) return 1 ;;
         # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
         *EXAMPLE|*example) return 1 ;;
     esac

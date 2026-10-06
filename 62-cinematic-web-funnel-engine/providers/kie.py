@@ -4,20 +4,27 @@
 
 Implements spec §10.1's mandate: "Implement providers/kie.py first. Reuse the
 existing canonical Kie setup, secret resolution, callback infrastructure, and
-image/video adapters where possible. Do not create a third divergent Kie
-client if the repository already has two that must remain in lockstep."
+image/video adapters where possible."
+
+HONEST STATUS (2026-10-05): this module is a STANDALONE Kie client. It is NOT
+a thin wrapper over the 47-movie-producer adapters; it duplicates their
+createTask/recordInfo plumbing and is kept aligned with them BY HAND, so it
+is a second divergent client until it is consolidated onto Skill 74 (the
+shared KIE live adapter). That consolidation is a staged follow-up and is not
+done here.
 
 This module is SKILL-LOCAL (62-cinematic-web-funnel-engine/providers/) and
 has NO dependency on OpenMontage's ``tools.base_tool`` — unlike
 ``47-movie-producer/kie-adapters/tools/{graphics,video}/kie_*.py`` (the
 OpenMontage-installed adapters, extended for ``bytedance/seedance-1.5-pro``
 frame pinning in this same U5 unit), which only import inside a client's
-cloned OpenMontage tree. Skill 62 must run standalone. This module is kept
-IN LOCKSTEP with those two adapters by construction: identical endpoints
-(``/api/v1/jobs/createTask`` + ``/api/v1/jobs/recordInfo``), identical
-request-body shapes, and the identical ``resultJson``-is-a-JSON-encoded-
-STRING decode contract (see ``_decode_result_json`` below) — never a
-divergent third client (ADR per spec §10.1).
+cloned OpenMontage tree. Skill 62 must run standalone. Shared with those
+adapters: the ``/api/v1/jobs/createTask`` + ``/api/v1/jobs/recordInfo``
+endpoints, and the ``resultJson``-is-a-JSON-encoded-STRING decode contract
+(see ``_decode_result_json`` below). NOT shared: Veo. 47 still uses the
+legacy ``POST /api/v1/veo/generate`` route (``veo3``/``veo3_fast``); this
+module uses the current Veo route on createTask with model ``veo-3-1`` (see
+``_veo_3_1_input``).
 
 Every model is addressed through ``providers.base.ModelRegistry`` by its
 registry ``model_id`` — this file NEVER hardcodes a provider wire slug or a
@@ -59,10 +66,12 @@ this module never requires ``requests`` to be installed.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -83,8 +92,8 @@ from .base import (
 )
 
 # ---------------------------------------------------------------------------
-# Kie.ai API constants (kept in lockstep with 47-movie-producer/kie-adapters/
-# tools/{graphics,video}/kie_*.py — same endpoints, same body shapes).
+# Kie.ai API constants (aligned by hand with 47-movie-producer/kie-adapters/
+# tools/{graphics,video}/kie_*.py — same endpoints; Veo bodies differ, see _veo_3_1_input).
 # ---------------------------------------------------------------------------
 _KIE_API_BASE = "https://api.kie.ai"
 _CREATE_TASK_URL = f"{_KIE_API_BASE}/api/v1/jobs/createTask"
@@ -126,6 +135,96 @@ def _decode_result_json(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+# Veo 3.1 on createTask (live KIE catalog/schema, verified 2026-10-05):
+# GET /api/v1/models?q=veo lists ``veo-3-1`` (and the veo/extend,
+# veo/get-1080p-video, veo/get-4k-video helpers); GET /api/v1/models/veo3 and
+# /veo3_fast answer code 404 "model name ... not supported". The registry flags
+# such models with ``"wire_schema": "veo-3-1"``.
+_VEO_WIRE_SCHEMA = "veo-3-1"
+_VEO_RESOLUTIONS = ("720p", "1080p", "4k")
+_VEO_ASPECT_RATIOS = ("16:9", "9:16", "Auto")
+_VEO_DURATIONS = (4, 6, 8)
+
+
+def _veo_3_1_input(request: VideoGenerationRequest) -> Dict[str, Any]:
+    """Build the createTask ``input`` for model ``veo-3-1`` exactly per its
+    live schema: ``image_urls`` (NOT ``input_urls``), INTEGER ``duration`` in
+    {4,6,8}, lowercase ``resolution`` in {720p,1080p,4k}, ``aspect_ratio`` in
+    {16:9,9:16,Auto}, ``generation_type`` enum. There is no audio field (clips
+    carry audio by default), so ``generate_audio`` is never sent. 1 image =
+    image-to-video, 2 = first/last frame, order significant."""
+    resolution = str(request.resolution).lower()
+    if resolution not in _VEO_RESOLUTIONS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 resolution must be one of {_VEO_RESOLUTIONS}, got {request.resolution!r}"
+        )
+    if request.aspect_ratio not in _VEO_ASPECT_RATIOS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 aspect_ratio must be one of {_VEO_ASPECT_RATIOS}, got {request.aspect_ratio!r}"
+        )
+    if int(request.duration_seconds) not in _VEO_DURATIONS:
+        raise ProviderTaskError(
+            f"kie provider: veo-3-1 duration must be one of {_VEO_DURATIONS}, got {request.duration_seconds!r}"
+        )
+    task_input: Dict[str, Any] = {
+        "prompt": request.prompt,
+        "aspect_ratio": request.aspect_ratio,
+        "resolution": resolution,
+        "duration": int(request.duration_seconds),
+        "generation_type": "FIRST_AND_LAST_FRAMES_2_VIDEO" if request.input_urls else "TEXT_2_VIDEO",
+    }
+    if request.input_urls:
+        task_input["image_urls"] = list(request.input_urls)
+    return task_input
+
+
+def _urls_from(value: Any) -> List[str]:
+    """Normalise a ``resultUrls`` value: a list, or (callback docs type it as
+    a string) a JSON-encoded list / single URL string."""
+    if isinstance(value, list):
+        return [str(u) for u in value if u]
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(u) for u in parsed if u]
+        return [text.strip("[]")] if text.startswith("[") else [text]
+    return []
+
+
+def result_urls_from_callback(payload: Dict[str, Any]) -> List[str]:
+    """Result URLs from a veo-3-1 callback body (documented shape:
+    ``{"code":200,"data":{"taskId":...,"info":{"resultUrls":[...]}}}``).
+    Empty list when the callback is not a success."""
+    if not isinstance(payload, dict) or payload.get("code") != 200:
+        return []
+    return _urls_from(((payload.get("data") or {}).get("info") or {}).get("resultUrls"))
+
+
+# Live price authority (2026-10-05): GET /api/v1/models/<id>/price returns
+# data.pricingDesc, one line per mode, e.g.
+#   "Fast mode (...): 720P — 60 credits (≈ $0.30) per video; 1080P — 65 credits (≈ $0.325) per video; ..."
+_PRICE_ENTRY = re.compile(r"(\d+)\s*([PpKk])\s*—\s*[\d.]+\s*credits\s*\(≈\s*\$([0-9.]+)\)")
+
+
+def parse_pricing_desc(text: str) -> Dict[str, Dict[str, float]]:
+    """Parse a KIE ``pricingDesc`` into ``{"fast": {"720p": 0.30, ...}, ...}``
+    keyed by lowercase mode name, then lowercase resolution (720p, 1080p, 4k).
+    Lines that do not start with ``<Mode> mode`` are ignored."""
+    out: Dict[str, Dict[str, float]] = {}
+    for line in str(text or "").splitlines():
+        m = re.match(r"\s*([A-Za-z]+) mode", line)
+        if not m:
+            continue
+        prices = {f"{n}{u.lower()}": float(usd) for n, u, usd in _PRICE_ENTRY.findall(line)}
+        if prices:
+            out[m.group(1).lower()] = prices
+    return out
 
 
 def _resolve_secret(env_var_name: str, *, required: bool = True) -> Optional[str]:
@@ -387,6 +486,7 @@ class KieProvider(MediaProvider):
         callback_hmac_key_env: str = "KIE_CALLBACK_HMAC_KEY",
         kv_read_token_env: str = "KVREAD_TOKEN",
         client_slug_env: str = "KIE_CLIENT_SLUG",
+        live_prices: bool = True,
     ) -> None:
         self.registry = registry or ModelRegistry()
         self.transport: KieTransport = transport or RequestsTransport()
@@ -395,6 +495,7 @@ class KieProvider(MediaProvider):
         self._callback_hmac_key_env = callback_hmac_key_env
         self._kv_read_token_env = kv_read_token_env
         self._client_slug_env = client_slug_env
+        self._live_prices = live_prices
         # task_id -> CallbackTicket, for tasks submitted WITH a callback
         # attached by this instance. Purely in-process bookkeeping; nothing
         # here is persisted (a real run persists via the project's own
@@ -525,24 +626,32 @@ class KieProvider(MediaProvider):
     ) -> TaskHandle:
         slug = self.registry.slug_for(request.model_id)
         entry = self.registry.get_model(request.model_id)
+        if entry.get("status") == "planned":
+            raise ProviderTaskError(
+                f"kie provider: {request.model_id} is status=planned and cannot be submitted: "
+                f"{entry.get('wire_blocked_reason', 'not wired')}"
+            )
         max_images = (entry.get("reference_image_support") or {}).get("max_images")
         if max_images is not None and len(request.input_urls) > max_images:
             raise ProviderTaskError(
                 f"kie provider: {request.model_id} accepts at most {max_images} "
                 f"input_urls (frame-pin images), got {len(request.input_urls)}"
             )
-        task_input: Dict[str, Any] = {
-            "prompt": request.prompt,
-            "aspect_ratio": request.aspect_ratio,
-            "resolution": request.resolution,
-            "duration": str(request.duration_seconds),  # STRING (422-fix pattern)
-            "generate_audio": request.generate_audio,
-        }
-        if request.input_urls:
-            # ORDER-SIGNIFICANT for frame-pinning models: index 0 = first
-            # frame, index 1 = last frame (spec §10.1/§10.2). Never
-            # re-sorted or de-duplicated — passed through exactly as given.
-            task_input["input_urls"] = list(request.input_urls)
+        if entry.get("wire_schema") == _VEO_WIRE_SCHEMA:
+            task_input = _veo_3_1_input(request)
+        else:
+            task_input = {
+                "prompt": request.prompt,
+                "aspect_ratio": request.aspect_ratio,
+                "resolution": request.resolution,
+                "duration": str(request.duration_seconds),  # STRING (422-fix pattern)
+                "generate_audio": request.generate_audio,
+            }
+            if request.input_urls:
+                # ORDER-SIGNIFICANT for frame-pinning models: index 0 = first
+                # frame, index 1 = last frame (spec §10.1/§10.2). Never
+                # re-sorted or de-duplicated — passed through exactly as given.
+                task_input["input_urls"] = list(request.input_urls)
         body: Dict[str, Any] = {"model": slug, "input": task_input}
         ticket = self._maybe_attach_callback(body, use_callback=use_callback)
         handle = self._submit(body, model_id=request.model_id)
@@ -614,9 +723,13 @@ class KieProvider(MediaProvider):
             state = data.get("state", "")
             if state == "success":
                 result_json = _decode_result_json(data.get("resultJson"))
-                urls = result_json.get("resultUrls") or []
+                urls = _urls_from(result_json.get("resultUrls"))
                 if urls:
                     return urls[0]
+                # Veo-style payload shape (callback docs): data.info.resultUrls.
+                info_urls = _urls_from((data.get("info") or {}).get("resultUrls"))
+                if info_urls:
+                    return info_urls[0]
                 fallback = (
                     result_json.get("videoUrl")
                     or result_json.get("url")
@@ -660,11 +773,59 @@ class KieProvider(MediaProvider):
         multiplied by a clip's duration.
         """
         entry = self.registry.get_model(request.model_id)
+        live = self._live_estimate(entry, request)
+        if live is not None:
+            return live
         price_unit = (entry.get("price") or {}).get("unit", "")
         if isinstance(request, VideoGenerationRequest) and price_unit == "usd_per_second":
             quantity = float(request.duration_seconds)
         else:
             quantity = 1.0
-        return self.registry.estimate(
-            request.model_id, quantity, resolution=request.resolution, strict=False
+        resolution = request.resolution
+        if entry.get("wire_schema") == _VEO_WIRE_SCHEMA:
+            resolution = str(resolution).lower()
+        estimate = self.registry.estimate(
+            request.model_id, quantity, resolution=resolution, strict=False
+        )
+        if (entry.get("price") or {}).get("live"):
+            estimate = dataclasses.replace(
+                estimate,
+                note="FALLBACK registry constant (live catalog price not read; see price.source for its date). "
+                + estimate.note,
+            )
+        return estimate
+
+    def _live_estimate(self, entry: Dict[str, Any], request: Any) -> Optional[CostEstimate]:
+        """Live price first: when the registry entry declares ``price.live``
+        (endpoint + mode), GET it (free) and price from ``pricingDesc``.
+        Returns None on any failure (no key, transport error, non-200 body
+        code, mode/resolution missing) so the caller falls back to the
+        dated registry constants."""
+        live = (entry.get("price") or {}).get("live")
+        if not (self._live_prices and live and isinstance(request, VideoGenerationRequest)):
+            return None
+        try:
+            resp = self.transport.get_json(
+                f"{_KIE_API_BASE}{live['endpoint']}",
+                headers={"Authorization": f"Bearer {self._api_key()}"},
+                params=None,
+                timeout=15,
+            )
+            body = resp.json_body or {}
+            if resp.status_code >= 400 or body.get("code") != 200:
+                return None
+            table = parse_pricing_desc((body.get("data") or {}).get("pricingDesc", ""))
+            unit_price = table[str(live["mode"]).lower()][str(request.resolution).lower()]
+        except Exception:  # fail soft to the labeled fallback constants
+            return None
+        return CostEstimate(
+            model_id=request.model_id,
+            provider_model_slug=entry["provider_model_slug"],
+            unit=(entry.get("price") or {}).get("unit", "usd_per_clip"),
+            unit_price=unit_price,
+            quantity=1.0,
+            estimated_total=round(unit_price, 6),
+            verified=True,
+            registry_snapshot_id=self.registry.snapshot_id,
+            note=f"LIVE catalog price ({live['endpoint']}), {live['mode']} mode, {request.resolution}",
         )

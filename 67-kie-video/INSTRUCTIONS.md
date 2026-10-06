@@ -56,8 +56,7 @@ The KIE.ai API is CREATE-THEN-POLL:
    - Runway: `GET https://api.kie.ai/api/v1/runway/record-detail?taskId=<TASK_ID>`
    - Veo 3.1: `GET https://api.kie.ai/api/v1/veo/record-info?taskId=<TASK_ID>`
 4. State lifecycle: waiting -> queuing -> generating -> success | fail.
-5. On success, download the generated video immediately (download URLs expire in ~24h;
-   media is retained on KIE storage for 14 days).
+5. On success, download the generated video immediately. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 6. Perform multi-frame visual QC (Frame 0, Midpoint, Final Frame). See references/qc.md.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -118,7 +117,7 @@ Validate full payload JSON against models.json:
   python3 scripts/validate_payload.py --file payload.json
 
 Enforces:
-- Endpoint/family match (`kie-market` -> `createTask`, `runway-dedicated` -> `generate`, `veo-dedicated` -> `generate`).
+- Endpoint/family match (`kie-market` -> `createTask`, `runway-dedicated` -> `generate`, `veo3-dedicated` -> `generate`).
 - Duration against the model's duration window: range windows are errors when outside bounds (string "2-30s" or array [3, 15] shapes); discrete and comma-list windows ("5s or 10s", "4, 6, 8s") are errors when the duration is not a listed option.
 - Resolution in allowed enum.
 - Media reference counts against the registry's numeric max_reference_images/videos/audios fields (and prose caps where they carry "imgs"/"vids" counts) plus file-size structural rules.
