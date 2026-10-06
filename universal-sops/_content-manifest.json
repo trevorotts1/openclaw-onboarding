@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T06:48:47Z",
+  "generated_at": "2026-10-06T07:53:38Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -185,16 +185,16 @@
       "bytes": 9411
     },
     "funnel-craft/FUNNEL-PIPELINE-MANIFEST.json": {
-      "sha256": "11b6bf6705e3e88cc2a11936b61a8470eab81a8b8c15751a06e68fb9507b9853",
-      "bytes": 9680
+      "sha256": "bbbe06849b1833ab280733e34e54712c7dc86f05feaf6fd6c6675f4081bd8cb6",
+      "bytes": 9814
     },
     "funnel-craft/MASTER-FUNNEL-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "479955ec2f9d7ab42aa33c5fab1ae9dabaff19ccc61642a90c8f1eb5f168bc57",
-      "bytes": 5007
+      "sha256": "4bce829b2d979895c8246166ee7459e20e16e350b7d5b929597b75841d2dac89",
+      "bytes": 5277
     },
     "funnel-craft/README.md": {
-      "sha256": "35014fc0871702f11e31953d148f0240b67da785895f5f6a3f22d140054e0833",
-      "bytes": 6638
+      "sha256": "634e29ff810a243fea63b8f75380c5fb3c19742ac678e546007bab3b78f07729",
+      "bytes": 6915
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
@@ -205,8 +205,8 @@
       "bytes": 7900
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
-      "sha256": "41b54c7f782baa2768b6409038165ed0fc0c4816848aecefc4f9cc77e83a64c0",
-      "bytes": 3428
+      "sha256": "3c2b135d74b4bc502ca2565a1c77af0162e133a82de19bad13a800c231102cba",
+      "bytes": 6128
     },
     "funnel-craft/SOP-FUNNEL-04-BUILD.md": {
       "sha256": "15216ef46a39b8aa49b3de1e7a2e7f99624a6a133680e379a9032441f0afecf3",
@@ -357,16 +357,16 @@
       "bytes": 6916
     },
     "sales-page-craft/README.md": {
-      "sha256": "3ba95839798ce08798199a22055384bfa2ed0af43f1b3d0a209bcbbd0b7ddab3",
-      "bytes": 11483
+      "sha256": "1106766174ae0b4c8f7f22139d76f1ca7a70a39aa5d9dbc43d1cd36414eb87e9",
+      "bytes": 11647
     },
     "sales-page-craft/SOP-SALESPAGE-01-DR-ASSET-STACK.md": {
-      "sha256": "819ddada2ba7c906b8fa278fa81f5279ec760ae578368ac4cb43f6ab17b905bf",
-      "bytes": 10197
+      "sha256": "d2767eb5d9f2e160df95cabc31410c8aec63f39545e8dfde77c8adf570febae6",
+      "bytes": 10834
     },
     "signature-page-craft/README.md": {
-      "sha256": "9285a415b16d8efb1a7056ff9784057cfc8875974a7dc154c7dc05b684e1cb8c",
-      "bytes": 11988
+      "sha256": "f09ee52bdcfad140ab0a30c0393813b0482e87a7a51ad0b88f42acd86a1e31cf",
+      "bytes": 12380
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {
       "sha256": "a75217bafc536232eb846326159b0ef25954bc2a555f1b91582c15d79a600efa",

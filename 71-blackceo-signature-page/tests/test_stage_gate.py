@@ -69,6 +69,20 @@ def put_receipt(run: Path, stage, **kw):
     write(run / "private" / "receipts" / f"{stage}.json", json.dumps(receipt(stage, **kw)))
 
 
+def kie_transport(files, **over):
+    """A valid Skill 74 transport block for the given generated files (all default-route 16:9)."""
+    tasks = [{"file": f, "task_id": f"task-{i:03d}", "model_id": "model-from-skill-66",
+              "model_source": "latest-family", "requested_ratio": "16:9", "generated_ratio": "16:9",
+              "preflight_ok": True, "budget_exit": 0} for i, f in enumerate(files, 1)]
+    t = {"skill": "74-kie-live-adapter", "policy": "66-kie-image", "mode": "active", "tasks": tasks}
+    t.update(over)
+    return t
+
+
+KIE_COST = {"provider": "kie", "credits_before": 100.0, "credits_after": 88.0}
+KIE_FILES = ["image-generation-qc/Image-001.png", "image-generation-qc/Image-002.png"]
+
+
 def png_bytes():
     # 1x1 transparent PNG, byte-identical every call for deterministic hashing.
     import base64
@@ -191,7 +205,7 @@ class StageGateTest(unittest.TestCase):
         self.assertIn("ghl-install-test | NOT AUTHORIZED", report)
         self.assertIn("publish-verify | NOT AUTHORIZED", report)
         # Cost line summed from the image-generation-qc receipt (100.0 - 88.0)
-        self.assertIn("fixture: 12.00 credits", report)
+        self.assertIn("kie: 12.00 credits", report)
 
     # ---- (e) real per-file validator commands substitute {sauce} and {brand}
     #
@@ -292,8 +306,8 @@ class StageGateTest(unittest.TestCase):
         gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
         put_receipt(run, "image-generation-qc", author="image-gen",
                     reviewer="image-reviewer", scores={"grade": 9},
-                    extra={"cost": {"provider": "fixture", "credits_before": 100.0,
-                                    "credits_after": 88.0},
+                    extra={"cost": dict(KIE_COST),
+                           "transport": kie_transport(KIE_FILES),
                            "validator_files": [
                                "image-generation-qc/Image-001.png",
                                "image-generation-qc/Image-002.png",
@@ -318,6 +332,82 @@ class StageGateTest(unittest.TestCase):
         proc = run_gate("close", str(run), "image-inventory-prompts", expect=1, env=env)
         combined = proc.stdout + proc.stderr
         self.assertIn("Missing Signature Grade Block", combined)
+
+    # ---- (i) Skill 74 transport gate on image-generation-qc (owner order: one approved KIE path)
+    def close_image_qc(self, **extra):
+        run = self.td / "run-transport"
+        env, gate = self.build_image_stage_chain(
+            run, (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8"))
+        put_receipt(run, "image-inventory-prompts", author="prompt-writer",
+                    reviewer="prompt-reviewer", scores={"fidelity": 9},
+                    extra={"validator_files": ["image-inventory-prompts/IMG-001.txt",
+                                               "image-inventory-prompts/IMG-002.txt"]})
+        gate("close", str(run), "image-inventory-prompts", expect=0, env=env)
+        base = {"cost": dict(KIE_COST), "validator_files": KIE_FILES}
+        base.update(extra)
+        put_receipt(run, "image-generation-qc", author="image-gen", reviewer="image-reviewer",
+                    scores={"grade": 9}, extra=base)
+        return run_gate("close", str(run), "image-generation-qc", env=env)
+
+    def test_i1_no_transport_block_is_refused(self):
+        proc = self.close_image_qc()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("missing transport block", proc.stdout + proc.stderr)
+
+    def test_i2_hand_rolled_route_is_refused(self):
+        proc = self.close_image_qc(transport=kie_transport(KIE_FILES, skill="curl-createTask"))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not an approved route", proc.stdout + proc.stderr)
+
+    def test_i3_shadow_mode_is_refused(self):
+        proc = self.close_image_qc(transport=kie_transport(KIE_FILES, mode="shadow"))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("must be 'active'", proc.stdout + proc.stderr)
+
+    def test_i4_task_missing_for_a_file_is_refused(self):
+        proc = self.close_image_qc(transport=kie_transport(KIE_FILES[:1]))
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("transport.tasks cover", proc.stdout + proc.stderr)
+
+    def test_i5_placeholder_task_id_and_failed_preflight_refused(self):
+        t = kie_transport(KIE_FILES)
+        t["tasks"][0]["task_id"] = "placeholder"
+        t["tasks"][1]["preflight_ok"] = False
+        proc = self.close_image_qc(transport=t)
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("missing or a placeholder", out)
+        self.assertIn("preflight_ok must be true", out)
+
+    def test_i6_n43_ratio_rule(self):
+        t = kie_transport(KIE_FILES)
+        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="4:5")   # default route must send 3:4
+        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="3:1")   # legacy-only ratio on the default source
+        proc = self.close_image_qc(transport=t)
+        out = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("N43 ratio rule violated: requested 4:5, generated 4:5, expected 3:4", out)
+        self.assertIn("N43 sends 3:1 to the legacy route only", out)
+
+    def test_i7_n43_ratio_rule_passes_when_followed(self):
+        t = kie_transport(KIE_FILES)
+        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="3:4")
+        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="3:1", model_source="legacy-ratio-route")
+        proc = self.close_image_qc(transport=t)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_i8_cost_provider_must_match_route(self):
+        proc = self.close_image_qc(transport=kie_transport(KIE_FILES),
+                                   cost={"provider": "agnes", "credits_before": 1, "credits_after": 0})
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("cost.provider must be 'kie'", proc.stdout + proc.stderr)
+
+    def test_i9_agnes_route_when_selected(self):
+        t = {"skill": "63-agnes-image", "policy": "63-agnes-image",
+             "tasks": [{"file": f} for f in KIE_FILES]}
+        proc = self.close_image_qc(transport=t,
+                                   cost={"provider": "agnes", "credits_before": 5, "credits_after": 3})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_h_empty_validator_command_clean_failure(self):
         # Hardening: run_one_validator("") must emit a clean failure line, not an
@@ -392,13 +482,15 @@ class StageGateTest(unittest.TestCase):
             "image-inventory-prompts": {"fidelity": 9},
             "image-generation-qc": {"grade": 9},
         }
-        costs = {"image-generation-qc": {"provider": "fixture", "credits_before": 100.0,
-                                          "credits_after": 88.0}}
+        costs = {"image-generation-qc": {"provider": "kie", "credits_before": 100.0,
+                                          "credits_after": 88.0,
+                                          "transport": kie_transport(KIE_FILES)}}
         for stage in authors:
             put_receipt(run, stage, author=authors[stage],
                         reviewer=reviewers.get(stage, authors[stage]),
                         scores=scores.get(stage, {}),
-                        extra=({"cost": costs[stage]} if stage in costs else None))
+                        extra=({"cost": {k: v for k, v in costs[stage].items() if k != "transport"},
+                                "transport": costs[stage]["transport"]} if stage in costs else None))
             gate("close", str(run), stage, expect=0)
         return run, gate
 

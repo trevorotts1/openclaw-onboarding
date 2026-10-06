@@ -88,7 +88,7 @@ and the generated blocks in those sibling clusters re-stamp from the map rather 
 - Select Standard OR Long-Form; never silently merge both; never auto-switch.
 - Internal framework labels and counts stay in the private review source; the publication source carries no private production labels.
 - One page = at most ONE external Creative Direction family (Photographic OR Cinematic/Directorial OR Visual-Artist) or Secret-Sauce-only; never mix families on one page; Secret Super Sauce is the adaptive house layer, not a second style.
-- Image prompts: house rule 5,000-20,000 meaningful characters; default working target 8,000-14,000; the referenced runtime validator currently rejects above 19,000 -- never disable validation, never silently truncate.
+- Image prompts: length follows the KIE prompt budget (`07-kie-setup/references/kie-common-rules.md` rule 12): 95 to 100 percent of the chosen model's character maximum, never below 80 percent, checked with Skill 74 `prompt-budget --check`; this replaced the 5,000-20,000 house rule, the 8,000-14,000 target and the 19,000 note -- never disable validation, never silently truncate.
 - One image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file.
 - Never pass human research-lineage names downstream when a style library requires branded, descriptive execution grammar.
 - QC: page-stage criteria each >=8/10 with no auto-fail; prompt/generated-image work retains average >=8.5, each criterion >=8, zero auto-fails where the governing references require it.
@@ -97,7 +97,7 @@ and the generated blocks in those sibling clusters re-stamp from the map rather 
 
 ## Delegation seams (what this skill does NOT fork)
 
-- Images: delegate execution to **66 kie-image** when Kie.ai is selected, or **63 agnes-image** when Agnes is explicitly selected/available. Do not hand-roll provider calls. Paid-call approvals, client-owned credentials, provider limits and retry rules stay owned by the executing provider skill and fleet policy.
+- Images and video: when Kie.ai is selected, policy owner **66 kie-image** (images) or **67 kie-video** (video), then transport **74 kie-live-adapter** (validate, preflight, prompt-budget check, submit in active mode, save immediately), per `71-blackceo-signature-page/references/kie-generation-route.md`; **63 agnes-image** when Agnes is explicitly selected/available. Do not hand-roll provider calls. Paid-call approvals, client-owned credentials, provider limits and retry rules stay owned by the executing provider skill and fleet policy.
 - GHL media + page build: delegate to **06 ghl-install-pages**, the existing GHL delivery rail.
 - Vercel hosting: **08 vercel-setup** when selected and configured.
 - Browser automation: the repo's managed browser path / Skill 03 conventions when graphical browser work is required.

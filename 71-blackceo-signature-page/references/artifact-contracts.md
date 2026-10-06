@@ -90,6 +90,15 @@ Each image entry is one intended generated master asset. Crops/exports can point
 
 Required fields are validated by `scripts/validate_image_manifest.py`.
 
+## Generation receipt (stage `image-generation-qc`)
+
+The stage receipt `private/receipts/image-generation-qc.json` carries a `transport` block and a `cost`
+block. `scripts/stage_gate.py` refuses to close the stage without them. The full example and field
+meanings are in `references/kie-generation-route.md` section 3. Summary: `transport.skill` is
+`74-kie-live-adapter` (policy `66-kie-image`) or `63-agnes-image`; Skill 74 receipts need `mode: "active"`,
+and one task per generated file with a real `task_id`, `model_id`, `model_source`,
+`requested_ratio`, `generated_ratio`, `preflight_ok: true` and `budget_exit: 0`.
+
 ## Review-PDF manifest
 
 The manifest is the authority for page order. Do not rely on lexicographic filename sorting.

@@ -525,6 +525,87 @@ def check_cost(run_dir, stage, receipt):
     return problems
 
 
+# Image generation route (references/kie-generation-route.md): policy owner, then Skill 74 transport.
+# skill -> (policy owner, cost provider). Agnes is allowed only when the client selected it.
+TRANSPORTS = {"74-kie-live-adapter": ("66-kie-image", "kie"), "63-agnes-image": ("63-agnes-image", "agnes")}
+MODEL_SOURCES = ("latest-family", "explicit-request", "department-pin", "legacy-ratio-route")
+BAD_IDS = {"", "-", "none", "null", "nil", "n/a", "na", "tbd", "todo", "native", "placeholder",
+           "fake", "dummy", "test", "unknown", "0"}
+# AGENTS.md N43 ratio rules (kie-common-rules.md rule 11). Ratios only; model ids come from Skill 66.
+N43_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
+N43_LEGACY_ONLY = ("3:1", "1:3", "9:21")
+
+
+def _real_id(value):
+    return isinstance(value, str) and value.strip().lower() not in BAD_IDS
+
+
+def _ratio_problem(who, task):
+    req, gen, src = task.get("requested_ratio"), task.get("generated_ratio"), task.get("model_source")
+    if not (isinstance(req, str) and isinstance(gen, str) and req and gen):
+        return f"{who}: requested_ratio and generated_ratio are required"
+    if req in N43_LEGACY_ONLY:
+        if gen != req or src not in ("legacy-ratio-route", "explicit-request", "department-pin"):
+            return f"{who}: N43 sends {req} to the legacy route only (generated_ratio {gen!r}, model_source {src!r})"
+    elif src in ("explicit-request", "department-pin"):
+        pass  # an explicit request or a pin overrides the default's ratio substitutions
+    elif gen != N43_SUBSTITUTIONS.get(req, req):
+        return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
+                f"expected {N43_SUBSTITUTIONS.get(req, req)}")
+    return None
+
+
+def check_transport(run_dir, stage, receipt):
+    """Image stages must prove the Skill 66/67 -> Skill 74 route (or an explicit Agnes route)."""
+    spec = STAGES[stage]
+    if not spec.get("transport_required"):
+        return []
+    t = receipt.get("transport")
+    if not isinstance(t, dict):
+        return [f"stage {stage}: receipt missing transport block (references/kie-generation-route.md section 3)"]
+    skill = t.get("skill")
+    if skill not in TRANSPORTS:
+        return [f"stage {stage}: transport.skill {skill!r} is not an approved route {sorted(TRANSPORTS)}; "
+                f"a hand-rolled createTask is not"]
+    policy, provider = TRANSPORTS[skill]
+    problems = []
+    if t.get("policy") != policy:
+        problems.append(f"stage {stage}: transport.policy must be {policy!r}, got {t.get('policy')!r}")
+    cost = receipt.get("cost")
+    if isinstance(cost, dict) and cost.get("provider") != provider:
+        problems.append(f"stage {stage}: cost.provider must be {provider!r} for {skill}, got {cost.get('provider')!r}")
+    if skill == "74-kie-live-adapter" and t.get("mode") != "active":
+        problems.append(f"stage {stage}: transport.mode must be 'active' (shadow never dispatches), got {t.get('mode')!r}")
+    files = sorted(str(p.relative_to(run_dir)) for p in run_dir.glob(spec.get("per_file_glob", "")) if p.is_file())
+    tasks = t.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        return problems + [f"stage {stage}: transport.tasks must list one entry per generated file"]
+    got = sorted(str(x.get("file")) for x in tasks if isinstance(x, dict))
+    if got != files:
+        problems.append(f"stage {stage}: transport.tasks cover {got} but the stage has {files}")
+    for i, x in enumerate(tasks):
+        who = f"stage {stage}: transport.tasks[{i}] ({x.get('file') if isinstance(x, dict) else '?'})"
+        if not isinstance(x, dict):
+            problems.append(f"{who} is not an object")
+            continue
+        if skill != "74-kie-live-adapter":
+            continue
+        if not _real_id(x.get("task_id")):
+            problems.append(f"{who}: task_id {x.get('task_id')!r} is missing or a placeholder")
+        if x.get("preflight_ok") is not True:
+            problems.append(f"{who}: preflight_ok must be true (balance covers price x 1.30)")
+        if x.get("budget_exit") != 0:
+            problems.append(f"{who}: budget_exit must be 0 (prompt-budget --check passed)")
+        if not _real_id(x.get("model_id")):
+            problems.append(f"{who}: model_id is missing")
+        if x.get("model_source") not in MODEL_SOURCES:
+            problems.append(f"{who}: model_source must be one of {list(MODEL_SOURCES)}")
+        rp = _ratio_problem(who, x)
+        if rp:
+            problems.append(rp)
+    return problems
+
+
 def cmd_init(run_dir):
     intake = run_dir / "intake.json"
     if not intake.exists():
@@ -585,6 +666,7 @@ def cmd_close(run_dir, stage):
         # Review / scores / cost
         failures.extend(check_review_scores(run_dir, stage, receipt))
         failures.extend(check_cost(run_dir, stage, receipt))
+        failures.extend(check_transport(run_dir, stage, receipt))
 
     if failures:
         return fail_exit(failures)

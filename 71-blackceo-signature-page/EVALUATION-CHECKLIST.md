@@ -19,7 +19,7 @@ Mark each item PASS, FAIL, or BLOCKED and include evidence.
 - Failed work gets at most three focused repair attempts.
 - One page uses one external Creative Direction family/style or Secret-Sauce-only.
 - Secret Sauce adapts around conflicts instead of overwriting the selected style.
-- Image prompts keep the 5,000-20,000 house rule and 19,000 runtime-compatibility warning.
+- Image prompts follow the KIE prompt budget (95 to 100 percent of the model maximum, never below 80 percent; `kie-common-rules.md` rule 12), checked with Skill 74 `prompt-budget --check`.
 
 ## Scripts
 

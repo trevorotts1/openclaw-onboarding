@@ -36,7 +36,7 @@ for f in \
   references/BlackCEO-Page-Brand-Law.md references/stage-contract.json \
   references/swarm-plan.md references/html-qc-rubric.md references/private-label-list.txt \
   CHANGELOG.md VERSION START-HERE.md EVALUATION-CHECKLIST.md \
-  references/runtime-adapters.md agents/openai.yaml \
+  references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \
   repo-integration/universal-sops/signature-page-craft/README.md; do

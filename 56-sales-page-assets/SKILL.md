@@ -1,7 +1,7 @@
 ---
 name: sales-page-assets
-description: Builds a Trevor Otts Direct-Response sales-page asset stack from one Ultimate AI Sales Page Writer survey — the DR sibling of Skill 49 (absorbs the n8n "All In One Sales Page Assets" funnel family). Produces the 8-section main page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect high-ticket long-form page (6,500-7,100 words), 40-80-word bump copy with a checkbox close, and a slice-covered image plan. Gates every framework with fail-closed deterministic provers (intake, image-slice coverage, main-8, upsell-9, high-ticket band, bump band, media provenance + per-stage coverage, build-bundle labels + Skill 6 manifest contract) plus a signed PROCESS-CERTIFICATE. A canonical fail-closed entry (deps/version/hash-pin/bypass-scan/0600-nonce) drives a no-skip orchestrator. Delegates image generation to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6; routes the bump copy to the Skill 44 order-bump seam. OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the client's own providers, never Anthropic.
-version: v2.0.1
+description: Builds a Trevor Otts Direct-Response sales-page asset stack from one Ultimate AI Sales Page Writer survey — the DR sibling of Skill 49 (absorbs the n8n "All In One Sales Page Assets" funnel family). Produces the 8-section main page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect high-ticket long-form page (6,500-7,100 words), 40-80-word bump copy with a checkbox close, and a slice-covered image plan. Gates every framework with fail-closed deterministic provers (intake, image-slice coverage, main-8, upsell-9, high-ticket band, bump band, media provenance + per-stage coverage, build-bundle labels + Skill 6 manifest contract) plus a signed PROCESS-CERTIFICATE. A canonical fail-closed entry (deps/version/hash-pin/bypass-scan/0600-nonce) drives a no-skip orchestrator. Delegates KIE image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport), or to Skill 63 when the client selected Agnes, and ALL GHL media + build to Skill 6; routes the bump copy to the Skill 44 order-bump seam. OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the client's own providers, never Anthropic.
+version: v2.1.0
 ---
 
 # Sales Page Assets (Skill 56)
@@ -11,8 +11,8 @@ main sales page, the 9-section upsell, the downsell recovery page, the Sovereign
 long-form page, and the order-bump copy, produced from one **"Ultimate AI Sales Page Writer"** survey
 submission. This is the **Direct-Response sibling of the Signature Funnel (Skill 49)**: two funnel copy
 engines sharing one delivery rail (Skill 6) and one labeling grammar. This skill owns the **IP and the
-gates**; existing engines own execution: **Skill 47** (or the client's own image provider) generates
-images, **Skill 6** creates the GHL media folder, uploads, and builds the funnel/pages, and **Skill 44**
+gates**; existing engines own execution: **Skill 66** (model policy) then **Skill 74** (the one approved KIE
+transport; or Skill 63 when the client selected Agnes) generate images, **Skill 6** creates the GHL media folder, uploads, and builds the funnel/pages, and **Skill 44**
 wires the bump order-form. It never hand-rolls an image call, a GHL REST call, ImgBB re-hosting, or a
 mail sender.
 
@@ -66,7 +66,8 @@ The entry shell runs five fail-closed guards (deps -> version -> hash-pin -> byp
 ```
 P0 Intake       -> prove_sp_intake.py          (locked 12-field brief)
 P1 Image plan   -> prove_sp_image_plan.py       (N prompts; every stage slice non-empty)
-P2 Images       -> Skill 47 kie_image.py / client image provider
+P2 Images       -> Skill 66 policy -> Skill 74 transport (or Skill 63 Agnes); record each result with
+                   scripts/kie74_receipt.py
 P3 Copy x7      -> prove_sp_main_structure.py + prove_sp_upsell_structure.py
                    + prove_sp_highticket_band.py + prove_sp_bump_band.py   (the copy suite)
 P4 Media        -> Skill 6 ghl_media.py          (media folder + upload; ImgBB removed)
@@ -79,7 +80,7 @@ P9 Handoff      -> Skill 6 ghl_rest_canvas.py build (+ Skill 44 bump seam) -> si
 
 A failing gate aborts the run and **no certificate is written** — an incomplete or non-compliant asset
 stack can never reach Complete. Writing your own per-run driver (a hand-rolled GHL REST call, an ImgBB
-upload, a raw image createTask, a mail sender, an `api.anthropic.com` call) is the ungoverned path and is
+upload, a raw image createTask, a copied KIE client script, a mail sender, an `api.anthropic.com` call) is the ungoverned path and is
 refused by the entry shell's bypass-scan (`AF-SP56-CANONICAL-BYPASS`). A direct
 `python3 run_sales_page_assets.py` without the front-door nonce dies `AF-SP56-FRONT-DOOR`.
 
@@ -101,7 +102,7 @@ Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everythin
 
 ## Delegation seams (never forked)
 
-- Images -> **Skill 47** `kie_image.py` OR the client's OWN image provider (the operator OpenAI Assistant / ImgBB account are NOT shipped).
+- Images -> **Skill 66** (policy: model, N43 ratio rules) then **Skill 74** `kie_live_adapter.py` (validate, preflight, prompt-budget, `submit --mode active`, save immediately), or **Skill 63** when the client selected Agnes (the operator OpenAI Assistant / ImgBB account are NOT shipped). Procedure: `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3 (shared by both engines). After each success run `python3 scripts/kie74_receipt.py --run-dir <RUN_DIR> --phase P2-IMAGES --result <result.json>`: it stores the adapter result under `<RUN_DIR>/receipts/kie74/` (the one place the entry shell's bypass scan allow-lists) and appends the provider receipt. Prompt length follows `07-kie-setup/references/kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent). No price, model id, endpoint or rate figure is written in this skill: ask Skill 74.
 - GHL media folder + upload -> **Skill 6** `ghl_media.py` (ImgBB removed from the client path).
 - GHL funnel/step/page build + HTML injection -> **Skill 6** `ghl_rest_canvas.py` / `ghl_builder.py`.
 - Bump order-bump element on a GHL order form -> **Skill 44** (grocery-shopping rule; P4->P5 board handoff).
@@ -146,5 +147,5 @@ provider-neutral by construction. Per-box capability must be proven before fleet
 ## Prerequisites
 
 - Skill 06 (GHL install pages) — the media + funnel/page build rail.
-- Skill 47 (Kie image adapter) — `kie_image.py` (or the client's own image provider).
+- Skill 66 (KIE image policy) and Skill 74 (KIE live adapter) — the only approved KIE path (or Skill 63 when the client selected Agnes).
 - Skill 44 (Convert & Flow operator) — the order-bump order-form seam.
