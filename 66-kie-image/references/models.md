@@ -2,7 +2,7 @@
 
 Verification date: 2026-08-26. Every limit below is quoted from a first-party
 KIE page fetched that day. The machine-readable source of truth is
-`../models.json` (30 entries; every entry carries `source_url`,
+`../models.json` (32 entries; every entry carries `source_url`,
 `last_verified_at`, `cap_status`). This page is the human-readable view.
 
 Encoding sources (research files, verbatim quotes):

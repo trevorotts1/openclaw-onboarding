@@ -1,6 +1,6 @@
 {
   "name": "kie-callback-relay",
-  "version": "1.1.0",
+  "version": "2.0.2",
   "description": "Centralized Cloudflare Worker -- receives Kie.ai callbacks, verifies HMAC, writes to KV for box polling",
   "private": true,
   "type": "module",

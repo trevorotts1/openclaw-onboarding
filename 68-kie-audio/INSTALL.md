@@ -88,14 +88,16 @@ TEST 1: Reload the environment so the key is available (does NOT print it):
   source "$HOME/.openclaw/secrets/.env" 2>/dev/null || source "$HOME/clawd/secrets/.env" 2>/dev/null || true
   [ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY is loaded" || echo "KIE_API_KEY is EMPTY"
 
-TEST 2: Confirm the KIE API is reachable and the key is valid (account balance,
+TEST 2: Confirm the KIE API is reachable and the key is valid (credit balance,
 zero-cost, no generation):
 
-  curl -sS -m 30 https://api.kie.ai/api/v1/account/balance \
+  curl -sS -m 30 https://api.kie.ai/api/v1/chat/credit \
     -H "Authorization: Bearer $KIE_API_KEY"
 
-  Expected: a JSON body. HTTP 401 = key wrong/missing (return to Step 1).
-  HTTP 402 = zero credits (top up before running any generation task).
+  Expected: a JSON body {"code":200,"msg":"success","data":<number>}. Check the
+  body `code`, not just the HTTP status (errors can arrive with HTTP 200):
+  `code` 401 = key wrong/missing (return to Step 1); `code` 402 = zero credits
+  (top up before running any generation task).
 
 Do NOT run a real TTS/Suno generation as the install check — that spends
 credits. The validator self-test (Step 3) proves payload correctness offline.
@@ -133,7 +135,7 @@ SETUP CHECKLIST
 
 [ ] KIE_API_KEY confirmed SET (value never printed)
 [ ] Test 1 passed — key loads into the environment
-[ ] Test 2 passed — account/balance endpoint returned JSON (401/402 diagnosed, not ignored)
+[ ] Test 2 passed — chat/credit endpoint returned body code 200 with a numeric balance (401/402 diagnosed, not ignored)
 [ ] Validator self-test exited 0 (both scripts)
 [ ] wire.sh ran twice; second run byte-identical; sentinel stamped
 

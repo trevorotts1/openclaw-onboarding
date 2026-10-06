@@ -25,8 +25,8 @@ Then poll:
   curl -sS -m 30 "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID>" \
     -H "Authorization: Bearer $KIE_API_KEY"
 
-state "success" -> resultJson.resultUrls[]. Download immediately (URLs expire
-~24h; media deleted after 14 days).
+state "success" -> data.response.resultUrls[] (same list as the JSON string in
+data.resultJson). Download immediately. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ALWAYS run the validators first (see INSTRUCTIONS.md step 4): select_image_model.py,
 validate_prompt.py, validate_payload.py. A bad payload never reaches the API.
@@ -162,7 +162,7 @@ COMMON MISTAKES TO AVOID
 
 MISTAKE 1: Treating createTask 200 as the finished image.
   The 200 is the CREATED receipt with a taskId. Only recordInfo
-  state=="success" (or the callback) carries resultJson.resultUrls.
+  state=="success" (or the callback) carries the result URLs (resultJson / response).
 
 MISTAKE 2: Skipping the validators.
   validate_prompt.py + validate_payload.py run BEFORE dispatch. Wan >5,000
