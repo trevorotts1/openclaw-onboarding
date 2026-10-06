@@ -19,5 +19,5 @@
 - Clutter ceiling: max 5 distinct elements (subject, headline, subhead, offer, CTA+logo counted together).
 
 ## Model routing
-- Default: GPT-Image 2.5 (layout + multiple text strings).
-- People-led brand ads → Nano Banana 2. Offer/typography-led → Ideogram V3 DESIGN.
+- Default: GPT-Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`; layout + multiple text strings), for every ad type.
+- People-led brand ads → GPT-Image 2.5 Sunburst (Nano Banana 2 only as a labeled fallback). Offer/typography-led → GPT-Image 2.5 Sunburst LONG. There is no Ideogram route for ads (consistent with `social-media-designs/_RULES.md`).

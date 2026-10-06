@@ -328,3 +328,41 @@ def test_main_persists_to_explicit_evidence_root(tmp_path, capsys):
     assert rc == 0
     assert os.path.isfile(
         os.path.join(evidence_root, "u88-content-conversation-loop-evidence.json"))
+
+
+# ---------------------------------------------------------------------------
+# Leg 1 early-return branches must return a defined result, never raise
+# UnboundLocalError (qc19_receipt_fixture / cta_dm_first were once assigned
+# after the early returns that used them).
+# ---------------------------------------------------------------------------
+
+def _assert_defined_failure(res, code):
+    assert res["pass"] is False
+    assert res["pregen_gate_ok"] is False
+    assert res["pregen_gate_exit_code"] == code
+    assert res["qc19_receipt"]["pass"] is True
+    assert res["cta_dm_first_with_comment_backup"] is True
+    assert res["post_copy"]
+
+
+def test_leg1_compiler_import_failure_returns_defined_result(monkeypatch):
+    # A None entry in sys.modules makes `import social_prompt_compiler` raise.
+    monkeypatch.setitem(sys.modules, "social_prompt_compiler", None)
+    _assert_defined_failure(proof.leg1_pregen_gate_and_qc(), 99)
+
+
+def test_leg1_compile_not_ok_returns_defined_result(monkeypatch):
+    shared = os.path.join(os.path.dirname(os.path.dirname(_HERE)), "shared-utils")
+    monkeypatch.syspath_prepend(shared)
+    monkeypatch.delitem(sys.modules, "social_prompt_compiler", raising=False)
+    import social_prompt_compiler as spc
+    monkeypatch.setattr(spc, "compile_prompt",
+                        lambda *a, **k: {"ok": False, "problems": ["forced failure"]})
+    res = proof.leg1_pregen_gate_and_qc()
+    _assert_defined_failure(res, 3)
+    assert res["pregen_gate_problems"] == ["forced failure"]
+
+
+def test_leg1_happy_path_still_passes():
+    res = proof.leg1_pregen_gate_and_qc()
+    assert res["pass"] is True and res["pregen_gate_ok"] is True

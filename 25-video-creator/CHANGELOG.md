@@ -1,10 +1,57 @@
 # Changelog — video-creator (Skill 25)
 
-## [7.0.2] - 2026-10-06 - feat: prompt length check before a KIE submit (rule 12)
+## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model
+
+### Fixed
+- Image-to-video sent `input.image_urls`, which is not an input of the default model `wan/3-0-video` (its schema at
+  docs.kie.ai/market/wan/3-0-video takes `first_frame_url` as a single string, plus `last_frame_url` and
+  `reference_image_urls[]`). The image field is now chosen per model from what Skill 67 and the KIE docs establish:
+  `first_frame_url` (string): wan/3-0-video, wan/3-0-video-prime, wan/2-7-image-to-video, bytedance/seedance-2-5,
+  bytedance/seedance-2-mini, minimax-h3/image-to-video. `image_url` (string): kling/v2-5-turbo-image-to-video-pro.
+  `image_urls` (list): kling-3.0-omni/image-to-video, kling-3.0/video, pixverse-v6/image-to-video,
+  happyhorse-1-1/image-to-video, happyhorse/image-to-video, gemini-omni-video. Each is read from the model's KIE docs
+  page (source table in `ai_providers.py`). runway and veo3* use dedicated APIs and fail with a clear error; any other
+  model fails before any HTTP call with an error naming the model. `image_field` (CLI `--image-field`) overrides.
+- Tests updated and extended (established models, unknown model, override wins).
+
+## [7.0.2] - 2026-10-05 — fix: replace dead KIE video endpoint with live createTask flow
+
+### Fixed (root cause — the default `kieai` video path could never work)
+- **Evidence (live probe 2026-10-05, with known-good and fake-path controls):** `POST https://api.kie.ai/v1/video/generate`
+  (what `scripts/ai_providers.py` posted to) returns **HTTP 404 under both the `/v1` and `/api/v1` prefixes**; the control
+  (a known-live KIE route) answered normally and a fabricated path also 404'd, so the endpoint is dead, not the probe.
+  The old payload also carried **no model id**, and `_image_to_video_kieai` raised `NotImplementedError`.
+  `text_to_video.py` defaults to `--provider kieai`, so Skill 25's default video path failed on every box.
+- **Text-to-video and image-to-video now use KIE's live unified job API:** `POST /api/v1/jobs/createTask`
+  `{model, input:{...}}` -> `data.taskId`, then `GET /api/v1/jobs/recordInfo?taskId=` (states
+  waiting/queuing/generating/success/fail) with 3 s start and backoff to 15 s and a 900 s deadline. The body `code` is
+  checked on every call (HTTP 200 with code 402/429 is an error, not success). Results are read from
+  `data.response.resultUrls` or the parsed `data.resultJson`, then downloaded and ffprobe-validated immediately
+  (existing `_download_video`).
+- **Local images are uploaded** to `https://kieai.redpandaai.co/api/file-stream-upload` (multipart, `uploadPath`
+  `video-creator/inputs`) and `data.downloadUrl` is sent in `input.image_urls`.
+- **Model is never invented here:** it comes from Skill 67's selector (`67-kie-video/scripts/select_video_model.py`), located
+  as a sibling of the skills dir (`<skills>/67-kie-video`, then `~/.openclaw/skills`, `/data/.openclaw/skills`). If Skill 67 is
+  not installed the call fails with an actionable error before any HTTP. New `--model` on `text_to_video.py` and
+  `image_to_video.py` (KIE only): an explicit model id always wins and is sent unchanged. `--resolution` is mapped to the
+  spelling in Skill 67's `models.json` for that model.
+- **Key resolution** goes through the shared canon (`shared-utils/key_resolver.py`, service `kie`) with the previous
+  `KIE_API_KEY` / `KIEAI_API_KEY` environment read as fallback. Auth failures (401/403) stop after one attempt, never loop.
+- Legacy `https://api.kie.ai/v1` endpoints in old `config.json` files are replaced by `https://api.kie.ai/api/v1`.
+- Runway, Pika, mock, local, and all non-KIE behavior are unchanged.
+
+### Notes
+- Skill 74 (`74-kie-live-adapter`, landing separately) is the intended shared KIE transport. Skill 25 does not import it;
+  this fix is self-contained so the default path works today. Migrate to Skill 74 when it ships.
+- Not rebuilt: `video-creator.skill` (zip). It has been stale since 2026-03 (no CHANGELOG, tests, or `wire.sh`, and an older
+  `ai_providers.py`); installs copy from the numbered source via `wire.sh`, and no gate compares the zip to the sources.
+  Rebuilding would be an unrelated repackaging of the whole skill.
+- `style` is not a KIE input and is no longer sent; `seed`, `negative_prompt`, `aspect_ratio` are sent only when supplied.
+  The image field for image-to-video defaults to `image_urls` (Skill 67 registry convention); override with `image_field`.
 
 ### Added
-- `AIProvider._check_prompt_budget` runs before the `kieai` provider submits: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. A prompt below the 80 percent floor or above the model max is refused before any spend and the error names the exact characters to add or cut. No model id means the limit is UNKNOWN and no floor is enforced.
-- `tests/test_prompt_budget_contract.py`: 79 percent rejected, 95 and 100 percent reach submit, 101 percent rejected, no model id has no floor.
+- `tests/test_kie_live_flow.py` (30 tests, fake HTTP transport): createTask payload, poll states/backoff/timeout, body-code
+  errors, auth stop, upload, explicit-model passthrough, missing Skill 67, key resolution.
 
 ## [7.0.1] - 2026-09-28 — fix: venv out of the skill root + no duplicate SKILL.md registration
 

@@ -542,8 +542,8 @@ fi
 # Part 4, THE VISUAL (U-11): after doc creation, generate the workflow visual for
 # every on-disk playbook and record the Visual column. scripts/31-generate-workflow-
 # visual.sh parses the playbook via the canonical engine, emits diagram.mmd, renders
-# diagram.png via npx mermaid-cli (free), generates the budget-capped Kie hero, and
-# records the Visual column in registry.md + the manifest. Best-effort: the truth
+# diagram.png via npx mermaid-cli (free), and records the Visual column in registry.md
+# + the manifest. Hero image generation is delegated to Skill 66 (kie-image). Best-effort: the truth
 # diagram must NEVER block the install, so a failure WARNs and never changes exit.
 # =============================================================================
 GEN_VISUAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/31-generate-workflow-visual.sh"

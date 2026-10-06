@@ -4,9 +4,21 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [2.0.3] - 2026-10-06 - feat: descriptive music fields use the rule 12 length band
+## [v2.0.3] - 2026-10-05 - fix: dead credit endpoint, version drift, registry and test counts, retention prose
 
-- Suno `style` (custom mode), the non-custom song description, the sounds prompt, add-vocals `style` and add-instrumental `tags` are descriptive: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. The first-party limits in this validator are the policy-owner fallback. Verbatim fields (TTS text, custom-mode lyrics) are exempt from the floor and keep only their ceilings. Self-test: 32 checks.
+### Fixed
+- Dead credit endpoint: `INSTALL.md` (Test 2 and checklist) and `QC.md` used `GET /api/v1/account/balance`. They now use `GET https://api.kie.ai/api/v1/chat/credit`, response `{code,msg,data:<number>}`, and say to check the body `code` (401 key wrong, 402 zero credits), not only the HTTP status. Live probe 2026-10-05 (known-good and fake-path controls): GET /api/v1/chat/credit, POST /api/v1/jobs/createTask, GET /api/v1/models and GET /api/v1/veo/record-info answered; /api/v1/account/balance, /api/v1/user/credits, /api/v1/jobs/create and /api/v1/veo/task returned HTTP 404.
+- Version drift: `SKILL.md` carried a nested `metadata.version` of 1.0.0 and `QC.md` asserted v1.0.0 while `skill-version.txt` said v2.0.2. `SKILL.md` now has top-level `version: v2.0.3` (nested rolled) and `QC.md` asserts v2.0.3.
+- Registry count: the 2.0.0 entry said `models.json` has 9 entries; it has 10 (TTS 5, Suno 4, STT 1). Prose corrected. `QC.md` and the 2.0.0 entry said the validator self-test has 13 checks; it runs 21. Corrected.
+- Retention: Result retention prose now reads: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately. Edited in `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `references/music.md`, `references/qc.md`. `EXAMPLES.md` notes that `data.response.resultUrls` is the parsed copy of `resultJson`.
+- The speech-to-text safety gate is untouched and stays fail-closed (`dispatch_enabled: false`, validator exit 2).
+
+### Migration Notes
+- No core-file block changed; no re-wire needed.
+- The prebuilt `68-kie-audio.skill` archive was not regenerated here.
+- Risk level: LOW.
+
+---
 
 ## [2.0.0] - 2026-08-26
 
@@ -39,12 +51,12 @@ All notable changes to this skill are documented here.
     speech-to-text/deepgram/google/speech; the KIE docs elevenlabs directory
     holds exactly 4 models, all TTS or audio isolation; `kie.ai/market` returned
     HTTP 403 to WebFetch; WebSearch variants returned zero results.
-- Machine-readable capability registry `models.json` (SPEC 12): 9 entries —
+- Machine-readable capability registry `models.json` (SPEC 12): 10 entries —
   TTS 5, Suno 4 families (generate, extend, sounds, other-operations with a
   14-operation records table), STT 1 special entry. Every entry carries
   source_url from the first-party docs page verified 2026-08-26.
 - Deterministic validator `scripts/validate_audio_request.py` (SPEC 14) with
-  `--self-test` (13 checks): per-turn 10,000/combined 5,000 caps, enum checks,
+  `--self-test` (13 checks at release; 21 now): per-turn 10,000/combined 5,000 caps, enum checks,
   Suno family guard (never createTask), duration advisory, sounds 500, mashup
   exactly 2 URLs, persona window, replace-section bounds, instrumental-true
   prohibition, STT dispatch hard-rejected with the negative-result reference.

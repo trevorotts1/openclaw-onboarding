@@ -2,7 +2,7 @@
 
 Verification date: 2026-08-26. Every limit below is quoted from a first-party
 KIE page fetched that day. The machine-readable source of truth is
-`../models.json` (30 entries; every entry carries `source_url`,
+`../models.json` (32 entries; every entry carries `source_url`,
 `last_verified_at`, `cap_status`). This page is the human-readable view.
 
 Encoding sources (research files, verbatim quotes):
@@ -24,7 +24,7 @@ Encoding sources (research files, verbatim quotes):
 | Qwen Image 3.0 / Pro | `qwen3/text-to-image`, `qwen3-pro/text-to-image`, `qwen3/image-to-image`, `qwen3-pro/image-to-image` | 4.5K **tokens** advertised (marketing copy); docs schemas say maxLength 5000 chars. Token cap, NEVER converted to a fake char cap (spec rule D) | 3 @ 10 MB, JPEG/PNG/WEBP/BMP/GIF/TIFF | 1K/2K; ratios 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9 |
 | Seedream 5.0 Pro | `seedream/5-pro-text-to-image`, `seedream/5-pro-image-to-image`, `seedream/5-pro-layer-decomposition` | NOT PUBLISHED | 10 @ 30 MB, JPEG/PNG/WEBP | Basic=1K / High=2K; 21:9 in enum |
 | Seedream 5.0 Lite | `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image` | NOT PUBLISHED | 14 @ 30 MB, JPEG/PNG/WEBP | Basic=2K / High=3K / Ultra=4K; 21:9 in enum |
-| Seedream 4.5 | `seedream/4.5-text-to-image`, `seedream/4-5-edit` | NOT PUBLISHED | 14 @ 30 MB (playground editor), README says "up to 10"; UNDETERMINED arbiter | Basic=2K / High=4K; NO output_format field |
+| Seedream 4.5 | `seedream/4.5-text-to-image`, `seedream/4.5-edit` | NOT PUBLISHED | 14 @ 30 MB (playground editor), README says "up to 10"; UNDETERMINED arbiter | Basic=2K / High=4K; NO output_format field |
 | Nano Banana 2 | `nano-banana-2` | NOT PUBLISHED | 14 @ 30 MB, JPEG/PNG/WEBP | 1K/2K/4K; JPG/PNG; 15-value ratio enum incl 1:4, 4:1, 1:8, 8:1, 21:9, auto |
 | Nano Banana 2 Lite | `nano-banana-2-lite` | NOT PUBLISHED | 10 @ 30 MB, JPEG/PNG/WEBP | 1K-focused (README); only 3 fields exposed: prompt, image_urls, aspect_ratio |
 | Nano Banana Pro | `nano-banana-pro` | NOT PUBLISHED (context window 64K/32K is NOT a prompt cap) | 8 @ 30 MB, JPEG/PNG/WEBP | 1K/2K/4K; PNG/JPG; 11-value enum (NO 1:4/4:1/1:8/8:1) |

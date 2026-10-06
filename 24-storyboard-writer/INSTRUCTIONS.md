@@ -13,10 +13,12 @@ It:
 
 ## Where pricing and durations come from
 
-Pricing and duration limits are read from:
-- `scripts/model-database.json`
+Durations and indicative prices are read from `scripts/model-database.json`. That file is a dated snapshot (last verified 2024-01-15) and is NOT authoritative:
+- Which model to use: Skill 67 (`67-kie-video`, `scripts/select_video_model.py`). Run it when the user names no model.
+- Live prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74, live `pricingDesc`). The price numbers in the JSON are fallback constants read by the cost estimate only.
+- Sora is prohibited by the Video department and is never a default. The Sora rows in the snapshot are historical data only.
 
-If estimates look wrong, update that JSON file.
+If estimates look wrong, do not hand-edit prices to "fix" them. Quote the price from the Skill 74 command above instead.
 
 ## How to run
 
@@ -25,7 +27,7 @@ If estimates look wrong, update that JSON file.
 ```bash
 python3 scripts/create_storyboard.py \
   --duration 300 \
-  --model sora-25s \
+  --model kling-3 \
   --topic "Product Tutorial" \
   --output my_storyboard
 ```
@@ -47,7 +49,7 @@ python3 -c "from scripts.model_database import list_models; print('\n'.join(list
 ```python
 from scripts.model_database import calculate_cost
 
-cost = calculate_cost("sora-25s", 300)
+cost = calculate_cost("kling-3", 300)
 print(cost)
 ```
 

@@ -22,9 +22,13 @@ API references (do NOT modify without verifying against fleet receipts):
                        MODEL_TIMEOUTS gpt-image-2-5-sunburst-image-to-image /
                        gpt-image-2-5-sunburst-text-to-image
   - createTask body: same kie-slide-submitter.js _kiePost / body block
-                       (model, input.prompt, input.image_input,
-                        input.aspect_ratio, input.resolution,
-                        input.output_format)
+                       (model, input.prompt, input.input_urls,
+                        input.aspect_ratio, input.resolution; no output_format)
+  - Reference field: the documented sunburst image-to-image schema field is
+                       `input_urls` (required, array, maxItems 16; docs.kie.ai
+                       /market/gpt/gpt-image-2-5-sunburst-image-to-image, read
+                       2026-10-05; AGENTS.md N43). This adapter used the Nano Banana
+                       field name `image_input` before v15.0.3.
   - Poll endpoint:   GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=
   - Result URL path: .data.resultJson.resultUrls[0]
                      OR .data.resultJson.images[0].url  (nano-banana style)
@@ -73,9 +77,47 @@ _RECORD_INFO_URL = f"{_KIE_API_BASE}/api/v1/jobs/recordInfo"
 _MODEL_EDIT = "gpt-image-2-5-sunburst-image-to-image"   # when source image(s) provided
 _MODEL_TEXT = "gpt-image-2-5-sunburst-text-to-image"    # when no source image
 
+# Input fields each model's live schema DECLARES (docs.kie.ai/market/gpt/gpt-image-2-5-
+# sunburst-text-to-image and ...-image-to-image, read 2026-10-05). The createTask input is
+# built ONLY from these; undeclared fields (for example `output_format`, which neither
+# schema documents) are never sent.
+_DECLARED_INPUT_FIELDS = {
+    _MODEL_TEXT: ("prompt", "aspect_ratio", "resolution", "background"),
+    _MODEL_EDIT: ("prompt", "input_urls", "aspect_ratio", "resolution", "background"),
+}
+
 # Poll config (stay within 10 req/s status-query limit)
 _POLL_INTERVAL_SECONDS = 5
 _POLL_TIMEOUT_SECONDS = 300   # 5 min; matches kie-slide-submitter MODEL_TIMEOUTS
+
+
+def _real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same
+    one key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    if not raw or not str(raw).strip():
+        return None
+    import sys
+    # Nearest copy first (a repo checkout or the installed skills dir that holds this
+    # file), then the explicit override, then the standard install roots.
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "secret_helper.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                from secret_helper import looks_like_real_key
+            except Exception:
+                return None
+            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
 
 
 def _decode_result_json(raw: Any) -> dict[str, Any]:
@@ -272,10 +314,10 @@ class KieImage(BaseTool):
     # ------------------------------------------------------------------
 
     def _get_api_key(self) -> str | None:
-        return os.environ.get("KIE_API_KEY")
+        return _real_kie_key(os.environ.get("KIE_API_KEY"))
 
     def get_status(self) -> ToolStatus:
-        """AVAILABLE only when KIE_API_KEY is set in the environment."""
+        """AVAILABLE only when KIE_API_KEY is set to a real key (a placeholder is NOT-SET)."""
         if self._get_api_key():
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
@@ -285,11 +327,19 @@ class KieImage(BaseTool):
     # ------------------------------------------------------------------
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        """Approximate KIE image cost (credits, treated as USD equivalent)."""
+        """Runtime FALLBACK constants only, not a price authority.
+
+        Price authority: ``python3 74-kie-live-adapter/scripts/kie_live_adapter.py
+        price --model <id>`` (live pricingDesc, snapshot fallback
+        74-kie-live-adapter/references/kie-model-registry.json). These constants are
+        used only when no live price was read; the same two values (2K, other) are
+        mirrored in Skill 58 config/cost-model.json. Canonical rules:
+        07-kie-setup/references/kie-common-rules.md.
+        """
         resolution = inputs.get("resolution", "2K")
         if resolution == "2K":
             return 0.05
-        return 0.03
+        return 0.04
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         return 30.0
@@ -504,10 +554,9 @@ class KieImage(BaseTool):
             "model": "gpt-image-2-5-sunburst-image-to-image" | "gpt-image-2-5-sunburst-text-to-image",
             "input": {
               "prompt": <str>,
-              "image_input": [<url>, ...],   # only when source images provided
+              "input_urls": [<url>, ...],    # only when source images provided (documented field)
               "aspect_ratio": "16:9",
-              "resolution": "2K",
-              "output_format": "png"
+              "resolution": "2K"            # plus optional "background"; no output_format
             }
           }
 
@@ -553,14 +602,17 @@ class KieImage(BaseTool):
         model = _MODEL_EDIT if source_urls else _MODEL_TEXT
 
         # Build createTask body (verified against kie-slide-submitter.js)
-        task_input: dict[str, Any] = {
+        candidate: dict[str, Any] = {
             "prompt": prompt,
             "aspect_ratio": aspect_ratio,
             "resolution": resolution,
-            "output_format": output_format,
         }
+        if inputs.get("background"):
+            candidate["background"] = inputs["background"]   # transparent | opaque | auto
         if source_urls:
-            task_input["image_input"] = source_urls
+            candidate["input_urls"] = source_urls   # documented sunburst i2i field; not Nano Banana `image_input`
+        # Only fields the model's schema declares are sent (output_format is not one).
+        task_input = {k: v for k, v in candidate.items() if k in _DECLARED_INPUT_FIELDS[model]}
 
         body = {"model": model, "input": task_input}
 

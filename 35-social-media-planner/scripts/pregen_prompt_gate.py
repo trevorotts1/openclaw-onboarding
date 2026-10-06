@@ -23,13 +23,16 @@ declared metadata BEFORE any generation call, mirroring the Graphics department'
       stub, not a real prompt — it is NOT submitted, NOT generated.
   6 — QUALITY/ROUTING failure (AF-SM-MODEL-ROUTING / AF-SM-INPUT-QC-GATE): the prompt is
       structurally complete but (a) a text-overlay image is routed to a non-text-rendering
-      model (Nano Banana 2/Pro) instead of Ideogram V3 DESIGN (playbook.md Section 8), or
+      model (Nano Banana 2/Pro), or Nano Banana is used as anything other than an
+      explicitly labeled non-text fallback (--fallback-label). Skill 35's default image
+      model is KIE GPT Image 2.5 Sunburst (owner order 2026-10-05, AGENTS.md N43;
+      playbook.md Section 8), or
       (b) a graphics-department-sourced asset has no SOP-GIP-02 QC receipt scoring >= 8.5.
 
 USAGE
     python3 pregen_prompt_gate.py check \\
         --prompt-file working/prompts/day1-primary.txt \\
-        --model ideogram-v3-design \\
+        --model gpt-image-2-5-sunburst-text-to-image \\
         --platform instagram --ratio 4:5 --pixels 1080x1350 \\
         --text-overlay "Three Moves That Doubled Our Pipeline" \\
         --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \\
@@ -75,6 +78,17 @@ EXIT_USAGE = 2
 EXIT_FORM = 3
 EXIT_QUALITY = 6
 
+# Owner order 2026-10-05 + AGENTS.md N43 (fleet pin): Skill 35 generates every image
+# with KIE GPT Image 2.5 Sunburst. `--model` defaults to the text-to-image id; use the
+# image-to-image id when a reference image is supplied. Legacy gpt-image-2 is only for
+# 3:1, 1:3 and 9:21 (Skill 35 produces none); `flare` is never registered.
+DEFAULT_IMAGE_MODEL = "gpt-image-2-5-sunburst-text-to-image"
+DEFAULT_IMAGE_MODEL_I2I = "gpt-image-2-5-sunburst-image-to-image"
+# N43 ratio substitution: Skill 35's 4:5 deliverable is requested as 3:4 and cropped to
+# 4:5 after generation. 2:3, 9:16, 16:9 and 1:1 are requested as they are.
+DISPATCH_RATIO_SUBSTITUTION = {"4:5": "3:4"}
+LEGACY_GPT_IMAGE_2_RATIOS = frozenset({"3:1", "1:3", "9:21"})
+
 # Every ratio Skill 35 actually produces (playbook.md Section 7/8/9). A prompt declaring a
 # ratio outside this set is a FORM failure — it does not match any real deliverable slot.
 KNOWN_RATIOS = {"4:5", "2:3", "9:16", "16:9", "1:1"}
@@ -100,8 +114,15 @@ _KIE_ID = {
 # through verified adapters; Nano Banana 2/Pro remain non-text.
 TEXT_RENDERING_CAPABILITY = "text_rendering"
 
-# Legacy name-based knowledge, now ONLY a fallback when no capability metadata
-# resolves (e.g. capability file missing). Kept in sync with 45's GK-20 rule.
+# Name-based FLOOR, not a second authority. The source of truth is
+# shared-utils/model-capabilities.json (read by _capability_map above); these sets
+# are consulted ONLY when that file is missing/unreadable, or for model ids it has no
+# family for (today: ideogram-*, agnes-image-*, nano-banana-*). Every entry that the
+# capability map DOES classify (the gpt-image-* ids) must agree with it: that is
+# enforced by test_pregen_prompt_gate.py case 10, so this copy cannot silently drift.
+# Add a new model to model-capabilities.json first; touch these sets only for ids the
+# map cannot express. Routing policy for video models lives in Skill 67, not here
+# (this gate only checks image prompts). Related to 45's GK-20 rule.
 _FALLBACK_TEXT_CAPABLE = {"ideogram-v3-design", "ideogram/v3-text-to-image", "ideogram-v3", "gpt-image-2", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "gpt-image-2-5-sunburst", "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "agnes-image-2.1-flash"}
 _FALLBACK_NON_TEXT = {"nano-banana-2", "nano-banana-pro"}
 
@@ -211,6 +232,7 @@ def check_prompt(
     asset_source: str,
     qc_receipt: Optional[dict],
     social_band: bool = True,  # kept for callers; rule 12 has no opt-out, so it is ignored
+    fallback_label: bool = False,
 ) -> GateResult:
     """No file I/O (the length check runs the shared enforcer, which calls Skill 74
     prompt-budget). The CLI (`cmd_check`) does all file/arg handling and calls this.
@@ -287,12 +309,30 @@ def check_prompt(
     # --- QUALITY / ROUTING (exit 6): correct once FORM is complete ----------------------
     # F32: capability-metadata routing via model-capabilities.json. GPT Image 2.5 and
     # Agnes are ELIGIBLE through verified adapters; the Ideogram-only allowlist is gone.
+    # Owner order 2026-10-05: Nano Banana is never a primary route. It is allowed only
+    # when the caller labels the call as an explicit non-text fallback.
+    # AGENTS.md N43: legacy gpt-image-2 (not 2.5) is allowed ONLY for 3:1, 1:3 and 9:21.
+    _bare = model_norm.split("/")[-1]
+    if _bare.startswith("gpt-image-2") and not _bare.startswith("gpt-image-2-5") \
+            and ratio not in LEGACY_GPT_IMAGE_2_RATIOS:
+        res.quality_problems.append(
+            f"AF-SM-MODEL-ROUTING: {model!r} is legacy GPT Image 2, allowed only for ratios "
+            f"{sorted(LEGACY_GPT_IMAGE_2_RATIOS)} (AGENTS.md N43). Ratio {ratio!r} must use "
+            f"{DEFAULT_IMAGE_MODEL} (or {DEFAULT_IMAGE_MODEL_I2I}).")
+
+    if model_norm.split("/")[-1].startswith("nano-banana") and not fallback_label:
+        res.quality_problems.append(
+            f"AF-SM-MODEL-ROUTING: {model!r} is not a Skill 35 route. The default image "
+            f"model is KIE GPT Image 2.5 Sunburst ({DEFAULT_IMAGE_MODEL}; "
+            f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana is allowed only "
+            "as an explicitly labeled NON-TEXT fallback (--fallback-label).")
+
     if text_overlay and not model_is_text_capable(model_norm):
         res.quality_problems.append(
             f"AF-SM-MODEL-ROUTING: this prompt carries baked on-image text but is routed to "
             f"{model!r}, which does not declare the text-rendering capability "
             f"(shared-utils/model-capabilities.json). Text-bearing social assets route by "
-            "capability: Ideogram V3 DESIGN or GPT Image 2.5 (Kie) or Agnes through their "
+            "capability: GPT Image 2.5 Sunburst (Kie, the default) or Agnes through their "
             "verified adapters — never Nano Banana 2/Pro, which stay reserved for non-text "
             "imagery (GK-20).")
 
@@ -373,6 +413,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         avoid_list_text=avoid_list_text,
         asset_source=args.asset_source,
         qc_receipt=qc_receipt,
+        fallback_label=args.fallback_label,
     )
 
     if result.ok:
@@ -409,8 +450,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     ck = sub.add_parser("check", help="gate one assembled prompt before generation")
     ck.add_argument("--prompt-file", required=True)
-    ck.add_argument("--model", required=True,
-                    help="e.g. ideogram-v3-design | nano-banana-2 | nano-banana-pro")
+    ck.add_argument("--model", default=DEFAULT_IMAGE_MODEL,
+                    help=f"default {DEFAULT_IMAGE_MODEL} (KIE GPT Image 2.5 Sunburst; use "
+                         f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana "
+                         "is accepted only with --fallback-label and never for baked text.")
+    ck.add_argument("--fallback-label", action="store_true",
+                    help="mark this call as an explicit NON-TEXT fallback (the only way "
+                         "Nano Banana is allowed)")
     ck.add_argument("--ratio", help="4:5 | 2:3 | 9:16 | 16:9 | 1:1")
     ck.add_argument("--pixels", help="e.g. 1080x1350")
     ck.add_argument("--platform", help="facebook | instagram | linkedin | pinterest | "

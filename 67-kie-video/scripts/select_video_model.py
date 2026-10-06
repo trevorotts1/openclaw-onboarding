@@ -21,7 +21,7 @@ import os
 import re
 import sys
 
-VERSION = "1.0.0"
+VERSION = "2.0.3"
 
 # ---------------------------------------------------------------------------
 # Routing registry for all 37 KIE Video models across all families.

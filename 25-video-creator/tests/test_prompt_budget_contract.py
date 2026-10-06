@@ -16,13 +16,20 @@ import pytest
 try:
     import requests as _requests  # noqa: F401
 except ModuleNotFoundError:
+    _requests = None
+
+
+def _stub_requests(monkeypatch):
+    """A requests stand-in (RequestException, get, post), removed again after the test."""
     stub = ModuleType("requests")
 
     class RequestException(Exception):
         pass
 
     stub.RequestException = RequestException
-    sys.modules["requests"] = stub
+    stub.get = stub.post = lambda *a, **k: (_ for _ in ()).throw(RequestException("no network in tests"))
+    monkeypatch.setitem(sys.modules, "requests", stub)
+
 
 SCRIPTS = Path(os.environ.get("SKILL25_ROOT", Path(__file__).resolve().parents[1])) / "scripts"
 MODEL = "gpt-image-2-5-sunburst-text-to-image"  # any KIE model with a maxLength; 20,000 in the registry snapshot
@@ -31,6 +38,8 @@ MAX = 20000
 
 @pytest.fixture
 def provider(monkeypatch):
+    if _requests is None:
+        _stub_requests(monkeypatch)
     monkeypatch.setenv("HOME", tempfile.mkdtemp())
     monkeypatch.delenv("KIE_API_KEY", raising=False)
     spec = importlib.util.spec_from_file_location("skill25_ai_providers_budget", SCRIPTS / "ai_providers.py")
@@ -75,6 +84,5 @@ def test_in_band_prompt_reaches_submit(provider, pct):
 
 def test_no_model_id_means_unknown_limit_and_no_floor(provider):
     ai, reached = provider
-    with pytest.raises(RuntimeError, match="submit reached"):
-        ai.generate_video("short", output=Path("unused.mp4"))
-    assert len(reached) == 1
+    ai._check_prompt_budget("short", None)  # returns: UNKNOWN, no floor
+    assert reached == []

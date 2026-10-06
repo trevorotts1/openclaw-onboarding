@@ -24,7 +24,7 @@ import os
 import re
 import sys
 
-VERSION = "1.0.0"
+VERSION = "2.0.3"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 

@@ -1,5 +1,42 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.0.3 — 2026-10-05
+
+Fix: Veo on `POST /api/v1/jobs/createTask` aligned with the live KIE catalog and schema.
+Evidence (free GETs, 2026-10-05): `GET /api/v1/models?q=veo` lists `veo-3-1`, `veo/extend`,
+`veo/get-1080p-video`, `veo/get-4k-video` and NO `veo3` / `veo3_fast`; `GET
+/api/v1/models/veo-3-1/schema` is code 200, path `/api/v1/jobs/createTask`, input `prompt`
+(required), `image_urls`, `generation_type`, `aspect_ratio` (16:9|9:16|Auto), `resolution`
+(720p|1080p|4k), `duration` (integer 4|6|8), `watermark`, `enable_translation`,
+`enable_fallback` (deprecated); `/models/veo3/schema` and `/models/veo3_fast/schema` answer
+code 404 "model name ... not supported".
+
+- `providers/kie.py` sends model `veo-3-1` with the schema-exact body (`image_urls`, integer
+  `duration`, lowercase `resolution`, `generation_type`, no `generate_audio`).
+- Tier selector: neither the live schema nor the docs page names a field that picks
+  Lite/Fast/Quality. So `kie-veo3-fast` is the one explicit tier this skill sends, and
+  `kie-veo3-quality` is `status: "planned"` and refuses to submit (it would be byte-identical
+  to Fast). Which tier KIE actually bills for a `veo-3-1` request remains unproven without a
+  paid call.
+- Price authority is the live catalog: `KieProvider.estimate_cost` reads `GET
+  /api/v1/models/veo-3-1/price` (`pricingDesc`) first, and only falls back to the registry
+  constants, which are now dated and labeled and equal the live numbers read 2026-10-05 (Fast
+  720p/1080p/4k $0.30/$0.325/$0.90, Quality $1.25/$1.275/$1.85; Lite $0.15/$0.175/$0.75 not
+  wired). They replace the stale 2026-07-14 figures ($0.40/$2.00). Same figures:
+  `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model veo-3-1`. Note
+  `scripts/estimate_cost.py` and the budget gate stay offline and use the registry fallback
+  constants.
+- Result route: documented unified `GET /api/v1/jobs/recordInfo` (`resultJson` is a JSON
+  string `{"resultUrls": [...]}`, states waiting|queuing|generating|success|fail); callback
+  shape `data.info.resultUrls` (list or JSON string) is parsed by `result_urls_from_callback`.
+  Not exercised on a live veo-3-1 task (no paid call).
+- Docs: SKILL.md and INSTRUCTIONS.md state `providers/kie.py` is a standalone client pending
+  consolidation onto Skill 74. Skills 47 and 37 untouched (legacy `/api/v1/veo/generate` live).
+- Entry shell `cinematic-web-funnel-entry.sh` aborted every run (`expected major 1.x` against
+  `v2.0.2`). Now expects major 2, accepts only `^v2\.[0-9]+\.[0-9]+$` (rejects `v2.0.1-junk`),
+  keeps the frontmatter lockstep check, adds `--check-version` and
+  `scripts/test_entry_version.py`. Not hash-pinned.
+
 ## 1.0.2 — 2026-07-18
 
 Fix (carry-forward of PR #602, `ce6aab7a`): `prove_conversion.py` JSON extraction is now

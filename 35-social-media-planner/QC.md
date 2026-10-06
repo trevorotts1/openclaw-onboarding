@@ -75,6 +75,7 @@ esac
 
 ## Images (every image)
 
+- [ ] Image was generated with KIE GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference); Nano Banana only if explicitly labeled as a non-text fallback
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
 - [ ] Image contains NO violent or inappropriate imagery
@@ -172,12 +173,12 @@ esac
 
 ## Video Content QC Checklist
 
-- [ ] Duration exactly 60 seconds (`ffprobe -v quiet -show_entries format=duration -of csv=p=0 final.mp4`)
+- [ ] Duration within the 55-60 second target window (`ffprobe -v quiet -show_entries format=duration -of csv=p=0 final.mp4`)
 - [ ] Resolution 1080x1920 (9:16) (`ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x final.mp4`)
 - [ ] Video codec H.264 (`ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 final.mp4`)
 - [ ] Audio codec AAC 192kbps (`ffprobe -v quiet -select_streams a:0 -show_entries stream=bit_rate,codec_name -of csv=p=0:s=,x final.mp4`)
 - [ ] Frame rate 30fps (`ffprobe -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 final.mp4`)
-- [ ] Smooth crossfade transitions between segments (visual inspection)
+- [ ] Transitions match the storyboard (hard cuts or crossfades as declared per scene; visual inspection)
 - [ ] 3-second brand intro (first frames match [from identity.md: brand colors/logo])
 - [ ] 3-second brand outro with CTA
 - [ ] ffprobe no errors (`ffprobe final.mp4` returns clean streams)

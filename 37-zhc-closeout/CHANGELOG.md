@@ -1,5 +1,10 @@
 # Changelog - Skill 37: ZHC Closeout
 
+## v13.1.6 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- **Image order fixed (contradiction):** `scripts/generate-infographics.sh` tried `nano-banana-2` first while `generate-visual-intelligence.sh` tried `gpt-image-2-5-sunburst-text-to-image` first. AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`, so both now use sunburst first and `nano-banana-2` only as the fallback; the per-account 422 `model name not supported` early switch is kept.
+- Docs aligned (SKILL.md, INSTRUCTIONS.md, INSTALL.md, CORE_UPDATES.md, `KNOWN-ISSUES.md`): model order, `ZHC_VIDEO_DURATION` default 8 (INSTRUCTIONS said 4), install text that named `gpt-image-2.5`/`veo3_fast` defaults the scripts do not use. All hard-coded prices removed; they point to `74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
+
 ## [13.1.2] - 2026-09-06 — leave pre-identity onboarding state untouched
 
 - Stop closeout before failure metadata or verification writes when no client identity exists. Existing scoped builds keep the normal closeout gates; fresh onboarding no longer inherits a misleading pending-build stub.
