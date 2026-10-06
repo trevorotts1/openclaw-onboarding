@@ -7,6 +7,10 @@ instead of restating these rules. If another file disagrees with this one, this 
 Sources: https://docs.kie.ai (market, rate-limit, task-detail, file-upload, common API pages),
 live endpoint probes on 2026-10-05, and AGENTS.md section N43.
 
+Note: `kie_live_adapter.py` (commands `price`, `validate`, `prompt-budget`) and
+`74-kie-live-adapter/references/kie-model-registry.json` land in a follow-up Skill 74 change.
+Reference them by these exact names.
+
 ## 1. Authority order (highest first)
 
 1. Owner rulings (AGENTS.md N43 and similar).
@@ -22,12 +26,17 @@ live endpoint probes on 2026-10-05, and AGENTS.md section N43.
 - Job status: `GET /api/v1/jobs/recordInfo?taskId=<id>`
 - Balance: `GET /api/v1/chat/credit`
 - Catalog: `GET /api/v1/models`; schema: `GET /api/v1/models/<id>/schema`
+- Price: `GET /api/v1/models/<id>/price`; success rate: `GET /api/v1/models/<id>/success-rate`
+  (both share the 1 request per second discovery budget in rule 3)
 - Fresh download link: `POST /api/v1/common/download-url`
 - Upload host: `https://kieai.redpandaai.co` with `/api/file-base64-upload` (10 MB max),
-  `/api/file-stream-upload`, `/api/file-url-upload`
+  `/api/file-stream-upload` (use for files over 10 MB), `/api/file-url-upload`
 - Legacy family routes still live: `/api/v1/veo/generate`, `/api/v1/veo/record-info`
 - DEAD (404), never use: `/api/v1/account/balance`, `/api/v1/user/credits`,
   `/api/v1/jobs/create`, `/api/v1/veo/task`, `/api/v1/video/generate`
+
+Models whose schema `paths` key is not `/api/v1/jobs/createTask` (chat, Codex, Grok, Gemini) are
+synchronous: call the path the schema returns; there is no task to poll.
 
 Auth: `Authorization: Bearer <key>` only. A header named `apikey` returns 401.
 Always read the body field `code`. HTTP 200 can still carry 401, 402, 404, 422, 429, 433 or 455.
@@ -82,17 +91,22 @@ returned). Links from download-url last 20 minutes. Task records last 2 months.
 
 On a client box the KIE key is the client's own. Operator keys are never used for client work.
 Resolve keys only through shared-utils `key_resolver.py` / `secret_names.json`. Print SET or
-NOT-SET only, never the value. Stop after 2 attempts on 401 or 403.
+NOT-SET only, never the value. Stop on 401 or 403: at most 2 attempts per AGENTS.md N40 (fail-closed dependency: stop at 2,
+report once); Skill 74 makes 1 attempt (stricter).
 
 ## 10. Model ids
 
 Never write a model id from memory. Use the policy owner's registry or the department pin.
 New live models start as DISCOVERED and are never auto-defaults.
 
-## 11. Image pin (restated from N43, unchanged)
+## 11. Image pin (restated from AGENTS.md N43, unchanged)
 
-The fleet image family is `gpt-image-2-5-sunburst-*`. Legacy `gpt-image-2-*` is used only for
-the 3:1, 1:3 and 9:21 ratios. `flare` is not introduced without a new owner ruling.
+Default: `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`.
+Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21 (rated weak on 2.5; no
+substitute was blessed). Ratio substitutions on 2.5 sunburst: 5:4 becomes 4:3; 4:5 becomes 3:4;
+2:1 becomes 16:9; 1:2 becomes 9:16. All other requested ratios go to 2.5 sunburst as asked.
+The fleet is pinned to `sunburst`; `flare` is not introduced without a new owner ruling.
+Constraint sets are per generation and never merged (2.5 prompt cap 20,000; legacy 25,000).
 
 ## 12. Prompt length budget (owner order 2026-10-05)
 
