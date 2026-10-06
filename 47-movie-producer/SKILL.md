@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v15.0.3
+version: v15.1.1
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -59,15 +59,18 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
 - `Dockerfile` — Linux/VPS container image (`node:22-bookworm-slim`) that bakes the Chromium system libs + ffmpeg and runs the provisioner, so the Remotion/HyperFrames render paths work on a VPS
 - `DEPENDENCY-MANIFEST.md` — the §A no-vendoring decision
 - `kie-adapters/` — our two Kie.AI BaseTool adapters (copied into the clone at install)
-  - `tools/graphics/kie_image.py` — Kie image generation (gpt-image-2-5-*)
-  - `tools/video/kie_video.py` — Kie video generation (gemini-omni-video / veo3)
+  - `tools/graphics/kie_image.py`: Kie image generation (gpt-image-2-5-*); thin wrapper over Skill 74 plus the embedded, hash-locked copy of Skill 74's client
+  - `tools/video/kie_video.py`: Kie video generation (gemini-omni-video / seedance / veo3); thin wrapper over Skill 74 (reads the embedded client from `kie_image.py` when Skill 74 is not installed)
 - `scripts/` — the deterministic **attestation spine** (OUR code; gates AROUND OpenMontage, never vendors it). See the binding "Attestation spine" section in `INSTRUCTIONS.md`.
   - `executive_producer.py` — the gate-and-attest driver (5 DMAIC phases; `AF-VID-PHASE-SKIPPED`)
   - `video_build_check.py` — receipt validators + the V-CONTROL postflight gate
   - `video_sync_check.py` — manifest ↔ code ↔ ruleset lockstep
   - `video_gate_integrity_check.py` — Guard A (declared == enforced == tested)
   - `test_video_preflight.py` — negative-test suite (every gate proven to fail-closed)
-  - `test_kie_adapter_resultjson_decode.py` — Kie `resultJson` JSON-string decode test
+  - `test_kie_adapter_resultjson_decode.py`: Kie `resultJson` JSON-string test through Skill 74 (also the shared fake-transport harness)
+  - `test_kie_adapter_key_and_i2i_field.py`, `test_kie_video_seedance.py`: adapter contracts over a fake Skill 74 transport
+  - `test_kie_adapter_safety.py`: no fallback on an unknown outcome, the key gate in a bare clone, the 80 percent prompt floor
+  - `embed_kie_client.py` / `test_kie_embedded_client_hashlock.py`: generate and lock the embedded Skill 74 client and secret helper
   - `cc_board.py` — fail-soft Command Center board caller (5 phase cards; legal `review → done`)
   - `test_cc_board.py` — offline proof of the board caller's contract
 - `test-fixtures/make-video-fixtures.sh` — GOOD/BAD run fixtures for the driver self-test

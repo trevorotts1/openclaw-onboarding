@@ -1,5 +1,40 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.1 - 2026-10-06
+
+QC follow-up: owner rule 12 (prompts 95 to 100 percent of the model maximum, never under 80 percent) is now a HARD REJECT here, not a report.
+
+- `providers/kie.py`: a prompt under 80 percent of the model maximum raises `ProviderTaskError` with the exact characters to add (Skill 74 prompt-budget), as one over the maximum already did with the characters to cut. New `KieProvider.prompt_budget(model_id)` returns Skill 74's numbers (None for an unknown limit, a verbatim field or no Skill 74).
+- Template audit: the P6 to P9 templates were one sentence long (about 300 to 600 characters against a 20000 maximum, so a floor of 16000 would have rejected every real run). New `providers/prompt_depth.py` carries real production direction (composition, lens, light, color, materials, atmosphere, continuity, people and brand safety, finish, layout safety for the web page, what must not appear, plus still-specific and motion-specific sections for camera path, parallax, temporal consistency, start/end frame fidelity and scroll scrubbing), filled in from the project's style contract and the scene. `generate_images.py` and `generate_videos.py` (concept, anchor, scene and boundary stills; draft, final and connector clips) pass their templates and sections through `fit_prompt`, which adds whole sections (then sentences) until the prompt is in the 95 to 100 percent band of the live maximum, reserving room for the negative-prompt clause. If the library cannot reach the floor, the short prompt goes to the provider, which refuses it. Models with no known limit (Veo 3.1) and verbatim fields are untouched.
+- Tests: `test_providers_kie.py` (79 percent refused with the characters to add, 80 and 95 pass, 101 refused with the characters to cut); new `test_prompt_depth.py` (the band at 20000, 12000, 5000 and 2500, the negative-prompt reserve, no-limit and verbatim exemptions, the real pipeline templates refused bare and accepted expanded, direction specific to the project and not repeated filler). The offline fixture schema now carries the real 20000 prompt maximum so every unit, e2e and self-test run exercises the floor.
+
+## v2.1.0 - 2026-10-06
+
+Consolidation: Skill 62 no longer has its own Kie HTTP client. `providers/kie.py` calls Skill 74
+(`74-kie-live-adapter`, the one fleet KIE transport) in `active` mode per call and keeps only this
+skill's policy.
+
+- Removed from `providers/kie.py`: the createTask/recordInfo/upload URLs and polling loop, the
+  `resultJson` decoder, the live `/price` GET, and the hand-rolled upload and download. Skill 74 now
+  does validate (live schema), prompt-budget, upload, createTask, wait, save and price. Prompt length
+  comes from `prompt-budget` (no band is hard-coded): over the model maximum is refused before any
+  paid call; under the 80 percent floor is reported (the floor is enforced by the policy owner Skill 66).
+- Kept in `providers/kie.py`: model registry and tier policy, the Veo 3.1 wire shape, the
+  quality-tier refusal (`kie-veo3-quality` stays `planned`), per-mode/per-resolution price-table
+  parsing (the row is chosen here; the live text comes from Skill 74 `price`, catalog source only),
+  the 46-kie-callback-relay HMAC wiring and the injectable `KieTransport` test seam.
+- Fallback: when Skill 74 is not installed, `providers/_kie_legacy.py` (the old plumbing, quarantined)
+  runs and the provider logs `path=legacy`; every other run logs `path=skill74 mode=active`.
+- `generate_image` now sends the documented sunburst image-to-image field `input_urls` (was Nano Banana
+  `image_input`) and no longer sends the undeclared `output_format`.
+- Tests: `test_providers_kie.py` runs the real Skill 74 client against a routed fake transport
+  (catalog, schema, credit, createTask, recordInfo, upload); new tests cover the path log, schema
+  refusal, prompt-budget refusal and report, upload, and the legacy fallback. The offline fixture
+  transports in `generate_images.py` and `generate_videos.py` answer Skill 74's catalog/schema reads
+  via `providers/_fixture_support.py` (test support only).
+- Not ported: the speculative `data.info.resultUrls`, `videoUrl` and `images[].url` poll fallbacks;
+  the documented recordInfo route returns `resultJson.resultUrls`, which Skill 74 reads.
+
 ## v2.0.3 — 2026-10-05
 
 Fix: Veo on `POST /api/v1/jobs/createTask` aligned with the live KIE catalog and schema.

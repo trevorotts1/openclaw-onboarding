@@ -1,7 +1,7 @@
 ---
 name: cinematic-web-funnel-engine
 description: Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels with complete copy, AI-generated scroll-controlled scenes, frame-matched video transitions, responsive Next.js delivery, Vercel deployment, and GoHighLevel/Convert and Flow integrations. Use when a client asks for an animated website, immersive landing page, cinematic funnel, scroll-story page, premium interactive web experience, or a funnel that combines conversion content with AI-generated motion.
-version: v2.0.3
+version: v2.1.1
 ---
 
 # Cinematic and Web Funnel Engine (Skill 62)
@@ -58,12 +58,14 @@ work unit, not this skeleton.
 
 ## Delegation seams (never forked here)
 
-- Image/video generation → Kie.ai on the client's own `KIE_API_KEY`. Honest status:
-  `providers/kie.py` is a STANDALONE Kie client, aligned by hand with
-  `47-movie-producer/kie-adapters/` (it is a second client, not a wrapper). Veo is
-  already divergent on purpose: this skill calls createTask with model `veo-3-1`, while
-  47 still uses the legacy `/api/v1/veo/generate` route. Consolidation onto Skill 74
-  (the shared KIE live adapter) is a staged follow-up and is not done yet. Veo price authority is
+- Image/video generation → Kie.ai on the client's own `KIE_API_KEY`, through Skill 74
+  (`74-kie-live-adapter`, the one fleet KIE transport). `providers/kie.py` is not a Kie
+  client any more: it calls Skill 74 per call in `active` mode for validate, prompt-budget,
+  upload, createTask, wait, save and price, and keeps only this skill's policy (model
+  registry, tiers, the Veo 3.1 wire shape, the quality-tier refusal). Each run logs
+  `path=skill74`. If Skill 74 is not installed the quarantined `providers/_kie_legacy.py`
+  fallback runs and logs `path=legacy`. Prompts: owner rule 12 applies (95 to 100 percent of the model maximum, never under 80 percent, a HARD REJECT below the floor via Skill 74 prompt-budget); the generators build their prompts from the templates plus `providers/prompt_depth.py` direction so real runs meet it. Veo: this skill calls createTask with model
+  `veo-3-1`, while 47 still uses the legacy `/api/v1/veo/generate` route. Veo price authority is
   the live catalog (`python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model veo-3-1`);
   the registry holds dated fallback constants only. Only the Fast id is sendable (no documented
   tier selector on `veo-3-1`; the Quality id is planned).

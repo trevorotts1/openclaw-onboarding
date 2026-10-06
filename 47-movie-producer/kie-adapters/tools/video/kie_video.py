@@ -1,4 +1,4 @@
-"""KIE.ai video generation adapter for OpenMontage.
+"""KIE.ai video generation adapter for OpenMontage (Skill 47).
 
 Provides capability "video_generation" via the KIE.ai API.
 
@@ -14,16 +14,24 @@ ALSO SUPPORTED:  bytedance/seedance-1.5-pro (Skill 62 U5 extension, added
                  the capability the Cinematic and Web Funnel Engine (Skill 62)
                  needs for seam-continuous connector clips between scenes
                  (spec §10.1/§10.2, CINEMATIC-AND-WEB-FUNNEL-ENGINE-SPEC.md).
-                 Uses the SAME /api/v1/jobs/createTask + /api/v1/jobs/
-                 recordInfo endpoint pair as gemini-omni-video — no new HTTP
-                 surface. Verified against 07-kie-setup/kie-setup-full.md
-                 §"Seedance 1.5 Pro" (2026-07-15).
 
-Both original model paths are verified against the fleet script:
-  37-zhc-closeout/scripts/generate-celebration-video.sh
-(lines 420-612, the Gemini Omni submit/poll + Veo submit/poll functions,
-including the string-duration 422 fix, the aspect_ratio always-inject rule,
-the image-fetch transient retry, and the veo3_fast fallback path).
+ONE KIE PATH: this file is a thin BaseTool wrapper. Every KIE call (live-schema
+validate, prompt-budget, credit preflight, createTask, wait, save) runs through
+Skill 74 (74-kie-live-adapter), called per call in ``active`` mode. The Skill 74
+client is taken from the installed sibling skill folder when it is present;
+otherwise from the EMBEDDED COPY that lives in the sibling file
+tools/graphics/kie_image.py (generated verbatim from Skill 74's source by
+scripts/embed_kie_client.py and hash-locked by
+scripts/test_kie_embedded_client_hashlock.py; the clone and the Docker image
+carry only the two adapter files, so the copy travels inside one of them).
+Each run prints which path ran: ``path=skill74`` or ``path=embedded``.
+
+ONE EXCEPTION, kept on purpose: veo3 / veo3_fast use KIE's legacy
+``POST /api/v1/veo/generate`` + ``GET /api/v1/veo/record-info`` route, which
+Skill 74 does not model (it submits to the createTask path a schema declares and
+polls jobs/recordInfo). That route's body and its successFlag poll are Skill 47's
+own policy and live in ``_run_veo_legacy``; the transport under them (auth, HTTP,
+retry on 429, redaction, result download) is still Skill 74's ``Adapter``.
 
 INSTALL NOTE (Skill 47 INSTALL.md):
   This file is NOT part of OpenMontage source (AGPLv3).  It is an adapter
@@ -52,9 +60,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
+import tempfile
 import time
+import types
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from tools.base_tool import (
     BaseTool,
@@ -70,70 +83,52 @@ from tools.base_tool import (
 )
 
 # ---------------------------------------------------------------------------
-# KIE.ai API constants (verified against generate-celebration-video.sh)
+# Models, durations and aspect sets (verified against generate-celebration-video.sh
+# lines 388-415 and 07-kie-setup/kie-setup-full.md "Seedance 1.5 Pro"). The
+# prompt length limits are NOT here: Skill 74 prompt-budget and the live schema own them.
 # ---------------------------------------------------------------------------
-_KIE_API_BASE = "https://api.kie.ai"
+_POLL_TIMEOUT_SECONDS = 1800   # 30 min; matches ZHC_VIDEO_POLL_TIMEOUT_SEC default
+_VEO_POLL_INTERVAL_SECONDS = 10
+_USD_PER_CREDIT = 0.005        # kie.ai/pricing: 1 credit ~= $0.005
 
-# gemini-omni-video: uses /jobs/createTask + /jobs/recordInfo
-_GEMINI_CREATE_URL  = f"{_KIE_API_BASE}/api/v1/jobs/createTask"
-_GEMINI_POLL_URL    = f"{_KIE_API_BASE}/api/v1/jobs/recordInfo"  # ?taskId=<id>
-
-# veo3 / veo3_fast: uses /veo/generate + /veo/record-info
-# (verified 07-kie-setup/EXAMPLES.md Example 4 + generate-celebration-video.sh lines 540-559)
-_VEO_CREATE_URL = f"{_KIE_API_BASE}/api/v1/veo/generate"
-_VEO_POLL_URL   = f"{_KIE_API_BASE}/api/v1/veo/record-info"    # ?taskId=<id>
-
-# Poll configuration (stay within 10 req/s status-query limit)
-_POLL_INTERVAL_SECONDS = 10
-_POLL_TIMEOUT_SECONDS  = 1800   # 30 min; matches ZHC_VIDEO_POLL_TIMEOUT_SEC default
-
-# Valid duration values per model (generate-celebration-video.sh lines 388-415)
 _GEMINI_VALID_DURATIONS = {"4", "5", "6", "7", "8"}
 _VEO_VALID_DURATIONS    = {"4", "6", "8"}
 
-# Default model/duration (mirrors generate-celebration-video.sh defaults)
 _DEFAULT_MODEL    = "gemini-omni-video"
 _FALLBACK_MODEL   = "veo3_fast"
 _DEFAULT_DURATION = "8"   # STRING — the 422 fix
 
-# Valid aspect ratios for KIE Gemini Omni (generate-celebration-video.sh line 425)
-_VALID_ASPECT_RATIOS = {"16:9", "9:16"}
+_VALID_ASPECT_RATIOS = {"16:9", "9:16"}   # gemini-omni-video / veo (generate-celebration-video.sh line 425)
 
-# ---------------------------------------------------------------------------
-# bytedance/seedance-1.5-pro constants (Skill 62 U5 extension, 2026-07-15)
-# Verified against 07-kie-setup/kie-setup-full.md §"Seedance 1.5 Pro":
-#   prompt: string, min 3 / max 2500 chars
+# bytedance/seedance-1.5-pro (Skill 62 U5 extension, 2026-07-15):
 #   input_urls: array of 0-2 image URLs (frame pinning; 0=first, 1=last frame)
 #   aspect_ratio: required, one of 1:1/4:3/3:4/16:9/9:16/21:9
 #   resolution: 480p/720p/1080p
 #   duration: 4, 8, or 12 seconds (as a STRING, mirroring the gemini-omni fix)
-#   fixed_lens: bool, default false
-#   generate_audio: bool, default false (enabling audio increases cost)
-# ---------------------------------------------------------------------------
 _SEEDANCE_MODEL              = "bytedance/seedance-1.5-pro"
 _SEEDANCE_VALID_DURATIONS    = {"4", "8", "12"}
 _SEEDANCE_DEFAULT_DURATION   = "8"
 _SEEDANCE_VALID_RESOLUTIONS  = {"480p", "720p", "1080p"}
 _SEEDANCE_DEFAULT_RESOLUTION = "720p"
 _SEEDANCE_VALID_ASPECT_RATIOS = {"1:1", "4:3", "3:4", "16:9", "9:16", "21:9"}
-_SEEDANCE_PROMPT_MIN_CHARS    = 3
-_SEEDANCE_PROMPT_MAX_CHARS    = 2500
 _SEEDANCE_MAX_INPUT_URLS      = 2  # 0=text-to-video, 1=first-frame, 2=first+last frame pin
+
+_TRANSIENT_FETCH_MARKERS = (
+    "image fetch failed", "fetch image", "failed to fetch", "failed to download", "failed to load",
+)
 
 
 def _real_kie_key(raw):
-    """Return the key only when the shared secret canon accepts it as a real KIE key.
+    """Return the key only when the secret canon accepts it as a real KIE key.
 
-    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same
-    one key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
-    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
-    helper cannot be imported the key counts as NOT-SET.
+    Uses shared-utils/secret_helper.py when this file sits in a repo checkout or an installed skills
+    tree; the OpenMontage clone and the Docker image have no shared-utils, so the same gate then comes
+    from the EMBEDDED copy of that helper in the sibling kie_image.py (generated verbatim, hash-locked).
+    A placeholder such as the installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: a key
+    the gate cannot approve counts as NOT-SET.
     """
     if not raw or not str(raw).strip():
         return None
-    import sys
-    # Nearest copy first (a repo checkout or the installed skills dir that holds this
-    # file), then the explicit override, then the standard install roots.
     cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
     cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
               os.path.expanduser("~/.openclaw/skills/shared-utils"),
@@ -143,43 +138,131 @@ def _real_kie_key(raw):
             if c not in sys.path:
                 sys.path.insert(0, c)
             try:
-                from secret_helper import looks_like_real_key
+                from secret_helper import looks_like_real_key as shared_gate
             except Exception:
-                return None
-            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
-    return None
+                break  # the shared copy is unusable: use the embedded one below
+            return raw if shared_gate(raw, "KIE_API_KEY") else None
+    block = _embedded_block(_SECRET_BEGIN, _SECRET_END)
+    if block is None:
+        return None  # no gate available at all: fail closed
+    return raw if _exec_module(block, "kie_image.py#embedded-secret-helper").looks_like_real_key(raw, "KIE_API_KEY") else None
 
 
-def _decode_result_json(raw: Any) -> dict[str, Any]:
-    """Normalise KIE's ``resultJson`` field into a parsed dict.
+# ---------------------------------------------------------------------------
+# Skill 74 client: installed sibling skill first, the embedded copy in the
+# sibling kie_image.py second.
+# ---------------------------------------------------------------------------
+_SKILL74_DIRNAME = "74-kie-live-adapter"
+_EMBED_BEGIN = "# >>> BEGIN EMBEDDED SKILL-74 CLIENT"
+_EMBED_END = "# <<< END EMBEDDED SKILL-74 CLIENT"
+_SECRET_BEGIN = "# >>> BEGIN EMBEDDED SECRET-HELPER"
+_SECRET_END = "# <<< END EMBEDDED SECRET-HELPER"
+_CLIENT: Any = None  # (client module, "skill74" | "embedded") or (None, None) when neither exists
 
-    KIE's poll endpoints (/api/v1/jobs/recordInfo and /api/v1/veo/record-info)
-    return ``resultJson`` as a JSON-ENCODED STRING — a string whose contents are
-    themselves JSON — NOT an already-parsed object.  This mirrors the fleet
-    reference script generate-celebration-video.sh, which pipes
-    ``jq -r '.data.resultJson'`` (raw string) into a SECOND ``jq`` to parse it
-    (lines 499 and 592).  The original adapters read ``resultJson`` as if it
-    were already a dict and called ``.get()`` on the raw string, so the result
-    URL was never extracted on a client box (confirmed live against api.kie.ai
-    during the v14.1.x render proof).
 
-    Defensive contract:
-      - str   -> json.loads() (returns {} if it does not decode to a dict)
-      - dict  -> used as-is (tolerate an already-parsed object)
-      - other -> {} (None, list, number, etc.)
-    """
-    if isinstance(raw, str):
-        text = raw.strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-        except (ValueError, TypeError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    if isinstance(raw, dict):
-        return raw
-    return {}
+def _skill74_candidates() -> list[Path]:
+    override = os.environ.get("KIE_SKILL74_DIR")
+    if override is not None:  # test hook: look only here ("" = Skill 74 not installed)
+        return [Path(override)] if override else []
+    roots = [p for p in Path(__file__).resolve().parents]  # repo checkout: the skills tree is an ancestor
+    roots += [Path(os.environ["OPENCLAW_SKILLS_DIR"])] if os.environ.get("OPENCLAW_SKILLS_DIR") else []
+    roots += [Path.home() / ".openclaw" / "skills", Path("/data/.openclaw/skills")]
+    return [r / _SKILL74_DIRNAME for r in roots]
+
+
+def _exec_module(code_text: str, filename: str) -> types.ModuleType:
+    mod = types.ModuleType("kie_live_adapter_client")
+    mod.__file__ = filename
+    exec(compile(code_text, filename, "exec"), mod.__dict__)  # in memory: nothing is written next to the source
+    return mod
+
+
+def _embedded_block(begin: str, end: str) -> Any:
+    """Text of a generated block in the sibling kie_image.py (same relative layout in the skill and in the clone), or None."""
+    sibling = Path(__file__).resolve().parents[1] / "graphics" / "kie_image.py"
+    if not sibling.is_file():
+        return None
+    text = sibling.read_text(encoding="utf-8")
+    if begin not in text or end not in text:
+        return None
+    return text[text.index(begin):text.index(end)]
+
+
+def _kie_client() -> Any:
+    """-> (client module with Adapter / KieError, path label). Printed once per process."""
+    global _CLIENT
+    if _CLIENT is None:
+        _CLIENT = (None, None)
+        for d in _skill74_candidates():
+            f = d / "scripts" / "kie_live_adapter.py"
+            if f.is_file():
+                _CLIENT = (_exec_module(f.read_text(encoding="utf-8"), str(f)), "skill74")
+                print(f"[kie-47] path=skill74 mode=active ({f})", file=sys.stderr)
+                break
+        else:
+            block = _embedded_block(_EMBED_BEGIN, _EMBED_END)
+            if block is not None:
+                _CLIENT = (_exec_module(block, "kie_image.py#embedded-skill-74-client"), "embedded")
+                print("[kie-47] path=embedded mode=active (Skill 74 not installed; generated copy from kie_image.py)", file=sys.stderr)
+    return _CLIENT
+
+
+def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None, now: Any = None) -> Any:
+    """A Skill 74 Adapter pinned to ``active`` mode for this call (owner order: live)."""
+    client, _label = _kie_client()
+    if client is None:
+        raise RuntimeError("no KIE client: Skill 74 is not installed and the embedded copy in kie_image.py is missing")
+    env = {"KIE_API_KEY": api_key, "KIE_LIVE_ADAPTER_MODE": "active", "HOME": os.environ.get("HOME") or str(Path.home())}
+    for name in ("KIE_LIVE_CACHE_DIR", "KIE_LIVE_RECEIPT_DIR", "KIE_LIVE_MIN_SPACING", "OC_CONFIG",
+                 "KIE_LIVE_API_BASE", "KIE_LIVE_UPLOAD_BASE"):
+        if os.environ.get(name):
+            env[name] = os.environ[name]
+    kwargs: dict[str, Any] = {}
+    if transport is not None:
+        kwargs["transport"] = transport
+    if sleep is not None:
+        kwargs["sleep"] = sleep
+    if now is not None:
+        kwargs["now"] = now
+    adapter = client.Adapter(env=env, **kwargs)
+    adapter.mode = "active"
+    return adapter
+
+
+def _err_text(result: dict[str, Any]) -> str:
+    err = result.get("error") or {}
+    return f"{err.get('code')}: {err.get('msg')}" if err else f"state={result.get('state')}"
+
+
+class _KieUnresolved(RuntimeError):
+    """A paid KIE job whose outcome is unknown: it timed out or could not be read (``task_id`` set), or the
+    createTask answer was lost to a network error after the request may have been sent (``task_id`` None).
+    Never fall back to another model and never resubmit: record the task id for the Dispatcher to re-poll."""
+
+    def __init__(self, message: str, task_id: Any = None):
+        super().__init__(message)
+        self.task_id = task_id
+
+
+def _first_result_url(*blocks: Any) -> str:
+    """First result URL from the shapes the legacy Veo record-info returns."""
+    for b in blocks:
+        if isinstance(b, str):  # resultJson arrives as a JSON-ENCODED STRING
+            try:
+                b = json.loads(b)
+            except ValueError:
+                continue
+        if not isinstance(b, dict):
+            continue
+        urls = b.get("resultUrls")
+        if isinstance(urls, list) and urls and isinstance(urls[0], str):
+            return urls[0]
+        for k in ("videoUrl", "url", "resultUrl"):
+            if isinstance(b.get(k), str) and b[k]:
+                return b[k]
+    return ""
+
+
 
 
 class KieVideo(BaseTool):
@@ -252,8 +335,9 @@ class KieVideo(BaseTool):
         "durations outside 4/6/8s (Veo), 4-8s (Gemini Omni), or 4/8/12s (Seedance)",
         "paid Seedance calls before a live price is confirmed — Kie.ai's own "
         "docs state pricing is not listed for bytedance/seedance-1.5-pro "
-        "(07-kie-setup/kie-setup-full.md); the caller's budget gate must "
-        "resolve a live price before any paid call, this adapter does not",
+        "(07-kie-setup/kie-setup-full.md); Skill 74 preflight reports an "
+        "unpriced model and proceeds, so the caller's budget gate must "
+        "resolve a live price before any paid call",
     ]
     fallback_tools = ["kie_video"]  # internal fallback: gemini-omni -> veo3_fast
 
@@ -345,7 +429,7 @@ class KieVideo(BaseTool):
                     "first image and end on the second (spec §10.1/§10.2 "
                     "'two-image input_urls frame pinning').  Each URL must be "
                     "publicly reachable by KIE servers -- upload local files "
-                    "first (see kie_image._upload_local_image).  Ignored for "
+                    "first through Skill 74 upload (see kie_image).  Ignored for "
                     "every other model (they use image_urls/image_url instead)."
                 ),
             },
@@ -355,7 +439,7 @@ class KieVideo(BaseTool):
                 "description": (
                     "Reference image URLs for gemini-omni-video.  Each URL must "
                     "be publicly reachable by KIE/Gemini servers.  Upload local "
-                    "files first (see kie_image._upload_local_image).  "
+                    "files first through Skill 74 upload (see kie_image).  "
                     "Ignored for veo3/veo3_fast (text-to-video only) and for "
                     "bytedance/seedance-1.5-pro (use `input_urls` instead, "
                     "which preserves first/last-frame order)."
@@ -549,451 +633,169 @@ class KieVideo(BaseTool):
         return urls
 
     # ------------------------------------------------------------------
-    # Gemini Omni Video path (POST /api/v1/jobs/createTask)
+    # Skill 74 jobs
     # ------------------------------------------------------------------
 
-    def _submit_gemini_omni(
-        self,
-        prompt: str,
-        duration: str,
-        aspect_ratio: str,
-        image_urls: list[str],
-        generate_audio: bool,
-        api_key: str,
-    ) -> str:
-        """Submit a gemini-omni-video job; return the taskId.
+    @staticmethod
+    def _check_prompt(adapter: Any, model: str, prompt: str) -> tuple[str | None, list[str]]:
+        """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here).
+        -> (refusal text or None, warnings). Owner rule 12: a descriptive prompt over the model maximum
+        or under 80 percent of it is a HARD REJECT, and the refusal names the exact characters to cut or add."""
+        r = adapter.cmd_prompt_budget(model, check=True, prompt_text=prompt)
+        err = r.get("error") or {}
+        if err.get("code") == "prompt_above_max":
+            return f"kie_video: {model} prompt exceeds the model limit: {err.get('msg')}", []
+        if err.get("code") == "prompt_below_floor":
+            return f"kie_video: {model} prompt is below the 80 percent floor: {err.get('msg')}", []
+        return None, []
 
-        Body shape (verified against generate-celebration-video.sh
-        submit_gemini_omni(), lines 462-483):
+    @staticmethod
+    def _preflight(adapter: Any, model: str, seconds: float) -> tuple[str | None, Any, list[str]]:
+        """Credit preflight (price x 1.30 against the live balance). -> (refusal, credits estimate, warnings).
+        Only a real shortfall blocks; an unpriced model or an unreadable balance is reported and the run proceeds."""
+        pre = adapter.cmd_preflight(model, seconds)
+        if (pre.get("error") or {}).get("code") == "insufficient_credits":
+            return f"kie_video: {_err_text(pre)}", None, []
+        warnings = [f"credit preflight not enforced for {model} ({_err_text(pre)})"] if pre["state"] == "fail" else []
+        return None, (pre.get("data") or {}).get("credits_estimate"), warnings
 
-          {
-            "model": "gemini-omni-video",
-            "input": {
-              "prompt": <str>,
-              "image_urls": [<url>, ...],   # when reference images present
-              "duration": "<str>",           # MUST be a string (422 fix)
-              "aspect_ratio": "16:9",        # ALWAYS included (422 fix)
-              "generate_audio": true
-            }
-          }
-        """
-        import requests
+    def _run_job(self, adapter: Any, model: str, task_input: dict[str, Any], seconds: float, save_dir: str) -> dict[str, Any]:
+        """createTask models: prompt-budget, preflight, then Skill 74 submit + wait + save.
+        -> {"ok", "error", "transient", "run", "credits", "warnings"}."""
+        refusal, warnings = self._check_prompt(adapter, model, task_input.get("prompt", ""))
+        if not refusal:
+            refusal, credits, more = self._preflight(adapter, model, seconds)
+            warnings += more
+        else:
+            credits = None
+        if refusal:
+            return {"ok": False, "error": refusal, "transient": False, "unresolved": False, "refused": True,
+                    "task_id": None, "run": {}, "credits": None, "warnings": warnings}
+        run = adapter.cmd_run({"model": model, "input": task_input}, save_dir, timeout=_POLL_TIMEOUT_SECONDS)
+        if run["state"] == "success" and run["saved_paths"]:
+            return {"ok": True, "error": "", "transient": False, "unresolved": False, "task_id": run["task_id"],
+                    "run": run, "credits": credits, "warnings": warnings}
+        msg = _err_text(run) + (f" (task {run['task_id']} may still finish)" if run.get("task_id") else "")
+        err = run.get("error") or {}
+        tid = run.get("task_id")
+        verdict = run["state"] == "fail" and "state_raw" in (run.get("data") or {})  # KIE itself reported the task failed
+        # Unknown outcome: a task id exists but KIE has not said it failed (timeout, unreadable status), or
+        # createTask was sent and its answer was lost to a network error. Money may be spent either way.
+        unresolved = (bool(tid) and not verdict) or (not tid and err.get("code") == "network")
+        transient = verdict and any(k in msg.lower() for k in _TRANSIENT_FETCH_MARKERS)
+        return {"ok": False, "error": msg, "transient": transient, "unresolved": unresolved, "task_id": tid,
+                "run": run, "credits": credits, "warnings": warnings}
 
-        task_input: dict[str, Any] = {
-            "prompt": prompt,
-            "duration": duration,            # STRING — the verified 422 fix
-            "aspect_ratio": aspect_ratio,    # ALWAYS present — the verified 422 fix
-            "generate_audio": generate_audio,
-        }
-        if image_urls:
-            task_input["image_urls"] = image_urls
-
-        body = {"model": "gemini-omni-video", "input": task_input}
-
-        resp = requests.post(
-            _GEMINI_CREATE_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
-        if not task_id:
-            raise RuntimeError(f"kie_video gemini-omni-video submit: no taskId: {data}")
-        return task_id
-
-    def _poll_jobs_task(self, task_id: str, api_key: str, *, model_label: str) -> str:
-        """Poll GET /api/v1/jobs/recordInfo until success; return result URL.
-
-        SHARED poll path for every model submitted through
-        POST /api/v1/jobs/createTask. gemini-omni-video AND
-        bytedance/seedance-1.5-pro (Skill 62 U5) use the IDENTICAL
-        createTask/recordInfo endpoint pair — verified against
-        07-kie-setup/kie-setup-full.md "Common create task endpoint" +
-        "Seedance 1.5 Pro" (2026-07-15) — so one poll implementation serves
-        both; only `model_label` changes, purely for attributing error/
-        exception text to the model that actually ran.
-
-        Handles transient image-fetch failures (rc=2 signal in the fleet
-        script) by raising a retriable error so the caller can re-submit.
-
-        Verified against generate-celebration-video.sh poll_gemini_omni(),
-        lines 486-529.
-        """
-        import requests
-
-        elapsed = 0
-        headers = {"Authorization": f"Bearer {api_key}"}
-
-        while elapsed < _POLL_TIMEOUT_SECONDS:
-            time.sleep(_POLL_INTERVAL_SECONDS)
-            elapsed += _POLL_INTERVAL_SECONDS
-
-            resp = requests.get(
-                _GEMINI_POLL_URL,
-                params={"taskId": task_id},
-                headers=headers,
-                timeout=15,
-            )
-            if resp.status_code >= 500:
-                continue
-            resp.raise_for_status()
-            body = resp.json()
-
-            data_block = body.get("data") or {}
-            state = data_block.get("state", "")
-
-            if state == "success":
-                # resultJson arrives as a JSON-ENCODED STRING from KIE; decode
-                # it before reading the result URL(s).  Tolerates an already-
-                # parsed dict.  (generate-celebration-video.sh line 499 pipes
-                # `jq -r .data.resultJson` into a SECOND jq to parse it.)
-                result_json = _decode_result_json(data_block.get("resultJson"))
-                result_urls = result_json.get("resultUrls") or []
-                if result_urls:
-                    return result_urls[0]
-                # Fallbacks (mirrors poll_gemini_omni jq expressions)
-                video_url = (
-                    result_json.get("videoUrl")
-                    or result_json.get("url")
-                    or result_json.get("resultUrl")
-                    or ""
-                )
-                if video_url:
-                    return video_url
-                raise RuntimeError(
-                    f"kie_video: {model_label} task {task_id} succeeded "
-                    f"but no result URL found: {result_json}"
-                )
-
-            if state in ("fail", "failed", "error"):
-                fail_msg = data_block.get("failMsg") or body.get("msg") or "unknown"
-                # Transient image-fetch failure — flag for re-submit
-                # (mirrors generate-celebration-video.sh lines 506-514)
-                if any(kw in fail_msg.lower() for kw in (
-                    "image fetch failed", "fetch image", "failed to fetch",
-                    "failed to download", "failed to load",
-                )):
-                    raise _ImageFetchError(
-                        f"kie_video: {model_label} transient image-fetch "
-                        f"failure for task {task_id}: {fail_msg}"
-                    )
-                raise RuntimeError(
-                    f"kie_video: {model_label} task {task_id} failed: {fail_msg}"
-                )
-            # Pending / processing — keep polling
-
-        raise RuntimeError(
-            f"kie_video: {model_label} task {task_id} timed out "
-            f"after {_POLL_TIMEOUT_SECONDS}s"
-        )
-
-    def _poll_gemini_omni(self, task_id: str, api_key: str) -> str:
-        """Poll a gemini-omni-video task. Thin wrapper over the shared
-        `_poll_jobs_task` (kept as a distinct method so existing callers/
-        tests calling `_poll_gemini_omni(task_id, api_key)` are unaffected)."""
-        return self._poll_jobs_task(task_id, api_key, model_label="gemini-omni-video")
-
-    def _poll_seedance(self, task_id: str, api_key: str) -> str:
-        """Poll a bytedance/seedance-1.5-pro task (Skill 62 U5). Same
-        createTask/recordInfo endpoint pair as gemini-omni-video — see
-        `_poll_jobs_task`."""
-        return self._poll_jobs_task(task_id, api_key, model_label=_SEEDANCE_MODEL)
-
-    # ------------------------------------------------------------------
-    # Seedance path (POST /api/v1/jobs/createTask, same endpoint as
-    # gemini-omni-video — Skill 62 U5 extension, 2026-07-15)
-    # ------------------------------------------------------------------
-
-    def _submit_seedance(
-        self,
-        prompt: str,
-        duration: str,
-        aspect_ratio: str,
-        resolution: str,
-        input_urls: list[str],
-        generate_audio: bool,
-        fixed_lens: bool,
-        api_key: str,
-    ) -> str:
-        """Submit a bytedance/seedance-1.5-pro job; return the taskId.
-
-        Uses the SAME endpoint as gemini-omni-video
-        (POST /api/v1/jobs/createTask) — verified against
-        07-kie-setup/kie-setup-full.md §"Seedance 1.5 Pro" (2026-07-15) — so
-        no new HTTP surface is introduced.
-
-        Body shape (per kie-setup-full.md curl example):
-
-          {
-            "model": "bytedance/seedance-1.5-pro",
-            "input": {
-              "prompt": <str>,
-              "input_urls": [<first_frame_url>, <last_frame_url>],  # 0-2 images
-              "aspect_ratio": <str>,   # REQUIRED
-              "resolution": <str>,     # 480p / 720p / 1080p
-              "duration": "<str>",     # "4" | "8" | "12"
-              "fixed_lens": <bool>,
-              "generate_audio": <bool>
-            }
-          }
-
-        FRAME PINNING (spec §10.1/§10.2 "two-image input_urls frame
-        pinning"): when `input_urls` has exactly 2 entries, index 0 is the
-        FIRST frame and index 1 is the LAST frame of the generated clip.
-        1 entry = image-to-video from that single start frame. 0 entries =
-        pure text-to-video (`input_urls` is omitted from the body entirely,
-        matching kie-setup-full.md: "Text to video if input_urls is omitted").
-        """
-        import requests
-
-        task_input: dict[str, Any] = {
-            "prompt": prompt,
-            "aspect_ratio": aspect_ratio,  # REQUIRED for Seedance (kie-setup-full.md)
-            "resolution": resolution,
-            "duration": duration,          # STRING, mirrors the gemini-omni 422-fix pattern
-            "fixed_lens": fixed_lens,
-            "generate_audio": generate_audio,
-        }
-        if input_urls:
-            task_input["input_urls"] = input_urls
-
-        body = {"model": _SEEDANCE_MODEL, "input": task_input}
-
-        resp = requests.post(
-            _GEMINI_CREATE_URL,  # shared /api/v1/jobs/createTask endpoint
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
-        if not task_id:
-            raise RuntimeError(f"kie_video seedance submit: no taskId: {data}")
-        return task_id
-
-    # ------------------------------------------------------------------
-    # Veo fallback path (POST /api/v1/veo/generate)
-    # ------------------------------------------------------------------
-
-    def _submit_veo(
-        self,
-        model: str,
-        prompt: str,
-        duration: str,
-        aspect_ratio: str,
-        generate_audio: bool,
-        api_key: str,
-    ) -> str:
-        """Submit a veo3 / veo3_fast job; return the taskId.
-
-        Body shape (verified against generate-celebration-video.sh
-        submit_veo(), lines 534-545 + 07-kie-setup/EXAMPLES.md Example 4):
-
-          {
-            "model": "veo3_fast",
-            "prompt": <str>,
-            "aspect_ratio": "16:9",
-            "duration": <int>,         # NOTE: veo endpoint takes integer
-            "generate_audio": true
-          }
-
-        NOTE: the veo/generate body differs from the createTask body — it has
-        top-level 'prompt' (not nested under 'input') and takes duration as an
-        integer (not a string).  This is NOT a typo; both behaviours are
-        verified against the fleet script (submit_veo uses --argjson for
-        duration, which emits an integer JSON value).
-        """
-        import requests
-
+    def _run_veo_legacy(
+        self, adapter: Any, model: str, prompt: str, duration: str, aspect_ratio: str,
+        generate_audio: bool, save_dir: str,
+    ) -> dict[str, Any]:
+        """veo3 / veo3_fast on KIE's legacy Veo route (see the module docstring). The body has a
+        top-level 'prompt' and an INTEGER duration (verified against generate-celebration-video.sh
+        submit_veo(), lines 534-545 + 07-kie-setup/EXAMPLES.md Example 4). Raises RuntimeError."""
         try:
             duration_int = int(duration)
         except ValueError:
             duration_int = 8
-
-        body: dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "aspect_ratio": aspect_ratio,
-            "duration": duration_int,
-            "generate_audio": generate_audio,
-        }
-
-        resp = requests.post(
-            _VEO_CREATE_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
+        body = {"model": model, "prompt": prompt, "aspect_ratio": aspect_ratio,
+                "duration": duration_int, "generate_audio": generate_audio}
+        try:
+            j = adapter.call("POST", adapter.api + "/api/v1/veo/generate", body)
+        except Exception as exc:  # Skill 74's KieError: code + redacted msg
+            if getattr(exc, "code", None) == "network":  # the request may have been sent: outcome unknown, never resubmit
+                raise _KieUnresolved(f"Veo submit outcome unknown after a network error ({getattr(exc, 'msg', exc)})")
+            raise RuntimeError(f"Veo submit failed: {getattr(exc, 'msg', exc)}")
+        task_id = (j.get("data") or {}).get("taskId") or j.get("taskId")
         if not task_id:
-            raise RuntimeError(f"kie_video veo submit: no taskId: {data}")
-        return task_id
+            raise RuntimeError(f"Veo submit returned no taskId: {j}")
+        url = self._poll_veo(adapter, task_id)
+        saved = adapter.cmd_save(task_id, save_dir, info={"task_id": task_id, "state": "success", "result_urls": [url]})
+        if saved["state"] != "success" or not saved["saved_paths"]:
+            raise _KieUnresolved(f"Veo task {task_id} succeeded but its result could not be saved: {_err_text(saved)}", task_id)
+        return {"task_id": task_id, "url": url, "path": saved["saved_paths"][0]}
 
-    def _poll_veo(self, task_id: str, api_key: str) -> str:
-        """Poll GET /api/v1/veo/record-info until success; return result URL.
-
-        Treats HTTP 5xx and body errorCode=500 as transient (up to 3 times).
-
-        Verified against generate-celebration-video.sh poll_veo(), lines 547-612.
-        """
-        import requests
-
-        elapsed = 0
-        headers = {"Authorization": f"Bearer {api_key}"}
-        consecutive_500 = 0
-
+    def _poll_veo(self, adapter: Any, task_id: str) -> str:
+        """Poll GET /api/v1/veo/record-info until success; return the result URL. Transient 5xx and
+        body errorCode 500 are tolerated up to 3 times (generate-celebration-video.sh poll_veo(), lines 547-612)."""
+        elapsed, transient = 0, 0
         while elapsed < _POLL_TIMEOUT_SECONDS:
-            time.sleep(_POLL_INTERVAL_SECONDS)
-            elapsed += _POLL_INTERVAL_SECONDS
-
-            resp = requests.get(
-                _VEO_POLL_URL,
-                params={"taskId": task_id},
-                headers=headers,
-                timeout=15,
-            )
-            http_code = resp.status_code
-            body_err_code = ""
+            adapter.sleep(_VEO_POLL_INTERVAL_SECONDS)
+            elapsed += _VEO_POLL_INTERVAL_SECONDS
             try:
-                body_json = resp.json()
-                body_err_code = str(
-                    (body_json.get("data") or {}).get("errorCode")
-                    or body_json.get("errorCode")
-                    or ""
-                )
-            except Exception:
-                body_json = {}
-
-            # Transient 5xx handling (mirrors poll_veo consecutive_500 logic)
-            if http_code >= 500 or body_err_code == "500":
-                consecutive_500 += 1
-                if consecutive_500 > 3:
-                    raise RuntimeError(
-                        f"kie_video: Veo poll for {task_id}: "
-                        "4 consecutive 500 errors; giving up"
-                    )
-                time.sleep(30)
+                j = adapter.call("GET", "%s/api/v1/veo/record-info?taskId=%s" % (adapter.api, quote(task_id)))
+            except Exception as exc:
+                code = getattr(exc, "code", None)
+                if code == "network" or str(code).startswith("5"):
+                    transient += 1
+                    if transient > 3:
+                        raise _KieUnresolved(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up", task_id)
+                    adapter.sleep(30)
+                    elapsed += 30
+                    continue
+                raise _KieUnresolved(f"Veo poll for {task_id} failed: {getattr(exc, 'msg', exc)}", task_id)
+            data = j.get("data") or {}
+            if str(data.get("errorCode") or j.get("errorCode") or "") == "500":
+                transient += 1
+                if transient > 3:
+                    raise _KieUnresolved(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up", task_id)
+                adapter.sleep(30)
                 elapsed += 30
                 continue
-            consecutive_500 = 0
+            transient = 0
+            flag = str(data.get("successFlag") or "")
+            if flag == "1":
+                url = _first_result_url(data.get("response"), data.get("resultJson"))
+                if url:
+                    return url
+                raise _KieUnresolved(f"Veo task {task_id} succeeded but no result URL: {data}", task_id)
+            if flag == "-1":
+                raise RuntimeError(f"Veo task {task_id} failed: {data.get('errorMessage') or data.get('failMsg') or j.get('msg') or 'unknown'}")
+        raise _KieUnresolved(f"Veo task {task_id} timed out after {_POLL_TIMEOUT_SECONDS}s (it may still finish)", task_id)
 
-            if http_code >= 400:
-                raise RuntimeError(
-                    f"kie_video: Veo poll HTTP {http_code} for {task_id}"
-                )
-
-            resp.raise_for_status()
-
-            data_block = body_json.get("data") or {}
-            success_flag = str(data_block.get("successFlag") or "")
-
-            if success_flag in ("1",):
-                # Extract result URL (mirrors poll_veo jq expressions:
-                # `.data.response.resultUrls[0] // .data.response.videoUrl
-                #  // .data.resultJson` — generate-celebration-video.sh line 592).
-                response_block = data_block.get("response") or {}
-                result_urls = response_block.get("resultUrls") or []
-                if result_urls:
-                    return result_urls[0]
-                video_url = response_block.get("videoUrl") or ""
-                if not video_url:
-                    # resultJson arrives as a JSON-ENCODED STRING from KIE;
-                    # decode it before reading the URL (tolerates a parsed dict).
-                    result_json = _decode_result_json(data_block.get("resultJson"))
-                    video_url = (
-                        (result_json.get("resultUrls") or [None])[0]
-                        or result_json.get("videoUrl")
-                        or result_json.get("url")
-                        or result_json.get("resultUrl")
-                        or ""
-                    )
-                if video_url:
-                    return str(video_url)
-                raise RuntimeError(
-                    f"kie_video: Veo task {task_id} succeeded but no result URL: {data_block}"
-                )
-
-            if success_flag in ("-1",):
-                fail_msg = (
-                    data_block.get("errorMessage")
-                    or data_block.get("failMsg")
-                    or body_json.get("msg")
-                    or "unknown"
-                )
-                raise RuntimeError(f"kie_video: Veo task {task_id} failed: {fail_msg}")
-            # Pending — keep polling
-
-        raise RuntimeError(
-            f"kie_video: Veo task {task_id} timed out after {_POLL_TIMEOUT_SECONDS}s"
+    @staticmethod
+    def _unresolved_result(model: str, task_id: Any, message: str, label: str, warnings: list[str]) -> ToolResult:
+        """A paid job whose outcome is unknown. No fallback model, no resubmission: the task id (when KIE
+        returned one) is recorded in ``data`` for the Dispatcher to re-poll with Skill 74 ``wait``."""
+        if task_id:
+            advice = f"re-poll task {task_id} (Skill 74 wait --task-id {task_id}); do not resubmit or switch model"
+        else:
+            advice = "the createTask answer was lost: check the KIE task list before any resubmission; do not switch model"
+        return ToolResult(
+            success=False,
+            error=f"kie_video: {model} outcome unknown: {message}; {advice}",
+            data={
+                "provider": "kie", "model": model, "kie_task_id": task_id or None,
+                "kie_task_state": "unresolved" if task_id else "createTask_outcome_unknown",
+                "needs_repoll": True, "kie_client_path": label, "warnings": warnings,
+            },
         )
-
-    # ------------------------------------------------------------------
-    # Download
-    # ------------------------------------------------------------------
-
-    def _download_video(self, url: str, output_path: Path) -> None:
-        """Download the generated video bytes to output_path.
-
-        CRITICAL: downloads to disk rather than using the remote URL directly,
-        because tempfile CDN URLs return content-disposition: attachment and
-        cannot be embedded inline (e.g. by Telegram).  Always download first.
-        (generate-celebration-video.sh lines 688-697)
-        """
-        import requests
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        resp = requests.get(url, timeout=180, allow_redirects=True)
-        resp.raise_for_status()
-        output_path.write_bytes(resp.content)
 
     # ------------------------------------------------------------------
     # Execute
     # ------------------------------------------------------------------
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        """Generate a video via KIE.ai and download the MP4.
+        """Generate a video via KIE.ai (through Skill 74) and save the MP4.
 
         Model routing:
-          - gemini-omni-video: POST /api/v1/jobs/createTask,
-              input.duration as STRING, aspect_ratio always set,
-              image_urls accepted for image-guided generation.
-              Poll: GET /api/v1/jobs/recordInfo?taskId=
-          - veo3 / veo3_fast: POST /api/v1/veo/generate,
+          - gemini-omni-video: createTask, input.duration as STRING, aspect_ratio
+              always set, image_urls accepted for image-guided generation.
+              One retry on a transient image-fetch failure (the same URLs); any other
+              failure falls back to veo3_fast. createTask is never retried after a
+              network error (Skill 74 rule: that could charge twice).
+          - bytedance/seedance-1.5-pro: createTask, 0-2 `input_urls` frame pins.
+          - veo3 / veo3_fast: the legacy Veo route (see the module docstring),
               duration as integer, no image references.
-              Poll: GET /api/v1/veo/record-info?taskId=
-          - On gemini-omni-video image-fetch transient failure, one automatic
-              retry (re-host is the caller's responsibility for image freshness;
-              here we simply retry with the same URLs).
-          - On gemini-omni-video total failure, falls back to veo3_fast.
 
         Returns a ToolResult with data keys:
           provider, model, prompt, output,
           kie_task_id   (render proof receipt),
           kie_result_url (render proof receipt),
-          has_audio.
+          has_audio, kie_client_path ("skill74" or "embedded"), warnings.
         """
-        import requests
-
         api_key = self._get_api_key()
         if not api_key:
-            return ToolResult(
-                success=False,
-                error="KIE_API_KEY is not set. " + self.install_instructions,
-            )
+            return ToolResult(success=False, error="KIE_API_KEY is not set. " + self.install_instructions)
 
         start = time.time()
         prompt = inputs.get("prompt", "")
@@ -1002,129 +804,118 @@ class KieVideo(BaseTool):
         aspect_ratio = self._snap_aspect(inputs.get("aspect_ratio", "16:9"), model)
         generate_audio = bool(inputs.get("generate_audio", True))
         output_path = Path(inputs.get("output_path", "kie_video_output.mp4"))
-
         duration = self._snap_duration(raw_duration, model)
         image_urls = self._resolve_image_urls(inputs)
 
-        task_id: str = ""
-        result_url: str = ""
+        try:
+            adapter = _new_adapter(api_key, getattr(self, "_transport", None), getattr(self, "_sleep", None), getattr(self, "_now", None))
+        except RuntimeError as exc:
+            return ToolResult(success=False, error=f"kie_video: {exc}")
+        label = _kie_client()[1]
+        seconds = float(duration)
+
+        task_id = result_url = saved_path = ""
         used_model = model
         used_input_urls: list[str] = []
+        credits: Any = None
+        warnings: list[str] = []
+        save_dir = tempfile.mkdtemp(prefix="kie_video_")
 
-        # --- bytedance/seedance-1.5-pro (Skill 62 U5: text-to-video or
-        #     1-2 image `input_urls` frame pinning) ---
-        if model == _SEEDANCE_MODEL:
-            seedance_prompt = prompt.strip()
-            if not (_SEEDANCE_PROMPT_MIN_CHARS <= len(seedance_prompt) <= _SEEDANCE_PROMPT_MAX_CHARS):
-                return ToolResult(
-                    success=False,
-                    error=(
-                        f"kie_video: {_SEEDANCE_MODEL} prompt must be "
-                        f"{_SEEDANCE_PROMPT_MIN_CHARS}-{_SEEDANCE_PROMPT_MAX_CHARS} "
-                        f"characters (got {len(seedance_prompt)})"
-                    ),
-                )
-            resolution = self._snap_resolution(inputs.get("resolution", _SEEDANCE_DEFAULT_RESOLUTION))
-            fixed_lens = bool(inputs.get("fixed_lens", False))
-            input_urls = self._resolve_input_urls(inputs)
-            try:
-                task_id = self._submit_seedance(
-                    seedance_prompt, duration, aspect_ratio, resolution,
-                    input_urls, generate_audio, fixed_lens, api_key,
-                )
-                result_url = self._poll_seedance(task_id, api_key)
-                used_model = _SEEDANCE_MODEL
-                used_input_urls = input_urls
-            except Exception as exc:
-                return ToolResult(
-                    success=False,
-                    error=f"kie_video: {_SEEDANCE_MODEL} failed: {exc}",
-                )
+        def adopt(job: dict[str, Any]) -> None:
+            nonlocal task_id, result_url, saved_path, credits
+            run = job["run"]
+            task_id, result_url, saved_path = run["task_id"], (run["result_urls"] or [""])[0], run["saved_paths"][0]
+            credits = job["credits"]
 
-        # --- Attempt gemini-omni-video (primary) ---
-        elif model == "gemini-omni-video":
-            max_gemini_attempts = 2
-            for attempt in range(1, max_gemini_attempts + 1):
-                try:
-                    task_id = self._submit_gemini_omni(
-                        prompt, duration, aspect_ratio, image_urls,
-                        generate_audio, api_key
-                    )
-                    result_url = self._poll_gemini_omni(task_id, api_key)
-                    used_model = "gemini-omni-video"
-                    break
-                except _ImageFetchError:
-                    # Transient image-fetch: retry once (generate-celebration-video.sh
-                    # retries with re-hosted refs; here we retry with the same refs
-                    # since the adapter does not own the upload state).
-                    if attempt < max_gemini_attempts:
-                        time.sleep(5)
-                        continue
-                    # Exhausted gemini retries; fall through to veo3_fast
-                    break
-                except requests.HTTPError as exc:
-                    if attempt < max_gemini_attempts:
-                        time.sleep(5)
-                        continue
-                    # Fall through to veo3_fast
-                    break
-                except RuntimeError:
-                    if attempt < max_gemini_attempts:
-                        time.sleep(5)
-                        continue
-                    # Fall through to veo3_fast
-                    break
-
-            # --- Fallback to veo3_fast if gemini-omni-video failed ---
-            if not result_url:
-                veo_duration = self._snap_duration(_DEFAULT_DURATION, _FALLBACK_MODEL)
-                try:
-                    task_id = self._submit_veo(
-                        _FALLBACK_MODEL, prompt, veo_duration, aspect_ratio,
-                        generate_audio, api_key
-                    )
-                    result_url = self._poll_veo(task_id, api_key)
-                    used_model = _FALLBACK_MODEL
-                except Exception as exc:
-                    return ToolResult(
-                        success=False,
-                        error=(
-                            f"kie_video: gemini-omni-video failed and "
-                            f"veo3_fast fallback also failed: {exc}"
-                        ),
-                    )
-
-        # --- Direct veo3 / veo3_fast path ---
-        else:
-            veo_duration = self._snap_duration(duration, model)
-            try:
-                task_id = self._submit_veo(
-                    model, prompt, veo_duration, aspect_ratio,
-                    generate_audio, api_key
-                )
-                result_url = self._poll_veo(task_id, api_key)
-                used_model = model
-            except Exception as exc:
-                return ToolResult(
-                    success=False,
-                    error=f"kie_video: {model} failed: {exc}",
-                )
-
-        if not result_url:
-            return ToolResult(
-                success=False,
-                error="kie_video: no result URL produced after all attempts",
-            )
-
-        # Download the MP4 bytes to disk (never use the remote URL directly —
-        # CDN content-disposition attachment breaks downstream embed)
         try:
-            self._download_video(result_url, output_path)
-        except Exception as exc:
-            return ToolResult(
-                success=False,
-                error=f"kie_video: download failed for {result_url}: {exc}",
-            )
+            # --- bytedance/seedance-1.5-pro (Skill 62 U5: text-to-video or 1-2 image `input_urls` frame pinning) ---
+            if model == _SEEDANCE_MODEL:
+                input_urls = self._resolve_input_urls(inputs)
+                task_input: dict[str, Any] = {
+                    "prompt": prompt.strip(),
+                    "aspect_ratio": aspect_ratio,  # REQUIRED for Seedance (kie-setup-full.md)
+                    "resolution": self._snap_resolution(inputs.get("resolution", _SEEDANCE_DEFAULT_RESOLUTION)),
+                    "duration": duration,          # STRING, mirrors the gemini-omni 422-fix pattern
+                    "fixed_lens": bool(inputs.get("fixed_lens", False)),
+                    "generate_audio": generate_audio,
+                }
+                if input_urls:
+                    task_input["input_urls"] = input_urls  # omitted entirely for text-to-video
+                job = self._run_job(adapter, _SEEDANCE_MODEL, task_input, seconds, save_dir)
+                warnings += job["warnings"]
+                if job["unresolved"]:
+                    return self._unresolved_result(_SEEDANCE_MODEL, job["task_id"], job["error"], label, warnings)
+                if not job["ok"]:
+                    return ToolResult(success=False, error=f"kie_video: {_SEEDANCE_MODEL} failed: {job['error']}")
+                adopt(job)
+                used_input_urls = input_urls
+
+            # --- gemini-omni-video (primary), then veo3_fast ---
+            elif model == "gemini-omni-video":
+                task_input = {
+                    "prompt": prompt,
+                    "duration": duration,            # STRING, the verified 422 fix
+                    "aspect_ratio": aspect_ratio,    # ALWAYS present, the verified 422 fix
+                    "generate_audio": generate_audio,
+                }
+                if image_urls:
+                    task_input["image_urls"] = image_urls
+                last_error = ""
+                for attempt in (1, 2):
+                    job = self._run_job(adapter, "gemini-omni-video", task_input, seconds, save_dir)
+                    warnings += job["warnings"]
+                    if job["ok"]:
+                        adopt(job)
+                        break
+                    if job["unresolved"]:  # timeout / unreadable status / lost createTask answer: money may be spent
+                        return self._unresolved_result("gemini-omni-video", job["task_id"], job["error"], label, warnings)
+                    if job.get("refused"):  # prompt or credit refusal: a different model must not bypass it
+                        return ToolResult(success=False, error=job["error"])
+                    last_error = job["error"]
+                    if job["transient"] and attempt == 1:
+                        adapter.sleep(5)  # transient image-fetch: one retry with the same references
+                        continue
+                    break
+                if not result_url:
+                    warnings.append(f"gemini-omni-video failed ({last_error}); falling back to {_FALLBACK_MODEL}")
+                    try:
+                        veo = self._run_veo_legacy(
+                            adapter, _FALLBACK_MODEL, prompt, self._snap_duration(_DEFAULT_DURATION, _FALLBACK_MODEL),
+                            aspect_ratio, generate_audio, save_dir,
+                        )
+                    except _KieUnresolved as exc:
+                        return self._unresolved_result(_FALLBACK_MODEL, exc.task_id, str(exc), label, warnings)
+                    except RuntimeError as exc:
+                        return ToolResult(
+                            success=False,
+                            error=f"kie_video: gemini-omni-video failed and veo3_fast fallback also failed: {exc}",
+                        )
+                    task_id, result_url, saved_path, used_model = veo["task_id"], veo["url"], veo["path"], _FALLBACK_MODEL
+
+            # --- direct veo3 / veo3_fast ---
+            else:
+                try:
+                    veo = self._run_veo_legacy(
+                        adapter, model, prompt, self._snap_duration(duration, model), aspect_ratio, generate_audio, save_dir,
+                    )
+                except _KieUnresolved as exc:
+                    return self._unresolved_result(model, exc.task_id, str(exc), label, warnings)
+                except RuntimeError as exc:
+                    return ToolResult(success=False, error=f"kie_video: {model} failed: {exc}")
+                task_id, result_url, saved_path = veo["task_id"], veo["url"], veo["path"]
+
+            if not result_url or not saved_path:
+                return ToolResult(success=False, error="kie_video: no result URL produced after all attempts")
+
+            # The saved MP4 goes to disk, never the remote URL (CDN content-disposition attachment
+            # breaks downstream embed; generate-celebration-video.sh lines 688-697).
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(saved_path, str(output_path))
+            except OSError as exc:
+                return ToolResult(success=False, error=f"kie_video: could not place the result at {output_path}: {exc}")
+        finally:
+            shutil.rmtree(save_dir, ignore_errors=True)
 
         return ToolResult(
             success=True,
@@ -1139,20 +930,12 @@ class KieVideo(BaseTool):
                 "duration": duration,
                 "aspect_ratio": aspect_ratio,
                 "input_urls": used_input_urls,   # frame-pin echo (Seedance only; [] otherwise)
+                "kie_client_path": label,
+                "warnings": warnings,
             },
             artifacts=[str(output_path)],
-            cost_usd=self.estimate_cost({**inputs, "model": used_model}),
+            cost_usd=(round(credits * _USD_PER_CREDIT, 4) if isinstance(credits, (int, float))
+                      else self.estimate_cost({**inputs, "model": used_model})),
             duration_seconds=round(time.time() - start, 2),
             model=used_model,
         )
-
-
-# ---------------------------------------------------------------------------
-# Internal sentinel (not part of the public API)
-# ---------------------------------------------------------------------------
-
-class _ImageFetchError(RuntimeError):
-    """Raised by _poll_gemini_omni when the model reports a transient
-    image-fetch failure, signalling the caller to retry (mirrors rc=2
-    in generate-celebration-video.sh poll_gemini_omni)."""
-    pass
