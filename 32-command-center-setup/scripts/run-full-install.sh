@@ -514,6 +514,32 @@ _cc_model_is_sovereign() {
   return 0
 }
 
+# _cc_is_retired_ollama_flash — exit 0 when the id is one of the Ollama Cloud
+# deepseek-v4-flash ids RETIRED on 2026-09-25 (HTTP 410): deepseek-v4-flash,
+# :cloud, :0731, :0731-cloud, bare or behind an ollama/ or ollama-cloud/ prefix.
+# DeepSeek DIRECT ids (ds/, deepseek/ provider) and OpenRouter ids are LIVE and
+# never match. Case-insensitive.
+_cc_is_retired_ollama_flash() {
+  local m re='^(ollama(-cloud)?/)?deepseek-v4-flash(:cloud|:0731(-cloud)?)?$'
+  m="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "$m" =~ $re ]]
+}
+
+# _cc_retired_successor — echo the LIVE successor of a retired id, keeping its
+# provider prefix: ollama-cloud/deepseek-v4.1-flash, else ...deepseek-v4.1-flash:cloud.
+_cc_retired_successor() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    ollama-cloud/*) printf 'ollama-cloud/deepseek-v4.1-flash' ;;
+    ollama/*)       printf 'ollama/deepseek-v4.1-flash:cloud' ;;
+    *)              printf 'deepseek-v4.1-flash:cloud' ;;
+  esac
+}
+
+# _cc_live_model_id — echo the id unchanged, or its live successor when retired.
+_cc_live_model_id() {
+  if _cc_is_retired_ollama_flash "${1:-}"; then _cc_retired_successor "$1"; else printf '%s' "${1:-}"; fi
+}
+
 # cc_resolve_sovereign_model — echo the box's OWN primary TEXT model id (or empty
 # when none qualifies). Precedence, first sovereign candidate wins:
 #   1. CC_SOVEREIGN_DEFAULT_MODEL env  (explicit operator override, per client)
@@ -524,7 +550,7 @@ _cc_model_is_sovereign() {
 # NEVER a hardcoded shared model — everything is read from THIS box's config.
 cc_resolve_sovereign_model() {
   if [[ -n "${CC_SOVEREIGN_DEFAULT_MODEL:-}" ]] && _cc_model_is_sovereign "$CC_SOVEREIGN_DEFAULT_MODEL"; then
-    printf '%s' "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
+    _cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
   fi
   [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
@@ -541,6 +567,7 @@ cc_resolve_sovereign_model() {
   ' "$OC_CONFIG" 2>/dev/null)"
   while IFS= read -r cand; do
     [[ -z "$cand" ]] && continue
+    cand="$(_cc_live_model_id "$cand")"
     if _cc_model_is_sovereign "$cand"; then printf '%s' "$cand"; return 0; fi
   done <<< "$candidates"
   printf ''
@@ -615,8 +642,8 @@ _cc_normalize_judge_id() {
 # operator override (CC_QC_JUDGE_MODEL) still must be a client-owned reasoning
 # cloud model.
 cc_resolve_judge_model() {
-  if [[ -n "${CC_QC_JUDGE_MODEL:-}" ]] && _cc_model_is_reasoning_judge "$CC_QC_JUDGE_MODEL"; then
-    _cc_normalize_judge_id "$CC_QC_JUDGE_MODEL"; return 0
+  if [[ -n "${CC_QC_JUDGE_MODEL:-}" ]] && _cc_model_is_reasoning_judge "$(_cc_live_model_id "$CC_QC_JUDGE_MODEL")"; then
+    _cc_normalize_judge_id "$(_cc_live_model_id "$CC_QC_JUDGE_MODEL")"; return 0
   fi
   [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
@@ -634,6 +661,7 @@ cc_resolve_judge_model() {
   for fam in deepseek glm qwen3 gpt-oss mistral ministral; do
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
+      id="$(_cc_live_model_id "$id")"
       _cc_model_is_reasoning_judge "$id" || continue
       lid="$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]')"
       case "$lid" in
@@ -700,6 +728,26 @@ PYASSIGN
   fi
   rm -f "$tmp" 2>/dev/null || true
   return 1
+}
+
+# cc_env_correct_retired — when KEY holds a RETIRED Ollama deepseek-v4-flash id,
+# replace it with its live successor (every update). Any other value is left
+# untouched. Echoes "corrected(<old> -> <new>)" or nothing. Returns 0 either way.
+cc_env_correct_retired() {
+  local file="$1" key="$2" cur new tmp
+  cur="$(cc_env_get "$file" "$key" 2>/dev/null || true)"
+  [[ -n "$cur" ]] || return 0
+  _cc_is_retired_ollama_flash "$cur" || return 0
+  new="$(_cc_retired_successor "$cur")"
+  tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 0
+  grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
+  if mv "$tmp" "$file"; then
+    chmod 600 "$file" 2>/dev/null || true
+    cc_env_set_if_absent "$file" "$key" "$new" >/dev/null && printf 'corrected(%s -> %s)' "$cur" "$new"
+  else
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
 }
 
 # cc_env_get — echo KEY's value from an env file (empty when absent). Reads the
@@ -809,7 +857,8 @@ cc_write_env_local() {
   # ---- (3) SOVEREIGN_DEFAULT_MODEL — box's OWN primary TEXT model ----
   local sm_status model_id
   if cc_env_has_nonempty "$envf" SOVEREIGN_DEFAULT_MODEL; then
-    sm_status="preserved(existing)"
+    sm_status="$(cc_env_correct_retired "$envf" SOVEREIGN_DEFAULT_MODEL)"
+    sm_status="${sm_status:-preserved(existing)}"
   else
     model_id="$(cc_resolve_sovereign_model)"
     if [[ -n "$model_id" ]]; then
@@ -848,7 +897,8 @@ cc_write_env_local() {
   # only the judge NAME, from the client's own models.
   local jm_status judge_id
   if cc_env_has_nonempty "$envf" QC_JUDGE_MODEL; then
-    jm_status="preserved(existing)"
+    jm_status="$(cc_env_correct_retired "$envf" QC_JUDGE_MODEL)"
+    jm_status="${jm_status:-preserved(existing)}"
   else
     judge_id="$(cc_resolve_judge_model)"
     if [[ -n "$judge_id" ]]; then

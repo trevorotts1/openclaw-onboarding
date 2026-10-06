@@ -15,7 +15,7 @@ value was read or printed by the measurement):
   * The model tag `deepseek-v4-pro:cloud` was deleted from Ollama Cloud on
     2026-08-17 and every call for it failed silently. `GET
     https://ollama.com/api/tags` on 2026-09-21 lists exactly
-    `deepseek-v4.1-flash`, `deepseek-v4-flash:0731` and
+    `deepseek-v4.1-flash`, `deepseek-v4.1-flash` and
     `deepseek-v4-pro:0813`. A tag a provider can retire under us belongs in
     config, not in a constant, so both scoring model ids are env-overridable:
     OLLAMA_CLOUD_SCORING_MODEL and OPENROUTER_SCORING_MODEL.
@@ -212,9 +212,9 @@ def test_the_override_resolves_from_the_secrets_store_too(box):
     name, so a box that carries one in its store and nothing in its
     environment -- launchd, the openclaw cron -- still honours it."""
     store = box / ".openclaw" / "secrets" / ".env"
-    store.write_text("OLLAMA_CLOUD_SCORING_MODEL=deepseek-v4-flash:0731\n",
+    store.write_text("OLLAMA_CLOUD_SCORING_MODEL=deepseek-v4.1-flash\n",
                      encoding="utf-8")
-    assert llm_score.ollama_cloud_model() == "deepseek-v4-flash:0731"
+    assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash"
 
 
 def test_the_deleted_cloud_tag_is_gone_from_the_module():

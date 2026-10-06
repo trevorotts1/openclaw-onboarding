@@ -73,7 +73,7 @@ REAL_FLEET_CFG = {
     "models": {"list": [
         {"id": "ollama/kimi-k2.6:0711-cloud"},
         {"id": "ollama/deepseek-v4-pro:0813-cloud"},
-        {"id": "ollama/deepseek-v4-flash:0731-cloud"},
+        {"id": "ollama/deepseek-v4.1-flash:cloud"},
         {"id": "ollama/minimax-m3:cloud"},
         {"id": "ollama/glm-5.3:cloud"},
         {"id": "ollama/kimi-k2.7-code:cloud"},
@@ -254,7 +254,7 @@ def test_real_fleet_cloud_tagged_ids_resolve_and_stay_independent():
         "HEAVY-WRITER and JUDGE collapsed onto one model: %s" % jg
     assert hw["model"] == "deepseek-v4-pro:0813-cloud", \
         "HEAVY-WRITER must take the date-tagged DeepSeek pro build, got %s" % hw["model"]
-    assert mm["tiers"]["LIGHT"]["chain"][0]["model"] == "deepseek-v4-flash:0731-cloud"
+    assert mm["tiers"]["LIGHT"]["chain"][0]["model"] == "deepseek-v4.1-flash:cloud"
     # The code variant is a different model and must never fill a chat slot.
     assert "kimi-k2.7-code" not in json.dumps(mm["tiers"]["HEAVY-WRITER"])
 

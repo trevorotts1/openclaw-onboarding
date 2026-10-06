@@ -1,3 +1,11 @@
+## [v26.0.5]  -  2026-10-06  -  Ollama deepseek-v4-flash retired (HTTP 410): every shipped Ollama id now deepseek-v4.1-flash:cloud, and the Command Center installer corrects retired SOVEREIGN_DEFAULT_MODEL and QC_JUDGE_MODEL values on every update
+
+#### What changed
+- **Ollama Cloud retired `deepseek-v4-flash`, `:cloud`, `:0731` and `:0731-cloud` on 2026-09-25 (HTTP 410).** Every shipped Ollama id now points at the live `deepseek-v4.1-flash:cloud` (`ollama/deepseek-v4.1-flash:cloud`, `ollama-cloud/deepseek-v4.1-flash`): `scripts/deprecated-models.json` (its replacement was itself retired; every retired id is now listed), `53-book-writer/model-map.json`, `shared-utils/model_selector.py`, `install.sh` seed chain, `HEARTBEAT.md`, the Skill 23 role library and generator, the Skill 38 scripts, templates and references, and the tests that name them. DeepSeek Direct ids (`ds/`, `deepseek/`), OpenRouter ids, presentations and Skill 36 are untouched.
+- **Command Center installer.** `SOVEREIGN_DEFAULT_MODEL` and `QC_JUDGE_MODEL` resolution never picks a retired id (it uses the live successor), and an existing retired value in `.env.local` is corrected on every update.
+- **Guard.** `tests/unit/retired-ollama-deepseek-flash.test.sh` fails if a retired Ollama deepseek-v4-flash id reappears in shipped files.
+- **Command Center pin moves to v7.6.102** (includes the retired-id self-heal). `cc-compat.json`, `release-cohort.json` (cc_sha c28c448a), README and the paired-release doc lines move together. The role-library content manifest is re-stamped for the edited role files.
+
 ## [v26.0.4]  -  2026-10-06  -  Box fixes 2: archived-skill retirement, plain-words UPDATE PENDING summary (releases, JEV core change, changed skills), fresh box CHANGELOG, 999-setup clone on 9Router boxes, JEV named in intake text, SOP manifest no-op, skill 43 semver, skill 44 gate, skill 06 lattice skip, lib-shared delivery
 
 #### What changed
