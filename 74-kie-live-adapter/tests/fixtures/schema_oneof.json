@@ -1,0 +1,76 @@
+{
+ "code": 200,
+ "msg": "success",
+ "data": {
+  "model": "oneof",
+  "openapi": {
+   "openapi": "3.1.0",
+   "paths": {
+    "/api/v1/jobs/createTask": {
+     "post": {
+      "requestBody": {
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Body"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "components": {
+    "schemas": {
+     "Body": {
+      "type": "object",
+      "required": [
+       "model",
+       "input"
+      ],
+      "properties": {
+       "model": {
+        "type": "string"
+       },
+       "input": {
+        "oneOf": [
+         {
+          "$ref": "#/components/schemas/ByTask"
+         },
+         {
+          "$ref": "#/components/schemas/ByImage"
+         }
+        ]
+       }
+      }
+     },
+     "ByTask": {
+      "type": "object",
+      "required": [
+       "task_id"
+      ],
+      "properties": {
+       "task_id": {
+        "type": "string"
+       }
+      }
+     },
+     "ByImage": {
+      "type": "object",
+      "required": [
+       "image_url"
+      ],
+      "properties": {
+       "image_url": {
+        "type": "string"
+       },
+       "prompt": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

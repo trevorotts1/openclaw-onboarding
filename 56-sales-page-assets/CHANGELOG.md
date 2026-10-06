@@ -1,5 +1,17 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## v2.0.1 - 2026-10-05 - Entry shell version gate matches the current v2 contract
+
+### Fixed
+- `sales-page-assets-entry.sh` aborted every run and its `--self-test` with `ABORT [VERSION]: skill-version.txt is 'v2.0.0', expected major 1.x`. Two defects: `EXPECTED_MAJOR` was still `"1"` although the skill is on major 2, and the `case` pattern `"1".*` could never match the shipped `vMAJOR.MINOR.PATCH` form (leading `v`), so even a v1.x file would have been refused. The gate now expects major 2, accepts `vMAJOR.MINOR.PATCH`, and also requires SKILL.md frontmatter `version:` to equal skill-version.txt.
+
+### Added
+- `sales-page-assets-entry.sh --check-version` (deps + version gate only) and `scripts/test_entry_version.py`, which proves the gate passes on the shipped version and fails closed on major 1, major 3, malformed values and frontmatter drift.
+
+### Not changed
+The enforcement-core hash pin is untouched (the entry shell and the new test are not pinned files); `scripts/delegation_receipt.py` is unchanged and still identical in Skills 49 and 56.
+
+
 ## 1.5.0 — 2026-07-21 — A10 / T0-09, T0-10: certificates can no longer mint on self-authored evidence
 
 ### Fixed

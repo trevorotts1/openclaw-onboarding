@@ -1,0 +1,29 @@
+{
+  "skill": "74-kie-live-adapter",
+  "prerequisites": [
+    {
+      "id": "skill-07-kie-setup",
+      "type": "skill",
+      "label": "Skill 07 - KIE Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Complete Skill 07 (kie-setup) first: it establishes the KIE account and credential this adapter uses."
+    },
+    {
+      "id": "python3",
+      "type": "binary",
+      "label": "Python 3 (standard library only)",
+      "check": { "binary": "python3" },
+      "severity": "required",
+      "satisfy": "Install Python 3 (macOS: brew install python3; Debian or Ubuntu: apt install python3). The adapter uses only the standard library and needs no pip packages."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "KIE API Key (presence only)",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "KIE_API_KEY must be SET in ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. Check presence only and never print the value. If absent, ask the operator to provision it; do not mint a new key."
+    }
+  ]
+}
