@@ -35,7 +35,7 @@ Default mode is shadow, so `submit` and `run` return `skipped` with `fallback_us
 
 ## Credentials and limits
 
-Key lookup: environment KIE_API_KEY first, then the shared resolver in shared-utils (secret_names.json canon). Values are never printed. 401 or 403: stop after two attempts and report; do not loop. Catalog, schema, price and success-rate share one request per second per account, so the adapter caches (catalog 6 hours, schema 24 hours) and spaces discovery calls at least 1.1 seconds apart.
+Key lookup: environment KIE_API_KEY first, then the shared resolver in shared-utils (secret_names.json canon). Values are never printed. 401 or 403: one attempt, no retry; report and do not loop. Catalog, schema, price and success-rate share one request per second per account, so the adapter caches (catalog 6 hours, schema 24 hours) and spaces discovery calls at least 1.1 seconds apart.
 
 ## Where things live
 

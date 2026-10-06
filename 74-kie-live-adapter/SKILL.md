@@ -36,7 +36,7 @@ Set `KIE_LIVE_ADAPTER_MODE` to `off`, `shadow` or `active`. If the variable is u
 
 1. The adapter never picks a different model, never routes to a newly discovered model, and never overrides a pinned model. The caller decides the model and the fallback. The fleet image pin in AGENTS.md (sunburst) stays in force.
 2. Never print or log the key. Receipts and errors are redacted. Presence checks print SET or NOT-SET only.
-3. Stop after two attempts on a 401 or 403. The adapter never retries those.
+3. One attempt on a 401 or 403, no retry. The adapter stops and reports.
 4. Check the `code` in the response body. HTTP 200 can carry 401, 402, 404, 422, 429, 433 or 455.
 5. createTask is never retried after a network error (that could charge twice).
 6. Never copy `scripts/kie_live_adapter.py` into a Presentations deck run directory. The deck render guard blocks scripts there that mention the KIE API. Run it from this skill folder only.

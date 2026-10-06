@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vendor_skill_probe.sh - CANARY ONLY. Detects drift in KIE's official agent skills.
+# vendor_skill_probe.sh - PROBE BOX ONLY. Detects drift in KIE's official agent skills.
 # Installs them with `npx skills add https://kie.ai` into a disposable HOME and project,
 # hashes the unique files the same way vendor-approval.json was built, prints MATCH or DRIFT,
 # then deletes the temp dir. Never touches the real HOME. Never run on client boxes.

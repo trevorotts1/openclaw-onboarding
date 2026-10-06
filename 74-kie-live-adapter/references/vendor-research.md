@@ -23,6 +23,6 @@ Dated 2026-10-05. Verified live by the orchestrator against api.kie.ai unless no
 | 17 | Vendor kie-models is instruction-only (no scripts) | install inspection; tree hash 3871a627...09ac | VERIFIED |
 | 18 | KIE troubleshooting page content | page did not render | UNRESOLVED |
 | 19 | Live free-call and one-paid-job smoke from this build | KIE_API_KEY NOT-SET in the build environment | PENDING (not run; see QC.md) |
-| 20 | Vendor drift canary | scripts/vendor_skill_probe.sh run once | VERIFIED: MATCH on 2026-10-05 |
+| 20 | Vendor drift probe | scripts/vendor_skill_probe.sh run once | VERIFIED: MATCH on 2026-10-05 |
 
 Live smoke outputs: none recorded (PENDING). When run, append the printed lines of `bash scripts/live_smoke.sh --paid` here (they never contain key material).

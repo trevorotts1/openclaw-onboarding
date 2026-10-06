@@ -258,7 +258,6 @@ class Adapter:
             self.warnings.append("unknown adapter mode %r; using shadow" % m)
             m = "shadow"
         self.mode = m
-        home = self.env.get("HOME") or os.path.expanduser("~")
         self.cache = self.env.get("KIE_LIVE_CACHE_DIR") or os.path.join(home, ".openclaw", "cache", "kie-live-adapter")
         self.rdir = self.env.get("KIE_LIVE_RECEIPT_DIR") or os.path.join(self.cache, "receipts")
         self.spacing = float(self.env.get("KIE_LIVE_MIN_SPACING", "1.1"))
@@ -518,7 +517,7 @@ class Adapter:
             tid = (j.get("data") or {}).get("taskId")
             if not tid:
                 raise KieError("bad_response", "createTask returned no taskId")
-            return self.result(state="queued", task_id=tid, data={"record_id_ignored": True}, **base)
+            return self.result(state="queued", task_id=tid, **base)
         body = dict(inp)  # sync path: schema-declared path and body; model added only if absent
         body.setdefault("model", model)
         j = self.call("POST", self.api + path, body, timeout=300)

@@ -1,6 +1,6 @@
 {
   "approved_on": "2026-10-05",
-  "policy": "canary-only",
+  "policy": "probe-box-only",
   "source": "https://kie.ai/.well-known/agent-skills/index.json",
   "installer": "skills 1.7.0",
   "install_command": "npx -y skills add https://kie.ai -y --copy",

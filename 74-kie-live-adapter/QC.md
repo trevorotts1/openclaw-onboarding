@@ -12,7 +12,7 @@ Unit test files in tests/: test_adapter_contract.py, test_shadow_mode.py, test_n
 
 Live smoke status at release: PENDING. Reason: KIE_API_KEY was NOT-SET in the build environment, and the build rules forbid reading secret files to find it. Run `bash scripts/live_smoke.sh` on an operator box and record the result in references/vendor-research.md.
 
-## Vendor drift canary (operator or canary box only)
+## Vendor drift probe (operator or probe box only)
 
 `bash scripts/vendor_skill_probe.sh` installs KIE's official skills into a throwaway HOME and prints MATCH or DRIFT against vendor-approval.json. Result at release: MATCH, tree hash 3871a627...09ac.
 
