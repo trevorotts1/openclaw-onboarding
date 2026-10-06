@@ -6,7 +6,7 @@
 **Role type:** qc
 **Role number:** ROLE-25
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 2.1.1
+**Version:** 2.1.2
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -84,7 +84,7 @@ Review the prompt QC trend data for the past month. If the same auto-fail codes 
 
 ## 6. Quarterly Operations
 
-Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.py` (PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING), and the full prompt auto-fail battery (AF-P1 through AF-P16). Verify the 15-element spec is still current. Update this document if anything has shifted.
+Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.py` (PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING), and the full prompt auto-fail battery (AF-P1 through AF-P23). Verify the 15-element spec is still current. Update this document if anything has shifted.
 
 ---
 
@@ -173,7 +173,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Steps:**
 
-1. Verify element 1 -- ARCHETYPE declaration on line 1: the prompt's first line must name one of the defined archetypes (A1 through A5) by name. A prompt that starts with the scene description, a STYLE note, or any content other than the archetype declaration fails AF-P13 (ARCHETYPE on line 1 required).
+1. Verify element 1 -- ARCHETYPE declaration on line 1: the prompt's first line must name one of the defined archetypes (A1 through A5) by name. A prompt that starts with the scene description, a STYLE note, or any content other than the archetype declaration fails AF-P21 (ARCHETYPE on line 1 required).
 2. Verify element 2 -- Scene/environment description: a concrete, specific scene is present. "A professional in an office" is not specific. "{{OWNER_NAME}} reviewing the {{CLIENT_METHOD}} intake document at a standing desk at dawn, warm side lighting, home office environment" is specific. Grade the specificity 1-10.
 3. Verify element 3 -- Zone layout statement: thirds or zone language must be explicit. "Centered" alone is not thirds language (AF-P6). "Headline in the upper-left third, human subject in the right two-thirds" is correct.
 4. Verify elements 4-7 -- Verbatim copy lines with per-line weight and point size: every copy line (headline, sub-headline, supporting beats, kicker label) must be present verbatim AND carry its per-line rendering specification (typeface family, weight, point size). A copy line with "Bold text" but no size is AF-P10 (basic / no designed hierarchy).
@@ -193,7 +193,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Hand to:** SOP 9.3 (spelling-lock cross-check) for prompts that pass the structural audit. Prompts with auto-fails are quarantined and returned to the Prompt Author.
 
-**Failure mode:** If a prompt's archetype declaration (element 1) does not match the archetype in `design_system.json` for that slide, record the mismatch as an AF-P13 variant and return it to BOTH the Prompt Author and the Typography Architect (the design system may have been updated after authoring, creating a drift).
+**Failure mode:** If a prompt's archetype declaration (element 1) does not match the archetype in `design_system.json` for that slide, record the mismatch as an AF-P21 variant and return it to BOTH the Prompt Author and the Typography Architect (the design system may have been updated after authoring, creating a drift).
 
 ---
 
@@ -420,14 +420,14 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority -- prompt auto-fail codes AF-P1 through AF-P16)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority -- prompt auto-fail codes AF-P1 through AF-P23)
 - `scripts/build_deck.py` (PROMPT_CHAR_FLOOR = 9000, PROMPT_CHAR_CEILING = 18000)
 - NEGATIVE-PROMPTING-SOP (8-class block specification, positive-twin requirement, no-contradiction audit)
 
 **Tier 2:**
 - `working/copy/slides_copy.md` (canonical verbatim copy for copy-fidelity verification)
 - `hook_variants.json` (which slides are hook-anchor slides -- AF-P12 check)
-- `working/typography/design_system.json` (expected archetype per slide -- AF-P13 check)
+- `working/typography/design_system.json` (expected archetype per slide -- AF-P21 check)
 - `working/copy/intake.json` (LOGO_ON_SLIDES, brand.logo_image_path, LOGO_URL, DARK_OK -- AF-P15, AF-P5 checks)
 
 **Tier 3:**
@@ -457,7 +457,7 @@ A price or offer slide that does not specify a gold gradient, glow, or strike-th
 1. The PROMPT_CHAR_FLOOR or PROMPT_CHAR_CEILING in `build_deck.py` changes, or the pinned image model's prompt maximum changes.
 2. The 15-element prompt spec is extended or modified by the Director.
 3. The NEGATIVE BLOCK 8-class specification changes (a new class is added or an existing class is revised).
-4. The prompt auto-fail battery (AF-P1 through AF-P16) is extended.
+4. The prompt auto-fail battery (AF-P1 through AF-P23) is extended.
 5. The casting ledger doctrine (SOP-CAST-01) changes.
 6. The operator explicitly requests a revision, or a Devil's Advocate challenge is accepted 3+ times.
 
