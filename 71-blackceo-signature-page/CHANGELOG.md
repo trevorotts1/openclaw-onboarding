@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.2.3 - 2026-10-06
+
+- The image-engine question now has an agent-facing step: SKILL.md "Image and video engine routing" and the SOP intake step tell the agent to run `scripts/write_intake.py ... --image-engine kie|agnes`. The intake stage reads `references/artifact-contracts.md` and closes only when `intake.json` carries `image_engine` (new `gate:intake_engine`; test i16).
+- Model-source `evidence` also needs at least 3 words and may not be one repeated character.
+- Version bumped to 1.2.3 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.2.2 - 2026-10-06
 
 - `scripts/write_intake.py` writes `intake.json` including `image_engine` (`kie` default, `agnes`), so a real Agnes run satisfies the stage gate; documented in `references/kie-generation-route.md` and `artifact-contracts.md`. Test i15.

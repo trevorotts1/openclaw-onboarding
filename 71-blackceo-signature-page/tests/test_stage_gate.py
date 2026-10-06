@@ -447,6 +447,21 @@ class StageGateTest(unittest.TestCase):
         bad = subprocess.run(w + ["--image-engine", "dalle"], capture_output=True)
         self.assertNotEqual(bad.returncode, 0)
 
+    def test_i16_intake_stage_requires_image_engine(self):
+        env = {**os.environ, "STAGE_GATE_CONTRACT": str(ROOT / "references" / "stage-contract.json")}
+        run = self.td / "intake-gate"
+        write(run / "private" / "brand.json", json.dumps({"fonts": {"display": "T", "body": "T", "accent": "T"},
+              "logo": {"files": "t.png", "masthead_files": "t.png"}, "founder_photos": "t.png"}))
+        write(run / "intake.json", json.dumps({"page_version": "standard", "brand_file": "private/brand.json"}))
+        run_gate("init", str(run), expect=0, env=env)
+        put_receipt(run, "intake", author="intake-agent")
+        proc = run_gate("close", str(run), "intake", expect=1, env=env)
+        self.assertIn("image_engine", proc.stdout + proc.stderr)
+        subprocess.run([PY, str(ROOT / "scripts" / "write_intake.py"), str(run), "--page-version", "standard",
+                        "--brand-owner", "blackceo", "--brand-file", "private/brand.json", "--image-cap", "1"],
+                       check=True, capture_output=True)
+        run_gate("close", str(run), "intake", expect=0, env=env)
+
     def test_i11_task_id_without_result_file_refused(self):
         proc = self.close_image_qc(no_files=True, transport=kie_transport(KIE_FILES))
         self.assertEqual(proc.returncode, 1)
@@ -482,7 +497,7 @@ class StageGateTest(unittest.TestCase):
         proc = self.close_image_qc(transport=t)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("needs evidence", proc.stdout + proc.stderr)
-        for weak in ("pin", "placeholder", "short one"):
+        for weak in ("pin", "placeholder", "short one", "xxxxxxxxxxxx", "twowordsonly here ok"[:12]):
             t["tasks"][0]["evidence"] = weak
             self.assertEqual(self.close_image_qc(transport=t).returncode, 1, weak)
         t["tasks"][0]["evidence"] = "client asked for the legacy model by name in the intake"
