@@ -132,7 +132,7 @@ class FakeKieTransport:
         return {"openapi": "3.1.0", "paths": {"/api/v1/jobs/createTask": {"post": {
             "requestBody": {"content": {"application/json": {"schema": body}}}}}}}
 
-    def request(self, method, url, headers=None, body=None, timeout=60):
+    def request(self, method, url, headers=None, body=None, timeout=60, guard=None):
         u = urlparse(url)
         self.calls.append((method, url))
         path = u.path
