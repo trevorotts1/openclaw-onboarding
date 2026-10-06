@@ -56,8 +56,7 @@ maxLength/minLength, enums and required fields per model. Requests outside the l
 blocked before dispatch. For the GPT Image 2.5 family the prompt cap is 20,000 characters
 (N43 and the KIE model page); a 25,000 figure is wrong for 2.5. (N43 records 25,000 as the
 owner-confirmed cap for retained legacy `gpt-image-2-*` entries only; never apply either number
-across generations.) Owner house bands (for example 9,000 to 19,000) stay as stricter overlays
-owned by the policy skills.
+across generations.) The older house band of 9,000 to 19,000 is superseded by rule 12.
 
 ## 6. Credit preflight
 
@@ -94,3 +93,25 @@ New live models start as DISCOVERED and are never auto-defaults.
 
 The fleet image family is `gpt-image-2-5-sunburst-*`. Legacy `gpt-image-2-*` is used only for
 the 3:1, 1:3 and 9:21 ratios. `flare` is not introduced without a new owner ruling.
+
+## 12. Prompt length budget (owner order 2026-10-05)
+
+Prompt writers must know each model's character limit and write prompts close to the maximum
+(at least within 5 percent of it, never below 80 percent) to get better images, video and audio.
+
+- Applies to DESCRIPTIVE prompt fields of KIE image, video and music models: image prompt,
+  video prompt, music style or description. It does NOT apply to verbatim content fields that
+  are spoken or sung exactly (text-to-speech script text, user-supplied lyrics); those follow
+  their own content length.
+- Limit source: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id>`
+  (live schema maxLength; fallback `74-kie-live-adapter/references/kie-model-registry.json`).
+  Never from memory.
+- Target: 95 to 100 percent of maxLength. Hard floor: 80 percent (below it, reject and rewrite).
+  Hard ceiling: 100 percent (above it, reject). 80 to 95 percent: warn and expand.
+- Example: GPT Image 2.5 (sunburst), maxLength 20,000: floor 16,000, target 19,000 to 20,000.
+  Legacy `gpt-image-2-*` per N43, cap 25,000: floor 20,000, target 23,750 to 25,000.
+- This rule supersedes the older house band of 9,000 to 19,000 (its floor and ceiling). Any skill
+  or SOP still stating that band is out of date and will be updated to point here.
+- If a model's schema declares no maxLength for its prompt field, writers use the policy owner's
+  documented limit (Skill 66, 67 or 68). If none exists, the validator reports UNKNOWN and does
+  not enforce a floor.
