@@ -1,11 +1,12 @@
 # Changelog — Skill 28: Cinematic Forge
 
-## v7.0.3 — 2026-10-06 — model-choice wording defers to Skills 66 and 68; changelog order
+## v7.0.3 - 2026-10-06 - model-choice wording defers to Skills 66 and 68; changelog order
 
 - Removed the parenthetical that spelled out the retired audio ids; Skill 68 is the only authority for audio model ids.
 - Image model naming (Nano Banana Pro) and Suno naming replaced with "image via Skill 66" and "music via Skill 68" wherever this skill stated a model choice (SKILL.md, INSTALL.md, QC.md, README.md, CORE_UPDATES.md). The "VEO 3.1 Fast only" rule is unchanged.
 - imgBB wording: dropped "(free)" and "free account" so nothing implies a KIE cost; the facts about imgBB are unchanged.
 - The v7.0.0 entry moved to its chronological position, above v6.6.0.
+- Added PREREQS.json (Skills 01, 66, 67, 68 and the KIE_API_KEY credential) so the Skill 66, 67 and 68 requirements in SKILL.md are enforced by the prerequisite check.
 
 ## v7.0.2 — 2026-10-05 — QC follow-ups for the Skill 68 delegation
 

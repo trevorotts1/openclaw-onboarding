@@ -562,7 +562,7 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
 
 **Why:** VEO generates a different voice every segment. By segment 6, the narrator sounds like a completely different person. Generating audio separately with locked voice IDs ensures consistency.
 
-**Skill 68 (`68-kie-audio`) OWNS every KIE audio call in this phase** — text-to-speech, sound effects and music. It is authoritative for model ids, API routes, payload shape, limits and audio QC. Cinematic Forge decides WHAT audio each segment needs (this section); Skill 68 decides HOW it is requested. Do NOT hand-write a KIE audio request here and do NOT name a KIE audio model id from this file.
+**Skill 68 (`68-kie-audio`) OWNS every KIE audio call in this phase**: text-to-speech, sound effects and music. It is authoritative for model ids, API routes, payload shape, limits and audio QC. Cinematic Forge decides WHAT audio each segment needs (this section); Skill 68 decides HOW it is requested. Do NOT hand-write a KIE audio request here and do NOT name a KIE audio model id from this file.
 
 **The handoff the agent performs for EVERY audio clip below:**
 
@@ -600,7 +600,7 @@ fi
    - Ambient sounds (office noise, beach waves, crowd murmur)
    - Action sounds (footsteps, door opening, pen writing)
    - Transition sounds (swooshes, impacts)
-   - The sound-effects payload MUST carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` routes it to its sounds checks (prompt max 500, model V5 or V5_5) instead of validating it as a song generation.
+   - The sound-effects payload MUST carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` routes it to its sounds checks (prompt length and model per Skill 68's sounds checks) instead of validating it as a song generation.
 
 4. **Background Music** (music via Skill 68, domain `music`)
    - Generated based on user's music preferences from Question 8b
