@@ -419,11 +419,11 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
    > "Based on what you've described, here's the approximate cost and timeline:
    >
-   > **Video:** [X] segments x $0.40 = $[Y] (VEO 3.1 Fast)
-   > **Reference Images:** ~[X] images x $0.10 = $[Y] (Nano Banana Pro)
-   > **Voice/Dialogue:** ~[X] clips x $0.15 = $[Y] (ElevenLabs)
-   > **Sound Effects:** ~[X] clips x $0.10 = $[Y] (via Skill 68)
-   > **Music:** ~[X] tracks x $0.35 = $[Y] (Suno)
+   > **Video:** [X] segments x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 67>`] = $[Y] (VEO 3.1 Fast)
+   > **Reference Images:** ~[X] images x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 66>`] = $[Y] (Nano Banana Pro)
+   > **Voice/Dialogue:** ~[X] clips x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
+   > **Sound Effects:** ~[X] clips x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
+   > **Music:** ~[X] tracks x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
    > **Estimated Total: ~$[TOTAL]**
    >
    > **Estimated Production Time:** [X] minutes for video generation, [X] minutes for audio, [X] minutes for assembly. Total approximately [X] minutes from start to finished video.

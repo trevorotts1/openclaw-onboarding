@@ -77,9 +77,9 @@ These models must be available on the KIE.ai account:
 
 | Model | Purpose | Approx Cost |
 |-------|---------|-------------|
-| VEO 3.1 Fast (`veo3_fast`) | Video generation | $0.40/segment |
-| Nano Banana Pro | Image generation | ~$0.10/image |
-| Voice, sound effects and music | Delegated to Skill 68 (`68-kie-audio`), which owns the model ids, routes and validation. It must be installed. | ~$0.10-0.50/clip |
+| VEO 3.1 Fast (`veo3_fast`) | Video generation | price from the live adapter (see SKILL.md Phase 0) |
+| Nano Banana Pro | Image generation | price from the live adapter |
+| Voice, sound effects and music | Delegated to Skill 68 (`68-kie-audio`), which owns the model ids, routes and validation. It must be installed. | price from the live adapter |
 
 ## Installation Steps
 
@@ -128,7 +128,7 @@ Rules:
 Verify the required API keys are present.
 
 Minimum expectation:
-- KIE.ai key is present and you can access VEO, Nano Banana Pro, ElevenLabs, and Suno via KIE.ai
+- KIE.ai key is present and you can access VEO, Nano Banana Pro, and the voice, sound-effect and music routes (via Skill 68) on KIE.ai
 
 **Dependencies for the delivery gate.** `qc-output.sh`'s technical mode needs
 `ffmpeg`/`ffprobe` only. Its DELIVERY mode additionally needs `jq` (it reads the
@@ -196,7 +196,7 @@ The agent executing Cinematic Forge MUST be a model that supports tool calls (AP
 - **9:16 vertical is ALWAYS the primary format.** 16:9 is only created after 9:16 is approved.
 - **No Topaz upscale until the user approves the draft.** Don't waste processing on unapproved content.
 - **Narrator and character dialogue NEVER overlap** in the same segment.
-- **All VEO audio is discarded** and replaced with ElevenLabs + Suno audio layers.
+- **All VEO audio is discarded** and replaced with voice (via Skill 68) + Suno audio layers.
 - **GHL uses Private Integration Tokens (PIT)**, not API keys. Use the correct terminology.
 
 ---

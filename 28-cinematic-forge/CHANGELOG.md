@@ -4,6 +4,7 @@
 
 - The missing-Skill-68 guard in Phase 3 now stops (returns or exits non-zero) instead of only printing a message.
 - Lines that named ElevenLabs as the voice vendor now say "voice via Skill 68"; Skill 68 owns the text-to-speech vendor choice.
+- The Phase 0 budget template no longer hard-codes any price or voice vendor; each line takes its price from the live adapter `price` command for the model Skill 66, 67 or 68 chose. INSTALL.md and README.md follow the same rule (price and vendor wording).
 - Sound-effects payloads must carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` applies its sounds checks (confirmed by reading that script).
 
 ## v7.0.1 — 2026-10-05 — remove dead KIE endpoints; delegate audio to Skill 68
