@@ -1,72 +1,65 @@
-# SOP-IMG-05: PIL LOGO IMAGE COMPOSITE (PIPELINE DETERMINISM)
+# SOP-IMG-05: LOGO IDENTITY MECHANISMS AND THE LOCAL-CANVAS BAN (PIPELINE DETERMINISM)
 
-> **Decision 5C (AF-OVERLAY-DELIVERED):** the native-text overlay half of this SOP is ELIMINATED. This SOP now composites ONLY the locked logo IMAGE onto the slide PNG (image compositing — the real mark, baked into the image before assembly). It NEVER writes `pptx_text_overlays.json` and NEVER routes any text to a native PPTX text box. Garbled/mis-styled HERO TEXT is fixed by the Slide Image Creator's re-prompt/re-seed loop, then human escalation — never an overlay.
+> **File name note:** the file keeps its historical name `SOP-IMG-05-PIL-LOGO-COMPOSITE.md` because other documents link to it. The shipped renderer does NOT run a Pillow logo composite (see Rule A). This SOP describes exactly what `scripts/build_deck.py` does today.
+>
+> **Decision 5C (AF-OVERLAY-DELIVERED):** the native-text overlay half of this pipeline is ELIMINATED. Garbled or mis-styled HERO TEXT is fixed by the Slide Image Creator's re-prompt and re-seed loop, then human escalation, never an overlay. A `pptx_text_overlays.json`, or any native (non-notes) on-slide text run, is AF-OVERLAY-DELIVERED.
 
-**Cluster:** Image-Design System (pipeline post-processing)
-**Version:** v1.0.0 (2026-06-14)
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; SOP-DESIGN-04-LOGO-CONSISTENCY.md; SOP-IMG-01-KIE-CALL-MECHANICS.md
-**Owning role at write time:** Slide Image Creator (declares the composite in the prompt and the post-render manifest); PPTX Assembly Specialist (executes the PIL step)
+**Cluster:** Image-Design System (pipeline determinism)
+**Version:** v2.0.2 (2026-10-06)
+**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md; SOP-DESIGN-04-LOGO-CONSISTENCY.md; SOP-IMG-01-KIE-CALL-MECHANICS.md; `07-kie-setup/references/kie-common-rules.md`
+**Owning role at write time:** Slide Image Creator (declares the logo reference in the prompt); Slide Submitter (confirms the local logo file is configured before the render); PPTX Assembly Specialist (the assembly step places a local logo file)
 **Enforced at the gate by:** QC Specialist - Presentations (AF-LOGO, AF-GRAD, AF-TYPE)
-**Purpose:** Make logo identity and hero-string rendering deterministic via code, eliminating two entire defect classes -- logo drift and gradient-on-type / weak-type -- at the pipeline level before QC ever runs.
+**Purpose:** Make logo identity deterministic where code can guarantee it, and keep Pillow out of slide creation.
 
 ---
 
-## 1. THE PIPELINE DETERMINISM RULES (Rule A live; Rule B eliminated; Rule C scope ban)
+## 1. THE PIPELINE DETERMINISM RULES (Rule A logo mechanisms; Rule B eliminated; Rule C scope ban)
 
-### Rule A -- PIL Logo Composite (every slide, mandatory)
+### Rule A -- Logo identity: the two mechanisms the shipped renderer has
 
-After Kie.ai returns a rendered PNG, a Python PIL post-processing step runs on every slide before QC. It composites the one locked logo PNG (referenced by `LOGO_URL` in the brief) into the lower-right chip at a fixed position and scale. This step is mandatory and unconditional on every slide in the deck.
+`build_deck.py` resolves the logo from a `--logo` argument if it is run with one, otherwise from `working/copy/intake.json` `brand.logo_image_path`, and does exactly one of two things with it. Nothing else touches the logo.
 
-Why: the image model cannot guarantee pixel-perfect logo reproduction. Even image-to-image mode with the logo as the first reference drifts. The PIL composite is the write-once, read-many identity lock that pairs with the read-time AF-LOGO check (SOP: qc-specialist-presentations-sops.md). With this step in place the logo on every slide is exactly LOGO_URL, no model creativity involved.
+**What the canonical command reaches today:** `presentation-canonical-entry.sh` and `run_signature_deck.py` have NO `--logo` option (the entry exits with "unknown argument") and do not forward one to `build_deck.py`. Through the canonical path only mechanism 2 is reachable, fed by `intake.json` `brand.logo_image_path` (a LOCAL PNG file, absolute or relative to the run directory; a URL there makes the renderer exit 2). A logo that exists only as a hosted URL is downloaded once to a local PNG in the run directory and `brand.logo_image_path` is pointed at it, or the Slide Submitter escalates to the Director.
 
-**The PIL composite procedure:**
+1. **`--logo` is a public https URL.** Reachable today only by invoking `build_deck.py` with `--logo`, which the canonical entry does not forward, so it needs the entry and runner to be changed (lane D) before any agent can use it. Every slide is rendered image-to-image with that URL as the single reference in `input.input_urls` (the pinned image-to-image model from `presentation_job/model_catalog.json`, alias `image.i2i`). The model places the mark; the prompt carries the "place, do not redraw, recolor, or restyle it" sentence (SOP-IMG-01 check 3). No local file is composited in this mode.
+2. **A local file path** (`brand.logo_image_path` in `intake.json`, the canonical route, or a local `--logo` on a direct `build_deck.py` run). The render stays text-to-image (alias `image.t2i`). At assembly, `assemble_pptx` places that exact PNG file on every slide as a PICTURE shape on top of the full-bleed slide image, top-right, about 13 percent of the slide width (`LOGO_WIDTH_FRACTION` 0.13) with a 0.25 inch margin (`LOGO_MARGIN_IN`), the same size and position on every slide, bytes written verbatim so transparency is preserved. A picture shape is not native text, so this is not AF-OVERLAY-DELIVERED.
 
-1. Download the current slide PNG from `working/renders/slide-NN.png`.
-2. Download `LOGO_URL` once per deck run, cache as `working/brand/logo-ref.png`. Verify the download is non-empty before proceeding.
-3. Composite the logo into the lower-right chip:
-   - Scale the logo PNG to approximately 9% of the slide width (230 px on a 2560-px wide slide), maintaining aspect ratio.
-   - Place the top-left corner of the scaled logo at: `x = slide_width - logo_width - margin`, `y = slide_height - logo_height - margin`, where `margin = max(40px, floor(0.025 * min(slide_width, slide_height)))`.
-   - Apply a white chip behind the logo (padding 8px on all sides, 1px gold border: `#C4A44D` or the client's primary gold hex from the STYLE BLOCK) using PIL `ImageDraw.rectangle`.
-   - Use `Image.paste(logo_img, (x, y), mask=logo_img.split()[3] if logo_img.mode == 'RGBA' else None)` to composite with transparency if the logo has an alpha channel.
-4. Write the composited result back to `working/renders/slide-NN.png`, overwriting the raw Kie output.
-5. Record the composite in `working/checkpoints/logo_composite_log.json`: `{"slide": "slide-NN", "logo_url": "<LOGO_URL>", "chip_x": x, "chip_y": y, "logo_width_px": logo_width, "logo_height_px": logo_height, "composite_ts": "<ISO-timestamp>"}`.
+What the renderer does NOT do (never describe or ask for these as if they existed): a Pillow composite onto `working/renders/slide-NN.png`, a lower-right white chip with a gold border, a `working/checkpoints/logo_composite_log.json`, a post-render logo step on a URL-logo deck, or any automatic fallback from image-to-image to a composite after two failed renders.
 
-**Do not** rely on the image model's interpretation of the logo -- even a correct image-to-image call is treated as a layout hint only. The PIL composite is the identity guarantee.
+**Why this matters:** a logo that must be pixel-exact belongs in the local-file mechanism (the exact file is placed, no model creativity). The image-to-image mechanism conditions the model on the logo but cannot guarantee pixel-perfect reproduction, so QC checks the result (AF-LOGO, AF-F7).
 
-**Failure mode:** If the PIL step fails (network error downloading LOGO_URL, corrupt PNG, PIL exception), halt and flag to the Director. Do not advance a slide without the composite: an uncomposited slide is a logo-drift risk and is treated as a composite-failure auto-fail at QC (AF-LOGO sub-condition "composite not logged").
+**Failure handling:** if the logo mutates or garbles on a URL-logo deck, tighten the logo sentence and negative twin and re-render through the canonical render command (re-prompt and re-seed, SOP-IMG-01). If it still mutates after two image-to-image attempts, escalate to the Director, who may switch the deck to a local logo file (mechanism 2) by having the intake owner set `brand.logo_image_path` to that file. Never hand-edit a PNG, never write a local compositing script into the run directory (Rule C), and never hand-submit to KIE.ai.
 
 ---
 
 ### Rule B -- ELIMINATED: Native Text Overlay for Hero Strings (Decision 5C, AF-OVERLAY-DELIVERED)
 
-The former native-text overlay rule is REMOVED. ALL text — hero price numbers, callout strings, headlines, gradient-risk strings, struck prices — is baked into the SINGLE composed gpt-image-2.5 image by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
+The former native-text overlay rule is REMOVED. ALL text (hero price numbers, callout strings, headlines, gradient-risk strings, struck prices) is baked into the SINGLE composed image from the pinned model (`image.t2i` in `presentation_job/model_catalog.json`) by the model. There is no NATIVE-OVERLAY-PRIMARY class, no "render the background only and overlay the text later" instruction, and no `pptx_text_overlays.json`.
 
 When a critical verbatim string garbles or mis-styles at render (including the gradient-risk strings the gradient ban in Section 2 targets), the remedy is the Slide Image Creator's RE-PROMPT / RE-SEED loop (tighten the spelling-lock + negative block, new seed, re-render the composed image), then HUMAN ESCALATION if it persists. A native PPTX text box is never the remedy.
 
-**Why no native overlay:** a native PPTX text run is not part of the composed image; it is the exact defect Decision 5C eliminates. The mere presence of a `pptx_text_overlays.json` at assembly, or any native (non-notes) on-slide text run in the delivered PPTX, is AF-OVERLAY-DELIVERED, enforced by `scripts/build_deck.py` `_chk_no_overlay`. The gradient ban (Section 2) is enforced inside the prompt + AF-GRAD, not by extracting text to an overlay.
-
-This SOP's ONLY post-render composite is Rule A — the locked logo IMAGE onto the PNG.
+The presence of a `pptx_text_overlays.json` at assembly, or any native (non-notes) on-slide text run in the delivered PPTX, is AF-OVERLAY-DELIVERED, enforced by `scripts/build_deck.py` `_chk_no_overlay`. The gradient ban (Section 2) is enforced inside the prompt and AF-GRAD, not by extracting text to an overlay.
 
 ---
 
-### Rule C — PIL/Pillow NEVER fabricates a slide canvas (the hard scope ban)
+### Rule C -- PIL/Pillow NEVER fabricates or edits a slide canvas (the hard scope ban)
 
-Pillow/PIL is authorized in the entire Presentations pipeline for **exactly one thing: compositing the locked LOGO image onto a slide PNG that kie.ai already rendered (Rule A).** It is authorized for NOTHING else.
+Pillow/PIL is NOT authorized anywhere in the Presentations pipeline to create or modify `working/renders/slide-NN.png`. The only logo step with a local file is Rule A mechanism 2, which is done by python-pptx at assembly and never writes a PNG.
 
 **BANNED, each an auto-fail (`AF-LOCAL-CANVAS` / `AF-CANONICAL-RENDER-BYPASS`):**
 
 - `Image.new('RGB', (2048,1152), ...)` / `Image.new('RGB', (2560,1440), ...)` / any `Image.new` that fabricates a full-slide canvas (a flat cream card, a color wash, a "typography" card, a background plate).
-- `ImageDraw`-drawn headlines, hook lines, body text, or any slide text — drawing words with PIL is the local-render defect, never a remedy.
-- Using PIL to produce a "pure-typography hook slide" because it "has no photo." Pure-typography hook slides are kie.ai gpt-image-2.5 renders (SOP-DESIGN-02 §2.0; SOP-IMG-01 §1A) and carry a real kie `taskId`. PIL does not render them; PIL only composites their logo afterward.
-- Any PIL/Pillow call that runs **before** kie.ai has returned a PNG for that slide. Rule A is strictly *post*-render (it overwrites `working/renders/slide-NN.png`); there is no PIL path that *creates* a `slide-NN.png` from nothing.
+- `ImageDraw`-drawn headlines, hook lines, body text, or any slide text. Drawing words with PIL is the local-render defect, never a remedy.
+- Using PIL to produce a "pure-typography hook slide" because it "has no photo." Pure-typography hook slides are KIE.ai image renders (SOP-DESIGN-02 section 2.0; SOP-IMG-01 section 1A) and carry a real KIE task id.
+- Any PIL/Pillow write to `slide-NN.png`, before or after KIE.ai returns it.
 
-The QC cross-check reads, for every slide, a real kie `taskId` and a PNG above the 51,200-byte kie-bake floor; a slide whose PNG was born from `Image.new` (the ~26–30 KB flat-card signature, no kie `taskId`) is the exact defect this rule kills. The only legitimate PIL writes to `slide-NN.png` are the logo-composite overwrite (Rule A) logged in `logo_composite_log.json`; PIL aside from that is forbidden.
+The QC cross-check reads, for every slide, a real KIE task id (in `working/checkpoints/pending_tasks.json` and the render record in `process_manifest.json`) and a PNG above the 51,200-byte floor (`PLACEHOLDER_MIN_BYTES`); a slide whose PNG was born from `Image.new` (the roughly 26 to 30 KB flat-card signature, no KIE task id) is the exact defect this rule kills.
 
 ---
 
-## 2. GRADIENT BAN (producing rule -- striped from the prompt SOP)
+## 2. GRADIENT BAN (producing rule)
 
-Effective with this SOP, the following prompt language is PROHIBITED on any slide in any presentation deck:
+The following prompt language is PROHIBITED on any slide in any presentation deck:
 
 - "liquid-gold gradient (#B8860B to #E6C66E)" or any gold-to-gold gradient on type
 - "metallic warm gold glowing" or "warm metallic" on type regions
@@ -82,14 +75,14 @@ Replace with: flat brand-color hero type (solid brand color, high contrast again
 
 ## 3. INTEGRATION WITH SOP-DESIGN-04 AND SOP-IMG-01
 
-- SOP-DESIGN-04-LOGO-CONSISTENCY.md step 2 already defines the PIL composite as the belt-and-suspenders fallback after two failed image-to-image render attempts. This SOP promotes the PIL composite to a MANDATORY first-pass step on every slide (not a fallback). SOP-DESIGN-04 step 2 is superseded: the composite runs unconditionally.
-- SOP-IMG-01-KIE-CALL-MECHANICS.md check 9 (logo identity) is unaffected. The PIL composite is a post-Kie step; the image-to-image prompt directive (AF-P15 at write time) remains required for layout conditioning.
-- The AF-LOGO check in the QC gate reads the composited slide PNG, not the raw Kie output. The SSIM threshold (>= 0.97 on the logo chip region against LOGO_URL) is the read-time enforcement.
+- SOP-DESIGN-04-LOGO-CONSISTENCY.md describes the logo-consistency goal. Where it mentions a composite after two failed image-to-image attempts, Rule A above governs what actually exists: escalate to the Director, who may supply a local logo file (mechanism 2).
+- SOP-IMG-01-KIE-CALL-MECHANICS.md check 9 (logo identity) is unchanged. AF-P15 (write time) requires the prompt to carry the directive of the logo mechanism in use. Rule A is the authority because `build_deck.py` sends the prompt verbatim and never edits it for a logo: on the canonical command (mechanism 2) the prompt must NOT draw, describe or name any logo, declares no reference image, keeps the top-right corner free of type and imagery, and carries the negative twin "Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation" (otherwise the model draws a mark and `assemble_pptx` places a second one on top). In URL image-to-image mode (mechanism 1) the prompt declares image-to-image with LOGO_URL as the first reference and carries "place, do not redraw, recolor, or restyle it" and "do not invent or redesign any mark".
+- The AF-LOGO check in the QC gate reads the rendered slide (and, for mechanism 2, the assembled slide). The SSIM threshold (>= 0.97 on the logo region against LOGO_URL or the local logo file) is the read-time enforcement.
 
 ---
 
 ## 4. OUTPUTS PRODUCED
 
-- `working/renders/slide-NN.png` (overwritten with PIL-composited logo IMAGE, for every slide)
-- `working/checkpoints/logo_composite_log.json` (one entry per slide)
-- (NO pptx_text_overlays.json — the native-text overlay path is eliminated, Decision 5C; its presence is AF-OVERLAY-DELIVERED)
+- Mechanism 1 (URL logo, not reachable through the canonical command today): nothing beyond the normal renders; the logo is part of each rendered PNG.
+- Mechanism 2 (local logo file): the logo picture shape on every slide of the assembled `.pptx`; `working/renders/slide-NN.png` is left exactly as KIE.ai returned it.
+- (NO `pptx_text_overlays.json` and NO `logo_composite_log.json`. The native-text overlay path is eliminated, Decision 5C.)

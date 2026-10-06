@@ -6,8 +6,8 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 1.0
-**Last updated:** 2026-06-15
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -269,7 +269,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 The Director cannot dispatch Phase 1 agents until capacity_plan.json exists with go_nogo = "GO".
 
 ### Gate 2 -- Budget Pre-flight
-kie_credits_remaining >= budget_ceiling before Phase 4 begins.
+kie_credits_remaining >= budget_ceiling x 1.30 (the credit preflight of `07-kie-setup/references/kie-common-rules.md` rule 6) before Phase 4 begins; the renderer's own Phase-0 balance gate (`AF-KIE-BALANCE`, exit 4) is a second, independent check.
 
 ### Gate 3 -- All Required Keys Found
 No required key has `found_in: "NOT FOUND"` in capacity_plan.json before Phase 4 begins.

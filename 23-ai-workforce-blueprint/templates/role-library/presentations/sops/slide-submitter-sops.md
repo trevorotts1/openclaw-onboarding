@@ -10,237 +10,133 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
-### SOP 9.1 -- Model Manifest and Variant Selection
+### SOP 9.1 -- Model Pin, Mode Rule, and Submit-Time Preflight
 
-**When to run:** At the very start of Phase 4, before the first API call.
+**When to run:** At the very start of Phase 4, before the render command.
 
 **Inputs:**
-- MODEL MANIFEST from master SOP (SOP-IMG-01-KIE-CALL-MECHANICS + director-of-presentations SOP 9.x + build_deck.py MODEL_* pins (PRESENTATION-MASTER-DOCTRINE.md §4) of the master SOP)
-- working/copy/intake.json (LOGO_ON_SLIDES, LOGO_URL fields)
-- working/copy/media_library.json (LOGO_URL, FOUNDER_PORTRAIT_URL)
+- `presentation_job/model_catalog.json` (aliases `image.t2i`, `image.i2i`)
+- `working/checkpoints/model_manifest.json` (the operator-confirmed echo from the Director)
+- `working/copy/intake.json` (LOGO_ON_SLIDES, `brand.logo_image_path`) and `working/copy/media_library.json`
 
 **Steps:**
-1. Read the MODEL MANIFEST from the master SOP. It specifies exactly two models:
-   - `gpt-image-2-5-sunburst-image-to-image` (i2i): the DEFAULT whenever LOGO_ON_SLIDES = true in intake.json. Every call passes input_urls beginning with LOGO_URL (from media_library.json). Slides assigned archetype A5 (founder portrait) append FOUNDER_PORTRAIT_URL. Maximum 16 URLs; all public https. This is also used any time reference images are available.
-   - `gpt-image-2-5-sunburst-text-to-image` (t2i): used ONLY when there are no reference images at all (LOGO_ON_SLIDES = false AND no founder portrait URL and no other reference images).
-2. Read `LOGO_ON_SLIDES` from intake.json.
-3. Set `model_variant`:
-   - If LOGO_ON_SLIDES = true (or any reference images exist): `gpt-image-2-5-sunburst-image-to-image`.
-   - If LOGO_ON_SLIDES = false AND no reference images of any kind: `gpt-image-2-5-sunburst-text-to-image`.
-4. Write the model_variant selection to working/checkpoints/phase4_checkpoint.json: `{ "model_variant": "...", "selected_at": "...", "manifest_version": "..." }`.
-5. If the MODEL MANIFEST specifies a different model than these two defaults, use the manifest's specification. The manifest takes precedence. Never use a model not in the manifest.
-6. Announce the model selection to the Director: "Phase 4 starting with model: [model_variant]. Manifest version: [version]. Logo on slides: [true/false]. Smoke test will run next."
-7. **(Density-floor overhaul) Run the SOP-IMG-01 submit-time preflight (checks 1-8) on every slide body before submitting** (universal-sops/presentation-image-library/SOP-IMG-01 section 7): (1) mode matches assets, a logo/portrait/style-frame slide is I2I with non-empty input_urls, never T2I; (2) every input_urls reference is NAMED in order in the prompt; (3) the logo reference carries "place, do not redraw, recolor, or restyle it"; (4) a style-reference frame carries the verbatim style-reference-only directive; (5) that directive is NOT applied to the logo or a face; (6) every reference URL is a reachable public https <=30 MB (a 404/auth/local-path logo HALTS the wave, never fall back to T2I to "get unblocked", that reintroduces logo mutation); (7) no analysis/"image-to-text" job is POSTed to Kie (there is no such endpoint); (8) download reads `JSON.parse(data.resultJson).resultUrls[0]`, never `.url`. A slide failing any preflight check is not submitted until fixed.
+1. Read the two image aliases from `presentation_job/model_catalog.json`. They must equal the models named in the operator-confirmed `model_manifest.json`. A mismatch is not yours to resolve: halt and tell the Director "model_manifest.json and model_catalog.json disagree." Never guess the model.
+2. Mode rule (what the canonical command does): the canonical entry has NO `--logo` option (passing one exits with "unknown argument"). The logo reaches the renderer only through `working/copy/intake.json` `brand.logo_image_path`, which must be a LOCAL PNG file (absolute, or relative to the run directory). With a local logo the render stays text-to-image (alias `image.t2i`) and the renderer places that exact file on every slide at assembly (SOP-IMG-05 Rule A mechanism 2). With no logo configured, every slide is rendered text-to-image and no logo is placed. The URL image-to-image mechanism (SOP-IMG-05 Rule A mechanism 1) is not reachable through the canonical command today; it needs `--logo` to be forwarded by the entry and runner (lane D). The batch renderer sends no reference image. A reference image (a founder portrait on an A5 slide, a style frame) is not supported by the batch path: flag it to the Director, do not hand-submit.
+3. If LOGO_ON_SLIDES = true, `brand.logo_image_path` must name an existing local PNG before the render starts (a missing file or a URL there makes the renderer exit 2). If the client's logo exists only as a hosted LOGO_URL, it is downloaded once to a local PNG in the run directory (for example `working/copy/logo.png`) and `brand.logo_image_path` is pointed at it by the intake owner; you do not edit `intake.json` yourself. If that cannot be done, escalate to the Director before the render. Rendering a logo deck with no logo configured ships slides with no logo.
+4. Run the SOP-IMG-01 section 7 preflight on the deck: (1) mode matches assets; (2) the prompts carry the AF-P15 directive of the canonical command: they draw, describe and name no logo or reference image (a local logo is placed at assembly), keep the top-right logo zone free of type and imagery, and carry the "do not draw any logo" negative twin; (3) a style-reference frame, if any, carries the verbatim style-reference-only directive and the logo does not; (4) the logo file at `brand.logo_image_path` exists and is a PNG, which are the two things the renderer checks (a missing, non-PNG, or URL-valued path HALTS the render; a local path is valid here because the renderer places the file at assembly, and it is invalid only as an image-to-image `input_urls` value, which this command never sends); (5) no analysis or "image-to-text" job is ever sent to KIE (there is no such endpoint). A deck failing a check is not rendered until fixed.
+5. Record the pin and mode in `working/checkpoints/phase4_checkpoint.json`: `{ "model_t2i": "...", "model_i2i": "...", "logo_mode": "t2i", "logo_file": "<path>|none", "selected_at": "..." }`, and tell the Director: "Phase 4 starting with models: [t2i/i2i]. Logo: [local file placed at assembly / none]."
 
 **Outputs:**
-- phase4_checkpoint.json updated with model_variant
+- `phase4_checkpoint.json` updated with the pin and mode
 
-**Hand to:** SOP 9.5 (smoke test), then SOP 9.2 (wave submission)
+**Hand to:** SOP 9.2 (dispatch)
 
-**Failure mode:** If MODEL MANIFEST is missing or the model_variant field is ambiguous, halt immediately. Notify the Director: "Cannot proceed without a clear MODEL MANIFEST. Awaiting clarification." Never guess the model.
+**Failure mode:** If the catalog or the manifest is missing or ambiguous, halt immediately and notify the Director: "Cannot proceed without a clear model pin." Never guess the model.
 
 ---
 
-### SOP 9.2 -- KIE Submit and Rate Cap (20 requests / 10 seconds)
+### SOP 9.2 -- Dispatch the One Render Command
 
-**When to run:** After smoke test passes (SOP 9.5). This is the main submission loop.
+**When to run:** After SOP 9.1 passes.
 
-**Rate cap source.** The cap below (20 new generation requests per 10 seconds, per account, 100+ concurrent tasks allowed, HTTP 429 on excess) is sourced from the live Kie.ai documentation: https://docs.kie.ai/ Section 8 "Rate Limits & Concurrency", verified 2026-06-14. It is not estimated. Re-confirm against the live docs on each MODEL MANIFEST version bump.
-
-**Inputs:**
-- working/prompts/slide-NN-prompt.txt (all prompt files)
-- working/checkpoints/phase4_checkpoint.json (skip completed slides)
-- Client's KIE_API_KEY (from client's env store)
-- LOGO_URL and FOUNDER_PORTRAIT_URL (from working/copy/media_library.json)
+**Inputs:** the run directory, `slides.json`, the output path, and the client's own KIE key in the client's env stores.
 
 **Steps:**
-1. Build the submission queue: list all slide-NN-prompt.txt files in order. Remove any slides already in phase4_checkpoint.json with status "submitted" or "success". This is the PENDING list.
-2. Check the generation budget BEFORE starting: SLIDE_COUNT x 2 x `per_image_usd` = budget ceiling (`per_image_usd` is recorded in capacity_plan.json from the live `pricingDesc`). If the Kie.ai account balance is < budget ceiling x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`), notify the Director BEFORE submitting the first slide.
-3. Submit slides in WAVES of 20:
-   a. Take the first 20 slides from the PENDING list.
-   b. Submit each as a separate API call to Kie.ai with the appropriate model_variant.
+1. Run exactly one command:
+   ```bash
+   bash <SCRIPTS_DIR>/presentation-canonical-entry.sh \
+       --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
+   ```
+   There is no `--logo` option; the logo comes from `intake.json` `brand.logo_image_path` (SOP 9.1 step 3). The entry runs the deps, bypass-scan and version-pin gates; the runner runs its Phase-0 preflight (OCR engine present, key authenticates, live credit balance via `GET /api/v1/chat/credit` against the script's estimated floor, abort `AF-KIE-AUTH` or `AF-KIE-BALANCE`, exit 4); then `build_deck.py` renders.
+2. You do not sleep, wave, throttle, or retry on your own. The script submits every slide once 0.6 seconds apart, the governor paces the `kie` provider, a submit that gets HTTP 429 sleeps 20 seconds and retries (at most 15 times in a row, then that slide fails), and the poll cadence is the script's.
+3. Never run `build_deck.py` or `run_signature_deck.py` directly to route around the entry gates, never run a per-deck `working/*.py` driver, and never start a smoke-test createTask by hand: a createTask outside the canonical path is `AF-CANONICAL-RENDER-BYPASS`. The built-in auth proof and credit check are the smoke test.
+4. Credit and price questions are answered by Skill 74, read-only and from the Skill 74 folder: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (rule 7). Never copy the adapter into the run directory.
 
-      **Request body for image-to-image (the default when LOGO_ON_SLIDES = true):**
-      ```json
-      {
-        "model": "gpt-image-2-5-sunburst-image-to-image",
-        "input": {
-          "prompt": "<the slide's full QC-passed prompt>",
-          "input_urls": ["<LOGO_URL>", "<FOUNDER_PORTRAIT_URL if A5>"],
-          "aspect_ratio": "16:9",
-          "resolution": "2K"
-        }
-      }
-      ```
+**Outputs:** the run's console output and JSON summary, plus the receipts of SOP 9.3.
 
-      **Request body for text-to-image (only when no reference images at all):**
-      ```json
-      {
-        "model": "gpt-image-2-5-sunburst-text-to-image",
-        "input": {
-          "prompt": "<the slide's full QC-passed prompt>",
-          "aspect_ratio": "16:9",
-          "resolution": "2K"
-        }
-      }
-      ```
+**Hand to:** SOP 9.3 (read the result)
 
-   c. Record each submission: `{ "slide_number": N, "task_id": "...", "submitted_at": "...", "status": "submitted" }` in phase4_checkpoint.json.
-   d. After submitting all 20 in the wave: sleep for 10 seconds (the documented window) before starting the next wave. Any retries issued during the wave count against the cap, so let the full 10-second window elapse before the next wave.
-4. Repeat step 3 until all slides are submitted.
-5. Pacing: each wave is 20 submissions followed by a 10-second window, so the submission rate stays at or below the documented 20 requests / 10 seconds (source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Do not collapse the sleep below the window; do not submit more than 20 in a wave.
-6. Update the generation budget tracker in phase4_checkpoint.json: `{ "slides_submitted": N, "estimated_cost_so_far": N * per_image_usd }`. If estimated_cost_so_far > 1.5 x budget ceiling: warn the Director. If estimated_cost_so_far > 2 x SLIDE_COUNT x per_image_usd: stop and escalate. Never exceed 2x the slide count in API calls without explicit operator authorization.
-
-**Prompt-must-state-references rule:** Every i2i prompt must state what each reference is. Specifically: "the first reference image is the brand logo, place it per the LOGO element; and on A5, the second reference is the founder, whose likeness drives the portrait." This description must appear in the prompt body so the model understands the role of each URL. If a prompt is missing this statement and the slide uses i2i, add it at the end of the prompt before submitting (log the addition in phase4_checkpoint.json).
-
-**Outputs:**
-- phase4_checkpoint.json (all submissions recorded with task_ids)
-
-**Hand to:** SOP 9.3 (polling loop)
-
-**Failure mode:** If any API call returns a rate limit error (HTTP 429): increase the sleep between waves from 10 seconds to 30 seconds and retry. Log the rate limit event in phase4_checkpoint.json. If 3 consecutive rate limit errors occur on the same slide, halt and notify the Director.
+**Failure mode:** If the command reports a missing key, a placeholder key, or a 401 or 403, stop. Do not retry (a 401 or 403 is permanent). Notify the Director to check the client's own KIE key in the client's env stores; never use the operator's key.
 
 ---
 
-### SOP 9.3 -- Loop-Guarded Poll and Parallel Download
+### SOP 9.3 -- Read the Receipts and Route the Exit Code
 
-**When to run:** After all slides are submitted (SOP 9.2 complete). Polls Kie.ai for task completions.
+**When to run:** When the render command returns.
 
-**Inputs:**
-- phase4_checkpoint.json (all task_ids with status "submitted")
+**What the renderer did (so you can read it):** After the last submit it polls every pending task, one pass every 10 seconds, and downloads each slide the moment its own task succeeds. A task still unfinished 900 seconds after polling began (`BUILD_DECK_POLL_MAX_SECONDS`, `BATCH_MAX_POLL_SECONDS`) is a terminal failure for that slide, never re-submitted blindly and never a silent hang. Each download is an authenticated GET (the client's key as the Bearer header plus a browser User-Agent), then verified as a real PNG, 16:9 at 2K, with an OCR readback of the baked text against the approved copy.
 
-**Steps:**
-1. Wait 5 minutes (300 seconds) after the last submission before the first poll. Kie.ai generation typically takes 2-4 minutes per image -- polling immediately wastes API calls.
-2. Begin the poll loop. In each poll iteration:
-   a. For each task_id with status "submitted": call the Kie.ai status endpoint: `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` with `Authorization: Bearer <CLIENT_KIE_API_KEY>`. Read `data.state` from the response.
-   b. For any task with state `success`: parse `data.resultJson` as a JSON string; extract the `resultUrls` array; download `resultUrls[0]` to `working/renders/slide-NN.png` immediately. Update phase4_checkpoint.json: `{ "status": "success", "downloaded_at": "...", "local_path": "working/renders/slide-NN.png" }`.
-   c. For any task with state `fail` (or `failed`/`error`/`cancelled`): record `failCode` and `failMsg` from `data.failCode` and `data.failMsg` into phase4_checkpoint.json and flag to the Director.
-   d. For tasks still in state `waiting`: skip until next poll.
-3. After each poll iteration: check if any "submitted" tasks remain. If none remain: exit the poll loop.
-4. Sleep 60 seconds between poll iterations.
-5. HARD CAP: 100 poll iterations maximum. If 100 iterations complete and tasks still have "submitted" status: stop the poll loop. Write `poll_cap_reached: true` to phase4_checkpoint.json. Escalate to the Director immediately: "Poll cap of 100 reached. [N] tasks still pending. Kie.ai may be stuck. Director must investigate."
-6. After each successful download: verify the file is a valid PNG (check file size > 0 bytes and PNG magic bytes). If the file is empty or corrupted: mark `download_corrupt: true` in the checkpoint and retry the download once.
+**Receipts to read:**
+- `working/checkpoints/pending_tasks.json`: per slide, the KIE task id written before polling, replaced by the verified PNG's sha256 and `completed: true` once downloaded. A re-run reuses only slides recorded complete here, so a crash never re-bills a finished slide; a slide whose task was still in flight is submitted again.
+- `working/renders/slide-NN.ocr.json`: the OCR readback record per slide.
+- `working/checkpoints/process_manifest.json`: the render record (model used, task ids).
+- The JSON summary: `{ "slidesRendered": N, "kieTaskIds": [...], "outputPath": "...", "failures": [] }`.
 
-**State reference (use exactly these state values, never the old incorrect ones):**
+**Exit codes:**
 
-| API state value | Meaning | Action |
+| Exit | Meaning | Action |
 |---|---|---|
-| `waiting` | Task is queued or in progress | Skip; poll again next iteration |
-| `success` | Task complete | Parse resultJson -> resultUrls -> download resultUrls[0] |
-| `fail` (or `failed`/`error`/`cancelled`) | Terminal failure | Log failCode + failMsg; flag to Director; do NOT poll again for this task |
+| 0 | Every slide rendered and the `.pptx` was written | Confirm `slidesRendered` equals the slide count and every slide has a task id; notify the Director |
+| 1 | One or more slides failed (NO `.pptx`), or assembly failed | Read `failures` (terminal KIE state with `failCode` and `failMsg`, poll cap, bad PNG, OCR mismatch). Fix the Layer-A input if it was a content problem and re-run the SAME command; otherwise report. Never substitute an image. Hand failCode events to the Healer |
+| 2 | Fatal config error (no or placeholder key, bad `slides.json`, `python-pptx` missing) | Fix the config; notify the Director |
+| 3 | Process preflight failed: a required upstream artifact is missing or thin | Re-run `run_signature_deck.py --next` to see what is owed |
+| 4 | Phase-0 abort: OCR engine missing, key did not authenticate, or credit balance below the floor | Report to the Director; top up credits or fix the key; do NOT render anyway |
+| 5 | Guard or postflight block (hand-rolled renderer in the run directory, or the deliverable bundle incomplete) | Remove the offender or finish the bundle; never self-approve a skip |
 
-**Outputs:**
-- working/renders/slide-NN.png (all completed images)
-- phase4_checkpoint.json (updated with completion status and local paths)
+**State reference (use exactly these KIE state values):** `waiting` (and `queuing`, `generating`) = still in flight; `success` = done, parse `data.resultJson` (a JSON STRING) then `resultUrls[0]`; `fail` (also `failed`, `error`, `cancelled`) = terminal failure, log `failCode` and `failMsg`.
 
-**Hand to:** QC Specialist -- Presentations (Phase 5 image QC)
+**Outputs:** the verified `working/renders/slide-NN.png` set and the receipts above.
 
-**Failure mode:** If the poll cap is reached (100 iterations): escalate immediately. Write a clear status to phase4_checkpoint.json showing which slides are complete and which are pending. The Director can re-dispatch this role to resume polling after investigating the Kie.ai issue.
+**Hand to:** QC Specialist -- Presentations (Phase 5 image QC, `P-IMAGE-QC`)
+
+**Failure mode:** If the run exits 1 for the same slide on a second run, escalate to the Director with the `failCode`, the `failMsg`, and the task id from `pending_tasks.json`.
 
 ---
 
 ### SOP 9.3a -- API CONTRACT (authoritative)
 
-The following table is the authoritative API reference for Phase 4 in this role. (The master SOP, universal-sops/CLIENT-WEBINAR-DECK-SOP.md, no longer carries an Appendix A; this table is the single copy.) It follows AGENTS.md N43 and `07-kie-setup/references/kie-common-rules.md`, which win over it. If this section ever conflicts with Section 9.3 above, this table wins and Section 9.3 must be corrected.
+This table is the API reference for Phase 4 in this role. It follows AGENTS.md N43 and `07-kie-setup/references/kie-common-rules.md`, which win over it. If this section ever conflicts with Section 9.3 above, this table wins and Section 9.3 must be corrected.
 
-> **Source of every hard constant below:** the live Kie.ai documentation at https://docs.kie.ai/ (endpoints + GPT Image 2 reference + Section 8 "Rate Limits & Concurrency"). Verified 2026-06-14. Every external constant here (model ids, character ceiling, reference-image count, rate cap, task states) is sourced, not estimated.
+> **Source of every hard constant below:** `07-kie-setup/references/kie-common-rules.md` (live-verified 2026-10-05 against https://docs.kie.ai/ and live endpoint probes), and the shipped code (`build_deck.py`, `providers.yaml`, `model_catalog.json`).
 
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
-| Text-to-image model string | `gpt-image-2-5-sunburst-text-to-image` |
-| Image-to-image model string | `gpt-image-2-5-sunburst-image-to-image` |
+| Models | The `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (today `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`); the catalog wins over any id quoted in a document |
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
-| Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` |
-| Prompt ceiling | 20,000 characters in `input.prompt` (authoring size per rule 12 of the canonical rules) |
-| Reference images | `input.input_urls`, public https URLs, max 16 (the department registry value; the 2.5 docs state no count cap, N43 records this as unresolved) |
-| Aspect ratios | GPT-Image-2.5 sunburst (the default): auto, 1:1, 3:2, 2:3, **16:9**, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9 (the last four are 1K only). N43 substitutions: 5:4 to 4:3, 4:5 to 3:4, 2:1 to 16:9, 1:2 to 9:16. Only 3:1, 1:3, 9:21 dispatch to the retained legacy `gpt-image-2-*` route. This SOP pins 16:9. |
-| Resolutions | 1K, 2K, 4K (this SOP pins 2K unless intake says otherwise) |
+| Balance | `GET https://api.kie.ai/api/v1/chat/credit` |
+| Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` (a header named `apikey` returns 401); always read the body `code`, HTTP 200 can still carry 401, 402, 404, 422, 429, 433 or 455 |
+| Prompt length | The model's prompt maximum (20,000 characters for the current pin); authoring size follows rule 12 (read with `prompt-budget`), and the renderer gate today is 9,000 to 18,000 |
+| Reference images | `input.input_urls`, public https URLs. `build_deck.py` sends none on the canonical command (a local logo is placed at assembly); it sends exactly one, the logo URL, only when run directly with `--logo <https URL>` (SOP-IMG-05 mechanism 1, not reachable through the canonical command today) |
+| Aspect ratio and resolution | The renderer pins `16:9` and `2K` |
+| Rate limits | createTask 20 per 10 seconds per account; recordInfo 10 per second per taskId (rule 3) |
 | Create response | `{ "code": 200, "data": { "taskId": "..." } }` |
-| Task states | `waiting`, `success`, `fail` (treat fail/failed/error/cancelled as terminal) |
+| Task states | `waiting`, `success`, `fail` (treat fail, failed, error, cancelled as terminal) |
 | Success payload | `data.resultJson` is a JSON STRING containing `{"resultUrls": ["https://..."]}`; download `resultUrls[0]` |
 | Failure fields | `data.failCode`, `data.failMsg` (log both) |
-| Optional | `callBackUrl` webhook on createTask (this SOP polls instead) |
-| Cost benchmark | The live `pricingDesc` (Skill 74); the Presentations model catalog `unit_costs` is the dated fallback snapshot, never a price authority |
-
-Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Section 9. Every hard external constant here is sourced from the live docs (https://docs.kie.ai/, verified 2026-06-14). On the NEXT MODEL MANIFEST version bump, re-fetch the live docs, re-confirm each constant, and update the verification date; if a constant changed, update the MODEL MANIFEST and this appendix with operator sign-off, refresh the citation, and log the change. Do NOT leave a bare "verify later" note on an un-cited number; that pattern is an AF-SRC auto-fail.
+| Retention | Download immediately; result URLs may expire within 24 hours (rule 8) |
+| Price | `kie_live_adapter.py price` is the authority (rule 7); the catalog `unit_costs` is a dated snapshot |
 
 ---
 
-### SOP 9.4 -- Truncation and Generation-Budget Discipline
+### SOP 9.4 -- Generation-Budget Discipline
 
-**When to run:** Continuously during Phase 4, checked at the start of each wave (SOP 9.2) and during polling (SOP 9.3).
+**When to run:** Before the render and after every run.
 
 **Inputs:**
-- phase4_checkpoint.json (current cost tracker)
-- working/copy/capacity_plan.json (budget estimate from Capacity & Reliability Engineer)
+- `working/copy/capacity_plan.json` (budget estimate from the Capacity & Reliability Engineer)
+- `working/checkpoints/pending_tasks.json` (task ids actually created)
 
 **Steps:**
-1. After every 10 successful downloads: calculate actual cost. Formula: submissions_sent x per_image_usd = estimated actual cost.
-2. Compare actual cost to budget_ceiling from capacity_plan.json.
-3. Budget warnings and stops:
-   - At 1.0x budget_ceiling: log "Budget at 100% -- proceeding within budget."
-   - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
-   - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
-4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Length check: confirm each slide prompt is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds still enforce the old band until the prompt-budget code change lands (the Slide Image Creator owns the sizing). Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
+1. Before the render: budget ceiling = SLIDE_COUNT x price per image (from `kie_live_adapter.py price`). If the live balance is below ceiling x 1.30 (the credit preflight of rule 6), tell the Director before dispatching; the script's own Phase-0 balance check still applies and aborts with exit 4.
+2. After each run: count the task ids in `pending_tasks.json`. Each id is a billed submission. If the total created exceeds 2 x SLIDE_COUNT, stop and escalate to the Director for operator authorization before any further re-run.
+3. Length check: the Slide Image Creator and Prompt QC own prompt sizing (rule 12). Never truncate a prompt to fit; return it with the measured length and the model maximum.
 
-**Outputs:**
-- phase4_checkpoint.json (budget events and truncation log)
+**Outputs:** budget notes in `phase4_checkpoint.json`.
 
-**Hand to:** Director (budget warnings and stops), Slide Image Creator (truncation notifications)
+**Hand to:** Director (budget warnings and stops), Slide Image Creator (length returns)
 
-**Failure mode:** If the budget ceiling calculation is impossible (capacity_plan.json missing or has no budget_ceiling field), use the default formula: SLIDE_COUNT x 2 x per_image_usd read from the live `pricingDesc`. Never skip the budget check.
+**Failure mode:** If `capacity_plan.json` is missing or has no budget ceiling, compute SLIDE_COUNT x price per image from `kie_live_adapter.py price` and continue. Never skip the budget check.
 
 ---
-
-### SOP 9.5 -- API Smoke Test
-
-**When to run:** Before wave 1 of any run, immediately after model variant is confirmed (SOP 9.1). This test runs once per Phase 4 invocation, never skipped.
-
-**Purpose:** Verify the client's KIE_API_KEY is live, the createTask endpoint is reachable, and resultUrls parsing works end-to-end. A failed smoke test costs one cheap 1K task and stops Phase 4 before 75 real slides burn.
-
-**Inputs:**
-- Client's KIE_API_KEY (from client's env store)
-- working/checkpoints/phase4_checkpoint.json (record smoke test outcome here)
-
-**Steps:**
-1. Submit ONE cheap test task using the client's key:
-   - Model: `gpt-image-2-5-sunburst-text-to-image` (use t2i for the smoke test regardless of run variant -- it is cheaper and tests the key and endpoint equally well).
-   - Prompt: `"test slide, white background, the word TEST centered"`
-   - Resolution: `1K` (the cheapest tier).
-   - Aspect ratio: `16:9`.
-   - POST to `https://api.kie.ai/api/v1/jobs/createTask` with `Authorization: Bearer <CLIENT_KIE_API_KEY>`.
-
-2. Confirm the response contains `{ "code": 200, "data": { "taskId": "..." } }`. If not, HALT Phase 4 immediately and notify the Director with the response body.
-
-3. Poll the smoke task to terminal state (same poll logic: 5-minute initial wait, then every 60 seconds, maximum 20 polls for the smoke test).
-
-4. On state `success`:
-   - Parse `data.resultJson` as a JSON string.
-   - Extract the `resultUrls` array.
-   - Confirm `resultUrls[0]` is a non-empty https URL.
-   - Attempt to download it (HEAD or GET the URL; confirm HTTP 200 and non-zero content).
-   - Record in phase4_checkpoint.json: `{ "smoke_test": "passed", "smoke_task_id": "...", "smoke_at": "..." }`.
-   - Announce to Director: "Smoke test passed. KIE key live, resultUrls parsing confirmed. Proceeding to wave 1."
-
-5. On state `fail` (or `failed`/`error`/`cancelled`):
-   - Record `failCode` and `failMsg` from the response.
-   - Write to phase4_checkpoint.json: `{ "smoke_test": "failed", "failCode": "...", "failMsg": "...", "smoke_at": "..." }`.
-   - HALT Phase 4. Notify Director: "Smoke test FAILED. failCode: [X], failMsg: [Y]. Phase 4 is blocked. Investigate KIE key and account balance before retrying."
-   - Do NOT submit any real slides until the smoke test passes on a retry.
-
-6. On poll cap (20 polls with no terminal state):
-   - Record `{ "smoke_test": "timeout", "smoke_task_id": "...", "smoke_at": "..." }`.
-   - HALT Phase 4. Notify Director: "Smoke test timed out after 20 polls. Kie.ai may be degraded. Investigate before starting the run."
-
-**Outputs:**
-- phase4_checkpoint.json (smoke_test field: "passed" | "failed" | "timeout")
-
-**Hand to:** SOP 9.2 (wave submission) on pass only. Director on fail or timeout.
-
-**Failure mode:** A smoke test that cannot complete (network error, auth error, timeout) always halts the run. There is no bypass. The cost of one cheap 1K task is mandatory insurance against burning 75 slides on a broken key or a degraded platform.
-
----
-
