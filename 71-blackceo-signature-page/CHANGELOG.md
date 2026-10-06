@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.2.5 - 2026-10-06
+
+- `verify.sh`: the prompt validator sanity fixture failed under the 1.2.4 KIE rule-12 gate — `tests/fixtures/prompt_good.txt` is 6,795 characters, below the 16,000 hard floor of the GPT Image 2.5 Sunburst band. verify.sh now grows the fixture into the band with `tests/fit_prompt.py` (the same helper `tests/run_tests.py` uses, matching the 999-setup copy of this skill) before running the sanity check; a fit failure is reported as its own line. `--runtime-max 19000` dropped — accepted and ignored since 1.2.4.
+- Version bumped to 1.2.5 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.2.4 - 2026-10-06
 
 - `scripts/validate_prompt.py`: the 5,000 to 20,000 house band and the 19,000 runtime warning are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. New `--model` (default GPT Image 2.5 Sunburst); `--runtime-max` is accepted and ignored.
