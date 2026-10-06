@@ -23,15 +23,41 @@ Every numeric limit below is quoted from the 2026-08-26 first-party KIE docs
 (see references/tts.md and references/music.md for the verbatim quotes and
 source URLs). The validator never invents a limit: what is VERIFIED is
 enforced; what is UNDETERMINED is reported as a warning, never hard-rejected.
+
+KIE prompt rule 12 (owner order 2026-10-05): a DESCRIPTIVE music field (Suno style,
+the non-custom song description, the sounds prompt, add-vocals style, add-instrumental
+tags) is 95 to 100 percent of its character max, hard floor 80 percent, hard ceiling
+100 percent, checked by the shared enforcer shared-utils/kie_prompt_enforcer.py (limit
+from Skill 74 prompt-budget, else the first-party limit below as the policy-owner
+fallback). VERBATIM fields (TTS text, custom-mode lyrics) are exempt from the floor and
+keep only their ceilings below.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_enforcer()
 
 # ---------------------------------------------------------------------------
 # Verified facts (source: first-party KIE docs pages fetched 2026-08-26)
@@ -98,6 +124,17 @@ def _err(msg):
 
 def _warn(msg):
     warnings.append(msg)
+
+def _descriptive(label, model, text, cap):
+    """Rule 12 for a descriptive music field through the shared enforcer. `cap` is the first-party character
+    limit (the policy-owner fallback when Skill 74 has no schema for this dedicated Suno route)."""
+    v = KPE.check("suno/%s" % model, text if isinstance(text, str) else "", "descriptive", fallback_max=cap)
+    if not v["ok"]:
+        _err("music: %s: %s" % (label, v["message"]))
+    elif v["status"] == "BELOW_TARGET":
+        _warn("music: %s is %d chars; the target is 95-100%% of %d (add %d chars)" % (
+            label, v["chars"], cap, v["target_min"] - v["chars"]))
+
 
 def _as_list(v):
     if v is None:
@@ -392,16 +429,12 @@ def _validate_prompt_caps(p, model, prompt, style, title, custom_mode):
         cap = SUNO_CUSTOM_PROMPT_MAX[model]
         if _txt_len(prompt) > cap:
             _err(f"music: custom prompt {_txt_len(prompt)} chars > {cap} for {model}")
-        scap = SUNO_CUSTOM_STYLE_MAX[model]
-        if style is not None and _txt_len(style) > scap:
-            _err(f"music: style {_txt_len(style)} chars > {scap} for {model}")
+        if style is not None:  # descriptive: rule 12 (floor 80 percent, ceiling 100 percent of the style max)
+            _descriptive("style", model, style, SUNO_CUSTOM_STYLE_MAX[model])
     else:
-        if _txt_len(prompt) > SUNO_NON_CUSTOM_PROMPT_MAX:
-            _err(f"music: non-custom prompt {_txt_len(prompt)} chars > "
-                 f"{SUNO_NON_CUSTOM_PROMPT_MAX} (generate-music page)")
-        else:
-            _warn("music: non-custom prompt limit UNDETERMINED -- generate-music page says "
-                  "3000, generate-mashup page says 500; both verbatim; conflict unresolved")
+        _descriptive("non-custom song description", model, prompt, SUNO_NON_CUSTOM_PROMPT_MAX)  # descriptive
+        _warn("music: non-custom prompt limit UNDETERMINED -- generate-music page says "
+              "3000, generate-mashup page says 500; both verbatim; conflict unresolved")
     if title is not None and _txt_len(title) > SUNO_TITLE_MAX:
         _err(f"music: title {_txt_len(title)} chars > {SUNO_TITLE_MAX}")
 
@@ -461,9 +494,7 @@ def validate_sounds(p):
     model = p["model"]
     if model not in ("V5", "V5_5"):
         _err(f"music: sounds model must be V5 or V5_5, got {model!r}")
-    prompt = p.get("prompt", "")
-    if _txt_len(prompt) > SUNO_SOUNDS_PROMPT_MAX:
-        _err(f"music: sounds prompt {_txt_len(prompt)} chars > {SUNO_SOUNDS_PROMPT_MAX}")
+    _descriptive("sounds prompt", model, p.get("prompt", ""), SUNO_SOUNDS_PROMPT_MAX)  # descriptive
     tempo = p.get("soundTempo")
     if tempo is not None:
         if not (SUNO_SOUND_TEMPO[0] <= tempo <= SUNO_SOUND_TEMPO[1]):
@@ -526,16 +557,16 @@ def _validate_audio_url_size(p):
 def validate_add_instrumental(p):
     if p.get("negativeTags") is not None and _txt_len(p.get("negativeTags")) > 200:
         _err("music: add-instrumental negativeTags max 200 chars")
-    if p.get("tags") is not None and _txt_len(p.get("tags")) > 1000:
-        _err("music: add-instrumental tags max 1000 chars")
+    if p.get("tags") is not None:  # descriptive: rule 12
+        _descriptive("add-instrumental tags", p.get("model") or "V5", p.get("tags"), 1000)
 
 def validate_add_vocals(p):
     # add-vocals rides the same per-field limits as add-instrumental (same
     # audio-operations family, verified 2026-08-27 against references/).
     if p.get("negativeTags") is not None and _txt_len(p.get("negativeTags")) > 200:
         _err("music: add-vocals negativeTags max 200 chars")
-    if p.get("style") is not None and _txt_len(p.get("style")) > 1000:
-        _err("music: add-vocals style max 1000 chars")
+    if p.get("style") is not None:  # descriptive: rule 12
+        _descriptive("add-vocals style", p.get("model") or "V5", p.get("style"), 1000)
     if "audioId" not in p and "taskId" not in p:
         _err("music: add-vocals requires taskId/audioId")
 
@@ -646,6 +677,8 @@ def _expect_exit(path, domain, want):
 def self_test():
     import tempfile
     ok = 0
+    os.environ["HOME"] = tempfile.mkdtemp()  # hermetic: no key and no cache, the adapter answers from its registry
+    os.environ.pop("KIE_API_KEY", None)
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
 
@@ -760,7 +793,38 @@ def self_test():
                "taskId": "t1", "callBackUrl": "https://x/cb"}
         _expect_exit(write("addvoc-ok.json", av3), "music", 0)
 
-        ok = 21
+        # Rule 12 for DESCRIPTIVE music fields: Suno V5 custom style max 1000 -> floor 800, ceiling 1000.
+        def style_req(n):
+            return {"endpoint": "/api/v1/generate", "model": "V5", "customMode": True, "instrumental": False,
+                    "prompt": "lyrics are verbatim and exempt from the floor", "style": "x" * n,
+                    "title": "t", "callBackUrl": "https://x/cb"}
+        _expect_exit(write("style-79.json", style_req(790)), "music", 2)    # 79 percent rejected
+        _expect_exit(write("style-80.json", style_req(800)), "music", 0)    # 80 percent floor passes (target warning)
+        _expect_exit(write("style-95.json", style_req(950)), "music", 0)    # 95 percent passes
+        _expect_exit(write("style-100.json", style_req(1000)), "music", 0)  # 100 percent passes
+        _expect_exit(write("style-101.json", style_req(1001)), "music", 2)  # 101 percent rejected
+        # non-custom song description (max 3000): 79 percent rejected, 95 percent passes
+        nc = {"endpoint": "/api/v1/generate", "model": "V5", "customMode": False, "instrumental": False,
+              "prompt": "x" * 2370, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("noncustom-79.json", nc), "music", 2)
+        nc2 = dict(nc); nc2["prompt"] = "x" * 2850
+        _expect_exit(write("noncustom-95.json", nc2), "music", 0)
+        # sounds prompt (max 500): 79 percent rejected, 95 percent passes
+        so3 = {"endpoint": "/api/v1/generate/sounds", "model": "V5", "prompt": "x" * 395, "soundTempo": 120}
+        _expect_exit(write("sounds-79.json", so3), "music", 2)
+        so4 = dict(so3); so4["prompt"] = "x" * 475
+        _expect_exit(write("sounds-95.json", so4), "music", 0)
+        # the exact add/cut counts appear in the report
+        import subprocess
+        r = subprocess.run([sys.executable, __file__, "--domain", "music", "--payload", str(td / "style-79.json")],
+                           capture_output=True, text=True)
+        if "ADD at least 10" not in r.stdout:
+            raise SystemExit("SELF-TEST FAIL: style floor message must name the exact chars to add (10)\n" + r.stdout)
+        # verbatim TTS text keeps only its ceiling: a short script is fine
+        _expect_exit(write("tts-short.json", {"model": "elevenlabs/text-to-speech-turbo-2-5",
+                                              "callBackUrl": "https://x/cb", "input": {"text": "hi"}}), "tts", 0)
+
+        ok = 32
     print(f"SELF-TEST PASS: {ok} checks green")
     return 0
 

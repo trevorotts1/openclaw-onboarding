@@ -28,6 +28,7 @@ Exit: 0 = every assertion passed; 1 = a case failed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -69,7 +70,28 @@ _AVOID_LIST = (
 )
 
 
+# Rule 12: the gate measures every prompt against the model maxLength (Skill 74 prompt-budget). The cases
+# below size their prompts as a percentage of that max (20,000 for GPT Image 2.5 and Nano Banana 2, 5,000
+# for Ideogram V3). The test runs the real adapter against its registry snapshot (hermetic HOME, no key).
+MAX = {"nano-banana-2": 20000, "ideogram-v3-design": 5000, "gpt-image-2-5-sunburst-text-to-image": 20000}
+_FILLER = ("Distinct visual decision number {i}: the focal element keeps clear hierarchy, quiet contrast "
+           "behind any text zone, and a palette applied exactly as briefed. ")
+
+
+def fit(body: str, model: str, pct: int = 97) -> str:
+    """Pad `body` with non-repeating visual-decision sentences to exactly pct percent of the model max."""
+    target = MAX[model] * pct // 100
+    out, i = body.strip(), 0
+    while len(out) < target:
+        i += 1
+        out += " " + _FILLER.format(i=i)
+    return out[:target]
+
+
 def main() -> int:
+    hermetic_home = tempfile.mkdtemp()  # no key and no cache: the adapter answers from its registry snapshot
+    os.environ["HOME"] = hermetic_home
+    os.environ.pop("KIE_API_KEY", None)
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
 
@@ -89,7 +111,8 @@ def main() -> int:
               "OK:" not in r1.stdout, r1.stdout)
 
         print("\n=== 2. text-overlay prompt routed to Nano Banana 2 -> exit 6, AF-SM-MODEL-ROUTING (now IMPOSSIBLE) ===")
-        p2 = _write(tmp, "p2.txt", _COMPLIANT_PROMPT_BODY)
+        p2 = _write(tmp, "p2.txt", fit(_COMPLIANT_PROMPT_BODY, "nano-banana-2"))
+        p2i = _write(tmp, "p2i.txt", fit(_COMPLIANT_PROMPT_BODY, "ideogram-v3-design"))
         avoid_file = _write(tmp, "avoid.txt", _AVOID_LIST)
         r2 = run_gate(
             "--prompt-file", str(p2), "--model", "nano-banana-2",
@@ -97,7 +120,6 @@ def main() -> int:
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
-            "--no-social-band",
         )
         check("exit code is 6", r2.returncode == 6, f"got {r2.returncode}, stderr={r2.stderr!r}")
         check("stderr names AF-SM-MODEL-ROUTING", "AF-SM-MODEL-ROUTING" in r2.stderr, r2.stderr)
@@ -106,25 +128,23 @@ def main() -> int:
 
         print("\n=== 3. SAME text-overlay prompt routed to Ideogram V3 DESIGN, all FORM fields present -> exit 0 ===")
         r3 = run_gate(
-            "--prompt-file", str(p2), "--model", "ideogram-v3-design",
+            "--prompt-file", str(p2i), "--model", "ideogram-v3-design",
             "--ratio", "4:5", "--pixels", "1080x1350",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
-            "--no-social-band",
         )
         check("exit code is 0", r3.returncode == 0, f"got {r3.returncode}, stderr={r3.stderr!r}")
         check("stdout confirms OK", r3.stdout.strip().startswith("OK:"), r3.stdout)
 
         print("\n=== 4a. graphics-department asset with NO QC receipt -> exit 6, AF-SM-INPUT-QC-GATE ===")
         r4a = run_gate(
-            "--prompt-file", str(p2), "--model", "ideogram-v3-design",
+            "--prompt-file", str(p2i), "--model", "ideogram-v3-design",
             "--ratio", "4:5", "--pixels", "1080x1350",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
-            "--no-social-band",
         )
         check("exit code is 6", r4a.returncode == 6, f"got {r4a.returncode}")
         check("stderr names AF-SM-INPUT-QC-GATE", "AF-SM-INPUT-QC-GATE" in r4a.stderr, r4a.stderr)
@@ -132,14 +152,13 @@ def main() -> int:
         print("=== 4b. SAME asset with a low-score receipt (7.0) -> still refused ===")
         low_receipt = _write(tmp, "low_receipt.json", json.dumps({"pass": True, "average": 7.0}))
         r4b = run_gate(
-            "--prompt-file", str(p2), "--model", "ideogram-v3-design",
+            "--prompt-file", str(p2i), "--model", "ideogram-v3-design",
             "--ratio", "4:5", "--pixels", "1080x1350",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
             "--qc-receipt-file", str(low_receipt),
-            "--no-social-band",
         )
         check("low-score (7.0 < 8.5) receipt still refused (exit 6)", r4b.returncode == 6,
               f"got {r4b.returncode}")
@@ -147,29 +166,27 @@ def main() -> int:
         print("=== 4c. SAME asset with a >=8.5 passing receipt -> exit 0 ===")
         good_receipt = _write(tmp, "good_receipt.json", json.dumps({"pass": True, "average": 8.9}))
         r4c = run_gate(
-            "--prompt-file", str(p2), "--model", "ideogram-v3-design",
+            "--prompt-file", str(p2i), "--model", "ideogram-v3-design",
             "--ratio", "4:5", "--pixels", "1080x1350",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
             "--asset-source", "graphics-department",
             "--qc-receipt-file", str(good_receipt),
-            "--no-social-band",
         )
         check("passing (8.9 >= 8.5) receipt clears the gate (exit 0)", r4c.returncode == 0,
               f"got {r4c.returncode}, stderr={r4c.stderr!r}")
 
         print("\n=== 5. non-text prompt on Nano Banana 2 -> passes (routing rule is text-overlay-only) ===")
-        p5 = _write(tmp, "p5.txt",
-                    "A photoreal lifestyle photo of a team collaborating, brand-appropriate, "
-                    "appropriate for the client's audience, no suggestive content. No on-image "
-                    "text.")
+        p5 = _write(tmp, "p5.txt", fit(
+            "A photoreal lifestyle photo of a team collaborating, brand-appropriate, "
+            "appropriate for the client's audience, no suggestive content. No on-image "
+            "text.", "nano-banana-2"))
         r5 = run_gate(
             "--prompt-file", str(p5), "--model", "nano-banana-2",
             "--ratio", "9:16", "--pixels", "1080x1920",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(avoid_file),
-            "--no-social-band",
             # no --text-overlay
         )
         check("exit code is 0 (no text overlay -> Nano Banana stays legitimate)",
@@ -206,44 +223,53 @@ def main() -> int:
             "than a flat, illustrated look, matching the client's established "
             "photographic house style across the last six months of campaign creative."
         )
-        assert len(p6_body.strip()) >= 1600, "fixture must clear the text_bearing_medium GIP floor"
-        p6 = _write(tmp, "p6.txt", p6_body)
+        p6 = _write(tmp, "p6.txt", fit(p6_body, "ideogram-v3-design"))
         r6 = run_gate(
             "--prompt-file", str(p6), "--model", "ideogram-v3-design",
             "--ratio", "4:5", "--pixels", "1080x1350",
             "--brand-colors", "#0B3D2E,#F5EFE0,#C9A24B",
             "--text-overlay", "Three Moves That Doubled Our Pipeline",
             "--avoid-list-file", str(avoid_file),
-            "--no-social-band",
         )
         check("exit code is 0", r6.returncode == 0, f"got {r6.returncode}, stderr={r6.stderr!r}")
         check("stdout confirms OK", r6.stdout.strip().startswith("OK:"), r6.stdout)
 
-        print("\n=== 7. F32: social-planner hard band 8,999/19,001 fail; 9,000/19,000 pass length ===")
+        print("\n=== 7. Rule 12: 79 percent rejected (chars to add), 95 and 100 percent pass, 101 percent rejected (chars to cut) ===")
+        gpt = "gpt-image-2-5-sunburst-text-to-image"
+        suffix = " brand-appropriate, appropriate for the client's audience, no suggestive content."
+
         def _sized(n: int) -> str:
-            base = "A useful visual decision sentence for the scene. "   # 49 chars
-            suffix = " brand-appropriate, appropriate for the client's audience, no suggestive content."
+            base = "A useful visual decision sentence for the scene. "
             return base + "x" * (n - len(base) - len(suffix)) + suffix
 
-        for size, expect_exit, label in ((8999, 3, "8999 FAILS"), (9000, 0, "9000 passes length"),
-                                         (19000, 0, "19000 passes length"), (19001, 3, "19001 FAILS")):
+        for size, expect_exit, label in ((15800, 3, "79 percent (15800) rejected"), (19000, 0, "95 percent (19000) passes"),
+                                         (20000, 0, "100 percent (20000) passes"), (20200, 3, "101 percent (20200) rejected")):
             pf = _write(tmp, f"band_{size}.txt", _sized(size))
             rr = run_gate(
-                "--prompt-file", str(pf), "--model", "gpt-image-2-5-sunburst-text-to-image",
+                "--prompt-file", str(pf), "--model", gpt,
                 "--ratio", "4:5", "--pixels", "1080x1350",
                 "--brand-colors", "#0B3D2E,#F5EFE0",
                 "--avoid-list-file", str(avoid_file),
                 # no --text-overlay so routing stays out of the picture
             )
-            check(f"F32 band {label} (exit {expect_exit})", rr.returncode == expect_exit,
+            check(f"band {label} (exit {expect_exit})", rr.returncode == expect_exit,
                   f"got {rr.returncode}, stderr={rr.stderr[:200]!r}")
             if expect_exit == 3:
-                check(f"F32 band {size}: failure names AF-PROMPT-LENGTH",
-                      "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
+                check(f"band {size}: failure names AF-PROMPT-LENGTH", "AF-PROMPT-LENGTH" in rr.stderr, rr.stderr)
+        r79 = run_gate("--prompt-file", str(tmp / "band_15800.txt"), "--model", gpt, "--ratio", "4:5",
+                       "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
+        check("79 percent rejection names the exact chars to add (200)", "ADD at least 200" in r79.stderr, r79.stderr)
+        r101 = run_gate("--prompt-file", str(tmp / "band_20200.txt"), "--model", gpt, "--ratio", "4:5",
+                        "--pixels", "1080x1350", "--brand-colors", "#0B3D2E", "--avoid-list-file", str(avoid_file))
+        check("101 percent rejection names the exact chars to cut (200)", "CUT exactly 200" in r101.stderr, r101.stderr)
+        r_old = run_gate("--prompt-file", str(_write(tmp, "old9000.txt", _sized(9000))), "--model", gpt,
+                         "--ratio", "4:5", "--pixels", "1080x1350", "--brand-colors", "#0B3D2E",
+                         "--avoid-list-file", str(avoid_file))
+        check("the retired 9,000 floor no longer passes (exit 3)", r_old.returncode == 3, str(r_old.returncode))
 
         print("\n=== 8. F32: GPT Image 2.5 + Agnes ELIGIBLE through verified adapters (capability routing) ===")
-        for model in ("gpt-image-2-5-sunburst-text-to-image", "agnes-image-2.1-flash"):
-            pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(9000))
+        for model, size in (("gpt-image-2-5-sunburst-text-to-image", 19500), ("agnes-image-2.1-flash", 9000)):
+            pf = _write(tmp, f"cap_{model.replace('.', '_')}.txt", _sized(size))
             rr = run_gate(
                 "--prompt-file", str(pf), "--model", model,
                 "--ratio", "4:5", "--pixels", "1080x1350",
@@ -255,7 +281,9 @@ def main() -> int:
             check(f"F32 spend receipt recorded for {model}", "F32 spend receipt" in rr.stdout, rr.stdout)
 
         print("\n=== 9. F32: nano-banana-2 still refused for a text-overlay prompt (GK-20 preserved) ===")
-        sized_overlay = _sized(9000).rstrip() + ' On-image text reads exactly: "Headline Here".'
+        sized_overlay = fit("A useful visual decision sentence for the scene. On-image text reads exactly: "
+                            "\"Headline Here\". brand-appropriate, appropriate for the client's audience, no "
+                            "suggestive content.", "nano-banana-2")
         r9 = run_gate(
             "--prompt-file", str(_write(tmp, "nb.txt", sized_overlay)),
             "--model", "nano-banana-2",

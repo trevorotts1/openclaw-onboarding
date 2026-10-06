@@ -1,5 +1,11 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.0.2] - 2026-10-06 - feat: prompt length check before a KIE submit (rule 12)
+
+### Added
+- `AIProvider._check_prompt_budget` runs before the `kieai` provider submits: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. A prompt below the 80 percent floor or above the model max is refused before any spend and the error names the exact characters to add or cut. No model id means the limit is UNKNOWN and no floor is enforced.
+- `tests/test_prompt_budget_contract.py`: 79 percent rejected, 95 and 100 percent reach submit, 101 percent rejected, no model id has no floor.
+
 ## [7.0.1] - 2026-09-28 — fix: venv out of the skill root + no duplicate SKILL.md registration
 
 ### Fixed (root cause — OpenClaw's skill scanner walked the runtime copy's venv on every rescan)

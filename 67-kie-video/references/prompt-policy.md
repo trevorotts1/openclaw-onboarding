@@ -1,5 +1,11 @@
 # BlackCEO Video Prompt Policy & Compression Guide
 
+> SUPERSEDED IN PART (owner order 2026-10-05, KIE prompt rule 12): the house band below (5,000 / 9,000 / 19,000)
+> and the per-rule target figures are replaced by the prompt budget: 95-100% of the model's character max, never
+> below 80%, never above 100%, limit from Skill 74 `prompt-budget` (live schema first, then the models.json cap).
+> `scripts/validate_prompt.py` calls the shared enforcer `shared-utils/kie_prompt_enforcer.py`. Rules A-E still
+> describe how each model's cap status is classified; the 17-domain structure and compression guidance still apply.
+
 Authoritative Reference: BlackCEO Execution Spec §5 (Prompt Rules A–E, Structure, Expansion, Compression).
 
 ---

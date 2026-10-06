@@ -62,6 +62,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # cross-test fixture i
 
 import phase_verifiers as PV  # noqa: E402
 import prompt_gate as PG  # noqa: E402
+_PGB = PG.length_budget()  # KIE rule 12 numbers via the shared enforcer; the 9,000/18,000 constants are retired
+PG_PROMPT_CHAR_FLOOR, PG_PROMPT_CHAR_CEILING = _PGB["floor"], _PGB["ceiling"]
 from presentation_job import dispatcher as D  # noqa: E402
 from presentation_job.manifest import Manifest  # noqa: E402
 from presentation_job.state import StateStore  # noqa: E402
@@ -293,7 +295,7 @@ def test_verify_accepts_an_in_band_design_prompt(tmp_path):
     """NEGATIVE CONTROL: without this, the test above would pass even if the
     verifier failed every design prompt, and no resume could ever reuse work."""
     rd, _mf = _run_with_live_artifacts(
-        tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
+        tmp_path, sizes={pid: PG_PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
         gate_clean=True)
     for pid, _rel, _n in DESIGN:
         ok, reasons = PV.verify(pid, rd)
@@ -304,10 +306,9 @@ def test_verify_band_is_read_from_prompt_gate(tmp_path, monkeypatch):
     rd, _mf = _run_with_live_artifacts(
         tmp_path, sizes={pid: 30000 for pid, _r, _n in DESIGN}, gate_clean=True)
     ok, reasons = PV.verify(DESIGN[0][0], rd)
-    assert ok is False, "30,000 chars is over the 18,000 ceiling"
+    assert ok is False, "30,000 chars is over the rule 12 max"
     assert "AF-P2" in " ".join(reasons), reasons
-    monkeypatch.setattr(PG, "PROMPT_CHAR_CEILING", 60000)
-    monkeypatch.setattr(PG, "PROMPT_CHAR_FLOOR", 20000)
+    monkeypatch.setattr(PG, "length_problems", lambda text, model=None: [])  # the gate's band moved
     ok, reasons = PV.verify(DESIGN[0][0], rd)
     assert ok is True, (
         "the verifier must follow prompt_gate's constants, not a second copy: "
@@ -367,9 +368,12 @@ def _stub_dispatch(monkeypatch, parts_for):
     calls: list = []
 
     def fake(system_prompt, user_prompt, *, phase_id, run_dir, **kw):
+        import re as _re
         calls.append(user_prompt)
         parts = parts_for()
-        return (parts[min(len(calls), len(parts)) - 1],
+        _m = _re.search(r"PART (\d+) OF", user_prompt)  # pick by the unit's own ordinal: units run concurrently
+        _k = int(_m.group(1)) if _m else len(calls)
+        return (parts[min(_k, len(parts)) - 1],
                 {"request_id": "req-stub"}, {"provider": "stub", "model": "stub"})
 
     monkeypatch.setattr(D, "dispatch_complete", fake)
@@ -397,7 +401,7 @@ def test_pending_phase_is_not_skipped_and_is_reauthoried(tmp_path, monkeypatch, 
         "the dispatcher's idempotent pre-check re-blessed the artifact")
     assert len(calls) == 3, f"expected a real 3-unit re-author, got {len(calls)}"
     text = (rd / rel).read_text(encoding="utf-8").strip()
-    assert PG.PROMPT_CHAR_FLOOR <= len(text) <= PG.PROMPT_CHAR_CEILING, (
+    assert PG_PROMPT_CHAR_FLOOR <= len(text) <= PG_PROMPT_CHAR_CEILING, (
         f"re-authored artifact is {len(text)} chars, outside the band")
     assert PG.prompt_problems(text, "One Request. One Package.") == []
 
@@ -495,14 +499,14 @@ def test_verifier_agrees_with_the_consumer_gate(tmp_path):
     re-author each."""
     for code, mutate in MUTATIONS:
         rd, _mf = _run_with_live_artifacts(
-            tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
+            tmp_path, sizes={pid: PG_PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
             gate_clean=True)
         rel = "prompts/sales.design.txt"
         # Built 200 chars under the ceiling so a mutation that GROWS the text
         # (the AF-R3 replacement is +10) cannot tip it out of band and turn this
         # into an AF-P2 test by accident.
-        text = mutate(_gate_clean_prompt(PG.PROMPT_CHAR_CEILING - 200))
-        assert len(text.strip()) <= PG.PROMPT_CHAR_CEILING, (
+        text = mutate(_gate_clean_prompt(PG_PROMPT_CHAR_CEILING - 200))
+        assert len(text.strip()) <= PG_PROMPT_CHAR_CEILING, (
             f"must stay IN band: {len(text.strip())}")
         _rewrite_artifact(rd, "P-U-DESIGN-SALES", rel, text)
 
@@ -532,10 +536,10 @@ def test_verifier_strips_like_the_consumer_does(tmp_path):
     literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED
     by the consumer -- the exact one-directional divergence the review proved."""
     rd, _mf = _run_with_live_artifacts(
-        tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING - 200 for pid, _r, _n in DESIGN},
+        tmp_path, sizes={pid: PG_PROMPT_CHAR_CEILING - 200 for pid, _r, _n in DESIGN},
         gate_clean=True)
     rel = "prompts/sales.design.txt"
-    base = _gate_clean_prompt(PG.PROMPT_CHAR_CEILING - 200)
+    base = _gate_clean_prompt(PG_PROMPT_CHAR_CEILING - 200)
     # Rewrite every `Do not ` so that the ONLY surviving one is the final
     # trailing-space literal -- then let the fixture's "\n" make it a trailing-space EOF.
     text = base.replace("Do not ", "Never ").rstrip() + "\nDo not "
@@ -562,11 +566,11 @@ def test_banked_predicate_applies_the_whole_gate(tmp_path):
     and P-U-DESIGN-VSL."""
     from presentation_job import artifacts as A
     rd, _mf = _run_with_live_artifacts(
-        tmp_path, sizes={pid: PG.PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
+        tmp_path, sizes={pid: PG_PROMPT_CHAR_CEILING for pid, _r, _n in DESIGN},
         gate_clean=True)
     rel = "prompts/sales.design.txt"
-    text = _drop_negative_block(_gate_clean_prompt(PG.PROMPT_CHAR_CEILING))
-    assert len(text.strip()) <= PG.PROMPT_CHAR_CEILING, "must stay IN band"
+    text = _drop_negative_block(_gate_clean_prompt(PG_PROMPT_CHAR_CEILING))
+    assert len(text.strip()) <= PG_PROMPT_CHAR_CEILING, "must stay IN band"
     _rewrite_artifact(rd, "P-U-DESIGN-SALES", rel, text)
 
     assert PG.prompt_problems(text.strip()), "control must fail the gate"

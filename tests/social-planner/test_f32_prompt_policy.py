@@ -4,9 +4,10 @@ test_f32_prompt_policy.py — F32 social-planner prompt structure + length polic
 (QC-F32).
 
 Covers:
-  - The count rule: len(unicodedata.normalize("NFC", final).strip()) with
-    8,999 / 9,000 / 19,000 / 19,001 NFC boundaries (8999+19001 fail; 9000+19000
-    pass length but still require semantic QC);
+  - The count rule: len(unicodedata.normalize("NFC", final).strip()) with the
+    rule 12 boundaries for GPT Image 2.5 (maxLength 20,000, from the shared
+    enforcer): 15,999 and 20,001 fail; 16,000 (floor), 19,000 (95 percent) and
+    20,000 (max) pass length but still require semantic QC);
   - Python/TS parity for the counting rule (TS mirror: Array.from(normalized
     .trim()).length) via a shared fixture JSON both implementations agree on;
   - padding rejection (repeated sentences / duplicated n-grams) BEFORE spend;
@@ -15,7 +16,7 @@ Covers:
     per-reference instructions, never global;
   - policy + spend receipt: hash + count + policy version + provider/model +
     capability source recorded; house band distinct from vendor caps;
-  - the pregen gate enforces the band and capability-metadata routing (GPT
+  - the pregen gate enforces the rule 12 band and capability-metadata routing (GPT
     Image 2 + Agnes eligible through verified adapters; Ideogram allowlist gone).
 
 Run:  python3 -m unittest discover -s tests/social-planner -p 'test_f*.py'
@@ -25,8 +26,14 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 import unicodedata
+
+# Hermetic: the shared enforcer runs the real Skill 74 adapter against its registry snapshot
+# (no key, no cache), so the rule 12 numbers are the same on every box.
+os.environ["HOME"] = tempfile.mkdtemp()
+os.environ.pop("KIE_API_KEY", None)
 
 _ONB_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SHARED = os.path.join(_ONB_ROOT, "shared-utils")
@@ -66,38 +73,48 @@ def sized(n: int) -> str:
 
 
 class TestCountRuleBoundaries(unittest.TestCase):
-    """8,999 and 19,001 fail; 9,000 and 19,000 pass length (semantic QC still
-    required). Measured on NFC-normalized, stripped payloads."""
+    """Rule 12 for GPT Image 2.5 (max 20,000): 15,999 and 20,001 fail; 16,000 (floor),
+    19,000 and 20,000 pass length (semantic QC still required). Measured on
+    NFC-normalized, stripped payloads."""
 
     def test_count_rule_is_the_contract(self):
         self.assertEqual(count("  Hello  "), 5)
         self.assertEqual(count("🦄🦄"), 2)  # code points, not UTF-16 units
-        self.assertEqual(count("café  "), 4)  # NFD pair -> NFC composed
+        self.assertEqual(count("café  "), 4)  # NFD pair -> NFC composed
 
-    def test_8999_fails_validate_final(self):
-        v = spc.validate_final(sized(8999))
+    def test_15999_fails_validate_final_and_names_chars_to_add(self):
+        v = spc.validate_final(sized(15999))
         self.assertFalse(v["ok"])
-        self.assertTrue(any("AF-PROMPT-LENGTH" in p and "below" in p for p in v["problems"]),
+        self.assertTrue(any("AF-PROMPT-LENGTH" in p and "ADD at least 1 chars" in p for p in v["problems"]),
                         v["problems"])
-        self.assertEqual(v["count"], 8999)
+        self.assertEqual(v["count"], 15999)
 
-    def test_9000_passes_length(self):
-        v = spc.validate_final(sized(9000))
-        self.assertTrue(v["ok"], v["problems"])
-        self.assertEqual(v["count"], 9000)
-        self.assertEqual(v["house_band"], {"min": 9000, "max": 19000})
-
-    def test_19000_passes_length(self):
+    def test_79_percent_fails_95_percent_passes(self):
+        self.assertFalse(spc.validate_final(sized(15800))["ok"])
         v = spc.validate_final(sized(19000))
         self.assertTrue(v["ok"], v["problems"])
-        self.assertEqual(v["count"], 19000)
+        self.assertEqual(v["band"]["status"], "OK")
 
-    def test_19001_fails_validate_final(self):
-        v = spc.validate_final(sized(19001))
+    def test_16000_floor_passes_length_with_target_warning(self):
+        v = spc.validate_final(sized(16000))
+        self.assertTrue(v["ok"], v["problems"])
+        self.assertEqual(v["count"], 16000)
+        self.assertEqual((v["band"]["floor"], v["band"]["target_min"], v["band"]["max"]), (16000, 19000, 20000))
+
+    def test_20000_passes_length(self):
+        v = spc.validate_final(sized(20000))
+        self.assertTrue(v["ok"], v["problems"])
+        self.assertEqual(v["count"], 20000)
+
+    def test_20001_fails_validate_final_and_names_chars_to_cut(self):
+        v = spc.validate_final(sized(20001))
         self.assertFalse(v["ok"])
-        self.assertTrue(any("AF-PROMPT-LENGTH" in p and "above" in p for p in v["problems"]),
+        self.assertTrue(any("AF-PROMPT-LENGTH" in p and "CUT exactly 1 chars" in p for p in v["problems"]),
                         v["problems"])
-        self.assertEqual(v["count"], 19001)
+        self.assertEqual(v["count"], 20001)
+
+    def test_old_9000_house_floor_is_retired(self):
+        self.assertFalse(spc.validate_final(sized(9000))["ok"])
 
     def test_astral_chars_count_as_code_points(self):
         # 4500 unicorn emoji = 4500 code points (9000 UTF-16 units) — must be
@@ -158,9 +175,16 @@ class TestPaddingRejected(unittest.TestCase):
         # full in-band brief.
         r = spc.compile_prompt({"audience": "dental patients", "theme": "brighter smile"},
                                "agnes", "agnes-image-2.1-flash")
+        self.assertTrue(r["ok"], r["problems"])  # Agnes publishes no limit: no floor, no ceiling
+        self.assertGreater(r["count"], 0)
+        self.assertLess(r["token_estimate"], 20000 // 2)
+
+    def test_kie_short_brief_is_rewritten_into_the_rule_12_band(self):
+        r = spc.compile_prompt({"audience": "dental patients", "theme": "brighter smile"},
+                               "kie", "gpt-image-2-5-sunburst-text-to-image")
         self.assertTrue(r["ok"], r["problems"])
-        self.assertTrue(9000 <= r["count"] <= 19000, r["count"])
-        self.assertLess(r["token_estimate"], 19000 // 2)
+        self.assertTrue(19000 <= r["count"] <= 20000, r["count"])  # 95 to 100 percent of 20,000
+        self.assertEqual(r["band"]["status"], "OK")
 
 
 class TestLogoVsStyleConflict(unittest.TestCase):
@@ -210,8 +234,9 @@ class TestPolicyAndReceipt(unittest.TestCase):
     def test_policy_file_scope_and_band(self):
         with open(_POLICY, encoding="utf-8") as f:
             pol = json.load(f)
-        self.assertEqual(pol["house_band"]["min_chars"], 9000)
-        self.assertEqual(pol["house_band"]["max_chars"], 19000)
+        self.assertNotIn("house_band", pol)  # no fixed numbers: rule 12 via the shared enforcer
+        self.assertEqual(pol["length_rule"]["enforcer"], "shared-utils/kie_prompt_enforcer.py")
+        self.assertEqual(pol["length_rule"]["floor_percent_of_max"], 80)
         self.assertIn("SOCIAL PLANNER ONLY", pol["scope"])
         kie = pol["providers"]["kie-gpt-image-2-5"]
         self.assertEqual(kie["vendor_cap_chars"], 20000)  # published schema cap
@@ -229,28 +254,27 @@ class TestPolicyAndReceipt(unittest.TestCase):
             self.assertIn(field, r, field)
         self.assertEqual(r["count"], count(r["final_prompt"]))
         self.assertEqual(r["vendor_cap_chars"], 20000)
+        self.assertEqual(r["band"]["max"], 20000)
         self.assertGreater(len(r["hash"]), 0)
 
     def test_hash_is_stable_and_payload_exact(self):
-        v1 = spc.validate_final(sized(9000))
-        v2 = spc.validate_final(sized(9000))
+        v1 = spc.validate_final(sized(19000))
+        v2 = spc.validate_final(sized(19000))
         self.assertEqual(v1["hash"], v2["hash"])
-        normalized = unicodedata.normalize("NFC", sized(9000)).strip()
+        normalized = unicodedata.normalize("NFC", sized(19000)).strip()
         import hashlib
         self.assertEqual(v1["hash"], hashlib.sha256(normalized.encode("utf-8")).hexdigest())
 
-    def test_unrelated_bands_untouched(self):
+    def test_prompt_bands_hold_no_length_numbers(self):
         bands_path = os.path.join(_ONB_ROOT, "45-design-intelligence-library",
                                   "library", "_system", "prompt-bands.json")
         with open(bands_path, encoding="utf-8") as f:
             bands = json.load(f)
-        # pre-existing GIP bands keep their numbers (scoped override only adds)
-        self.assertEqual(bands["bands"]["text_bearing_medium"]["min"], 1600)
-        self.assertEqual(bands["bands"]["text_bearing_medium"]["max"], 4500)
-        self.assertEqual(bands["bands"]["medium"]["min"], 800)
-        scoped = bands["bands"]["social_planner_image_scoped_override"]
-        self.assertEqual((scoped["min"], scoped["max"]), (9000, 19000))
-        self.assertTrue(scoped["hard_fail_closed"])
+        self.assertEqual(bands["length_source"]["enforcer"], "shared-utils/kie_prompt_enforcer.py")
+        for bid, band in bands["bands"].items():
+            for key in ("min", "max", "boundaries"):
+                self.assertNotIn(key, band, f"{bid} reintroduced a hard-coded {key}")
+        self.assertNotIn("social_planner_image_scoped_override", bands["bands"])  # the policy file + enforcer own it
 
 
 class TestPregenGateF32(unittest.TestCase):
@@ -281,29 +305,35 @@ class TestPregenGateF32(unittest.TestCase):
             except OSError:
                 pass
 
-    def test_gate_8999_fails_9000_passes(self):
-        proc = self._run_gate(sized(8999), "gpt-image-2-5-sunburst-text-to-image")
+    def test_gate_15999_fails_16000_passes(self):
+        proc = self._run_gate(sized(15999), "gpt-image-2-5-sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("AF-PROMPT-LENGTH", proc.stderr)
-        proc = self._run_gate(sized(9000), "gpt-image-2-5-sunburst-text-to-image")
+        self.assertIn("ADD at least 1 chars", proc.stderr)
+        proc = self._run_gate(sized(16000), "gpt-image-2-5-sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-    def test_gate_19000_passes_19001_fails(self):
-        proc = self._run_gate(sized(19000), "agnes-image-2.1-flash")
+    def test_gate_20000_passes_20001_fails(self):
+        proc = self._run_gate(sized(20000), "gpt-image-2-5-sunburst-text-to-image")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        proc = self._run_gate(sized(19001), "agnes-image-2.1-flash")
+        proc = self._run_gate(sized(20001), "gpt-image-2-5-sunburst-text-to-image")
         self.assertEqual(proc.returncode, 3, proc.stderr)
-        self.assertIn("AF-PROMPT-LENGTH", proc.stderr)
+        self.assertIn("CUT exactly 1 chars", proc.stderr)
+
+    def test_gate_agnes_has_no_published_limit_so_no_floor(self):
+        for n in (9000, 19001):
+            proc = self._run_gate(sized(n), "agnes-image-2.1-flash")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_gate_capability_routing_admits_gpt_image25_and_agnes(self):
-        for model in ("gpt-image-2-5-sunburst-text-to-image", "agnes-image-2.1-flash",
-                      "ideogram-v3-design"):
-            proc = self._run_gate(sized(9000), model)
+        for model, n in (("gpt-image-2-5-sunburst-text-to-image", 19000), ("agnes-image-2.1-flash", 9000),
+                         ("ideogram-v3-design", 4800)):
+            proc = self._run_gate(sized(n), model)
             self.assertEqual(proc.returncode, 0,
                              f"{model} refused: {proc.stderr}")
 
     def test_gate_capability_routing_refuses_nano_banana_for_text(self):
-        prompt = sized(9000).rstrip() + ' On-image text reads exactly: "Headline Here".'
+        prompt = sized(19000 - 40).rstrip() + ' On-image text reads exactly: "Headline Here".'
         proc = self._run_gate(prompt, "nano-banana-2", text_overlay="Headline Here")
         self.assertEqual(proc.returncode, 6, proc.stderr)
         self.assertIn("AF-SM-MODEL-ROUTING", proc.stderr)

@@ -8,7 +8,7 @@ description: >
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
 metadata:
-  version: "2.1.0"
+  version: "2.1.1"
   priority: HIGH
 ---
 

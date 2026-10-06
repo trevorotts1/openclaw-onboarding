@@ -315,7 +315,7 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
         # A part inside its own share of the shared band (PD-TEST-098).
         floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
         part = f"PART for slide {n}. " + ("specific art direction. " *
-                                          (floor_share // 20 + 40))
+                                          (((floor_share + _ceil) // 2) // 24))
         return part, {"request_id": "r"}, {"provider": "s", "model": "m"}
 
     monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)
@@ -336,9 +336,9 @@ def test_design_text_units_join_in_order(tmp_path, monkeypatch):
     # consumer enforces -- the property whose absence parked three phases.
     assert 3 == len(calls)
     import prompt_gate as _pg
-    assert _pg.PROMPT_CHAR_FLOOR <= len(body.strip()) <= _pg.PROMPT_CHAR_CEILING, (
-        f"joined design prompt is {len(body.strip())} chars, outside the "
-        f"{_pg.PROMPT_CHAR_FLOOR}-{_pg.PROMPT_CHAR_CEILING} band")
+    assert not _pg.length_problems(body.strip()), (
+        f"joined design prompt is {len(body.strip())} chars, outside the rule 12 band: "
+        f"{_pg.length_problems(body.strip())}")
 
 # ---------------------------------------------------------------------------
 # PD-TEST-119 / 120 / 121 -- AN ACTIONABLE REPAIR RECEIPT VOIDS THE BANK.
@@ -374,7 +374,7 @@ def _design_env2(tmp_path, monkeypatch, *, verify_ok):
         calls.append(user_prompt)
         floor_share, _ceil = D.design_unit_char_budget(int(m.group(2)))
         return (f"PART for slide {n}. "
-                + ("specific art direction. " * (floor_share // 20 + 40)),
+                + ("specific art direction. " * (((floor_share + _ceil) // 2) // 24)),
                 {"request_id": "r"}, {"provider": "s", "model": "m"})
 
     monkeypatch.setattr(D, "dispatch_complete", fake_dispatch)

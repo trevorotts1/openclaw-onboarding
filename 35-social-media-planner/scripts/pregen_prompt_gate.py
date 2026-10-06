@@ -46,11 +46,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import unicodedata
 from pathlib import Path
 from typing import Optional
+
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_enforcer()
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -61,14 +79,17 @@ EXIT_QUALITY = 6
 # ratio outside this set is a FORM failure — it does not match any real deliverable slot.
 KNOWN_RATIOS = {"4:5", "2:3", "9:16", "16:9", "1:1"}
 
-# F32 social-planner house band (shared-utils/social_prompt_policy.json): every
-# social-planner image prompt for GPT Image 2.5 (Kie) and Agnes carries 9,000-19,000
-# stripped Unicode chars (NFC, trimmed) on the FINAL payload. 8,999 FAILS, 9,000
-# passes length (semantic QC still required), 19,000 passes, 19,001 FAILS. This is a
-# production house policy DISTINCT from vendor caps (Kie GPT Image 2.5 published
-# maxLength 20000; Agnes NOT_PUBLISHED).
-SOCIAL_MIN_CHARS = 9000
-SOCIAL_MAX_CHARS = 19000
+# Prompt length is KIE rule 12 (owner order 2026-10-05), enforced by the shared enforcer
+# shared-utils/kie_prompt_enforcer.py: 95-100 percent of the model's maxLength, floor 80 percent,
+# ceiling 100 percent, limit from Skill 74 prompt-budget. The F32 count rule is kept: the FINAL
+# transmitted payload is NFC-normalized and trimmed before it is measured. This module keeps no
+# floor or ceiling of its own. Only a social-planner model label is mapped to its KIE model id.
+_KIE_ID = {
+    "ideogram-v3-design": "ideogram/v3-text-to-image",
+    "ideogram-v3": "ideogram/v3-text-to-image",
+    "gpt-image-2-5-sunburst": "gpt-image-2-5-sunburst-text-to-image",
+    "gpt-image-2": "gpt-image-2-text-to-image",
+}
 
 # Capability-metadata routing (F32): text-rendering capability comes from
 # shared-utils/model-capabilities.json — NOT from a hardcoded model-name allowlist.
@@ -189,17 +210,16 @@ def check_prompt(
     avoid_list_text: Optional[str],
     asset_source: str,
     qc_receipt: Optional[dict],
-    social_band: bool = True,
+    social_band: bool = True,  # kept for callers; rule 12 has no opt-out, so it is ignored
 ) -> GateResult:
-    """Pure function — no I/O, no subprocess. The CLI (`cmd_check`) does all file/arg
-    handling and calls this. Easy to unit-test directly, mirrors diu_validator.py's
-    band_problems() split (accumulate all problems, never short-circuit on the first).
+    """No file I/O (the length check runs the shared enforcer, which calls Skill 74
+    prompt-budget). The CLI (`cmd_check`) does all file/arg handling and calls this.
+    Mirrors diu_validator.py's band_problems() split (accumulate all problems, never
+    short-circuit on the first).
 
-    F32: with social_band=True (the default for every Skill 35 image prompt), the
-    FINAL transmitted payload is length-gated at 9,000-19,000 stripped Unicode
-    chars (NFC, trimmed) — 8,999 fails, 9,000 passes length, 19,000 passes,
-    19,001 fails. Routing uses capability metadata (model-capabilities.json), not
-    a hardcoded allowlist."""
+    Rule 12: the FINAL transmitted payload (NFC, trimmed) is length-gated at 95-100 percent
+    of the model maxLength, floor 80 percent, by the shared enforcer. Routing uses capability
+    metadata (model-capabilities.json), not a hardcoded allowlist."""
     res = GateResult()
     prompt_lc = prompt_text.lower()
     model_norm = (model or "").strip().lower()
@@ -254,24 +274,15 @@ def check_prompt(
             "'brand-appropriate, appropriate for the client's audience, no suggestive "
             "content' — this is non-negotiable, not implied.")
 
-    # --- F32 LENGTH gate (FORM-level: a prompt outside the house band is NOT
-    # submitted) — measured on the FINAL transmitted payload. The caller is
-    # responsible for having already appended reference instructions and
-    # negatives to the file it passes here (validate AFTER references+negatives).
-    if social_band:
-        count = _count_social_chars(prompt_text)
-        if count < SOCIAL_MIN_CHARS:
+    # --- Rule 12 LENGTH gate (FORM-level: a prompt outside the band is NOT submitted) --
+    # Measured on the FINAL transmitted payload. The caller has already appended reference
+    # instructions and negatives to the file it passes here.
+    if (prompt_text or "").strip():
+        v = KPE.check(_KIE_ID.get(model_norm, model_norm), unicodedata.normalize("NFC", prompt_text))
+        if not v["ok"]:
             res.form_problems.append(
-                f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — below "
-                f"the social-planner house floor {SOCIAL_MIN_CHARS} ({SOCIAL_MIN_CHARS - 1} "
-                f"fails, {SOCIAL_MIN_CHARS} passes). Expand with useful visual decisions via "
-                "shared-utils/social_prompt_compiler.py — never repetitive filler.")
-        elif count > SOCIAL_MAX_CHARS:
-            res.form_problems.append(
-                f"AF-PROMPT-LENGTH: final prompt is {count} stripped Unicode chars — above "
-                f"the social-planner house ceiling {SOCIAL_MAX_CHARS} "
-                f"({SOCIAL_MAX_CHARS + 1} fails, {SOCIAL_MAX_CHARS} passes). Condense "
-                "without losing required meaning — never truncate silently.")
+                f"AF-PROMPT-LENGTH: {v['message']}. Rewrite with useful visual decisions via "
+                "shared-utils/social_prompt_compiler.py (never repetitive filler), up to 3 tries, then escalate.")
 
     # --- QUALITY / ROUTING (exit 6): correct once FORM is complete ----------------------
     # F32: capability-metadata routing via model-capabilities.json. GPT Image 2.5 and
@@ -343,6 +354,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         avoid_list_text = avp.read_text(encoding="utf-8")
 
+    if args.no_social_band:
+        print("NOTE: --no-social-band is retired and ignored; the rule 12 length band always applies.", file=sys.stderr)
     qc_receipt = _read_qc_receipt(args.qc_receipt_file) if args.qc_receipt_file else None
     if args.qc_receipt_file and qc_receipt is None:
         print(f"FATAL: --qc-receipt-file could not be read/parsed as JSON: "
@@ -360,7 +373,6 @@ def cmd_check(args: argparse.Namespace) -> int:
         avoid_list_text=avoid_list_text,
         asset_source=args.asset_source,
         qc_receipt=qc_receipt,
-        social_band=not args.no_social_band,
     )
 
     if result.ok:
@@ -370,9 +382,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         print(f"OK: prompt clears the Skill 35 pre-generation gate "
               f"(model={args.model}, ratio={args.ratio}, platform={args.platform}).")
-        if not args.no_social_band:
-            print(f"    F32 spend receipt: count={count} chars (house band "
-                  f"{SOCIAL_MIN_CHARS}-{SOCIAL_MAX_CHARS}), sha256={digest}")
+        print(f"    F32 spend receipt: count={count} chars (rule 12 band for "
+              f"{args.model}), sha256={digest}")
         return EXIT_OK
 
     print("!" * 78, file=sys.stderr)
@@ -418,9 +429,8 @@ def build_parser() -> argparse.ArgumentParser:
                                               "(required when --asset-source is "
                                               "graphics-department)")
     ck.add_argument("--no-social-band", action="store_true",
-                    help="opt out of the F32 social-planner 9,000-19,000 hard length "
-                         "band (e.g. when gating a graphics-department asset prompt). "
-                         "Default: the band is ENFORCED on every Skill 35 image prompt.")
+                    help="DEPRECATED and ignored: KIE prompt rule 12 has no opt-out. The length band is "
+                         "95-100 percent of the model maxLength, floor 80 percent, and always applies.")
     ck.set_defaults(func=cmd_check)
     return ap
 

@@ -189,9 +189,9 @@ DESIGN_WIDTH_PX, DESIGN_HEIGHT_PX = 2560, 1440  # documented pixel pair for 16:9
 PNG_MIN_BYTES = 102_400
 PNG_MAGIC = b"\x89PNG"
 
-# Prompt char band: the SAME 9,000-char HARD floor slide prompts carry
-# (SOP 9.10 step 4: "at least 9,000 characters — the same hard floor as slide prompts").
-PROMPT_CHAR_FLOOR = 9_000
+# Prompt length: the SAME KIE rule 12 band slide prompts carry (owner order 2026-10-05: 95 to 100
+# percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, via the shared
+# enforcer). This script keeps no band of its own: prompt_gate.prompt_problems (below) measures it.
 
 # Poll ladder (mirrors build_deck._poll_interval_for_elapsed + POLL_MAX_SECONDS).
 POLL_FAST_S, POLL_FAST_WINDOW_S = 10, 120
@@ -694,9 +694,10 @@ def _verify_entry_nonce(run_dir: Path) -> bool:
 # Prompt resolution — VERBATIM, never re-composed (the build_deck slide rule).
 # ---------------------------------------------------------------------------
 def resolve_prompt(run_dir: Path) -> tuple[str, Path]:
-    """Locate + read working/prompts/infographic-prompt.txt and enforce the 9,000-char
-    HARD floor (SOP 9.10 step 4). Returns (prompt_text, prompt_path). Exits 1 with a
-    named reason on any failure — this script never authors its own prompt."""
+    """Locate + read working/prompts/infographic-prompt.txt and enforce the shared rule 12
+    length band (SOP 9.10 step 4: the same floor as slide prompts). Returns (prompt_text,
+    prompt_path). Exits 1 with a named reason on any failure — this script never authors
+    its own prompt."""
     p = run_dir / INFOGRAPHIC_PROMPT_REL
     if not p.is_file():
         # SOP 9.10: a run may legitimately declare infographic_skipped in
@@ -723,14 +724,9 @@ def resolve_prompt(run_dir: Path) -> tuple[str, Path]:
         print(f"FATAL: infographic prompt unreadable: {p}: {exc}", file=sys.stderr)
         raise SystemExit(1)
     stripped = text.strip()
-    if len(stripped) < PROMPT_CHAR_FLOOR:
-        print(f"FATAL: infographic prompt is {len(stripped)} chars — under the "
-              f"{PROMPT_CHAR_FLOOR}-char HARD floor (SOP 9.10 step 4, the same floor as "
-              "slide prompts, AF-P1/AF-PROMPT-FLOOR). A thin prompt is a stub; re-author "
-              "it to the 15-element standard and re-run.", file=sys.stderr)
-        raise SystemExit(1)
-    # SOP 9.10 step 5: the rest of the shared rich-prompt gate rides TOO — the same
-    # accumulating gate the deck's slide prompts pass: ceiling, structural blocks
+    # SOP 9.10 steps 4 and 5: the shared rich-prompt gate, the same accumulating gate the
+    # deck's slide prompts pass: the rule 12 length band (floor AF-P1, ceiling AF-P2, each
+    # naming the exact characters to add or cut), structural blocks
     # ([ARCHETYPE / DO-NOT BLOCK / "Do not "), the 8-class negative block, the
     # per-string spelling-lock, prompt density, and the demographic landmines (AF-R3).
     # A prompt that would be refused for a slide is refused for the infographic —
@@ -761,6 +757,7 @@ def _gate_prompt_via_build_deck(prompt_text: str) -> list:
     import build_deck as _bd
     prompt_lc = prompt_text.lower()
     problems: list = []
+    problems.extend(f"{code}: {msg}" for code, msg in _bd._length_problems(prompt_text))
     missing = _bd._missing_structural_blocks(prompt_lc)
     if missing:
         problems.append("missing required structural block(s): " + ", ".join(missing))
@@ -884,7 +881,7 @@ def run(run_dir: Path, out_arg: Path | None = None, force: bool = False) -> int:
 # ---------------------------------------------------------------------------
 def resolve_design_prompt(run_dir: Path, page: str) -> tuple[str, Path]:
     """Locate + read prompts/<page>.design.txt AT THE RUN ROOT and enforce the SAME
-    9,000-char HARD floor + shared rich-prompt gate resolve_prompt enforces for
+    rule 12 length band + shared rich-prompt gate resolve_prompt enforces for
     the infographic (one gate, every paid render). Returns (prompt_text, path).
     Exits 1 with a named reason on any failure — never a placeholder render."""
     if page not in DESIGN_PAGES:
@@ -908,13 +905,6 @@ def resolve_design_prompt(run_dir: Path, page: str) -> tuple[str, Path]:
         print(f"FATAL: design prompt unreadable: {p}: {exc}", file=sys.stderr)
         raise SystemExit(1)
     stripped = text.strip()
-    if len(stripped) < PROMPT_CHAR_FLOOR:
-        print(f"FATAL: {page} design prompt is {len(stripped)} chars — under the "
-              f"{PROMPT_CHAR_FLOOR}-char HARD floor (SOP 9.10 step 4, the same "
-              "floor as slide prompts, AF-P1/AF-PROMPT-FLOOR). A thin prompt is a "
-              "stub; re-author it to the 15-element standard and re-run.",
-              file=sys.stderr)
-        raise SystemExit(1)
     import prompt_gate as _pg
     problems: list = []
     try:
@@ -1029,7 +1019,7 @@ def run_design(run_dir: Path, page: str, force: bool = False) -> int:
 # the SHARED rich-prompt gate on every run, so the selftest must exercise the
 # full pipeline with a prompt that honestly clears it — never padding.
 # ---------------------------------------------------------------------------
-SELFTEST_PROMPT = '''\
+_SELFTEST_PROMPT_BASE = '''\
 [ARCHETYPE A4] [SECTION: ONE-PAGE INFOGRAPHIC] [LADDER: TYPE-DOMINANT PUNCH + EMBEDDED STRUCTURED LIST]
 ONE BIG IDEA: From scattered ideas to a clear, sellable offer in one sitting — one vertical page the audience keeps.
 
@@ -1181,6 +1171,33 @@ or upscale-compress the page. Do not add a second page, a fold line, or a QR pla
 '''
 
 
+_SELFTEST_PROMPT_CACHE: list = []
+
+
+def selftest_prompt() -> str:
+    """The worked-example fixture above, deepened with distinct fixture clauses so it sits in the KIE rule 12 band
+    (the middle of the 95 to 100 percent target, read from the shared enforcer through prompt_gate). It is what
+    resolve_prompt's shared gate must clear in the selftest and in tests that need a gate-clearing prompt."""
+    if not _SELFTEST_PROMPT_CACHE:
+        import prompt_gate as _pg_fx
+        bud = _pg_fx.length_budget()
+        base = _SELFTEST_PROMPT_BASE.rstrip()
+        room = (bud["target_min"] + bud["ceiling"]) // 2 - len(base) - 2
+        clauses, i = [], 0
+        while sum(len(c) + 1 for c in clauses) < room:
+            clauses.append(f"FIXTURE DETAIL {i}: element {i} of the poster carries its own distinct art-direction note "
+                           f"about spacing, weight, color use and reading order for stage {i} of the page.")
+            i += 1
+        _SELFTEST_PROMPT_CACHE.append(base + "\n" + " ".join(clauses)[:max(room, 0)])
+    return _SELFTEST_PROMPT_CACHE[0]
+
+
+def __getattr__(name):  # PEP 562: `build_infographic.SELFTEST_PROMPT` stays available to tests, computed on first use
+    if name == "SELFTEST_PROMPT":
+        return selftest_prompt()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def _selftest() -> int:
     import tempfile
     fails = []
@@ -1196,23 +1213,23 @@ def _selftest() -> int:
     #    correctly be refused by the gate it exists to exercise).
     try:
         import prompt_gate as _pg_st
-        _probs = _pg_st.prompt_problems(SELFTEST_PROMPT.strip())
+        _probs = _pg_st.prompt_problems(selftest_prompt().strip())
     except Exception as exc:  # noqa: BLE001
         _probs = [f"prompt_gate unavailable in selftest: {exc!r}"]
     check("selftest prompt clears shared rich-prompt gate", not _probs,
           "; ".join(_probs)[:300])
-    check("selftest prompt inside 9000-18000 band",
-          PROMPT_CHAR_FLOOR <= len(SELFTEST_PROMPT.strip()) <= 18_000,
-          str(len(SELFTEST_PROMPT.strip())))
+    check("selftest prompt inside the rule 12 length band",
+          not _pg_st.length_problems(selftest_prompt().strip()),
+          str(len(selftest_prompt().strip())))
 
     # 1) payload shape: 9:16 override is real, 2K resolution, t2i vs i2i routing.
     with tempfile.TemporaryDirectory() as td:
         rd = Path(td)
         (rd / "working" / "prompts").mkdir(parents=True)
-        (rd / "working" / "prompts" / "infographic-prompt.txt").write_text(SELFTEST_PROMPT)
+        (rd / "working" / "prompts" / "infographic-prompt.txt").write_text(selftest_prompt())
         prompt, ppath = resolve_prompt(rd)
         check("prompt resolves", bool(prompt) and ppath.name == "infographic-prompt.txt")
-        check("prompt floor enforced", len(prompt) >= PROMPT_CHAR_FLOOR)
+        check("prompt floor enforced", len(prompt) >= _pg_st.length_budget()["floor"])
 
     def fake_models():
         return ("stub-t2i", "stub-i2i")

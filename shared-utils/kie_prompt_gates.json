@@ -1,0 +1,28 @@
+{
+  "_comment": "The declared list of every gate that enforces KIE prompt length (rule 12, owner order 2026-10-05). Each gate module must import shared-utils/kie_prompt_enforcer.py and define no band constant of its own; each data file must hold no length numbers. Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which fails when a gate stops importing the enforcer or a separate hard-coded band returns. Add a new gate here when it is written.",
+  "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
+  "enforcer": "shared-utils/kie_prompt_enforcer.py",
+  "forbidden_module_constants": [
+    "PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_CHAR_TARGET_HIGH", "API_PROMPT_HARD_CEILING",
+    "PROMPT_FLOOR", "PROMPT_CEILING", "API_CAP",
+    "SOCIAL_MIN_CHARS", "SOCIAL_MAX_CHARS",
+    "HOUSE_MIN", "HOUSE_TARGET", "HOUSE_MAX", "TIER_CAPS", "FLOOR_PCT", "TARGET_PCT"
+  ],
+  "gate_modules": [
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py",
+    "scripts/qc_gip_agnes_prompt_band.py",
+    "35-social-media-planner/scripts/pregen_prompt_gate.py",
+    "shared-utils/social_prompt_compiler.py",
+    "45-design-intelligence-library/scripts/diu_validator.py",
+    "66-kie-image/scripts/validate_prompt.py",
+    "67-kie-video/scripts/validate_prompt.py",
+    "68-kie-audio/scripts/validate_audio_request.py",
+    "25-video-creator/scripts/ai_providers.py"
+  ],
+  "data_files": [
+    {"path": "45-design-intelligence-library/library/_system/prompt-bands.json", "forbidden_keys": ["min", "max", "boundaries"]},
+    {"path": "shared-utils/social_prompt_policy.json", "forbidden_keys": ["house_band", "min_chars", "max_chars", "target_chars"]},
+    {"path": "23-ai-workforce-blueprint/templates/role-library/graphics/connection-manifest.json", "forbidden_keys": ["floor", "ceiling", "api_cap"]}
+  ]
+}

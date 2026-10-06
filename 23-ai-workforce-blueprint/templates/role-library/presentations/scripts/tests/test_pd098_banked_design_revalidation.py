@@ -54,6 +54,8 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # cross-test fixture import
 
 import prompt_gate as PG  # noqa: E402
+_PGB = PG.length_budget()  # KIE rule 12 numbers via the shared enforcer; the 9,000/18,000 constants are retired
+PG_PROMPT_CHAR_FLOOR, PG_PROMPT_CHAR_CEILING = _PGB["floor"], _PGB["ceiling"]
 from presentation_job import artifacts as A  # noqa: E402
 
 # The three live artifacts, by their measured sizes.
@@ -107,7 +109,7 @@ def test_over_ceiling_design_prompt_fails_revalidation(tmp_path, page, size):
     sha = _write(rd, rel, "d" * size)
     ok, why = _validate(rd, rel, sha)
     assert not ok, "an over-ceiling design prompt must not re-validate"
-    assert "AF-P2" in why and str(PG.PROMPT_CHAR_CEILING) in why, why
+    assert "AF-P2" in why and str(_PGB["max"]) in why, why
     assert f"{size} chars" in why
     # ...and the render gate agrees, so the two can never disagree about it.
     assert any("AF-P2" in p for p in PG.prompt_problems((rd / rel).read_text()))
@@ -116,15 +118,15 @@ def test_over_ceiling_design_prompt_fails_revalidation(tmp_path, page, size):
 def test_under_floor_design_prompt_fails_revalidation(tmp_path):
     rd = _run(tmp_path)
     rel = "prompts/vsl.design.txt"
-    sha = _write(rd, rel, "d" * (PG.PROMPT_CHAR_FLOOR - 1))
+    sha = _write(rd, rel, "d" * (PG_PROMPT_CHAR_FLOOR - 1))
     ok, why = _validate(rd, rel, sha)
-    assert not ok and "AF-P1" in why and str(PG.PROMPT_CHAR_FLOOR) in why, why
+    assert not ok and "AF-P1" in why and str(PG_PROMPT_CHAR_FLOOR) in why, why
 
 
 def test_in_band_design_prompt_passes_and_sha_still_applies(tmp_path):
     rd = _run(tmp_path)
     rel = "prompts/checkout.design.txt"
-    sha = _write(rd, rel, _gate_clean(PG.PROMPT_CHAR_CEILING))
+    sha = _write(rd, rel, _gate_clean(PG_PROMPT_CHAR_CEILING))
     ok, why = _validate(rd, rel, sha)
     assert ok, why
     assert "shared prompt band" in why and "sha256 match" in why
@@ -148,14 +150,13 @@ def test_all_three_design_pages_are_covered():
 def test_band_is_read_from_prompt_gate_not_hardcoded(tmp_path, monkeypatch):
     rd = _run(tmp_path)
     rel = "prompts/sales.design.txt"
-    _write(rd, rel, _gate_clean(30000))   # over 18000, under a moved ceiling
+    _write(rd, rel, _gate_clean(30000))   # over the rule 12 max, under a moved ceiling
     assert not _validate(rd, rel)[0]
 
-    monkeypatch.setattr(PG, "PROMPT_CHAR_CEILING", 40000)
-    monkeypatch.setattr(PG, "PROMPT_CHAR_FLOOR", 20000)
+    monkeypatch.setattr(PG, "length_problems", lambda text, model=None: [])  # the gate's band moved
     ok, why = _validate(rd, rel)
     assert ok, (
-        "the predicate followed a monkeypatched prompt_gate ceiling, so the "
+        "the predicate followed a monkeypatched prompt_gate length gate, so the "
         f"band is imported, not hard-coded: {why}")
 
 
@@ -378,7 +379,7 @@ def test_revalidate_banked_accepts_an_in_band_design_prompt(tmp_path):
     predicate simply failed everything, and every resume would re-author
     forever."""
     eng, manifest = _design_engine(tmp_path,
-                                   stripped_override=PG.PROMPT_CHAR_CEILING)
+                                   stripped_override=PG_PROMPT_CHAR_CEILING)
     for pid, rel, _b, _s in DESIGN_PHASE_ARTIFACTS:
         bad = eng._revalidate_banked(manifest.phase(pid), eng._phase_state(pid))
         assert bad == [], f"{pid}: an in-band design prompt must reuse banked work: {bad}"

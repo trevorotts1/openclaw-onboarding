@@ -1,5 +1,12 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.8] - 2026-10-06 - feat: `pregen_prompt_gate.py` uses the rule 12 length band
+
+### Changed
+- The social-planner 9,000 to 19,000 house band is retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. The F32 count rule (NFC, trimmed, final payload) is kept; the `--no-social-band` flag is still accepted but ignored (with a stderr note) because rule 12 has no opt-out. The rejection message names the exact characters to add or cut.
+- `shared-utils/social_prompt_policy.json` (version 1.1.0) holds no length numbers; `shared-utils/social_prompt_compiler.py` rewrites a short brief up to the rule 12 band with genuine render decisions (never filler) and rejects a prompt still out of band.
+- `test_pregen_prompt_gate.py` cases 7 and 8 now prove 79 percent rejected, 95 and 100 percent pass, 101 percent rejected, and the retired 9,000 floor refused.
+
 ## [3.6.5] - 2026-09-12 - CRITICAL Fix: live preflight reported 0 connected accounts on every box (engine never ran)
 
 ### Fixed

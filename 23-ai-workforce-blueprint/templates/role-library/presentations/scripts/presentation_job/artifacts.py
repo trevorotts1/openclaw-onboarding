@@ -100,7 +100,8 @@ def _import_prompt_gate():
 def validate_design_prompt(path: Path, rel_path: str,
                            recorded_sha: Optional[str] = None) -> Tuple[bool, str]:
     """A design-page prompt (`prompts/<page>.design.txt`) must sit inside the
-    SHARED prompt band the render gate enforces.
+    SHARED prompt band the render gate enforces (KIE rule 12: 80 to 100 percent
+    of the model maxLength, via the shared enforcer).
 
     `build_infographic.resolve_design_prompt` reads this file VERBATIM as ONE
     GPT-Image-2.5 prompt and refuses it via `prompt_gate` before any paid call.
@@ -124,17 +125,12 @@ def validate_design_prompt(path: Path, rel_path: str,
                       f"prompt's {length}-char length was NOT checked against "
                       "the shared band")
 
-    if length < pg.PROMPT_CHAR_FLOOR:
+    length_probs = pg.length_problems(text.strip())
+    if length_probs:
         return False, (
-            f"{rel_path} is {length} chars, UNDER the {pg.PROMPT_CHAR_FLOOR}-char "
-            "shared prompt floor (AF-P1; prompt_gate.PROMPT_CHAR_FLOOR) -- the "
-            "render gate refuses it, so it is not reusable banked work")
-    if length > pg.PROMPT_CHAR_CEILING:
-        return False, (
-            f"{rel_path} is {length} chars, over the {pg.PROMPT_CHAR_CEILING}-char "
-            "shared prompt ceiling (AF-P2; prompt_gate.PROMPT_CHAR_CEILING, 2,000 "
-            "under the GPT-Image-2.5 API ceiling) -- the render gate refuses it "
-            "before any paid call, so it is not reusable banked work")
+            f"{rel_path} is {length} chars and fails the shared KIE rule 12 length "
+            f"gate (prompt_gate.length_problems): {length_probs[0]} -- the render "
+            "gate refuses it before any paid call, so it is not reusable banked work")
 
     # PD-TEST-113 / D2 (independent review of PR #1148). The band checks above are
     # only PART of the gate, and this predicate -- not the phase verifier -- is the
@@ -157,8 +153,7 @@ def validate_design_prompt(path: Path, rel_path: str,
             "refuses it before any paid call, so it is not reusable banked work: "
             + "; ".join(problems))
 
-    band = (f"inside the {pg.PROMPT_CHAR_FLOOR}-{pg.PROMPT_CHAR_CEILING} "
-            "shared prompt band")
+    band = "inside the shared prompt band (KIE rule 12)"
     if recorded_sha is not None:
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != recorded_sha:

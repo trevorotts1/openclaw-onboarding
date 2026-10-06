@@ -1445,7 +1445,8 @@ def _shared_prompt_gate():
 
 def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
     """`(floor_share, ceiling_share)` -- the character budget for ONE unit of
-    a design-page fan-out, derived from the SHARED band.
+    a design-page fan-out, derived from the SHARED band (KIE rule 12: the floor is 80 percent of the
+    model maxLength, the ceiling is the maxLength less the English pin).
 
     The gate measures the FINAL artifact: N unit texts joined by
     `_UNIT_TEXT_SEPARATOR` (2 chars each, N-1 of them). So the aggregate is
@@ -1456,11 +1457,12 @@ def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
     A degenerate/absent `unit_count` is treated as ONE unit (the whole band),
     which is the honest reading for a phase that enumerated a single unit."""
     pg = _shared_prompt_gate()
+    bud = pg.length_budget()  # KIE rule 12 numbers from the shared enforcer, never re-typed here
     n = unit_count if isinstance(unit_count, int) and unit_count > 0 else 1
     sep_total = len(_UNIT_TEXT_SEPARATOR) * (n - 1)
-    ceiling_share = max(1, (pg.PROMPT_CHAR_CEILING - sep_total) // n)
-    floor_share = -(-max(0, pg.PROMPT_CHAR_FLOOR - sep_total) // n)  # ceil
-    return floor_share, min(ceiling_share, pg.PROMPT_CHAR_CEILING)
+    ceiling_share = max(1, (bud["ceiling"] - sep_total) // n)
+    floor_share = -(-max(0, bud["floor"] - sep_total) // n)  # ceil
+    return floor_share, min(ceiling_share, bud["ceiling"])
 
 
 def design_part_count(payload: Dict[str, Any]) -> int:
@@ -1497,6 +1499,7 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
         ordinal = 1
     floor_share, ceiling_share = design_unit_char_budget(n)
     pg = _shared_prompt_gate()
+    _bud = pg.length_budget()
     # Aim at the MIDDLE of the share so a compliant part clears both bounds
     # with real headroom; the shares themselves stay the hard bounds the
     # validator enforces.
@@ -1542,11 +1545,12 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
         f"`prompt_gate`, and the render phase is NOT submitted.\n"
         + attribution +
         f"2. LENGTH -- THE BAND IS SHARED, AND IT IS MEASURED ON THE FINAL "
-        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate requires the "
-        f"complete `prompts/{page}.design.txt` to be between "
-        f"{pg.PROMPT_CHAR_FLOOR:,} and {pg.PROMPT_CHAR_CEILING:,} characters "
-        f"({pg.PROMPT_CHAR_CEILING:,} sits 2,000 under the "
-        f"{pg.API_PROMPT_HARD_CEILING:,}-character GPT-Image-2.5 API ceiling). "
+        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate (KIE rule 12) "
+        f"requires the complete `prompts/{page}.design.txt` to be between "
+        f"{_bud['floor']:,} and {_bud['ceiling']:,} characters "
+        f"(80 percent of the {_bud['max']:,}-character GPT-Image-2.5 maxLength "
+        f"up to that maxLength less the {_bud['pin']}-character English pin the "
+        f"renderer appends; aim for 95 to 100 percent). "
         f"Your part is {ordinal} of {n}, so YOUR OWN OUTPUT MUST BE BETWEEN "
         f"{floor_share:,} AND {ceiling_share:,} CHARACTERS -- aim for "
         f"{target_lo:,}-{target_hi:,}. The {n} parts plus their separators sum "
@@ -6440,7 +6444,7 @@ def _validate_design_page_unit(payload: Dict[str, Any],
         problems.append(
             f"PD-TEST-098/AF-P2: this unit's part is {length:,} chars, over its "
             f"{ceiling_share:,}-char share of the shared "
-            f"{_shared_prompt_gate().PROMPT_CHAR_CEILING:,}-char ceiling. This "
+            f"{_shared_prompt_gate().length_budget()['ceiling']:,}-char ceiling. This "
             f"phase authors ONE prompt in {n} parts and the gate measures the "
             f"ASSEMBLED file, so a part written at full single-prompt length "
             f"puts the whole artifact over the ceiling and the render phase is "
@@ -6450,7 +6454,7 @@ def _validate_design_page_unit(payload: Dict[str, Any],
         problems.append(
             f"PD-TEST-098/AF-P1: this unit's part is {length:,} chars, under its "
             f"{floor_share:,}-char share of the shared "
-            f"{_shared_prompt_gate().PROMPT_CHAR_FLOOR:,}-char floor. The "
+            f"{_shared_prompt_gate().length_budget()['floor']:,}-char floor. The "
             f"assembled file would fall under the gate's hard floor. Expand with "
             f"real, specific art direction -- never boilerplate padding.")
     return (not problems), problems

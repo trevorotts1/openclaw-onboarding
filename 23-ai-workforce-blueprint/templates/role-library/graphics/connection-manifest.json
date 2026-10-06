@@ -44,11 +44,16 @@
     },
     {
       "name": "gip-prompt-band-enforcement",
-      "description": "Per decision GK-D2 (extended to Agnes skills 63/64): every GPT-image-2 and Agnes Image prompt must fall within 5,000-19,000 stripped chars (5,000 is the HARD FLOOR, 19,000 is the MAX — stays 6,000 chars clear of the 25,000 API cap). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) — enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
+      "description": "Prompt length for every KIE GPT Image and other KIE image prompt follows KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the model's maxLength, hard floor 80 percent, hard ceiling 100 percent. No character numbers live here: the shared enforcer shared-utils/kie_prompt_enforcer.py reads them from Skill 74 prompt-budget (live schema, registry fallback). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) - enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
       "cfg_key": "roleLibrary.graphics.gipPromptBand",
-      "floor": 5000,
-      "ceiling": 19000,
-      "api_cap": 25000,
+      "prompt_budget": {
+        "rule": "KIE prompt rule 12",
+        "enforcer": "shared-utils/kie_prompt_enforcer.py",
+        "limit_source": "74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --check",
+        "floor_percent_of_max": 80,
+        "target_percent_of_max": "95 to 100",
+        "ceiling_percent_of_max": 100
+      },
       "gates": [
         "45-design-intelligence-library/scripts/diu_validator.py prompt-band",
         "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",

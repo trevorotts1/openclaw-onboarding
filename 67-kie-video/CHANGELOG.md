@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.2] - 2026-10-06 - feat: `validate_prompt.py` uses the rule 12 length band
+
+- The 5,000 / 9,000 / 19,000 house band and its warnings are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. Models with no limit anywhere (NOT_PUBLISHED, LIVE_PROBE_REQUIRED) are UNKNOWN with no floor; the policy-owner cap in models.json applies when the adapter has none. Exit 1 below the 80 percent floor (chars to add), exit 2 above the max (chars to cut). Self-test: 23 of 23.
+
 ## [2.0.0] - 2026-08-31 - fix: QC.md version expectation matches skill-version.txt after media-limits repack
 
 - `QC.md` checklist no longer asserts `skill-version.txt` reads `v1.0.0` (it

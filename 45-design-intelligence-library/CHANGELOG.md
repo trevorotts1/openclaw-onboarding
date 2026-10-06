@@ -1,5 +1,12 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## [2.1.4] - 2026-10-06 - feat: GIP prompt bands use the rule 12 length band (`prompt-bands.json` v3)
+
+### Changed
+- `prompt-bands.json` holds no `min` or `max`: a band is a quality profile (density floor, text-bearing, endpoints). KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. `diu_validator.py prompt-band` takes `--model` (default: the band's first endpoint) and `prompt-caps` takes `--model` (ceiling only; the SHORT/MEDIUM/LONG tier table is gone).
+- Removed the `text_bearing_medium` Ideogram band and the `social_planner_image_scoped_override` band (the social policy and the shared enforcer own that length). Ideogram V3 stays only on the non-social `medium` specialty band; its text-bearing applies_to entries moved to `text_bearing_long` (GPT Image 2.5).
+- `prove_gip_prompt_floor.py`, `test_prompt_band_cli.py` and `test_gip_prompt_author_qc_pair.py` prove 79 percent rejected (chars to add), 95 and 100 percent pass, 101 percent rejected (chars to cut). The duplicate shadowed `cmd_self_test` definitions in `diu_validator.py` were collapsed to one.
+
 ## [2.0.0] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
 
 ### Why

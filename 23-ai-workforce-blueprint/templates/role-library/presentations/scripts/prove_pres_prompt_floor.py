@@ -3,8 +3,9 @@
 """prove_pres_prompt_floor.py — standalone, CI-runnable prover for the Presentations
 shared image-prompt gate (prompt_gate.py).
 
-The 9,000–18,000-char floor + structural-block + 8-class negative-block + spelling-lock +
-density + demographic-landmine gate used to live ONLY inside the 8,753-line build_deck.py,
+The rule 12 length band (95 to 100 percent of the model maxLength, floor 80 percent, via the shared
+enforcer shared-utils/kie_prompt_enforcer.py) + structural-block + 8-class negative-block +
+spelling-lock + density + demographic-landmine gate used to live ONLY inside the 8,753-line build_deck.py,
 so it could not be unit-tested in isolation or wired as a CI ledger gate. This prover
 imports the SAME shared prompt_gate module every image-API path now uses and exercises it
 against fixtures + any on-disk prompt file/dir — so the floor can never be a length-only
@@ -20,9 +21,9 @@ EXIT CODES
     2 — one or more prompts VIOLATE the gate
     3 — usage / fail-closed (bad args, unreadable file, prompt_gate import failure)
 
-Provenance: build_deck.py PROMPT_CHAR_FLOOR/CEILING + rich_prompt_quality_problems +
-_missing_structural_blocks + FORBIDDEN_DEMOGRAPHIC_DEFAULTS, extracted verbatim into
-prompt_gate.py and drift-pinned to build_deck.py by sync_check.py.
+Provenance: build_deck.py _length_problems (rule 12) + rich_prompt_quality_problems +
+_missing_structural_blocks + FORBIDDEN_DEMOGRAPHIC_DEFAULTS, extracted into prompt_gate.py;
+sync_check.py proves both import the shared enforcer and keep no band constant.
 """
 
 from __future__ import annotations
@@ -53,10 +54,14 @@ except Exception as exc:  # noqa: BLE001 — a missing shared gate is fail-close
 # fixtures each trip exactly one class of gate so a regression that silently loosens the
 # gate is caught.
 # ---------------------------------------------------------------------------
-def _rich_pass_prompt() -> str:
-    """Build a prompt that clears the whole gate: >=9,000 chars of DISTINCT content, the
-    [ARCHETYPE] block, an 8-class DO-NOT BLOCK, a spelling-lock, hex palette, type size,
-    a composition token, and the verbatim copy baked in."""
+GPT_MAX = 20000  # GPT Image 2.5 maxLength per Skill 74 prompt-budget (registry snapshot, hermetic)
+
+
+def _rich_pass_prompt(chars: int = GPT_MAX * 97 // 100) -> str:
+    """Build a prompt that clears the whole gate at exactly `chars` stripped characters (default 97 percent
+    of the 20,000 GPT Image 2.5 max): distinct content, the [ARCHETYPE] block, an 8-class DO-NOT BLOCK,
+    a spelling-lock, hex palette, type size, a composition token, the verbatim copy baked in, and the
+    mandatory English pin (so the pin adds nothing at submit)."""
     copy_line = "Stop Guessing. Start Closing."
     head = (
         "[ARCHETYPE: split-hero editorial]\n"
@@ -66,8 +71,6 @@ def _rich_pass_prompt() -> str:
         f'HEADLINE VERBATIM + SPELLING-LOCK: render this exact string letter-for-letter, '
         f'spelled exactly: "{copy_line}".\n'
     )
-    # A long body of DISTINCT sentences so the distinct-word floor (220) is cleared without
-    # paste-repetition. Each sentence introduces new vocabulary.
     vocab = (
         "photoreal cinematic boardroom dusk amber rim-light glass table reflection "
         "confident founder tailored charcoal suit poised gesture layered depth bokeh "
@@ -78,14 +81,6 @@ def _rich_pass_prompt() -> str:
         "kerning tracking baseline ligature counters serif humanist geometric grotesque "
         "palette saturation vibrance clarity texture grain filmic anamorphic flare"
     ).split()
-    body_sentences = []
-    for i in range(55):
-        w = vocab[i % len(vocab)]
-        body_sentences.append(
-            f"Detail {i}: the {w} element is described with a distinct clause "
-            f"number {i} carrying its own descriptive nuance about lighting palette "
-            f"placement and mood so the prompt reads rich and specific throughout stage {i}."
-        )
     do_not = (
         "\n\nDO-NOT BLOCK:\n"
         "Do not render any misspelled or garbled text; render every quoted letter-for-letter. "
@@ -96,8 +91,17 @@ def _rich_pass_prompt() -> str:
         "Do not let a busy cluttered background compete behind any text zone; keep legible negative space. "
         "Do not lighten, ashen, or desaturate any deep skin tone; preserve skin-tone fidelity. "
         "Do not add a watermark, emoji, clipart, Calibri or Arial system default font, or any UI artifact.\n"
-    )
-    return head + " ".join(body_sentences) + do_not
+    ) + "\n" + prompt_gate.ENGLISH_PIN
+    room = chars - len(head.lstrip()) - len(do_not.rstrip())
+    body_sentences = []
+    for i in range(room // 150 + 2):
+        w = vocab[i % len(vocab)]
+        body_sentences.append(
+            f"Detail {i}: the {w} element is described with a distinct clause "
+            f"number {i} carrying its own descriptive nuance about lighting palette "
+            f"placement and mood so the prompt reads rich and specific throughout stage {i}."
+        )
+    return head.lstrip() + " ".join(body_sentences)[:max(room, 0)] + do_not.rstrip()
 
 
 def _self_test() -> int:
@@ -106,11 +110,17 @@ def _self_test() -> int:
     rich = _rich_pass_prompt()
     fixtures.append(("rich-pass", rich, "Stop Guessing. Start Closing.", True))
 
+    # Rule 12 through the shared enforcer: 79 percent rejected, 95 and 100 percent pass, 101 percent rejected.
+    for label, pct, ok in (("79-percent", 79, False), ("95-percent", 95, True),
+                           ("100-percent", 100, True), ("101-percent", 101, False)):
+        fixtures.append((label, _rich_pass_prompt(GPT_MAX * pct // 100), "Stop Guessing. Start Closing.", ok))
+    fixtures.append(("retired-9000-floor", _rich_pass_prompt(9000), "Stop Guessing. Start Closing.", False))
+
     fixtures.append(("thin-stub", "a short prompt with no spec", None, False))
     fixtures.append(("whitespace-only", "   \n   \t  ", None, False))
 
     # Long enough but missing structural blocks + quality teeth.
-    padded = ("word " * 4000)  # ~20k chars but few distinct words, no blocks
+    padded = ("word " * 3880)  # ~19.4k chars (inside the length band) but few distinct words, no blocks
     fixtures.append(("padded-no-structure", padded, None, False))
 
     # Rich body but a demographic landmine smuggled in.
@@ -125,6 +135,9 @@ def _self_test() -> int:
     for label, text, copy, should_pass in fixtures:
         problems = prompt_gate.prompt_problems(text, copy)
         passed = not problems
+        if label.endswith(("79-percent", "101-percent")) or label == "retired-9000-floor":  # must fail ON LENGTH
+            if not prompt_gate.length_problems(text):
+                failures.append(f"[{label}] must be rejected by the length gate, got: {problems}")
         if passed != should_pass:
             failures.append(
                 f"[{label}] expected {'PASS' if should_pass else 'FAIL'} but got "
@@ -133,6 +146,12 @@ def _self_test() -> int:
         else:
             verdict = "PASS" if passed else "FAIL(as expected)"
             print(f"  {label:24s} -> {verdict}")
+    lo = prompt_gate.length_problems(_rich_pass_prompt(GPT_MAX * 79 // 100))
+    hi = prompt_gate.length_problems(_rich_pass_prompt(GPT_MAX * 101 // 100))
+    if not any("ADD at least 200" in m for m in lo):
+        failures.append(f"79 percent rejection must name the exact chars to add (200): {lo}")
+    if not any("CUT exactly 200" in m for m in hi):
+        failures.append(f"101 percent rejection must name the exact chars to cut (200): {hi}")
 
     # The pin + mode-consistency + aspect helpers are covered by prompt_gate's own
     # self-test; run it too so this prover is the single CI entry point.

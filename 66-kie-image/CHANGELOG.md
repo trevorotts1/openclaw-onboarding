@@ -1,5 +1,10 @@
 # Changelog - kie-image
 
+## [2.1.1] - 2026-10-06 - fix: `validate_prompt.py` calls the shared rule 12 enforcer
+
+- `validate_prompt.py` no longer carries its own band math or Skill 74 bridge call: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. The models.json cap (live_schema_cap_chars, vendor_hard_cap_chars, owner_observed_cap_chars) is the policy-owner fallback. `adapter_bridge.prompt_budget` is removed (`latest_family` and `validate` stay). Self-test: 30 of 30.
+- `validate_payload.py` prompt ceiling now reads `live_schema_cap_chars` first (20,000 for legacy `gpt-image-2`, superseding the N43 25,000 per the KIE live schema of 2026-10-05); before, the legacy route had no ceiling check at all.
+
 ## [2.1.0] - 2026-10-05 - feat: GPT Image auto-latest default and 80-100% prompt budget
 
 - The GPT Image default follows the newest GPT Image generation in KIE's live catalog (owner order 2026-10-05), resolved through Skill 74 `latest-family` by `select_image_model.py`; falls back to the models.json default (GPT Image 2.5 Sunburst) when the adapter is absent or unreachable. Explicit model/alias pins ("gpt image 2.5", "sunburst", canonical ids) and department pins never move. Names that carry version 2 ("gpt image 2", "gpt-image-2", "gpt-img2", "gpt image 2.0") now route to the LEGACY gpt-image-2 family (owner correction 2026-10-06); only version-less names ("gpt image", "gpt-image", "openai image") follow latest-family. Legacy GPT Image 2 routing for 3:1, 1:3, 9:21 and the N43 ratio substitutions are unchanged. The result carries `default_source` and `fallback_default` (the previous default, for a retry when a newly promoted model fails dispatch or validation).
