@@ -30,7 +30,7 @@ scripts/shared-script-authority.json; both headers say the same thing):
     This twin has no kie_tasks.py beside it, so it stays self-contained.
   * SAME as build_deck.py (declared 2026-10-05): the result download is an authenticated GET
     (Bearer + browser User-Agent), because an unauthenticated GET returned HTTP 403 live.
-    The canonical role-library kie_generate.py has a separate download path; see the PR notes.
+    The canonical role-library kie_generate.py does the same (identical _download).
 Limits and rates shared by every KIE skill: 07-kie-setup/references/kie-common-rules.md.
 
 USAGE:

@@ -53,6 +53,8 @@ INTENTIONAL DIVERGENCE FROM THE PRESENTATION-RENDER TWIN (same text is in the tw
     60 seconds, 6,000 second deadline). The twin keeps its own wave submit, a 5 minute wait
     after the last submit, then serial 60 second polls for up to 100 passes, because no
     kie_tasks.py sits beside it.
+The result download is an authenticated GET (Bearer + browser User-Agent, http(s) only), identical in both
+copies and to build_deck.download_image (FIX-4; a plain GET returned HTTP 403 live).
 Limits and rates shared by every KIE skill: 07-kie-setup/references/kie-common-rules.md.
 
 RATE CAP: at most 20 createTask requests per rolling 10 seconds. This script submits
@@ -76,6 +78,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -548,15 +551,25 @@ def _poll_task(task_id: str, api_key: str) -> str:
     )
 
 
-def _download(url: str, dest: Path) -> None:
+def _download(url: str, dest: Path, api_key: str) -> None:
     """
     Download the KIE result image URL to dest path.
-    The result URL is a CDN link (tempfile.aiquickdraw.com or similar) that does NOT
-    require the KIE Bearer token — sending it causes HTTP 403. Plain unauthenticated GET.
+    AUTHENTICATED GET, identical to build_deck.download_image (FIX-4): the result URL
+    needs `Authorization: Bearer <key>` plus a browser User-Agent; a plain GET with
+    neither returned HTTP 403 in the live run (see tests/test_fix4_authenticated_download.py
+    in the role-library presentations scripts, and test_kie_generate_authenticated_download.py
+    beside this file). Only http(s) URLs are opened (SSRF / local-file-read guard).
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "kie_generate/1.0"})
+    scheme = (urllib.parse.urlparse(str(url)).scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"REFUSED: KIE result URL {url!r} has scheme {scheme!r}; only http(s) may be opened.")
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as f:
+        with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
             f.write(resp.read())
     except Exception as exc:
         raise RuntimeError(f"Download failed for {url}: {exc}") from exc
@@ -736,7 +749,7 @@ def main():
         return poll_task_once(task_id, api_key)
 
     def _download_to(url: str, tmp_path: Path) -> None:
-        _download(url, tmp_path)
+        _download(url, tmp_path, api_key)
 
     try:
         result = _lifecycle.run(
