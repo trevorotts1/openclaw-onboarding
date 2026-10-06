@@ -1,0 +1,75 @@
+{
+  "probedAt": "2026-10-06T07:57:34Z",
+  "platform": "mac",
+  "openclaw": {
+    "cliPresent": true,
+    "version": "2026.9.8",
+    "semver": [
+      2026,
+      9,
+      8
+    ],
+    "is2xOrNewer": true
+  },
+  "lanes": {
+    "agent_browser": {
+      "available": true,
+      "version": "{\"ok\":true}",
+      "path": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/pytest-of-blackceomacmini/pytest-988/test_empty_pages_list_warns_no0/bin-bash/agent-browser"
+    },
+    "openclaw_managed_browser": {
+      "pluginEnabled": true,
+      "cliWorks": false,
+      "playwrightAvailable": true,
+      "profile": "openclaw",
+      "doctorOk": false
+    },
+    "existing_session": {
+      "userProfileConfigured": false,
+      "chromeExtension": false
+    },
+    "playwright_direct": {
+      "available": true,
+      "browsersInstalled": false
+    },
+    "cua": {
+      "pluginEnabled": true,
+      "appPresent": true,
+      "driverPresent": true,
+      "providerSelected": "cua"
+    },
+    "computer_peekaboo": {
+      "likely": true
+    }
+  },
+  "secrets": {
+    "firebaseRefreshToken": false,
+    "locationPit": false,
+    "locationId": true,
+    "kieApiKey": false
+  },
+  "selectedLane": "agent_browser",
+  "fallbackChain": [
+    "agent_browser",
+    "playwright_direct",
+    "cua_last_resort"
+  ],
+  "optimizations": {
+    "preferHeadless": true,
+    "maxParallelTabs": 1,
+    "snapshotMode": "efficient",
+    "iframeStrategy": "frame_scoped_snapshot"
+  },
+  "iframeDrag": {
+    "available": true,
+    "requires": "playwright+cdp",
+    "degradedWithout": "STOP on cross-origin tile/drag"
+  },
+  "blockers": [],
+  "warnings": [
+    "playwright importable but no browser binaries found in /private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/pytest-of-blackceomacmini/pytest-988/test_empty_pages_list_warns_no0/home/.cache/ms-playwright",
+    "openclaw browser status failed for profile 'openclaw'",
+    "no Firebase refresh token alias found in env (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN / FIREBASE_REFRESH_TOKEN)",
+    "no LOCATION PIT alias found in env (GOHIGHLEVEL_API_KEY / GHL_API_KEY / GOHIGHLEVEL_LOCATION_PIT / GHL_LOCATION_PIT)"
+  ]
+}

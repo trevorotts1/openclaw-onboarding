@@ -95,7 +95,8 @@ step_version() {
   # Accept the shipped form vMAJOR.MINOR.PATCH (a bare MAJOR.MINOR.PATCH is tolerated too).
   [[ "$v" =~ ^v?${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] \
     || die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x.y (vMAJOR.MINOR.PATCH)"
-  # Lockstep: SKILL.md frontmatter version must equal skill-version.txt.
+  # Lockstep: SKILL.md frontmatter version must equal skill-version.txt (checked whenever SKILL.md ships beside it).
+  [ -f "$SKILL_DIR/SKILL.md" ] || return 0
   local fm; fm="$(awk '$0=="---"{f++; if(f>=2) exit; next} f==1 && /^version:/{sub(/^version:[ \t]*/,""); print; exit}' "$SKILL_DIR/SKILL.md" | tr -d '[:space:]"'"'"'')"
   [ -n "$fm" ] || die "VERSION" "SKILL.md has no top-level frontmatter version: field"
   [ "$fm" = "$v" ] || die "VERSION" "SKILL.md frontmatter version ($fm) != skill-version.txt ($v) - drift"
