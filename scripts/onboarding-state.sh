@@ -225,6 +225,12 @@ purged = [k for k in list(skills) if rollback_re.search(k)]
 for k in purged:
     del skills[k]
 
+# A skill archived on main ("NN-x-ARCHIVED" in the source) is retired: drop the
+# stale key an earlier seed wrote for its old live name "NN-x".
+for k in list(skills):
+    if os.path.isdir(os.path.join(src_dir, k + "-ARCHIVED")):
+        del skills[k]
+
 # Discover non-archived numbered skill folders in the source.
 found = []
 for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
@@ -473,9 +479,17 @@ obs_verify_skill() {
     qc_script="$skill_path/qc-${skill_name}.sh"
   else
     # first qc-*.sh in the folder
+    # qc-built-*.sh are by-hand BUILT-ARTIFACT helpers (they need an argument), so
+    # skip them: skill 44's gate is qc-convert-and-flow.sh, not qc-built-workflow.sh.
     for c in "$skill_path"/qc-*.sh; do
+      case "$(basename "$c")" in qc-built-*) continue ;; esac
       [ -x "$c" ] && { qc_script="$c"; break; }
     done
+    if [ -z "$qc_script" ]; then
+      for c in "$skill_path"/qc-*.sh; do
+        [ -x "$c" ] && { qc_script="$c"; break; }
+      done
+    fi
   fi
   if [ -n "$qc_script" ]; then
     # DEFECT FIX: some qc-*.sh gates (e.g. skill 38's F17/F21/U-1/U-2/U-6

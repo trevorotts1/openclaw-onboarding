@@ -598,7 +598,10 @@ oc_gate_skill() {
   elif [ -n "$_qc_skill_name" ] && [ -x "$OC_SKILLS_DIR/$folder/qc-${_qc_skill_name}.sh" ]; then
     qc="$OC_SKILLS_DIR/$folder/qc-${_qc_skill_name}.sh"
   else
-    qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1 || true)
+    # qc-built-*.sh are by-hand BUILT-ARTIFACT helpers (they need an argument):
+    # skip them first (skill 44's gate is qc-convert-and-flow.sh).
+    qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | grep -v '/qc-built-' | head -1 || true)
+    [ -n "$qc" ] || qc=$(ls "$OC_SKILLS_DIR/$folder"/qc-*.sh 2>/dev/null | head -1 || true)
   fi
   if [ -n "$qc" ] && [ -f "$qc" ]; then
     local qc_rc=0

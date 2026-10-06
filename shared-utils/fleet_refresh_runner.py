@@ -3276,6 +3276,20 @@ def hc_cc_health(paths: dict, times: int = 3, wait: float = 2.0) -> dict:
     return _hc("pass", f"{url} 200 x{times}")
 
 
+def hc_persona_contexts(paths: dict) -> dict:
+    """Command Center (v7.4.0+) needs MC_PERSONA_COMPANY_CONTEXTS_JSON in its persisted
+    .env.local or every new task sticks on "Missing: persona". FAILS LOUDLY when missing."""
+    cc_dir = paths.get("cc_dir")
+    if not cc_dir or not Path(cc_dir).is_dir():
+        return _hc("n/a", "no Command Center on this box")
+    try:
+        from ensure_persona_contexts import run  # type: ignore
+        rc, msg = run(Path(cc_dir), Path(paths.get("root") or Path.home() / ".openclaw"), check_only=True)
+    except Exception as e:
+        return _hc("n/a", f"undetermined: {type(e).__name__}")
+    return _hc("pass" if rc == 0 else ("n/a" if rc == 4 else "fail"), msg[:200])
+
+
 def hc_session_reset(res: BoxResult) -> dict:
     v = str(res.steps.get("sessions-reset-CEO", "not-run"))
     if v.startswith("ok"):
@@ -3301,6 +3315,7 @@ def probe_health(paths: dict, res: Optional[BoxResult] = None) -> dict:
         "gateway-health":   hc_gateway_health(paths),
         "telegram-getme":   hc_telegram_getme(paths),
         "cc-health":        hc_cc_health(paths),
+        "persona-contexts": hc_persona_contexts(paths),
         "config-applied":   hc_config_applied(paths, wait=60.0 if res is not None else 0.0),
     }
     if res is not None:
