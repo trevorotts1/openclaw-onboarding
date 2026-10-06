@@ -1,5 +1,12 @@
 # Changelog - kie-image
 
+## [2.1.0] - 2026-10-05 - feat: GPT Image auto-latest default and 80-100% prompt budget
+
+- The GPT Image default follows the newest GPT Image generation in KIE's live catalog (owner order 2026-10-05), resolved through Skill 74 `latest-family` by `select_image_model.py`; falls back to the models.json default (GPT Image 2.5 Sunburst) when the adapter is absent or unreachable. Explicit model/alias pins ("gpt image 2.5", "sunburst", canonical ids) and department pins never move. Legacy GPT Image 2 routing for 3:1, 1:3, 9:21 and the N43 ratio substitutions are unchanged. The result carries `default_source` and `fallback_default` (the previous default, for a retry when a newly promoted model fails dispatch or validation).
+- `validate_prompt.py` now enforces the owner prompt budget through Skill 74 `prompt-budget` (models.json cap as fallback): below 80% of the max is rejected (exact chars to add), above the max is rejected (exact chars to cut), 80-95% warns. The old 5,000 / 9,000 / 19,000 house band is retired. Exit 1 now also covers below the floor; exit 2 is above the max.
+- `validate_payload.py` validates a model that is not in models.json (a newly promoted generation) against Skill 74's live schema.
+- New `scripts/adapter_bridge.py` (finds the sibling adapter; env KIE_LIVE_ADAPTER_PATH overrides, empty disables). Self-tests cover: newer generation becomes the default, pin unchanged, adapter unreachable falls back, under-80% and over-max rejected.
+
 All notable changes to this skill are documented here.
 
 ---

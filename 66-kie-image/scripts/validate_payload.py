@@ -22,6 +22,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
 VERSION = "1.0.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
@@ -180,6 +183,18 @@ def validate(payload, model_id_override=None):
         errors.append("payload model %r does not match expected model %r" % (model_name, model_id_override))
 
     model = by_id.get(model_name)
+    if not model and isinstance(payload.get("input"), dict):
+        # not in models.json (for example a newer GPT Image generation promoted by Skill 74): the live schema
+        # (registry snapshot fallback) is the authority for required fields, enums and lengths
+        got = adapter_bridge.validate(model_name, payload["input"])
+        if got and got.get("state") == "validated":
+            warnings.append("model %r is not in models.json; validated by Skill 74 against its schema" % model_name)
+            return {"valid": not errors, "model_id": model_name, "api_family": api_family or "kie-market",
+                    "errors": errors, "warnings": warnings, "checked": dict(checked, model=model_name, via="skill-74")}
+        if got and got.get("error"):
+            errors.append("Skill 74 schema validation: %s" % got["error"].get("msg"))
+            return {"valid": False, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": checked}
     if not model:
         errors.append("model %r not present in registry (%s)" % (model_name, REGISTRY_PATH))
         return {"valid": False, "model_id": model_name, "api_family": api_family,
@@ -403,6 +418,7 @@ def _refs(n, size_mb=None, prefix="https://cdn.example.invalid/img_%d.png"):
 
 
 def selftest():
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""  # hermetic: no sibling adapter, no network
     cases = []
 
     def case(name, payload, expect_valid, expect_err_contains=None, expect_warn_contains=None):

@@ -102,7 +102,10 @@ Exit 0: prints the selected canonical model + task id. Exit 1: no good match
 
 Routing policy (spec 7.5), in order:
 1. Explicit user pick wins — capability match, never "fixed" into something else.
-2. Else GPT Image 2.5 is the preferred default (operator ruling 2026-09-09,
+2. Else the GPT Image default: the NEWEST GPT Image generation in KIE's live catalog
+   (owner order 2026-10-05, resolved by Skill 74 `latest-family`; models.json default
+   when the adapter is absent or unreachable; today GPT Image 2.5 Sunburst) is the
+   preferred default (operator ruling 2026-09-09,
    supersedes GPT Image 2; high-fidelity general generation/editing,
    product/brand, detailed long-form creative) when compatible — mind the
    ratio/resolution exclusions (2K/4K exclude 27:16, 16:27, 9:8, 8:9 — 1K
@@ -119,25 +122,30 @@ Routing policy (spec 7.5), in order:
 STEP 3: SIZE THE PROMPT (BEFORE VALIDATION)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-House band (spec 5.1): min 5,000 chars / target ~9,000 / max 19,000 — but the
-LEGAL band is per-model:
+Prompt budget (owner order 2026-10-05, supersedes the old 5,000 / 9,000 / 19,000 house band):
+a prompt uses 95-100% of the model's character max and is NEVER below 80% of it.
 
-- GPT Image 2 (legacy): owner-observed ~25K; house band legal, 19K+ warns,
-  never hard-fails on the observed cap.
-- GPT Image 2.5 (default, operator ruling 2026-09-09): 20K per KIE docs dated
-  2026-09-09 (DOCS, NOT owner-confirmed — the GPT Image 2 25K confirmation
-  does not carry forward); house band legal, 19K+ warns, hard-fails only
-  past 20,000.
-- Wan 2.7 Image (5,000 chars VERIFIED), Ideogram V3 (5,000 VERIFIED),
-  Imagen 4 family (5,000 VERIFIED): target 4,500–4,900; >5,000 HARD REJECTED.
-- Qwen Image 3.0/Pro: 4.5K TOKENS advertised (rule D — never convert to fake
-  chars); docs schema maxLength 5000 chars; token-aware validation.
-- Seedream / Nano Banana family / FLUX.2 / Z-Image: cap NOT PUBLISHED — house
-  band is a TARGET, not vendor law; no hard rejections.
+  python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id> --json
 
-Short user prompt ("make me a futuristic Black woman CEO...") is NOT an error —
-EXPAND it into the full production prompt (15 dimensions in
-references/prompt-policy.md section 9), never reject it. Cron jobs store
+gives the field, max, floor (80%) and target (95-100%) from the live schema (registry
+snapshot as fallback). validate_prompt.py applies it for you: below the floor is
+REJECTED with the exact number of characters to ADD; above the max is REJECTED with
+the exact number to CUT; 80-95% passes with a warning to expand. Unknown limit:
+UNKNOWN warning, no floor. Verbatim content (spoken text, lyrics) has no floor.
+Without the adapter the limit is the models.json cap. Per-model figures today:
+
+- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the
+  live schema; N43 records 25,000 as owner-confirmed for the retained legacy entries.
+  The validator uses the live schema figure and prints a warning that names the
+  difference.
+- Wan 2.7 Image, Ideogram V3, Imagen 4 family: 5,000 (floor 4,000, target 4,750+).
+- Qwen Image 3.0/Pro: docs advertise 4.5K TOKENS (rule D: never a fake char cap);
+  the live schema states 5,000 chars.
+- Others: the live schema figure; none stated means UNKNOWN.
+
+A short user prompt ("make me a futuristic Black woman CEO...") is expanded into the
+full production prompt (15 dimensions in references/prompt-policy.md section 9) BEFORE
+validation; the expanded prompt must land in the 80-100% range. Cron jobs store
 creative INTENT and compose at execution time (spec 5.5).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -147,8 +155,8 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
   python3 scripts/validate_prompt.py <model-id> <prompt-file-or-text> [--strict]
   python3 scripts/validate_payload.py <model-id> <payload.json> [--strict]
 
-- validate_prompt: exit 0 acceptable; exit 1 soft-fail (house band/status;
-  --strict promotes to error); exit 2 hard-fail (VERIFIED cap exceeded).
+- validate_prompt: exit 0 acceptable; exit 1 invalid (below the 80% floor, unknown
+  model, or a --strict warning); exit 2 above the max.
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
   for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
