@@ -100,7 +100,11 @@ audiences for two different file sets:
 The department copy at
 `23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a **generated
 mirror** of it. When a SOP exists in both places and they disagree, **the `universal-sops/`
-copy wins** and the department mirror is the one to regenerate.
+copy wins** and the department mirror is the one to regenerate. **Exception, recorded in
+`scripts/duplicate-sop-authority.json`:** only `PIPELINE-MANIFEST.json` and
+`MASTER-QC-AUTOFAIL-RULESET.md` are materialized from `universal-sops/` into a department; the
+role-library copy is the canonical side for every duplicated `SOP-*.md` filename, and that file
+records each pinned divergence.
 
 Canonical clusters under `universal-sops/`:
 
@@ -175,7 +179,7 @@ homes marked **[univ]** already live in a `universal-sops/` cluster.
 | Section 6.1 | hook ceiling + anti-footer + density floor | `SOP-SLIDE-03-HOOK-DOCTRINE` + `qc-specialist-presentations` copy-QC criterion **[univ slide-craft]** |
 | Section 7.2 | the five archetypes A1–A5 | `presentation-design-system/04-SOP-variable-layout-anti-template.md` (`SOP-DESIGN-03`) + `brand-steward` SOP **[univ design-system]** |
 | Section 7.5 | the gold-standard exemplar prompt | `presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md` + `prompt-author-presentations` SOP + `brand-steward` SOP 9.3 **[univ image-library]** |
-| Section 9.0 | the MODEL MANIFEST (declared at echo) | `SOP-IMG-01-KIE-CALL-MECHANICS` + `director-of-presentations` SOP 9.x + `build_deck.py` `MODEL_*` pins **[univ image-library]** |
+| Section 9.0 | the MODEL MANIFEST (declared at echo) | `CLIENT-WEBINAR-DECK-SOP.md` §9.0 (the manifest itself) + `SOP-IMG-01-KIE-CALL-MECHANICS` §2A (routing) + `director-of-presentations` SOP 9.x + `build_deck.py` `MODEL_*` pins **[univ + image-library]** |
 | Section 11.3 | QC render step + ≥ 8.5 pass threshold | `MASTER-QC-AUTOFAIL-RULESET.md` (`SOP-SLIDE-00`) + `qc-specialist-presentations` SOP 9.x **[univ slide-craft]** |
 | Section 11.4 | delivery (destination + bundle) | `SOP-PITCH-05-DELIVERABLE-BUNDLE` + `delivery-concierge` SOP + `CLIENT-WEBINAR-DECK-SOP.md` §9a **[dept + univ]** |
 

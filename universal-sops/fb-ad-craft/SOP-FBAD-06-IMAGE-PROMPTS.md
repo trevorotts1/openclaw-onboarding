@@ -80,13 +80,18 @@ independent.
 ### B1. The engine (reused as-is)
 
 Generate via the reused Kie adapter `kie_image.py` with the **client's own KIE_API_KEY**.
-The model id is `gpt-image-2-5-sunburst-*` today and **auto-adopts any future gpt-image version**
-— the gate accepts any model id beginning `gpt-image-` (AF-FBAD-IMAGE-MODEL), so a bump
-to gpt-image-3 needs no code change. Render **1500×1500, 1:1** (AF-FBAD-IMAGE-SIZE).
+The model id is the fleet pin from AGENTS.md N43: `gpt-image-2-5-sunburst-text-to-image`
+(or `-image-to-image` when references are supplied). The 1:1 ratio never routes to the legacy
+`gpt-image-2-*` model, and the `flare` variant is not registered. The gate only checks that the
+id begins `gpt-image-` (AF-FBAD-IMAGE-MODEL), which is a forward-compatible shape check and
+never permission to change the pin: moving to another variant or version needs a new operator
+ruling. Render **1500×1500, 1:1** (AF-FBAD-IMAGE-SIZE). The shared Kie rules (live endpoints,
+rate limits, key handling) live in `07-kie-setup/references/kie-common-rules.md`.
 
 ### B2. Money discipline (the running tally — not a balance call per image)
 
-Before each paid image, the producer checks the cheap LOCAL tally: `spent + next ≤
+The single Phase-0 credit preflight (estimated cost x 1.30 against `GET /api/v1/chat/credit`,
+AF-FBAD-KIE-BALANCE) already ran at intake. Before each paid image, the producer checks the cheap LOCAL tally: `spent + next ≤
 ceiling?` If the next image would cross, the run **STOPS** (record `would_cross: true`)
 — it does not spend (AF-FBAD-TALLY-CROSS). Every image's real task-id is logged in the
 run-id ledger so a retry skips finished images and never re-pays.
