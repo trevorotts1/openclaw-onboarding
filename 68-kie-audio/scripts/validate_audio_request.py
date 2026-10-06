@@ -153,7 +153,8 @@ def _validate_tts_via_adapter(p, model):
         return False
     if got.get("state") == "validated":
         cap = got.get("capability") or ""
-        if "speech" not in cap.lower():
+        # Text to Speech only. Anything that is speech to text (the closed STT gate) or unknown is refused.
+        if re.search(r"speech[ -]to[ -]text", cap, re.I) or not re.search(r"text[ -]to[ -]speech", cap, re.I):
             _err(f"tts: model {model!r} is not a Text to Speech model per Skill 74 "
                  f"(capability {cap or 'unknown'}); refusing")
         else:
@@ -822,6 +823,12 @@ def self_test():
         env_bad = _fake_adapter_env(td, {"validate": {"state": "fail", "error": {"code": "validation_failed", "msg": "input.text: longer than maxLength 10"}}})
         _expect_exit(write("new-tts-bad.json", tts_new), "tts", 2, env=env_bad, expect_out="Skill 74")
         _expect_exit(write("new-tts-offline.json", tts_new), "tts", 2)  # adapter unreachable -> old rejection
+        env_stt_cap = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Speech to Text", "error": None}})
+        _expect_exit(write("new-stt-as-tts.json", tts_new), "tts", 2, env=env_stt_cap, expect_out="not a Text to Speech model")
+        env_mixed = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Text to Speech, Speech to Text", "error": None}})
+        _expect_exit(write("new-mixed-cap.json", tts_new), "tts", 2, env=env_mixed, expect_out="not a Text to Speech model")
+        env_nocap = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": None, "error": None}})
+        _expect_exit(write("new-nocap.json", tts_new), "tts", 2, env=env_nocap)
         # STT gate stays closed even when the live catalog lists a candidate; the candidate is only reported
         env_stt = _fake_adapter_env(td, {"discover": {"state": "validated", "data": {"models": [
             {"model": "elevenlabs/speech-to-text-v1", "taskType": ["Speech to Text"]},
@@ -831,7 +838,7 @@ def self_test():
         env_none = _fake_adapter_env(td, {"discover": {"state": "validated", "data": {"models": []}}})
         _expect_exit(write("stt-inspect3.json", {}), "stt", 0, env=env_none, expect_out="no speech-to-text model")
 
-        ok = 28
+        ok = 31
     print(f"SELF-TEST PASS: {ok} checks green")
     return 0
 

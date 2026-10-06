@@ -286,6 +286,11 @@ def validate(payload, model_id_override=None):
         # fallback) in Skill 74 is the authority for required fields, enums and lengths. The model is only
         # validated because the caller NAMED it; it is never selected or made a default (no auto-latest for video).
         got = adapter_bridge.validate(model_name, payload["input"])
+        cap = (got or {}).get("capability") or ""
+        if got and got.get("state") == "validated" and not re.search(r"to[ -]video", cap, re.I):
+            errors.append(f"model {model_name!r} is not a video model per Skill 74 (capability {cap or 'unknown'}); refusing")
+            return {"valid": False, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": checked}
         if got and got.get("state") == "validated":
             warnings.append(f"model {model_name!r} is not in models.json; validated by Skill 74 against its schema (explicit pick only, never auto-default)")
             return {"valid": not errors, "model_id": model_name, "api_family": api_family,
@@ -462,7 +467,9 @@ def _adapter_cases():
     """Models absent from models.json, answered by a fake Skill 74. The case name starts with ADAPTER:."""
     new = {"model": "newvendor/video-9", "input": {"prompt": "A"}}
     return [
-        ("ADAPTER: live model not in registry validated by Skill 74", (new, {"state": "validated", "error": None}), True, None),
+        ("ADAPTER: live model not in registry validated by Skill 74", (new, {"state": "validated", "capability": "Text to Video, Image to Video", "error": None}), True, None),
+        ("ADAPTER: image model named as video refused", (new, {"state": "validated", "capability": "Text to Image", "error": None}), False, "not a video model"),
+        ("ADAPTER: unknown capability refused", (new, {"state": "validated", "capability": None, "error": None}), False, "not a video model"),
         ("ADAPTER: schema errors from Skill 74 reject", (new, {"state": "fail", "error": {"code": "validation_failed", "msg": "input.duration: above maximum 15"}}), False, "above maximum 15"),
         ("ADAPTER: adapter prints nothing -> not present in registry", (new, {}), False, "not present in registry"),
     ]

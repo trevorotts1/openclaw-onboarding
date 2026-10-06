@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-10-06 - fix: speech to text cannot pass the TTS path
+
+- `_validate_tts_via_adapter` accepted any capability containing "speech", so a named "Speech to Text" model would pass the tts domain and bypass the closed STT gate. It now accepts only a capability matching `text[ -]to[ -]speech` and refuses anything matching `speech[ -]to[ -]text` (including a mixed list) or an unknown capability. Three new self-test cases (Speech to Text, mixed, none) all exit 2; self-test 28 became 31 checks. The STT gate is unchanged. Version roll to v2.1.1 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
 ## [v2.1.0] - 2026-10-06 - feat: TTS dispatch runs through Skill 74; STT stays gated
 
 - `INSTRUCTIONS.md` and `SKILL.md`: TTS (Market createTask) first runs `kie_live_adapter.py validate` and `preflight --units <thousands of characters>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then audio QC. `skipped` falls back to curl. Suno keeps its curated dedicated route.

@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-10-06 - fix: an explicitly named unknown model must be a video model
+
+- `validate_payload.py`: a model not in `models.json` that Skill 74 validates is accepted only when its capability matches "to video" (text, image, video or speech to video); a non-video or unknown capability is refused. Two new self-test cases (image model, unknown capability); self-test 32/32 became 34/34. Version roll to v2.1.1 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
 ## [v2.1.0] - 2026-10-06 - feat: dispatch runs through Skill 74 (validate, preflight, submit), registry is the curated policy
 
 - `INSTRUCTIONS.md` Step 5 and `SKILL.md`: Market dispatch first runs `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight --units <seconds>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then multi-frame QC. `skipped` (adapter off or shadow) falls back to the curl path; adapter absent skips the first two steps with a note.
