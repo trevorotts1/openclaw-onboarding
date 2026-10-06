@@ -8,7 +8,7 @@
 > governs the *deterministic render + delivery* half of the process. It is **not** the whole
 > process. Before a `slides.json` is written, the department runs **LAYER A — the authoring
 > pipeline** (intake → priority shift → arc → research → copy → copy-QC → typography →
-> **rich prompt authoring (9,000–18,000-char per-slide prompt files)** → prompt-QC → speech),
+> **rich prompt authoring (per-slide prompt files written to the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds are being aligned to this rule in the same release)** → prompt-QC → speech),
 > governed by `PIPELINE-MANIFEST.json` and the role library and served one enforced step at a
 > time by `run_signature_deck.py --next`. This SOP (**LAYER B**) is how the render is invoked
 > once Layer A's artifacts exist. The two layers are ONE pipeline, not two products or two

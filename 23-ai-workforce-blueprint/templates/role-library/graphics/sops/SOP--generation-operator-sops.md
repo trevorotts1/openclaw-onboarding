@@ -25,10 +25,10 @@
 5. Select model and tier per MODEL-SPECS routing table. Verify the selected endpoint supports the requested aspect ratio.
 6. Run SOP 9.4 (SOP-DIU-601) preflight before submitting. Do not proceed if preflight fails.
 7. Submit via `createTask` with the exact JSON template from MODEL-SPECS §5 for the selected endpoint. Write the receipt file at submit time with all required fields.
-8. Exit. The cron poller handles completion detection. Do not hold the session open.
+8. Exit. The Render Dispatcher's poller handles completion detection. Do not hold the session open.
 
 **Outputs:** Receipt file in `_local/receipts/` with state `submitted`; job directory with compiled negatives artifact.
-**Hand to:** CDO/requestor when the cron poller completes postflight verification and flips the receipt to `complete`. Off-style results after postflight -> Fidelity Tester (SOP 9.5). Hard-rule violations -> quarantine (SOP 9.7).
+**Hand to:** CDO/requestor when the Render Dispatcher's poller completes postflight verification and flips the receipt to `complete`. Off-style results after postflight -> Fidelity Tester (SOP 9.5). Hard-rule violations -> quarantine (SOP 9.7).
 **Failure mode:** Any preflight failure returns an itemized failure list to the requestor and logs the rejection in the receipt. Never submit a failing preflight. Never improvise a fix to a preflight failure -- that is prompt authoring, not operator work.
 
 ---
@@ -50,7 +50,7 @@
 6. Submit via `createTask`. Record the returned `taskId` in the receipt immediately.
 
 **Outputs:** Task submitted with receipt file recording endpoint, model ID, tier, resolution, `taskId`, and cost class.
-**Hand to:** Cron poller for completion detection via `recordInfo`.
+**Hand to:** The Render Dispatcher's poller for completion detection via `recordInfo`.
 **Failure mode:** If the API key is missing from all env stores, escalate to CDO with the list of stores checked. Never proceed without a verified key. If both primary and backup endpoints are unavailable, escalate to CDO -- do not substitute an out-of-spec model.
 
 ---
@@ -87,7 +87,7 @@
 
 **Preflight checklist (run in this order -- any failure = halt and return itemized list to sender):**
 
-1. **Char count:** Count actual characters in the fully assembled positive prompt. Verify against the endpoint's cap from MODEL-SPECS §1 (Seedream: 3,000-char DIU house ceiling per MODEL-SPECS §1; the Skill 66 registry records the Seedream vendor cap as NOT_PUBLISHED, so treat 3,000 as a conservative house limit pending a live probe). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over.
+1. **Char count:** Count actual characters in the fully assembled positive prompt. Verify against the endpoint's cap from MODEL-SPECS §1 (Seedream 4.5 text-to-image and edit: 3,000 characters, the vendor's published maxLength on docs.kie.ai, verified 2026-10-06 (Seedream 5.0 Lite 3,000; 5.0 Pro and Flash 5,000). Skill 66's NOT_PUBLISHED entry for Seedream is stale and Skill 74's live schema is the ongoing source). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over.
 2. **Unfilled variables:** Grep for any `{[A-Z_]+}` token remaining in the assembled prompt. Return "PREFLIGHT FAIL: unfilled variables: {list}" if any found.
 3. **Aspect ratio supported:** Verify the requested aspect ratio appears in the endpoint's supported-ratio table (MODEL-SPECS §1). Return "PREFLIGHT FAIL: aspect ratio {ratio} not supported by {endpoint}" if absent.
 4. **Required params set:** Verify all endpoint-required params are present in the JSON template: `aspect_ratio` for Seedream; `expand_prompt: false` + `aspect_ratio` resolving to a preset for Ideogram production runs; `watermark: false` for Wan. Return "PREFLIGHT FAIL: missing required param {param}" for each absent param.
@@ -96,7 +96,7 @@
 7. **Avoid-list contradiction audit:** Confirm the compiled negatives artifact has been produced for this job and the contradiction audit in SOP 9.3 step 5 passed. Return "PREFLIGHT FAIL: compiled negatives missing or contradiction audit not completed" if absent.
 8. **Budget headroom and credit:** Verify estimated job cost (unit price from the live `pricingDesc`) does not exceed remaining budget headroom for this period, and that the live credit balance covers the estimate x 1.30 (credit preflight, see the canonical rules). If within the per-job approval threshold, require producer approval receipt before proceeding.
 
-**Postflight checklist (run immediately on receipt of a `success` task result):**
+**Postflight checklist (run by the Render Dispatcher's poller immediately on a `success` task result, recorded in the Operator's receipt):**
 
 1. **Download immediately.** Read `resultUrls` from the `recordInfo` response (`data.resultJson` is a JSON string) and download all of them to `_local/results/{job-id}/`. Do not log anything as complete before local files exist.
 2. **Nonzero size.** Verify each downloaded file has size > 0 bytes.
@@ -133,7 +133,7 @@ task_id:              {kie.ai-taskId}
 requestor:            {role-slug or workspace-slug}
 cost_class:           {estimated-cost-dollars}
 budget_cap:           {per-job-cap-dollars}
-state:                {queued|submitted|polling|complete|postflight-failed|quarantined}
+state:                {queued|held|preflight-failed|submitted|polling|complete|failed|postflight-failed|quarantined|hard-stopped|orphaned}
 submitted_at:         {iso8601}
 last_polled:          {iso8601}
 completed_at:         {iso8601 or null}
@@ -152,7 +152,7 @@ filled_prompt_hash:   {sha256 of exact filled positive prompt}
 4. If `estimated_cost > per_job_approval_threshold`: require a producer approval receipt before submitting.
 5. First-ever generation for this client: run a 1K SHORT smoke test on the cheapest capable endpoint first.
 
-**Orphan recovery (session start):**
+**Orphan recovery (owned by the Render Dispatcher, its SOP 9.7; the Operator does not poll):**
 1. List all receipts with `state: submitted` or `state: polling`.
 2. For each: call `recordInfo` for the taskId. If `state: success`: proceed to SOP 9.4 postflight. If `state: fail`: escalate to CDO. Otherwise (`waiting`, `queuing`, `generating`): update `last_polled` and leave for the cron.
 3. Any receipt with `last_polled` older than 24 hours with no completion: escalate to CDO.

@@ -141,7 +141,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.3a -- API CONTRACT (authoritative)
 
-The following table is copied verbatim from Appendix A of the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md). It is the authoritative API reference for Phase 4. If this section ever conflicts with Section 9.3 above, Appendix A wins and Section 9.3 must be corrected.
+The following table is the authoritative API reference for Phase 4 in this role. (The master SOP, universal-sops/CLIENT-WEBINAR-DECK-SOP.md, no longer carries an Appendix A; this table is the single copy.) It follows AGENTS.md N43 and `07-kie-setup/references/kie-common-rules.md`, which win over it. If this section ever conflicts with Section 9.3 above, this table wins and Section 9.3 must be corrected.
 
 > **Source of every hard constant below:** the live Kie.ai documentation at https://docs.kie.ai/ (endpoints + GPT Image 2 reference + Section 8 "Rate Limits & Concurrency"). Verified 2026-06-14. Every external constant here (model ids, character ceiling, reference-image count, rate cap, task states) is sourced, not estimated.
 
@@ -154,8 +154,8 @@ The following table is copied verbatim from Appendix A of the master SOP (univer
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` |
 | Prompt ceiling | 20,000 characters in `input.prompt` (authoring size per rule 12 of the canonical rules) |
-| Reference images | `input.input_urls`, public https URLs, max 16 |
-| Aspect ratios | auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, **16:9**, 9:16, 2:1, 1:2, 3:1, 1:3, 21:9, 9:21 (this SOP pins 16:9; this is the legacy GPT-Image-2 list, and the exact ratio set of the 2.5 default is in AGENTS.md N43, which wins) |
+| Reference images | `input.input_urls`, public https URLs, max 16 (the department registry value; the 2.5 docs state no count cap, N43 records this as unresolved) |
+| Aspect ratios | GPT-Image-2.5 sunburst (the default): auto, 1:1, 3:2, 2:3, **16:9**, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9 (the last four are 1K only). N43 substitutions: 5:4 to 4:3, 4:5 to 3:4, 2:1 to 16:9, 1:2 to 9:16. Only 3:1, 1:3, 9:21 dispatch to the retained legacy `gpt-image-2-*` route. This SOP pins 16:9. |
 | Resolutions | 1K, 2K, 4K (this SOP pins 2K unless intake says otherwise) |
 | Create response | `{ "code": 200, "data": { "taskId": "..." } }` |
 | Task states | `waiting`, `success`, `fail` (treat fail/failed/error/cancelled as terminal) |
@@ -184,7 +184,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
    - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
    - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
 4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Length check: confirm each slide prompt is sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent) (the Slide Image Creator owns the sizing). The render step's code gate (AF-P1 floor, AF-P2 ceiling in `build_deck.py`) still applies until a follow-up lane aligns it with rule 12. Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
+5. Length check: confirm each slide prompt is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds are being aligned to this rule in the same release (the Slide Image Creator owns the sizing). Never truncate a prompt to fit; return it to the Slide Image Creator with the measured length and the model's maxLength.
 
 **Outputs:**
 - phase4_checkpoint.json (budget events and truncation log)

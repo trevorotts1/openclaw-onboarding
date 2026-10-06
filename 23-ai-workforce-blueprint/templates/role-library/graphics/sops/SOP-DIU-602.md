@@ -64,7 +64,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 5. Only if no matching fingerprint exists: proceed to create a new task and write a new receipt.
 
-### D. Orphan recovery — at every session start
+### D. Orphan recovery (owned by the Render Dispatcher, its SOP 9.7; the Operator does not poll)
 
 1. List all receipt files with `state: submitted` or `state: polling`.
 
@@ -102,7 +102,7 @@ task_id:              {kie.ai-taskId}
 requestor:            {role-slug or workspace-slug}
 cost_class:           {estimated-cost-dollars}
 budget_cap:           {per-job-cap-dollars}
-state:                {queued|submitted|polling|complete|postflight-failed|quarantined}
+state:                {queued|held|preflight-failed|submitted|polling|complete|failed|postflight-failed|quarantined|hard-stopped|orphaned}
 submitted_at:         {iso8601}
 last_polled:          {iso8601}
 completed_at:         {iso8601 or null}

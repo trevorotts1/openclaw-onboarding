@@ -229,7 +229,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 4. **Kie image generation calls (when in scope):**
 
    Model selection:
-   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated; the API field that carries them is `input_urls`)
+   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated; the API field that carries them is `input_urls`; known defect, tracked for the Skill 47 lane: `kie_image.py` currently sends `image_input`, so reference images from that adapter may be dropped or rejected until it is changed)
    - Use `gpt-image-2-5-sunburst-text-to-image` when generating from text prompt only (no source images)
 
    API call shape (must match Skill 66's `references/api-patterns.md` and AGENTS.md N43; the `46-kie-callback-relay/kie-slide-submitter.js` submitter is a worked example, not the authority):
@@ -254,7 +254,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
    Model routing:
    - **Default:** `gemini-omni-video` — use when reference images are available or for image-to-video generation
-   - **Fallback:** `veo3` or `veo3_fast` — use when no reference image is available (text-to-video)
+   - **Fallback:** `veo3` or `veo3_fast` (legacy ids on `/api/v1/veo/generate`; Veo 3.1 is also live on `/api/v1/jobs/createTask` as model `veo-3-1`, and Skill 47's `kie_video.py` uses the legacy route) — use when no reference image is available (text-to-video)
 
    API call shape for `gemini-omni-video` (must match `37-zhc-closeout/scripts/generate-celebration-video.sh`):
    ```
@@ -289,7 +289,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
      "generate_audio": true
    }
    ```
-   Poll `GET https://api.kie.ai/api/v1/veo/record-info?taskId=[taskId]`. Note: `veo/generate` + `veo/record-info` is a DIFFERENT endpoint path than the `gemini-omni-video` `createTask` + `recordInfo` path (verified in `generate-celebration-video.sh` lines 541-559).
+   Poll `GET https://api.kie.ai/api/v1/veo/record-info?taskId=[taskId]`. Note: `veo/generate` + `veo/record-info` is a DIFFERENT endpoint path than the `gemini-omni-video` `createTask` + `recordInfo` path (verified in `generate-celebration-video.sh` lines 541-559). Both Veo routes are live (verified 2026-10-06): the legacy family `POST /api/v1/veo/generate` with `GET /api/v1/veo/record-info`, and the current KIE docs route `POST /api/v1/jobs/createTask` with model `veo-3-1` polled through `recordInfo`. Skill 47's code (`kie_video.py`) uses the legacy family with `veo3_fast`; do not describe the legacy family as the only Veo route.
 
 6. **Render via FFmpeg (the documentary-montage path and all final stitches):** All video compilation and stitching uses FFmpeg — the exclusive render path for the documentary-montage pipeline and final assembly. Do NOT invoke Remotion or HyperFrames for the documentary-montage render path (those are for the Remotion demo path and HyperFrames composition path respectively). Each render target uses the client's configured output spec (codec, resolution, frame rate).
 

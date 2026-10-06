@@ -174,7 +174,7 @@ This role contributes to the company revenue cascade by: **enabling video conten
 
 | Tool (Kie model) | Purpose | Kie model id / URL / endpoint | BYOK also possible? |
 |------------------|---------|-------------------------------|---------------------|
-| **Google Veo 3.1** (`veo3_fast`, `veo3`) | Primary text-to-video and first/last-frame image-to-video; native audio; native 1080p | `kie.ai/veo-3-1` · `POST /api/v1/veo/generate` → poll `/api/v1/veo/record-info` | Yes — BYOK Google/Gemini key, if the client supplies one |
+| **Google Veo 3.1** (`veo3_fast`, `veo3`) | Primary text-to-video and first/last-frame image-to-video; native audio; native 1080p | `kie.ai/veo-3-1` · legacy `POST /api/v1/veo/generate` → poll `/api/v1/veo/record-info`, or current docs `POST /api/v1/jobs/createTask` with model `veo-3-1` → poll `recordInfo` (both live, verified 2026-10-06) | Yes — BYOK Google/Gemini key, if the client supplies one |
 | **Runway** (Gen-4 Turbo & Aleph) | Text-to-video / image-to-video, style transfer, cinematic B-roll | `kie.ai/runway-api` · `POST /api/v1/runway/generate` | Yes — BYOK `RUNWAYML_API_SECRET`, if the client supplies one |
 | **ByteDance Seedance** (family) | Fast, realistic multimodal text/image/reference-to-video; strong multi-shot consistency | `kie.ai/seedance-2-0`, `/seedance-2-5`, `/seedance-2-0-mini`, `/seedance-1-5-pro`, `/seedance-1-0-pro-fast`, `/bytedance/seedance-v1` · `POST /api/v1/jobs/createTask` | — |
 | **Happy Horse** (Alibaba) | Text-to-video / image-to-video / reference-to-video; multi-shot, 1080p | `kie.ai/happyhorse-1-1`, `/happyhorse-1-0` · `POST /api/v1/jobs/createTask` | — |

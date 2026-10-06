@@ -133,7 +133,7 @@ Master authority: `SOP-GIP-01-PROMPT-ANATOMY.md`. Independence doctrine: you nev
 **Steps:**
 
 1. Run `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <declared-band> --prompt-file working/prompts/<asset-id>.txt [--copy "<verbatim string>" ...] [--style-ref] --run-dir <job-dir>` -- the SAME deterministic measurer the Operator's own preflight will re-run. This is the source of truth, never your self-score.
-2. Exit 0 = the prompt clears BOTH the length gate (within [MIN, MAX] for the declared band) AND the quality teeth. Also check the length against the rule 12 budget (`kie_live_adapter.py prompt-budget --model <id>`; `07-kie-setup/references/kie-common-rules.md`): reject below 80 percent of maxLength, warn from 80 to 95 percent. Record PASS.
+2. Exit 0 = the prompt clears BOTH the length gate (within [MIN, MAX] for the declared band) AND the quality teeth. Also compare the length with the model's prompt-budget target from `kie_live_adapter.py prompt-budget --model <id>` (rule 12 of `07-kie-setup/references/kie-common-rules.md`); the validator's exit code stays the pass/fail source until the gate thresholds are aligned in the same release. Record PASS.
 3. Exit 3 = `AF-GIP-PROMPT-FLOOR` (under the band MIN) or `AF-DIU-PROMPT-CAP` (over the band MAX). Record FAIL with the exact char count and the validator's own message.
 4. Exit 6 = `AF-GIP-PROMPT-QUALITY` (length cleared but a quality tooth failed). Record FAIL with the validator's itemized quality-defect list.
 5. Never emit a PASS the on-disk prompt or the validator's own exit code contradicts -- if you cannot verify a check on disk, it is a FAIL, not a pass.

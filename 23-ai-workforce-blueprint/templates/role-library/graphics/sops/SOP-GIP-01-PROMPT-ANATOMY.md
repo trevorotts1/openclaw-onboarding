@@ -23,7 +23,7 @@ just the cap check.
 > gate is a suggestion."* Clearing the floor is **NECESSARY, never SUFFICIENT**: the quality gate
 > (elements 4, 5, 8, 10) fails independently of length (AF-GIP-PROMPT-QUALITY).
 
-Band names, tiers, and quality teeth live in `45-design-intelligence-library/library/_system/prompt-bands.json` (bands: `text_bearing_long`, `text_bearing_medium`, `visual_long`, `medium`, `short_draft`; `short_draft` is NEVER a client deliverable). Prompt length follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (owner order 2026-10-05): before writing, run `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id>` for the chosen model, then write 95 to 100 percent of its maxLength (hard floor 80 percent, ceiling 100 percent). This supersedes the older 9,000 to 19,000 house band; the per-band numbers still enforced by `prompt-bands.json` and `diu_validator.py` are code thresholds that a follow-up lane changes.
+Band names, tiers, and quality teeth live in `45-design-intelligence-library/library/_system/prompt-bands.json` (bands: `text_bearing_long`, `text_bearing_medium`, `visual_long`, `medium`, `short_draft`; `short_draft` is NEVER a client deliverable). For length, write to the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py and graphics gate thresholds are being aligned to this rule in the same release (rule 12 of `07-kie-setup/references/kie-common-rules.md`).
 
 **GK-20 (2026-07-15, band<->routing reconciliation):** `text_bearing_long` targets GPT-Image-2.5
 T2I/I2I only — `nano-banana-2` was removed from its endpoints (Nano Banana is refused for ANY

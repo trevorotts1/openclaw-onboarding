@@ -20,7 +20,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
 - **LAYER A — THE AUTHORING PIPELINE.** The multi-phase, multi-role pipeline
   (`PIPELINE-MANIFEST.json`). Intake, priority-shift diagnosis, arc allocation,
   research, copywriting, copy-QC, typography, and — critically — **hand-authoring the
-  RICH per-slide image prompt** (sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent)) for every slide
+  RICH per-slide image prompt** (sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds are being aligned to this rule in the same release) for every slide
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
 - **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
@@ -153,7 +153,7 @@ code) — **never silently, never by your own choice.**
 
 ### PROMPT CHAR-COUNT (the script enforces it)
 
-Every per-slide rich prompt you (or the Slide Image Creator role) author is sized by rule 12 of `07-kie-setup/references/kie-common-rules.md` (run `kie_live_adapter.py prompt-budget --model <id>` first; 95 to 100 percent of maxLength, floor 80 percent). The render step's code gate (AF-P1 floor, AF-P2 ceiling in `build_deck.py`) still applies until a follow-up lane aligns it with rule 12. The mandatory English/Latin-only pin
+Every per-slide rich prompt you (or the Slide Image Creator role) author is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds are being aligned to this rule in the same release. The mandatory English/Latin-only pin
 the render step appends to EVERY prompt (if the authored prompt does not already carry
 it) is, verbatim:
 
