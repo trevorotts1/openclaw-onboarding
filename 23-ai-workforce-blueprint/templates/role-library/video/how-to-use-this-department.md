@@ -30,7 +30,7 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Pika, Runway, Sora, HeyGen, Synthesia.
+- Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted video models (Veo).
 - Pure animation work - explainer videos, character animation, whiteboard animation.
 - Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers).
 - Color correction + creative color grading.
@@ -72,7 +72,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **AI Video Generator Specialist** | Pika, Runway, Sora, HeyGen, Synthesia. |
+| **AI Video Generator Specialist** | Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted video models (Veo). |
 | **Animation Specialist 2D 3D Whiteboard** | Pure animation work - explainer videos, character animation, whiteboard animation. |
 | **Captioning Subtitling Specialist** | Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers). |
 | **Color Grading Specialist** | Color correction + creative color grading. |
@@ -96,8 +96,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **AI Video Generator Specialist**
 
-- *What it is for:* Pika, Runway, Sora, HeyGen, Synthesia.
-- *Example request:* "Have the AI Video Generator Specialist take this on: Pika, Runway, Sora, HeyGen, Synthesia."
+- *What it is for:* Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted video models (Veo).
+- *Example request:* "Have the AI Video Generator Specialist take this on: Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted video models (Veo)."
 
 **Animation Specialist 2D 3D Whiteboard**
 

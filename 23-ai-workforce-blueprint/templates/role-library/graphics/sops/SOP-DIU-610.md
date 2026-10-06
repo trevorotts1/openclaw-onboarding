@@ -64,7 +64,7 @@ Entry block format:
 - **seed**: {value} | `"no-seed-endpoint"`
 - **reference_provenance**: {source path(s) of all reference images used; "none" if no references}
 - **hosting_method**: {`ghl-media-library` | `imgbb` | `none`} — per SOP-DIU-609
-- **consent_record_id**: {UUID from _local/consent/{client-id}.json}
+- **consent_record_id**: {consent record identifier and version read from personal-photo-shoot/{client-slug}/CONSENT.md}
 - **consent_record_version**: {version at time of generation}
 - **consent_scope_modes**: [{list of modes A–F active at generation time}]
 - **likeness_present**: true | false
@@ -96,7 +96,7 @@ Entry block format:
 ### D. Licensing Audit (on-demand or as part of SOP-DIU-615 integrity sweep)
 
 1. Read the manifest for the client. Verify every entry has a non-null `consent_record_id` and `consent_record_version`.
-2. Cross-check: for every entry where `likeness_present: true`, confirm the referenced consent record exists in `_local/consent/{client-id}.json` and its status was `active` at `delivered_at`.
+2. Cross-check: for every entry where `likeness_present: true`, confirm the referenced consent record exists in `personal-photo-shoot/{client-slug}/CONSENT.md` and its status was `active` at `delivered_at`.
 3. For entries where `watermark_false_permitted: true`, confirm a valid manifest entry exists with `delivered_at` populated.
 4. Report any gap to CDO as a blocking finding. Gaps are not self-closed.
 
@@ -111,8 +111,8 @@ Entry block format:
 | Card ID + version, model, tier, filled prompt | Yes | SOP-DIU-602 generation receipt |
 | Seed value (or `no-seed-endpoint` flag) | Yes | SOP-DIU-602 generation receipt |
 | Reference image source paths | Conditional | SOP-DIU-609 hosting record; `"none"` if no references used |
-| Consent record ID + version at generation time | Yes | `_local/consent/{client-id}.json` — managed by SOP-DIU-608 |
-| Active consent scope modes | Yes | `_local/consent/{client-id}.json` |
+| Consent record ID + version at generation time | Yes | `personal-photo-shoot/{client-slug}/CONSENT.md` — managed by SOP-DIU-608 |
+| Active consent scope modes | Yes | `personal-photo-shoot/{client-slug}/CONSENT.md` |
 | Disclosure table | Yes | `_local/rights-manifest/{client-id}/disclosure-table.json` |
 | Delivery channel + jurisdiction | Yes | CDO delivery brief |
 | Shoot ID | Yes | Photo Shoot Director |
@@ -152,7 +152,7 @@ Entry block format:
 | `watermark: false` Wan job attempted without manifest entry | Hard stop. Write the manifest entry, then deliver. Never deliver `watermark: false` output without a manifest entry existing first. |
 | `minors_present` would be `true` | This state must never exist at delivery. If reached, the job did not complete SOP-DIU-608 correctly. Halt delivery. Quarantine asset per SOP-DIU-604. Escalate to CDO immediately. |
 | Consent record revoked after delivery — asset already in client's hands | Notify CDO immediately. Do not contact the client independently. CDO leads all communication and takedown decisions. |
-| Manifest entry references a consent record that no longer exists in `_local/consent/` | Escalate to CDO and Photo Shoot Director. Do not assume the consent was valid — treat as a gap until resolved. |
+| Manifest entry references a consent record that no longer exists at `personal-photo-shoot/{client-slug}/CONSENT.md` | Escalate to CDO and Photo Shoot Director. Do not assume the consent was valid — treat as a gap until resolved. |
 | Disclosure table has not been reviewed in over 90 days for a jurisdiction with active deliveries | Flag to CDO in the SOP-DIU-615 Healer sweep output. CDO decides whether a re-review is required. |
 | Licensing audit finds entries with `likeness_present: true` and no matching consent record | Blocking escalation to CDO + Photo Shoot Director. Do not use the affected card or any assets from the affected shoot until resolved. |
 
