@@ -16,8 +16,7 @@ _Source: node `Nano Banana Generate` → jsonBody_
   "input": {
     "prompt": {{ JSON.stringify($('Data Setup').item.json.image_prompt + ". Create a square podcast cover art image. Professional, clean, visually striking. Suitable for podcast platforms.") }},
     "aspect_ratio": "1:1",
-    "resolution": "2K",
-    "output_format": "png"
+    "resolution": "2K"
   }
 }
 ```

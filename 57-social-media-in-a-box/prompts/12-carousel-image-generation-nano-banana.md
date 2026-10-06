@@ -16,8 +16,7 @@ _Source: node `Nano Banana Generate` → jsonBody_
   "input": {
     "prompt": {{ JSON.stringify($json.prompt + ". Incorporate the text '" + $json.textOnImage + "' as a powerful, stylized typographic design element. The text must be bold, highly readable, and artistically integrated into the composition using dynamic font styling, strategic placement, and visual effects that make it pop while harmonizing with the overall aesthetic.") }},
     "aspect_ratio": "3:4",
-    "resolution": "2K",
-    "output_format": "png"
+    "resolution": "2K"
   }
 }
 ```
