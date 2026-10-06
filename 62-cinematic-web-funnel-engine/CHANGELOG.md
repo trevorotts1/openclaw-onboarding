@@ -1,5 +1,13 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.2 - 2026-10-06
+
+Delta QC round 2: the long prompts now carry scene-specific direction, not repeated house text.
+
+- Planner: every scene gets `production_direction` (subject, setting, time of day, light, materials, motion, camera blocking, mood, continuity), a new optional property in `structure/scene-plan.schema.json`. `plan_visual_journey.py` derives it per page section from a world-neutral library (13 section types plus a fallback for custom sections); an operator or agent may replace it with direction written for the exact scene.
+- `providers/prompt_depth.py` rewritten: each craft topic (subject, setting, composition, lens, light, color, materials, atmosphere, continuity, layout, mood, scale, wear, time and weather, background, finish, exclusions; for stills pose, hierarchy, crop, boundary, detail, reference; for clips camera path, parallax, temporal consistency, subject motion, endpoints, scrub, lens and light during the move, pacing; for connectors the bridge, the hand-off and the entering scene) is a short house rule plus sentences that apply it to THIS scene's own fields (and its crop rules, camera, duration, conversion purpose). Two different scenes now share under 50 percent of their sentences (measured 38 to 41 percent worst pair, by characters lower still), and no sentence repeats inside a prompt.
+- `{medium}` replaces still-image wording, so a clip prompt never says "image" (and a still never says "clip"); examples are world-neutral (no drawers, lamps, chairs or rooms in an outdoor world).
+- Tests: `test_prompt_depth.py` rewritten (band for all 13 section types at 20000, 12000, 5000, 2500; pairwise sentence share under half; no repeated sentence; no medium leakage; no domestic examples; the 79 / 80 / 95 / 100 / 101 percent boundaries through a real `KieProvider` call and Skill 74's budget math, replacing a vacuous arithmetic test; the real pipeline templates refused bare and accepted expanded).
 ## v2.1.1 - 2026-10-06
 
 QC follow-up: owner rule 12 (prompts 95 to 100 percent of the model maximum, never under 80 percent) is now a HARD REJECT here, not a report.

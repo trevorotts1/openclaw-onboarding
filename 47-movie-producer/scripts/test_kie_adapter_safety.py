@@ -15,6 +15,7 @@ Run:  python3 47-movie-producer/scripts/test_kie_adapter_safety.py      Exit: 0 
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -95,6 +96,58 @@ def main() -> int:
     res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "s.mp4")})
     check("seedance timeout: unresolved with the task id, no second job",
           res.success is False and res.data.get("kie_task_id") == "task-1" and len(ft.create_calls) == 1, detail=str(res.data))
+
+    print("== 1b. a LOST createTask answer that is not a socket error is unknown too (gateway 502 page, any 5xx) ==")
+    ft = base.FakeKieTransport()
+    ft.create_raw = (502, b"<html><body>502 Bad Gateway</body></html>")
+    res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
+    check("createTask HTTP 502 with a non-JSON body: no fallback, createTask sent once, veo never called",
+          res.success is False and len(ft.create_calls) == 1 and ft.veo_calls == [], detail=str(res.data))
+    check("createTask HTTP 502: needs_repoll with an unknown-outcome state and no task id",
+          res.data.get("needs_repoll") is True and res.data.get("kie_task_state") == "createTask_outcome_unknown" and res.data.get("kie_task_id") is None)
+    ft = base.FakeKieTransport()
+    ft.create_raw = (200, json.dumps({"code": 503, "msg": "service unavailable"}).encode())
+    res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
+    check("createTask body code 503: no fallback, needs_repoll", res.success is False and ft.veo_calls == [] and res.data.get("needs_repoll") is True)
+    ft2 = base.FakeKieTransport()
+    ft2.create_raw = (502, b"Bad Gateway")
+    res2 = base.fresh_tool(vid, "KieVideo", ft2).execute({"prompt": "a calm lake", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "s2.mp4")})
+    check("seedance createTask HTTP 502: unresolved, sent once", res2.success is False and len(ft2.create_calls) == 1 and res2.data.get("needs_repoll") is True)
+    ft = base.FakeKieTransport()
+    ft.veo_raw = (502, b"Bad Gateway")
+    res = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "model": "veo3_fast", "output_path": str(tmp / "v2.mp4")})
+    check("veo3_fast submit HTTP 502 non-JSON: unresolved, submitted once, no retry",
+          res.success is False and len(ft.veo_calls) == 1 and res.data.get("needs_repoll") is True, detail=str(res.data))
+    ft = base.FakeKieTransport()
+    ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
+    ft.veo_raw = (502, b"Bad Gateway")
+    res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
+    check("a gemini failure then a veo3_fast submit 502: unresolved, the veo job is not resubmitted",
+          res.success is False and len(ft.veo_calls) == 1 and res.data.get("needs_repoll") is True)
+
+    print("== 1c. an unexpected client fault (a truncated read) never raises out of execute() ==")
+    import http.client
+    for name, mod, cls, inputs in (("video", vid, "KieVideo", dict(GEM)), ("image", img, "KieImage", {"prompt": "a barn", "output_path": str(tmp / "i.png")})):
+        ft = base.FakeKieTransport()
+        ft.schema_error = http.client.IncompleteRead(b"")
+        try:
+            res = base.fresh_tool(mod, cls, ft).execute(dict(inputs))
+            raised = None
+        except Exception as exc:  # noqa: BLE001
+            res, raised = None, exc
+        check(f"{name}: a transport fault while reading the schema returns a failed result, no spend, no exception",
+              raised is None and res is not None and res.success is False and ft.create_calls == [] and ft.veo_calls == [], detail=str(raised or getattr(res, "error", "")))
+    ft = base.FakeKieTransport()
+    ft.create_error = http.client.IncompleteRead(b"")
+    res = base.fresh_tool(vid, "KieVideo", ft).execute(dict(GEM))
+    check("a truncated read AFTER createTask was sent: unresolved, no fallback, sent once",
+          res.success is False and ft.veo_calls == [] and len(ft.create_calls) == 1 and res.data.get("needs_repoll") is True, detail=str(res.data or res.error))
+
+    ft = base.FakeKieTransport()
+    ft.record_queue = [RUNNING] * 400
+    res = base.fresh_tool(img, "KieImage", ft).execute({"prompt": "a barn", "output_path": str(tmp / "slow.png")})
+    check("image timeout: failed with the task id recorded for re-polling (parity with video), createTask sent once",
+          res.success is False and res.data.get("kie_task_id") == "task-1" and res.data.get("needs_repoll") is True and len(ft.create_calls) == 1, detail=str(res.data))
 
     print("== 2. the key gate in a bare clone: empty HOME, no shared-utils ==")
     clone = Path(tempfile.mkdtemp(prefix="kie47-bareclone-"))

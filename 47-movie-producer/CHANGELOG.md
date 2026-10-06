@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.1.2 - 2026-10-06 - delta QC round 2
+
+- A lost createTask answer is an unknown outcome, not a rejection: with no task id, an error code of `network` or `bad_response` (a gateway 502 page, any non-KIE-JSON body) or any 5xx now means no fallback, no resubmit and `data.needs_repoll`. The same rule covers the veo3 / veo3_fast legacy submit. A definite rejection (for example 402) still falls back. Test: createTask HTTP 502 with a non-JSON body gives one createTask, zero veo calls, `createTask_outcome_unknown`.
+- Unexpected client faults (for example a truncated read) no longer raise out of `execute()`: before createTask they return a failed result with no spend; after it may have been sent they are unresolved (no fallback, no resubmit). Both adapters. `kie_image.py` now also records the task id and `needs_repoll` when a run times out (parity with video).
 ## v15.1.1 - 2026-10-06 - QC follow-ups on the Skill 74 consolidation
 
 - No fallback on an unknown outcome: when gemini-omni-video times out (the task may still finish), its task status cannot be read, or the createTask answer is lost to a network error, `kie_video.py` no longer starts a veo3_fast job and never resubmits. The result is `success=False` with `data.needs_repoll`, `data.kie_task_id` (when KIE returned one) and `data.kie_task_state` (`unresolved` or `createTask_outcome_unknown`) for the Dispatcher to re-poll. The same holds for Seedance and for the veo3 / veo3_fast legacy route (timeout, lost answer, unreadable status, result not saved). A definite failure still falls back; a prompt or credit refusal never falls back.

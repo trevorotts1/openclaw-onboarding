@@ -234,6 +234,12 @@ def _err_text(result: dict[str, Any]) -> str:
     return f"{err.get('code')}: {err.get('msg')}" if err else f"state={result.get('state')}"
 
 
+def _lost_answer(code: Any) -> bool:
+    """A createTask failure that does not prove the request was rejected: a network error, a body that is not
+    KIE JSON (a gateway 502 page), or any 5xx. The job may exist and be billed, so there is no fallback."""
+    return code in ("network", "bad_response") or str(code).startswith("5")
+
+
 class _KieUnresolved(RuntimeError):
     """A paid KIE job whose outcome is unknown: it timed out or could not be read (``task_id`` set), or the
     createTask answer was lost to a network error after the request may have been sent (``task_id`` None).
@@ -662,16 +668,23 @@ class KieVideo(BaseTool):
     def _run_job(self, adapter: Any, model: str, task_input: dict[str, Any], seconds: float, save_dir: str) -> dict[str, Any]:
         """createTask models: prompt-budget, preflight, then Skill 74 submit + wait + save.
         -> {"ok", "error", "transient", "run", "credits", "warnings"}."""
-        refusal, warnings = self._check_prompt(adapter, model, task_input.get("prompt", ""))
-        if not refusal:
-            refusal, credits, more = self._preflight(adapter, model, seconds)
-            warnings += more
-        else:
-            credits = None
+        try:  # a transport fault while reading the prompt limit or the balance happens BEFORE any spend: fail closed, do not raise
+            refusal, warnings = self._check_prompt(adapter, model, task_input.get("prompt", ""))
+            if not refusal:
+                refusal, credits, more = self._preflight(adapter, model, seconds)
+                warnings += more
+            else:
+                credits = None
+        except Exception as exc:  # noqa: BLE001 - any client-side fault (for example a truncated read) is a refusal with no spend
+            refusal, warnings, credits = f"kie_video: {model} pre-flight check failed before any spend: {getattr(exc, 'msg', exc)}", [], None
         if refusal:
             return {"ok": False, "error": refusal, "transient": False, "unresolved": False, "refused": True,
                     "task_id": None, "run": {}, "credits": None, "warnings": warnings}
-        run = adapter.cmd_run({"model": model, "input": task_input}, save_dir, timeout=_POLL_TIMEOUT_SECONDS)
+        try:
+            run = adapter.cmd_run({"model": model, "input": task_input}, save_dir, timeout=_POLL_TIMEOUT_SECONDS)
+        except Exception as exc:  # noqa: BLE001 - a fault after createTask may have been sent: the outcome is unknown, never resubmit
+            return {"ok": False, "error": f"unexpected client fault during the paid run: {getattr(exc, 'msg', exc)}",
+                    "transient": False, "unresolved": True, "task_id": None, "run": {}, "credits": credits, "warnings": warnings}
         if run["state"] == "success" and run["saved_paths"]:
             return {"ok": True, "error": "", "transient": False, "unresolved": False, "task_id": run["task_id"],
                     "run": run, "credits": credits, "warnings": warnings}
@@ -681,7 +694,7 @@ class KieVideo(BaseTool):
         verdict = run["state"] == "fail" and "state_raw" in (run.get("data") or {})  # KIE itself reported the task failed
         # Unknown outcome: a task id exists but KIE has not said it failed (timeout, unreadable status), or
         # createTask was sent and its answer was lost to a network error. Money may be spent either way.
-        unresolved = (bool(tid) and not verdict) or (not tid and err.get("code") == "network")
+        unresolved = (bool(tid) and not verdict) or (not tid and _lost_answer(err.get("code")))
         transient = verdict and any(k in msg.lower() for k in _TRANSIENT_FETCH_MARKERS)
         return {"ok": False, "error": msg, "transient": transient, "unresolved": unresolved, "task_id": tid,
                 "run": run, "credits": credits, "warnings": warnings}
@@ -702,8 +715,8 @@ class KieVideo(BaseTool):
         try:
             j = adapter.call("POST", adapter.api + "/api/v1/veo/generate", body)
         except Exception as exc:  # Skill 74's KieError: code + redacted msg
-            if getattr(exc, "code", None) == "network":  # the request may have been sent: outcome unknown, never resubmit
-                raise _KieUnresolved(f"Veo submit outcome unknown after a network error ({getattr(exc, 'msg', exc)})")
+            if _lost_answer(getattr(exc, "code", None)) or not hasattr(exc, "code"):  # may have been sent: outcome unknown, never resubmit
+                raise _KieUnresolved(f"Veo submit outcome unknown after a lost or unreadable answer ({getattr(exc, 'msg', exc)})")
             raise RuntimeError(f"Veo submit failed: {getattr(exc, 'msg', exc)}")
         task_id = (j.get("data") or {}).get("taskId") or j.get("taskId")
         if not task_id:
