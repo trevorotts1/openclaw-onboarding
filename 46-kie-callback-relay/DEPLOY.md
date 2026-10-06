@@ -97,7 +97,7 @@ curl https://kie-callback.<your-cf-zone>/healthz
 
 Expected:
 ```json
-{ "status": "ok", "worker": "kie-callback-relay", "version": "2.0.3", ... }
+{ "status": "ok", "worker": "kie-callback-relay", "version": "2.0.4", ... }
 ```
 
 ---

@@ -288,7 +288,7 @@ EXAMPLE 9: GENERATE A SORA 2 VIDEO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 What we are doing: Creating a video using the Sora 2 model (by OpenAI,
-accessed through KIE.ai). This is cheaper than VEO at $0.15 per clip.
+accessed through KIE.ai). Its historical price was $0.15 per clip (check live pricing via GET /api/v1/models pricingDesc or `kie_live_adapter.py price`).
 
 curl -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
   -H "Authorization: Bearer YOUR_API_KEY" \

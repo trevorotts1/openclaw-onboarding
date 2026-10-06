@@ -8,9 +8,9 @@ description: >
   crash-safe on-disk task registry. Applies to large decks (above configurable
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
-version: v2.0.3
+version: v2.0.4
 metadata:
-  version: "v2.0.3"
+  version: "v2.0.4"
   skill_number: 46
   requires_skills: [07]
   priority: HIGH

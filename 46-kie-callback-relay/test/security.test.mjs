@@ -75,11 +75,11 @@ const WEBHOOK_KEY  = 'kie-webhook-hmac-key-fixture';
 const SLUG         = 'client-alpha';
 
 // =============================================================================
-await section('Worker: /healthz reports version 2.0.3', async () => {
+await section('Worker: /healthz reports version 2.0.4', async () => {
   const res = await worker.fetch(new Request('https://w/healthz'), {}, makeCtx().ctx);
   ok(res.status === 200, 'healthz -> 200');
   const body = await res.json();
-  ok(body.version === '2.0.3', `healthz version == 2.0.3 (got ${body.version})`);
+  ok(body.version === '2.0.4', `healthz version == 2.0.4 (got ${body.version})`);
 });
 
 await section('Worker: /kv-read auth + preimage (fixes B/C/F/G)', async () => {
@@ -313,6 +313,16 @@ await section('box-kv-poller: images array with null/garbage items does not thro
         resultJson: { images: [null, undefined, 5, { url: MARKET_URL }] } } });
   marker = await p.waitForTask('sub-n2', 'task-n2', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
   ok(marker.status === 'done' && marker.resultUrls.length === 1 && marker.resultUrls[0] === MARKET_URL, 'null items skipped, the real URL still resolves done');
+});
+
+await section('box-kv-poller: all-null images array falls through to resultUrls and completes (no hang)', async () => {
+  const p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success',
+        resultJson: { images: [null, {}], resultUrls: [MARKET_URL] } } });
+  const guard = new Promise((_, rej) => setTimeout(() => rej(new Error('poller hung past 5s')), 5000));
+  const marker = await Promise.race([
+    p.waitForTask('sub-f1', 'task-f1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 }), guard]);
+  ok(marker.status === 'done' && marker.resultUrls[0] === MARKET_URL, `all-null images + resultUrls -> done (got ${marker.status})`);
+  ok(marker.source === 'kie-poll', 'completed through the poll path within the guard');
 });
 
 await section('box-kv-poller: Suno shape (response.data[].audio_url) -> done', async () => {
