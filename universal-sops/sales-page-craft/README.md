@@ -57,7 +57,7 @@ bash 56-sales-page-assets/sales-page-assets-entry.sh --run-dir <RUN_DIR>
 Requests route to this engine through the shared **STEP-0 funnel-engine selector**
 (`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`) — Skill 56 is
 the SECOND registered engine (the Direct-Response family). A hand-rolled GHL REST call, an ImgBB
-re-host, a raw image `createTask`, a mail sender, or a `python3 run_sales_page_assets.py` without the
+re-host, a raw image `createTask` (Skill 74 result files directly inside `receipts/kie74/` are the one allow-listed exception), a mail sender, or a `python3 run_sales_page_assets.py` without the
 front-door nonce is the ungoverned path and is refused (`AF-SP56-CANONICAL-BYPASS` / `AF-SP56-FRONT-DOOR`).
 
 ## Files
@@ -158,5 +158,5 @@ A/B variants come from two client models OR two persona prompts on one client mo
 Anthropic/Gemini split. The deterministic gates (`prove_sp_*.py`, the funnel-engine selector) are
 provider-neutral Python and run identically everywhere; `56-sales-page-assets/verify.sh` includes a
 provider-purity scan (ZERO `api.anthropic.com` / `claude-*` ids in the shipped skill). Images delegate
-to Skill 47 or the client's own image provider; ALL GHL media + build delegate to Skill 6; the bump
+to Skill 66 (model policy) then Skill 74 (the one approved KIE transport), or Skill 63 when the client selected Agnes; ALL GHL media + build delegate to Skill 6; the bump
 routes to Skill 44. Publishing is human-approved (preview URLs + a labeled `~/Downloads/` bundle).

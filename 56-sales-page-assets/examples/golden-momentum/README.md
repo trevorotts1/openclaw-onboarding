@@ -19,8 +19,9 @@ PASSES all seven Skill-56 provers and drives the canonical no-skip orchestrator 
   the fix for the legacy default-4 slice bug.
 - **Provenance (`media_ledger.json`):** every image carries a task id + a GHL-media-host URL; the
   bundle routes the bump to the Skill 44 order-bump seam and terminates on a thank-you step.
-- **Delegation seams (attested, never forked here):** image generation → Skill 47 / the client's
-  own image provider; GHL media folder/upload + funnel/page build → Skill 6; bump order-form →
+- **Delegation seams (attested, never forked here):** image generation → Skill 66 (model
+  policy) then Skill 74 (`kie_live_adapter.py`), or Skill 63 when the client selected Agnes (the committed specimen
+  certificate predates the rename and still labels the phase `kie_image.py`); GHL media folder/upload + funnel/page build → Skill 6; bump order-form →
   Skill 44. The orchestrator attests those phases in order.
 
 ## Content authenticity (systemic fix #8)
@@ -67,7 +68,7 @@ bash $S/verify.sh                                                               
 throwaway run-dir, writes a fresh run-scoped `.spa_run_nonce`, and runs
 `run_sales_page_assets.py --run-dir … --nonce …` — the no-skip state machine — which emits a
 signed certificate only on all-phases-pass. The delegated P2/P4/P5/P6/P8/P9 phases (image
-generation via Skill 47 / the client provider + all GHL media/build via Skill 6 + the Skill 44
+generation via Skills 66 and 74 (or Skill 63) + all GHL media/build via Skill 6 + the Skill 44
 bump seam) are attested seams in this repo-only reproduce; their live adapters run on a
 provisioned box.
 

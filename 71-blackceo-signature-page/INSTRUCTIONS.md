@@ -13,7 +13,7 @@ Do not use Skill 71 when the request clearly names the specialized multi-step/di
 3. Follow the Production/QC SOP stage order.
 4. Load only the stage-specific reference needed now.
 5. For image work, load Image Intelligence v5; choose one page-level Creative Direction family/style or Secret-Sauce-only.
-6. Delegate provider execution to Skill 66/63 rather than hand-rolling image calls.
+6. Route every image or video request policy (Skill 66 image, Skill 67 video, or Skill 63 when Agnes is selected) then transport (Skill 74), as written in `references/kie-generation-route.md`. Prompt length follows `kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent). Never hand-roll provider calls.
 7. Delegate GHL delivery to Skill 6.
 8. Produce preview/review artifacts and publish only under current authorization rules.
 

@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.2.0 - 2026-10-06
+
+KIE integration (owner order: the landing page skill must work flawlessly with the KIE rules, and Skill 74 is the one approved KIE path).
+
+- **KIE-1** New `references/kie-generation-route.md`: every image or video request routes policy owner (Skill 66 images, Skill 67 video, Skill 63 only when Agnes is selected) then Skill 74 transport (validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, wait, save immediately). GPT Image default via `latest-family`; N43 ratio rules; account limit 20 createTask per 10 seconds; no hard-coded prices, model ids or endpoints.
+- **KIE-2** `scripts/stage_gate.py` + `references/stage-contract.json`: `image-generation-qc` now has `transport_required`. The stage closes only when the receipt carries a `transport` block (Skill 74, mode active, per-file task id, model id and source, preflight ok, budget exit 0, N43 ratios) and `cost.provider` matches the route. A hand-rolled createTask has no such receipt and cannot close the stage. Tests: `tests/test_stage_gate.py` i1 to i9.
+- **KIE-3** Prompt length text now points to `07-kie-setup/references/kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent) instead of the older 5,000-20,000 house band, the 8,000-14,000 working target and the 19,000 ceiling: SKILL.md, `references/authority-map.md`, the Production and QC SOP (Stage 7 and 8), the image guide v5 (start, section 1, section 12), EVALUATION-CHECKLIST. The length validator code in `scripts/validate_prompt.py` is not changed here; if its check disagrees with `prompt-budget`, the budget wins.
+- **KIE-4** Submission limit corrected from 20 per 15 seconds to 20 per 10 seconds (rule 3) in `references/swarm-plan.md`, the SOP and the image guide. Retention (save immediately, links can expire within 24 hours) and the single-attempt 401/403 rule are stated in the route file.
+- **KIE-5** `references/BlackCEO-Page-Brand-Law.md` notes that model names inside the quoted brand-law rule 5 are never typed by Skill 71; the policy owners resolve them. `references/artifact-contracts.md` documents the generation receipt. `verify.sh` requires the new reference.
+- Version bumped to 1.2.0 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.1.1 - 2026-10-05
 
 Font fallback: "if a person doesn't provide a font, the system figures out the best for

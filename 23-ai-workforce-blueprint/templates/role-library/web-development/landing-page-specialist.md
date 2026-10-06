@@ -196,7 +196,7 @@ This role contributes to the company revenue cascade by: **building and optimizi
 2. **Multi-step 3/5/7 Signature Funnel → Skill 49 `signature-funnel`:** any funnel with checkout / upsell / downsell / OTO / branching. Skill 49 is NOT the engine for single-page signature landing pages.
 3. **Direct-Response / VSL / high-ticket / order-bump asset stack → Skill 56 `sales-page-assets`.**
 4. **Animated / cinematic / scroll-controlled experience → Skill 62 `cinematic-web-funnel-engine`.**
-5. **Delegate execution rails — never fork them:** image generation to the selected installed image skill (Skill 66 Kie by default when applicable; Skill 63 Agnes when selected) and GHL delivery to Skill 6.
+5. **Delegate execution rails — never fork them:** image generation to the selected installed image skill (for Kie by default when applicable: Skill 66 for the model policy, then Skill 74 for the transport, as written in `71-blackceo-signature-page/references/kie-generation-route.md`, with prompt length per `kie-common-rules.md` rule 12; Skill 63 Agnes when selected) and GHL delivery to Skill 6.
 **Outputs:** A resolved page family + owning skill recorded before any copy, wireframe, image, or build work starts
 **Hand to:** The owning engine (Skill 71 / 49 / 56 / 62) for authoring; Skill 6 (GHL delivery) and the selected image skill downstream
 **Failure mode:** The "hand-authored BlackCEO page" — building a signature landing page by hand, or letting the multi-step funnel engine (Skill 49) claim a single-page request, because the family was never resolved; the page then bypasses the canonical engine's copy, visual, and QC floors. Resolve the family FIRST; never waive an engine floor.

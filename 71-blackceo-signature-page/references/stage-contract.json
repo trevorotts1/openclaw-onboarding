@@ -148,6 +148,7 @@
       "min_scores": { "each": 8, "average": 8.5 },
       "reads": [
         "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
+        "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
         "assets/brand/signature-grade-block.txt"
@@ -165,6 +166,7 @@
       "count_of": "desktop-wireframe/image-inventory.json",
       "count_glob": "image-generation-qc/Image-*.png",
       "cost_required": true,
+      "transport_required": true,
       "validators": [
         "python3 scripts/validate_image_grade.py {file} --brand {brand}"
       ],
@@ -172,6 +174,7 @@
       "min_scores": { "each": 8, "average": 8.5 },
       "reads": [
         "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md",
+        "references/kie-generation-route.md",
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json"
       ],
