@@ -13,8 +13,8 @@ Cases (mirror the P3-05 (e) QC break-it probes verbatim):
      present -> PASSES (exit 0) — proves case 2 was really about routing, not a fluke.
   4. An "ungated" graphics-department asset (no QC receipt) -> refused (exit 6,
      AF-SM-INPUT-QC-GATE); the SAME asset with a >=8.5 SOP-GIP-02 receipt -> passes.
-  5. A non-text prompt on Nano Banana 2 passes ONLY when labeled --fallback-label (owner
-     order 2026-10-05: Nano Banana is never a primary route).
+  5. A non-text prompt on Nano Banana 2 is refused even with --fallback-label (owner rule:
+     Nano Banana is never a social route).
   6. GK-20 (band<->routing reconciliation, 2026-07-15): a text-overlay prompt SIZED TO the
      Graphics department's `text_bearing_medium` GIP band floor (prompt-bands.json, the
      ONLY text-bearing band naming an Ideogram endpoint) routed to Sunburst
@@ -177,7 +177,7 @@ def main() -> int:
         check("passing (8.9 >= 8.5) receipt clears the gate (exit 0)", r4c.returncode == 0,
               f"got {r4c.returncode}, stderr={r4c.stderr!r}")
 
-        print("\n=== 5. non-text prompt on Nano Banana 2 labeled --fallback-label -> passes ===")
+        print("\n=== 5. owner rule: Nano Banana is refused even for non-text and even with --fallback-label ===")
         p5 = _write(tmp, "p5.txt", fit(
             "A photoreal lifestyle photo of a team collaborating, brand-appropriate, "
             "appropriate for the client's audience, no suggestive content. No on-image "
@@ -187,11 +187,12 @@ def main() -> int:
             "--ratio", "9:16", "--pixels", "1080x1920",
             "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(avoid_file),
-            "--fallback-label",  # owner order 2026-10-05: Nano Banana only as a labeled fallback
+            "--no-social-band",
+            "--fallback-label",  # legacy flag, no effect
             # no --text-overlay
         )
-        check("exit code is 0 (no text overlay, labeled --fallback-label)",
-              r5.returncode == 0, f"got {r5.returncode}, stderr={r5.stderr!r}")
+        check("exit code is 6 (Nano Banana never allowed, labeled or not)",
+              r5.returncode == 6, f"got {r5.returncode}, stderr={r5.stderr!r}")
 
         print("\n=== 6. GK-20: text_bearing_medium-band-floor-sized prompt, routed to GPT Image 2.5 Sunburst -> exit 0 ===")
         # A genuinely rich body (>=1,600 chars to clear the Graphics text_bearing_medium GIP
@@ -301,7 +302,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td2:
         t2 = Path(td2)
         av = _write(t2, "av.txt", _AVOID_LIST)
-        pp = _write(t2, "pp.txt", _sized(9000))
+        pp = _write(t2, "pp.txt", _sized(19000))
         r11 = run_gate(  # NO --model: the default must be Sunburst text-to-image
             "--prompt-file", str(pp), "--ratio", "2:3", "--pixels", "1000x1500",
             "--brand-colors", "#0B3D2E,#F5EFE0", "--avoid-list-file", str(av),
@@ -315,18 +316,18 @@ def main() -> int:
             "--pixels", "1000x1500", "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(av),
         )
-        check("Nano Banana without --fallback-label is refused as a route (exit 6)",
+        check("Nano Banana without --fallback-label is refused (exit 6)",
               r11b.returncode == 6, f"got {r11b.returncode}")
         check("refusal names Sunburst as the default",
               "gpt-image-2-5-sunburst-text-to-image" in r11b.stderr, r11b.stderr)
-        pt = _write(t2, "pt.txt", _sized(9000).rstrip() + ' On-image text reads exactly: "Headline Here".')
+        pt = _write(t2, "pt.txt", _sized(18900).rstrip() + ' On-image text reads exactly: "Headline Here".')
         r11c = run_gate(
             "--prompt-file", str(pt), "--model", "nano-banana-2", "--fallback-label",
             "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E,#F5EFE0",
             "--avoid-list-file", str(av),
             "--text-overlay", "Headline Here",
         )
-        check("labeled Nano Banana fallback is still refused for baked text (exit 6)",
+        check("labeled Nano Banana is still refused for baked text (exit 6)",
               r11c.returncode == 6, f"got {r11c.returncode}")
         r11d = run_gate(
             "--prompt-file", str(pp), "--model", "gpt-image-2-5-sunburst-image-to-image",
@@ -339,7 +340,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td3:
         t3 = Path(td3)
         av3 = _write(t3, "av.txt", _AVOID_LIST)
-        pp3 = _write(t3, "pp.txt", _sized(9000))
+        pp3 = _write(t3, "pp.txt", _sized(19000))
         rl = run_gate("--prompt-file", str(pp3), "--model", "gpt-image-2-text-to-image",
                       "--ratio", "2:3", "--pixels", "1000x1500", "--brand-colors", "#0B3D2E",
                       "--avoid-list-file", str(av3))
@@ -351,7 +352,7 @@ def main() -> int:
         check("control: Sunburst on the same ratio passes (exit 0)", rs.returncode == 0, f"got {rs.returncode}")
         import importlib.util as _iu2
         _sp2 = _iu2.spec_from_file_location("pgg2", str(GATE)); _g2 = _iu2.module_from_spec(_sp2); _sp2.loader.exec_module(_g2)
-        rr = _g2.check_prompt(_sized(9000), model="gpt-image-2-text-to-image", ratio="3:1", pixels="3000x1000",
+        rr = _g2.check_prompt(_sized(19000), model="gpt-image-2-text-to-image", ratio="3:1", pixels="3000x1000",
                               platform=None, text_overlay=None, brand_colors="#0B3D2E",
                               avoid_list_text="x", asset_source="internal-generated", qc_receipt=None)
         check("legacy gpt-image-2 on 3:1 raises no legacy-routing problem",

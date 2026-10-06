@@ -36,7 +36,7 @@ AF_DEFERRED = "AF-SM-DEFERRED"
 DEFERRED = {
     "narrated-video": ("0.3.0",
         "narrated Reels (55-60s multi-clip + continuous Fish-Audio voiceover, FFmpeg concat)",
-        "the Sora 25.0s single-shot video lane (`--mode video`) works today"),
+        "the 25.0s single-clip video lane (`--mode video`, render model picked by the Skill 67 selector) works today"),
     "syndicate": ("0.4.0",
         "non-GHL add-on channels (WordPress / Medium / Substack / YouTube-direct)",
         "GHL-direct posting for every connected platform works today"),

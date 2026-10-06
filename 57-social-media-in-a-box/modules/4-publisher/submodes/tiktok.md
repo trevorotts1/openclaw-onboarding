@@ -9,5 +9,5 @@
   (TikTok as a search engine).
 
 ## Contract
-- Uses the Sora video lane (EXACTLY 25.0s; `AF-SM-STORYBOARD`).
+- Uses the 25.0s video lane (EXACTLY 25.0s, render model picked by the Skill 67 selector; `AF-SM-STORYBOARD`).
 - Result: `{platform:"tiktok", success, totalPosts, processedAccounts, errors}`.

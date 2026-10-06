@@ -21,5 +21,5 @@ _Source: node `Agent - Prompt Doctor` → text_
 ERROR RECEIVED: {{ $json.msg || $json.error.message }}
 ORIGINAL PROMPT: {{ $('Agent - Visual Prompt Architect').item.json.output }}
 
-TASK: Rewrite the prompt to fix the error (shorten it, remove banned words) while keeping the visual intent.
+TASK: Rewrite the prompt to fix the error (shorten it, remove banned words) while keeping the visual intent. If the error is a length error, cut only to the model's prompt maximum; the rewritten prompt must stay between 80 and 100 percent of that maximum (Skill 74 `prompt-budget`), never shorter.
 ```

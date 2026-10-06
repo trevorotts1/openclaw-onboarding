@@ -989,7 +989,7 @@ CRITICAL: These styles define the STRUCTURAL and VISUAL SYSTEM of your carousel.
 
 ### UNIVERSAL SPECIFICATIONS FOR ALL STYLES
 
-**Canvas Size:** 3:4 aspect ratio (1080 x 1440 pixels recommended)
+**Canvas Size:** request 3:4 (N43 substitutes 3:4 for 4:5); the result is cropped to 4:5 at 1080 x 1350 pixels, so keep key content inside the central 4:5 safe area
 
 **Slides Per Carousel:** 9 slides
 

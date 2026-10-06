@@ -3543,8 +3543,8 @@
       "path": "templates/role-library/graphics/social-media-graphics-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": true,
-      "content_sha": "sha256:618b70aefcaf44ef34129d99abfee3619e0879e5990dff904cf9d5b5a3705369",
-      "render_sha": "sha256:2ee374124773b69324b1b873a0f1bc8cdd355775b2688b27a8f55232c7317101",
+      "content_sha": "sha256:538dded01b4f0d465c77adbfc866406266aeae43b9dbfa3fa4c8b380b7c0b413",
+      "render_sha": "sha256:2fa0ea07a9396a795dcd62170ddfbf537d714a3725c7a4e84beee88ddf154e6d",
       "content_version": "1.0.7",
       "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
     },

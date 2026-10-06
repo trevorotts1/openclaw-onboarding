@@ -111,6 +111,25 @@ class StagingTests(unittest.TestCase):
         self.assertFalse((Path(self.wt) / "publish-receipts.json").is_file(),
                          "staging wrote publish receipts — staging is not posting proof")
 
+    def test_manifest_media_plan_defaults_to_sunburst_and_routes_video_to_67(self):
+        # Skill 74 / 66 / 67 plug-in: a config naming Nano Banana or Sora is ignored and
+        # reported, never silently honored; the manifest carries the Skill 74 job steps.
+        cfgdir = Path(self.ht) / ".openclaw" / "config"
+        (cfgdir / "image-model.json").write_text(json.dumps({"model": "nano-banana-pro"}))
+        (cfgdir / "video-specs.json").write_text(json.dumps({"model": "sora-2-text-to-video", "width": 1080}))
+        p = _run(self.ht, self.wt)
+        self.assertEqual(p.returncode, 0, f"STDERR: {p.stderr}")
+        media = json.loads((Path(self.wt) / "cycle-manifest.json").read_text())["media"]
+        self.assertEqual(media["image"]["text_to_image"], "gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual(media["image"]["image_to_image"], "gpt-image-2-5-sunburst-image-to-image")
+        files = sorted(v["file"] for v in media["violations"])
+        self.assertEqual(files, ["image-model.json", "video-specs.json"])
+        self.assertEqual(media["video"]["owner"], "67-kie-video")
+        steps = " | ".join(media["image"]["per_job_steps"])
+        for word in ("prompt-budget", "validate", "preflight", "--mode active"):
+            self.assertIn(word, steps)
+        self.assertIn("names 'nano-banana-pro'", p.stderr)
+
     def test_unknown_flags_exit_two(self):
         # The old suite asserted --execute exits 0 and --enqueue exits 7; the
         # parser implements NEITHER flag, and an unknown argument must exit 2.

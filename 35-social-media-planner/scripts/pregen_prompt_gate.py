@@ -23,8 +23,9 @@ declared metadata BEFORE any generation call, mirroring the Graphics department'
       stub, not a real prompt — it is NOT submitted, NOT generated.
   6 — QUALITY/ROUTING failure (AF-SM-MODEL-ROUTING / AF-SM-INPUT-QC-GATE): the prompt is
       structurally complete but (a) a text-overlay image is routed to a non-text-rendering
-      model (Nano Banana 2/Pro), or Nano Banana is used as anything other than an
-      explicitly labeled non-text fallback (--fallback-label). Skill 35's default image
+      model, or Nano Banana is used at all (owner rule: never for social, no fallback
+      label exists; the only fallback for Sunburst is legacy gpt-image-2 under the N43
+      ratio rules). Skill 35's default image
       model is KIE GPT Image 2.5 Sunburst (owner order 2026-10-05, AGENTS.md N43;
       playbook.md Section 8), or
       (b) a graphics-department-sourced asset has no SOP-GIP-02 QC receipt scoring >= 8.5.
@@ -309,8 +310,7 @@ def check_prompt(
     # --- QUALITY / ROUTING (exit 6): correct once FORM is complete ----------------------
     # F32: capability-metadata routing via model-capabilities.json. GPT Image 2.5 and
     # Agnes are ELIGIBLE through verified adapters; the Ideogram-only allowlist is gone.
-    # Owner order 2026-10-05: Nano Banana is never a primary route. It is allowed only
-    # when the caller labels the call as an explicit non-text fallback.
+    # Owner rule: Nano Banana is never a social route, labeled or not.
     # AGENTS.md N43: legacy gpt-image-2 (not 2.5) is allowed ONLY for 3:1, 1:3 and 9:21.
     _bare = model_norm.split("/")[-1]
     if _bare.startswith("gpt-image-2") and not _bare.startswith("gpt-image-2-5") \
@@ -320,12 +320,12 @@ def check_prompt(
             f"{sorted(LEGACY_GPT_IMAGE_2_RATIOS)} (AGENTS.md N43). Ratio {ratio!r} must use "
             f"{DEFAULT_IMAGE_MODEL} (or {DEFAULT_IMAGE_MODEL_I2I}).")
 
-    if model_norm.split("/")[-1].startswith("nano-banana") and not fallback_label:
+    if model_norm.split("/")[-1].startswith("nano-banana"):
         res.quality_problems.append(
             f"AF-SM-MODEL-ROUTING: {model!r} is not a Skill 35 route. The default image "
             f"model is KIE GPT Image 2.5 Sunburst ({DEFAULT_IMAGE_MODEL}; "
-            f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana is allowed only "
-            "as an explicitly labeled NON-TEXT fallback (--fallback-label).")
+            f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana is never "
+            "allowed for social images; the only fallback is legacy gpt-image-2 under the N43 ratio rules.")
 
     if text_overlay and not model_is_text_capable(model_norm):
         res.quality_problems.append(
@@ -453,10 +453,10 @@ def build_parser() -> argparse.ArgumentParser:
     ck.add_argument("--model", default=DEFAULT_IMAGE_MODEL,
                     help=f"default {DEFAULT_IMAGE_MODEL} (KIE GPT Image 2.5 Sunburst; use "
                          f"{DEFAULT_IMAGE_MODEL_I2I} with a reference image). Nano Banana "
-                         "is accepted only with --fallback-label and never for baked text.")
+                         "is always refused for social images.")
     ck.add_argument("--fallback-label", action="store_true",
-                    help="mark this call as an explicit NON-TEXT fallback (the only way "
-                         "Nano Banana is allowed)")
+                    help="legacy flag, no effect: Nano Banana is refused for social images "
+                         "even when labeled")
     ck.add_argument("--ratio", help="4:5 | 2:3 | 9:16 | 16:9 | 1:1")
     ck.add_argument("--pixels", help="e.g. 1080x1350")
     ck.add_argument("--platform", help="facebook | instagram | linkedin | pinterest | "

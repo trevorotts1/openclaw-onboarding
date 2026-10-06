@@ -75,7 +75,9 @@ esac
 
 ## Images (every image)
 
-- [ ] Image was generated with KIE GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference); Nano Banana only if explicitly labeled as a non-text fallback
+- [ ] Image was generated with KIE GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference), or the newer GPT Image generation that rule 13 resolved; Nano Banana is never allowed (the only fallback is legacy gpt-image-2 under the N43 ratio rules)
+- [ ] The job ran the Skill 74 chain (playbook.md Section 8c): `prompt-budget --check` passed (95 to 100 percent of the model maximum, never below 80), `validate` clean, `preflight` ok, `run --mode active` saved the file; the receipt names the model id used
+- [ ] `cycle-manifest.json` `media.violations` is empty, or each entry was reviewed (a Nano Banana, Midjourney or Sora id in a config file was ignored)
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
 - [ ] Image contains NO violent or inappropriate imagery
