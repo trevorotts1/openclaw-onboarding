@@ -1,6 +1,14 @@
-## [v26.0.5]  -  2026-10-06  -  Ollama deepseek-v4-flash retired (HTTP 410): every shipped Ollama id now deepseek-v4.1-flash:cloud, and the Command Center installer corrects retired SOVEREIGN_DEFAULT_MODEL and QC_JUDGE_MODEL values on every update
+## [v26.0.5]  -  2026-10-06  -  Merge train: #1559 fix(skill-71): verify sanity fixture meets prompt floor 1.2.5; #1560 fix(models): retire Ollama deepseek-v4-flash ids, use…
 
-#### What changed
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1559 — fix(skill-71): verify sanity fixture meets prompt floor 1.2.5
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1560 — [v26.0.5]  -  2026-10-06  -  Ollama deepseek-v4-flash retired (HTTP 410): every shipped Ollama id now deepseek-v4.1-flash:cloud, and the Command Center installer corrects retired SOVEREIGN_DEFAULT_MODEL and QC_JUDGE_MODEL values on every update
+
+##### What changed
 - **Ollama Cloud retired `deepseek-v4-flash`, `:cloud`, `:0731` and `:0731-cloud` on 2026-09-25 (HTTP 410).** Every shipped Ollama id now points at the live `deepseek-v4.1-flash:cloud` (`ollama/deepseek-v4.1-flash:cloud`, `ollama-cloud/deepseek-v4.1-flash`): `scripts/deprecated-models.json` (its replacement was itself retired; every retired id is now listed), `53-book-writer/model-map.json`, `shared-utils/model_selector.py`, `install.sh` seed chain, `HEARTBEAT.md`, the Skill 23 role library and generator, the Skill 38 scripts, templates and references, and the tests that name them. DeepSeek Direct ids (`ds/`, `deepseek/`), OpenRouter ids, presentations and Skill 36 are untouched.
 - **Command Center installer.** `SOVEREIGN_DEFAULT_MODEL` and `QC_JUDGE_MODEL` resolution never picks a retired id (it uses the live successor), and an existing retired value in `.env.local` is corrected on every update.
 - **Guard.** `tests/unit/retired-ollama-deepseek-flash.test.sh` fails if a retired Ollama deepseek-v4-flash id reappears in shipped files.
