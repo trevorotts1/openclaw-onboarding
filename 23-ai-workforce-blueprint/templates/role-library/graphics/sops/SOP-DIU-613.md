@@ -58,9 +58,9 @@ If the box has no brand config populated: create `_local/BRAND.md` with the veri
 If the client is likely to request photo-shoot or likeness work in the future (confirm at intake — default to yes for personal-brand clients):
 
 1. Create `personal-photo-shoot/{client-slug}/IDENTITY.md` with the client's physical descriptors and an approved reference image set per PHOTO-SHOOT-SOP §§2–3.
-2. Initiate the standing self-likeness consent record per SOP-DIU-608 self-likeness fast path: create `_local/consent/{client-slug}.json` with `status: active` and the standard scope fields. This makes the consent gate a file-read for all future likeness requests instead of a human-approval loop.
+2. Initiate the standing self-likeness consent record per SOP-DIU-608 self-likeness fast path: create `personal-photo-shoot/{client-slug}/CONSENT.md` with `status: active` and the standard scope fields. This makes the consent gate a file-read for all future likeness requests instead of a human-approval loop.
 
-If the client explicitly opts out of all likeness work: record `status: opted-out` in the consent record and skip identity profile creation. Document the opt-out with a timestamp.
+If the client explicitly opts out of all likeness work: record `status: none` with an explicit `opted_out: true` note and timestamp in the consent record (the status machine in SOP-DIU-608 has no `opted-out` state) and skip identity profile creation. Document the opt-out with a timestamp.
 
 ### Step 5 — Fidelity Tester review (mandatory before any client-facing output)
 
@@ -71,7 +71,7 @@ All 2–3 draft cards must reach `tested` status — passing the full 12-dimensi
 For each card that reaches `tested` status: generate a 1K SHORT contact sheet (4 variations, cheapest capable endpoint per MODEL-SPECS §2 routing) using the card and the client's verified brand variables.
 
 This step validates:
-- `KIE_API_KEY` wiring across all env stores (SOP-DIU-601 preflight)
+- Kie.ai key wiring across all env stores (the canonical `KIE_API_KEY` or any alias in `shared-utils/secret_names.json`) (SOP-DIU-601 preflight)
 - Hosting path (SOP-DIU-609 if any reference images are used)
 - Receipt plumbing (SOP-DIU-602 smoke-test rule: first-ever generation per client must be a 1K SHORT smoke test)
 
@@ -110,7 +110,7 @@ Deliver Lookbook v1 to the client as the calibration run's primary deliverable.
 | Approved reference decks for PPT batch analysis (if no existing assets) | Conditional | Client-approved; never CDO-assumed |
 | Box brand config file (`_local/BRAND.md`) | Yes (created in Step 3 if absent) | Box-owned; created from verified values at Step 3 |
 | Client's physical descriptors + reference image set (if likeness work anticipated) | Conditional | Client onboarding session; curated per PHOTO-SHOOT-SOP §§2–3 |
-| `KIE_API_KEY` verified across all env stores | Yes | Verified at Step 6 (SOP-DIU-601 preflight) |
+| Kie.ai key (canonical `KIE_API_KEY` or an alias from `shared-utils/secret_names.json`) verified across all env stores | Yes | Verified at Step 6 (SOP-DIU-601 preflight) |
 | Client's budget config block | Yes | Client box config; required before any generation (SOP-DIU-601 preflight Step 9) |
 
 ---
@@ -122,7 +122,7 @@ Deliver Lookbook v1 to the client as the calibration run's primary deliverable.
 | 2–3 tested style cards registered in INDEX.md | `library/INDEX.md` + card files | `tested` or `production` (Analyst upgrades to production on CDO confirmation) |
 | Brand config file | `_local/BRAND.md` | Verified; all Workflow-B variables resolved |
 | Identity profile (if applicable) | `personal-photo-shoot/{client-slug}/IDENTITY.md` | Created with reference image set |
-| Standing consent record (if applicable) | `_local/consent/{client-slug}.json` | `status: active` |
+| Standing consent record (if applicable) | `personal-photo-shoot/{client-slug}/CONSENT.md` | `status: active` |
 | 1K calibration contact sheets | `_local/results/{job-id}/` | Verified via SOP-DIU-601 postflight |
 | Initial taste profile | `_local/TASTE-PROFILE.md` | Seeded from client selections |
 | Lookbook v1 | `_local/lookbook/{client-slug}-v1.md` | Delivered to client via CDO |
@@ -145,7 +145,7 @@ Deliver Lookbook v1 to the client as the calibration run's primary deliverable.
 | Client has no visual assets and refuses to approve any reference decks | Halt calibration run. Escalate to the client via the human owner for a brief intake session. Do not produce a blank calibration run. Record the halt in the client's `_local/` directory with a timestamp. |
 | Brand config values cannot be confirmed from client materials | Halt Step 3. Escalate to CDO. Do not generate against unverified brand variables. |
 | No card passes the Fidelity Tester's 12-dimension rubric after two revision rounds | Escalate to CDO with the failing Test Log entries and the original brand materials. Do not present client-facing output until at least one card is tested. |
-| `KIE_API_KEY` absent from all env stores at Step 6 | Hard stop per SOP-DIU-601. Escalate to CDO with list of all env stores checked. No generation proceeds without a verified key. |
+| Kie.ai key (canonical name and every alias) absent from all env stores at Step 6 | Hard stop per SOP-DIU-601. Escalate to CDO with list of all env stores checked. No generation proceeds without a verified key. |
 | Client's budget config block is absent | Hard stop per SOP-DIU-601 preflight Step 9. Escalate to CDO for budget config before any generation. |
 | Likeness work anticipated but client declines to provide a reference image set | Do not create an identity profile with inferred or assumed descriptors. Record the opt-out or incomplete intake state. Escalate to CDO before any photo-shoot or likeness generation is attempted. |
 | Client requests more than one round of type-(b) preference re-runs on the calibration contact sheet | Escalate to CDO with a scope decision recommendation (iterate on existing cards vs. initiate a new brief). Do not continue open-ended re-runs. |

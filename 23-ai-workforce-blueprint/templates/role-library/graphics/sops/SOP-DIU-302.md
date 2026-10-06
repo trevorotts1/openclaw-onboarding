@@ -46,7 +46,7 @@ Routing decisions are made by reading MODEL-SPECS §2 **at runtime**. Do not cac
 
 9. **Write the receipt file.** Record the following in `_local/receipts/{receipt-id}.json` at submit time: endpoint, model ID (from MODEL-SPECS §1), tier, resolution, `taskId`, cost class, `state: submitted`, `submitted_at` (ISO 8601). Do not exit without writing the receipt.
 
-10. **Exit.** The cron poller handles completion detection via `GET /api/v1/jobs/recordInfo?taskId={taskId}`. Do not hold the session open polling for results.
+10. **Exit.** The Render Dispatcher's poller handles completion detection via `GET /api/v1/jobs/recordInfo?taskId={taskId}`. Do not hold the session open polling for results.
 
 ---
 
@@ -76,7 +76,7 @@ Routing decisions are made by reading MODEL-SPECS §2 **at runtime**. Do not cac
 
 ## Handoff Conditions
 
-- **Normal completion:** Receipt written with `taskId`; Operator exits; cron poller takes over via `getTaskInfo`. When the poller detects `state: success`, SOP-DIU-601 postflight runs and flips the receipt to `complete`; CDO and requestor are notified.
+- **Normal completion:** Receipt written with `taskId`; Operator exits; the Render Dispatcher's poller takes over via `recordInfo`. When the poller detects `state: success`, SOP-DIU-601 postflight runs and flips the receipt to `complete`; CDO and requestor are notified.
 - **Off-style result after postflight:** Hand to Fidelity Tester (SOP-DIU-501a / SOP-DIU-501b).
 - **Hard-rule violation detected in postflight visual inspection:** Hand to SOP-DIU-604 (Hard-Rule Quarantine & Incident Response) immediately.
 - **Fallback or degradation event:** Hand to SOP-DIU-603 (Fallback Ladder & Graceful Degradation) for ladder execution and CDO notification.

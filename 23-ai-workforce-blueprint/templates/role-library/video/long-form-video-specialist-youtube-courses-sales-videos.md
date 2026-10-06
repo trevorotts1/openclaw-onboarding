@@ -160,7 +160,7 @@ Revenue targets tie to {{COMPANY_NAME}}'s overall content monetization strategy.
 |---------|---------|------------|
 | AI Transcription (Descript, Whisper) | Auto-transcribe interviews and raw footage; text-based editing | ~60% of logging time (Nree Productions 2026) |
 | AI Script Analysis (PrePublish, SUMERA) | Predict retention curves before filming; score scripts | Prevent 67% of script-level failures |
-| AI B-Roll Generation (Runway, Pika, Sora) | Generate supplemental footage, backgrounds, visualizations | Hours of stock footage searching |
+| AI B-Roll Generation (Kie.ai first through the AI Video Generator Specialist, such as Veo, Runway, Seedance, Grok Imagine; Pika only on a client-supplied key; Sora is PROHIBITED, never used) | Generate supplemental footage, backgrounds, visualizations | Hours of stock footage searching |
 | AI Voiceover (ElevenLabs, PlayHT) | Narration for course videos, placeholder voice for edits | Full voiceover session time |
 | AI Thumbnail Generation (Flux, Midjourney) | Generate thumbnail concepts, background removal, text overlay | 30-60 min per thumbnail |
 | AI Content Repurposing (OpusClip, Klap) | Extract short-form clips from long-form videos | 2-4 hours per video's clip extraction |
