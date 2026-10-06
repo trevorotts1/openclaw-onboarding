@@ -1,3 +1,13 @@
+## [v26.0.4]  -  2026-10-06  -  Box fixes 2: archived-skill retirement, plain-words UPDATE PENDING summary (releases, JEV core change, changed skills), fresh box CHANGELOG, 999-setup clone on 9Router boxes, JEV named in intake text, SOP manifest no-op, skill 43 semver, skill 44 gate, skill 06 lattice skip, lib-shared delivery
+
+#### What changed
+- **Archived skills retired on boxes.** `update-skills.sh` moves the old live folder of every skill listed in `docs/archived-skill-tombstones.json` (11-superdesign, 21-tavily-search, ...) to `<root>/retired-skills/`, and the state seeder drops their stale keys.
+- **UPDATE PENDING "What changed" is real.** New `scripts/update-summary.py` adds the releases between the box's old and new version, a core callout when the JEV decision engine changed (with `routing-mode.sh status`), and skills whose version changed.
+- **Box CHANGELOG.md refreshed every roll** in `~/Downloads/openclaw-master-files` (it was frozen at v11.18.3). The legacy `~/.openclaw/.onboarding-version` is documented as unused.
+- **999-setup front door:** a 9Router box with no 999-setup checkout now gets one cloned and refreshed through the guarded `--skills-only` path (checksum-guarded; models and credentials untouched).
+- **JEV named** in the V4.3 "Task intake and assigned execution" text (AGENTS.md, SOP-00, ceo_execution_policy, classifier policy, plugin preamble).
+- **Gate fixes:** `author-missing-sops.py` exits 0 when no SOP-NEEDED.json exists; Skill 43 version is `2.0.0` (X.Y.Z); the verification gate skips `qc-built-*.sh` helpers so Skill 44 uses `qc-convert-and-flow.sh`; Skill 06's GK-27 lattice check skips off-repo (as Skill 35 does); `lib-shared.sh` is delivered to the skills dir every roll.
+
 ## [v26.0.3]  -  2026-10-06  -  Skill 38 v2.0.10: boxes that already installed Skill 38 get the inbound-hooks fix automatically on their next update (front-door repair skill38-inbound-hooks)
 
 Patch release: the Skill 38 inbound-hooks fix now reaches boxes that already set up Skill 38, with no manual re-run.
