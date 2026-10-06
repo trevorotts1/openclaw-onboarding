@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.1.1 - 2026-10-05
+
+Font fallback: "if a person doesn't provide a font, the system figures out the best for
+the job" (Trevor, 2026-10-05). Brand fonts move from BLOCKED to DERIVE-AND-DOCUMENT;
+every other MUST_SUPPLY value stays BLOCKED.
+
+- **FONTS-1** `assets/brand/blackceo-brand.json` + `assets/brand/client-brand.template.json` carry a `font_policy` object (`when_brand_fonts_missing: "derive-document"`, `requires_rationale`, `requires_reviewer`, context note); the TREVOR_MUST_SUPPLY font values are unchanged — the policy, not invented names, is what ships. `assets/brand/brand.schema.json` allows `font_policy` (optional, same shape).
+- **FONTS-2** `scripts/validate_visual_direction.py`: brand `fonts.*` placeholders no longer FAIL when `font_policy` authorizes derive-document. Instead the bible must be derived-and-documented: `fonts_source == "derived"`, non-empty `font_rationale`, `font_reviewer` named (FAIL, one reason per line, when any is missing); a MUST_SUPPLY or banned font inside `bible.fonts` still FAILs; every non-font MUST_SUPPLY key (logo, masthead, founder_photos, page references) still FAILs naming each key. Exits stay 0/1/2.
+- **FONTS-3** `scripts/validate_page.py`: `brand_fonts()` returns a derived flag; under derive-document the "not a brand font"/"not loadable" font checks become WARN lines (`WARN font (derived): ...`) instead of FAIL, while a banned font still FAILs. Exit codes stay 0/1/2.
+- **FONTS-4** `scripts/stage_gate.py`: `gate:must_supply` no longer blocks intake when the only missing keys are `fonts.*` under derive-document (logo/photos still block); `gate:brand_fonts` accepts a derived font map (real families not in the placeholder brand list pass; a placeholder in the font map fails; banned fonts fail). Also fixes a latent `"fonts" and "utf-8"` encoding-arg quirk in `find_must_supply_keys`.
+- **FONTS-5** Docs: `references/BlackCEO-Page-Brand-Law.md` "Fail closed" gains the font carve-out (derived-and-documented, never blocked; banned fonts still bound; everything else still blocks). SKILL.md brand bullet and the "pending means BLOCKED" line get the same carve-out. SOP Stage 3 font map states the derive-rationale-review flow.
+- **FONTS-6** Tests: `tests/test_validate_visual_direction.py` (12 tests — derived pass, missing fonts_source/rationale/reviewer fail, placeholder font in bible fails, banned font fails, non-font key still fails) and `tests/test_validate_page.py` (9 tests — derived policy WARNs not FAILs). All 32 existing tests stayed green before the new ones were added.
+- Version bumped to 1.1.1 everywhere (SKILL.md frontmatter, skill-version.txt, VERSION).
+
+
 ## 1.1.0 - 2026-10-05
 
 Enforcement fixes after the failed 2026-10-01 page test (order:

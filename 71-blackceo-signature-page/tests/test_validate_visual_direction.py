@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for validate_visual_direction.py (order A2).
+"""Tests for validate_visual_direction.py (order A2 + font fallback 1.1.1).
 
 Fixture brand file is used, never the real blackceo-brand.json — the real
-one still has TREVOR_MUST_SUPPLY fonts, which would make every run fail for
-the wrong reason.
+one still has TREVOR_MUST_SUPPLY fonts, but its font_policy authorizes
+derive-document, so a bible that is derived-and-documented (fonts_source
+"derived", non-empty font_rationale, font_reviewer named) PASSES instead of
+failing on the missing brand fonts. Every other MUST_SUPPLY key still
+fails; a MUST_SUPPLY or banned font inside the bible still fails.
 """
 import json
 import os
@@ -98,18 +101,138 @@ class TestValidateVisualDirection(unittest.TestCase):
         r = run_validator(run)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-    def test_must_supply_brand_fails_naming_keys(self):
+    def test_must_supply_fonts_derived_documented_passes(self):
+        # font_policy derive-document: MUST_SUPPLY brand fonts no longer fail.
+        # The bible must instead be derived-and-documented.
         brand = json.loads(json.dumps(FIXTURE_BRAND))
         brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
                           "body": "TREVOR_MUST_SUPPLY",
                           "accent": "TREVOR_MUST_SUPPLY"}
-        run = os.path.join(self.tmp, "missing")
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "derived")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts": {"display": "Fixture Derived Display",
+                             "body": "Fixture Derived Body",
+                             "accent": "Fixture Derived Accent"},
+                   "fonts_source": "derived",
+                   "font_rationale": "Display: heavy grotesque suits the Big "
+                                     "Bold Claim. Body: workhorse legibility "
+                                     "at 19/32px. Accent: serif italic for "
+                                     "pull quotes.",
+                   "font_reviewer": "independent-reviewer-agent"},
+                  brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("TREVOR_MUST_SUPPLY", r.stdout)
+
+    def test_must_supply_fonts_without_fonts_source_fails(self):
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "nosource")
         write_run(run, {"creative_direction": None},
                   {"selection_mode": "SECRET_SAUCE_ONLY"}, brand)
         r = run_validator(run)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertEqual(r.stdout.count("TREVOR_MUST_SUPPLY"), 3)
-        self.assertIn("fonts.display", r.stdout)
+        self.assertIn('fonts_source = "derived"', r.stdout)
+
+    def test_must_supply_fonts_without_rationale_fails(self):
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "norationale")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts_source": "derived",
+                   "font_reviewer": "reviewer-agent"}, brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("font_rationale is empty", r.stdout)
+
+    def test_must_supply_fonts_without_reviewer_fails(self):
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "noreviewer")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts_source": "derived",
+                   "font_rationale": "documented"}, brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("font_reviewer", r.stdout)
+
+    def test_derived_bible_placeholder_font_still_fails(self):
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "placeholderfont")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts": {"display": "TREVOR_MUST_SUPPLY"},
+                   "fonts_source": "derived",
+                   "font_rationale": "documented",
+                   "font_reviewer": "reviewer-agent"}, brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("placeholder", r.stdout)
+
+    def test_derived_bible_banned_font_still_fails(self):
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        run = os.path.join(self.tmp, "derivedbanned")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts": {"body": "Inter"},
+                   "fonts_source": "derived",
+                   "font_rationale": "documented",
+                   "font_reviewer": "reviewer-agent"}, brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("banned_fonts", r.stdout)
+
+    def test_non_font_must_supply_still_fails(self):
+        # The carve-out covers fonts.* ONLY. Any other MUST_SUPPLY key in the
+        # brand file still FAILS.
+        brand = json.loads(json.dumps(FIXTURE_BRAND))
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        brand["logo"] = {"files": "TREVOR_MUST_SUPPLY"}
+        run = os.path.join(self.tmp, "logomissing")
+        write_run(run, {"creative_direction": None},
+                  {"selection_mode": "SECRET_SAUCE_ONLY",
+                   "fonts_source": "derived",
+                   "font_rationale": "documented",
+                   "font_reviewer": "reviewer-agent"}, brand)
+        r = run_validator(run)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("logo.files", r.stdout)
+        self.assertIn("TREVOR_MUST_SUPPLY", r.stdout)
 
     def test_within_tolerance_token_passes(self):
         # cream #F5F0E8 with tolerance 3: #F4F0E8 passes (diff 1 per channel).

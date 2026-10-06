@@ -109,16 +109,22 @@ def brand_must_supply(brand_file):
     except Exception as exc:
         return [f"brand file unreadable: {brand_file}: {exc}"]
     found = [s for s in MUST_SUPPLY_STRINGS if s in text]
-    if found:
-        return [f"brand file {brand_file} contains {', '.join(found)} values: "
-                f"missing brand facts must be supplied by the owner before intake closes. "
-                f"Missing keys: " + ", ".join(find_must_supply_keys(brand_file))]
-    return []
+    if not found:
+        return []
+    missing_keys = find_must_supply_keys(brand_file)
+    if fonts_derivable(brand_file):
+        non_font = [k for k in missing_keys if not k.startswith("fonts")]
+        if not non_font:
+            return []  # only fonts.* missing under derive-document: not blocked
+        missing_keys = non_font
+    return [f"brand file {brand_file} contains {', '.join(found)} values: "
+            f"missing brand facts must be supplied by the owner before intake closes. "
+            f"Missing keys: " + ", ".join(missing_keys)]
 
 
 def find_must_supply_keys(brand_file):
     try:
-        data = json.loads(brand_file.read_text(encoding="fonts" and "utf-8"))
+        data = json.loads(brand_file.read_text(encoding="utf-8"))
     except Exception:
         return ["(file not valid JSON)"]
     missing = []
@@ -135,6 +141,17 @@ def find_must_supply_keys(brand_file):
 
     walk(data, "")
     return missing or ["(none located)"]
+
+
+def fonts_derivable(brand_file):
+    """True when the brand file's font_policy authorizes derive-document."""
+    try:
+        data = json.loads(brand_file.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    policy = data.get("font_policy") or {}
+    return (isinstance(policy, dict)
+            and policy.get("when_brand_fonts_missing") == "derive-document")
 
 
 def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
@@ -422,8 +439,15 @@ def run_builtin(name, args, run_dir):
             elif isinstance(node, str):
                 used.add(node)
         collect(fonts.get("fonts", fonts))
+        derived = fonts_derivable(brand) and any(
+            str(v) in MUST_SUPPLY_STRINGS for v in allowed)
+        placeholders = sorted(f for f in used if f in MUST_SUPPLY_STRINGS)
+        if placeholders:
+            return ("gate:brand_fonts: font map still carries placeholder values: "
+                    + ", ".join(placeholders)
+                    + "; font_policy derive-document requires real derived families")
         bad = sorted(f for f in used if f not in allowed and f not in ("", "-"))
-        if bad:
+        if bad and not derived:
             return ("gate:brand_fonts: fonts not in the brand file: " + ", ".join(bad)
                     + "; brand fonts: " + ", ".join(sorted(allowed)))
         banned_used = sorted(f for f in used if f in banned)

@@ -348,17 +348,33 @@ def brand_colors(brand):
 
 
 def brand_fonts(brand):
+    """Return (fonts, derived): derived=True when brand fonts are MUST_SUPPLY
+    placeholders under a derive-document font_policy — the page then carries
+    agent-derived fonts and the font checks degrade to WARN, never FAIL."""
     fonts = brand.get("fonts") or {}
+    policy = brand.get("font_policy") or {}
+    derived_policy = (isinstance(policy, dict)
+                      and policy.get("when_brand_fonts_missing") == "derive-document")
     values = []
+    placeholders = []
     for key, value in fonts.items():
         text = str(value).strip()
         if any(marker in text for marker in UNSUPPLIED):
-            die2(f"brand file fonts.{key} is not supplied yet ({text}); fail-closed per order 0.5")
+            placeholders.append(key)
+            continue
         if text:
             values.append(text)
+    if placeholders:
+        if not derived_policy:
+            die2(f"brand file fonts.{placeholders[0]} is not supplied yet "
+                 f"({str(fonts[placeholders[0]]).strip()}); fail-closed per order 0.5")
+        # derived fonts: the bible's fonts_source/font_rationale/font_reviewer
+        # gate this elsewhere (validate_visual_direction.py); here the page
+        # check degrades to WARN.
+        return values, True
     if not values:
         die2("brand file has no fonts")
-    return values
+    return values, False
 
 
 def load_intake(args, html_path):
@@ -608,7 +624,7 @@ def main():
 
     brand = load_brand(args.brand)
     palette, logo_only = brand_colors(brand)
-    fonts = brand_fonts(brand)
+    fonts, fonts_derived = brand_fonts(brand)
     banned = [str(f) for f in (brand.get("banned_fonts") or [])]
     try:
         tolerance = int(brand.get("color_tolerance", 0))
@@ -704,16 +720,31 @@ def main():
                             f"nearest brand color {off['nearest']} (exceeds color_tolerance {tolerance})"
                         )
 
-                    # 2. fonts
+                    # 2. fonts (derived-font runs degrade to WARN, never FAIL —
+                    # banned fonts always FAIL)
                     fonts_res = page.evaluate(
                         FONTS_JS, {"brandFonts": fonts, "banned": banned}
                     )
                     width_results[width]["fonts"] = fonts_res
                     for entry in fonts_res["bad"]:
-                        reason = "banned font" if entry["banned"] else "not a brand font"
-                        errors.append(f"font: {entry['selector']} uses {entry['font']} ({reason})")
+                        if entry["banned"]:
+                            errors.append(
+                                f"font: {entry['selector']} uses {entry['font']} (banned font)")
+                        elif fonts_derived:
+                            warnings.append(
+                                f"WARN font (derived): {entry['selector']} uses {entry['font']} "
+                                f"(agent-derived font; bible fonts_source/font_rationale/"
+                                f"font_reviewer govern this run)")
+                        else:
+                            errors.append(
+                                f"font: {entry['selector']} uses {entry['font']} (not a brand font)")
                     for name in fonts_res["unavailable"]:
-                        errors.append(f"font: brand font not loadable in document.fonts: {name}")
+                        if fonts_derived:
+                            warnings.append(
+                                f"WARN font (derived): {name} not loadable in document.fonts "
+                                f"(agent-derived font run)")
+                        else:
+                            errors.append(f"font: brand font not loadable in document.fonts: {name}")
 
                     # 3. logo
                     if is_blackceo:

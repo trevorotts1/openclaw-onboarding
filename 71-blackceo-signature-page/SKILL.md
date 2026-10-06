@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.1.0
+version: 1.1.1
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -35,7 +35,7 @@ Do not duplicate another skill's provider client, browser manager, GHL builder, 
 
 ## Read only what the current stage needs
 
-- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages).
+- **Brand (every stage):** `references/BlackCEO-Page-Brand-Law.md` and the run's brand file (`intake.json` -> `brand_file`; `assets/brand/blackceo-brand.json` for BlackCEO pages, `assets/brand/client-brand.template.json` filled by the client for client pages). Brand fonts are the one fail-open key: when they are still MUST_SUPPLY, `font_policy` says derive-document — derive the best display/body/accent for the job, document the rationale in the bible (`fonts_source: "derived"` + `font_rationale` + `font_reviewer`), reviewer approves. Never blocked on fonts; every other MUST_SUPPLY value still blocks.
 - Production order / gates: `references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md`
 - Standard copy: `references/BlackCEO-Signature-Landing-Page-Standard-v6.md`
 - Long-Form copy: `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md`
@@ -147,7 +147,7 @@ Read `references/qc-contract.md`.
 
 ## Reporting
 
-Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED.
+Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED — except derived fonts: brand fonts missing are derived-and-documented per `font_policy` and reviewed, never blocked (the reviewer's approval of `fonts_source`/`font_rationale`/`font_reviewer` in the bible is the confirmation, and an unapproved derived-font bible still ships nothing).
 
 ## Installation / maintenance boundary
 

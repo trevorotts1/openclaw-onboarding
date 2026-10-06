@@ -5,6 +5,12 @@
   "logo_only_colors": {"black": "CLIENT_MUST_SUPPLY", "white": "CLIENT_MUST_SUPPLY"},
   "color_tolerance": 3,
   "fonts": {"display": "CLIENT_MUST_SUPPLY", "body": "CLIENT_MUST_SUPPLY", "accent": "CLIENT_MUST_SUPPLY"},
+  "font_policy": {
+    "when_brand_fonts_missing": "derive-document",
+    "requires_rationale": true,
+    "requires_reviewer": true,
+    "note": "CLIENT context: agent derives best display/body/accent for this client's job, documents rationale in bible, reviewer approves. Never blocked on fonts."
+  },
   "banned_fonts": ["Inter", "Arial", "Helvetica", "Helvetica Neue", "Roboto", "Open Sans", "system-ui",
                    "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif-only"],
   "logo": {"files": "CLIENT_MUST_SUPPLY", "masthead_files": "CLIENT_MUST_SUPPLY"},
