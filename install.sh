@@ -3444,7 +3444,7 @@ if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
         _seed += [
             _pick(f'{_oll}/kimi-k2.7-code{_sfx}', f'{_oll}/kimi-k2.6{_sfx}'),
             _pick(f'{_oll}/minimax-m3{_sfx}'),
-            _pick(f'{_oll}/deepseek-v4-flash{_sfx}', f'{_oll}/deepseek-v4-pro{_sfx}'),
+            _pick(f'{_oll}/deepseek-v4.1-flash{_sfx}', f'{_oll}/deepseek-v4-pro{_sfx}'),
         ]
     # ALWAYS end on a NON-Ollama provider. An Ollama Cloud weekly cap / 429 is
     # ACCOUNT-level, so an all-Ollama chain fails as a single unit and takes the
