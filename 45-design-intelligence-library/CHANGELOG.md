@@ -1,12 +1,16 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.1.6 - 2026-10-06 - social routing correction: no Ideogram route
+
+- See the corrected `social-media-designs/_RULES.md` entry under v2.1.5 below (same PR).
+
 ## v2.1.5 - 2026-10-05 - close open items on the image consumers PR
 
-- `social-media-designs/_RULES.md`: wording now says GPT Image 2.5 Sunburst for all social images except text-led quote cards, which use Ideogram V3 as a deliberate, labeled specialty route enforced by Skill 35's gate; feed 4:5 rows carry the N43 3:4 substitution on the default model.
+- `social-media-designs/_RULES.md`: CORRECTED. GPT Image 2.5 Sunburst for ALL social images (legacy gpt-image-2 only for 3:1, 1:3, 9:21; N43 substitutions incl. 4:5 -> 3:4); Nano Banana 2 only as a labeled fallback; there is NO Ideogram V3 route for social (Skill 35 routes every image to Sunburst). The earlier claim that every Skill 35 deliverable must route to Ideogram, and the 'deliberate Ideogram specialty route' wording added earlier in this PR, are removed. Note: `_system/prompt-bands.json` (not edited here) still carries a legacy `text_bearing_medium` band that names an Ideogram endpoint and a GK-20 rationale to the same effect; it is not a social route and needs its own follow-up (the band names are validated by `diu_validator.py` tests).
 
 ## v2.1.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
-- Routing (owner order, AGENTS.md N43): GPT-Image 2.5 first everywhere in MODEL-SPECS Section 2, PHOTO-SHOOT-SOP modes A/B/C/F, and the advertisement, facebook-ad, personal-photo-shoot, powerpoint and social-media category rules; Nano Banana 2 fallback only. Deliberate exceptions kept and labelled: ultra-wide 4:1/8:1 (2.5 does not serve them) and the Ideogram quote-card route (`social-media-designs/_RULES.md`, enforced by Skill 35; flagged for the owner as it conflicts with the social-images-on-GPT-Image-2.5 order).
+- Routing (owner order, AGENTS.md N43): GPT-Image 2.5 first everywhere in MODEL-SPECS Section 2, PHOTO-SHOOT-SOP modes A/B/C/F, and the advertisement, facebook-ad, personal-photo-shoot, powerpoint and social-media category rules; Nano Banana 2 fallback only. Deliberate exception kept and labelled: ultra-wide 4:1/8:1 (2.5 does not serve them). (An Ideogram quote-card exception listed here earlier was wrong and was removed in v2.1.6.)
 - `library/_system/MODEL-SPECS.md` v1.6: relabelled a DATED SNAPSHOT. Authority is the Skill 66 policy and registry plus the Skill 74 live catalog (`kie_live_adapter.py validate` / `price`); the "only file that changes" claim removed; owner house rules kept. Documents that the v1.4 changelog row (gpt-image-2 primary for presentations) is historical and superseded by sunburst (Section 2, AGENTS.md N43). No model ids changed: `nano-banana-2` matches Skill 66, and `seedream/4.5-edit` matches the live KIE docs enum.
 
 ## [2.0.0] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
