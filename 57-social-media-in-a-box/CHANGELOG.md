@@ -1,5 +1,10 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.7 - 2026-10-06 - SKILL.md model wording, prompts 12 and 14 payloads
+
+- `SKILL.md` frontmatter description: Midjourney and Nano-Banana carousel wording replaced with GPT Image 2.5 Sunburst; the video render is routed to the Skill 67 (kie-video) model selector, and "Kie.ai Sora" is no longer named in `SKILL.md`, `MASTERDOC.md` or `modules/3-media-core/README.md`. Remaining Sora labels on the 25.0s lane (modes.md, prove_bands.py, publisher submodes, config) are a separate follow-up, not changed here.
+- Prompts 12 and 14: removed the undeclared `"output_format": "png"` line from the payloads (the sunburst schema declares prompt, aspect_ratio, resolution, background and input_urls only). Nothing else in either prompt changed. `PROMPT-HASHES.json` re-recorded for 12 and 14; `ENGINE-PIN.sha256` unchanged and still matches.
+
 ## v1.7.6 - 2026-10-05 - prompts 09 and 10 aspect ratio statements match N43
 
 - Prompts 09 and 10: only the aspect-ratio statements changed, 4:5 (1080x1350) to 3:4 (1080x1440), matching prompt 12 and the N43 4:5 to 3:4 substitution (09: universal canvas lines, 14 style templates, the worked example and the required-components line; 10: canvas size line). No other content touched. `PROMPT-HASHES.json` re-recorded; prompt hashes and engine hash match.

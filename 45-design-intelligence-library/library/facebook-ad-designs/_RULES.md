@@ -19,6 +19,6 @@
 - Brand default: bold, vibrant, high saturation, cinematic (client brand standard — see workspace brand config) unless card says otherwise.
 
 ## Model routing (overrides MODEL-SPECS defaults)
-- Default: GPT-Image 2.5 (layout adherence, people-led creative included); Nano Banana 2 is the fallback only.
+- Default: GPT-Image 2.5 Sunburst (layout adherence, people-led creative included); Nano Banana 2 is the fallback only.
 - Photoreal person + minimal text → GPT-Image 2.5 (Nano Banana 2 fallback).
-- Text/offer-led creative → GPT-Image 2.5 LONG or Ideogram V3 DESIGN.
+- Text/offer-led creative → GPT-Image 2.5 Sunburst LONG. There is no Ideogram route for Facebook ads (consistent with `social-media-designs/_RULES.md`).

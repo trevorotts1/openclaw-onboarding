@@ -114,7 +114,7 @@ Two engines: (A) single-call N-day multi-platform JSON generator (prompt 01); (B
   vision QC → winner staged; SeedDream resizes 9:16 / 16:9 when the post type demands. The
   Gemini grid selector (07) applies only to a multi-image collage; Midjourney is retired (F29).
 - **Video:** Storyboard Architect (08; 3–7 scenes, **exactly 25.0s**) → deterministic math validator
-  → Kie.ai Sora → poll → download.
+  → the Skill 67 (kie-video) model selector (Skill 67) → poll → download.
 - **Carousel image:** GPT Image 2.5 sunburst generate (12; 3:4, 2K; N43 substitutes 3:4 for 4:5) → Gemini QC bot casual-viewer test
   (11) → FAIL → SeedDream 4.5 edit from QC feedback (13) → QC 2 → final fallback strips ALL text →
   ledger update. Poll every **30s**; **≥10 complete** (9 LinkedIn) or **120-poll** timeout; assemble
