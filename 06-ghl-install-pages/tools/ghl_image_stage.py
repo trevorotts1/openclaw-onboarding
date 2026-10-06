@@ -73,7 +73,8 @@ DO NOT EDIT
 ``ghl_rest_canvas.py`` (B1), ``ghl_method.py`` / ``ghl_vercel.py`` /
 ``ghl_ecosystem.py`` (B3), ``kie_generate.py`` (different skill, out of scope),
 tests (B6), SOP/SKILL docs (B7), ``gates.json`` (B8),
-``skill-version.txt`` / ``CHANGELOG.md``.
+``skill-version.txt`` (repo-locked; rolled by scripts/bump-version.sh).
+CHANGELOG.md may carry a dated entry for edits to this file.
 EDIT ONLY: this file and (minimally) ``ghl_media.py`` if a small helper is needed.
 """
 
@@ -124,7 +125,7 @@ class ImagePipelineError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Key presence check — fail loud before any network call if the KIE key is absent
+# Key presence check - fail loud before any network call if the KIE key is absent
 # ---------------------------------------------------------------------------
 
 def _load_secret_helper():

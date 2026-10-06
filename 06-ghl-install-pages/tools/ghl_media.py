@@ -39,7 +39,7 @@ AUTH-MODEL SPLIT (LOAD-BEARING — this module sits ENTIRELY on the bare-Python 
     edited blob + the ``<img>`` snippet; ``ghl_rest_canvas.page_autosave`` (driven
     by ``ghl_builder.emit_rest_save_plan``) executes it in-browser.
 
-KEYS — THE KIE KEY IS THE BOX OWNER'S OWN (a client's, on a client box)
+KEYS - THE KIE KEY IS THE BOX OWNER'S OWN (a client's, on a client box)
 -----------------------------------------------------------------------
 ``KIE_API_KEY`` is read by the reused ``kie_generate.py`` from the environment or
 the standard env stores of the box it runs on. On a client box that key is the
