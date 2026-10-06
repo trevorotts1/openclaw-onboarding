@@ -190,6 +190,7 @@ DO NOT tell user setup is complete until all tests pass.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FULL API REFERENCE BELOW
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRICES: every dollar figure in this reference is a historical snapshot from the 2026-08 research pass, not an authoritative price. Get the live price from KIE itself: GET https://api.kie.ai/api/v1/models returns a pricingDesc per model, and GET https://api.kie.ai/api/v1/chat/credit returns your balance. When the KIE live adapter (Skill 74) is installed, use `kie_live_adapter.py price <model>`.
 
 
 
@@ -2425,7 +2426,7 @@ https://docs.kie.ai/veo3-api/get-veo-3-4k-video.md
 https://docs.kie.ai/veo3-api/get-veo-3-4k-video-callbacks.md
 https://docs.kie.ai/veo3-api/quickstart.md
 
-Important pricing note
+Important pricing note (historical snapshot; confirm live pricing as described at the top of this reference)
 
 Veo 3.1 Fast tier: $0.40
 Veo 3.1 Quality tier: $2.00
@@ -6428,7 +6429,7 @@ Max audio size: 10.0 MB
 KIE.ai model pricing
 Source: https://kie.ai/pricing (pricing table API)
 
-Note: Pricing table lists credit price and USD price. The UI indicates 1 credit is about $0.005 USD.
+Note: Pricing table lists credit price and USD price. The UI indicated 1 credit is about $0.005 USD (historical snapshot; live prices come from GET /api/v1/models pricingDesc, or `kie_live_adapter.py price <model>` when Skill 74 is installed).
 
 
 
