@@ -123,6 +123,19 @@ explicitly with `ZHC_IMAGE_MODEL` if a given account has a different preferred
 slug. Do NOT remove `nano-banana-2` as the primary; it works on most accounts
 and renders text better than the fallback.
 
+**Per-account availability remedy:** Skill 74 (`74-kie-live-adapter`) live
+model discovery is the path that answers "which KIE models does THIS account
+actually have?" at run time, so a 422 like this is reported from the account's
+own live model list instead of being found by a failed submit. Discovery
+reports; it never silently registers or swaps a model (see AGENTS.md N43 for the
+pinned image models). Until a box runs Skill 74, the fallback chain above stays
+the safety net.
+
+**KIE consumers:** Skill 37 is a KIE consumer (it generates the closeout
+infographics and the celebration video), alongside the other KIE skills listed
+in `CREDENTIALS.md` under "KIE.ai API Key". Shared KIE rules:
+`07-kie-setup/references/kie-common-rules.md`.
+
 **Upstream ask:** none (KIE account provisioning, not an OpenClaw defect).
 The fallback chain is the durable fix.
 

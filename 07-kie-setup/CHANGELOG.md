@@ -4,11 +4,21 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v7.0.5] - 2026-10-05 - fix: credit check in qc-kie-setup.sh no longer depends on shell quote stripping
+## [v7.0.6] - 2026-10-05 - fix: credit check in qc-kie-setup.sh no longer depends on shell quote stripping
 
 ### Fixed
 - `qc-kie-setup.sh` passed its credit check only by accident: the inner `'"code" *: *200'` lost its quotes inside the outer double-quoted eval string, so the grep that ran was `code *: *200`. The response is now tested with a plain `case "$RESP" in *'"code":200'*|*'"code": 200'*)` outside the eval, and the check reads that flag. Proven offline with a stub `curl`: body `{"code":200,...}` and `{"code": 200,...}` pass; body `{"code":401,...}` fails (warning).
 - The prebuilt `kie-setup.skill` archive is not rebuilt: no packaging script exists in `scripts/` (checked by listing), the archive was already out of date with its source before this change, and the updater copies skill folders wholesale.
+
+---
+
+## [v7.0.5] - 2026-10-05 - Canonical KIE common rules
+
+### Added
+- Synchronous-model note, price and success-rate endpoints, N40 citation and full N43 restatement in the common rules.
+- `references/kie-common-rules.md`: single source of truth for KIE authority order, endpoints, rate limits, polling, prompt caps, credit preflight, prices, retention, keys, model ids and the N43 image pin.
+- Rule 13, GPT Image auto-latest default: the fleet image default follows the newest GPT Image generation (today 2.5 sunburst); rule 11 reworded to match.
+- Rule 12, prompt length budget: write descriptive prompts at 95 to 100 percent of the model maxLength, never below 80 percent; supersedes the 9,000 to 19,000 house band.
 
 ---
 
