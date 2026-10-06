@@ -126,14 +126,19 @@ class TestPromptValidation(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("Padding detected", proc.stdout)
 
+    def fitted_good(self):
+        sys.path.insert(0, HERE)
+        import fit_prompt
+        return fit_prompt.fit_file(GOOD_PROMPT, self.tmp / "good_fitted.txt")
+
     def test_good_fixture_passes(self):
         self.assertTrue(Path(GOOD_PROMPT).exists(), "tests/fixtures/prompt_good.txt missing")
-        proc = run(PROMPT_SCRIPT, GOOD_PROMPT)
+        proc = run(PROMPT_SCRIPT, self.fitted_good())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
     def test_good_fixture_passes_sauce_only(self):
-        proc = run(PROMPT_SCRIPT, "--sauce-only", GOOD_PROMPT)
+        proc = run(PROMPT_SCRIPT, "--sauce-only", self.fitted_good())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
@@ -150,15 +155,29 @@ class TestPromptValidation(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("negative block", proc.stdout)
 
-    def test_house_band_and_runtime_warning_kept(self):
-        # 19,001-20,000 chars: still inside the band but over the runtime ceiling
-        # -> warning, not error (checked on a structurally complete prompt is not
-        # required here: the band itself is what this test pins).
-        short = self.tmp / "short.txt"
-        short.write_text("too short", encoding="utf-8")
-        proc = run(PROMPT_SCRIPT, str(short))
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("house minimum is 5000", proc.stdout)
+    def test_rule_12_length_band(self):
+        # KIE prompt rule 12: 79 percent rejected naming the characters to add, 95 and 100 percent pass the
+        # length gate, 101 percent rejected naming the characters to cut. The model max (20,000 for GPT Image 2.5)
+        # comes from Skill 74 prompt-budget through the shared enforcer, not from this skill.
+        sys.path.insert(0, HERE)
+        import fit_prompt
+        mx = fit_prompt.vp.KPE.budget_for(fit_prompt.vp.IMAGE_MODEL_DEFAULT)["max"]
+        base = Path(self.fitted_good()).read_text(encoding="utf-8")
+
+        def sized(n):
+            p = self.tmp / ("sized_%d.txt" % n)
+            p.write_text(base[:n] if len(base) >= n else base + "q" * (n - len(base)), encoding="utf-8")
+            return str(p)
+        low = run(PROMPT_SCRIPT, sized(mx * 79 // 100))
+        self.assertEqual(low.returncode, 1)
+        self.assertIn("ADD at least", low.stdout)
+        for pct in (95, 100):
+            out = run(PROMPT_SCRIPT, sized(mx * pct // 100)).stdout
+            self.assertNotIn("floor is", out)
+            self.assertNotIn("CUT exactly", out)
+        high = run(PROMPT_SCRIPT, sized(mx * 101 // 100))
+        self.assertEqual(high.returncode, 1)
+        self.assertIn("CUT exactly", high.stdout)
 
 
 if __name__ == "__main__":

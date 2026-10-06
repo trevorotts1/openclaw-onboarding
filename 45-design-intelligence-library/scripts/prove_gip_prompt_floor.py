@@ -117,8 +117,10 @@ def _fit(head: str, tail: str, chars: int) -> str:
 # Fixture sizes are percentages of the model max the band's first endpoint resolves to (Skill 74 registry
 # snapshot, hermetic): GPT Image 2.5 = 20,000 for the text_bearing_long and visual_long bands, Seedream 4.5 = 3,000
 # for the medium band.
-GPT_MAX = 20000
-MEDIUM_MAX = 3000
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import diu_validator as _dv  # noqa: E402  (the shared enforcer is reached through the validator)
+GPT_MAX = _dv.KPE.budget_for("gpt-image-2-5-sunburst-text-to-image")["max"]
+MEDIUM_MAX = _dv.KPE.budget_for("seedream/4.5-text-to-image")["max"] if _dv.KPE.budget_for("seedream/4.5-text-to-image") else 3000
 
 
 def rich_text_bearing(copy_line: str = "Stop Guessing. Start Closing.",

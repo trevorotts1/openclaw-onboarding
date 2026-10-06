@@ -1822,7 +1822,7 @@ def _ensure_english_pin(prompt: str) -> str:
     every createTask the canonical renderer submits pins the copy to correctly-spelled
     Latin-alphabet text. Prefers the shared prompt_gate helper (single source of truth);
     falls back to a local append if the module is unavailable, so the pin is ALWAYS on the
-    payload. Never appends past the 20,000-char GPT-Image-2.5 API ceiling."""
+    payload. Never appends past the model maxLength (KIE rule 12 ceiling, from the shared enforcer)."""
     pg = _import_prompt_gate()
     if pg is not None:
         try:
@@ -1833,7 +1833,7 @@ def _ensure_english_pin(prompt: str) -> str:
     if norm(ENGLISH_PIN) in norm(prompt):
         return prompt
     candidate = prompt.rstrip() + "\n\n" + ENGLISH_PIN
-    return candidate if len(candidate) <= 20000 else prompt
+    return candidate if KPE.check(MODEL_T2I, candidate)["status"] != "ABOVE_MAX" else prompt
 
 
 def _record_ocr_readback(out_path: Path, readback: dict) -> None:

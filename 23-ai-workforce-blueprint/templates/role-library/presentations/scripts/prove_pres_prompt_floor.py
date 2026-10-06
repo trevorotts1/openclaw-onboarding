@@ -54,7 +54,7 @@ except Exception as exc:  # noqa: BLE001 — a missing shared gate is fail-close
 # fixtures each trip exactly one class of gate so a regression that silently loosens the
 # gate is caught.
 # ---------------------------------------------------------------------------
-GPT_MAX = 20000  # GPT Image 2.5 maxLength per Skill 74 prompt-budget (registry snapshot, hermetic)
+GPT_MAX = prompt_gate.length_budget()["max"]  # the image model maxLength, from Skill 74 prompt-budget through the shared enforcer
 
 
 def _rich_pass_prompt(chars: int = GPT_MAX * 97 // 100) -> str:

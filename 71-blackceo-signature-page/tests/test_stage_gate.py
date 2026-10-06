@@ -28,6 +28,13 @@ GATE = ROOT / "scripts" / "stage_gate.py"
 PY = sys.executable
 sys.path.insert(0, str(ROOT / "scripts"))
 import stage_gate  # noqa: E402  (module import loads the real contract)
+sys.path.insert(0, str(ROOT / "tests"))
+import fit_prompt  # noqa: E402
+
+
+def fitted_good_prompt():
+    """tests/fixtures/prompt_good.txt grown into the KIE rule 12 band (the length gate measures the model maxLength)."""
+    return fit_prompt.fit_text((ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8"))
 
 
 def run_gate(*args, expect=None, env=None):
@@ -289,7 +296,7 @@ class StageGateTest(unittest.TestCase):
         # Passing fixture prompt contains the exact Signature Grade Block, so
         # --sauce-only (from the SECRET_SAUCE_ONLY bible) must pass when {sauce}
         # is actually substituted — and fail when it is not.
-        prompt_text = (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8")
+        prompt_text = fitted_good_prompt()
         run = self.td / "run-real"
         env, gate = self.build_image_stage_chain(run, prompt_text)
         put_receipt(run, "image-inventory-prompts", author="prompt-writer",
@@ -304,7 +311,7 @@ class StageGateTest(unittest.TestCase):
 
     def test_f_close_image_generation_qc_real_validator(self):
         run = self.td / "run-qc"
-        prompt_text = (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8")
+        prompt_text = fitted_good_prompt()
         env, gate = self.build_image_stage_chain(run, prompt_text)
         # Close the prompt stage first on the real contract (dependency chain).
         put_receipt(run, "image-inventory-prompts", author="prompt-writer",
@@ -330,7 +337,7 @@ class StageGateTest(unittest.TestCase):
     def test_g_missing_sauce_block_fails_close_with_real_validator(self):
         # Negative control: a prompt MISSING the Signature Grade Block must fail
         # close under --sauce-only, proving {sauce} really reaches the validator.
-        prompt_text = (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8")
+        prompt_text = fitted_good_prompt()
         grade_block = (ROOT / "assets" / "brand" / "signature-grade-block.txt").read_text().rstrip("\n")
         run = self.td / "run-nograde"
         env, gate = self.build_image_stage_chain(run, prompt_text.replace(grade_block, ""))
@@ -348,7 +355,7 @@ class StageGateTest(unittest.TestCase):
     def close_image_qc(self, no_files=False, agnes=False, **extra):
         run = self.td / "run-transport"
         env, gate = self.build_image_stage_chain(
-            run, (ROOT / "tests" / "fixtures" / "prompt_good.txt").read_text(encoding="utf-8"))
+            run, fitted_good_prompt())
         put_receipt(run, "image-inventory-prompts", author="prompt-writer",
                     reviewer="prompt-reviewer", scores={"fidelity": 9},
                     extra={"validator_files": ["image-inventory-prompts/IMG-001.txt",

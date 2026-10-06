@@ -23,7 +23,6 @@ try:
 except ImportError:
     _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n/a"})
 
-_PROMPT_FLOOR = 9000
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +94,21 @@ def _import_prompt_gate():
         except Exception:  # noqa: BLE001
             _PROMPT_GATE_CACHE = None
     return _PROMPT_GATE_CACHE
+
+
+def validate_slide_prompt(path: Path, rel_path: str) -> Tuple[bool, str]:
+    """A banked per-slide prompt (`working/prompts/slide-NN.txt`) must sit inside the KIE rule 12 length band the
+    render gate enforces (shared enforcer through `prompt_gate.length_problems`; no byte floor lives here)."""
+    ok, why = validate_text(path, 1)
+    if not ok:
+        return False, why
+    pg = _import_prompt_gate()
+    if pg is None:
+        return (True, f"{why} -- the slide prompt length was NOT checked (prompt_gate.py could not be imported)")
+    probs = pg.length_problems(path.read_text(encoding="utf-8", errors="replace").strip())
+    if probs:
+        return False, f"{rel_path} fails the shared KIE rule 12 length gate: {probs[0]}"
+    return True, why
 
 
 def validate_design_prompt(path: Path, rel_path: str,
@@ -410,7 +424,7 @@ def validate_artifact(run_dir: Path, rel_path: str, manifest: Any,
             return validate_text(path, min_b)
 
     if re.match(r"working/prompts/slide-\d+\.txt$", rel_path):
-        return validate_text(path, _PROMPT_FLOOR)
+        return validate_slide_prompt(path, rel_path)
     # PD-TEST-098: the design-page prompt gets its OWN band predicate instead
     # of falling through to the F15 hash-only catch-all below, which is what
     # let a 58,484-char prompt re-validate clean against an 18,000 ceiling.

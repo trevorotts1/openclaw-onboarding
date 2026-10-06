@@ -1,12 +1,42 @@
 {
-  "_comment": "The declared list of every gate that enforces KIE prompt length (rule 12, owner order 2026-10-05). Each gate module must import shared-utils/kie_prompt_enforcer.py and define no band constant of its own; each data file must hold no length numbers. Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which fails when a gate stops importing the enforcer or a separate hard-coded band returns. Add a new gate here when it is written.",
+  "_comment": "The declared list of every gate that enforces KIE prompt length (rule 12, owner order 2026-10-05). Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which (a) fails when a declared gate module holds a numeric character band (a len(...) compared with a literal, a band-named integer constant, a min/max/floor/ceiling key with a number) outside the allowed_numeric list, (b) fails when a gate imports the enforcer but never calls it, and (c) walks every skill's scripts and fails when an undeclared module compares a prompt length with a literal or defines a prompt-length constant. Add a new gate here when it is written.",
   "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
   "enforcer": "shared-utils/kie_prompt_enforcer.py",
+  "enforcer_calls": [
+    "check",
+    "check_count",
+    "require",
+    "problems",
+    "budget_for",
+    "rewrite_to_band"
+  ],
+  "enforcer_aliases": [
+    "KPE",
+    "K",
+    "kie_prompt_enforcer",
+    "ghl_media.KPE",
+    "_kie_prompt_enforcer()"
+  ],
   "forbidden_module_constants": [
-    "PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_CHAR_TARGET_HIGH", "API_PROMPT_HARD_CEILING",
-    "PROMPT_FLOOR", "PROMPT_CEILING", "API_CAP",
-    "SOCIAL_MIN_CHARS", "SOCIAL_MAX_CHARS",
-    "HOUSE_MIN", "HOUSE_TARGET", "HOUSE_MAX", "TIER_CAPS", "FLOOR_PCT", "TARGET_PCT"
+    "PROMPT_CHAR_FLOOR",
+    "PROMPT_CHAR_CEILING",
+    "PROMPT_CHAR_TARGET_HIGH",
+    "API_PROMPT_HARD_CEILING",
+    "PROMPT_FLOOR",
+    "PROMPT_CEILING",
+    "API_CAP",
+    "SOCIAL_MIN_CHARS",
+    "SOCIAL_MAX_CHARS",
+    "HOUSE_MIN",
+    "HOUSE_TARGET",
+    "HOUSE_MAX",
+    "TIER_CAPS",
+    "FLOOR_PCT",
+    "TARGET_PCT",
+    "PROMPT_MIN_CHARS",
+    "PROMPT_MAX_CHARS",
+    "DEFAULT_MIN_CHARS",
+    "DEFAULT_MAX_CHARS"
   ],
   "gate_modules": [
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
@@ -18,11 +48,244 @@
     "66-kie-image/scripts/validate_prompt.py",
     "67-kie-video/scripts/validate_prompt.py",
     "68-kie-audio/scripts/validate_audio_request.py",
-    "25-video-creator/scripts/ai_providers.py"
+    "25-video-creator/scripts/ai_providers.py",
+    "48-facebook-ad-generator/scripts/ad_build_check.py",
+    "49-signature-funnel/scripts/prove_sf_prompt_floor.py",
+    "56-sales-page-assets/scripts/prove_sp_prompt_floor.py",
+    "57-social-media-in-a-box/scripts/prove_bands.py",
+    "71-blackceo-signature-page/scripts/validate_prompt.py",
+    "06-ghl-install-pages/tools/ghl_media.py",
+    "universal-sops/video-production/scripts/probe_prompt_band.py",
+    "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py"
+  ],
+  "delegating_gate_modules": [
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/workbook_builder.py",
+      "via": "prompt_gate",
+      "calls": [
+        "length_problems",
+        "length_budget"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_infographic.py",
+      "via": "_pg",
+      "calls": [
+        "length_problems",
+        "length_budget",
+        "prompt_problems"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sales_checkout_builder.py",
+      "via": "prompt_gate",
+      "calls": [
+        "length_problems",
+        "deepen_to_band"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/vsl_builder.py",
+      "via": "prompt_gate",
+      "calls": [
+        "length_problems",
+        "deepen_to_band"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/artifacts.py",
+      "via": "pg",
+      "calls": [
+        "length_problems"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/gates.py",
+      "via": "pg",
+      "calls": [
+        "length_problems"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/wave_contract.py",
+      "via": "pg",
+      "calls": [
+        "length_budget"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py",
+      "via": "_shared_prompt_gate()",
+      "calls": [
+        "length_budget"
+      ]
+    },
+    {
+      "path": "06-ghl-install-pages/tools/ghl_image_stage.py",
+      "via": "ghl_media.KPE",
+      "calls": [
+        "rewrite_to_band"
+      ]
+    }
+  ],
+  "adapter_direct_gate_modules": [
+    {
+      "path": "47-movie-producer/kie-adapters/tools/video/kie_video.py",
+      "calls": [
+        "cmd_prompt_budget"
+      ],
+      "reason": "ships inside the OpenMontage clone and the Docker image with only the two files under kie-adapters, where shared-utils does not exist; it calls the embedded Skill 74 client's prompt-budget --check directly (the same limit source the shared enforcer wraps), hash-locked by scripts/test_kie_embedded_client_hashlock.py"
+    },
+    {
+      "path": "62-cinematic-web-funnel-engine/providers/kie.py",
+      "calls": [
+        "cmd_prompt_budget"
+      ],
+      "reason": "runs the Skill 74 adapter in active mode per call through its mocked-transport seam; it calls prompt-budget --check directly, the same limit source the shared enforcer wraps"
+    }
+  ],
+  "allowed_numeric": {
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py": [
+      "PLACEHOLDER_MIN_BYTES",
+      "len-vs-literal:len(path.read_text(errors='replace').strip()) < 500"
+    ],
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py": [
+      "MIN_2K_WIDTH"
+    ],
+    "68-kie-audio/scripts/validate_audio_request.py": [
+      "GEMINI_PER_TURN_MAX",
+      "EL_DIALOGUE_COMBINED_MAX",
+      "EL_TEXT_MAX",
+      "SUNO_CUSTOM_PROMPT_MAX",
+      "SUNO_NON_CUSTOM_PROMPT_DOCUMENTED",
+      "SUNO_CUSTOM_STYLE_MAX",
+      "cap_p"
+    ],
+    "06-ghl-install-pages/tools/ghl_image_stage.py": [
+      "_PNG_RES_FLOORS",
+      "_COPY_CONTEXT_CAP"
+    ],
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_infographic.py": [
+      "PNG_MIN_BYTES"
+    ],
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/artifacts.py": [
+      "min_b"
+    ],
+    "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py": [
+      "DEEPSEEK_MAX_OUTPUT_TOKENS",
+      "_P4_COPY_UPSTREAM_MAX_CHARS",
+      "budget"
+    ]
+  },
+  "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths.",
+  "exemptions": [
+    {
+      "path": "62-cinematic-web-funnel-engine/providers/_fixture_support.py",
+      "names": [
+        "FIXTURE_PROMPT_MAX"
+      ],
+      "reason": "the schema maxLength this hermetic fixture serves to the mocked Skill 74 transport; it mirrors the live 20,000 and decides nothing",
+      "status": "pending owner signature"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_teleprompter.py",
+      "names": [
+        "TELEPROMPTER_MIN_BYTES"
+      ],
+      "reason": "a teleprompter file size, not a KIE prompt",
+      "status": "not a prompt gate"
+    },
+    {
+      "path": "63-agnes-image/scripts/validate_prompt.py",
+      "names": [
+        "HOUSE_MIN_CHARS",
+        "HOUSE_MAX_CHARS",
+        "SOCIAL_MIN_CHARS",
+        "SOCIAL_MAX_CHARS"
+      ],
+      "reason": "Agnes is not a KIE model; its house band is Skill 63's own",
+      "status": "pending owner signature"
+    },
+    {
+      "path": "63-agnes-image/prove_agnes_image_prompt_floor.py",
+      "names": [
+        "HOUSE_MIN_CHARS",
+        "HOUSE_MAX_CHARS"
+      ],
+      "reason": "Agnes is not a KIE model; its house band is Skill 63's own",
+      "status": "pending owner signature"
+    },
+    {
+      "path": "shared-utils/fleet_refresh_runner.py",
+      "names": [
+        "_ROLE_SCAN_MAX_ENTRIES"
+      ],
+      "reason": "a role-directory scan limit, not a prompt",
+      "status": "not a prompt gate"
+    },
+    {
+      "path": "58-podcast-production-engine/scripts/webhook/intake_handler.py",
+      "names": [
+        "MAX_FIELD_CHARS_DEFAULT"
+      ],
+      "reason": "an intake webhook field size limit, not a KIE prompt",
+      "status": "not a prompt gate"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/curate.py",
+      "names": [
+        "min_sz"
+      ],
+      "reason": "a curated-asset file size, not a prompt",
+      "status": "not a prompt gate"
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/context_pack.py",
+      "names": [
+        "MIN_AVAILABLE_CHARS"
+      ],
+      "reason": "the minimum context budget for a language-model call, not a KIE prompt",
+      "status": "not a prompt gate"
+    }
   ],
   "data_files": [
-    {"path": "45-design-intelligence-library/library/_system/prompt-bands.json", "forbidden_keys": ["min", "max", "boundaries"]},
-    {"path": "shared-utils/social_prompt_policy.json", "forbidden_keys": ["house_band", "min_chars", "max_chars", "target_chars"]},
-    {"path": "23-ai-workforce-blueprint/templates/role-library/graphics/connection-manifest.json", "forbidden_keys": ["floor", "ceiling", "api_cap"]}
+    {
+      "path": "45-design-intelligence-library/library/_system/prompt-bands.json",
+      "forbidden_keys": [
+        "min",
+        "max",
+        "boundaries"
+      ]
+    },
+    {
+      "path": "shared-utils/social_prompt_policy.json",
+      "forbidden_keys": [
+        "house_band",
+        "min_chars",
+        "max_chars",
+        "target_chars"
+      ]
+    },
+    {
+      "path": "23-ai-workforce-blueprint/templates/role-library/graphics/connection-manifest.json",
+      "forbidden_keys": [
+        "floor",
+        "ceiling",
+        "api_cap"
+      ]
+    },
+    {
+      "path": "57-social-media-in-a-box/config/bands.json",
+      "forbidden_keys_in": {
+        "image_prompt_carousel": [
+          "min",
+          "max"
+        ],
+        "image_prompt_series": [
+          "min",
+          "max"
+        ]
+      }
+    }
   ]
 }

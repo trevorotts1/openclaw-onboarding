@@ -1,9 +1,9 @@
 {
   "pinned": {
-    "AA-PIPELINE-MANIFEST.json": "88297fa4f23de9cca27a0a246008ca50774e61dd7314ce45e662de134b475fdf",
+    "AA-PIPELINE-MANIFEST.json": "987a1b92a47e105f3161cf4756625aded4d0e7d293e070657128e63bd09d8eb3",
     "AVATAR-MANIFEST.json": "5789acead98e47f9f78a09f701190f79f8a12f8eb887ee7d010c6430419a2995",
     "scripts/aa_intake_gate.py": "af54c97ffaf6e9ac1d9eb8dabc8830368d3aecd405a8360424f71fffa2dd1255",
-    "scripts/aa_build_check.py": "e2053a0c3702a769bd4484dd34771f84fbd33ffca90f1e165363f7175e92905f",
+    "scripts/aa_build_check.py": "90f6bf267a2c8c264986726ce8a0a56ab69a85db12fb6e869a70628e93e74f20",
     "scripts/aa_delivery_gate.py": "83e1eadb68cbaabd8bdc9164d3a697bd3686c5cc62e70d2511c82ba77db63528",
     "scripts/aa_qc_cert.py": "9afe1f4ca5a433a2f5bcfd7fed081b60793e462e61c5d4c4632fc18c7815c428",
     "scripts/aa_egress_gate.py": "eb3cb92dc9a482a7bc5b81294022188b612e92805f33ea7403e5a8af90d2b480",

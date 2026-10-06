@@ -155,11 +155,18 @@ class TestBuildPromptsJson:
                 [{"id": "a", "prompt": "a short weak prompt"}], enforce_floor=True
             )
         # … but a prompt whose CONTENT clears the floor is accepted.
-        long_prompt = "Rich brand-graded scene. " * 80  # ~2000 chars of content
-        ok = m.build_prompts_json(
-            [{"id": "a", "prompt": long_prompt}], enforce_floor=True
-        )
+        # KIE rule 12: 79 percent of the model max is refused naming the chars to add, 95 percent is accepted,
+        # 101 percent is refused naming the chars to cut (Skill 74 limit through the shared enforcer).
+        mx = m.KPE.budget_for(m.IMAGE_MODEL_DEFAULT)["max"]
+
+        def sized(n):
+            return "Rich brand-graded scene. " + "r" * (n - 25)
+        with pytest.raises(ValueError, match="ADD at least"):
+            m.build_prompts_json([{"id": "a", "prompt": sized(mx * 79 // 100)}], enforce_floor=True)
+        ok = m.build_prompts_json([{"id": "a", "prompt": sized(mx * 95 // 100)}], enforce_floor=True)
         assert ok[0]["mode"] == "t2i"
+        with pytest.raises(ValueError, match="CUT exactly"):
+            m.build_prompts_json([{"id": "a", "prompt": sized(mx * 101 // 100)}], enforce_floor=True)
 
     def test_prompt_char_floor_off_by_default(self):
         # Default (enforce_floor=False) never rejects a short prompt — the floor

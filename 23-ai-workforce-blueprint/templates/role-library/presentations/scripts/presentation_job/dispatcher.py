@@ -4733,7 +4733,8 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
             ),
             slides=slides_payload,
             prompt_constraints=_wave_contract.PromptConstraints(
-                min_chars=9000, max_chars=18000,
+                min_chars=_shared_prompt_gate().length_budget()["floor"],
+                max_chars=_shared_prompt_gate().length_budget()["ceiling"],
                 required_blocks=("[ARCHETYPE", "DO-NOT BLOCK", "Do not ")),
         )
         try:
@@ -4755,8 +4756,8 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
             "owning_role": owning_role,
             "routing": routing,
             "prompt_constraints": {
-                "min_chars": 9000,
-                "max_chars": 18000,
+                "min_chars": _shared_prompt_gate().length_budget()["floor"],  # KIE rule 12 via the shared enforcer
+                "max_chars": _shared_prompt_gate().length_budget()["ceiling"],
                 "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
             },
             "slides": slides_payload,

@@ -101,7 +101,11 @@ SUNO_CUSTOM_PROMPT_MAX = {
     "V4": 3000,
     "V4_5": 5000, "V4_5PLUS": 5000, "V4_5ALL": 5000, "V5": 5000, "V5_5": 5000,
 }
-SUNO_NON_CUSTOM_PROMPT_MAX = 3000   # generate-music page; mashup page says 500 (UNDETERMINED)
+# Non-custom song description: the generate-music page says 3000, the generate-mashup page says 500, and the
+# conflict is unresolved (UNDETERMINED). Rule 12: an unknown limit has NO floor, and the ceiling is the smallest
+# documented value, so the field is checked ceiling-only at 500 until the owner settles it.
+SUNO_NON_CUSTOM_PROMPT_DOCUMENTED = (500, 3000)
+SUNO_NON_CUSTOM_PROMPT_MAX = min(SUNO_NON_CUSTOM_PROMPT_DOCUMENTED)
 SUNO_CUSTOM_STYLE_MAX = {"V4": 200, "V4_5": 1000, "V4_5PLUS": 1000,
                          "V4_5ALL": 1000, "V5": 1000, "V5_5": 1000}
 SUNO_TITLE_MAX = 80                 # generate: "title length limit: 80 characters (all models)"
@@ -432,9 +436,13 @@ def _validate_prompt_caps(p, model, prompt, style, title, custom_mode):
         if style is not None:  # descriptive: rule 12 (floor 80 percent, ceiling 100 percent of the style max)
             _descriptive("style", model, style, SUNO_CUSTOM_STYLE_MAX[model])
     else:
-        _descriptive("non-custom song description", model, prompt, SUNO_NON_CUSTOM_PROMPT_MAX)  # descriptive
-        _warn("music: non-custom prompt limit UNDETERMINED -- generate-music page says "
-              "3000, generate-mashup page says 500; both verbatim; conflict unresolved")
+        v = KPE.check("suno/%s" % model, prompt if isinstance(prompt, str) else "", "verbatim",
+                      fallback_max=SUNO_NON_CUSTOM_PROMPT_MAX)  # unknown limit: no floor, smallest documented ceiling
+        if not v["ok"]:
+            _err("music: non-custom song description: %s" % v["message"])
+        _warn("music: non-custom prompt limit UNDETERMINED -- generate-music page says 3000, generate-mashup page "
+              "says 500; no floor is enforced and the ceiling is the smallest documented value (%d)"
+              % SUNO_NON_CUSTOM_PROMPT_MAX)
     if title is not None and _txt_len(title) > SUNO_TITLE_MAX:
         _err(f"music: title {_txt_len(title)} chars > {SUNO_TITLE_MAX}")
 
@@ -803,12 +811,14 @@ def self_test():
         _expect_exit(write("style-95.json", style_req(950)), "music", 0)    # 95 percent passes
         _expect_exit(write("style-100.json", style_req(1000)), "music", 0)  # 100 percent passes
         _expect_exit(write("style-101.json", style_req(1001)), "music", 2)  # 101 percent rejected
-        # non-custom song description (max 3000): 79 percent rejected, 95 percent passes
+        # non-custom song description: limit UNDETERMINED (500 vs 3000), so no floor and the ceiling is 500
         nc = {"endpoint": "/api/v1/generate", "model": "V5", "customMode": False, "instrumental": False,
-              "prompt": "x" * 2370, "callBackUrl": "https://x/cb"}
-        _expect_exit(write("noncustom-79.json", nc), "music", 2)
-        nc2 = dict(nc); nc2["prompt"] = "x" * 2850
-        _expect_exit(write("noncustom-95.json", nc2), "music", 0)
+              "prompt": "x" * 20, "callBackUrl": "https://x/cb"}
+        _expect_exit(write("noncustom-short.json", nc), "music", 0)      # no floor on an unknown limit
+        nc2 = dict(nc); nc2["prompt"] = "x" * 500
+        _expect_exit(write("noncustom-500.json", nc2), "music", 0)       # a 500-char description must pass
+        nc3 = dict(nc); nc3["prompt"] = "x" * 501
+        _expect_exit(write("noncustom-501.json", nc3), "music", 2)       # over the smallest documented value
         # sounds prompt (max 500): 79 percent rejected, 95 percent passes
         so3 = {"endpoint": "/api/v1/generate/sounds", "model": "V5", "prompt": "x" * 395, "soundTempo": 120}
         _expect_exit(write("sounds-79.json", so3), "music", 2)

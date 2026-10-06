@@ -372,6 +372,68 @@ def length_problems(prompt_text: str, model: Optional[str] = None) -> List[str]:
     return []
 
 
+# Distinct, positive art-direction clauses for a designed web page (sales, checkout, video sales letter). A page-design
+# builder uses them through deepen_to_band() to bring its prompt into the KIE rule 12 band; each is a real instruction
+# for the same page, filled with its role and client, never a repeat and never filler.
+PAGE_DESIGN_DEPTH_BLOCKS = (
+    "Reading flow for the {role} page of {client}: the eye enters at the headline band, travels down through the proof and offer zones in a single clear path, and ends at the primary action area; no element sits outside that path, so the page can be understood in a few seconds without scrolling back.",
+    "Headline band: the headline is the largest and heaviest type on the page, set in a clean modern face with tight tracking, placed in the upper third on a calm field with generous padding, and supported by one lighter subhead line that finishes the thought without repeating it.",
+    "Hierarchy of type: three clear sizes carry the whole page, a display size for the headline, a medium size for section titles and prices, and a comfortable body size for supporting lines; weights step down in the same order, and no fourth size or decorative face is introduced.",
+    "Color roles: the primary brand color anchors headlines and major bands, the secondary color tints supporting panels, the accent color appears only on the primary action and a few emphasis marks, and the base color forms the page ground; each color keeps its single job from top to bottom.",
+    "Spacing rhythm: vertical gaps follow one repeating unit, doubled between major zones and halved inside a zone, so the page breathes evenly; margins are equal on both sides and wide enough that nothing feels pressed against the edge on a phone or a large display.",
+    "Primary action: the action area is the most saturated, highest-contrast region on the page, with a button shape of generous size, a short action phrase in clear type, and quiet reassurance text beneath it; nothing else competes with it for attention.",
+    "Offer panel: the offer is shown as one tidy panel with the product name, the key benefits as short lines with simple markers, the price in the second-largest type, and any guarantee set apart in a softly tinted strip; the panel has a single border weight and consistent inner padding.",
+    "Trust elements: a small row of credibility marks, such as a guarantee seal shape, secure checkout wording, and a short customer line, sits close to the action area in a muted tone so it reassures without shouting; shapes are simple geometric forms, never clipart.",
+    "Proof zone: testimonials or results appear as clean quote cards with a short line, a name and role in smaller type, and equal card sizes aligned to the page grid; avatars, if any, are neutral circles, and quote marks are drawn as simple type, not decorative art.",
+    "Layout grid: every zone aligns to one underlying column grid so left edges, right edges, and baselines repeat from zone to zone; panels share a corner radius and a border weight, which makes the page feel engineered and trustworthy rather than assembled.",
+    "Contrast and legibility: every line of copy sits on a calm background with strong tonal separation, light on dark in the headline band and dark on light in body zones; small type is never placed on a busy or tinted region, and no line depends on color alone to be read.",
+    "Imagery and motif: if a supporting visual is used it is a single, restrained element, such as a clean product shot or a soft brand motif in the accent color, placed beside the copy rather than behind it, with soft edges and no overlap onto any line of text.",
+    "Surface and finish: backgrounds are flat or very softly graded, without grain patterns, vignettes, or drop shadows that blur edges; thin rules separate zones, corners are softly rounded at one radius, and the overall finish is crisp, premium, and print-clean.",
+    "Brand fidelity: the exact brand palette values are used without substitution, the supplied logo appears once, unaltered, at its assigned position and a legible size, and no other mark, badge, or slogan is invented; every approved word is rendered exactly as written.",
+    "Copy integrity: every quoted string is rendered letter for letter with its original capitalization and punctuation; nothing is added, abbreviated, reworded, or translated, and no filler words appear anywhere on the page.",
+    "Responsive behavior: the layout is designed so that the same hierarchy survives a narrow phone crop, with zones that stack naturally, text that stays inside a safe margin, and an action area that remains visible without covering other content.",
+    "Consistency across the set: the band structure, zone geometry, footer, and logo placement are identical on every page of the funnel; only the content and the page role change, so the set reads as one designed system.",
+    "Footer: the footer carries the client name and the small legal line in the quietest type on the page, separated from the content by a thin rule, and sits at the same height and alignment as on the other pages.",
+    "Tone of the page: calm, confident, and respectful; the visual energy supports a visitor who is making a decision, with no clutter, no urgency gimmicks, and no ornament that competes with the message or the action.",
+    "Quality read: a reviewer looking only at the rendered page can name the headline, the offer, the price, the proof, and the action, with every character legible and correctly spelled and every color matching the brand palette.",
+    "Finishing checks: edges are crisp at 2K, spacing is even, alignment is exact, and no element is cropped, doubled, or floating; the page looks like a finished premium design a client would proudly publish.",
+    "Above the fold: the first screen of the {role} page shows the headline, the subhead, and either the primary action or the first visual proof, with at least a quarter of that screen left as calm space, so a visitor knows what the page offers before any scrolling.",
+    "Section dividers: zones are separated by a change of ground tone or a thin rule, never by heavy boxes or ornaments; the dividers repeat at the same weight and spacing across the page, which keeps the rhythm steady and the page light.",
+    "Price presentation: the price uses lining numerals in a weight one step below the headline, with the currency mark smaller and raised, any comparison value set lighter and struck through with a thin line, and the billing note beneath in the smallest type that still reads clearly.",
+    "Form and order details: if fields appear they are drawn as clean rules or softly bordered rectangles of equal height with small labels above, a single column, generous spacing between fields, and an order summary panel that echoes the offer panel's border and padding.",
+    "Payment reassurance: a quiet row of generic payment shapes and a short security line sits beneath the action area, drawn in a muted tone and at a small size, with no real card brand marks and no animated badges, so the page stays trustworthy and uncluttered.",
+    "Video frame treatment: if a video area is part of the page it is a clean rectangle at the page's main aspect ratio with a soft corner radius, a simple centered play shape in the accent color, and a short caption line below, with no screen glare, no fake interface chrome, and no overlapping text.",
+    "Iconography: any small icon is a plain line drawing in one stroke weight and the secondary color, used only to mark benefits or steps, aligned to the first line of its text, and never replaced by a photograph, an emoji, or a decorative illustration.",
+    "Whitespace budget: roughly a third of the page area is empty ground, distributed between zones and around the margins, so each zone reads as its own idea and the action area has room to stand out.",
+    "Tap targets and focus: every button and link area is large enough for comfortable thumb use, with clear spacing from its neighbors, and the primary action shows a visible, high-contrast outline style so keyboard and touch users both see where to act.",
+    "Microcopy: supporting lines under headings and buttons are short, plain, and specific, written in the client's voice, free of hype words and exclamation marks, and each one answers a single question the visitor is likely to have at that point.",
+    "Numbers and lists: lists keep consistent markers and hanging indents so wrapped lines align with their text, numerals line up on one baseline, and no list exceeds six items, which keeps the offer scannable and the page balanced.",
+    "Edge cases in the design: long names, long prices, and long headlines wrap gracefully inside their panels without touching the edge, and no element depends on a specific string length to look correct, so the page survives real client content.",
+)
+
+
+def deepen_to_band(prompt: str, blocks=PAGE_DESIGN_DEPTH_BLOCKS, ctx: Optional[dict] = None,
+                   model: Optional[str] = None) -> str:
+    """Rule 12 writer loop for a page-design builder: while the prompt is outside the band, append the next clauses
+    from `blocks` (formatted with `ctx`) toward the middle of the target band, using the verdict's exact add count,
+    up to 3 tries; raises PromptGateError when 3 tries do not fix it (escalate). Reserves room for the English pin."""
+    queue = [b.format(**(ctx or {})) for b in blocks]
+    reserve = len("\n\n" + ENGLISH_PIN)
+
+    def rewriter(text, verdict):
+        goal = (verdict["target_min"] + verdict["max"] - reserve) // 2
+        out = text.rstrip()
+        while queue and len(out) + len(queue[0]) + 2 <= goal:
+            out += "\n\n" + queue.pop(0)
+        return out
+
+    try:
+        fitted, _ = KPE.rewrite_to_band(model or _image_models()[0], prompt, rewriter)
+    except KPE.PromptBudgetError as exc:
+        raise PromptGateError(f"the page prompt could not be brought into the KIE rule 12 length band: {exc}") from exc
+    return fitted
+
+
 def prompt_problems(prompt_text: str, copy_val=None, model: Optional[str] = None) -> List[str]:
     """Return EVERY reason `prompt_text` fails the shared image-prompt gate (empty list =
     clears the whole gate). This is the accumulating (non-raising) form used by provers and

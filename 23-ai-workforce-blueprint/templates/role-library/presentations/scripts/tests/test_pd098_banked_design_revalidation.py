@@ -188,7 +188,8 @@ def test_non_design_artifacts_revalidate_exactly_as_before(tmp_path):
         {"gate": "Phase 1Q", "criteria": [], "average": 9.0, "pass": True}))
     sha_slides = _write(rd, "working/copy/slides.json", json.dumps(
         {"slides": [{"ordinal": n} for n in range(1, 9)]}))
-    sha_slide = _write(rd, "working/prompts/slide-07.txt", "s" * 12000)
+    # KIE rule 12 replaced the 9,000-byte slide floor: a banked slide prompt must sit in the shared length band.
+    sha_slide = _write(rd, "working/prompts/slide-07.txt", _gate_clean(PG_PROMPT_CHAR_CEILING))
     sha_bin = _write(rd, "mystery.bin", "\x00\x01")
     sha_empty = _write(rd, "empty.txt", "")
 
@@ -199,8 +200,7 @@ def test_non_design_artifacts_revalidate_exactly_as_before(tmp_path):
         ("working/qc/copy_qc_report.json", sha_json, True, "ok (valid JSON"),
         ("working/copy/slides.json", sha_slides, True,
          "no per-type predicate, verified by recorded hash"),
-        ("working/prompts/slide-07.txt", sha_slide, True,
-         "ok (12000 bytes, floor 9000)"),
+        ("working/prompts/slide-07.txt", sha_slide, True, "ok ("),
         ("mystery.bin", sha_bin, True,
          "no per-type predicate, verified by recorded hash"),
         # Both halves of the F15 branch: with NO recorded sha it refuses on

@@ -342,9 +342,9 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
     artifacts: Dict[str, str] = state.get("artifacts", {})
     models: Dict[str, str] = state.get("models", {})
     receipts = set(state.get("receipts", []))
-    band = manifest.get("image_prompt_band", {})
-    band_min = int(band.get("min_chars", 5000))
-    band_max = int(band.get("max_chars", 19000))
+    # Image prompt length is KIE prompt rule 12 (owner order 2026-10-05), set per model by the shared enforcer when a
+    # prompt is submitted to KIE; this gate keeps no character band of its own (the old 5,000-19,000 pair here was
+    # never read).
 
     # === G-STAGE: generation-completeness =================================
     for sid, spec in stages.items():

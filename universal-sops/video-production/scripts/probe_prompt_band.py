@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""probe_prompt_band.py — fail-closed 5,000-19,000 stripped-char gate for Personal
+"""probe_prompt_band.py — fail-closed KIE rule 12 length gate (80 to 100 percent of the model max) for Personal
 Video Creator likeness / reference-image prompts (cluster universal-sops/video-production).
 
 A CLONE of the repo's two-floor image-prompt band (56-sales-page-assets/scripts/
@@ -9,7 +9,7 @@ themselves cloned from the presentations build_deck.py gate), re-pointed at the
 likeness-preservation blocks a talking-head reference prompt MUST carry.
 
 THE FLOORS (all must clear or the prompt is NOT sent to the image provider):
-  FLOOR 1 — LENGTH: 5,000 <= stripped chars <= 19,000.   -> AF-PVC-PROMPT-FLOOR / -CEILING
+  FLOOR 1 — LENGTH: 80 percent <= stripped chars <= 100 percent of the model max (shared enforcer). -> AF-PVC-PROMPT-FLOOR / -CEILING
   FLOOR 2 — IDENTITY ANCHOR present ("same person"/"identity source"/"reference").
                                                              -> AF-PVC-PROMPT-IDENTITY
   FLOOR 2 — NEGATIVE BLOCK with a 'Do not ' imperative.      -> AF-PVC-PROMPT-IDENTITY
@@ -23,17 +23,36 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
-PROMPT_CHAR_FLOOR = 5000       # AF-PVC-PROMPT-FLOOR
-PROMPT_CHAR_CEILING = 19000    # AF-PVC-PROMPT-CEILING
+# Length: KIE prompt rule 12 (owner order 2026-10-05) through the shared enforcer; the limit comes from Skill 74
+# prompt-budget for the image model, and no band lives here (AF-PVC-PROMPT-FLOOR / AF-PVC-PROMPT-CEILING).
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-PVC-PROMPT-IDENTITY (density)
 
 IDENTITY_ANCHORS = (
@@ -71,15 +90,11 @@ def evaluate_prompt(record: Dict[str, Any]) -> List[Tuple[str, str]]:
 
     stripped = _stripped(prompt)
     lc = stripped.lower()
-    length = len(stripped)
 
-    if length < PROMPT_CHAR_FLOOR:
-        fails.append(("AF-PVC-PROMPT-FLOOR",
-                      f"{who}: {length} stripped chars, under the {PROMPT_CHAR_FLOOR} floor — "
-                      "a likeness prompt this short cannot carry identity specificity; NOT sent to the image provider"))
-    if length > PROMPT_CHAR_CEILING:
-        fails.append(("AF-PVC-PROMPT-CEILING",
-                      f"{who}: {length} stripped chars, over the {PROMPT_CHAR_CEILING} ceiling"))
+    verdict = KPE.check(str(record.get("model") or IMAGE_MODEL_DEFAULT), stripped)
+    if not verdict["ok"]:
+        code = "AF-PVC-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-PVC-PROMPT-FLOOR"
+        fails.append((code, f"{who}: {verdict['message']}; NOT sent to the image provider"))
 
     if not any(a in lc for a in IDENTITY_ANCHORS):
         fails.append(("AF-PVC-PROMPT-IDENTITY",
@@ -106,8 +121,7 @@ def verify(records: List[Dict[str, Any]]) -> Tuple[List[Tuple[str, str]], List[s
         return violations, []
     for rec in records:
         violations.extend(evaluate_prompt(rec))
-    return violations, [f"checked {len(records)} likeness prompt(s) against the "
-                        f"{PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} band"]
+    return violations, [f"checked {len(records)} likeness prompt(s) against the KIE rule 12 length band"]
 
 
 def _load_ledger(path: str) -> List[Dict[str, Any]]:
@@ -134,7 +148,7 @@ def _report(violations, notes) -> None:
     for n in notes:
         print(f"NOTE: {n}")
     if not violations:
-        print(f"PASS: every likeness prompt clears the two-floor gate ({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING}).")
+        print("PASS: every likeness prompt clears the two-floor gate (KIE rule 12 length band).")
         return
     print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to the image provider.")
     for code, msg in violations:
@@ -174,7 +188,14 @@ _VOCAB = ("cheekbone jawline brow temple forehead nostril philtrum cupid iris pu
           "photoreal hyperreal lifelike believable plausible convincing accurate faithful true")
 
 
-def _rich(target: int = 5600, anchor: bool = True, negative: bool = True) -> str:
+def _target() -> int:
+    """The middle of the rule 12 target band for the default image model (self-test fixtures)."""
+    b = KPE.budget_for(IMAGE_MODEL_DEFAULT)
+    return (b["target_min"] + b["max"]) // 2
+
+
+def _rich(target: Optional[int] = None, anchor: bool = True, negative: bool = True) -> str:
+    target = target or _target()
     body = _IDENTITY if anchor else "Create a photorealistic vertical 9:19 close-up of a person. "
     vocab = (_VOCAB + " ").split()
     i = 0
@@ -193,7 +214,7 @@ def run_self_test() -> int:
     cases = [
         ("valid", [], [{"name": "front_neutral", "prompt_text": _rich()}]),
         ("too_short", ["AF-PVC-PROMPT-FLOOR"], [{"name": "short", "prompt_text": _rich(200)}]),
-        ("too_long", ["AF-PVC-PROMPT-CEILING"], [{"name": "long", "prompt_text": _rich(19200)}]),
+        ("too_long", ["AF-PVC-PROMPT-CEILING"], [{"name": "long", "prompt_text": _rich(KPE.budget_for(IMAGE_MODEL_DEFAULT)["max"] + 200)}]),
         ("no_anchor", ["AF-PVC-PROMPT-IDENTITY"], [{"name": "noanchor", "prompt_text": _rich(anchor=False)}]),
         ("no_negative", ["AF-PVC-PROMPT-IDENTITY"], [{"name": "noneg", "prompt_text": _rich(negative=False)}]),
         ("empty", ["AF-PVC-PROMPT-FLOOR"], [{"name": "empty", "prompt_text": "   "}]),
@@ -214,7 +235,7 @@ def run_self_test() -> int:
 
 
 def main(argv: List[str]) -> int:
-    ap = argparse.ArgumentParser(description="Fail-closed 5,000-19,000 band for likeness prompts.")
+    ap = argparse.ArgumentParser(description="Fail-closed KIE rule 12 length band for likeness prompts.")
     ap.add_argument("--ledger", help="prompt ledger JSON ('-' reads stdin)")
     ap.add_argument("--dir", help="directory of *.txt prompt files")
     ap.add_argument("--self-test", action="store_true")
