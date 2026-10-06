@@ -13,6 +13,12 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v25.3.22 - 2026-10-06 - feat: page image prompts use the rule 12 length band
+
+- `tools/ghl_media.py`: the 1,500-character `PROMPT_CHAR_FLOOR` is retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. The floor is measured on the creative content before the English pin and the ceiling with it.
+- `tools/ghl_image_stage.py`: `_derive_copy_specs` brings each derived 8-block prompt into the band with a 3-try rewrite loop that adds real section-specific direction (setting, subject, lens, light, color, copy-safe space and so on) and escalates when 3 tries do not fix it.
+- `tests/test_ghl_media.py` proves 79 percent rejected (chars to add), 95 percent accepted, 101 percent rejected (chars to cut).
+
 ## [v23.3.1] - 2026-10-05 - KIE key ownership docs and shared-canon key resolver
 
 ### Fixed

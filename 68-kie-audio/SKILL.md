@@ -8,7 +8,7 @@ description: >
   (ADVERTISED_NOT_YET_VERIFIED — no endpoint, dispatch_enabled false).
 version: v2.0.3
 metadata:
-  version: "2.0.3"
+  version: "2.0.4"
   priority: HIGH
 ---
 

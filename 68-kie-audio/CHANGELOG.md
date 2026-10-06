@@ -4,6 +4,11 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.4] - 2026-10-06 - feat: descriptive music fields use rule 12; the unresolved non-custom limit has no floor
+
+- Suno `style`, the sounds prompt, add-vocals `style` and add-instrumental `tags` use the band. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Verbatim fields (TTS text, custom-mode lyrics) are exempt from the floor.
+- The non-custom song description limit is UNDETERMINED (generate-music says 3000, generate-mashup says 500): no floor, ceiling 500, the smallest documented value. A 500-character description passes; the self-test pins 20, 500 and 501.
+
 ## [v2.0.3] - 2026-10-05 - fix: dead credit endpoint, version drift, registry and test counts, retention prose
 
 ### Fixed

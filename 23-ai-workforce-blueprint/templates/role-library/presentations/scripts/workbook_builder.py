@@ -656,7 +656,7 @@ _DEPTH_BANK = (
     "Spacing rhythm: the vertical gaps follow one repeating unit, doubled between major zones and halved between a label and its field, giving the page a steady cadence that feels intentional.",
     "Label treatment: each field label is set in small capitals in the secondary color directly above its writing space, short enough to read at a glance and never wrapping onto a second line.",
     "Footer: the footer carries the client name and the page number in the quietest type on the page, separated from the content by a thin rule, and sits at the same height on every page of the set.",
-    "Surface: the page ground is a flat, even tone with without a gradient, a grain pattern, or a vignette, so the printed result is clean and economical and the writing areas stay perfectly legible.",
+    "Surface: the page ground is a flat, even tone without a gradient, a grain pattern, or a vignette, so the printed result is clean and economical and the writing areas stay perfectly legible.",
     "Edge treatment: rules end with square caps, zone corners are softly rounded at one consistent radius, and no drop shadows are used anywhere, keeping the editorial print aesthetic crisp.",
     "Brand fidelity: the exact palette hex values listed above are used without substitution or approximation; no tint, shade, or neighboring color is invented, and the ink color is never replaced by pure black.",
     "Logo handling: where a reference logo is supplied it appears once, unaltered, at the position named above, at a size that stays legible; it is never redrawn, recolored, stretched, or repeated.",

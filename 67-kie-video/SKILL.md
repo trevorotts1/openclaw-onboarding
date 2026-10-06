@@ -9,7 +9,7 @@ description: >
   asynchronous task dispatch with callbacks or polling, and mandatory real visual QC.
 version: v2.0.3
 metadata:
-  version: "2.0.3"
+  version: "2.0.4"
   priority: HIGH
 ---
 

@@ -1,5 +1,10 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.2 - 2026-10-06 - feat: the image prompt floor uses the rule 12 band
+
+- `scripts/prove_sf_prompt_floor.py`: the 5,000 to 19,000 `PROMPT_CHAR_FLOOR` and `PROMPT_CHAR_CEILING` are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. AF-FUN-PROMPT-FLOOR and AF-FUN-PROMPT-CEILING keep their codes.
+- `SF-PROVER-PIN.sha256` re-recorded with `bash signature-funnel-entry.sh --write-pin`; the entry self-test passes. The entry version gate now anchors the version (`^v?2.x.y$`) and keeps the SKILL.md lockstep and `--check-version`.
+
 ## v2.0.3 - 2026-10-05 - Entry shell version gate matches the current v2 contract
 
 ### Fixed

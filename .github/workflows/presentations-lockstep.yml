@@ -302,7 +302,7 @@ jobs:
           # The shared prompt_gate.py (imported by build_deck.py and EVERY side-door —
           # kie_generate.py x2 + the Skill-46 relay) is the ONE gate that keeps a thin /
           # garbled / ungated prompt off the paid kie.ai API. Its fixture prover proves the
-          # 9,000-18,000-char floor + structural + 8-class negative + spelling-lock + density
+          # KIE rule 12 length band (shared enforcer) + structural + 8-class negative + spelling-lock + density
           # + demographic teeth still fire (a PASS fixture passes, each FAIL fixture fails),
           # plus the pin / mode-consistency helpers. A regression that loosens the gate
           # exits non-zero and blocks the merge.
