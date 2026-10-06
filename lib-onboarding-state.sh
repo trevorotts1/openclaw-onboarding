@@ -474,7 +474,12 @@ oc_skill_registered() {
                "$OC_SKILLS_DIR/$folder/SKILL.md" 2>/dev/null || true)
   [ -z "$reg_name" ] && reg_name="$folder"
   local out
-  out=$(openclaw skills info "$reg_name" 2>/dev/null) || return 1
+  # Multi-agent boxes need --agent (bare `skills info` reports not-visible).
+  # obs_default_agent comes from scripts/onboarding-state.sh; absent when this lib
+  # is sourced alone, which keeps single-agent behaviour unchanged.
+  local _ag=""
+  command -v obs_default_agent >/dev/null 2>&1 && _ag="$(obs_default_agent)"
+  out=$(openclaw skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>/dev/null) || return 1
   # Ready / visible / enabled — any positive signal counts; empty/Not found fails.
   printf '%s' "$out" | grep -qiE "ready|enabled|visible|installed|name:" || return 1
   printf '%s' "$out" | grep -qiE "not found|unknown skill|no such skill" && return 1
