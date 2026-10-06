@@ -1,5 +1,10 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
+## v2.0.6 - 2026-10-06 - feat: image prompt richness uses the rule 12 band
+
+- `ad_build_check._chk_prompt_richness` no longer carries `PROMPT_MIN_CHARS` 3500 and `PROMPT_MAX_CHARS` 18000. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Each prompt in the S4 receipt is measured for its image model (`IMAGE_MODEL_DEFAULT` when the receipt names none).
+- `AD-PIPELINE-MANIFEST.json` manifest_version 3, the MASTER-AD ruleset row and SOP-FBAD-06 restate the rule; the S4 receipt example carries a rule 12 sized `char_count`.
+
 ## v2.0.5 - 2026-10-06 - follow Skill 47's adapters onto the Skill 74 transport
 
 - `scripts/test_kie_adapter_resultjson_decode.py` still imported `_decode_result_json` and the old poll methods (`_poll_gemini_omni`, `_poll_veo`, `_poll_task`), which Skill 47 v15.1.0 removed when its adapters moved onto Skill 74. It is now the same test as Skill 47's updated copy: it proves the result file comes out of a recordInfo response whose `resultJson` is a JSON string (image, gemini-omni-video, the veo3_fast legacy route) and that malformed or empty `resultJson` fails cleanly, over a fake Skill 74 transport (no network, no key).

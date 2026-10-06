@@ -4,13 +4,13 @@
   "run_id": "run-golden-daybreak",
   "funnel_type": "signature_funnel",
   "funnel_size": 7,
-  "skill_version": "1.0.8",
-  "issued_at": "2026-07-05T23:55:18Z",
+  "skill_version": "v2.1.2",
+  "issued_at": "2026-10-06T08:26:13Z",
   "nonce_fingerprint": "19dd9294004d6460",
   "ledger_hashes": {
     "brief.json": "50a363f7801774bdad6731da0c47526f73eb4ea957a7fa384d002227e27dc53f",
     "copy_ledger.json": "53556b9bee9168faf85fab05afab7975432476c60582711ee62fb0786c3c49cc",
-    "prompt_ledger.json": "7dc96eb34d2173353dd073c69619ea99021bdac555f13fe8758266edcd2993ec",
+    "prompt_ledger.json": "9272577f150281f3d62792943e3143a74958317f614f78dd70f28f67561f341e",
     "media_ledger.json": "777718a0fc962735a14debcdecc5fb7304c39466d27c6df539e7b299828640eb"
   },
   "phases": [
@@ -34,7 +34,7 @@
     },
     {
       "id": "P3-IMAGES",
-      "prover": "kie_image.py",
+      "prover": "kie_live_adapter.py",
       "status": "pass",
       "order": 3
     },
@@ -76,10 +76,19 @@
     }
   ],
   "all_phases_pass": true,
+  "delegation_receipts": "absent",
   "delivery": {
     "publish": "human-approval-required",
     "preview_only": true,
     "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"
   },
-  "signature": "67a5738a2a624457f9dd16d052acbaf1dbed85ee84e9d4a912584977b73e1213"
+  "persona": {
+    "persona_id": "blackceo-house-voice",
+    "persona_name": "Blackceo House Voice",
+    "persona_source": "selector",
+    "no_persona_required": false,
+    "governance_persona_id": null,
+    "section4_present": true
+  },
+  "signature": "9a150fe541c089262d9cac4e4c20d7121b37f7d298787cf7b74adf5b7b3f4553"
 }

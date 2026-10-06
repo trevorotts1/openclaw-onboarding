@@ -131,11 +131,11 @@ def _install_mock(monkeypatch):
     # download_image) — FIX-4's proven CDN contract. Patch that helper so the
     # mock measures download timing without touching the network.
     monkeypatch.setattr(bd, "download_image", _fake_download)
-    # load_rich_prompt needs real prompt files >= 9000 chars — stub it to avoid
-    # authoring 20 x 9KB files in the test.
+    # load_rich_prompt needs real in-band prompt files (KIE rule 12) — stub it to avoid
+    # authoring 20 large files in the test.
     monkeypatch.setattr(
         bd, "load_rich_prompt",
-        lambda slide, run_dir: "x" * bd.PROMPT_CHAR_FLOOR)
+        lambda slide, run_dir: "x" * bd.length_budget()["floor"])
     # _verify_aspect_and_readback imports prompt_gate + PIL + OCR — stub it out
     # (its behavior is FIX-4/FIX-6 territory, not this unit's scope).
     monkeypatch.setattr(bd, "_verify_aspect_and_readback", lambda *a, **k: None)

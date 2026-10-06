@@ -10,6 +10,13 @@ from presentation_job.result import CheckResult
 from presentation_job.waivers import WaiverError, load_waivers, validate_waiver
 from phase_verifiers import verify
 
+
+def _L():
+    """A prompt length inside the KIE rule 12 band (the shared enforcer through prompt_gate)."""
+    import prompt_gate
+    b = prompt_gate.length_budget()
+    return (b["target_min"] + b["ceiling"]) // 2
+
 def _rd(): return pathlib.Path(tempfile.mkdtemp())
 def _w(rd, rel, content):
     p = rd / rel; p.parent.mkdir(parents=True, exist_ok=True)
@@ -55,12 +62,12 @@ def test_script_gate_both_paths():
     g2 = Gates(rd2, {}).evaluate_all(); assert g2["script"]["state"] == "pass"
 
 def test_prompt_floor_names_short_file():
-    rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
-    _w(rd, "working/prompts/slide-02.txt", "q" * 8999)
+    rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * _L())
+    _w(rd, "working/prompts/slide-02.txt", "q" * (_L() // 2))
     g = Gates(rd, {}).evaluate_all()
     assert g["prompt_floor"]["state"] == "fail"
     r = g["prompt_floor"].get("reason", "")
-    assert "8999" in r and "slide-02" in r
+    assert str(_L() // 2) in r and "slide-02" in r
 
 
 class TestCanonicalPromptDirProblemsThreeValued:
@@ -82,7 +89,7 @@ class TestCanonicalPromptDirProblemsThreeValued:
 
     def test_good_clean_dir_is_pass_with_no_problems(self):
         """GOOD control: canonical, non-duplicate prompt files -> PASS, []."""
-        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * _L())
         result, problems = Gates(rd, {})._canonical_prompt_dir_problems()
         assert result is CheckResult.PASS
         assert problems == []
@@ -92,8 +99,8 @@ class TestCanonicalPromptDirProblemsThreeValued:
         FAIL, with the collision named in the problem list. Detector runs
         successfully end-to-end here -- nothing simulated."""
         rd = _rd()
-        _w(rd, "working/prompts/slide-1.txt", "p" * 9500)
-        _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        _w(rd, "working/prompts/slide-1.txt", "p" * _L())
+        _w(rd, "working/prompts/slide-01.txt", "p" * _L())
         result, problems = Gates(rd, {})._canonical_prompt_dir_problems()
         assert result is CheckResult.FAIL
         assert problems, "a real duplicate must produce at least one problem string"
@@ -108,7 +115,7 @@ class TestCanonicalPromptDirProblemsThreeValued:
         exact double-fallback-failure shape the sweep found. Must be
         UNDETERMINED, never PASS, and never silently equal to the GOOD case's
         (PASS, [])."""
-        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * _L())
         self._boom_build_deck(monkeypatch)
         g = Gates(rd, {})
         monkeypatch.setattr(g, "_prompt_gate", lambda: None)
@@ -124,7 +131,7 @@ class TestCanonicalPromptDirProblemsThreeValued:
         detector this would PASS. Because the duplicate/name detector itself
         could not run, the gate must refuse (state=fail), not silently pass a
         deck it never actually checked for D16 collisions."""
-        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * _L())
         self._boom_build_deck(monkeypatch)
         g = Gates(rd, {})
         monkeypatch.setattr(g, "_prompt_gate", lambda: None)
@@ -140,7 +147,7 @@ class TestCanonicalPromptDirProblemsThreeValued:
         recovered prompt_gate module's own detector call raises too (not just
         _prompt_gate() returning None). Must still be UNDETERMINED, not an
         uncaught exception and not a silent pass."""
-        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+        rd = _rd(); _w(rd, "working/prompts/slide-01.txt", "p" * _L())
         self._boom_build_deck(monkeypatch)
         g = Gates(rd, {})
         class _BoomingPromptGate:
@@ -181,7 +188,7 @@ def test_no_gate_is_warn_only_anymore():
     # drifting back to an arbitrary undersized stub.
     _w(rd, "working/deliverables/presenter-teleprompter.html",
        "y" * (GATES_MIN_BYTES["teleprompter_html"] + 1000))
-    _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
+    _w(rd, "working/prompts/slide-01.txt", "p" * _L())
     _wj(rd, "working/checkpoints/media_library.json",
         {"ghl_folder_id": "root", "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}], "pptx_ghl_media_id": "p9"})
     _wj(rd, "renders/slide-01.ocr.json", {"checked": True, "matched": True})

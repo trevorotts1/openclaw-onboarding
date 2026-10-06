@@ -5,10 +5,13 @@ Protocol (GIP) prompt-band gate (diu_validator.py prompt-band).
 
 Graphics had MAX-only cap tiers and NO minimum floor anywhere: a one-line prompt could
 reach the paid Kie.ai / GPT-Image 2.5 API unchallenged. FIX 1-A/1-B added per-asset-class
-BANDS (prompt-bands.json) with a HARD MIN floor (AF-GIP-PROMPT-FLOOR), the MAX cap
-(AF-DIU-PROMPT-CAP), and a length-INDEPENDENT quality gate (AF-GIP-PROMPT-QUALITY): the
-8-class negative block, a per-string spelling-lock + verbatim copy on text-bearing bands,
-a distinct-word density floor, and the mandatory style-reference-only directive.
+BANDS (prompt-bands.json). Since the owner order of 2026-10-05 (KIE prompt rule 12) a band
+holds no length numbers: length is 95 to 100 percent of the model maxLength, floor 80
+percent (AF-GIP-PROMPT-FLOOR), ceiling 100 percent (AF-DIU-PROMPT-CAP), enforced by the shared
+enforcer shared-utils/kie_prompt_enforcer.py. The band keeps the length-INDEPENDENT quality gate
+(AF-GIP-PROMPT-QUALITY): the 8-class negative block, a per-string spelling-lock + verbatim copy
+on text-bearing bands, a distinct-word density floor, and the mandatory style-reference-only
+directive.
 
 This prover imports the SAME band functions diu_validator uses at runtime and exercises
 them against fixtures — one genuinely rich PASS per band + one fixture per failure class —
@@ -17,7 +20,7 @@ loosens a tooth is caught in CI (mirrors presentations' prove_pres_prompt_floor.
 
 USAGE
     python3 prove_gip_prompt_floor.py --self-test          # fixture gate (CI + QC)
-    python3 prove_gip_prompt_floor.py --band medium <p.txt> # gate one or more prompt files
+    python3 prove_gip_prompt_floor.py --band medium <p.txt> [--model ID]  # gate prompt files
     python3 prove_gip_prompt_floor.py --band text_bearing_long --dir <run_dir>
 
 EXIT CODES
@@ -103,13 +106,31 @@ def _distinct_body(n_sentences: int) -> str:
     return " ".join(out)
 
 
+def _fit(head: str, tail: str, chars: int) -> str:
+    """head + a distinct body + tail, sized to exactly `chars` stripped characters (the body is trimmed to fit)."""
+    head, tail = head.lstrip(), tail.rstrip()
+    room = chars - len(head) - len(tail)
+    body = _distinct_body(room // 150 + 2)[:max(room, 0)]
+    return head + body + tail
+
+
+# Fixture sizes are percentages of the model max the band's first endpoint resolves to (Skill 74 registry
+# snapshot, hermetic): GPT Image 2.5 = 20,000 for the text_bearing_long and visual_long bands, Seedream 4.5 = 3,000
+# for the medium band.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import diu_validator as _dv  # noqa: E402  (the shared enforcer is reached through the validator)
+GPT_MAX = _dv.KPE.budget_for("gpt-image-2-5-sunburst-text-to-image")["max"]
+MEDIUM_MAX = _dv.KPE.budget_for("seedream/4.5-text-to-image")["max"] if _dv.KPE.budget_for("seedream/4.5-text-to-image") else 3000
+
+
 def rich_text_bearing(copy_line: str = "Stop Guessing. Start Closing.",
                       with_spelling_lock: bool = True,
                       with_style_ref_only: bool = True,
                       do_not_block: str = _DO_NOT_BLOCK,
-                      n_sentences: int = 40) -> str:
-    """A text_bearing_long PASS fixture: >=5,000 chars, >=150 distinct words, the 8-class
-    negative block, a spelling-lock, verbatim copy, and (optionally) the style-ref directive."""
+                      chars: int = GPT_MAX * 97 // 100) -> str:
+    """A text_bearing_long PASS fixture: `chars` stripped characters (default 97 percent of the 20,000
+    GPT Image 2.5 max), >=150 distinct words, the 8-class negative block, a spelling-lock, verbatim copy,
+    and (optionally) the style-ref directive."""
     head = (
         "ASSET: ad creative | BAND: text_bearing_long\n"
         "Composition: rule of thirds grid, headline in the upper-third safe margin, focal point "
@@ -124,46 +145,26 @@ def rich_text_bearing(copy_line: str = "Stop Guessing. Start Closing.",
         head += f'HEADLINE COPY: "{copy_line}".\n'
     if with_style_ref_only:
         head += ("REFERENCE DIRECTIVE: use the attached images only as style reference for color "
-                 "grading, lighting, and composition — do not copy their subjects, faces, or text.\n")
-    return head + _distinct_body(n_sentences) + do_not_block
+                 "grading, lighting, and composition, do not copy their subjects, faces, or text.\n")
+    return _fit(head, do_not_block, chars)
 
 
-def rich_text_bearing_medium(copy_line: str = "Stop Guessing. Start Closing.",
-                             with_spelling_lock: bool = True,
-                             with_style_ref_only: bool = True,
-                             do_not_block: str = _DO_NOT_BLOCK,
-                             n_sentences: int = 4) -> str:
-    """A text_bearing_medium PASS fixture (GK-20 band, Ideogram V3 DESIGN route):
-    >=1,600 chars, >=90 distinct words, the 8-class negative block, a spelling-lock,
-    verbatim copy, and (optionally) the style-ref directive -- comfortably under the
-    band's 4,500-char cap (itself sized to Ideogram's own verified 5,000-char API
-    cap, MODEL-SPECS.md). Reuses text_bearing_long's head/negative-block shape at a
-    much smaller body size, since the tight ceiling here rules out the 40-sentence
-    body text_bearing_long's PASS fixture uses."""
-    head = (
-        "ASSET: social post graphic with baked text | BAND: text_bearing_medium\n"
-        "Composition: rule of thirds grid, headline in the upper-third safe margin, focal point "
-        "in the right third. Palette anchored on brand hex #0A2540 with an accent of #F2B134.\n"
-    )
-    if with_spelling_lock:
-        head += (f'TYPOGRAPHY + VERBATIM COPY: render this exact string, letter-for-letter, '
-                 f'correctly spelled, with no added, dropped, doubled, or substituted characters: '
-                 f'"{copy_line}".\n')
-    else:
-        head += f'HEADLINE COPY: "{copy_line}".\n'
-    if with_style_ref_only:
-        head += ("REFERENCE DIRECTIVE: use the attached images only as style reference for color "
-                 "grading, lighting, and composition — do not copy their subjects, faces, or text.\n")
-    return head + _distinct_body(n_sentences) + do_not_block
-
-
-def rich_visual(n_sentences: int = 25) -> str:
-    """A visual_long PASS fixture (non-text-bearing: min 2,500, no spelling-lock required)."""
+def rich_visual(chars: int = GPT_MAX * 97 // 100) -> str:
+    """A visual_long PASS fixture (non-text-bearing: no spelling-lock required)."""
     head = (
         "ASSET: photoreal scene | BAND: visual_long\n"
         "Composition: rule of thirds, focal subject in the left third, brand hex #0A2540 grade.\n"
     )
-    return head + _distinct_body(n_sentences) + _DO_NOT_BLOCK
+    return _fit(head, _DO_NOT_BLOCK, chars)
+
+
+def rich_medium(chars: int = MEDIUM_MAX * 97 // 100) -> str:
+    """A medium PASS fixture (non-social specialty band, Seedream 4.5 endpoint, 3,000 max)."""
+    head = (
+        "ASSET: brand imagery | BAND: medium\n"
+        "Composition: rule of thirds, focal subject in the left third, brand hex #0A2540 grade.\n"
+    )
+    return _fit(head, _DO_NOT_BLOCK, chars)
 
 
 def _band(band_id: str):
@@ -179,45 +180,28 @@ def _self_test() -> int:
     tb = rich_text_bearing()
     fixtures.append(("text-bearing-rich-pass", "text_bearing_long", tb,
                      "Stop Guessing. Start Closing.", False, True))
-
     fixtures.append(("visual-rich-pass", "visual_long", rich_visual(), None, False, True))
+    fixtures.append(("medium-rich-pass", "medium", rich_medium(), None, False, True))
 
-    # --- GK-20: text_bearing_medium (the Ideogram V3 DESIGN route band) --------------
-    tbm = rich_text_bearing_medium()
-    fixtures.append(("text-bearing-medium-rich-pass", "text_bearing_medium", tbm,
-                     "Stop Guessing. Start Closing.", False, True))
-
-    # Under the text_bearing_medium floor (1,600) -> length fail.
-    fixtures.append(("text-bearing-medium-under-floor", "text_bearing_medium",
-                     "ASSET: social post graphic with baked text | BAND: text_bearing_medium\n"
-                     "A short prompt with no real spec.", None, False, False))
-
-    # Over the text_bearing_medium cap (4,500 -- Ideogram's own 5,000-char API cap
-    # minus the same ~10% safety margin the other bands keep) -> length fail.
-    tbm_over = rich_text_bearing_medium(n_sentences=14)
-    assert len(tbm_over.strip()) > 4500, "fixture must genuinely exceed the 4,500 cap"
-    fixtures.append(("text-bearing-medium-over-cap", "text_bearing_medium", tbm_over,
-                     None, False, False))
-
-    # Long enough for the floor, spelling-lock present, but NO spelling-lock directive
-    # variant (uses the no-lock negative block) -> quality fail, independent of length.
-    tbm_no_lock = rich_text_bearing_medium(with_spelling_lock=False,
-                                           do_not_block=_DO_NOT_BLOCK_NO_LOCK)
-    fixtures.append(("text-bearing-medium-no-spelling-lock", "text_bearing_medium",
-                     tbm_no_lock, "Stop Guessing. Start Closing.", False, False))
-    # --- end GK-20 fixtures -----------------------------------------------------------
+    # --- Rule 12 length: 79 percent rejected, 95 and 100 percent pass, 101 percent rejected --------
+    for label, pct, ok in (("79-percent", 79, False), ("95-percent", 95, True),
+                           ("100-percent", 100, True), ("101-percent", 101, False)):
+        fixtures.append((f"text-bearing-{label}", "text_bearing_long",
+                         rich_text_bearing(chars=GPT_MAX * pct // 100),
+                         "Stop Guessing. Start Closing.", False, ok))
+        fixtures.append((f"medium-{label}", "medium", rich_medium(chars=MEDIUM_MAX * pct // 100), None, False, ok))
+    # The retired house floors (5,000 / 9,000) no longer pass on a 20,000-char model.
+    fixtures.append(("retired-9000-floor", "text_bearing_long", rich_text_bearing(chars=9000),
+                     "Stop Guessing. Start Closing.", False, False))
 
     # Under the floor -> length fail.
     fixtures.append(("under-floor", "text_bearing_long", "a short prompt with no spec",
                      None, False, False))
     fixtures.append(("empty", "medium", "   \n  \t ", None, False, False))
 
-    # Over the cap -> length fail (a real distinct body padded past 19,000).
-    over = rich_text_bearing(n_sentences=180)
-    fixtures.append(("over-cap", "text_bearing_long", over, None, False, False))
-
     # Long enough + spelling-lock, but few DISTINCT words -> density (quality) fail.
-    padded = "ASSET: ad creative | BAND: text_bearing_long\n" + ("word " * 3000) + _DO_NOT_BLOCK
+    padded = ("ASSET: ad creative | BAND: text_bearing_long\n" + ("word " * 3880)).strip()
+    padded = padded[:GPT_MAX * 97 // 100 - len(_DO_NOT_BLOCK)] + _DO_NOT_BLOCK
     fixtures.append(("padded-no-density", "text_bearing_long", padded, None, False, False))
 
     # Rich body but the negative block is stripped -> <6 classes (quality) fail.
@@ -241,7 +225,7 @@ def _self_test() -> int:
                      "Stop Guessing. Start Closing.", True, False))
 
     # Rich body but a demographic landmine smuggled in -> AF-R3 (quality) fail.
-    landmined = tb + "\nUse the default 60/30/10 demographic mix for the audience."
+    landmined = tb[:-40] + "\nUse the default 60/30/10 demographic mix for the audience."
     fixtures.append(("demographic-landmine", "text_bearing_long", landmined,
                      "Stop Guessing. Start Closing.", False, False))
 
@@ -254,63 +238,49 @@ def _self_test() -> int:
             failures.append(
                 f"[{label}] expected {'PASS' if should_pass else 'FAIL'} but got "
                 f"{'PASS' if passed else 'FAIL'}"
-                + (f" — problems: {problems}" if problems else ""))
+                + (f"; problems: {problems}" if problems else ""))
         else:
-            print(f"  {label:30s} -> {'PASS' if passed else 'FAIL(as expected)'}")
+            print(f"  {label:32s} -> {'PASS' if passed else 'FAIL(as expected)'}")
+        # the rule 12 length fixtures must fail ON LENGTH (not on some unrelated quality tooth)
+        if label.endswith(("79-percent", "101-percent")) or label == "retired-9000-floor":
+            if not res["length"]:
+                failures.append(f"[{label}] must be rejected by the LENGTH gate, got only: {problems}")
 
-    # Assert the EXIT-CODE contract on the two floor/cap vs quality distinctions.
+    # The exact-chars contract: the length message names the characters to add or cut.
     band = _band("text_bearing_long")
-    # under-floor -> length present -> code path returns 3 (checked via band_length_problems).
+    low = dv.band_length_problems("x" * (GPT_MAX * 79 // 100), band, "text_bearing_long")
+    if not any("ADD at least 200" in m for _, m in low):
+        failures.append(f"79 percent rejection must name the exact chars to add (200): {low}")
+    high = dv.band_length_problems("x" * (GPT_MAX * 101 // 100), band, "text_bearing_long")
+    if not any(c == "AF-DIU-PROMPT-CAP" and "CUT exactly 200" in m for c, m in high):
+        failures.append(f"101 percent rejection must name the exact chars to cut (200): {high}")
+
+    # Assert the EXIT-CODE contract on the floor/cap vs quality distinction.
     if not dv.band_length_problems("tiny", band, "text_bearing_long"):
         failures.append("band_length_problems did not flag an under-floor prompt")
-    # a pure quality failure (length OK, quality bad) must have EMPTY length + non-empty quality.
-    qonly = "ASSET x | BAND y\n" + _distinct_body(40)  # long, dense, but no negative block/lock
+    qonly = _fit("ASSET x | BAND y\n", "", GPT_MAX * 97 // 100)  # in-band, dense, but no negative block/lock
     if dv.band_length_problems(qonly, band, "text_bearing_long"):
         failures.append("a length-OK prompt wrongly flagged a length problem (exit-code drift)")
     if not dv.band_quality_problems(qonly, band, "text_bearing_long"):
         failures.append("a quality-defective prompt cleared the quality gate")
 
-    # GK-20: same exit-code contract, proven on the NEW text_bearing_medium band.
-    band_tbm = _band("text_bearing_medium")
-    if not dv.band_length_problems("tiny", band_tbm, "text_bearing_medium"):
-        failures.append("band_length_problems did not flag an under-floor text_bearing_medium prompt")
-    qonly_tbm = "ASSET x | BAND y\n" + _distinct_body(8)  # clears 1,600 floor, no negative block/lock
-    if dv.band_length_problems(qonly_tbm, band_tbm, "text_bearing_medium"):
-        failures.append("a length-OK text_bearing_medium prompt wrongly flagged a length problem")
-    if not dv.band_quality_problems(qonly_tbm, band_tbm, "text_bearing_medium"):
-        failures.append("a quality-defective text_bearing_medium prompt cleared the quality gate")
-
-    # GK-20 acceptance: nano-banana-2/pro must be ABSENT from every text_bearing:true band
-    # (loaded from the SAME prompt-bands.json diu_validator reads at runtime -- not a
-    # separate/duplicated fixture, so this can never silently drift from the shipped file).
+    # GK-20 acceptance, read from the SAME prompt-bands.json diu_validator loads at runtime: no
+    # text_bearing:true band lists nano-banana, no band holds a length number (rule 12 owns length), and
+    # there is no Ideogram text-bearing band (Ideogram stays only on the non-social `medium` specialty band).
     all_bands = dv.load_bands()
+    if "text_bearing_medium" in all_bands:
+        failures.append("the text_bearing_medium Ideogram social band must not exist (owner order 2026-10-05)")
     for bid, b in all_bands.items():
+        for key in ("min", "max"):
+            if key in b:
+                failures.append(f"{bid}: hard-coded {key} reintroduced in prompt-bands.json (rule 12 owns length)")
+        endpoints = [str(e).lower() for e in (b.get("endpoints") or [])]
         if b.get("text_bearing"):
-            endpoints = [str(e).lower() for e in (b.get("endpoints") or [])]
             if any("nano-banana" in e for e in endpoints):
-                failures.append(
-                    f"GK-20 REGRESSION: text_bearing:true band {bid!r} still lists a "
-                    f"nano-banana endpoint ({b.get('endpoints')}) -- Nano Banana is refused "
-                    "for text everywhere else in the fleet (AF-SM-MODEL-ROUTING)")
-    # And the mandated Ideogram route MUST resolve to a legal text_bearing band whose MAX is
-    # achievable on Ideogram's own verified 5,000-char API cap (MODEL-SPECS.md) -- proves the
-    # routing rule and the band file are reconciled, not merely that nano-banana was removed.
-    ideogram_text_bands = [
-        bid for bid, b in all_bands.items()
-        if b.get("text_bearing")
-        and any("ideogram" in str(e).lower() for e in (b.get("endpoints") or []))
-    ]
-    if not ideogram_text_bands:
-        failures.append(
-            "GK-20 REGRESSION: no text_bearing:true band names an Ideogram endpoint -- the "
-            "mandatory quote-card/text-led route (_RULES.md) has no legal band")
-    for bid in ideogram_text_bands:
-        b = all_bands[bid]
-        if int(b.get("max", 0)) > 5000:
-            failures.append(
-                f"GK-20 REGRESSION: Ideogram-routed band {bid!r} has max={b.get('max')} "
-                "chars, OVER Ideogram V3's verified 5,000-char API cap (MODEL-SPECS.md) -- "
-                "Ideogram would truncate/reject prompts at this band's own ceiling")
+                failures.append(f"GK-20 REGRESSION: text_bearing:true band {bid!r} lists a nano-banana endpoint "
+                                f"({b.get('endpoints')}); Nano Banana is refused for text (AF-SM-MODEL-ROUTING)")
+            if any("ideogram" in e for e in endpoints):
+                failures.append(f"text_bearing:true band {bid!r} lists an Ideogram endpoint; Ideogram is not a social route")
 
     if failures:
         print("\nSELF-TEST FAILURES:", file=sys.stderr)
@@ -321,7 +291,7 @@ def _self_test() -> int:
     return EXIT_OK
 
 
-def _gate_files(band_id: str, paths: List[Path], copy_val=None, style_ref=False) -> int:
+def _gate_files(band_id: str, paths: List[Path], copy_val=None, style_ref=False, model=None) -> int:
     try:
         band = _band(band_id)
     except (FileNotFoundError, ValueError) as exc:
@@ -336,7 +306,7 @@ def _gate_files(band_id: str, paths: List[Path], copy_val=None, style_ref=False)
             print(f"FAIL-CLOSED: cannot read {p}: {exc}", file=sys.stderr)
             return EXIT_FAILCLOSED
         checked += 1
-        res = dv.band_problems(text, band, band_id, copy_val=copy_val, style_ref=style_ref)
+        res = dv.band_problems(text, band, band_id, copy_val=copy_val, style_ref=style_ref, model=model)
         problems = [f"{c}: {m}" for c, m in res["length"]] + res["quality"]
         if problems:
             any_violation = True
@@ -344,7 +314,7 @@ def _gate_files(band_id: str, paths: List[Path], copy_val=None, style_ref=False)
             for prob in problems:
                 print("   - " + prob, file=sys.stderr)
         else:
-            print(f"OK {p} ({len(text.strip())} chars) — clears the {band_id} GIP band gate")
+            print(f"OK {p} ({len(text.strip())} chars) — clears the {band_id} GIP band gate (rule 12)")
     if checked == 0:
         print("FAIL-CLOSED: no prompt files to check", file=sys.stderr)
         return EXIT_FAILCLOSED
@@ -356,7 +326,9 @@ def main(argv=None) -> int:
     ap.add_argument("prompts", nargs="*", help="prompt .txt file(s) to gate")
     ap.add_argument("--self-test", action="store_true", help="run the fixture gate (CI)")
     ap.add_argument("--band", help="band id for file/dir mode (text_bearing_long | "
-                                    "text_bearing_medium | visual_long | medium | short_draft)")
+                                    "visual_long | medium | short_draft)")
+    ap.add_argument("--model", help="KIE model id whose maxLength sets the length band "
+                                    "(default: the band's first endpoint)")
     ap.add_argument("--copy", action="append", default=[], help="verbatim copy string (repeatable)")
     ap.add_argument("--style-ref", action="store_true", help="style refs attached")
     ap.add_argument("--dir", help="gate every working/prompts/*.txt under this run dir")
@@ -386,7 +358,7 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return EXIT_FAILCLOSED
 
-    return _gate_files(args.band, paths, copy_val=(args.copy or None), style_ref=args.style_ref)
+    return _gate_files(args.band, paths, copy_val=(args.copy or None), style_ref=args.style_ref, model=args.model)
 
 
 if __name__ == "__main__":

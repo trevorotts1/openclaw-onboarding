@@ -752,6 +752,12 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-model-fallback.test.sh
           echo "✓ qc-model-fallback negative test passes (fails an out-of-enum model-tier)"
 
+      - name: Skill 38 docker-tenant inbound helpers (routing agent, trusted proxy, hooks schema)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/scripts/lib-docker-tenant.test.sh
+
       - name: Skill 38 Workflow visual, Part 4 truth diagram (U-11)
         shell: bash
         run: |

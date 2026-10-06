@@ -53,13 +53,13 @@ All scoring rubrics, pass/fail thresholds, seed-support tables, and rollback ver
 
 ### B. Regression Sweep (triggered on qualifying events — see Inputs)
 
-1. **Confirm budget approval.** Before firing any regression run, obtain explicit written approval from the Chief Design Officer with a dollar estimate. A full sweep on 10+ production cards at 3 test generations each is real spend. Never begin a sweep without approved budget headroom.
+1. **Confirm budget approval.** Before firing any regression run, obtain explicit written approval from the Chief Design Officer with a dollar estimate computed from the live price (`kie_live_adapter.py price`, the only price authority). A full sweep on 10+ production cards at 3 test generations each is real spend. Never begin a sweep without approved budget headroom.
 
 2. **Load the golden-seed registry.** Read all `_local/regression-goldens/*.json` files for production cards on the model(s) under review. Confirm each file is present and complete. Any production card missing a golden-seed entry is a Healer-615 flag — do not skip it silently; log the gap and alert CDO.
 
-3. **Re-run seed-capable goldens.** For each seed-capable card on the affected model: submit the banked seed + full prompt at the banked model/tier. Score all 12 dimensions per TEST-PROTOCOL §3. Do not start scoring until the result is locally downloaded and postflight-verified (per SOP-DIU-601).
+3. **Re-run seed-capable goldens.** For each seed-capable card on the affected model: hand the banked seed + full prompt at the banked model/tier to the Render Dispatcher for release to the Generation Operator, which submits through Skill 74 (the Fidelity Tester never calls `createTask`). Score all 12 dimensions per TEST-PROTOCOL §3. Do not start scoring until the result is locally downloaded and postflight-verified (per SOP-DIU-601).
 
-4. **Re-run no-seed baselines.** For each no-seed card: submit the banked full prompt at the banked model/tier. Score and compare against baseline score distributions. Because exact reproduction is not possible, classify only if a dimension drops more than 0.5 from the baseline average recorded at promotion.
+4. **Re-run no-seed baselines.** For each no-seed card: hand the banked full prompt at the banked model/tier to the same release path. Score and compare against baseline score distributions. Because exact reproduction is not possible, classify only if a dimension drops more than 0.5 from the baseline average recorded at promotion.
 
 5. **Classify each card result.** Apply exactly three classifications:
    - **PASS:** All dimension scores within 0.5 of the banked baseline on every dimension. Log in the regression sweep record. No action required.

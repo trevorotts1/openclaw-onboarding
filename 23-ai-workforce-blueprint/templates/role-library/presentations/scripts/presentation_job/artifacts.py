@@ -23,7 +23,6 @@ try:
 except ImportError:
     _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n/a"})
 
-_PROMPT_FLOOR = 9000
 
 
 # ---------------------------------------------------------------------------
@@ -97,10 +96,26 @@ def _import_prompt_gate():
     return _PROMPT_GATE_CACHE
 
 
+def validate_slide_prompt(path: Path, rel_path: str) -> Tuple[bool, str]:
+    """A banked per-slide prompt (`working/prompts/slide-NN.txt`) must sit inside the KIE rule 12 length band the
+    render gate enforces (shared enforcer through `prompt_gate.length_problems`; no byte floor lives here)."""
+    ok, why = validate_text(path, 1)
+    if not ok:
+        return False, why
+    pg = _import_prompt_gate()
+    if pg is None:
+        return (True, f"{why} -- the slide prompt length was NOT checked (prompt_gate.py could not be imported)")
+    probs = pg.length_problems(path.read_text(encoding="utf-8", errors="replace").strip())
+    if probs:
+        return False, f"{rel_path} fails the shared KIE rule 12 length gate: {probs[0]}"
+    return True, why
+
+
 def validate_design_prompt(path: Path, rel_path: str,
                            recorded_sha: Optional[str] = None) -> Tuple[bool, str]:
     """A design-page prompt (`prompts/<page>.design.txt`) must sit inside the
-    SHARED prompt band the render gate enforces.
+    SHARED prompt band the render gate enforces (KIE rule 12: 80 to 100 percent
+    of the model maxLength, via the shared enforcer).
 
     `build_infographic.resolve_design_prompt` reads this file VERBATIM as ONE
     GPT-Image-2.5 prompt and refuses it via `prompt_gate` before any paid call.
@@ -124,17 +139,12 @@ def validate_design_prompt(path: Path, rel_path: str,
                       f"prompt's {length}-char length was NOT checked against "
                       "the shared band")
 
-    if length < pg.PROMPT_CHAR_FLOOR:
+    length_probs = pg.length_problems(text.strip())
+    if length_probs:
         return False, (
-            f"{rel_path} is {length} chars, UNDER the {pg.PROMPT_CHAR_FLOOR}-char "
-            "shared prompt floor (AF-P1; prompt_gate.PROMPT_CHAR_FLOOR) -- the "
-            "render gate refuses it, so it is not reusable banked work")
-    if length > pg.PROMPT_CHAR_CEILING:
-        return False, (
-            f"{rel_path} is {length} chars, over the {pg.PROMPT_CHAR_CEILING}-char "
-            "shared prompt ceiling (AF-P2; prompt_gate.PROMPT_CHAR_CEILING, 2,000 "
-            "under the GPT-Image-2.5 API ceiling) -- the render gate refuses it "
-            "before any paid call, so it is not reusable banked work")
+            f"{rel_path} is {length} chars and fails the shared KIE rule 12 length "
+            f"gate (prompt_gate.length_problems): {length_probs[0]} -- the render "
+            "gate refuses it before any paid call, so it is not reusable banked work")
 
     # PD-TEST-113 / D2 (independent review of PR #1148). The band checks above are
     # only PART of the gate, and this predicate -- not the phase verifier -- is the
@@ -157,8 +167,7 @@ def validate_design_prompt(path: Path, rel_path: str,
             "refuses it before any paid call, so it is not reusable banked work: "
             + "; ".join(problems))
 
-    band = (f"inside the {pg.PROMPT_CHAR_FLOOR}-{pg.PROMPT_CHAR_CEILING} "
-            "shared prompt band")
+    band = "inside the shared prompt band (KIE rule 12)"
     if recorded_sha is not None:
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != recorded_sha:
@@ -415,7 +424,7 @@ def validate_artifact(run_dir: Path, rel_path: str, manifest: Any,
             return validate_text(path, min_b)
 
     if re.match(r"working/prompts/slide-\d+\.txt$", rel_path):
-        return validate_text(path, _PROMPT_FLOOR)
+        return validate_slide_prompt(path, rel_path)
     # PD-TEST-098: the design-page prompt gets its OWN band predicate instead
     # of falling through to the F15 hash-only catch-all below, which is what
     # let a 58,484-char prompt re-validate clean against an 18,000 ceiling.

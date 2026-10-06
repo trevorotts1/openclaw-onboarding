@@ -1,0 +1,88 @@
+"""KIE prompt rule 12 before submit: the kieai provider refuses a prompt outside 95-100 percent of the model
+max (hard floor 80 percent) and names the exact characters to add or cut. Hermetic: the real Skill 74 adapter
+answers from its registry snapshot (no key, empty HOME); the Skill 74 call (kie74) is a trap that must not be reached out of band."""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+import tempfile
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+try:
+    import requests as _requests  # noqa: F401
+except ModuleNotFoundError:
+    _requests = None
+
+
+def _stub_requests(monkeypatch):
+    """A requests stand-in (RequestException, get, post), removed again after the test."""
+    stub = ModuleType("requests")
+
+    class RequestException(Exception):
+        pass
+
+    stub.RequestException = RequestException
+    stub.get = stub.post = lambda *a, **k: (_ for _ in ()).throw(RequestException("no network in tests"))
+    monkeypatch.setitem(sys.modules, "requests", stub)
+
+
+SCRIPTS = Path(os.environ.get("SKILL25_ROOT", Path(__file__).resolve().parents[1])) / "scripts"
+MODEL = "gpt-image-2-5-sunburst-text-to-image"  # any KIE model with a maxLength; 20,000 in the registry snapshot
+MAX = 20000
+
+
+@pytest.fixture
+def provider(monkeypatch):
+    if _requests is None:
+        _stub_requests(monkeypatch)
+    monkeypatch.setenv("HOME", tempfile.mkdtemp())
+    monkeypatch.delenv("KIE_API_KEY", raising=False)
+    spec = importlib.util.spec_from_file_location("skill25_ai_providers_budget", SCRIPTS / "ai_providers.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    reached = []
+
+    def trap(*args, **kwargs):  # every KIE call goes through Skill 74 (module.kie74); a submit is a 'run' call
+        reached.append(args)
+        raise RuntimeError("submit reached")
+
+    monkeypatch.setattr(module, "kie74", trap)
+    ai = module.AIProvider("kieai", {"kieai": {"api_key": "test-only-not-a-key"}})
+    return ai, reached
+
+
+def go(ai, n, **kw):
+    return ai.generate_video("x" * n, model=MODEL, output=Path("unused.mp4"), **kw)
+
+
+def test_79_percent_is_rejected_before_submit_with_chars_to_add(provider):
+    ai, reached = provider
+    with pytest.raises(ValueError, match="ADD at least 200"):
+        go(ai, MAX * 79 // 100)
+    assert reached == []
+
+
+def test_101_percent_is_rejected_before_submit_with_chars_to_cut(provider):
+    ai, reached = provider
+    with pytest.raises(ValueError, match="CUT exactly 200"):
+        go(ai, MAX * 101 // 100)
+    assert reached == []
+
+
+@pytest.mark.parametrize("pct", [95, 100])
+def test_in_band_prompt_reaches_submit(provider, pct):
+    ai, reached = provider
+    with pytest.raises(RuntimeError, match="submit reached"):
+        go(ai, MAX * pct // 100)
+    assert len(reached) == 1
+
+
+def test_no_model_id_means_unknown_limit_and_no_floor(provider):
+    ai, reached = provider
+    ai._check_prompt_budget("short", None)  # returns: UNKNOWN, no floor
+    assert reached == []

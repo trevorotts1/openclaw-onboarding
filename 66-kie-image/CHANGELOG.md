@@ -1,5 +1,10 @@
 # Changelog - kie-image
 
+## [2.2.1] - 2026-10-06 - fix: `validate_prompt.py` calls the shared rule 12 enforcer
+
+- `validate_prompt.py` no longer carries its own band math or Skill 74 bridge call: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. The models.json cap (live_schema_cap_chars, vendor_hard_cap_chars, owner_observed_cap_chars) is the policy-owner fallback. `adapter_bridge.prompt_budget` is removed (`latest_family` and `validate` stay). Self-test: 30 of 30.
+- `validate_payload.py` prompt ceiling now reads `live_schema_cap_chars` first (20,000 for legacy `gpt-image-2`, superseding the N43 25,000 per the KIE live schema of 2026-10-05); before, the legacy route had no ceiling check at all.
+
 ## [2.2.0] - 2026-10-06 - feat: dispatch runs through Skill 74 (validate, preflight, submit), registry is the curated policy
 
 - `INSTRUCTIONS.md` Step 5 and `SKILL.md`: every dispatch path first runs `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight` (balance must cover price x 1.30), then submits through Skill 74 (`submit --mode active`, production batches add `--callback-url` of the Skill 46 relay), then this skill's own QC. If submit returns `skipped` (adapter off or shadow) the curl path is used unchanged; if the adapter is absent steps 1 and 2 are skipped with a note.

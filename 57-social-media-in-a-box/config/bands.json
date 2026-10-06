@@ -1,12 +1,12 @@
 {
   "$schema_note": "SACRED character/count bands for Social Media in a Box (Skill 57). SINGLE SOURCE OF TRUTH — scripts/prove_bands.py reads THIS file (never hardcodes the numbers) and measures stripped lengths deterministically. Every band is transcribed verbatim from the canonical super-prompts baked in prompts/ (09 FB/IG carousel, 10 LinkedIn carousel, 15 7-part series, 16 reformatter, 08 storyboard for the 25.0s duration lane). Bands are the DEFAULT floor; a logged client-exact override wins and is recorded on the process certificate (client gets EXACTLY what they ask for — never floored). max:null means an open upper bound (a MINIMUM floor).",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "bands": {
     "caption_fb_ig": {"min": 1500, "max": 1800, "unit": "chars", "field": "carouselCaption", "applies": ["facebook", "instagram"], "prompt": "09", "af": "AF-SM-CAPTION-BAND"},
     "caption_linkedin": {"min": 1500, "max": 1900, "unit": "chars", "field": "carouselCaption", "applies": ["linkedin"], "prompt": "10", "af": "AF-SM-CAPTION-BAND"},
-    "$image_prompt_note": "image_prompt_carousel and image_prompt_series band the AUTHORED seed prompt (the content contract written by prompts 09/10/15). They are not the transmitted KIE prompt: prompt 05 expands each seed to 95 to 100 percent of the routed model's maxLength (floor 80 percent) per Skill 74 prompt-budget before dispatch (rule 12 of 07-kie-setup/references/kie-common-rules.md).",
-    "image_prompt_carousel": {"min": 1000, "max": 1700, "unit": "chars", "field": "prompt", "prompt": "09/10/12", "af": "AF-SM-IMGPROMPT-BAND"},
-    "image_prompt_series": {"min": 1800, "max": null, "unit": "chars", "field": "imageprompt", "prompt": "15", "af": "AF-SM-IMGPROMPT-BAND"},
+    "$image_prompt_note": "image_prompt_carousel and image_prompt_series carry NO character numbers: KIE prompt rule 12 (owner order 2026-10-05) sets the length (95 to 100 percent of the routed model's maxLength, hard floor 80 percent, hard ceiling 100 percent) and the shared enforcer shared-utils/kie_prompt_enforcer.py reads it from Skill 74 prompt-budget. The authored seed (prompts 09/10/15) is not yet the transmitted prompt: prompt 05 expands it to the rule 12 band before dispatch, so the seed is held only to be non-empty and under the model maximum, and the expanded prompt, when the record carries it as kiePrompt, must clear the full band.",
+    "image_prompt_carousel": {"kind": "kie_prompt", "model": "gpt-image-2-5-sunburst-text-to-image", "unit": "chars", "field": "prompt", "expanded_field": "kiePrompt", "prompt": "09/10/12", "af": "AF-SM-IMGPROMPT-BAND"},
+    "image_prompt_series": {"kind": "kie_prompt", "model": "gpt-image-2-5-sunburst-text-to-image", "unit": "chars", "field": "imageprompt", "expanded_field": "kiePrompt", "prompt": "15", "af": "AF-SM-IMGPROMPT-BAND"},
     "post_body_words": {"min": 300, "max": null, "unit": "words", "field": "body", "prompt": "15", "af": "AF-SM-POSTBODY-WORDS"},
     "followup_series": {"min": 0, "max": 600, "unit": "chars", "field": "followupcomment", "prompt": "15", "af": "AF-SM-FOLLOWUP-BAND"},
     "followup_reformatter": {"min": 0, "max": 500, "unit": "chars", "field": "followUpComment", "prompt": "16", "af": "AF-SM-FOLLOWUP-BAND"},

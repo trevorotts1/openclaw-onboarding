@@ -37,6 +37,9 @@ import prove_sf_graph  # noqa: E402  (canonical 3/5/7 matrix + graph/derived fix
 from prove_sf_prompt_floor import _GRADE_BLOCK as SIG_GRADE_BLOCK  # noqa: E402  (canonical verbatim grade block)
 from prove_sf_prompt_floor import (  # noqa: E402  (FIX-IMG-07 required image set)
     ANY_IMAGE, load_structure, required_image_pairs)
+from prove_sf_prompt_floor import IMAGE_MODEL_DEFAULT, KPE  # noqa: E402
+sys.path.insert(0, str(HERE))
+import direction_bank  # noqa: E402  (genuine, scene-bound art direction that fills the rule 12 band)
 
 GOLDEN_SIZE = 7
 
@@ -1738,7 +1741,13 @@ def build_prompt_ledger() -> dict:
         # MASTERDOC §4: the canonical SIGNATURE GRADE BLOCK is embedded VERBATIM in every
         # prompt. Append it AFTER _vary so the per-prompt craft-phrase rotation never mutates
         # the constant — this is what the FIX-IMG-06 verbatim-containment gate now requires.
-        rec["prompt"] = _p(_vary(body, idx), SIG_GRADE_BLOCK)
+        authored = _p(_vary(body, idx))
+        # KIE rule 12: a golden prompt sits at 95 to 100 percent of the model max. The authored body carries the
+        # scene; genuine, scene-bound direction (direction_bank) supplies the rest. Never repetition or filler.
+        bud = KPE.budget_for(IMAGE_MODEL_DEFAULT)
+        goal = bud["target_min"] + (bud["max"] - bud["target_min"]) // 4  # clauses overshoot by under 600, so aim low in the band
+        need = goal - len(authored) - len(SIG_GRADE_BLOCK) - 2
+        rec["prompt"] = _p(authored, direction_bank.direction(authored, idx, need), SIG_GRADE_BLOCK)
         prompts.append(rec)
     return {"funnel_type": "signature_funnel", "prompts": prompts}
 

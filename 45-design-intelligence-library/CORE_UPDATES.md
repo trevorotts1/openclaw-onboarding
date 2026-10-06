@@ -19,11 +19,13 @@ The DIU brings style-card-driven image generation, photo-shoot identity-lock, an
 |---|---|---|
 | **Style Analyst** | Visual-forensics, taxonomy-rigorous, detail-obsessive | Analyzes images/batches, writes reusable style cards in 3 tiers, registers in library |
 | **Deck Systems Specialist** | Systems-thinker, rhythm-aware, manifest-disciplined | Analyzes deck style systems; runs Style Rotation Engine for multi-slide generation |
-| **Generation Operator** | Prompt-engineer, routing-fluent, budget-precise | Executes style-card-driven generation; routes across 7 endpoints; manages negative-prompting |
+| **Generation Operator** | Prompt-engineer, routing-fluent, budget-precise | Sole Kie.ai `createTask` caller and receipt creator (Skill 74); routes across 7 endpoints; manages negative-prompting |
 | **Photo Shoot Director** | Identity-guardian, consent-first, retouch-restrained | Personal photo shoots with identity-lock guarantees; consent gates; surgical retouching (Seedream 4.5) |
 | **Fidelity Tester** | Adversarial, evidence-driven, standards-immovable | Pre-production style-transfer tests; 12-dim fidelity scoring; patch loops; diagnosis mode |
 
 All five roles report to **Chief Design Officer** (producer/gatekeeper). No DIU role delivers directly to owner; all outputs route through CDO Gate 4.
+
+Generation pipeline: requesters go to the Prompt Author, then the independent Prompt QC Specialist, then the Render Dispatcher (release, polling, postflight, orphan recovery), then the Generation Operator (preflight and submit through Skill 74). The Style Librarian is the single INDEX writer. Consent is checked with `diu_validator.py consent-check --consent-file CONSENT.md`.
 
 Request routing (via extended Brainstorming Buddy — Graphics):
 - "Analyze this image / batch" → Style Analyst

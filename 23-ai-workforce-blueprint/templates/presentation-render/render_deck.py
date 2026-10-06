@@ -105,13 +105,9 @@ def fallback_model() -> str:
 
 FALLBACK_MODEL = fallback_model()
 
-# Char-count band reconciled to the live QC gate (qc-specialist-presentations.md
-# AF-P1/AF-P2, v12.7.1+): soft minimum 5,000, hard maximum 18,000 (a 2,000-char
-# safety margin below the GPT-Image 2 API ceiling of 20,000, MODEL-SPECS). Raised
-# from the old 1500/15000 so this canonical render module no longer hard-blocks a
-# valid 16,000-char specificity-rich prompt that the QC gate passes.
-PROMPT_CHAR_FLOOR = 9000
-PROMPT_CHAR_CEILING = 18000
+# Prompt length is KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer
+# (shared-utils/kie_prompt_enforcer.py, limit from Skill 74 prompt-budget); no band lives in this retired module.
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 
 # Required structural blocks -- checked case-insensitively
 REQUIRED_STRUCTURAL_BLOCKS = [
@@ -179,14 +175,26 @@ def _validate_model(model: str) -> None:
         )
 
 
+def _kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
 def _validate_prompt(slide_id: str, prompt: str) -> None:
     """Hard check: prompt must be within char range and have required structural blocks."""
-    length = len(prompt)
-    if length < PROMPT_CHAR_FLOOR or length > PROMPT_CHAR_CEILING:
-        raise ValueError(
-            f"AF-PROMPT-FLOOR: slide {slide_id} prompt is {length} chars "
-            f"(required: {PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING}). HARD BLOCK."
-        )
+    verdict = _kie_prompt_enforcer().check(IMAGE_MODEL_DEFAULT, prompt)
+    if not verdict["ok"]:
+        raise ValueError(f"AF-PROMPT-FLOOR: slide {slide_id}: {verdict['message']}. HARD BLOCK.")
 
     prompt_lower = prompt.lower()
     for block in REQUIRED_STRUCTURAL_BLOCKS:

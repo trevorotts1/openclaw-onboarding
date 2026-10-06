@@ -50,6 +50,8 @@ cd ~/.openclaw/skills/38-conversational-ai-system/scripts
 ./08-shopify-setup-wizard.sh         # Step 9.31 (operator opt-in)
 # … then continue in numeric order through 33: 09-install-conversation-workflows
 #   → 11-run-qc-checklist → 12-scaffold-channel-playbooks → 13/14 Cloudflare tunnel
+#   (13/14 skip themselves on a docker tenant whose tunnel the operator runs on the
+#   host — QC-PROTOCOL.md Rule 13a; set PUBLIC_HOSTNAME instead of a Cloudflare token)
 #   → 15-configure-hooks-mappings → 16-22 (version/backup/secrets/embeddings/design
 #   principles/reference sheet/run manifest + 22-notify-client-doc) → 23-33 (save
 #   secrets, self-test + tools-md, 25-seed-round3-feature-files, the 26–29 ZHC Pixel

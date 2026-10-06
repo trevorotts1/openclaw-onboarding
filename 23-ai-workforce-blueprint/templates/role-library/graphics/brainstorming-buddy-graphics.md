@@ -227,7 +227,7 @@ your YES before the team starts building."
 2. The Director ingests brief.json as the seed for its OWN intake SOP (it confirms and
    extends, never re-asks what the brief already answers).
 3. The Director then dispatches this department's BUILD SPECIALISTS in pipeline order:
-   AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester.
+   AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Prompt Author, Prompt QC Specialist, Render Dispatcher, Generation Operator, Photo Shoot Director, Fidelity Tester.
 4. Notify the owner that the build has started and tell them the next gate they will see
    (usually the Director's owner-approval gate).
 5. Record `handoff_at`, `handoff_to`, `dispatch_id` in brief.json.
@@ -258,7 +258,7 @@ the Master Orchestrator with the locked brief attached. Never silently drop a lo
 
 ### You hand work off to:
 - Chief Design Officer -- receives the locked, signed-off brief.json and runs the build.
-  The Director then dispatches this department's build specialists: AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Generation Operator, Photo Shoot Director, Fidelity Tester.
+  The Director then dispatches this department's build specialists: AI Image Generator Specialist, Ad Creative Specialist, Brand Identity Specialist, Social Media Graphics Specialist, Infographic Specialist, Thumbnail/Cover Designer, Presentation Designer, Email Designer, Print/Asset Design Specialist, Book Cover Designer, Course Slide Designer, Style Analyst, Deck Systems Specialist, Prompt Author, Prompt QC Specialist, Render Dispatcher, Generation Operator, Photo Shoot Director, Fidelity Tester.
 
   **DIU routing note:** When `brief.json` contains `diu_route: true`, the Chief Design Officer reads `diu_intake_path` and routes directly:
   - `analyze` → Style Analyst (new style card from reference images or deck)

@@ -114,8 +114,7 @@ DEFAULT_MAX_WORKERS = 8          # FALLBACK ONLY -- used when measured_capacity 
 RETRY_CAP = 3                    # attempts per slide, total, all rounds
 BACKOFF_S = {2: 2.0, 3: 4.0}     # sleep BEFORE attempt N (spec: 2s then 4s)
 JITTER_MAX_S = 0.5               # bounded 0-500ms jitter on every retry sleep
-DEFAULT_MIN_CHARS = 9000
-DEFAULT_MAX_CHARS = 18000
+# The prompt length band comes with each wave input (KIE rule 12 via the shared enforcer); no default lives here.
 
 RESULT_FILENAME = "prompt-worker-results.json"
 ATTEMPTS_LOG_SUFFIX = "-attempts.jsonl"

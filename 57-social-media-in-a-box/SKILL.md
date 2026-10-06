@@ -1,7 +1,7 @@
 ---
 name: social-media-in-a-box
 description: Run my social week end-to-end — the productionized weekly social-media engine. Takes a weekly theme and: validates readiness (Kie.ai credits / OpenRouter balance / GHL Private Integration Token / status), writes a week of platform-native content (7-part cliffhanger series + platform reformatter), generates media (GPT Image 2.5 Sunburst image with vision QC, a 25s video storyboard rendered through the Skill 67 (kie-video) model selector, GPT Image 2.5 Sunburst carousel with a Gemini QC loop and SeedDream repair, GPT Image 2.5 Sunburst podcast cover art), posts through the CLIENT's OWN Go High Level (Convert & Flow) location and connected social accounts, and writes the plan back to the content calendar. Modes week | day | carousel | video | podcast-cover | plan | clean across facebook / instagram / linkedin (+PDF) / youtube / tiktok / pinterest / google-business. Every SACRED character/count band and JSON contract is enforced by deterministic, fail-closed Python provers (not prose); the run mints a signed certificate proving ZERO Anthropic per run. NO n8n and NO Airtable at runtime — prompts are baked in, state is a local SQLite ledger, deliverables are local + labeled. Client runtime uses CLIENT providers ONLY, never Anthropic.
-version: v1.7.9
+version: v1.7.10
 ---
 
 # Social Media in a Box (Skill 57)

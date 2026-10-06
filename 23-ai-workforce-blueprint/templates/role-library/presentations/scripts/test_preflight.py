@@ -105,10 +105,11 @@ SLIDES = [
      "copy": ["Northwind Co", "Three moves that doubled our pipeline"]},
 ]
 
-# A realistic RICH per-slide prompt is long (the SOP targets 9,000-14,000 chars).
-# >= PROMPT_CHAR_FLOOR (9,000) is the reconciled HARD floor.
+# A realistic RICH per-slide prompt is long (KIE rule 12: 95 to 100 percent of the model maxLength).
+# The hard floor is 80 percent of the model maxLength (shared enforcer); the base block below is
+# deepened with distinct fixture clauses to the middle of the target band right after its definition.
 # This fixture is a single comprehensive block that clears every quality gate:
-#   - >= PROMPT_CHAR_FLOOR chars (measured on stripped length)
+#   - inside the rule 12 length band (measured on stripped length)
 #   - all three required structural blocks ([ARCHETYPE, NEGATIVE BLOCK, Do not)
 #   - spelling-lock token (reads exactly / letter-for-letter)
 #   - hex color (#1B2A4A), type size (72pt), composition zone (left third / rule of thirds)
@@ -289,6 +290,21 @@ bracket token, [TBD], or build note visible to the audience. Every element is fi
 Do not narrate the image on the slide surface. Demographic diversity in casting is a \
 binding specification; no demographic drift is permitted.
 """
+
+
+def _fit_rich_prompt(base: str) -> str:
+    """Deepen the fixture with distinct clauses to the middle of the rule 12 target band (never repeated filler)."""
+    bud = build_deck.length_budget()
+    room = (bud["target_min"] + bud["ceiling"]) // 2 - len(base) - 2
+    clauses, i = [], 0
+    while sum(len(c) + 1 for c in clauses) < room:
+        clauses.append(f"FIXTURE DETAIL {i}: element {i} of the slide carries its own distinct art-direction note "
+                       f"about spacing, weight, color use and reading order for stage {i} of the composition.")
+        i += 1
+    return base.rstrip() + "\n" + " ".join(clauses)[:max(room, 0)]
+
+
+RICH_PROMPT = _fit_rich_prompt(RICH_PROMPT)
 
 
 def _write_intake(root: Path):
@@ -756,16 +772,16 @@ def _rich_prompt_run_dir(prompt_text) -> Path:
 def test_chk_rich_prompts():
     """RICH-PROMPT-REQUIRED (AF-P1) unit test (the two NEW required assertions):
       - a slide with NO rich prompt FAILS (missing-rich-prompt fails),
-      - a slide whose rich prompt is < PROMPT_CHAR_FLOOR chars FAILS (sub-floor fails),
-      - a slide with a >= PROMPT_CHAR_FLOOR-char rich prompt PASSES,
+      - a slide whose rich prompt is under the rule 12 floor FAILS (sub-floor fails),
+      - a slide with an in-band rich prompt PASSES,
     plus load_rich_prompt raises on missing/short and returns the prompt verbatim
     when valid. Returns a list of failure strings ([] = all passed)."""
     fails = []
 
     valid = RICH_PROMPT
-    assert len(valid) >= build_deck.PROMPT_CHAR_FLOOR, \
-        f"test fixture RICH_PROMPT must be >= {build_deck.PROMPT_CHAR_FLOOR} chars (PROMPT_CHAR_FLOOR)"
-    short = "way too thin to be a real slide prompt"  # well under PROMPT_CHAR_FLOOR
+    assert not build_deck._length_problems(valid), \
+        "test fixture RICH_PROMPT must sit inside the rule 12 length band"
+    short = "way too thin to be a real slide prompt"  # well under the rule 12 floor
 
     # ---- NEW ASSERTION 1: a MISSING rich prompt FAILS ----
     rd = _rich_prompt_run_dir(None)
@@ -782,7 +798,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt missing-raise wrong msg: {exc}")
 
-    # ---- NEW ASSERTION 2: a < PROMPT_CHAR_FLOOR-char rich prompt FAILS ----
+    # ---- NEW ASSERTION 2: a sub-floor rich prompt FAILS ----
     rd = _rich_prompt_run_dir(short)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason:
@@ -796,7 +812,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt short-raise wrong msg: {exc}")
 
-    # ---- a valid >= PROMPT_CHAR_FLOOR-char rich prompt PASSES + is returned VERBATIM ----
+    # ---- a valid in-band rich prompt PASSES + is returned VERBATIM ----
     rd = _rich_prompt_run_dir(valid)
     reason = build_deck._chk_rich_prompts(rd)
     if reason:
@@ -809,11 +825,11 @@ def test_chk_rich_prompts():
         fails.append(f"RICHPROMPT: load_rich_prompt raised on a valid prompt: {exc}")
 
     # ---- an over-ceiling prompt FAILS in load_rich_prompt (AF-P2) ----
-    over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
+    over = "A" * (build_deck.length_budget()["max"] + 10)
     rd = _rich_prompt_run_dir(over)
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
-        fails.append("RICHPROMPT: load_rich_prompt should RAISE over the 18,000 ceiling")
+        fails.append("RICHPROMPT: load_rich_prompt should RAISE over the rule 12 ceiling")
     except ValueError as exc:
         if "AF-P2" not in str(exc):
             fails.append(f"RICHPROMPT: over-ceiling raise wrong msg: {exc}")
@@ -2311,7 +2327,7 @@ def test_h1_whitespace_only_prompt():
         whitespace -> PASSES and is returned VERBATIM (whitespace preserved).
     """
     fails = []
-    floor = build_deck.PROMPT_CHAR_FLOOR
+    floor = build_deck.length_budget()["floor"]
     slide = {"slide": 1, "scene": "x", "copy": ["y"]}
 
     # ---- pure whitespace, well over the RAW floor ----
@@ -3436,6 +3452,29 @@ def test_doctrine_gates_fire_and_pass():
         {"slide": 3, "arc_section": "teaching"}]))
     fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end")
 
+    # AF-PEAK-END (PD-TEST-082) — the LIVE container + explicit declarations,
+    # but a FLAT ending: still fires. A flat ending is remembered as flat, so
+    # flat_ending defeats the explicit ending_slide / arc_marks.ending too.
+    _r = _active("dgf_peak_end_flat_")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "arc_marks": {"peak": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "arc_marks": {"peak": False, "ending": True}}],
+        "peak_apex_slide": 4, "ending_slide": 8, "flat_ending": True}))
+    fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end/flat_ending")
+
+    # AF-PEAK-END (PD-TEST-082) — slides under ``slide_allocations`` but with
+    # NEITHER form of evidence (no token, no arc_marks, no explicit field):
+    # absence still fires.
+    _r = _active("dgf_peak_end_no_evidence_")
+    (_r / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 1, "arc_section": "opening"},
+            {"slide_number": 2, "arc_section": "cost_of_inaction"}]}))
+    fire("AF-PEAK-END", build_deck._chk_peak_end(_r), "peak_end/no_evidence")
+
     # AF-NO-SALIENCE-APEX — the apex slide is the LEAST vivid (von Restorff inversion).
     _r = _active("dgf_salience_")
     for _i in range(1, 4):
@@ -3558,6 +3597,18 @@ def test_doctrine_gates_fire_and_pass():
     passes(build_deck._chk_trigger(cr), "clean/no_trigger")
     passes(build_deck._chk_proclamation_hedge(cr), "clean/hedge")
     passes(build_deck._chk_peak_end(cr), "clean/peak_end")
+    # AF-PEAK-END (PD-TEST-082) — the LIVE shape passes with no tag token
+    # anywhere: slides under ``slide_allocations`` + explicit arc_marks.peak /
+    # arc_marks.ending + peak_apex_slide / ending_slide + flat_ending false.
+    _lr = _active("dgf_clean_peak_end_live_")
+    (_lr / "working" / "copy" / "arc_allocation.json").write_text(json.dumps({
+        "slide_allocations": [
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "arc_marks": {"peak": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "arc_marks": {"peak": False, "ending": True}}],
+        "peak_apex_slide": 4, "ending_slide": 8, "flat_ending": False}))
+    passes(build_deck._chk_peak_end(_lr), "clean/peak_end/live_shape")
     passes(build_deck._chk_persuasion_beats(cr), "clean/persuasion_beats")
     passes(build_deck._chk_style_preview(cr), "clean/style")
 
@@ -3585,6 +3636,217 @@ def test_doctrine_gates_fire_and_pass():
     passes(build_deck._chk_converter_no_invent(cc), "clean/converter")
 
     print(f"DOCTRINE-GATES (fire+pass)  -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-082 — AF-PEAK-END must read the artifact contract the producer
+# ACTUALLY emits.
+#
+# The live arc (run pres-operator-1d269693, working/copy/arc_allocation.json)
+# failed this gate for two independent reasons:
+#   1. the container — its slides live under ``slide_allocations``, which the
+#      gate never looked for, so it saw zero slots (the PD-TEST-067 divergence
+#      class);
+#   2. the evidence form — its labels/tags (opening, cost_of_inaction, ...,
+#      VALUE_ANCHOR, TRIGGER, ...) match no PEAK_TAGS/ENDING_TAGS token, even
+#      though it declares both beats explicitly and machine-readably
+#      (peak_apex/peak_apex_slide, ending_beat/ending_slide, per-slide
+#      arc_marks.peak / arc_marks.ending).
+#
+# The doctrine decision pinned here: accept EITHER form; a FLAT ending still
+# FAILS; ABSENCE of both forms still FAILS. PEAK_TAGS / ENDING_TAGS membership
+# is deliberately unchanged.
+# ---------------------------------------------------------------------------
+def _live_arc_obj():
+    """The live arc's shape, reproduced exactly (values verbatim from run
+    pres-operator-1d269693): slots under ``slide_allocations``, per-slide
+    ``arc_marks``, the explicit top-level declarations, ``flat_ending`` false.
+    NO token in PEAK_TAGS or ENDING_TAGS appears anywhere in it."""
+    return {
+        "artifact": "arc_allocation.json", "phase": "P3-ARC",
+        "slide_count": 8,
+        "arc_sections": ["Opening", "Cost of Inaction", "Higher Aim",
+                         "Value Anchor", "Urgency", "Ability Unblock",
+                         "Decision", "Trigger"],
+        "slide_allocations": [
+            {"slide_number": 1, "arc_section": "opening",
+             "move_tag": "PRIORITY_STACK",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 2, "arc_section": "cost_of_inaction",
+             "move_tag": "COST_OF_INACTION",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 3, "arc_section": "higher_aim",
+             "move_tag": "HIGHER_PRIORITY",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 4, "arc_section": "value_anchor",
+             "move_tag": "VALUE_ANCHOR",
+             "arc_marks": {"peak": True, "decision_climax": False, "ending": False}},
+            {"slide_number": 5, "arc_section": "urgency",
+             "move_tag": "URGENCY_SCARCITY",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 6, "arc_section": "ability_unblock",
+             "move_tag": "ABILITY_UNBLOCK",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": False}},
+            {"slide_number": 7, "arc_section": "decision",
+             "move_tag": "RERANK_DEMAND",
+             "arc_marks": {"peak": False, "decision_climax": True, "ending": False}},
+            {"slide_number": 8, "arc_section": "trigger",
+             "move_tag": "TRIGGER",
+             "arc_marks": {"peak": False, "decision_climax": False, "ending": True}},
+        ],
+        "peak_apex": {"slide_number": 4, "arc_section": "value_anchor",
+                      "move_tag": "VALUE_ANCHOR", "summary": "Anchor value."},
+        "peak_apex_slide": 4,
+        "decision_climax": {"slide_number": 7, "arc_section": "decision",
+                            "move_tag": "RERANK_DEMAND", "summary": "Ask now."},
+        "decision_climax_slide": 7,
+        "ending_beat": {"slide_number": 8, "arc_section": "trigger",
+                        "move_tag": "TRIGGER", "summary": "Fire the trigger."},
+        "ending_slide": 8,
+        "flat_ending": False,
+    }
+
+
+def test_peak_end_reads_live_artifact_contract():
+    """PD-TEST-082: the live shape PASSES; flat_ending still FAILS; absence
+    still FAILS; the legacy token form still PASSES; no arc still defers."""
+    import tempfile
+    fails = []
+
+    def _active(prefix):
+        root = Path(tempfile.mkdtemp(prefix=prefix))
+        (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (root / "working" / "copy" / "priority_shift_spec.json").write_text(
+            json.dumps({"true_goal": "convert audience priority to owner offer"}))
+        return root
+
+    def _write(root, obj):
+        (root / "working" / "copy" / "arc_allocation.json").write_text(
+            json.dumps(obj))
+
+    def _expect_pass(where, root):
+        reason = build_deck._chk_peak_end(root)
+        if reason:
+            fails.append(f"PD-TEST-082 {where}: expected PASS, got {reason!r}")
+
+    def _expect_fail(where, root, *needles):
+        reason = build_deck._chk_peak_end(root)
+        if not reason:
+            fails.append(f"PD-TEST-082 {where}: expected a FAIL, got '' (PASS)")
+            return
+        if "AF-PEAK-END" not in reason:
+            fails.append(f"PD-TEST-082 {where}: reason lacks AF-PEAK-END: {reason!r}")
+        for needle in needles:
+            if needle not in reason:
+                fails.append(f"PD-TEST-082 {where}: reason lacks {needle!r}: {reason!r}")
+
+    # (0) Sanity: the live shape really does carry NO token from either list —
+    #     otherwise the container/evidence fix would be untested by it.
+    live = _live_arc_obj()
+    _blob = " ".join(str(v).lower() for v in [
+        s["arc_section"] for s in live["slide_allocations"]]
+        + [s["move_tag"] for s in live["slide_allocations"]])
+    for _tok in build_deck.PEAK_TAGS + build_deck.ENDING_TAGS:
+        if _tok in _blob:
+            fails.append(f"PD-TEST-082 fixture sanity: live shape unexpectedly "
+                         f"contains token {_tok!r} — the fixture no longer proves "
+                         "the token scan fails on it")
+
+    # (1) THE LIVE SHAPE PASSES (container + explicit declarations).
+    r = _active("pd082_live_shape_")
+    _write(r, live)
+    _expect_pass("live shape", r)
+
+    # (2) flat_ending: true FAILS — even though ending_slide/ending_beat and
+    #     arc_marks.ending are ALL still present. The doctrine's core.
+    r = _active("pd082_flat_ending_")
+    _flat = _live_arc_obj()
+    _flat["flat_ending"] = True
+    _write(r, _flat)
+    _expect_fail("flat_ending=true (declarations intact)", r,
+                 "no deliberate ending/recap/CTA beat")
+    if "no PEAK/APEX/WOW beat" in (build_deck._chk_peak_end(r) or ""):
+        fails.append("PD-TEST-082 flat_ending=true: the PEAK half must still pass "
+                     "— flat_ending defeats only the ENDING")
+
+    # (3) ABSENCE of both forms FAILS: explicit fields removed AND arc_marks
+    #     stripped AND the labels carry no matching token.
+    r = _active("pd082_absence_")
+    _bare = _live_arc_obj()
+    for _k in ("peak_apex", "peak_apex_slide", "decision_climax",
+               "decision_climax_slide", "ending_beat", "ending_slide",
+               "flat_ending"):
+        _bare.pop(_k, None)
+    _bare["slide_allocations"] = [
+        {k: v for k, v in s.items() if k != "arc_marks"}
+        for s in _bare["slide_allocations"]]
+    _write(r, _bare)
+    _expect_fail("explicit fields + arc_marks removed", r,
+                 "no PEAK/APEX/WOW beat", "no deliberate ending/recap/CTA beat",
+                 "P49, SOP-NORTHSTAR-00")
+
+    # (4) The LEGACY token form still PASSES — no regression.
+    r = _active("pd082_legacy_tokens_")
+    _write(r, [{"slide": 1, "arc_section": "hook"},
+               {"slide": 2, "arc_section": "apex", "beat": "promise-apex"},
+               {"slide": 3, "arc_section": "recap"}])
+    _expect_pass("legacy token form", r)
+
+    # (4b) A bare LIST container still works, and an arc_section-only bare list
+    #      with neither form still FAILS (the pre-existing fixture's shape).
+    r = _active("pd082_bare_list_absence_")
+    _write(r, [{"slide": 1, "arc_section": "hook"},
+               {"slide": 2, "arc_section": "body"},
+               {"slide": 3, "arc_section": "teaching"}])
+    _expect_fail("bare list, neither form", r,
+                 "no PEAK/APEX/WOW beat", "no deliberate ending/recap/CTA beat")
+
+    # (5) A MISSING arc DEFERS — _chk_arc owns absence, never this gate.
+    r = _active("pd082_no_arc_")
+    if build_deck._chk_peak_end(r) != "":
+        fails.append("PD-TEST-082 missing arc: must defer with '' "
+                     "(no arc -> _chk_arc owns absence)")
+
+    # (6) Partial evidence still fails only the half that is absent: explicit
+    #     PEAK alone must leave the ENDING complaint standing.
+    r = _active("pd082_peak_only_")
+    _peak_only = _live_arc_obj()
+    for _k in ("ending_beat", "ending_slide", "flat_ending"):
+        _peak_only.pop(_k, None)
+    _peak_only["slide_allocations"] = [
+        {**{k: v for k, v in s.items() if k != "arc_marks"},
+         "arc_marks": {"peak": s["arc_marks"]["peak"]}}
+        for s in _peak_only["slide_allocations"]]
+    _write(r, _peak_only)
+    _expect_fail("explicit PEAK only", r, "no deliberate ending/recap/CTA beat")
+
+    # (7) The SHADOW-COMPARED slice verifier must agree with the gate on the
+    #     live shape (they read THE one evidence dict) — a divergence here is
+    #     the trust-boundary drift this fix exists to prevent.
+    try:
+        import slice1_gate_verifiers as _s1
+        _spec = _s1.get_verifier("slice1:peak_end")
+        r = _active("pd082_slice_parity_")
+        _write(r, live)
+        _ok, _reasons = _spec.run_verifier(r)
+        if not _ok:
+            fails.append(f"PD-TEST-082 slice1:peak_end disagrees with the gate on "
+                         f"the live shape (legacy PASS, slice FAIL): {_reasons}")
+        r = _active("pd082_slice_parity_flat_")
+        _write(r, _flat)
+        _ok2, _reasons2 = _spec.run_verifier(r)
+        if _ok2:
+            fails.append("PD-TEST-082 slice1:peak_end accepted a flat ending")
+    except Exception as _exc:  # noqa: BLE001 — surfaced, never swallowed
+        fails.append(f"PD-TEST-082 slice1:peak_end parity probe crashed: {_exc!r}")
+
+    print(f"PD-TEST-082 (peak-end artifact contract)  -> "
+          f"{'PASS' if not fails else 'FAIL'}")
+    # This module's convention is to RETURN the failure list for main(); a bare
+    # return is invisible to pytest, so assert as well — the checks above must
+    # fail the suite, not just print.
+    assert not fails, "PD-TEST-082:\n" + "\n".join(fails)
     return fails
 
 
@@ -4072,10 +4334,10 @@ def emit_af_coverage():
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
     except ValueError as exc:
-        # The floor symbol (PROMPT_CHAR_FLOOR) gate surfaces as AF-P1; AF-PROMPT-FLOOR
+        # The rule 12 floor gate (_length_problems) surfaces as AF-P1; AF-PROMPT-FLOOR
         # is its manifest twin (same floor, reconciled). Record both from the same proof.
         record("AF-P1", str(exc))
-        if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
+        if "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
 
     # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
@@ -4093,8 +4355,8 @@ def emit_af_coverage():
         record("AF-PROMPT-NAME", _prob)
         record("AF-PROMPT-DUP-FILE", _prob)
 
-    # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
-    over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
+    # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (the rule 12 ceiling).
+    over = "A" * (build_deck.length_budget()["max"] + 10)
     rd = _rich_prompt_run_dir(over)
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
@@ -5147,15 +5409,16 @@ def test_dark_slide_with_client_flag_passes() -> list:
 
 
 def test_structural_block_gate() -> list:
-    """FG-1 item 3 (folded from render_deck.py): a prompt that clears PROMPT_CHAR_FLOOR
+    """FG-1 item 3 (folded from render_deck.py): a prompt that clears the rule 12 floor
     but is MISSING a required structural block ([ARCHETYPE / NEGATIVE BLOCK /
     'Do not ']) FAILS _chk_rich_prompts AND raises in load_rich_prompt; a real
     structured RICH_PROMPT passes."""
     failures = []
     # Blockless filler well over the floor (no [ARCHETYPE, no NEGATIVE BLOCK, no "Do not ").
-    # 58 chars * 160 = 9280 chars, comfortably over the 9,000-char PROMPT_CHAR_FLOOR.
-    blockless = ("This is a long descriptive paragraph about a slide scene. " * 160)
-    assert len(blockless) >= build_deck.PROMPT_CHAR_FLOOR
+    # sized into the rule 12 length band so only the structural-block gate can fail it.
+    _unit = "This is a long descriptive paragraph about a slide scene. "
+    blockless = _unit * (build_deck.length_budget()["target_min"] // len(_unit) + 1)
+    assert not build_deck._length_problems(blockless)
     rd = _rich_prompt_run_dir(blockless)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason or "structural block" not in reason:
@@ -5839,6 +6102,10 @@ def main():
     # v16.0.1 (FIX-2) — positive-fire + clean-pass assertions for the v18 priority-shift
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).
     failures += test_doctrine_gates_fire_and_pass()
+    # PD-TEST-082 — AF-PEAK-END reads the artifact contract the producer
+    # actually emits (slide_allocations container + explicit peak/ending
+    # declarations), while flat_ending: true and total absence still FAIL.
+    failures += test_peak_end_reads_live_artifact_contract()
 
     # U022 -- _chk_mode with dated exemption, extracted_substance, and owner-skip token.
     failures += test_mode_substance_u022()
@@ -5944,11 +6211,11 @@ def main():
           f"{'PASS' if r.returncode == 3 and 'AF-P1' in out else 'FAIL'}")
 
     # CASE 5 — full upstream artifacts BUT the rich prompt is sub-floor =>
-    # refused, exit 3, AF-P1 floor (proves a sub-PROMPT_CHAR_FLOOR prompt fails through CLI).
+    # refused, exit 3, AF-P1 floor (proves a sub-floor prompt fails through the CLI).
     root = make_workdir(with_artifacts=True, rich_prompts=True, short_prompt=True)
     r = run(root)
     out = r.stdout + r.stderr
-    _floor_str = str(build_deck.PROMPT_CHAR_FLOOR)
+    _floor_str = str(build_deck.length_budget()["floor"])
     if r.returncode != 3:
         failures.append(f"CASE5 (short rich prompt) expected exit 3, got {r.returncode}")
     if "AF-P1" not in out or _floor_str not in out:

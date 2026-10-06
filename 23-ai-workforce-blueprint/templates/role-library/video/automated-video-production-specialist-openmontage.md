@@ -102,7 +102,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - **Budget analysis:** Review per-client Kie.AI spend for the month. Were any runs over-budget? Did the budget cap prevent any needed production? Recommend cap adjustments to Head of Video Production.
 - **Pipeline manifest library audit:** Review the department's saved pipeline manifests. Which have been reused most? Which are stale or obsolete? Archive outdated manifests.
 - **Free stock corpus check:** Verify the free stock sources (archive.org, NASA, Wikimedia, Library of Congress, National Archives) are still accessible and returning results. Report any dead endpoints to the OpenMontage upstream.
-- **Kie.AI adapter review:** Check that `kie_image.py` and `kie_video.py` adapters match the current Kie.AI API at `https://api.kie.ai`. Model IDs and endpoint paths can change. Validate against Skill 67 and Skill 66 (model policy and endpoints), the live catalog (Skill 74), and `07-kie-setup/references/kie-common-rules.md`, not against a static examples file.
+- **Kie.AI adapter review:** Check that `kie_image.py` and `kie_video.py` delegate to Skill 74 rather than carrying their own copy of the Kie.AI API shapes. Model IDs and endpoint paths can change. Validate against Skill 67 and Skill 66 (model policy and endpoints), the live catalog (Skill 74), and `07-kie-setup/references/kie-common-rules.md`, not against a static examples file.
 
 ---
 
@@ -110,7 +110,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 - **Full pipeline audit:** Run each active `pipeline_defs/*.yaml` on a test brief to confirm all 13 pipeline definitions still execute without error. Document which are actively used, which are available but untested, and which are not applicable to {{COMPANY_NAME}}'s content needs.
 - **Dependency health check:** Run `47-movie-producer/verify-deps.sh` on the client's installed clone. Confirm `make setup` still succeeds cleanly, all Python deps import, Remotion's `node_modules` is intact, and `npx hyperframes --version` resolves. Record the clean-setup receipt.
-- **Kie.AI adapter parity check:** Diff `kie_image.py` and `kie_video.py` against `37-zhc-closeout/scripts/generate-celebration-video.sh` and `46-kie-callback-relay/kie-slide-submitter.js` to confirm model IDs, endpoint paths, and parameter shapes remain in sync with the fleet's verified patterns.
+- **Kie.AI adapter parity check:** Confirm `kie_image.py` and `kie_video.py` still delegate to Skill 74 and carry no private endpoint, model id, or polling logic of their own; any divergence is reported to the Head of Video Production as a defect, not patched in the role.
 - **Tool evaluation:** Identify one new OpenMontage tool or pipeline definition that could benefit {{COMPANY_NAME}}'s video production. Report findings and recommendations to Head of Video Production.
 
 ---
@@ -163,7 +163,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
 | OpenMontage (Skill 47) | Agentic video production system — pipeline orchestration, tool registry, stage-director skills | Cloned to client box at `~/.openclaw/skills/47-movie-producer/` via `install.sh` | `github.com/calesthio/OpenMontage` AGPLv3; 13 pipeline defs, 82+ tools, `make setup` installs all deps |
-| Kie.AI (via `kie_image.py` + `kie_video.py` adapters) | Generative image and video asset production | `KIE_API_KEY` set in client `.env`; adapters auto-discovered by OpenMontage tool registry | Image: `gpt-image-2-5-sunburst-image-to-image`; Video: `gemini-omni-video` (default) + `veo3_fast` (fallback); `gpt-image` and `gemini-omni-video` use `POST https://api.kie.ai/api/v1/jobs/createTask` and poll `GET /api/v1/jobs/recordInfo?taskId=`. Both Veo routes are live (verified 2026-10-06): the legacy family (`POST /api/v1/veo/generate`, polled with `GET /api/v1/veo/record-info`), which `veo3_fast` and this adapter use, and the current KIE docs route (`POST /api/v1/jobs/createTask` with model `veo-3-1`, polled through `recordInfo`). The adapter's route is a code choice, not the only valid one; lifecycle rules: `07-kie-setup/references/kie-common-rules.md` |
+| Kie.AI (via `kie_image.py` + `kie_video.py` adapters) | Generative image and video asset production | `KIE_API_KEY` set in client `.env`; adapters auto-discovered by OpenMontage tool registry | Transport is Skill 74 (`kie_live_adapter.py`: `validate`, `prompt-budget --check`, `price`, `preflight` at price x 1.30, `submit --mode active`, `wait`, `save`); the Skill 47 adapters are thin callers of it, so this role never chooses an endpoint family, a polling route, or a model id by hand. Default image model comes from `latest-family` (rule 13); video model choice follows Skill 67 policy. Prompt length (image, video, and music descriptive prompts) is governed only by rule 12: run `prompt-budget --check` before `price`. Lifecycle rules: `07-kie-setup/references/kie-common-rules.md` |
 | Free Real-Footage Stock Corpus | Zero-cost documentary footage — archive.org, NASA, Wikimedia, Library of Congress, National Archives, NOAA, European Space Agency, JAXA, Pond5 public domain | Built into OpenMontage `tools/video/stock_sources/` | Powers `pipeline_defs/documentary-montage.yaml` at ~$1 budget; no API key required |
 | FFmpeg | Video composition, muxing, stream validation, export | System binary (fail-loud preflight in Skill 47 `install.sh`) | Every compose/stitch path; `ffprobe` for output validation |
 | Remotion (`remotion-composer/`) | Code-driven video composition for template-based sequences | npm; installed by `make setup` → `cd remotion-composer && npm install` | `npx remotion` commands; zero-key demo path via `make demo` |
@@ -194,7 +194,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 1. **Brief completeness check (10 min):** Every pipeline request must specify: (a) Topic and narrative goal — what story does this video tell and for whom?, (b) Desired duration (seconds or minutes), (c) Tone (documentary, explainer, promotional, educational), (d) Any required brand assets (logo, color palette, voice style), (e) Publish deadline, (f) Budget ceiling for this run (confirm with Head of Video Production before starting any Kie.AI-powered run). Reject incomplete briefs — return to requester with the missing fields listed.
 2. **Pipeline definition selection (10 min):** Match the brief to the most appropriate `pipeline_defs/*.yaml` from the 13 available definitions. Documentary topics with no brand-new generative visuals → `documentary-montage.yaml` (free, ~$1 budget). Branded explainer or promotional video requiring generated visuals → a Kie-powered pipeline. Check the pipeline manifest library for any previously authored manifests on similar topics.
 3. **Manifest authoring (20–45 min):** Author or update the pipeline manifest (a `.yaml` config pointing at a `pipeline_defs/*.yaml` with topic-specific overrides: clip duration, search terms for stock corpus, voiceover script outline, output resolution). Save the manifest to the project folder with a clear name: `<topic>-<date>-manifest.yaml`.
-4. **Budget and cost announcement (5 min, REQUIRED before any paid call):** BEFORE initiating any pipeline run that will call Kie.AI for image or video generation, announce in writing to the production log and the Head of Video Production: the pipeline name, the Kie.AI models to be used (`gpt-image-2-5-sunburst-image-to-image` and/or `gemini-omni-video`), the estimated number of API calls, and the estimated total cost in USD (priced from the live `pricingDesc`, with the credit preflight x 1.30 from `07-kie-setup/references/kie-common-rules.md`). Do NOT start the run until acknowledged. This gate is non-negotiable (OpenMontage `config.yaml` `require_approval_for_new_paid_tool: true`; `single_action_approval_usd: 0.50`).
+4. **Budget and cost announcement (5 min, REQUIRED before any paid call):** BEFORE initiating any pipeline run that will call Kie.AI for image or video generation, announce in writing to the production log and the Head of Video Production: the pipeline name, the Kie.AI models to be used (the `latest-family` image model and the Skill 67 video model), the estimated number of API calls, and the estimated total cost in USD (priced from the live `pricingDesc`, with the credit preflight x 1.30 from `07-kie-setup/references/kie-common-rules.md`). Do NOT start the run until acknowledged. This gate is non-negotiable (OpenMontage `config.yaml` `require_approval_for_new_paid_tool: true`; `single_action_approval_usd: 0.50`).
 5. **Budget cap configuration (5 min):** Before each run, verify the client's `config.yaml` budget block: `mode: cap`, `total_usd` set to a LOW value (never exceed the approved ceiling), `single_action_approval_usd: 0.50`. Never increase the cap without Head of Video Production written approval.
 **Outputs:** Authored pipeline manifest `.yaml`, cost announcement record, budget-cap confirmation
 **Hand to:** Pipeline execution (SOP 9.2)
@@ -210,7 +210,7 @@ This role contributes to the company revenue cascade by: **enabling {{COMPANY_NA
 2. **Pipeline initiation (5 min):** Launch the pipeline via the OpenMontage stage-director skill appropriate to the pipeline definition (see `skills/pipelines/` in the OpenMontage clone). Log the start time and pipeline manifest path.
 3. **Stage-by-stage monitoring:** OpenMontage pipelines execute in stages: (a) Research/scripting stage — verify the script outline is on-brief before proceeding to asset sourcing, (b) Asset sourcing stage — for documentary-montage, confirm stock clips are being retrieved from free sources (not triggering paid APIs); for generative runs, confirm each Kie.AI task ID is recorded before the next call, (c) Composition stage — confirm the composition engine (FFmpeg/Remotion/HyperFrames) is assembling clips and audio without errors, (d) Render stage — monitor render progress; a stalled render (no output after 10 minutes of silence) requires intervention.
 4. **Budget monitoring during run:** Check the OpenMontage budget counter after each paid API call. If cumulative spend approaches 80% of the cap, pause the run and notify Head of Video Production before proceeding. Never exceed the cap without approval.
-5. **Kie.AI task receipts:** For each Kie.AI API call, record the `kie_task_id` and `kie_result_url` from the response to the production log. These are the render-proof receipts required for QC. A generative run without recorded `kie_task_id` values is not verified.
+5. **Kie.AI task receipts:** For each Kie.AI API call, record the `kie_task_id` and the saved local file path from the Skill 74 receipt to the production log (result URLs expire; the saved file is the artifact). These are the render-proof receipts required for QC. A generative run without recorded `kie_task_id` values is not verified.
 **Outputs:** Completed pipeline run with stage logs, Kie.AI task ID receipts (for generative runs), raw MP4 output file
 **Hand to:** SOP 9.3 (Output Validation)
 **Failure mode:** Allowing a pipeline to continue after a stage produces suspicious output (wrong topic clips, no audio, distorted frames) rather than stopping and correcting the manifest. Pipeline stages are cheaper to fix early than after a full render completes.
@@ -267,7 +267,7 @@ Before any rendered video is marked complete and delivered:
 - [ ] ffprobe validation passed: rc 0, duration > 0, video stream present, codec valid
 - [ ] Content spot-check: first and last 30 seconds on-brief, no unexpected black frames or silent gaps
 - [ ] Budget reconciliation: actual spend documented and within approved cap
-- [ ] Kie.AI task receipts recorded (for generative runs): `kie_task_id` + `kie_result_url` present for each generative asset
+- [ ] Kie.AI task receipts recorded (for generative runs): `kie_task_id` + saved local file path present for each generative asset (from the Skill 74 receipt)
 - [ ] Delivery package complete: MP4, ffprobe receipt JSON, task receipt log, pipeline manifest, delivery note
 - [ ] No native paid provider keys in client `.env` at time of run (only `KIE_API_KEY` for generative assets)
 
@@ -338,22 +338,22 @@ Before any rendered video is marked complete and delivered:
 
 **Context:** Head of Video Production requests a 60-second branded promotional video for a {{COMPANY_INDUSTRY}} campaign, requiring original visual imagery that does not exist in the free stock corpus.
 **Pipeline used:** A Kie-powered pipeline; budget `total_usd: 8.00`, `mode: cap`.
-**Pre-run cost announcement:** "This run will call `gpt-image-2-5-sunburst-image-to-image` for 6 branded still images (estimated $0.30 each = $1.80 total) and `gemini-omni-video` for 2 video clips at 8 seconds each (estimated $2.50 each = $5.00 total). Total estimated: $6.80. Proceeding with Head of Video Production approval."
+**Pre-run cost announcement:** "This run will call the `latest-family` image model for 6 branded still images and a Skill 67 video model for 2 clips at 8 seconds each. Skill 74 `price` returned the live estimate for each; total estimated: [sum of the Skill 74 `price` results]. `preflight` confirmed the live balance covers [that sum] x 1.30. Proceeding with Head of Video Production approval."
 **Execution:**
 - `KIE_API_KEY` set; all native provider keys absent. `kie_image.py` and `kie_video.py` show `available`; all others show `unavailable`.
-- Image generation: 6 calls to `POST https://api.kie.ai/api/v1/jobs/createTask` with `model: gpt-image-2-5-sunburst-image-to-image`, brand logo as `image_input`, `aspect_ratio: 16:9`, `resolution: 2K`. All 6 `kie_task_id` values recorded. Results downloaded to `assets/images/`.
-- Video generation: 2 calls to `POST https://api.kie.ai/api/v1/jobs/createTask` with `model: gemini-omni-video`, `duration: "8"` (string, not integer — required to avoid 422 error), `generate_audio: true`. Both `kie_task_id` values recorded. Results downloaded to `assets/video/`.
+- Image generation: 6 Skill 74 submissions (`validate`, then `prompt-budget --check`, then `price` and `preflight`, then `submit --mode active`, then `wait` and `save`) with the `latest-family` image model, brand logo as image input, `aspect_ratio: 16:9`, `resolution: 2K`. All 6 `kie_task_id` values recorded. Results saved to `assets/images/`.
+- Video generation: 2 Skill 74 submissions with the Skill 67 video model, `duration: "8"` (a string, not an integer; `validate` catches the 422 case before spend), audio on. Both `kie_task_id` values recorded. Results saved to `assets/video/`.
 - FFmpeg composed the final 60-second timeline from generated assets + Piper narration.
 - ffprobe receipt: `duration: 61.3`, `codec_name: h264`, `width: 1920`, `height: 1080`, streams confirmed.
-- Actual cost: $7.20. Within the $8.00 cap.
-- Kie.AI task receipts: 8 `kie_task_id` + `kie_result_url` pairs logged to `receipts/kie-task-log.json`.
+- Actual cost: [sum of receipt costs]. Within the approved cap.
+- Kie.AI task receipts: 8 `kie_task_id` + saved-file-path pairs logged to `receipts/kie-task-log.json`.
 
 **Why this is good:**
 - Cost announcement and approval gate honored BEFORE any paid call.
-- `duration` passed as a STRING to `gemini-omni-video` — the verified 422-error fix (mirroring `37-zhc-closeout/scripts/generate-celebration-video.sh`).
+- `duration` passed as a STRING to the video model, with `validate` run first so a shape error is caught before any spend.
 - All asset gen routed through Kie.AI — `selected_provider: "kie"` in every tool result.
 - ffprobe validation confirmed render quality before delivery.
-- Receipts are real: `kie_task_id` + `kie_result_url` per asset, not a claim.
+- Receipts are real: `kie_task_id` + saved file per asset, not a claim.
 
 ---
 
@@ -398,7 +398,7 @@ Before any rendered video is marked complete and delivered:
 
 | # | Mistake | Root Cause | Prevention |
 |---|---------|------------|------------|
-| 1 | Passing `duration` as an integer to `gemini-omni-video` Kie.AI endpoint | API requires a string; integer triggers 422 error | Always pass `duration: "8"` (quoted string) not `duration: 8`. This is verified in `37-zhc-closeout/scripts/generate-celebration-video.sh` and enforced in `kie_video.py`. |
+| 1 | Passing `duration` as an integer to a Kie.AI video model | API requires a string; integer triggers 422 error | Always pass `duration: "8"` (quoted string) not `duration: 8`, and run Skill 74 `validate` before `submit`; the adapter enforces the live schema (rule 5). |
 | 2 | Running `make setup` without first running the fail-loud dep preflight | FFmpeg or Node not installed; `make setup` fails mid-run | Always run Skill 47's dep preflight (`ffmpeg --version`, `node -v`, `npx --yes hyperframes --version`) BEFORE `make setup`. Exit non-zero and fix before proceeding. |
 | 3 | Using `docker compose restart` instead of `up --force-recreate` after editing the client `.env` | `restart` does not reload `env_file`; stale keys remain active | After any `.env` change, use `docker compose up -d --force-recreate` or restart the OpenClaw gateway process. |
 | 4 | Implementing Whisper or cloud TTS inside an OpenMontage pipeline instead of handing off to Skill 26 or Skill 30 | "It's faster to do it here" thinking | Whisper = Skill 26. Cloud TTS = Skill 30. Never re-implement them inside a pipeline. Handoff is faster and more maintainable than duplication. |
@@ -411,7 +411,7 @@ Before any rendered video is marked complete and delivered:
 **Tier 1 — Always consult first:**
 - OpenMontage repository (`github.com/calesthio/OpenMontage`) — `README.md`, `pipeline_defs/*.yaml`, `tools/**/*.py` — the authoritative source for pipeline behavior, tool capabilities, and provider configuration
 - Kie.AI API documentation (`https://docs.kie.ai/`) — model IDs, endpoint paths, rate limits, parameter shapes — verify before any adapter update
-- Fleet verified scripts: `37-zhc-closeout/scripts/generate-celebration-video.sh` (Kie video API verified pattern) + `46-kie-callback-relay/kie-slide-submitter.js` (Kie image API verified pattern)
+- Skill 74 `kie_live_adapter.py` (the single live adapter) and `07-kie-setup/references/kie-common-rules.md` (the shared rules)
 
 **Tier 2 — Video production best practice:**
 - School of Motion (schoolofmotion.com) — Motion design and video production education
@@ -424,7 +424,7 @@ Before any rendered video is marked complete and delivered:
 - HyperFrames documentation (via `npx hyperframes --help` and OpenMontage `tools/video/hyperframes_compose.py`) — frame-by-frame composition
 
 **Tier 4 — Fleet skill references:**
-- `07-kie-setup/EXAMPLES.md` — verified Kie.AI API request shapes and model IDs for the fleet
+- `07-kie-setup/references/kie-common-rules.md` — the shared Kie.AI lifecycle rules (rate limits, polling, preflight, retention, prompt budget); `EXAMPLES.md` is illustrative only
 - `26-caption-creator/SKILL.md` — Whisper-based caption generation handoff interface
 - `30-fish-audio-api-reference/` — Fish Audio TTS handoff interface
 - `23-ai-workforce-blueprint/QC-PROTOCOL.md` — fleet QC protocol and 8.5-threshold rubric
@@ -441,7 +441,7 @@ Before any rendered video is marked complete and delivered:
 
 ### Edge Case 17.1 — Kie.AI API Unavailable During Production Run
 
-- **Trigger:** A Kie-powered pipeline run calls `POST https://api.kie.ai/api/v1/jobs/createTask` and receives a non-2xx response or connection timeout.
+- **Trigger:** A Kie-powered pipeline run's Skill 74 `submit` returns a non-2xx response or a connection timeout.
 - **Action:** (1) Retry once after a 5-minute wait — transient API errors are common. (2) If the second attempt fails, pause the pipeline run immediately. Do NOT fall back to a native paid provider (FAL, Runway, OpenAI) — that violates the client-own-keys and Kie-routing rules. (3) Document the API error response body and timestamp. (4) Notify Head of Video Production: Kie.AI is unavailable, pipeline is paused, awaiting resolution or a switch to the free documentary-montage path if the topic supports it. (5) Check the Kie.AI status page for known outages.
 - **Escalate to:** Head of Video Production (budget decision: wait for Kie.AI recovery, or switch to free path, or postpone)
 
@@ -465,8 +465,8 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 
 1. The role's primary KPIs miss targets for 2 consecutive months → Head of Video Production triggers review
 2. OpenMontage upstream releases a major version change affecting pipeline definitions, tool contracts, or the `BaseTool` class
-3. Kie.AI changes model IDs, endpoint paths, or request schemas for `gpt-image-2-5-sunburst-image-to-image`, `gemini-omni-video`, or `veo3_fast`
-4. The fleet's verified Kie.AI patterns (`37-zhc-closeout/scripts/generate-celebration-video.sh`, `46-kie-callback-relay/kie-slide-submitter.js`) are updated, requiring adapter parity changes
+3. Kie.AI changes model IDs, endpoint paths, or request schemas (the Skill 74 live adapter and `kie-common-rules.md` absorb the change; this file changes only if the role's duties do)
+4. Skill 74 or Skill 67 changes its command surface or video model policy
 5. New free stock sources are added to OpenMontage's `tools/video/stock_sources/` — update the tools table and the documentary-montage description
 6. A Devil's Advocate challenge for this role gets accepted 3+ times in 90 days
 7. The Head of Video Production requests a production pipeline quality or efficiency review

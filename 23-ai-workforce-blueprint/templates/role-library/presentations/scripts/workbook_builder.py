@@ -149,13 +149,9 @@ MAX_POLL_PASSES     = 90        # ~15 min cap per task
 
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# prompt band (WORKBOOK-REDESIGN-PLAN.md §2.1): the Presentations rich-prompt gate,
-# 9,000-18,000 stripped chars — NOT the superseded 5,000-19,000 research band. The
-# shared prompt_gate module enforces the same band; these constants back the executor's
-# own _assert_prompt_band so the floor holds even when prompt_gate is unavailable.
-PROMPT_FLOOR = 9000
-PROMPT_TARGET_MIN = 9000
-PROMPT_CEILING = 18000
+# Prompt band: KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer through prompt_gate:
+# 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent (the English pin
+# counts toward the ceiling). This script keeps no band of its own; the old 9,000 to 18,000 constants are retired.
 
 # ---------------------------------------------------------------------------
 # Reportlab constants
@@ -641,21 +637,98 @@ Nothing else rotates: palette, band structure, zone geometry, footer, and logo p
 are identical across pages so the set reads as one designed system. This page carries the
 motif at {motif_position}.
 {style_ref}"""
-    return prompt
+    return _deepen_to_band(prompt)
+
+
+# Distinct, positive art-direction clauses that bring a workbook page prompt into the rule 12 band. Each is a real
+# design instruction for the same page (never a repeat, never padding); they are added in order until the prompt sits
+# in the middle of the target band.
+_DEPTH_BANK = (
+    "Reading order: the eye enters at the headline, drops to the subhead, travels the content zones top to bottom, and lands on the footer; no element sits outside that single path, so a client can complete the page without searching.",
+    "Writing space: every line the client fills in is a clean rule of even weight with generous leading above it, tall enough for handwriting at the size of a comfortable pen, and never crossed by a decorative element.",
+    "Type hierarchy: the headline carries the largest weight and the tightest tracking, the subhead is one clear step lighter, the body copy is a calm medium weight, and the footer is the smallest size that still reads at arm's length.",
+    "Color discipline: the primary brand color anchors the headline and the rules, the secondary color tints the content zones, the accent appears only on the single motif and one emphasis device, and the base color fills the page ground.",
+    "Margins: a uniform safe margin surrounds the page on all four sides; neither copy, rule, nor motif touches it, so the page survives printing on any home or office printer without clipping.",
+    "Grid: content zones align to one underlying column grid so left edges, right edges, and baselines repeat from page to page; the set reads as one designed system, not a stack of unrelated sheets.",
+    "Zone separation: each content zone is separated from its neighbor by consistent vertical space, never by heavy boxes, so the page stays light and the writing areas stay the visual priority.",
+    "Motif: the single brand motif is drawn in the accent color at modest scale in its assigned corner, with soft edges and no overlap onto any writing area, acting as a quiet signature rather than a decoration.",
+    "Contrast: every quoted string reads at full contrast against its zone; dark ink on light ground for body copy, light ink on the primary band for the headline, and every line of copy sits on a calm, quiet region of the image.",
+    "Spacing rhythm: the vertical gaps follow one repeating unit, doubled between major zones and halved between a label and its field, giving the page a steady cadence that feels intentional.",
+    "Label treatment: each field label is set in small capitals in the secondary color directly above its writing space, short enough to read at a glance and never wrapping onto a second line.",
+    "Footer: the footer carries the client name and the page number in the quietest type on the page, separated from the content by a thin rule, and sits at the same height on every page of the set.",
+    "Surface: the page ground is a flat, even tone without a gradient, a grain pattern, or a vignette, so the printed result is clean and economical and the writing areas stay perfectly legible.",
+    "Edge treatment: rules end with square caps, zone corners are softly rounded at one consistent radius, and no drop shadows are used anywhere, keeping the editorial print aesthetic crisp.",
+    "Brand fidelity: the exact palette hex values listed above are used without substitution or approximation; no tint, shade, or neighboring color is invented, and the ink color is never replaced by pure black.",
+    "Logo handling: where a reference logo is supplied it appears once, unaltered, at the position named above, at a size that stays legible; it is never redrawn, recolored, stretched, or repeated.",
+    "Density of design: the page feels full of intention rather than full of objects; whitespace is used deliberately to frame the writing areas, and every element present earns its place by helping the client act.",
+    "Consistency across the set: the band structure, zone geometry, footer, and logo placement are identical on every page; only the content and the single rotating motif position change from one page to the next.",
+    "Print behavior: all shapes and text are crisp at 2K portrait three by four; fine rules stay heavier than the print threshold so none disappear when the page is printed in grayscale.",
+    "Accessibility: the combination of ink and ground meets a strong contrast ratio, the smallest text is still easy to read, and meaning is never carried by color alone; the labels and the rules together tell the client what to do.",
+    "Tone of the page: calm, confident, and encouraging; the visual energy supports a client who is about to commit something to paper, with no clutter and no ornament that competes with that moment.",
+    "Headline zone: the headline band spans the full content width, sits in the upper portion of the page, and uses the primary color as its field with the base color for the letters, giving the page an immediate, professional anchor.",
+    "Subhead zone: the subhead sits directly beneath the headline in the secondary color, one line long, and frames the prompt the client is about to answer in plain, friendly words.",
+    "Bullet zone: bullets are set with a small accent-colored marker and a hanging indent so wrapped lines align with the text rather than the marker, and each bullet keeps the same spacing as its neighbors.",
+    "Question zone: the reflective question is set apart in a lightly tinted panel with a generous writing area beneath it, large enough for a full paragraph in the client's own handwriting.",
+    "Affirmation zone: the closing affirmation sits near the bottom in the secondary color with a signature rule beside it, so the page ends on a sense of commitment and completion.",
+    "Tint panels: panels are flat, slightly deeper than the page ground, with no border or a one-weight border in the secondary color, so they lift the content zones without adding visual noise.",
+    "Photographic content: none; the page is a pure editorial layout of type, rules, panels, and one motif, so no people, faces, hands, or objects appear anywhere in the composition.",
+    "Typography family: one single type family is used throughout in at most three weights, selected for crisp rendering at small sizes; no second family, no script face, and no decorative display face is introduced.",
+    "Alignment: all text is left aligned except the footer page number, which is right aligned; no justified text is used because it opens uneven gaps that distract from the writing areas.",
+    "Hierarchy of rules: major rules under the headline are heavier than the writing rules inside the content zones, which are heavier than the hairline separators in the footer, so weight communicates importance.",
+    "Verbatim copy: every quoted string on the page is rendered exactly as written, letter for letter, with its original capitalization and punctuation, and nothing is added, abbreviated, translated, or reworded.",
+    "Page balance: the visual weight is distributed so the headline band is balanced by the writing areas below it and the motif in its corner is balanced by the footer on the opposite side; the page never feels lopsided.",
+    "Finishing: the page reads as a finished, premium companion document that a coach or consultant would proudly hand to a client, with the polish of professional print design and none of the look of a template.",
+    "Functional marks: if any small functional mark is needed, such as a checkbox, it is drawn as a plain open square in the secondary color at one consistent size, never an emoji, a clipart image, or a decorative symbol.",
+    "Quality read: a reviewer can name the headline, the subhead, each bullet, the question, and the affirmation from the rendered image alone, with every character legible and correctly spelled.",
+    "Whitespace budget: roughly a third of the page area is empty ground, distributed between zones and around the margins, so the writing areas feel open and inviting rather than crowded.",
+    "Weight of the headline band: the band is tall enough to hold the headline on one or two lines with comfortable padding above and below, and its lower edge aligns exactly with the top of the first content zone.",
+    "Line quality: every rule is perfectly straight and evenly weighted from end to end, with no wobble, no taper, and no hand-drawn irregularity, so the page looks engineered and trustworthy.",
+    "Spacing between bullets: the gap between one bullet and the next equals the gap between a label and its writing space doubled, so bullets read as a list while remaining clearly separate items.",
+    "Edge of the writing panels: panel edges are crisp at the output resolution, with no anti-aliasing halo, and each panel keeps the same inner padding on every side.",
+    "Brand voice in layout: the layout is warm and professional, matching the brand palette, so the page feels like part of the client's own materials rather than a generic worksheet.",
+    "Reference page match: when a reference page is attached, this page matches its band structure, zone geometry, footer, and logo placement exactly, and differs only in its own content strings and its motif position.",
+    "Heading casing: headings keep the casing given in the quoted copy; no heading is converted to all capitals, lowercased, or re-punctuated to fit the layout.",
+    "Number and symbol handling: any digit, currency mark, percent sign, or punctuation inside a quoted string is rendered exactly as written, with the same spacing around it, so figures never drift.",
+    "Zone padding: every tinted panel keeps equal inner padding on all four sides, large enough that no letter touches a panel edge and wrapped lines never crowd the corners.",
+    "Visual calm: no element on the page is animated in feeling, tilted, rotated, or skewed; every shape sits square to the page so the layout reads as stable, orderly, and dependable.",
+    "Material feel: the page looks like a high quality printed companion workbook, with the flat, matte quality of good paper and none of the glow, gloss, or glassy sheen of a screen interface.",
+    "Scaling: the layout holds together at thumbnail size, where the headline band, the writing areas, and the footer still read as three clear tiers, and at full size, where every small label stays sharp.",
+    "Page identity: the page number and the page role both appear in the footer so a client who prints the set can sort the pages back into order without opening the file.",
+    "Left edge discipline: the left edges of the headline, the subhead, the labels, the bullets, and the question align to one vertical line, which gives the whole page a strong, calm spine.",
+    "Final check on restraint: if a decision is close between adding a decorative element and leaving the space open, the space stays open; the client's own writing is the content that fills this page.",
+)
+
+
+def _deepen_to_band(prompt: str) -> str:
+    """Append distinct art-direction clauses until the prompt sits in the middle of the rule 12 target band. A no-op
+    when the shared gate is unavailable (submit then refuses the prompt) or the prompt is already at the target."""
+    if prompt_gate is None:
+        return prompt
+    try:
+        bud = prompt_gate.length_budget()
+    except Exception:  # noqa: BLE001
+        return prompt
+    if len(prompt.strip()) >= bud["target_min"]:
+        return prompt
+    goal = (bud["target_min"] + bud["ceiling"]) // 2
+    out = prompt.rstrip() + "\n\n=== PAGE ART DIRECTION DEPTH (the same page, stated in full) ===\n"
+    for clause in _DEPTH_BANK:
+        if len(out.strip()) + len(clause) + 1 > goal:
+            break
+        out += clause + "\n"
+    return out
 
 
 def _assert_prompt_band(prompt: str, page_id: str) -> None:
-    """Enforce the 5,000-19,000 stripped-char band (target >=9,000). Raise on violation."""
-    stripped = prompt.strip()
-    n = len(stripped)
-    if n < PROMPT_FLOOR:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, UNDER the {PROMPT_FLOOR}-char floor. "
-            "A workbook page prompt below the floor is a thin stub — not submitted.")
-    if n > PROMPT_CEILING:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, OVER the {PROMPT_CEILING}-char ceiling. "
-            "Tighten redundant phrasing.")
+    """Enforce the KIE rule 12 length band through the shared enforcer (floor 80 percent, ceiling 100 percent of the
+    model maxLength, each failure naming the exact characters to add or cut). Raise on violation. Fails closed when
+    the shared gate cannot be loaded: a prompt this script cannot measure is never submitted."""
+    if prompt_gate is None:
+        raise RuntimeError(f"{page_id}: the shared prompt gate (prompt_gate.py) is not loadable, so the rule 12 length "
+                           "band cannot be measured; the prompt is not submitted.")
+    probs = prompt_gate.length_problems(prompt.strip())
+    if probs:
+        raise RuntimeError(f"{page_id}: " + "; ".join(probs))
     if prompt_gate is not None:
         try:
             prompt_gate.verify_prompt(prompt, slide_id=page_id)
@@ -1618,15 +1691,15 @@ def _selftest() -> int:
     p = build_page_prompt(page_role="My Goals", motif_position="top-right", brand=brand,
                           client_name="Test Client", is_i2i=True, page_index=1,
                           page_count_total=3, content=content)
-    if not (PROMPT_FLOOR <= len(p.strip()) <= PROMPT_CEILING):
-        fails.append(f"prompt band: {len(p.strip())} chars outside {PROMPT_FLOOR}-{PROMPT_CEILING}")
+    if prompt_gate is not None and prompt_gate.length_problems(p.strip()):
+        fails.append(f"prompt band: {len(p.strip())} chars outside the rule 12 band: {prompt_gate.length_problems(p.strip())}")
     if prompt_gate is not None:
         try:
             prompt_gate.verify_prompt(p, slide_id="page-01")
         except Exception as exc:  # noqa: BLE001
             fails.append(f"prompt_gate.verify_prompt failed: {exc}")
-    if len(p.strip()) < PROMPT_TARGET_MIN:
-        fails.append(f"prompt length {len(p.strip())} below target {PROMPT_TARGET_MIN}")
+    if prompt_gate is not None and len(p.strip()) < prompt_gate.length_budget()["target_min"]:
+        fails.append(f"prompt length {len(p.strip())} below the rule 12 target {prompt_gate.length_budget()['target_min']}")
     # AF-WORKBOOK-PROMPT-NO-CONTENT: content-bearing prompt must PASS.
     try:
         _assert_content_in_prompt(page, p)

@@ -1,5 +1,10 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## v2.0.1 - 2026-10-06 - chore: the unused 5,000 to 19,000 image prompt band is removed
+
+- `aa_build_check.py` read `image_prompt_band` min and max into variables nothing used; they are removed and the manifest states the rule instead of numbers. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.
+- `AA-GATE-HASHES.json` re-recorded for `aa_build_check.py` and `AA-PIPELINE-MANIFEST.json`; the integrity check and the negative suite pass.
+
 ## 1.5.4 — 2026-08-25 — tone-core GO fixes: forbidden self-pick prose removed
 
 - Stripped the forbidden "choose a relevant well known person" self-pick line from all five

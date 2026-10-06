@@ -520,6 +520,23 @@ Then HALT install. Do not skip. Do not work around. Do not try to
 generate a placeholder key. Wait for the operator's "I'm done"
 signal.
 
+### Rule 13a: Docker tenant exception (operator-managed tunnel)
+
+On a box that runs inside a container on a shared host (Contabo/VPS
+multi-tenant), the public tunnel is run by the OPERATOR's cloudflared
+on the host. The container cannot see it, so "no tunnel, no token"
+is the expected state, not a fault. 00-verify-prerequisites.sh then:
+
+  - passes without a Cloudflare key when PUBLIC_HOSTNAME is set (env
+    or the secrets env file), and steps 13 and 14 skip themselves;
+  - otherwise halts with "PUBLIC HOSTNAME NOT SET (operator-managed
+    tunnel)" and the agent asks the OPERATOR for the box's public
+    gateway hostname. It does NOT show the Rule 13 message.
+
+The client is never asked for a Cloudflare token on this box shape,
+and the token for the operator's own zone is NEVER given to a client
+box (it would grant edit rights over every other client's DNS).
+
 ### Rule 14: Restart flow
 
 When the operator returns and says they have the key (signals like

@@ -44,11 +44,11 @@
 2. Build the Slide Manifest as an ordered table: one row per slide containing -- slide number, slide type (from the Rotation Engine variant list in `powerpoint-designs/_RULES.md`), foundation block reference, active rotation variant, filled variable values, text strategy (a or b), destination resolution, and the generation tier.
 3. Verify the Rotation Engine pattern across the manifest: no two consecutive slides may use the identical variant unless the deck's style system explicitly permits repetition. Flag any deviation to CDO before submitting.
 4. For decks of 10 or more slides: submit the complete Slide Manifest to CDO for approval before any generation begins. CDO approval covers cost/timeline authorization, not just style sign-off. Record the CDO approval timestamp in the manifest header row.
-5. Assemble the manifest file in the job directory (`_local/jobs/{job-id}/SLIDE-MANIFEST.md`) alongside an estimated total generation cost. Manifest file is the single interface artifact crossing into the Generation Operator's lane.
-6. Hand the approved manifest to the Generation Operator with: card ID@version, manifest file path, budget ceiling, resolution, deadline, and identity involvement flag.
+5. Assemble the manifest file in the job directory (`_local/jobs/{job-id}/SLIDE-MANIFEST.md`) alongside an estimated total generation cost (per-slide unit price from `kie_live_adapter.py price`, the live `pricingDesc`; the client's PRICING.md holds billed actuals). Manifest file is the single interface artifact crossing into the Generation Operator's lane.
+6. Hand the approved manifest to the Render Dispatcher, which releases it in batches to the Generation Operator (the only role that submits to Kie.ai, through Skill 74), with: card ID@version, manifest file path, budget ceiling, resolution, deadline, and identity involvement flag.
 
 **Outputs:** Approved, complete Slide Manifest file in the job directory; Generation Operator briefed and ready to execute.
-**Hand to:** Generation Operator for slide-by-slide batch execution. Manifest ownership transfers at this point.
+**Hand to:** Render Dispatcher (batch release) and Generation Operator for slide-by-slide batch execution. Manifest ownership transfers at this point.
 **Failure mode:** If the brief's verbatim text strings contain unfilled placeholders, do not assemble the manifest. Return the incomplete brief to CDO with the specific unfilled fields listed. Never send a manifest with placeholder tokens to the Generation Operator.
 
 ---

@@ -130,8 +130,7 @@ AF_PROMPT_NO_CONTENT = "AF-SALES-PROMPT-NO-CONTENT"
 # Design-prompt band (mirrors workbook_builder.py's Presentations rich-prompt gate:
 # 9,000-18,000 stripped chars).
 # ---------------------------------------------------------------------------
-PROMPT_FLOOR = 9000
-PROMPT_CEILING = 18000
+# Prompt length is KIE rule 12 (owner order 2026-10-05) through prompt_gate and the shared enforcer; no band lives here.
 
 ASPECT_RATIO = "16:9"
 RESOLUTION = "2K"
@@ -526,16 +525,12 @@ def assert_content_in_prompt(page_id: str, fields: Dict[str, str], prompt: str) 
 
 
 def _assert_prompt_band(prompt: str, page_id: str) -> None:
-    stripped = prompt.strip()
-    n = len(stripped)
-    if n < PROMPT_FLOOR:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, UNDER the {PROMPT_FLOOR}-char floor."
-        )
-    if n > PROMPT_CEILING:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, OVER the {PROMPT_CEILING}-char ceiling."
-        )
+    if prompt_gate is None:
+        raise RuntimeError(f"{page_id}: the shared prompt gate (prompt_gate.py) is not loadable, so the rule 12 length "
+                           "band cannot be measured; the prompt is not submitted.")
+    probs = prompt_gate.length_problems(prompt.strip())
+    if probs:
+        raise RuntimeError(f"{page_id}: " + "; ".join(probs))
     if prompt_gate is not None:
         try:
             prompt_gate.verify_prompt_minimal(prompt, slide_id=page_id)
@@ -543,10 +538,18 @@ def _assert_prompt_band(prompt: str, page_id: str) -> None:
             raise RuntimeError(f"{page_id}: shared prompt gate rejected the design prompt: {exc}")
 
 
+def _deepen(prompt: str, role: str, client_name: str) -> str:
+    """Bring the prompt into the KIE rule 12 band with the shared page-design clauses (no-op when the shared gate
+    is not loadable; the submit gate then refuses the prompt)."""
+    if prompt_gate is None:
+        return prompt
+    return prompt_gate.deepen_to_band(prompt, ctx={"role": str(role).lower(), "client": client_name})
+
+
 def build_design_prompt(*, page_role: str, brand: Dict[str, str], client_name: str,
                         fields: Dict[str, str], page_index: int, page_count_total: int) -> str:
-    """Compose a content-in-image sales/checkout hero design prompt (9,000-18,000
-    stripped chars), templating workbook_builder.py's proven content-in-image
+    """Compose a content-in-image sales/checkout hero design prompt (KIE rule 12 length
+    band, deepened with real page-design direction), templating workbook_builder.py's proven content-in-image
     technique for a marketing hero rather than a workbook page."""
     prim, sec, acc = brand["primary"], brand["secondary"], brand["accent"]
     base, ink = brand["base"], brand["ink"]
@@ -705,7 +708,7 @@ proof-band emphasis differ between the two pages, so the set reads as one design
 end to end — the same visitor recognizes the checkout page as a continuation of the sales
 page they just left, never a different site.
 """
-    return prompt
+    return _deepen(prompt, role_label, client_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1546,8 +1549,8 @@ def _selftest() -> int:
     for pid, prompt, fields in (("sales-hero", sales_prompt, sales_fields),
                                 ("checkout-hero", checkout_prompt, checkout_fields)):
         n = len(prompt.strip())
-        if not (PROMPT_FLOOR <= n <= PROMPT_CEILING):
-            fails.append(f"{pid}: prompt {n} chars outside {PROMPT_FLOOR}-{PROMPT_CEILING} band")
+        if prompt_gate is None or prompt_gate.length_problems(prompt.strip()):
+            fails.append(f"{pid}: prompt {n} chars outside the rule 12 band")
         try:
             assert_content_in_prompt(pid, fields, prompt)
         except Exception as exc:  # noqa: BLE001

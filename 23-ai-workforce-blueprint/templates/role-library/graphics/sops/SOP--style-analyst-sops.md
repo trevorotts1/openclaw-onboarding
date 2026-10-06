@@ -23,7 +23,7 @@
 4. **Execute Workflow A analysis per MASTER-SOP §§3-4.** Fill every section of STYLE-CARD-TEMPLATE.md. No section may be left blank or marked "TBD" in a submitted draft.
 
    **REPRESENTATION-MIX SCHEMA FIELD (required for any card involving people):** When the client's brief or intake record includes a REPRESENTATION_MIX value (the captured audience composition with percentages), record it in the card's Model Notes section under the key `representation_mix`. Format: `representation_mix: {gender: "...", ethnicity: "...", notes: "..."}`. If no REPRESENTATION_MIX has been captured and the card is for an audience/webinar context, add a flag: `representation_mix: UNCAPTURED - NO PEOPLE default until intake is completed`. For webinar and audience decks: casting and representation is owned by the Presentations pipeline QC. The DIU style card governs the visual aesthetic only.
-5. **Count actual prompt characters.** For each prompt tier block in the card, count the actual character length and write it explicitly in the card's character-count annotation line. Do not estimate. Seedream hard cap is 3,000 characters; flag any tier that exceeds 2,800 characters with a warning.
+5. **Count actual prompt characters.** For each prompt tier block in the card, count the actual character length and write it explicitly in the card's character-count annotation line. Do not estimate. Seedream hard cap is 3,000 characters; never exceed it. A tier near the cap is not a defect: the card tiers are authoring ceilings, and the prompt actually submitted is sized to the model's budget at generation time (rule 12 of `07-kie-setup/references/kie-common-rules.md`).
 6. **Set card status = "draft."** Emit a per-card receipt file: `{CARD-ID}.json` containing id, name, category, status, version, authored-by, authored-date, similarity-scores-at-creation, provenance-class.
 7. **Hand to Fidelity Tester** with: the draft card file path, the receipt file path, the reference images path, and a one-line handoff note specifying the intended test category and any flags from steps 2-3.
 
@@ -65,7 +65,7 @@
 **Steps -- Card Registration at "tested" promotion:**
 1. Receive the Fidelity Tester's promotion notification: card ID, new status = "tested," updated card file path, test log file path.
 2. Verify the per-card receipt file exists and is current. If not present, emit it now from the card data before proceeding.
-3. Write the INDEX.md row: ID, name, category, status = "tested," version, source summary, file path, test-log path, embedding-last-run date (set to today after step 4).
+3. Hand the Style Librarian the INDEX.md row data (ID, name, category, status = "tested," version, source summary, file path, test-log path, embedding-last-run date set after step 4); the Librarian (single INDEX writer) compiles and writes the row.
 4. Embed the card per SOP 9.4 (SOP-DIU-606): compute the embedding from the card's one-line summary + mood keywords + palette descriptors. Record the embedding checksum in the receipt file.
 5. **Increment the Registrar counter.** Record the new count in the INDEX.md summary row.
 6. **If counter >= 50:** Immediately raise a CDO activation ticket: "Library Registrar activation threshold reached (N tested+production cards). Per SOP-DIU-606 step 9, the Library Registrar role is eligible for activation. Please schedule the `add-role.sh --dept graphics --role 'Library Registrar'` run and confirm INDEX write ownership transfer."
@@ -74,7 +74,7 @@
 1. Receive the Fidelity Tester's patch approval: card ID, old version, new version, change description.
 2. Update the card file version number and Changelog section per MASTER-SOP §8.
 3. Re-embed the updated card per SOP 9.4 (dedupe check is NOT required on version bumps -- same card lineage).
-4. Update the INDEX.md row: version field, embedding-last-run date.
+4. Have the Style Librarian update the INDEX.md row: version field, embedding-last-run date.
 5. Check NAMED-STYLES.md for any alias pinned to this card ID. If an alias pins at a version older than the bump, apply SOP-DIU-607 version-advance logic: v1.x patches auto-advance; v2.0 re-analyses require a CDO confirmation + Fidelity Tester side-by-side regression render before the alias pointer moves.
 
 **Outputs:** Updated INDEX.md row; updated receipt file; updated embedding entry; version bump applied to card Changelog; alias advance notifications where applicable; Registrar activation ticket if threshold reached.

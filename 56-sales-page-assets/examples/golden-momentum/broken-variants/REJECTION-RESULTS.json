@@ -37,20 +37,20 @@
     "rejected": true,
     "expected_code": "AF-SP56-INTAKE-UNLOCKED",
     "code_present": true,
-    "out_tail": "== Sales Page Assets :: intake gate ==\nsource: examples/golden-momentum/broken-variants/F_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 1 violation(s):\n  [AF-SP56-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start",
+    "out_tail": "source: examples/golden-momentum/broken-variants/F_unapproved/brief.json\nRESULT: FAIL (fail-closed) \u2014 2 violation(s):\n  [AF-SP56-INTAKE-UNLOCKED] brief is not locked (provenance-gated) \u2014 generation must not start\n  [AF-SP56-INTAKE-PERSONA-LOG] persona-selection-log absent/empty \u2014 persona never grounded (SOP-SALESPAGE-01 \u00a73)",
     "e2e_orchestrator_rc": 2,
     "e2e_no_certificate": true,
     "e2e_marker": "AF-SP56-INTAKE-UNLOCKED",
-    "e2e_marker_present": true
+    "e2e_marker_present": false
   },
   "E_missing_provenance": {
     "e2e_orchestrator_rc": 2,
     "e2e_no_certificate": true,
     "e2e_marker": "media_ledger.json absent",
-    "e2e_marker_present": true,
+    "e2e_marker_present": false,
     "prover": "run_sales_page_assets.py (P2 seam)",
     "rejected": true,
     "expected_code": "P2-IMAGES delegation seam (media_ledger.json absent)",
-    "out_tail": "  [PASS] P1-IMAGE-PLAN  (prove_sp_image_plan.py + prove_sp_prompt_floor.py) :: prove_sp_image_plan.py rc=0 :: RESULT: PASS \u2014 contiguous prompt set; every stage slice has >=1 image. | prove_sp_prompt_floor.py rc=0 :: PASS: every image prompt clears the two-floor gate (5000-19000).\n  [FAIL] P2-IMAGES      (kie_image.py) :: delegated artifact media_ledger.json absent (expected for: Skill 47 kie_image.py OR the client's own image provider)\nABORT: phase P2-IMAGES failed its fail-closed gate. NO certificate issued (a later phase can never run before an earlier one passes).\n[mc_board] COMMAND_CENTER_URL/MISSION_CONTROL_URL unset \u2014 board disabled (no-op); run continues."
+    "out_tail": "  [persona] blackceo-house-voice (Blackceo House Voice) via selector\n  [FAIL] P0-INTAKE      (prove_sp_intake.py) :: prove_sp_intake.py rc=2 ::   [AF-SP56-INTAKE-PERSONA-LOG] persona-selection-log absent/empty \u2014 persona never grounded (SOP-SALESPAGE-01 \u00a73)\nABORT: phase P0-INTAKE failed its fail-closed gate. NO certificate issued (a later phase can never run before an earlier one passes).\n[mc_board] COMMAND_CENTER_URL/MISSION_CONTROL_URL unset \u2014 board disabled (no-op); run continues."
   }
 }

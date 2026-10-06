@@ -26,7 +26,7 @@ This folder holds:
 2. If it's a PowerPoint/PDF or 4+ related images → open `_system/PPT-ANALYSIS-SOP.md` instead.
 3. Apply the analysis protocol, extract the style (not content).
 4. Write a style card per `_system/STYLE-CARD-TEMPLATE.md`.
-5. **Register in INDEX.md** immediately — add a row with ID, name, summary, status (draft), version, date, file path.
+5. **Register in INDEX.md** immediately: hand the Style Librarian the registration receipt (ID, name, summary, status draft, version, date, file path); the Librarian is the single INDEX writer and compiles the row.
 6. **Test the card** per `_system/TEST-PROTOCOL.md` (→ Fidelity Tester).
 7. Hand off to Style Analyst for INDEX governance and versioning.
 
@@ -55,7 +55,7 @@ This folder holds:
 6. Fill the card's variables (`{SUBJECT}`, `{HEADLINE_TEXT}`, etc.) with provided values.
 7. Select the prompt tier (SHORT/MEDIUM/LONG) based on endpoint character limit.
 8. Build negative-prompt set per the model's requirements.
-9. **Execute via Kie.ai** using the JSON template from MODEL-SPECS (via Generation Operator).
+9. **Execute via Kie.ai through the pipeline:** the Prompt Author writes the prompt, the Prompt QC Specialist grades it, the Render Dispatcher releases it, and the Generation Operator submits through Skill 74 (`validate`, `preflight` at price x 1.30, `prompt-budget`, `submit --mode active`) using the live schema; the Dispatcher polls and runs postflight. Use the MODEL-SPECS JSON template only as a shape reference.
 10. Log the generation: model, seed, style_ref, prompt_tier, endpoint used.
 11. Hand off to CDO for approval or to Fidelity Tester if off-style.
 
@@ -78,7 +78,7 @@ This folder holds:
    - Combine with Foundation Block (deck cohesion).
    - Rotate flex variables across slides (same family should differ).
 6. If the client appears in any slide → combine the family prompt with Identity Lock Block (PHOTO-SHOOT-SOP Mode E).
-7. Execute all slides via Kie.ai / Generation Operator.
+7. Execute all slides via the pipeline in job 2 step 9 (Dispatcher release to the Generation Operator, Skill 74 transport).
 8. **Hand to CDO for Slide Manifest approval** (≥10-slide decks require producer gate).
 9. Hand off for cohesion check and final delivery.
 
@@ -91,10 +91,10 @@ This folder holds:
 **Trigger:** "Do a photo shoot of [Client Name] in style SI-001"
 
 **Steps:**
-1. **Consent gate (MANDATORY, CODED — run FIRST):** per `_system/PHOTO-SHOOT-SOP.md` § 1, run
-   `python3 scripts/diu_validator.py consent-check --identity-file personal-photo-shoot/{client-slug}/IDENTITY.md`.
+1. **Consent gate (MANDATORY, CODED — run FIRST):** per `_system/PHOTO-SHOOT-SOP.md` § 1 and SOP-DIU-608, run
+   `python3 scripts/diu_validator.py consent-check --consent-file personal-photo-shoot/{client-slug}/CONSENT.md`.
    A non-zero exit (4 = `AF-DIU-CONSENT`) — unconfirmed consent, a minor, or an unprotected biometric store,
-   including a missing IDENTITY file — means STOP: do NOT generate.
+   including a missing CONSENT file — means STOP: do NOT generate.
    - If the person is the client themself → documented permission confirmed.
    - If the person is someone else → requires client's documented permission + routed through producer (CDO).
    - **Minors:** HARD NO without explicit owner + legal sign-off (the gate fails closed on any non-adult).
@@ -103,7 +103,7 @@ This folder holds:
 4. **Identity Lock Block (mandatory in every prompt)** — preserve skin tone, facial structure, age, features exactly (see § 4).
 5. Pick the shoot mode (A: location, B: wardrobe, C: action, D: editorial, E: slide integration, F: stylized, G: retouch).
 6. If style-driven (e.g., "in style SI-001") → combine Identity Lock Block + style card prompt + `{SUBJECT}` = "this exact person."
-7. Execute via Seedream 4.5 (preferred for identity work) or Nano Banana 2.
+7. Execute via Seedream 4.5 (preferred for identity work) or Nano Banana 2, through the same pipeline (Prompt Author, Prompt QC, Dispatcher release, Operator submit via Skill 74), after the Photo Shoot Director's consent stamp and the Likeness Rights Officer's countersign.
 8. **Retouch protocol (if needed):** use Seedream 4.5 Edit, one change per pass, preserve-first phrasing (§ 6).
 9. Log the shoot, reference photos used, retouch history, consent date in the identity profile.
 10. **Hand to CDO** for approval and likeness verification. Any concern → CDO + Director of Legal simultaneously.

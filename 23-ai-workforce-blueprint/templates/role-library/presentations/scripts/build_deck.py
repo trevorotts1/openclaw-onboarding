@@ -60,15 +60,16 @@ WHAT IT DOES (zero AI judgement at runtime):
     1. Reads a slides.json (see slides.schema.json) and an output .pptx path.
     2. For EACH slide, LOADS the per-slide RICH prompt VERBATIM from
          working/prompts/slide-NN.txt  (or the SOP-named  slide-NN-prompt.txt).
-       This is the Slide Image Creator's hand-authored output — a 9,000–14,000-char
-       (HARD floor 9,000; HARD ceiling 18,000) prompt that already carries the
-       typography (per-line weight + pt size),
+       This is the Slide Image Creator's hand-authored output — a prompt of 95 to 100
+       percent of the model's maxLength (KIE prompt rule 12; HARD floor 80 percent, HARD
+       ceiling 100 percent, limit from Skill 74 prompt-budget via the shared enforcer)
+       that already carries the typography (per-line weight + pt size),
        placement, usage, the logo(s), the scene, the verbatim copy, the negative
        block, and everything else that appears on the slide. build_deck.py renders
        THAT prompt verbatim — it does NOT compose its own thin prompt from
        scene+copy. A whole slide is rendered in ONE gpt-image-2.5 generation.
-       If a slide has NO rich prompt file, or the prompt is < PROMPT_CHAR_FLOOR
-       (9,000) chars, or it fails the QUALITY floor (AF-P13 eight-class negative
+       If a slide has NO rich prompt file, or the prompt is below the rule 12 floor
+       (80 percent of the model maxLength), or it fails the QUALITY floor (AF-P13 eight-class negative
        block / AF-P14 spelling-lock / AF-P-DENSITY / AF-P-VERBATIM), build_deck.py
        FAILS LOUD — it NEVER silently falls back to a thin composed prompt. The
        prompt-side QC gates run on every rich prompt, all FAIL-LOUD (no silent render):
@@ -77,24 +78,35 @@ WHAT IT DOES (zero AI judgement at runtime):
              landmine). Representation comes from the slide spec / casting ledger
              (the client's captured audience), never a baked-in default split
              (SOP-CAST-01, AF-R3).
-         (b) CHAR-COUNT gate — the rich prompt length must be within
-             [PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING] = [9000, 18000]; the floor is
-             HARD (any prompt under the 9,000-char target-band low end is not run, not
-             rendered, not updated — AF-P1/AF-PROMPT-FLOOR) and the 18,000 ceiling is the universal GPT-Image-2.5
-             safety boundary (AF-P2).
+         (b) CHAR-COUNT gate — KIE prompt rule 12 (owner order 2026-10-05), enforced
+             through the shared enforcer shared-utils/kie_prompt_enforcer.py (Skill 74
+             prompt-budget --check; this file keeps no floor or ceiling of its own): the
+             rich prompt is 95 to 100 percent of the model maxLength, the floor is HARD
+             at 80 percent (a prompt under it is not run, not rendered, not updated,
+             AF-P1/AF-PROMPT-FLOOR, and the message names the exact characters to ADD)
+             and the ceiling is HARD at 100 percent (AF-P2, the message names the exact
+             characters to CUT). The mandatory English pin (appended at submit when
+             absent) counts toward the ceiling.
     3. Calls KIE.ai (gpt-image-2-5-sunburst-text-to-image, or gpt-image-2-5-sunburst-image-to-image when a
        logo is supplied via input_urls so the WHOLE slide + logo render in ONE
        generation) per the ONLY-allowed recipe:
          POST https://api.kie.ai/api/v1/jobs/createTask  -> data.taskId
          GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>  -> data.state
          on success: parse data.resultJson (JSON string) -> resultUrls[0]
-       Poll every ~8s up to ~7 minutes. Heavy gpt-image-2.5 renders (split scenes,
-       multiple photoreal zones) routinely run past 3 minutes; a slide that is still
-       actively 'generating' is given the full ceiling (plus a bounded grace window)
-       before it is declared a timeout. On HTTP 429, sleep 20s and retry.
-    4. Downloads resultUrls[0] UNAUTHENTICATED to <renders_dir>/slide-NN.png.
+       Single-slide path (poll_task): poll on an exponential ladder, 10s for the first
+       2 minutes, 20s for the next 3 minutes, then 40s (BUILD_DECK_POLL_* env), with an
+       absolute hard cap of 900s (BUILD_DECK_POLL_MAX_SECONDS, 15 minutes) and no grace
+       window: a task still non-terminal at the cap raises RenderPollTimeout, a terminal
+       FAIL. Batch path (render_slides_batch): submit every slide 0.6s apart, then poll all
+       task ids together every 10s up to the same 900s cap. On HTTP 429 at submit, sleep
+       20s and retry, at most 15 consecutive times (KIE_SUBMIT_MAX_429), then fail the slide.
+    4. Downloads resultUrls[0] with an AUTHENTICATED GET (Authorization: Bearer <key> plus
+       a browser User-Agent; an unauthenticated GET returns 403) to <renders_dir>/slide-NN.png.
     5. VERIFIES each PNG: real PNG magic bytes AND non-zero size.
-    6. Retries a failing slide up to 3 times (re-submit from scratch).
+    6. Retries a failing slide by re-submitting the IDENTICAL request, up to
+       SLIDE_MAX_ATTEMPTS times (default 6; BUILD_DECK_SLIDE_MAX_ATTEMPTS, clamped to 1-10)
+       with exponential backoff (base 4s, doubling, capped at 90s). AuthError (401/403) and
+       RenderPollTimeout are never retried.
     7. Assembles ALL slide PNGs into a 16:9 .pptx via python-pptx — ONE full-bleed
        picture per slide, NO text boxes (text is baked into the KIE image, matching the
        designed architecture).
@@ -150,8 +162,8 @@ PROCESS PREFLIGHT (un-bypassable by default):
 
     The preflight enforces EVERY SOP artifact: intake, research brief, converting
     arc, slides_copy, design/typography brief, copy QC (pass), anti-compression
-    coverage, AND a >=9,000-char RICH prompt (clearing the AF-P13/AF-P14/density/
-    verbatim quality floor) for EVERY slide in working/prompts/
+    coverage, AND a RICH prompt inside the rule 12 length band (clearing the
+    AF-P13/AF-P14/density/verbatim quality floor) for EVERY slide in working/prompts/
     (the Slide Image Creator's output). Any missing/short/thin/deviation → refuse to
     render, exit 3, loud. There is no path past the gate with a thin or absent
     per-slide prompt.
@@ -261,6 +273,28 @@ except Exception:  # noqa: BLE001 — fail-soft: legacy box without governor.py
 
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, quote
+
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it.
+    Fail closed: without the shared enforcer there is no prompt length gate, so the renderer cannot run."""
+    here = Path(__file__).resolve()
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in here.parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path.home() / "openclaw-onboarding" / "shared-utils",
+        Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found: the KIE prompt length gate (rule 12) is "
+                      "unavailable. Install or update the onboarding skills (update-skills.sh).")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 # FIX 20 citation-validation gate (lazy import: only needed when a run dir
 # actually carries the FIX 19 research artifacts; a bare/legacy run dir must
@@ -478,41 +512,67 @@ ENGLISH_PIN = (
 )
 
 # ---------------------------------------------------------------------------
-# PROMPT CHAR-COUNT GATE (the prompt-side QC gate, fail-loud)
+# PROMPT CHAR-COUNT GATE (the prompt-side QC gate, fail-loud) = KIE prompt rule 12
 # ---------------------------------------------------------------------------
-# Two facts from the standards (qc-specialist-presentations.md AF-P1/AF-P2,
+# Owner order 2026-10-05 (07-kie-setup/references/kie-common-rules.md rule 12): a descriptive
+# prompt is 95 to 100 percent of the model's maxLength, hard floor 80 percent (reject below),
+# hard ceiling 100 percent (reject above). The numbers are NOT kept in this file: they come
+# from the shared enforcer shared-utils/kie_prompt_enforcer.py (KPE), which wraps Skill 74
+# `kie_live_adapter.py prompt-budget --check` (live schema, registry fallback). The retired
+# 9,000 / 18,000 house band and its constants (PROMPT_CHAR_FLOOR / PROMPT_CHAR_TARGET_HIGH /
+# PROMPT_CHAR_CEILING) are gone; GPT Image 2.5 (maxLength 20,000) now means floor 16,000, target
+# 19,000 to 20,000. Facts the gate still rests on (qc-specialist-presentations.md AF-P1/AF-P2,
 # slide-image-creator-sops.md SOP 9.1 step 3, MODEL-SPECS.md):
-#   * GPT-Image-2.5 hard ceiling on input.prompt is 20,000 characters on both
-#     endpoints. The HARD MAXIMUM is 18,000 — a 2,000-char safety margin below
-#     that ceiling so a prompt is never rejected or truncated by the platform.
-#     This ceiling is UNIVERSAL: it applies to every prompt path. A prompt over
-#     it is an AF-P2 auto-fail.
-#   * The FLOOR is 9,000 chars and it is HARD (AF-P1). build_deck.py does NOT
-#     compose its own thin prompt any more — it renders the Slide Image Creator's
-#     hand-authored RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt).
-#     That prompt carries the full 15-element spec (typography size + per-line
-#     weight, placement, usage, the logo(s), the scene, verbatim copy, the negative
-#     block, everything on the slide); the SOP targets 9,000–14,000 chars. A prompt
-#     under 9,000 chars is, by definition, not a real slide prompt — it is a thin
-#     stub or a truncated file — so it is NOT run, NOT rendered, and NOT updated:
-#     the slide FAILS LOUD (AF-P1). 9,000 is the reconciled HARD floor: it is the LOW
-#     end of the SOP's own authoring target band (9,000–14,000 per slide-image-creator.md),
-#     raised from the retired 5,000 floor because the deep diagnosis proved a 5,000-char
-#     prompt — mostly boilerplate negative block + archetype line — is fully "compliant"
-#     yet too thin to carry the 15-element spec, and a competing role taught "5,000 = done."
-#     The HARD floor now IS the target-band low end, so a floor-grazing prompt physically
-#     cannot omit the typography/face/composition/lighting/palette detail. On top of the
-#     raw length floor, the rich-prompt gate ALSO enforces a density/specificity check
+#   * build_deck.py does NOT compose its own thin prompt: it renders the Slide Image Creator's
+#     hand-authored RICH per-slide prompt VERBATIM (working/prompts/slide-NN.txt). That prompt
+#     carries the full 15-element spec (typography size + per-line weight, placement, usage,
+#     the logo(s), the scene, verbatim copy, the negative block, everything on the slide). A
+#     prompt under the rule 12 floor is not a real slide prompt, so it is NOT run, NOT rendered
+#     and NOT updated: the slide FAILS LOUD (AF-P1), and the message names the characters to ADD.
+#     Over the ceiling it is AF-P2 and the message names the characters to CUT.
+#   * The mandatory English pin is appended at submit when the author omitted it, so the gate
+#     measures the authored prompt against the floor and the prompt PLUS the pin against the
+#     ceiling (see _length_problems).
+#   * On top of the length band the rich-prompt gate ALSO enforces a density/specificity check
 #     (hex palette + a pt/px type size + a composition/zone token + a distinct-word floor)
 #     and a VERBATIM-WORDS-BAKED check (the slide's exact copy must appear in the prompt
 #     body), so length alone can never satisfy the gate. The Prompt-Authoring phase
-#     (P4-PROMPT) writes to this band and the Prompt-QC phase (P4-PROMPT-QC) verifies it
-#     independently — and the governed Prompt-QC gate now RE-MEASURES every on-disk prompt
-#     (it is no longer a JSON rubber stamp).
-PROMPT_CHAR_FLOOR = 9000      # HARD floor (AF-P1/AF-PROMPT-FLOOR): the 9,000-char target-band LOW end; any rich prompt under it is NOT run/rendered/updated — FAIL LOUD
-PROMPT_CHAR_TARGET_HIGH = 18000  # v15.0.0: SOP authoring-target HIGH end raised 14000->18000 so the authoring band is 9,000-18,000 (matches PROMPT_CHAR_CEILING; the HARD ceiling stays PROMPT_CHAR_CEILING). Final char standard: MIN 9,000 / MAX 18,000.
-PROMPT_CHAR_CEILING = 18000   # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
-PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a >=9,000-char prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
+#     (P4-PROMPT) writes to the band and the Prompt-QC phase (P4-PROMPT-QC) verifies it
+#     independently, and the governed Prompt-QC gate RE-MEASURES every on-disk prompt.
+PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: a long prompt that repeats one paragraph to pad length has few distinct words; a genuinely rich prompt has 400+. Floor catches paste-repetition padding.
+
+
+def length_budget(model: Optional[str] = None) -> dict:
+    """The rule 12 numbers for sizing a rich prompt: {max, floor, target_min, ceiling, pin}. `ceiling` is the longest
+    AUTHORED text that still fits once the mandatory English pin (`pin` chars, appended at submit when absent) is
+    added. Fails closed (RuntimeError) when the model limit is unknown. Mirrors prompt_gate.length_budget."""
+    b = KPE.budget_for(model or MODEL_T2I)
+    if b is None:
+        raise RuntimeError("the prompt length limit is unavailable (Skill 74 prompt-budget gave no max for "
+                           f"{model or MODEL_T2I}); refusing to size a prompt blind")
+    pin = len("\n\n" + ENGLISH_PIN)
+    return {"max": b["max"], "floor": b["floor"], "target_min": b["target_min"], "ceiling": b["max"] - pin, "pin": pin}
+
+
+def _length_problems(text: str, model: Optional[str] = None) -> list:
+    """The rule 12 LENGTH gate for one rich prompt, through the shared enforcer. Returns [] when the
+    prompt is inside the band, else [(af_code, message)]: AF-P1 below the 80 percent floor (message
+    names the exact characters to ADD), AF-P2 above the model maxLength (message names the exact
+    characters to CUT). The floor is measured on the authored prompt; the ceiling on the prompt plus the
+    mandatory English pin that submit appends when the author omitted it. `model` defaults to the
+    catalog text-to-image id (the image-to-image id of the same generation has the same maxLength)."""
+    stripped = text.strip()
+    if not stripped:
+        return [("AF-P1", "prompt is empty / whitespace-only; it carries none of the mandatory per-slide spec")]
+    v = KPE.check(model or MODEL_T2I, stripped)
+    if not v["ok"]:
+        return [("AF-P2" if v["status"] == "ABOVE_MAX" else "AF-P1", v["message"])]
+    pin = 0 if _norm_ws(ENGLISH_PIN) in _norm_ws(stripped) else len("\n\n" + ENGLISH_PIN)
+    if v["max"] and v["chars"] + pin > v["max"]:
+        over = v["chars"] + pin - v["max"]
+        return [("AF-P2", f"prompt is {v['chars']} chars; the mandatory English pin appended at submit adds {pin}, "
+                          f"so the payload is {v['chars'] + pin} against a max of {v['max']}; CUT exactly {over} chars")]
+    return []
 
 # ---------------------------------------------------------------------------
 # AF-COPY-BAND — per-slide COPY character-count FLOOR and CEILING (spec item 7 /
@@ -1457,9 +1517,10 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
 
     FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
       * no rich prompt file exists for this slide                       → AF-P1
-      * the rich prompt is < PROMPT_CHAR_FLOOR (9,000) chars            → AF-P1
-        (not run, not rendered, not updated)
-      * the rich prompt is > PROMPT_CHAR_CEILING (18,000) chars         → AF-P2
+      * the rich prompt is under the rule 12 floor (80 percent of the model
+        maxLength)                                                      → AF-P1
+        (not run, not rendered, not updated; the message names the chars to ADD)
+      * the rich prompt (plus the English pin) is over the model maxLength → AF-P2
       * a forbidden demographic-default landmine is present             → AF-R3
       * the dead endpoint fragment is present
     """
@@ -1487,35 +1548,15 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
             f"fragment '{DEAD_ENDPOINT_FRAGMENT}'. Refusing."
         )
 
-    # PROMPT CHAR-COUNT GATE (fail-loud). The floor is HARD (9,000): a prompt under
-    # it is a thin stub / truncated file, NOT a real slide prompt — never run it.
-    # H1: measure the STRIPPED length so a file padded with whitespace (or one that is
-    # whitespace-only) can never satisfy the floor. len(prompt) over raw bytes would
-    # let "   \n   ... 5000 spaces ..." pass as a "5,000-char prompt".
-    if not prompt.strip():
+    # PROMPT CHAR-COUNT GATE (fail-loud) = KIE rule 12 through the shared enforcer. The floor is
+    # HARD (80 percent of the model maxLength): a prompt under it is a thin stub / truncated file,
+    # NOT a real slide prompt, never run it. H1: the enforcer measures the STRIPPED length so a file
+    # padded with whitespace (or one that is whitespace-only) can never satisfy the floor.
+    for code, msg in _length_problems(prompt):
         raise ValueError(
-            f"slide {ordinal}: rich prompt {prompt_path} is empty / whitespace-only. "
-            f"A blank prompt carries none of the mandatory per-slide spec. It is NOT "
-            f"run, NOT rendered, NOT updated. Re-author the rich prompt. Refusing "
-            f"(prompt char-count gate, AF-P1 floor)."
-        )
-    length = len(prompt.strip())
-    if length < PROMPT_CHAR_FLOOR:
-        raise ValueError(
-            f"slide {ordinal}: rich prompt {prompt_path} is {length} chars, UNDER the "
-            f"HARD floor of {PROMPT_CHAR_FLOOR}. A prompt this short cannot carry the "
-            f"mandatory per-slide spec (typography size/placement/usage, logo, scene, "
-            f"verbatim copy, negative block). It is NOT run, NOT rendered, and NOT "
-            f"updated. Re-author the rich prompt to >= {PROMPT_CHAR_FLOOR} chars. "
-            f"Refusing (prompt char-count gate, AF-P1 floor)."
-        )
-    if length > PROMPT_CHAR_CEILING:
-        raise ValueError(
-            f"slide {ordinal}: rich prompt {prompt_path} is {length} chars, over the "
-            f"hard ceiling of {PROMPT_CHAR_CEILING} (2,000 under the 20,000 GPT-Image-2.5 API "
-            f"ceiling, MODEL-SPECS). The prompt is too long; tighten redundant phrasing "
-            f"(never delete the negative block or any spelling-lock). Refusing "
-            f"(prompt char-count gate, AF-P2 ceiling)."
+            f"slide {ordinal}: rich prompt {prompt_path}: {msg}. It is NOT run, NOT rendered, and NOT "
+            f"updated; re-author the rich prompt into the rule 12 band (prompt char-count gate, {code}). "
+            f"Never delete the negative block or any spelling-lock to make room. Refusing."
         )
     # STRUCTURAL-BLOCK GATE (fail-loud, AF-P1). Folded in from the retired
     # render_deck.py: a long file is not enough — the rich prompt MUST carry the
@@ -1781,7 +1822,7 @@ def _ensure_english_pin(prompt: str) -> str:
     every createTask the canonical renderer submits pins the copy to correctly-spelled
     Latin-alphabet text. Prefers the shared prompt_gate helper (single source of truth);
     falls back to a local append if the module is unavailable, so the pin is ALWAYS on the
-    payload. Never appends past the 20,000-char GPT-Image-2.5 API ceiling."""
+    payload. Never appends past the model maxLength (KIE rule 12 ceiling, from the shared enforcer)."""
     pg = _import_prompt_gate()
     if pg is not None:
         try:
@@ -1792,7 +1833,7 @@ def _ensure_english_pin(prompt: str) -> str:
     if norm(ENGLISH_PIN) in norm(prompt):
         return prompt
     candidate = prompt.rstrip() + "\n\n" + ENGLISH_PIN
-    return candidate if len(candidate) <= 20000 else prompt
+    return candidate if KPE.check(MODEL_T2I, candidate)["status"] != "ABOVE_MAX" else prompt
 
 
 def _record_ocr_readback(out_path: Path, readback: dict) -> None:
@@ -3827,9 +3868,9 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
     return ("AF-PROMPT-QC: the prompt-QC report passed its shape check but the on-disk "
             "per-slide prompts do NOT clear the rich-prompt floor/quality gate — a real "
             "Prompt-QC pass RE-MEASURES the actual prompt files, it is not a self-typed "
-            "score over thin prompts. Re-author the prompts to the 9,000–14,000 standard "
-            "(>= 9,000 chars, 8-class negative block, per-string spelling-lock, the slide's "
-            "verbatim copy baked, real density) and re-run the Prompt QC Specialist. "
+            "score over thin prompts. Re-author the prompts into the rule 12 length band "
+            "(80 to 100 percent of the model maxLength, 8-class negative block, per-string spelling-lock, "
+            "the slide's verbatim copy baked, real density) and re-run the Prompt QC Specialist. "
             "Offenders: " + offenders + more + ".")
 
 
@@ -5343,14 +5384,9 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
         # prompt file can never satisfy the floor.
         raw = p.read_text(errors="replace")
         stripped = raw.strip()
-        length = len(stripped)
-        if length < PROMPT_CHAR_FLOOR:
-            problems.append((ordinal, f"rich prompt {p.name} is {length} non-whitespace "
-                            f"chars, under the {PROMPT_CHAR_FLOOR}-char HARD floor"))
-            continue
-        if length > PROMPT_CHAR_CEILING:
-            problems.append((ordinal, f"rich prompt {p.name} is {length} chars, OVER the "
-                            f"{PROMPT_CHAR_CEILING}-char HARD ceiling (AF-P2)"))
+        length_probs = _length_problems(stripped)
+        if length_probs:
+            problems.append((ordinal, f"rich prompt {p.name}: {length_probs[0][1]} ({length_probs[0][0]})"))
             continue
         missing_blocks = _missing_structural_blocks(stripped.lower())
         if missing_blocks:
@@ -5367,12 +5403,12 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
 def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """RICH-PROMPT-REQUIRED gate (AF-P1). EVERY slide the system is about to render
     MUST have a hand-authored RICH per-slide prompt in working/prompts/ that is
-    >= PROMPT_CHAR_FLOOR (9,000) chars AND clears the quality floor. A missing prompt
+    inside the rule 12 length band (80 to 100 percent of the model maxLength) AND clears the quality floor. A missing prompt
     file, one under the floor, or one that is thin/padded/missing the 8-class negative
     block / spelling-lock / verbatim copy is an AF-P1 auto-fail: build_deck.py renders
     the rich prompt VERBATIM and NEVER composes a thin fallback, so a thin/absent prompt
     means the slide cannot be rendered at all. Returns "" on pass, or a fatal AF-P1
-    message (run_preflight maps a returned reason to exit 3). The 18,000 ceiling (AF-P2),
+    message (run_preflight maps a returned reason to exit 3). The rule 12 ceiling (AF-P2),
     the required structural blocks, AND the quality teeth (AF-P13 / AF-P14 / AF-P-DENSITY
     / AF-P-VERBATIM) are ALL enforced here at preflight — not only per-slide at render
     time in load_rich_prompt — so a too-short, structurally-empty, thin, or
@@ -5391,8 +5427,8 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         head = (f"AF-P1: rich-prompt-required gate FAILED for {len(problems)} of {n} "
                 f"slide-checks. build_deck.py renders the Slide Image Creator's rich prompt "
                 f"VERBATIM (working/prompts/slide-NN.txt or slide-NN-prompt.txt) and "
-                f"never composes a thin fallback; each must be >= {PROMPT_CHAR_FLOOR} "
-                f"chars AND clear the quality floor. Offenders:")
+                f"never composes a thin fallback; each must be inside the rule 12 length band "
+                f"(80 to 100 percent of the model maxLength) AND clear the quality floor. Offenders:")
         return head + " | " + offenders
     return ""
 
@@ -9024,7 +9060,7 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
     the prompt-QC agent's self-typed pass.
 
     A slide passes ONLY when BOTH floors are clean (§1.1a):
-      LENGTH gate  — C1 >= 9,000 chars (AF-P1, fatal); C2 <= 18,000 (AF-P2).
+      LENGTH gate  — C1 >= the rule 12 floor (AF-P1, fatal); C2 <= the model maxLength (AF-P2).
       QUALITY gate — C4 structural blocks; C5 perceptual INTELLIGENCE engines (Facial/
         Lighting/World/Hair + per-slide harmony + image-side Hook via iec.check_prompts);
         C6 8-class negative block (AF-P13); C7 per-string spelling-lock (AF-P14); C8 verbatim
@@ -9081,7 +9117,7 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
         if p is None:
             deficiencies.append(_pdef(
                 "AF-P1", "fatal", "no prompt file",
-                "working/prompts/slide-NN.txt (9,000-18,000 chars)", "Rich-Prompt",
+                "working/prompts/slide-NN.txt (rule 12 length band)", "Rich-Prompt",
                 "Author the rich per-slide prompt; build_deck renders it VERBATIM and never "
                 "composes a thin fallback."))
             slides[ordinal] = {"char_count": 0, "excellence": 0.0, "deficiencies": deficiencies}
@@ -9095,15 +9131,15 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
         lc = stripped.lower()
 
         # --- LENGTH gate (C1/C2) ---
-        if length < PROMPT_CHAR_FLOOR:
-            deficiencies.append(_pdef(
-                "AF-P1", "fatal", f"{length} chars", f">= {PROMPT_CHAR_FLOOR}", "Length",
-                f"Re-author to {PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} chars of real "
-                f"specificity; do NOT pad."))
-        elif length > PROMPT_CHAR_CEILING:
-            deficiencies.append(_pdef(
-                "AF-P2", "reauthor", f"{length} chars", f"<= {PROMPT_CHAR_CEILING}", "Length",
-                f"Trim to <= {PROMPT_CHAR_CEILING} chars without dropping any engine token."))
+        for _lcode, _lmsg in _length_problems(stripped):
+            if _lcode == "AF-P1":
+                deficiencies.append(_pdef(
+                    "AF-P1", "fatal", f"{length} chars", "inside the rule 12 band", "Length",
+                    f"{_lmsg}. Re-author with real specificity; do NOT pad."))
+            else:
+                deficiencies.append(_pdef(
+                    "AF-P2", "reauthor", f"{length} chars", "inside the rule 12 band", "Length",
+                    f"{_lmsg}. Trim without dropping any engine token."))
 
         # --- QUALITY gate (C4 structural blocks) ---
         # A block counts as present if its canonical label OR any accepted alias appears
@@ -9292,6 +9328,175 @@ PEAK_TAGS = ("peak", "apex", "wow", "salience_apex", "salience-apex",
              "promise-apex", "promise_apex")
 ENDING_TAGS = ("recap", "close", "closing", "cta", "call to action", "call-to-action",
                "final", "ending", "send-off", "sendoff")
+
+# ---------------------------------------------------------------------------
+# AF-PEAK-END's artifact contract (PD-TEST-082, 2026-09-15).
+#
+# PEAK_TAGS / ENDING_TAGS ABOVE ARE DELIBERATELY UNCHANGED. The doctrine
+# decision was that the gate must accept EITHER form of evidence, so the fix is
+# that the gate stops reading ONLY free-text tokens and starts ALSO reading the
+# arc's own first-class fields -- exactly how PD-TEST-067 was resolved in this
+# tree ("the consumer widening to the artifact actually produced").
+#
+# FORM 1 -- free text: a PEAK/ENDING token anywhere in the slots' arc labels
+# (unchanged since the gate was written).
+# FORM 2 -- explicit, machine-readable declaration: the arc's own top-level
+# peak/ending fields and its per-slide arc_marks.
+#
+# Neither form is a weakening: FORM 2 still demands a DELIBERATE POSITIVE
+# declaration, and ARC_FLAT_ENDING_KEY overrides every form of ending evidence.
+# ---------------------------------------------------------------------------
+
+#: Container keys holding the arc's slide list — an ALIAS of
+#: ``presentation_job/arc_slides.SLIDE_LIST_KEYS``, the ONE reader for the
+#: deck's slide-array shape that PD-TEST-067 established. It is the same tuple
+#: OBJECT (asserted by identity in tests/test_pd082_peak_end_contract.py), so
+#: the two names cannot drift apart. ``slide_allocations`` is the spelling the
+#: live P3-ARC agent actually wrote on run pres-operator-1d269693, and looking
+#: for only the first three keys is precisely why this gate saw zero slots
+#: (PD-TEST-082 layer 1).
+ARC_SLOT_LIST_KEYS = _arc_slides.SLIDE_LIST_KEYS
+
+#: The shared container reader — likewise an alias of the same FUNCTION object,
+#: so there is exactly ONE implementation of "where is the deck's slide array?"
+#: in this tree (the invariant PD-TEST-067 established, which PD-TEST-082
+#: honours rather than re-implementing).
+ARC_SLOTS_FROM_OBJ = _arc_slides.slots_from_obj
+
+#: Per-slot free-text keys FORM 1 scans. Unchanged by PD-TEST-082.
+ARC_SLOT_TOKEN_KEYS = ("arc_section", "section", "beat", "tag", "type", "role")
+
+#: Per-slot explicit marks (FORM 2), the live shape:
+#: ``arc_marks = {"peak": bool, "decision_climax": bool, "ending": bool}``.
+ARC_MARKS_KEY = "arc_marks"
+ARC_MARK_PEAK_KEY = "peak"
+ARC_MARK_ENDING_KEY = "ending"
+
+#: Top-level explicit declarations (FORM 2), in precedence order. The live arc
+#: carries BOTH the object (slide_number + arc_section + move_tag + summary) and
+#: the bare ordinal; either alone is a positive declaration.
+ARC_PEAK_DECL_KEYS = ("peak_apex_slide", "peak_apex")
+ARC_ENDING_DECL_KEYS = ("ending_slide", "ending_beat")
+
+#: The producer's own flat-ending flag. Truthy => the ending is flat, and a
+#: flat ending is remembered as flat (P49), so it OVERRIDES every other form of
+#: ending evidence -- see _arc_peak_end_evidence.
+ARC_FLAT_ENDING_KEY = "flat_ending"
+
+
+def _arc_positive_declaration(value) -> bool:
+    """True when an explicit peak/ending field is a POSITIVE declaration.
+
+    "Positive" is the doctrine's own word: a present-but-empty placeholder must
+    not satisfy a gate that exists to force a deliberate choice. So JSON null,
+    ``false``, an empty/blank string, an empty object and a zero/negative
+    ordinal are all NOT declarations; a dict with real content, a bare non-zero
+    ordinal, a non-empty string, ``true`` or a non-empty list all are.
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip()) and value.strip().lower() not in (
+            "none", "null", "false")
+    if isinstance(value, dict):
+        return any(bool(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0  # slide ordinals are 1-based; 0 is a placeholder
+    return True
+
+
+def _arc_peak_end_evidence(obj) -> dict:
+    """AF-PEAK-END's evidence from ONE already-parsed arc object.
+
+    THE one place the peak-end evidence is derived, so the preflight gate
+    (_chk_peak_end), the shadow-compared slice verifier (slice1:peak_end) and
+    any future reader agree BY CONSTRUCTION rather than by three copies of the
+    same scan -- the failure mode PD-TEST-067 documented for this exact
+    artifact.
+
+    Returns the two verdicts plus the raw evidence behind each:
+
+      present          an arc object was supplied at all
+      blob             the FORM 1 token blob the verdicts were derived from
+      token_peak       FORM 1: a PEAK_TAGS token in the slots' free text
+      token_ending     FORM 1: an ENDING_TAGS token in the slots' free text
+      marked_peak      FORM 2: some slide's arc_marks.peak is true
+      marked_ending    FORM 2: some slide's arc_marks.ending is true
+      declared_peak    FORM 2: a positive peak_apex_slide / peak_apex
+      declared_ending  FORM 2: a positive ending_slide / ending_beat
+      flat_ending      the producer's own flat_ending flag is truthy
+      peak             FINAL: token OR marked OR declared
+      ending           FINAL: (token OR marked OR declared) AND NOT flat_ending
+
+    The container is read by the SHARED reader
+    (``arc_slides.slots_from_obj``, aliased as ``ARC_SLOTS_FROM_OBJ``), never by
+    a private copy.
+    """
+    slots = ARC_SLOTS_FROM_OBJ(obj)
+    top = obj if isinstance(obj, dict) else {}
+
+    tokens = []
+    marked_peak = False
+    marked_ending = False
+    for slot in slots if isinstance(slots, list) else []:
+        if isinstance(slot, dict):
+            for key in ARC_SLOT_TOKEN_KEYS:
+                value = slot.get(key)
+                if isinstance(value, str):
+                    tokens.append(value.lower())
+            tags = slot.get("tags")
+            if isinstance(tags, list):
+                tokens += [str(t).lower() for t in tags]
+            # arc_slides.slots_from_obj wraps a NON-dict entry as {"slot": entry}
+            # (it normalises every slot to a dict so ordinal consumers work).
+            # Re-reading that one key restores the historical bare-string entry
+            # (`["apex", "recap"]`) as a FORM 1 token source, so widening the
+            # reader does not silently DROP evidence the old scan accepted.
+            legacy = slot.get("slot")
+            if isinstance(legacy, str):
+                tokens.append(legacy.lower())
+            marks = slot.get(ARC_MARKS_KEY)
+            if isinstance(marks, dict):
+                # Strict ``is True``: the producer emits real JSON booleans
+                # (verified on the live artifact). A truthy stand-in is a
+                # producer defect and must fail loudly, not be papered over.
+                if marks.get(ARC_MARK_PEAK_KEY) is True:
+                    marked_peak = True
+                if marks.get(ARC_MARK_ENDING_KEY) is True:
+                    marked_ending = True
+    blob = " ".join(tokens)
+
+    token_peak = any(t in blob for t in PEAK_TAGS)
+    token_ending = any(t in blob for t in ENDING_TAGS)
+    declared_peak = any(_arc_positive_declaration(top.get(k))
+                        for k in ARC_PEAK_DECL_KEYS)
+    declared_ending = any(_arc_positive_declaration(top.get(k))
+                          for k in ARC_ENDING_DECL_KEYS)
+    flat_ending = bool(top.get(ARC_FLAT_ENDING_KEY))
+
+    ending_evidence = token_ending or marked_ending or declared_ending
+    return {
+        "present": True,
+        "blob": blob,
+        "token_peak": token_peak,
+        "token_ending": token_ending,
+        "marked_peak": marked_peak,
+        "marked_ending": marked_ending,
+        "declared_peak": declared_peak,
+        "declared_ending": declared_ending,
+        "flat_ending": flat_ending,
+        "peak": bool(token_peak or marked_peak or declared_peak),
+        # The doctrine's core, in one place: a flat ending is remembered as
+        # flat, so flat_ending defeats a token match AND an explicit
+        # ending_slide/ending_beat/arc_marks.ending alike.
+        "ending": bool(ending_evidence and not flat_ending),
+    }
+
+
 LADDER_BEAT_MARKERS = ("ladder", "anchor", "price", "offer", "value-stack",
                        "value_stack", "valuestack", "drop", "value_add", "value add")
 COST_OF_INACTION_MARKERS = ("cost of inaction", "cost_of_inaction", "cost-of-inaction",
@@ -9644,39 +9849,38 @@ def _chk_proclamation_hedge(run_dir: Path, slides_path: Optional[Path] = None) -
 def _chk_peak_end(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-PEAK-END (P49). The arc must declare a deliberate PEAK beat AND a deliberate
     ending beat (the peak-end rule — a flat ending is remembered as flat). Defers when
-    no arc / no doctrine."""
+    no arc / no doctrine.
+
+    PD-TEST-082: the arc may declare each beat EITHER as a free-text token
+    (FORM 1, unchanged) OR through its own first-class fields (FORM 2:
+    per-slide ``arc_marks`` and the top-level ``peak_apex*``/``ending_*``
+    declarations). Absence of BOTH forms still fails, and a truthy
+    ``flat_ending`` still fails the ending even when an ``ending_slide`` is
+    present — the doctrine is not softened, only the evidence widened to what
+    the producer actually emits. The evidence itself is derived in ONE place
+    (``_arc_peak_end_evidence``) so this gate and the shadow-compared
+    ``slice1:peak_end`` verifier cannot drift apart."""
     if not _doctrine_active(run_dir):
         return ""
-    blob = None
+    obj = None
+    found = False
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/arc_allocation.json"):
         p = run_dir / rel
         if p.exists():
             obj = _read_json(p)
-            if isinstance(obj, dict) and "__parse_error__" in obj:
-                return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
-                        "engineered PEAK + ending cannot be proven (P49).")
-            slots = _arc_slides.slots_from_obj(obj) or []  # PD-TEST-067
-            tokens = []
-            for s in slots if isinstance(slots, list) else []:
-                if isinstance(s, dict):
-                    for k in ("arc_section", "section", "beat", "tag", "type", "role"):
-                        v = s.get(k)
-                        if isinstance(v, str):
-                            tokens.append(v.lower())
-                    tags = s.get("tags")
-                    if isinstance(tags, list):
-                        tokens += [str(t).lower() for t in tags]
-                elif isinstance(s, str):
-                    tokens.append(s.lower())
-            blob = " ".join(tokens)
+            found = True
             break
-    if blob is None:
+    if not found:
         return ""  # no arc yet — _chk_arc owns absence.
+    if isinstance(obj, dict) and "__parse_error__" in obj:
+        return ("AF-PEAK-END: arc_allocation.json is not valid JSON, so the "
+                "engineered PEAK + ending cannot be proven (P49).")
+    evidence = _arc_peak_end_evidence(obj)
     missing = []
-    if not any(t in blob for t in PEAK_TAGS):
+    if not evidence["peak"]:
         missing.append("no PEAK/APEX/WOW beat")
-    if not any(t in blob for t in ENDING_TAGS):
+    if not evidence["ending"]:
         missing.append("no deliberate ending/recap/CTA beat")
     if missing:
         return ("AF-PEAK-END: the arc fails the peak-end rule — " + "; ".join(missing)
@@ -12871,7 +13075,18 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
               "slide ordinals (cover / data / people).", file=sys.stderr)
         return 2
 
-    slides = json.loads(Path(slides_path).read_text())
+    _deck = json.loads(Path(slides_path).read_text())
+    # SMOKE-1 F28 (2026-09-01): slides.json is the DECK dict {deck_title, ..., slides:[...]}
+    # but this line iterated the top-level dict, so by_ord was keyed by deck keys and every
+    # representative-slide lookup died "representative slide 1 is not in slides.json" (exit 2).
+    if isinstance(_deck, dict) and isinstance(_deck.get("slides"), list):
+        slides = _deck["slides"]
+    elif isinstance(_deck, list):
+        slides = _deck
+    else:
+        print("FATAL --sample: slides.json is neither a deck dict nor a slide list.",
+              file=sys.stderr)
+        return 2
     by_ord = {s["slide"]: s for s in slides if isinstance(s, dict) and "slide" in s}
     out_dir = run_dir / "working" / "style-preview"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -13278,8 +13493,15 @@ def main():
         print(f"FATAL: slides.json is not valid JSON: {exc}", file=sys.stderr)
         sys.exit(2)
 
+    # SMOKE-1 F29 (2026-09-01): slides.json is the DECK dict {deck_title, ..., slides:[...]}.
+    # Unwrap the slide list (same fix class as the --sample path at ~11761). Scene field:
+    # the rich prompt files carry scene content authoritatively (load_rich_prompt owns
+    # composition), so a slide without a literal "scene" key is tolerated as empty rather
+    # than failing the legacy schema check.
+    if isinstance(slides, dict) and isinstance(slides.get("slides"), list):
+        slides = slides["slides"]
     if not isinstance(slides, list) or not slides:
-        print("FATAL: slides.json must be a non-empty JSON array.", file=sys.stderr)
+        print("FATAL: slides.json must be a non-empty JSON array (or deck dict with a slides list).", file=sys.stderr)
         sys.exit(2)
 
     # Basic schema validation (deterministic, fail loud).
@@ -13288,7 +13510,7 @@ def main():
         if not isinstance(s, dict):
             print("FATAL: every slide must be an object.", file=sys.stderr)
             sys.exit(2)
-        for req in ("slide", "scene", "copy"):
+        for req in ("slide", "copy"):
             if req not in s:
                 print(f"FATAL: slide missing required field '{req}': {json.dumps(s)}", file=sys.stderr)
                 sys.exit(2)

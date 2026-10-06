@@ -1,21 +1,17 @@
 {
   "policy_id": "social-prompt-policy",
-  "policy_version": "1.0.0",
-  "effective_date": "2026-09-08",
-  "owner_requirement": "Every final social-planner image prompt for Kie GPT Image 2.5 and Agnes contains 9,000-19,000 meaningful stripped Unicode characters. This is a production house policy, not a claim that longer prompts automatically create better images.",
-  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.5 + Agnes adapters). Unrelated skills keep their own bands (Graphics GIP bands in 45-design-intelligence-library, Agnes general guidance). This file is the single source of truth for the scoped override.",
-  "house_band": {
-    "min_chars": 9000,
-    "max_chars": 19000,
-    "target_chars": 9000,
-    "hard_boundaries": {
-      "below_min_fails_at": 8999,
-      "min_passes_at": 9000,
-      "max_passes_at": 19000,
-      "above_max_fails_at": 19001
-    },
-    "distinct_from_vendor_caps": true,
-    "note": "8,999 and 19,001 fail production preflight; 9,000 and 19,000 pass length checks but still require semantic QC. The house range is deliberately narrower than any vendor cap so headroom always exists."
+  "policy_version": "1.1.0",
+  "effective_date": "2026-10-05",
+  "owner_requirement": "Every final social-planner image prompt for a Kie model is 95 to 100 percent of that model's maxLength, never below 80 percent (KIE prompt rule 12, owner order 2026-10-05). Models with no published limit (Agnes) have no floor. This is a production policy, not a claim that longer prompts automatically create better images.",
+  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.5 + Agnes adapters). Unrelated skills keep their own gates. This file is the single source of truth for the scoped override.",
+  "length_rule": {
+    "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
+    "enforcer": "shared-utils/kie_prompt_enforcer.py",
+    "limit_source": "74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --check (live schema, registry fallback)",
+    "floor_percent_of_max": 80,
+    "target_percent_of_max": "95 to 100",
+    "ceiling_percent_of_max": 100,
+    "note": "No fixed character numbers are kept here. The numbers are read from the model's live schema each time, so a new GPT Image generation or a KIE limit change is picked up automatically. A prompt below the floor or above the max is rejected before any paid call, and the message names the exact characters to add or cut. The writer rewrites up to 3 times, then escalates."
   },
   "count_rule": {
     "normalization": "NFC",
@@ -30,7 +26,7 @@
     "1. assemble every section (purpose/audience, brand/reference roles, subject/setting, composition, lighting/finish, exact text, preservation/exclusions, output/QC)",
     "2. append per-reference instructions (role-correct) and the merged negative block LAST",
     "3. THEN count and hash the final transmitted payload — never an intermediate draft",
-    "4. reject if outside the house band, padded, or contradictory — before any paid call",
+    "4. reject if outside the rule 12 band, padded, or contradictory, before any paid call",
     "5. recheck after every regeneration"
   ],
   "providers": {
@@ -38,9 +34,8 @@
       "provider_id": "kie",
       "model_id": "gpt-image-2-5-sunburst-text-to-image",
       "vendor_cap_chars": 20000,
-      "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08)",
-      "headroom_chars": 1000,
-      "uncertainty_note": "Check the selected endpoint independently for image-to-image and future GPT models; a verified provider cap below 9,000 requires a visible compatible-model choice, never truncation.",
+      "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08); recorded here only as the policy-owner fallback when the Skill 74 adapter is unreachable",
+      "uncertainty_note": "Check the selected endpoint independently for image-to-image and future GPT models; a verified provider cap that cannot hold a rule 12 prompt requires a visible compatible-model choice, never truncation.",
       "adapter_verified": true
     },
     "agnes-image-2.1-flash": {

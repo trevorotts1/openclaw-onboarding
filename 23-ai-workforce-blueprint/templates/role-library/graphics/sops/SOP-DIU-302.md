@@ -30,7 +30,7 @@ Routing decisions are made by reading MODEL-SPECS §2 **at runtime**. Do not cac
 
 1. **Read the assembly packet.** Confirm it contains: style card ID + version, all filled `{VARIABLE}` tokens, model preference or `auto-route` flag, aspect ratio, resolution, tier, and budget cap. If any field is missing, return to the requestor — do not proceed.
 
-2. **Resolve the endpoint.** Open MODEL-SPECS §2 routing table. Match the task category (text-heavy design, typography, ultra-wide banner, surgical edit, portrait, draft/variant, etc.) to the FIRST CHOICE column. Use the BACKUP column only if the primary is flagged `degraded` in current receipts or confirmed down.
+2. **Resolve the endpoint.** Open MODEL-SPECS §2 routing table. Match the task category (text-heavy design, typography, ultra-wide banner, surgical edit, portrait, draft/variant, etc.) to the FIRST CHOICE column. Use the BACKUP column only if the primary is flagged `degraded` in current receipts or confirmed down. A department pin or an explicit requester model wins over the table; when the table's choice is the GPT Image default, resolve the id with `kie_live_adapter.py latest-family --family gpt-image` (rule 13 of `07-kie-setup/references/kie-common-rules.md`) instead of typing it from memory, and record the resolved id.
 
 3. **Verify aspect ratio compatibility.** Cross-reference the requested aspect ratio against MODEL-SPECS §1 aspect-ratio table for the resolved endpoint. If the ratio is unsupported on the primary, check the backup endpoint. If neither supports it, return to the requestor with the list of supported ratios for each endpoint — do not silently alter the ratio.
 
@@ -38,15 +38,15 @@ Routing decisions are made by reading MODEL-SPECS §2 **at runtime**. Do not cac
 
 5. **Select the JSON template.** Open MODEL-SPECS §5 for the resolved endpoint (§5.1–5.7). Copy the template exactly. Fill only the designated variable slots. Do not alter template structure, add fields, or remove fields.
 
-6. **Verify the API key.** Check all env stores per the client-box-env-stores protocol before submitting. A missing or unreachable key is a hard stop — do not guess at key locations or proceed without confirmation.
+6. **Verify the API key.** Check all env stores per the client-box-env-stores protocol before submitting (report SET or NOT-SET only, never the value). A missing or unreachable key is a hard stop — do not guess at key locations or proceed without confirmation. A 401 or 403 from KIE is one attempt only (rule 9): report once, do not retry.
 
 7. **Run SOP-DIU-601 preflight.** Do not submit until SOP-DIU-601 (Preflight & Postflight Mechanical Gates) returns a clean pass. Any preflight failure halts submission and returns an itemized failure list to the requestor.
 
-8. **Submit via `createTask`.** POST to `https://api.kie.ai/api/v1/jobs/createTask` with `Authorization: Bearer {API_KEY}` and the completed JSON template body. Extract `data.taskId` from the response immediately.
+8. **Submit through Skill 74.** Run `python3 74-kie-live-adapter/scripts/kie_live_adapter.py submit --request <req.json> --mode active` with the completed JSON template as the request (the adapter performs the `createTask` call, sends the Bearer header, checks the body `code`, and never retries `createTask` after a network error). Take `task_id` from the result immediately.
 
 9. **Write the receipt file.** Record the following in `_local/receipts/{receipt-id}.json` at submit time: endpoint, model ID (from MODEL-SPECS §1), tier, resolution, `taskId`, cost class, `state: submitted`, `submitted_at` (ISO 8601). Do not exit without writing the receipt.
 
-10. **Exit.** The Render Dispatcher's poller handles completion detection via `GET /api/v1/jobs/recordInfo?taskId={taskId}`. Do not hold the session open polling for results.
+10. **Exit.** The Render Dispatcher's poller handles completion detection via `GET /api/v1/jobs/recordInfo?taskId={taskId}` (its `kie_live_adapter.py wait`). Do not hold the session open polling for results, and never call `wait`, `save` or `recordInfo` yourself.
 
 ---
 
@@ -89,7 +89,7 @@ Routing decisions are made by reading MODEL-SPECS §2 **at runtime**. Do not cac
 |---|---|
 | API key missing from all env stores | Hard stop. Escalate to CDO with list of all stores checked. |
 | Both primary and backup endpoints unavailable | Hard stop. Preserve all manifests and receipts. Escalate to CDO. Do not attempt a third-endpoint substitution without explicit CDO direction. |
-| `createTask` returns a non-2xx error | Log error code and response body. Apply SOP-DIU-603 fallback ladder. Escalate if fallback ladder exhausted. |
+| The `submit` result is state `fail` | Log the body `code` and message. Apply SOP-DIU-603 fallback ladder. Escalate if fallback ladder exhausted. |
 | Requested aspect ratio unsupported on all viable endpoints | Return to requestor with supported-ratio list. Do not generate at wrong ratio. |
 | Resolution silently downgraded by any path | This is a violation, not a fallback. Escalate to CDO immediately. |
 | SOP-DIU-601 preflight fails | Do not submit. Return itemized failure list to the requestor. |

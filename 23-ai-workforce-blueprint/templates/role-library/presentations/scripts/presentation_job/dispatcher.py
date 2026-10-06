@@ -1445,7 +1445,8 @@ def _shared_prompt_gate():
 
 def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
     """`(floor_share, ceiling_share)` -- the character budget for ONE unit of
-    a design-page fan-out, derived from the SHARED band.
+    a design-page fan-out, derived from the SHARED band (KIE rule 12: the floor is 80 percent of the
+    model maxLength, the ceiling is the maxLength less the English pin).
 
     The gate measures the FINAL artifact: N unit texts joined by
     `_UNIT_TEXT_SEPARATOR` (2 chars each, N-1 of them). So the aggregate is
@@ -1456,11 +1457,12 @@ def design_unit_char_budget(unit_count: int) -> Tuple[int, int]:
     A degenerate/absent `unit_count` is treated as ONE unit (the whole band),
     which is the honest reading for a phase that enumerated a single unit."""
     pg = _shared_prompt_gate()
+    bud = pg.length_budget()  # KIE rule 12 numbers from the shared enforcer, never re-typed here
     n = unit_count if isinstance(unit_count, int) and unit_count > 0 else 1
     sep_total = len(_UNIT_TEXT_SEPARATOR) * (n - 1)
-    ceiling_share = max(1, (pg.PROMPT_CHAR_CEILING - sep_total) // n)
-    floor_share = -(-max(0, pg.PROMPT_CHAR_FLOOR - sep_total) // n)  # ceil
-    return floor_share, min(ceiling_share, pg.PROMPT_CHAR_CEILING)
+    ceiling_share = max(1, (bud["ceiling"] - sep_total) // n)
+    floor_share = -(-max(0, bud["floor"] - sep_total) // n)  # ceil
+    return floor_share, min(ceiling_share, bud["ceiling"])
 
 
 def design_part_count(payload: Dict[str, Any]) -> int:
@@ -1497,6 +1499,7 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
         ordinal = 1
     floor_share, ceiling_share = design_unit_char_budget(n)
     pg = _shared_prompt_gate()
+    _bud = pg.length_budget()
     # Aim at the MIDDLE of the share so a compliant part clears both bounds
     # with real headroom; the shares themselves stay the hard bounds the
     # validator enforces.
@@ -1542,11 +1545,12 @@ def _design_page_prompt_contract(phase_id: str, order: Dict[str, Any]) -> str:
         f"`prompt_gate`, and the render phase is NOT submitted.\n"
         + attribution +
         f"2. LENGTH -- THE BAND IS SHARED, AND IT IS MEASURED ON THE FINAL "
-        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate requires the "
-        f"complete `prompts/{page}.design.txt` to be between "
-        f"{pg.PROMPT_CHAR_FLOOR:,} and {pg.PROMPT_CHAR_CEILING:,} characters "
-        f"({pg.PROMPT_CHAR_CEILING:,} sits 2,000 under the "
-        f"{pg.API_PROMPT_HARD_CEILING:,}-character GPT-Image-2.5 API ceiling). "
+        f"ASSEMBLED FILE, NOT ON YOUR PART. The shared gate (KIE rule 12) "
+        f"requires the complete `prompts/{page}.design.txt` to be between "
+        f"{_bud['floor']:,} and {_bud['ceiling']:,} characters "
+        f"(80 percent of the {_bud['max']:,}-character GPT-Image-2.5 maxLength "
+        f"up to that maxLength less the {_bud['pin']}-character English pin the "
+        f"renderer appends; aim for 95 to 100 percent). "
         f"Your part is {ordinal} of {n}, so YOUR OWN OUTPUT MUST BE BETWEEN "
         f"{floor_share:,} AND {ceiling_share:,} CHARACTERS -- aim for "
         f"{target_lo:,}-{target_hi:,}. The {n} parts plus their separators sum "
@@ -3609,11 +3613,9 @@ def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]
         p = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"
         if not p.is_file():
             return False, ["no prompt file"]
-        length = len(p.read_text(encoding="utf-8", errors="replace").strip())
-        if length < 9000:
-            return False, [f"AF-P1: {length} chars < 9,000 floor"]
-        if length > 18000:
-            return False, [f"AF-P2: {length} chars > 18,000 ceiling"]
+        probs = _shared_prompt_gate().length_problems(p.read_text(encoding="utf-8", errors="replace").strip())
+        if probs:  # KIE rule 12 band through the shared enforcer (names the exact characters to add or cut)
+            return False, probs
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable "
                        "-- degraded to a length-only check"]
     try:
@@ -4653,6 +4655,24 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
         return DispatchResult(phase_id, "error", 0, [reason])
 
     owning_role = order.get("owning_role") or (phase_obj.owning_role if phase_obj else "")
+    # SMOKE-1 F21 (2026-09-01): the engine-side sweep can hand this builder an
+    # order/phase pair that both resolve empty, so wave_input.owning_role was None
+    # and every slide call defaulted to "Presentation Manager (Deck Author)" —
+    # RoleSOPNotFound x12, zero spend on real work. Last-resort fallback: read the
+    # owning_role straight out of the pinned PIPELINE-MANIFEST.
+    if not owning_role:
+        try:
+            _man = _json_load_manifest_fallback()
+            owning_role = next((ph.get("owning_role") for ph in _man.get("phases", [])
+                                if ph.get("id") == phase_id), "") or ""
+        except Exception:  # noqa: BLE001 — manifest absence must not crash the sweep
+            owning_role = ""
+    if not owning_role:
+        reason = ("P4-PROMPT parallel dispatch: owning_role unresolvable "
+                  "(order, phase_obj, and manifest all empty)")
+        _append_sidecar(run_dir, phase_id, {
+            "worker": worker_id, "attempt": 0, "status": "error", "reason": reason})
+        return DispatchResult(phase_id, "error", 0, [reason])
 
     # --- normalize slides from the SAME source the serial loop + verifier use
     slides_payload: List[Dict[str, Any]] = []
@@ -4729,7 +4749,8 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
             ),
             slides=slides_payload,
             prompt_constraints=_wave_contract.PromptConstraints(
-                min_chars=9000, max_chars=18000,
+                min_chars=_shared_prompt_gate().length_budget()["floor"],
+                max_chars=_shared_prompt_gate().length_budget()["ceiling"],
                 required_blocks=("[ARCHETYPE", "DO-NOT BLOCK", "Do not ")),
         )
         try:
@@ -4751,8 +4772,8 @@ def _dispatch_prompt_phase_parallel(run_dir: Path, order: Dict[str, Any], *,
             "owning_role": owning_role,
             "routing": routing,
             "prompt_constraints": {
-                "min_chars": 9000,
-                "max_chars": 18000,
+                "min_chars": _shared_prompt_gate().length_budget()["floor"],  # KIE rule 12 via the shared enforcer
+                "max_chars": _shared_prompt_gate().length_budget()["ceiling"],
                 "required_blocks": ["[ARCHETYPE", "DO-NOT BLOCK", "Do not "],
             },
             "slides": slides_payload,
@@ -6440,7 +6461,7 @@ def _validate_design_page_unit(payload: Dict[str, Any],
         problems.append(
             f"PD-TEST-098/AF-P2: this unit's part is {length:,} chars, over its "
             f"{ceiling_share:,}-char share of the shared "
-            f"{_shared_prompt_gate().PROMPT_CHAR_CEILING:,}-char ceiling. This "
+            f"{_shared_prompt_gate().length_budget()['ceiling']:,}-char ceiling. This "
             f"phase authors ONE prompt in {n} parts and the gate measures the "
             f"ASSEMBLED file, so a part written at full single-prompt length "
             f"puts the whole artifact over the ceiling and the render phase is "
@@ -6450,7 +6471,7 @@ def _validate_design_page_unit(payload: Dict[str, Any],
         problems.append(
             f"PD-TEST-098/AF-P1: this unit's part is {length:,} chars, under its "
             f"{floor_share:,}-char share of the shared "
-            f"{_shared_prompt_gate().PROMPT_CHAR_FLOOR:,}-char floor. The "
+            f"{_shared_prompt_gate().length_budget()['floor']:,}-char floor. The "
             f"assembled file would fall under the gate's hard floor. Expand with "
             f"real, specific art direction -- never boilerplate padding.")
     return (not problems), problems
@@ -8382,6 +8403,27 @@ def resolve_scripts_dir_for_run(run_dir: Path) -> Path:
         pass
     return _OWN_SCRIPTS_DIR
 
+
+def _json_load_manifest_fallback() -> Dict[str, Any]:
+    """Load the pinned PIPELINE-MANIFEST.json for phase-definition fallbacks.
+    Resolution: PRESENTATION_MANIFEST env first (the launcher pins it), then the
+    universal-sops repo copy two conventions up from this module. Raises on
+    absence — callers degrade, never crash the sweep."""
+    from pathlib import Path as _P
+    import json as _json
+    candidates = []
+    env_path = os.environ.get("PRESENTATION_MANIFEST")
+    if env_path:
+        candidates.append(_P(env_path))
+    candidates.append(_P.home() / "openclaw-onboarding" / "universal-sops" /
+                      "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
+    for c in candidates:
+        try:
+            if c.is_file():
+                return _json.loads(c.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            continue
+    raise FileNotFoundError("no PIPELINE-MANIFEST.json resolvable for phase fallback")
 
 def resolve_dept_root(scripts_dir: Path) -> Path:
     return scripts_dir.parent

@@ -175,22 +175,22 @@ This role contributes to the company revenue cascade by: **converting the DIU's 
 ### SOP 9.1 -- [SOP-DIU-612] Cross-Department Style Request Block
 
 **Wraps:** universal-sops/cross-dept-request-template.md; MASTER-SOP §3.2, §7; MODEL-SPECS §5; all category _RULES.md  
-**Owner:** Design Producer (this role)  
+**Owner:** Chief Design Officer owns SOP-DIU-612 (standalone file and CDO SOP 9.11); this role runs the producer gate as the CDO's delegate, and the Style Steward does the intake validation and translation for requests from other departments (the Steward submits to this gate; nothing reaches release without this gate and CDO approval)  
 **When to run:** Every time a department outside Graphics requests a style-card-driven generated asset.  
 **Frequency:** On-demand, typically multiple times per week once DIU is running at scale.
 
-**Purpose:** Receive, validate, and route inbound style requests from other departments (Social Media, Presentations, Marketing, Email, etc.) using a standardized additive STYLE block on the universal cross-department request template. Ensures the Generation Operator receives fully resolved, unambiguous instructions and that any likeness-bearing request routes through the Photo Shoot Director's consent gate FIRST.
+**Purpose:** Receive, validate, and route inbound style requests from other departments (Social Media, Presentations, Marketing, Email, etc.) using a standardized additive STYLE block on the universal cross-department request template. Ensures the Render Dispatcher (which releases packets to the Generation Operator, the sole Kie.ai submitter) receives fully resolved, unambiguous instructions and that any likeness-bearing request routes through the Photo Shoot Director's consent gate FIRST.
 
 **Steps:**
 1. Receive the incoming request. Verify it includes the STYLE block fields: STYLE_ID@version (or descriptive mood keywords if no existing card, which triggers a new analysis brief), tier (default MEDIUM if unspecified), all filled Workflow-B variables ({SUBJECT}, {SETTING}, {HEADLINE_TEXT}, etc.), destination format (aspect ratio + channel), and a likeness_present flag (yes/no).
 2. Resolve STYLE_ID against INDEX.md. If the requester provided mood keywords without an ID, retrieve the top-k candidate IDs from the semantic index (SOP-DIU-606) and confirm with the requester before any generation starts. Hard rule: no generation fires from an unresolved or unconfirmed style ID.
-3. If likeness_present = yes: HALT. Route to the Photo Shoot Director for consent verification BEFORE returning to the Generation Operator. This overrides all other routing regardless of which department submitted the request.
+3. If likeness_present = yes: HALT. Route to the Photo Shoot Director for consent verification BEFORE returning to the Render Dispatcher and Generation Operator. This overrides all other routing regardless of which department submitted the request.
 4. Verify that category _RULES format/ratio tables are satisfied for the destination format. If a mismatch exists (e.g., 9:16 for a category whose _RULES specify 16:9 only), return to requester with the supported options before proceeding.
-5. Issue a confirmed style block to the Generation Operator: STYLE_ID@version + tier + all resolved variables + destination format. Record the requesting department and the request ID.
+5. Issue a confirmed style block through the Prompt Author and independent Prompt QC (the Operator never receives an unauthored prompt) to the Render Dispatcher for release to the Generation Operator: STYLE_ID@version + tier + all resolved variables + destination format. Record the requesting department and the request ID.
 6. Return contract to consuming department upon delivery: asset + generation log entry (ID@version, model, seed/taskId) + provenance summary. For campaign requests, record the pinned ID@version so the department is notified before any future card version bump changes their assets.
 
 **Outputs:** Confirmed, routable style block for Generation Operator; or a hold notice with specific missing fields to the requesting department.  
-**Hand to:** Generation Operator (if no likeness) or Photo Shoot Director (if likeness_present). Return delivery package + provenance to requesting department.  
+**Hand to:** Render Dispatcher, for release to the Generation Operator (if no likeness), or Photo Shoot Director (if likeness_present). Return delivery package + provenance to requesting department.  
 **Failure mode:** If a requester bypasses the STYLE block format and submits a prose description of a visual ("make it bold and gold"), do NOT attempt to infer a style ID. Return with the intake form and explain that all cross-department DIU requests require a resolved style ID or a mood-brief that will be confirmed before generation. Ambiguity here propagates all the way to a wrong deliverable on the requestor's timeline.
 
 ---
@@ -198,7 +198,7 @@ This role contributes to the company revenue cascade by: **converting the DIU's 
 ### SOP 9.2 -- [SOP-DIU-613] New-Client Calibration Run
 
 **Wraps:** MASTER-SOP §6 (Workflow A); PPT-ANALYSIS-SOP §4 (batch analysis); PHOTO-SHOOT-SOP §§1-3 (consent + identity profile); TEST-PROTOCOL (cards reach tested status before client sees generated output)  
-**Owner:** Design Producer (this role)  
+**Owner:** Chief Design Officer owns SOP-DIU-613 (the Style Analyst and Generation Operator execute their steps, the latter through the Render Dispatcher); this role runs the calibration as the CDO's delegate  
 **When to run:** Once per client, at DIU activation. Must be completed before any standard production brief is accepted.  
 **Frequency:** One-time per client; may be re-run after a major brand refresh.
 
@@ -208,12 +208,12 @@ This role contributes to the company revenue cascade by: **converting the DIU's 
 1. Collect the client's existing brand materials: logo files (SVG/PNG), brand color hex codes, font names, existing collateral samples (PDFs, image folders, previous ad creative).
 2. Brief the Style Analyst: produce 2-3 style cards from the provided materials using Workflow A. If the client has multiple visual contexts (presentation deck, social media, print), produce one card per context. Cards must reach "tested" status before the client sees any generated output.
 3. Verify brand variables against box brand config: confirm {BRAND_COLOR_1}, {BRAND_COLOR_2}, and {LOGO_NOTE} in the workspace brand config match the client's supplied materials. Create or update BRAND.md with hex palette, descriptive palette (for prompt assembly), logo usage rules, typography character, and a do-not list. Confirm with Brand Identity Specialist that BRAND.md is consistent with their records.
-4. If any likeness work is anticipated: route to Photo Shoot Director to create IDENTITY.md and capture standing self-likeness consent (standard scope: all Modes A-F, self-person, internal + commercial use). This is the "self-likeness fast path" -- a file-read gate at future sessions, not a human loop each time.
-5. Instruct Generation Operator to produce a calibration contact sheet (1K resolution, SHORT tier, cheapest capable endpoint per MODEL-SPECS routing table, Wan n=4 or equivalent): 2-4 images per style card, one category per card. Confirm receipt + smoke test pass before delivery.
+4. If any likeness work is anticipated: route to Photo Shoot Director to create IDENTITY.md (reference photos and shoot history) and CONSENT.md (the SOP-DIU-608 consent record that the coded gate `diu_validator.py consent-check --consent-file` reads), capturing standing self-likeness consent (self-person, the client's anticipated modes with Mode F only by explicit opt-in, internal + commercial use). This is the "self-likeness fast path" -- a file-read gate at future sessions, not a human loop each time.
+5. Hand the calibration contact sheet request through the Prompt Author and Prompt QC to the Render Dispatcher for release to the Generation Operator (1K resolution, the cheapest capable endpoint per the live registry and `kie_live_adapter.py price`, n=4 or equivalent; cheapness comes from the model and resolution, never from a short prompt, because prompts are sized per rule 12 of `07-kie-setup/references/kie-common-rules.md`): 2-4 images per style card, one category per card. Confirm receipt + postflight pass before delivery.
 6. Present the contact sheet to the client/owner as "your style options." Plain-English labels using card names, not internal IDs. Invite them to pick favorites (minimum 1 per card).
 7. Log all selections to TASTE-PROFILE.md: mark liked cards and specific images. Note any comments on what they like or dislike about each. This is the taste profile's seed state.
 8. Using selections and INDEX status, produce Lookbook v1: one representative thumbnail per production-status card + one-line plain-English summary + "best for" category. Deliver as a client-readable file.
-9. Confirm all artifacts are present before declaring calibration complete: BRAND.md, IDENTITY.md (if applicable), TASTE-PROFILE.md (at least 1 preference), Lookbook v1, INDEX entry for each card, and at least 1 card at "tested" or "production" status.
+9. Confirm all artifacts are present before declaring calibration complete: BRAND.md, IDENTITY.md and CONSENT.md (if applicable), TASTE-PROFILE.md (at least 1 preference), Lookbook v1, INDEX entry for each card, and at least 1 card at "tested" or "production" status.
 
 **Outputs:** BRAND.md, TASTE-PROFILE.md (seed state), Lookbook v1, 2-3 tested style cards in INDEX, calibration contact sheet (delivered to client).  
 **Hand to:** Production pipeline is now open. Accept the client's first standard production brief.  
@@ -224,7 +224,7 @@ This role contributes to the company revenue cascade by: **converting the DIU's 
 ### SOP 9.3 -- [SOP-DIU-614] Client Revision Loop and Taste Profile
 
 **Wraps:** TEST-PROTOCOL §5 (diagnosis mode: operator error vs. card defect); MASTER-SOP §7 step 6 (deviations noted, card is law); NEGATIVE-PROMPTING-SOP §5 (defect-to-avoid-list growth); PHOTO-SHOOT-SOP §3 (standing retouch preferences)  
-**Owner:** Design Producer (this role)  
+**Owner:** Chief Design Officer owns SOP-DIU-614 (the Generation Operator executes re-runs, released through the Render Dispatcher); this role runs the loop as the CDO's delegate  
 **When to run:** Every time a client provides feedback on a delivered asset.  
 **Frequency:** On-demand throughout the production lifecycle.
 
@@ -280,14 +280,14 @@ This role contributes to the company revenue cascade by: **converting the DIU's 
 
 **Steps:**
 1. At brief intake, whenever the likeness_present flag is yes or a reference image is attached, halt standard routing. Do NOT forward the brief to the Generation Operator yet.
-2. Check IDENTITY.md for the named person. Verify consent record status (active / pending / expired / revoked). Confirm SCOPE covers the requested mode(s) (A-F). For self-likeness clients, verify the standing release at onboarding is on file and its scope includes the requested mode -- this is a file read, not a human loop.
-3. If consent is active and scope is confirmed: forward the brief to the Photo Shoot Director with a consent-verified note and the IDENTITY.md path. The Photo Shoot Director will execute from §4 (Identity Lock Block assembly) forward.
+2. Check CONSENT.md (the SOP-DIU-608 record; IDENTITY.md holds reference photos and shoot history only) for the named person by running `python3 45-design-intelligence-library/scripts/diu_validator.py consent-check --consent-file <CONSENT.md>`. Verify consent record status (active / pending / expired / revoked). Confirm SCOPE covers the requested mode(s) (A-F). For self-likeness clients, verify the standing release at onboarding is on file and its scope includes the requested mode -- this is a file read, not a human loop.
+3. If consent is active and scope is confirmed: forward the brief to the Photo Shoot Director with a consent-verified note and the CONSENT.md and IDENTITY.md paths. The Photo Shoot Director will execute from §4 (Identity Lock Block assembly) forward.
 4. If consent is absent, expired, or out-of-scope: HALT production. Notify the owner with the specific consent gap and the steps required to resolve it (fresh consent for the missing scope, or scope restriction to covered modes). Document the halt in the brief record.
 5. If the reference set contains images of people other than the named subject: route the who-appears inventory to the Photo Shoot Director per PHOTO-SHOOT-SOP §2. Non-client faces must be cropped or have their own release before generation proceeds. This is a hard stop, not a judgment call.
 
 **Outputs:** Consent-verified brief forwarded to Photo Shoot Director; or a specific halt notice to owner documenting the consent gap.  
 **Hand to:** Photo Shoot Director (if consent confirmed); owner (if halt required).  
-**Failure mode:** If the client asserts verbal consent exists but no IDENTITY.md record is present, do NOT proceed on verbal assertion alone. The standing self-likeness release is a one-time file creation at calibration (SOP-DIU-613 step 4). For any other subject, a documented consent record is required. The Photo Shoot Director owns the consent record format -- route there.
+**Failure mode:** If the client asserts verbal consent exists but no CONSENT.md record is present, do NOT proceed on verbal assertion alone. The standing self-likeness release is a one-time file creation at calibration (SOP-DIU-613 step 4). For any other subject, a documented consent record is required. The Photo Shoot Director owns the consent record format -- route there.
 
 ---
 
@@ -301,7 +301,7 @@ Before any DIU deliverable advances past the producer gate, it must pass these c
 - [ ] All {VARIABLE} tokens filled; none sent verbatim to API.
 - [ ] Watermark:false applied per MODEL-SPECS §4 where applicable.
 - [ ] Generation receipt on disk with taskId, model, card ID@version, seed (where supported).
-- [ ] Postflight verification passed: file exists on disk, nonzero size, decodable, dimensions match brief.
+- [ ] Postflight verification passed (run by the Render Dispatcher; confirm the receipt shows it): file exists on disk, nonzero size, decodable, dimensions match brief.
 
 ### Gate 2 -- Graphics QC Specialist (technical defect check)
 
@@ -346,8 +346,8 @@ What requires the human owner's approval before delivery:
 
 ### You hand work off to:
 
-- **Generation Operator** -- you give them: Approved, production-ready briefs (resolved style ID, all variables, tier, resolution, budget). Also: preference-based re-run instructions (classification (b) notes translated to 12-dimension language). Format: Brief file or written instruction. Frequency: Per production job.
-- **Photo Shoot Director** -- you give them: Consent-verified likeness briefs with IDENTITY.md path confirmed. Also: any consent-gap halt notices requiring consent collection. Format: Brief file + consent status note. Frequency: Per likeness-involved job.
+- **Render Dispatcher (for release to the Generation Operator)** -- you give them: Approved, production-ready briefs (resolved style ID, all variables, tier, resolution, budget), authored and graded through the Prompt Author and Prompt QC. Also: preference-based re-run instructions (classification (b) notes translated to 12-dimension language, released the same way). Format: Brief file or written instruction. Frequency: Per production job.
+- **Photo Shoot Director** -- you give them: Consent-verified likeness briefs with the CONSENT.md and IDENTITY.md paths confirmed. Also: any consent-gap halt notices requiring consent collection. Format: Brief file + consent status note. Frequency: Per likeness-involved job.
 - **Fidelity Tester** -- you give them: Defect-classified client notes (classification (a) from SOP-DIU-614) for diagnosis. Format: Note + original asset ID + generation receipt path. Frequency: On-demand when defect is identified in client feedback.
 - **Style Analyst** -- you give them: New card briefs triggered by calibration (SOP-DIU-613) or taste profile accumulation. Also: provenance-issue notices on cards that failed producer Gate 3. Format: Written brief. Frequency: Per calibration run and per recurring preference escalation.
 - **Chief Design Officer** -- you give them: Weekly delivery summary, producer gate metrics (same-day clearance rate, brief approval rate), 3-strike escalation decisions, and any gate stalls requiring CDO decision. Format: Written summary + open action items. Frequency: Weekly and on-demand.
@@ -355,7 +355,7 @@ What requires the human owner's approval before delivery:
 
 ### Cross-department coordination:
 
-- All cross-department style requests pass through this role (SOP-DIU-612) before reaching the Generation Operator. No other department contacts the Generation Operator directly for DIU-style work.
+- All cross-department style requests pass through this role (SOP-DIU-612) before reaching the Render Dispatcher and Generation Operator. No other department contacts the Generation Operator directly for DIU-style work.
 - For deck requests, coordinate with the Deck Systems Specialist and the Presentations department's counterpart to honor the Graphics-Presentations boundary contract (SOP-DIU-611): deck style system + slide imagery = DIU; narrative + assembly + editable text = Presentations.
 
 ---
@@ -462,7 +462,7 @@ For this role, the authoritative sources are:
 
 - **DEPARTMENT-BUILD-BRIEF.md** (vendor) -- `$OC_ROOT/master-files/design-library/DEPARTMENT-BUILD-BRIEF.md` -- The foundational document defining the producer role (rule 1), all operating rules, and the unit's handoff contracts. Consult when resolving ambiguity about producer scope vs. other roles.
 - **MASTER-SOP.md** (vendor) -- `$OC_ROOT/master-files/design-library/_system/MASTER-SOP.md` -- Variable system (§3.2), Workflow B (§7), brand defaults (§9). The single source of truth for how briefs translate to generation instructions.
-- **SOP-DIU-612, SOP-DIU-613, SOP-DIU-614** -- These role files (Section 9 above) are the authoritative text for the three producer-owned procedures. The SOP library mirror is `templates/role-library/graphics/sops/design-producer-sops.md`.
+- **SOP-DIU-612, SOP-DIU-613, SOP-DIU-614** -- These role files (Section 9 above) are the authoritative text for the three producer-owned procedures. The standalone SOP files are `templates/role-library/graphics/sops/SOP-DIU-612.md`, `SOP-DIU-613.md`, and `SOP-DIU-614.md` (there is no `design-producer-sops.md` mirror).
 - **SOP-ALLOCATION.md** -- `/tmp/diu-build-v2/SOP-ALLOCATION.md` (build reference) -- The collision-free SOP ID registry. Consult when adding or modifying any SOP reference to confirm no ID duplication.
 
 **Tier 2 -- ZHC operational precedents:**
@@ -569,10 +569,9 @@ When the Library Registrar activates (INDEX production cards ≥ 50, per SOP-DIU
 
 ### 19.4 -- SOP Mirror Location
 
-The three DIU SOPs owned by this role (SOP-DIU-612, SOP-DIU-613, SOP-DIU-614) are mirrored verbatim at:
-`templates/role-library/graphics/sops/design-producer-sops.md`
+The three DIU SOPs owned by this role (SOP-DIU-612, SOP-DIU-613, SOP-DIU-614) also exist as standalone files in `templates/role-library/graphics/sops/` (`SOP-DIU-612.md`, `SOP-DIU-613.md`, `SOP-DIU-614.md`); there is no `design-producer-sops.md` mirror file.
 
-Per SOP-ALLOCATION.md no-duplication guarantee: each ID appears exactly once (authoritative: this file, Section 9) and once in the mirror. The 00-START-HERE.md routing table for the graphics department lists these IDs in its DIU SOP table.
+Per SOP-ALLOCATION.md no-duplication guarantee: each ID appears exactly once in this file, Section 9, and once as its standalone file. The 00-START-HERE.md routing table for the graphics department lists these IDs in its DIU SOP table.
 
 ---
 

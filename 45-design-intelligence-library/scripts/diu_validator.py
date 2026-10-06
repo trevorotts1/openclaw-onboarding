@@ -13,21 +13,21 @@ never; a violation is a hard non-zero exit an agent cannot narrate past).
 
 WHAT IT ENFORCES (three sub-commands)
 
-  prompt-caps  — PROMPT-LENGTH CAPS (MODEL-SPECS.md §"tier table").
-      SHORT <= 500, MEDIUM <= 2,800, LONG <= 19,000 characters. An assembled
-      prompt over its tier cap is a HARD FAIL (exit 3) — the operator must fall
-      back a tier (the MODEL-SPECS auto-fallback rule) rather than silently
-      truncate at the endpoint.
+  prompt-caps  - MODEL MAX CEILING (KIE prompt rule 12).
+      The prompt may never exceed the model's maxLength. The max comes from the shared
+      enforcer shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget: live schema,
+      registry fallback), never from a table in this file. An assembled prompt over the max
+      is a HARD FAIL (exit 3) and the message names the exact characters to cut.
 
   prompt-band  — GRAPHICS IMAGE PROTOCOL (GIP) PROMPT BANDS (_system/prompt-bands.json).
-      The MAX-only cap tiers were necessary but not SUFFICIENT: a one-line prompt
-      could reach Kie.ai/GPT-Image 2.5 unchallenged (no MIN floor anywhere in graphics).
-      This is the graphics analogue of the Presentations 9,000-char floor gate. A
-      prompt is checked against its asset-class BAND:
-        * length below the band MIN  -> HARD FAIL (exit 3, AF-GIP-PROMPT-FLOOR):
-          NOT submitted, NOT rendered — re-author (never truncate up to the floor).
-        * length above the band MAX  -> HARD FAIL (exit 3, AF-DIU-PROMPT-CAP): fall
-          back a tier per MODEL-SPECS, do not ship a prompt the endpoint truncates.
+      A band is a QUALITY profile per asset class (density floor, text-bearing, endpoints).
+      Prompt LENGTH is KIE prompt rule 12 and is checked through the shared enforcer against
+      the model named by --model (default: the first endpoint of the band):
+        * length below the 80 percent floor -> HARD FAIL (exit 3, AF-GIP-PROMPT-FLOOR):
+          NOT submitted, NOT rendered, the message names the exact characters to ADD.
+        * length above the model max (100 percent) -> HARD FAIL (exit 3, AF-DIU-PROMPT-CAP):
+          the message names the exact characters to CUT.
+        * 80 to 95 percent passes with a warning to expand (the writer targets 95 to 100).
         * a QUALITY defect (independent of length, exactly like AF-P13/P14/P-DENSITY)
           -> HARD FAIL (exit 6, AF-GIP-PROMPT-QUALITY): the negative block must name
           >= 6 of the 8 defect classes; a text-bearing band requires a per-string
@@ -35,12 +35,9 @@ WHAT IT ENFORCES (three sub-commands)
           clear the band floor (anti-padding); and when style reference images are
           attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
           (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
-          Two text-bearing bands exist because one endpoint cannot serve both:
-          `text_bearing_long` (5,000-19,000) targets GPT-Image 2.5 T2I/I2I; the
-          mandatory Ideogram V3 DESIGN quote-card/text-led route (see
-          social-media-designs/_RULES.md) targets `text_bearing_medium`
-          (1,600-4,500) instead, sized to Ideogram's own verified 5,000-char API
-          cap (MODEL-SPECS.md) — GK-20 band<->routing reconciliation.
+          Text-bearing assets route to GPT Image 2.5 (`text_bearing_long`). There is no
+          Ideogram text-bearing band: Ideogram V3 stays only on the non-social
+          specialty `medium` band.
 
   route-check  — DIU ROUTING INTERLOCK (SOP-DIU-611 §D.1 "coded hard stop").
       An audience / webinar / funnel / sales / virtual-event deck CANNOT proceed on
@@ -49,12 +46,14 @@ WHAT IT ENFORCES (three sub-commands)
       architecture violation → HARD ABORT (exit 2). This is the code behind the
       prose "mechanical gate" the SOP claims.
 
-  consent-check — CONSENT + MINOR + PII GATE (PHOTO-SHOOT-SOP.md §1, fail-closed).
-      Real-person likeness generation requires documented+dated consent, an
+  consent-check — CONSENT + MINOR + PII GATE (SOP-DIU-608 CONSENT.md, fail-closed).
+      Real-person likeness generation requires an active, dated, unexpired consent
+      record (personal-photo-shoot/{client-slug}/CONSENT.md front-matter), an
       attested-adult subject (Minors = HARD NO), and an at-rest protection
       attestation on the biometric IDENTITY store. Any missing/negative/ambiguous
-      field, or an absent IDENTITY file, is a HARD FAIL (exit 4) — generation must
-      not proceed. Converts the prose consent rule into a coded hard stop.
+      field, or an absent CONSENT.md, is a HARD FAIL (exit 4) — generation must
+      not proceed. IDENTITY.md is only a pointer and is not read. Converts the
+      prose consent rule into a coded hard stop.
 
   fidelity     — FIDELITY-SCORE RECEIPT + 3-STRIKE COUNTER (TEST-PROTOCOL.md §5).
       A card reaches `production` only when: average across all 12 dimensions
@@ -71,7 +70,7 @@ EXIT CODES
     0 — pass (within cap / legal route / consent OK / fidelity pass, no 3rd strike;
         prompt-band: within [MIN, MAX] AND clears every quality tooth).
     2 — routing-interlock violation (AF-DIU-ROUTING-INTERLOCK) or usage error.
-    3 — prompt over the tier cap (AF-DIU-PROMPT-CAP) OR under the band floor
+    3 — prompt over the model max (AF-DIU-PROMPT-CAP) OR under the band floor
         (AF-GIP-PROMPT-FLOOR) OR a fidelity FAIL that has not yet reached the 3rd
         consecutive strike.
     4 — consent/minor/PII gate failure (AF-DIU-CONSENT): consent unconfirmed, a
@@ -83,14 +82,12 @@ EXIT CODES
         copy / density / style-reference-only) did not — re-author, do not submit.
 
 USAGE
-    python3 diu_validator.py prompt-caps --tier LONG --prompt-file assembled.txt
-    python3 diu_validator.py prompt-caps --tier SHORT --prompt "…inline…"
+    python3 diu_validator.py prompt-caps --model gpt-image-2-5-sunburst-text-to-image --prompt-file assembled.txt
     python3 diu_validator.py prompt-band --band text_bearing_long \
-                --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
-    python3 diu_validator.py prompt-band --band text_bearing_medium \
-                --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
+                --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref] [--model MODEL_ID]
     python3 diu_validator.py prompt-band --band medium --prompt "…inline…" [--run-dir RUN]
     python3 diu_validator.py route-check --deck-kind webinar
+    python3 diu_validator.py consent-check --consent-file personal-photo-shoot/<client-slug>/CONSENT.md
     python3 diu_validator.py fidelity --run-dir RUN --card-id FB-003 \
                 --scores-file scores.json [--hard-rule-violation "text on face"]
 
@@ -107,22 +104,45 @@ import tempfile
 import time
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# 1) PROMPT-LENGTH CAPS — MODEL-SPECS.md tier table (SHORT/MEDIUM/LONG).
-# ---------------------------------------------------------------------------
-TIER_CAPS = {
-    "SHORT": 500,
-    "MEDIUM": 2800,
-    "LONG": 19000,
-}
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
+    # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
+    # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
+    import importlib.util
+    here = Path(__file__).resolve().parent / "_kie_prompt_enforcer_embedded.py"
+    if here.is_file():
+        spec = importlib.util.spec_from_file_location("kie_prompt_enforcer", here)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["kie_prompt_enforcer"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    raise ImportError("kie_prompt_enforcer not found (neither shared-utils nor the embedded copy beside this file)")
 
 
+KPE = _load_enforcer()
+
+# Model used when --model is not given and the band names no endpoint (drafts). Only the id is named here;
+# its limit is read live by the enforcer.
+DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
+
+# ---------------------------------------------------------------------------
+# 1) MODEL MAX CEILING: KIE prompt rule 12, through the shared enforcer.
+# ---------------------------------------------------------------------------
 def cmd_prompt_caps(args) -> int:
-    tier = (args.tier or "").strip().upper()
-    if tier not in TIER_CAPS:
-        print(f"FATAL: --tier must be one of {sorted(TIER_CAPS)} (got {args.tier!r}).",
-              file=sys.stderr)
-        return 2
+    if getattr(args, "tier", None):
+        print(f"NOTE: --tier {args.tier} is retired and ignored; the ceiling is the model maxLength (rule 12).", file=sys.stderr)
+    model = (getattr(args, "model", None) or DEFAULT_MODEL).strip()
     if args.prompt_file:
         p = Path(args.prompt_file)
         if not p.is_file():
@@ -135,18 +155,16 @@ def cmd_prompt_caps(args) -> int:
         print("FATAL: pass --prompt-file PATH or --prompt STR.", file=sys.stderr)
         return 2
 
-    cap = TIER_CAPS[tier]
-    n = len(prompt)
-    if n > cap:
-        over = n - cap
+    # ceiling only: this command never judges the floor (prompt-band does)
+    v = KPE.check(model, prompt, kind="verbatim", fallback_max=KPE.last_known(model))
+    if not v["ok"]:
         print("!" * 78, file=sys.stderr)
-        print(f"FATAL AF-DIU-PROMPT-CAP: assembled {tier}-tier prompt is {n} chars, "
-              f"OVER the {cap}-char cap by {over}. Per MODEL-SPECS.md, fall back one "
-              f"tier (LONG->MEDIUM->SHORT) and re-assemble — do NOT ship a prompt that "
-              f"the endpoint will silently truncate.", file=sys.stderr)
+        print(f"FATAL AF-DIU-PROMPT-CAP: {v['message']}. Fall back to a model whose limit holds the "
+              f"prompt or cut the stated characters; do NOT ship a prompt the endpoint will truncate.",
+              file=sys.stderr)
         print("!" * 78, file=sys.stderr)
         return 3
-    print(f"OK: {tier}-tier prompt is {n}/{cap} chars (within cap).")
+    print(f"OK: prompt is {v['chars']}/{v['max']} chars for {model} (within the model max).")
     return 0
 
 
@@ -193,91 +211,104 @@ def cmd_route_check(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 2b) CONSENT + MINOR + PII GATE — PHOTO-SHOOT-SOP.md §1 (fail-closed).
+# 2b) CONSENT + MINOR + PII GATE — SOP-DIU-608 CONSENT.md (fail-closed).
 # ---------------------------------------------------------------------------
 # Generating a REAL person's likeness (personal-photo-shoot) is gated on documented
 # consent, an ABSOLUTE minor prohibition (Minors = HARD NO), and protection of the
-# biometric IDENTITY store. These were prose-only rules an agent could proceed past.
-# This is the coded hard stop: it reads the client's IDENTITY.md and FAILS CLOSED
-# (exit 4, AF-DIU-CONSENT) on ANY missing / negative / ambiguous field, or if the file
-# is absent. Consent that "cannot be confirmed" must block, never default open.
-_CONSENT_YES = {"granted", "yes", "true", "documented", "on-file", "on_file", "confirmed"}
-_NOT_MINOR_TOK = {"no", "false", "adult", "18+", "over-18", "over_18"}
-_MINOR_TOK = {"yes", "true", "minor", "under-18", "under_18"}
-_ADULT_YES = {"yes", "true", "adult", "18+", "over-18", "over_18", "confirmed"}
+# biometric IDENTITY store. The ONE machine-read record is the per-client CONSENT.md
+# (SOP-DIU-608): YAML front-matter with status / created / expiry_date / adult_attested /
+# storage_protection. IDENTITY.md only carries a pointer to it and is never read here.
+# FAILS CLOSED (exit 4, AF-DIU-CONSENT) on ANY missing / negative / ambiguous field, or if
+# the file is absent. Consent that "cannot be confirmed" must block, never default open.
 _PROTECT_OK = {"encrypted-at-rest", "encrypted_at_rest", "encrypted", "restricted",
                "redacted", "access-restricted", "access_restricted"}
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _scan_field(text, keys):
-    """Return the lowercased value of the first `key: value` line whose key exactly
-    matches one of `keys` (case-insensitive; tolerant of markdown bullets/bold/backticks)."""
-    keyset = set(keys)
-    for raw in text.splitlines():
-        line = raw.strip().lstrip("-*# ").strip()
-        m = re.match(r"[*_`\s]*([A-Za-z][A-Za-z0-9 _/-]*?)[*_`\s]*:\s*(.+?)\s*$", line)
+def _consent_front_matter(text):
+    """Flat {key: value} map from the leading `---` YAML front-matter block (stdlib only:
+    one `key: value` per line, nested/list lines ignored, `# comments` and quotes stripped).
+    Returns {} when there is no front-matter block, which fails closed downstream."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i >= len(lines) or lines[i].strip() != "---":
+        return {}
+    out = {}
+    for raw in lines[i + 1:]:
+        if raw.strip() == "---":
+            break
+        if not raw or raw[0] in " \t#-":
+            continue
+        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", raw)
         if not m:
             continue
-        k = m.group(1).strip().lower().replace(" ", "_").replace("-", "_")
-        if k in keyset:
-            return m.group(2).strip().lower().strip("*_` ")
-    return None
+        val = m.group(2).strip()
+        if val[:1] in "\"'":
+            q = val[0]
+            end = val.find(q, 1)
+            val = val[1:end] if end > 0 else val[1:]
+        else:
+            val = val.split(" #", 1)[0].strip()
+        out[m.group(1).lower()] = val.strip().lower()
+    return out
 
 
 def cmd_consent_check(args) -> int:
-    p = Path(args.identity_file)
+    # `identity_file` is the pre-CONSENT.md attribute name; kept so older callers and the
+    # self-tests below still reach this gate (the path must now be a CONSENT.md).
+    path = getattr(args, "consent_file", None) or getattr(args, "identity_file", None)
+    p = Path(path)
     problems = []
     if not p.is_file():
         print("!" * 78, file=sys.stderr)
-        print(f"FATAL AF-DIU-CONSENT: IDENTITY file not found: {p}. Consent CANNOT be "
-              f"confirmed -> fail closed; do NOT generate this person's likeness.",
+        print(f"FATAL AF-DIU-CONSENT: CONSENT.md not found: {p}. Consent CANNOT be "
+              f"confirmed -> fail closed; do NOT generate this person's likeness. "
+              f"(Create the record per SOP-DIU-608; an IDENTITY.md is not read.)",
               file=sys.stderr)
         print("!" * 78, file=sys.stderr)
         return 4
-    text = p.read_text(encoding="utf-8")
+    fm = _consent_front_matter(p.read_text(encoding="utf-8"))
 
-    # (1) Documented consent + a consent date.
-    consent = _scan_field(text, ["consent", "consent_status"])
-    consent_toks = set(re.split(r"[^a-z0-9+]+", consent)) if consent else set()
-    if not (consent_toks & _CONSENT_YES):
-        problems.append(f"consent status missing/negative (got {consent!r}); need an affirmative "
-                        f"'Consent: granted'")
-    consent_date = _scan_field(text, ["consent_date"])
-    if not (consent_date and re.search(r"\d{4}-\d{2}-\d{2}", consent_date)):
-        problems.append("no consent date present (need 'Consent date: YYYY-MM-DD')")
+    # (1) Documented, dated, active, unexpired consent.
+    status = fm.get("status", "")
+    if status != "active":
+        problems.append(f"consent status is {status or 'missing'!r}; SOP-DIU-608 requires "
+                        f"'status: active'")
+    if not _ISO_DATE.match(fm.get("created", "")):
+        problems.append("no consent date present (need 'created: YYYY-MM-DD')")
+    expiry = fm.get("expiry_date", "")
+    if expiry and expiry not in ("null", "none", "~"):
+        if not _ISO_DATE.match(expiry):
+            problems.append(f"expiry_date {expiry!r} is not YYYY-MM-DD")
+        elif expiry <= time.strftime("%Y-%m-%d"):
+            problems.append(f"consent expired on {expiry}; renew per SOP-DIU-608")
 
     # (2) Minor gate — HARD NO. Fail closed unless the subject is EXPLICITLY attested adult.
-    minor = _scan_field(text, ["minor", "subject_is_minor", "is_minor"])
-    adult = _scan_field(text, ["adult", "age_verified_adult", "age_confirmed_adult"])
-    minor_tok = minor.split()[0] if minor else ""
-    adult_tok = adult.split()[0] if adult else ""
-    is_minor = (minor_tok in _MINOR_TOK) or (adult_tok in {"no", "false"})
-    is_adult = (minor_tok in _NOT_MINOR_TOK) or (adult_tok in _ADULT_YES)
-    if is_minor:
-        problems.append("subject is flagged a MINOR -> HARD NO (PHOTO-SHOOT-SOP §1): likeness "
-                        "generation is PROHIBITED without explicit owner + legal sign-off")
-    elif not is_adult:
-        problems.append("subject age not attested adult (need 'Minor: no' or "
-                        "'Age verified adult: yes'); minors are HARD NO -> fail closed")
+    if fm.get("minors", "hard_block") != "hard_block":
+        problems.append("'minors' must stay 'hard_block' (never overridden, SOP-DIU-608)")
+    if fm.get("adult_attested", "") not in ("true", "yes"):
+        problems.append("subject not attested adult (need 'adult_attested: true'); "
+                        "minors are HARD NO -> fail closed")
 
-    # (3) Biometric PII protection — the IDENTITY store holds likeness descriptors; require an
-    # explicit at-rest protection attestation so raw biometric PII is never assumed plaintext-OK.
-    protection = _scan_field(text, ["storage_protection", "storage", "identity_storage"])
-    protect_toks = set(re.split(r"[^a-z0-9+]+", protection)) if protection else set()
-    if not (protect_toks & _PROTECT_OK):
-        problems.append(f"IDENTITY biometric store protection not attested (got {protection!r}); "
-                        f"need 'Storage protection: encrypted-at-rest' — descriptors must not be "
-                        f"stored plaintext")
+    # (3) Biometric PII protection — the IDENTITY.md descriptors are biometric PII; require an
+    # explicit at-rest protection attestation so they are never assumed plaintext-OK.
+    protection = fm.get("storage_protection", "")
+    if not (set(re.split(r"[^a-z0-9_-]+", protection)) & _PROTECT_OK):
+        problems.append(f"IDENTITY biometric store protection not attested (got "
+                        f"{protection!r}); need 'storage_protection: encrypted-at-rest' "
+                        f"-- descriptors must not be stored plaintext")
 
     if problems:
         print("!" * 78, file=sys.stderr)
         print(f"FATAL AF-DIU-CONSENT: {p} FAILS the fail-closed consent/minor/PII gate "
-              f"(PHOTO-SHOOT-SOP §1). Do NOT generate this person's likeness:", file=sys.stderr)
+              f"(SOP-DIU-608). Do NOT generate this person's likeness:", file=sys.stderr)
         for i, pr in enumerate(problems, 1):
             print(f"  {i}. {pr}", file=sys.stderr)
         print("!" * 78, file=sys.stderr)
         return 4
-    print(f"OK: consent documented + dated, subject attested adult, IDENTITY store protection "
+    print(f"OK: consent active + dated, subject attested adult, biometric store protection "
           f"declared -> likeness generation may proceed ({p}).")
     return 0
 
@@ -565,29 +596,27 @@ def _is_text_bearing(band: dict) -> bool:
     return bool(band.get("text_bearing"))
 
 
-def band_length_problems(prompt_text: str, band: dict, band_id: str) -> list:
-    """LENGTH half. Returns a list of (af_code, message). AF-GIP-PROMPT-FLOOR when under the
-    band MIN; AF-DIU-PROMPT-CAP when over the band MAX. Empty when within [MIN, MAX]."""
-    problems = []
+def band_model(band: dict, model=None) -> str:
+    """The KIE model whose maxLength sets the length band: --model, else the band's first endpoint."""
+    return (model or (band.get("endpoints") or [DEFAULT_MODEL])[0]).strip()
+
+
+def band_length_problems(prompt_text: str, band: dict, band_id: str, model=None) -> list:
+    """LENGTH half = KIE prompt rule 12 through the shared enforcer. Returns a list of (af_code, message).
+    AF-GIP-PROMPT-FLOOR when under the 80 percent floor (message names the chars to add); AF-DIU-PROMPT-CAP
+    when over the model max (message names the chars to cut). Empty when inside the band."""
     stripped = prompt_text.strip()
-    n = len(stripped)
-    mn = int(band.get("min", 0))
-    mx = int(band.get("max", 0))
+    mdl = band_model(band, model)
     if not stripped:
-        problems.append(("AF-GIP-PROMPT-FLOOR",
-                         f"prompt is empty / whitespace-only — carries none of the mandatory "
-                         f"per-asset {band_id} spec (band floor {mn})."))
-        return problems
-    if n < mn:
-        problems.append(("AF-GIP-PROMPT-FLOOR",
-                         f"prompt is {n} chars, UNDER the {band_id} band floor of {mn}. Too short "
-                         f"to carry the rich per-asset spec — NOT submitted, NOT rendered. "
-                         f"Re-author (never truncate up to the floor)."))
-    if mx and n > mx:
-        problems.append(("AF-DIU-PROMPT-CAP",
-                         f"prompt is {n} chars, OVER the {band_id} band cap of {mx}. Fall back a "
-                         f"tier per MODEL-SPECS — do not ship a prompt the endpoint truncates."))
-    return problems
+        return [("AF-GIP-PROMPT-FLOOR",
+                 f"prompt is empty / whitespace-only; it carries none of the mandatory per-asset {band_id} spec.")]
+    v = KPE.check(mdl, prompt_text, fallback_max=KPE.last_known(mdl))
+    if v["ok"]:
+        return []
+    code = "AF-DIU-PROMPT-CAP" if v["status"] == "ABOVE_MAX" else "AF-GIP-PROMPT-FLOOR"
+    return [(code, v["message"] + (". NOT submitted, NOT rendered. Re-author (never truncate up to the floor)."
+                                   if code == "AF-GIP-PROMPT-FLOOR" else
+                                   ". Fall back to a model that holds the prompt; do not ship one the endpoint truncates."))]
 
 
 def band_quality_problems(prompt_text: str, band: dict, band_id: str,
@@ -667,12 +696,12 @@ def band_quality_problems(prompt_text: str, band: dict, band_id: str,
 
 
 def band_problems(prompt_text: str, band: dict, band_id: str,
-                  copy_val=None, style_ref: bool = False) -> dict:
+                  copy_val=None, style_ref: bool = False, model=None) -> dict:
     """Accumulating (non-raising) form used by the prover and the CLI. Returns
     {'length': [(code, msg), ...], 'quality': [msg, ...]} — empty lists = clears the whole
     band gate."""
     return {
-        "length": band_length_problems(prompt_text, band, band_id),
+        "length": band_length_problems(prompt_text, band, band_id, model),
         "quality": band_quality_problems(prompt_text, band, band_id, copy_val, style_ref),
     }
 
@@ -684,8 +713,8 @@ def _band_receipts_path(run_dir: Path) -> Path:
 def cmd_prompt_band(args) -> int:
     band_id = (args.band or "").strip()
     if not band_id:
-        print("FATAL: --band is required (e.g. text_bearing_long | text_bearing_medium | "
-              "visual_long | medium | short_draft).", file=sys.stderr)
+        print("FATAL: --band is required (e.g. text_bearing_long | visual_long | medium | "
+              "short_draft).", file=sys.stderr)
         return 2
     try:
         bands = load_bands(args.bands_file)
@@ -707,7 +736,8 @@ def cmd_prompt_band(args) -> int:
         return 2
 
     copy_val = args.copy or None
-    res = band_problems(prompt, band, band_id, copy_val=copy_val, style_ref=bool(args.style_ref))
+    mdl = band_model(band, getattr(args, "model", None))
+    res = band_problems(prompt, band, band_id, copy_val=copy_val, style_ref=bool(args.style_ref), model=mdl)
     length_probs = res["length"]
     quality_probs = res["quality"]
     n = len(prompt.strip())
@@ -719,8 +749,8 @@ def cmd_prompt_band(args) -> int:
             receipt = {
                 "band": band_id,
                 "chars": n,
-                "min": band.get("min"),
-                "max": band.get("max"),
+                "model": mdl,
+                "length_rule": "KIE prompt rule 12 (shared enforcer)",
                 "distinct_words": len(set(_GIP_WORD_RE.findall(prompt.lower()))),
                 "text_bearing": _is_text_bearing(band),
                 "style_ref": bool(args.style_ref),
@@ -742,7 +772,7 @@ def cmd_prompt_band(args) -> int:
                           encoding="utf-8")
 
     if not length_probs and not quality_probs:
-        print(f"OK: {band_id} prompt is {n}/{band.get('max')} chars (floor {band.get('min')}), "
+        print(f"OK: {band_id} prompt is {n} chars for {mdl} (rule 12 band), "
               f"clears the GIP band + quality gate.")
         return 0
 
@@ -773,260 +803,41 @@ def cmd_self_test(_args) -> int:
     Returns 0 when all tests pass, non-zero on the first failure."""
     failures = []
 
-    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
-    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
-    if TIER_CAPS != expected:
-        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
-    else:
-        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
-
-    # (b) Prompt-band max for text_bearing_long is 19000.
+    # (a) The band file holds no length numbers: length is rule 12 through the shared enforcer.
     try:
         bands = load_bands()
-        tbl = bands.get("text_bearing_long")
-        if tbl is None:
-            failures.append("text_bearing_long band missing from prompt-bands.json")
-        elif tbl.get("max") != 19000:
-            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
-        elif tbl.get("min") != 5000:
-            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
-        else:
-            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
-    except(Exception) as exc:  # noqa: BLE001
+        for bid, band in bands.items():
+            for key in ("min", "max"):
+                if key in band:
+                    failures.append(f"{bid}: hard-coded {key} reintroduced in prompt-bands.json")
+        if "text_bearing_medium" in bands:
+            failures.append("text_bearing_medium (the Ideogram social band) must not exist")
+        print("SELF-TEST OK: prompt-bands.json carries no length numbers; no Ideogram social band.")
+    except Exception as exc:  # noqa: BLE001
         failures.append(f"prompt-bands load failed: {exc}")
+        bands = {}
 
-    # (c) Text-bearing bands never route to nano-banana-2.
+    # (b) Text-bearing bands never route to nano-banana-2.
     for bid, band in bands.items():
         if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
             failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
     print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
 
-    # (d) prompt-caps: a 19,500-char "long" prompt must be over cap.
-    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
-    if cap_rc != 3:
-        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
-    else:
-        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
+    # (c) Rule 12 on GPT Image 2.5 (max 20,000): 79 percent rejected (add), 101 percent rejected (cut), 95 percent passes.
+    for n, want in ((15800, 3), (20200, 3), (19000, 0), (20000, 0)):
+        pb = cmd_prompt_band(_FakeArgs(band="text_bearing_long", prompt="x" * n))
+        # length passes -> the filler has no negative block, so the exit is 6 (quality), never 3
+        got = 3 if pb == 3 else 0
+        if got != want:
+            failures.append(f"prompt-band: {n}-char text_bearing_long prompt length verdict {got} != {want} (exit {pb})")
+    print("SELF-TEST OK: prompt-band enforces rule 12 (79 percent and 101 percent rejected, 95 and 100 percent length-clear).")
 
-    # (e) prompt-caps: a 18,500-char "long" prompt must pass.
-    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
-    if cap_rc2 != 0:
-        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
-    else:
-        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
-
-    # (f) route-check: a "webinar deck" must be rejected.
-    rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
-    if rc_rc != 2:
-        failures.append(f"route-check: 'webinar deck' should exit 2, got {rc_rc}")
-    else:
-        print("SELF-TEST OK: route-check rejects webinar deck (exit 2).")
-
-    # (g) route-check: a "brand deck" must pass.
-    rc_rc2 = cmd_route_check(_FakeArgs(deck_kind="brand deck"))
-    if rc_rc2 != 0:
-        failures.append(f"route-check: 'brand deck' should exit 0, got {rc_rc2}")
-    else:
-        print("SELF-TEST OK: route-check passes brand deck (exit 0).")
-
-    # (h) prompt-band: a 1,000-char text_bearing_long prompt must fail the floor.
-    pb_rc = cmd_prompt_band(_FakeArgs(
-        band="text_bearing_long", prompt="x" * 1000))
-    if pb_rc != 3:
-        failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
-    else:
-        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
-
-    # (i) consent-check: a missing identity file must fail closed.
-    with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as tf:
-        tf.write(b"")
-        tmpf = tf.name
-    try:
-        os.unlink(tmpf)
-        cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
-        if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
-        else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
-    finally:
-        pass
-
-    if failures:
-        print("\nSELF-TEST FAILURES:", file=sys.stderr)
-        for f in failures:
-            print(f"  - {f}", file=sys.stderr)
-        return 1
-    print("\nSELF-TEST ALL PASSED.")
-    return 0
-
-
-class _FakeArgs:
-    """Lightweight namespace for self-test argument simulation."""
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
-        self.__dict__.setdefault("prompt_file", None)
-        self.__dict__.setdefault("bands_file", None)
-        self.__dict__.setdefault("copy", [])
-        self.__dict__.setdefault("style_ref", False)
-        self.__dict__.setdefault("run_dir", None)
-
-
-# ---------------------------------------------------------------------------
-# 5) SELF-TEST -- smoke-test every gate in one command.
-# ---------------------------------------------------------------------------
-def cmd_self_test(_args) -> int:
-    """Run a self-contained smoke test of every enforcement gate.
-    Returns 0 when all tests pass, non-zero on the first failure."""
-    failures = []
-
-    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
-    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
-    if TIER_CAPS != expected:
-        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
-    else:
-        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
-
-    # (b) Prompt-band max for text_bearing_long is 19000.
-    try:
-        bands = load_bands()
-        tbl = bands.get("text_bearing_long")
-        if tbl is None:
-            failures.append("text_bearing_long band missing from prompt-bands.json")
-        elif tbl.get("max") != 19000:
-            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
-        elif tbl.get("min") != 5000:
-            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
-        else:
-            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
-    except(Exception) as exc:  # noqa: BLE001
-        failures.append(f"prompt-bands load failed: {exc}")
-
-    # (c) Text-bearing bands never route to nano-banana-2.
-    for bid, band in bands.items():
-        if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
-            failures.append(
-                f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
-    print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
-
-    # (d) prompt-caps: a 19,500-char "long" prompt must be over cap.
-    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
-    if cap_rc != 3:
-        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
-    else:
-        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
-
-    # (e) prompt-caps: a 18,500-char "long" prompt must pass.
-    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
-    if cap_rc2 != 0:
-        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
-    else:
-        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
-
-    # (f) route-check: a "webinar deck" must be rejected.
-    rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
-    if rc_rc != 2:
-        failures.append(f"route-check: 'webinar deck' should exit 2, got {rc_rc}")
-    else:
-        print("SELF-TEST OK: route-check rejects webinar deck (exit 2).")
-
-    # (g) route-check: a "brand deck" must pass.
-    rc_rc2 = cmd_route_check(_FakeArgs(deck_kind="brand deck"))
-    if rc_rc2 != 0:
-        failures.append(f"route-check: 'brand deck' should exit 0, got {rc_rc2}")
-    else:
-        print("SELF-TEST OK: route-check passes brand deck (exit 0).")
-
-    # (h) prompt-band: a 1,000-char text_bearing_long prompt must fail the floor.
-    pb_rc = cmd_prompt_band(_FakeArgs(
-        band="text_bearing_long", prompt="x" * 1000))
-    if pb_rc != 3:
-        failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
-    else:
-        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
-
-    # (i) consent-check: a missing identity file must fail closed.
-    with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as tf:
-        tf.write(b"")
-        tmpf = tf.name
-    try:
-        os.unlink(tmpf)
-        cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
-        if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
-        else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
-    finally:
-        pass
-
-    if failures:
-        print("\nSELF-TEST FAILURES:", file=sys.stderr)
-        for f in failures:
-            print(f"  - {f}", file=sys.stderr)
-        return 1
-    print("\nSELF-TEST ALL PASSED.")
-    return 0
-
-
-class _FakeArgs:
-    """Lightweight namespace for self-test argument simulation."""
-    def __init__(self, **kw):
-        self.__dict__.update(kw)
-        self.__dict__.setdefault("prompt_file", None)
-        self.__dict__.setdefault("bands_file", None)
-        self.__dict__.setdefault("copy", [])
-        self.__dict__.setdefault("style_ref", False)
-        self.__dict__.setdefault("run_dir", None)
-
-
-# ---------------------------------------------------------------------------
-# 5) SELF-TEST — smoke-test every gate in one command.
-# ---------------------------------------------------------------------------
-def cmd_self_test(_args) -> int:
-    """Run a self-contained smoke test of every enforcement gate.
-    Returns 0 when all tests pass, non-zero on the first failure."""
-    failures = []
-
-    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
-    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
-    if TIER_CAPS != expected:
-        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
-    else:
-        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
-
-    # (b) Prompt-band max for text_bearing_long is 19000.
-    try:
-        bands = load_bands()
-        tbl = bands.get("text_bearing_long")
-        if tbl is None:
-            failures.append("text_bearing_long band missing from prompt-bands.json")
-        elif tbl.get("max") != 19000:
-            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
-        elif tbl.get("min") != 5000:
-            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
-        else:
-            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
-    except(Exception) as exc:  # noqa: BLE001
-        failures.append(f"prompt-bands load failed: {exc}")
-
-    # (c) Text-bearing bands never route to nano-banana-2.
-    for bid, band in bands.items():
-        if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
-            failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
-    print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
-
-    # (d) prompt-caps: a 19,500-char long prompt must be over cap.
-    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
-    if cap_rc != 3:
-        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
-    else:
-        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
-
-    # (e) prompt-caps: a 18,500-char long prompt must pass.
-    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
-    if cap_rc2 != 0:
-        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
-    else:
-        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
+    # (d) prompt-caps: over the model max exits 3; at the max exits 0.
+    if cmd_prompt_caps(_FakeArgs(prompt="x" * 20001, model=DEFAULT_MODEL)) != 3:
+        failures.append("prompt-caps: 20,001 chars on GPT Image 2.5 should exit 3")
+    if cmd_prompt_caps(_FakeArgs(prompt="x" * 20000, model=DEFAULT_MODEL)) != 0:
+        failures.append("prompt-caps: 20,000 chars on GPT Image 2.5 should exit 0")
+    print("SELF-TEST OK: prompt-caps enforces the model max (exit 3 above, exit 0 at the max).")
 
     # (f) route-check: a webinar deck must be rejected.
     rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
@@ -1048,7 +859,7 @@ def cmd_self_test(_args) -> int:
     if pb_rc != 3:
         failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
     else:
-        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
+        print("SELF-TEST OK: prompt-band floor rejects a 1,000-char text_bearing_long prompt.")
 
     # (i) consent-check: a missing identity file must fail closed.
     import tempfile as _tf
@@ -1060,9 +871,9 @@ def cmd_self_test(_args) -> int:
         _os.unlink(tmpf)
         cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
         if cc_rc != 4:
-            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+            failures.append(f"consent-check: missing CONSENT file should exit 4, got {cc_rc}")
         else:
-            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+            print("SELF-TEST OK: consent-check fails closed on missing CONSENT file (exit 4).")
     finally:
         pass
 
@@ -1084,6 +895,7 @@ class _FakeArgs:
         self.__dict__.setdefault("copy", [])
         self.__dict__.setdefault("style_ref", False)
         self.__dict__.setdefault("run_dir", None)
+        self.__dict__.setdefault("model", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1095,18 +907,20 @@ def main(argv=None) -> int:
                     "bands, routing interlock, consent/minor/PII, fidelity + 3-strike).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    pc = sub.add_parser("prompt-caps", help="enforce SHORT/MEDIUM/LONG char caps")
-    pc.add_argument("--tier", required=True, help="SHORT | MEDIUM | LONG")
+    pc = sub.add_parser("prompt-caps", help="enforce the model max (KIE rule 12 ceiling, shared enforcer)")
+    pc.add_argument("--model", default=DEFAULT_MODEL, help="KIE model id whose maxLength is the ceiling (default: %(default)s)")
+    pc.add_argument("--tier", help="DEPRECATED and ignored: the SHORT/MEDIUM/LONG tier table is retired; the ceiling is the model maxLength")
     pc.add_argument("--prompt-file", help="path to the assembled prompt")
     pc.add_argument("--prompt", help="inline prompt string")
     pc.set_defaults(func=cmd_prompt_caps)
 
     pb = sub.add_parser("prompt-band",
-                        help="enforce the GIP per-asset-class prompt band (MIN floor + MAX cap "
-                             "+ quality teeth)")
+                        help="enforce the GIP per-asset-class prompt band (rule 12 length through "
+                             "the shared enforcer + quality teeth)")
     pb.add_argument("--band", required=True,
-                    help="text_bearing_long | text_bearing_medium | visual_long | medium | "
-                         "short_draft")
+                    help="text_bearing_long | visual_long | medium | short_draft")
+    pb.add_argument("--model", help="KIE model id whose maxLength sets the length band "
+                                    "(default: the band's first endpoint)")
     pb.add_argument("--prompt-file", help="path to the assembled prompt")
     pb.add_argument("--prompt", help="inline prompt string")
     pb.add_argument("--copy", action="append", default=[],
@@ -1126,9 +940,10 @@ def main(argv=None) -> int:
     rc.set_defaults(func=cmd_route_check)
 
     cc = sub.add_parser("consent-check",
-                        help="fail-closed consent + minor + PII gate (PHOTO-SHOOT-SOP §1)")
-    cc.add_argument("--identity-file", required=True,
-                    help="path to the client's personal-photo-shoot IDENTITY.md")
+                        help="fail-closed consent + minor + PII gate (SOP-DIU-608 CONSENT.md)")
+    cc.add_argument("--consent-file", "--identity-file", dest="consent_file", required=True,
+                    help="path to the client's personal-photo-shoot CONSENT.md "
+                         "(--identity-file is the old spelling; it must still point at CONSENT.md)")
     cc.set_defaults(func=cmd_consent_check)
 
     fd = sub.add_parser("fidelity", help="fidelity receipt + 3-strike counter")

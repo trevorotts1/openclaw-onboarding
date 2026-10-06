@@ -178,6 +178,7 @@ This role contributes to the company revenue cascade by: **multiplying the style
 ## 9. Standard Operating Procedures (Numbered)
 
 ### SOP 9.1 — [SOP-DIU-612] Cross-Department Style Request Block
+**Ownership note:** the Chief Design Officer owns SOP-DIU-612 (standalone file and CDO SOP 9.11). This role does the intake validation and translation for requests from other departments; the Design Producer holds the producer gate as the CDO's delegate (`design-producer.md` SOP 9.1); nothing is released without CDO approval.
 **Wraps:** MASTER-SOP.md §3.2, §7 (Workflow B variable system); all category `_RULES.md` files; MODEL-SPECS.md §5; `universal-sops/cross-dept-request-template.md`
 **Library version pin:** MASTER-SOP.md v1.0; MODEL-SPECS.md (check §6 header date on every run — update pin if version has bumped)
 **When to run:** Every time a department outside the DIU submits a graphics request that references a style ID, describes a visual mood for a deliverable, or requests a Kie.ai-powered generation for use in another department's workflow.
@@ -193,10 +194,10 @@ This role contributes to the company revenue cascade by: **multiplying the style
 4. Translate the validated style request into a Workflow-B variable set: STYLE_ID@version, model tier, filled variables, destination format → `_RULES.md` for that category. Verify that all required variables for the target category are present and filled; unfilled variables block preflight per SOP-DIU-601 and must be resolved before routing.
 5. Check the version-pin ledger. If this request is for an active campaign that should use a locked version (pin already established), confirm the request is using the locked version. If the request references a version newer than the active pin, flag the discrepancy to CDO before proceeding.
 6. Submit the translated Workflow-B request to CDO for approval. Include: requestor, department, campaign context, translated variable set, tier, destination format, estimated generation count, and any version-pin status.
-7. On CDO approval: hand the complete, validated request to the Generation Operator with the full variable set, confirmed STYLE_ID@version, and the cross-department request origin noted (for the generation log provenance trail per SOP-DIU-610 compliance).
+7. On CDO approval: send the complete, validated request (full variable set, confirmed STYLE_ID@version, cross-department request origin noted for the generation log provenance trail per SOP-DIU-610 compliance) through the Prompt Author and independent Prompt QC to the Render Dispatcher, which releases it to the Generation Operator (the sole Kie.ai submitter, through Skill 74).
 8. Record the completed request translation in the daily coordination log: requestor dept, card ID@version used, tier, format, CDO approval timestamp.
-**Outputs:** Translated Workflow-B request (to CDO for approval → to Generation Operator for execution); version-pin discrepancy alerts (as needed); request rejections for incomplete or invalid STYLE blocks.
-**Hand to:** CDO (for approval); Generation Operator (on CDO approval); Photo Shoot Director (on `likeness_present=true` before all else).
+**Outputs:** Translated Workflow-B request (to CDO for approval → Prompt Author and Prompt QC → Render Dispatcher release → Generation Operator for execution); version-pin discrepancy alerts (as needed); request rejections for incomplete or invalid STYLE blocks.
+**Hand to:** CDO (for approval); Prompt Author and Render Dispatcher (on CDO approval, for release to the Generation Operator); Photo Shoot Director (on `likeness_present=true` before all else).
 **Failure mode:** If a request arrives claiming a style ID that does not exist in INDEX.md, do NOT improvise a substitute. Return with a clear error: "STYLE_ID [X] does not exist in the production catalog. Please provide a valid ID or describe the style in mood/category terms for a catalog lookup." Never guess at the intended card.
 
 ---
@@ -332,7 +333,7 @@ The Style Steward is the quality gate for all outbound cross-department style re
 - **Brand Identity Specialist** — gives you: brand-fit tag recommendations for newly promoted production cards; frequency: per new production promotion, ~1–5 per week
 
 ### You hand work off to:
-- **Generation Operator** — you give them: complete, CDO-approved Workflow-B request packages (STYLE_ID@version, filled variables, tier, format, cross-dept origin logged); frequency: once per approved cross-dept request
+- **Render Dispatcher (for release to the Generation Operator, via the Prompt Author and Prompt QC)** — you give them: complete, CDO-approved Workflow-B request packages (STYLE_ID@version, filled variables, tier, format, cross-dept origin logged); frequency: once per approved cross-dept request
 - **Photo Shoot Director** — you give them: `likeness_present=true` cross-dept requests for consent-gate clearance before any other processing; frequency: whenever likeness flag is present
 - **Style Librarian** — you give them: retrieval queries (mood keywords or reference images from external dept requests); frequency: on-demand
 - **Chief Design Officer** — you give them: translated cross-dept request packages (for approval); candidate shortlists (for style selection); version-pin discrepancy alerts; retirement impact reports; weekly catalog report; frequency: multiple daily + weekly report

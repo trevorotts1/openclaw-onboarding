@@ -23,7 +23,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROUTING_AGENT_ID="${ROUTING_AGENT_ID:-main}"
+# Crons must target a CONFIGURED agent (2026.9.x often has no `main`; a cron
+# owned by a missing agent fails on every fire).
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/lib-docker-tenant.sh"
+ROUTING_AGENT_ID="$(s38_resolve_routing_agent)" || exit 10
 
 # ---- JSON-idempotency helper (oc_cron_present) -----------------------------
 _CRON_LIB=""

@@ -1,5 +1,11 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.2 - 2026-10-06 - feat: the image prompt floor uses the rule 12 band
+
+- `scripts/prove_sf_prompt_floor.py`: the 5,000 to 19,000 `PROMPT_CHAR_FLOOR` and `PROMPT_CHAR_CEILING` are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. AF-FUN-PROMPT-FLOOR and AF-FUN-PROMPT-CEILING keep their codes.
+- `SF-PROVER-PIN.sha256` re-recorded with `bash signature-funnel-entry.sh --write-pin`; the entry self-test passes. The entry version gate now anchors the version (`^v?2.x.y$`) and keeps the SKILL.md lockstep and `--check-version`.
+- The golden prompt ledger (`examples/golden-daybreak/prompt_ledger.json`) is re-baselined to real 95 to 100 percent prompts: the authored scene bodies stay, and genuine scene-bound art direction (`direction_bank.py`, never repetition) fills the rest. `build_golden.py` regenerates the ledger, the certificate and the broken-variant results; `verify.sh` is green.
+
 ## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
 
 - **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
