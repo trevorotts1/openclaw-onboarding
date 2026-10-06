@@ -1,5 +1,9 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.5 - 2026-10-05 - close open items on the image consumers PR
+
+- Prompts 09 and 10 were read end to end: no image-model primary wording (no Nano Banana, no Midjourney) exists there, so they are unchanged. Re-pin confirmed: prompt hashes and engine hash match.
+
 ## v1.7.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - `scripts/preflight_gate.py`: credit rule is now max(estimate x 1.30, 200), with 200 kept and documented as this skill's absolute floor; `_live_kie_credits` checks the BODY `code`; shortfall reported. New `scripts/test_kie_credit_rule.py`. `ENGINE-PIN.sha256` re-recorded.

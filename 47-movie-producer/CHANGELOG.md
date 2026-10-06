@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.0.3 - 2026-10-05 - close open items on the image consumers PR
+
+- `kie_image.py` builds the createTask input only from fields the model schema declares (`prompt`, `input_urls` for image-to-image, `aspect_ratio`, `resolution`, `background`); the undeclared `output_format` is no longer sent. Tests extended. INSTRUCTIONS no longer claims a PNG output format is requested.
+
 ## v15.0.2 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - Credit preflight: `VID_KIE_BALANCE_FLOOR_MULTIPLIER` 1.25 -> 1.30 (fleet-wide rule: required balance = estimated cost x 1.30). `_fetch_kie_balance` now checks the response BODY `code` (HTTP 200 with a non-200 body code is an unverifiable balance). New probe in `test_video_preflight.py`.

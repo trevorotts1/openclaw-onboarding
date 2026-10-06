@@ -58,6 +58,15 @@ try:
           body.get("model") == "gpt-image-2-5-sunburst-image-to-image")
     check("i2i sends documented field input_urls", inp.get("input_urls") == ["https://example.invalid/ref.png"])
     check("i2i does not send Nano Banana field image_input", "image_input" not in inp)
+    declared = set(img._DECLARED_INPUT_FIELDS["gpt-image-2-5-sunburst-image-to-image"])
+    check("i2i input holds only schema-declared fields", set(inp) <= declared)
+    check("i2i does not send undeclared output_format", "output_format" not in inp)
+    seen.clear()
+    tool.execute({"prompt": "p", "output_path": "/tmp/kie_t2i_test.png"})
+    tin = (seen.get("body") or {}).get("input", {})
+    check("t2i input holds only schema-declared fields",
+          set(tin) <= set(img._DECLARED_INPUT_FIELDS["gpt-image-2-5-sunburst-text-to-image"]))
+    check("t2i does not send output_format or input_urls", "output_format" not in tin and "input_urls" not in tin)
 finally:
     if old is None:
         os.environ.pop("KIE_API_KEY", None)

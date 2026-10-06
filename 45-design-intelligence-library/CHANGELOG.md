@@ -1,5 +1,9 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.1.5 - 2026-10-05 - close open items on the image consumers PR
+
+- `social-media-designs/_RULES.md`: wording now says GPT Image 2.5 Sunburst for all social images except text-led quote cards, which use Ideogram V3 as a deliberate, labeled specialty route enforced by Skill 35's gate; feed 4:5 rows carry the N43 3:4 substitution on the default model.
+
 ## v2.1.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - Routing (owner order, AGENTS.md N43): GPT-Image 2.5 first everywhere in MODEL-SPECS Section 2, PHOTO-SHOOT-SOP modes A/B/C/F, and the advertisement, facebook-ad, personal-photo-shoot, powerpoint and social-media category rules; Nano Banana 2 fallback only. Deliberate exceptions kept and labelled: ultra-wide 4:1/8:1 (2.5 does not serve them) and the Ideogram quote-card route (`social-media-designs/_RULES.md`, enforced by Skill 35; flagged for the owner as it conflicts with the social-images-on-GPT-Image-2.5 order).

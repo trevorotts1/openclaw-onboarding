@@ -151,7 +151,7 @@ When `KIE_API_KEY` is in `.env`:
 **Kie image models:**
 - `gpt-image-2-5-sunburst-image-to-image` — when source images are provided (edit mode)
 - `gpt-image-2-5-sunburst-text-to-image` — when no source image (text-to-image)
-- Output: 16:9 aspect ratio, 2K resolution, PNG
+- Output: 16:9 aspect ratio, 2K resolution (only schema-declared fields are sent; `output_format` is not one, so the saved file type follows `output_path`)
 
 **Kie video models:**
 - `gemini-omni-video` (default) — image-to-video, accepts reference image URLs, duration as STRING (e.g. `"8"`), `generate_audio: true`
