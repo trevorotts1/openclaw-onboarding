@@ -31,7 +31,8 @@
 # (resolved from openclaw.json allowFrom, never to operator IDs). If no
 # client chat is found the script logs a warning and exits 0 (non-blocking).
 #
-# OPERATOR IDs ARE NEVER TARGETED — hard-coded exclusion below.
+# OPERATOR IDs ARE NEVER TARGETED — the exclusion list is loaded from the
+# shared resolver below (no ids hardcoded).
 #
 # USAGE
 #   bash check-ghl-token-liveness.sh
@@ -63,9 +64,9 @@ REFRESH_ENV_VARS=(
   "GHL_FIREBASE_REFRESH_TOKEN"
 )
 
-# Operator Telegram chat IDs — NEVER send notifications here.
-# Trevor + LeAnne + Spaulding (from INSTALL-CONTRACT.md / ensure-pipeline-crons.sh).
-OPERATOR_CHAT_IDS_RE='^(5252140759|6663821679|6771245262)$'
+# Operator Telegram chat ids — NEVER send notifications here. The id list is
+# loaded from the single authority (shared-utils/resolve-owner-chat.sh);
+# this file hardcodes no ids (id-removal v25.3.19).
 
 # ---------------------------------------------------------------------------
 # State directory — used for the once-per-day idempotency guard.
@@ -87,6 +88,30 @@ PASS_STAMP="${STATE_DIR}/ghl-token-liveness-${TODAY}.ok"
 NOTIFIED_STAMP="${STATE_DIR}/ghl-token-liveness-${TODAY}.notified"
 
 _log() { echo "[ghl-token-liveness] $*"; }
+
+# Operator chat ids — loaded from the single authority (id-removal v25.3.19):
+# shared-utils/resolve-owner-chat.sh declares OPERATOR_CHAT_IDS_SH; never
+# hardcode ids here.
+_operator_chat_ids_sh() {
+  local resolver="" d t
+  if [ -d /data/.openclaw ]; then resolver="/data/.openclaw/skills/shared-utils/resolve-owner-chat.sh"
+  else resolver="$OC_ROOT/skills/shared-utils/resolve-owner-chat.sh"; fi
+  if [ ! -r "$resolver" ]; then
+    d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || true)"
+    for t in "$d/../../shared-utils/resolve-owner-chat.sh" \
+             "$d/../../../shared-utils/resolve-owner-chat.sh"; do
+      if [ -r "$t" ]; then resolver="$t"; break; fi
+    done
+  fi
+  [ -r "$resolver" ] || return 1
+  sed -nE 's/^OPERATOR_CHAT_IDS_SH="([^"]*)".*/\1/p' "$resolver" | head -1
+}
+OPERATOR_CHAT_IDS_SH="$(_operator_chat_ids_sh || true)"
+if [ -z "${OPERATOR_CHAT_IDS_SH:-}" ]; then
+  _log "CONFIG PROBLEM: operator chat-id authority (shared-utils/resolve-owner-chat.sh) not readable — refusing to run; operator exclusion cannot be guaranteed."
+  exit 2
+fi
+OPERATOR_CHAT_IDS_RE="^($(printf '%s' "$OPERATOR_CHAT_IDS_SH" | tr ' ' '|'))$"
 
 # ---------------------------------------------------------------------------
 # Step 1 — Once-per-day guard (VALID branch short-circuit)
@@ -347,10 +372,10 @@ esac
 # ---------------------------------------------------------------------------
 CLIENT_CHAT_ID=""
 if command -v python3 >/dev/null 2>&1 && [[ -f "${OC_ROOT}/openclaw.json" ]]; then
-  CLIENT_CHAT_ID=$(python3 - "${OC_ROOT}/openclaw.json" 2>/dev/null <<'PYEOF'
+  CLIENT_CHAT_ID=$(OPERATOR_CHAT_IDS="$OPERATOR_CHAT_IDS_SH" python3 - "${OC_ROOT}/openclaw.json" 2>/dev/null <<'PYEOF'
 import json, os, sys, re
 
-OPERATOR_IDS = {"5252140759", "6663821679", "6771245262"}
+OPERATOR_IDS = set(os.environ.get("OPERATOR_CHAT_IDS", "").split())
 
 def valid_client_chat(v, bot_id=""):
     if not isinstance(v, (str, int)):
