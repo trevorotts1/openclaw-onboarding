@@ -86,7 +86,7 @@ Set these in the hPanel Environment section BEFORE running install.
 |----------|--------------|
 | `GITHUB_TOKEN` | GitHub access |
 | `TAVILY_API_KEY` | Web search |
-| `KIE_API_KEY` | Image generation |
+| `KIE_API_KEY` | KIE.ai media generation: image, video, music, and speech (the client's own key) |
 | `VERCEL_TOKEN` | Vercel deployments |
 | `CONTEXT7_API_KEY` | API documentation |
 

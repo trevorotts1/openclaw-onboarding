@@ -22,7 +22,8 @@ PUBLIC ENTRY POINT
      (REUSED AS-IS — never forked).  Asserts ``result['ok']`` AND
      ``not result['missing']`` — missing PNGs are a hard FAIL.
   3. Calls ``ghl_media.resolve_location_pit()`` / ``resolve_location_id()`` for
-     the OPERATOR'S OWN fixture keys (never a client key).  Optionally calls
+     the GHL LOCATION PIT and location id (GHL credentials; the KIE key is
+     separate and is the box owner's own, see step 0).  Optionally calls
      ``ghl_media.create_media_folder`` to group one run's images.
   4. For each PNG, calls ``ghl_media.upload_media(...)`` (bare Python, not
      Cloudflare-WAF-gated), then RE-FETCHES the returned CDN URL and asserts
@@ -59,9 +60,12 @@ HONEST-FAIL POLICY
 If ``KIE_API_KEY`` is absent (currently found only in stale ``.bak`` files),
 this function writes an honest ``FAIL`` record to ``images/manifest.json`` and
 raises ``ImagePipelineError`` so the build gate fails.  NO SVG placeholder, NO
-``file://`` URL, NO silent skip.  The operator must provision ``KIE_API_KEY``
-(their own key, via Skill 07 ``07-kie-setup``) into the active env store before
-a live run.
+``file://`` URL, NO silent skip.  The box owner must provision the KIE key
+(on a client box, the client's own key, via Skill 07 ``07-kie-setup``; operator
+keys are never used for client work) into the active env store before a live
+run.  Any alias in the ``KIE_API_KEY`` family of ``shared-utils/secret_names.json``
+satisfies the check.  Shared KIE rules:
+``07-kie-setup/references/kie-common-rules.md``.
 
 DO NOT EDIT
 -----------
@@ -120,10 +124,56 @@ class ImagePipelineError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Key presence check — fail loud before any network call if KIE_API_KEY absent
+# Key presence check — fail loud before any network call if the KIE key is absent
 # ---------------------------------------------------------------------------
 
-_KIE_KEY_ENV_NAMES = ("KIE_API_KEY",)
+def _load_secret_helper():
+    """Import shared-utils/secret_helper.py (the ONE secret-name canon reader).
+
+    shared-utils is not a package, so probe the repo sibling and the well-known
+    fleet install locations (Mac ``~/.openclaw/skills`` and VPS
+    ``/data/.openclaw/skills``).  Returns the module, or None when unreadable."""
+    if "secret_helper" in sys.modules:
+        return sys.modules["secret_helper"]
+    import importlib.util
+    for base in (
+        os.path.join(_TOOLS_DIR, "..", "..", "shared-utils"),
+        os.path.expanduser("~/.openclaw/skills/shared-utils"),
+        "/data/.openclaw/skills/shared-utils",
+    ):
+        path = os.path.normpath(os.path.join(base, "secret_helper.py"))
+        if not os.path.isfile(path):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("secret_helper", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["secret_helper"] = mod
+            spec.loader.exec_module(mod)
+            return mod
+        except Exception:  # noqa: BLE001
+            sys.modules.pop("secret_helper", None)
+    return None
+
+
+def _kie_key_names() -> tuple[str, ...]:
+    """Every accepted name for the KIE key: the ``KIE_API_KEY`` family of
+    ``shared-utils/secret_names.json`` (aliases live THERE, never restated here).
+
+    ponytail: if the canon cannot be loaded this fails open to the canonical name
+    only; add aliases to secret_names.json, not here."""
+    helper = _load_secret_helper()
+    return tuple(helper.alias_list("KIE_API_KEY")) if helper else ("KIE_API_KEY",)
+
+
+def _kie_value_ok(value: str) -> bool:
+    """True when ``value`` is non-empty and not placeholder-shaped."""
+    if not value:
+        return False
+    helper = _load_secret_helper()
+    return not helper.is_placeholder(value) if helper else True
+
+
+_KIE_KEY_ENV_NAMES = _kie_key_names()
 _KIE_ENV_STORES = (
     "~/.openclaw/workspace/.env",
     "~/clawd/secrets/.env",
@@ -132,9 +182,12 @@ _KIE_ENV_STORES = (
 
 
 def _resolve_kie_api_key(env: dict | None = None) -> str:
-    """Resolve ``KIE_API_KEY`` from the environment or the canonical env stores.
+    """Resolve the KIE key from the environment or the canonical env stores.
 
-    Mirrors the lookup order documented in ``kie_generate.py``.  Raises
+    Accepts every alias in the ``KIE_API_KEY`` family of the shared secret-name
+    canon (``shared-utils/secret_names.json``) and skips placeholder-shaped
+    values.  On a client box this is the CLIENT'S OWN key.  Mirrors the store
+    order documented in ``kie_generate.py``.  Raises
     ``ImagePipelineError`` (``honest_fail=True``) if the key is absent so the
     build gate fails with an honest FAIL rather than a silent skip.
 
@@ -147,7 +200,7 @@ def _resolve_kie_api_key(env: dict | None = None) -> str:
     # 1) Live process environment.
     for name in _KIE_KEY_ENV_NAMES:
         val = str(env.get(name, "")).strip().strip("'\"")
-        if val:
+        if _kie_value_ok(val):
             return val
 
     # 2) Canonical env-store files (same paths kie_generate.py reads).
@@ -164,16 +217,17 @@ def _resolve_kie_api_key(env: dict | None = None) -> str:
                     k, _, v = line.partition("=")
                     k = k.strip()
                     v = v.strip().strip("'\"")
-                    if k in _KIE_KEY_ENV_NAMES and v:
+                    if k in _KIE_KEY_ENV_NAMES and _kie_value_ok(v):
                         return v
         except OSError:
             continue
 
     raise ImagePipelineError(
-        "KIE_API_KEY is absent from all env stores "
-        f"({', '.join(_KIE_ENV_STORES)}) and from the live process environment. "
-        "Provision KIE_API_KEY (the operator's own key) via Skill 07 "
-        "(07-kie-setup) before running the image pipeline. "
+        "The KIE key is absent from all env stores "
+        f"({', '.join(_KIE_ENV_STORES)}) and from the live process environment "
+        f"(names checked: {', '.join(_KIE_KEY_ENV_NAMES)}). "
+        "Provision KIE_API_KEY (the box owner's own key; on a client box, the "
+        "client's) via Skill 07 (07-kie-setup) before running the image pipeline. "
         "NO placeholder image will be substituted — this is a hard FAIL.",
         honest_fail=True,
     )
@@ -859,7 +913,7 @@ def run_image_pipeline(
             for the expected shape).
         run_dir: The build run directory.  ``images/`` and ``logs/`` subdirectories
             are created under it.
-        location_id: The GHL sub-account location id (operator's own fixture).
+        location_id: The GHL sub-account location id.
             When ``None``, resolved from the env via ``ghl_media.resolve_location_id``.
         location_pit: The GHL LOCATION Private Integration Token (Bearer).
             When ``None``, resolved from the env via ``ghl_media.resolve_location_pit``.
@@ -926,14 +980,14 @@ def run_image_pipeline(
             "honest_fail": honest,
         }
 
-    # ── Step 0: KIE_API_KEY present? Fail loud before any network call. ────────
+    # ── Step 0: KIE key present (any shared-canon alias)? Fail loud before any network call. ──
     try:
         _resolve_kie_api_key(env)
     except ImagePipelineError as exc:
         logger.error("IMAGE PIPELINE FAIL (key absent): %s", exc)
         return _fail(str(exc), honest=True)
 
-    # ── Step 1: Resolve operator credentials (never a client key). ────────────
+    # ── Step 1: Resolve the GHL LOCATION PIT + location id. ───────────────────
     try:
         _location_id = location_id or ghl_media.resolve_location_id(env)
         _location_pit = location_pit or ghl_media.resolve_location_pit(env)
