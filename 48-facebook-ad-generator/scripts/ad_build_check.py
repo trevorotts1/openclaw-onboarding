@@ -40,6 +40,7 @@ Zero third-party deps (stdlib json / re / pathlib / urllib only).
 
 import json
 import re
+import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -86,8 +87,13 @@ PROMPT_MAX_CHARS = 18000
 # Image size (square feed ad) + the model family the generation must stay on.
 IMAGE_EDGE_PX = 1500
 # Auto-adopt any future gpt-image version: a model id must START WITH this prefix.
-# gpt-image-2, gpt-image-3, gpt-image-2-image-to-image, gpt-image-2-text-to-image
-# all pass; "dalle" / "flux" / "" fail. The version digit is NEVER hardcoded.
+# This is a deliberate, documented FAMILY gate (the version is never hardcoded), not
+# the dispatch pin. The id this skill actually sends is Skill 66's registry id
+# `gpt-image-2-5-sunburst-text-to-image` (AGENTS.md N43 pins the fleet to
+# gpt-image-2-5-sunburst-*; legacy gpt-image-2-* is only for ratios 3:1, 1:3, 9:21,
+# which a square 1:1 ad never uses). gpt-image-2-5-sunburst-text-to-image,
+# gpt-image-2-5-sunburst-image-to-image and any future gpt-image-N all pass;
+# "dalle" / "flux" / "" fail.
 GPT_IMAGE_MODEL_PREFIX = "gpt-image-"
 
 # Placeholder / fabricated tokens that are NOT a real Kie task id.
@@ -140,8 +146,15 @@ DELIVERABLES_REQUIRED = [
 
 # Phase-0 Kie balance preflight constants (AF-FBAD-KIE-BALANCE).
 FBAD_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
+# Owner rule (fleet-wide, 2026-10): required balance = estimated cost x 1.30. Same value in
+# Skill 47 (VID_KIE_BALANCE_FLOOR_MULTIPLIER). Canonical rule text:
+# 07-kie-setup/references/kie-common-rules.md.
 FBAD_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (re-dos)
-FBAD_CREDIT_PER_USD = 100                 # conservative USD->credit factor
+# ONE shared constant: credits per USD = 200. Verified 2026-10-05 from first-party KIE
+# sources: the kie.ai/pricing page header "1 credit ~= $0.005 USD" (200 credits per USD) and
+# the kie-models vendor reference example "160 credits (0.80 USD)" (also 200 per USD). Both
+# agree. The earlier value 100 under-required the balance by half.
+FBAD_CREDIT_PER_USD = 200
 
 # Tolerance between a scorecard's SELF-DECLARED average and the average COMPUTED from
 # its own category scores. A declared number can NEVER override the computed one; a
@@ -1131,6 +1144,12 @@ def _fetch_kie_balance(api_key: str, url: str = FBAD_KIE_CREDIT_URL,
         obj = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Kie credit response is not JSON: {exc}; body={raw[:200]!r}")
+    # KIE can answer HTTP 200 with an error envelope ({"code": 401, "msg": ...}); the
+    # body `code` is the truth, never the HTTP status alone. An envelope whose code is
+    # not 200 is an unverifiable balance (fail LOUD, never "enough").
+    if isinstance(obj, dict) and "code" in obj and obj.get("code") != 200:
+        raise RuntimeError(f"Kie credit endpoint returned body code {obj.get('code')!r}: "
+                           f"{str(obj.get('msg', ''))[:200]!r}")
     candidates = []
     if isinstance(obj, (int, float)):
         candidates.append(obj)
@@ -1150,20 +1169,57 @@ def _fetch_kie_balance(api_key: str, url: str = FBAD_KIE_CREDIT_URL,
     return float(candidates[0])
 
 
+def real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
+    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    import os
+    if not raw or not str(raw).strip():
+        return None
+    # Nearest copy first (a repo checkout or the installed skills dir that holds this
+    # file), then the explicit override, then the standard install roots.
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "secret_helper.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                from secret_helper import looks_like_real_key
+            except Exception:
+                return None
+            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
+
+
 def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
                           api_key=None) -> str:
     """AF-FBAD-KIE-BALANCE. Phase-0 balance gate for a PAID job, run ONCE at start.
     Computes the estimated credit floor (estimated_cost_usd x FBAD_CREDIT_PER_USD x
     FBAD_KIE_BALANCE_FLOOR_MULTIPLIER), fetches the live Kie balance, and returns a
     fatal AF-FBAD-KIE-BALANCE string when balance < floor OR the balance cannot be
-    verified. Defers (passes) for a free job (estimated_cost<=0) or when no API key is
-    available on this box. An UNVERIFIABLE balance is a HARD ABORT."""
+    verified. Passes only for a free job (estimated_cost<=0). A PAID job with no API key
+    on this box is an UNVERIFIABLE balance and returns the fatal AF-FBAD-KIE-BALANCE
+    string (same rule as Skill 47, SK1-67): the legacy --phase path HARD-ABORTS (exit 4)
+    and the recover path PARKS it as a recoverable money park. A placeholder key counts
+    as no key. An unverifiable or short balance is likewise fatal."""
     if not estimated_cost_usd or estimated_cost_usd <= 0:
         return ""
-    if not api_key:
-        return ""  # no key to query on this box; deferred to the generation subprocess.
     estimated_floor = (float(estimated_cost_usd) * FBAD_CREDIT_PER_USD
                        * FBAD_KIE_BALANCE_FLOOR_MULTIPLIER)
+    if not api_key:
+        return ("AF-FBAD-KIE-BALANCE: this is a PAID Kie batch but KIE_API_KEY is not set "
+                "(or is only a placeholder) on this box, so the credit balance cannot be "
+                f"verified. It needs at least {estimated_floor:g} credits (estimated_cost "
+                f"${estimated_cost_usd:g} x {FBAD_CREDIT_PER_USD} credits/USD x "
+                f"{FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). An unverifiable balance is "
+                "a HARD ABORT: set the client's own KIE_API_KEY, then re-run or --resume.")
     try:
         balance = _fetch_kie_balance(api_key)
     except RuntimeError as exc:
@@ -1174,7 +1230,8 @@ def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
     if balance < estimated_floor:
         return ("AF-FBAD-KIE-BALANCE: Kie.ai credit balance is below the estimated floor "
                 f"for this batch. balance={balance:g} credits, "
-                f"estimated_floor={estimated_floor:g} (estimated_cost "
+                f"estimated_floor={estimated_floor:g}, shortfall="
+                f"{estimated_floor - balance:g} credits (estimated_cost "
                 f"${estimated_cost_usd:g} x {FBAD_CREDIT_PER_USD} credits/USD x "
                 f"{FBAD_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any "
                 "paid dispatch so the batch does not die mid-run. Top up and retry.")
