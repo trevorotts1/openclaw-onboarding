@@ -577,7 +577,7 @@ Rules:
 ```
 DO-NOT BLOCK (final paragraph; inline, because GPT Image 2.5 Sunburst has no negative-prompt field):
 Do not misspell, garble, duplicate, drop, add, substitute, or invent any letter or word; render every quoted text string exactly as written, letter-for-letter.
-Do not draw, invent, redesign, recolor, restyle, or substitute any logo, monogram, icon, leaf, sprout, tree, mountain, badge, roundel, or tagline lockup; reproduce only the supplied reference mark exactly as placed.
+Logo class (canonical command): Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation. (URL image-to-image mode only, use instead: Do not draw, invent, redesign, recolor, restyle, or substitute any logo, monogram, icon, leaf, sprout, tree, mountain, badge, roundel, or tagline lockup; reproduce only the supplied reference mark exactly as placed.)
 Do not render any bracketed token, any square brackets, or any of "owner to confirm", "insert", "tbd", "placeholder", "client win", "endorsement", "real result", "to supply", "pending", or any build note; only the quoted audience-facing copy appears.
 Do not render any description of the picture, any spoken-script or presenter line, any stage direction, any telegraphing kicker, any internal build note, or the literal word "webinar" as on-slide text.
 Do not render extra or missing fingers, malformed or fused hands, warped or distorted facial features, mismatched eyes, distorted teeth, plastic over-smoothed skin, or unnatural body proportions.
@@ -632,7 +632,7 @@ PROFESSIONALISM (standalone-art gate): finished gallery-grade standalone piece o
 
 DO-NOT BLOCK (final paragraph, all eight SOP 9.8 classes):
 Do not misspell, garble, duplicate, drop, add, substitute, or invent any letter or word; render every quoted text string exactly as written, letter-for-letter.
-Do not draw, invent, redesign, recolor, restyle, or substitute any logo, monogram, icon, leaf, sprout, tree, mountain, badge, roundel, or tagline lockup; reproduce only the supplied reference mark exactly as placed.
+Logo class (canonical command): Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation. (URL image-to-image mode only, use instead: Do not draw, invent, redesign, recolor, restyle, or substitute any logo, monogram, icon, leaf, sprout, tree, mountain, badge, roundel, or tagline lockup; reproduce only the supplied reference mark exactly as placed.)
 Do not render any bracketed token, any square brackets, or "owner to confirm", "insert", "tbd", "placeholder", "client win", "endorsement", "real result", "to supply", "pending", or any build note; only the quoted audience-facing copy appears.
 Do not render any description of the picture, any spoken-script or presenter line, any stage direction, any telegraphing kicker, any internal build note, or the literal word "webinar" as on-slide text.
 Do not render extra or missing fingers, malformed or fused hands, warped or distorted facial features, mismatched eyes, distorted teeth, plastic over-smoothed skin, or unnatural body proportions.
@@ -692,7 +692,7 @@ Do not render any watermark, signature, UI artifact, emoji or clipart glyph, em 
 **Inputs:**
 - intake.json (audience_composition, FINAL_PRICE, fish_audio_voice_id if available)
 - SOP-CAST-01-AUDIENCE-COMPOSITION-AND-CASTING-LEDGER.md (the casting ledger)
-- SOP-IMG-05-PIL-LOGO-COMPOSITE.md (gradient ban and PIL composite)
+- SOP-IMG-05-PIL-LOGO-COMPOSITE.md (logo mechanisms, gradient ban)
 - SOP-PITCH-05-DELIVERABLE-BUNDLE.md (audio deliverable)
 - The brief (value stack, promises, re-pitch block, validator sources, Wall of Wins tiles)
 

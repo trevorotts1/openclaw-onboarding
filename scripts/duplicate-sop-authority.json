@@ -33,8 +33,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "role_library_sha256": "3dae63a5874e608373270f22a8559b56a9155636844971236701d95b864d6a16",
-      "universal_sops_sha256": "a7a599052cc69220a2095b48d665f0960335dd923d3665aa5b6c2b495c64584c",
+      "role_library_sha256": "438963454bb449f2c6005ff8957cdb0275c88ecac148aef191dbaa62f542bfee",
+      "universal_sops_sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"

@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T07:57:10Z",
+  "generated_at": "2026-10-06T07:57:13Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -281,8 +281,8 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "a7a599052cc69220a2095b48d665f0960335dd923d3665aa5b6c2b495c64584c",
-      "bytes": 33301
+      "sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
+      "bytes": 33571
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
       "sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",

@@ -55,7 +55,7 @@ Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an
 | Mode | Kie.ai endpoint family | What it does | When the Presentations pipeline uses it |
 |---|---|---|---|
 | **A. Text-to-Image (T2I)** | model `gpt-image-2-5-sunburst-text-to-image` | Generates a slide image from words ONLY. No reference images. The model invents every pixel, including any logo or face described in words. | ONLY when the deck has NO logo asset AND no founder portrait for this slide (`LOGO_ON_SLIDES = false` AND archetype is not A5). Rare. |
-| **B. Image-to-Image (I2I)** | model `gpt-image-2-5-sunburst-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries the logo (i.e. almost every slide), and for every A5 founder-portrait slide. |
+| **B. Image-to-Image (I2I)** | model `gpt-image-2-5-sunburst-image-to-image` | Generates a slide image from words PLUS up to 16 reference image URLs passed in `input_urls`. The references anchor real assets (the locked logo, the founder's real face, an optional style-reference frame) so they are composited rather than reinvented. | THE DEFAULT for every slide that carries a URL logo (URL image-to-image mode only; on the canonical command the logo is a local file placed at assembly and Mode A is used), and for every A5 founder-portrait slide. |
 | **C. Image-to-Text / JSON (analysis)** | NOT a Kie.ai generation endpoint | "Read this image and return structured findings" (e.g. analyze a reference deck into named style families; QC-read a rendered slide for defects). | Done by the multimodal LLM agent READING the image directly. There is no Kie.ai HTTP call for this. See §6. |
 
 **The hard mode-selection rule (this is the gate):**
@@ -137,7 +137,7 @@ The ONLY thing that differs between Mode A and Mode B is the `model` string and 
 
 ## 4. MODE A - TEXT-TO-IMAGE (no references)
 
-**Use only when:** `LOGO_ON_SLIDES = false` AND the slide is not A5 AND no style-reference frame is passed. (Rare for a branded deck.)
+**Use when:** no URL logo is in use (`LOGO_ON_SLIDES = false`, or the logo is a local file placed at assembly on the canonical command) AND the slide is not A5 AND no style-reference frame is passed.
 
 **curl:**
 ```bash
@@ -169,7 +169,7 @@ curl -s -X POST 'https://api.kie.ai/api/v1/jobs/createTask' \
 **Rules for Mode A:**
 - There is NO `input_urls` field. Adding one to a T2I body is malformed - the reference would be ignored, and the agent would falsely believe the logo was composited. If `input_urls` is needed, the call is Mode B, not Mode A.
 - Prompt length: the API ceiling for the GPT Image 2.5 Sunburst family is 20,000 characters (`07-kie-setup/references/kie-common-rules.md`). How much of that ceiling a descriptive prompt should use (target, floor, ceiling) is set by rule 12 of that file. This SOP does not restate it. Measure it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id> --check --prompt-file <slide-NN.txt>` (run from the Skill 74 folder, never from a deck run directory). `build_deck.py` and `prompt_gate.py` currently enforce a 9,000 to 18,000 character band, so until that gate is migrated to rule 12 write 16,000 to 18,000 characters for the current 20,000-character pin: that window passes both the rule 12 floor (16,000) and the renderer ceiling (18,000).
-- Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the logo-mutation defect). That is exactly why a deck with a logo never uses Mode A.
+- Everything the model must draw is in `prompt`. A logo described in words here WILL be reinvented (the logo-mutation defect). That is exactly why a URL-logo deck never uses Mode A (URL image-to-image mode only; on the canonical command Mode A with a local logo is correct, SOP-IMG-05 Rule A).
 - The `prompt` MUST carry the mandatory English/Latin-only pin verbatim (Section 1A): *"All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No garbled, misspelled, or invented text."* (When the deterministic `build_deck.py` path is used, the script appends this for you if the authored prompt lacks it.)
 
 ---
