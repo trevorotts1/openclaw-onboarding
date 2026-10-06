@@ -61,7 +61,9 @@ python3 scripts/text_to_video.py "A serene mountain landscape at sunset, cinemat
 ```
 
 Positional argument: `prompt` (the text description, in quotes).
-Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`.
+Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`, `--model`.
+
+**KIE (`--provider kieai`, the default) runs on KIE's live job API** (`POST /api/v1/jobs/createTask`, then polls `GET /api/v1/jobs/recordInfo` for up to 15 minutes, then downloads the result). The model is chosen by Skill 67 (`67-kie-video`, its `select_video_model.py`); if Skill 67 is not installed the command stops with a clear error instead of guessing. `--model <KIE model id>` always wins and is sent unchanged. `--resolution` is mapped to the spelling Skill 67's registry lists for that model (for example `1080p` becomes `1080P`); a resolution the model does not offer (for example `4k` on Wan 3.0) is rejected. `--style` is not a KIE input and is ignored by KIE. `--model` is KIE-only like `--seed`. Skill 74 (`74-kie-live-adapter`, landing separately) is the future shared KIE transport; Skill 25 does not import it yet.
 
 `--seed` and `--negative-prompt` are KIE-only options. Supplying either with Runway, Pika, or mock is rejected with a nonzero exit; those providers never silently discard the option.
 
@@ -89,7 +91,9 @@ python3 scripts/image_to_video.py photo.jpg \
 ```
 
 Positional argument: `image` (path to image file).
-Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`.
+Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`.
+
+With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask, and the result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
 
 ### Add Music
 

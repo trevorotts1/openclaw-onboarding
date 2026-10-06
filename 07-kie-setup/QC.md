@@ -23,8 +23,8 @@ Enables the agent to use KIE.ai as the unified API for image, video, and audio g
 - [ ] QC fails if the agent reports the key missing without checking all locations first.
 
 ## 5. Functional Checks
-- [ ] Mask-print the first 10 characters of `KIE_API_KEY` to confirm the environment loads correctly.
-- [ ] Call the credit endpoint and confirm a successful balance response.
+- [ ] Confirm `KIE_API_KEY` loads with a presence-only check (`[ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"`). Never print any character of the key.
+- [ ] Call the credit endpoint (`GET https://api.kie.ai/api/v1/chat/credit`) and confirm the response body has `"code":200` and a numeric `data` balance.
 - [ ] Create a test image task with model `gpt-image-2-5-sunburst-text-to-image` using the documented `createTask` endpoint and capture the returned task ID.
 - [ ] Poll the documented status endpoint and confirm the task transitions through a valid async state and eventually returns result data or a valid in-progress state.
 - [ ] Ask the agent what a 401, 402, and 429 mean. Expected: bad/missing key, insufficient credits, and rate limit respectively.

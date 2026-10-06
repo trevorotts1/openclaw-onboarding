@@ -13,6 +13,22 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v23.3.1] - 2026-10-05 - KIE key ownership docs and shared-canon key resolver
+
+### Fixed
+- **Key ownership contradiction.** `tools/ghl_media.py` said "KEYS - OPERATOR'S
+  OWN, NEVER A CLIENT'S"; `TOOLS.md` and the Presentations `build_deck.py` say the
+  KIE key is the client's own. Rule (owner): on a client box the KIE key is the
+  client's own; operator keys are never used for client work. The `ghl_media.py`
+  docstring, the `ghl_image_stage.py` docstrings and its missing-key error, and the
+  SKILL.md "Image key" line now say so. Behavior check: `ghl_media.py` resolves no
+  KIE key itself; it runs `kie_generate.py`, which reads the running box's own env
+  stores, so no operator key is injected by this skill.
+- **Duplicate KIE key resolver.** `tools/ghl_image_stage.py` accepted only the bare
+  name `KIE_API_KEY`. It now reads the `KIE_API_KEY` family from the shared canon
+  (`shared-utils/secret_names.json` via `secret_helper.alias_list`) and skips
+  placeholder-shaped values. New test: `tests/test_ghl_image_stage_kie_key.py`.
+
 ## [v23.3.0] - 2026-09-07 - skill6-fix-plan wave: adaptive capability probe + lane policy, multi-iframe routing, lane adapters, INSTALL v3 rewrite (live E2E deliberately HELD)
 
 Branch **skill6/fix-plan-20260907**. Everything below is offline-proven only:

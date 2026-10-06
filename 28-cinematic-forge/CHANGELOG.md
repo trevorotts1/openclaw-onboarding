@@ -1,5 +1,14 @@
 # Changelog — Skill 28: Cinematic Forge
 
+## v7.0.1 — 2026-10-05 — remove dead KIE endpoints; delegate audio to Skill 68
+
+Live probes on 2026-10-05 (known-good control and fake-path control, no paid calls) returned HTTP 404 for `GET /api/v1/user/credits` and `POST /api/v1/jobs/create`, while `GET /api/v1/chat/credit` (body `{code,msg,data:<number>}`) answered. The task API is `POST /api/v1/jobs/createTask` and `GET /api/v1/jobs/recordInfo`.
+
+- Credit check (SKILL.md Phase 0, QC.md 5.1) now uses `/api/v1/chat/credit` and requires the body `code` to be checked before reading `data`.
+- Phase 3 audio (dialogue, narrator, sound effects, music) no longer calls KIE directly. The dead `/api/v1/jobs/create` calls and the model ids `eleven_multilingual_v2`, `eleven_sound_effects` and `suno_v4` are removed. Skill 68 (`68-kie-audio`) owns model ids, routes and validation; the agent runs its `scripts/validate_audio_request.py` before dispatch and its `references/qc.md` after. Skill 68 has no ElevenLabs sound-effects model, so sound effects use its sound-effect route.
+- API reference table: image rows corrected from `/jobs/create` and `/jobs/query` to `/jobs/createTask` and `/jobs/recordInfo` (Skill 66 owns the image model id); audio rows replaced by a pointer to Skill 68; `/veo/generate`, `/veo/record-info` and `/veo/extend` left as is (they match Skill 67's registry).
+- INSTALL.md, QC.md and cost table wording updated to match. The "VEO 3.1 Fast only" rule, intake, assembly and delivery gates are unchanged.
+
 ## v6.6.0 — SK1-32: the delivered artifact is the REQUESTED artifact, and the gate that says so checks the approved intake
 
 - **T0-47 (BLOCKER) — the un-transformed file was the one that shipped.** Phase 5

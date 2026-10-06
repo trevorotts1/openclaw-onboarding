@@ -140,9 +140,9 @@ SETUP CHECKLIST
 [ ] Test 2 passed — recordInfo probe answered without 401 (connectivity proven,
     no credits burned)
 [ ] normalize_alias.py --self-test PASS
-[ ] select_image_model.py --self-test PASS (15/15)
-[ ] validate_prompt.py --self-test PASS
-[ ] validate_payload.py --self-test PASS (40/40)
+[ ] select_image_model.py --self-test PASS (24/24)
+[ ] validate_prompt.py --self-test PASS (21/21)
+[ ] validate_payload.py --self-test PASS (49/49)
 [ ] wire.sh run — one block per core target, one sentinel, second run no-change
 [ ] CORE_UPDATES.md applied via wire.sh to the labeled core files
 

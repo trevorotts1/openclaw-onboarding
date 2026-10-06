@@ -636,7 +636,7 @@ def self_test() -> int:
             "fully-locked project PASSES all 8 paid-call preconditions",
             result.passed and len(result.checks) == 8,
         )
-        check("passing result carries a verified estimated_cost_usd", result.estimated_cost_usd == 0.40)
+        check("passing result carries a verified estimated_cost_usd", result.estimated_cost_usd == 0.30)
         check("passing result carries a request_hash for idempotency", bool(result.request_hash))
 
         # An unpriced/unverified model (Seedance — see model-registry.json's

@@ -143,7 +143,7 @@ KIE.ai uses DIFFERENT endpoints than OpenAI!
 | Create Image | POST   | https://api.kie.ai/api/v1/jobs/createTask |
 | Check Status | GET    | https://api.kie.ai/api/v1/jobs/recordInfo?taskId=XXX |
 | Create Video | POST   | https://api.kie.ai/api/v1/veo/generate |
-| Video Status | GET    | https://api.kie.ai/api/v1/veo/task?taskId=XXX |
+| Video Status | GET    | https://api.kie.ai/api/v1/veo/record-info?taskId=XXX |
 
 WRONG - NEVER USE: /v1/images/generations (that is OpenAI format, not KIE.ai)
 
@@ -412,7 +412,7 @@ After 30 seconds: every 5 to 10 seconds.
 After 2 minutes: every 15 to 30 seconds.
 Stop after 10 to 15 minutes and investigate.
 Use exponential backoff to reduce load.
-On success, parse resultJson, download results immediately, and store them. Generated URLs typically expire after 24 hours.
+On success, parse resultJson, download results immediately, and store them. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 Kling 3.0 (kling-3.0/video)
 Source: https://docs.kie.ai/market/kling/kling-3.0.md
 Overview
@@ -3655,7 +3655,7 @@ Global notes from KIE docs:
 
 Default rate limits: up to 20 new generation requests per 10 seconds per account. HTTP 429 if exceeded.
 Asynchronous tasks. Use callback or query endpoint to retrieve results.
-Generated media stored for 14 days.
+Generated media: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 API base: https://api.kie.ai
 Auth: Authorization: Bearer YOUR_API_KEY
 

@@ -1441,6 +1441,16 @@
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
+  },
+  {
+   "skill": "74",
+   "slug": "kie-live-adapter",
+   "name": "kie-live-adapter",
+   "client_facing": false,
+   "description": "Setup/reference: live KIE adapter (standard-library Python) for skills 66, 67 and 68; reads the live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls, and saves results. Shadow mode by default: records drift, never dispatches a paid job, never chooses or changes a model.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }

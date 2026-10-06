@@ -63,7 +63,7 @@ H="$(python3 "$ENGINE" hash "$PB" 2>/dev/null | tr -d '[:space:]')"
 python3 - "$WF/appt/visual.json" "$H" "$WF/appt/diagram.png" "$WF/appt/hero.png" <<'PY'
 import json, sys
 path, h, png, hero = sys.argv[1:5]
-json.dump({"workflow_id":"appt","structure_hash":h,"model_id":"mock-gpt-image",
+json.dump({"workflow_id":"appt","structure_hash":h,"model_id":"mock",
            "diagram_mmd":"appt/diagram.mmd","diagram_png":png,"hero_png":hero,
            "hero_status":"present","hosted_urls":{"diagram":None,"hero":None},
            "generated_at":"2026-07-05T00:00:00Z"}, open(path,"w"), indent=2)
@@ -95,7 +95,7 @@ H2="$(python3 "$ENGINE" hash "$PB" 2>/dev/null | tr -d '[:space:]')"
 python3 - "$WF/appt/visual.json" "$H2" "$WF/appt/diagram.png" <<'PY'
 import json, sys
 path, h, png = sys.argv[1:4]
-json.dump({"workflow_id":"appt","structure_hash":h,"model_id":"mock-gpt-image",
+json.dump({"workflow_id":"appt","structure_hash":h,"model_id":"mock",
            "diagram_mmd":"appt/diagram.mmd","diagram_png":png,"hero_png":None,
            "hero_status":"pending","hosted_urls":{"diagram":None,"hero":None},
            "generated_at":"2026-07-05T00:00:00Z"}, open(path,"w"), indent=2)
