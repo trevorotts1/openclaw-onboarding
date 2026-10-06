@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.41 - 2026-10-06 - Persona company contexts are written by every update
+
+`TENANT-CONFIGURATION.md` no longer says operators add `MC_PERSONA_COMPANY_CONTEXTS_JSON` by hand: `shared-utils/ensure_persona_contexts.py` writes and verifies it on every update.
+
 ## v13.1.20 - 2026-09-21 - The parity guard can see agents.entries, and a dept folder stops becoming a doubled agent id
 
 Three findings from the client box at the v25.1.66 skills roll.

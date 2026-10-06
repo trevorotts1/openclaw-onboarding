@@ -12,17 +12,21 @@ KEEP_N="${OPENCLAW_JSON_BACKUPS_KEEP:-3}"
 case "$KEEP_N" in ''|*[!0-9]*) KEEP_N=3 ;; esac
 if [ "$#" -gt 0 ]; then dirs=("$@"); else dirs=("${OPENCLAW_ROOT:-}" "$HOME/.openclaw" /data/.openclaw); fi
 pruned=0
+# protected / in-flight names (a plain function: bash 3.2 cannot parse case patterns inside $(...))
+_skip() {
+  case "${1##*/}" in
+    openclaw.json.last-good|openclaw.json.lock*|openclaw.json.tmp*|*.tmp|*.tmp.*) return 0 ;;
+  esac
+  return 1
+}
 for d in "${dirs[@]}"; do
   [ -n "$d" ] && [ -d "$d" ] || continue
   # newest first; names are only the candidates, mtime decides
   files=()
-  while IFS= read -r f; do files+=("$f"); done < <(
-    ls -1t "$d"/openclaw.json.* 2>/dev/null | while IFS= read -r f; do
-      case "$(basename "$f")" in
-        openclaw.json.last-good|openclaw.json.lock*|openclaw.json.tmp*|*.tmp|*.tmp.*) continue ;;
-      esac
-      [ -f "$f" ] && [ ! -L "$f" ] && printf '%s\n' "$f"
-    done)
+  while IFS= read -r f; do
+    _skip "$f" && continue
+    [ -f "$f" ] && [ ! -L "$f" ] && files+=("$f")
+  done < <(ls -1t "$d"/openclaw.json.* 2>/dev/null)
   i=0
   for f in ${files[@]+"${files[@]}"}; do
     i=$((i + 1))

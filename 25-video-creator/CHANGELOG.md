@@ -1,5 +1,9 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.1.2] - 2026-10-06 - QC reads every credential store
+
+- `qc-video-creator.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars.
+
 ## [7.1.1] - 2026-10-06 - fix: the rule 12 prompt check runs on every KIE submit
 
 - The check moved into `_kie_run`, the one place both text-to-video and image-to-video submit from, so it always has the resolved model id (it was dormant before). KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. A model with no known limit is UNKNOWN and has no floor; an image-to-video call with no prompt is not measured.
