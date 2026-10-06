@@ -192,6 +192,21 @@ def leg1_pregen_gate_and_qc() -> dict:
         "send the swipe file straight to your inbox -- or grab the link in the "
         "comments if DMs are slow to load for you."
     )
+    # Defined BEFORE any early return so every branch below can reference them
+    # (previously the early returns raised UnboundLocalError).
+    # FIXTURE — stands in for the live, paid kie.ai generation call + the
+    # Section-19 QC Image Checklist scoring pass. Never claimed as "run";
+    # explicitly labeled as a fixture representing the deferred live leg.
+    qc19_receipt_fixture = {
+        "pass": True, "average": 9.1, "checklist": "playbook.md Section 19",
+        "source": "FIXTURE -- live kie.ai generation + Section-19 scoring not "
+                  "run in this offline proof",
+    }
+    lower_copy = post_copy.lower()
+    dm_idx = lower_copy.find("dm")
+    comment_idx = lower_copy.find("comment")
+    cta_dm_first = dm_idx != -1 and comment_idx != -1 and dm_idx < comment_idx
+
     prompt_text = (
         "A warm, editorial flat-lay of a laptop and coffee on a wooden desk, "
         "brand-appropriate, appropriate for the client's audience, no "
@@ -246,19 +261,6 @@ def leg1_pregen_gate_and_qc() -> dict:
         asset_source="internal-generated",
         qc_receipt=None,
     )
-    # FIXTURE — stands in for the live, paid kie.ai generation call + the
-    # Section-19 QC Image Checklist scoring pass. Never claimed as "run";
-    # explicitly labeled as a fixture representing the deferred live leg.
-    qc19_receipt_fixture = {
-        "pass": True, "average": 9.1, "checklist": "playbook.md Section 19",
-        "source": "FIXTURE -- live kie.ai generation + Section-19 scoring not "
-                  "run in this offline proof",
-    }
-    lower_copy = post_copy.lower()
-    dm_idx = lower_copy.find("dm")
-    comment_idx = lower_copy.find("comment")
-    cta_dm_first = dm_idx != -1 and comment_idx != -1 and dm_idx < comment_idx
-
     ok = gate_result.ok and qc19_receipt_fixture["pass"] and cta_dm_first
     return {
         "pass": bool(ok),
