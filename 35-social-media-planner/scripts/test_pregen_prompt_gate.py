@@ -268,6 +268,25 @@ def main() -> int:
               f"got {r9.returncode}")
         check("refusal names AF-SM-MODEL-ROUTING", "AF-SM-MODEL-ROUTING" in r9.stderr, r9.stderr)
 
+    print("\n=== 10. fallback routing sets agree with shared-utils/model-capabilities.json (no drift) ===")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pregen_prompt_gate", str(GATE))
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    cap_map = gate._capability_map()
+    check("capability map is loadable (control: the comparison below is not vacuous)",
+          bool(cap_map.get("families")), "model-capabilities.json not found or empty")
+    if cap_map.get("families"):
+        for m in sorted(gate._FALLBACK_TEXT_CAPABLE | gate._FALLBACK_NON_TEXT):
+            from_map = gate.model_is_text_capable(m, cap_map)
+            from_floor = gate.model_is_text_capable(m, {})
+            check(f"map and floor agree on {m} (map={from_map}, floor={from_floor})",
+                  from_map == from_floor)
+        check("a gpt-image id is text-capable via the capability map itself",
+              gate.model_is_text_capable("gpt-image-2-5-sunburst-text-to-image", cap_map))
+        check("nano-banana-2 is not text-capable under the map",
+              not gate.model_is_text_capable("nano-banana-2", cap_map))
+
     print()
     if FAILURES:
         print(f"test_pregen_prompt_gate: {len(FAILURES)} FAILURE(S): {FAILURES}")

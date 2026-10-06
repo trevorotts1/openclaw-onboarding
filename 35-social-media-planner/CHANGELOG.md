@@ -1,5 +1,22 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.8] - 2026-10-05 - Fix: video model and price contradictions; defer to Skill 67 and live pricing
+
+### Fixed
+- `CORE_UPDATES.md` pinned `video_generate model=google/veo-3.1-lite-preview` while saying "via kie.ai". That id is not in Skill 67's registry (`67-kie-video/models.json` names Veo 3.1 Lite `veo3_lite`, dedicated route `POST /api/v1/veo/generate`). Aligned to Skill 67: clips are dispatched through Skill 67; this skill's default request is Veo 3.1 Lite (`veo3_lite`); an explicit client or manifest pick wins; Sora is prohibited. SKILL.md Phase 2 step 4 and the playbook tech stack, sub-agent table, Step 8 and Section 16 follow.
+- `references/playbook.md` and `README.md`: ALL dollar and credit figures removed (Section 8 model table and weekly image cost, Section 16 price table "Verified April 2026", Step H and the text-to-video cost line, Weekly Cost Estimate, README estimate). Veo figures here ($0.15/$0.30/$1.25) had disagreed with Skills 27 and 28 ($0.40/$2.00). One price authority now: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback `74-kie-live-adapter/references/kie-model-registry.json`).
+- Playbook tech stack said image primary is Nano Banana 2 and video is Veo 3.1 Fast, while Sections 8 and 16 said Ideogram V3 DESIGN for text-bearing images and Veo 3.1 Lite for video. Now consistent. The playbook status table and README/TOOLS text no longer name Nano Banana 2 as the image model.
+- Podcast cover art was routed to Nano Banana 2 (playbook Section 15, CORE_UPDATES step 7) while Section 8 routes every text-bearing image, including the podcast cover, to Ideogram V3 DESIGN. Aligned to Section 8.
+- Section 16 said clips run "up to 8-10 seconds"; Skill 67's registry says 4, 6 or 8 seconds for Veo 3.1. Corrected.
+- Grok Imagine is no longer recommended: it is not in Skill 67's video registry (verified 2026-08-26).
+- `QC.md` video checks: "duration exactly 60 seconds" contradicted the 55-60 second window used everywhere else; "smooth crossfade transitions" contradicted the default hard-cut storyboard. Fixed.
+- `scripts/pregen_prompt_gate.py`: the duplicate routing sets are documented as a floor under `shared-utils/model-capabilities.json` (the source of truth). New test case 10 fails if the two copies drift.
+- `README.md`: stale version lines (v1.0.0, v1.1.0) and "1,656-line" playbook count removed.
+- Playbook Section 20 and Section 16 now point to `07-kie-setup/references/kie-common-rules.md` for KIE rules (credit preflight, saving results, client's own key).
+
+### Migration Notes
+- CORE_UPDATES.md changed (video clip step, TOOLS.md kie.ai row, podcast cover step). Existing users should re-run core updates. Risk: LOW.
+
 ## [3.6.5] - 2026-09-12 - CRITICAL Fix: live preflight reported 0 connected accounts on every box (engine never ran)
 
 ### Fixed

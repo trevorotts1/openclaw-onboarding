@@ -160,13 +160,16 @@ def export_to_markdown(storyboard, filename):
 def main():
     parser = argparse.ArgumentParser(description='Create video storyboard')
     parser.add_argument('--duration', type=int, required=True, help='Total video duration in seconds')
-    parser.add_argument('--model', type=str, required=True, help='AI model ID (veo-3-1, sora-10s, etc.)')
+    parser.add_argument('--model', type=str, required=True, help='AI model ID from the snapshot (veo-3-1, kling-3, etc.). Model choice is owned by Skill 67.')
     parser.add_argument('--topic', type=str, required=True, help='Video topic/theme')
     parser.add_argument('--style', type=str, default='neutral', help='Visual style')
     parser.add_argument('--output', type=str, default='storyboard', help='Output filename prefix')
     
     args = parser.parse_args()
     
+    if args.model.lower().startswith('sora'):
+        print('Warning: Sora is prohibited by the Video department and is never a default. Use the model Skill 67 selects.', file=sys.stderr)
+
     print(f"Creating storyboard for {args.duration}s {args.topic} video using {args.model}...")
 
     try:
@@ -183,6 +186,7 @@ def main():
     print("\n✅ Storyboard created!")
     print(f"Segments: {storyboard['calculations']['num_segments']}")
     print(f"Estimated cost: ${storyboard['calculations']['estimated_total_cost']}")
+    print("(fallback estimate from the 2024 snapshot; live price: python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>)")
     return 0
 
 if __name__ == '__main__':

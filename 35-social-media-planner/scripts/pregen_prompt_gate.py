@@ -79,8 +79,15 @@ SOCIAL_MAX_CHARS = 19000
 # through verified adapters; Nano Banana 2/Pro remain non-text.
 TEXT_RENDERING_CAPABILITY = "text_rendering"
 
-# Legacy name-based knowledge, now ONLY a fallback when no capability metadata
-# resolves (e.g. capability file missing). Kept in sync with 45's GK-20 rule.
+# Name-based FLOOR, not a second authority. The source of truth is
+# shared-utils/model-capabilities.json (read by _capability_map above); these sets
+# are consulted ONLY when that file is missing/unreadable, or for model ids it has no
+# family for (today: ideogram-*, agnes-image-*, nano-banana-*). Every entry that the
+# capability map DOES classify (the gpt-image-* ids) must agree with it: that is
+# enforced by test_pregen_prompt_gate.py case 10, so this copy cannot silently drift.
+# Add a new model to model-capabilities.json first; touch these sets only for ids the
+# map cannot express. Routing policy for video models lives in Skill 67, not here
+# (this gate only checks image prompts). Related to 45's GK-20 rule.
 _FALLBACK_TEXT_CAPABLE = {"ideogram-v3-design", "ideogram/v3-text-to-image", "ideogram-v3", "gpt-image-2", "gpt-image-2-text-to-image", "gpt-image-2-image-to-image", "gpt-image-2-5-sunburst", "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image", "agnes-image-2.1-flash"}
 _FALLBACK_NON_TEXT = {"nano-banana-2", "nano-banana-pro"}
 

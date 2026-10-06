@@ -1,33 +1,41 @@
-# KIE.AI Video Models Reference
+# KIE.AI Video Models Reference (dated snapshot, NOT authoritative)
 
-Complete guide to KIE.AI video models available for video editing and B-roll generation.
+> **Status: historical snapshot, not a complete guide.** This table was written before the KIE catalog moved on and has no verification date. Model names and availability below may be out of date. Do not use it to pick a model; it holds no prices.
+>
+> - **Which model to use (policy owner):** Skill 67 (`67-kie-video`: `models.json` and `scripts/select_video_model.py`).
+> - **What the live catalog offers and costs now:** Skill 74 (`74-kie-live-adapter`). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Limits, durations, resolutions: `kie_live_adapter.py validate` or that registry.
+> - **This file contains no prices and no numeric model limits on purpose**, so there is exactly one price authority.
+> - **KIE rules (endpoints, rate limit, credit preflight, saving results, client's own key):** `07-kie-setup/references/kie-common-rules.md`.
+> - If anything here disagrees with Skill 67, Skill 74, or the rules file above, they win.
+> - **Sora is prohibited** by the Video department (`23-ai-workforce-blueprint/templates/role-library/video/ai-video-generator-specialist.md`). The Sora section below is kept only as history and is never a recommendation.
 
 ## Text-to-Video Generation Models
 
 ### Veo 3.1 Series (Google)
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Veo 3.1 Fast** | ~$0.40/video | Up to 1080p | Rapid iteration, social media content, cost-effective B-roll |
-| **Veo 3.1 Quality** | ~$2.00/video | Up to 1080p | Premium cinematic B-roll, professional visuals, smoother motion |
+| Model | Best For |
+|-------|----------|
+| **Veo 3.1 Fast** | Rapid iteration, social media content, cost-effective B-roll |
+| **Veo 3.1 Quality** | Premium cinematic B-roll, professional visuals, smoother motion |
 
 **Features:**
 - Native audio generation (ambient sound, effects)
 - Start & End Frame control for smooth transitions
 - Multi-image reference for visual consistency
-- Extend feature for clips beyond 8 seconds
+- Extend feature for longer clips
 - Strong prompt adherence
 
 ---
 
-### Sora 2 Series (OpenAI)
+### Sora 2 Series (OpenAI) - PROHIBITED, history only
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Sora 2** | $0.015/sec | Up to 720p | Creative control, narrative-driven content |
-| **Sora 2 Pro (720P)** | $0.045/sec | 720p | Enhanced quality with richer visual/audio details |
-| **Sora 2 Pro (1080P)** | $0.10-0.13/sec | 1080p | High-definition generation, commercial production |
-| **Sora 2 Storyboard** | Variable | Variable | Precise frame-by-frame creative control, storyboard-based generation |
+The Video department prohibits Sora. Do not recommend, select, or generate with it. Retained only so old notes still make sense.
+
+| Model | Best For |
+|-------|----------|
+| **Sora 2** | Creative control, narrative-driven content |
+| **Sora 2 Pro** | Enhanced quality with richer visual/audio details |
+| **Sora 2 Storyboard** | Precise frame-by-frame creative control, storyboard-based generation |
 
 **Features:**
 - Strong physics consistency
@@ -35,17 +43,13 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 - Creative control tools
 - Storyboard integration (Storyboard variant)
 
-**Comparison to Official OpenAI Pricing:**
-- KIE.AI: $0.015/sec vs OpenAI: $0.10/sec = **85% savings**
-- KIE.AI: $0.045/sec vs OpenAI: $0.30/sec = **85% savings**
-
 ---
 
 ### Kling 3.0
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Kling 3.0** | Variable | Variable | High-quality video generation, alternative to Veo/Sora |
+| Model | Best For |
+|-------|----------|
+| **Kling 3.0** | High-quality video generation, alternative to Veo |
 
 **Features:**
 - Competitive quality to Veo and Sora
@@ -56,9 +60,9 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ### Wan 2.6
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Wan 2.6** | Variable | Variable | General video creation, diverse content types |
+| Model | Best For |
+|-------|----------|
+| **Wan 2.6** | General video creation, diverse content types |
 
 **Features:**
 - Versatile video generation
@@ -71,9 +75,9 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ### Seed Dance Models
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Seed Dance** | Variable | Variable | Dance/movement-focused video generation, human motion |
+| Model | Best For |
+|-------|----------|
+| **Seed Dance** | Dance/movement-focused video generation, human motion |
 
 **Features:**
 - Specialized for human movement and dance
@@ -84,9 +88,9 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ### Runway Aleph
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Runway Aleph** | Variable | Variable | Video-to-video editing, object manipulation |
+| Model | Best For |
+|-------|----------|
+| **Runway Aleph** | Video-to-video editing, object manipulation |
 
 **Features:**
 - In-context video model for multi-task editing
@@ -101,9 +105,9 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ### Topaz Video AI (via KIE.AI)
 
-| Model | Cost | Resolution | Best For |
-|-------|------|------------|----------|
-| **Topaz Video Upscaler** | Variable | Up to 4K/8K | AI video upscaling, quality enhancement |
+| Model | Best For |
+|-------|----------|
+| **Topaz Video Upscaler** | AI video upscaling, quality enhancement |
 
 **Features:**
 - Upscales low-resolution footage
@@ -125,12 +129,13 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ### For B-Roll Generation:
 
-| Budget | Recommended Model | Why |
-|--------|-------------------|-----|
-| **Tight** | Veo 3.1 Fast | $0.40/video, includes audio, good quality |
-| **Standard** | Veo 3.1 Quality | $2.00/video, cinematic, premium output |
-| **Creative Control** | Sora 2 Storyboard | Frame-by-frame precision |
-| **Action/Dance Content** | Seed Dance | Better human motion |
+Do not choose from this file. Ask Skill 67's selector, then price the pick with Skill 74: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
+
+```bash
+python3 ~/.openclaw/skills/67-kie-video/scripts/select_video_model.py "<what the B-roll clip shows, length, vertical or horizontal>"
+```
+
+If the user names a model, that explicit pick wins. Announce provider, model and estimated USD (from that price command) and get approval before any paid generation.
 
 ### For Video Enhancement:
 
@@ -144,39 +149,23 @@ Complete guide to KIE.AI video models available for video editing and B-roll gen
 
 ## KIE.AI Platform Details
 
-**Pricing Advantage:**
-- KIE.AI is 30-85% cheaper than official APIs
-- Pay-as-you-go credit system (1 credit ≈ $0.005 USD)
+Prices, credit conversion, rate limits and endpoints are owned by `07-kie-setup/references/kie-common-rules.md` (rules) and Skill 74 (live catalog and `pricingDesc`). They are not restated here so they cannot drift.
 
-**Technical Details:**
-- All tasks are asynchronous (receive task_id, poll for completion)
-- Media files stored for 14 days only
-- Rate limit: 20 generation requests per 10 seconds per account
+**Technical Details (see the rules file for the authority):**
+- All tasks are asynchronous (receive a task id, then check for completion).
+- Generated media is kept by KIE for a limited time and download URLs expire, so save results immediately (rules file).
+- A credit preflight (estimated cost x 1.30) runs before a paid batch (rules file).
 
 **Integration Note:**
-KIE.AI is accessed via API calls. The skill doesn't directly integrate with KIE.AI; it provides the workflow and scripts for using KIE.AI-generated content. Users generate B-roll via KIE.AI interface/API separately, then use this skill to merge it with their talking head videos.
-
----
-
-## Quick Reference: Cost Examples
-
-| Task | Model | Duration | Cost |
-|------|-------|----------|------|
-| Single B-roll clip | Veo 3.1 Fast | 5 sec | ~$0.40 |
-| Premium B-roll clip | Veo 3.1 Quality | 5 sec | ~$2.00 |
-| Narrative sequence | Sora 2 | 10 sec | $0.15 |
-| HD commercial | Sora 2 Pro 1080P | 10 sec | $1.00-1.30 |
-| Upscale 1080p to 4K | Topaz | Per video | Variable |
+This skill ships no KIE client and no KIE script. The agent generates B-roll clips through Skill 67 (model choice and dispatch, using the client's own KIE key), then uses this skill to assemble them with the talking head video.
 
 ---
 
 ## Workflow Integration
 
-When user's AI helps with B-roll workflow:
+When the agent runs the B-roll workflow:
 
-1. **Analyze** their talking head video with `analyze-video.sh`
-2. **Recommend** appropriate KIE.AI models based on their content and budget
-3. **Guide** them to generate B-roll via KIE.AI (they do this step separately)
-4. **Merge** the B-roll using `merge-broll.sh` with their original video
-
-The AI doesn't directly call KIE.AI - it guides the user through the process and handles the post-generation editing.
+1. **Analyze** the talking head video with `analyze-video.sh`
+2. **Select** the model for each clip with Skill 67 (`select_video_model.py`), and get the live price from Skill 74
+3. **Generate** the B-roll through Skill 67 after the owner approves the estimated cost
+4. **Merge** the B-roll using `merge-broll.sh` with the original video
