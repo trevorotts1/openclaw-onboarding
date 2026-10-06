@@ -198,6 +198,157 @@ _SECTION_LIBRARY: Dict[str, Dict[str, str]] = {
 }
 
 
+# Scene-specific production direction per section type (scene-plan.production_direction). The prompt builder
+# (providers/prompt_depth.py) expands these fields per scene, so each scene's long prompt is carried by what
+# is true of THAT scene and the shared house rules are the minority. World-neutral on purpose: the project's
+# own world comes from the style contract. An operator or agent may replace any scene's direction.
+_SECTION_DIRECTION: Dict[str, Dict[str, str]] = {
+    "hero": {
+        "subject": "the hero subject of the project seen whole, large enough to read at a glance and framed with generous space around it",
+        "setting": "its native environment, wide enough to show the scale and character of the place and what surrounds it",
+        "time_of_day": "the best light of the day, shortly after sunrise or shortly before sunset, when the air is clear and the light is long",
+        "light": "a low, warm key light raking across the subject from one side with long soft shadows and a gentle cool fill from the open sky",
+        "materials": "the primary surfaces of the subject and its surroundings, shown with honest wear, edge detail and a believable sheen",
+        "motion": "almost nothing moves except slow ambient life in the distance and the camera itself drifting forward",
+        "camera_blocking": "the camera starts wide and level, then pushes in on a straight line toward the subject without any lateral wobble",
+        "mood": "calm confidence and quiet anticipation, the feeling of arriving somewhere worth the trip",
+        "continuity": "nothing precedes this scene, so it fixes the look every later scene must keep: the palette, the light direction and the proportions of the subject"
+    },
+    "problem": {
+        "subject": "the point of friction, a specific object or situation that shows the audience's pain in concrete form",
+        "setting": "the same world as the hero scene, but at its least comfortable: cramped framing, cluttered or neglected surroundings",
+        "time_of_day": "flat, late-day light when energy is low and the day has gone slightly wrong",
+        "light": "a harder, more directional key with deeper shadows and a cooler tint, so the frame feels tight and tense without becoming dark",
+        "materials": "worn, strained or overloaded surfaces, with visible evidence of the problem such as scuffs, tangles, stains or overflow",
+        "motion": "small repeating motions that show the problem in action, such as a hand retrying something or a loose part shifting",
+        "camera_blocking": "the camera moves from medium to close on the friction point, slightly faster than in the hero scene, with a tiny handheld-like settle at the end",
+        "mood": "recognition and mild discomfort, the feeling of 'that is exactly my situation'",
+        "continuity": "carry over the hero scene's world, palette and proportions, but show it under strain; the subject's identity must stay unmistakable"
+    },
+    "solution": {
+        "subject": "the product, system or method that resolves the problem, revealed working as intended",
+        "setting": "the same world as the problem scene, now orderly, open and arranged around the solution",
+        "time_of_day": "clear mid-morning light that feels fresh and decisive",
+        "light": "a clean, soft key from above and to one side with open shadows and a bright, even fill, as if the weather had cleared",
+        "materials": "crisp, well-finished surfaces on the solution, with polished edges, clean joints and a quality of manufacture you can feel",
+        "motion": "the solution doing its job in one smooth, legible motion, with everything else holding still so the cause and effect are obvious",
+        "camera_blocking": "the camera starts close on the old friction point, then pulls back and sideways to reveal the solution in context",
+        "mood": "relief and clarity, the moment the knot comes undone",
+        "continuity": "the same world and subject as the problem scene, visibly improved; keep the palette and light direction, but raise brightness and order"
+    },
+    "offer": {
+        "subject": "the offer made tangible, a small, clear arrangement of what the customer receives, laid out with intention",
+        "setting": "a calm, uncluttered stage with generous empty space around the offer where overlay copy can sit",
+        "time_of_day": "steady, neutral daylight with no dramatic time cue, so nothing competes with the offer",
+        "light": "a broad, soft, shadow-light key that shows every item clearly, with gentle gradient falloff toward the edges of the frame",
+        "materials": "premium, tactile surfaces on each item in the offer, with consistent finishing so they read as one family",
+        "motion": "a slow lateral drift across the arrangement, items fixed in place, with one subtle ambient movement in the background",
+        "camera_blocking": "the camera drifts sideways at constant height and speed, keeping the arrangement centred in the safe region the whole time",
+        "mood": "generous and orderly, an invitation that feels easy to accept",
+        "continuity": "reuse the solution scene's materials and light so the offer feels like its natural continuation; keep the empty space stable for copy"
+    },
+    "proof": {
+        "subject": "the evidence that the promise is real, shown as a concrete result, a documented outcome or a real person in context",
+        "setting": "a believable working environment where the result happened, not a staged studio",
+        "time_of_day": "plain, honest daylight, the look of documentation rather than advertising",
+        "light": "natural, slightly diffuse light with believable contrast, close to what a documentary camera would capture without extra rigging",
+        "materials": "real-world textures and honest imperfections that make the evidence credible, including small signs of use",
+        "motion": "a small, natural action that confirms the result, such as a hand checking a measurement or a person glancing at the outcome",
+        "camera_blocking": "the camera moves from medium to close on the evidence with a slow, steady push and settles on the most telling detail",
+        "mood": "grounded trust, calm and unexaggerated, the feeling of seeing it with your own eyes",
+        "continuity": "stay in the same world as the offer scene but at ground level and in more natural light; keep the subject's finish consistent"
+    },
+    "testimonial": {
+        "subject": "one real-feeling person, shown in an intimate portrait as they speak or reflect about the outcome",
+        "setting": "a quiet, personal space that belongs to them, softly out of focus behind the face",
+        "time_of_day": "soft late-morning light, unhurried and private",
+        "light": "a large soft key from one side at eye level, a faint fill, and a subtle edge light separating the person from the background",
+        "materials": "natural skin, fabric and the textures of a lived-in space, none of it glossy or retouched flat",
+        "motion": "small, human motions, a breath, a blink, a slight turn of the head, a hand settling, nothing theatrical",
+        "camera_blocking": "the camera moves from medium to close very slowly, ending on the eyes and the beginning of an expression",
+        "mood": "warmth, sincerity and quiet pride",
+        "continuity": "keep the world's palette and the overall lens look, but allow the lighting to become softer and more intimate than in earlier scenes"
+    },
+    "pricing": {
+        "subject": "a clean, simple object or arrangement that stands in for value, with nothing in the frame that suggests cost or clutter",
+        "setting": "an open, almost empty space with a plain background and a single calm focal point",
+        "time_of_day": "even, shadowless midday light that feels neutral and fair",
+        "light": "soft, wide, even illumination with very gentle shadows so that numbers laid over the frame stay perfectly legible",
+        "materials": "smooth, matte, low-reflectance surfaces with no sparkle or busy pattern that could fight the typography",
+        "motion": "a nearly static frame with a slow, almost imperceptible drift and a faint breath of ambient movement",
+        "camera_blocking": "the camera holds almost still and drifts a few centimetres at constant speed, never changing framing noticeably",
+        "mood": "clarity and fairness, the feeling of nothing hidden",
+        "continuity": "keep the offer scene's materials and palette, simplified; reduce detail density rather than changing style"
+    },
+    "guarantee": {
+        "subject": "a steady, protective subject such as a sturdy object, a closed hand or a sheltering structure that signals safety",
+        "setting": "a warm, secure space with solid walls or horizon lines and nothing precarious in view",
+        "time_of_day": "warm late-afternoon light that feels settled and kind",
+        "light": "a golden, enveloping key with soft shadows and a warm bounce, giving the whole frame a sense of shelter",
+        "materials": "solid, weighty textures such as wood grain, stone, heavy fabric or brushed metal that suggest durability",
+        "motion": "almost none, a single slow settling movement such as dust drifting or a light shifting gently across a surface",
+        "camera_blocking": "the camera sits low and stable, then glides forward very slowly without any tilt",
+        "mood": "reassurance and trust, the feeling of being looked after",
+        "continuity": "continue the warm light direction of the proof scene and keep the subject's finish identical"
+    },
+    "faq": {
+        "subject": "an orderly arrangement of a few distinct objects, each clearly separated, that suggest questions answered one by one",
+        "setting": "a tidy, well-organised space with clear spacing and a simple background",
+        "time_of_day": "calm daylight that does not draw attention to the time",
+        "light": "even, neutral illumination that lets each object read separately without drama",
+        "materials": "clean, simple surfaces with clear edges and consistent finish across the objects",
+        "motion": "minimal, a single object quietly changing state while the others stay still",
+        "camera_blocking": "the camera makes a very slow, level lateral move along the arrangement, pausing nowhere",
+        "mood": "patient, helpful and uncomplicated",
+        "continuity": "match the pricing scene's simplified look; keep the arrangement within the central safe region"
+    },
+    "urgency": {
+        "subject": "a clear signal that time is passing, shown through the subject itself rather than through graphics or text",
+        "setting": "the same world as the offer scene, but with the light and the shadows already moving along",
+        "time_of_day": "the last strong light before the day changes, with shadows lengthening noticeably",
+        "light": "a strong low-angle key that is visibly moving or fading, with colour shifting from warm toward cool at the edges",
+        "materials": "the same surfaces as the offer scene, now catching the changing light so their highlights slide and shift",
+        "motion": "purposeful motion with a little more energy, such as clouds, shadows or people moving across the frame at a steady, faster pace",
+        "camera_blocking": "the camera pushes in a little faster than earlier scenes on a straight, confident line",
+        "mood": "focus and gentle pressure, never panic",
+        "continuity": "same world, subject and palette, with the light direction preserved while its intensity and colour progress"
+    },
+    "cta": {
+        "subject": "the single object or gesture that stands for taking the next step, placed unmistakably at the centre of attention",
+        "setting": "a clean, focused space where everything leads toward the one action and nothing else competes for attention",
+        "time_of_day": "bright, confident daylight, the clearest moment of the whole journey",
+        "light": "a clean key with a subtle halo of brightness around the focal object and calmer, slightly darker surroundings",
+        "materials": "the best-finished surface in the whole project, with a crisp edge and a hint of reflection that invites a click",
+        "motion": "a small, inviting movement of the focal object or a hand approaching it, with everything else stationary",
+        "camera_blocking": "the camera makes a confident, steady push to a close framing of the focal action and stops precisely on it",
+        "mood": "decisive, warm and encouraging, the feeling of a door held open",
+        "continuity": "reuse the hero's world, light and subject so the end of the journey rhymes with its beginning; keep a clear area for the button"
+    },
+    "close": {
+        "subject": "the hero subject again, now at rest in a resolved, settled pose, as if the journey has arrived",
+        "setting": "the opening scene's environment, wide and still, now understood and familiar",
+        "time_of_day": "the same time of day as the opening scene, a little later and a little softer",
+        "light": "the opening scene's key light direction at a gentler intensity with a golden, quiet fill",
+        "materials": "the same surfaces as the hero scene, now glowing with the warmth of the closing light",
+        "motion": "a slow exhale of ambient motion, a breeze, drifting light or distant movement, then stillness",
+        "camera_blocking": "the camera pulls back and rises slightly, revealing the whole world one last time before holding",
+        "mood": "resolution and quiet satisfaction, a closing moment worth remembering",
+        "continuity": "mirror the hero scene exactly in framing logic and palette so the end visibly answers the beginning"
+    },
+    "footer": {
+        "subject": "a simple brand mark or a calm, symbolic object that anchors the page without competing with its copy",
+        "setting": "a quiet, neutral space with a shallow depth and a plain background",
+        "time_of_day": "neutral, timeless light",
+        "light": "soft, even and low in contrast so that small text laid over it stays readable",
+        "materials": "subtle, matte, low-detail surfaces",
+        "motion": "none, a still frame with at most a barely perceptible drift",
+        "camera_blocking": "the camera holds still, with no push, pull or tilt",
+        "mood": "trustworthy, settled and professional",
+        "continuity": "keep the palette and finish of the rest of the project in their quietest form"
+    }
+}
+
+
 def _fallback_section_profile(section: str, index: int) -> Dict[str, str]:
     """Deterministic fallback for any section name not in _SECTION_LIBRARY —
     a pure function of (section, index) so an operator-supplied custom
@@ -213,6 +364,26 @@ def _fallback_section_profile(section: str, index: int) -> Dict[str, str]:
         "motion_direction": "push-in" if even else "lateral-drift",
         "motion_speed": "slow" if even else "medium",
     }
+
+
+def _fallback_direction(section: str, index: int) -> Dict[str, str]:
+    """Direction for a custom section name: a pure function of (section, index), distinct per section."""
+    even = index % 2 == 0
+    return {
+        "subject": f"the one subject that best expresses the '{section}' section, large and unmistakable in the frame",
+        "setting": f"the project's own world, framed so that it explains what the '{section}' section is about",
+        "time_of_day": "the project's established moment of the day, held steady" if even else "the same moment of the day, a shade later and softer",
+        "light": "one dominant key from a consistent direction with a soft fill" if even else "one dominant key from a consistent direction, slightly lower and warmer than the previous scene",
+        "materials": f"the surfaces that belong to the '{section}' subject, finished consistently with the rest of the project",
+        "motion": "one slow, motivated movement and otherwise stillness" if even else "a small, natural ambient movement and otherwise stillness",
+        "camera_blocking": "a steady push toward the subject on a straight line" if even else "a steady lateral drift past the subject at constant height",
+        "mood": f"the feeling this '{section}' section should leave, calm, credible and unforced",
+        "continuity": "keep the approved anchor's palette, light direction and subject proportions unchanged",
+    }
+
+
+def _section_direction(section: str, index: int) -> Dict[str, str]:
+    return dict(_SECTION_DIRECTION.get(section.strip().lower()) or _fallback_direction(section, index))
 
 
 def _section_profile(section: str, index: int) -> Dict[str, str]:
@@ -373,6 +544,7 @@ def _build_scene(
         "estimated_cost_usd": _informational_cost_estimate(model_entry, duration, connector_required, registry),
         "approval_status": "proposed",
         "anchor_asset_hash": None,
+        "production_direction": _section_direction(section, index),
     }
 
 

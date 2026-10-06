@@ -485,13 +485,15 @@ class KieImage(BaseTool):
         # Only fields the model's schema declares are sent (output_format is not one).
         task_input = {k: v for k, v in candidate.items() if k in _DECLARED_INPUT_FIELDS[model]}
 
-        refusal, warnings = self._check_prompt(adapter, model, prompt)
-        if refusal:
-            return ToolResult(success=False, error=refusal)
-
-        # Credit preflight (price x 1.30 against the live balance). Only a real shortfall blocks;
-        # an unpriced model or an unreadable balance is reported and the run proceeds.
-        pre = adapter.cmd_preflight(model)
+        try:  # a transport fault here happens BEFORE any spend: fail closed with a result, do not raise
+            refusal, warnings = self._check_prompt(adapter, model, prompt)
+            if refusal:
+                return ToolResult(success=False, error=refusal)
+            # Credit preflight (price x 1.30 against the live balance). Only a real shortfall blocks;
+            # an unpriced model or an unreadable balance is reported and the run proceeds.
+            pre = adapter.cmd_preflight(model)
+        except Exception as exc:  # noqa: BLE001
+            return ToolResult(success=False, error=f"kie_image: pre-flight check failed before any spend: {getattr(exc, 'msg', exc)}")
         if (pre.get("error") or {}).get("code") == "insufficient_credits":
             return ToolResult(success=False, error=f"kie_image: {_err_text(pre)}")
         credits = (pre.get("data") or {}).get("credits_estimate")
@@ -502,8 +504,13 @@ class KieImage(BaseTool):
         try:
             run = adapter.cmd_run({"model": model, "input": task_input}, save_dir, timeout=_RUN_TIMEOUT_SECONDS)
             if run["state"] != "success" or not run["saved_paths"]:
-                where = f" (task {run['task_id']} may still finish)" if run.get("task_id") else ""
-                return ToolResult(success=False, error=f"kie_image: Skill 74 run did not complete: {_err_text(run)}{where}")
+                tid = run.get("task_id")
+                where = f" (task {tid} may still finish)" if tid else ""
+                failed_for_real = run["state"] == "fail" and "state_raw" in (run.get("data") or {})  # KIE itself said the task failed
+                data = {"provider": "kie", "model": model, "kie_task_id": tid, "kie_task_state": "unresolved",
+                        "needs_repoll": True, "kie_client_path": label} if tid and not failed_for_real else None
+                return ToolResult(success=False, data=data or {},
+                                  error=f"kie_image: Skill 74 run did not complete: {_err_text(run)}{where}")
             output_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(run["saved_paths"][0], str(output_path))
         finally:

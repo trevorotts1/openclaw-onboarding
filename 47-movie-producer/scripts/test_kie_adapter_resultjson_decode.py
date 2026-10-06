@@ -110,6 +110,9 @@ class FakeKieTransport:
         self.balance = 100000
         self.catalog = []
         self.create_error = None        # an exception instance raised on createTask
+        self.create_raw = None          # (status, bytes) answered on createTask instead of the default (a gateway page)
+        self.veo_raw = None             # (status, bytes) answered on the legacy veo/generate
+        self.schema_error = None        # an exception instance raised on a schema GET
         self.result_url = RESULT_URL
         self.downloads = []
 
@@ -139,6 +142,8 @@ class FakeKieTransport:
         if method == "GET" and path == "/api/v1/models":
             return self._j({"code": 200, "msg": "success", "data": {"total": len(self.catalog), "models": self.catalog}})
         if method == "GET" and path.startswith("/api/v1/models/") and path.endswith("/schema"):
+            if self.schema_error is not None:
+                raise self.schema_error
             model = path[len("/api/v1/models/"):-len("/schema")]
             return self._j({"code": 200, "msg": "success", "data": {"openapi": self._schema(model)}})
         if method == "GET" and path == "/api/v1/chat/credit":
@@ -147,6 +152,8 @@ class FakeKieTransport:
             self.create_calls.append(json.loads(body.decode()))
             if self.create_error is not None:
                 raise self.create_error
+            if self.create_raw is not None:
+                return self.create_raw
             if self.create_queue:
                 return self._j(self.create_queue.pop(0))
             return self._j({"code": 200, "msg": "success", "data": {"taskId": "task-%d" % len(self.create_calls)}})
@@ -162,6 +169,8 @@ class FakeKieTransport:
             return self._j({"code": 200, "data": {"downloadUrl": "https://fixtures.example/up-%s" % b["fileName"], "fileName": b["fileName"]}})
         if method == "POST" and path == "/api/v1/veo/generate":
             self.veo_calls.append(json.loads(body.decode()))
+            if self.veo_raw is not None:
+                return self.veo_raw
             return self._j({"code": 200, "msg": "success", "data": {"taskId": "veo-task-%d" % len(self.veo_calls)}})
         if method == "GET" and path == "/api/v1/veo/record-info":
             return self._j(self.veo_record or {"code": 200, "data": {"successFlag": 1, "response": {"resultUrls": [self.result_url]}}})

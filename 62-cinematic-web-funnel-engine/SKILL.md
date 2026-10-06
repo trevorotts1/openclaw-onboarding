@@ -1,7 +1,7 @@
 ---
 name: cinematic-web-funnel-engine
 description: Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels with complete copy, AI-generated scroll-controlled scenes, frame-matched video transitions, responsive Next.js delivery, Vercel deployment, and GoHighLevel/Convert and Flow integrations. Use when a client asks for an animated website, immersive landing page, cinematic funnel, scroll-story page, premium interactive web experience, or a funnel that combines conversion content with AI-generated motion.
-version: v2.1.1
+version: v2.1.2
 ---
 
 # Cinematic and Web Funnel Engine (Skill 62)
@@ -64,7 +64,7 @@ work unit, not this skeleton.
   upload, createTask, wait, save and price, and keeps only this skill's policy (model
   registry, tiers, the Veo 3.1 wire shape, the quality-tier refusal). Each run logs
   `path=skill74`. If Skill 74 is not installed the quarantined `providers/_kie_legacy.py`
-  fallback runs and logs `path=legacy`. Prompts: owner rule 12 applies (95 to 100 percent of the model maximum, never under 80 percent, a HARD REJECT below the floor via Skill 74 prompt-budget); the generators build their prompts from the templates plus `providers/prompt_depth.py` direction so real runs meet it. Veo: this skill calls createTask with model
+  fallback runs and logs `path=legacy`. Prompts: owner rule 12 applies (95 to 100 percent of the model maximum, never under 80 percent, a HARD REJECT below the floor via Skill 74 prompt-budget); the generators build their prompts from the templates plus `providers/prompt_depth.py` direction so real runs meet it; the length is carried by each scene's own `production_direction` (written by the planner), not by house rules. Veo: this skill calls createTask with model
   `veo-3-1`, while 47 still uses the legacy `/api/v1/veo/generate` route. Veo price authority is
   the live catalog (`python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model veo-3-1`);
   the registry holds dated fallback constants only. Only the Fast id is sendable (no documented

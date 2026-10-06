@@ -1,96 +1,179 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""test_prompt_depth.py: the Skill 62 prompt composer lands in the 95-100 percent band (owner rule 12).
+"""test_prompt_depth.py: the Skill 62 prompt composer (owner rule 12 and owner intent).
 
-Skill 74 prompt-budget owns the numbers; ``providers.prompt_depth`` only fills them with real
-production direction. Covers the band at several maxima, the negative-prompt reserve, the
-no-limit and verbatim exemptions, the 79 / 95 / 101 percent boundaries through the real Skill 74
-budget math, and that the direction is specific to the project (not a repeated filler block).
+Rule 12: a descriptive prompt lands in 95-100 percent of the model maximum, never under 80 percent
+(Skill 74 prompt-budget owns the numbers). Intent: the length must make the output better, so it is
+carried by SCENE-SPECIFIC direction (the planner's ``production_direction``), not by house rules repeated
+in every prompt. Covers: the band at several maxima for every section type, the negative-prompt reserve,
+the no-limit and verbatim exemptions, two different scenes sharing under 50 percent of their sentences,
+no sentence repeated inside one prompt, no still-image wording in clip prompts, world-neutral examples,
+and the 79 / 95 / 101 percent boundaries through a real KieProvider call and Skill 74's budget math.
 Run: python3 -m unittest discover -s tests/unit
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import math
+import os
+import re
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _SKILL_DIR = Path(__file__).resolve().parent.parent.parent
-if str(_SKILL_DIR) not in sys.path:
-    sys.path.insert(0, str(_SKILL_DIR))
+for _p in (_SKILL_DIR, _SKILL_DIR / "scripts"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
+import plan_visual_journey as pj  # noqa: E402
+from providers import base, kie  # noqa: E402
 from providers import prompt_depth as pd  # noqa: E402
-from providers import kie  # noqa: E402
 
-STYLE = {"visual_world": "a sunlit modern studio loft", "realism_level": "photoreal", "palette": ["warm white", "oak", "sage"],
-         "prohibited_styles": ["cartoon", "neon"]}
-SCENE = {"visual_motif": "a ceramic table lamp", "narrative_purpose": "invite the visitor in",
-         "camera": {"start_state": "wide", "end_state": "close-up", "motion_direction": "slow push in", "motion_speed": "slow"}}
+STYLE = {"visual_world": "a salt flat observatory", "realism_level": "photoreal", "palette": ["white", "ochre", "steel blue"],
+         "material_language": "salt crust and weathered steel", "lighting_logic": "low sun from camera left",
+         "lens_family": "50mm prime", "composition_system": "rule of thirds", "prohibited_styles": ["cartoon", "neon"]}
+SECTIONS = ["hero", "problem", "solution", "offer", "proof", "testimonial", "pricing", "guarantee", "faq", "urgency", "cta", "close", "footer"]
 
 
-def _budget(mx: int):
-    import math
+def scene(section: str, index: int = 0):
+    prof = pj._section_profile(section, index)
+    return {
+        "scene_id": f"scene-{index + 1:02d}-{section}", "page_section": section,
+        "narrative_purpose": prof["narrative_purpose"], "conversion_purpose": prof["conversion_purpose"],
+        "visual_motif": prof["visual_motif"],
+        "camera": {k: prof[k] for k in ("start_state", "end_state", "motion_direction", "motion_speed")},
+        "duration_seconds": 8.0, "crop_rules": {"desktop": "16:9 full-bleed", "mobile": "9:16 crop-safe"},
+        "production_direction": pj._section_direction(section, index),
+    }
+
+
+def budget(mx: int):
     return {"max": mx, "floor": math.ceil(mx * 0.8), "target_min": math.ceil(mx * 0.95), "verbatim": False}
 
 
+def sentences(text: str):
+    return [x.strip() for x in re.split(r"(?<=[.!?])\s+", text.replace("\n", " ")) if x.strip()]
+
+
+def stills(i, sec):
+    return pd.fit_prompt("base prompt " + sec, pd.image_sections(STYLE, scene(sec, i)), budget(20000))
+
+
+def clips(i, sec):
+    return pd.fit_prompt("base prompt " + sec, pd.video_sections(STYLE, scene(sec, i)), budget(20000))
+
+
 class FitPromptTests(unittest.TestCase):
-    def test_lands_in_the_target_band_for_real_maxima(self) -> None:
-        base_prompt = "a sunlit modern studio loft; concept art direction: warm cinematic"
-        for sections in (pd.image_sections(STYLE), pd.image_sections(STYLE, SCENE), pd.video_sections(STYLE, SCENE),
-                         pd.video_sections(STYLE, SCENE, SCENE)):
-            for mx in (20000, 12000, 5000, 2500):
-                b = _budget(mx)
-                out = pd.fit_prompt(base_prompt, sections, b)
-                self.assertGreaterEqual(len(out), b["target_min"], (mx, len(out)))
-                self.assertLessEqual(len(out), mx, (mx, len(out)))
+    def test_lands_in_the_target_band_for_every_section_type_and_real_maxima(self) -> None:
+        for i, sec in enumerate(SECTIONS):
+            for sections in (pd.image_sections(STYLE, scene(sec, i)), pd.video_sections(STYLE, scene(sec, i)),
+                             pd.video_sections(STYLE, scene(sec, i), scene("cta", 3))):
+                for mx in (20000, 12000, 5000, 2500):
+                    b = budget(mx)
+                    out = pd.fit_prompt("a short base prompt", sections, b)
+                    self.assertGreaterEqual(len(out), b["target_min"], (sec, mx, len(out)))
+                    self.assertLessEqual(len(out), mx, (sec, mx, len(out)))
 
     def test_negative_prompt_reserve_is_respected(self) -> None:
-        b = _budget(20000)
+        b = budget(20000)
         reserve = len(" Do not include: no AI-generated text, no watermark, no distorted anatomy, no extra limbs")
-        out = pd.fit_prompt("a loft", pd.image_sections(STYLE), b, reserve)
+        out = pd.fit_prompt("a scene", pd.image_sections(STYLE, scene("hero")), b, reserve)
         self.assertLessEqual(len(out) + reserve, 20000)
         self.assertGreaterEqual(len(out) + reserve, b["target_min"])
 
     def test_no_limit_or_verbatim_leaves_the_prompt_alone(self) -> None:
-        self.assertEqual(pd.fit_prompt("a loft", pd.image_sections(STYLE), None), "a loft")
-        self.assertEqual(pd.fit_prompt("a loft", pd.image_sections(STYLE), {"max": 20000, "target_min": 19000, "verbatim": True}), "a loft")
+        secs = pd.image_sections(STYLE, scene("hero"))
+        self.assertEqual(pd.fit_prompt("a loft", secs, None), "a loft")
+        self.assertEqual(pd.fit_prompt("a loft", secs, {"max": 20000, "target_min": 19000, "verbatim": True}), "a loft")
 
     def test_a_library_that_cannot_reach_the_floor_returns_a_short_prompt_for_the_provider_to_refuse(self) -> None:
-        out = pd.fit_prompt("a loft", pd.image_sections(STYLE), _budget(200000))
+        out = pd.fit_prompt("a loft", pd.image_sections(STYLE, scene("hero")), budget(200000))
         self.assertLess(len(out), 0.8 * 200000)
 
-    def test_direction_is_specific_not_repeated_filler(self) -> None:
-        sections = pd.video_sections(STYLE, SCENE)
-        self.assertEqual(len(sections), len(set(sections)))
-        text = "\n".join(sections)
-        for needle in ("a ceramic table lamp", "slow push in", "a sunlit modern studio loft", "warm white, oak, sage", "cartoon, neon"):
-            self.assertIn(needle, text)
-        words = text.split()
-        self.assertGreater(len(set(words)) / len(words), 0.2)  # real vocabulary, not one block repeated
-        self.assertNotIn("{", text)
 
-    def test_connector_direction_names_both_scenes(self) -> None:
-        other = dict(SCENE, visual_motif="a walnut desk")
-        text = "\n".join(pd.video_sections(STYLE, SCENE, other))
-        self.assertIn("a ceramic table lamp", text)
-        self.assertIn("a walnut desk", text)
+class SceneSpecificLengthTests(unittest.TestCase):
+    """The length is carried by what is true of each scene, not by repeated house rules."""
+
+    def test_two_different_scenes_share_under_half_of_their_sentences(self) -> None:
+        for make in (stills, clips):
+            prompts = {sec: sentences(make(i, sec)) for i, sec in enumerate(SECTIONS)}
+            keys = list(prompts)
+            for a in range(len(keys)):
+                for b in range(a + 1, len(keys)):
+                    pa, pb = prompts[keys[a]], prompts[keys[b]]
+                    shared = len(set(pa) & set(pb))
+                    self.assertLess(shared / len(pa), 0.5, (make.__name__, keys[a], keys[b], shared, len(pa)))
+                    self.assertLess(shared / len(pb), 0.5, (make.__name__, keys[a], keys[b], shared, len(pb)))
+
+    def test_most_of_each_prompt_is_scene_specific_by_characters(self) -> None:
+        for make in (stills, clips):
+            a, b = sentences(make(0, "hero")), sentences(make(1, "problem"))
+            shared = set(a) & set(b)
+            share_chars = sum(len(x) for x in a if x in shared) / sum(len(x) for x in a)
+            self.assertLess(share_chars, 0.5, (make.__name__, share_chars))
+
+    def test_no_sentence_repeats_inside_one_prompt(self) -> None:
+        for make in (stills, clips):
+            for i, sec in enumerate(SECTIONS):
+                s = sentences(make(i, sec))
+                self.assertEqual(len(s), len(set(s)), (make.__name__, sec))
+        connector = pd.fit_prompt("base", pd.video_sections(STYLE, scene("problem", 1), scene("solution", 2)), budget(20000))
+        self.assertEqual(len(sentences(connector)), len(set(sentences(connector))))
+
+    def test_direction_is_distinct_per_section_in_the_planner(self) -> None:
+        for field in ("subject", "setting", "light", "materials", "motion", "camera_blocking", "mood", "continuity", "time_of_day"):
+            values = [pj._section_direction(sec, i)[field] for i, sec in enumerate(SECTIONS)]
+            self.assertEqual(len(values), len(set(values)), field)
+
+    def test_the_scene_fields_really_appear_in_the_prompt(self) -> None:
+        sc = scene("proof", 4)
+        text = stills(4, "proof")
+        for field in ("subject", "setting", "light", "materials", "mood", "continuity"):
+            self.assertIn(sc["production_direction"][field], text, field)
+        self.assertIn("16:9 full-bleed", text)
+        self.assertIn(sc["narrative_purpose"], text)
+
+    def test_a_planner_scene_without_direction_still_expands_with_neutral_defaults(self) -> None:
+        sc = scene("hero")
+        sc.pop("production_direction")
+        out = pd.fit_prompt("base", pd.image_sections(STYLE, sc), budget(20000))
+        self.assertGreaterEqual(len(out), 16000)  # the 80 percent floor is still met from the neutral defaults
+        self.assertNotIn("{", out)
 
 
-class RealPipelinePromptsMeetTheFloorTests(unittest.TestCase):
-    """The prompts the P6 to P9 generators really build, expanded with prompt_depth, are accepted by the
-    provider under the 80 percent floor (Skill 74 prompt-budget, 20000 maximum); the bare templates are refused."""
+class MediumAndWorldTests(unittest.TestCase):
+    def test_clip_prompts_never_say_image_and_still_prompts_never_say_clip(self) -> None:
+        for i, sec in enumerate(SECTIONS):
+            text = "\n".join(pd.video_sections(STYLE, scene(sec, i)) + pd.video_sections(STYLE, scene(sec, i), scene("cta", 3)))
+            self.assertIsNone(re.search(r"\bimages?\b|\bphotograph|\bthumbnail", text, re.I), (sec, re.search(r"\bimages?\b|\bphotograph|\bthumbnail", text, re.I)))
+            still = "\n".join(pd.image_sections(STYLE, scene(sec, i)))
+            self.assertIsNone(re.search(r"\bclip\b|\bvideo\b", still, re.I), sec)
+
+    def test_no_indoor_domestic_examples_in_an_outdoor_world(self) -> None:
+        banned = re.compile(r"\b(drawer|light switch|coat|chair|cup|lamp|sofa|desk|furniture|kitchen|bedroom|room|window|shelf|shelves)\b", re.I)
+        for i, sec in enumerate(SECTIONS):
+            text = "\n".join(pd.image_sections(STYLE, scene(sec, i)) + pd.video_sections(STYLE, scene(sec, i)))
+            self.assertIsNone(banned.search(text), (sec, banned.search(text)))
+
+    def test_connector_names_both_scenes(self) -> None:
+        a, b = scene("problem", 1), scene("solution", 2)
+        text = "\n".join(pd.video_sections(STYLE, a, b))
+        self.assertIn(a["production_direction"]["subject"], text)
+        self.assertIn(b["production_direction"]["subject"], text)
+        self.assertIn(b["production_direction"]["light"], text)
+
+
+class BoundariesThroughARealProviderTests(unittest.TestCase):
+    """79 percent is refused with the characters to add, 95 passes, 101 is refused with the characters to cut: a real
+    KieProvider call through the real Skill 74 prompt-budget math (20000 maximum from the fixture schema)."""
 
     def setUp(self) -> None:
-        import os
-        from unittest.mock import patch
         sys.path.insert(0, str(_SKILL_DIR / "scripts"))
         import generate_images as gi
-        import generate_videos as gv
-        from providers import base
-        self.gi, self.gv, self.base = gi, gv, base
-        self.env = patch.dict(os.environ, {"KIE_API_KEY": "FIXTURE-KEY", "KIE_POLICY_ROOT": ""})
-        self.env.start()
-        self.addCleanup(self.env.stop)
         self.bodies = []
 
         class Spy(gi.FixtureKieTransport):
@@ -99,57 +182,60 @@ class RealPipelinePromptsMeetTheFloorTests(unittest.TestCase):
                     self.bodies.append(kw["body"])
                 return super().post_json(url, **kw)
 
-        import contextlib, io
-        self.quiet = contextlib.redirect_stderr(io.StringIO())
-        self.quiet.__enter__()
-        self.addCleanup(self.quiet.__exit__, None, None, None)
+        self.env = patch.dict(os.environ, {"KIE_API_KEY": "FIXTURE-KEY", "KIE_POLICY_ROOT": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        quiet = contextlib.redirect_stderr(io.StringIO())
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
         self.provider = kie.KieProvider(transport=Spy())
+        self.mid = "kie-gpt-image-2-5-sunburst-text-to-image"
 
-    def test_image_templates_are_refused_bare_and_accepted_expanded(self) -> None:
-        mid = "kie-gpt-image-2-5-sunburst-text-to-image"
-        bare = self.gi._scene_anchor_prompt(STYLE_FULL, SCENE_FULL)
-        with self.assertRaises(self.base.ProviderTaskError):
-            self.provider.generate_image(self.base.ImageGenerationRequest(model_id=mid, prompt=bare))
-        budget = self.provider.prompt_budget(mid)
-        full = pd.fit_prompt(bare, pd.image_sections(STYLE_FULL, SCENE_FULL), budget)
-        self.provider.generate_image(self.base.ImageGenerationRequest(model_id=mid, prompt=full))
-        self.assertTrue(0.95 * 20000 <= len(self.bodies[-1]["input"]["prompt"]) <= 20000)
+    def go(self, n: int):
+        return self.provider.generate_image(base.ImageGenerationRequest(model_id=self.mid, prompt="x" * n))
 
-    def test_video_templates_are_refused_bare_and_accepted_expanded(self) -> None:
+    def test_budget_numbers_come_from_skill74(self) -> None:
+        b = self.provider.prompt_budget(self.mid)
+        self.assertEqual((b["max"], b["floor"], b["target_min"]), (20000, 16000, 19000))
+
+    def test_79_percent_refused_with_the_characters_to_add(self) -> None:
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.go(15800)
+        self.assertIn("ADD at least 200", str(ctx.exception))
+        self.assertEqual(self.bodies, [])
+
+    def test_80_95_and_100_percent_pass(self) -> None:
+        for n in (16000, 19000, 20000):
+            self.go(n)
+        self.assertEqual([len(b["input"]["prompt"]) for b in self.bodies], [16000, 19000, 20000])
+
+    def test_101_percent_refused_with_the_characters_to_cut(self) -> None:
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.go(20200)
+        self.assertIn("CUT exactly 200", str(ctx.exception))
+        self.assertEqual(self.bodies, [])
+
+    def test_the_real_pipeline_templates_are_refused_bare_and_accepted_expanded(self) -> None:
+        import generate_images as gi
+        import generate_videos as gv
+        sc, nxt = scene("proof", 4), scene("cta", 5)
+        bare = gi._scene_anchor_prompt(STYLE, sc)
+        with self.assertRaises(base.ProviderTaskError):
+            self.go_prompt(bare)
+        full = pd.fit_prompt(bare, pd.image_sections(STYLE, sc), self.provider.prompt_budget(self.mid))
+        self.go_prompt(full)
+        self.assertTrue(19000 <= len(self.bodies[-1]["input"]["prompt"]) <= 20000)
         mid = "kie-bytedance-seedance-1.5-pro"
-        for bare, secs in (
-            (self.gv._final_scene_prompt(STYLE_FULL, SCENE_FULL), pd.video_sections(STYLE_FULL, SCENE_FULL)),
-            (self.gv._connector_prompt(STYLE_FULL, SCENE_FULL, SCENE_FULL), pd.video_sections(STYLE_FULL, SCENE_FULL, SCENE_FULL)),
-        ):
-            req = lambda p: self.base.VideoGenerationRequest(model_id=mid, prompt=p, duration_seconds=8)
-            with self.assertRaises(self.base.ProviderTaskError):
-                self.provider.generate_video(req(bare))
-            self.provider.generate_video(req(pd.fit_prompt(bare, secs, self.provider.prompt_budget(mid))))
-            self.assertTrue(0.95 * 20000 <= len(self.bodies[-1]["input"]["prompt"]) <= 20000)
+        for text, secs in ((gv._final_scene_prompt(STYLE, sc), pd.video_sections(STYLE, sc)),
+                           (gv._connector_prompt(STYLE, sc, nxt), pd.video_sections(STYLE, sc, nxt))):
+            mk = lambda p: self.provider.generate_video(base.VideoGenerationRequest(model_id=mid, prompt=p, duration_seconds=8))
+            with self.assertRaises(base.ProviderTaskError):
+                mk(text)
+            mk(pd.fit_prompt(text, secs, self.provider.prompt_budget(mid)))
+            self.assertTrue(19000 <= len(self.bodies[-1]["input"]["prompt"]) <= 20000)
 
-
-STYLE_FULL = {"visual_world": "a sunlit modern studio loft", "realism_level": "photoreal", "palette": ["warm white", "oak"],
-              "material_language": "oak, linen, brushed brass", "lighting_logic": "soft window key from camera left",
-              "lens_family": "35mm to 85mm", "composition_system": "rule of thirds", "prohibited_styles": ["cartoon"]}
-SCENE_FULL = {"visual_motif": "a ceramic table lamp", "narrative_purpose": "invite the visitor in",
-              "camera": {"start_state": "wide", "end_state": "close-up", "motion_direction": "slow push in", "motion_speed": "slow"}}
-
-
-class BoundaryThroughSkill74Tests(unittest.TestCase):
-    """79 percent is refused with the characters to add, 95 passes, 101 is refused, all through Skill 74's own math."""
-
-    def setUp(self) -> None:
-        mod = kie.load_skill74()
-        self.assertIsNotNone(mod, "Skill 74 must be present beside Skill 62 in the repo")
-        self.ad = mod.Adapter(env={"KIE_API_KEY": "k", "KIE_LIVE_ADAPTER_MODE": "active", "KIE_LIVE_CACHE_DIR": "/tmp/cwfe-pd-nocache"})
-
-    def test_budget_math(self) -> None:
-        b = self.ad.cmd_prompt_budget  # noqa: F841 (method exists)
-        mod = kie.load_skill74()
-        self.assertEqual(mod.budget(20000), {"max": 20000, "floor": 16000, "target_min": 19000, "target_max": 20000})
-        self.assertLess(15800, 16000)   # 79 percent of 20000
-        self.assertGreaterEqual(19000, 19000)  # 95 percent
-        self.assertGreater(20200, 20000)  # 101 percent
+    def go_prompt(self, p: str):
+        return self.provider.generate_image(base.ImageGenerationRequest(model_id=self.mid, prompt=p))
 
 
 if __name__ == "__main__":
