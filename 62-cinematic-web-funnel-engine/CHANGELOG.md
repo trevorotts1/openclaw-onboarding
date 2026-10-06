@@ -1,5 +1,12 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.4 - 2026-10-06
+
+Final QC minor gaps on the prompt builder.
+
+- The 95 to 100 percent target now holds for ANY direction shape. Very short direction (four words per field) landed at 91.6 to 92.7 percent at the 20000 maximum; three more scene-applied still topics (negative space, lighting ratio, accent discipline) and three clip topics (easing and frame rhythm, foreground elements for parallax, ending hold) top it up. Measured for four-word fields: stills 0.951 to 1.0 and clips 0.951 to 1.0 of the maximum across 20000, 12000, 8000, 5000, 2500 and 1000.
+- Planner defaults respect the world: the `time_of_day` defaults no longer say sunrise, sunset, daylight, morning or afternoon (they describe a relative moment of the project's day), and the "architecture or landscape" wording is now "structure and surroundings". Test: planner direction and the expanded prompts for an indoor world contain none of sunrise, sunset, architecture, landscape, daylight, dawn, dusk, midday, morning, afternoon, sky or horizon, for all 13 section types and a custom section.
+- The band test is parametrized over the maxima 20000, 12000, 8000, 5000, 2500 and 1000, for stills, clips and connectors, and for five input shapes (no scene, no direction, concise operator direction, four-word direction, full planner direction), each across the 13 section types. Cross-scene sentence overlap stays under 50 percent (stills 0.35, clips 0.40 worst pair).
 ## v2.1.3 - 2026-10-06
 
 Delta QC round 3 on the prompt builder.
