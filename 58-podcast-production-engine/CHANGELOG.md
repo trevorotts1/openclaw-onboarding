@@ -1,5 +1,12 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.14 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+- `scripts/generate_cover.sh` (Step 10) now calls Skill 74's CLI (`kie_live_adapter.py submit`, `wait`, `save`, `--mode active --json`) for the cover job, found as a sibling skill folder. If Skill 74 is not installed the step exits 2 with a clear message; there is no fallback to a second client.
+- Policy stays in this script: model `gpt-image-2-5-sunburst-text-to-image`, the cover prompt, the one-shot resolution fallback, the typed exit codes (3 createTask, 4 bounded poll timeout, 5 task failed, 6 download), the image content probe and the ffmpeg finalize chain (square JPEG, 1500 to 3000 pixels, under 512 kilobytes), and the receipt.
+- Removed (duplicate KIE client): the own `curl` createTask call and its retry loop, the own recordInfo polling loop with its backoff table, the own result download, and the `KIE_API_BASE` default. The first poll is still never faster than 5 seconds (first value of `KIE_BACKOFF_SCHEDULE`, floor 5); Skill 74 then backs off up to 15 seconds inside the same 600 second budget. `KIE_API_BASE` remains a test hook (localhost mock only).
+- Tests: new `scripts/tests/test_generate_cover_kie74.sh` (mock KIE through Skill 74: success and receipt, auth failure not retried, task failure, bounded timeout, download failure, missing Skill 74, no second client in the script).
+
 ## v1.0.13 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
 
 - `scripts/podcast-smoke-test.py`: the KIE credit probe now also requires the BODY `code` to be 200 (`body_code_ok` in `config/smoke-endpoints.json`); HTTP 200 alone no longer passes. New `scripts/tests/test_smoke_body_code.py`.

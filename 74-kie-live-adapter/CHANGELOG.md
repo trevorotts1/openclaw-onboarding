@@ -1,5 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.2] - 2026-10-06
+- Consumer options for the one-KIE-path consolidation of Skills 25, 37, 58 and 59: result downloads send a product User-Agent by default (urllib's default is 403-blocked by the result CDN); `save` and `run` take `--user-agent` (replaces it, result download only) and a repeatable `--allow-host`; `run` saves a direct result link returned by a synchronous endpoint (data.resultUrls or data.response.resultUrls). Tests: `tests/test_consumer_options.py`.
+
 ## [1.1.1] - 2026-10-06
 - `submit` and `run` accept `--callback-url URL` (overrides `callBackUrl` in the request file; still http or https only). This is the production route for Skill 46 (`kie-callback-relay`): the relay's signed URL is passed on the command line and the normalized result (`task_id`, `model_id`, `data.callback_url`) is what Skill 46 `adoptAdapterTask` consumes. New test `test_callback_url_flag_overrides_request_file`.
 

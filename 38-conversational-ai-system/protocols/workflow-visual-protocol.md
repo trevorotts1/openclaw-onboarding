@@ -112,8 +112,10 @@ the script. RECORD the exact model id that Skill 66 returned in the run manifest
 and `registry.md`. If Skill 66 cannot dispatch, ship the Mermaid truth diagram alone and flag
 the hero PENDING.
 
-Once installed, the live Kie catalog check is provided by Skill 74 (`74-kie-live-adapter`) in
-shadow mode; Skill 66 remains the decision authority. Until a hero job actually runs,
+ONE KIE PATH: every Kie call for the hero (submit, wait, upload, download, balance) is the CLI of
+Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py`, `--mode active --json`, found as a
+sibling skill folder). This skill never carries its own createTask, polling, upload or download
+code. Skill 66 remains the decision authority for the model. Until a hero job actually runs,
 `scripts/31-generate-workflow-visual.sh` is a stub that records no model id (`model_id` is null
 in `visual.json`).
 
@@ -193,9 +195,9 @@ populated, its per-playbook section MUST embed the visual.
 
 - `scripts/31-generate-workflow-visual.sh` - parses via the engine, emits `diagram.mmd`, renders the
   PNG via `npx mermaid-cli`, writes `visual.json` and the `registry.md` Visual column. The Kie
-  hero dispatch is delegated to Skill 66 and is a stub in this script today (no Kie call, no model
-  recorded); upload, manifest, and `kie-image-events.jsonl` logging happen when a real hero job
-  runs. Idempotent via the structure hash; `--force` overrides.
+  hero dispatch is delegated to Skill 66 (model) and Skill 74 (transport) and is a stub in this script today (no Kie call, no model
+  recorded); upload, manifest, and `kie-image-events.jsonl` logging happen when a real hero job runs. Idempotent via the structure hash;
+  `--force` overrides.
 - `scripts/09-install-conversation-workflows.sh` - invokes the generator after doc creation and
   records the Visual column.
 - `scripts/qc-workflow-visual.sh` (+ `qc-workflow-visual.test.sh`) - FAILS a registered playbook

@@ -36,6 +36,8 @@ SCHEMA_TTL = 24 * 3600
 B64_LIMIT = 10 * 1024 * 1024
 MAX_UPLOAD = 512 * 1024 * 1024  # ponytail: hard ceiling; raise only with a vendor-confirmed larger limit
 JOB_PATH = "/api/v1/jobs/createTask"
+# Result CDNs answer urllib's default agent with 403/1010; a plain product agent is sent on result downloads.
+DOWNLOAD_UA = "Mozilla/5.0 (compatible; OpenClaw-KIE-Live-Adapter/1.1)"
 UPLOAD_MIMES = ("image/", "video/", "audio/", "application/pdf")
 
 
@@ -521,6 +523,9 @@ class Adapter:
         self.api = self._base("KIE_LIVE_API_BASE", API)
         self.upl = self._base("KIE_LIVE_UPLOAD_BASE", UPLOAD)
         self._reg = None
+        # Result-download options (never sent to the API host, never carry the key): a caller that needs a
+        # browser User-Agent (Skill 59: the result CDN 403s urllib's default) or a host allowlist sets these.
+        self.dl_headers, self.dl_hosts = {"User-Agent": DOWNLOAD_UA}, ()
 
     def _base(self, name, default):
         v = self.env.get(name)
@@ -842,7 +847,11 @@ class Adapter:
         body = dict(inp)  # sync path: schema-declared path and body; model added only if absent
         body.setdefault("model", model)
         j = self.call("POST", self.api + path, body, timeout=300)
-        return self.result(state="success", data={"response": j.get("data", j)},
+        resp = j.get("data", j)
+        urls, _ = extract_results(resp)  # dedicated endpoints (Runway, Veo) can return the result link directly
+        if not urls and isinstance(resp, dict):
+            urls, _ = extract_results(resp.get("response"))
+        return self.result(state="success", result_urls=urls, data={"response": resp},
                            warnings=["sync endpoint: result is in data.response; no task to poll"], **base)
 
     # -- polling
@@ -896,13 +905,13 @@ class Adapter:
     def _download(self, url, dest_dir, task_id, i):
         if urllib.parse.urlparse(url).scheme != "https" and self.api == API:  # http only when the localhost test base is set
             raise KieError("bad_url", "refusing non-https result URL")
-        status, raw = self.t.request("GET", url, {}, None, 120)  # no Authorization: result hosts are not the API
+        status, raw = self.t.request("GET", url, dict(self.dl_headers), None, 120)  # no Authorization: result hosts are not the API
         if status in (403, 404, 410):  # expired: refresh once through download-url
             j = self.call("POST", self.api + "/api/v1/common/download-url", {"url": url})
             fresh = j.get("data")
             if not isinstance(fresh, str):
                 raise KieError("bad_response", "download-url returned no link")
-            status, raw = self.t.request("GET", fresh, {}, None, 120)
+            status, raw = self.t.request("GET", fresh, dict(self.dl_headers), None, 120)
         if status != 200 or not raw:
             raise KieError("download_failed", "download failed with HTTP %s" % status)
         ext = os.path.splitext(urllib.parse.urlparse(url).path)[1]
@@ -920,7 +929,16 @@ class Adapter:
             kw = self._norm(self._info(task_id), task_id) if info is None else info
             if kw["state"] != "success":
                 return self.result(**dict(kw, warnings=["task not successful; nothing to save"]))
-            kw["saved_paths"] = [self._download(u, save_dir, task_id, i) for i, u in enumerate(kw["result_urls"])]
+            urls = kw["result_urls"]
+            if self.dl_hosts:  # caller allowlist: exact host or subdomain; others are skipped, never fetched
+                hosts = [(urllib.parse.urlparse(u).hostname or "").lower() for u in urls]
+                keep = [u for u, ho in zip(urls, hosts) if any(ho == h or ho.endswith("." + h) for h in self.dl_hosts)]
+                if len(keep) != len(urls):
+                    kw["warnings"] = list(kw.get("warnings") or []) + ["%d result URL(s) skipped: host not in --allow-host" % (len(urls) - len(keep))]
+                if not keep:
+                    raise KieError("host_not_allowed", "no result URL host is in the --allow-host list")
+                urls = keep
+            kw["saved_paths"] = [self._download(u, save_dir, task_id, i) for i, u in enumerate(urls)]
             return self.result(**kw)
         except KieError as e:
             return self.fail(e, task_id=task_id)
@@ -935,6 +953,12 @@ class Adapter:
 
     def _run(self, req, save_dir, timeout=None):
         r = self._submit(req)
+        if r["state"] == "success" and r["result_urls"] and r["raw_family"] == "sync":  # direct result: save it
+            kw = {k: r[k] for k in ("state", "result_urls", "credits_consumed", "raw_family", "model_id",
+                                    "capability", "schema_source", "schema_fetched_at", "data", "warnings")}
+            kw["task_id"] = r["task_id"] or "sync-" + uuid.uuid4().hex[:12]
+            kw["warnings"] = [x for x in kw["warnings"] if x not in self.warnings]
+            return self.cmd_save(kw["task_id"], save_dir, info=kw)
         if r["state"] != "queued":
             return r
         t = req.get("timeout") or timeout or 300
@@ -1339,9 +1363,11 @@ def main(argv=None, adapter=None, out=sys.stdout):
     add("submit", ("--request", {"required": True}), ("--dry-run", {"action": "store_true"}),
         ("--callback-url", {"help": "Skill 46 relay callBackUrl; overrides callBackUrl in the request file"}))
     add("wait", ("--task-id", {"required": True}), ("--timeout", {"type": float, "default": 300}))
+    ua = ("--user-agent", {"help": "User-Agent for the RESULT download only (never the API call)"})
+    ah = ("--allow-host", {"action": "append", "help": "download only result URLs on this host or its subdomains; repeatable"})
     add("run", ("--request", {"required": True}), ("--save-dir", {"required": True}),
         ("--timeout", {"type": float, "default": None}),
-        ("--callback-url", {"help": "Skill 46 relay callBackUrl; overrides callBackUrl in the request file"}))
+        ("--callback-url", {"help": "Skill 46 relay callBackUrl; overrides callBackUrl in the request file"}), ua, ah)
     add("credits")
     add("price", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
     add("preflight", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
@@ -1350,7 +1376,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
         ("--prompt-file", {}))
     add("latest-family", ("--family", {"required": True}), ("--capability", {"action": "append"}),
         ("--current-default", {}), ("--refresh", {"action": "store_true"}))
-    add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}))
+    add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}), ua, ah)
     a = ap.parse_args(argv)
     try:
         ad = adapter or Adapter()
@@ -1359,6 +1385,9 @@ def main(argv=None, adapter=None, out=sys.stdout):
         return 1
     if a.mode:
         ad.mode = a.mode
+    if getattr(a, "user_agent", None):
+        ad.dl_headers = {"User-Agent": a.user_agent}  # replaces the default product agent
+    ad.dl_hosts = tuple(h.lower().lstrip(".") for h in (getattr(a, "allow_host", None) or []))
     exit_code = None
     try:
         if a.cmd == "health":
