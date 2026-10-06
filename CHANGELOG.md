@@ -1,3 +1,16 @@
+## [v26.0.2]  -  2026-10-06  -  Jev chain live: the bridge calls the Jev model with the box's own key, else its OpenRouter key, else the local engine
+
+JEV now calls the Jev model: the box's own Jev key first, else the box's OpenRouter key (the same Jev model through OpenRouter), else the local engine.
+
+#### What changed
+- **Live chain.** `shared-utils/decision-engine.py` (the bridge Command Center calls) used to decide intent and department with local word rules only and never called Jev. In `auto` and `model` mode it now asks the existing direct-first ladder (new `shared-utils/jev_live.py`, reusing the ladder, providers and credential resolver): own key (`TYPESAFE_API_KEY` / `JEV_API_KEY` / `JEV_TYPESAFE_API_KEY`), else `OPENROUTER_API_KEY`, else the local engine exactly as before. Any error, timeout, bad answer or low confidence (top probability under 0.6) also falls back to the local engine; the bridge never fails because of Jev. Exact released-pack matches stay authoritative and send nothing. `legacy`, `off` and `shadow` send nothing.
+- **Spending.** Default rule allows spend and transmit for the Jev decision purpose with no budget limit and no budget store (Jev costs about 4 cents per million tokens).
+- **Speed.** The whole Jev attempt is capped at 2.2 seconds (own key up to 1.2 s, OpenRouter gets what is left) so it always fits under Command Center's 3 second bridge deadline.
+- **Visibility without noise.** `scripts/health/routing-check.sh` prints one new read-only `routing-jev-path` line (`own-key`, `openrouter` or `local-only`, from key names only, never values). The bridge logs a `jev_path` line to `routing-events.jsonl` only when the path changes. No new message, no new schedule.
+- **Wire contract unchanged.** schemaVersion 1.1.0, configRevision echoed, no assignment keys. A Jev-placed route adds `route.method` (`jev_own_key` or `jev_openrouter`), the same additive field `model` mode already uses.
+- **Tests.** `tests/unit/test_jev_live_chain.py` (offline, fake transports): own key, OpenRouter only, neither, provider error, low confidence, deadline, legacy/off/shadow send nothing, wire contract, no key material in output, path event only on change.
+
+
 ## [v26.0.1]  -  2026-10-06  -  Box fixes: onboarding-state shim sources the beside-copy lib first, updater refreshes stale ~/.openclaw/lib-onboarding-state.sh, oc_skill_registered passes --agent
 
 #### What changed
