@@ -205,8 +205,7 @@ AF_NO_VIDEO = "AF-VSL-NO-VIDEO"
 # Presentations rich-prompt gate: 9,000-18,000 stripped chars — VSL-BUILDER-SOP.md
 # §3 step 2, explicitly NOT Loop 2C's looser 5,000-19,000 research band).
 # ---------------------------------------------------------------------------
-PROMPT_FLOOR = 9000
-PROMPT_CEILING = 18000
+# Prompt length is KIE rule 12 (owner order 2026-10-05) through prompt_gate and the shared enforcer; no band lives here.
 
 ASPECT_RATIO = "16:9"
 RESOLUTION = "2K"
@@ -684,16 +683,12 @@ def assert_content_in_prompt(page_id: str, fields: Dict[str, str], prompt: str) 
 
 
 def _assert_prompt_band(prompt: str, page_id: str) -> None:
-    stripped = prompt.strip()
-    n = len(stripped)
-    if n < PROMPT_FLOOR:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, UNDER the {PROMPT_FLOOR}-char floor."
-        )
-    if n > PROMPT_CEILING:
-        raise RuntimeError(
-            f"{page_id}: prompt is {n} chars, OVER the {PROMPT_CEILING}-char ceiling."
-        )
+    if prompt_gate is None:
+        raise RuntimeError(f"{page_id}: the shared prompt gate (prompt_gate.py) is not loadable, so the rule 12 length "
+                           "band cannot be measured; the prompt is not submitted.")
+    probs = prompt_gate.length_problems(prompt.strip())
+    if probs:
+        raise RuntimeError(f"{page_id}: " + "; ".join(probs))
     if prompt_gate is not None:
         try:
             prompt_gate.verify_prompt_minimal(prompt, slide_id=page_id)
@@ -701,10 +696,18 @@ def _assert_prompt_band(prompt: str, page_id: str) -> None:
             raise RuntimeError(f"{page_id}: shared prompt gate rejected the design prompt: {exc}")
 
 
+def _deepen(prompt: str, client_name: str) -> str:
+    """Bring the prompt into the KIE rule 12 band with the shared page-design clauses (no-op when the shared gate
+    is not loadable; the submit gate then refuses the prompt)."""
+    if prompt_gate is None:
+        return prompt
+    return prompt_gate.deepen_to_band(prompt, ctx={"role": "video sales letter", "client": client_name})
+
+
 def build_design_prompt(*, brand: Dict[str, str], client_name: str,
                         fields: Dict[str, str]) -> str:
-    """Compose a content-in-image VSL hero design prompt (9,000-18,000 stripped
-    chars), templating workbook_builder.py's / sales_checkout_builder.py's proven
+    """Compose a content-in-image VSL hero design prompt (KIE rule 12 length band,
+    deepened with real page-design direction), templating workbook_builder.py's / sales_checkout_builder.py's proven
     content-in-image technique for a video-player-centric marketing hero."""
     prim, sec, acc = brand["primary"], brand["secondary"], brand["accent"]
     base, ink = brand["base"], brand["ink"]
@@ -850,7 +853,7 @@ identical header band, identical palette, identical typography ladder. Only the
 headline/subheadline/CTA copy and the video-player-mockup emphasis are unique to this
 page, so the full set reads as one designed system end to end.
 """
-    return prompt
+    return _deepen(prompt, client_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1699,8 +1702,8 @@ def _selftest() -> int:
     fields = _vsl_content_fields(brief, "Test Client")
     prompt = build_design_prompt(brand=brand, client_name="Test Client", fields=fields)
     n = len(prompt.strip())
-    if not (PROMPT_FLOOR <= n <= PROMPT_CEILING):
-        fails.append(f"vsl-hero: prompt {n} chars outside {PROMPT_FLOOR}-{PROMPT_CEILING} band")
+    if prompt_gate is None or prompt_gate.length_problems(prompt.strip()):
+        fails.append(f"vsl-hero: prompt {n} chars outside the rule 12 band")
     try:
         assert_content_in_prompt("vsl-hero", fields, prompt)
     except Exception as exc:  # noqa: BLE001

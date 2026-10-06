@@ -24,6 +24,13 @@ EXIT_MANIFEST_MISMATCH = 7
 EXIT_USAGE = 2
 
 
+
+def _rule12_len() -> int:
+    """A slide-prompt length inside the KIE rule 12 band (the middle of the target band), from the shared enforcer."""
+    import prompt_gate
+    b = prompt_gate.length_budget()
+    return (b["target_min"] + b["ceiling"]) // 2
+
 def _canonical_manifest() -> Path:
     """Locate the canonical PIPELINE-MANIFEST.json the way the deployed tree and
     the repo tree carry it. Deployed layout first (scripts/../sops/), repo
@@ -692,7 +699,7 @@ class TestOCRReadbackGateBlocks:
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * _rule12_len())
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
@@ -775,7 +782,7 @@ class TestQCGateBlocks:
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * _rule12_len())
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
@@ -883,7 +890,7 @@ class TestQCAggregatePhaseEndToEnd:
         (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
         (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
         (run_dir / "renders").mkdir(parents=True, exist_ok=True)
-        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * _rule12_len())
         (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
             {"ghl_folder_id": "root",
              "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],

@@ -1520,6 +1520,8 @@ and the image-to-image reference field **`input_urls`** (30 MB/file; JPEG/PNG/WE
 
 Owner rule 2026-10-05: the fleet GPT Image default follows the newest GPT Image generation in KIE's live catalog (resolved by Skill 74 `latest-family`); today that is GPT Image 2.5 Sunburst. Legacy ratio routing and substitutions above still apply.
 
+Note 2026-10-05: KIE live schema 2026-10-05 reports a 20,000-character maxLength for legacy gpt-image-2; KIE enforces the live value, so 20,000 is the effective cap.
+
 ---
 
 ---

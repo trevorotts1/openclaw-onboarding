@@ -3,7 +3,7 @@
 """prove_sp_prompt_floor.py — fail-closed two-floor gate for Sales Page Assets image
 prompts (Skill 56). A CLONE of the Signature-Funnel two-floor prompt gate
 (49/scripts/prove_sf_prompt_floor.py, itself cloned from the presentations
-build_deck.py PROMPT_CHAR_FLOOR / CEILING / structural-block / density gate), with the
+structural-block / density gate; the LENGTH floor is the shared KIE rule 12 enforcer), with the
 signature GRADE fingerprint PARAMETERIZED on the client's own brand color
 (${INTAKE.primary_brand_color}) instead of the Trevor Otts fixed signature color — a
 sales-page image is graded to the CLIENT's brand, not a house style. (FIX-XC-04e.)
@@ -13,7 +13,7 @@ SLICE COVERAGE only (prove_sp_image_plan.py) and never STRENGTH, so ~250-char ge
 prompts sailed through to a paid image call. This prover is wired as the SECOND P1 gate.
 
 THE TWO FLOORS (both must clear or the prompt NEVER reaches a paid image call):
-  FLOOR 1 — LENGTH: 5,000 <= stripped chars <= 19,000.        -> AF-SP56-PROMPT-FLOOR / -CEILING
+  FLOOR 1 — LENGTH: 80 percent <= stripped chars <= 100 percent of the model max. -> AF-SP56-PROMPT-FLOOR / -CEILING
   FLOOR 2 — STRUCTURE / EXCELLENCE: a genuinely rich prompt carries the load-bearing blocks:
     * a BRAND-GRADE BLOCK fingerprint (the color-grade discipline paragraph).      -> AF-SP56-PROMPT-GRADE
     * the CLIENT brand color named in the prompt when the ledger declares one
@@ -34,18 +34,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
-# --- the sales-page band (clone of the funnel band 5,000 / 19,000) -----------
-PROMPT_CHAR_FLOOR = 5000       # HARD low end (AF-SP56-PROMPT-FLOOR)
-PROMPT_CHAR_CEILING = 19000    # HARD high end (AF-SP56-PROMPT-CEILING); ~1,000 under the API ceiling
+# --- prompt length: KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer ----------
+# 95 to 100 percent of the model maxLength, hard floor 80 percent (AF-SP56-PROMPT-FLOOR), hard ceiling
+# 100 percent (AF-SP56-PROMPT-CEILING). The limit comes from Skill 74 prompt-budget; no band lives here.
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-SP56-PROMPT-DENSITY: catches paragraph-repeat padding
 
 # BRAND-GRADE BLOCK fingerprints — any ONE proves a real color-grade discipline paragraph is
@@ -115,16 +134,12 @@ def evaluate_prompt(record: Dict[str, Any], brand_tokens: List[str]) -> List[Tup
 
     stripped = _stripped(prompt)
     lc = stripped.lower()
-    length = len(stripped)
 
-    # FLOOR 1 — length band
-    if length < PROMPT_CHAR_FLOOR:
-        fails.append(("AF-SP56-PROMPT-FLOOR",
-                      f"{who}: {length} stripped chars, under the {PROMPT_CHAR_FLOOR} floor — a prompt "
-                      "this short cannot carry the brand specificity; NOT sent to the image provider"))
-    if length > PROMPT_CHAR_CEILING:
-        fails.append(("AF-SP56-PROMPT-CEILING",
-                      f"{who}: {length} stripped chars, over the {PROMPT_CHAR_CEILING} ceiling"))
+    # FLOOR 1 — length band (KIE rule 12 through the shared enforcer)
+    verdict = KPE.check(str(record.get("model") or IMAGE_MODEL_DEFAULT), stripped)
+    if not verdict["ok"]:
+        code = "AF-SP56-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-SP56-PROMPT-FLOOR"
+        fails.append((code, f"{who}: {verdict['message']}; NOT sent to the image provider"))
 
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
@@ -198,8 +213,7 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
             continue
         violations.extend(evaluate_prompt(rec, brand_tokens))
     tail = f" (brand color words required: {brand_tokens})" if brand_tokens else ""
-    notes.append(f"checked {len(prompts)} image prompt(s) against the "
-                 f"{PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} band{tail}")
+    notes.append(f"checked {len(prompts)} image prompt(s) against the KIE rule 12 length band{tail}")
     return violations, notes
 
 
@@ -216,7 +230,7 @@ def _report(violations, notes) -> None:
     for note in notes:
         print(f"NOTE: {note}")
     if not violations:
-        print(f"PASS: every image prompt clears the two-floor gate ({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING}).")
+        print("PASS: every image prompt clears the two-floor gate (KIE rule 12 length band).")
         return
     print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to the image provider.")
     for code, msg in violations:
@@ -256,8 +270,15 @@ _VOCAB = (
 )
 
 
-def _rich_prompt(scene: str, target: int = 5600, text_bearing: bool = False,
+def _target() -> int:
+    """The middle of the rule 12 target band for the default image model (self-test fixtures)."""
+    b = KPE.budget_for(IMAGE_MODEL_DEFAULT)
+    return (b["target_min"] + b["max"]) // 2
+
+
+def _rich_prompt(scene: str, target: Optional[int] = None, text_bearing: bool = False,
                  words=None) -> str:
+    target = target or _target()
     body = scene + " "
     body += _GRADE_BLOCK + " "
     body += ("COMPOSITION AND SHOT: eye level, subject off center on the rule of thirds, generous "
@@ -332,7 +353,7 @@ def _violation_cases():
     def too_short(led):
         led["prompts"][0]["prompt_text"] = "deep evergreen brand-grade hero. No text. Do not distort. " * 4
     def too_long(led):
-        led["prompts"][0]["prompt_text"] = _rich_prompt(_STAGE_SCENES[0][1], target=19200) + (_VOCAB * 60)
+        led["prompts"][0]["prompt_text"] = _rich_prompt(_STAGE_SCENES[0][1], target=KPE.budget_for(IMAGE_MODEL_DEFAULT)["max"] + 200)
     def no_grade(led):
         # a long, dense, brand-colored prompt that OMITS every grade-block fingerprint.
         body = (_STAGE_SCENES[0][1] + " The palette is dominated by deep evergreen with warm brass "
@@ -340,7 +361,7 @@ def _violation_cases():
                 "words anywhere in the image. ")
         vocab = (_VOCAB + " ").split()
         i = 0
-        while len(body) < 5600:
+        while len(body) < _target():
             body += vocab[i % len(vocab)] + " "
             i += 1
         body += "Do not distort hands, eyes, or teeth. Do not add any unintended text."
@@ -414,7 +435,7 @@ def run_self_test() -> int:
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
         description=f"Fail-closed two-floor gate for Sales Page Assets image prompts "
-                    f"({PROMPT_CHAR_FLOOR}-{PROMPT_CHAR_CEILING} chars). Exit 0 pass, 2 violation, 3 usage.")
+                    "(KIE rule 12 length band). Exit 0 pass, 2 violation, 3 usage.")
     ap.add_argument("--ledger", help="path to image_plan.json / a prompt ledger ('-' reads stdin)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID fixture (must PASS) + each VIOLATION fixture (must FAIL)")

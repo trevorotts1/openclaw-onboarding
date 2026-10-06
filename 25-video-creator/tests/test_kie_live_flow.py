@@ -97,6 +97,8 @@ def env(monkeypatch, tmp_path, skills):
     module = load_module()
     monkeypatch.setattr(module, "_skills_dirs", lambda: [skills])
     monkeypatch.setattr(module.AIProvider, "_validate_downloaded_video", staticmethod(lambda path: None))
+    # These contract tests use short prompts; rule 12 prompt length is covered by tests/unit/kie-prompt-enforcer-and-gates.test.py
+    monkeypatch.setattr(module.AIProvider, "_check_prompt_budget", lambda self, prompt, model: None)
     ns = SimpleNamespace(module=module, tmp=tmp_path)
 
     def install(fake):

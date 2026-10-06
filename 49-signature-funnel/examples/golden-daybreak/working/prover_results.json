@@ -17,7 +17,7 @@
     "rc": 0,
     "pass": true,
     "tail": [
-      "PASS: every image prompt clears the two-floor gate (5000-19000)."
+      "PASS: every image prompt clears the two-floor gate (KIE rule 12 length band)."
     ]
   },
   "prove_sf_graph.py": {

@@ -41,8 +41,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1
 PHASE_ID = "P4-PROMPT"
-DEFAULT_MIN_CHARS = 9000
-DEFAULT_MAX_CHARS = 18000
+
+
+def _length_defaults() -> Tuple[int, int]:
+    """(floor, ceiling) of an authored prompt under KIE rule 12 (80 percent of the model max, and 100 percent less the
+    English pin), from the shared enforcer through prompt_gate. No band lives in this module; fails closed."""
+    from .artifacts import _import_prompt_gate
+    pg = _import_prompt_gate()
+    if pg is None:
+        raise WaveContractError("prompt_gate.py is not loadable, so the rule 12 prompt length band cannot be resolved")
+    budget = pg.length_budget()
+    return budget["floor"], budget["ceiling"]
+
 #: The three block prefixes the serial loop's prompt contract has always
 #: required (dispatcher._dispatch_prompt_phase_parallel built these inline).
 DEFAULT_REQUIRED_BLOCKS = ("[ARCHETYPE", "DO-NOT BLOCK", "Do not ")
@@ -88,8 +98,8 @@ class RoutingStamp:
 @dataclass(frozen=True)
 class PromptConstraints:
     """min/max chars + required block prefixes for a gate-passing prompt."""
-    min_chars: int = DEFAULT_MIN_CHARS
-    max_chars: int = DEFAULT_MAX_CHARS
+    min_chars: int = field(default_factory=lambda: _length_defaults()[0])
+    max_chars: int = field(default_factory=lambda: _length_defaults()[1])
     required_blocks: Tuple[str, ...] = DEFAULT_REQUIRED_BLOCKS
 
     def to_dict(self) -> Dict[str, Any]:
@@ -171,8 +181,12 @@ def _check_routing(routing: Any, where: str) -> None:
 def _check_prompt_constraints(pc: Any, where: str) -> Tuple[int, int, List[str]]:
     if not isinstance(pc, dict):
         raise WaveContractError(f"{where}: prompt_constraints must be an object")
-    min_chars = pc.get("min_chars", DEFAULT_MIN_CHARS)
-    max_chars = pc.get("max_chars", DEFAULT_MAX_CHARS)
+    min_chars = pc.get("min_chars", None)
+    max_chars = pc.get("max_chars", None)
+    if min_chars is None or max_chars is None:
+        d_min, d_max = _length_defaults()
+        min_chars = d_min if min_chars is None else min_chars
+        max_chars = d_max if max_chars is None else max_chars
     if isinstance(min_chars, bool) or not isinstance(min_chars, int) or min_chars < 1:
         raise WaveContractError(
             f"{where}: prompt_constraints.min_chars must be a positive integer")

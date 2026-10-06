@@ -37,9 +37,27 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 EXIT_PASS = 0
 EXIT_AUTOFAIL = 2
@@ -82,6 +100,32 @@ def _band(bands, key):
     if not isinstance(b, dict):
         raise SystemExit("FATAL: bands.json missing band %r" % key)
     return b
+
+
+def _kie_prompt_failures(band, rec, text, who, override=None):
+    """KIE prompt rule 12 through the shared enforcer (limits from Skill 74 prompt-budget; no numbers live in
+    bands.json). A client-exact override (override=(lo, hi)) is measured against the client's own numbers.
+    The authored SEED is checked non-empty and under the model maximum (it is expanded to the rule 12 band by
+    prompt 05 before dispatch); an expanded prompt carried as band['expanded_field'] must clear the full band."""
+    out = []
+    model = str(rec.get("imageModel") or band.get("model"))
+    seed = text if isinstance(text, str) else ""
+    if override is not None:
+        lo, hi = override
+        if not _chk_range(_chars(seed), lo, hi):
+            out.append((band["af"], "%s image prompt is %d chars, outside the client-exact %s-%s" % (who, _chars(seed), lo, hi)))
+    elif not seed.strip():
+        out.append((band["af"], "%s image prompt is empty" % who))
+    else:
+        v = KPE.check(model, seed, kind="verbatim")
+        if not v["ok"]:
+            out.append((band["af"], "%s image prompt: %s" % (who, v["message"])))
+    expanded = rec.get(band.get("expanded_field", "kiePrompt"))
+    if isinstance(expanded, str):
+        v = KPE.check(model, expanded)
+        if not v["ok"]:
+            out.append((band["af"], "%s expanded KIE prompt: %s" % (who, v["message"])))
+    return out
 
 
 def _chk_range(val, lo, hi):
@@ -199,7 +243,7 @@ def evaluate_carousel(rec, bands):
     hw_band = _band(bands, "headline_words")
     ip_band = _band(bands, "image_prompt_carousel")
     hw_lo, hw_hi, _ = _resolve(rec, "headline_words", hw_band)
-    ip_lo, ip_hi, _ = _resolve(rec, "image_prompt_carousel", ip_band)
+    ip_lo, ip_hi, ip_ovr = _resolve(rec, "image_prompt_carousel", ip_band)
     if isinstance(slides, list):
         for i, s in enumerate(slides, 1):
             if not isinstance(s, dict):
@@ -209,10 +253,8 @@ def evaluate_carousel(rec, bands):
             if not _chk_range(w, hw_lo, hw_hi):
                 fails.append((hw_band["af"], "slide %d textOnImage is %d words, over %s"
                               % (i, w, hw_hi)))
-            c = _chars(s.get("prompt") or "")
-            if not _chk_range(c, ip_lo, ip_hi):
-                fails.append((ip_band["af"], "slide %d image prompt is %d chars, outside %s-%s"
-                              % (i, c, ip_lo, ip_hi)))
+            fails.extend(_kie_prompt_failures(ip_band, s, s.get("prompt"), "slide %d" % i,
+                                              (ip_lo, ip_hi) if ip_ovr else None))
 
     if "images_ready" in rec:
         floor = _band(bands, "carousel_assemble_floor")
@@ -236,9 +278,9 @@ def evaluate_series(rec, bands):
     fu_band = _band(bands, "followup_series")
     # R1: uniform override across the series evaluator (body words, image prompt, followUp).
     b_lo, b_hi, _ = _resolve(rec, "post_body_words", body_band)
-    ip_lo, ip_hi, _ = _resolve(rec, "image_prompt_series", ip_band)
+    ip_lo, ip_hi, ip_ovr = _resolve(rec, "image_prompt_series", ip_band)
     fu_lo, fu_hi, _ = _resolve(rec, "followup_series", fu_band)
-    worst_body, worst_ip, worst_fu = 10 ** 9, 10 ** 9, 0
+    worst_body, worst_fu = 10 ** 9, 0
     for i, d in enumerate(days, 1):
         if not isinstance(d, dict):
             fails.append(("AF-SM-CONTENT-MISSING", "day %d is not an object" % i))
@@ -247,16 +289,13 @@ def evaluate_series(rec, bands):
         worst_body = min(worst_body, w)
         if not _chk_range(w, b_lo, b_hi):
             fails.append((body_band["af"], "day %d body is %d words, outside %s-%s" % (i, w, b_lo, b_hi)))
-        c = _chars(d.get("imageprompt") or "")
-        worst_ip = min(worst_ip, c)
-        if not _chk_range(c, ip_lo, ip_hi):
-            fails.append((ip_band["af"], "day %d imageprompt is %d chars, under %s" % (i, c, ip_lo)))
+        fails.extend(_kie_prompt_failures(ip_band, d, d.get("imageprompt"), "day %d" % i,
+                                          (ip_lo, ip_hi) if ip_ovr else None))
         f = _chars(d.get("followupcomment") or "")
         worst_fu = max(worst_fu, f)
         if not _chk_range(f, fu_lo, fu_hi):
             fails.append((fu_band["af"], "day %d followupcomment is %d chars, over %s" % (i, f, fu_hi)))
     checks.append(("min body words", worst_body, ">=%s" % b_lo, _chk_range(worst_body, b_lo, None)))
-    checks.append(("min imageprompt chars", worst_ip, ">=%s" % ip_lo, _chk_range(worst_ip, ip_lo, None)))
     checks.append(("max followup chars", worst_fu, "<=%s" % fu_hi, _chk_range(worst_fu, None, fu_hi)))
     return fails, checks
 
@@ -540,7 +579,7 @@ def _valid_fbig_carousel():
     return {
         "kind": "carousel", "platform": "facebook",
         "carouselCaption": _pad_chars(1600) + " #a #b #c #d #e",
-        "slides": [{"textOnImage": "Hook line here", "prompt": _pad_chars(1200)} for _ in range(10)],
+        "slides": [{"textOnImage": "Hook line here", "prompt": _pad_chars(1200)} for _ in range(10)],  # seeds: any non-empty size under the model max
         "images_ready": 10,
     }
 
@@ -666,14 +705,25 @@ def self_test():
     check_fail("carousel-slides-not-10", f, "AF-SM-CAROUSEL-SLIDES")
     f = _valid_fbig_carousel(); f["slides"][0]["textOnImage"] = _pad_words(12)
     check_fail("headline-over-8-words", f, "AF-SM-HEADLINE-WORDS")
-    f = _valid_fbig_carousel(); f["slides"][0]["prompt"] = _pad_chars(400)
-    check_fail("imgprompt-too-short", f, "AF-SM-IMGPROMPT-BAND")
+    f = _valid_fbig_carousel(); f["slides"][0]["prompt"] = ""
+    check_fail("imgprompt-empty", f, "AF-SM-IMGPROMPT-BAND")
+    mx = KPE.budget_for(_band(bands, "image_prompt_carousel")["model"])["max"]
+    f = _valid_fbig_carousel(); f["slides"][0]["prompt"] = _pad_chars(mx + 1)
+    check_fail("imgprompt-over-model-max", f, "AF-SM-IMGPROMPT-BAND")
+    f = _valid_fbig_carousel(); f["slides"][0]["kiePrompt"] = _pad_chars(mx * 79 // 100)
+    check_fail("expanded-prompt-79-percent", f, "AF-SM-IMGPROMPT-BAND")
+    f = _valid_fbig_carousel()
+    for s_ in f["slides"]:
+        s_["kiePrompt"] = _pad_chars(mx * 95 // 100)
+    check_pass("expanded-prompt-95-percent", f)
+    f = _valid_fbig_carousel(); f["slides"][0]["kiePrompt"] = _pad_chars(mx * 101 // 100)
+    check_fail("expanded-prompt-101-percent", f, "AF-SM-IMGPROMPT-BAND")
     f = _valid_fbig_carousel(); f["images_ready"] = 1
     check_fail("assemble-floor", f, "AF-SM-CAROUSEL-FLOOR")
     f = _valid_series(); f["days"][2]["body"] = _pad_words(120)
     check_fail("body-under-300", f, "AF-SM-POSTBODY-WORDS")
-    f = _valid_series(); f["days"][2]["imageprompt"] = _pad_chars(900)
-    check_fail("series-imgprompt-short", f, "AF-SM-IMGPROMPT-BAND")
+    f = _valid_series(); f["days"][2]["imageprompt"] = _pad_chars(mx + 1)
+    check_fail("series-imgprompt-over-model-max", f, "AF-SM-IMGPROMPT-BAND")
     f = _valid_series(); f["days"][2]["followupcomment"] = _pad_chars(700)
     check_fail("followup-over-600", f, "AF-SM-FOLLOWUP-BAND")
     f = _valid_reformat(); f["instagram"]["followUpComment"] = _pad_chars(600)

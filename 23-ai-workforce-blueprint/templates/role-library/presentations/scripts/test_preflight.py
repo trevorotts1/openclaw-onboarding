@@ -105,10 +105,11 @@ SLIDES = [
      "copy": ["Northwind Co", "Three moves that doubled our pipeline"]},
 ]
 
-# A realistic RICH per-slide prompt is long (the SOP targets 9,000-14,000 chars).
-# >= PROMPT_CHAR_FLOOR (9,000) is the reconciled HARD floor.
+# A realistic RICH per-slide prompt is long (KIE rule 12: 95 to 100 percent of the model maxLength).
+# The hard floor is 80 percent of the model maxLength (shared enforcer); the base block below is
+# deepened with distinct fixture clauses to the middle of the target band right after its definition.
 # This fixture is a single comprehensive block that clears every quality gate:
-#   - >= PROMPT_CHAR_FLOOR chars (measured on stripped length)
+#   - inside the rule 12 length band (measured on stripped length)
 #   - all three required structural blocks ([ARCHETYPE, NEGATIVE BLOCK, Do not)
 #   - spelling-lock token (reads exactly / letter-for-letter)
 #   - hex color (#1B2A4A), type size (72pt), composition zone (left third / rule of thirds)
@@ -289,6 +290,21 @@ bracket token, [TBD], or build note visible to the audience. Every element is fi
 Do not narrate the image on the slide surface. Demographic diversity in casting is a \
 binding specification; no demographic drift is permitted.
 """
+
+
+def _fit_rich_prompt(base: str) -> str:
+    """Deepen the fixture with distinct clauses to the middle of the rule 12 target band (never repeated filler)."""
+    bud = build_deck.length_budget()
+    room = (bud["target_min"] + bud["ceiling"]) // 2 - len(base) - 2
+    clauses, i = [], 0
+    while sum(len(c) + 1 for c in clauses) < room:
+        clauses.append(f"FIXTURE DETAIL {i}: element {i} of the slide carries its own distinct art-direction note "
+                       f"about spacing, weight, color use and reading order for stage {i} of the composition.")
+        i += 1
+    return base.rstrip() + "\n" + " ".join(clauses)[:max(room, 0)]
+
+
+RICH_PROMPT = _fit_rich_prompt(RICH_PROMPT)
 
 
 def _write_intake(root: Path):
@@ -756,16 +772,16 @@ def _rich_prompt_run_dir(prompt_text) -> Path:
 def test_chk_rich_prompts():
     """RICH-PROMPT-REQUIRED (AF-P1) unit test (the two NEW required assertions):
       - a slide with NO rich prompt FAILS (missing-rich-prompt fails),
-      - a slide whose rich prompt is < PROMPT_CHAR_FLOOR chars FAILS (sub-floor fails),
-      - a slide with a >= PROMPT_CHAR_FLOOR-char rich prompt PASSES,
+      - a slide whose rich prompt is under the rule 12 floor FAILS (sub-floor fails),
+      - a slide with an in-band rich prompt PASSES,
     plus load_rich_prompt raises on missing/short and returns the prompt verbatim
     when valid. Returns a list of failure strings ([] = all passed)."""
     fails = []
 
     valid = RICH_PROMPT
-    assert len(valid) >= build_deck.PROMPT_CHAR_FLOOR, \
-        f"test fixture RICH_PROMPT must be >= {build_deck.PROMPT_CHAR_FLOOR} chars (PROMPT_CHAR_FLOOR)"
-    short = "way too thin to be a real slide prompt"  # well under PROMPT_CHAR_FLOOR
+    assert not build_deck._length_problems(valid), \
+        "test fixture RICH_PROMPT must sit inside the rule 12 length band"
+    short = "way too thin to be a real slide prompt"  # well under the rule 12 floor
 
     # ---- NEW ASSERTION 1: a MISSING rich prompt FAILS ----
     rd = _rich_prompt_run_dir(None)
@@ -782,7 +798,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt missing-raise wrong msg: {exc}")
 
-    # ---- NEW ASSERTION 2: a < PROMPT_CHAR_FLOOR-char rich prompt FAILS ----
+    # ---- NEW ASSERTION 2: a sub-floor rich prompt FAILS ----
     rd = _rich_prompt_run_dir(short)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason:
@@ -796,7 +812,7 @@ def test_chk_rich_prompts():
         if "AF-P1" not in str(exc):
             fails.append(f"RICHPROMPT: load_rich_prompt short-raise wrong msg: {exc}")
 
-    # ---- a valid >= PROMPT_CHAR_FLOOR-char rich prompt PASSES + is returned VERBATIM ----
+    # ---- a valid in-band rich prompt PASSES + is returned VERBATIM ----
     rd = _rich_prompt_run_dir(valid)
     reason = build_deck._chk_rich_prompts(rd)
     if reason:
@@ -809,11 +825,11 @@ def test_chk_rich_prompts():
         fails.append(f"RICHPROMPT: load_rich_prompt raised on a valid prompt: {exc}")
 
     # ---- an over-ceiling prompt FAILS in load_rich_prompt (AF-P2) ----
-    over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
+    over = "A" * (build_deck.length_budget()["max"] + 10)
     rd = _rich_prompt_run_dir(over)
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
-        fails.append("RICHPROMPT: load_rich_prompt should RAISE over the 18,000 ceiling")
+        fails.append("RICHPROMPT: load_rich_prompt should RAISE over the rule 12 ceiling")
     except ValueError as exc:
         if "AF-P2" not in str(exc):
             fails.append(f"RICHPROMPT: over-ceiling raise wrong msg: {exc}")
@@ -2311,7 +2327,7 @@ def test_h1_whitespace_only_prompt():
         whitespace -> PASSES and is returned VERBATIM (whitespace preserved).
     """
     fails = []
-    floor = build_deck.PROMPT_CHAR_FLOOR
+    floor = build_deck.length_budget()["floor"]
     slide = {"slide": 1, "scene": "x", "copy": ["y"]}
 
     # ---- pure whitespace, well over the RAW floor ----
@@ -4318,10 +4334,10 @@ def emit_af_coverage():
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
     except ValueError as exc:
-        # The floor symbol (PROMPT_CHAR_FLOOR) gate surfaces as AF-P1; AF-PROMPT-FLOOR
+        # The rule 12 floor gate (_length_problems) surfaces as AF-P1; AF-PROMPT-FLOOR
         # is its manifest twin (same floor, reconciled). Record both from the same proof.
         record("AF-P1", str(exc))
-        if str(build_deck.PROMPT_CHAR_FLOOR) in str(exc) or "AF-P1" in str(exc):
+        if "AF-P1" in str(exc):
             triggered.add("AF-PROMPT-FLOOR")
 
     # AF-PROMPT-NAME / AF-PROMPT-DUP-FILE (R3 U02, _canonical_prompt_dir_problems):
@@ -4339,8 +4355,8 @@ def emit_af_coverage():
         record("AF-PROMPT-NAME", _prob)
         record("AF-PROMPT-DUP-FILE", _prob)
 
-    # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (PROMPT_CHAR_CEILING).
-    over = "A" * (build_deck.PROMPT_CHAR_CEILING + 10)
+    # AF-P2 — an over-ceiling prompt RAISES from load_rich_prompt (the rule 12 ceiling).
+    over = "A" * (build_deck.length_budget()["max"] + 10)
     rd = _rich_prompt_run_dir(over)
     try:
         build_deck.load_rich_prompt({"slide": 1, "scene": "x", "copy": ["y"]}, rd)
@@ -5393,15 +5409,16 @@ def test_dark_slide_with_client_flag_passes() -> list:
 
 
 def test_structural_block_gate() -> list:
-    """FG-1 item 3 (folded from render_deck.py): a prompt that clears PROMPT_CHAR_FLOOR
+    """FG-1 item 3 (folded from render_deck.py): a prompt that clears the rule 12 floor
     but is MISSING a required structural block ([ARCHETYPE / NEGATIVE BLOCK /
     'Do not ']) FAILS _chk_rich_prompts AND raises in load_rich_prompt; a real
     structured RICH_PROMPT passes."""
     failures = []
     # Blockless filler well over the floor (no [ARCHETYPE, no NEGATIVE BLOCK, no "Do not ").
-    # 58 chars * 160 = 9280 chars, comfortably over the 9,000-char PROMPT_CHAR_FLOOR.
-    blockless = ("This is a long descriptive paragraph about a slide scene. " * 160)
-    assert len(blockless) >= build_deck.PROMPT_CHAR_FLOOR
+    # sized into the rule 12 length band so only the structural-block gate can fail it.
+    _unit = "This is a long descriptive paragraph about a slide scene. "
+    blockless = _unit * (build_deck.length_budget()["target_min"] // len(_unit) + 1)
+    assert not build_deck._length_problems(blockless)
     rd = _rich_prompt_run_dir(blockless)
     reason = build_deck._chk_rich_prompts(rd)
     if not reason or "structural block" not in reason:
@@ -6194,11 +6211,11 @@ def main():
           f"{'PASS' if r.returncode == 3 and 'AF-P1' in out else 'FAIL'}")
 
     # CASE 5 — full upstream artifacts BUT the rich prompt is sub-floor =>
-    # refused, exit 3, AF-P1 floor (proves a sub-PROMPT_CHAR_FLOOR prompt fails through CLI).
+    # refused, exit 3, AF-P1 floor (proves a sub-floor prompt fails through the CLI).
     root = make_workdir(with_artifacts=True, rich_prompts=True, short_prompt=True)
     r = run(root)
     out = r.stdout + r.stderr
-    _floor_str = str(build_deck.PROMPT_CHAR_FLOOR)
+    _floor_str = str(build_deck.length_budget()["floor"])
     if r.returncode != 3:
         failures.append(f"CASE5 (short rich prompt) expected exit 3, got {r.returncode}")
     if "AF-P1" not in out or _floor_str not in out:

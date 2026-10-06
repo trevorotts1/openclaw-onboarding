@@ -3,40 +3,56 @@
 """
 validate_prompt.py - Skill 67 kie-video prompt validator.
 
-Checks a prompt against a video model's published/observed char caps and the
-house band (5000/9000/19000).
+KIE prompt rule 12 (owner order 2026-10-05): a descriptive video prompt is 95 to 100 percent of the
+model's character max, never below 80 percent, never above 100 percent. This script keeps no band of its own:
+it calls the shared enforcer shared-utils/kie_prompt_enforcer.py, which wraps Skill 74
+`kie_live_adapter.py prompt-budget --check` (live schema, registry snapshot). When the adapter has no limit
+for a model, the policy-owner limit recorded in models.json applies (vendor_hard_cap_chars, else
+owner_observed_cap_chars). A model with no limit anywhere is UNKNOWN: warning, no floor.
+The retired 5,000 / 9,000 / 19,000 house band is gone.
 
-RULES (spec 5 & references/prompt-policy.md):
-  A. verified cap >= 20000  -> house band 5,000-19,000 (Wan 3.0, Gemini Omni, Seedance 2.5)
-  B. verified 5,000-19,999  -> conservative ceiling BELOW hard cap (MiniMax 7K, PixVerse 5K, Wan 2.7 5K, HappyHorse 5K)
-  C. verified < 5,000       -> cap-relative guidance, never force 5K (Kling Omni 3072, Kling 2.5/motion 2500)
-  D. token cap published    -> tokens estimate (chars/4), never a fake char cap
-  E. not published          -> NOT_PUBLISHED / LIVE_PROBE_REQUIRED (Kling 3.0 video, Seedance 2 mini, Veo3, Runway)
+RULE LABELS (informational, from models.json cap_status):
+  A. verified cap >= 20000  B. verified 5,000-19,999  C. verified < 5,000
+  D. token cap published (tokens estimate chars/4, never a fake char cap)
+  E. not published (NOT_PUBLISHED / LIVE_PROBE_REQUIRED: UNKNOWN, no floor)
 
-STDLIB PYTHON3 ONLY. Deterministic. No network. No secrets read.
+STDLIB PYTHON3 ONLY. No secrets read (the adapter resolves its own key).
 
 Exit codes:
   0  prompt acceptable (warnings may exist)
-  1  soft-fail = house-band violation OR cap-status issues (non-fatal by default;
-     use --strict to turn warnings fatal)
-  2  hard-fail = prompt exceeds a VERIFIED hard cap
+  1  invalid: below the 80 percent floor (prints the chars to ADD), unknown model, or a --strict warning
+  2  hard-fail: above the model max (prints the chars to CUT)
 
-Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est,
-  band_min, band_target, band_max, rule, errors[], warnings[], valid }.
+Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est, max, floor, target_min,
+  limit_source, status, rule, errors[], warnings[], valid }.
 """
 
 import argparse
 import json
 import os
 import sys
+from pathlib import Path
+
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_enforcer()
 
 VERSION = "2.1.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
-
-HOUSE_MIN = 5000
-HOUSE_TARGET = 9000
-HOUSE_MAX = 19000
 
 # Rule classifications
 RULE_A = "A"
@@ -87,121 +103,56 @@ def classify(entry):
 
 def validate_body(prompt, model_id, strict):
     entry = by_id_get(model_id)
-    if entry is None:
-        return {
-            "model_id": model_id,
-            "cap_status": "UNKNOWN",
-            "chars": char_count(prompt),
-            "tokens_est": token_estimate(char_count(prompt)),
-            "band_min": HOUSE_MIN,
-            "band_target": HOUSE_TARGET,
-            "band_max": HOUSE_MAX,
-            "rule": None,
-            "errors": [f"model {model_id!r} not in registry"],
-            "warnings": [],
-            "valid": False,
-        }
-
     chars = char_count(prompt)
     tokens = token_estimate(chars)
+    if entry is None:
+        return {"model_id": model_id, "cap_status": "UNKNOWN", "chars": chars, "tokens_est": tokens, "rule": None,
+                "status": "UNKNOWN", "errors": [f"model {model_id!r} not in registry"], "warnings": [], "valid": False}
+
     cap_status = entry.get("cap_status", "NOT_PUBLISHED")
     rule, vcap, tcap = classify(entry)
     display_name = entry.get("display_name", model_id)
+    errors, warnings, hard = [], [], None
 
-    errors = []
-    warnings = []
-    hard = None
-
-    # HappyHorse Chinese sub-cap: vendor documents 5,000 chars non-Chinese but
-    # 2,500 chars Chinese. When the prompt is predominantly CJK and the registry
-    # carries vendor_hard_cap_chars_cn, enforce the 2,500 Chinese cap first.
+    # HappyHorse Chinese sub-cap: vendor documents 5,000 chars non-Chinese but 2,500 chars Chinese. When the
+    # prompt is predominantly CJK and the registry carries vendor_hard_cap_chars_cn, enforce 2,500 first.
     cn_cap = entry.get("vendor_hard_cap_chars_cn")
     if cn_cap is not None and chars > cn_cap:
         cjk = sum(1 for ch in prompt if "一" <= ch <= "鿿")
         if chars > 0 and cjk / chars > 0.3:
             hard = cn_cap
-            errors.append(
-                f"prompt is {chars} characters, predominantly Chinese; hard cap for "
-                f"{display_name} ({model_id}) is 2,500 Chinese characters (VERIFIED)"
-            )
+            errors.append(f"prompt is {chars} characters, predominantly Chinese; hard cap for "
+                          f"{display_name} ({model_id}) is 2,500 Chinese characters (VERIFIED)")
 
-    # Hard-fail on VERIFIED hard char caps (rule A/B/C) — chars > cap -> exit 2
-    if vcap is not None and chars > vcap and cap_status == "VERIFIED":
-        hard = vcap
-        errors.append(
-            f"prompt is {chars} characters; hard cap for {display_name} ({model_id}) is {vcap} (VERIFIED)"
-        )
-
-    if rule == RULE_A:
-        if chars < HOUSE_MIN:
-            warnings.append(
-                f"prompt {chars} chars is thin vs house band {HOUSE_MIN}-{HOUSE_MAX}; "
-                f"add context, target ~{HOUSE_TARGET} (non-fatal)"
-            )
-        elif chars > HOUSE_MAX:
-            if vcap is not None and chars > vcap:
-                pass  # already recorded as error
-            else:
-                warnings.append(
-                    f"prompt {chars} chars exceeds house max {HOUSE_MAX}; cap {vcap} — "
-                    f"trim before dispatch if needed (non-fatal)"
-                )
-    elif rule == RULE_B:
-        if chars <= vcap and chars >= vcap * 0.98:
-            warnings.append(
-                f"prompt {chars} chars is at {int(chars * 100 / vcap)}% of hard cap {vcap}; "
-                f"leave headroom (target below {vcap})"
-            )
-        elif chars < HOUSE_MIN:
-            warnings.append(
-                f"prompt {chars} chars under standard house min {HOUSE_MIN}; model cap is {vcap} (non-fatal)"
-            )
-    elif rule == RULE_C:
-        if chars <= vcap and chars >= vcap * 0.9:
-            warnings.append(f"prompt {chars} chars near cap {vcap}; keep headroom")
-    elif rule == RULE_D:
-        if tcap is not None and tokens > tcap:
-            warnings.append(
-                f"estimated {tokens} tokens (chars/4) exceeds documented {tcap} token cap for {model_id}; "
-                f"trim, and treat as approximate"
-            )
-    elif rule == RULE_E:
+    # Rule 12 through the shared enforcer: live schema / registry, else the policy-owner limit in models.json
+    fb = vcap or entry.get("live_schema_cap_chars") or entry.get("owner_observed_cap_chars")
+    v = KPE.check(model_id, prompt, fallback_max=fb)
+    status, limit_source = v["status"], v["source"]
+    if v["status"] == "ADAPTER_UNAVAILABLE":  # adapter absent and no policy-owner limit: UNKNOWN, no floor
+        status, limit_source = "UNKNOWN", "models.json:%s" % cap_status
+        warnings.append("Skill 74 adapter unavailable and no limit recorded in models.json: prompt limit UNKNOWN for "
+                        "%s (cap_status %s); no floor enforced; no cap invented" % (model_id, cap_status))
         if cap_status == "LIVE_PROBE_REQUIRED":
-            warnings.append(
-                f"cap_status LIVE_PROBE_REQUIRED: vendor doc conflict for {model_id} "
-                f"(e.g. 1800 vs 2048 chars) — probe live endpoint before long prompts; no invented cap used"
-            )
-        else:
-            warnings.append(
-                f"cap_status NOT_PUBLISHED: prompt cap unknown for {model_id} — house band proposed "
-                f"(min {HOUSE_MIN}, target {HOUSE_TARGET}, max {HOUSE_MAX}); no invented cap used"
-            )
+            warnings.append("cap_status LIVE_PROBE_REQUIRED: vendor doc conflict for %s; probe the live endpoint before "
+                            "long prompts" % model_id)
+    else:
+        warnings.extend(v["warnings"])
+        if not v["ok"]:
+            errors.append(v["message"])
+            if v["status"] == "ABOVE_MAX":
+                hard = v["max"]
+    if rule == RULE_D and tcap is not None and tokens > tcap:
+        warnings.append(f"estimated {tokens} tokens (chars/4) exceeds documented {tcap} token cap for {model_id}; "
+                        f"trim, and treat as approximate")
 
     if strict:
         for w in warnings:
             errors.append("strict: " + w)
         warnings = []
 
-    band_status = "ok"
-    if chars < HOUSE_MIN:
-        band_status = "thin"
-    elif chars > HOUSE_MAX:
-        band_status = "hot"
-
-    result = {
-        "model_id": model_id,
-        "cap_status": cap_status,
-        "chars": chars,
-        "tokens_est": tokens,
-        "band_min": HOUSE_MIN,
-        "band_target": HOUSE_TARGET,
-        "band_max": HOUSE_MAX,
-        "rule": rule,
-        "band_status": band_status,
-        "errors": errors,
-        "warnings": warnings,
-        "valid": not errors,
-    }
+    result = {"model_id": model_id, "cap_status": cap_status, "chars": chars, "tokens_est": tokens,
+              "max": v["max"], "floor": v["floor"], "target_min": v["target_min"], "limit_source": limit_source,
+              "status": status, "rule": rule, "errors": errors, "warnings": warnings, "valid": not errors}
     if hard is not None:
         result["hard_cap_chars"] = hard
     return result
@@ -228,60 +179,52 @@ def validate_prompt(prompt, model_id, strict=False):
 # ---------------------------------------------------------------------------
 
 def selftest():
+    # Adapter off: limits come from models.json (the policy owner), so the cases are deterministic.
+    saved = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
     cases = [
-        # (name, prompt, model, expected_valid, expected_rule, expect_err, expect_warn, expect_exit2)
-        ("wan 3.0 19000 ok",
-         "x" * 19000, "wan/3-0-video", True, "A", None, None, False),
-        ("wan 3.0 20000 exact ok",
-         "x" * 20000, "wan/3-0-video", True, "A", None, "exceeds house max", False),
-        ("wan 3.0 21000 exceeds cap",
-         "x" * 21000, "wan/3-0-video", False, "A", "hard cap for Wan 3.0 Video", None, True),
-        ("kling omni 3000 ok",
-         "x" * 3000, "kling-3.0-omni/text-to-video", True, "C", None, None, False),
-        ("kling omni 3200 exceeds cap",
-         "x" * 3200, "kling-3.0-omni/text-to-video", False, "C", "hard cap", None, True),
-        ("pixverse 5000 exact ok",
-         "x" * 5000, "pixverse-v6/text-to-video", True, "B", None, None, False),
-        ("pixverse 5001 exceeds cap",
-         "x" * 5001, "pixverse-v6/text-to-video", False, "B", "hard cap", None, True),
-        ("minimax 7000 exact ok",
-         "x" * 7000, "minimax-h3/text-to-video", True, "B", None, None, False),
-        ("minimax 7001 exceeds cap",
-         "x" * 7001, "minimax-h3/text-to-video", False, "B", "hard cap", None, True),
-        ("kling 3.0 video not published proposed band",
-         "x" * 8000, "kling-3.0/video", True, "E", None, "NOT_PUBLISHED", False),
-        ("runway live probe required note",
-         "x" * 1500, "runway", True, "E", None, "LIVE_PROBE_REQUIRED", False),
-        ("veo3 not published proposed band",
-         "x" * 6000, "veo3", True, "E", None, "NOT_PUBLISHED", False),
-        ("seedance 2.5 30000 ok",
-         "x" * 30000, "bytedance/seedance-2-5", True, "A", None, "exceeds house max", False),
-        ("seedance 2.5 30001 exceeds",
-         "x" * 30001, "bytedance/seedance-2-5", False, "A", "hard cap", None, True),
-        ("unknown model fails",
-         "test prompt", "not/a-real-video-model", False, None, "not in registry", None, False),
-        ("happyhorse 4000 CJK exceeds Chinese cap",
-         "好" * 4000, "happyhorse-1-1/text-to-video", False, "B", "2,500 Chinese characters", None, True),
-        ("happyhorse 4000 latin no CN cap",
-         "x" * 4000, "happyhorse-1-1/text-to-video", True, "B", None, None, False),
+        # (name, prompt, model, expected_valid, expected_status, expect_err, expect_exit2)
+        ("wan 3.0 (20000) 19000 = 95% ok", "x" * 19000, "wan/3-0-video", True, "OK", None, False),
+        ("wan 3.0 20000 = max ok", "x" * 20000, "wan/3-0-video", True, "OK", None, False),
+        ("wan 3.0 20001 above max", "x" * 20001, "wan/3-0-video", False, "ABOVE_MAX", "CUT exactly 1 chars", True),
+        ("wan 3.0 15999 = 79.99% below floor", "x" * 15999, "wan/3-0-video", False, "BELOW_FLOOR", "ADD at least 1 chars", False),
+        ("wan 3.0 16000 = 80% floor ok (warn expand)", "x" * 16000, "wan/3-0-video", True, "BELOW_TARGET", None, False),
+        ("wan 3.0 9000 (old house target) now rejected", "x" * 9000, "wan/3-0-video", False, "BELOW_FLOOR", None, False),
+        ("kling omni 3072 = max ok", "x" * 3072, "kling-3.0-omni/text-to-video", True, "OK", None, False),
+        ("kling omni 3073 above max", "x" * 3073, "kling-3.0-omni/text-to-video", False, "ABOVE_MAX", "CUT exactly 1 chars", True),
+        ("kling omni 2457 below 80% floor", "x" * 2457, "kling-3.0-omni/text-to-video", False, "BELOW_FLOOR", "ADD at least 1 chars", False),
+        ("pixverse 5000 = max ok", "x" * 5000, "pixverse-v6/text-to-video", True, "OK", None, False),
+        ("pixverse 5001 above max", "x" * 5001, "pixverse-v6/text-to-video", False, "ABOVE_MAX", "CUT exactly 1 chars", True),
+        ("pixverse 3999 below floor", "x" * 3999, "pixverse-v6/text-to-video", False, "BELOW_FLOOR", None, False),
+        ("minimax 7000 = max ok", "x" * 7000, "minimax-h3/text-to-video", True, "OK", None, False),
+        ("minimax 7001 above max", "x" * 7001, "minimax-h3/text-to-video", False, "ABOVE_MAX", None, True),
+        ("kling 3.0 video not published: UNKNOWN, no floor", "x" * 800, "kling-3.0/video", True, "UNKNOWN", None, False),
+        ("runway live probe required: UNKNOWN, no floor", "x" * 1500, "runway", True, "UNKNOWN", None, False),
+        ("veo3 not published: UNKNOWN, no floor", "x" * 60, "veo3", True, "UNKNOWN", None, False),
+        ("seedance 2.5 30000 = max ok", "x" * 30000, "bytedance/seedance-2-5", True, "OK", None, False),
+        ("seedance 2.5 30001 above max", "x" * 30001, "bytedance/seedance-2-5", False, "ABOVE_MAX", None, True),
+        ("seedance 2.5 23999 below floor", "x" * 23999, "bytedance/seedance-2-5", False, "BELOW_FLOOR", None, False),
+        ("unknown model fails", "test prompt", "not/a-real-video-model", False, "UNKNOWN", "not in registry", False),
+        ("happyhorse 4000 CJK exceeds Chinese cap", "好" * 4000, "happyhorse-1-1/text-to-video", False, None,
+         "2,500 Chinese characters", True),
+        ("happyhorse 4000 latin = 80% ok (no CN cap)", "x" * 4000, "happyhorse-1-1/text-to-video", True, "BELOW_TARGET", None, False),
     ]
-
     failures = []
-    for name, prompt, model, exp_valid, exp_rule, exp_err, exp_warn, exp_exit2 in cases:
+    for name, prompt, model, exp_valid, exp_status, exp_err, exp_exit2 in cases:
         res = validate_prompt(prompt, model)
         if res["valid"] != exp_valid:
             failures.append(f"FAIL {name}: expected valid={exp_valid} got {res['valid']} ({res['errors']})")
             continue
-        if exp_rule is not None and res.get("rule") != exp_rule:
-            failures.append(f"FAIL {name}: expected rule={exp_rule} got={res.get('rule')}")
+        if exp_status is not None and res.get("status") != exp_status:
+            failures.append(f"FAIL {name}: expected status={exp_status} got={res.get('status')}")
         if exp_err and not any(exp_err in e for e in res["errors"]):
             failures.append(f"FAIL {name}: expected error {exp_err!r} got {res['errors']}")
-        if exp_warn and not any(exp_warn in w for w in res["warnings"]):
-            failures.append(f"FAIL {name}: expected warning {exp_warn!r} got {res['warnings']}")
-        got_exit2 = res.get("hard_cap_chars") is not None
-        if exp_exit2 != got_exit2:
-            failures.append(f"FAIL {name}: expected hard-cap-flag={exp_exit2} got={got_exit2}")
-
+        if exp_exit2 != (res.get("hard_cap_chars") is not None):
+            failures.append(f"FAIL {name}: expected hard-cap-flag={exp_exit2}")
+    if saved is None:
+        os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    else:
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = saved
     if failures:
         print("validate_prompt.py --self-test FAILED", file=sys.stderr)
         for f in failures:

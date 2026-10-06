@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.2.4 - 2026-10-06
+
+- `scripts/validate_prompt.py`: the 5,000 to 20,000 house band and the 19,000 runtime warning are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. New `--model` (default GPT Image 2.5 Sunburst); `--runtime-max` is accepted and ignored.
+- `tests/fit_prompt.py` grows the fixture prompts into the band for the tests that need a passing prompt.
+- Version bumped to 1.2.4 (SKILL.md frontmatter, skill-version.txt, VERSION).
+
 ## 1.2.3 - 2026-10-06
 
 - The image-engine question now has an agent-facing step: SKILL.md "Image and video engine routing" and the SOP intake step tell the agent to run `scripts/write_intake.py ... --image-engine kie|agnes`. The intake stage reads `references/artifact-contracts.md` and closes only when `intake.json` carries `image_engine` (new `gate:intake_engine`; test i16).

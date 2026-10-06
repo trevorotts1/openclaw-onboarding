@@ -252,8 +252,10 @@ else
   gate "route-check sales deck -> interlock"  2 python3 "$VALIDATOR" route-check --deck-kind "sales deck"
   gate "route-check funnel -> interlock"     2 python3 "$VALIDATOR" route-check --deck-kind funnel
   gate "route-check brand -> DIU-routable"    0 python3 "$VALIDATOR" route-check --deck-kind brand
-  gate "prompt-caps SHORT within cap -> ok"   0 python3 "$VALIDATOR" prompt-caps --tier SHORT --prompt "hi"
-  gate "prompt-caps SHORT over cap -> fail"   3 python3 "$VALIDATOR" prompt-caps --tier SHORT --prompt "$(python3 -c 'print("x"*600)')"
+  # Rule 12 (owner order 2026-10-05): the ceiling is the model maxLength from the shared enforcer, not a tier table.
+  gate "prompt-caps within the model max -> ok"  0 python3 "$VALIDATOR" prompt-caps --model gpt-image-2-5-sunburst-text-to-image --prompt "hi"
+  gate "prompt-caps over the model max -> fail"  3 python3 "$VALIDATOR" prompt-caps --model gpt-image-2-5-sunburst-text-to-image --prompt "$(python3 -c 'print("x"*20001)')"
+  gate "prompt-band 79 percent -> floor"         3 python3 "$VALIDATOR" prompt-band --band visual_long --prompt "$(python3 -c 'print("x"*15800)')"
   # Fixtures use the SOP-DIU-608 CONSENT.md front-matter record (the gate no longer reads IDENTITY.md).
   mkconsent() { # mkconsent <file> <adult_attested> <storage_protection> <status> <minors>
     printf -- '---\nclient_slug: "sample"\ncreated: "2026-01-15"\nstatus: "%s"\nexpiry_date: null\nminors: "%s"\nadult_attested: %s\nstorage_protection: "%s"\n---\n# CONSENT log\n' "$4" "$5" "$2" "$3" > "$1"

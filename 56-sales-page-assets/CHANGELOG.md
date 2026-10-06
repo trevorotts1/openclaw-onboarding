@@ -1,5 +1,11 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## v2.1.2 - 2026-10-06 - feat: the image prompt floor uses the rule 12 band
+
+- `scripts/prove_sp_prompt_floor.py`: the 5,000 to 19,000 band is retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. AF-SP56-PROMPT-FLOOR and AF-SP56-PROMPT-CEILING keep their codes.
+- `SPA-PROVER-PIN.sha256` re-recorded with `--write-pin`; the entry self-test passes. The entry version gate is anchored and keeps the lockstep and `--check-version`.
+- The golden image plan (`examples/golden-momentum/image_plan.json`) is re-baselined to real 95 to 100 percent prompts with genuine scene-bound art direction (`direction_bank.py`); `build_golden.py` regenerated the plan, certificate and rejection results, and `verify.sh` is green.
+
 ## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
 
 - **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.

@@ -67,10 +67,10 @@ def main() -> int:
         for f in kept:
             print("   ", f.name, f.stat().st_size)
         return 2
-    # floor check
-    under = [f.name for f in kept if f.stat().st_size < bd.PROMPT_CHAR_FLOOR]
+    # length check: KIE rule 12 band through build_deck's shared-enforcer gate
+    under = [f.name for f in kept if bd._length_problems(f.read_text(errors="replace"))]
     if under:
-        print(f"FATAL: prompts under the {bd.PROMPT_CHAR_FLOOR}-char floor: {under}")
+        print(f"FATAL: prompts outside the rule 12 length band: {under}")
         return 2
 
     slides = []

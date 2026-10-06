@@ -45,14 +45,16 @@
     },
     {
       "name": "gip-prompt-band-enforcement",
-      "description": "Per decision GK-D2 (extended to Agnes skills 63/64): every GPT-Image (2.5 `sunburst` by default per AGENTS.md N43) and Agnes Image prompt is written to the model's prompt-budget target as returned by kie_live_adapter.py prompt-budget (rule 12 of 07-kie-setup/references/kie-common-rules.md); rule 12 is the only authority for the band; the floor, ceiling, and cap fields below are the current gate thresholds mirrored for the validator code (owned by the prompt-budget code lane), and this prose restates no figure. When the code lane re-records them, they must match `prompt-budget` output. The cap fields are the documented model caps (AGENTS.md N43); the retained legacy GPT-Image-2 route (3:1, 1:3, 9:21 only) keeps its own owner-confirmed cap. Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) -- enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
+      "description": "Prompt length for every KIE GPT Image and other KIE image prompt follows KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the model's maxLength, hard floor 80 percent, hard ceiling 100 percent. No character numbers live here: the shared enforcer shared-utils/kie_prompt_enforcer.py reads them from Skill 74 prompt-budget (live schema, registry fallback). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) - enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
       "cfg_key": "roleLibrary.graphics.gipPromptBand",
-      "floor": 5000,
-      "ceiling": 19000,
-      "api_cap": 20000,
-      "api_cap_family": "GPT-Image-2.5 sunburst (documented cap, AGENTS.md N43)",
-      "legacy_api_cap": 25000,
-      "legacy_api_cap_family": "retained legacy gpt-image-2-* route, 3:1 / 1:3 / 9:21 only (OWNER_CONFIRMED, AGENTS.md N43)",
+      "prompt_budget": {
+        "rule": "KIE prompt rule 12",
+        "enforcer": "shared-utils/kie_prompt_enforcer.py",
+        "limit_source": "74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --check",
+        "floor_percent_of_max": 80,
+        "target_percent_of_max": "95 to 100",
+        "ceiling_percent_of_max": 100
+      },
       "gates": [
         "45-design-intelligence-library/scripts/diu_validator.py prompt-band",
         "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",

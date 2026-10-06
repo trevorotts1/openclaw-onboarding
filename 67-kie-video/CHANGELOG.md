@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.1.2] - 2026-10-06 - feat: `validate_prompt.py` uses the rule 12 length band (merged with the capability fix)
+
+- KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Models with no limit anywhere (NOT_PUBLISHED, LIVE_PROBE_REQUIRED) are UNKNOWN with no floor; the policy-owner cap in models.json applies when the adapter has none. Exit 1 below the 80 percent floor, exit 2 above the max. Self-test: 23 of 23.
+
 ## [v2.1.1] - 2026-10-06 - fix: an explicitly named unknown model must be a video model
 
 - `validate_payload.py`: a model not in `models.json` that Skill 74 validates is accepted only when its capability matches "to video" (text, image, video or speech to video); a non-video or unknown capability is refused. Two new self-test cases (image model, unknown capability); self-test 32/32 became 34/34. Version roll to v2.1.1 (`SKILL.md`, `QC.md`, `skill-version.txt`).

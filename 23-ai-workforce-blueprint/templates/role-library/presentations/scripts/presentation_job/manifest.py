@@ -938,7 +938,8 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # text-only agent writer for the ghl_external_installer.py script executors
 # with explicit executor.capability (ghl_workflow_install / ghl_page_install)
 # + gate_codes AF-U-FORM-GATE / AF-U-GHL-SALES / AF-U-GHL-VSL.
-MIN_MANIFEST_VERSION = 69  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
+MIN_MANIFEST_VERSION = 70  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

@@ -236,7 +236,8 @@ def validate(payload, model_id_override=None):
         checked["prompt_chars"] = len(str(inp["prompt"]).strip())
 
     # ---- prompt / negative_prompt char caps (registry-driven) --------------
-    vcap = model.get("vendor_hard_cap_chars")
+    # KIE's live schema (live_schema_cap_chars) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
+    vcap = model.get("live_schema_cap_chars") or model.get("vendor_hard_cap_chars")
     if vcap is not None and "prompt" in inp:
         plen = len(str(inp["prompt"]).strip())
         if plen > vcap:

@@ -29,8 +29,11 @@ def test_state():
 def test_prompts():
     # The padded 1.0.0-era fixture is no longer a valid prompt under the C4
     # padding rule; the compliant fixture is tests/fixtures/prompt_good.txt.
-    run([PY, str(SCRIPTS / "validate_prompt.py"), str(FIX / "prompt_good.txt"),
-         "--sauce-only"], 0)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fit_prompt
+    with tempfile.TemporaryDirectory() as td:
+        fitted = fit_prompt.fit_file(FIX / "prompt_good.txt", Path(td) / "prompt_fitted.txt")
+        run([PY, str(SCRIPTS / "validate_prompt.py"), fitted, "--sauce-only"], 0)
     run([PY, str(SCRIPTS / "validate_prompt.py"), str(FIX / "prompt-valid.md")], 1)
     run([PY, str(SCRIPTS / "validate_prompt.py"), str(FIX / "prompt-too-short.md")], 1)
 

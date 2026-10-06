@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T09:11:58Z",
+  "generated_at": "2026-10-06T11:16:59Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -105,12 +105,12 @@
       "bytes": 2456
     },
     "fb-ad-craft/AD-PIPELINE-MANIFEST.json": {
-      "sha256": "db8defd68caf6c4c6e442bd54fe534ad4ef64b6723f50d2f56677f08e13bf151",
-      "bytes": 39011
+      "sha256": "4215416f94b75d8acc0d39095437b39eda4d4bdf7657062c68d8a7b177d46c67",
+      "bytes": 39132
     },
     "fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "ef1664b18995ed318199f02438ed2b575da3984ce57a0a1a9a86d1574e366645",
-      "bytes": 17456
+      "sha256": "78f5ae473efe51e89ebfbbbada00d01abea77ab6c9dd6bdc728da8058d3f2da3",
+      "bytes": 17582
     },
     "fb-ad-craft/README.md": {
       "sha256": "1797f343117c9872fa1097a7f481841161ab13901ffe4f61c75f46f1981ba9b0",
@@ -137,8 +137,8 @@
       "bytes": 2387
     },
     "fb-ad-craft/SOP-FBAD-06-IMAGE-PROMPTS.md": {
-      "sha256": "507aebc5c1874452ee6e7e905228e8ba4cc8dc0450245d9f5e1ab4598e766b7b",
-      "bytes": 6748
+      "sha256": "25dda2385b7ea42e904238d664f6741e5e471c0d7e08453565607e58f9ef3ea6",
+      "bytes": 6919
     },
     "fb-ad-craft/SOP-FBAD-07-TARGETING.md": {
       "sha256": "8a53df23a821d3558bb88d647a73e025f45d69dbf2981abd166375b91e4d132c",
@@ -301,8 +301,8 @@
       "bytes": 142915
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "5e97dd55e9adef18c7519202115fb8bf6af9c7ff378997fafaaa9c95b15cc1e7",
-      "bytes": 201524
+      "sha256": "fe9421351aa32bd2755737989c774b2f2d0112f5fe41a6354f7e66d4b8b5bfdd",
+      "bytes": 201685
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -313,8 +313,8 @@
       "bytes": 5951
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
-      "sha256": "7edee435b51f69761f4354ff782074620617aec76f6135ed57550b1633232381",
-      "bytes": 19647
+      "sha256": "b47691a86750e247b0994d079c2f77d8636ec9ac9ffcf67762799e401c555523",
+      "bytes": 19643
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
       "sha256": "6803532f25db7b19b7c8e2bacb0d9b3e5923aaf3cd9a9a8c8c2e4bba827109ae",
@@ -333,7 +333,7 @@
       "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "7877eebd50d55a2823b6d24ff5c511242a234b64d66e3fbb32a3cc5ed551c349",
+      "sha256": "862fc9b97030e6bf9ae6d4d078a611d24053d3a94dee0ad0ea7de528c827661d",
       "bytes": 14314
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
@@ -385,8 +385,8 @@
       "bytes": 3559
     },
     "social-media-craft/SOP-SOCIAL-02-RUN.md": {
-      "sha256": "d060fec5f74e1d07584ffbe1a89ecf08902e11e87cbddbdd3a649a9d6b19c462",
-      "bytes": 6162
+      "sha256": "d82a9074709fbe7ea01c6836d46ee1a5674534b628fcbdbb87b811024c85187c",
+      "bytes": 5478
     },
     "social-media-craft/SOP-SOCIAL-03-CREATIVE-INTERJECTION.md": {
       "sha256": "099f7fc8851589b41c4955c183665f6da1cc0baee34c8a734be99cbc69bd1f07",

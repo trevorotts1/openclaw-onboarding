@@ -83,3 +83,21 @@ from api_key_utils import find_api_key
 - API key detection from 4 sources
 - Fuzzy matching for 30+ services
 - Security-conscious design
+
+### kie_prompt_enforcer.py
+
+The ONE Python enforcer of KIE prompt rule 12 (owner order 2026-10-05). A descriptive KIE prompt (image prompt,
+video prompt, music style) is 95 to 100 percent of the model's maxLength, hard floor 80 percent, hard ceiling 100
+percent; verbatim fields (TTS script, user lyrics) are exempt from the floor. The numbers come from Skill 74
+`kie_live_adapter.py prompt-budget --check` (live schema, registry fallback); this module only runs that command.
+
+```python
+import kie_prompt_enforcer as K
+v = K.check("gpt-image-2-5-sunburst-text-to-image", prompt)        # ok, status, chars, add, cut, message
+K.require(model, prompt)                                           # raises PromptBudgetError naming the chars to add or cut
+K.rewrite_to_band(model, prompt, rewriter)                         # up to 3 automatic rewrites, then PromptBudgetEscalation
+K.budget_for(model)                                                # {max, floor, target_min} for sizing a prompt
+```
+
+Every gate listed in `kie_prompt_gates.json` imports it and keeps no band of its own;
+`tests/unit/kie-prompt-enforcer-and-gates.test.py` fails if one stops or a separate hard-coded band returns.

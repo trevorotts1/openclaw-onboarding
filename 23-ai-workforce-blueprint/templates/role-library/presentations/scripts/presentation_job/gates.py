@@ -164,7 +164,6 @@ class Gates:
                 return {"state":"fail","evidence":rel,"reason":f"{rel} is {size} bytes, below the {min_bytes}-byte floor"}
         return {"state":"fail","evidence":paths[0],"reason":f"none of {paths} exist"}
     def _prompt_floor_gate(self) -> Dict[str, Any]:
-        floor = 9000
         d = self.run_dir / "working" / "prompts"
         if not d.is_dir(): return {"state":"fail","evidence":"working/prompts","reason":"no prompts directory -- nothing to measure"}
         # FIX-22 / D16: a zero-padding naming collision (slide-1.txt vs slide-01.txt)
@@ -192,10 +191,15 @@ class Gates:
                     "reason":"; ".join(dir_problems[:5])}
         files = sorted(d.glob("slide-*.txt"))
         if not files: return {"state":"fail","evidence":"working/prompts","reason":"prompts directory is empty"}
-        lengths = [(f.name, len(f.read_text(encoding="utf-8", errors="replace"))) for f in files]
-        short = [(n, L) for n, L in lengths if L < floor]
+        from .artifacts import _import_prompt_gate
+        pg = _import_prompt_gate()
+        if pg is None:
+            return {"state":"fail","evidence":"working/prompts","reason":"prompt_gate.py is not loadable, so the KIE rule 12 length band cannot be measured -- UNDETERMINED, not checked"}
+        texts = [(f.name, f.read_text(encoding="utf-8", errors="replace")) for f in files]
+        lengths = [(n, len(t)) for n, t in texts]
+        short = [(n, L) for (n, L), (_, t) in zip(lengths, texts) if pg.length_problems(t.strip())]
         base = {"evidence":"working/prompts","slides_checked":len(lengths),"min_chars_seen":min(L for _, L in lengths)}
-        if short: return {**base,"state":"fail","reason":f"{len(short)} prompt(s) below the {floor}-char floor: "+", ".join(f"{n}={L}" for n, L in short[:5])}
+        if short: return {**base,"state":"fail","reason":f"{len(short)} prompt(s) outside the KIE rule 12 length band: "+", ".join(f"{n}={L}" for n, L in short[:5])}
         return {**base,"state":"pass","reason":None}
     def _ghl_gate(self) -> Dict[str, Any]:
         p = self.run_dir / "working" / "checkpoints" / "media_library.json"

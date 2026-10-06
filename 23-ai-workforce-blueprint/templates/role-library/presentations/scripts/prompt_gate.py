@@ -4,7 +4,7 @@ prompt_gate.py — the ONE shared image-prompt gate for the Presentations pipeli
 
 WHY THIS FILE EXISTS
 --------------------
-Before this module, the 9,000–18,000-char prompt floor + structural-block +
+Before this module, the prompt length floor + structural-block +
 8-class negative-block + spelling-lock + density + demographic-landmine gates
 lived ONLY inside the 8,753-line build_deck.py. Every OTHER path to the paid
 kie.ai image API carried ZERO prompt-quality checks:
@@ -18,18 +18,19 @@ a thin/garbled/CJK prompt could reach the paid API and ship a bad image. This
 module is the single source of truth every image-API path imports so NO path can
 submit a prompt that has not cleared the same floor + quality + pin gate.
 
-The numeric floor/ceiling here are DRIFT-PINNED to build_deck.py's own
-PROMPT_CHAR_FLOOR / PROMPT_CHAR_CEILING by sync_check.py (V-check), exactly the
-way build_deck.py is already pinned to the retired render_deck.py — so this
-extraction can never silently diverge from the canonical renderer's floor.
+The LENGTH band is KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the
+model's maxLength, hard floor 80 percent, hard ceiling 100 percent. Neither this module nor
+build_deck.py keeps a number: both call the shared enforcer
+shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget --check). sync_check.py (V-check)
+proves both modules import that enforcer and define no band constant of their own.
 
 WHAT IT ENFORCES (verify_prompt — the one entry every path calls)
 -----------------------------------------------------------------
   * dead-endpoint fragment never rides inside a prompt payload
   * forbidden demographic-default landmine (AF-R3)
   * empty / whitespace-only prompt                            (AF-P1 floor)
-  * length >= PROMPT_CHAR_FLOOR (9,000)                       (AF-P1)
-  * length <= PROMPT_CHAR_CEILING (18,000)                    (AF-P2)
+  * length >= the rule 12 floor, 80 percent of the model max  (AF-P1, names the chars to ADD)
+  * length <= the model max, English pin included             (AF-P2, names the chars to CUT)
   * required structural blocks ([ARCHETYPE ...], negative block, "Do not ")
   * 8-class negative block                                    (AF-P13)
   * per-string spelling-lock                                  (AF-P14)
@@ -60,6 +61,28 @@ import struct
 import sys
 from pathlib import Path
 from typing import List, Optional
+
+
+def _load_kie_prompt_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it.
+    Fail closed: without the shared enforcer there is no prompt length gate."""
+    here = Path(__file__).resolve()
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in here.parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path.home() / "openclaw-onboarding" / "shared-utils",
+        Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found: the KIE prompt length gate (rule 12) is "
+                      "unavailable. Install or update the onboarding skills (update-skills.sh).")
+
+
+KPE = _load_kie_prompt_enforcer()
 
 # FIX 13 — model pins resolve from the central catalog (presentation_job/
 # model_catalog.py), NOT from literals here. Bootstrap is the same pattern
@@ -103,17 +126,10 @@ ENGLISH_PIN = (
 )
 
 # ---------------------------------------------------------------------------
-# PROMPT CHAR-COUNT GATE  (DRIFT-PINNED to build_deck.py by sync_check.py V-check)
+# PROMPT CHAR-COUNT GATE = KIE prompt rule 12 through the shared enforcer (see length_problems).
+# No floor or ceiling number lives here: the limit is read from Skill 74 prompt-budget.
 # ---------------------------------------------------------------------------
-PROMPT_CHAR_FLOOR = 9000       # HARD floor (AF-P1): a rich prompt under this is a thin stub — never run it
-PROMPT_CHAR_TARGET_HIGH = 18000  # SOP authoring-target HIGH end (matches the hard ceiling)
-PROMPT_CHAR_CEILING = 18000    # UNIVERSAL hard maximum (AF-P2; 2,000 under the 20,000 API ceiling)
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-P-DENSITY: catches paste-repetition padding
-
-# The GPT-Image-2.5 platform ceiling on input.prompt (both endpoints). ensure_english_pin
-# never appends past this — but PROMPT_CHAR_CEILING (18,000) already leaves 2,000 chars
-# of margin, so the pin (~230 chars) always fits.
-API_PROMPT_HARD_CEILING = 20000
 
 # ---------------------------------------------------------------------------
 # REQUIRED STRUCTURAL BLOCKS (AF-P1)  — folded in from the retired render_deck.py
@@ -321,7 +337,104 @@ def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> List[str]:
     return problems
 
 
-def prompt_problems(prompt_text: str, copy_val=None) -> List[str]:
+def length_budget(model: Optional[str] = None) -> dict:
+    """The rule 12 numbers for sizing a rich prompt before it is written: {max, floor, target_min, ceiling,
+    pin}. `ceiling` is the longest AUTHORED text that still fits once the mandatory English pin (`pin` chars,
+    appended at submit when absent) is added, so it is what an author or a fan-out split must respect.
+    Fails closed (PromptGateError) when the model limit is unknown."""
+    b = KPE.budget_for(model or _image_models()[0])
+    if b is None:
+        raise PromptGateError("the prompt length limit is unavailable (Skill 74 prompt-budget gave no max for "
+                              f"{model or _image_models()[0]}); refusing to size a prompt blind")
+    pin = len("\n\n" + ENGLISH_PIN)
+    return {"max": b["max"], "floor": b["floor"], "target_min": b["target_min"], "ceiling": b["max"] - pin, "pin": pin}
+
+
+def length_problems(prompt_text: str, model: Optional[str] = None) -> List[str]:
+    """The rule 12 LENGTH gate for one rich prompt, through the shared enforcer. [] when inside the band;
+    else one message that names the exact characters to ADD (below the 80 percent floor, AF-P1) or to
+    CUT (above the model max, AF-P2). The floor is measured on the authored prompt; the ceiling on the
+    prompt plus the mandatory English pin (ensure_english_pin appends it when the author omitted it).
+    `model` defaults to the catalog text-to-image id; the image-to-image id of the same generation has
+    the same maxLength."""
+    stripped = prompt_text.strip()
+    if not stripped:
+        return ["AF-P1: prompt is empty / whitespace-only; it carries none of the mandatory per-slide spec"]
+    v = KPE.check(model or _image_models()[0], stripped)
+    if not v["ok"]:
+        return [("AF-P2: " if v["status"] == "ABOVE_MAX" else "AF-P1: ") + v["message"]
+                + ". NOT run, NOT rendered, NOT updated; re-author into the rule 12 band"
+                " (never delete the negative block or any spelling-lock to make room)."]
+    pin = 0 if has_english_pin(stripped) else len("\n\n" + ENGLISH_PIN)
+    if v["max"] and v["chars"] + pin > v["max"]:
+        return [f"AF-P2: prompt is {v['chars']} chars; the mandatory English pin appended at submit adds {pin}, so the "
+                f"payload is {v['chars'] + pin} against a max of {v['max']}; CUT exactly {v['chars'] + pin - v['max']} chars"]
+    return []
+
+
+# Distinct, positive art-direction clauses for a designed web page (sales, checkout, video sales letter). A page-design
+# builder uses them through deepen_to_band() to bring its prompt into the KIE rule 12 band; each is a real instruction
+# for the same page, filled with its role and client, never a repeat and never filler.
+PAGE_DESIGN_DEPTH_BLOCKS = (
+    "Reading flow for the {role} page of {client}: the eye enters at the headline band, travels down through the proof and offer zones in a single clear path, and ends at the primary action area; no element sits outside that path, so the page can be understood in a few seconds without scrolling back.",
+    "Headline band: the headline is the largest and heaviest type on the page, set in a clean modern face with tight tracking, placed in the upper third on a calm field with generous padding, and supported by one lighter subhead line that finishes the thought without repeating it.",
+    "Hierarchy of type: three clear sizes carry the whole page, a display size for the headline, a medium size for section titles and prices, and a comfortable body size for supporting lines; weights step down in the same order, and no fourth size or decorative face is introduced.",
+    "Color roles: the primary brand color anchors headlines and major bands, the secondary color tints supporting panels, the accent color appears only on the primary action and a few emphasis marks, and the base color forms the page ground; each color keeps its single job from top to bottom.",
+    "Spacing rhythm: vertical gaps follow one repeating unit, doubled between major zones and halved inside a zone, so the page breathes evenly; margins are equal on both sides and wide enough that nothing feels pressed against the edge on a phone or a large display.",
+    "Primary action: the action area is the most saturated, highest-contrast region on the page, with a button shape of generous size, a short action phrase in clear type, and quiet reassurance text beneath it; nothing else competes with it for attention.",
+    "Offer panel: the offer is shown as one tidy panel with the product name, the key benefits as short lines with simple markers, the price in the second-largest type, and any guarantee set apart in a softly tinted strip; the panel has a single border weight and consistent inner padding.",
+    "Trust elements: a small row of credibility marks, such as a guarantee seal shape, secure checkout wording, and a short customer line, sits close to the action area in a muted tone so it reassures without shouting; shapes are simple geometric forms, never clipart.",
+    "Proof zone: testimonials or results appear as clean quote cards with a short line, a name and role in smaller type, and equal card sizes aligned to the page grid; avatars, if any, are neutral circles, and quote marks are drawn as simple type, not decorative art.",
+    "Layout grid: every zone aligns to one underlying column grid so left edges, right edges, and baselines repeat from zone to zone; panels share a corner radius and a border weight, which makes the page feel engineered and trustworthy rather than assembled.",
+    "Contrast and legibility: every line of copy sits on a calm background with strong tonal separation, light on dark in the headline band and dark on light in body zones; small type is never placed on a busy or tinted region, and no line depends on color alone to be read.",
+    "Imagery and motif: if a supporting visual is used it is a single, restrained element, such as a clean product shot or a soft brand motif in the accent color, placed beside the copy rather than behind it, with soft edges and no overlap onto any line of text.",
+    "Surface and finish: backgrounds are flat or very softly graded, without grain patterns, vignettes, or drop shadows that blur edges; thin rules separate zones, corners are softly rounded at one radius, and the overall finish is crisp, premium, and print-clean.",
+    "Brand fidelity: the exact brand palette values are used without substitution, the supplied logo appears once, unaltered, at its assigned position and a legible size, and no other mark, badge, or slogan is invented; every approved word is rendered exactly as written.",
+    "Copy integrity: every quoted string is rendered letter for letter with its original capitalization and punctuation; nothing is added, abbreviated, reworded, or translated, and no filler words appear anywhere on the page.",
+    "Responsive behavior: the layout is designed so that the same hierarchy survives a narrow phone crop, with zones that stack naturally, text that stays inside a safe margin, and an action area that remains visible without covering other content.",
+    "Consistency across the set: the band structure, zone geometry, footer, and logo placement are identical on every page of the funnel; only the content and the page role change, so the set reads as one designed system.",
+    "Footer: the footer carries the client name and the small legal line in the quietest type on the page, separated from the content by a thin rule, and sits at the same height and alignment as on the other pages.",
+    "Tone of the page: calm, confident, and respectful; the visual energy supports a visitor who is making a decision, with no clutter, no urgency gimmicks, and no ornament that competes with the message or the action.",
+    "Quality read: a reviewer looking only at the rendered page can name the headline, the offer, the price, the proof, and the action, with every character legible and correctly spelled and every color matching the brand palette.",
+    "Finishing checks: edges are crisp at 2K, spacing is even, alignment is exact, and no element is cropped, doubled, or floating; the page looks like a finished premium design a client would proudly publish.",
+    "Above the fold: the first screen of the {role} page shows the headline, the subhead, and either the primary action or the first visual proof, with at least a quarter of that screen left as calm space, so a visitor knows what the page offers before any scrolling.",
+    "Section dividers: zones are separated by a change of ground tone or a thin rule, never by heavy boxes or ornaments; the dividers repeat at the same weight and spacing across the page, which keeps the rhythm steady and the page light.",
+    "Price presentation: the price uses lining numerals in a weight one step below the headline, with the currency mark smaller and raised, any comparison value set lighter and struck through with a thin line, and the billing note beneath in the smallest type that still reads clearly.",
+    "Form and order details: if fields appear they are drawn as clean rules or softly bordered rectangles of equal height with small labels above, a single column, generous spacing between fields, and an order summary panel that echoes the offer panel's border and padding.",
+    "Payment reassurance: a quiet row of generic payment shapes and a short security line sits beneath the action area, drawn in a muted tone and at a small size, with no real card brand marks and no animated badges, so the page stays trustworthy and uncluttered.",
+    "Video frame treatment: if a video area is part of the page it is a clean rectangle at the page's main aspect ratio with a soft corner radius, a simple centered play shape in the accent color, and a short caption line below, with no screen glare, no fake interface chrome, and no overlapping text.",
+    "Iconography: any small icon is a plain line drawing in one stroke weight and the secondary color, used only to mark benefits or steps, aligned to the first line of its text, and never replaced by a photograph, an emoji, or a decorative illustration.",
+    "Whitespace budget: roughly a third of the page area is empty ground, distributed between zones and around the margins, so each zone reads as its own idea and the action area has room to stand out.",
+    "Tap targets and focus: every button and link area is large enough for comfortable thumb use, with clear spacing from its neighbors, and the primary action shows a visible, high-contrast outline style so keyboard and touch users both see where to act.",
+    "Microcopy: supporting lines under headings and buttons are short, plain, and specific, written in the client's voice, free of hype words and exclamation marks, and each one answers a single question the visitor is likely to have at that point.",
+    "Numbers and lists: lists keep consistent markers and hanging indents so wrapped lines align with their text, numerals line up on one baseline, and no list exceeds six items, which keeps the offer scannable and the page balanced.",
+    "Edge cases in the design: long names, long prices, and long headlines wrap gracefully inside their panels without touching the edge, and no element depends on a specific string length to look correct, so the page survives real client content.",
+)
+
+
+def deepen_to_band(prompt: str, blocks=PAGE_DESIGN_DEPTH_BLOCKS, ctx: Optional[dict] = None,
+                   model: Optional[str] = None) -> str:
+    """Rule 12 writer loop for a page-design builder: while the prompt is outside the band, append the next clauses
+    from `blocks` (formatted with `ctx`) toward the middle of the target band, using the verdict's exact add count,
+    up to 3 tries; raises PromptGateError when 3 tries do not fix it (escalate). Reserves room for the English pin."""
+    queue = [b.format(**(ctx or {})) for b in blocks]
+    reserve = len("\n\n" + ENGLISH_PIN)
+
+    def rewriter(text, verdict):
+        goal = (verdict["target_min"] + verdict["max"] - reserve) // 2
+        out = text.rstrip()
+        while queue and len(out) + len(queue[0]) + 2 <= goal:
+            out += "\n\n" + queue.pop(0)
+        return out
+
+    try:
+        fitted, _ = KPE.rewrite_to_band(model or _image_models()[0], prompt, rewriter)
+    except KPE.PromptBudgetError as exc:
+        raise PromptGateError(f"the page prompt could not be brought into the KIE rule 12 length band: {exc}") from exc
+    return fitted
+
+
+def prompt_problems(prompt_text: str, copy_val=None, model: Optional[str] = None) -> List[str]:
     """Return EVERY reason `prompt_text` fails the shared image-prompt gate (empty list =
     clears the whole gate). This is the accumulating (non-raising) form used by provers and
     by the side-doors that want to report all problems for a slide at once."""
@@ -344,17 +457,7 @@ def prompt_problems(prompt_text: str, copy_val=None) -> List[str]:
                         "mandatory per-slide spec")
         return problems  # nothing else measurable
 
-    length = len(stripped)
-    if length < PROMPT_CHAR_FLOOR:
-        problems.append(
-            f"AF-P1: prompt is {length} chars, UNDER the HARD floor of {PROMPT_CHAR_FLOOR}. "
-            "Too short to carry the mandatory per-slide 15-element spec — NOT run, NOT "
-            "rendered, NOT updated. Re-author the rich prompt.")
-    if length > PROMPT_CHAR_CEILING:
-        problems.append(
-            f"AF-P2: prompt is {length} chars, over the hard ceiling of {PROMPT_CHAR_CEILING} "
-            "(2,000 under the 20,000 GPT-Image-2.5 API ceiling). Tighten redundant phrasing "
-            "(never delete the negative block or any spelling-lock).")
+    problems.extend(length_problems(prompt_text, model))
 
     missing_blocks = _missing_structural_blocks(prompt_text.lower())
     if missing_blocks:
@@ -370,7 +473,7 @@ def prompt_problems(prompt_text: str, copy_val=None) -> List[str]:
 
 def presentations_gate_enabled() -> bool:
     """True iff the caller opted into the FULL presentations rich-prompt gate (the
-    9,000–18,000-char floor + structural + 8-class negative + spelling-lock + density
+    rule 12 length band + structural + 8-class negative + spelling-lock + density
     teeth, the 2K width floor, the English/Latin pin, model/reference mode-consistency,
     and the OCR hard-fail) via the KIE_PROMPT_GATE env var.
 
@@ -405,15 +508,15 @@ def verify_prompt_minimal(prompt_text: str, slide_id=None) -> str:
     return prompt_text
 
 
-def verify_prompt(prompt_text: str, copy_val=None, slide_id=None) -> str:
+def verify_prompt(prompt_text: str, copy_val=None, slide_id=None, model: Optional[str] = None) -> str:
     """THE shared gate every image-API path calls before submitting to kie.ai. Raises
     PromptGateError (a ValueError) listing every failure when the prompt does not clear the
-    9,000–18,000-char floor + structural + 8-class negative + spelling-lock + density +
+    rule 12 length band + structural + 8-class negative + spelling-lock + density +
     demographic-landmine gate. Returns the prompt unchanged on success (callers then run it
     through ensure_english_pin before submit).
 
     slide_id is an optional label (slide ordinal / name) folded into the error message."""
-    problems = prompt_problems(prompt_text, copy_val)
+    problems = prompt_problems(prompt_text, copy_val, model)
     if problems:
         who = f"slide {slide_id}: " if slide_id is not None else ""
         raise PromptGateError(
@@ -434,19 +537,13 @@ def has_english_pin(prompt_text: str) -> bool:
 def ensure_english_pin(prompt_text: str) -> str:
     """Return `prompt_text` guaranteed to carry the mandatory English/Latin anti-garble
     pin. Belt-and-braces: if the pin is already present (authoring-side responsibility),
-    the prompt is returned unchanged; otherwise the pin is appended. Never appends past the
-    GPT-Image-2.5 API hard ceiling (a post-gate prompt is <=18,000, so the ~230-char pin
-    always fits with 2,000 chars of margin). This is what makes ENGLISH_PIN REAL — before
+    the prompt is returned unchanged; otherwise the pin is appended. The rule 12 length gate
+    (length_problems) already counts the pin toward the model max, so a prompt that cleared
+    the gate always fits with the pin appended. This is what makes ENGLISH_PIN REAL: before
     this function the constant was defined and appended nowhere."""
     if has_english_pin(prompt_text):
         return prompt_text
-    candidate = prompt_text.rstrip() + "\n\n" + ENGLISH_PIN
-    if len(candidate) > API_PROMPT_HARD_CEILING:
-        # Cannot safely append without risking API-side truncation of the pin. Leave the
-        # prompt as-is; the caller's floor/ceiling gate already bounds length well under
-        # this, so this branch is a defensive no-op that should never fire in practice.
-        return prompt_text
-    return candidate
+    return prompt_text.rstrip() + "\n\n" + ENGLISH_PIN
 
 
 # ---------------------------------------------------------------------------
@@ -790,6 +887,17 @@ def _self_test() -> int:
     # A thin stub must fail the FULL floor.
     if not prompt_problems("too short"):
         failures.append("thin stub did not fail the gate")
+
+    # Rule 12 length through the shared enforcer (GPT Image 2.5 max 20,000): 79 percent rejected naming the
+    # chars to add, 95 percent clears the length gate, 101 percent rejected naming the chars to cut.
+    for n, want in ((15800, "ADD at least 200"), (19000, None), (20200, "CUT exactly")):
+        lp = length_problems("x" * n)
+        if want is None and lp:
+            failures.append(f"{n}-char prompt must clear the rule 12 length gate, got {lp}")
+        elif want is not None and not any(want in m for m in lp):
+            failures.append(f"{n}-char prompt must be rejected with {want!r}, got {lp}")
+    if not any("CUT exactly" in m for m in length_problems("x" * 19900)):  # 19,900 + the pin > 20,000
+        failures.append("a prompt whose English pin overflows the max must name the chars to cut")
 
     # The universal-safe minimal gate must PASS a thin-but-nonempty prompt (shared callers
     # like GHL / funnel / movie / Anthology are not held to the 9,000-char deck floor) while

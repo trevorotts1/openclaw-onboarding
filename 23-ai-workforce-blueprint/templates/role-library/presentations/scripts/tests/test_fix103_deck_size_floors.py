@@ -284,11 +284,13 @@ def test_deliverables_reexports_helper_family():
 
 
 # ---------------------------------------------------------------------------
-# 6. The prompt floor is untouched: 9,000-char floor, 18,000-char ceiling.
+# 6. The prompt band is KIE rule 12: no hard-coded constants, floor 80 percent of the model max.
 # ---------------------------------------------------------------------------
 
 def test_prompt_floor_untouched():
     import build_deck
-    assert build_deck.PROMPT_CHAR_FLOOR == 9000
-    assert build_deck.PROMPT_CHAR_CEILING == 18000
-    assert build_deck.PROMPT_CHAR_TARGET_HIGH == 18000
+    for name in ("PROMPT_CHAR_FLOOR", "PROMPT_CHAR_CEILING", "PROMPT_CHAR_TARGET_HIGH"):
+        assert not hasattr(build_deck, name), f"{name}: the 9,000-18,000 band is retired (rule 12)"
+    b = build_deck.length_budget()
+    assert b["floor"] == -(-b["max"] * 80 // 100)
+    assert b["target_min"] == -(-b["max"] * 95 // 100)

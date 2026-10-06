@@ -12,8 +12,8 @@
 # ============================================================================
 # Root-cause fix for the enforcement-surface gap (Fix 10 — entrypoint shell gate).
 #
-# The Presentations department's guardrails (kie.ai-only image path, 9,000-char
-# prompt floor (PROMPT_CHAR_FLOOR=9000), the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
+# The Presentations department's guardrails (kie.ai-only image path, the prompt
+# length band (KIE rule 12 through the shared enforcer), the AF-OVERLAY-DELIVERED / kie-baked / image-QC battery, the
 # GoHighLevel upload, the teleprompter bundle, the phase-attestation chain) all
 # live INSIDE the canonical render path:
 #

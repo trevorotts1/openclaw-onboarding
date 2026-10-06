@@ -20,6 +20,7 @@ Exit: 0 = every assertion passed; 1 = a case failed (prints which one).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,8 @@ HERE = Path(__file__).resolve().parent                       # 45-design-intelli
 SKILL45_DIR = HERE.parent                                     # 45-design-intelligence-library
 REPO_ROOT = SKILL45_DIR.parent                                # repo root
 VALIDATOR = HERE / "diu_validator.py"
+sys.path.insert(0, str(HERE))
+import prove_gip_prompt_floor as pg  # noqa: E402  (distinct-body builder for the rule 12 length)
 
 GRAPHICS_DIR = REPO_ROOT / "23-ai-workforce-blueprint" / "templates" / "role-library" / "graphics"
 PROMPT_AUTHOR_MD = GRAPHICS_DIR / "prompt-author-graphics.md"
@@ -75,7 +78,7 @@ def run_prompt_band(band: str, prompt: str, *, copy: list[str] | None = None,
     if run_dir:
         cmd += ["--run-dir", str(run_dir)]
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     finally:
         Path(prompt_path).unlink(missing_ok=True)
 
@@ -137,7 +140,14 @@ def _compliant_visual_long_prompt() -> str:
         "cast the subject exactly as specified above. Do not render watermarks, emoji, clipart, or a "
         "basic platform-default font anywhere in the frame.",
     ]
-    return "\n\n".join(clauses)
+    # Rule 12: the first endpoint of visual_long is GPT Image 2.5 (max 20,000), so a compliant prompt is 95 to
+    # 100 percent of it. The Prompt Author deepens the anatomy above with distinct render decisions until it is
+    # in band, then closes with the negative block.
+    negative = clauses.pop()
+    head = "\n\n".join(clauses)
+    target = 20000 * 97 // 100
+    room = target - len(head) - len(negative) - 4
+    return head + "\n\n" + pg._distinct_body(room // 150 + 2)[:room] + "\n\n" + negative
 
 
 def _thin_self_authored_stub() -> str:
@@ -149,6 +159,8 @@ def _thin_self_authored_stub() -> str:
 
 
 def main() -> int:
+    os.environ["HOME"] = tempfile.mkdtemp()  # hermetic: no key, no cache, the adapter answers from its registry
+    os.environ.pop("KIE_API_KEY", None)
     print("=== A. structural: both role files exist and are registered ===")
     check("prompt-author-graphics.md exists", PROMPT_AUTHOR_MD.is_file(), str(PROMPT_AUTHOR_MD))
     check("qc-specialist-prompt-graphics.md exists", PROMPT_QC_MD.is_file(), str(PROMPT_QC_MD))

@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""qc_gip_agnes_prompt_band.py — QC gate that checks image-prompt length and
-REJECTS below 5,000 or above 19,000 characters for GPT-image-2.5 and Agnes Image.
+"""qc_gip_agnes_prompt_band.py -- QC gate that checks image-prompt length against KIE
+prompt rule 12 (owner order 2026-10-05) for GPT-image-2.5 and Agnes Image prompts.
 
 This is a unified pre-commit / CI gate covering both scopes:
   1. Graphics department GIP prompts (GPT-image-2.5 T2I/I2I)
   2. Agnes skills 63/64 prompts (Agnes Image 2.1 Flash)
 
-THE RULE (decision GK-D2, extended to Agnes via skills 63/64):
-  For image prompts generated for GPT-image-2.5 OR Agnes Image 2.1 Flash:
-  NEVER BELOW 5,000 characters AND NEVER ABOVE 19,000 characters.
-  Valid range: 5,000-19,000.
-  GPT-image-2.5 publishes a 20,000-char cap (AGENTS.md N43; KIE model page);
-  19,000 leaves ~1,000 chars headroom. The 25,000 figure belongs ONLY to the
-  legacy gpt-image-2-* entries (owner-confirmed cap, N43; ratios 3:1, 1:3,
-  9:21), not to the 2.5 family this gate covers. Agnes Image
-  publishes no hard cap (63-agnes-image/references/prompt-policy.md); the same
-  5,000-19,000 house band governs it.
-  5,000 is the HARD FLOOR -- a prompt below 5,000 is a thin stub, NOT submitted.
+THE RULE (rule 12, 07-kie-setup/references/kie-common-rules.md):
+  A descriptive image prompt is 95 to 100 percent of the model's maxLength, hard floor
+  80 percent (rejected below), hard ceiling 100 percent (rejected above). The numbers are
+  NOT kept here: this gate calls the shared enforcer shared-utils/kie_prompt_enforcer.py,
+  which wraps `kie_live_adapter.py prompt-budget --check` (live schema, registry fallback).
+  The rejection message names the exact characters to add or cut. A model with no known
+  limit (Agnes is not a KIE model) is reported UNKNOWN and has no floor.
 
 IMAGE-TO-IMAGE FOR LOGOS: When a prompt involves the client's LOGO or existing
 brand image, use IMAGE-TO-IMAGE generation (provide the logo as reference image),
@@ -30,6 +26,7 @@ USAGE
     python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --style-ref  # style-ref check
     python3 scripts/qc_gip_agnes_prompt_band.py --dir <prompts_dir>  # gate a directory
     python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --json  # machine-readable output
+    python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --model <KIE model id>  # default: the pinned GPT Image 2.5 text-to-image id
 
 EXIT CODES
     0 -- all checks pass
@@ -41,21 +38,36 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    raise ImportError("shared-utils/kie_prompt_enforcer.py not found; install or update the onboarding skills")
+
+
+KPE = _load_enforcer()
+
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
-# The SACRED band: 5,000-19,000 stripped characters.
-PROMPT_FLOOR = 5000
-PROMPT_CEILING = 19000
-# GPT-image-2.5 vendor cap: 20,000 chars (N43). Legacy GPT-image-2 is 25,000
-# and Agnes has no published cap, so neither belongs in this constant.
-API_CAP = 20000
+# The length band is not defined here: it is KIE prompt rule 12, enforced by the shared
+# enforcer (limits from Skill 74 prompt-budget). Only the default model id is named.
+DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
 
 # Logo-related tokens -- a prompt containing any of these + NOT declaring I2I intent
 # is a violation of the "image-to-image for logos" rule.
@@ -90,27 +102,16 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", str(text)).strip().lower()
 
 
-def check_length(prompt_text: str) -> List[Tuple[str, str]]:
-    """Check prompt length against the 5,000-19,000 band."""
-    stripped = prompt_text.strip()
-    n = len(stripped)
-    problems: List[Tuple[str, str]] = []
-    if not stripped:
-        problems.append(("AF-QC-PROMPT-EMPTY",
-                         "prompt is empty / whitespace-only -- NOT submitted."))
-        return problems
-    if n < PROMPT_FLOOR:
-        problems.append(("AF-QC-PROMPT-FLOOR",
-                         f"prompt is {n} chars, UNDER the 5,000-char FLOOR. "
-                         f"A prompt below 5,000 is a thin stub -- NOT submitted, "
-                         f"NOT rendered. Re-author to at least {PROMPT_FLOOR} chars."))
-    if n > PROMPT_CEILING:
-        problems.append(("AF-QC-PROMPT-CEILING",
-                         f"prompt is {n} chars, OVER the 19,000-char MAX. "
-                         f"GPT-image-2.5 accepts up to {API_CAP} chars; the 19,000 cap "
-                         f"preserves ~{API_CAP - PROMPT_CEILING:,} chars headroom. Trim to <= {PROMPT_CEILING} chars "
-                         f"(remove {n - PROMPT_CEILING} chars)."))
-    return problems
+_CODES = {"BELOW_FLOOR": "AF-QC-PROMPT-FLOOR", "ABOVE_MAX": "AF-QC-PROMPT-CEILING",
+          "ADAPTER_UNAVAILABLE": "AF-QC-PROMPT-BUDGET-UNAVAILABLE"}
+
+
+def check_length(prompt_text: str, model: str = DEFAULT_MODEL) -> List[Tuple[str, str]]:
+    """Check prompt length against rule 12 through the shared enforcer."""
+    if not prompt_text.strip():
+        return [("AF-QC-PROMPT-EMPTY", "prompt is empty / whitespace-only -- NOT submitted.")]
+    v = KPE.check(model, prompt_text)
+    return [] if v["ok"] else [(_CODES.get(v["status"], "AF-QC-PROMPT-BAND"), v["message"] + " -- NOT submitted.")]
 
 
 def check_logo_i2i(prompt_text: str) -> List[Tuple[str, str]]:
@@ -154,10 +155,10 @@ def check_style_ref_directive(prompt_text: str,
 
 
 def gate_prompt(prompt_text: str, logo_check: bool = False,
-                style_ref: bool = False) -> Tuple[bool, List[Tuple[str, str]]]:
+                style_ref: bool = False, model: str = DEFAULT_MODEL) -> Tuple[bool, List[Tuple[str, str]]]:
     """Run all applicable gates. Returns (passed, list_of_problems)."""
     all_problems: List[Tuple[str, str]] = []
-    all_problems.extend(check_length(prompt_text))
+    all_problems.extend(check_length(prompt_text, model))
     if logo_check:
         all_problems.extend(check_logo_i2i(prompt_text))
     if style_ref:
@@ -166,13 +167,13 @@ def gate_prompt(prompt_text: str, logo_check: bool = False,
 
 
 def _to_dict(problems: List[Tuple[str, str]], n_chars: int,
-             passed: bool, filepath: str = "") -> Dict[str, Any]:
+             passed: bool, filepath: str = "", model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     """Convert gate results to a JSON-serializable dict."""
     return {
         "file": filepath,
         "chars": n_chars,
-        "floor": PROMPT_FLOOR,
-        "ceiling": PROMPT_CEILING,
+        "model": model,
+        "band": "rule 12: 95-100 percent of the model maxLength, floor 80 percent (shared enforcer)",
         "passed": passed,
         "violations": [{"code": code, "message": msg} for code, msg in problems],
     }
@@ -182,8 +183,8 @@ def _to_dict(problems: List[Tuple[str, str]], n_chars: int,
 # Self-test fixtures (CI gate)
 # ---------------------------------------------------------------------------
 
-def _rich_prompt(n_sentences: int = 40, with_style_ref: bool = True) -> str:
-    """Build a prompt guaranteed to be >= 5,000 chars with distinct content."""
+def _rich_prompt(chars: int = 19500, with_style_ref: bool = True) -> str:
+    """Build a prompt of exactly `chars` stripped characters with distinct content."""
     vocab = (
         "photoreal cinematic boardroom dusk amber rim-light glass reflection "
         "confident founder tailored charcoal poised gesture layered depth bokeh "
@@ -197,7 +198,7 @@ def _rich_prompt(n_sentences: int = 40, with_style_ref: bool = True) -> str:
         "isometric vignette parallax silhouette chromatic aberration halftone"
     ).split()
     out = []
-    for i in range(n_sentences):
+    for i in range(chars // 150 + 1):  # more than enough sentences; the result is trimmed to size
         w = vocab[i % len(vocab)]
         out.append(
             f"Detail {i}: the {w} element is described with a distinct clause "
@@ -215,41 +216,38 @@ def _rich_prompt(n_sentences: int = 40, with_style_ref: bool = True) -> str:
             "Use the attached images only as style reference for color grading, "
             "lighting, and composition -- do not copy their subjects, faces, or text.\n"
         )
-    return base + " ".join(out)
+    return (base + " ".join(out))[:chars].strip().ljust(chars, ".")
 
 
 def _self_test() -> int:
     failures: List[str] = []
+    mx = 20000  # GPT Image 2.5 maxLength per Skill 74 prompt-budget; the fixtures are percentages of it
 
-    # --- CAP LABEL (N43: GPT-image-2.5 cap is 20,000, not the legacy 25,000) ---
-    if API_CAP != 20000:
-        failures.append(f"[api-cap] expected 20000 (N43), got {API_CAP}")
-    _, over_probs = gate_prompt(_rich_prompt(250))
-    if not any("20000" in m and "25000" not in m for _, m in over_probs):
-        failures.append("[ceiling-msg] ceiling message must cite the 20000 cap")
+    def expect(name: str, chars: int, want_pass: bool, **kw) -> None:
+        passed, probs = gate_prompt(_rich_prompt(chars, kw.pop("style", True)), **kw)
+        if passed != want_pass:
+            failures.append(f"[{name}] expected {'PASS' if want_pass else 'FAIL'} at {chars} chars but got: {probs}")
 
-    # --- LENGTH TESTS ---
-    ok = _rich_prompt(40)
-    passed, probs = gate_prompt(ok)
-    if not passed:
-        failures.append(f"[rich-pass] expected PASS but got: {probs}")
-
-    short = "A short prompt about a desk scene."
-    passed, probs = gate_prompt(short)
+    # --- LENGTH TESTS (rule 12): 79 percent rejected, 95 and 100 percent pass, 101 percent rejected ---
+    expect("79-percent", mx * 79 // 100, False)
+    expect("95-percent", mx * 95 // 100, True)
+    expect("100-percent", mx, True)
+    expect("101-percent", mx * 101 // 100, False)
+    _, probs = gate_prompt(_rich_prompt(mx * 79 // 100))
+    if not any("ADD at least 200" in m for _, m in probs):
+        failures.append(f"[79-percent-message] must name the exact chars to add (200): {probs}")
+    _, probs = gate_prompt(_rich_prompt(mx * 101 // 100))
+    if not any("CUT exactly 200" in m for _, m in probs):
+        failures.append(f"[101-percent-message] must name the exact chars to cut (200): {probs}")
+    passed, probs = gate_prompt("A short prompt about a desk scene.")
     if passed:
         failures.append("[under-floor] expected FAIL but got PASS")
-
-    over = _rich_prompt(250)
-    passed, probs = gate_prompt(over)
-    if passed:
-        failures.append("[over-ceiling] expected FAIL but got PASS")
-
     passed, probs = gate_prompt("   \n  \t ")
     if passed:
         failures.append("[empty] expected FAIL but got PASS")
 
     # --- LOGO-TO-I2I TESTS ---
-    body_no_sr = _rich_prompt(40, with_style_ref=False)
+    body_no_sr = _rich_prompt(mx * 95 // 100 - 200, with_style_ref=False)
     logo_no_i2i = body_no_sr + "\nPlace the company logo in the top right corner."
     passed, probs = gate_prompt(logo_no_i2i, logo_check=True)
     if passed:
@@ -259,18 +257,17 @@ def _self_test() -> int:
                      "\nUse image-to-image generation with the attached logo as "
                      "a reference image via extra_body.image. Render the logo "
                      "using the provided brand mark as a reference.")
+    logo_with_i2i += "." * (mx * 95 // 100 - len(logo_with_i2i.strip()))
     passed, probs = gate_prompt(logo_with_i2i, logo_check=True)
     if not passed:
         failures.append(f"[logo-with-i2i] expected PASS but got: {probs}")
 
     # --- STYLE-REF-DIRECTIVE TESTS ---
-    passed, probs = gate_prompt(_rich_prompt(40, with_style_ref=True),
-                                style_ref=True)
+    passed, probs = gate_prompt(_rich_prompt(mx * 95 // 100, with_style_ref=True), style_ref=True)
     if not passed:
         failures.append(f"[style-ref-ok] expected PASS but got: {probs}")
 
-    passed, probs = gate_prompt(_rich_prompt(40, with_style_ref=False),
-                                style_ref=True)
+    passed, probs = gate_prompt(_rich_prompt(mx * 95 // 100, with_style_ref=False), style_ref=True)
     if passed:
         failures.append("[style-ref-missing] expected FAIL but got PASS")
 
@@ -284,7 +281,7 @@ def _self_test() -> int:
 
 
 def _gate_files(paths: List[Path], logo_check: bool = False,
-                style_ref: bool = False, as_json: bool = False) -> int:
+                style_ref: bool = False, as_json: bool = False, model: str = DEFAULT_MODEL) -> int:
     any_violation = False
     checked = 0
     results: List[Dict[str, Any]] = []
@@ -301,18 +298,18 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
         checked += 1
         n = len(text.strip())
         passed, problems = gate_prompt(text, logo_check=logo_check,
-                                       style_ref=style_ref)
+                                       style_ref=style_ref, model=model)
         if not passed:
             any_violation = True
         if as_json:
-            results.append(_to_dict(problems, n, passed, str(p)))
+            results.append(_to_dict(problems, n, passed, str(p), model))
         else:
             if not passed:
                 print(f"VIOLATION {p} ({n} stripped chars):", file=sys.stderr)
                 for code, msg in problems:
                     print(f"  - {code}: {msg}", file=sys.stderr)
             else:
-                msg = f"OK {p} ({n} chars) -- within 5,000-19,000 band"
+                msg = f"OK {p} ({n} chars) -- within the rule 12 band for {model}"
                 if logo_check:
                     msg += " + logo/I2I PASS"
                 if style_ref:
@@ -330,9 +327,7 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
             "checked": checked,
             "passed": sum(1 for r in results if r["passed"]),
             "failed": sum(1 for r in results if not r["passed"]),
-            "floor": PROMPT_FLOOR,
-            "ceiling": PROMPT_CEILING,
-            "api_cap": API_CAP,
+            "model": model,
             "results": results,
         }
         print(json.dumps(summary, indent=2))
@@ -341,9 +336,11 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
-        description="QC gate: enforce 5,000-19,000 char band for GPT-image-2.5 "
-                    "and Agnes Image prompts, plus logo image-to-image rule "
-                    "and style-reference-only directive.")
+        description="QC gate: enforce KIE prompt rule 12 (95-100 percent of the model max, "
+                    "floor 80 percent) for GPT-image-2.5 and Agnes Image prompts, plus logo "
+                    "image-to-image rule and style-reference-only directive.")
+    ap.add_argument("--model", default=DEFAULT_MODEL,
+                    help="KIE model id whose maxLength sets the band (default: %(default)s)")
     ap.add_argument("--self-test", action="store_true",
                     help="run the fixture gate (CI)")
     ap.add_argument("--file", action="append", default=[],
@@ -381,7 +378,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_FAILCLOSED
 
     return _gate_files(paths, logo_check=args.logo, style_ref=args.style_ref,
-                       as_json=args.as_json)
+                       as_json=args.as_json, model=args.model)
 
 
 if __name__ == "__main__":

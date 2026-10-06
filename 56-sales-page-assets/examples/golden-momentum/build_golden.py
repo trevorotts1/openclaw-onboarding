@@ -826,8 +826,20 @@ def build_image_plan() -> dict:
     # gate (prove_sp_prompt_floor.py) passes, parameterized on the client's primary_brand_color.
     sys.path.insert(0, str(SCRIPTS))
     import prove_sp_prompt_floor as _pf  # noqa: E402
-    prompts = [{"index": i, "stage": st, "prompt_text": _pf._rich_prompt(tx)}
-               for i, (st, tx) in enumerate(scenes)]
+    # KIE rule 12: a golden prompt sits at 95 to 100 percent of the model max. The structured base carries the scene,
+    # grade block, composition, light and quality; genuine scene-bound direction (direction_bank) fills the rest,
+    # inserted before the closing brand-style and negative block. Never repetition or filler.
+    sys.path.insert(0, str(HERE))
+    import direction_bank as _db  # noqa: E402
+    bud = _pf.KPE.budget_for(_pf.IMAGE_MODEL_DEFAULT)
+    goal = bud["target_min"] + (bud["max"] - bud["target_min"]) // 4  # clauses overshoot by under 600, so aim low in the band
+    prompts = []
+    for i, (st, tx) in enumerate(scenes):
+        base = _pf._rich_prompt(tx, target=1)
+        head, sep, tail = base.partition("BRAND STYLE AND NEGATIVE BLOCK:")
+        need = goal - len(base) - 2
+        prompts.append({"index": i, "stage": st,
+                        "prompt_text": head + _db.direction(tx, i, need) + " " + sep + tail})
     return {"funnel_type": "sales_page_assets", "image_prompt_count": len(prompts),
             "primary_brand_color": "deep evergreen", "prompts": prompts}
 
