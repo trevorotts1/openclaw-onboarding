@@ -69,6 +69,54 @@ class Options(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["state"], "success")
         self.assertEqual([x for x in tr.calls if "aiquickdraw" in x["url"]][0]["headers"], {"User-Agent": UA})
 
+    def test_refreshed_link_must_be_on_the_allow_list(self):
+        a, tr, c = make(self.tmp, [["GET", "recordInfo", [done()]], ["GET", "aiquickdraw.com", [(403, b"")]],
+                                   ["POST", "download-url", [(200, {"code": 200, "data": "https://evil.example/f.png"})]]])
+        a.dl_hosts = ("aiquickdraw.com",)
+        r = a.cmd_save("T1", os.path.join(self.tmp, "o"))
+        self.assertEqual((r["state"], r["error"]["code"]), ("fail", "host_not_allowed"))
+        self.assertEqual(tr.n("GET", "evil.example"), 0)
+
+    def test_redirect_off_the_list_or_to_http_is_refused(self):
+        import urllib.request
+        a, tr, c = make(self.tmp, [["GET", "recordInfo", [done()]], ["GET", "aiquickdraw.com", [(200, PNG)]]])
+        a.dl_hosts = ("aiquickdraw.com",)
+        a.cmd_save("T1", os.path.join(self.tmp, "o"))
+        guard = [x for x in tr.calls if "aiquickdraw" in x["url"]][0]["guard"]
+        self.assertTrue(guard("https://static.aiquickdraw.com/b.png"))
+        self.assertFalse(guard("https:///x"))
+        for bad in ("https://evil.example/b.png", "http://static.aiquickdraw.com/b.png"):
+            self.assertFalse(guard(bad), bad)
+            h = K._GuardRedirect(guard)
+            req = urllib.request.Request("https://tempfile.aiquickdraw.com/a.png")
+            with self.assertRaises(urllib.error.HTTPError):
+                h.redirect_request(req, None, 302, "Found", {}, bad)
+        ok = K._GuardRedirect(guard).redirect_request(
+            urllib.request.Request("https://tempfile.aiquickdraw.com/a.png"), None, 302, "Found", {},
+            "https://static.aiquickdraw.com/b.png")
+        self.assertEqual(ok.full_url, "https://static.aiquickdraw.com/b.png")
+
+    def test_no_allow_list_means_no_guard(self):
+        a, tr, c = make(self.tmp, [["GET", "recordInfo", [done()]], ["GET", "aiquickdraw.com", [(200, PNG)]]])
+        a.cmd_save("T1", os.path.join(self.tmp, "o"))
+        self.assertIsNone([x for x in tr.calls if "aiquickdraw" in x["url"]][0]["guard"])
+
+    def test_blank_allow_host_values_are_ignored_and_never_lift_the_list(self):
+        import io
+        for flags, expect in ((["--allow-host", " ", "--allow-host", "aiquickdraw.com"], 0),
+                              (["--allow-host", "", "--allow-host", "  "], 1)):
+            a, tr, c = make(self.tmp, [["GET", "recordInfo", [done("https://evil.example/x.png")]]])
+            out = io.StringIO()
+            K.main(["save", "--task-id", "T1", "--save-dir", os.path.join(self.tmp, "o"), "--json"] + flags,
+                   adapter=a, out=out)
+            self.assertEqual(tr.n("GET", "evil.example"), 0, flags)
+            self.assertEqual(json.loads(out.getvalue())["error"]["code"], "host_not_allowed")
+
+    def test_url_with_no_hostname_is_refused(self):
+        a, tr, c = make(self.tmp, [["GET", "recordInfo", [done("https:///x.png")]]])
+        r = a.cmd_save("T1", os.path.join(self.tmp, "o"))
+        self.assertEqual((r["state"], r["error"]["code"]), ("fail", "bad_url"))
+
 
 SYNC_SCHEMA = {"code": 200, "data": {"model": "runway-x", "openapi": {"paths": {"/api/v1/runway/generate": {"post": {
     "requestBody": {"content": {"application/json": {"schema": {

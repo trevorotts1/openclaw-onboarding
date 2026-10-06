@@ -49,13 +49,26 @@ class KieError(Exception):
 
 
 # ---------------------------------------------------------------- transport
-class UrllibTransport:
-    """request(method, url, headers, body, timeout) -> (http_status, bytes)."""
+class _GuardRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only when guard(new_url) is true (the --allow-host list); else the 3xx is the answer."""
 
-    def request(self, method, url, headers=None, body=None, timeout=60):
+    def __init__(self, guard):
+        self.guard = guard
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not self.guard(urllib.parse.urljoin(req.full_url, newurl)):
+            raise urllib.error.HTTPError(req.full_url, code, "redirect off the allow-list refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class UrllibTransport:
+    """request(method, url, headers, body, timeout, guard=None) -> (http_status, bytes)."""
+
+    def request(self, method, url, headers=None, body=None, timeout=60, guard=None):
         req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+        opener = urllib.request.build_opener(_GuardRedirect(guard)) if guard else urllib.request.build_opener()
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with opener.open(req, timeout=timeout) as r:
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
             return e.code, e.read()
@@ -902,16 +915,34 @@ class Adapter:
             delay = min(delay * 1.5, 15.0)  # ponytail: simple geometric backoff, capped at 15s
 
     # -- download
+    def _allowed(self, url):
+        """Host check for result downloads: a hostname is required; with --allow-host the host must match
+        (exact or subdomain) and the scheme must be https (http only on the localhost test base)."""
+        p = urllib.parse.urlparse(url)
+        host = (p.hostname or "").lower()
+        if not host:
+            return False
+        if not self.dl_hosts:
+            return True
+        if p.scheme != "https" and self.api == API:
+            return False
+        return any(host == h or host.endswith("." + h) for h in self.dl_hosts)
+
     def _download(self, url, dest_dir, task_id, i):
         if urllib.parse.urlparse(url).scheme != "https" and self.api == API:  # http only when the localhost test base is set
             raise KieError("bad_url", "refusing non-https result URL")
-        status, raw = self.t.request("GET", url, dict(self.dl_headers), None, 120)  # no Authorization: result hosts are not the API
+        if not urllib.parse.urlparse(url).hostname:
+            raise KieError("bad_url", "refusing result URL with no host")
+        guard = self._allowed if self.dl_hosts else None  # redirects are re-checked against the allow-list
+        status, raw = self.t.request("GET", url, dict(self.dl_headers), None, 120, guard=guard)  # no Authorization: result hosts are not the API
         if status in (403, 404, 410):  # expired: refresh once through download-url
             j = self.call("POST", self.api + "/api/v1/common/download-url", {"url": url})
             fresh = j.get("data")
             if not isinstance(fresh, str):
                 raise KieError("bad_response", "download-url returned no link")
-            status, raw = self.t.request("GET", fresh, dict(self.dl_headers), None, 120)
+            if not self._allowed(fresh):
+                raise KieError("host_not_allowed", "refreshed download link is not on the --allow-host list (or has no host)")
+            status, raw = self.t.request("GET", fresh, dict(self.dl_headers), None, 120, guard=guard)
         if status != 200 or not raw:
             raise KieError("download_failed", "download failed with HTTP %s" % status)
         ext = os.path.splitext(urllib.parse.urlparse(url).path)[1]
@@ -931,8 +962,7 @@ class Adapter:
                 return self.result(**dict(kw, warnings=["task not successful; nothing to save"]))
             urls = kw["result_urls"]
             if self.dl_hosts:  # caller allowlist: exact host or subdomain; others are skipped, never fetched
-                hosts = [(urllib.parse.urlparse(u).hostname or "").lower() for u in urls]
-                keep = [u for u, ho in zip(urls, hosts) if any(ho == h or ho.endswith("." + h) for h in self.dl_hosts)]
+                keep = [u for u in urls if self._allowed(u)]
                 if len(keep) != len(urls):
                     kw["warnings"] = list(kw.get("warnings") or []) + ["%d result URL(s) skipped: host not in --allow-host" % (len(urls) - len(keep))]
                 if not keep:
@@ -1387,7 +1417,10 @@ def main(argv=None, adapter=None, out=sys.stdout):
         ad.mode = a.mode
     if getattr(a, "user_agent", None):
         ad.dl_headers = {"User-Agent": a.user_agent}  # replaces the default product agent
-    ad.dl_hosts = tuple(h.lower().lstrip(".") for h in (getattr(a, "allow_host", None) or []))
+    given = getattr(a, "allow_host", None) or []
+    ad.dl_hosts = tuple(h for h in (x.strip().lower().lstrip(".") for x in given) if h)
+    if given and not ad.dl_hosts:  # only blank values were given: fail closed, never silently lift the allow-list
+        ad.dl_hosts = ("\0",)
     exit_code = None
     try:
         if a.cmd == "health":
