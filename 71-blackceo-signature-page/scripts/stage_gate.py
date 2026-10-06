@@ -42,7 +42,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:noop"}
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop"}
 
 
 def fail_exit(lines):
@@ -402,6 +402,15 @@ def run_builtin(name, args, run_dir):
         if problems:
             return "gate:must_supply: " + "; ".join(problems)
         return None
+    if name == "gate:intake_engine":
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_engine: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict) or intake.get("image_engine") not in ("kie", "agnes"):
+            return ("gate:intake_engine: intake.json must carry image_engine \"kie\" or \"agnes\" "
+                    "(write it with scripts/write_intake.py)")
+        return None
     if name == "gate:noop":
         # Test-only builtin: always passes.
         return None
@@ -525,6 +534,148 @@ def check_cost(run_dir, stage, receipt):
     return problems
 
 
+# Image generation route (references/kie-generation-route.md): policy owner, then Skill 74 transport.
+# skill -> (policy owner, cost provider). Agnes is allowed only when the client selected it.
+TRANSPORTS = {"74-kie-live-adapter": ("66-kie-image", "kie"), "63-agnes-image": ("63-agnes-image", "agnes")}
+MODEL_SOURCES = ("latest-family", "explicit-request", "department-pin", "legacy-ratio-route")
+BAD_IDS = {"", "-", "none", "null", "nil", "n/a", "na", "tbd", "todo", "native", "placeholder",
+           "fake", "dummy", "test", "unknown", "0"}
+# AGENTS.md N43 ratio rules (kie-common-rules.md rule 11). Ratios only; model ids come from Skill 66.
+N43_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
+N43_LEGACY_ONLY = ("3:1", "1:3", "9:21")
+
+
+def _real_id(value):
+    return isinstance(value, str) and value.strip().lower() not in BAD_IDS
+
+
+KIE74_DIR = Path("receipts") / "kie74"
+
+
+def _kie74_file(run_dir, task_id):
+    safe = "".join(c for c in str(task_id) if c.isalnum() or c in "_-")[:80] or "task"
+    return run_dir / KIE74_DIR / f"{safe}.json"
+
+
+def _kie74_problems(run_dir, stage, tasks):
+    """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/."""
+    problems, seen = [], {}
+    for x in tasks:
+        if not isinstance(x, dict) or not _real_id(x.get("task_id")):
+            continue
+        tid = x["task_id"]
+        if tid in seen:
+            problems.append(f"stage {stage}: task_id {tid!r} is used for both {seen[tid]} and {x.get('file')}")
+        seen[tid] = x.get("file")
+        f = _kie74_file(run_dir, tid)
+        try:
+            obj = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            problems.append(f"stage {stage}: task_id {tid!r} has no readable {KIE74_DIR}/{f.name} "
+                            f"(record it with kie74_receipt.py)")
+            continue
+        if not (isinstance(obj, dict) and obj.get("adapter") == "74-kie-live-adapter"
+                and obj.get("task_id") == tid and obj.get("state") == "success"
+                and obj.get("adapter_mode") == "active"):
+            problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
+    ids = {}
+    d = run_dir / KIE74_DIR
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        try:
+            tid = json.loads(f.read_text(encoding="utf-8")).get("task_id")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if tid in ids:
+            problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} and {ids[tid]} carry the same task_id {tid!r}")
+        ids[tid] = f.name
+    return problems
+
+
+def _agnes_selected(run_dir):
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(intake, dict) and str(intake.get("image_engine", "")).strip().lower() == "agnes"
+
+
+def _ratio_problem(who, task):
+    req, gen, src = task.get("requested_ratio"), task.get("generated_ratio"), task.get("model_source")
+    if not (isinstance(req, str) and isinstance(gen, str) and req and gen):
+        return f"{who}: requested_ratio and generated_ratio are required"
+    if req in N43_LEGACY_ONLY:
+        if gen != req or src not in ("legacy-ratio-route", "explicit-request", "department-pin"):
+            return f"{who}: N43 sends {req} to the legacy route only (generated_ratio {gen!r}, model_source {src!r})"
+    elif src in ("explicit-request", "department-pin"):
+        # an explicit request or a pin overrides the default's ratio substitutions, with evidence
+        ev = task.get("evidence")
+        e = ev.strip() if isinstance(ev, str) else ""
+        if not (len(e) >= 12 and len(e.split()) >= 3 and len(set(e.replace(" ", ""))) > 1
+                and e.lower() not in BAD_IDS and e != task.get("model_id")):
+            return (f"{who}: model_source {src!r} needs evidence naming the request text or the pin id "
+                    f"(at least 12 characters and 3 words, not a placeholder or a repeated character)")
+    elif gen != N43_SUBSTITUTIONS.get(req, req):
+        return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
+                f"expected {N43_SUBSTITUTIONS.get(req, req)}")
+    return None
+
+
+def check_transport(run_dir, stage, receipt):
+    """Image stages must prove the Skill 66/67 -> Skill 74 route (or an explicit Agnes route)."""
+    spec = STAGES[stage]
+    if not spec.get("transport_required"):
+        return []
+    t = receipt.get("transport")
+    if not isinstance(t, dict):
+        return [f"stage {stage}: receipt missing transport block (references/kie-generation-route.md section 3)"]
+    skill = t.get("skill")
+    if skill not in TRANSPORTS:
+        return [f"stage {stage}: transport.skill {skill!r} is not an approved route {sorted(TRANSPORTS)}; "
+                f"a hand-rolled createTask is not"]
+    policy, provider = TRANSPORTS[skill]
+    problems = []
+    if t.get("policy") != policy:
+        problems.append(f"stage {stage}: transport.policy must be {policy!r}, got {t.get('policy')!r}")
+    cost = receipt.get("cost")
+    if isinstance(cost, dict) and cost.get("provider") != provider:
+        problems.append(f"stage {stage}: cost.provider must be {provider!r} for {skill}, got {cost.get('provider')!r}")
+    if skill == "63-agnes-image" and not _agnes_selected(run_dir):
+        problems.append(f"stage {stage}: the Agnes route needs intake.json image_engine: \"agnes\" "
+                        f"(the client must have selected Agnes)")
+    if skill == "74-kie-live-adapter" and t.get("mode") != "active":
+        problems.append(f"stage {stage}: transport.mode must be 'active' (shadow never dispatches), got {t.get('mode')!r}")
+    files = sorted(str(p.relative_to(run_dir)) for p in run_dir.glob(spec.get("per_file_glob", "")) if p.is_file())
+    tasks = t.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        return problems + [f"stage {stage}: transport.tasks must list one entry per generated file"]
+    got = sorted(str(x.get("file")) for x in tasks if isinstance(x, dict))
+    if got != files:
+        problems.append(f"stage {stage}: transport.tasks cover {got} but the stage has {files}")
+    if skill == "74-kie-live-adapter":
+        problems.extend(_kie74_problems(run_dir, stage, tasks))
+    for i, x in enumerate(tasks):
+        who = f"stage {stage}: transport.tasks[{i}] ({x.get('file') if isinstance(x, dict) else '?'})"
+        if not isinstance(x, dict):
+            problems.append(f"{who} is not an object")
+            continue
+        if skill != "74-kie-live-adapter":
+            continue
+        if not _real_id(x.get("task_id")):
+            problems.append(f"{who}: task_id {x.get('task_id')!r} is missing or a placeholder")
+        if x.get("preflight_ok") is not True:
+            problems.append(f"{who}: preflight_ok must be true (balance covers price x 1.30)")
+        if x.get("budget_exit") != 0:
+            problems.append(f"{who}: budget_exit must be 0 (prompt-budget --check passed)")
+        if not _real_id(x.get("model_id")):
+            problems.append(f"{who}: model_id is missing")
+        if x.get("model_source") not in MODEL_SOURCES:
+            problems.append(f"{who}: model_source must be one of {list(MODEL_SOURCES)}")
+        rp = _ratio_problem(who, x)
+        if rp:
+            problems.append(rp)
+    return problems
+
+
 def cmd_init(run_dir):
     intake = run_dir / "intake.json"
     if not intake.exists():
@@ -585,6 +736,7 @@ def cmd_close(run_dir, stage):
         # Review / scores / cost
         failures.extend(check_review_scores(run_dir, stage, receipt))
         failures.extend(check_cost(run_dir, stage, receipt))
+        failures.extend(check_transport(run_dir, stage, receipt))
 
     if failures:
         return fail_exit(failures)

@@ -36,7 +36,7 @@ placeholders in the shipped skill:
 | # | Legacy inline secret | Legacy node | Neutralized to | Notes |
 |---|---|---|---|---|
 | 1 | Anthropic API key (`x-api-key`) | `Claude Copy` (main page Version A) | `${CLIENT_TEXT_API_KEY}` | The whole Anthropic leg is re-pointed to the CLIENT's own writing provider — never Anthropic. |
-| 2 | OpenAI bearer token (`Authorization`) | `Image Generation (OpenAI Image 1)` | `${CLIENT_IMAGE_API_KEY}` | Images delegate to Skill 47 or the client's own image provider. |
+| 2 | OpenAI bearer token (`Authorization`) | `Image Generation (OpenAI Image 1)` | `${CLIENT_IMAGE_API_KEY}` | Images delegate to Skill 66 (policy) then Skill 74 (transport), or Skill 63 when the client selected Agnes. |
 | 3 | ImgBB key (query `key`) | `ImgBB Upload` (public re-host) | **REMOVED entirely** | Re-hosting is replaced by Skill 6 `ghl_media.py`; there is no ImgBB in the client path. |
 
 > Verified: a pattern scan of the 14 source `.md` extracts found **zero literal key values** in them —

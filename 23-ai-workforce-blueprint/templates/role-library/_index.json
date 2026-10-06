@@ -385,8 +385,8 @@
         "sop-writer",
         "webinar-event-marketing-specialist"
       ],
-      "content_sha": "sha256:c8775624b17f2592bcf5497bdc608cffc3421fbcff1df4f8923c23d8323bd464",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:b5c4df97442743eb5f1155605e463f1e9c35ea2b1e26aacb58dd12b121aa6678",
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     "master-orchestrator": {
       "count": 3,
@@ -746,8 +746,8 @@
         "web-security-specialist",
         "wordpress-specialist"
       ],
-      "content_sha": "sha256:1c92ca5deb6148d1380dbab43557103ea3ae833e6f7eb6b54582501cc39d26f0",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_sha": "sha256:963777c79e57c866b1da61733549e25413c2393db7c192823ea2b4b072ee0d47",
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     "rescue-rangers": {
       "count": 5,
@@ -7431,10 +7431,10 @@
       "path": "templates/role-library/web-development/landing-page-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:acaca332d94144df3cbf1e6bea03f234ae0098e8309fdfd052890b982650801d",
+      "content_sha": "sha256:a8d2c91a9cf1d2a7f42f8e31e3727f8ea9c165de541bbe18a23dffabc2f3f7c7",
       "render_sha": "sha256:4308962b9a7ba2822ac37c850a7185625e1c5cdaadb62f24598db9f5eae3cbdd",
       "content_version": "1.0.12",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     {
       "slug": "member-area--membership-site-specialist",
@@ -7783,10 +7783,10 @@
       "path": "templates/role-library/marketing/signature-funnel-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:9cfe2d9b17f1c5c02c8a1efdfd4f43372416ac131561a423344ef69d06ce547e",
+      "content_sha": "sha256:896855fe4d9b8799f5dcb62dabc2e11e4e2139348e784282710976b657c04f5b",
       "render_sha": "sha256:9cfe2d9b17f1c5c02c8a1efdfd4f43372416ac131561a423344ef69d06ce547e",
       "content_version": "1.0.7",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     {
       "slug": "signature-funnel-specialist",
@@ -7799,10 +7799,10 @@
       "path": "templates/role-library/web-development/signature-funnel-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:2b5be120120279f5fc7b45ec818a961f99e204f0d82485dfe948a816aa7da5ee",
+      "content_sha": "sha256:e3c9bb3319801d4b106505ca3c3ecbbb4380f697c4fccf52c6d53f97136fed23",
       "render_sha": "sha256:2b5be120120279f5fc7b45ec818a961f99e204f0d82485dfe948a816aa7da5ee",
       "content_version": "1.0.7",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     {
       "slug": "sales-page-assets-specialist",
@@ -7815,10 +7815,10 @@
       "path": "templates/role-library/marketing/sales-page-assets-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:503919558bcbaba79b12737a741a72e920f63d034daefca1b386864895de9a0c",
+      "content_sha": "sha256:685349e320a28fd74edecc81a245c0d86d1c257e07d502183e67435f0940cacc",
       "render_sha": "sha256:503919558bcbaba79b12737a741a72e920f63d034daefca1b386864895de9a0c",
       "content_version": "1.0.5",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     {
       "slug": "sales-page-assets-specialist",
@@ -7831,10 +7831,10 @@
       "path": "templates/role-library/web-development/sales-page-assets-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:639b1176cd116347f2ff3b9aa337807da18bba9358d471446f1f692eda96ab1c",
+      "content_sha": "sha256:33b28a3d1d833af9b175e8b148a86fdb96c1fb7ed2ef8337df2b6b409b753d16",
       "render_sha": "sha256:639b1176cd116347f2ff3b9aa337807da18bba9358d471446f1f692eda96ab1c",
       "content_version": "1.0.4",
-      "content_hashed_at": "2026-10-04T23:48:08.324617+00:00"
+      "content_hashed_at": "2026-10-06T05:26:03.310002+00:00"
     },
     {
       "slug": "diagnostician--rescue-rangers",
