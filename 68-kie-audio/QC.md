@@ -3,8 +3,7 @@
 ## 1. Purpose
 Enables the agent to generate TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs
 dialogue-v3 / multilingual-v2 / turbo-2-5 via the generic Market `createTask`
-route) and Suno music/sound generation (the DEDICATED `/api/v1/generate`
-family — never `createTask`), using the EXISTING fleet credential KIE_API_KEY,
+route) and Suno music/sound generation (CURRENT createTask envelope `ai-music-api/*` + LEGACY dedicated `/api/v1/generate` family — ONLY `ai-music-api/*` rides createTask), using the EXISTING fleet credential KIE_API_KEY,
 with correct payload shapes, caps, validation, async completion handling, and
 REAL audio QC. STT is registered as `ADVERTISED_NOT_YET_VERIFIED`,
 `dispatch_enabled: false` — this skill cannot do speech-to-text and must never
@@ -22,9 +21,9 @@ pretend otherwise.
       negative trail; no duplicate canonical ids; every entry carries
       `source_url`.
 - [ ] The references document the correct model ids (`google/gemini-3-1-flash-tts`, etc.)
-      and endpoints (`https://api.kie.ai/api/v1/jobs/createTask` for TTS;
-      `/api/v1/generate` family for Suno).
-- [ ] `skill-version.txt` reads `v2.1.1`.
+      and endpoints (`https://api.kie.ai/api/v1/jobs/createTask` for TTS and for Suno CURRENT `ai-music-api/*`;
+      LEGACY dedicated `/api/v1/generate` family for Suno V4..V5_5).
+- [ ] `skill-version.txt` reads `v2.2.0`.
 - [ ] No real credential value appears anywhere in the skill files.
 
 - [ ] Skill 74 wiring: for TTS, `kie_live_adapter.py validate` and `preflight` run before `submit --mode active` (INSTRUCTIONS.md); with the adapter absent the skill works on `models.json` and curl. `validate_audio_request.py --domain stt` may report a live-catalog candidate but dispatch stays rejected (exit 2) and `dispatch_enabled` stays false.
@@ -34,8 +33,7 @@ pretend otherwise.
 - [ ] `KIE_API_KEY` is present (SET) — referenced, never printed.
 - [ ] `curl` and `python3` (stdlib only) are available.
 - [ ] The installer understands the three sub-domains and their API families:
-      TTS = generic Market `createTask`; Suno = DEDICATED routes (never
-      `createTask`); STT = not dispatchable.
+      TTS = generic Market `createTask`; Suno = LAYERED (CURRENT createTask `ai-music-api/*`, LEGACY dedicated `/api/v1/generate` family — ONLY `ai-music-api/*` rides createTask); STT = not dispatchable.
 
 ## 4. Key Detection
 - [ ] Search the standard secret locations in order: `~/.openclaw/secrets/.env`,
@@ -54,12 +52,11 @@ pretend otherwise.
       body `code`, not just the HTTP status: 401 = key wrong, 402 = zero credits.
       This is the zero-cost install check; do NOT run a real generation as the install test.
 - [ ] Validator self-tests pass deterministically (exit 0, same output twice):
-      - `python3 scripts/validate_audio_request.py --self-test` (21 checks)
+      - `python3 scripts/validate_audio_request.py --self-test` (58 checks)
       - `python3 scripts/normalize_alias.py --self-test`
 - [ ] Confirm the agent can explain: 200 = task accepted, NOT complete;
       Suno callback stages `text` → `first` → `complete` (only complete is
-      finished output); retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately); Suno must NEVER go
-      through `createTask`; STT dispatch is rejected with exit 2.
+      finished output); retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately); Suno createTask carries ONLY `ai-music-api/*`; STT dispatch is rejected with exit 2.
 
 ## 6. Real Audio QC (SPEC 9.5 verbatim lists) — after generation, MANDATORY
 API success is NOT QC. Actually inspect the result.
@@ -78,8 +75,8 @@ API success is NOT QC. Actually inspect the result.
 
 ### 6.2 Music QC
 - [ ] Valid playable file
-- [ ] Requested duration/model behavior (duration only effective for V5_5
-      custom; check the returned duration)
+- [ ] Requested duration/model behavior (duration only effective for
+      V5_5/V6-family custom; check the returned duration)
 - [ ] Musical genre/style (matches prompt/style intent)
 - [ ] Vocals/instrumental intent (instrumental request returned instrumental;
       vocal request returned vocals)

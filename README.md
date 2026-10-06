@@ -170,7 +170,7 @@ This is the **unified repo** for both platforms (PRD 2.1). Platform-specific fil
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **74 numbered skill folders (01–74)**: 69 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **75 numbered skill folders (01–75)**: 70 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -294,8 +294,9 @@ That file is the master instruction file. It contains:
 | 72-motion-video-plus | **Motion Video Plus (v1.0.0)**: deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume and per-scene frame cleanup, Fish Audio chunked voiceover (s2.1-pro default, drama-3-preview opt-in) with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours. Proven stack only (FFmpeg, Chromium, playwright-core, Fish Audio); Diffusion Studio, Hyperframes, Remotion documented as untested. |
 | 73-diagnose-explain-fix | **Diagnose / Explain / Fix (v1.0.0)** — the `/def` command: finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks exactly one question (which model performs the fix). Instruction-only; no binaries, keys, or config writes. Moved here from a hand-installed slot-70 folder that collided with 70-lean-core-file-system; `update-skills.sh` retires the old `70-diagnose-explain-fix` folder. |
 | 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
+| 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
 
-**Total: 74 numbered skill folders** (01–74): **69 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 75 numbered skill folders** (01–75): **70 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

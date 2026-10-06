@@ -1,0 +1,42 @@
+{
+  "brief": {
+    "product_name": "GlowSip",
+    "offer_text": "Half price starter kit",
+    "cta_text": "Tap to claim your kit today",
+    "claims": [
+      "Visible glow in seven days"
+    ]
+  },
+  "lines": [
+    {
+      "line_id": "gift01",
+      "text": "My GlowSip ritual starts my mornings",
+      "critical": true
+    },
+    {
+      "line_id": "offer01",
+      "text": "I grabbed my half price starter with my own hands",
+      "critical": true
+    },
+    {
+      "line_id": "cta01",
+      "text": "Tap to claim your kit today",
+      "critical": true
+    },
+    {
+      "line_id": "climb01",
+      "text": "I see my visible glow in my mirror",
+      "critical": true
+    },
+    {
+      "line_id": "climb02",
+      "text": "I kept my promise for seven days",
+      "critical": true
+    },
+    {
+      "line_id": "verse01",
+      "text": "I hum my tune while I walk",
+      "critical": false
+    }
+  ]
+}

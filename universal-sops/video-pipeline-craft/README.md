@@ -17,6 +17,7 @@ This craft cluster (`universal-sops/video-pipeline-craft/`) is the execution pla
 | **47** movie-producer | "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" · "make me a whole video end to end" |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" · "build an immersive funnel" · "create a cinematic squeeze page" |
 | **72** motion-video-plus | "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" · "produce a kinetic typography video" · "animate my brand video" |
+| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" · "create a music-driven ad campaign" · "run a drama song factory job" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->

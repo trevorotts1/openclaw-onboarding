@@ -140,9 +140,12 @@ carries failCode "GENERATION_FAILED".
 EXAMPLE 4: SUNO GENERATE - CUSTOM SONG (V5)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DEDICATED route — NOT createTask. Required: prompt, customMode, instrumental,
-model, callBackUrl. Custom caps: prompt 5,000 (V5), style 1,000, title 80.
-customMode true + model V5_5 only = duration applies (10-360, default 20).
+CURRENT route (recommended): POST /api/v1/jobs/createTask with top-level
+"model": "ai-music-api/generate" and the version at input.model (default V6).
+Required input: custom_mode, instrumental, model. Custom caps: prompt/lyrics
+5,000, style 1,000, title 80. customMode true + V5_5/V6-family = duration
+applies (10-360, default 20). LEGACY route POST /api/v1/generate keeps
+V4..V5_5 (Discontinued — warned, kept).
 
 curl https://api.kie.ai/api/v1/generate \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -272,9 +275,11 @@ references/stt.md — do NOT invent a /transcribe route.
 COMMON MISTAKES TO AVOID
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-MISTAKE 1: Routing Suno through createTask.
-  WRONG:  POST /api/v1/jobs/createTask with model "suno/...".
-  RIGHT:  DEDICATED POST /api/v1/generate (+ /extend, /sounds, per-op routes).
+MISTAKE 1: Routing the wrong Suno model through createTask.
+  WRONG:  POST /api/v1/jobs/createTask with model "V5" or "suno/...".
+  RIGHT:  createTask carries ONLY ai-music-api/* (e.g. "ai-music-api/generate"
+          with input.model V6); legacy versions stay on DEDICATED
+          POST /api/v1/generate (+ /extend, /sounds, per-op routes).
           The validator rejects the wrong family (exit 2).
 
 MISTAKE 2: Treating the 200 as the finished audio.
@@ -285,9 +290,9 @@ MISTAKE 3: Exceeding combined-text caps.
   dialogue-v3 combined > 5,000 (reject); Gemini per-turn text > 10,000 (reject).
 
 MISTAKE 4: Using a parameter where it does not apply.
-  duration on non-V5_5 or non-custom — provider IGNORES it (advisory warning in
-  validator, not a reject); instrumental=true with prompt/vocalGender on extend
-  (hard reject).
+  duration on non-V5_5/V6-family or non-custom — provider IGNORES it (advisory
+  warning in validator, not a reject); instrumental=true with prompt/vocalGender
+  on extend (hard reject).
 
 MISTAKE 5: Dispatching an STT request anywhere.
   Exit 2 from the validator. No endpoint exists. Report status, never fabricate.

@@ -346,14 +346,17 @@
         "music-generation",
         "song-generation"
       ],
-      "api_family": "suno-dedicated",
+      "api_family": "suno-layered",
       "model_enum": [
         "V4",
         "V4_5",
         "V4_5PLUS",
         "V4_5ALL",
         "V5",
-        "V5_5"
+        "V5_5",
+        "V6",
+        "V6_MINI",
+        "V6_WILD"
       ],
       "create_endpoint": "/api/v1/generate",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
@@ -365,7 +368,10 @@
           "V4_5PLUS": 5000,
           "V4_5ALL": 5000,
           "V5": 5000,
-          "V5_5": 5000
+          "V5_5": 5000,
+          "V6": 5000,
+          "V6_MINI": 5000,
+          "V6_WILD": 5000
         },
         "non_custom_prompt_max_chars": 3000,
         "custom_style_max_chars": {
@@ -374,11 +380,14 @@
           "V4_5PLUS": 1000,
           "V4_5ALL": 1000,
           "V5": 1000,
-          "V5_5": 1000
+          "V5_5": 1000,
+          "V6": 1000,
+          "V6_MINI": 1000,
+          "V6_WILD": 1000
         },
         "title_max_chars": 80,
         "duration": {
-          "effective_conditions": "custom_mode true AND model V5_5",
+          "effective_conditions": "custom_mode true AND model V5_5/V6/V6_MINI/V6_WILD",
           "default_seconds": 20,
           "min_seconds": 10,
           "max_seconds": 360
@@ -398,6 +407,11 @@
         "persona_model_models": [
           "V5",
           "V5_5"
+        ],
+        "lyrics_max_chars": 5000,
+        "variety_range": [
+          0,
+          4
         ]
       },
       "house_band_chars": [
@@ -407,11 +421,26 @@
       ],
       "house_band_status": "rule C (small) - 4800 safe for V4_5+, 2900 for V4 custom; house floor inapplicable",
       "cap_status": "VERIFIED",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-06",
       "source_url": "https://docs.kie.ai/suno-api/generate-music/",
       "active": true,
       "known_inconsistencies": [
-        "Non-custom prompt limit: generate-music page says 3000 characters; generate-mashup page says non-custom max 500 characters. Two KIE documents disagree; both reported verbatim; conflict UNDETERMINED."
+        "Non-custom prompt limit: generate-music page says 3000 characters; generate-mashup page says non-custom max 500 characters. Two KIE documents disagree; both reported verbatim; conflict UNDETERMINED.",
+        "Live pages 2026-10-06: V4..V5_5 marked Discontinued; default V6 (current family V6/V6_MINI/V6_WILD). Legacy dedicated route kept, accepted with a validator warning."
+      ],
+      "model_default": "V6",
+      "route_models": {
+        "current": "ai-music-api/generate",
+        "current_endpoint": "/api/v1/jobs/createTask",
+        "legacy_endpoint": "/api/v1/generate"
+      },
+      "discontinued": [
+        "V4",
+        "V4_5",
+        "V4_5PLUS",
+        "V4_5ALL",
+        "V5",
+        "V5_5"
       ]
     },
     {
@@ -423,14 +452,17 @@
       "tasks": [
         "music-extension"
       ],
-      "api_family": "suno-dedicated",
+      "api_family": "suno-layered",
       "model_enum": [
         "V4",
         "V4_5",
         "V4_5PLUS",
         "V4_5ALL",
         "V5",
-        "V5_5"
+        "V5_5",
+        "V6",
+        "V6_MINI",
+        "V6_WILD"
       ],
       "create_endpoint": "/api/v1/generate/extend",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
@@ -442,7 +474,10 @@
           "V4_5PLUS": 100,
           "V4_5ALL": 80,
           "V5": 100,
-          "V5_5": 100
+          "V5_5": 100,
+          "V6": 100,
+          "V6_MINI": 100,
+          "V6_WILD": 100
         },
         "prompt_max_chars": {
           "V4": 3000,
@@ -450,7 +485,10 @@
           "V4_5PLUS": 5000,
           "V4_5ALL": 5000,
           "V5": 5000,
-          "V5_5": 5000
+          "V5_5": 5000,
+          "V6": 5000,
+          "V6_MINI": 5000,
+          "V6_WILD": 5000
         },
         "continueAt": {
           "semantics": "time point in seconds from which to start extending the music"
@@ -467,11 +505,24 @@
       ],
       "house_band_status": "rule C (small) - 4800 safe for V4_5+, 2900 for V4; house floor inapplicable",
       "cap_status": "VERIFIED",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-06",
       "source_url": "https://docs.kie.ai/suno-api/extend-music/",
       "active": true,
       "known_inconsistencies": [
         "No duration field exists on extend; extension length is implicit and continueAt marks the start point."
+      ],
+      "route_models": {
+        "current": "ai-music-api/extend / ai-music-api/upload-and-extend-audio",
+        "current_endpoint": "/api/v1/jobs/createTask",
+        "legacy_endpoint": "/api/v1/generate/extend"
+      },
+      "discontinued": [
+        "V4",
+        "V4_5",
+        "V4_5PLUS",
+        "V4_5ALL",
+        "V5",
+        "V5_5"
       ]
     },
     {
@@ -483,10 +534,13 @@
       "tasks": [
         "sound-effects"
       ],
-      "api_family": "suno-dedicated",
+      "api_family": "suno-layered",
       "model_enum": [
         "V5",
-        "V5_5"
+        "V5_5",
+        "V6",
+        "V6_MINI",
+        "V6_WILD"
       ],
       "create_endpoint": "/api/v1/generate/sounds",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
@@ -532,10 +586,16 @@
       ],
       "house_band_status": "rule C (small) - 500 char cap; house floor inapplicable",
       "cap_status": "VERIFIED",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-06",
       "source_url": "https://docs.kie.ai/suno-api/generate-sounds",
       "active": true,
-      "known_inconsistencies": []
+      "known_inconsistencies": [],
+      "route_models": {
+        "current": "ai-music-api/sounds",
+        "current_endpoint": "/api/v1/jobs/createTask",
+        "legacy_endpoint": "/api/v1/generate/sounds"
+      },
+      "discontinued": []
     },
     {
       "provider": "kie",
@@ -559,7 +619,7 @@
         "midi",
         "mp4"
       ],
-      "api_family": "suno-dedicated",
+      "api_family": "suno-layered",
       "create_endpoint": "/api/v1/generate/upload-cover",
       "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
       "auth_env": "KIE_API_KEY",
@@ -642,12 +702,16 @@
       ],
       "house_band_status": "rule C (small); per-operation caps apply (see operations notes)",
       "cap_status": "VERIFIED",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-06",
       "source_url": "https://docs.kie.ai/suno-api/generate-music/",
       "active": true,
       "known_inconsistencies": [
         "Mashup page non-custom prompt limit says 500 chars; generate-music page says 3000 for non-custom. Two KIE documents disagree; both reported verbatim; conflict UNDETERMINED."
-      ]
+      ],
+      "route_models": {
+        "current_endpoint": "/api/v1/jobs/createTask (ai-music-api/*)",
+        "legacy_endpoint": "/api/v1/generate/* family"
+      }
     },
     {
       "provider": "kie",

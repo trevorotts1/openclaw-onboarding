@@ -1,0 +1,1 @@
+{"body": {"agent_id": "song-runner-01", "job_id": "job-song-001", "show_name": "Sneak", "workspace": "rival"}, "expect": "WrongCompanyError at enqueue: rejected, nothing stored in outbox, nothing hits the wire", "method": "(none — client-side gate)", "note": "tenant isolation: Outbox bound to ONE workspace; events from another company rejected before SQLite"}

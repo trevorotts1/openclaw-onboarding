@@ -41,8 +41,11 @@ and the limit quotes, see references/tts.md (TTS) and references/music.md (Suno)
 1. TTS (Gemini + ElevenLabs): generic Market
    `POST https://api.kie.ai/api/v1/jobs/createTask`, model enum selects engine.
    Asynchronous: get taskId, wait for callback or poll recordInfo.
-2. Music/Suno: DEDICATED family `POST /api/v1/generate` (+ extend/sounds/ops).
-   NEVER through createTask.
+2. Music/Suno: CURRENT `POST /api/v1/jobs/createTask` with `ai-music-api/*`
+   (input.model V4..V6_WILD, default V6) for generate / extend /
+   upload-and-extend-audio / generate-persona / sounds; LEGACY dedicated
+   `POST /api/v1/generate` family kept for V4..V5_5 (Discontinued — warned,
+   kept). ONLY ai-music-api/* rides createTask.
 3. STT: not available. `ADVERTISED_NOT_YET_VERIFIED`, `dispatch_enabled: false`.
    Never route a transcription request here.
 
@@ -75,28 +78,37 @@ Required: `model`, `callBackUrl` (recommended), `input` with `speakers[]` and
 
 ## Music/Suno — generate
 
-Route never through createTask. Required (non-custom): `prompt`, `customMode`,
-`instrumental`, `model` (V4/V4_5/V4_5PLUS/V4_5ALL/V5/V5_5), `callBackUrl`.
+Current route: createTask + `ai-music-api/generate`; version at `input.model`
+(V4..V6_WILD, default V6). Required input (non-custom): `custom_mode`,
+`instrumental`, `model`. Legacy route `POST /api/v1/generate`: `prompt`,
+`customMode`, `instrumental`, `model` (V4/V4_5/V4_5PLUS/V4_5ALL/V5/V5_5),
+`callBackUrl`.
 Custom: `style`, `title` (+`prompt` if not instrumental). Optional: `negativeTags`,
 `vocalGender` ("m"/"f"), `styleWeight`/`weirdnessConstraint`/`audioWeight` (0-1),
-`personaId`, `personaModel` (style_persona/voice_persona, V5/5.5 only),
-`duration` (only effective for V5_5 custom: 10-360, default 20; otherwise
+`personaId`, `personaModel` (style_persona/voice_persona),
+`duration` (only effective for V5_5/V6-family custom: 10-360, default 20; otherwise
 ignored by provider).
 
-Caps: custom prompt V4 3,000 / others 5,000; non-custom 3,000 (generate-music
-page; mashup page says 500 — UNDETERMINED); style V4 200 / others 1,000;
-title 80 (all models on generate).
+Caps: custom prompt V4 3,000 / others 5,000 (V6 family included); lyrics
+5,000; non-custom 500 ceiling, no floor (generate-music says 3,000, mashup page
+says 500 — UNDETERMINED, smallest documented value wins); style V4 200 /
+others 1,000; title 80 (all models on generate); duration V5_5/V6-family
+custom only (10-360, default 20).
 
 ## Music/Suno — extend
 
-`POST /api/v1/generate/extend`. Required: `defaultParamFlag`, `audioId`,
-`model`, `callBackUrl`. `continueAt` = seconds to start extending from.
+Current: createTask + `ai-music-api/extend` (required input `audio_id`,
+`model`) or `ai-music-api/upload-and-extend-audio` (required input
+`upload_url`, `model`). Legacy `POST /api/v1/generate/extend`: `defaultParamFlag`,
+`audioId`, `model`, `callBackUrl`. `continueAt` = seconds to start extending from.
 instrumental=true PROHIBITS prompt + vocalGender. Title: V4 80, V4_5/V4_5PLUS 100,
-V4_5ALL 80, V5/V5_5 100. Prompt: V4 3,000, others 5,000.
+V4_5ALL 80, V5/V5_5/V6-family 100. Prompt: V4 3,000, others 5,000.
 
 ## Music/Suno — sounds
 
-`POST /api/v1/generate/sounds`. Required: `prompt` (max 500), `model` (V5/V5_5).
+Current: createTask + `ai-music-api/sounds` (required input `prompt`,
+`model`). Legacy `POST /api/v1/generate/sounds`. Models V5/V5_5/V6/V6_MINI/V6_WILD;
+`prompt` max 500.
 Optional: `soundLoop` (bool), `soundTempo` (1-300 BPM), `soundKey` (default
 "Any"; minor Cm..Bm, major C..B), `grabLyrics` (bool), `callBackUrl`.
 
@@ -146,12 +158,11 @@ fallback_used true, the adapter is off or in shadow mode and sent nothing: dispa
 with curl as before (steps 1 and 2 already ran). Adapter absent: skip steps 1 and 2
 with a one-line note and use curl.
 
-Suno music (dedicated `/api/v1/generate` family) keeps its curated route: this skill's
-route is authoritative and Skill 74 `submit` is not used for it. KIE's live catalog also
-lists `ai-music-api/*` ids whose schema declares createTask (observed in the Skill 74
-registry snapshot of 2026-10-06); which route is authoritative is an owner decision
-recorded as open in CHANGELOG, not changed here. Run `A price --model <id>` and
-`A preflight --model <id>` for the matching catalog id when one exists.
+Suno music keeps its curated layered route (W0-02 contract, live docs 2026-10-06):
+current createTask envelope `ai-music-api/*` is authoritative for new work and Skill 74
+`submit` may carry it; the legacy dedicated `/api/v1/generate` family stays valid for
+V4..V5_5 (Discontinued — warned, kept). Run `A price --model <id>` and `A preflight
+--model <id>` for the matching catalog id when one exists.
 
 ## Async completion
 
