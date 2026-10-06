@@ -180,9 +180,30 @@ def resolve_dept_dir_in_tree(root: Optional[Path], slug: str) -> Optional[Path]:
     return None
 
 
+def _registered_agents(cfg):
+    """(id, entry) for every registered agent in BOTH roster shapes:
+    `agents.entries` (OpenClaw 2026.9.x, keyed by id, no "id" in the body) and
+    legacy `agents.list[]`. Same union as update-skills.sh _registry_snapshot();
+    entries wins when both carry an id."""
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return []
+    out, seen = [], set()
+    entries = agents.get("entries")
+    for k, v in (entries.items() if isinstance(entries, dict) else ()):
+        if isinstance(v, dict) and str(k).lower() not in seen:
+            out.append((str(k), v)); seen.add(str(k).lower())
+    lst = agents.get("list")
+    for a in (lst if isinstance(lst, list) else ()):
+        if isinstance(a, dict) and a.get("id") and str(a["id"]).lower() not in seen:
+            out.append((str(a["id"]), a)); seen.add(str(a["id"]).lower())
+    return out
+
+
 def _config_derived_departments_dir(cfg_path: Optional[Path], client_dept_slugs) -> Optional[Path]:
     """
-    Resolve the departments tree from openclaw.json agents.list — the path the
+    Resolve the departments tree from openclaw.json's agent roster
+    (agents.entries, else legacy agents.list) — the path the
     gateway dispatcher and the department agents ACTUALLY run from (ground
     truth, never a guess). For every client department slug with a registered
     `dept-<slug>` agent whose `.workspace` exists on disk, take the workspace's
@@ -198,11 +219,10 @@ def _config_derived_departments_dir(cfg_path: Optional[Path], client_dept_slugs)
         cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    agents = ((cfg.get("agents") or {}).get("list") or [])
-    by_id = {a.get("id"): a for a in agents if isinstance(a, dict)}
+    by_id = {aid.lower(): a for aid, a in _registered_agents(cfg)}
     parents = set()
     for slug in client_dept_slugs:
-        agent = by_id.get(f"dept-{slug}")
+        agent = by_id.get(f"dept-{slug}".lower())
         if not agent:
             continue
         ws = agent.get("workspace")

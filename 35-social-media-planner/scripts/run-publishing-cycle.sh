@@ -903,7 +903,7 @@ SECRETS_ENV="$OPENCLAW_DIR/secrets/.env"
 # Brand/source files live in the workspace dir on OpenClaw >= 2026.x
 # ($OPENCLAW_DIR/workspace/SOUL.md), not the config root. Prefer workspace/,
 # fall back to config root (older layouts / container paths).
-# [fix 2026-09-08: Talaya box rc=3 — every cycle stopped, brand files unread]
+# [fix 2026-09-08: client box rc=3 — every cycle stopped, brand files unread]
 _ws="$OPENCLAW_DIR/workspace"
 SOUL_MD="$OPENCLAW_DIR/SOUL.md";      [ -f "$_ws/SOUL.md" ]      && SOUL_MD="$_ws/SOUL.md"
 IDENTITY_MD="$OPENCLAW_DIR/IDENTITY.md"; [ -f "$_ws/IDENTITY.md" ] && IDENTITY_MD="$_ws/IDENTITY.md"
@@ -931,6 +931,25 @@ for f in "$IMAGE_MODEL_JSON" "$VIDEO_SPECS_JSON" "$SOCIAL_CADENCE_JSON"; do
     warn "config not present: $f — phases that need it will be skipped"
   fi
 done
+
+# ---------- KIE media plan (Skill 74 / 66 / 67 plug-in for image-model.json + video-specs.json) ----------
+# One stdlib call, no network: resolves the image model (GPT Image 2.5 Sunburst unless the client config
+# names another GPT Image generation), lists the Skill 74 steps every paid job runs, locates Skill 67, and
+# reports any config that names Nano Banana, Midjourney or Sora. The result goes into cycle-manifest.json.
+MEDIA_PLAN_JSON="{}"
+if command -v python3 >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/kie_media_plan.py" ]; then
+  MEDIA_PLAN_JSON="$(python3 "$SCRIPT_DIR/kie_media_plan.py" --image-config "$IMAGE_MODEL_JSON" \
+    --video-config "$VIDEO_SPECS_JSON" --skill-dir "$SKILL_DIR" --openclaw-dir "$OPENCLAW_DIR" 2>/dev/null || echo '{}')"
+  printf '%s' "$MEDIA_PLAN_JSON" | python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for v in d.get("violations", []):
+    print("[Skill35][WARN] %s names %r: %s (%s)" % (v.get("file"), v.get("value"), v.get("reason"), v.get("action")))' >&2 || true
+else
+  warn "kie_media_plan.py unavailable: manifest carries no media plan; image/video follow playbook Sections 8 and 16"
+fi
 
 # ---------- GHL credential preflight (runtime HARD-STOP) ----------
 # F18: one documented credential resolver (shared-utils/social_planner_credentials.py)
@@ -1222,16 +1241,21 @@ log "workdir   = $WORKDIR"
 # build-workforce manifest approach (write JSON; the AI agent spawns
 # sub-agents under its own control — see build-workforce.py L1442).
 MANIFEST="$WORKDIR/cycle-manifest.json"
-python3 - "$MANIFEST" "$TOPIC" "$PLATFORMS_NORM" "$SCHEDULE" "$RUN_ID" "$WORKDIR" "$SKILL_DIR/skill-version.txt" <<'PYEOF'
+python3 - "$MANIFEST" "$TOPIC" "$PLATFORMS_NORM" "$SCHEDULE" "$RUN_ID" "$WORKDIR" "$SKILL_DIR/skill-version.txt" "$MEDIA_PLAN_JSON" <<'PYEOF'
 import json, sys, time
 from pathlib import Path
-manifest_path, topic, platforms, schedule, run_id, workdir, version_file = sys.argv[1:8]
+manifest_path, topic, platforms, schedule, run_id, workdir, version_file, media_json = sys.argv[1:9]
+try:
+    media_plan = json.loads(media_json)
+except ValueError:
+    media_plan = {}
 plist = [p for p in platforms.split(",") if p]
 
 manifest = {
     "skill": "35-social-media-planner",
     "skill_version": Path(version_file).read_text().strip(),
     "publication_evidence_contract": "references/publication-verification.md",
+    "media": media_plan,
     "run_id": run_id,
     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "topic": topic,

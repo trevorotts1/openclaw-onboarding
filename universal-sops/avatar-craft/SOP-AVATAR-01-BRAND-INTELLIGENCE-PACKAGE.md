@@ -119,16 +119,19 @@ compensating procedure the DRIVING ROLE performs** (the Brand Positioning Specia
 CMO) — never the zero-egress scripts. Three steps, in order:
 
 1. **Intake → open the card (`in_progress`).** The moment the brand-intake is accepted (version=brand,
-   `aa_intake_gate` clean) and BEFORE the foreman dispatches, open a Command Center card on the
-   **marketing** board:
+   `aa_intake_gate` clean) and BEFORE the foreman dispatches, open a Command Center card. Do not
+   name a department: `task` lets Command Center pick one (General Task when nothing fits), so the
+   card opens even on a board with no marketing department:
 
    ```
-   scripts/mc-route.sh marketing "Brand Intelligence — <First> <Last>"  "<run_id / brief link>"
+   scripts/mc-route.sh task "Brand Intelligence — <First> <Last>" "<run_id / brief link>"
    ```
 
-   `mc-route.sh` is the signed fleet router (Bearer + `x-webhook-signature`, secrets resolved at
-   runtime; it never egresses from inside `scripts/`, it is invoked by the role). If it exits non-zero,
-   the CEO escalates to the operator — never self-intake, never proceed board-blind.
+   `mc-route.sh task` is the signed fleet router (Bearer + `x-webhook-signature`, secrets resolved at
+   runtime; it never egresses from inside `scripts/`, it is invoked by the role). `task` takes no
+   department, so this card does not depend on a marketing department existing on this board —
+   Command Center picks the department (General Task when nothing fits). If it exits non-zero, the
+   CEO escalates to the operator — never self-intake, never proceed board-blind.
 
 2. **QC certificate issued → advance to `review` (NEVER straight to `done`).** When
    `aa_delivery_gate.py` issues the signed `PROCESS-CERTIFICATE.json` (content gate PASS, 40/40

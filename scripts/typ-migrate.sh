@@ -8,11 +8,13 @@
 #
 # WHAT IT DOES
 #   1. DETECT: scans AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md
-#      for inline content blocks that are longer than ~25 lines (bloat threshold).
+#      for inline content blocks that are longer than ~25 lines (detection
+#      heuristic only, BLOAT_THRESHOLD; it is not a size target for what stays).
 #   2. DETECT: scans common wrong locations for misplaced TYP documents
 #      (~/clawd/projects/, ~/Downloads/ root, /data/ root, workspace/).
 #   3. RELOCATE: moves full docs to the correct platform-specific master-files path,
-#      replaces inline content with a hyper-concise summary + explicit pointer.
+#      replaces inline content with a one-to-two-sentence pointer (WHAT, WHERE,
+#      WHEN), the pointer standard owned by skill 70 (70-lean-core-file-system).
 #   4. VERIFY: confirms destination files exist and bootstrap files are clean.
 #
 # PLATFORM DETECTION (mirrors apply-fleet-standards.sh)
@@ -443,8 +445,8 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 5: REMEDIATE — BLOAT IN BOOTSTRAP FILES
 #   For each bloated section, extract the section content to a deep file in
-#   master-files/processes/ (default), replace it inline with a 10-25 line
-#   summary + pointer.
+#   master-files/processes/ (default), replace it inline with a
+#   one-to-two-sentence pointer (WHAT, WHERE, WHEN).
 #   IMPORTANT: we do NOT auto-summarize because the agent must write a
 #   Five-Question-Test summary. Instead, we:
 #   (a) Extract the full content to master-files
@@ -503,8 +505,8 @@ if [ "${#BLOAT_DETAILS[@]}" -gt 0 ]; then
       {
         echo "<!-- TYP-MIGRATE: This file was identified as bloated ($dline lines). -->"
         echo "<!-- Full content extracted to: $dest_file -->"
-        echo "<!-- ACTION REQUIRED: Replace this notice with a proper TYP summary (10-25 lines). -->"
-        echo "<!-- Use the Five Question Test: What is it? When use it? Key facts? Full doc path? When go deeper? -->"
+        echo "<!-- ACTION REQUIRED: Replace this notice with a one-to-two-sentence pointer (WHAT, WHERE, WHEN). -->"
+        echo "<!-- Pointer standard: skill 70, 70-lean-core-file-system. Always-on rules stay inline, shortened. -->"
         echo ""
         echo "## TYP MIGRATION NOTICE — ACTION REQUIRED"
         echo ""
@@ -514,12 +516,11 @@ if [ "${#BLOAT_DETAILS[@]}" -gt 0 ]; then
         echo "  $dest_file"
         echo ""
         echo "**Next step (agent):** Read the full content at the path above, then replace"
-        echo "this notice with a proper TYP summary (10–25 lines, Five Question Test):"
-        echo "  1. What is this? (one sentence)"
-        echo "  2. When do I use it? (triggers)"
-        echo "  3. What do I need to know right now? (key facts)"
-        echo "  4. Full reference: $dest_file"
-        echo "  5. When should I go deeper? (scenarios requiring the full doc)"
+        echo "this notice with a one-to-two-sentence pointer (skill 70, Lean Core File System):"
+        echo "  WHAT: what this is, in the words a person would use"
+        echo "  WHERE: $dest_file"
+        echo "  WHEN: the trigger words that mean the agent should open it"
+        echo "  Always-on rules (safety, never-do rules, hard constraints) stay inline, shortened."
         echo ""
       } > "$local_tmp2"
 
@@ -606,8 +607,8 @@ notice = [
     f"**Full reference:** {dest_file}",
     "**When to go deeper:** any task requiring the full content of this section",
     "",
-    "_ACTION REQUIRED (agent): Replace this notice with a proper TYP summary (10–25 lines,_",
-    "_Five Question Test). The full content is at the path above. NEVER paste it back here._",
+    "_ACTION REQUIRED (agent): Replace this notice with a one-to-two-sentence pointer (WHAT, WHERE, WHEN;_",
+    "_skill 70, Lean Core File System). The full content is at the path above. NEVER paste it back here._",
     "",
 ]
 
@@ -643,12 +644,12 @@ if $SUBAGENT_RULE_MISSING && [ -f "$AGENTS_FILE" ]; then
   TYP_RULE_BLOCK="
 ### MANDATORY — Teach Yourself Protocol (TYP) Storage Rule
 
-**NEVER paste long playbooks, SOPs, API docs, or any document over ~25 lines into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder, then write only a hyper-concise summary (10–25 lines max) plus an explicit pointer here.
+**NEVER paste long playbooks, SOPs, API docs, or any situational block longer than about five sentences into any bootstrap file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, SOUL.md, IDENTITY.md).** Store the full document in the master-files TYP subfolder, then leave only a one-to-two-sentence pointer that says WHAT it is, WHERE it lives (the full absolute path) and WHEN to open it (trigger words). Always-on rules (safety, never-do rules, hard constraints) stay inline, shortened. The Lean Core File System skill (70-lean-core-file-system) owns core-file size (each file under 40,000 characters) and the weekly audit.
 
 ${MAC_PATH_LINE}
 ${VPS_PATH_LINE}
 - Every pointer must include the full path and a \"when to go deeper\" trigger.
-- See the Teach Yourself Protocol skill (01-teach-yourself-protocol) for the full protocol.
+- See the Teach Yourself Protocol skill (01-teach-yourself-protocol) for storage and the Lean Core File System skill (70-lean-core-file-system) for the pointer format.
 - This rule applies to ALL spawned subagents — they read AGENTS.md on every session.
 "
 

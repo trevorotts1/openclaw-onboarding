@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -286,6 +287,60 @@ def _pid_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+# PD-TEST-080: the pid-reuse qualifier for the liveness test above. Kept here,
+# beside _pid_is_alive, so every pid question this package asks is answered by
+# one module -- a second liveness/start-time test living elsewhere is exactly
+# how two components end up disagreeing about whether a process is alive.
+_PS_START_PROBE_TIMEOUT_S = 5.0
+
+
+def _parse_ps_elapsed(text: str) -> Optional[float]:
+    """`[[dd-]hh:]mm:ss` -- the elapsed-time format `ps -o etime=` prints on
+    both BSD and GNU ps -- to seconds. None when the string is not that shape."""
+    m = re.fullmatch(r"(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)", (text or "").strip())
+    if not m:
+        return None
+    days, hours, minutes, seconds = (int(g) if g is not None else 0
+                                     for g in m.groups())
+    return days * 86400.0 + hours * 3600.0 + minutes * 60.0 + seconds
+
+
+def _process_start_epoch(pid: int) -> Optional[float]:
+    """When `pid` STARTED, as a Unix epoch -- or None when that cannot be
+    established.
+
+    `_pid_is_alive` answers "does this pid name a process?". That is NOT the
+    same question as "is this the process that wrote this record?", because
+    POSIX recycles pids: a dead worker's pid can be reused by an unrelated
+    process and make a stale on-disk record look live. Comparing a live pid's
+    start against a timestamp the record's writer observed WHILE IT WAS STILL
+    RUNNING is what separates the two, and on a stock box this is the only such
+    witness available (macOS has no /proc, and this package takes no psutil
+    dependency).
+
+    Measured with `ps -p <pid> -o etime=`, against a clock read taken BEFORE
+    the probe, so the result is never LATER than the real start: the rounding
+    error can only make a live owner look older than it is, never make a
+    recycled pid look like the owner. None on any doubt (no `ps`, non-zero
+    exit, unparseable output) -- callers must fail closed on None, never read
+    it as "dead"."""
+    if not pid or pid <= 0:
+        return None
+    before = time.time()
+    try:
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "etime="],
+                             capture_output=True, text=True,
+                             timeout=_PS_START_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    elapsed = _parse_ps_elapsed(out.stdout)
+    if elapsed is None:
+        return None
+    return before - elapsed
 
 
 def _auto_dispatch_lock_path(run_dir: Path) -> Path:

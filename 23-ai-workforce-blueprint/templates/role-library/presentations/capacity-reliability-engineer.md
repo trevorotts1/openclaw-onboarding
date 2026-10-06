@@ -6,8 +6,8 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 1.0
-**Last updated:** 2026-06-15
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -112,7 +112,7 @@ Re-calibrate the fleet sizing table (see SOP 9.1) against actual run performance
 - `uptime` (CPU load)
 - `df -h` (disk space)
 - One live test turn to Ollama Cloud (model reachability check)
-- Kie.ai balance API (credit balance check)
+- Kie.ai credit endpoint `GET /api/v1/chat/credit` (credit balance check)
 - working/checkpoints/capacity_plan.json (write)
 - cron / launchd (watchdog installation on client's box)
 - openclaw message send (for watchdog alerts -- never direct Telegram API)
@@ -146,9 +146,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
    - `free_disk_gb`: available disk on the home partition
 3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the `kimi-k2.6:cloud` model. Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
-4. Check Kie.ai credit balance: call the Kie.ai balance endpoint with the client's KIE_API_KEY. Record: `kie_credits_remaining`.
-5. Calculate image generation budget: SLIDE_COUNT x 2 x $0.03. Record as `budget_ceiling`.
-6. Compare `kie_credits_remaining` to `budget_ceiling`. If credits < budget_ceiling: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
+4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
+5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
+6. Compare `kie_credits_remaining` to `budget_ceiling` x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`). If credits < budget_ceiling x 1.30: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
 7. Apply the fleet sizing table:
    | Free RAM at probe | Max concurrent sub-agents (total) | QC agents | Writer agents |
    |---|---|---|---|
@@ -170,6 +170,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "free_disk_gb": N,
      "ollama_cloud_reachable": true,
      "kie_credits_remaining": N,
+     "per_image_usd": N,
      "budget_ceiling": N,
      "budget_ok": true,
      "model_location": "cloud|local",
@@ -204,70 +205,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - capacity_plan.json (for client_slug and deck_slug)
 
 **Steps:**
-1. Write the watchdog script to working/scripts/watchdog.sh:
-   ```bash
-   #!/bin/bash
-   # Resilience watchdog for [DECK_SLUG] -- Phase 7 SOP 9.2
-   CHECKPOINT_DIR="[WORKDIR]/working/checkpoints"
-   LAST_PROGRESS_FILE="$CHECKPOINT_DIR/.last_progress"
-   CONSECUTIVE_STALLS_FILE="$CHECKPOINT_DIR/.consecutive_stalls"
-   STALL_THRESHOLD_MINUTES=10
-   START_TIME_FILE="$CHECKPOINT_DIR/.watchdog_start_time"
-   MAX_RUNTIME_MINUTES=90
-
-   # Initialize start time on first run
-   if [ ! -f "$START_TIME_FILE" ]; then
-       date +%s > "$START_TIME_FILE"
-   fi
-
-   # Check if we have exceeded 90 minutes
-   START_TIME=$(cat "$START_TIME_FILE")
-   CURRENT_TIME=$(date +%s)
-   ELAPSED_MINUTES=$(( (CURRENT_TIME - START_TIME) / 60 ))
-   if [ $ELAPSED_MINUTES -gt $MAX_RUNTIME_MINUTES ]; then
-       openclaw message send --channel telegram --to [DIRECTOR_CHAT_ID] --message "[DECK_SLUG] watchdog: max runtime (90 min) exceeded. Removing watchdog and escalating to operator."
-       openclaw message send --channel telegram --to [OPERATOR_CHAT_ID] --message "[DECK_SLUG] watchdog: run exceeded 90-minute watchdog window. Manual intervention required."
-       exit 0
-   fi
-
-   # Check phase4_checkpoint.json for progress
-   if [ -f "$CHECKPOINT_DIR/phase4_checkpoint.json" ]; then
-       SLIDES_COMPLETE=$(python3 -c "import json; d=json.load(open('$CHECKPOINT_DIR/phase4_checkpoint.json')); print(len([x for x in d.get('slides', []) if x.get('status')=='complete']))")
-       PREV_COMPLETE=$(cat "$LAST_PROGRESS_FILE" 2>/dev/null || echo "0")
-       echo "$SLIDES_COMPLETE" > "$LAST_PROGRESS_FILE"
-       if [ "$SLIDES_COMPLETE" = "$PREV_COMPLETE" ] && [ "$SLIDES_COMPLETE" != "0" ]; then
-           # No progress since last check -- increment consecutive stalls
-           STALL_COUNT=$(cat "$CONSECUTIVE_STALLS_FILE" 2>/dev/null || echo "0")
-           STALL_COUNT=$((STALL_COUNT + 1))
-           echo "$STALL_COUNT" > "$CONSECUTIVE_STALLS_FILE"
-           
-           if [ $STALL_COUNT -eq 1 ]; then
-               # First stall: alert Director and attempt self-heal
-               openclaw message send --channel telegram --to [DIRECTOR_CHAT_ID] --message "[DECK_SLUG] watchdog: no progress in 10 minutes (current: $SLIDES_COMPLETE). Attempting self-heal..."
-           elif [ $STALL_COUNT -ge 2 ]; then
-               # Second consecutive stall or beyond: page operator
-               openclaw message send --channel telegram --to [OPERATOR_CHAT_ID] --message "[DECK_SLUG] watchdog: second consecutive stall detected ($STALL_COUNT total). Manual intervention required."
-           fi
-       else
-           # Progress detected: reset stall counter
-           echo "0" > "$CONSECUTIVE_STALLS_FILE"
-       fi
-   fi
-   ```
-2. Install the cron via crontab to run every 10 minutes:
-   ```bash
-   (crontab -l 2>/dev/null; echo "*/10 * * * * bash [WORKDIR]/working/scripts/watchdog.sh >> [WORKDIR]/working/checkpoints/watchdog.log 2>&1") | crontab -
-   ```
-3. Verify the cron is installed: `crontab -l | grep watchdog`.
-4. Record the cron installation in capacity_plan.json: `watchdog_installed: true, watchdog_cron: "*/10 * * * *", watchdog_max_runtime_minutes: 90, stall_threshold_minutes: 10`.
-5. When a stall is detected: attempt self-heal on first stall only.
-   - Phase 4 first stall: check phase4_checkpoint.json for tasks with status "submitted" and submitted_at > 10 minutes ago. If found, attempt to re-poll those task IDs. If self-heal succeeds, reset stall counter. If self-heal fails or second stall occurs, escalate to operator.
-   - Phase 5 first stall: check image_qc_report.json for images not yet scored > 10 minutes after download. Re-dispatch QC on those images. If succeeds, reset counter.
-6. After Phase 6 completes (delivery_verified = true in media_library.json): remove the cron:
-   ```bash
-   crontab -l | grep -v watchdog | crontab -
-   ```
-7. Write `watchdog_removed: true, removed_at: ISO timestamp` to capacity_plan.json. Clean up watchdog tracking files: `rm $CHECKPOINT_DIR/.last_progress $CHECKPOINT_DIR/.consecutive_stalls $CHECKPOINT_DIR/.watchdog_start_time`.
+1. Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
+2. Record `watchdog: installer-managed` in `capacity_plan.json`.
 
 **Outputs:**
 - working/scripts/watchdog.sh (installed and running every 10 minutes)
@@ -276,7 +215,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Hand to:** Director (receives first-stall alert for self-heal attempts); Operator (receives second-stall alert or failed self-heal notification); ROLE-16 Healer -- Presentations (on second consecutive stall or failed self-heal: hand off with the full incident package -- stall count, checkpoint state, self-heal attempt log -- so the Healer can root-cause and permanently patch the SOP that allowed the stall)
 
-**Failure mode:** If crontab is not available on the client's box (some minimal Docker containers): install the watchdog as a background shell process instead: `nohup bash working/scripts/watchdog_loop.sh &`. Write the PID to capacity_plan.json: `watchdog_pid: N`. Kill the PID explicitly after Phase 6 or after 90 minutes, whichever comes first.
+**Failure mode:** Verify the installer-scheduled watchdog is live: Mac `launchctl list | grep com.blackceo.presentation-watchdog`; VPS `openclaw cron list | grep presentation-watchdog`. If absent, run `update-skills.sh` (it re-asserts the schedule). Never write or install a per-deck watchdog.
 
 ---
 
@@ -330,7 +269,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 The Director cannot dispatch Phase 1 agents until capacity_plan.json exists with go_nogo = "GO".
 
 ### Gate 2 -- Budget Pre-flight
-kie_credits_remaining >= budget_ceiling before Phase 4 begins.
+kie_credits_remaining >= budget_ceiling x 1.30 (the credit preflight of `07-kie-setup/references/kie-common-rules.md` rule 6) before Phase 4 begins; the renderer's own Phase-0 balance gate (`AF-KIE-BALANCE`, exit 4) is a second, independent check.
 
 ### Gate 3 -- All Required Keys Found
 No required key has `found_in: "NOT FOUND"` in capacity_plan.json before Phase 4 begins.
@@ -461,7 +400,7 @@ If free_disk_gb < 10: the run cannot proceed because image downloads and PPTX as
 ## 18. Update Triggers (When to Revise This Document)
 
 1. Fleet sizing table needs recalibration (based on actual run performance data).
-2. Kie.ai price changes (budget formula: currently $0.03 per image -- verify quarterly).
+2. The live `pricingDesc` for the pinned image model changes materially (the budget formula uses `per_image_usd` from it, with no hard-coded price).
 3. New env stores are added to OpenClaw (currently 4 stores -- if a 5th is added, update SOP 9.3).
 4. Phase 7 watchdog cron interval changes (currently 10 minutes, max 90-minute window).
 5. The operator explicitly requests a revision.

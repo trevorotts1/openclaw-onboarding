@@ -91,3 +91,10 @@ client-roster.txt
 # battery_e2e_test.py persists the same class of runtime state under
 # canary-run/battery-state/: certs, env payloads, SQLite DBs, transcripts.
 59-anthology-engine/canary-run/battery-state/
+
+# fleet-refresh run outputs carry box names; never commit them
+.fleet-refresh-summary.json
+.fleet-loaded-state.json
+.fleet-loaded-state.json.*
+.fleet-refresh-summary.json.*
+.fleet-retirement-triggered

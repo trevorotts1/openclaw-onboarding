@@ -22,7 +22,10 @@ import os
 import re
 import sys
 
-VERSION = "1.0.0"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
+VERSION = "2.2.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -111,7 +114,7 @@ def check_refs(model, refs_value, errors, warnings):
             errors.append(
                 "reference image count %d exceeds published maximum %d (%s)" % (
                     len(refs_value), max_count, model["canonical_model_id"]))
-        elif (model.get("canonical_model_id") == "seedream/4-5-edit"
+        elif (model.get("canonical_model_id") == "seedream/4.5-edit"
                 and max_count == 14 and len(refs_value) >= 11):
             warnings.append(
                 "reference count %d is inside the field-editor maximum (14) but the README "
@@ -180,6 +183,18 @@ def validate(payload, model_id_override=None):
         errors.append("payload model %r does not match expected model %r" % (model_name, model_id_override))
 
     model = by_id.get(model_name)
+    if not model and isinstance(payload.get("input"), dict):
+        # not in models.json (for example a newer GPT Image generation promoted by Skill 74): the live schema
+        # (registry snapshot fallback) is the authority for required fields, enums and lengths
+        got = adapter_bridge.validate(model_name, payload["input"])
+        if got and got.get("state") == "validated":
+            warnings.append("model %r is not in models.json; validated by Skill 74 against its schema" % model_name)
+            return {"valid": not errors, "model_id": model_name, "api_family": api_family or "kie-market",
+                    "errors": errors, "warnings": warnings, "checked": dict(checked, model=model_name, via="skill-74")}
+        if got and got.get("error"):
+            errors.append("Skill 74 schema validation: %s" % got["error"].get("msg"))
+            return {"valid": False, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": checked}
     if not model:
         errors.append("model %r not present in registry (%s)" % (model_name, REGISTRY_PATH))
         return {"valid": False, "model_id": model_name, "api_family": api_family,
@@ -403,6 +418,7 @@ def _refs(n, size_mb=None, prefix="https://cdn.example.invalid/img_%d.png"):
 
 
 def selftest():
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""  # hermetic: no sibling adapter, no network
     cases = []
 
     def case(name, payload, expect_valid, expect_err_contains=None, expect_warn_contains=None):
@@ -440,15 +456,15 @@ def selftest():
          _base("seedream/5-lite-image-to-image", {"image_urls": _refs(15)}), False,
          expect_err_contains="exceeds published maximum 14")
     case("seedream 4.5 edit 14 refs OK (warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(14)}), True,
+         _base("seedream/4.5-edit", {"image_urls": _refs(14)}), True,
          expect_warn_contains="10 reference images")
     case("seedream 4.5 edit 11 refs OK (warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(11)}), True,
+         _base("seedream/4.5-edit", {"image_urls": _refs(11)}), True,
          expect_warn_contains="10 reference images")
     case("seedream 4.5 edit 10 refs OK (no warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(10)}), True)
+         _base("seedream/4.5-edit", {"image_urls": _refs(10)}), True)
     case("seedream 4.5 edit 15 refs FAIL",
-         _base("seedream/4-5-edit", {"image_urls": _refs(15)}), False,
+         _base("seedream/4.5-edit", {"image_urls": _refs(15)}), False,
          expect_err_contains="exceeds published maximum 14")
     case("wan 2.7 image 9 refs OK",
          _base("wan/2-7-image", {"input_urls": _refs(9)}), True)

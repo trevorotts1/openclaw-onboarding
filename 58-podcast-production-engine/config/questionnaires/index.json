@@ -12,7 +12,7 @@
     "primary_field": "contact.podcast_survey_writing_style",
     "primary_field_note": "Radio selector with values Counter Intuitive, Vulnerable, Provocative, Passionate. This is the primary Presentation Style selector that routes the question path and the Style Engine.",
     "personal_variant_field": "contact.select_your_presentation_style_personal_podcast",
-    "personal_variant_note": "Radio selector used for the Personal Podcast style selection where present; its values cover Counterintuitive and Passionate only. Resolve the style from this field when the primary field is absent.",
+    "personal_variant_note": "Authoritative radio selector for Personal Podcast survey submissions; its values cover Counterintuitive and Passionate only. Personal intake resolves style from this dedicated field and never falls back to podcast_survey_writing_style, which can be stale contact data from an Interview submission.",
     "canonical_style_ids": ["counter_intuitive", "vulnerable", "provocative", "passionate"],
     "normalization_rule": "Strip every non-alphanumeric character from the selected label, lowercase, then match against each style file's accepted_labels normalized the same way. A style value that does not normalize to exactly one canonical id fails value-shape validation and the required-field gate raises a needs_input operator alert; the style is never guessed."
   },

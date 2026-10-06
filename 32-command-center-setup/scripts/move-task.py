@@ -100,6 +100,20 @@ try:
 except ImportError:
     _HAS_SHARED_RESOLVER = False
 
+# JEV A35: re-dispatch/resume through the EXISTING D23 CAS seam
+# (shared-utils/decision_engine/commit/dispatch.py — never restated here).
+# move-task.py owns the sanctioned task-row writes, so the production
+# re-dispatch caller lives here: the task row supplies the 8.12 scope, the
+# persisted revision chain decides reuse-vs-revision, and the CAS head is
+# mirrored onto tasks.assignment_version (the column the continuation
+# TaskSnapshot reads). Fail-closed when the seam is unreachable.
+_CAS_COMMIT_DIR = Path(__file__).resolve().parent.parent.parent / "shared-utils" / "decision_engine" / "commit"
+sys.path.insert(0, str(_CAS_COMMIT_DIR))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 — JEV A35 re-dispatch seam
+except Exception:  # noqa: BLE001 — bare box: status flow still works, resume refuses
+    _cas_dispatch = None
+
 DA_ROLE = "devils-advocate"
 
 
@@ -182,6 +196,12 @@ def _ensure_tables(db: sqlite3.Connection) -> None:
     cols = {r[1] for r in db.execute('PRAGMA table_info(task_signoffs)')}
     if 'artifact_fingerprint' not in cols:
         db.execute('ALTER TABLE task_signoffs ADD COLUMN artifact_fingerprint TEXT')
+    # JEV A35/D12: the CAS head as the task row sees it. TaskSnapshot.
+    # assignment_version reads this column; the re-dispatch caller below is
+    # what writes it. Additive, idempotent; empty PRAGMA = no tasks table yet.
+    tcols = {r[1] for r in db.execute('PRAGMA table_info(tasks)')}
+    if tcols and 'assignment_version' not in tcols:
+        db.execute('ALTER TABLE tasks ADD COLUMN assignment_version INTEGER DEFAULT 0')
 
 
 def _reviewer_error(db, task_id, actor):
@@ -507,27 +527,12 @@ def _apply_selected_persona(db, task_id, cols, sel) -> None:
 def _heal_persona(db, task_id, cols) -> str:
     """Best-effort persona selection for a naked task. Returns:
     'healed' | 'no_persona_required' | 'unresolved' | 'unavailable'."""
-    selector = _selector_path()
-    if not selector:
-        return "unavailable"
     title = _task_field(db, task_id, cols, "title") or ""
     desc = _task_field(db, task_id, cols, "description") or ""
     dept = _task_field(db, task_id, cols, "department") or "general"
     task_text = (f"{title}. {desc}".strip() if desc else title).strip() or "general task"
-    try:
-        proc = subprocess.run(
-            [sys.executable or "python3", selector,
-             "--task", task_text, "--department", str(dept),
-             "--no-llm", "--no-record", "--format", "json"],
-            capture_output=True, text=True, timeout=20,
-        )
-    except Exception:
-        return "unavailable"
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return "unavailable"
-    try:
-        sel = json.loads(proc.stdout)
-    except Exception:
+    sel = _invoke_selector(task_text, str(dept))
+    if sel is None:
         return "unavailable"
     if sel.get("no_persona_required"):
         _record_no_persona(db, task_id, cols)
@@ -539,6 +544,193 @@ def _heal_persona(db, task_id, cols) -> str:
         _audit(db, task_id, None, None, "move-task", "healed-persona", f"selector -> {pid}")
         return "healed"
     return "unresolved"
+
+
+def _invoke_selector(task_text: str, dept: str):
+    """One bounded canonical-selector call. Returns the parsed selection dict,
+    or None when the selector is absent/failed/returned nothing usable."""
+    selector = _selector_path()
+    if not selector:
+        return None
+    try:
+        proc = subprocess.run(
+            [sys.executable or "python3", selector,
+             "--task", task_text, "--department", dept,
+             "--no-llm", "--no-record", "--format", "json"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        sel = json.loads(proc.stdout)
+    except Exception:
+        return None
+    return sel if isinstance(sel, dict) else None
+
+
+# ─── JEV A35: production re-dispatch caller (spec 8.12 / 10.3 / 10.4) ────────
+# A card entering In Progress IS a (re)dispatch of that task. The 8.12 scope
+# comes from the LIVE row; the persisted decision_revisions chain (same DB,
+# beside the task row) decides reuse-vs-new-revision; the CAS head is then
+# mirrored onto tasks.assignment_version — the column the D12 continuation
+# TaskSnapshot.assignment_version reads. Fail-soft: a seam refusal is audited
+# and never blocks the status transition (never park work).
+
+# Board columns carrying the 8.12 dimensions, when the board has them. Only
+# true INPUTS live here: `tasks.persona_id` is the resolved OUTCOME, not a
+# scope input — mapping it in would make every selection perturb its own next
+# scope read and turn every re-dispatch into a false scope change.
+_SCOPE_COLUMNS = (("title", "title"), ("description", "description"))
+
+
+def _task_scope(db, task_id, cols) -> dict:
+    """The 8.12 invalidation scope of the live task row.
+
+    title/description come from their own columns; the remaining dimensions
+    (audience/voice/sop/catalog/policy/model/owner/persona) come from the
+    optional ``decision_scope`` JSON column any engine may populate. Absent
+    dimensions stay absent — the diff treats them as unchanged, never as
+    fabricated values.
+    """
+    scope: dict = {}
+    for dim, col in _SCOPE_COLUMNS:
+        if col in cols:
+            scope[dim] = _task_field(db, task_id, cols, col)
+    if "decision_scope" in cols:
+        try:
+            extra = json.loads(_task_field(db, task_id, cols, "decision_scope") or "{}")
+        except Exception:
+            extra = {}
+        if isinstance(extra, dict):
+            for key in (_cas_dispatch.SCOPE_FIELDS if _cas_dispatch else ()):
+                if extra.get(key) is not None:
+                    scope[key] = extra[key]
+    return scope
+
+
+def _decision_from_selection(task_id: str, sel: dict, scope: dict):
+    """(decision envelope, board mirrors) for one selection at one scope.
+
+    The decisionId is the selection's identity at that scope hash, so a
+    re-dispatch at an unchanged scope addresses the SAME identity and the
+    diff can reuse it (spec 8.12)."""
+    sel = dict(sel or {})
+    mirrors = {k: sel[k] for k in ("persona_id", "persona_name", "persona_mode",
+                                   "persona_score") if sel.get(k) is not None}
+    shash = _cas_dispatch.scope_hash(scope) if _cas_dispatch else ""
+    decision = {
+        "decisionId": "sel-%s-%s" % (task_id, (shash or "0")[:12]),
+        "action": "select",
+        "source": sel.get("source") or ("selector" if sel.get("persona_id") else "unresolved"),
+        "persona_id": sel.get("persona_id"),
+        "persona_name": sel.get("persona_name"),
+        "persona_mode": sel.get("persona_mode") or sel.get("interaction_mode"),
+        "persona_score": sel.get("score"),
+        "no_persona_required": bool(sel.get("no_persona_required")),
+        "scope": dict(scope or {}),
+    }
+    return decision, mirrors
+
+
+def _resume_redispatch(db, args, cur, to_c, cols):
+    """A35: route a (re)dispatch through the EXISTING D23 seam.
+
+    Returns an exit code to REFUSE the move (2) when a stale resume is
+    rejected by the typed D23 gate, else None to continue.
+
+    Entering In Progress only. Fail-soft by construction: a missing seam, a
+    bare board, or a typed D23 recompute refusal is reported + audited and
+    NEVER blocks the status transition.
+    """
+    if _cas_dispatch is None or to_c != "inprogress":
+        return None
+    scope = _task_scope(db, args.task, cols)
+    dept = _task_field(db, args.task, cols, "department") or "general"
+    title = _task_field(db, args.task, cols, "title") or ""
+    desc = _task_field(db, args.task, cols, "description") or ""
+    task_text = (f"{title}. {desc}".strip() if desc else title).strip() or "general task"
+    row_persona = _task_field(db, args.task, cols, "persona_id") if "persona_id" in cols else None
+
+    try:
+        have_chain = _cas_dispatch.latest_revision(db, args.task) is not None
+    except Exception:  # noqa: BLE001 — unreadable chain: nothing to reuse, skip
+        return None
+    if not have_chain and not row_persona and not _selector_path():
+        return None  # first dispatch, nothing to select with: refuse, never fabricate
+
+    # Stale-caller gate (spec 10.3/10.4 via the EXISTING check_late_result): a
+    # resume queued against revision N must not proceed when the head has
+    # moved. Typed refusal, head untouched, status NOT advanced.
+    expected = getattr(args, "expected_revision", None)
+    if expected is not None:
+        try:
+            _commit, store = _cas_dispatch.load_cas_store(
+                db, args.task, _cas_dispatch.scope_hash(scope))
+            _cas_dispatch.guard_late_result(store, "selector", int(expected))
+        except Exception as exc:  # noqa: BLE001 — typed D23 stale refusal
+            _audit(db, args.task, cur, args.to, args.by,
+                   "cas-refused-%s" % type(exc).__name__, str(exc)[:200])
+            db.commit()
+            print(f"[move-task] REFUSED (stale resume): task {args.task} was queued at "
+                  f"revision {expected} but the head moved ({type(exc).__name__}: {exc}). "
+                  f"Re-read the chain and re-dispatch.", file=sys.stderr)
+            return 2
+
+    def _recompute(base, new_scope):
+        sel = _invoke_selector(task_text, str(dept))
+        if sel is None and isinstance(base, dict):
+            # Selector unreachable at recompute: re-derive from the base
+            # selection and say so in the envelope (degradation is recorded,
+            # never silent).
+            sel = {"persona_id": base.get("persona_id"),
+                   "persona_name": base.get("persona_name"),
+                   "persona_mode": base.get("persona_mode"),
+                   "source": "degraded-recompute"}
+        if sel is None or (not sel.get("persona_id") and not sel.get("no_persona_required")):
+            if row_persona:
+                sel = {"persona_id": row_persona, "source": "task-row"}
+            else:
+                sel = {}
+        return _decision_from_selection(args.task, sel, new_scope)
+
+    try:
+        action, rev, payload = _cas_dispatch.redispatch(
+            db, args.task, scope, _recompute,
+            "resume:%s->%s" % (cur or "", args.to),
+            {"by": args.by or "", "from_status": cur or "", "to_status": args.to},
+            commit_in=False)
+    except Exception as exc:  # noqa: BLE001 -- typed D23 refusal: audit, keep head
+        _audit(db, args.task, cur, args.to, args.by,
+               "cas-refused-%s" % type(exc).__name__, str(exc)[:200])
+        db.commit()
+        print(f"[move-task] CAS resume REFUSED ({type(exc).__name__}): task {args.task} "
+              f"head unchanged", file=sys.stderr)
+        return
+
+    if "assignment_version" in cols:
+        db.execute("UPDATE tasks SET assignment_version=? WHERE id=?", (int(rev), args.task))
+    db.commit()
+
+    # redispatch() returns the audit triple for committed/recommitted and the
+    # bare committed envelope for reuse — normalize both shapes here.
+    if isinstance(payload, dict) and "decision" in payload:
+        decision = payload.get("decision") or {}
+        decision_id = payload.get("decision_id")
+    else:
+        decision = payload if isinstance(payload, dict) else {}
+        decision_id = decision.get("decisionId")
+    if "persona_id" in cols and decision.get("persona_id"):
+        _apply_selected_persona(db, args.task, cols, {
+            "persona_id": decision.get("persona_id"),
+            "persona_name": decision.get("persona_name"),
+            "persona_mode": decision.get("persona_mode"),
+            "score": decision.get("persona_score")})
+        db.commit()
+    print(f"[move-task] CAS resume: task {args.task} action={action} revision={rev} "
+          f"decision_id={decision_id}")
+
 
 
 def _enforce_persona_gate(db, args, cur, to_c, cols) -> int | None:
@@ -628,6 +820,14 @@ def cmd_move(db, args) -> int:
             db.commit()
             return 2
 
+    # ---- JEV A35: (re)dispatch through the CAS seam, then the persona gate ----
+    # Order matters: the CAS resume may itself select + apply a persona (one
+    # selector spawn), so the Persona-Gate below then finds the card non-naked
+    # and skips its own heal instead of spawning a second time.
+    resume_rc = _resume_redispatch(db, args, cur, to_c, cols)
+    if resume_rc is not None:
+        return resume_rc  # stale resume: refused, head + status untouched
+
     # ---- F4.4 Persona-Gate: In Progress = warn-and-heal, Review = hard gate ----
     gate_rc = _enforce_persona_gate(db, args, cur, to_c, cols)
     if gate_rc is not None:
@@ -705,6 +905,9 @@ def main(argv: list[str]) -> int:
     m.add_argument("--allow-no-persona", action="store_true",
                    help="(F4.4 Persona-Gate) Record no_persona_required and allow a persona-naked "
                         "task into Review — explicit operator override for genuinely mechanical work.")
+    m.add_argument("--expected-revision", dest="expected_revision", type=int, default=None,
+                   help="(A35) the revision this resume was queued against. When the CAS head has "
+                        "moved past it, the move is REFUSED (exit 2) instead of clobbering.")
 
     s = sub.add_parser("signoff", help="record a Devil's Advocate (or other) sign-off")
     s.add_argument("--task", required=True)

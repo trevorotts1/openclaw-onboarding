@@ -11,7 +11,7 @@ Safe to re-run: every write is INSERT OR REPLACE / INSERT OR IGNORE,
 keyed off stable IDs derived from each SOP's slug. Used by Skill 32's
 fresh install AND by client update flows that ship a refreshed library.
 """
-import sqlite3, json, os, secrets, sys, hashlib
+import sqlite3, json, os, re, secrets, sys, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,6 +101,201 @@ def _ghl_pit_present() -> bool:
         except OSError:
             continue
     return False
+
+
+# ---------------------------------------------------------------------------
+# UNIVERSAL-SOPS CRAFT-CLUSTER INGEST
+#
+# The gap this closes: an engine's operating SOPs live in
+# universal-sops/<cluster>/ as markdown, NOT in the shared sops.jsonl release
+# asset and NOT in 23-ai-workforce-blueprint/templates/role-library/<dept>/sops/.
+# Nothing ever read them into the Command Center SOP library, so a department
+# whose entire runbook lives in a craft cluster showed ZERO SOPs in the
+# dashboard and in semantic SOP search, on every box, forever. The podcast
+# engine is exactly that case: seven SOP-PODCAST-0*.md files, department
+# 'podcast', none of them in the library.
+#
+# This ingest reads the markdown, derives a library row per file, and upserts it
+# through the same stable identity the JSONL pass uses (sop_ + sha256(slug)), so
+# it is idempotent by slug and re-runnable on every roll. It NEVER downloads,
+# never embeds (zero cost on the client's key), and never deletes.
+#
+# The map is explicit on purpose: a cluster is ingested only when a department
+# genuinely owns it. Adding a cluster is one line here.
+# ---------------------------------------------------------------------------
+CRAFT_CLUSTER_DEPARTMENTS = {
+    "podcast-craft": "podcast",
+}
+
+
+def _resolve_universal_sops(explicit=None):
+    """universal-sops/ lives beside the numbered skill dirs, in the repo and in
+    an installed skills tree alike, so relative resolution works in both."""
+    if explicit:
+        p = Path(explicit)
+        return p if p.is_dir() else None
+    here = Path(__file__).resolve()
+    for base in (here.parent.parent.parent, here.parent.parent.parent.parent):
+        cand = base / "universal-sops"
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def _craft_sop_row(md_path, department, cluster):
+    """Derive ONE library row from a craft-cluster SOP markdown file.
+
+    Shape matches the JSONL rows the shared library ships (see the upsert
+    below): steps is a list of {name, order} dicts because that is what
+    shared-utils/sop-embed-once/embed_sop_library.py reads.
+    """
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    lines = text.splitlines()
+
+    title = ""
+    description = ""
+    steps = []
+    for line in lines:
+        s = line.strip()
+        if not title and s.startswith("# "):
+            title = s[2:].strip()
+            continue
+        if s.startswith("## "):
+            steps.append({"name": s[3:].strip(), "order": len(steps) + 1})
+            continue
+        # The first PROSE line, not the bold metadata header block these SOPs
+        # open with (**Cluster:**, **Skill:**, **Owning role:**, ...).
+        if (title and not description and s
+                and not s.startswith(("#", "|", "---", ">", "- ", "* ", "1.", "!["))
+                and not re.match(r"^\*\*[^*]{1,80}:?\*\*", s)):
+            description = s.replace("**", "").strip()
+
+    slug = md_path.stem
+    if not title:
+        title = slug
+    return {
+        "slug": slug,
+        "name": title[:300],
+        "description": description[:1000],
+        "version": 1,
+        "department": department,
+        "cadence": None,
+        "source_role": None,
+        "confidence": None,
+        "confidence_tier": None,
+        "estimated_minutes": None,
+        "time_of_day": None,
+        "source_file_url": "universal-sops/%s/%s" % (cluster, md_path.name),
+        "task_keywords": " ".join(slug.lower().replace("-", " ").split()),
+        "steps": steps,
+        "success_criteria": "",
+        "prerequisites": None,
+        "persona_hints": [],
+        "template_vars_used": [],
+        "layer_version": "v2",
+        "dependencies_upstream": [],
+    }
+
+
+def _upsert_craft_rows(conn, rows):
+    """Same stable identity and same INSERT OR REPLACE contract as the JSONL
+    pass, so a craft SOP and a library SOP can never collide or diverge."""
+    cols_present = [c[1] for c in conn.execute("PRAGMA table_info(sops)")]
+    stamp = datetime.now(timezone.utc).isoformat()
+    written = 0
+    for row in rows:
+        sop_id = "sop_" + hashlib.sha256(row["slug"].encode()).hexdigest()
+        existing = conn.execute("SELECT slug FROM sops WHERE id = ?", (sop_id,)).fetchone()
+        if existing and existing[0] != row["slug"]:
+            print(f"  FATAL: hash collision - sop_id={sop_id} maps to both "
+                  f"slug={existing[0]!r} and slug={row['slug']!r}. Aborting.", file=sys.stderr)
+            return -1
+        data = dict(row)
+        data.pop("dependencies_upstream", None)
+        data["id"] = sop_id
+        data["steps"] = json.dumps(row["steps"], default=str)
+        data["persona_hints"] = json.dumps(row["persona_hints"])
+        data["template_vars_used"] = json.dumps(row["template_vars_used"])
+        data["created_at"] = stamp
+        data["updated_at"] = stamp
+        cols = [c for c in data if c in cols_present]
+        sql = "INSERT OR REPLACE INTO sops (%s) VALUES (%s)" % (
+            ",".join(cols), ",".join("?" * len(cols)))
+        conn.execute(sql, [data[c] for c in cols])
+        written += 1
+    conn.commit()
+    return written
+
+
+def ingest_craft_clusters(conn, universal_sops_dir, clusters=None):
+    """Ingest every mapped craft cluster. Returns (written, clusters_seen)."""
+    total = 0
+    seen = []
+    wanted = clusters or CRAFT_CLUSTER_DEPARTMENTS
+    for cluster, department in sorted(wanted.items()):
+        cdir = Path(universal_sops_dir) / cluster
+        if not cdir.is_dir():
+            print(f"  craft cluster {cluster}: directory not present at {cdir}; skipped")
+            continue
+        rows = []
+        for md in sorted(cdir.glob("SOP-*.md")):
+            row = _craft_sop_row(md, department, cluster)
+            if row:
+                rows.append(row)
+        if not rows:
+            print(f"  craft cluster {cluster}: no SOP-*.md files found in {cdir}; skipped")
+            continue
+        n = _upsert_craft_rows(conn, rows)
+        if n < 0:
+            return (-1, seen)
+        print(f"  craft cluster {cluster} -> department {department}: upserted {n} SOP(s)")
+        total += n
+        seen.append(cluster)
+    return (total, seen)
+
+
+def _craft_main(argv):
+    """Standalone mode: ingest-sop-library.py --craft-clusters [--db P] [--universal-sops D]"""
+    db_path = None
+    usops = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--db" and i + 1 < len(argv):
+            db_path = argv[i + 1]; i += 2; continue
+        if argv[i] == "--universal-sops" and i + 1 < len(argv):
+            usops = argv[i + 1]; i += 2; continue
+        i += 1
+    db_path = db_path or _default_db()
+    if not Path(db_path).is_file():
+        print(f"[craft-sops] mission-control.db not found at {db_path}; nothing ingested", file=sys.stderr)
+        return 0
+    root = _resolve_universal_sops(usops)
+    if root is None:
+        print("[craft-sops] universal-sops/ not found next to the skill directories; nothing ingested", file=sys.stderr)
+        return 0
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    have_sops = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sops'").fetchone()[0]
+    if not have_sops:
+        print("[craft-sops] the sops table does not exist yet (Skill 32 dashboard not installed); nothing ingested",
+              file=sys.stderr)
+        conn.close()
+        return 0
+    print(f"[craft-sops] db={db_path} universal-sops={root}")
+    written, seen = ingest_craft_clusters(conn, root)
+    conn.close()
+    if written < 0:
+        return 1
+    print(f"[craft-sops] done: {written} row(s) across {len(seen)} cluster(s)")
+    return 0
+
+
+if "--craft-clusters" in sys.argv:
+    sys.exit(_craft_main(sys.argv[1:]))
 
 
 CLIENT = sys.argv[1]

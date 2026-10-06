@@ -46,6 +46,27 @@ class Reliability(unittest.TestCase):
         self.assertFalse(finalize(self.state));self.assertTrue(self.passed())
         update(self.state,lambda s:s.update(interviewCompletedAt='new'))
         self.assertFalse(finalize(self.state))
+    def test_runtime_dirs_do_not_invalidate_but_role_files_do(self):
+        pres=self.art/'presentations';role=pres/'01-director-of-presentations';runs=pres/'runs'
+        role.mkdir(parents=True);runs.mkdir();(pres/'memory').mkdir()
+        (role/'how-to.md').write_text('role how-to');(runs/'scheduler-readiness-watchdog.json').write_text('{"t":1}')
+        (pres/'memory'/'MEMORY.md').write_text('day 1')
+        self.assertTrue(self.passed())
+        # the presentations scheduler rewrites runs/*.json; dreaming rewrites memory/
+        (runs/'scheduler-readiness-watchdog.json').write_text('{"t":2}');(runs/'supervisor-restarts.json').write_text('[]')
+        (pres/'memory'/'MEMORY.md').write_text('day 2')
+        self.assertTrue(finalize(self.state),read(self.state)['completionVerification']['unmetRequirements'])
+        (role/'how-to.md').write_text('role how-to, edited after verification')
+        self.assertFalse(finalize(self.state))
+        self.assertIn('changed-or-missing-artifacts',read(self.state)['completionVerification']['unmetRequirements'])
+    def test_legacy_evidence_keeps_the_v1_digest(self):
+        from workforce_completion import artifact_digest
+        runs=self.art/'presentations'/'runs';runs.mkdir(parents=True);(runs/'r.json').write_text('{}')
+        self.assertTrue(self.passed())
+        def legacy(s):
+            e=s['buildArtifactVerification'];e.pop('digestVersion');e['digest']=artifact_digest(self.art,1)
+        update(self.state,legacy)
+        self.assertTrue(finalize(self.state))     # an already-verified build does not flip on update
     def test_interview_eligibility_table(self):
         from interview_eligibility import eligible_status,eligible_returncode
         for value in ('pass','needs-review'):self.assertTrue(eligible_status(value))
@@ -166,6 +187,16 @@ class RoutingTransport(unittest.TestCase):
         bodies=[];statuses=[503,200]
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self,*args):pass
+            def do_GET(self):
+                # JEV-601: mc-route.sh slug mode GETs /api/workspaces to confirm the
+                # department exists before routing. Top-level JSON list, as
+                # _load_departments()/the PYDEPT matcher in scripts/mc-route.sh require.
+                if self.path=='/api/workspaces':
+                    body=json.dumps([{"id":"ws-engineering","slug":"engineering","name":"Engineering"}]).encode()
+                    self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404);self.end_headers()
             def do_POST(self):
                 bodies.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
                 status=statuses.pop(0) if statuses else 200

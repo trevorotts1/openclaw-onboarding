@@ -305,7 +305,10 @@ def test_engine_json_is_classified_as_mirror_not_box_owned():
     assert crw.script_asset_policy("config/resource_profile.json") == crw.POLICY_BOX_OWNED
     # The other two buckets are unchanged.
     assert crw.script_asset_policy("presentation_job/governor.py") == crw.POLICY_MIRROR
-    assert crw.script_asset_policy("build_deck.py.headtest") == crw.POLICY_SKIP
+    # FIX 42: build_deck.py.headtest (the stale renderer copy) is deleted;
+    # the .headtest suffix itself stays deliberately-not-delivered, so
+    # pin the suffix policy with a synthetic name, not the deleted file.
+    assert crw.script_asset_policy("any_renderer.headtest") == crw.POLICY_SKIP
 
 
 def test_test_time_artifact_dir_is_never_delivered():

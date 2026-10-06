@@ -56,7 +56,7 @@ if OUT2="$(bash "$TREE2/scripts/guard-fab-qc-gate.sh" 2>&1)"; then
   fail "deleted schema file: guard PASSED (should have FAILED)"
   echo "$OUT2" | sed 's/^/    /'
 else
-  if echo "$OUT2" | grep -q "MISSING shared-utils/persona-bundle-receipt.schema.json"; then
+  if grep -q "MISSING shared-utils/persona-bundle-receipt.schema.json" <<<"$OUT2"; then
     pass "deleted schema file: guard FAILS and names the missing schema"
   else
     fail "deleted schema file: guard failed but did NOT name the missing schema:"
@@ -86,7 +86,7 @@ PY
     fail "seeded always-pass validator: guard PASSED (should have FAILED) — self-test regression not caught"
     echo "$OUT3" | sed 's/^/    /'
   else
-    if echo "$OUT3" | grep -q "bundle-receipt schema validator self-test FAILED"; then
+    if grep -q "bundle-receipt schema validator self-test FAILED" <<<"$OUT3"; then
       pass "seeded always-pass validator: guard FAILS and names the validator self-test check"
     else
       fail "seeded always-pass validator: guard failed but did NOT name the self-test check:"
@@ -114,7 +114,7 @@ PY
     fail "seeded receipt missing 'hold': guard PASSED (should have FAILED) — real-receipt check not catching drift"
     echo "$OUT4" | sed 's/^/    /'
   else
-    if echo "$OUT4" | grep -q "a REAL persona_bundle_ladder receipt FAILED schema validation"; then
+    if grep -q "a REAL persona_bundle_ladder receipt FAILED schema validation" <<<"$OUT4"; then
       pass "seeded receipt missing 'hold': guard FAILS and names the real-receipt-vs-schema check"
     else
       fail "seeded receipt missing 'hold': guard failed but did NOT name the real-receipt check:"

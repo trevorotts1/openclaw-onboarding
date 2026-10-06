@@ -86,10 +86,19 @@ OVERRIDE = "sk-or-v1-F25-PROCESS-OVERRIDE-0123456789abcdefghij"
 # ---------------------------------------------------------------------------
 # Hermetic harness
 # ---------------------------------------------------------------------------
+#: v25.1.56 added Agnes and DeepSeek-direct steps to the scoring chain, so
+#: their credential names belong here too:
+#: test_public_api_still_imports_and_the_chain_still_degrades runs the REAL
+#: chain with the REAL _post_chat, and a DEEPSEEK_API_KEY left in this
+#: runner's environment would turn that leg into a live network call instead
+#: of the degraded-mode assertion it claims to be.
 _SCRUB = (
     "OPENROUTER_API_KEY", "OPENROUTER_KEY", "OR_API_KEY", "OPEN_ROUTER_API_KEY",
     "OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY", "OLLAMA_KEY", "OLLAMA_TOKEN",
     "OLLAMA_CLOUD_URL", "OPENCLAW_SECRETS", "OC_ROOT", "OC_CONFIG",
+    "AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY",
+    "DEEPSEEK_API_KEY", "DEEPSEEK_KEY", "DEEP_SEEK_API_KEY",
+    "LLM_SCORE_CHAIN",
 )
 
 #: Cleared inside the out-of-process probes so they measure the DEFAULT

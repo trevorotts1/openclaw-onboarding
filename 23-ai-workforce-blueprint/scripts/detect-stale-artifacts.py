@@ -73,6 +73,13 @@ HOME = os.path.expanduser("~")
 # equivalent local probe rather than refusing to run.
 sys.path.insert(0, str(_SCRIPT_DIR))
 try:
+    # The departments tree: the build state's own companyRoot first (shared with
+    # the QC checker and floor-fill-driver.py), else <workspace>/departments.
+    from _qc_paths import departments_root_for as _departments_root_for  # type: ignore
+except Exception:  # pragma: no cover - bundle without _qc_paths.py
+    def _departments_root_for(workspace):
+        return Path(workspace) / "departments"
+try:
     from create_role_workspaces import resolve_dept_dir as _resolve_dept_dir  # type: ignore
 except Exception:  # pragma: no cover - exercised only on a bundle without the builder
     _DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
@@ -323,7 +330,7 @@ def prune_absent_from_disk(workspace, built_from, present_keys, kind):
       * persona/* keys are skipped: personas are a shared pool rendered into each
         department's governing-personas.md, not a per-key artifact on disk.
     """
-    departments_root = Path(workspace) / "departments"
+    departments_root = _departments_root_for(workspace)
     if not departments_root.is_dir():
         return built_from, present_keys, []
 
@@ -387,7 +394,7 @@ def load_built_from_disk(workspace):
     built_from = {}
     untracked = []
     present = set()
-    depts_dir = workspace / "departments"
+    depts_dir = _departments_root_for(workspace)
     if not depts_dir.is_dir():
         return built_from, untracked, present
     for dept_dir in sorted(p for p in depts_dir.iterdir() if p.is_dir()):

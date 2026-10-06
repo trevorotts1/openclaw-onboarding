@@ -259,7 +259,7 @@ except Exception:  # noqa: BLE001 — fail-soft: legacy box without governor.py
     except Exception:  # noqa: BLE001 — still fail-soft
         _governor = None  # type: ignore[assignment]
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, quote
 
 # FIX 20 citation-validation gate (lazy import: only needed when a run dir
@@ -1127,10 +1127,48 @@ DELIVERABLES_REQUIRED = [
 # API key
 # ---------------------------------------------------------------------------
 
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 21: a placeholder KIE_API_KEY is rejected by every reader — it must
+    never be sent to Kie.ai. Uses the shared-utils/secret_helper canon when
+    reachable; otherwise the same minimal inline gate kie_generate.py carries
+    (FIX 67)."""
+    try:
+        import importlib.util as _ilu
+        here = Path(__file__).resolve().parent
+        repo_root = None
+        for anc in here.parents:
+            if (anc / "shared-utils" / "secret_helper.py").is_file():
+                repo_root = anc
+                break
+        if repo_root is not None:
+            _p = repo_root / "shared-utils" / "secret_helper.py"
+            _spec = _ilu.spec_from_file_location("secret_helper_s51", str(_p))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return bool(_mod.is_placeholder(value))
+    except Exception:  # noqa: BLE001 -- broken helper degrades to the inline gate
+        pass
+    if not value:
+        return True
+    low = str(value).strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def load_api_key() -> str:
-    key = os.environ.get("KIE_API_KEY", "").strip()
-    if key:
-        return key.strip("'\"")
+    key = os.environ.get("KIE_API_KEY", "").strip().strip("'\"")
+    if key and not _is_placeholder_value(key):
+        return key
     for path in SECRETS_CANDIDATES:
         p = Path(path)
         if not p.exists():
@@ -1139,9 +1177,9 @@ def load_api_key() -> str:
             line = line.strip()
             if line.startswith("KIE_API_KEY="):
                 value = line[len("KIE_API_KEY="):].strip().strip("'\"")
-                if value:
+                if value and not _is_placeholder_value(value):
                     return value
-    print("FATAL: KIE_API_KEY not found in env or any of:", file=sys.stderr)
+    print("FATAL: KIE_API_KEY not found (or is a placeholder) in env or any of:", file=sys.stderr)
     for path in SECRETS_CANDIDATES:
         print("   ", path, file=sys.stderr)
     sys.exit(2)
@@ -1561,13 +1599,24 @@ _GOV_ACQUIRE_TIMEOUT_S = 90.0
 
 def _gov_acquire(poll: bool = False) -> Optional[object]:
     """Acquire one kie slot from the governor. Returns a lease, or None when
-    the governor is absent OR the wait timed out (fail-soft — log and go)."""
+    the governor is absent (fail-soft — log and go).
+
+    FIX 10: daily-cap exhaustion (GovernorDailyCapReached) and submit-side
+    (poll=False) rate timeouts are NEVER fail-soft — they are re-raised so
+    the phase parks instead of spending unthrottled.
+    """
     if _governor is None:
         return None
     try:
         return _governor.acquire(
             _GOV_PROVIDER, n=1, timeout_s=_GOV_ACQUIRE_TIMEOUT_S, poll=poll)
-    except Exception as exc:  # noqa: BLE001 — never let the limiter block the render
+    except Exception as exc:  # noqa: BLE001 — classified below, never masked blindly
+        daily_cap_cls = getattr(_governor, "GovernorDailyCapReached", None)
+        if daily_cap_cls is not None and isinstance(exc, daily_cap_cls):
+            raise
+        timeout_cls = getattr(_governor, "GovernorTimeout", None)
+        if not poll and timeout_cls is not None and isinstance(exc, timeout_cls):
+            raise
         kind = "poll" if poll else "submit"
         print(f"    [governor] {kind} acquire unavailable ({exc.__class__.__name__}: "
               f"{exc}) — proceeding unthrottled", file=sys.stderr, flush=True)
@@ -2762,7 +2811,18 @@ def assemble_pptx(rendered: list, out_path: Path, logo_path: Optional[Path] = No
                 slide.notes_slide.notes_text_frame.text = spoken
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(str(out_path))
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    try:
+        prs.save(str(tmp))
+        os.replace(tmp, out_path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -2830,9 +2890,17 @@ def notes_sync_pass(bundle_pptx: Path, run_dir: Path, bundle_dir: Path) -> dict:
             slide.notes_slide.notes_text_frame.text = spoken
             slides_with_notes += 1
 
+    # FIX 22: atomic save - a failed prs.save() must never leave a partial
+    # .pptx at the final path. Write to a sibling tmp file, then os.replace.
+    tmp = bundle_pptx.with_name(f".{bundle_pptx.name}.{os.getpid()}.tmp")
     try:
-        prs.save(str(bundle_pptx))
+        prs.save(str(tmp))
+        os.replace(tmp, bundle_pptx)
     except Exception as exc:  # noqa: BLE001
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
         return {"status": "error", "slides_total": slides_total,
                 "slides_with_notes": slides_with_notes, "speech_source": None,
                 "reason": f"could not save {bundle_pptx} after notes injection: {exc}"}
@@ -6568,6 +6636,140 @@ PITCHLESS_FORBIDDEN_TOKENS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-131 -- WHAT AF-PITCH-LEAK MUST ACTUALLY SCAN.
+#
+# THE DEFECT. This check lowercased the WHOLE FILE and tested each forbidden token
+# as a bare substring. On the live pitchless run that made it fail on two things
+# that are not pitch content at all:
+#
+#   1. THE RECORD OF ABSENCE. The arc allocation documents its own suppression
+#      using the forbidden vocabulary, verbatim:
+#        "...intake declares pitch_included:false, so there is no anchor price,
+#         value stack, or price ladder in this deck."
+#        "...no offer, price, ladder, vip, or re-pitch content is included because
+#         intake.json records pitch_included:false."
+#      The producer did exactly what a pitchless deck requires and then SAID SO,
+#      and the saying is what failed. A check for content must not be tripped by a
+#      sentence denying that content.
+#
+#   2. NULL-VALUED SCHEMA KEYS. The same file carries the schema's own field names
+#      with null values -- "price_ladder_section": null, "value_stack_section":
+#      null, "re_pitch_section": null, "offer_price_ladder_included": false. A key
+#      declaring a thing ABSENT was scanned as if it declared it PRESENT, and the
+#      `_included: false` case trips on the key name alone.
+#
+# THE FIX. Scan the artifact's CONTENT, not its serialization:
+#   * for JSON, walk the VALUES and never the keys, so a field NAME can never be a
+#     match; and
+#   * skip fields that are prose ABOUT the artifact rather than part of it
+#     (`*_reason`, `*_note(s)`, `validation_notes`), because those exist to explain
+#     decisions -- including the decision to suppress.
+# Everything else is still scanned exactly as before, so a genuine leak in a
+# substantive field (`section_id`, `name`, `move_tag`, `slide_title`, ...) still
+# fails. Non-JSON artifacts (.md copy) are prose by nature and stay whole-text.
+# ---------------------------------------------------------------------------
+
+#: Field names whose VALUE is prose about the artifact rather than artifact content.
+_PITCH_SCAN_PROSE_FIELDS = frozenset({
+    "reason", "note", "notes", "validation_notes", "validation_note",
+})
+
+#: Names that LOOK like prose fields but carry DELIVERED content (review D1). A
+#: speaker note ships with the deck; skipping it would hide a real leak, so these
+#: are never treated as prose-about-the-artifact. BOTH spellings are listed: the
+#: department's canonical delivered-notes field is SINGULAR -- `presenter_note`
+#: inside presenter_notes.json (director-of-presentations.md:505,
+#: presenter_guide.py:105/374, pptx-assembly-specialist.md:195) -- and the plural-
+#: only set let `{"presenter_note": "price ladder tier 2 is $2997"}` pass.
+_PITCH_SCAN_CONTENT_FIELDS = frozenset({
+    "speaker_note", "speaker_notes", "slide_note", "slide_notes",
+    "presenter_note", "presenter_notes", "script_note", "script_notes",
+    "narration_note", "narration_notes",
+})
+
+
+def _pitch_scan_is_prose_field(name: str) -> bool:
+    n = str(name or "").strip().lower()
+    if n in _PITCH_SCAN_CONTENT_FIELDS:
+        return False
+    # EXACT prose names, plus the `*_reason` family the department actually uses
+    # to record a suppression rationale. The blanket `*_note` / `*_notes`
+    # catch-all was deliberately DROPPED (independent review of PR #1155): it
+    # swallowed content-bearing names whose own KEY states the leak --
+    # `{"price_ladder_notes":"Tier 1 $997, Tier 2 $2997"}` and
+    # `{"offer_notes":"Buy now, act now."}` both passed while failing on main.
+    # `*_reason` stays because the live run records suppressions as
+    # `offer_price_ladder_reason` and `non_applicable_sections.reason`, and
+    # scanning those keys would restore the false positive this rewrite removes.
+    return n in _PITCH_SCAN_PROSE_FIELDS or n.endswith("_reason")
+
+
+def _pitch_scan_key_is_affirmative(value) -> bool:
+    """True when a key's own NAME should be scanned as content (review D2).
+
+    Scanning keys unconditionally is what produced the false positives this rewrite
+    exists to remove: the live arc records a suppressed mechanic as a null/false
+    key (`"offer_price_ladder": null`). Scanning keys only when the value asserts
+    something keeps `{"offer_price_ladder_included": true}` and
+    `{"price_ladder_section": {"rung_1": "$997"}}` failing, while a null/false/empty
+    key stays silent. Underscores normalise to spaces so `price_ladder_section`
+    still matches the token "price ladder"."""
+    return not (value is None or value is False or value == "" or value == []
+                or value == {})
+
+
+def _pitch_scan_texts(path: Path) -> List[str]:
+    """The strings of `path` that AF-PITCH-LEAK should test.
+
+    JSON -> its values (never its keys), minus prose-about-the-artifact fields.
+    Anything else (the .md copy) -> the file text, because that IS prose content.
+    An unparseable JSON file degrades to the whole text, i.e. the old behaviour,
+    so a broken artifact can never become a SILENT pass."""
+    raw = path.read_text(errors="replace")
+    if path.suffix.lower() != ".json":
+        return [raw]
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 -- fail towards the stricter scan
+        return [raw]
+    out: List[str] = []
+
+    def walk(node, key="", skip_direct_strings=False):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                prose = _pitch_scan_is_prose_field(k)
+                # D2: a non-prose key with an affirmative value states content in
+                # its own name ("offer_price_ladder_included": true). BOTH the raw
+                # key and its space-normalised form are tested: normalising alone
+                # turned `re_pitch_section` into "re pitch section", which matches
+                # no token (the tuple holds "re-pitch"/"re_pitch"/"repitch"), so
+                # the whole re-pitch family silently stopped being caught.
+                if not prose and _pitch_scan_key_is_affirmative(v):
+                    out.append(str(k))
+                    out.append(str(k).replace("_", " "))
+                if prose:
+                    if isinstance(v, str):
+                        continue          # its own prose, not content
+                    if isinstance(v, list):
+                        # D1: a prose key skips its STRING LEAVES but still
+                        # descends into container elements, so a list of dicts
+                        # cannot hide content the way a bare dict cannot.
+                        walk(v, str(k), True)
+                        continue
+                walk(v, str(k))
+        elif isinstance(node, list):
+            for v in node:
+                if skip_direct_strings and isinstance(v, str):
+                    continue
+                walk(v, key)
+        elif isinstance(node, str):
+            out.append(node)
+
+    walk(obj)
+    return out
+
+
 def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """2A — AF-PITCH-LEAK. A PITCHLESS deck (intake.json.pitch_included:false) must
     contain NO pitch/price/offer/ladder content. Scans arc_allocation.json,
@@ -6585,15 +6787,18 @@ def _chk_pitch_leak(run_dir: Path, slides_path: Optional[Path] = None) -> str:
             leaks.append(f"{rel} present (Offer Price Strategist ran on a pitchless deck)")
             break
     # Token scan over the arc + copy artifacts.
-    scan = []
     for rel in ("working/copy/arc_allocation.json", "arc_allocation.json",
                 "working/copy/slides_copy.md", "slides_copy.md",
                 "working/copy/price_ladder.json"):
         p = run_dir / rel
-        if p.exists():
-            scan.append((rel, p.read_text(errors="replace").lower()))
-    for rel, low in scan:
-        hits = [t for t in PITCHLESS_FORBIDDEN_TOKENS if t in low]
+        if not p.exists():
+            continue
+        hits = []
+        for text in _pitch_scan_texts(p):
+            low = text.lower()
+            for t in PITCHLESS_FORBIDDEN_TOKENS:
+                if t in low and t not in hits:
+                    hits.append(t)
         if hits:
             leaks.append(f"{rel}: " + ", ".join(repr(h) for h in hits[:6]))
     if leaks:
@@ -7777,8 +7982,9 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
       * a direct kie.ai task submission — createTask / recordInfo / api.kie.ai outside
         build_deck.py (a per-deck renderer) -> AF-CANONICAL-RENDER-BYPASS.
 
-    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS) and anything under a
-    scripts/ or virtual-env directory are exempt. Returns "" when the run dir carries
+    The canonical tools themselves (CANONICAL_RENDER_SCRIPTS), anything inside the
+    canonical scripts dir (by resolved path), and virtual-env directories are
+    exempt. Returns "" when the run dir carries
     no hand-rolled renderer. A failure may be waived ONLY by a logged
     owner_skip_approval token (AF-CANONICAL-RENDER-BYPASS or AF-LOCAL-CANVAS)."""
     skip = (_owner_skip_approved(run_dir, AF_CANONICAL_RENDER_BYPASS)
@@ -7790,7 +7996,11 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         return ""
 
     _SKIP_DIR_SEGS = {".venv", "venv", "site-packages", "__pycache__", ".git",
-                      "node_modules", ".mypy_cache", ".pytest_cache", "scripts"}
+                      "node_modules", ".mypy_cache", ".pytest_cache"}
+    # FIX 28: the old "scripts" blanket skip hid hand-rolled assemblers under
+    # working/scripts/. Skip only the canonical scripts dir, by resolved path
+    # (the canonical_render_guard.py pattern) — every other scripts/ dir is scanned.
+    _canonical_scripts_dir = Path(__file__).resolve().parent
     offenders = []
     try:
         candidates = sorted(run_dir.rglob("*.py"))
@@ -7801,6 +8011,15 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
             continue
         if _SKIP_DIR_SEGS & set(py.parts):
             continue
+        try:
+            _rp = py.resolve()
+        except OSError:
+            _rp = py
+        try:
+            _rp.relative_to(_canonical_scripts_dir)
+            continue  # inside the canonical scripts home — exempt
+        except ValueError:
+            pass
         try:
             text = py.read_text(errors="replace")
         except OSError:
@@ -10902,7 +11121,12 @@ def find_run_dir(explicit: Optional[str], slides_path: Path, out_path: Path) -> 
 #   OC_DECK_ENTRY_NONCE. The renderer admits the run ONLY when the exported nonce
 #   matches that run-scoped file (constant-time compare); the entry script consumes
 #   (deletes) the file after the run so a stale env value cannot be replayed.
-# A model that merely READ the shipped source cannot conjure a valid value.
+# SECURITY DOCTRINE (FIX 18): the nonce blocks blind direct calls - no invocation
+#   admits a run without first passing through presentation-canonical-entry.sh. It
+#   is NOT tamper-proof against a same-user agent: anything running as the same
+#   OS user can read the exported OC_DECK_ENTRY_NONCE or the 0600 checkpoint file
+#   and replay them. Treat the nonce as front-door spend discipline, not a
+#   security boundary.
 # ===========================================================================
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
 
@@ -13078,7 +13302,8 @@ def main():
     # wave no longer overwrite each other's nonce. This SUPERSEDES the
     # retired OC_DECK_CANONICAL_ENTRY / OC_DECK_ALLOW_DIRECT env markers, which
     # shipped in box-visible comments and were therefore forgeable by any model that
-    # read the repo — setting either of those names is now DENIED. Module imports and
+    # read the repo — setting either of those names is now ignored: the handshake
+    # checks only OC_DECK_ENTRY_NONCE. Module imports and
     # unit-test paths that call build_deck functions directly are unaffected — this
     # guard fires only when main() is reached via the CLI (`python3 build_deck.py ...`).
     # References: AF-CANONICAL-RENDER-BYPASS, shared CONTRACT.md §FRONT-DOOR MARKER.

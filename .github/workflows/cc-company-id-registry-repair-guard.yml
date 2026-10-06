@@ -1,0 +1,68 @@
+name: CC company-id registry repair guard
+
+# THE DEFECT THIS LOCKS — the installer repaired the copy nobody reads.
+#
+# 32-command-center-setup/scripts/run-full-install.sh detects that the mirrored
+# company id disagrees with the company owning the Command Center's workspaces
+# and repairs it. It repaired ONE copy: the MC_COMPANY_ID scalar in .env.local.
+#
+# The Command Center resolves a request's tenant through tenantRegistration(),
+# which reads the per-host `companyId` inside MC_TENANT_REGISTRY_JSON — not the
+# scalar. interview-launch.py stamps that registry once from the launch state and
+# then refuses to rebind a registered host, so a wrong value is sticky. Measured
+# on a client box: six registered hosts all still carried `companyId: default`
+# after an install that reported success, and that client's board rendered zero
+# of their 40 active departments while they sat fully logged in.
+#
+# Second half: the repair ran on FULL installs only. --update-only warned and
+# changed nothing, and a code-only roll is frequently the only thing that ever
+# runs on a provisioned box again.
+#
+# tests/unit/cc-company-id-registry-repair.test.sh extracts the SHIPPING
+# cc_repair_company_id VERBATIM (function-name-anchored awk — no
+# reimplementation) and exercises it against sandboxed .env.local fixtures.
+# It carries its own MUTATION PROOF: a scalar-only repair must leave all six
+# registry hosts wrong, so a green run here is never vacuous.
+#
+# Hermetic: stdlib python3 + bash only. No network, no fleet box, no real
+# credentials, and no secret VALUE is ever printed.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "shared-utils/service_env.py"
+      - "tests/unit/cc-company-id-registry-repair.test.sh"
+      - ".github/workflows/cc-company-id-registry-repair-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "shared-utils/service_env.py"
+      - "tests/unit/cc-company-id-registry-repair.test.sh"
+      - ".github/workflows/cc-company-id-registry-repair-guard.yml"
+  workflow_dispatch:
+
+jobs:
+  cc-company-id-registry-repair-guard:
+    name: Both copies of the company id are repaired, on every install path
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the registry-repair regression suite (+ in-suite mutation proof)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/cc-company-id-registry-repair.test.sh
+          echo "cc-company-id-registry-repair-guard: PASS"

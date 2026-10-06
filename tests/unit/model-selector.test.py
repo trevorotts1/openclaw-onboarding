@@ -113,6 +113,78 @@ class TestCascadeOrder(unittest.TestCase):
         self.assertEqual(r["model_id"], "ollama/kimi-k2.7:cloud")
 
 
+class TestOllamaCloudIdShapes(unittest.TestCase):
+    """ISSUE-08: date-tagged, size-tagged and ollama-cloud/ prefixed ids.
+
+    The chain patterns were anchored `^ollama/...(?::cloud)?$`, so every real
+    fleet id (`ollama/deepseek-v4-pro:0813-cloud`, `ollama-cloud/kimi-k2.6:cloud`)
+    matched NOTHING and every Ollama slot in every chain silently emptied. These
+    assert the shapes the fleet actually runs.
+    """
+
+    def _version(self, entry, model_id):
+        m = entry["pattern"].match(model_id)
+        self.assertIsNotNone(m, "%s must match %s" % (entry["label"], model_id))
+        return sm._parse_version(m.group(1))
+
+    def test_date_tagged_deepseek_pro(self):
+        self.assertEqual(
+            self._version(sm.DEEPSEEK_PRO_OLLAMA, "ollama/deepseek-v4-pro:0813-cloud"), (4,))
+
+    def test_date_tagged_kimi(self):
+        self.assertEqual(
+            self._version(sm.KIMI_OLLAMA, "ollama/kimi-k2.6:0711-cloud"), (2, 6))
+
+    def test_date_tagged_deepseek_flash(self):
+        self.assertEqual(
+            self._version(sm.DEEPSEEK_FLASH_OLLAMA, "ollama/deepseek-v4-flash:0731-cloud"), (4,))
+
+    def test_ollama_cloud_prefix_minimax(self):
+        self.assertEqual(
+            self._version(sm.MINIMAX_OLLAMA, "ollama-cloud/minimax-m3:cloud"), (3,))
+
+    def test_ollama_cloud_prefix_kimi(self):
+        self.assertEqual(
+            self._version(sm.KIMI_OLLAMA, "ollama-cloud/kimi-k2.6:cloud"), (2, 6))
+
+    def test_glm_on_ollama_cloud_has_a_slot(self):
+        self.assertEqual(self._version(sm.GLM_OLLAMA, "ollama/glm-5.3:cloud"), (5, 3))
+        self.assertIn(sm.GLM_OLLAMA, sm.CHAINS["mid"]["normal"])
+
+    def test_size_tagged_cloud_tag_still_matches(self):
+        # the pre-existing compound tag shape (`:235b-cloud`) must keep matching
+        self.assertEqual(self._version(sm.MINIMAX_OLLAMA, "ollama/minimax-m3:235b-cloud"), (3,))
+
+    def test_code_variant_is_not_the_kimi_chat_slot(self):
+        # a family SUFFIX is a different model; it must never fill the Kimi slot
+        self.assertIsNone(sm.KIMI_OLLAMA["pattern"].match("ollama/kimi-k2.7-code:cloud"))
+
+    def test_highest_version_wins_across_tag_shapes(self):
+        inv = ["ollama/kimi-k2.7:cloud", "ollama/kimi-k2.6:0711-cloud"]
+        self.assertEqual(sm._best_match_in_position(inv, sm.KIMI_OLLAMA),
+                         "ollama/kimi-k2.7:cloud")
+
+    def test_ollama_glm_slot_never_claims_an_openrouter_glm_slug(self):
+        # both slots are family `glm`; the Tier-1 slot must not claim the Tier-2
+        # verified slug (that would mislabel an OpenRouter model as Ollama Cloud)
+        inv = ["openrouter/z-ai/glm-5.3"]
+        self.assertIsNone(sm._best_match_in_position(inv, sm.GLM_OLLAMA))
+        self.assertEqual(sm._best_match_in_position(inv, sm.GLM_OPENROUTER),
+                         "openrouter/z-ai/glm-5.3")
+
+    def test_real_fleet_inventory_resolves_every_tier(self):
+        inv = ["ollama/kimi-k2.6:0711-cloud", "ollama/deepseek-v4-pro:0813-cloud",
+               "ollama/deepseek-v4-flash:0731-cloud", "ollama/minimax-m3:cloud",
+               "ollama/glm-5.3:cloud", "ollama/kimi-k2.7-code:cloud"]
+        heavy = sm._best_match_in_position(inv, sm.CHAINS["heavy"]["normal"][0])
+        mid = sm._best_match_in_position(inv, sm.CHAINS["mid"]["normal"][0])
+        fast = sm._best_match_in_position(inv, sm.CHAINS["fast"]["normal"][0])
+        self.assertEqual(heavy, "ollama/deepseek-v4-pro:0813-cloud")
+        self.assertEqual(mid, "ollama/minimax-m3:cloud")
+        self.assertEqual(fast, "ollama/deepseek-v4-flash:0731-cloud")
+        self.assertNotEqual(heavy, mid)   # HEAVY-WRITER and JUDGE stay independent
+
+
 class TestModalityMatch(unittest.TestCase):
     """Invariant 2: vision task MUST get a vision model; text-only never eligible."""
 

@@ -115,6 +115,7 @@ _BW_SHARED_UTILS = os.path.join(
 )
 sys.path.insert(0, os.path.normpath(_BW_SHARED_UTILS))
 from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy, registry_rows as _registry_rows
+from shared_core_copy import ensure_core_copy
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
     _HAS_CANONICAL_SLUG = True
@@ -139,12 +140,30 @@ try:
         library_lookup as _crw_library_lookup,
         fill_tokens as _crw_fill_tokens,
         normalize_dept as _crw_normalize_dept,
+        record_sop_needed as _crw_record_sop_needed,
+        routing_how_to as _crw_routing_how_to,
+        write_sop_needed_manifest as _crw_write_sop_needed_manifest,
+        ensure_director_role as _crw_ensure_director_role,
+        get_sop_needed_records as _crw_get_sop_needed_records,
     )
     _LIBRARY_FILL_AVAILABLE = True
 except Exception as _e:  # pragma: no cover - defensive
     _LIBRARY_FILL_AVAILABLE = False
     print(f"[ROLE-LIBRARY WARNING] create_role_workspaces import failed "
           f"({_e}); falling back to stub+LLM SOP path", file=sys.stderr)
+    # v25.4.0: the no-stub path needs these names to exist even when the
+    # engine import fails — the fallbacks below refuse loudly rather than
+    # writing a silent placeholder.
+    def _crw_record_sop_needed(*a, **k):
+        raise RuntimeError("create_role_workspaces unavailable: cannot record SOP-needed")
+    def _crw_routing_how_to(*a, **k):
+        raise RuntimeError("create_role_workspaces unavailable: cannot build routing doc")
+    def _crw_write_sop_needed_manifest(*a, **k):
+        return None
+    def _crw_ensure_director_role(roles, dept_slug, dept_name=""):
+        return list(roles or [])
+    def _crw_get_sop_needed_records():
+        return []
 
 # v13.8.14 PROVER-ALIGNMENT (single source of truth): per-role folder creation
 # routes through the SAME engine floor-fill-driver.py uses —
@@ -201,7 +220,8 @@ def _resolve_build_state_path():
     return None
 
 # WS-2: build-wide tally of how roles were staffed, for the visible ratio log.
-_LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0}
+_LIBRARY_FILL_STATS = {"instantiated_from_library": 0, "llm_generated": 0,
+                       "routed_to_general_task": 0}
 # Set of role folder names (absolute paths) instantiated from the library, so
 # write_sop_research_manifest() can SKIP them (their SOPs are already authored
 # inside how-to.md - no LLM regeneration needed).
@@ -2557,6 +2577,29 @@ def verify_interview_complete(answers_path=None):
     return result
 
 
+def _guarantee_general_task(selected_departments, floor):
+    """v25.4.0 — general-task is the mandatory catch-all routing target.
+
+    The no-stub installer routes every library-miss role's work to the
+    general-task department. That routing is only valid if the department
+    EXISTS, so general-task is never declinable: even an explicit decline is
+    overridden here with a loud log (the decline stays recorded; it is simply
+    not honored for this one department — the fail-safe-to-the-LARGER-floor
+    posture: visibly over-provisioned beats silently under-routed).
+    """
+    if _canonical_present("general-task", selected_departments):
+        return
+    info = (floor or {}).get("general-task", {}).copy()
+    if not info:
+        info = {"name": "General Task",
+                "description": "Catch-all routing fallback department.",
+                "emoji": "🔀"}
+    selected_departments["general-task"] = info
+    print("[CANONICAL] general-task is the mandatory catch-all routing target "
+          "— force-included even if declined. Routed work must always have a "
+          "department to land in.", file=sys.stderr)
+
+
 def reconcile_canonical_floor(selected_departments, core_answers, departments_config):
     """
     Enforce the canonical floor on the client's selected departments.
@@ -2617,6 +2660,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
               f"{len(selected_departments)} departments carried forward, "
               f"{len(declined)} provenanced decline(s) retired, "
               f"0 re-added.", file=sys.stderr)
+        _guarantee_general_task(selected_departments, floor)
         return selected_departments
 
     industry = core_answers.get("industry", "") or ""
@@ -2684,6 +2728,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     print(f"[CANONICAL] Floor reconciled: {len(selected_departments)} departments "
           f"({len(auto_included)} auto-included, {len(client_customs)} client customs, "
           f"{len(declined)} declined).", file=sys.stderr)
+    _guarantee_general_task(selected_departments, floor)
     return selected_departments
 
 
@@ -2823,18 +2868,19 @@ def _detect_vertical_packs(core_answers, vertical_packs):
         if not isinstance(pack, dict):
             continue
         hits = []
+        variants = pack.get("auto_add_keyword_variants") or {}
         for kw in pack.get("auto_add_keywords", []) or []:
             k = str(kw).strip().lower()
             if not k:
                 continue
             # Word-boundary match for single tokens; substring for multi-word
             # phrases (which are already specific enough not to false-match).
-            if " " in k:
-                if k in haystack:
+            # The keyword's listed inflected forms count as the keyword
+            # ("coaching" for "coach"; never a stem, so "stagecoach" stays out).
+            for form in [k] + [str(v).strip().lower() for v in variants.get(kw) or [] if str(v).strip()]:
+                if (form in haystack) if " " in form else re.search(r"\b" + re.escape(form) + r"\b", haystack):
                     hits.append(kw)
-            else:
-                if re.search(r"\b" + re.escape(k) + r"\b", haystack):
-                    hits.append(kw)
+                    break
         if hits:
             matched.append((pack_id, hits))
     return matched
@@ -3204,30 +3250,39 @@ def materialize_custom_roles(dept_id, dept_info, dept_config, interview_answers)
         os.makedirs(role_dir, exist_ok=True)
         how_to_path = os.path.join(role_dir, "how-to.md")
         if not os.path.isfile(how_to_path):
-            with open(how_to_path, "w") as f:
-                f.write(f"""# {title} - how-to.md  [PENDING - OWNER-REQUESTED CUSTOM ROLE - FILL FROM LIBRARY]
-
-**Department:** {dept_info['name']} ({dept_info.get('emoji', '')})
-**Company:** {company_name}
-**Industry:** {industry}
-**Staffing:** {"permanent specialist" if permanent else "on-call specialist"}
-**Owner request:** {summary or "(owner asked for this role during the interview; no extra detail captured)"}
-**Status:** PENDING - owner-requested custom role; fill from the nearest role-library template family.
-
-> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
-> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
->    nearest template family (closest role title). If none, use the closest dept family.
-> 2. Copy that template and TOKEN-FILL: company = `{company_name}`, role = `{title}`,
->    department = `{dept_info['name']}`, industry = `{industry}`.
-> 3. Keep the template's Section-9 SOP structure intact. If the owner gave a
->    specific procedure for this role (see the dept's owner-procedures.md), fold it
->    into the relevant SOP step.
-> 4. Once filled, remove this PENDING header - the role drops off PENDING-SOPS.md.
-
-## What This Role Does
-
-{summary or f"Owner-requested specialist in the {dept_info['name']} department. Materialized as a build decision (Capability 3)."}
-""")
+            # v25.4.0: NO PENDING stubs — not even for owner-requested custom
+            # roles. Library fill first; on a miss, the routing notice sends
+            # the role's work to general-task and a SOP-needed record tracks
+            # the gap for the authoring step.
+            _custom_filled = None
+            if _LIBRARY_FILL_AVAILABLE:
+                try:
+                    _doc, _entry = _crw_library_lookup(slug, dept_id)
+                    if _doc:
+                        _custom_filled = _crw_fill_tokens(
+                            _doc.read_text(encoding="utf-8"), title,
+                            dept_info["name"], False, role_entry=_entry)
+                        if len(_custom_filled.encode("utf-8")) < 3072:
+                            _custom_filled = None
+                except Exception as _e:  # noqa: BLE001 — lookup never breaks the build
+                    print(f"[CUSTOM-ROLE] library lookup failed for '{title}': {_e}",
+                          file=sys.stderr)
+            if _custom_filled is not None:
+                with open(how_to_path, "w") as f:
+                    f.write(_custom_filled)
+                print(f"[CUSTOM-ROLE] '{title}' library-filled.", file=sys.stderr)
+            else:
+                _rec = _crw_record_sop_needed(
+                    title, dept_id,
+                    "no role-library template matched (owner-requested custom role)",
+                    role_folder=role_dir, how_to_path=how_to_path,
+                    role_description=summary)
+                with open(how_to_path, "w") as f:
+                    f.write(_crw_routing_how_to(
+                        title, dept_info["name"], dept_id, company_name,
+                        industry, _rec["id"], role_description=summary))
+                print(f"[CUSTOM-ROLE] '{title}' no template — routed to general-task "
+                      f"+ SOP-needed record {_rec['id']}.", file=sys.stderr)
         existing_slugs.add(slug)
         created.append(role_dir)
         built_records.append({"dept": dept_id, "title": title, "slug": slug, "permanent": permanent})
@@ -3691,6 +3746,8 @@ def apply_standard_edits(config):
         custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
+        # v25.4.0 — NO EMPTY DEPARTMENTS: final on-disk refusal.
+        _refuse_empty_department_on_disk(dept_id)
         capture_custom_sops(dept_id, dept_info, dept_config, dept_answers)
         specialists, _decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
         specialists_by_dept[dept_id] = specialists
@@ -3705,11 +3762,13 @@ def apply_standard_edits(config):
                       f"{dept_id}: {_pe}", file=sys.stderr)
     _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
     _llm = _LIBRARY_FILL_STATS["llm_generated"]
-    _tot = _inst + _llm
+    _routed = _LIBRARY_FILL_STATS["routed_to_general_task"]
+    _tot = _inst + _llm + _routed
     _pct = (100 * _inst // _tot) if _tot else 0
     print(f"[STANDARD-FIRST ROLE-LIBRARY SUMMARY] Roles touched: {_tot} | "
           f"instantiated-from-library: {_inst} ({_pct}%) | "
-          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          f"routed-to-general-task (no template): {_routed} | "
+          f"LLM-generated (no template): {_llm}",
           file=sys.stderr)
 
     # ── ASSEMBLY (org chart, rosters, routing map, manifests) — mirrors the
@@ -3722,7 +3781,7 @@ def apply_standard_edits(config):
         write_department_roster(dept_id, dept_info)
         write_department_how_to_use(dept_id, dept_info, company_name)
     write_universal_routing_map(selected_departments)
-    write_pending_sops_manifest(selected_departments)
+    write_sop_needed_manifest(selected_departments)
     manifest_path = write_sop_research_manifest(
         company_name=company_name,
         industry=industry,
@@ -3802,9 +3861,7 @@ def apply_standard_edits(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {a.get("id") for a in _registry_rows(_cfg_chk)
-                               if isinstance(a, dict)}
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(f"[STANDARD-FIRST WIRING-ASSERT] PASS — all "
                       f"{len(_expected_dept_agent_ids)} dept agents confirmed in "
@@ -3827,10 +3884,7 @@ def apply_standard_edits(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {a.get("id") for a in
-                                            _registry_rows(_cfg_chk2)
-                                            if isinstance(a, dict)}
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print("[STANDARD-FIRST WIRING-ASSERT] PASS (after "
                                       "materialize repair)", file=sys.stderr)
@@ -4236,6 +4290,8 @@ def build_from_config(config):
         if custom_role_folders:
             role_folders = list(role_folders) + custom_role_folders
             print(f"[NON-INTERACTIVE] Added {len(custom_role_folders)} owner-requested custom role(s) to {dept_id}/", file=sys.stderr)
+        # v25.4.0 — NO EMPTY DEPARTMENTS: final on-disk refusal.
+        _refuse_empty_department_on_disk(dept_id)
 
         # CAPABILITY 4 (PRD R2.5): capture this owner's department-specific
         # procedures as a build decision, respecting sop_boundary_gate.py
@@ -4277,11 +4333,13 @@ def build_from_config(config):
     # (deterministic, identical across clients) rather than regenerating SOPs.
     _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
     _llm = _LIBRARY_FILL_STATS["llm_generated"]
-    _tot = _inst + _llm
+    _routed = _LIBRARY_FILL_STATS["routed_to_general_task"]
+    _tot = _inst + _llm + _routed
     _pct = (100 * _inst // _tot) if _tot else 0
     print(f"[ROLE-LIBRARY SUMMARY] Roles staffed: {_tot} | "
           f"instantiated-from-library: {_inst} ({_pct}%) | "
-          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          f"routed-to-general-task (no template): {_routed} | "
+          f"LLM-generated (no template): {_llm}",
           file=sys.stderr)
 
     # Load persona categories and create governing personas
@@ -4317,7 +4375,7 @@ def build_from_config(config):
     # Gap-3: collect every NO_TEMPLATE role (PENDING how-to.md) into a single
     # company-root manifest so the orchestrator knows exactly what to fill - a
     # missing template is never a silent empty stub.
-    write_pending_sops_manifest(selected_departments)
+    write_sop_needed_manifest(selected_departments)
 
     # Issue #9: all department roles are on disk; the org chart, rosters, routing
     # map and persona matrix are being assembled.
@@ -4460,20 +4518,13 @@ def build_from_config(config):
             # via explicit tools.allow on each generation dept agent (see
             # add_agent_to_config below).
             #
-            # GOAL-4 D4 (4B+4C) — NO-REFUSAL TOOL BASELINE at build origin.
-            # Mirrors apply-fleet-standards.sh: agents.defaults.tools.allow=["*"]
-            # so a freshly-built box is BORN with departments + sub-agents able to
-            # run exec / file ops / web / MCP / Kie HTTP without ever refusing a
-            # job. This is the VALID defaults-level key (allow) — NOT the poison
-            # key (exec). Under RESTRICT-ONLY precedence the CEO/main per-agent
-            # deny (set in add_agent_to_config) STILL wins, so the wildcard does
-            # NOT re-open the CEO. Idempotent: only fills the key if absent so a
-            # client customization is never clobbered.
-            _defaults = config_data.setdefault("agents", {}).setdefault("defaults", {})
-            _defaults_tools = _defaults.setdefault("tools", {})
-            if "allow" not in _defaults_tools:
-                _defaults_tools["allow"] = ["*"]
-                print("[NON-INTERACTIVE] no-refusal baseline: agents.defaults.tools.allow=['*'] (GOAL-4 D4)", file=sys.stderr)
+            # agents.defaults is NEVER written by the build. The GOAL-4 D4
+            # no-refusal baseline used to be written here as
+            # agents.defaults.tools.allow=["*"]; OpenClaw >= 2026.6.8 rejects ANY
+            # agents.defaults.tools key ("agents.defaults: Unrecognized key
+            # \"tools\""), so the next gateway restart fails. The baseline is
+            # owned by scripts/apply-fleet-standards.sh, which writes the
+            # schema-valid form for the box's own OpenClaw version.
 
             registration_failures = []
             if any(os.path.isfile(os.path.join(DEPARTMENTS_DIR, d, "SOUL.md")) for d in ("master-orchestrator", "ceo")):
@@ -4484,8 +4535,7 @@ def build_from_config(config):
                     if result is False:
                         # False = guard-blocked or not added (not just already-present)
                         # Check if it was already present (idempotent) vs actually failed
-                        existing_ids = [a.get("id") for a in _registry_rows(config_data)]
-                        if f"dept-{dept_id}" not in existing_ids:
+                        if not _registered_dept_agent_id(_registry_rows(config_data), dept_id):
                             registration_failures.append(f"{dept_id}:add_returned_false")
                 except Exception as _reg_e:
                     print(f"[NON-INTERACTIVE ERROR] Registration failed for {dept_id}: {_reg_e}", file=sys.stderr)
@@ -4540,11 +4590,7 @@ def build_from_config(config):
     if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
         try:
             _cfg_chk = load_openclaw_config()
-            _actual_ids_chk = {
-                a.get("id") for a in _registry_rows(_cfg_chk)
-                if isinstance(a, dict)
-            }
-            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            _wiring_missing = _missing_dept_agents(_cfg_chk, _expected_dept_agent_ids)
             if not _wiring_missing:
                 print(
                     f"[WIRING-ASSERT] PASS — all {len(_expected_dept_agent_ids)} "
@@ -4571,12 +4617,7 @@ def build_from_config(config):
                         ).returncode
                         if _mat_rc == 0:
                             _cfg_chk2 = load_openclaw_config()
-                            _actual_ids2 = {
-                                a.get("id")
-                                for a in _registry_rows(_cfg_chk2)
-                                if isinstance(a, dict)
-                            }
-                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            _still_missing = _missing_dept_agents(_cfg_chk2, _expected_dept_agent_ids)
                             if not _still_missing:
                                 print(
                                     f"[WIRING-ASSERT] PASS (after materialize repair) "
@@ -4664,7 +4705,7 @@ def build_from_config(config):
 
     # v10.5.1: Run v2.1 post-build augmentation - adds IDENTITY.md, SOUL.md,
     # MEMORY.md, HEARTBEAT.md, how-to.md (universal 18-section template), and
-    # AGENTS/TOOLS/USER symlinks to every role folder created above. Master
+    # AGENTS/TOOLS/USER real-file copies to every role folder created above. Master
     # Orchestrator (CEO) gets the CEO variant of the deferral clause. Idempotent.
     #
     # v10.15.4: Stream stdout/stderr live (no capture_output). Record return
@@ -5363,38 +5404,15 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(da_sop_path, 'w') as f:
             f.write(da_sop_content)
 
-    # v9.6.1: SHARED files (AGENTS.md / TOOLS.md / USER.md) are SYMLINKED,
-    # not copied. Every dept director, specialist, and sub-agent reads the
-    # SAME master file at ~/clawd/. When any agent writes to its AGENTS.md,
-    # TOOLS.md, or USER.md, the write lands in the universal file and ALL
-    # other agents pick it up on next read.
-    #
-    # Reason: prior `shutil.copy2()` was creating per-dept duplicates that
-    # diverged from the master over time, defeating the purpose of a shared
-    # operating playbook (AGENTS.md), shared tool registry (TOOLS.md), and
-    # shared owner profile (USER.md).
+    # SHARED files (AGENTS.md / TOOLS.md / USER.md) are REAL-FILE COPIES of the
+    # workspace root's canonical (N29, amended 2026-07-31). A symlink here is
+    # rejected by the runtime's workspace-root boundary guard and the dept agent
+    # silently runs on a ~107-char stub. An existing real, non-empty file is
+    # NEVER deleted or overwritten -- the updater's link_shared_core_files()
+    # refreshes it with backup + content preservation on every roll.
     for filename in INHERITED_FILES:
-        src = os.path.join(WORKSPACE_ROOT, filename)
-        dst = os.path.join(dept_dir, filename)
-        if not os.path.isfile(src):
-            continue
-        # If a stale copy or wrong symlink exists, remove it before re-linking
-        if os.path.lexists(dst):
-            # Already a correct symlink pointing to the master? Skip.
-            if os.path.islink(dst) and os.readlink(dst) == src:
-                continue
-            try:
-                os.remove(dst)
-            except OSError as e:
-                print(f"[INHERITED-FILES WARN] Could not replace {dst}: {e}", file=sys.stderr)
-                continue
-        try:
-            os.symlink(src, dst)
-        except OSError as e:
-            # Fallback to copy only if symlink unsupported (rare - Windows w/o admin)
-            print(f"[INHERITED-FILES WARN] symlink failed for {filename}: {e}; falling back to copy",
-                  file=sys.stderr)
-            shutil.copy2(src, dst)
+        ensure_core_copy(os.path.join(WORKSPACE_ROOT, filename),
+                         os.path.join(dept_dir, filename))
 
     # G5: detect CEO dept - canonical orchestrator rule is PREPENDED to its
     # MEMORY.md / SOUL.md / IDENTITY.md (NOT to AGENTS.md/TOOLS.md which are
@@ -5409,19 +5427,19 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(soul_path, 'w') as f:
             f.write(soul_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of SOUL.md
-    # (idempotent - skip if V2 marker already present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V4.3 marker already present; upgrade older V1-V4 managed block if present)
     if is_ceo_dept:
         with open(soul_path, 'r') as f:
             existing = f.read()
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in existing:
-            # Strip any V1 block first (so V2 is the only copy at the top)
+            # Managed-block upgrade handled inside _upgrade_ceo_policy (V4.3 is the only copy at the top)
             with open(soul_path, 'w') as f:
                 f.write(_upgrade_ceo_policy(existing))
 
     # v10.13.23 - Create IDENTITY.md for the dept head (Trevor's agent-file
     # architecture). Per the spec: every top-level agent gets its own
     # IDENTITY/SOUL/MEMORY/HEARTBEAT; the SHARED files (USER/AGENTS/TOOLS)
-    # stay symlinked at the workspace root. Sub-agents (role folders inside
+    # are real-file copies of the workspace root (N29). Sub-agents (role folders inside
     # this dept) get their IDENTITY.md via post-build-role-workspaces.py.
     identity_path = os.path.join(dept_dir, "IDENTITY.md")
     if not os.path.isfile(identity_path):
@@ -5429,7 +5447,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
         with open(identity_path, 'w') as f:
             f.write(identity_content)
     # G5: for CEO, prepend canonical orchestrator rule at the TOP of IDENTITY.md
-    # (idempotent - skip if V2 marker present; upgrade V1→V2 if only V1 present)
+    # (idempotent - skip if V4.3 marker already present; upgrade older V1-V4 managed block if present)
     if is_ceo_dept:
         with open(identity_path, 'r') as f:
             existing = f.read()
@@ -5448,8 +5466,8 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
             else:
                 f.write(f"# MEMORY.md - {dept_info['name']} Department\n\n> Long-term state, decisions, and metrics for this department.\n> Updated by the department head after each work session.\n")
-    # G5: if CEO MEMORY.md already exists but lacks V2 marker, prepend it
-    # (upgrade V1→V2 if only V1 is present)
+    # G5: if CEO MEMORY.md already exists but lacks V4.3 marker, prepend it
+    # (upgrade older V1-V4 managed block if present)
     elif is_ceo_dept:
         with open(memory_path, 'r') as f:
             existing = f.read()
@@ -5486,7 +5504,7 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
                 ws_existing = _f.read()
         else:
             ws_existing = ""
-        # Only inject if V2 marker not already present
+        # Only inject if V4.3 marker not already present
         if CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER not in ws_existing:
             with open(ws_soul_path, 'w') as _f:
                 _f.write(_upgrade_ceo_policy(ws_existing))
@@ -5522,7 +5540,10 @@ def create_department_workspace(dept_id, dept_info, interview_answers):
 # Idempotency: create_department_workspace() checks for the IDEMPOTENCY_MARKER
 # before prepending - re-running the build never duplicates the block.
 
-CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V3 -->"
+# v25.2.22 fix 4: guard on the CURRENT marker. A bare _V4 guard read the old V4
+# block as present and skipped the upgrade, so existing departments/ceo
+# SOUL.md / IDENTITY.md / MEMORY.md stayed on V4 forever.
+CEO_ORCHESTRATOR_IDEMPOTENCY_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V4_3 -->"
 CEO_ORCHESTRATOR_V1_MARKER = "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"
 CEO_ORCHESTRATOR_RULE = _ceo_policy_block()
 
@@ -5577,7 +5598,7 @@ def generate_identity_md(dept_id, dept_info, interview_answers):
 
     Trevor's agent-file architecture (v10.13.23): every top-level agent has
     its own IDENTITY/SOUL/MEMORY/HEARTBEAT. Sub-agents inherit. SHARED files
-    (USER/AGENTS/TOOLS) live at the workspace root and are symlinked.
+    (USER/AGENTS/TOOLS) are real-file copies of the workspace root (N29).
 
     Kept intentionally lightweight - the agent fills in its persona name and
     voice during the first conversation with the owner.
@@ -5633,9 +5654,9 @@ department mission, KPIs, and standards. See HEARTBEAT.md for the cadence.
 - I back up the local OpenClaw config before any change.
 - I follow the Teach Yourself Protocol (TYP) for substantial new knowledge.
 - I investigate root cause before fixing. I never claim done without verifying.
-- I use the symlinked TOOLS.md to know what tools are available.
-- I use the symlinked AGENTS.md to know how to behave and who to escalate to.
-- I use the symlinked USER.md to know who I work for and how they communicate.
+- I use the shared TOOLS.md to know what tools are available.
+- I use the shared AGENTS.md to know how to behave and who to escalate to.
+- I use the shared USER.md to know who I work for and how they communicate.
 {production_tools_note}
 ## Persona Governance
 
@@ -6429,6 +6450,99 @@ def _instantiate_role_from_library(role_name, dept_id, interview_answers):
     return header + out
 
 
+def _library_role_entries(dept_id):
+    """The role library's roles for a department, one per canonical slug."""
+    index = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "templates", "role-library", "_index.json")
+    try:
+        with open(index) as f:
+            roles = json.load(f).get("roles", [])
+    except (OSError, ValueError):
+        return []
+    dept = _crw_normalize_dept(dept_id) if _LIBRARY_FILL_AVAILABLE else dept_id
+    out = {}
+    for e in roles:
+        if (e.get("dept") or "").lower() == dept and e.get("slug"):
+            out.setdefault(e["slug"], e)
+    return list(out.values())
+
+
+def _role_key(name, dept_id):
+    """Canonical library slug for a role name or folder name, prover-normalized."""
+    bare = re.sub(r"^\d+[-_]", "", str(name or ""))
+    if _LIBRARY_FILL_AVAILABLE:
+        _, entry = _crw_library_lookup(bare, dept_id)
+        if entry and entry.get("slug"):
+            bare = entry["slug"]
+    return re.sub(r"-{2,}", "-", _engine_slugify(bare))
+
+
+def library_floor_roles(dept_id, roles, dept_dir=None):
+    """Role folders carry the role library's canonical slug, and every library
+    role of the department is built.
+
+    The suggested-roles headers carry employment tags and no **Slug:** line
+    ("### 1. Director of CRM (full-time-permanent)"), so the raw name became the
+    folder ("01-director-of-crm-full-time-permanent") and the floor prover never
+    matched it. Roles the roster does not list (healer, devil's advocate, SOP
+    writer) were never built. A role (or folder already on disk) that resolves to
+    a library slug counts as present, so nothing is built twice.
+    """
+    have = set()
+    for r in roles:
+        if not (r.get("slug") or "").strip() and _LIBRARY_FILL_AVAILABLE:
+            _, entry = _crw_library_lookup(r["name"], dept_id)
+            if entry and entry.get("slug"):
+                r["slug"] = entry["slug"]
+        have.add(_role_key(r.get("slug") or r["name"], dept_id))
+    if dept_dir and os.path.isdir(dept_dir):
+        have |= {_role_key(n, dept_id) for n in os.listdir(dept_dir)
+                 if os.path.isdir(os.path.join(dept_dir, n))}
+    nums = []
+    for r in roles:
+        try:
+            if int(r.get("number") or 0) < 99:
+                nums.append(int(r.get("number") or 0))
+        except (TypeError, ValueError):
+            pass
+    nxt = max(nums, default=0) + 1
+    for e in sorted(_library_role_entries(dept_id), key=lambda e: e["slug"]):
+        if _role_key(e["slug"], dept_id) in have:
+            continue
+        title = e.get("title") or ""
+        roles.append({"number": nxt, "name": title if title and "{{" not in title else e["slug"].replace("-", " ").title(),
+                      "slug": e["slug"], "description": "", "sops": [], "persona_traits": "",
+                      "is_qc": e["slug"].startswith("qc")})
+        have.add(_role_key(e["slug"], dept_id))
+        nxt += 1
+    return roles
+
+
+def _refuse_empty_department_on_disk(dept_id):
+    """v25.4.0 — NO EMPTY DEPARTMENTS (final on-disk refusal).
+
+    After roster roles + custom roles are materialized, the department must
+    have at least one role folder on disk. A department dir with zero role
+    folders is a shell (N37) — refuse loudly instead of shipping it.
+    """
+    if not DEPARTMENTS_DIR:
+        return
+    dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
+    if not os.path.isdir(dept_dir):
+        return
+    role_dirs = [
+        e for e in os.listdir(dept_dir)
+        if os.path.isdir(os.path.join(dept_dir, e))
+        and os.path.isfile(os.path.join(dept_dir, e, "how-to.md"))
+    ]
+    if not role_dirs:
+        raise ValueError(
+            f"[installer] REFUSING department '{dept_id}': zero role folders "
+            f"on disk after roster + custom-role materialization. A "
+            f"department with no roles is forbidden — remove it from the "
+            f"install spec or give it roles.")
+
+
 def create_role_workspace(dept_id, dept_info, interview_answers):
     """
     Create role subfolders inside a department workspace.
@@ -6453,13 +6567,27 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         print(f"[ROLE-WORKSPACE WARNING] Department directory does not exist: {dept_dir}", file=sys.stderr)
         return []
 
-    # Parse the suggested-roles file
-    roles = parse_suggested_roles(dept_id)
+    # Parse the suggested-roles file, then align it to the role library's floor.
+    roles = library_floor_roles(dept_id, parse_suggested_roles(dept_id), dept_dir)
+
+    # v25.4.0 — DIRECTOR REQUIRED: a department without a director is headless.
+    # If the roster + library floor name no director, scaffold one from the
+    # director template (flagged for human review). Same helper the engine
+    # uses, so both instantiation paths agree.
+    if _LIBRARY_FILL_AVAILABLE:
+        roles = _crw_ensure_director_role(
+            roles, dept_id, dept_info.get("name", ""))
+
+    # v25.4.0 — NO EMPTY DEPARTMENTS: refuse to build a department with zero
+    # roles. (Owner-requested custom roles are materialized by the caller right
+    # after this function; the final on-disk refusal lives there. Reaching here
+    # with no roles means the roster, the library floor, AND the director
+    # scaffold all came up empty — a defect, not a quiet skip.)
     if not roles:
-        print(f"[ROLE-WORKSPACE] No roles found for {dept_id}, skipping role workspace creation."
-              f" If roles are expected, check suggested-roles/{DEPT_TO_SUGGESTED_ROLES.get(dept_id, 'unknown')}",
-              file=sys.stderr)
-        return []
+        raise ValueError(
+            f"[installer] REFUSING department '{dept_id}': zero roles after "
+            f"roster parse + library floor + director scaffold. Remove it from "
+            f"the install spec or give it roles.")
 
     company_name = interview_answers.get('company_name', 'the company')
     industry = interview_answers.get('industry', '')
@@ -6477,7 +6605,7 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
         # no-slug fallback), so the folder name is byte-identical to the role-library
         # .md filename and the floor-manifest slug. It also writes the unique
         # IDENTITY/SOUL/MEMORY/HEARTBEAT files, the SOP/00-INDEX.md, and the shared
-        # AGENTS/TOOLS/USER symlinks. build-workforce then writes its EXTRA artifacts
+        # AGENTS/TOOLS/USER real-file copies. build-workforce then writes its EXTRA artifacts
         # (how-to.md from the role-library, 00-START-HERE.md, governing-personas.md,
         # and SOP stubs) INTO the engine-created role_path. role_dir/folder_name are
         # derived FROM the engine result so the two paths can never drift again.
@@ -6494,11 +6622,16 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             "number": _role_number,
             "is_ceo": (_role_number == 0 and (role.get('slug') or '').strip() == "master-orchestrator"),
             "is_qc": bool(role.get('is_qc')),
+            # v25.4.0: passthrough for scaffolded directors — the engine uses
+            # this to fill the generic director scaffold when the department
+            # has no director template of its own.
+            "_director_template_key": role.get("_director_template_key"),
+            "_scaffolded_director": bool(role.get("_scaffolded_director")),
         }
         if _ENGINE_ROLE_WRITER_AVAILABLE:
             try:
                 _engine_path = _crw_create_role_workspace(
-                    dept_dir, role['name'], (COMPANY_DIR or WORKSPACE_ROOT),
+                    dept_dir, role['name'], WORKSPACE_ROOT,
                     role_metadata=_role_metadata)
                 role_dir = str(_engine_path)
                 folder_name = os.path.basename(role_dir)
@@ -6550,52 +6683,32 @@ def create_role_workspace(dept_id, dept_info, interview_answers):
             print(f"[ROLE-LIBRARY] INSTANTIATED {folder_name} ({dept_id}) "
                   f"← role-library (SOPs included, no LLM regen)", file=sys.stderr)
         else:
-            _LIBRARY_FILL_STATS["llm_generated"] += 1
+            _LIBRARY_FILL_STATS["routed_to_general_task"] += 1
             print(f"[ROLE-LIBRARY] NO TEMPLATE for {folder_name} ({dept_id}) "
-                  f"- writing PENDING how-to.md stub (collected in PENDING-SOPS.md)",
-                  file=sys.stderr)
-            # Gap-3: NO_TEMPLATE roles must NOT leave a silent empty stub. Write a
-            # how-to.md clearly headed PENDING, carrying the EXACT one-shot
-            # instruction to populate it FROM the nearest role-library template
-            # family (token-fill, NOT a free-form LLM essay). It is also collected
-            # into the company-root PENDING-SOPS.md manifest so the orchestrator
-            # knows what to fill - never silent.
-            # v13.8.14: the engine (create_role_workspace) already wrote a PENDING
-            # stub how-to.md when no library matched. Overwrite it with
-            # build-workforce's richer PENDING how-to (company/industry tokens +
-            # the company-root PENDING-SOPS.md one-shot fill instruction). Both
-            # carry the [PENDING - FILL FROM LIBRARY] marker the manifest scans for.
+                  f"- routing work to general-task + SOP-needed record "
+                  f"(no PENDING stub written)", file=sys.stderr)
+            # v25.4.0: NO silent placeholders. The engine (create_role_workspace)
+            # already wrote a ROUTING how-to.md + emitted the SOP-needed record
+            # when no library matched. Only the legacy fallback path (engine
+            # unavailable) reaches here without one — write it now so the
+            # no-stub invariant holds on every path.
             how_to_path = os.path.join(role_dir, "how-to.md")
-            if True:
-                pending_how_to = f"""# {role['name']} - how-to.md  [PENDING - FILL FROM LIBRARY]
-
-**Department:** {dept_info['name']} ({dept_info['emoji']})
-**Company:** {company_name}
-**Industry:** {industry}
-**Status:** PENDING - no role-library template matched this role.
-
-> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
-> 1. Look in `23-ai-workforce-blueprint/templates/role-library/{dept_id}/` for the
->    nearest template family (same department, closest role title). If this
->    department has no library docs, use the closest department's family.
-> 2. Copy that template and TOKEN-FILL only the placeholders:
->    company = `{company_name}`, role = `{role['name']}`, department =
->    `{dept_info['name']}`, industry = `{industry}`.
-> 3. Keep the template's Section-9 SOP structure intact. Reserve free-form
->    generation ONLY if there is genuinely no comparable template.
-> 4. Once filled, remove this PENDING header and this role drops off PENDING-SOPS.md.
-
-## What This Role Does
-{role['description'] if role['description'] else '(see 00-START-HERE.md)'}
-
-## SOPs (read-first)
-The numbered `0N-*.md` files in this folder are step-by-step instruction sets.
-Read the matching SOP BEFORE executing a task it covers. No improvising. If no
-SOP covers the task, do not guess - escalate to the {dept_info['head']} so the
-SOP-Writer can author one (INSTRUCTIONS.md Moment 3.7).
-"""
+            _head = ""
+            try:
+                with open(how_to_path, encoding="utf-8", errors="replace") as _f:
+                    _head = _f.read(600)
+            except OSError:
+                pass
+            if "[ROUTED — WORK HANDLED BY GENERAL-TASK]" not in _head:
+                _rec = _crw_record_sop_needed(
+                    role["name"], dept_id, "no role-library template matched",
+                    role_folder=role_dir, how_to_path=how_to_path,
+                    role_description=role.get("description", ""))
                 from generated_context import write_new
-                write_new(how_to_path, pending_how_to)
+                write_new(how_to_path, _crw_routing_how_to(
+                    role["name"], dept_info["name"], dept_id, company_name,
+                    industry, _rec["id"],
+                    role_description=role.get("description", "")))
 
         # 1. Create 00-START-HERE.md
         start_here_path = os.path.join(role_dir, "00-START-HERE.md")
@@ -7444,20 +7557,34 @@ def write_universal_routing_map(departments):
     return routing_path
 
 
-def write_pending_sops_manifest(departments):
-    """Write PENDING-SOPS.md at the company root - the human/orchestrator-readable
-    manifest of every role whose how-to.md is a PENDING stub (no library template
-    matched), so the orchestrator knows exactly what still needs filling.
+def write_sop_needed_manifest(departments):
+    """Flush the installer's SOP-needed records to SOP-NEEDED.json.
 
-    Closes the 'silent empty stub' gap: a NO_TEMPLATE role is no longer a quiet
-    placeholder - it is headed PENDING in its own how-to.md AND collected here.
-    Scans the on-disk role folders for how-to.md files that carry the PENDING
-    marker (written by create_role_workspace / create_role_workspaces.stub_how_to).
+    v25.4.0: replaces write_pending_sops_manifest / PENDING-SOPS.md. The
+    installer no longer writes PENDING stubs — a library miss routes the
+    role's work to general-task and emits a machine-readable record
+    (create_role_workspaces.record_sop_needed). This flushes those records to
+    SOP-NEEDED.json (+ the human-readable SOP-NEEDED.md companion) at the
+    company root. The authoring step (scripts/author-missing-sops.py) consumes
+    the JSON; the library gate fails while any record is un-authored.
+
+    Also sweeps the departments tree for legacy PENDING markers: finding one
+    means pre-v25.4.0 code wrote a stub (or something bypassed the installer).
+    Those are reported loudly — they must be filled or converted, never left.
     """
-    if not COMPANY_DIR or not DEPARTMENTS_DIR:
-        return None
-    pending = []  # (dept_id, role_folder, how_to_path)
-    if os.path.isdir(DEPARTMENTS_DIR):
+    manifest_path = None
+    if _LIBRARY_FILL_AVAILABLE:
+        try:
+            manifest_path = _crw_write_sop_needed_manifest(COMPANY_DIR)
+        except Exception as e:
+            print(f"[SOP-NEEDED] manifest write failed: {e}", file=sys.stderr)
+    else:
+        print("[SOP-NEEDED] engine unavailable; skipping manifest", file=sys.stderr)
+
+    # Legacy sweep: PENDING markers must not exist on disk. If they do, say so
+    # loudly — a stub on disk is a build defect under the no-stub rule.
+    legacy = []
+    if DEPARTMENTS_DIR and os.path.isdir(DEPARTMENTS_DIR):
         for dept_id in sorted(departments.keys()):
             dept_dir = os.path.join(DEPARTMENTS_DIR, dept_id)
             if not os.path.isdir(dept_dir):
@@ -7470,53 +7597,19 @@ def write_pending_sops_manifest(departments):
                 if not os.path.isfile(how_to):
                     continue
                 try:
-                    head = open(how_to).read(600)
+                    head = open(how_to, encoding="utf-8", errors="replace").read(600)
                 except OSError:
                     continue
                 if "PENDING - FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
-                    pending.append((dept_id, entry, how_to))
-
-    lines = [
-        "# PENDING-SOPS.md - Role how-to.md files awaiting library fill",
-        "",
-        f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}",
-        "",
-    ]
-    if not pending:
-        lines += [
-            "All role `how-to.md` files were instantiated from the role-library "
-            "(token-fill). Nothing pending. ✅",
-            "",
-        ]
-    else:
-        lines += [
-            f"**{len(pending)} role(s) have a PENDING how-to.md** - no role-library "
-            "template matched, so each carries a PENDING header with a one-shot "
-            "fill instruction. Populate each FROM the nearest library template "
-            "family (token-fill style, NOT a free-form LLM essay). Do NOT mark the "
-            "workforce complete until this list is empty.",
-            "",
-            "| Department | Role folder | how-to.md |",
-            "| --- | --- | --- |",
-        ]
-        for dept_id, role_folder, how_to in pending:
-            lines.append(f"| {dept_id} | `{role_folder}/` | `{how_to}` |")
-        lines += [
-            "",
-            "## How to fill each (one-shot, token-fill)",
-            "For each row: open the role's `how-to.md`, read its PENDING header for "
-            "the exact instruction, find the nearest matching template family in "
-            "`23-ai-workforce-blueprint/templates/role-library/<dept>/`, copy it, "
-            "and token-fill the company/role/industry placeholders. Reserve "
-            "free-form generation only for roles with NO comparable template.",
-            "",
-        ]
-    manifest_path = os.path.join(COMPANY_DIR, "PENDING-SOPS.md")
-    with open(manifest_path, 'w') as f:
-        f.write("\n".join(lines))
-    print(f"[PENDING-SOPS] Wrote {manifest_path} ({len(pending)} pending)", file=sys.stderr)
+                    legacy.append((dept_id, entry, how_to))
+    if legacy:
+        print(f"[SOP-NEEDED] DEFECT: {len(legacy)} legacy PENDING stub(s) found on "
+              f"disk — PENDING stubs are never written by this installer. Fill them "
+              f"via scripts/fill-pending-howtos.py --apply or convert them; they "
+              f"must not ship:", file=sys.stderr)
+        for dept_id, entry, how_to in legacy:
+            print(f"  [SOP-NEEDED] LEGACY STUB: {dept_id}/{entry}/how-to.md", file=sys.stderr)
     return manifest_path
-
 
 # ============================================================
 # COMMAND CENTER CONFIG GENERATION
@@ -7934,6 +8027,31 @@ def ensure_ceo_foundation_agent(config):
     raise RuntimeError("CEO foundation workspace is not materialized; cannot register fallback")
 
 
+def _registered_dept_agent_id(rows, dept_id):
+    """Id of the agent already serving this department, or None.
+
+    That is dept-<id>, or any agent whose workspace IS this department's folder
+    (a box that registered it under another key). Either one is the department's
+    registration: the build never adds a second entry beside it.
+    """
+    agent_id = f"dept-{dept_id}"
+    rows = [a for a in rows if isinstance(a, dict)]
+    if any(a.get("id") == agent_id for a in rows):
+        return agent_id
+    ws = os.path.realpath(os.path.join(DEPARTMENTS_DIR, dept_id))
+    for a in rows:
+        if a.get("workspace") and os.path.realpath(os.path.expanduser(a["workspace"])) == ws:
+            return a.get("id")
+    return None
+
+
+def _missing_dept_agents(config, expected_ids):
+    """The expected dept-<id> agents with no registration in `config` (by id or workspace)."""
+    rows = _registry_rows(config)
+    return {aid for aid in expected_ids
+            if not _registered_dept_agent_id(rows, aid[len("dept-"):])}
+
+
 def add_agent_to_config(config, dept_id, dept_info):
     """
     Add a department head agent to openclaw.json agents.list.
@@ -7966,8 +8084,21 @@ def add_agent_to_config(config, dept_id, dept_info):
         for entry in normalized["agents"].pop("list"):
             entry = dict(entry)
             rid = entry.pop("id")
-            entries[rid] = entry
+            orig = config["agents"]["entries"].get(rid)
+            # An entry the registration did not change is written back as found.
+            unchanged = isinstance(orig, dict) and dict(orig, id=rid) == dict(entry, id=rid)
+            entries[rid] = orig if unchanged else entry
         normalized["agents"]["entries"] = entries
+        if (changed and len(entries) > 1 and "ownership" not in normalized["agents"]
+                and not any(isinstance(e, dict) and e.get("default") is True for e in entries.values())):
+            # The schema rejects a multi-agent entries roster with neither
+            # ownership="explicit" nor one default=true marker. Set it only when
+            # THIS write made the roster multi-agent; an existing value is kept.
+            # Same rule as materialize-dept-agents.sh.
+            normalized["agents"]["ownership"] = "explicit"
+        if "list" in config["agents"]:
+            # The box's own (empty) legacy key is left exactly as found.
+            normalized["agents"]["list"] = config["agents"]["list"]
         config.clear()
         config.update(normalized)
         return changed
@@ -7990,26 +8121,23 @@ def add_agent_to_config(config, dept_id, dept_info):
                 existing.pop("skills")  # Retire generated router-only skill suppression.
                 return True
         return False  # Preserve all other installed/owner configuration.
+    _other_id = _registered_dept_agent_id(agents_list, dept_id)
+    if _other_id:
+        # Already registered under another key: never a second entry, never a model.
+        print(f"[CONFIG] {agent_id}: department already registered as '{_other_id}' "
+              f"- left untouched.", file=sys.stderr)
+        return False
 
-    # U135 (July 23): Use the canonical model resolution chain instead of any
-    # hardcoded model name. resolve_dept_agent_model() drives the capability-class
-    # cascade, which selects from the box's AVAILABLE models (never a fixed id).
-    # If select_model.py is unreachable at install time, fall back to a
-    # safe default that Anthropic-strips and matches the July 23 fleet config.
+    # MODEL: a NEW agent gets NO "model" key -- it inherits agents.defaults, the
+    # model the box owner already chose. The build never writes model ids into
+    # openclaw.json: build-picked ids were not on client allowlists, and a bare
+    # "ollama/..." id hits the provider-namespace trap on boxes that register the
+    # provider as "ollama-cloud" (silent until the agent launches). N31 (object
+    # form) still binds anyone who DOES write a model; the build no longer does.
     #
-    # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
-    # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
-    # Cloud is over-capacity the agent dies silently. See AGENTS.md N31.
-    #
-    # MSF (v12.x): the dept-head model now comes from the capability-class layer.
-    # resolve_dept_agent_model() (a) honors any Layer-0 explicit pin on a seed
-    # entry, (b) infers the dept's DOMINANT capability class and resolves a
-    # concrete model from the box's AVAILABLE models via resolve_role_model(),
-    # and (c) falls straight through to the legacy _resolve_dept_default_model()
-    # cascade when model_selector is unavailable / no class model resolves.
-    # GENERATION roles never pull a dept HEAD off an LLM (the head is a router),
-    # and the per-role GENERATION gate inside resolve_role_model keeps individual
-    # generation roles off LLMs.
+    # resolve_dept_agent_model() below feeds ONLY the Command Center Layer-1
+    # dept-default artifact (dept-default-models.json -> agent_settings rows),
+    # never the openclaw.json entry.
     _seed_entry = next(
         (a for a in agents_list if isinstance(a, dict) and a.get("id") == agent_id),
         None,
@@ -8029,14 +8157,6 @@ def add_agent_to_config(config, dept_id, dept_info):
     # Record the dept default so the CC seeding step can write the
     # agent_settings (role_id IS NULL, setting_type='model') row (PLAN.md §3.2).
     _record_dept_default(dept_id, _dept_default, _primary)
-    model = {
-        "primary": _primary,
-        "fallbacks": [
-            "openrouter/moonshotai/kimi-k2.6",
-            "ollama/deepseek-v4-pro:cloud",
-            "openrouter/deepseek/deepseek-v4-pro",
-        ],
-    }
     workspace = os.path.join(DEPARTMENTS_DIR, dept_id)
     agent_dir = _agent_dir_for(agent_id)
 
@@ -8056,17 +8176,8 @@ def add_agent_to_config(config, dept_id, dept_info):
 
     # BUG 4 FIX: schema-valid subagents block ONLY. The strict 2026.5.22
     # AgentEntrySchema permits exactly { allowAgents, model } under subagents.
-    canonical_subagents = {
-        "allowAgents": ["*"],
-        "model": {
-            "fallbacks": [
-                "ollama/kimi-k2.6:cloud",
-                "openrouter/moonshot/kimi-k2.6",
-                "ollama/deepseek-v4-pro:cloud",
-                "openrouter/deepseek/deepseek-v4-pro",
-            ]
-        },
-    }
+    # No subagents.model either: sub-agents inherit the box's own model chain.
+    canonical_subagents = {"allowAgents": ["*"]}
 
     # CEO / Master Orchestrator agent - pure router, NEVER executes production work.
     # Setting skills:[] blocks ALL installed OpenClaw skills for this agent so it
@@ -8212,7 +8323,6 @@ def add_agent_to_config(config, dept_id, dept_info):
         "workspace": workspace,
         # BUG 2 FIX: unique per-agent agentDir derived from the unique id.
         "agentDir": agent_dir,
-        "model": model,
         "subagents": canonical_subagents,
     }
     if is_ceo_agent:

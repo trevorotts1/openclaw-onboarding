@@ -94,12 +94,15 @@ def _make_fixture_run_dir(tmp_path: pathlib.Path, page: str = "sales") -> pathli
     prompt body is build_infographic's own SELFTEST_PROMPT (the real
     15-element fixture, 10,255 chars, gate-clearing)."""
     rd = tmp_path / "run"
-    (rd / "working" / "prompts").mkdir(parents=True)
+    (rd / "prompts").mkdir(parents=True)
     (rd / "working" / "checkpoints").mkdir(parents=True)
     (rd / "working" / "copy").mkdir(parents=True)
     (rd / "working" / "copy" / "intake.json").write_text("{}", encoding="utf-8")
 
-    (rd / "working" / "prompts" / f"{page}.design.txt").write_text(
+    # PD-TEST-091: the prompt goes where the PIPELINE puts it. The old fixture
+    # wrote working/prompts/ — the one place no producer ever writes — so this
+    # test passed while the live run quarantined all three render phases.
+    (rd / "prompts" / f"{page}.design.txt").write_text(
         bi.SELFTEST_PROMPT, encoding="utf-8")
     return rd
 
@@ -245,3 +248,108 @@ def test_pre_fix_manifest_has_no_producer():
         "the backup is not pre-fix bytes (it already carries the producer phase)")
     sales = next(p for p in pre["phases"] if p["id"] == "P-U-DESIGN-SALES")
     assert (sales.get("executor") or {}).get("kind") == "agent"
+
+
+# ---------------------------------------------------------------------------
+# 5. PD-TEST-091 — the design-prompt path must be ONE path across every
+#    component that names it. This is the guard that was missing: the fix above
+#    changed _design_prompt_rel, but nothing failed when it disagreed with the
+#    manifest, so the disagreement shipped and the live run quarantined all
+#    three P-U-DESIGN-RENDER-* phases with "design prompt not found".
+#
+#    Four independent authorities name this path. Any one of them drifting from
+#    build_infographic's reader is the same outage, so assert all four agree.
+# ---------------------------------------------------------------------------
+def _design_prompt_authorities():
+    """(authority_name, phase_page, declared_relpath) for the design prompt."""
+    from presentation_job.manifest import Manifest
+    m = Manifest(_manifest_path())
+    by_id = {p.id: p for p in m.phases}
+    for page in DESIGN_PAGES:
+        up = page.upper()
+        producer = by_id[f"P-U-DESIGN-{up}"]
+        renderer = by_id[f"P-U-DESIGN-RENDER-{up}"]
+        for art in (producer.produces_artifact or []):
+            yield f"manifest:{producer.id}.produces_artifact", page, str(art)
+        for art in (renderer.consumes or []):
+            yield f"manifest:{renderer.id}.consumes", page, str(art)
+
+
+@pytest.mark.parametrize("page", DESIGN_PAGES)
+def test_design_prompt_path_is_one_path_everywhere(page):
+    """build_infographic's reader must equal the manifest's declared path."""
+    want = str(bi._design_prompt_rel(page))
+    authorities = [(who, str(rel)) for who, pg, rel in _design_prompt_authorities()
+                   if pg == page]
+    # Reviewer nit (PD-TEST-091 re-review): a manifest that declared NO artifacts
+    # for a design phase would make the offenders assertion below pass vacuously.
+    # Require both edges to be present AND to name this path.
+    assert len(authorities) >= 2, (
+        f"the manifest declared fewer than two edges for {page!r}: {authorities}")
+    offenders = [(who, rel) for who, rel in authorities if rel != want]
+    assert not offenders, (
+        f"the design prompt for {page!r} is named {want!r} by build_infographic "
+        f"but differently by: {offenders}. One of them is the outage.")
+
+
+@pytest.mark.parametrize("page", DESIGN_PAGES)
+def test_design_prompt_reader_matches_dispatcher_output_map(page):
+    """The dispatcher's `_UNIT_CONTRACT_OUTPUTS` declaration must name the same
+    path.
+
+    Honest scope (reviewer nit): `_UNIT_CONTRACT_OUTPUTS` has NO runtime reader --
+    the fanout's real target is derived from the MANIFEST via
+    `resolve_target_paths -> Phase.resolve_artifact_patterns`. So this is a
+    tripwire on a declaration, not a live lockstep; the manifest assertion above
+    and the verifier control below are the live ones. It is kept because a stale
+    declaration is how a future reader gets misled, which is what happened here.
+    """
+    from presentation_job import dispatcher as D
+    want = str(bi._design_prompt_rel(page))
+    got = [str(x) for x in D._UNIT_CONTRACT_OUTPUTS[f"P-U-DESIGN-{page.upper()}"]]
+    assert got == [want], (
+        f"dispatcher _UNIT_CONTRACT_OUTPUTS says {got}, reader says {want}")
+
+
+@pytest.mark.parametrize("page", DESIGN_PAGES)
+def test_design_phase_verifier_accepts_a_run_root_prompt(tmp_path, page):
+    """Behavioural control on the VERIFIER: the real `phase_verifiers.verify()`
+    must PASS when the prompt is where the pipeline puts it, and FAIL when it is
+    only at the old nested path.
+
+    Scope, stated honestly (reviewer nit): this test never calls
+    `_design_prompt_rel`, so it does NOT fail under the reader ablation. It pins
+    the verifier's side of the contract, not the reader's -- the reader is pinned
+    by the two tests above, which do fail under ablation."""
+    import phase_verifiers as pv
+    pid = f"P-U-DESIGN-{page.upper()}"
+
+    root = tmp_path / "root"
+    (root / "prompts").mkdir(parents=True)
+    (root / "prompts" / f"{page}.design.txt").write_text(
+        bi.SELFTEST_PROMPT, encoding="utf-8")
+    ok_root, why_root = pv.verify(pid, root)
+    assert ok_root, f"verifier rejects a run-root prompt the pipeline writes: {why_root}"
+
+    nested = tmp_path / "nested"
+    (nested / "working" / "prompts").mkdir(parents=True)
+    (nested / "working" / "prompts" / f"{page}.design.txt").write_text(
+        bi.SELFTEST_PROMPT, encoding="utf-8")
+    ok_nested, _ = pv.verify(pid, nested)
+    assert not ok_nested, (
+        "verifier accepts a nested prompt that no producer ever writes")
+
+
+def test_design_prompt_is_reachable_from_the_run_root(tmp_path):
+    """End-to-end shape: a prompt at the run root must be FOUND by the reader,
+    and a prompt at the old working/prompts/ location must NOT be — that
+    asymmetry is exactly what quarantined the three render phases."""
+    rd = tmp_path / "run"
+    (rd / "prompts").mkdir(parents=True)
+    (rd / "working" / "prompts").mkdir(parents=True)
+    (rd / "prompts" / "sales.design.txt").write_text("ROOT", encoding="utf-8")
+    (rd / "working" / "prompts" / "sales.design.txt").write_text(
+        "NESTED", encoding="utf-8")
+    found = rd / bi._design_prompt_rel("sales")
+    assert found.read_text(encoding="utf-8") == "ROOT", (
+        "the reader resolved the nested path the pipeline never writes")

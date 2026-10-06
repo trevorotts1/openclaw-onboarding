@@ -23,7 +23,7 @@
 #
 # WHAT IT DOES (idempotent, fail-soft):
 #   - replicates the committed install (INSTALL.md Step 2/3): copy the skill
-#     source into <VC_DIR>, create/keep a `venv`, pip-install the pinned runtime,
+#     source into <VC_DIR>, create/keep a venv, pip-install the pinned runtime,
 #     make the scripts executable
 #   - writes <VC_DIR>/.installed-from so scripts/tool-drift-check.sh can PROVE the
 #     installed copy matches the current skill-version
@@ -34,10 +34,30 @@
 #   - NEVER aborts the overall update: every failure is logged loudly and the
 #     script still exits 0 (the wiring loop continues regardless)
 #
+# VENV LOCATION (fixed 2026-09 — was previously <VC_DIR>/venv, INSIDE the skill
+#   root): OpenClaw's skill discovery walks every skill root up to depth 6 on
+#   every rescan, skipping only dot-prefixed names and node_modules — it does
+#   NOT skip `venv`. A ~215 MB site-packages tree inside the skill root got
+#   walked on every rescan. The venv now lives OUTSIDE every skill root, as a
+#   sibling of the skills parent: $(dirname "$SKILLS_PARENT")/venvs/video-creator
+#   (Mac ~/.openclaw/venvs/video-creator, VPS /data/.openclaw/venvs/video-creator),
+#   still overridable by VENV_DIR. A legacy <VC_DIR>/venv is migrated in place
+#   (moved, not rebuilt) the first time this script runs after the fix.
+#
+# DUPLICATE SKILL REGISTRATION (fixed 2026-09): the runtime copy previously
+#   carried its own SKILL.md (copied verbatim from the source), so OpenClaw
+#   registered `video-creator` twice and logged a precedence collision on every
+#   scan. The copy step below excludes SKILL.md (and venv/.venv) so only
+#   25-video-creator registers the skill; any stale <VC_DIR>/SKILL.md left over
+#   from an older install is removed on every pass.
+#
 # Invoked by update-skills.sh as:  bash wire.sh --idempotent   (arg ignored;
 #   idempotency is unconditional here). Honours VIDEO_CREATOR_DIR / VENV_DIR /
-#   PYTHON env overrides for tests. No bare `gws`, no destructive ops (additive
-#   copy, mirroring INSTALL.md's `cp -r`), no client-specific values.
+#   PYTHON env overrides for tests. No bare `gws`, no destructive ops beyond the
+#   one named below, no client-specific values.
+#   The one allowed `rm -rf` is the legacy <VC_DIR>/venv, and only once its
+#   contents are safely moved (or a healthy replacement already exists) at the
+#   new location — never a blind delete.
 # =============================================================================
 
 # Fail-soft by contract: do NOT use `set -e` / `set -u`. A per-skill installer
@@ -52,10 +72,12 @@ log() { echo "[skill25/wire] $*"; }
 # Derive from SCRIPT_DIR's parent so the path is platform-correct (Mac
 # $HOME/.openclaw/skills vs Linux /data/.openclaw/skills) WITHOUT hardcoding. On
 # Mac this equals the ~/.openclaw/skills/video-creator path tool-drift-check.sh
-# probes. INSTALL.md names the venv `venv` (Step 2) — match that exactly.
+# probes. The venv is derived the same way, one level further up, so it lands
+# outside every skill root (see the VENV LOCATION header note above).
 SKILLS_PARENT="$(dirname "$SCRIPT_DIR")"
 VC_DIR="${VIDEO_CREATOR_DIR:-$SKILLS_PARENT/video-creator}"
-VENV_DIR="${VENV_DIR:-$VC_DIR/venv}"
+VENV_DIR="${VENV_DIR:-$(dirname "$SKILLS_PARENT")/venvs/video-creator}"
+LEGACY_VENV="$VC_DIR/venv"   # pre-fix location: INSTALL.md named it `venv`, inside VC_DIR
 STAMP="$VC_DIR/.installed-from"
 PY="${PYTHON:-python3}"
 
@@ -84,6 +106,39 @@ if [ "$VC_DIR" = "$SCRIPT_DIR" ]; then
   log "ERROR: install dir resolved to the source dir ($VC_DIR) — refusing to self-copy. Skipping (update continues)."
   exit 0
 fi
+
+# ---- venv migration: move any legacy in-skill-root venv out, before anything
+# else runs (including the is_current fast path, so an already-current box
+# still migrates instead of keeping the duplicate skill + in-root venv forever).
+venv_ok() { [ -x "$1/bin/python" ] && "$1/bin/python" -c "import moviepy.editor" >/dev/null 2>&1; }
+if [ "$LEGACY_VENV" != "$VENV_DIR" ] && [ -d "$LEGACY_VENV" ]; then
+  mkdir -p "$(dirname "$VENV_DIR")" 2>/dev/null || true
+  if [ -e "$VENV_DIR" ] && venv_ok "$VENV_DIR"; then
+    rm -rf "$LEGACY_VENV" && log "removed legacy venv at $LEGACY_VENV (new location already healthy)"
+  else
+    [ -e "$VENV_DIR" ] && rm -rf "$VENV_DIR"   # broken/partial new one; legacy replaces it
+    if mv "$LEGACY_VENV" "$VENV_DIR" 2>/dev/null; then
+      log "moved legacy venv $LEGACY_VENV -> $VENV_DIR"
+    else
+      log "WARN: legacy venv move failed ($LEGACY_VENV -> $VENV_DIR)"
+    fi
+  fi
+fi
+# A venv relocated by `mv` (by this script, or by hand before this fix existed)
+# keeps a stale activate script pointing at the old path (bin/python still
+# imports fine; `source activate` does not). Repair it in place, in-process —
+# no reinstall, no network.
+if [ -x "$VENV_DIR/bin/python" ] && [ -f "$VENV_DIR/bin/activate" ] && ! grep -qF "$VENV_DIR" "$VENV_DIR/bin/activate" 2>/dev/null; then
+  if "$VENV_DIR/bin/python" -m venv --without-pip "$VENV_DIR" >/dev/null 2>&1; then
+    log "repaired venv activate/scripts for relocated venv at $VENV_DIR"
+  else
+    log "WARN: venv script repair failed for $VENV_DIR"
+  fi
+fi
+# The runtime copy must never register a second `video-creator` skill: a stale
+# SKILL.md from an older install (this fix stops copying a new one) is removed
+# on every pass.
+rm -f "$VC_DIR/SKILL.md" 2>/dev/null
 
 # ---- drift stamp: record the source version this copy was built from --------
 # Format matches scripts/tool-drift-check.sh's parser (SKILL_VERSION= /
@@ -135,29 +190,36 @@ rebuild() {
   mkdir -p "$VC_DIR" || { log "ERROR: mkdir $VC_DIR failed"; return 1; }
 
   # Additive sync of the source into the install copy (mirrors INSTALL.md's
-  # `cp -r`). The venv lives ONLY in $VC_DIR and is absent from the source, so
-  # this never clobbers it; user output/config under $VC_DIR is likewise kept.
-  if ! cp -R "$SCRIPT_DIR/." "$VC_DIR/"; then
-    log "ERROR: source copy ($SCRIPT_DIR -> $VC_DIR) failed"
-    return 1
-  fi
+  # `cp -r`), EXCEPT SKILL.md (would register a 2nd `video-creator` skill) and
+  # any venv/.venv that might exist in the source folder (the venv lives only
+  # at $VENV_DIR, outside every skill root — never copied into $VC_DIR). User
+  # output/config already under $VC_DIR is untouched either way.
+  local _entry _base
+  for _entry in "$SCRIPT_DIR"/* "$SCRIPT_DIR"/.[!.]*; do
+    [ -e "$_entry" ] || continue
+    _base="$(basename "$_entry")"
+    case "$_base" in SKILL.md|venv|.venv) continue ;; esac
+    cp -R "$_entry" "$VC_DIR/" || { log "ERROR: copy $_entry -> $VC_DIR failed"; return 1; }
+  done
   chmod +x "$VC_DIR/scripts/"*.py 2>/dev/null || true
 
-  # venv: create if missing, otherwise reuse (idempotent).
+  # venv: create if missing, otherwise reuse (idempotent). Lives outside the
+  # skill root (see header) so OpenClaw's skill-root scan never walks it.
+  mkdir -p "$(dirname "$VENV_DIR")" 2>/dev/null || true
   if [ ! -x "$VENV_DIR/bin/python" ]; then
     log "creating venv -> $VENV_DIR"
     "$PY" -m venv "$VENV_DIR" || { log "ERROR: venv creation failed"; return 1; }
   fi
 
-  # shellcheck disable=SC1091
-  . "$VENV_DIR/bin/activate" 2>/dev/null || { log "ERROR: venv activate failed"; return 1; }
-  pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
-  if ! pip install -q "${PIP_PINS[@]}"; then
+  # Use the venv's own python module invocations directly — never bare `pip`
+  # and never `source activate` — so this does not depend on activate having
+  # been (re)generated correctly (see the relocation repair above) or on the
+  # calling shell's PATH.
+  "$VENV_DIR/bin/python" -m pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
+  if ! "$VENV_DIR/bin/python" -m pip install -q "${PIP_PINS[@]}"; then
     log "ERROR: 'pip install ${PIP_PINS[*]}' failed"
-    deactivate 2>/dev/null || true
     return 1
   fi
-  deactivate 2>/dev/null || true
 
   log "rebuild complete."
   return 0

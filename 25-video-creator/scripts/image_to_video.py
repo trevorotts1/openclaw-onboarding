@@ -5,6 +5,7 @@ Animate static images into video with various motion effects.
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -18,7 +19,11 @@ from ai_providers import AIProvider
 def image_to_video(image_path: Path, output: Optional[Path] = None,
                   motion: str = 'ken_burns', duration: float = 5.0,
                   resolution: Optional[str] = None, zoom_direction: str = 'in',
-                  music: Optional[str] = None, provider: str = 'local') -> Path:
+                  music: Optional[str] = None, provider: str = 'local',
+                  model: Optional[str] = None,
+                  image_field: Optional[str] = None,
+                  image_field_type: Optional[str] = None,
+                  input_extra: Optional[dict] = None) -> Path:
     """
     Convert image to video with motion effects.
     
@@ -31,6 +36,10 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
         zoom_direction: 'in' or 'out' for zoom effect
         music: Background music file
         provider: AI provider (local uses MoviePy)
+        model: Explicit KIE model id (kieai only; default comes from Skill 67)
+        image_field: KIE input key for the image (kieai only; overrides the per-model mapping)
+        image_field_type: 'string' or 'array' (required with image_field unless it matches the mapped key)
+        input_extra: extra model-specific KIE input fields (kieai only)
         
     Returns:
         Path to generated video
@@ -53,11 +62,14 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     if provider != 'local':
         config = load_config()
         ai = AIProvider(provider, config.get('video_providers', {}))
+        extra = {k: v for k, v in (('model', model), ('resolution', resolution), ('image_field', image_field),
+                                                 ('image_field_type', image_field_type), ('input_extra', input_extra)) if v}
         return ai.image_to_video(
             image_path=image_path,
             prompt=f"{motion} motion effect",
-            duration=int(duration),
-            output=output
+            duration=duration,  # raw: per-model coercion (kieai) decides the type
+            output=output,
+            **extra
         )
 
     from moviepy.editor import ImageClip, AudioFileClip
@@ -69,9 +81,10 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     # Apply resolution if specified
     if resolution:
         res_map = {'720p': (1280, 720), '1080p': (1920, 1080), '4k': (3840, 2160)}
-        target_size = res_map.get(resolution)
-        if target_size:
-            clip = clip.resize(newsize=target_size)
+        target_size = res_map.get(resolution.lower())
+        if target_size is None:
+            raise ValueError(f"Unsupported resolution {resolution!r} for local mode (supported: 720p, 1080p, 4k)")
+        clip = clip.resize(newsize=target_size)
     
     # Apply motion effect
     if motion == 'zoom':
@@ -256,6 +269,16 @@ def load_config():
     return {}
 
 
+def _json_object(text):
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not valid JSON: {exc}")
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object, for example '{\"quality\": \"720p\"}'")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description='Convert image to video with motion')
     parser.add_argument('image', type=Path, help='Input image file')
@@ -266,14 +289,23 @@ def main():
                        help='Motion effect type')
     parser.add_argument('--duration', '-d', type=float, default=5.0,
                        help='Video duration in seconds')
-    parser.add_argument('--resolution', '-r', choices=['720p', '1080p', '4k'],
-                       help='Output resolution')
+    parser.add_argument('--resolution', '-r',
+                       help='Output resolution. local: 720p, 1080p, 4k. kieai: any value the model documents '
+                            '(for example 480p, 540p, 720p, 1080p, 2K, 4k); the model decides')
     parser.add_argument('--zoom-direction', choices=['in', 'out'], default='in',
                        help='Zoom direction (for zoom motion)')
     parser.add_argument('--music', help='Background music file')
     parser.add_argument('--provider', default='local',
                        choices=['local', 'kieai', 'runway', 'pika'],
                        help='AI provider for generation')
+    parser.add_argument('--model', help='Explicit KIE model id (kieai only); default comes from Skill 67')
+    parser.add_argument('--image-field', help='KIE input key for the image (kieai only); overrides the per-model mapping')
+    parser.add_argument('--image-field-type', choices=['string', 'array'],
+                       help='Type of --image-field: string (single URL) or array (list of URLs). '
+                            'Required with --image-field for a model that is not mapped; never guessed from the name.')
+    parser.add_argument('--input-extra', type=_json_object, metavar='JSON',
+                       help='JSON object of extra model-specific KIE input fields (kieai only), '
+                            'for example \'{"quality": "720p"}\'. Documented-required fields for a model go here.')
     
     args = parser.parse_args()
     
@@ -290,7 +322,11 @@ def main():
             resolution=args.resolution,
             zoom_direction=args.zoom_direction,
             music=args.music,
-            provider=args.provider
+            provider=args.provider,
+            model=args.model,
+            image_field=args.image_field,
+            image_field_type=args.image_field_type,
+            input_extra=args.input_extra
         )
         print(f"\n🎥 Video ready: {result}")
         return 0

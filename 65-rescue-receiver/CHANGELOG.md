@@ -1,5 +1,151 @@
 # Changelog - 65 Rescue Receiver (65-rescue-receiver)
 
+## [23.6.0] - 2026-10-03 - wave 4 box-side receiver hardening (RR plan F61, F62, F66, F88)
+
+`RECEIVER_VERSION` 1.7.2 to 1.8.0.
+
+**F61. A box with a wrong slug or token polled forever and logged nothing.**
+THE DEFECT. `CLAIM_RESP=$(_post ...) || exit 0` threw away the HTTP class, so a 401 looked exactly like an empty queue. On the receiver side one unenrolled box made 9 unauthorized claims in 16 minutes; on the box there was no trace.
+THE FIX. The claim now runs in the poll's own shell (the response class lives in shell globals), and an unauthorized answer (HTTP 401/403, or a 2xx body whose status is `unauthorized`) writes `state/rr-receiver/claim-unauthorized.json` (slug, HTTP code, first and last time, count; never the token) and logs one `claim-unauthorized slug=...` line per hour. The first claim the receiver accepts again removes the file. `rr-readiness.sh` reports `claim_unauthorized` and `slug_mismatch` (RR_BOX_SLUG differs from the canonical FLEET_STANDING_BOX_SLUG, the split one box had) as FLAG lines in the human report and a `flags` object in `--json`. Flags never change the readiness state or exit code.
+Test: `tests/rescue/RR-030/test_claim_unauthorized.sh`.
+
+**F62. A poll killed mid-turn re-ran the work blind.**
+THE DEFECT. The journal wrote `effect_started` before the agent turn, but nothing ever read it, so a poll killed mid-turn started the same instruction again.
+THE FIX. Before the initial notification, the poll looks for a journal row with exactly this `instruction_id` still at `effect_started` or `effect_executed` that no done record carries. If one exists the turn is not run: the claim is acked `failed` with the new reason `interrupted_prior_attempt` (added to the ack allow-list) so the ticket reaches a human. `_gc_journal` moves such orphan rows older than 30 days to `reconcile/` as `journal-<op>` (never deleted). The matching RR-07 `Parse Request` allow-list change ships with the n8n wave-4 lane; boxes only send the reason after the next fleet roll.
+Test: `tests/rescue/RR-030/test_journal_reconcile.sh`.
+
+**F66. Gateway-down fixes were delivered through the gateway.**
+THE DEFECT. `openclaw agent` runs through the Gateway unless `--local` is given, so the RR-03 fix for a closed gateway port had to travel through the thing it was fixing.
+THE FIX. An `instruction_id` starting `rr03-` runs the agent turn with `--local`, in both the supervised and the degraded path. Every other instruction is unchanged. Try it on the operator box first, before the fleet roll.
+Test: `tests/rescue/RR-030/test_rr03_local_flag.sh`.
+
+**F88. The client-facing final update was a raw status dump.**
+THE DEFECT. The final notification body read `<reply> Repair status: partial. Verification: unverified. Remaining blocker: repair_not_verified. Owner: assigned_agent. Next action: ...`.
+THE FIX. `rescue-notification.py final-body` builds three plain sentences: `Fixed and checked.` (repaired and verified), `We are still working on this: <reason in plain words>.`, or `A specialist will follow up.` (blocker owned by a person). Internal reason codes are never shown. The machine fields stay in the ack and the done record only.
+Test: `tests/rescue/RR-030/test_final_body.py`.
+
+## [23.5.3] - 2026-10-03 - a no-op receipt is not a delivery receipt (RR plan F63)
+
+THE DEFECT. After the receipt contract landed, the server answers an ack for a ticket that is already
+closed or cleared with `recorded:false` and reason `already_terminal` or `unknown_instruction`. The box
+could not tell that apart from a delivery, so either it kept resending the same ack forever, or a reader
+could mistake the settled ack for proof the work was delivered.
+
+THE FIX. `_receipt_match` now recognises a 2xx JSON with `recorded:false`, one of those two reasons, and a
+receipt carrying THIS operation id. The ack is retired (the pending copy is removed, the resend loop ends)
+and the journal phase is `ack_settled_noop`, never `ack_confirmed`; the log says `SETTLED_NOOP`. Any other
+`recorded:false` (for example `row_write_missed`), a receipt for a different operation, or no receipt at all
+stays UNCONFIRMED and is resent. The journal GC reaps `ack_settled_noop` like a confirmed record.
+`RECEIVER_VERSION` 1.7.1 to 1.7.2. Test: `tests/rescue/RR-030/test_receipt_noop.sh`.
+
+## [23.5.1] - 2026-09-19 - a receipt revision string could settle an acknowledgement
+
+THE DEFECT. `_receipt_match` required the receipt's operation ID and attempt
+identity, but accepted any nonempty `state_revision`. A server response with a
+string such as `"receipt_only"` could therefore settle the durable ACK even
+though the result-v3 contract requires a nonnegative integer revision.
+
+THE FIX. The receiver now checks both the JSON type and decimal representation:
+only a numeric, nonnegative integer revision settles an ACK. Strings, negative
+numbers, fractions, booleans, missing values, and malformed receipts remain in
+`ack-pending` for reconciliation. RR-008 adds regression cases for each of
+those invalid shapes.
+
+## [23.5.0] - 2026-09-19 - a nonempty agent reply was being treated as a repair
+
+THE DEFECT. The receiver's `delivered` verdict meant that `openclaw agent`
+exited 0 and produced text. That transport observation was too easily read as
+“the incident is fixed.” A response that restored one service but left the
+original acceptance check blocked was also classified by escalation-like prose,
+which discarded the partial result instead of preserving it.
+
+THE FIX. Each turn now receives a result-v3 prompt and the receiver writes a
+normalized structured result into the ACK. The receiver owns the claim identity
+and transport receipt; agent-provided repair state must be one of the contract
+values and `repaired` is downgraded to `partial` unless it includes a verified,
+receiver-bound original-symptom acceptance check (`incident_id`, `attempt_id`,
+`check_id`, `passed`, `evidence_ref`) and an authorized fix card. A missing or
+malformed result becomes `not_repaired` / `unverified` with
+`structured_result_missing`, so a nonempty reply never promotes a repair. The
+dedup record retains the exact result for a later ACK replay.
+
+User notification is recorded separately as initial and final statuses, each
+with an optional channel, message receipt, and failure reason. The prompt asks
+for message receipts only where the ticket authorizes a user-facing update and
+the agent has the originating conversation. Without a receipt the status is
+`unavailable` or `unconfirmed`; text claiming “I told the user” is not delivery
+evidence. This receiver has no channel-owned receipt integration, so even an
+agent-supplied message ID remains `unconfirmed` until one exists. Notification
+recovery is a separate obligation, so a failed final message never causes the
+verified repair to run again.
+
+TESTS: `tests/rescue/RR-029/test_structured_result.sh` exercises the real
+receiver result builder for fallback, partial, unverified repaired, and
+notification-receipt cases.
+
+## [23.4.9] - 2026-09-17 - the escalation INTAKE was never probed, so a stale secret was silent
+
+THE DEFECT. A box whose `RESCUE_RANGERS_WEBHOOK_SECRET` went stale after an operator-side
+rotation gets a 401 or a 403 on every escalation, silently, for as long as nobody happens to
+escalate and then check. Nothing on the box looked:
+
+  * `rr-readiness.sh` probes only the RETURN leg (`RR_RECEIVER_URL` with `RR_BOX_TOKEN`). A
+    box can sit at `VERIFIED` while every escalation it makes is refused. Readiness said
+    nothing about whether the box could still get INTO the queue.
+  * `scripts/lib/rescue_admission.py` DOES classify a 403 as an auth refusal
+    (`is_auth_refusal`, `_AUTH_REFUSAL_MARKERS`), but only during a real escalation, and
+    nothing scheduled a probe or wrote a durable flag afterwards.
+  * `scripts/rescue-escalation-section.md.tpl` already documents the exact self-check that
+    proves the channel with zero ticket residue: an `__AUTHTEST__` escalate body whose reply
+    is `{"accepted":true,"ticketId":null,"status":"test_suppressed"}`. It was a manual
+    paragraph for an agent to run by hand. Nothing ran it on a schedule.
+
+THE FIX: `rr-intake-auth-check.sh`, registered by `wire.sh` as the daily cron
+`rr-intake-auth-check` (23 7 local, delivery none). It sends the template's own
+`__AUTHTEST__` body with the credential in a 0600 `curl -H @file` header file inside a 0700
+private dir, exactly as the RR-028 safe probe does, and classifies:
+
+    test_suppressed            -> OK                 rc 0   flag REMOVED
+    401 / 403 / auth-refusal   -> RR_SECRET_STALE    rc 3   flag written
+    200 missing_message        -> RR_OLD_RELAY_URL   rc 4   flag written
+    no credential anywhere     -> RR_SECRET_MISSING  rc 5   flag written, NOTHING sent
+    transport / 429 / 5xx /
+    redirect / unknown 2xx     -> UNDETERMINED       rc 75
+
+UNDETERMINED IS NEVER REPORTED AS STALE, and an UNDETERMINED pass never overwrites a flag
+that already records a PROVEN class: an unproven result must not erase a proven one. Only an
+OK clears the flag, because only an OK is proof. The flag
+(`state/rr-intake-auth.flag`) records a class, an HTTP code, a timestamp and the remedy. It
+never records a value, and the credential is never printed, never in argv and never in the
+request body.
+
+THE DAILY SURFACE. There was no known-flags surface in this skill or in `shared-utils` to
+append to (grepped: none exists), so `rr-readiness.sh`'s HUMAN report now reads the flag file
+and prints it with its remedy. `--json` is untouched: it emits exactly one JSON object that
+callers parse with `json.load`, so an extra stdout line there would break every consumer.
+
+DELIVERY NONE IS NOT OPTIONAL. If the CLI refuses `--no-deliver`, `wire.sh` registers NOTHING
+and says so. A delivering daily cron would route operator-facing credential diagnostics into
+the client's chat. A missing check is a gap; a delivering one is client spam.
+
+ONE FALSE NEGATIVE CAUGHT IN REVIEW OF THIS OWN CHANGE. `rescue_env_get` returns rc 3 when the
+store carries malformed lines ANYWHERE, and the requested name may STILL be resolved on
+stdout (`shared-utils/rescue-env.sh`, the rc-3 branch prints the value before returning). The
+first draft discarded the value on any non-zero rc, so one unrelated bad line elsewhere in
+`secrets/.env` would have reported `RR_SECRET_MISSING` on a box that HAS a credential: the
+exact false negative this check exists to stop producing. The rc is now captured in the
+script's own shell (a helper's assignment would have been lost in the command-substitution
+subshell, which is how the first fix for it silently did nothing), the OUTPUT decides, and the
+malformed store is NAMED as a note rather than turned into a verdict. Covered by section 6b.
+
+TESTS: `65-rescue-receiver/tests/test_intake_auth_check.sh`, 31 assertions against a REAL
+local HTTP responder (`tests/stub-intake.py`) that journals what it received, so the
+credential's route is proven rather than asserted. It covers all four required
+classifications plus the missing-credential case, proves the value never reaches the body or
+the flag, proves an UNDETERMINED leaves a proven flag alone, and carries a control that the
+same harness yields 0 / 3 / 4 for the three server shapes, so a green suite cannot be green
+because the responder is broken.
+
 ## [23.4.8] - 2026-09-14 - a CLI that failed to answer is not a CLI that answered "none"
 
 MEASURED LIVE, not hypothesised. A capture loop ran the readiness reporter 40 times on this
@@ -623,3 +769,9 @@ later, only after the additive server contract is confirmed fleet-wide
 ## [23.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
+## [23.5.2] - 2026-09-19 - RR-029 durable Telegram notification intents
+
+Authorized server-supplied Telegram origins now create deterministic initial and
+final notification jobs. Final intent is retained with the done record and is
+recreated on cached replay after a crash; no repair turn is rerun. Confirmation
+records gateway provider acceptance only.

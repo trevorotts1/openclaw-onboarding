@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.6.5"
+version: "3.6.11"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -86,10 +86,10 @@ WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), em
 ### Phase 2: Content Creation
 1. Writer + Editor: Draft → refine article.
 1a. **Agnes vs. Kie.ai choice (MANDATORY when both are installed):** If the client has BOTH Agnes (Skill 63 `agnes-image-2.1-flash` / Skill 64 `agnes-video-v2.0`) AND Kie.ai installed, the skill MUST offer the owner a choice before any image/video generation begins. Ask: "I see you have Agnes. Because you have Agnes, would you like to use Agnes to create your videos and images, or would you prefer to stick with Kie.ai?" Route all generation calls for this cycle based on the owner's answer. If only one provider is installed, skip this step. Full choice logic: `references/playbook.md` Section 8 "Step 0 — Agnes vs. Kie.ai choice".
-2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via Ideogram V3 DESIGN for any text/headline image and Nano Banana 2/Pro for non-text imagery only; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Full decision table + working curl examples: `references/playbook.md` Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
+2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via KIE GPT Image 2.5 Sunburst for every image (`gpt-image-2-5-sunburst-text-to-image`, or `gpt-image-2-5-sunburst-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43). Nano Banana is never used for social images; the only fallback is legacy gpt-image-2 under the N43 ratio rules; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Every paid KIE image runs the Skill 74 chain (policy, `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, then GHL CDN upload): `references/playbook.md` Section 8c. Full decision table + working examples: Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
 3. Video Script Writer: Script video/podcast.
 4. Video Producer: 
-   - Generate clips via `video_generate`.
+   - Generate clips through Skill 67 (`67-kie-video`), which owns video model selection and dispatch. Default request: Veo 3.1 Lite (`veo3_lite`); an explicit client or manifest pick wins; OpenAI Sora is prohibited and a Sora id in `video-specs.json` is ignored and reported. Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74). KIE rules: `07-kie-setup/references/kie-common-rules.md`.
    - FFmpeg crossfade: `ffmpeg -i clip1.mp4 -i clip2.mp4 -filter_complex "[0:v][0:a][1:v][1:a]xfade=transition=fade:offset=[from config: clip_duration]s[v][a]" -map "[v]" -map "[a]" output.mp4`.
    - Optimize: `ffmpeg -i input.mp4 -vf scale=[from config: video_width]:[from config: video_height] -c:a aac output.mp4`.
 5. Audio Generator: TTS voiceover.

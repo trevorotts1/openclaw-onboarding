@@ -4,6 +4,15 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [7.1.0] - September 28, 2026 (no copies of the onboarding repo's skills in a backup)
+
+### Changed
+- **The full instance backup no longer copies the onboarding repo's skills or any openclaw-onboarding clone.** They are files from one commit of a public GitHub repo, re-installed from it, and copying them into every backup duplicated hundreds of MB per box. `scripts/full-backup.sh` Step 8 now records the installed version (`.onboarding-version`, `.onboarding-content-manifest.json`) and copies only the box's own custom skills: folders the manifest does not list, other than shared-utils, universal-sops and onboarding clones. A box with no content manifest still gets the whole folder copied, since nothing records what the repo owns. The projects copy skips an `openclaw-onboarding/` clone.
+- The protocol docs (full protocol, INSTRUCTIONS, EXAMPLES, CORE_UPDATES) say the same, including for any backup job an agent sets up itself, such as a nightly one: leave out the skills folder (except the two record files and custom skills) and every openclaw-onboarding clone.
+- Restore: re-install the onboarding skills at the recorded version, then copy the custom skills back.
+
+---
+
 ## [7.0.0] - July 21, 2026 (T2-08 / T0-24: prune only after the replacement verifies)
 
 ### Fixed

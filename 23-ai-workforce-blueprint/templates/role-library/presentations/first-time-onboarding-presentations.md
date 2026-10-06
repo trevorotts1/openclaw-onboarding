@@ -207,16 +207,6 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 
 **Failure mode:** If the Buddy role is missing or errors on dispatch, escalate to the Director with the user's idea attached; never drop a newcomer mid-handoff.
 
-**Dispatch contract:**
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role first-time-onboarding-presentations \
-  --specialist-type brainstorming-buddy-presentations \
-  --problem-statement "First-time user oriented; begin the brainstorm. Initial idea: <verbatim or none>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1.0
-```
-
 ---
 
 ### SOP 9.4 -- On-Demand Refresher
@@ -369,16 +359,7 @@ When a new speaker or audience deliverable is added, update SOP 9.1 and 9.2 so t
 ## 20. Sub-Specialists (Named Roles Within This Specialty)
 This role is a specialist and does not manage sub-specialists directly. Close collaborators:
 
-The Director of Presentations (or the Master Orchestrator on a net-new first contact) is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type first-time-onboarding-presentations \
-  --problem-statement "First-time Presentations contact from <user>; orient then hand to the Brainstorming Buddy. Initial idea: <verbatim or none>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1.0
-```
+The Director of Presentations (or the Master Orchestrator on a net-new first contact) is the spawn authority for this role.
 
 *End of first-time-onboarding-presentations.md. All 19 sections present and filled.*
 

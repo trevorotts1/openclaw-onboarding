@@ -29,6 +29,9 @@ info() { [[ $VERBOSE -eq 1 ]] && echo "[INFO] $*" || true; }
 
 TMPDIR_FIXTURE="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_FIXTURE"' EXIT
+# A real (non-empty) board DB: the resolver skips 0-byte files as decoys, so a
+# bare `touch` is no longer a stand-in for a Command Center database.
+mkdb() { python3 -c 'import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute("CREATE TABLE IF NOT EXISTS workspaces(id TEXT)")' "$1"; }
 
 # ─── GUARD 1: no local find_dashboard_db copies in persona-selector-v2.py ────
 info "Checking persona-selector-v2.py has no local find_dashboard_db definition..."
@@ -49,7 +52,7 @@ pass "No local find_dashboard_db in verify-persona-adherence.py"
 info "Simulating Mac layout..."
 MAC_DB_DIR="$TMPDIR_FIXTURE/mac-home/projects/command-center"
 mkdir -p "$MAC_DB_DIR"
-touch "$MAC_DB_DIR/mission-control.db"
+mkdb "$MAC_DB_DIR/mission-control.db"
 
 RESULT=$(HOME="$TMPDIR_FIXTURE/mac-home" python3 - <<'PYEOF'
 import sys, os
@@ -84,7 +87,7 @@ fi
 info "Simulating VPS layout via DASHBOARD_DB_PATH override..."
 VPS_DB_DIR="$TMPDIR_FIXTURE/vps-data/projects/command-center"
 mkdir -p "$VPS_DB_DIR"
-touch "$VPS_DB_DIR/mission-control.db"
+mkdb "$VPS_DB_DIR/mission-control.db"
 
 RESULT=$(DASHBOARD_DB_PATH="$VPS_DB_DIR/mission-control.db" python3 - <<PYEOF
 import sys, os
@@ -107,7 +110,7 @@ fi
 info "Testing DASHBOARD_DB_PATH override takes priority..."
 OVERRIDE_DIR="$TMPDIR_FIXTURE/override-dir"
 mkdir -p "$OVERRIDE_DIR"
-touch "$OVERRIDE_DIR/override.db"
+mkdb "$OVERRIDE_DIR/override.db"
 
 RESULT=$(DASHBOARD_DB_PATH="$OVERRIDE_DIR/override.db" python3 - <<PYEOF
 import sys, os

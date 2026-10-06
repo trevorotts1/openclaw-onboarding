@@ -2,6 +2,219 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-10-06 - feat(kie): Presentations department integrated with Skill 74
+
+Every Presentations role, SOP and tool document now describes the deck image chain exactly as the shipped code runs it, and agrees with `07-kie-setup/references/kie-common-rules.md`.
+
+#### The chain, as documented now
+- **Authoring.** The Prompt Author writes each slide prompt to the prompt budget of the pinned model (rule 12; read with `kie_live_adapter.py prompt-budget --check`). While the renderer gate stands (9,000 to 18,000 characters in `build_deck.py` and `prompt_gate.py`) the window that passes both is 16,000 to 18,000 characters. Band migration in code belongs to the code lane; the documents follow rule 12 and name the interim window.
+- **Pin.** `presentation_job/model_catalog.json` is a department pin that outranks Skill 74 (rule 1). It follows the newest GPT Image generation (rule 13) only by an operator catalog bump, never silently. Catalog 1.3.1 adds that note to the two image aliases.
+- **Transport and receipts.** One command renders (`presentation-canonical-entry.sh`). The renderer submits every slide once, 0.6 seconds apart, under the provider governor; a 429 on submit sleeps 20 seconds (at most 15 in a row); it polls every 10 seconds with a 900-second cap and downloads with an authenticated GET. Receipts are `pending_tasks.json`, the per-slide `.ocr.json` sidecars and the process manifest render record.
+- **Guard.** `canonical_render_guard.py` blocks a Skill 74 file copied into a run directory; new test `tests/test_skill74_blocked_in_run_dir.py` pins that behaviour.
+
+#### Contradictions fixed
+- **Slide Submitter** rewritten: no hand-typed calls, manual waves, five-minute waits, 60-second polls, 100-poll caps or hand-run smoke tests; it supervises the one command and reads the receipts.
+- **SOP-IMG-05** no longer promises a Pillow logo composite, a lower-right chip or `logo_composite_log.json`. It describes the two real logo mechanisms (URL logo image-to-image; local logo file placed top-right by `assemble_pptx`) and keeps the ban on Pillow creating slide images.
+- **Overlay fallbacks removed** from the QC, assembly and Slide Image Creator roles (Decision 5C): the AF-I1, AF-F4 and AF-F7 remedies are re-prompt and re-seed, then human escalation.
+- **Stale hook-band prose** deleted from the Slide Image Creator; SOUL, IDENTITY, TOOLS and BUILDER-PROMPT no longer tell agents to run `build_deck.py` directly or that the renderer retries three times per slide; the PPTX Assembly role uses the renderer's 10 x 5.625 inch slides and no per-deck assembler; style-probe wording in SOP-IMG-03 matches the nine-sample style preview and the A, B or C pick.
+- **Suggested-roles roster** updated for the Slide Submitter, Slide Image Creator, PPTX Assembly Specialist and Capacity Engineer; the generated how-to-use guide is regenerated.
+
+#### Follow-up after QC of #1526 (logo command and nits)
+- **The canonical command has no `--logo`.** `presentation-canonical-entry.sh` rejects it ("unknown argument") and the runner does not forward one. Slide Submitter (SOP 9.1, 9.2, Gate 1, KPI, Common Mistake 5, Edge 17.4, anti-patterns, escalation row, Example A), SOP-IMG-05, TOOLS.md, Brand Steward and Image QC now all say the same: the logo is a LOCAL PNG named in `intake.json` `brand.logo_image_path` (a URL there makes the renderer exit 2), the render stays text-to-image, and `assemble_pptx` places the file top-right. A logo that exists only as a hosted URL is downloaded to a local PNG first, or the Submitter escalates to the Director. The URL image-to-image mode exists only in a direct `build_deck.py --logo` run and needs lane D to plumb it. A local path is valid for the placement mechanism and invalid only as an image-to-image `input_urls` value.
+- SOP-IMG-05 Rule B no longer names a model id; Slide Submitter Example A prices are placeholders pointing at `kie_live_adapter.py price`; `model_catalog.json` 1.3.2 notes that `prefer_latest` is inert without a candidates list; the stray `working/checkpoints/read_slice_truncations.json` runtime counter is removed from the tree.
+
+- **Round-2 QC leftovers (zero contradictions).** Slide Submitter API table row on reference images now matches `build_deck.py` (none on the canonical command; one only on a direct `--logo <https URL>` run). SOP 9.1 step 4 drops the image-to-image-era "place, do not redraw" sentence and the 30 MB cap (the renderer checks only that the logo file exists and is a PNG). The Slide Image Creator logo lines (element 10, SOP 9.1 step 2, the logo-directive note) say the URL image-to-image mode is not reachable through the canonical command and the Submitter never passes a logo URL; its mirror no longer promises a PIL image composite. QC mirror says "the composed image from the pinned model". Stray duplicate rule at the end of the Slide Submitter mirror removed.
+
+- **AF-P15 follows the renderer (round 3).** `build_deck.py` sends the authored prompt verbatim and never edits it for a logo, and on the canonical command a local logo PNG is placed top-right by `assemble_pptx` after generation. So AF-P15 now requires the prompt directive that matches the logo mechanism in use: canonical command, the prompt draws, describes and names no logo, declares no reference image, keeps the top-right corner clear and carries the negative twin "Do not draw, invent, redesign or place any logo, monogram, icon or brand mark anywhere on the slide; the real logo is added after generation"; URL image-to-image mode (a direct `build_deck.py --logo <https URL>` run or the standalone `kie_generate.py` flow), the existing image-to-image declaration, LOGO_URL first reference and "place, do not redraw". One rule, worded the same in AF-P15 (QC and prompt QC), Slide Submitter SOP 9.1 step 4, SOP-IMG-05, SOP-IMG-01, the Slide Image Creator, the Prompt Author and the Brand Steward STYLE BLOCK logo rule (canonical: top-right about 13 percent, no chip). SOP-IMG-01 no longer tells the reader to composite with Pillow.
+- **One product name.** Every remaining "gpt-image-2.5" mention in the Presentations markdown (roles, mirrors, SOPs, builder SOPs, templates, roster, universal-sops presentation clusters) now reads "GPT Image 2.5 Sunburst"; model ids stay `gpt-image-2-5-sunburst-*`. Code comments and error strings in the scripts are unchanged.
+
+- **One meaning per AF-P code (round 4).** The QC role used AF-P9 to AF-P15 twice. The code (`prompt_gate.py`, `build_deck.py`, `phase_verifiers.py`, the manifest and tests) owns AF-P1, AF-P2, AF-P13 (eight-class negative block) and AF-P14 (spelling-lock); the department docs cite AF-P9 (grounding), AF-P10 (designed typography), AF-P11 (standalone art), AF-P12 (hook over-stamping) and AF-P15 (logo directive) far more widely. Those keep their numbers; the density-floor additions that collided with them are renumbered: logo as text-to-image in URL mode AF-P9 to AF-P17, references not named AF-P10 to AF-P18, missing "place, do not redraw" AF-P11 to AF-P19, style-frame directive AF-P12 to AF-P20, archetype or word-block position not declared AF-P13 to AF-P21, weight-ladder or price-type or hero-weight missing AF-P14 to AF-P22, hook-anchor not pure-type AF-P15 to AF-P23. The Prompt QC role's archetype checks now cite AF-P21. No code or test changed.
+
+- **Round 5: Pillow promises and URL-mode leftovers removed.** The statements that the only Pillow step is a locked-logo composite (SOP-IMG-01 department and universal copies, SOP-SLIDE-00, the universal MASTER-QC-AUTOFAIL-RULESET, the PIPELINE-MANIFEST AF-LOCAL-CANVAS trigger text, the QC AF-I1 mirror row, the Slide Image Creator garble remedy) now say what SOP-IMG-05 says: the only logo step is `assemble_pptx` placing a local logo file, and Pillow never writes or edits a slide PNG. The SOP-IMG-01 I6 row escalates to the Director instead of compositing. The Prompt QC SOP step 1 now matches the role (AF-P15 per-mechanism directive). The Slide Image Creator and Brand Steward roles and mirrors carry a logo-mechanism note and label every chip, `LOGO_URL`, `input_urls` and MODE line as URL image-to-image mode, with the canonical counterpart (no drawn logo, clear top-right zone, "do not draw any logo" twin) beside the per-mechanism negative and positive twins. SOP-IMG-01 Mode B is labelled URL mode. Remaining "GPT-Image-2.5" mentions in the how-to-use generator, the PIPELINE-MANIFEST prose, connection-manifest, both slides.schema.json descriptions and the model_catalog notes now read "GPT Image 2.5 Sunburst" (prose fields only; no model id or machine-read value changed); the slides.schema.json description no longer says the renderer composes a prompt. AF-P1..AF-P16 ranges updated to AF-P23.
+
+- **Round 6.** QC SOP 9.5 step 1f (role and mirror) now checks the logo against SOP-IMG-05 Rule A (canonical command: a local PNG placed by `assemble_pptx`; URL mode: `input_urls` with "place, do not redraw") and says never to composite or edit a PNG. The copy-verbatim negative-block logo line in the Slide Image Creator SOP 9.8 and 9.9 templates (role and mirror) is per-mechanism. SOP-IMG-01 "never uses Mode A", the Mode B default row and the Mode A "use only when" line (both copies) are scoped to URL image-to-image mode. The Slide Image Creator mirror's SOP-IMG-05 pointer reads "logo mechanisms, gradient ban".
+
+#### Not changed
+No code, price table, band threshold or renderer pin changed (`build_deck.py`, `run_signature_deck.py` and `CANONICAL-RENDERER-PIN.sha256` untouched). No client box, credential, model or provider setting is touched. Open owner items found while reading are listed in the pull request.
+
+## [v25.2.16] - 2026-09-29 - SOP-00 NEW INTAKE goes through the decision engine (mc-route.sh auto)
+
+`SOP-00-Owner-Task-Routing.md` carries the CEO_EXECUTION_POLICY_V3 mirror, so its
+NEW INTAKE bullet changes with the canonical policy in
+`shared-utils/ceo_execution_policy.py`: each new owner message goes once through
+`mc-route.sh auto "<owner message verbatim>"`; `JEV_ANSWER_DIRECTLY` means answer
+and create nothing, `ROUTED` means one card exists in the department the decision
+engine chose (General Task when nothing fits). If the helper fails or the engine is
+off, the old path applies (answer questions, route work with
+`department_slug: "general-task"`). The NO UNIVERSAL DECISION-CALL clause is
+unchanged. `tests/unit/test_ceo_execution_policy.py` checks every V3 carrier is
+identical to the canonical policy.
+
+## [Unreleased] - 2026-09-21 - fix(departments): a department's own slug beats the map key it is filed under
+
+A client artifact keys its department map `<name>-dept` while each entry names
+its real folder. v25.1.61 folded on the KEY, slugging all 34 departments
+`…-dept` while readers that take the slug off the entry produced the bare name
+— one department with two identities, and a duplicate workspace row for each.
+
+`shared-utils/departments_payload.py` now resolves entry identity by
+precedence `id` -> `slug` -> `folder` -> the map key, using the key only when
+the entry carries none of the three, and stripping a trailing `-dept` only
+from a key-derived slug. An entry's own value is never rewritten. Mirrored
+byte for byte with blackceo-command-center at f73ae663 (CC v7.6.35).
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py`
+(lenient) carry the identical precedence; all were executed against the client
+shape and the four precedence cases and agree with the shared module.
+
+## [Unreleased] - 2026-09-21 - fix(departments): a slug-keyed "departments" object is folded, not refused
+
+A client Mac's real `departments.json` is `{"company": ..., "total_departments":
+34, "total_roles": N, "departments": {"<slug>": {...}, ...}}` — the `departments`
+KEY holds an OBJECT keyed by slug. The shared envelope normalizer accepted a
+slug-keyed object only at the top level, so 34 real departments read as a hard
+`MalformedDepartmentsError` instead.
+
+`shared-utils/departments_payload.py` now folds a slug-keyed object of
+department objects in BOTH positions, under the `departments` key and at the
+top level, with the key filling `id`/`slug` only when the entry lacks its own
+and file order preserved. The fold still refuses unless EVERY value is an
+object, so a metadata envelope's keys can never become departments.
+
+The `except ImportError` fallbacks in `scripts/materialize-missing-departments.py`
+(strict), `scripts/department-floor.py`, `scripts/prove-zhe.py`,
+`scripts/prove-board-join.py` and `scripts/upgrade-company-config.py` (lenient)
+carry the identical rule, so a box predating the shared module does not report
+zero departments on a file the module reads fine.
+
+No writer here emits that shape: `scripts/build-workforce.py` writes a bare
+list (`generate_departments_json`) or `{removedWithProvenance, departments:
+[list]}` (`_make_artifact_payload`), and `scripts/retire-confirmed-decline.sh`
+writes a list. The dict-keyed `departments` built by
+`scripts/register-library-additions.py` belongs to
+`templates/role-library/_index.json`, a different file. No writer was changed.
+
+## [Unreleased] - 2026-09-21 - fix(persona-selector): Stage-D stops outbidding the fleet for Ollama Cloud
+
+`PERSONA_SCORE_WORKERS` default 6 -> 3. Ollama Cloud's concurrency limit is
+ACCOUNT-WIDE (10) and the operator's standing ceiling is 8, shared by every
+running agent on every box — not a per-process budget. A 6-wide scoring burst
+queued behind whatever agents were already live and step 1 of the scoring chain
+timed out: measured on a client Mac, 0 of 3 scoring calls reached
+`ollama-cloud/minimax-m3` and all fell through to OpenRouter/Agnes at 4-20s.
+Three is wide enough to hide per-call latency without spending the fleet's
+shared concurrency.
+
+The env override is unchanged, and `PERSONA_SCORE_WORKERS=1` is still the
+literal sequential path with no thread created.
+
+`tests/unit/stage-d-parallel-scoring.test.py` now runs its overlap leg at the
+SHIPPED default rather than a pinned 6, so a default that stops overlapping
+fails there instead of passing against a width nothing ships (6 personas x 0.2s
+at 3 workers is ~0.4s, inside the unchanged 0.6s bound), and pins the default at
+3 with the reason. Paired with the `shared-utils/llm_score.py` OSError fix in
+onboarding v25.1.58: on Python 3.9 a `socket.timeout` is not a `TimeoutError`,
+so a step timeout escaped the per-step handler, propagated out of `pool.map` in
+`score_personas`, and killed the whole selection instead of advancing the chain.
+
+## [Unreleased] - 2026-09-21 - fix(departments): a wrapped departments.json is read, not folded into departments
+
+`<company_dir>/departments.json` legitimately ships in two top-level shapes: the
+bare LIST `generate_departments_json()` returns, and an OBJECT wrapping that
+list under a `departments` key. This skill writes the second one itself —
+`scripts/retire-confirmed-decline.sh` emits
+`{removedWithProvenance, departments}` and `build-workforce.py`'s
+`_make_artifact_payload` deliberately preserves it so the retirement audit trail
+survives every later apply-diff build. A client Mac additionally carried a build
+envelope of the same family, `{company, total_departments, total_roles,
+departments}`.
+
+Every reader here gated on `isinstance(data, list)` and read the object shape as
+"no departments" — a false negative on an artifact this skill wrote. The envelope
+layer now goes through one shared normalizer,
+`shared-utils/departments_payload.py`: a list is used, an object carrying a
+`departments` list is unwrapped, and anything else fails loudly naming the path
+and the top-level type. A dict's keys are never iterated as departments.
+
+- `scripts/materialize-missing-departments.py` also closed a DATA-LOSS path. It
+  fell back to `existing = []` on the object shape and then wrote the merged list
+  back, overwriting the client's real departments and destroying
+  `removedWithProvenance`. It now unwraps, writes back in the shape it read, and
+  REFUSES to touch an artifact it cannot read rather than clobbering it.
+- `scripts/prove-zhe.py` (sr-b) no longer scores a wrapped artifact "present but
+  lists no departments"; `scripts/prove-board-join.py` and
+  `scripts/department-floor.py` no longer report chosen-source "none" on one;
+  `scripts/upgrade-company-config.py` no longer emits an empty `dept_kpis` block.
+
+Neither writer changed. Onboarding v25.1.57.
+
+## [Unreleased] - 2026-09-21 - perf(persona-selector): Stage-D scores finalists concurrently
+
+Stage-D scored its finalists one at a time. In `llm` mode each finalist costs
+four sequential HTTPS chat calls, one per scoring layer, so a profiled
+`--blend` run spent 43.7s of its 46.6s wall clock blocked in
+`llm_score._post_chat` (other runs: 206s, 258s). The Command Center killed the
+selector at its spawn budget and the blend never landed.
+
+- `score_personas()` replaces the Stage-D list comprehension and maps
+  `score_persona` over the finalists on a `ThreadPoolExecutor`. `executor.map`
+  yields in INPUT order, so the scored list is element-for-element what the
+  comprehension produced and variety sampling, the bonus passes and the
+  tie-breaks are untouched.
+- `PERSONA_SCORE_WORKERS` (default 6) sets the width, capped at the finalist
+  count. `PERSONA_SCORE_WORKERS=1` takes a literal sequential path with no
+  thread created, as the escape hatch.
+- `shared-utils/semantic_task_fit.py` locks the task-embedding cache behind one
+  `_task_embed()` so the G13 "one embed per selection" contract holds with
+  concurrent callers instead of becoming one embed per finalist.
+- `shared-utils/llm_score.py` sets `_secret_helper()`'s latch only after the
+  module reference is final, closing a window where a racing thread degraded to
+  exact-name-only credential resolution.
+
+`decompose-task.py`'s sub-task loop stays sequential on purpose: each
+sub-task's `record_selection` write is what the next sub-task's variety penalty
+and sticky-assignment read.
+
+Tests: `tests/unit/stage-d-parallel-scoring.test.py` (5 cases, hermetic,
+fail-first proven at 1.19s against the 0.6s bound).
+
+## [Unreleased] - 2026-09-17 - fix(workforce): refresh-stale-roles restamps role provenance so refilled roles stop re-flagging STALE
+
+`refresh-stale-roles.py` rewrote a STALE role's `how-to.md` from the role
+library and reported `REFRESHED`, but restamped `.workforce-build-state.json`'s
+`artifactProvenance` for `kind=="sop"` and `kind=="dept"` rows only, never for
+`kind=="role"`. `detect-stale-artifacts.py`'s fast path reads that state file
+and nothing else (its own comment calls the path filesystem-blind), so the
+refilled role kept its OLD `source_content_sha`, was re-classified STALE on the
+very next run, and the roll's D2 completeness gate withheld the version stamp.
+One box sat on a single version with 10 roles looping this way across five
+consecutive rolls, every roll printing `REFRESHED` for them.
+
+- `refresh_one()` now returns the provenance record for the bytes it wrote,
+  built from the `workforce-provenance` marker `try_library_fill()` stamped into
+  those bytes (falling back to the queue row's own `current` manifest sha), in
+  the same record shape `build-workforce.py`'s
+  `_flush_artifact_provenance_to_state()` writes for a fresh build.
+- `_apply_state_restamps()` merges role restamps in the SAME atomic build-state
+  write as sop/dept, so content and provenance can never land separately.
+  `artifactProvenance.personas` and every unrelated state key are untouched.
+- A role refreshed with no establishable sha counts against the completeness
+  contract instead of being reported as a clean refresh.
+- ONE LIBRARY PER DRAIN: `create_role_workspaces.py` resolves the role-library
+  with different precedence than this consumer does (it probes the INSTALLED
+  skills dir; the consumer probes the directory it was run from), so a drain run
+  from any other tree refilled `how-to.md` out of a different library than the
+  queue it was consuming, producing `library_fill produced no usable content`
+  for exactly the roles the running tree had added. The consumer now pins
+  `ROLE_LIBRARY_PATH` to its own resolved `SKILL_DIR`, which an explicitly-set
+  operator value still overrides.
+- `tests/unit/refresh-stale-roles.test.sh` gains scenarios 17-22: end-to-end
+  refresh-then-`detect-stale-artifacts.py`-says-CURRENT, the sha landing in both
+  the marker and build state, a control proving sop/dept/persona records survive
+  byte-identical, dry-run restamps nothing, and the library-pin pair.
+
 ## v22.0.31 — durable jq resolution on container boxes
 
 - The container image does not ship `jq`, and a distro-installed `jq` vanishes on

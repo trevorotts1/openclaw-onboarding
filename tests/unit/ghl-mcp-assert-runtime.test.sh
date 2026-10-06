@@ -19,12 +19,22 @@
 # both plists are all redirected into a temp dir via the script's documented
 # override env vars.
 #
+# skill 36 v2.0.2: THE PLATFORM IS NOW PINNED PER CASE, and that is the point.
+# The launchd cases below assert Darwin behaviour, so they set
+# GHL_MCP_PLATFORM_OVERRIDE=mac; before this release they inherited whatever the
+# runner happened to be, and on a Linux runner they exercised the mac branch
+# only because the gate wrongly called a Linux box a Mac. Section (L) adds the
+# shape that bug was about: a HOME-layout Linux container, supervised by pm2
+# under a root-persisted PM2_HOME, with no launchd anywhere. Its pm2 and crontab
+# are PATH stubs, so the case measures the gate and not the machine running it.
+#
 # Exit 0 = all cases behaved. Exit 1 = one or more did not (CI FAIL).
 
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE_SRC="$REPO_ROOT/scripts/ghl-mcp-assert-runtime.sh"
+LIB_SRC="$REPO_ROOT/scripts/lib/ghl-mcp-paths.sh"
 PASS=0
 FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -37,6 +47,10 @@ if [ ! -f "$GATE_SRC" ]; then
   echo "  FAIL: runtime gate not found at $GATE_SRC"
   exit 1
 fi
+if [ ! -f "$LIB_SRC" ]; then
+  echo "  FAIL: shared path library not found at $LIB_SRC"
+  exit 1
+fi
 
 SIM_PORT=18765
 SIM_COMMIT="bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3"
@@ -46,8 +60,12 @@ SIM_COMMIT="bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3"
 _make_box() {
   local mut="${1:-}" tmp
   tmp="$(mktemp -d)"
-  mkdir -p "$tmp/scripts" "$tmp/config" "$tmp/mcp" "$tmp/logs" "$tmp/agents"
+  mkdir -p "$tmp/scripts/lib" "$tmp/config" "$tmp/mcp" "$tmp/logs" "$tmp/agents"
   cp "$GATE_SRC" "$tmp/scripts/ghl-mcp-assert-runtime.sh"
+  # The gate derives paths and platform from the shared library and REFUSES
+  # rather than guessing when it is absent (case (M) proves that). A simulated
+  # box therefore has to carry it, exactly as a real delivered scripts/ tree does.
+  [ "$mut" = "no-paths-lib" ] || cp "$LIB_SRC" "$tmp/scripts/lib/ghl-mcp-paths.sh"
 
   # The pin — the EXPECTATION the running service is compared against.
   cat > "$tmp/config/ghl-mcp-pin.env" <<EOF
@@ -149,7 +167,8 @@ EOF
 
 _run_gate() {  # _run_gate <box>  -> echoes "<rc>|<stderr+stdout>"
   local box="$1" out rc=0
-  out="$(GHL_MCP_DIR="$box/mcp" \
+  out="$(GHL_MCP_PLATFORM_OVERRIDE=mac \
+         GHL_MCP_DIR="$box/mcp" \
          GHL_MCP_LOG_DIR_OVERRIDE="$box/logs" \
          GHL_MCP_OC_JSON="$box/openclaw.json" \
          GHL_MCP_PLIST="$box/com.clawd.ghl-mcp.plist" \
@@ -171,9 +190,11 @@ fi
 rm -rf "$BOX"
 
 # ── (B) An EMPTY box reports SKIP (rc=2), never a failure ────────────────────
-EMPTY="$(mktemp -d)"; mkdir -p "$EMPTY/scripts"
+EMPTY="$(mktemp -d)"; mkdir -p "$EMPTY/scripts/lib"
 cp "$GATE_SRC" "$EMPTY/scripts/ghl-mcp-assert-runtime.sh"
+cp "$LIB_SRC" "$EMPTY/scripts/lib/ghl-mcp-paths.sh"
 RC=0
+GHL_MCP_PLATFORM_OVERRIDE=mac \
 GHL_MCP_DIR="$EMPTY/absent-mcp" \
 GHL_MCP_LOG_DIR_OVERRIDE="$EMPTY/absent-logs" \
 GHL_MCP_OC_JSON="$EMPTY/absent.json" \
@@ -245,6 +266,170 @@ _mutation_case unrotated-log \
 _mutation_case no-pin \
   "no pin file on the box — there is no expectation to compare against" \
   "NO expectation to compare"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# (L) THE linux-home SHAPE: the box this release exists for
+#
+# A HOME-layout Linux container: no /data, no launchd, Tier 2 installed under
+# the OpenClaw root (the bind-mounted directory) and supervised by pm2 under a
+# root-persisted PM2_HOME. Before this fix the gate called it a Mac and emitted
+# two FATALs for launchd plists that nothing on the box could ever load, so the
+# updater exited 2 ("GHL MCP Tier 2 MISCONFIGURED") about a service that was
+# online and answering. Every case below therefore asserts on a box whose
+# runtime is CORRECT, and case (L1) additionally asserts that the word launchd
+# never appears in the verdict.
+#
+# pm2, crontab and the openclaw CLI are PATH STUBS. The alternative is a test
+# whose result depends on whether the machine running it happens to have a pm2
+# daemon with an app of the same name, which is measuring the runner, not the
+# gate. The stub emits the same pm2 jlist record shape the gate's secret filter
+# reads, and nothing else.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# _make_linux_box <mutation>  -> echoes the sandbox root
+#   ""            fully correct: pm2 online, crontab probe line present
+#   "pm2-down"    pm2 does not know the app, and there is no systemd unit
+#   "cron-store"  no crontab entry, but the OpenClaw cron store has the probe
+_make_linux_box() {
+  local mut="${1:-}" tmp
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/scripts/lib" "$tmp/config" "$tmp/mcp" "$tmp/logs" "$tmp/bin"
+  cp "$GATE_SRC" "$tmp/scripts/ghl-mcp-assert-runtime.sh"
+  cp "$LIB_SRC" "$tmp/scripts/lib/ghl-mcp-paths.sh"
+
+  cat > "$tmp/config/ghl-mcp-pin.env" <<EOF
+GHL_MCP_VETTED_COMMIT="$SIM_COMMIT"
+GHL_MCP_TOOL_PROFILE="curated"
+GHL_MCP_PORT="$SIM_PORT"
+GHL_MCP_EXPECT_MIN_TOOLS="1"
+GHL_MCP_EXPECT_MAX_TOOLS="200"
+GHL_MCP_LOG_MAX_BYTES="10485760"
+GHL_MCP_PIN_VETTED_VERDICT="CLEAN"
+EOF
+  : > "$tmp/mcp/.ghl-mcp-launch.sh"
+  printf '{\n  "commit": "%s",\n  "profile": "curated"\n}\n' "$SIM_COMMIT" > "$tmp/mcp/.ghl-mcp-build.json"
+  printf '{"mcp":{"servers":{"ghl-mcp":{}}}}\n' > "$tmp/openclaw.json"
+  printf 'small\n' > "$tmp/logs/stderr.log"
+  : > "$tmp/scripts/ghl-mcp-probe.sh"
+
+  # ── pm2 stub: `describe` answers for the app, `jlist` emits ONE record in the
+  #    exact shape the gate's filter reads (script path, stop_exit_codes, and the
+  #    four non-secret env keys).
+  cat > "$tmp/bin/pm2" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  describe)
+    [ "${mut}" = "pm2-down" ] && exit 1
+    exit 0 ;;
+  jlist)
+    [ "${mut}" = "pm2-down" ] && { printf '[]\n'; exit 0; }
+    cat <<'JSON'
+[{"name":"ghl-community-mcp","pm2_env":{"pm_exec_path":"__LAUNCHER__","exec_interpreter":"bash","stop_exit_codes":0,"GHL_TOOL_PROFILE":"curated","PORT":"__PORT__","MCP_SERVER_PORT":"__PORT__","GHL_MCP_LOG_DIR":"__LOGS__"}}]
+JSON
+    exit 0 ;;
+esac
+exit 0
+EOF
+  # Substitute the sandbox paths into the record without fighting heredoc quoting.
+  sed -i.bak -e "s|__LAUNCHER__|$tmp/mcp/.ghl-mcp-launch.sh|" \
+             -e "s|__PORT__|$SIM_PORT|g" \
+             -e "s|__LOGS__|$tmp/logs|" "$tmp/bin/pm2" && rm -f "$tmp/bin/pm2.bak"
+  chmod +x "$tmp/bin/pm2"
+
+  # ── crontab stub: the probe line, unless the case is about the cron STORE.
+  cat > "$tmp/bin/crontab" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "-l" ]; then
+  [ "${mut}" = "cron-store" ] && exit 0
+  printf '*/15 * * * * GHL_MCP_LOG_DIR=%s /bin/bash %s --once --heal # ghl-mcp-probe\n' \\
+    "$tmp/logs" "$tmp/scripts/ghl-mcp-probe.sh"
+fi
+exit 0
+EOF
+  chmod +x "$tmp/bin/crontab"
+
+  # ── openclaw stub: the cron STORE, which is where autostart registers the
+  #    probe on a container with no usable crontab.
+  cat > "$tmp/bin/openclaw" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "cron" ] && [ "\$2" = "list" ]; then
+  [ "${mut}" = "cron-store" ] && printf '[{"name": "ghl-mcp-probe", "cron": "*/15 * * * *"}]\n'
+fi
+exit 0
+EOF
+  chmod +x "$tmp/bin/openclaw"
+
+  printf '%s' "$tmp"
+}
+
+_run_linux_gate() {  # _run_linux_gate <box> -> "<rc>|<output>"
+  local box="$1" out rc=0
+  out="$(PATH="$box/bin:$PATH" \
+         GHL_MCP_PLATFORM_OVERRIDE=linux-home \
+         GHL_MCP_DIR="$box/mcp" \
+         GHL_MCP_LOG_DIR_OVERRIDE="$box/logs" \
+         GHL_MCP_OC_JSON="$box/openclaw.json" \
+         GHL_MCP_PLIST="$box/absent.plist" \
+         GHL_MCP_PROBE_PLIST="$box/absent-probe.plist" \
+         GHL_MCP_SYSTEMD_UNIT="$box/nonexistent.service" \
+         bash "$box/scripts/ghl-mcp-assert-runtime.sh" 2>&1)" || rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+
+BOX="$(_make_linux_box "")"
+RES="$(_run_linux_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "0" ]; then
+  pass "(L1) a healthy linux-home container PASSES: pm2 under the derived PM2_HOME, no launchd demanded"
+else
+  fail "(L1) a healthy linux-home container was rejected (rc=$RC). Offending lines:"
+  printf '%s\n' "$OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/        /'
+fi
+if printf '%s' "$OUT" | grep -qi 'launchd'; then
+  fail "(L2) the verdict still mentions launchd on a Linux box: the mac branch is being entered off Darwin"
+  printf '%s\n' "$OUT" | grep -i 'launchd' | sed 's/^/        /'
+else
+  pass "(L2) no launchd assertion is made on a Linux box (the pre-fix FATAL pair is gone)"
+fi
+if printf '%s' "$OUT" | grep -qF 'pm2 runs the crash-only launcher'; then
+  pass "(L3) the gate READ the pm2 registration (it inspected the supervisor autostart actually installs)"
+else
+  fail "(L3) the gate did not report on the pm2 registration: it is not inspecting the real supervisor"
+fi
+rm -rf "$BOX"
+
+BOX="$(_make_linux_box pm2-down)"
+RES="$(_run_linux_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "1" ] && printf '%s' "$OUT" | grep -qF 'nothing supervises it'; then
+  pass "(L4) a linux-home box with NO live pm2 app and no systemd still FAILS (the gate did not go blind)"
+else
+  fail "(L4) an unsupervised linux-home box returned rc=$RC without the expected diagnosis"
+  printf '%s\n' "$OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/        /'
+fi
+rm -rf "$BOX"
+
+BOX="$(_make_linux_box cron-store)"
+RES="$(_run_linux_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "0" ] && printf '%s' "$OUT" | grep -qF 'OpenClaw cron store'; then
+  pass "(L5) a probe registered in the OpenClaw cron store counts (containers with no usable crontab)"
+else
+  fail "(L5) the cron-store probe was not recognised (rc=$RC)"
+  printf '%s\n' "$OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/        /'
+fi
+rm -rf "$BOX"
+
+# ── (M) A PARTIAL scripts/ TREE IS A REFUSAL, NEVER A GUESS ──────────────────
+# The gate derives the install path from scripts/lib/ghl-mcp-paths.sh. If that
+# file did not reach the box, the honest answer is "I cannot determine where
+# Tier 2 lives here", not a verdict about a directory the gate invented.
+BOX="$(_make_box no-paths-lib)"
+RES="$(_run_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "1" ] && printf '%s' "$OUT" | grep -qF 'ghl-mcp-paths.sh is not on this box'; then
+  pass "(M) a missing shared path library is a LOUD refusal naming every location searched"
+else
+  fail "(M) a missing shared path library returned rc=$RC without the expected refusal"
+  printf '%s\n' "$OUT" | sed 's/^/        /'
+fi
+rm -rf "$BOX"
 
 echo ""
 echo "=== Result: $PASS passed | $FAIL failed ==="

@@ -309,6 +309,9 @@ def _write_intake(root: Path):
         "pitch_included": True,
         "named_methodology": "Three-Move Pipeline System",
         "time_to_result": "8 weeks",
+        # U022 post-window: the shared happy-path fixture is a factually-correct
+        # from_scratch build (no source extraction needed), so declare the mode.
+        "creation_mode": "from_scratch",
         # P1-C: the six mandatory Brainstorming-Buddy fields captured under
         # pre_presentation_capture (asserted by _chk_intake_provenance).
         "pre_presentation_capture": {
@@ -6654,9 +6657,12 @@ def test_mode_substance_u022() -> list:
             (r / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({"owner_skip_approval": token}))
         return r
 
+    class _Early(_dt.date):
+        @classmethod
+        def today(cls): return cls(2026, 9, 1)
     r1 = _mk({}, False)
     try:
-        build_deck.date = orig_date
+        build_deck.date = _Early
         result = build_deck._chk_mode(r1)
         if result: fails.append(f"U022-1: unset mode + no doctrine inside window expected '', got {result!r}")
     finally:

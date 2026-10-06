@@ -1276,7 +1276,7 @@ def record_model_plan(plan: Dict[str, Any], *,
     unknown_slots = [s for s in (plan or {})
                      if s not in slot_classes
                      and s not in ("thinking", "floor_waivers", "source",
-                                   "declared_at")]
+                                   "declared_at", "openrouter_model")]
     if unknown_slots:
         raise ValueError(
             f"refusing to record a model plan: unknown slot(s) "
@@ -1301,6 +1301,9 @@ def record_model_plan(plan: Dict[str, Any], *,
 
     thinking = (plan or {}).get("thinking")
     thinking = str(thinking).strip().lower() if thinking not in (None, "") else None
+    # FIX 61.2: the client's OpenRouter model pick rides the plan.
+    openrouter_model = (plan or {}).get("openrouter_model")
+    openrouter_model = str(openrouter_model).strip() if openrouter_model not in (None, "") else None
     if thinking is not None and thinking not in THINKING_LEVELS:
         raise ValueError(
             f"refusing to record thinking level {thinking!r}: the vocabulary is "
@@ -1425,6 +1428,9 @@ def record_model_plan(plan: Dict[str, Any], *,
     # choice in THINKING_LEVELS, so only an OMITTED answer leaves the stored
     # one standing.
     block["thinking"] = thinking if thinking is not None else block.get("thinking")
+    # FIX 61.2: record the OpenRouter model alongside thinking.
+    if openrouter_model is not None:
+        block["openrouter_model"] = openrouter_model
     block["floor_waivers"] = sorted(waivers)
     block["source"] = str(source or "interview")
     block["declared_at"] = _now()

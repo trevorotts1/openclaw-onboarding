@@ -25,6 +25,12 @@ Key invariants enforced here (PRD 1.8 + onb-gemini GA migration):
     SAME provider for the query embedding. If the matching key is unavailable,
     search falls back to KEYWORD mode with a loud WARNING — it NEVER computes
     cross-model cosine similarity (cross-provider OR cross-GA/preview).
+  - LOCAL OLLAMA MODE (explicit per-box opt-in, free, no key): `--reembed-local`
+    re-embeds every row of an existing index in place with a local Ollama
+    server (OLLAMA_EMBED_MODEL @768, OLLAMA_EMBED_URL default
+    http://127.0.0.1:11434), stamping provider='ollama'. Search then uses the
+    same local model for queries. get_embedder() never picks ollama without the
+    explicit provider_hint, so a box that never re-embeds stays on Gemini.
 
 Usage:
     from embedding_engine import (
@@ -85,6 +91,9 @@ except ImportError:
 GEMINI_MODEL = "gemini-embedding-2"           # GA model — pinned here
 GEMINI_OUTPUT_DIM = 3072                      # explicit dimensionality contract
 OPENAI_EMBED_MODEL = "text-embedding-3-small"  # 1536-dim
+OLLAMA_EMBED_MODEL = "nomic-embed-text"        # 768-dim, local opt-in only
+OLLAMA_EMBED_DIM = 768
+OLLAMA_EMBED_URL = os.environ.get("OLLAMA_EMBED_URL", "http://127.0.0.1:11434").rstrip("/")
 
 # All retired / preview Gemini embedding slugs whose vectors are INCOMPATIBLE
 # with GEMINI_MODEL. Any DB row carrying one of these model names is stale and
@@ -98,6 +107,7 @@ STALE_GEMINI_MODELS = frozenset({
 _DIM_BY_MODEL = {
     GEMINI_MODEL: GEMINI_OUTPUT_DIM,
     OPENAI_EMBED_MODEL: 1536,
+    OLLAMA_EMBED_MODEL: OLLAMA_EMBED_DIM,
 }
 # Backfill heuristic: when a pre-1.8 DB has no provider/model metadata, infer
 # from vector blob length. 3072-dim blobs may be -preview OR GA; both are
@@ -198,16 +208,21 @@ def get_embedder(provider_hint: str = None):
     Resolve the embedder. Returns (provider, client, model_id) or raises
     SystemExit(1) if neither provider is available.
 
-    provider_hint: if set to "gemini" or "openai", only try that provider.
+    provider_hint: if set to "gemini", "openai" or "ollama", only try that provider.
     This is used by the search path to enforce same-provider queries.
+    "ollama" (local, no key) is ONLY ever returned for that explicit hint.
 
     Resolution order (when no hint):
       1. Gemini (preferred per N18) — needs GOOGLE_API_KEY + google-genai pkg.
       2. OpenAI (fallback per N18)  — needs OPENAI_API_KEY + openai pkg.
       3. SystemExit(1) with clear error.
     """
-    if provider_hint not in (None, "gemini", "openai"):
-        raise ValueError(f"provider_hint must be 'gemini', 'openai', or None, got: {provider_hint!r}")
+    if provider_hint not in (None, "gemini", "openai", "ollama"):
+        raise ValueError(f"provider_hint must be 'gemini', 'openai', 'ollama', or None, got: {provider_hint!r}")
+    if provider_hint == "ollama":
+        # The "client" is the local server URL; reachability is proven by the
+        # first embed call (a failure there falls back to keyword in search()).
+        return ("ollama", OLLAMA_EMBED_URL, OLLAMA_EMBED_MODEL)
 
     want_gemini = provider_hint in (None, "gemini")
     want_openai = provider_hint in (None, "openai")
@@ -269,6 +284,21 @@ def get_client():
 # ---------------------------------------------------------------------------
 # Embedding
 # ---------------------------------------------------------------------------
+
+def _ollama_embed(base_url: str, model_id: str, text: str):
+    """POST {base_url}/api/embed {model, input} -> float32 vector (EMBED-3 dim gate)."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"{base_url}/api/embed",
+        data=json.dumps({"model": model_id, "input": text}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 — local server
+        values = json.load(resp)["embeddings"][0]
+    vec = np.array(values, dtype=np.float32)
+    _assert_vector_dim(vec, OLLAMA_EMBED_DIM, "ollama", model_id)
+    return vec
+
 
 def _is_quota_or_timeout(exc: Exception) -> bool:
     msg = str(exc).lower()
@@ -354,6 +384,8 @@ def get_embedding(embedder, text, retries=5):
                 _assert_vector_dim(vec, _DIM_BY_MODEL.get(model_id, vec.shape[0]),
                                    provider, model_id)
                 return vec
+            elif provider == "ollama":
+                return _ollama_embed(client, model_id, text)
             else:
                 raise ValueError(f"unknown provider: {provider!r}")
         except Exception as e:
@@ -409,6 +441,8 @@ def embed_query(embedder, query):
                 _assert_vector_dim(vec, _DIM_BY_MODEL.get(model_id, vec.shape[0]),
                                    provider, model_id)
                 return vec
+            elif provider == "ollama":
+                return _ollama_embed(client, model_id, query)
             else:
                 raise ValueError(f"unknown provider: {provider!r}")
         except Exception as e:
@@ -827,6 +861,14 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
     try:
         query_vector = embed_query(embedder, query)
     except Exception as e:
+        if index_provider == "ollama":
+            print(
+                f"WARNING [embedding-engine]: local Ollama embed failed ({e}) — is "
+                f"Ollama running with {OLLAMA_EMBED_MODEL} at {OLLAMA_EMBED_URL}? "
+                f"Falling back to KEYWORD search.",
+                file=sys.stderr,
+            )
+            return keyword_fallback_search(query, limit, db_path, mode)
         if is_credential_error(e):
             print(
                 f"WARNING [embedding-engine]: embedder rejected credentials ({e}). "
@@ -917,10 +959,11 @@ def verify_index_integrity(db_path: str = None,
     """
     if db_path is None:
         db_path = DB_PATH
+    # EMBED-3: gemini is held to 3072; the local ollama opt-in to its own 768.
     if expect_model is None:
-        expect_model = GEMINI_MODEL
+        expect_model = OLLAMA_EMBED_MODEL if expect_provider == "ollama" else GEMINI_MODEL
     if expect_dim is None:
-        expect_dim = GEMINI_OUTPUT_DIM
+        expect_dim = OLLAMA_EMBED_DIM if expect_provider == "ollama" else GEMINI_OUTPUT_DIM
     if not os.path.exists(db_path):
         print(f"ERROR [embedding-engine] verify: DB not found at {db_path}",
               file=sys.stderr)
@@ -1186,8 +1229,9 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
     # persisted by ANY writer sharing this table.
     bad = cursor.execute(
         "SELECT id, length(vector) FROM embeddings "
-        "WHERE length(vector) NOT IN (?, ?) LIMIT 10",
-        (1536 * 4, GEMINI_OUTPUT_DIM * 4),
+        "WHERE length(vector) NOT IN (?, ?) "
+        "AND NOT (provider = 'ollama' AND length(vector) = ?) LIMIT 10",
+        (1536 * 4, GEMINI_OUTPUT_DIM * 4, OLLAMA_EMBED_DIM * 4),
     ).fetchall()
     conn.close()
     if bad:
@@ -1206,6 +1250,79 @@ def cmd_index(rebuild: bool = False, db_path: str = None,
         f"(skipped {skipped} unchanged, {errors} errors)."
     )
     return 0 if errors == 0 else 2
+
+
+# ---------------------------------------------------------------------------
+# cmd_reembed_local — switch an existing index to local Ollama (opt-in)
+# ---------------------------------------------------------------------------
+
+def cmd_reembed_local(db_path: str = None, batch_size: int = 20,
+                      pause: float = 1.0) -> int:
+    """
+    Re-embed every row of an existing persona index IN PLACE with local Ollama
+    (OLLAMA_EMBED_MODEL @OLLAMA_EMBED_DIM), stamping provider='ollama'. Rows,
+    ids and section metadata are untouched; only vector/provider/model/dim change.
+
+    Resumable: rows already on the local model are skipped. Commits per batch and
+    sleeps `pause` seconds between batches (throttle for small boxes). While the
+    run is partial the index is mixed, so search() stays on KEYWORD mode until it
+    finishes. Ends with the EMBED-3 verify for the ollama contract.
+    Returns 0 done+verified, 1 cannot run, 2 rows failed (re-run to retry),
+    4 verify failed.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    if not os.path.exists(db_path):
+        print(f"ERROR [embedding-engine]: DB not found at {db_path}", file=sys.stderr)
+        return 1
+    if not NUMPY_AVAILABLE:
+        print("ERROR [embedding-engine]: numpy not installed", file=sys.stderr)
+        return 1
+    conn = init_db(db_path)
+    cur = conn.cursor()
+    todo = cur.execute(
+        "SELECT id, content FROM embeddings "
+        "WHERE NOT (provider = 'ollama' AND model = ? AND dim = ?)",
+        (OLLAMA_EMBED_MODEL, OLLAMA_EMBED_DIM),
+    ).fetchall()
+    print(f"[embedding-engine] reembed-local: {len(todo)} row(s) to embed with "
+          f"{OLLAMA_EMBED_MODEL} at {OLLAMA_EMBED_URL}")
+    done = failed = streak = 0
+    for i, (row_id, content) in enumerate(todo, 1):
+        if not (content or "").strip():
+            failed += 1
+            print(f"  WARN {row_id}: empty content — cannot re-embed", file=sys.stderr)
+            continue
+        try:
+            vec = _ollama_embed(OLLAMA_EMBED_URL, OLLAMA_EMBED_MODEL, content)
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            streak += 1
+            print(f"  ERROR {row_id}: {e}", file=sys.stderr)
+            if streak >= 5:
+                conn.commit()
+                conn.close()
+                print("ERROR [embedding-engine]: 5 consecutive Ollama failures — "
+                      "stopping (re-run to resume).", file=sys.stderr)
+                return 2
+            continue
+        streak = 0
+        cur.execute(
+            "UPDATE embeddings SET vector = ?, provider = 'ollama', model = ?, "
+            "dim = ?, last_updated = ? WHERE id = ?",
+            (vec.tobytes(), OLLAMA_EMBED_MODEL, OLLAMA_EMBED_DIM, time.time(), row_id),
+        )
+        done += 1
+        if i % batch_size == 0:
+            conn.commit()
+            print(f"  {i}/{len(todo)}")
+            time.sleep(pause)
+    conn.commit()
+    conn.close()
+    print(f"[embedding-engine] reembed-local: embedded {done}, failed {failed}.")
+    if failed:
+        return 2
+    return verify_index_integrity(db_path, expect_provider="ollama")
 
 
 # ---------------------------------------------------------------------------
@@ -1281,6 +1398,18 @@ def _indexer_main():
                         help="EMBED-3: verify every row carries real vectors "
                              "matching the pinned contract (gemini/3072). "
                              "Exit 0 pass, 4 fail.")
+    parser.add_argument("--verify-provider", choices=["gemini", "ollama"],
+                        default="gemini",
+                        help="Contract --verify checks: gemini (3072, default) or "
+                             "the local ollama opt-in (768).")
+    parser.add_argument("--reembed-local", action="store_true",
+                        help="Opt this box into FREE local Ollama embeddings: "
+                             "re-embed every index row in place with "
+                             f"{OLLAMA_EMBED_MODEL} (resumable).")
+    parser.add_argument("--batch-size", type=int, default=20,
+                        help="--reembed-local: rows per commit (default 20).")
+    parser.add_argument("--pause", type=float, default=1.0,
+                        help="--reembed-local: seconds between batches (default 1).")
     parser.add_argument("--db", default=None,
                         help="Explicit DB path (default: the canonical live "
                              "coaching-personas index).")
@@ -1293,7 +1422,13 @@ def _indexer_main():
     if args.status:
         sys.exit(cmd_status(db_path=args.db))
     if args.verify:
-        sys.exit(verify_index_integrity(db_path=args.db))
+        sys.exit(verify_index_integrity(db_path=args.db,
+                                        expect_provider=args.verify_provider))
+    if args.reembed_local:
+        if args.db is None:
+            _assert_live_write_target(DB_PATH)
+        sys.exit(cmd_reembed_local(db_path=args.db, batch_size=args.batch_size,
+                                   pause=args.pause))
     # --status short-circuits above regardless of --rebuild, so the guard
     # only ever runs for a real (non-status) invocation — same precedence
     # the previous wrapper-level guard had.

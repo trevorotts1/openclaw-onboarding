@@ -47,9 +47,13 @@ in the front door or orchestrator.
 
 ## Delegation reminders for whoever builds the next unit
 
-- Never hand-roll a Kie HTTP call, a GHL REST call, or a mail sender inside this skill.
-  Extend `47-movie-producer/kie-adapters/` for media; delegate all GHL work to Skill 6
-  (`06-ghl-install-pages`) / Skill 44 (`44-convert-and-flow-operator`).
+- Never add another hand-rolled Kie HTTP call, GHL REST call, or mail sender inside this
+  skill. `providers/kie.py` calls Skill 74 (`74-kie-live-adapter`, the one fleet KIE
+  transport) in `active` mode and keeps only this skill's model and tier policy; route
+  any new media work through it. It logs `path=skill74` per run; `path=legacy` means
+  Skill 74 is missing on the box and the quarantined fallback ran, which is a defect to
+  report. Delegate all GHL work to Skill 6 (`06-ghl-install-pages`) / Skill 44
+  (`44-convert-and-flow-operator`).
 - Never author sacred copy here. Consume a locked content manifest from Skill 49
   (`49-signature-funnel`) or Skill 56 (`56-sales-page-assets`) per ADR-10.
 - Never use an Anthropic model ID in a client runtime path.

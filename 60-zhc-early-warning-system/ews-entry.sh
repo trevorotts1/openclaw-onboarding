@@ -4,7 +4,18 @@
 # THE ONE SANCTIONED ENTRY. The sentinel tick and every companion command route
 # through here (spec 4.1). It runs the deps gate (python3), then dispatches.
 # -----------------------------------------------------------------------------
-#   tick [--no-send]         one sentinel tick (the 15-minute cron target)
+#   tick [--no-send]         one sentinel tick, BY HAND (true exit contract:
+#                            0 clean, 1 error, 2 usage, 10 findings present)
+#   cron-tick [--no-send]    the SCHEDULER's tick (the 15-minute cron target).
+#                            Runs the exact same sentinel tick as `tick`, then
+#                            maps exit 10 (FINDINGS PRESENT) to 0. Findings are
+#                            a SUCCESSFUL detection, but the openclaw scheduler
+#                            reads any non-zero exit as a job failure and
+#                            auto-disables a job after 10 consecutive ones, so a
+#                            box with a standing finding used to switch its own
+#                            sentinel off. Every OTHER non-zero exit (1 error,
+#                            2 usage, 6 deps) passes through UNCHANGED, so a
+#                            genuinely broken tick still fails loudly.
 #   audit [--json]           read-only diff table (companion)
 #   install [...]            idempotent install / upgrade
 #   verify                   the failable drill battery
@@ -21,6 +32,7 @@
 #   --self-test              run EVERY script's --self-test (the aggregate gate)
 #
 # EXIT: passes through the dispatched tool's exit code; 6 = python3 missing; 2 usage.
+#       `cron-tick` is the ONE deliberate exception: it remaps 10 to 0 (see above).
 # =============================================================================
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -33,10 +45,43 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 usage() {
-    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # Print the banner-delimited header block, however long it grows. The old
+    # fixed '2,30p' range leaked the first lines of executable code into the
+    # help text and would silently truncate the header as soon as it grew.
+    sed -n '2,/^# =\{20,\}$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 py() { python3 "$SCRIPTS/$1" "${@:2}"; }
+
+# ---------------------------------------------------------------------------
+# cron_tick - the scheduler-facing wrapper around the sentinel tick.
+#
+# ROOT CAUSE OF "THE TICK CRON KEEPS AUTO-DISABLING ITSELF": the cron was
+# registered as `ews-entry.sh tick`, which passes the sentinel's exit code
+# through verbatim. The sentinel exits 10 when it HAS findings, which is the
+# system working. The openclaw scheduler has no notion of a "findings" exit:
+# it records any non-zero exit as lastRunStatus=error and auto-disables the
+# job after 10 consecutive failures. A box holding a standing finding
+# therefore failed every 15 minutes until the scheduler switched the sentinel
+# off - the guard silenced by its own detections.
+#
+# This wrapper is the fix: 10 becomes 0 HERE, at the scheduler boundary only.
+# The findings themselves are untouched (they are recorded in the ledger and
+# routed by the tick itself), `tick` keeps the honest exit contract for
+# by-hand runs and scripts, and every other non-zero exit still propagates so
+# a real breakage (1 error, 2 usage, 6 missing python3) still fails the job.
+# ---------------------------------------------------------------------------
+cron_tick() {
+    local rc=0
+    py ews_sentinel.py tick "$@" || rc=$?
+    if [ "$rc" -eq 10 ]; then
+        echo "$TAG cron-tick: sentinel reported FINDINGS (exit 10). That is a successful" >&2
+        echo "$TAG detection, not a job failure - exiting 0 so the scheduler does not" >&2
+        echo "$TAG auto-disable the tick. Read the findings with: ews-entry.sh audit" >&2
+        return 0
+    fi
+    return "$rc"
+}
 
 aggregate_self_test() {
     echo "$TAG --self-test: running every script's self-test"
@@ -62,6 +107,7 @@ aggregate_self_test() {
 CMD="${1:-}"; shift || true
 case "$CMD" in
     tick)             py ews_sentinel.py tick "$@" ;;
+    cron-tick)        cron_tick "$@" ;;
     audit)            bash "$SCRIPTS/ews_companion.sh" audit "$@" ;;
     install)          bash "$SELF_DIR/install.sh" "$@" ;;
     verify)           bash "$SELF_DIR/verify.sh" "$@" ;;

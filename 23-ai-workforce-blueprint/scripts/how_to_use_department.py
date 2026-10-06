@@ -198,6 +198,13 @@ FOLDER_ALIAS_TO_MAP_ID = {
     "legal-compliance": "legal",
 }
 
+# Department slug -> actual client departments/ folder name, when the deployed
+# folder case differs from the role-library slug (Fix 59: the real folder is
+# `Presentations`, not `presentations`; breaks on case-sensitive Linux).
+DEPT_FOLDER_NAME_OVERRIDES = {
+    "presentations": "Presentations",
+}
+
 
 def resolve_meta(dept_folder, meta_table=None):
     """Resolve display metadata for a role-library folder slug.
@@ -749,7 +756,7 @@ def render_how_to_use(dept_folder, roles=None, tokens=None, meta_table=None):
         "DEPARTMENT_NAME": meta["display_name"],
         "DEPARTMENT_EMOJI": meta.get("emoji", ""),
         "DEPARTMENT_HEAD": head_name,
-        "DEPARTMENT_SLUG": dept_folder,
+        "DEPARTMENT_SLUG": DEPT_FOLDER_NAME_OVERRIDES.get(dept_folder, dept_folder),
         "DEPARTMENT_PLAIN_LANGUAGE_PURPOSE": purpose
         or f"The {meta['display_name']} department owns all "
            f"{meta['display_name'].lower()} work for your business.",
@@ -1018,7 +1025,7 @@ when the entry check detects an attempt to bypass the sanctioned entry script.
 
 ## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
 
-A slide image MUST be generated via kie.ai GPT-Image-2.5. A slide image \
+A slide image MUST be generated via kie.ai GPT Image 2.5 Sunburst. A slide image \
 fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) \
 is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any \
 run-directory `*.py` file triggers AF-LOCAL-CANVAS.

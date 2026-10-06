@@ -35,7 +35,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_preflight",
-        "label": "preflight_gate.py PASS: Kie.ai credits >= 200, OpenRouter balance >= $5, GHL PIT valid against GET /locations/{locationId}, all required config fields present, status == Paid, AND the C2 live connected-accounts discovery reconcile (config platforms enum vs GET /social-media-posting/oauth/{locationId}/accounts — both drift directions BLOCK; a deliberate exclusion is honored only via the LOGGED platformsExcluded list; Owner Q&A answers publish scope from this live reconcile, never a memorized list). FAIL -> labeled failure report + configured notification; run blocked (sys.exit 2). AF-SM-PREFLIGHT-* / AF-SM-DISCOVERY-DRIFT."
+        "label": "preflight_gate.py PASS: Kie.ai credit balance >= the planned image/video estimate x 1.30 (200 credits is the skill's absolute floor; default estimate when none is logged), OpenRouter balance >= $5, GHL PIT valid against GET /locations/{locationId}, all required config fields present, status == Paid, AND the C2 live connected-accounts discovery reconcile (config platforms enum vs GET /social-media-posting/oauth/{locationId}/accounts — both drift directions BLOCK; a deliberate exclusion is honored only via the LOGGED platformsExcluded list; Owner Q&A answers publish scope from this live reconcile, never a memorized list). FAIL -> labeled failure report + configured notification; run blocked (sys.exit 2). AF-SM-PREFLIGHT-* / AF-SM-DISCOVERY-DRIFT."
       },
       "gate_codes": ["AF-SM-PREFLIGHT-CREDITS", "AF-SM-PREFLIGHT-BALANCE", "AF-SM-PREFLIGHT-TOKEN", "AF-SM-PREFLIGHT-CONFIG", "AF-SM-PREFLIGHT-STATUS", "AF-SM-DISCOVERY-DRIFT"]
     },
@@ -89,14 +89,14 @@
     {
       "id": "P4-MEDIA",
       "order": 4,
-      "name": "Media core (image grid+judge / Sora 25s video / carousel QC loop / podcast cover) via local SQLite ledger",
+      "name": "Media core (image generate+QC / 25.0s video lane via the Skill 67 selector / carousel QC loop / podcast cover) via local SQLite ledger",
       "module": "3-media-core",
       "owning_role": "brand-designer",
       "produces_artifact": "working/media/media_ledger.json",
       "preflight": {
         "required": true,
         "checker": "_chk_media_ledger",
-        "label": "ledger.py drove the media jobs (Nano-Banana generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
+        "label": "ledger.py drove the media jobs (GPT Image 2.5 sunburst generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
       },
       "gate_codes": ["AF-SM-MEDIA-LEDGER", "AF-SM-CAROUSEL-FLOOR"]
     },
@@ -236,7 +236,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_podcast",
-        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio S2-Pro TTS; ffprobe 600-900 s / >=128 kbps; 1400x1400 JPEG cover (prompt 14). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
+        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio S2-Pro TTS; ffprobe 600-900 s / >=128 kbps; exactly 1400x1400 JPEG cover (prompt 14; the GPT Image 2.5 Sunburst 2K output is resized). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
       },
       "gate_codes": ["AF-SM-PODCAST-SCRIPT", "AF-SM-PODCAST-DURATION", "AF-SM-PODCAST-COVER"]
     },
@@ -271,7 +271,7 @@
     }
   ],
   "autofails": [
-    {"code": "AF-SM-PREFLIGHT-CREDITS", "stage": "P0", "level": "run", "trigger": "Kie.ai credits < 200", "enforced_by": "preflight_gate", "py_symbol": "check_kie_credits"},
+    {"code": "AF-SM-PREFLIGHT-CREDITS", "stage": "P0", "level": "run", "trigger": "Kie.ai credit balance below max(planned image/video estimate x 1.30, 200), or the balance cannot be confirmed (checked only when the plan requests images or video)", "enforced_by": "preflight_gate", "py_symbol": "check_kie_credits"},
     {"code": "AF-SM-PREFLIGHT-BALANCE", "stage": "P0", "level": "run", "trigger": "OpenRouter balance < $5", "enforced_by": "preflight_gate", "py_symbol": "check_openrouter_balance"},
     {"code": "AF-SM-PREFLIGHT-TOKEN", "stage": "P0", "level": "run", "trigger": "GHL Private Integration Token invalid against GET /locations/{locationId}", "enforced_by": "preflight_gate", "py_symbol": "check_ghl_token"},
     {"code": "AF-SM-PREFLIGHT-CONFIG", "stage": "P0", "level": "run", "trigger": "a required client-config field is missing/empty", "enforced_by": "preflight_gate", "py_symbol": "check_required_fields"},

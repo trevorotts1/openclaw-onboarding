@@ -32,11 +32,13 @@ pip install moviepy opencv-python requests pillow
 The .skill file is an archive. No CLI command needed - install by following SKILL.md, INSTALL.md, and CORE_UPDATES.md instructions.
 ```
 
-Or manually:
+Or manually, once the numbered skill source is at `$HOME/.openclaw/skills/25-video-creator`:
 ```bash
-unzip video-creator.skill -d $HOME/.openclaw/skills/
-chmod +x $HOME/.openclaw/skills/video-creator/scripts/*.py
+bash $HOME/.openclaw/skills/25-video-creator/wire.sh
 ```
+This copies the runtime files (excluding `SKILL.md`, so the copy never
+registers as a second skill), builds the venv at
+`$HOME/.openclaw/venvs/video-creator`, and makes the scripts executable.
 
 ### Step 3: Configure AI Providers
 ```bash
@@ -59,7 +61,9 @@ python3 scripts/text_to_video.py "A serene mountain landscape at sunset, cinemat
 ```
 
 Positional argument: `prompt` (the text description, in quotes).
-Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`.
+Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`, `--model`.
+
+**KIE (`--provider kieai`, the default) runs through Skill 74** (`74-kie-live-adapter`, `scripts/kie_live_adapter.py run --mode active --json`, found as a sibling skill folder like Skill 67): Skill 74 checks the input against the model's live schema, submits to the path that schema declares, polls for up to 15 minutes and saves the result, then this skill verifies the video. If Skill 74 is not installed the command stops with a clear error; there is no second KIE client to fall back to. The model is chosen by Skill 67 (`67-kie-video`, its `select_video_model.py`); if Skill 67 is not installed the command stops with a clear error instead of guessing. `--model <KIE model id>` always wins and is sent unchanged. `--resolution` accepts any value; for a mapped model it is checked against that model's documented values (for example `1080p` becomes `1080P` on Wan 3.0, `4k` on Wan 3.0 is rejected, Pixverse receives it as `quality`). `--style` is not a KIE input and is ignored by KIE. `--model` is KIE-only like `--seed`.
 
 `--seed` and `--negative-prompt` are KIE-only options. Supplying either with Runway, Pika, or mock is rejected with a nonzero exit; those providers never silently discard the option.
 
@@ -87,7 +91,11 @@ python3 scripts/image_to_video.py photo.jpg \
 ```
 
 Positional argument: `image` (path to image file).
-Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`.
+Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`, `--image-field`.
+
+With `--provider kieai` the local image is uploaded with Skill 74 (`upload`), and the returned download URL is sent in the model's own input field (18 models are mapped from the KIE docs, for example `first_frame_url` as a single string for `wan/3-0-video`, `image_urls` as a list for `pixverse-v6/image-to-video`; the full table is in `scripts/ai_providers.py`). Any other model stops with an error naming it unless you pass `--image-field <input key> --image-field-type string|array` (the type is never guessed); `runway`, `veo-3-1`, `veo3`, `veo3_fast` and `veo3_lite` are mapped too and go through Skill 74 like any other model (it submits to the path each model's schema declares). The result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
+
+For the 18 mapped models, `--duration`, `--resolution`, aspect ratio and seed are checked against the model's documented type and allowed values before any request is sent (for example Kling v2.5 turbo takes duration `"5"` or `"10"` as a string, Pixverse calls resolution `quality`). A bad value stops with a message listing the allowed values. Inputs a model documents as required but this client cannot know (for example `mode`/`sound` on `kling-3.0/video`, `quality` on Pixverse) are passed as JSON: `--input-extra '{"mode": "pro", "sound": false}'` (available on `image_to_video.py` and `text_to_video.py`, KIE only).
 
 ### Add Music
 
@@ -128,7 +136,7 @@ When `--output` is omitted, text-to-video writes a prompt/timestamp filename in 
 Apply the core file updates from `CORE_UPDATES.md`.
 ## Video Creator Skill
 - Installed at: ~/.openclaw/skills/video-creator/
-- Full reference: ~/.openclaw/skills/video-creator/SKILL.md
+- Full reference: ~/.openclaw/skills/25-video-creator/SKILL.md
 ```
 
 ---

@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+fleet_notify.py — tell the OPERATOR when a fleet roll rolled a box back, failed
+it, or left content gaps that were already there. Never a client: nothing here
+can address a client chat.
+
+  python3 fleet_notify.py --summary .fleet-refresh-summary.json [--dry-run]
+  python3 fleet_notify.py --passed RESULT.json   # "<Client> (<Platform>) updated and passed"
+  python3 fleet_notify.py --test            # one labelled test note, operator only
+
+Every box is named by its CLIENT ("Client Name (Platform)"), never a box id:
+fleet-refresh.sh stamps "client" and "label" into each box result from the
+private fleet boxes file (the box itself does not know whose it is).
+
+Channels:
+  Telegram  the fleet-standing-operator-alert n8n webhook, a plain relay that
+            posts to the operator's own chat through the operator agent's bot.
+            Reached with the fleet-standing gate credentials every box already
+            carries (FLEET_STANDING_GATE_URL / _HEADER / _SECRET, from the
+            environment or openclaw.json env.vars), so it works from the
+            operator's Mac AND from a client box running its own Sunday update.
+            (Not the Rescue Rangers intake: that one routes to coaching the
+            client's own agent or a remediation turn on the box -- AI tokens,
+            and a path that can reach the client.)
+  Email     only on the operator's Mac (his Google service account AND the
+            private fleet boxes file present): Gmail send, as and to the operator.
+
+Exit 0 always unless arguments are bad; what was sent is printed.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import socket
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import operator_google  # noqa: E402
+
+NOTIFY_OUTCOMES = ("ROLLED_BACK", "FAILED")
+PLATFORM_NAMES = {"mac": "Mac", "hostinger": "Hostinger", "contabo": "Contabo"}
+
+
+def client_label(entry: dict) -> str:
+    """'Client Name (Platform)' for a boxes-file entry. A box with no client
+    name says so loudly instead of falling back to its id."""
+    client = entry.get("client") or f"UNKNOWN CLIENT ({entry.get('name') or entry.get('box') or '?'})"
+    plat = str(entry.get("platform") or "")
+    return f"{client} ({PLATFORM_NAMES.get(plat, plat.title())})" if plat else client
+
+
+def label(r: dict) -> str:
+    """How a box result is named to a person: its client label, else its box id."""
+    return r.get("label") or r.get("client") or f"box {r.get('box')}"
+
+
+def _wants_alert(r: dict) -> bool:
+    return r.get("outcome") in NOTIFY_OUTCOMES or bool((r.get("heal") or {}).get("needs_attention"))
+
+
+_SECRETISH = [re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{25,}\b"),   # bot tokens
+              re.compile(r"\b[A-Fa-f0-9]{32,}\b"),              # hex secrets / long SHAs
+              re.compile(r"\b[A-Za-z0-9_-]{40,}\b")]            # other long opaque strings
+
+
+def scrub(text: str) -> str:
+    for rx in _SECRETISH:
+        text = rx.sub("<redacted>", text)
+    return text
+
+
+def _openclaw_env() -> dict:
+    roots = [os.environ.get("OPENCLAW_ROOT", ""), "/data/.openclaw", str(Path.home() / ".openclaw")]
+    for r in filter(None, roots):
+        try:
+            cfg = json.loads((Path(r) / "openclaw.json").read_text())
+            return (cfg.get("env") or {}).get("vars") or {}
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+def alert_target() -> tuple[str, str, str]:
+    """(url, header name, secret) for the operator alert webhook, or empties."""
+    envv = _openclaw_env()
+    get = lambda k: os.environ.get(k) or str(envv.get(k) or "")
+    url = get("FLEET_OPERATOR_ALERT_URL")
+    gate = get("FLEET_STANDING_GATE_URL")
+    if not url and gate.rstrip("/").endswith("/fleet-standing-check"):
+        url = gate.rstrip("/")[: -len("fleet-standing-check")] + "fleet-standing-alert"
+    return url, get("FLEET_STANDING_GATE_HEADER") or "X-Fleet-Standing-Secret", get("FLEET_STANDING_GATE_SECRET")
+
+
+def tg_escape(text: str) -> str:
+    """The alert webhook's Telegram node sends with legacy Markdown, so a lone
+    '_' (scripts/watchdog-cc.sh, not_restored, ...) made Telegram reject the
+    whole alert ("can't parse entities") -- only the email arrived. Escape the
+    four legacy-Markdown markers so every alert reads exactly as written."""
+    return re.sub(r"([_*`\[])", r"\\\1", text)
+
+
+def send_telegram(text: str) -> tuple[bool, str, int | None]:
+    """(ok, detail, message_id). The webhook now responds with its last node's
+    output (n8n responseMode=lastNode) -- the Telegram API result itself -- so
+    the delivered message_id is provable from the HTTP response alone, with no
+    execution data stored on the n8n side."""
+    url, header, secret = alert_target()
+    if not url or not secret:
+        return False, "operator alert webhook not configured on this machine", None
+    req = urllib.request.Request(url, data=json.dumps({"text": tg_escape(text[:3900])[:4090]}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", header: secret})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            message_id = None
+            try:
+                message_id = (json.loads(r.read()).get("result") or {}).get("message_id")
+            except (ValueError, AttributeError):
+                pass  # response body wasn't the expected Telegram result shape
+            return r.status == 200, f"alert webhook HTTP {r.status}", message_id
+    except urllib.error.HTTPError as e:
+        return False, f"alert webhook HTTP {e.code}", None
+    except Exception as e:  # noqa: BLE001
+        return False, f"alert webhook unreachable ({e.__class__.__name__})", None
+
+
+def compose(rows: list[dict], origin: str) -> tuple[str, str]:
+    stamp = time.strftime("%Y-%m-%d %H:%M %Z")
+    bad = [r for r in rows if _wants_alert(r)]
+    subject = (f"Fleet update: {sum(r.get('outcome') == 'ROLLED_BACK' for r in bad)} rolled back, "
+               f"{sum(r.get('outcome') == 'FAILED' for r in bad)} failed, "
+               f"{sum(r.get('outcome') == 'UPDATED' for r in bad)} need attention ({origin})")
+    lines = [f"Fleet update report from {origin}, {stamp}.", ""]
+    for r in bad:
+        what = {"ROLLED_BACK": "rolled back (put back to how it was before the update)",
+                "FAILED": "FAILED and needs a person"}.get(
+                    r["outcome"], "updated, but has content gaps that were already there before")
+        tries = len((r.get("heal") or {}).get("attempts") or [])
+        lines.append(f"- {label(r)} {what}: {r.get('outcome_detail') or '; '.join(r.get('errors') or [])}")
+        if tries:
+            lines.append(f"  Fix attempts made before that: {tries}.")
+        if r.get("rollback", {}).get("not_restored"):
+            lines.append(f"  Not undone by the rollback: {r['rollback']['not_restored']}.")
+    ok = sum(1 for r in rows if r.get("outcome") == "UPDATED")
+    lines += ["", f"Updated fine: {ok}. Nothing was sent to any client."]
+    return subject, scrub("\n".join(lines))
+
+
+def _ver(v) -> str:
+    v = str(v or "unknown")
+    return v if v == "unknown" or v.startswith("v") else f"v{v}"
+
+
+def passed_note(r: dict) -> str | None:
+    """The per-box pass message, or None when this result is not a clean pass."""
+    if r.get("outcome") != "UPDATED" or r.get("result") != "ok" or (r.get("heal") or {}).get("needs_attention"):
+        return None
+    return (f"\u2705 {label(r)} updated and passed. Onboarding {_ver(r.get('onboarding_version'))}, "
+            f"Command Center {_ver(r.get('cc_version'))}")
+
+
+def notify_passed(r: dict, dry_run: bool = False) -> dict:
+    """Telegram only: a pass is good news, email is kept for failures and rollbacks."""
+    text = passed_note(r)
+    if not text:
+        return {"sent": False, "reason": f"{label(r)} did not pass cleanly"}
+    return {"text": text} if dry_run else {"text": text, "telegram": send_telegram(scrub(text))}
+
+
+def notify(rows: list[dict], origin: str, dry_run: bool = False) -> dict:
+    if not any(_wants_alert(r) for r in rows):
+        return {"sent": False, "reason": "nothing rolled back, failed or needing attention"}
+    subject, body = compose(rows, origin)
+    out = {"subject": subject}
+    if dry_run:
+        out["body"] = body
+        return out
+    out["telegram"] = send_telegram(f"{subject}\n\n{body}")
+    out["email"] = (operator_google.send_email(subject, body) if operator_google.available()
+                    else (False, "no operator Google account on this machine (Telegram only)"))
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--summary", help="fleet-refresh summary JSON (a list of box results)")
+    ap.add_argument("--passed", metavar="RESULT", help="one box's result JSON: send the pass note if it passed")
+    ap.add_argument("--origin", default=socket.gethostname().split(".")[0])
+    ap.add_argument("--dry-run", action="store_true", help="print the note, send nothing")
+    ap.add_argument("--test", action="store_true", help="send one labelled test note to the operator")
+    a = ap.parse_args()
+    if a.test:
+        text = ("TEST ONLY - fleet roll notification check from "
+                f"{a.origin}. No box was changed. If you see this, roll-back and failure alerts reach you.")
+        res = {"telegram": send_telegram(text),
+               "email": operator_google.send_email("TEST ONLY - fleet roll notification check", text)
+               if operator_google.available() else (False, "no operator Google account here")}
+        print(json.dumps(res))
+        return 0
+    if a.passed:
+        try:
+            r = json.loads(Path(a.passed).read_text())
+        except (OSError, ValueError) as e:
+            print(json.dumps({"sent": False, "reason": f"result unreadable: {e}"}))
+            return 0
+        print(json.dumps(notify_passed(r, a.dry_run), default=str, ensure_ascii=False))
+        return 0
+    if not a.summary:
+        ap.error("--summary, --passed or --test is required")
+    try:
+        rows = json.loads(Path(a.summary).read_text())
+    except (OSError, ValueError) as e:
+        print(json.dumps({"sent": False, "reason": f"summary unreadable: {e}"}))
+        return 0
+    print(json.dumps(notify(rows, a.origin, a.dry_run), default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

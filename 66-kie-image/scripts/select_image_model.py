@@ -6,7 +6,10 @@ select_image_model.py - Skill 66 kie-image model selector.
 Maps a natural-language image request to a KIE Market canonical_model_id, or
 returns valid=false with an alternative when the request cannot be served.
 
-STDLIB PYTHON3 ONLY. Deterministic. No network. No secrets read.
+STDLIB PYTHON3 ONLY. No secrets read. The GPT Image default follows the newest GPT Image generation
+in KIE's live catalog (owner order 2026-10-05): resolved through Skill 74 `latest-family` when that
+adapter is present and reachable, else the models.json default below. Explicit model/alias pins,
+department pins, the legacy 3:1/1:3/9:21 routing and the N43 substitutions are unchanged.
 
 Exit codes:
   0  selected (valid=true)
@@ -21,7 +24,10 @@ import os
 import re
 import sys
 
-VERSION = "1.0.0"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
+VERSION = "2.2.0"
 
 MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -88,7 +94,7 @@ REGISTRY = {
         "name": "Seedream 4.5",
         "routes": {
             "t2i": {"canonical_model_id": "seedream/4.5-text-to-image", "task": "text-to-image"},
-            "edit": {"canonical_model_id": "seedream/4-5-edit", "task": "image-to-image"},
+            "edit": {"canonical_model_id": "seedream/4.5-edit", "task": "image-to-image"},
         },
         "default": "t2i",
     },
@@ -190,13 +196,13 @@ ALIASES = {
     # GPT Image 2 route is still reachable via an explicit canonical model id
     # (gpt-image-2-text-to-image / gpt-image-2-image-to-image, matched via
     # MODEL_TO_FAMILY below) or the "legacy"-qualified phrases added here.
-    "gpt-img2": "gpt-image-2-5-sunburst",
-    "gpt img2": "gpt-image-2-5-sunburst",
-    "gpt image 2": "gpt-image-2-5-sunburst",
-    "gpt-image 2": "gpt-image-2-5-sunburst",
-    "gpt image 2.0": "gpt-image-2-5-sunburst",
-    "gpt-image-2.0": "gpt-image-2-5-sunburst",
-    "gpt-image-2": "gpt-image-2-5-sunburst",
+    "gpt-img2": "gpt-image-2",
+    "gpt img2": "gpt-image-2",
+    "gpt image 2": "gpt-image-2",
+    "gpt-image 2": "gpt-image-2",
+    "gpt image 2.0": "gpt-image-2",
+    "gpt-image-2.0": "gpt-image-2",
+    "gpt-image-2": "gpt-image-2",
     # gpt 2.5 / sunburst phrasing (new, added alongside the retargeted aliases
     # above -- no existing alias key was deleted)
     "gpt image 2.5": "gpt-image-2-5-sunburst",
@@ -205,6 +211,10 @@ ALIASES = {
     "gpt image 2.5 sunburst": "gpt-image-2-5-sunburst",
     "gpt-img2.5": "gpt-image-2-5-sunburst",
     "sunburst": "gpt-image-2-5-sunburst",
+    # version-less generic names: the fleet default, which follows the newest generation (owner order 2026-10-05)
+    "gpt image": "gpt-image-2-5-sunburst",
+    "gpt-image": "gpt-image-2-5-sunburst",
+    "openai image": "gpt-image-2-5-sunburst",
     # explicit legacy pin phrasing (retained route, ruling 2026-09-09)
     "gpt image 2 legacy": "gpt-image-2",
     "legacy gpt image 2": "gpt-image-2",
@@ -388,8 +398,34 @@ def family_from_text(text):
 GPT_2_5_LEGACY_ONLY_RATIOS = {"3:1", "1:3", "9:21"}
 GPT_2_5_RATIO_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
 
+# Version-less generic names ("gpt image", "gpt-image", "openai image") mean "the fleet GPT Image default" and
+# follow the newest generation (owner order 2026-10-05). Names that carry a version ("gpt image 2", "gpt-img2",
+# "gpt image 2.5", "sunburst") or a canonical model id are pins and never move: "gpt image 2" is the
+# legacy GPT Image 2 family (used with its own N43 ratio rules).
+GENERIC_GPT_ALIASES = {"gpt image", "gpt-image", "openai image"}
+_DEFAULT_MEMO = {}
 
-def choose_answer(family, request, explicit_model_id):
+
+def gpt_default_routes():
+    """{'t2i','i2i','source','changed','fallback'}: newest GPT Image generation via Skill 74, else models.json."""
+    if "v" in _DEFAULT_MEMO:
+        return _DEFAULT_MEMO["v"]
+    st = REGISTRY["gpt-image-2-5-sunburst"]["routes"]
+    out = {"t2i": st["t2i"]["canonical_model_id"], "i2i": st["i2i"]["canonical_model_id"],
+           "source": "models.json", "changed": False, "fallback": None}
+    got = adapter_bridge.latest_family("gpt-image", current=out["t2i"])
+    routes = (got or {}).get("routes") or {}
+    t2i, i2i = routes.get("Text to Image"), routes.get("Image to Image")
+    if t2i and i2i:
+        out.update(t2i=t2i, i2i=i2i, source="skill-74:" + str(got.get("source")), changed=bool(got.get("changed")))
+        if (t2i, i2i) != (st["t2i"]["canonical_model_id"], st["i2i"]["canonical_model_id"]):
+            # owner order: if the newer model fails dispatch or validation, retry the previous default for that job
+            out["fallback"] = {"t2i": st["t2i"]["canonical_model_id"], "i2i": st["i2i"]["canonical_model_id"]}
+    _DEFAULT_MEMO["v"] = out
+    return out
+
+
+def choose_answer(family, request, explicit_model_id, dynamic=False):
     """Return dict with selected_model_id / valid / reason / alternative."""
     norm = normalize(request)
     fam_spec = REGISTRY[family]
@@ -457,6 +493,9 @@ def choose_answer(family, request, explicit_model_id):
     # --- gpt-image-2.5 sunburst (operator default, ruling 2026-09-09) --------
     if family == "gpt-image-2-5-sunburst":
         key = "i2i" if task == "image-to-image" else "t2i"
+        dflt = gpt_default_routes() if dynamic else None
+        if dflt:  # auto-latest default (owner order 2026-10-05); ratio routing below still applies
+            routes = {k: {"canonical_model_id": dflt[k], "task": routes[k]["task"]} for k in ("t2i", "i2i")}
         ratio = detect_aspect_ratio(request)
         task_label = "image-to-image" if key == "i2i" else "text-to-image"
         if ratio in GPT_2_5_LEGACY_ONLY_RATIOS:
@@ -476,7 +515,8 @@ def choose_answer(family, request, explicit_model_id):
                 notes=["aspect_ratio %s substituted with %s for dispatch (operator-approved "
                        "substitution, ruling 2026-09-09)" % (ratio, sub)],
             )
-        return _ok(routes[key]["canonical_model_id"], "GPT Image 2.5 %s" % task_label)
+        return _ok(routes[key]["canonical_model_id"], "GPT Image default %s (%s)" % (
+            task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.5 sunburst pinned"))
 
     # --- gpt-image-2 (legacy, retained by operator ruling 2026-09-09) -------
     if family == "gpt-image-2":
@@ -635,9 +675,13 @@ def detect_aspect_ratio(text):
 
 def select(request):
     family, explicit_id, frag = family_from_text(request)
+    dynamic = False
     if family is None:
         family = "gpt-image-2-5-sunburst"  # owner-preferred general route (DoD 21; operator ruling 2026-09-09)
-    ans = choose_answer(family, request, explicit_id)
+        dynamic = True
+    elif family == "gpt-image-2-5-sunburst" and explicit_id is None and frag in GENERIC_GPT_ALIASES:
+        dynamic = True
+    ans = choose_answer(family, request, explicit_id, dynamic)
     # registry-driven capability check applies to ALL families; explicit pins
     # are re-checked too. ratio_override carries an already-resolved ratio
     # (e.g. an operator-approved GPT Image 2.5 substitution) through to the
@@ -661,6 +705,9 @@ def select(request):
         "alternative": ans["alternative"],
         "notes": notes,
         "valid": ans["valid"],
+        "default_source": gpt_default_routes()["source"] if dynamic else None,
+        "fallback_default": (gpt_default_routes()["fallback"] or {}).get("i2i" if detect_task(request) == "image-to-image" else "t2i")
+        if dynamic else None,
     }
 
 
@@ -676,12 +723,14 @@ SELFTEST_CASES = [
     ("general product photography request", "gpt-image-2-5-sunburst-text-to-image", True, None),
     ("wan 2.7 image 4K output please", "wan/2-7-image-pro", True, None),
     ("wan/2-7-image with 4K output", None, False, "wan/2-7-image-pro"),
-    ("use gpt-img2 for this headshot edit", "gpt-image-2-5-sunburst-image-to-image", True, None),
+    # Version-2 names are the legacy family (owner correction 2026-10-06); version-less names get the default.
+    ("use gpt-img2 for this headshot edit", "gpt-image-2-image-to-image", True, None),
+    ("use gpt image for this headshot edit", "gpt-image-2-5-sunburst-image-to-image", True, None),
     ("quinn image 3.0 create an infographic", "qwen3/text-to-image", True, None),
     ("z image generate a blue robot", "z-image", True, None),
     ("z image by quinn", "z-image", True, None),
     ("glimblox render something", "gpt-image-2-5-sunburst-text-to-image", True, None),
-    ("seedream 4.5 with five reference images", "seedream/4-5-edit", True, None),
+    ("seedream 4.5 with five reference images", "seedream/4.5-edit", True, None),
     ("seedream 4.5 pure text generation", "seedream/4.5-text-to-image", True, None),
     ("nano banana 2 lite fast poster", "nano-banana-2-lite", True, None),
     ("imagen 4 ultra studio shot", "google/imagen4-ultra", True, None),
@@ -709,7 +758,73 @@ SELFTEST_CASES = [
 ]
 
 
+# (name, fake adapter answer or None=no adapter or "broken", request, expected_model_id)
+NEWER = {"state": "success", "data": {"family": "gpt-image", "source": "live", "changed": True, "routes": {
+    "Text to Image": "gpt-image-3-aurora-text-to-image", "Image to Image": "gpt-image-3-aurora-image-to-image"}}}
+DYNAMIC_CASES = [
+    ("newer generation becomes the default (t2i)", NEWER, "general product photography request",
+     "gpt-image-3-aurora-text-to-image"),
+    ("newer generation becomes the default (i2i)", NEWER, "edit this headshot with gpt image",
+     "gpt-image-3-aurora-image-to-image"),
+    ("version-less generic alias follows the newest generation", NEWER, "use gpt image for this poster",
+     "gpt-image-3-aurora-text-to-image"),
+    ("openai image follows the newest generation", NEWER, "make an openai image of a leaf",
+     "gpt-image-3-aurora-text-to-image"),
+    ("gpt image 2 names version 2: legacy, not auto-latest", NEWER, "use gpt image 2 for this poster",
+     "gpt-image-2-text-to-image"),
+    ("gpt-img2 names version 2: legacy, not auto-latest", NEWER, "edit this headshot with gpt-img2",
+     "gpt-image-2-image-to-image"),
+    ("explicit 2.5 alias is a pin and never moves", NEWER, "use gpt image 2.5 sunburst for this poster",
+     "gpt-image-2-5-sunburst-text-to-image"),
+    ("explicit canonical id is a pin", NEWER, "dispatch with gpt-image-2-5-sunburst-text-to-image explicitly",
+     "gpt-image-2-5-sunburst-text-to-image"),
+    ("another family pin is untouched", NEWER, "use ideogram for typography", "ideogram/v3-text-to-image"),
+    ("legacy 3:1 still routes to GPT Image 2", NEWER, "banner in 3:1 ratio", "gpt-image-2-text-to-image"),
+    ("N43 substitution still applies on the newest default", NEWER, "product shot in 4:5 aspect ratio",
+     "gpt-image-3-aurora-text-to-image"),
+    ("adapter unreachable falls back to models.json", "broken", "general product photography request",
+     "gpt-image-2-5-sunburst-text-to-image"),
+    ("adapter absent falls back to models.json", None, "general product photography request",
+     "gpt-image-2-5-sunburst-text-to-image"),
+]
+
+
+def _dynamic_selftest():
+    import tempfile
+    failures = []
+    saved = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    with tempfile.TemporaryDirectory() as d:
+        script = os.path.join(d, "kie_live_adapter.py")
+        with open(script, "w") as fh:
+            fh.write("import json, os, sys\nsys.stdout.write(open(os.path.join(os.path.dirname(__file__), 'answer.json')).read())\n")
+        for name, answer, req, exp in DYNAMIC_CASES:
+            _DEFAULT_MEMO.clear()
+            if answer is None:
+                os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
+            elif answer == "broken":
+                with open(os.path.join(d, "answer.json"), "w") as fh:
+                    fh.write("this is not json")
+                os.environ["KIE_LIVE_ADAPTER_PATH"] = script
+            else:
+                with open(os.path.join(d, "answer.json"), "w") as fh:
+                    json.dump(answer, fh)
+                os.environ["KIE_LIVE_ADAPTER_PATH"] = script
+            got = select(req)["selected_model_id"]
+            if got != exp:
+                failures.append("FAIL %s: %r expected %s got %s" % (name, req, exp, got))
+    if saved is None:
+        os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    else:
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = saved
+    _DEFAULT_MEMO.clear()
+    return failures
+
+
 def selftest():
+    # the static battery must not depend on the network or on a sibling adapter: bridge off
+    saved = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
+    _DEFAULT_MEMO.clear()
     failures = []
     for req, exp_id, exp_valid, exp_alt in SELFTEST_CASES:
         res = select(req)
@@ -724,13 +839,18 @@ def selftest():
                     req, exp_id, exp_valid, exp_alt,
                     res["selected_model_id"], res["valid"], res["alternative"])
             )
+    if saved is None:
+        os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    else:
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = saved
+    failures += _dynamic_selftest()
+    total = len(SELFTEST_CASES) + len(DYNAMIC_CASES)
     if failures:
         print("select_image_model.py --self-test FAILED", file=sys.stderr)
         for f in failures:
             print("  " + f, file=sys.stderr)
         return 1
-    print("select_image_model.py --self-test: %d/%d passed"
-          % (len(SELFTEST_CASES), len(SELFTEST_CASES)))
+    print("select_image_model.py --self-test: %d/%d passed" % (total, total))
     return 0
 
 

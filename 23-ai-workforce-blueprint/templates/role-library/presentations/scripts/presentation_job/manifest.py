@@ -227,6 +227,11 @@ class Phase:
     # Parsing this flag is what lets the engine finally honor its own manifest's
     # routing intent. See Engine._deck_creation_mode / Engine.run in phases.py.
     converter_path: bool = False
+    # PD-TEST-168 part B: a phase whose ONLY job is an optional deck extra (the
+    # infographic). Routed around -- not dispatched, not verified -- when the
+    # deck POSITIVELY does not require it. Same shape as converter_path above;
+    # see Engine._infographic_route_around_applies for the fail-open contract.
+    infographic_path: bool = False
     # P8.25-WORKBOOK fix: the manifest declares the " + " pair with the directory
     # on the FIRST pattern only ("working/deliverables/{deck_slug}-WORKBOOK.pdf +
     # {deck_slug}-WORKBOOK-FILLABLE.pdf"). A token-bearing bare filename inherits
@@ -557,6 +562,7 @@ class Manifest:
                 heartbeat_minutes=p.get("heartbeat_minutes"),
                 long_running=bool(p.get("long_running")),
                 converter_path=bool(p.get("converter_path")),
+                infographic_path=bool(p.get("infographic_path")),
                 workers=workers,
                 defers_unless=p.get("defers_unless"),
                 # MASTER Part 8 Fix 8: carry the manifest's declared consumed

@@ -157,3 +157,22 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/unit/install-state-fail-open.test.sh
+
+      # ISSUE-14 rides in this job for the same reason ONB-STATE-002 does: it is
+      # the identical failure CLASS -- code that nothing in CI ever compiled or
+      # ran on the interpreter it actually lands on. ONB-STATE-001 covers Python
+      # bodies that `bash -n` treats as opaque text; this covers shell that parses
+      # fine under `bash -n` on ANY version and only dies at RUNTIME on the bash
+      # 3.2 macOS actually ships. No workflow in this repo runs tests/unit as a
+      # directory, and the queue is the scarce resource, so it goes here rather
+      # than into a workflow of its own.
+      #
+      # The test is self-proving: T1 asserts an unguarded fixture is FLAGGED (not
+      # vacuous), T2 that the guarded twin PASSES (not a red light), T3/T4 that a
+      # comment or a heredoc body mentioning `declare -A` is never flagged, and
+      # only then T5 sweeps the real tree.
+      - name: bash-4 syntax needs the bash 4+ re-exec guard (ISSUE-14)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/bash4-syntax-guard.test.sh

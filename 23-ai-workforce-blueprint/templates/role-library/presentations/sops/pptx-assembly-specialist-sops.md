@@ -10,6 +10,8 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+> **Phase-Code Map (per FIX of the short-code reconciliation):** the numeric short codes below resolve to manifest ids in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 69, 62 phases) exactly per the Director's Phase-Code Map (director-of-presentations.md Section 9). This role's own phases: assembly `P8-ASSEMBLE` (order 8), PDF export `P8.1-PDF-EXPORT` (8.1), workbook `P8.25-WORKBOOK` (8.25), notes sync `P9.5-NOTES-SYNC` (8.7), upsell HTML `P-U-HTML-SALES`/`P-U-HTML-CHECKOUT`/`P-U-HTML-VSL` (5.2/5.3/5.4); the render this role receives comes from `P4-RENDER` (4.9) and its image QC from `P-IMAGE-QC` (4.95); final aggregation is `P-QC-AGGREGATE` (8.65) and delivery is `P9-DELIVER` (9). The manifest id is the canonical key when reading a manifest row.
+
 ### SOP 9.1 -- PPTX Build with Embedded Speaker Notes
 
 **When to run:** Phase 6 -- after delivery_verified: true in media_library.json.
@@ -25,20 +27,20 @@ This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json
 
 **Archival reference -- decommissioned overlay subsystem specification (preserved by U003 rescue):**
 
-The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed gpt-image-2.5 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
+The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed GPT Image 2.5 Sunburst image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
 - If a slide's verbatim text garbles, misspells, or duplicates at image QC, the remedy is NEVER a native overlay. The Slide Image Creator RE-PROMPTS and RE-SEEDS the slide (new prompt, new seed) and re-renders. If the garble PERSISTS after the re-prompt/re-seed loop, it ESCALATES TO A HUMAN — it is never papered over with a native text box.
 - The mere PRESENCE of a `pptx_text_overlays.json` file in the run dir at assembly is a hard auto-fail (AF-OVERLAY-DELIVERED). If you find one, HALT, delete it, and route the affected slide back to the re-prompt/re-seed loop.
 - A delivered PPTX whose any slide carries a native (non-notes) on-slide text run instead of a composed image is AF-OVERLAY-DELIVERED. `scripts/build_deck.py` enforces this both at preflight (`_chk_no_overlay`) and at the postflight completeness gate.
-- The LOGO is the ONLY exception, and it is NOT native text: when the model cannot bake the locked logo cleanly after two image-to-image attempts, the real logo IMAGE is composited onto the slide PNG via the PIL image-composite path (SOP-IMG-05) BEFORE assembly — it is baked into the image, not added as a native PPTX element.
+- The LOGO is the ONLY other picture, and it is NOT native text: on a deck rendered with a URL logo the model places the mark image-to-image (nothing is composited); on a deck rendered with a LOCAL logo file, `assemble_pptx` adds that exact file as a picture shape, top-right, about 13 percent of the slide width, 0.25 inch margin, on every slide (SOP-IMG-05 Rule A). There is no Pillow composite and no `logo_composite_log.json`.
 
 **Steps:**
 1. Verify slide count: `ls working/media-library/*.png | wc -l` must equal slide_count_final from mission_prd.json. If it does not, halt and notify the Director.
 2. Verify presenter_notes.json has exactly slide_count_final entries. If fewer entries than slides: flag missing notes to the Director. Do not assemble with missing notes.
-3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single gpt-image-2.5 image per slide (plus the off-slide speaker-notes pane and, where required, the PIL-composited logo image baked into the PNG per SOP-IMG-05).
-3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (PIL-baked logo when used) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
-3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. The assembler must NEVER hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
-4. Write the assembly script at working/scripts/assemble_pptx.py:
+3. **AF-OVERLAY-DELIVERED guard.** Confirm there is NO `pptx_text_overlays.json` anywhere in the run dir (working/copy/, working/checkpoints/, or the run root). If one exists, HALT: delete it and route the affected slide(s) back to the Slide Image Creator's re-prompt/re-seed loop (then human escalation if garble persists). Native text overlays are eliminated; assembly composites ONLY the single GPT Image 2.5 Sunburst image per slide (plus the off-slide speaker-notes pane and, on a local-logo deck, the exact logo picture per SOP-IMG-05 Rule A).
+3a. **Canonical assembler only (AF-CANONICAL-RENDER-BYPASS).** The deck is assembled by the canonical renderer `scripts/build_deck.py` `assemble_pptx()`, invoked ONLY through `scripts/run_signature_deck.py`. That function adds ONLY `add_picture` (full-bleed kie.ai image) + `add_picture` (the exact local logo file, when the deck has one) + the off-slide notes pane, and emits ZERO `add_textbox`. You do NOT hand-write or run a parallel per-deck assembler (no `working/phase*_assemble.py`, no improvised renderer). A hand-rolled per-deck assembler/renderer is AF-CANONICAL-RENDER-BYPASS (and AF-RENDERER); a locally fabricated slide canvas (`Image.new(...)` for a 2048×1152 card, or a PowerPoint-drawn typography card) is AF-LOCAL-CANVAS. The python in step 4 is the REFERENCE SPEC of the canonical assembler's image-only behavior, not a license to author a separate assembler. In the shipped path the assembler reads the verified `working/renders/slide-NN.png` set that the render step produced; `working/media-library/` is the QC-passed delivery and upload copy. A gate is skippable ONLY via an explicit, LOGGED owner/founder `owner_skip_approval` token in `process_manifest.json`.
+3b. **Workspace discipline (AF-DH1 prevention):** All intermediate files (prompts, renders, QC logs, manifests, scripts) MUST remain under `working/`. Output PPTX goes to `output/[DECK_SLUG].pptx` and PDF to `output/[DECK_SLUG].pdf`. Nothing may hard-code `BUNDLE_DIR = ~/Downloads/<DECK>` or any client delivery path as its working directory -- that path is owned exclusively by Delivery Concierge SOP 9.0. Verify now; refuse to proceed if any of these conditions are violated.
+4. Reference only: canonical `build_deck.assemble_pptx()` behaves as follows (do not write this file):
    ```python
    from pptx import Presentation
    from pptx.util import Inches  # Inches ONLY -- no Pt/RGBColor: this assembler
@@ -46,8 +48,8 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
    import json, os, glob, re
 
    # Configuration
-   SLIDE_WIDTH_INCHES = 13.333
-   SLIDE_HEIGHT_INCHES = 7.5
+   SLIDE_WIDTH_INCHES = 10.0   # build_deck.SLIDE_WIDTH_IN
+   SLIDE_HEIGHT_INCHES = 5.625  # build_deck.SLIDE_HEIGHT_IN
    MEDIA_DIR = "working/media-library"
    NOTES_FILE = "working/copy/presenter_notes.json"
    OVERLAYS_FILE = "working/copy/pptx_text_overlays.json"  # ELIMINATED — present == AF-OVERLAY-DELIVERED (halt)
@@ -61,7 +63,7 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
        notes = {item["slide_number"]: item["presenter_note"] for item in json.load(f)}
 
    # AF-OVERLAY-DELIVERED: native text overlays are ELIMINATED. The assembler
-   # composites ONLY the single composed gpt-image-2.5 image per slide (all text is
+   # composites ONLY the single composed GPT Image 2.5 Sunburst image per slide (all text is
    # baked into the image by the model) plus the off-slide speaker-notes pane. If a
    # pptx_text_overlays.json exists, HALT (do not read it) — it is an auto-fail.
    if os.path.exists(OVERLAYS_FILE):
@@ -80,7 +82,8 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
        slide = prs.slides.add_slide(blank_layout)
 
        # Full-bleed composed image (the ONLY visual on the slide; all text baked in
-       # by gpt-image-2.5, plus the PIL-composited logo image per SOP-IMG-05 when used).
+       # by GPT Image 2.5 Sunburst; the shipped assembler also adds the exact local logo file as a
+       # second picture, top-right, when the deck has one, SOP-IMG-05 Rule A).
        # ONLY add_picture is permitted -- there is NO add_textbox / add_shape /
        # placeholder-text call anywhere in this assembler. Text-on-slide is absent
        # by construction, not by discipline.
@@ -102,14 +105,14 @@ The eliminated subsystem included: a strike-capable overlay support mechanism wi
                    raise SystemExit(
                        f"AF-OVERLAY-DELIVERED: slide {i} has a native on-slide text "
                        f"run. The deck is image-only (text baked into the single "
-                       f"gpt-image-2.5 image). Re-prompt/re-seed the slide; never overlay.")
+                       f"GPT Image 2.5 Sunburst image). Re-prompt/re-seed the slide; never overlay.")
 
    assert_image_only(prs)  # structural ban on text-on-slide, enforced in code
    os.makedirs("output", exist_ok=True)
    prs.save(OUTPUT_FILE)
    print(f"Saved: {OUTPUT_FILE}")
    ```
-5. Run the assembly script: `python3 working/scripts/assemble_pptx.py`.
+5. Run `python3 scripts/run_signature_deck.py …` (P8-ASSEMBLE).
 6. Verify the output file exists at output/[DECK_SLUG].pptx and is non-empty.
 7. Open the PPTX with python-pptx and verify: slide count == slide_count_final, first and last slide images are correct, first slide has a non-empty notes field, AND no slide carries any native on-slide text run (every shape on every slide is a picture; the only text part is the off-slide notes pane). A native on-slide text run is AF-OVERLAY-DELIVERED.
 8. Notify the Director that `output/` files are ready (PPTX + PDF). Do NOT copy any file to ~/Downloads or to `delivery/`; Delivery Concierge SOP 9.0 owns final packaging. Touching the delivery directory from this role is an AF-DH1 trigger.
@@ -126,7 +129,7 @@ Garbled-text remedy (NO native overlay — Decision 5C): if a slide's rendered t
 
 **Deterministic-renderer path (`scripts/build_deck.py`) -- automatic per-slide speaker notes:**
 
-When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) rather than a hand-written `assemble_pptx.py`, the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
+When the deck is assembled via the deterministic fleet renderer `scripts/build_deck.py` (the zero-AI-at-runtime path) the renderer injects per-slide speaker notes AUTOMATICALLY -- you do NOT hand-build a `presenter_notes.json` for this path. The behavior is:
 
 1. **Auto-discovery (non-fatal).** Before assembling, `build_deck.py` searches, in order, for the presenter speech at: `working/presenter-speech/speech.md`, `working/delivery/PRESENTERS-SPEECH.md`, `working/presenter-speech/PRESENTERS-SPEECH.md`, and finally `PRESENTERS-SPEECH.md` in the bundle directory. The FIRST file found wins.
 2. **Phase ordering is tolerated.** The deck render is Phase 4; the presenter speech is a Phase 9 artifact written by the Presenters Speech Writer. So at render time the speech is FREQUENTLY absent. When no speech file is found, the renderer logs a clear "no presenter speech found yet ... rendering WITHOUT per-slide notes (non-fatal)" message and assembles the deck with no notes. **A missing speech NEVER blocks the render.** Per-slide notes are a best-effort enrichment, not a render gate. (The full bundle is still enforced separately by the postflight AF-BUNDLE-COMPLETE gate, which requires the speech artifacts to exist before the run can be reported "done.")
@@ -145,12 +148,11 @@ The shipped `.pptx` must carry, in each slide's NATIVE NOTES pane, that slide's 
 
 - **Phase-ordering note (not a render gate).** Because the presenter speech is a later-phase (Phase 9) artifact, the notes pane is FREQUENTLY empty at the Phase-4 render and that is non-fatal at render time (per the auto-discovery rule above). The notes-pane requirement is enforced at CLOSEOUT, after the speech exists: by final delivery, the re-assembled / finalized `.pptx` must have a non-empty notes pane on every audience-facing content slide.
 - **Verify (AF-EMPTY-NOTES-PANE).** At closeout, open the final `.pptx` and confirm every content slide's notes pane is non-empty (read `slide.notes_slide.notes_text_frame.text` per slide; structural/section-divider slides with no spoken line are exempt). A final delivery whose content slides ship with empty notes panes (the speech existed but was never injected) fails AF-EMPTY-NOTES-PANE; re-run the deterministic assembly with the speech present so the notes are injected, then re-verify.
-
 ---
 
-### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC)
+### SOP 9.2 -- Export the Deck to Portable-Document Format (System-Wide Delivery Output + Final QC; manifest id `P8.1-PDF-EXPORT`, order 8.1)
 
-**System-wide rule:** EVERY deck the system produces emits a portable-document-format (`.pdf`) export ALONGSIDE the `.pptx`, so a recipient without PowerPoint can open the deck. The portable-document export is a REQUIRED, verified DELIVERY output of every assembly run, not merely a transient QC artifact. The same export ships to the client and feeds the per-page PNGs the QC Specialist reads. This applies to ALL decks fleet-wide.
+**System-wide rule:** EVERY deck the system produces emits a portable-document-format (`.pdf`) export ALONGSIDE the `.pptx`, so a recipient without PowerPoint can open the deck. The portable-document export is a REQUIRED, verified DELIVERY output of every assembly run -- not merely a transient artifact for QC. The same export both ships to the client and feeds the per-page PNGs the QC Specialist reads. This applies to ALL decks fleet-wide.
 
 **When to run:** Immediately after the PPTX is built (SOP 9.1 complete).
 
@@ -158,31 +160,34 @@ The shipped `.pptx` must carry, in each slide's NATIVE NOTES pane, that slide's 
 - output/[DECK_SLUG].pptx
 
 **Steps:**
-1. Convert the PowerPoint file to a portable-document-format file using LibreOffice Impress in headless mode (the same LibreOffice headless convert path the design-intelligence-library uses, cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md`):
+1. Convert the PowerPoint file to a portable-document-format file using LibreOffice Impress in headless mode (the same LibreOffice headless convert path the design-intelligence-library uses for deck rasterization, cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md` and `sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md`):
    ```bash
    soffice --headless --convert-to pdf --outdir output/ output/[DECK_SLUG].pptx
    ```
-   This produces output/[DECK_SLUG].pdf -- the delivery export, not a throwaway. The `soffice` binary is the same LibreOffice the Capacity & Reliability Engineer verifies at Step 0.5.
-2. Verify the PDF was created and is non-empty.
-3. **Documented fallback if `soffice` is unavailable** (record which path succeeded in render_log.json `pdf_export_tool`): (a) try the `libreoffice --headless --convert-to pdf` alias (cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md`, which uses `libreoffice --headless --convert-to pdf`); (b) if no LibreOffice binary exists, write a multi-page PDF from the ordered slide PNGs using a Python image-to-PDF library already on the box (for example, Pillow `Image.save(..., save_all=True)`) -- an image-only portable-document export that still opens without PowerPoint (slides are already image-only by construction — Decision 5C); (c) if no path produces a non-empty PDF, HALT delivery, flag the Director and Capacity & Reliability Engineer, and request LibreOffice be installed. Never deliver a deck without its portable-document export; the system-wide rule is not waivable.
+   This produces output/[DECK_SLUG].pdf. The `soffice --headless --convert-to pdf` command is the documented primary path; the `soffice` binary is the same LibreOffice the Capacity & Reliability Engineer verifies at Step 0.5.
+2. Verify the PDF was created and is non-empty. This `.pdf` is the delivery export, not a throwaway.
+3. **Documented fallback if `soffice` is unavailable.** If `soffice` is not on the path or the convert fails, attempt the fallbacks IN ORDER and record which one succeeded in render_log.json (`pdf_export_tool`):
+   a. `libreoffice --headless --convert-to pdf --outdir output/ output/[DECK_SLUG].pptx` (the `libreoffice` launcher is an equivalent alias for `soffice` on installs where the `soffice` shim is absent; cited in `45-design-intelligence-library/library/_system/PPT-ANALYSIS-SOP.md`, which uses `libreoffice --headless --convert-to pdf`).
+   b. If neither LibreOffice binary is present, render each per-slide PNG from working/media-library/slide-NN.png into a single PDF using a Python image-to-PDF library already in the box's Python environment (for example, Pillow's `Image.save(..., save_all=True)` to write a multi-page PDF from the ordered slide PNGs). This produces a faithful image-only portable-document export that still opens without PowerPoint. Native text overlays added in SOP 9.1 are baked into the rasterized PDF only when the PNG already carries them; when overlays were applied natively (SOP 9.3 / 9.4), prefer a LibreOffice path so the overlay text is preserved, and flag the limitation if only the image fallback is available.
+   c. If no fallback can produce a non-empty PDF, HALT the assembly delivery, flag to the Director and the Capacity & Reliability Engineer that the portable-document export tooling is missing, and request LibreOffice be installed before delivery. Do NOT deliver a deck without its portable-document export; the system-wide rule is not waivable.
 4. Extract PDF pages to PNG using pdftoppm (for QC):
    ```bash
    pdftoppm -png -r 100 output/[DECK_SLUG].pdf output/pdf-pages/slide
    ```
    This produces output/pdf-pages/slide-000001.png through slide-NNNNNN.png.
-5. Verify: PDF page count matches slide_count_final AND the PPTX slide count. If the PDF has fewer pages than expected (LibreOffice sometimes drops slides with very large images), flag to the Director and do not deliver until counts match.
+5. Verify: page count from the PDF (and from pdftoppm) matches slide_count_final AND matches the PPTX slide count. If the PDF has fewer pages than expected (LibreOffice sometimes drops slides with very large images), flag to the Director and do not deliver until the page counts match.
 6. Write a render_log.json to output/render_log.json: `{ "pptx_path": "...", "pdf_path": "...", "pdf_is_delivery_output": true, "pdf_export_tool": "soffice|libreoffice|pillow-image-pdf", "page_count": N, "slide_count_final": N, "pptx_slide_count": N, "counts_match": true, "rendered_at": "ISO timestamp" }`.
 7. Run the assembly quality gate (Gate 6): assert BOTH output/[DECK_SLUG].pptx and output/[DECK_SLUG].pdf exist, are non-empty, and have matching page/slide counts. Halt delivery on any failure.
-8. Send the PDF path and the pdf-pages directory to the QC Specialist for Phase 6 QC; the `.pptx` and `.pdf` together travel to the Media Librarian / Delivery Concierge as delivery outputs.
+8. Send the PDF path and the pdf-pages directory to the QC Specialist for Phase 6 QC. The same `.pdf` is carried forward as a delivery output to the Media Librarian / Delivery Concierge.
 
 **Outputs:**
 - output/[DECK_SLUG].pdf (REQUIRED delivery output, ships alongside the .pptx; also feeds QC)
 - output/pdf-pages/slide-NNNNNN.png (one file per slide, for QC)
-- output/render_log.json (records `pdf_is_delivery_output` and `pdf_export_tool`)
+- output/render_log.json (records `pdf_is_delivery_output` and the `pdf_export_tool` used)
 
-**Hand to:** QC Specialist -- Presentations (Phase 6 final deck QC); both files to the Media Librarian / Delivery Concierge for delivery.
+**Hand to:** QC Specialist -- Presentations (Phase 6 final deck QC); the `.pptx` and the `.pdf` together travel to the Media Librarian / Delivery Concierge for delivery.
 
-**Failure mode:** If `soffice` is not installed: run the documented fallback chain in step 3 (libreoffice alias, then Pillow image-to-PDF) and flag to the Director and Capacity & Reliability Engineer. If no path can produce a non-empty portable-document export, HALT delivery and request LibreOffice be installed; never deliver a `.pptx` without its `.pdf` (the system-wide rule).
+**Failure mode:** If `soffice` is not installed: run the documented fallback chain in step 3 (libreoffice alias, then the Pillow image-to-PDF fallback) and flag to the Director and Capacity & Reliability Engineer. The C&RE should have verified LibreOffice is available in the Step 0.5 capacity probe. If no path can produce a non-empty portable-document export, HALT delivery and request LibreOffice be installed; never deliver a `.pptx` without its `.pdf` (the system-wide rule).
 
 ---
 
@@ -196,7 +201,7 @@ The full specification is archived in the U003 rescue backup.
 The native PPTX text/element-overlay path no
 longer exists: there is no `pptx_text_overlays.json`, no `add_textbox` loop, no
 strike support, no rendered-height/collision asserts, and no gradient scrim. Every
-slide is a SINGLE composed gpt-image-2.5 image with its text baked in by the model;
+slide is a SINGLE composed GPT Image 2.5 Sunburst image with its text baked in by the model;
 the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
 - Garbled / misspelled text is fixed ONLY by the Slide Image Creator's re-prompt /
@@ -206,59 +211,8 @@ the only legitimate PPTX text part is the off-slide speaker-notes pane.
   (non-notes) on-slide text run in the delivered PPTX, is a hard auto-fail
   (AF-OVERLAY-DELIVERED), enforced by `scripts/build_deck.py` `_chk_no_overlay` at
   preflight and at the postflight completeness gate.
-- The LOGO fallback is NOT native text: when the model cannot bake the locked logo
-  cleanly, the real logo IMAGE is composited onto the slide PNG via the PIL
-  image-composite path (SOP-IMG-05) BEFORE assembly — baked into the image, not
-  added as a native PPTX element.
-
----
-
-
-### SOP 9.5 -- Infographic PNG Export (infographic_png deliverable)
-
-**When to run:** After SOP 9.2 (PDF export complete) AND only when `working/checkpoints/infographic_status.json` exists with `status: "ready"`. This SOP is CONDITIONAL -- it fires exclusively on runs where the Slide Image Creator produced a QC-passed `working/deliverables/infographic.png` (converter-origin runs and any deck with `deliverable_bundle.checklist_items` in intake.json). Skip this SOP and record `infographic_export_skipped: true` in render_log.json when `infographic_status.json` is absent or `status != "ready"`.
-
-**Why this SOP exists:** `PIPELINE-MANIFEST.json` lists `infographic_png` as a required deliverable for converter-origin decks (key: `infographic_png`; note: "produced by infographic-checklist role"). The Slide Image Creator owns production (SOP 9.10); this role owns the verified copy into the delivery path, identical to how the PDF export is a separate verified step from assembly.
-
-**Inputs:**
-- working/checkpoints/infographic_status.json (`status: "ready"`, `deliverable_path: "working/deliverables/infographic.png"`)
-- working/deliverables/infographic.png (QC-passed portrait infographic image)
-
-**Steps:**
-1. Read `working/checkpoints/infographic_status.json`. Confirm `status == "ready"` and `qc_passed == true`. If either is false or the file is absent: skip this SOP (record `infographic_export_skipped: true` in render_log.json) and notify the Director: "infographic_status.json missing or not ready -- SOP 9.5 skipped. If this run requires an infographic, route back to Slide Image Creator SOP 9.10."
-2. Verify the source file exists and is non-empty:
-   ```bash
-   ls -lh working/deliverables/infographic.png
-   ```
-   The file must exist and show a non-zero size (expect >= 100KB for a 2K-resolution render). A missing or zero-byte file is a halt condition.
-3. Copy to the output directory alongside the PPTX and PDF:
-   ```bash
-   cp working/deliverables/infographic.png output/infographic.png
-   ```
-4. Verify the copy succeeded:
-   ```bash
-   ls -lh output/infographic.png
-   ```
-   The output file must exist and have the same size as the source (within 1 byte; a size mismatch indicates a corrupt copy).
-5. Update `output/render_log.json` to add the infographic record:
-   ```json
-   {
-     "infographic_path": "output/infographic.png",
-     "infographic_size_bytes": N,
-     "infographic_export_tool": "cp",
-     "infographic_qc_passed": true,
-     "infographic_exported_at": "ISO timestamp"
-   }
-   ```
-   Merge this into the existing render_log.json object (do not overwrite the PPTX/PDF fields).
-6. Notify the Director: "output/infographic.png exported and verified ([SIZE]). Ready for Delivery Concierge."
-
-**Outputs:**
-- output/infographic.png (delivery-ready copy of the QC-passed infographic)
-- output/render_log.json (updated with infographic_path, infographic_size_bytes, infographic_qc_passed)
-
-**Hand to:** Delivery Concierge (SOP 9.0 / AF-DH1) -- the Delivery Concierge adds `infographic.png` to the five-file client package whitelist for converter-origin runs and copies it into `delivery/[DECK_SLUG]-FINAL/`. This role does NOT copy to delivery/; that is Delivery Concierge territory (AF-DH1 rule).
-
-**Failure mode:** If the copy fails (disk full, permission error): halt and notify the Director immediately. Do NOT proceed to delivery with a missing infographic on a run where `infographic_status.json` declares it required. If the source file is zero bytes despite `status: "ready"` in infographic_status.json, flag to the Director AND the Slide Image Creator: "infographic.png is zero bytes -- Slide Image Creator must re-run SOP 9.10 before export."
+- The LOGO is NOT native text: a URL logo is placed by the image model (image-to-image),
+  and a local logo file is added by `assemble_pptx` as a picture shape (SOP-IMG-05
+  Rule A). There is no Pillow composite.
 
 ---

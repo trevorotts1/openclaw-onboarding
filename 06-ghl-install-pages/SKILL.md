@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v25.1.9"
+  version: "v25.3.21"
   priority: HIGH
 ---
 
@@ -171,7 +171,7 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
     `GHL_AGENCY_PIT`) **401s for media** — never substitute it.
   - **Location id**: `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` →
     `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` (first id).
-  - **Image key**: `KIE_API_KEY`.
+  - **Image key**: the KIE key (`KIE_API_KEY`; every alias in `shared-utils/secret_names.json` counts). On a client box it is the client's own key; operator keys are never used for client work. Shared KIE rules: `07-kie-setup/references/kie-common-rules.md`.
   `ghl_media.resolve_location_pit()` / `resolve_location_id()` search EVERY alias
   across the live env AND the stores above before raising; the image stage's
   `_resolve_kie_api_key()` does the same for KIE. **HARD RULE — never record a GHL

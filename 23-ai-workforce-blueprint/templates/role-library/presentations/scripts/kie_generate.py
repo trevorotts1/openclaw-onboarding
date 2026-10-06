@@ -32,19 +32,34 @@ ENGLISH/LATIN-ONLY PIN: every prompt that renders copy MUST carry the mandatory 
 LOCKSTEP NOTE: this helper ships in TWO repo locations —
     23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py
     23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py
-Keep their LOGIC identical when editing either (v17.0.42 re-unified a drift where
+Keep the logic they SHARE identical when editing either (v17.0.42 re-unified a drift where
 each copy carried a fix the other lacked: HIGH-3 secrets override vs FIX-IMG-03
 per-entry aspect_ratio/resolution + the runtime dead-endpoint guard).
-FIX 68/67 STATUS (W21b): the role-library copy carries the platform-aware
-secrets order (presentation_job.oc_paths) AND the FIX 67 secret-name canon
-(shared-utils/secret_helper aliases + placeholder rejection). The
-presentation-render twin has NOT yet received that port — port the same four
-functions (_secrets_candidates oc_paths seam, _import_secret_helper,
-_kie_alias_names, _is_placeholder_value, and the _load_api_key canon loop)
-before claiming the two are logic-identical again.
+Both copies are hash-locked by scripts/shared-script-authority.json (checked by
+scripts/check-shared-script-drift.py); after any edit re-record with --record.
 
-RATE CAP: 20 requests / 10 seconds per KIE.ai docs. This script submits in waves of 20
-          with a 10-second sleep between waves.
+FIX 68/67 STATUS (declared 2026-10-05): both copies carry the platform-aware secrets
+order (presentation_job.oc_paths) AND the FIX 67 secret-name canon (shared-utils/
+secret_helper aliases + placeholder rejection). _load_api_key, _import_secret_helper,
+_kie_alias_names and _is_placeholder_value are byte-for-byte identical in the two copies.
+
+INTENTIONAL DIVERGENCE FROM THE PRESENTATION-RENDER TWIN (same text is in the twin's header):
+  * This copy has the front-door nonce gate (_require_entry_nonce). The twin does NOT, on
+    purpose: it is the copy 06-ghl-install-pages/tools/ghl_media.py runs for non-deck page
+    images, with no Presentations run directory and no nonce, and the nonce check imports
+    build_deck.py, which does not sit beside the twin. Porting the gate would make every
+    Skill 06 call exit 2.
+  * This copy submits and polls through kie_tasks.py (no initial wait, round-robin every
+    60 seconds, 6,000 second deadline). The twin keeps its own wave submit, a 5 minute wait
+    after the last submit, then serial 60 second polls for up to 100 passes, because no
+    kie_tasks.py sits beside it.
+The result download is an authenticated GET (Bearer + browser User-Agent, http(s) only), identical in both
+copies and to build_deck.download_image (FIX-4; a plain GET returned HTTP 403 live).
+Limits and rates shared by every KIE skill: 07-kie-setup/references/kie-common-rules.md.
+
+RATE CAP: at most 20 createTask requests per rolling 10 seconds. This script submits
+          through kie_tasks.py, which spaces submits to that ceiling (the twin submits in
+          waves of 20 with a 10-second sleep between waves).
 
 ENDPOINTS (VERIFIED 2026-06-16, live 200):
     Submit:  POST https://api.kie.ai/api/v1/jobs/createTask
@@ -63,6 +78,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -535,15 +551,25 @@ def _poll_task(task_id: str, api_key: str) -> str:
     )
 
 
-def _download(url: str, dest: Path) -> None:
+def _download(url: str, dest: Path, api_key: str) -> None:
     """
     Download the KIE result image URL to dest path.
-    The result URL is a CDN link (tempfile.aiquickdraw.com or similar) that does NOT
-    require the KIE Bearer token — sending it causes HTTP 403. Plain unauthenticated GET.
+    AUTHENTICATED GET, identical to build_deck.download_image (FIX-4): the result URL
+    needs `Authorization: Bearer <key>` plus a browser User-Agent; a plain GET with
+    neither returned HTTP 403 in the live run (see tests/test_fix4_authenticated_download.py
+    in the role-library presentations scripts, and test_kie_generate_authenticated_download.py
+    beside this file). Only http(s) URLs are opened (SSRF / local-file-read guard).
     """
-    req = urllib.request.Request(url, headers={"User-Agent": "kie_generate/1.0"})
+    scheme = (urllib.parse.urlparse(str(url)).scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"REFUSED: KIE result URL {url!r} has scheme {scheme!r}; only http(s) may be opened.")
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, open(dest, "wb") as f:
+        with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
             f.write(resp.read())
     except Exception as exc:
         raise RuntimeError(f"Download failed for {url}: {exc}") from exc
@@ -569,6 +595,49 @@ def _guardrail_scan_prompts(slides: list) -> None:
                 sys.exit(2)
 
 
+# ---------------------------------------------------------------------------
+# FIX 18 — front-door nonce gate. kie_generate.py spends real KIE.ai credits, so
+# it must be admitted only through presentation-canonical-entry.sh (the canonical
+# entry chain), never by blind direct invocation. The nonce blocks blind direct
+# calls; it is NOT tamper-proof against a same-user agent (anything running as
+# the same OS user can read the exported OC_DECK_ENTRY_NONCE / the 0600
+# checkpoint file and replay them), so this is front-door spend discipline, not
+# a security boundary. The nonce check is the single source of truth
+# (build_deck._verify_entry_nonce).
+# ---------------------------------------------------------------------------
+def _run_dir_from_renders(renders_dir: Path) -> Optional[Path]:
+    """Walk up from renders_dir to the run root (the dir holding working/checkpoints)."""
+    for cand in (renders_dir.resolve(), *renders_dir.resolve().parents):
+        if (cand / "working" / "checkpoints").is_dir():
+            return cand
+    return None
+
+
+def _require_entry_nonce(renders_dir: Path) -> None:
+    """Fail closed (exit 2) unless the front-door nonce verifies for this run."""
+    try:
+        import build_deck as _build_deck
+    except ImportError:  # noqa: BLE001 - without build_deck the gate cannot verify
+        print(
+            "FATAL: kie_generate.py must run beside build_deck.py - the front-door "
+            "nonce gate is unavailable. Direct invocation is denied.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    run_dir = _run_dir_from_renders(renders_dir)
+    if run_dir is None or not _build_deck._verify_entry_nonce(run_dir):
+        print(
+            "FATAL: kie_generate.py must be invoked via "
+            "presentation-canonical-entry.sh - the per-run front-door nonce "
+            "(OC_DECK_ENTRY_NONCE) is missing or does not match "
+            "<run-dir>/working/checkpoints/.canonical-entry-nonce (or the per-phase "
+            ".nonce-<id> file). Direct invocation is denied (front-door "
+            "enforcement).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
 def main():
 
     if len(sys.argv) != 3:
@@ -587,6 +656,8 @@ def main():
 
     renders_dir.mkdir(parents=True, exist_ok=True)
 
+    _require_entry_nonce(renders_dir)
+
     api_key = _load_api_key()
     slides  = json.loads(prompts_path.read_text())
 
@@ -603,8 +674,9 @@ def main():
     # duplicate createTask calls, and round-robin polls all due tasks so a
     # ready result downloads + QCs immediately instead of waiting behind a
     # slow sibling. Rate sharing: the lifecycle always holds the KIE
-    # 20-submits/10s wave ceiling; shared governor leases are opt-in via
-    # KIE_TASKS_USE_GOVERNOR=1 (same acquire/report seam build_deck.py uses).
+    # 20-submits/10s wave ceiling; governor leases (same acquire/report seam
+    # build_deck.py uses) are taken whenever the governor module is importable,
+    # because the call below passes governor="auto".
     import kie_tasks as _lifecycle
 
     print(f"\n=== KIE.ai generate — {len(slides)} slides ===")
@@ -677,7 +749,7 @@ def main():
         return poll_task_once(task_id, api_key)
 
     def _download_to(url: str, tmp_path: Path) -> None:
-        _download(url, tmp_path)
+        _download(url, tmp_path, api_key)
 
     try:
         result = _lifecycle.run(

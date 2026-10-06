@@ -227,7 +227,7 @@
       <span class="glyph" aria-hidden="true">&#127807;</span>
       <span class="wordmark">ZERO <em>HUMAN</em> WORKFORCE</span>
     </div>
-    <button class="exit" id="exitBtn" type="button">Exit</button>
+    <button class="exit" id="exitBtn" type="button" aria-keyshortcuts="Escape">Exit</button>
   </header>
 
   <main id="app" role="main" aria-label="Presentation intake questions">
@@ -239,7 +239,7 @@
       <div class="spin" id="loader" role="status" aria-label="Loading"></div>
     </div>
   </main>
-  <footer class="privacy">Your answers are private and only used to build your presentation.</footer>
+  <footer class="privacy" role="contentinfo">Your answers are private and only used to build your presentation.</footer>
 
   <script>
   (function () {
@@ -350,7 +350,27 @@
         label: "Run mode",
         default: "",
         required: false, storeOn: "pre_presentation_capture.RUN_MODE",
-        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
+        allowed_values: ["ultra", "standard", "economy"], value_labels: { "ultra": "Ultra: the strongest models you choose, up to 16x faster", "standard": "Standard — the department default", "economy": "Economy — leaner and cheaper" } },
+      { id: "ollama_plan", order: 11.55, kind: "enum",
+        prompt: "Are you on the Ollama Cloud $20/month or $100/month plan?",
+        help: "The $20 plan runs 3 at once; the $100 plan runs 8 at once.",
+        label: "Ollama Cloud plan",
+        default: "",
+        required: false, storeOn: "pre_presentation_capture.OLLAMA_PLAN",
+        allowed_values: ["$20/month", "$100/month"], value_labels: { "$20/month": "$20/month — 3 at once", "$100/month": "$100/month — 8 at once" } },
+      { id: "deepseek_variant", order: 11.6, kind: "enum",
+        prompt: "Which DeepSeek variant for the heavy writing?",
+        help: "Flash is fast and cheap; Pro is the strongest.",
+        label: "DeepSeek variant",
+        default: "",
+        required: false, storeOn: "pre_presentation_capture.DEEPSEEK_VARIANT",
+        allowed_values: ["flash", "pro"], value_labels: { "flash": "Flash — fast and cheap", "pro": "Pro — strongest" } },
+      { id: "openrouter_model", order: 11.7, kind: "text",
+        prompt: "Which OpenRouter model should Ultra use? (e.g. z-ai/glm-5.3-flash)",
+        help: "In Ultra mode this model replaces any Ollama-routed step.",
+        label: "OpenRouter model",
+        default: "",
+        required: false, storeOn: "pre_presentation_capture.OPENROUTER_MODEL" },
       { id: "client_notes", order: 12, kind: "text",
         prompt: "Anything else important we should <span class=\"emph\">know</span> before we start?",
         help: "Extras: target slide count, deadline, proof assets, anything else. Optional.",
@@ -575,7 +595,7 @@
 
       var msg = el("div", { class: "msg", role: "alert", "aria-live": "polite" });
       var last = currentIndex === TOTAL - 1;
-      var next = el("button", { class: "primary", html: (last ? "Submit my brief" : "Continue") + ' <span class="arrow">&#8594;</span>' });
+      var next = el("button", { class: "primary", "aria-keyshortcuts": "Enter", html: (last ? "Submit my brief" : "Continue") + ' <span class="arrow">&#8594;</span>' });
       next.disabled = q.required === true;
       var row = el("div", { class: "row" });
       row.appendChild(next);
@@ -848,6 +868,7 @@
       c.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Thank you!" }));
       c.appendChild(el("p", { class: "thanks", text: "Your answers are in. The presentation department has everything it needs to start — you can close this tab." }));
       c.appendChild(el("p", { class: "msg ok", text: "✓ Submitted" }));
+      c.appendChild(el("p", { class: "thanks", text: "Want another presentation? Just tell your assistant 'new presentation'." }));
       stage.appendChild(c);
       if (app) {
         var intro = app.querySelector(".intro");

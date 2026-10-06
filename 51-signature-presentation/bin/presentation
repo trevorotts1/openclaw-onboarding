@@ -113,7 +113,13 @@ else
         if [ -f "$_cand" ]; then
             while IFS='=' read -r _k _v; do
                 case "$_k" in ''|\#*) continue ;; esac
+                # FIX 38: strip a leading "export " so "export FOO=bar" lines
+                # parse as FOO (not mangled "exportFOO").
+                _k="$(printf '%s' "$_k" | sed 's/^export[[:space:]][[:space:]]*//')"
                 _k="$(printf '%s' "$_k" | tr -d '[:space:]')"
+                # FIX 38: only eval names that are valid shell identifiers
+                # (^[A-Za-z_][A-Za-z0-9_]*$) before the eval below.
+                case "$_k" in ''|*[!a-zA-Z0-9_]*|[0-9]*) continue ;; esac
                 [ -n "$_k" ] || continue
                 if [ -z "$(eval "printf '%s' \"\${$_k:-}\"")" ]; then
                     _v="$(printf '%s' "$_v" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")"
@@ -209,4 +215,4 @@ for _a in "$@"; do
     esac
 done
 note "dispatching canonical door: $DOOR (${#_newargv[@]} args)"
-exec bash "$DOOR" "${_newargv[@]}"
+exec bash "$DOOR" ${_newargv[@]+"${_newargv[@]}"}

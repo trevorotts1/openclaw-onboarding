@@ -29,13 +29,44 @@ name: podcast-engine-fail-closed-guard
 #        changes nothing on the running automation host. This suite proves the
 #        FILE is right, never that the host is running it. **
 #
+#   T0-23 — the DAILY smoke test reported success while blind. Its stale-job
+#     sweep caught sqlite3.Error and returned [], so a podcast_jobs database that
+#     existed and would not open rendered as "zero stale jobs"; do_run() then
+#     wrapped the sweep in `except Exception` and substituted {"stale_count": 0}
+#     as well, so even a raise became a clean zero. Separately, load_endpoints()
+#     ended in `data.get("providers", data)` and the shipped smoke-endpoints.json
+#     has no "providers" key, so every run probed one imaginary provider named
+#     after the config wrapper ("podcast_engine": "UNKNOWN" in the stored
+#     diagnostic) and the five real pinned providers were never probed at all.
+#     And a job that had already DIED carries status 'failed', which is terminal,
+#     so the stale sweep skipped it at any threshold and nothing looked at failed
+#     jobs anywhere. Guarded by
+#     tests/unit/podcast-smoke-test-blind-not-green.test.py, which drives the REAL
+#     CLI against temp WAL databases and asserts the pair that matters: a healthy
+#     WAL database IS read, and an existing-but-unreadable one fails loudly rather
+#     than reporting zero. It carries its own known-good control (the same file,
+#     made readable, yields its row) so an empty result can never pass as proof.
+#
 #   T0-22 — podcast_state.py could not tell "no ledger configured" from "the
 #     linkage is broken"; both were silent and the advance reported success while
 #     the atomic-claim record was never updated. Guarded by
 #     tests/unit/podcast-state-ledger-linkage.test.py, which drives the REAL CLI
 #     end to end in both directions against a temp database.
 #
-# All three suites are hermetic: fake curl on PATH, scratch HOME/TMPDIR, temp
+#   Duplicate guest / release gates — the create-time dedup compared ONLY
+#     `submission_fingerprint`, a column that holds TWO hash formats (the
+#     webhook job_key and the local content sha256). The same guest stored one
+#     way was invisible to a submission stored the other way, and `contact_id`
+#     was never compared at all, so an ALREADY PUBLISHED guest could be queued
+#     again and advanced to publishing. A rescue/activation proof (SOP-PODCAST-07
+#     Section 3 advances a REAL job) left no marker, and a research package that
+#     admitted it had no transcript could reach a publish step. Guarded by
+#     58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py,
+#     which drives the REAL CLI end to end against a temp database and asserts
+#     the refusals AND that a clean first-time guest still creates and advances,
+#     so the fix is not "refuse everything".
+#
+# All suites are hermetic: fake curl on PATH, scratch HOME/TMPDIR, temp
 # SQLite. No network, no Podbean account, no client data.
 
 on:
@@ -49,6 +80,11 @@ on:
       - "tests/unit/podcast-engine-fail-closed.test.sh"
       - "tests/unit/podcast-state-ledger-linkage.test.py"
       - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - "58-podcast-production-engine/scripts/podcast-smoke-test.py"
+      - "58-podcast-production-engine/config/smoke-endpoints.json"
+      - "58-podcast-production-engine/config/furnace.json"
+      - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
+      - "58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   pull_request:
     branches: [main]
@@ -60,12 +96,17 @@ on:
       - "tests/unit/podcast-engine-fail-closed.test.sh"
       - "tests/unit/podcast-state-ledger-linkage.test.py"
       - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - "58-podcast-production-engine/scripts/podcast-smoke-test.py"
+      - "58-podcast-production-engine/config/smoke-endpoints.json"
+      - "58-podcast-production-engine/config/furnace.json"
+      - "tests/unit/podcast-smoke-test-blind-not-green.test.py"
+      - "58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py"
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   workflow_dispatch:
 
 jobs:
   podcast-engine-fail-closed:
-    name: Channel scoping + loudness + webhook ordering + ledger linkage
+    name: Channel scoping + loudness + webhook ordering + ledger linkage + smoke-test blindness
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -89,7 +130,12 @@ jobs:
           bash -n tests/unit/podcast-engine-fail-closed.test.sh
           python3 -m py_compile 58-podcast-production-engine/scripts/podcast_state.py
           python3 -m py_compile tests/unit/podcast-state-ledger-linkage.test.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py
           python3 -m py_compile tests/unit/podbean-publish-workflow-response-ordering.test.py
+          python3 -m py_compile 58-podcast-production-engine/scripts/podcast-smoke-test.py
+          python3 -m py_compile tests/unit/podcast-smoke-test-blind-not-green.test.py
+          python3 -c 'import json; json.load(open("58-podcast-production-engine/config/smoke-endpoints.json"))'
+          python3 -c 'import json; json.load(open("58-podcast-production-engine/config/furnace.json"))'
           python3 -c 'import json; json.load(open("58-podcast-production-engine/config/n8n/podbean-publish.workflow.json"))'
           # `bash -n` does NOT parse heredoc bodies. The generator embeds Python
           # in `python3 - <<PYEOF` blocks; compile each body on its own.
@@ -118,16 +164,97 @@ jobs:
           echo "syntax OK"
 
       - name: T0-19 / T0-20 — channel scoping and loudness fail closed
+        id: t0_19_20
+        continue-on-error: true
         shell: bash
         timeout-minutes: 10
         run: bash tests/unit/podcast-engine-fail-closed.test.sh
 
       - name: T0-22 — a broken ledger linkage is not a clean advance
+        id: t0_22
+        continue-on-error: true
         shell: bash
         timeout-minutes: 8
         run: python3 tests/unit/podcast-state-ledger-linkage.test.py
 
       - name: T0-21 — the success response is downstream of the completion write
+        id: t0_21
+        continue-on-error: true
         shell: bash
         timeout-minutes: 5
         run: python3 tests/unit/podbean-publish-workflow-response-ordering.test.py
+
+      - name: T0-23 — a blind daily smoke test is not a green one
+        id: t0_23_blind
+        continue-on-error: true
+        shell: bash
+        timeout-minutes: 8
+        run: python3 tests/unit/podcast-smoke-test-blind-not-green.test.py
+
+      - name: T0-23 — the smoke test's own hermetic self-test still passes
+        id: t0_23_selftest
+        continue-on-error: true
+        shell: bash
+        timeout-minutes: 8
+        run: python3 58-podcast-production-engine/scripts/podcast-smoke-test.py --self-test
+
+      - name: Duplicate guest / rescue-advanced / no-source-material release gates
+        id: dup_guest
+        continue-on-error: true
+        shell: bash
+        timeout-minutes: 8
+        run: python3 -m unittest discover -s 58-podcast-production-engine/scripts/tests -p "test_duplicate_guest_guard.py" -v
+
+      # Every suite above runs to completion and reports its OWN result, instead
+      # of the first failure aborting the job and hiding the rest. That masking
+      # is not hypothetical: T0-19/T0-20 failed from 2026-07-23 to 2026-09-22 and
+      # T0-22, T0-21 and T0-23 were SKIPPED for the whole two months. T0-21 was a
+      # live duplicate-publish fail-open that whole time and nothing could see it.
+      #
+      # `continue-on-error` keeps the job going; `outcome` is the suite's REAL
+      # result (before continue-on-error is applied), `conclusion` is the
+      # suppressed one. This gate reads `outcome`, so a red suite is still red.
+      - name: Every suite reported; fail if any of them failed
+        if: always()
+        shell: bash
+        env:
+          T0_19_20:       ${{ steps.t0_19_20.outcome }}
+          T0_22:          ${{ steps.t0_22.outcome }}
+          T0_21:          ${{ steps.t0_21.outcome }}
+          T0_23_BLIND:    ${{ steps.t0_23_blind.outcome }}
+          T0_23_SELFTEST: ${{ steps.t0_23_selftest.outcome }}
+          DUP_GUEST:      ${{ steps.dup_guest.outcome }}
+        run: |
+          set -uo pipefail
+          failed=0
+          {
+            echo "| suite | result |"
+            echo "|---|---|"
+          } > summary.md
+          report() {
+            # $1 = label, $2 = outcome. An empty outcome means the step never
+            # ran at all, which is a failure of this workflow, not a pass.
+            local label="$1" outcome="${2:-<did not run>}" mark
+            case "$outcome" in
+              success) mark="PASS" ;;
+              skipped) mark="SKIPPED" ;;
+              *)       mark="FAIL"; failed=1 ;;
+            esac
+            printf '%-8s %s\n' "$mark" "$label"
+            echo "| $label | $mark |" >> summary.md
+          }
+          report "T0-19 / T0-20  channel scoping and loudness" "$T0_19_20"
+          report "T0-22  ledger linkage is not a clean advance" "$T0_22"
+          report "T0-21  success response downstream of the write" "$T0_21"
+          report "T0-23  a blind daily smoke test is not a green one" "$T0_23_BLIND"
+          report "T0-23  smoke test hermetic self-test" "$T0_23_SELFTEST"
+          report "Duplicate guest / rescue-advanced / no-source-material release gates" "$DUP_GUEST"
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" -ne 0 ]; then
+            echo ""
+            echo "At least one suite failed. Each suite's own result is above and in the"
+            echo "job summary; open that suite's step for its output."
+            exit 1
+          fi
+          echo ""
+          echo "All suites passed."

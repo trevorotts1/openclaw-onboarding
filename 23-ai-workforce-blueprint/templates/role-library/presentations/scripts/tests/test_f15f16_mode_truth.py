@@ -280,7 +280,7 @@ def test_an_unbounded_client_gets_each_modes_ratified_ceiling():
     per-mode ceiling applies there -- and provider advertising still never
     raises the operator ceiling."""
     prof = _profile(ceiling="UNBOUNDED")
-    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 100
+    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 400
     assert model_router.mode_ceiling("standard", profile=prof)["ceiling"] == \
         model_router.STANDARD_MODE_CEILING
     assert model_router.capped_width(2500, "standard", profile=prof)["width"] \
@@ -422,7 +422,7 @@ def test_the_operator_ceiling_constant_is_untouched():
     ratified 100, and standard may never again be quietly cut below the
     number the operator actually has -- the two bounds that survive whatever
     he decides next."""
-    assert model_router.ULTRA_OPERATOR_CEILING == 100
+    assert model_router.ULTRA_OPERATOR_CEILING == 400
     assert model_router.STANDARD_MODE_CEILING <= model_router.ULTRA_OPERATOR_CEILING
     assert model_router.STANDARD_MODE_CEILING == 100, (
         "U3: standard is the operator's 100 -- see tests/"

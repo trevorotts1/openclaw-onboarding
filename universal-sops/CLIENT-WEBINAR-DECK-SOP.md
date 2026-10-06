@@ -8,7 +8,7 @@
 > governs the *deterministic render + delivery* half of the process. It is **not** the whole
 > process. Before a `slides.json` is written, the department runs **LAYER A — the authoring
 > pipeline** (intake → priority shift → arc → research → copy → copy-QC → typography →
-> **rich prompt authoring (9,000–18,000-char per-slide prompt files)** → prompt-QC → speech),
+> **rich prompt authoring (per-slide prompt files written to the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds still enforce the old band until the prompt-budget code change lands)** → prompt-QC → speech),
 > governed by `PIPELINE-MANIFEST.json` and the role library and served one enforced step at a
 > time by `run_signature_deck.py --next`. This SOP (**LAYER B**) is how the render is invoked
 > once Layer A's artifacts exist. The two layers are ONE pipeline, not two products or two
@@ -187,12 +187,15 @@ assembler, and it is the script.
 - The builder writes ONE file — `slides.json` — and runs ONE command — `build_deck.py`.
 - The builder NEVER generates, edits, fetches, or substitutes an image. It has no image tool.
 - The builder NEVER writes an inline KIE.ai HTTP call and NEVER touches `/api/v1/image/gpt-image`.
-- There are NO placeholder/stock slides. A render that fails after the script's retries is a
+- There are NO placeholder/stock slides. A slide that fails to render makes the script exit 1 and list it in `failures`
+  (the batch path does not re-submit it by itself; a re-run re-submits only the slides without a verified PNG). That is a
   build failure to report — never something the builder patches around.
 - The deliverable registered + reported is the EXACT `.pptx` `build_deck.py` produced, and
   ONLY when the script exited 0.
-- 16:9, 2K, `gpt-image-2-5-sunburst-text-to-image` — all enforced INSIDE the script; the builder does
-  not choose or pass any of them.
+- 16:9, 2K, and the Kie model per call (`gpt-image-2-5-sunburst-image-to-image` when a logo, portrait or
+  style-reference URL is supplied for the slide, `gpt-image-2-5-sunburst-text-to-image` only when no
+  reference exists), all enforced INSIDE the script (section 9.0); the builder does not choose or pass
+  any of them.
 - Client's OWN `KIE_API_KEY` — the script reads it from the client/dept env stores itself;
   the builder never handles the key.
 
@@ -207,12 +210,13 @@ source material  ──▶  STEP 1: builder writes slides.json
                               ▼
                  STEP 2: builder runs  python3 scripts/build_deck.py slides.json out.pptx
                               │   (the script does ALL of this — the builder does none of it:)
-                              │     • mechanically composes the KIE prompt per slide
+                              │     • renders the authored rich KIE prompt per slide
                               │       (scene + verbatim copy + logo + layout + English pin)
-                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-text-to-image, 16:9, 2K)
+                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-image-to-image by default,
+                              │         -text-to-image when no reference exists; 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
-                              │     • parse data.resultJson → resultUrls[0] → download PNG (unauth)
-                              │     • verify PNG magic bytes + size; retry a slide up to 3×
+                              │     • parse data.resultJson → resultUrls[0] → download PNG (authenticated GET)
+                              │     • verify PNG magic bytes + size; a slide that fails is recorded as a failure (no automatic re-submit in the batch path)
                               │     • assemble full-bleed .pptx (no text boxes); FAIL LOUD on any gap
                               ▼
                  STEP 3: builder registers the EXACT outputPath (.pptx) from the script summary
@@ -279,8 +283,9 @@ Rules:
 - `layout` — optional placement hint. Omit for the script's safe default.
 
 The builder does **NOT** write KIE prompts, pick a model, set aspect ratio/resolution, or
-call any API. The script composes the prompt mechanically from `slides.json` and pins
-`gpt-image-2-5-sunburst-text-to-image` / 16:9 / 2K / English-Latin-only itself.
+call any API. The script renders the authored rich prompt from `slides.json`
+(scene + verbatim copy + logo + layout + English pin) and pins
+the section 9.0 model, 16:9 / 2K / English-Latin-only itself.
 
 **Control.** Confirm `slides.json` is a single valid JSON array, ordinals are unique and
 contiguous from 1, and every `copy[0]` is the intended headline with correct spelling.
@@ -411,9 +416,24 @@ exists at `outputPath` before reporting.
 
 ---
 
-## 9. ENFORCEMENT (AF-I14)
+## 9. ENFORCEMENT (AF-I14) AND THE MODEL MANIFEST
 
-QC scans the builder's runtime session trace (`~/.openclaw/agents/dept-presentations/sessions/`)
+**9.0 Model manifest (the only place this pipeline names a model).** The script, never the builder,
+applies it, and `presentation_job/model_catalog.py` is the machine copy:
+- Default: `gpt-image-2-5-sunburst-image-to-image` (a logo, portrait or style reference is supplied in
+  `input_urls`) or `gpt-image-2-5-sunburst-text-to-image` (no reference), 16:9, 2K.
+- The legacy `gpt-image-2-*` route is used only for 3:1, 1:3 and 9:21; the `flare` variant is not
+  registered (AGENTS.md N43; call mechanics in `presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md`
+  section 2A).
+- Prompt caps: 20,000 characters on 2.5 and 25,000 on the legacy route. Prompt length follows rule 12 of
+  `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap:
+  2.5 floor 16,000, legacy floor 20,000). The `build_deck.py` constants PROMPT_CHAR_FLOOR and
+  PROMPT_CHAR_CEILING (AF-P1, AF-P2) are aligned to rule 12 by the Skill 74 v1.1 prompt-budget change in
+  this same release.
+- Key: the client's own `KIE_API_KEY`. The shared Kie rules (live endpoints, rate limits, retention,
+  credit preflight) live in `07-kie-setup/references/kie-common-rules.md`.
+
+**9.1 AF-I14 trace scan.** QC scans the builder's runtime session trace (`~/.openclaw/agents/dept-presentations/sessions/`)
 for the deterministic build path and for forbidden patterns. The build FAILS immediately if
 the trace shows: the dead endpoint `/api/v1/image/gpt-image`; a native `image_generate`
 invocation for a slide; an inline KIE.ai HTTP call written by the builder instead of running

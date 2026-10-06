@@ -675,6 +675,31 @@ def _phase_terminal_bad(status: Optional[str]) -> bool:
 # ---------------------------------------------------------------------------
 _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 
+#: The literal prefix the engine's own substance park writes (phases.py `_block`
+#: callers build it as f"substance check failed: {verdict}"). PD-TEST-135 matches
+#: a block against this SO THAT operator prose can never be mistaken for a
+#: checker verdict, however it is worded.
+_VERIFIER_VERDICT_PREFIX = "substance check failed"
+
+#: PD-TEST-194: the identifiers a substance verdict names, used to identify WHICH
+#: EPISODE a park belongs to by identity rather than by a text prefix (this
+#: checker's verdict list is non-deterministic in both order and membership
+#: between two attempts of the same episode -- see `_block_is_verifier_sourced`).
+#:
+#: THE CHECK LABEL IS NOT AN IDENTITY. phase_verifiers builds each line as
+#:   f"AF-PROMPT-FLOOR slide-{sid}: {code} -- {detail}"
+#: so the literal label `AF-PROMPT-FLOOR` is hard-coded on EVERY line that checker
+#: emits. Intersecting ALL `AF-` tokens therefore makes the match a TAUTOLOGY for
+#: the only pairing that occurs in reality (block and heal are written by the same
+#: verifier call). Independent review MEASURED the consequence: two draws with
+#: wholly disjoint autofails (AF-AAA vs AF-ZZZ) matched on the constant label
+#: alone. The autofails are the part that varies, and the grammar places them
+#: AFTER `slide-<n>:`, so take them from there; keep the all-token form only as a
+#: fallback for a verdict that does not follow the grammar.
+_VERDICT_AUTOFAIL_RE = re.compile(r"slide-\d+\s*:\s*(AF-[A-Z0-9][A-Z0-9-]*)",
+                                  re.IGNORECASE)
+_VERDICT_ID_RE = re.compile(r"\bAF-[A-Z0-9][A-Z0-9-]*", re.IGNORECASE)
+
 
 def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
     """The dispatcher's own park marker for a phase (the F9 resolution, with
@@ -688,13 +713,281 @@ def _dispatch_blocked_marker(run_dir: Path, phase_id: str) -> Path:
                 / f"{phase_id}.dispatch-blocked.txt")
 
 
+# ---------------------------------------------------------------------------
+# PD-TEST-080 (2026-09-11) -- the park marker only binds while its OWNER is
+# still alive to own it.
+#
+# PD-TEST-060 (above) skipped any phase whose dispatcher marker was on disk, on
+# the rationale "the dispatcher owns this generation's durable budget". That
+# rationale is true only while the dispatcher exists. It routinely outlives its
+# owner: the dispatcher re-arms on the Engine's own quarantine (dispatcher
+# .should_dispatch keys on the phase's state.json status, and quarantined IS a
+# change -- phases.py:3537-3539), sweeps again, fails identically, RE-PARKS and
+# re-writes the marker AFTER the Engine cleared it (phases.py:3546), and then
+# reaches state.terminal and exits ("run terminal is set -- exiting"). The
+# marker is left with no owner, and none of the three marker-clearing sites can
+# fire for a phase parked by a CODE bug: dispatcher._reserve_paid_attempt only
+# clears on a new approved-input generation (:7806-7810), the Engine only
+# clears on a work-order reissue (:2722) which needs a runnable phase, and the
+# quarantine clear (:3546) has already happened and been undone.
+#
+# The result was a closed loop: the code fix is deployed, --resume runs,
+# readmission skips the phase because a dead dispatcher's marker is still on
+# disk, the phase stays quarantined, _phase_terminal_bad withholds its
+# descendants, and the run re-parks identically -- exactly the failure
+# PD-TEST-060 was written to eliminate. Measured on
+# pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4 (terminal BLOCKED, 10/57
+# done): four quarantined phases held markers owned by pids 55801 and 71266,
+# all dead, and with those markers set aside the same call re-admitted all five
+# failed/quarantined phases -- the markers were the sole gate.
+#
+# THE BUDGET IS STILL NOT BYPASSED, and that is why this is the right seam. The
+# durable paid ceiling is the LEDGER (.dispatch-state/<phase>.json: `blocked`,
+# `paid_attempts`, DISPATCH_RETRY_CAP), enforced by dispatcher.should_dispatch
+# and dispatcher._reserve_paid_attempt -- neither of which this decision
+# touches, and neither of which reads the marker. The marker is a SIGNAL ("a
+# human needs to look at this"), so a marker whose owner is gone is retired
+# here, loudly, rather than left to make the Engine's own park reaction
+# (phases.py:3144-3162) fire for a park nobody holds. Every ambiguity resolves
+# to LIVE: see dispatcher.park_marker_owner_state.
+# ---------------------------------------------------------------------------
+_PARK_MARKER_HONOURED_STATES = ("live", "unknown")
+
+
+def _park_marker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
+    """dispatcher.park_marker_owner_state for this run dir, degrading to
+    "unknown" -- i.e. the marker is honoured -- when that module will not
+    import. Same fail-closed fallback discipline as _dispatch_blocked_marker:
+    a degraded install must never silently start discarding live parks."""
+    try:
+        from . import dispatcher as _dispatcher
+        return _dispatcher.park_marker_owner_state(Path(run_dir), phase_id)
+    except Exception:  # noqa: BLE001 -- see docstring
+        return "unknown", "dispatcher module unavailable"
+
+
+# PD-TEST-155. A phase the Engine still calls `running` may be re-opened ONLY
+# when the dispatcher worker named by its own dispatch ledger is provably gone.
+# `_ready_queue_tick()` skips `running` outright, so without this the phase is never
+# re-planned and its whole descendant subtree waits on it forever. The set is
+# the SAME fail-closed vocabulary as the park marker's on purpose: "live" and
+# "unknown" both mean HONOUR IT (never reclaim a phase out from under a worker
+# that might still be finishing it), and only a positive "orphaned" verdict
+# re-opens the phase.
+_RUNNING_OWNER_HONOURED_STATES = ("live", "unknown")
+
+
+def _running_worker_owner_state(run_dir: Any, phase_id: str) -> Tuple[str, str]:
+    """dispatcher.running_worker_owner_state for this run dir, degrading to
+    "unknown" -- i.e. honoured -- when that module will not import, so a
+    degraded install never reclaims a possibly-live phase."""
+    try:
+        from . import dispatcher as _dispatcher
+        return _dispatcher.running_worker_owner_state(Path(run_dir), phase_id)
+    except Exception:  # noqa: BLE001 -- see docstring
+        return "unknown", "dispatcher module unavailable"
+
+
+def _retire_orphaned_park_marker(run_dir: Any, phase_id: str) -> bool:
+    """Delete a park marker whose owner is provably gone. True when one was
+    removed.
+
+    Called BEFORE the phase's status flips to PENDING, deliberately: a crash
+    between the two then leaves a still-quarantined phase with no marker (the
+    next resume re-admits it, idempotently) instead of a PENDING phase still
+    carrying a park nobody owns -- which is the one shape that would make the
+    Engine's own F9 park reaction (phases.py:3144) fire for an ownerless park.
+    Best-effort: an unlink that fails is reported to the caller, never raised,
+    and the readmission itself stands -- the marker is a signal, not the lock."""
+    path = _dispatch_blocked_marker(run_dir, phase_id)
+    try:
+        if path.is_file():
+            path.unlink()
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def _block_is_verifier_sourced(ps: Dict[str, Any]) -> bool:
+    """True ONLY when the phase's current block is the engine's own SUBSTANCE park
+    (PD-TEST-135).
+
+    The gap this closes: `_phase_terminal_bad` treats
+    {QUARANTINED, FAILED, BLOCKED, OBSOLETE} as terminal -- it withholds every
+    descendant -- but `_READMITTABLE_PHASE_STATUSES` covered only
+    FAILED and QUARANTINED. BLOCKED was therefore the ONE status that was
+    terminal-bad yet never re-admittable: a phase parked by a substance check
+    could not be re-entered on ANY resume, so its descendants stayed withheld
+    and the run re-parked identically forever -- even after the checker that
+    parked it had been fixed.
+
+    Measured 2026-09-16 on run pres-operator-1d269693: P4-COPY sat
+    status="blocked" on "substance check failed: AF-NO-VILLAIN ..." while the
+    INSTALLED intelligence_engines_check.check_copy() returned ZERO problems
+    against the same copy -- already fixed by PD-TEST-125 -- and 34 downstream
+    phases (including PF-DESIGN -> P4-RENDER -> out.pptx) waited on the stale
+    string.
+
+    WHY THIS MATCHES A SHAPE, NOT heal's VOCABULARY. An earlier cut tested the
+    reason for heal's verifier keywords ("verifier", "verify"); an independent
+    review measured that this reopened 12 of 12 crafted OPERATOR park reasons --
+    any operator prose mentioning verification -- and so contradicted the rule
+    stated immediately above `_READMITTABLE_PHASE_STATUSES` ("Owner-decision
+    parks (PHASE_STATUS_BLOCKED, FIX 10) are never re-admitted: only the client
+    can make that call") and the pre-existing test
+    test_owner_blocked_and_done_phases_are_never_readmitted.
+
+    heal.classify_failure() cannot arbitrate either: it tests
+    _OWNER_DECISION_MARKERS FIRST, and the engine appends the boilerplate "An
+    owner_skip_approval token for this phase is required to advance it to
+    done." to EVERY substance park -- so heal returns owner_decision for the
+    very reason P4-COPY carries. Deferring to heal would refuse the one block
+    this fix exists to reopen. Both were measured, not assumed.
+
+    The engine's substance park has a shape, so this matches the shape:
+      (a) the reason BEGINS with the checker's own verdict prefix, never with
+          operator prose; AND
+      (b) the phase's MOST RECENT heal event is a verifier_substance event whose
+          reason the current block quotes -- the SAME episode -- so a stale
+          verifier heal cannot reopen a later dispatcher budget park.
+    The class constant comes from heal at module scope (phases.py:40), so it
+    cannot drift behind a silent fallback."""
+    reason = str(ps.get("blocked_reason") or "").strip()
+    if not reason.lower().startswith(_VERIFIER_VERDICT_PREFIX):
+        return False
+    events = [h for h in (ps.get("heal_events") or []) if isinstance(h, dict)]
+    if not events:
+        return False
+    last = events[-1]
+    ev_reason = str(last.get("reason") or "").strip()
+    if not ev_reason:
+        return False
+    # PD-TEST-194 (F2, independent review): the heal event's `class` is DERIVED,
+    # not authoritative. phases.py writes it as heal.classify_failure(sub_reason),
+    # and _PROVIDER_ERROR_MARKERS matches bare words -- "provider", "timeout",
+    # "connection", "quota", "429". A genuine substance verdict that merely
+    # MENTIONS the transport is therefore labelled provider_error, and trusting
+    # that label left a measurable class of substance parks permanently
+    # unreopenable:
+    #   "substance check failed: AF-IMAGE-GROUNDING: the image provider returned
+    #    429 rate limit for slide-3."  -> class=provider_error -> gate (b) False.
+    # The reason is the structural fact; the label is an inference from it.
+    # Accept either, so the gate cannot be defeated by vocabulary alone.
+    if (last.get("class") != heal.FAILURE_VERIFIER_SUBSTANCE
+            and not ev_reason.lower().startswith(_VERIFIER_VERDICT_PREFIX)):
+        return False
+    # NOTE (delta review): the 60-char test is a SUBSTRING test, not episode
+    # equality, so two verdicts from the same check that share a 60-char prefix
+    # but different tails would match (measured: OP12). It is not reachable by an
+    # operator -- the only writer of a state blocked_reason is Engine._block
+    # (phases.py:4039). PD-TEST-194 (F3, independent review) CORRECTS the earlier
+    # wording here, which claimed "all its call sites pass engine-authored text
+    # beginning with this prefix": an AST sweep of all 21 _block/_fail_unit call
+    # sites found EXACTLY ONE whose reason literal starts with the prefix (the
+    # substance park itself). The guarantee is the CALL-SITE INVENTORY plus
+    # _block being the sole writer -- NOT a property every call site enforces,
+    # and nothing in this module enforces it. A future call site that prefixed
+    # operator prose with the verdict string WOULD be misread as a verifier park;
+    # that hole is latent, not reachable today, and is recorded rather than
+    # implied away.
+    if reason.startswith(ev_reason) or ev_reason[:60] in reason:
+        return True
+    # PD-TEST-194 -- THE EPISODE MATCH ABOVE IS STRUCTURALLY FRAGILE, and it was
+    # measured inert on the very park this function exists to reopen.
+    #
+    # Both gates above pass for the live P4-PROMPT park (the reason begins with
+    # the checker's prefix, and the newest heal event IS a verifier_substance
+    # event), and the function still returned False -- so PD-TEST-135's re-open
+    # path never fired and the phase could not be re-entered on ANY resume. The
+    # two verdicts, from the SAME checker on the SAME phase in the SAME episode:
+    #
+    #   blocked_reason : substance check failed: ... slide-1: AF-WORLD-SCALE -- ;
+    #                    ... AF-FACE-PROMPT-MISSING -- ; ... AF-LIGHT-...
+    #   heal ev_reason : substance check failed: ... slide-1: AF-FACE-PROMPT-MISSING
+    #                    -- ; ... AF-LIGHT-PROMPT-MISSING -- ; ... AF-P-DENSITY ...
+    #
+    # Neither `startswith` nor the 60-char substring can hold, because the lists
+    # differ in BOTH order and membership -- the block leads with AF-WORLD-SCALE
+    # (absent from the heal event) and the heal event carries AF-P-DENSITY
+    # (absent from the block). A text-prefix episode test assumes the checker
+    # emits one stable string; this checker does not. PD-TEST-190 measured that
+    # its omissions are NON-DETERMINISTIC (which required family is missing
+    # varies per draw), so the tail of the verdict -- and often its head -- moves
+    # BETWEEN ATTEMPTS OF THE SAME EPISODE. Any park whose verdict list shifted
+    # was therefore misclassified as an operator park and could never be
+    # reopened, which is the exact defect PD-TEST-135 was written to fix.
+    #
+    # WHAT IS ACTUALLY INVARIANT is the IDENTITY OF THE FAILING CHECKS, not their
+    # order or the prose between them. So compare the check-id SETS. This keeps
+    # every protection the note above relies on: the caller has already required
+    # the checker's own verdict prefix (so operator prose cannot reach here), and
+    # the newest heal event has already been required to be a verifier_substance
+    # event (so a stale verifier heal cannot reopen a LATER dispatcher budget
+    # park -- that park's text does not carry the prefix and is rejected at the
+    # gate above). A single shared failing check id, in an episode the phase's own
+    # newest verifier heal produced, is the same episode by identity rather than
+    # by string luck.
+    block_ids = _verdict_check_ids(reason)
+    heal_ids = _verdict_check_ids(ev_reason)
+    if block_ids and heal_ids:
+        return bool(block_ids & heal_ids)
+    if block_ids or heal_ids:
+        # PD-TEST-194 (mixed grammar, independent delta review): EXACTLY ONE side
+        # carries structural autofails. That side is specific; the other names no
+        # autofail at all, so it cannot CONTRADICT it -- and refusing here was a
+        # reachable FALSE NEGATIVE. Both shapes are real and produced by the SAME
+        # checker (phase_verifiers emits the detailed
+        # "AF-PROMPT-FLOOR slide-<n>: <code> -- <detail>" and the summary-only
+        # "AF-PROMPT-FLOOR: <verdict>" / "AF-PROMPT-FLOOR: check_prompt_qc_
+        # deterministic returned pass:false"). The heal is written from one draw
+        # and the block from the next, so a phase whose verdict flips between
+        # draws lands here -- measured on BASE as True, and my first cut of the
+        # fallback closure made it False, i.e. one narrow shape of the very
+        # defect this PR exists to fix.
+        #
+        # This does NOT reopen F1's tautology: that was two STRUCTURED verdicts
+        # with disjoint autofails matching on the constant label, which the
+        # intersection above still rejects.
+        return True
+    # PD-TEST-194 (adversarial self-probe, closing a hole F1 left open): when
+    # either verdict lacks the `slide-<n>:` grammar the set match CANNOT be used,
+    # and falling back to "all AF- tokens" silently reintroduced the very
+    # tautology F1 removed -- two grammar-less verdicts sharing only the constant
+    # label would match. That path is REACHABLE: phase_verifiers emits
+    #   "AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false"  and
+    #   f"AF-PROMPT-FLOOR: {verdict}"
+    # So when there is no structural identity to compare, fall back to the
+    # ORIGINAL text tests (already tried above) and otherwise stay CLOSED. A
+    # park we cannot identify is not a park we reopen.
+    return False
+
+
+def _verdict_check_ids(text: str) -> set:
+    """The autofail/check identifiers a substance verdict names, order-insensitive.
+
+    PD-TEST-194. A verdict reads
+    `substance check failed: <CHECK> slide-1: <AUTOFAIL> -- ; <CHECK> slide-1: ...`
+    so the identifiers are the `AF-...` autofail tokens plus the leading check
+    names. Extracting the `AF-` tokens is enough to identify the episode: they are
+    the checker's own vocabulary, they are not free prose, and two unrelated
+    episodes do not share them by accident."""
+    return {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(text or "")}
+
+
 def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Reset FAILED/QUARANTINED phases to PENDING so the next run re-enters
-    them. Returns one record per re-admitted phase; each record is also
+    """Reset FAILED/QUARANTINED phases -- and verifier-parked BLOCKED phases
+    (PD-TEST-135) -- to PENDING so the next run re-enters them.
+    Returns one record per re-admitted phase; each record is also
     appended to that phase's `readmissions` history and to the run-level
     state["resume_readmissions"]. The phase's `attempts`, `heal_events`,
     `failed_rc`/`failed_reason` are PRESERVED -- the failed attempt is never
     erased, and the next attempt increments the same counter.
+
+    A phase is skipped only while the dispatcher that parked it is STILL ALIVE
+    (PD-TEST-080: a marker whose owner is gone is adjudicated by
+    dispatcher.park_marker_owner_state and retired, and its record carries
+    `orphaned_park_marker` / `orphaned_park_marker_retired`).
 
     Called from __main__._reset_parked_state, the shared --run/--resume
     unpark helper (FIX 22), so both entry verbs stay identical."""
@@ -702,19 +995,81 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     readmitted: List[Dict[str, Any]] = []
     for ps in state.get("phases") or []:
         pid = ps.get("id")
-        if not pid or ps.get("status") not in _READMITTABLE_PHASE_STATUSES:
+        if not pid:
             continue
-        if _dispatch_blocked_marker(run_dir, pid).exists():
-            # The dispatcher owns this generation's durable budget.
+        status = ps.get("status")
+        _reclaimed_running: Optional[str] = None
+        if status == PHASE_STATUS_RUNNING:
+            # PD-TEST-155: a phase left `running` by an engine that died mid-wait
+            # is ORPHANED, and nothing else in the engine can rescue it --
+            # `_ready_queue_tick()` collects `running` into its own bucket and
+            # `continue`s, so it is never re-planned, never expired, and (being
+            # neither terminal-bad nor done) it silently holds its entire
+            # descendant subtree in `waiting_dependency` forever. The run ends up
+            # INERT with a full queue and zero dispatches.
+            #
+            # This function is called ONLY from __main__._reset_parked_state, on
+            # the --run/--resume startup path, INSIDE RunLock's exclusive flock --
+            # so by the time we are here no other engine is servicing this run,
+            # and a `running` status can only be a leftover. The verdict below is
+            # still taken from the phase's own dispatch ledger rather than from
+            # that argument alone, and every ambiguity resolves to "honoured"
+            # (fail closed), so a phase whose worker is genuinely alive is never
+            # reclaimed out from under it.
+            owner_state, owner_detail = _running_worker_owner_state(run_dir, pid)
+            if owner_state in _RUNNING_OWNER_HONOURED_STATES:
+                continue
+            _reclaimed_running = owner_detail
+        elif status not in _READMITTABLE_PHASE_STATUSES:
+            # PD-TEST-135: a verifier-parked BLOCKED phase is re-openable so the
+            # repaired checker actually reaches it; an operator park is not.
+            if not (status == PHASE_STATUS_BLOCKED
+                    and _block_is_verifier_sourced(ps)):
+                continue
+        owner_state, owner_detail = _park_marker_owner_state(run_dir, pid)
+        if owner_state in _PARK_MARKER_HONOURED_STATES:
+            # The dispatcher owns this generation's durable budget -- and it is
+            # still running to enforce it.
             continue
         record: Dict[str, Any] = {
             "phase": pid,
             "at": utcnow(),
             "prior_status": ps.get("status"),
             "prior_attempts": ps.get("attempts"),
-            "prior_reason": (ps.get("quarantined_reason")
-                             or ps.get("failed_reason")),
+            # PD-TEST-155: name the reclaim so the audit trail says WHY a phase
+            # that was `running` is suddenly pending again -- and carry the
+            # phase's own `waiting_for` so the artifact it was blocked on is on
+            # the record rather than only in the state being overwritten.
+            **({"reclaimed_orphaned_running": _reclaimed_running,
+                "reclaimed_waiting_for": list(ps.get("waiting_for") or []),
+                "reclaimed_waited_seconds": ps.get("waited_seconds")}
+               if _reclaimed_running else {}),
+            # PD-TEST-135: record the reason ACTUALLY being cleared, which
+            # depends on which status is being re-admitted.
+            #   * blocked -> blocked_reason is the one being adjudicated. Both
+            #     reviews flagged the opposite order: the live P4-COPY record
+            #     carries a STALE quarantined_reason ("agent-authored phase
+            #     produced nothing within 60 minutes"), so a reopened BLOCK
+            #     named a missing-artifact cause instead of the substance
+            #     verdict.
+            #   * failed/quarantined -> the mirror case, measured on the live
+            #     run: P-U-DESIGN-SALES carries BOTH a stale substance
+            #     blocked_reason AND the quarantined_reason that actually parked
+            #     it ("dispatcher retry ceiling: 8 consecutive identical 'error'
+            #     dispatch outcomes"), with failed_reason None. Blocked-first
+            #     would log the stale block for a phase that was never blocked.
+            # Control flow is unaffected either way; this is the audit trail.
+            "prior_reason": (
+                ((ps.get("blocked_reason") or ps.get("quarantined_reason")
+                  or ps.get("failed_reason"))
+                 if ps.get("status") == PHASE_STATUS_BLOCKED else
+                 (ps.get("quarantined_reason") or ps.get("failed_reason")
+                  or ps.get("blocked_reason")))),
         }
+        if owner_state == "orphaned":
+            record["orphaned_park_marker"] = owner_detail
+            record["orphaned_park_marker_retired"] = _retire_orphaned_park_marker(
+                run_dir, pid)
         ps.setdefault("readmissions", []).append(record)
         ps["readmitted_at"] = record["at"]
         ps["status"] = PHASE_STATUS_PENDING
@@ -1250,6 +1605,81 @@ class Engine:
         deck_type = self._deck_type()
         return bool(deck_type) and deck_type != _SIGNATURE_DECK_TYPE
 
+    def _deck_infographic_required(self):
+        """PD-TEST-168 part B: does THIS deck require the infographic extra?
+
+        Returns True / False / None, and only False ever routes the phase
+        around:
+
+          * None  -- intake.json absent, unreadable, or the deciding keys are
+            not positively present. FAIL OPEN: the phase stays in the walk.
+          * True  -- a non-empty `deliverable_bundle.checklist_items`, or a
+            content-first creation_mode (a converter origin). The phase runs.
+          * False -- intake.json WAS read, `checklist_items` is absent/empty,
+            AND the creation_mode is confirmed non-content-first.
+
+        The rule is not invented here: sops/slide-image-creator-sops.md step 1
+        states it -- "Confirm the run requires an infographic by checking
+        `deliverable_bundle.checklist_items` in intake.json. If the key is
+        absent or empty and the run is NOT a converter origin, skip this SOP
+        and record `infographic_skipped: true` ... Do NOT produce the file
+        speculatively." build_infographic.py:702-711 already honours that
+        marker; this makes the WALK agree with it, so a legitimately skipped
+        infographic cannot deadlock the phase on an artifact that will never
+        exist.
+        """
+        p = self.run_dir / "working" / "copy" / "intake.json"
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        if not isinstance(obj, dict):
+            return None
+        creation_mode = self._deck_creation_mode()
+        if creation_mode in self._CONTENT_FIRST_CREATION_MODES:
+            return True
+        if creation_mode is None:
+            return None
+        bundle = obj.get("deliverable_bundle")
+        if isinstance(bundle, dict):
+            items = bundle.get("checklist_items")
+        else:
+            items = obj.get("checklist_items")
+        if items:
+            return True
+        return False
+
+    def _infographic_route_around_applies(self, phase: Phase) -> bool:
+        """True only when `phase` is the infographic stage AND this deck is
+        POSITIVELY known not to require one. Fails OPEN, exactly like
+        _sp_only_route_around_applies above: an absent/unreadable signal keeps
+        the phase in the walk and it must earn its pass the normal way."""
+        if not getattr(phase, "infographic_path", False):
+            return False
+        return self._deck_infographic_required() is False
+
+    def _route_around_infographic_phase(self, phase: Phase) -> None:
+        """Record the infographic stage as not applicable to this deck, with no
+        executor and no verifier run -- and WITHOUT disguising the decision as a
+        genuine execution. Mirrors _route_around_converter_phase exactly:
+        status=done so all_done accounting matches a deck that never had the
+        precondition, verifier_ok=None and artifacts=[] so no substance scan
+        mistakes it for a verified pass, and routed_around + reason so the
+        distinction is permanently auditable in state.json and the event log.
+        """
+        reason = ("this deck positively does not require an infographic — "
+                  "working/copy/intake.json carries no deliverable_bundle."
+                  "checklist_items and its creation_mode is not a content-first "
+                  "mode, so the slide-image-creator SOP 9.10 step 1 skip "
+                  "applies; not dispatched")
+        self.report.event("phase.routed_around", f"{phase.id}: {reason}")
+        self._checkpoint(phase.id, status=PHASE_STATUS_DONE, attested_at=utcnow(),
+                         artifacts=[], sha256={}, verifier_ok=None,
+                         verifier_notes=[f"NOTE: {reason}"],
+                         owner_skip_approval=None, routed_around=True,
+                         routed_around_reason=reason,
+                         intake_sha_at_done=_intake_sha_now(self.run_dir))
+
     def _phases_applicable_to_this_deck(self, phases: List[Phase],
                                         only: Optional[str] = None) -> List[Phase]:
         """THE phase walk's applicability selection: return the subset of
@@ -1306,6 +1736,17 @@ class Engine:
                 self._route_around_sp_only_phase(p, deck_type)
             routed_ids = {p.id for p in sp_routed}
             phases = [p for p in phases if p.id not in routed_ids]
+
+        # PD-TEST-168 part B — the optional infographic extra. Without this a
+        # deck that legitimately skips the infographic deadlocks P8.3-INFOGRAPHIC
+        # on working/deliverables/infographic.png, an artifact that will never
+        # exist (phase_verifiers has no skip path).
+        info_routed = [p for p in phases if self._infographic_route_around_applies(p)]
+        if info_routed:
+            for p in info_routed:
+                self._route_around_infographic_phase(p)
+            info_ids = {p.id for p in info_routed}
+            phases = [p for p in phases if p.id not in info_ids]
         return list(phases)
 
     # -- verification -----------------------------------------------------
@@ -1973,7 +2414,15 @@ class Engine:
                     # child card (idempotent, see BoardMirror.child_report) and closes
                     # it 'done' in the same call.
                     title, description = self._child_card_meta(phase)
-                    self.board.child_report(phase.id, title, description, "done", done_msg)
+                    # PD-TEST-195: hand the board the phase's VERIFIED artifacts
+                    # as completion evidence. `shas` is the same mapping already
+                    # checkpointed three lines up (`artifacts=sorted(shas.keys())`),
+                    # so this is the exact set the phase is claiming, not a
+                    # re-derivation. Without it the CC server 403s the
+                    # done-transition ("no completion evidence") and the board is
+                    # left disagreeing with the run.
+                    self.board.child_report(phase.id, title, description, "done", done_msg,
+                                            deliverables=sorted(shas.keys()))
         return rc
 
     def _intake_gate_applies(self, phase: Phase) -> bool:
@@ -2163,7 +2612,7 @@ class Engine:
         # D2 (canary DEFECT D2): resolve relative scripts/xxxx.py paths against
         # the actual scripts directory (parent of the presentation_job package).
         # Without this, subprocess.run(cwd=run_dir) interprets "scripts/pdf_export.py"
-        # relative to /tmp/canary-spaulding-.../ where no scripts/ subdirectory exists,
+        # relative to /tmp/canary-client-.../ where no scripts/ subdirectory exists,
         # causing "can't open file" and a hard BLOCKED after 3 retries.
         scripts_dir = Path(__file__).resolve().parent.parent
         return [str(scripts_dir / tok[len('scripts/'):])

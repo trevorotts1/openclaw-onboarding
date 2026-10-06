@@ -249,6 +249,24 @@ RETRYABLE_AT_CLOSE: Tuple[str, ...] = (FAILURE_TRANSIENT, FAILURE_PROVIDER_ERROR
 #: kept anywhere near those would be erased by the very resume it is counting.
 STATE_KEY = "auto_resume"
 
+#: state.json key holding the CRASH attempt ledger (Fix 35). A crash is an
+#: engine-dead, nonterminal run -- the engine died without parking (BLOCKED)
+#: or finishing, so the normal auto-resume path (which only ever un-parks a
+#: BLOCKED run) refuses it. Before Fix 35 the poller resumed this shape on
+#: EVERY tick with no bound at all: a run whose engine died on startup was
+#: re-forked every five minutes, forever. The crash budget lives in its OWN
+#: key so crash retries never consume the BLOCKED park budget and a BLOCKED
+#: park never consumes the crash budget -- the two failure shapes are
+#: different (a park is a decision the engine made; a crash is the engine
+#: dying) and their bounds are not fungible.
+CRASH_STATE_KEY = "auto_resume_crash"
+
+#: Automatic CRASH resumes allowed per run per rolling window (Fix 35).
+#: Three, like the BLOCKED cap, for the same reason: no run has ever been
+#: observed needing a fourth consecutive automatic restart, and a run whose
+#: engine dies four times in a day needs a human, not a fifth fork.
+AUTO_RESUME_CRASH_CAP = 3
+
 #: state.json key holding the "cap exhausted" alert stamp, so the operator is
 #: told ONCE per exhaustion rather than every five minutes forever.
 ALERT_KEY = "auto_resume_alert"
@@ -333,6 +351,13 @@ DECISION_CONFIGURATION_PENDING = "CONFIGURATION-PENDING"
 #     next action named, nothing re-asked.
 DECISION_KNOWN_PLAN = "KNOWN-PLAN"
 
+#: Fix 35 verdicts, for the crash path (engine dead, run nonterminal) --
+#: separate codes so a crash-cap exhaustion never reads as a BLOCKED-park
+#: cap exhaustion in the log.
+DECISION_CRASH_RESUME = "CRASH-RESUME"
+DECISION_CRASH_CAP = "CRASH-CAP-EXHAUSTED"
+DECISION_CRASH_WRONG_SHAPE = "CRASH-NOT-APPLICABLE"
+
 EXIT_RESUME = 0
 EXIT_USAGE = 2
 #: A decision was MADE and it was "do not resume".
@@ -411,20 +436,24 @@ def _parse_at(value: Any) -> Optional[datetime]:
     return dt.astimezone(timezone.utc)
 
 
-def _rows(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    raw = state.get(STATE_KEY)
+def _rows(state: Dict[str, Any],
+          key: str = STATE_KEY) -> List[Dict[str, Any]]:
+    raw = state.get(key)
     if not isinstance(raw, list):
         return []
     return [r for r in raw if isinstance(r, dict)]
 
 
-def _counted_rows(state: Dict[str, Any], now: datetime) -> List[Dict[str, Any]]:
+def _counted_rows(state: Dict[str, Any], now: datetime,
+                  key: str = STATE_KEY) -> List[Dict[str, Any]]:
     """The attempt rows that COUNT against the cap: inside the rolling window
     and not refunded. A refunded row is one this module later proved bought no
-    running engine (see `_refund_manifest_pin_attempts`)."""
+    running engine (see `_refund_manifest_pin_attempts`). `key` selects the
+    ledger: STATE_KEY for BLOCKED parks, CRASH_STATE_KEY for crash resumes
+    (Fix 35) -- the two caps are always counted separately."""
     floor = now - timedelta(hours=AUTO_RESUME_WINDOW_HOURS)
     out = []
-    for row in _rows(state):
+    for row in _rows(state, key):
         if row.get("refunded"):
             continue
         at = _parse_at(row.get("at"))
@@ -544,7 +573,8 @@ def _manifest_status(state: Dict[str, Any],
                         f"({manifest_path})")
 
 
-def _refund_manifest_pin_attempts(state: Dict[str, Any], now: datetime) -> int:
+def _refund_manifest_pin_attempts(state: Dict[str, Any], now: datetime,
+                                  key: str = STATE_KEY) -> int:
     """Mark attempts that were spent under the pin that is STILL stale.
 
     An attempt row records the manifest sha the run was pinned to at the time.
@@ -556,13 +586,14 @@ def _refund_manifest_pin_attempts(state: Dict[str, Any], now: datetime) -> int:
     Mutates `state` in place and returns how many rows it refunded. Bounded in
     the only direction that matters: it can only ever REMOVE attempts from the
     tally, and only for rows whose recorded pin is provably the stale one, so
-    it can never manufacture an extra attempt.
+    it can never manufacture an extra attempt. `key` selects which ledger the
+    refund applies to -- the BLOCKED ledger, or the Fix 35 crash ledger.
     """
     pinned = state.get("manifest_sha256")
     if not isinstance(pinned, str) or not pinned:
         return 0
     refunded = 0
-    for row in _counted_rows(state, now):
+    for row in _counted_rows(state, now, key):
         if row.get("manifest_sha256") == pinned:
             row["refunded"] = "manifest-pin"
             row["refunded_at"] = utcnow()
@@ -921,6 +952,129 @@ def evaluate(run_dir, now: Optional[datetime] = None) -> Decision:
         attempt=attempt, counted=len(counted))
 
 
+def evaluate_crash(run_dir, now: Optional[datetime] = None) -> Decision:
+    """The full verdict for an engine-DEAD, nonterminal run. PURE: reads only.
+
+    The crash path is the shape the BLOCKED path refuses: state.json exists,
+    no engine is alive, and terminal is NOT BLOCKED (DONE and ABANDONED are
+    endings and are never resumed by anything; BLOCKED belongs to
+    `evaluate`). Before Fix 35 the poller resumed this shape on every tick
+    with no bound at all -- a run whose engine died on startup was re-forked
+    every five minutes, forever.
+
+    The bound is the same SHAPE as the BLOCKED path (a cap over a rolling
+    window, backoff between attempts, never spending an attempt on a death
+    the manifest pin makes certain) but a SEPARATE cap
+    (AUTO_RESUME_CRASH_CAP) in a SEPARATE ledger (state[CRASH_STATE_KEY]):
+    crash retries must never eat the BLOCKED park budget and BLOCKED retries
+    must never eat the crash budget. The two failure shapes are different --
+    a park is a decision the engine made, a crash is the engine dying -- and
+    their bounds are not fungible.
+
+    No operator chat alert on crash-cap exhaustion (unlike the BLOCKED path):
+    the poller logs the decider's reason on every tick it leaves the run
+    dead, which is where a crash loop is visible; a chat alert would
+    duplicate that line, not add to it.
+    """
+    now = now or datetime.now(timezone.utc)
+    run_path = Path(run_dir).expanduser()
+
+    if os.environ.get(AUTO_RESUME_ENV, "").strip() == "0":
+        return Decision(False, f"auto-resume is DISABLED ({AUTO_RESUME_ENV}=0) "
+                               "-- this crashed run is left dead for a human, "
+                               "which is the pre-Fix-35 behaviour",
+                        DECISION_DISABLED, EXIT_SKIP,
+                        cap=AUTO_RESUME_CRASH_CAP)
+
+    state, why = _read_state(run_path)
+    if state is None:
+        return Decision(False, f"cannot decide: {why}. Nothing was resumed "
+                               "and no crash attempt was spent.",
+                        DECISION_UNREADABLE, EXIT_UNDETERMINED,
+                        cap=AUTO_RESUME_CRASH_CAP)
+
+    terminal = str(state.get("terminal") or "")
+    if terminal in ("DONE", "ABANDONED"):
+        return Decision(False, f"terminal is {terminal!r} -- an ending, "
+                               "never resumed by anything, crash path "
+                               "included",
+                        DECISION_CRASH_WRONG_SHAPE, EXIT_SKIP,
+                        cap=AUTO_RESUME_CRASH_CAP)
+    if terminal == "BLOCKED":
+        return Decision(False, "terminal is 'BLOCKED' -- a parked run belongs "
+                               "to the normal auto-resume path, not the crash "
+                               "path (call without --crash)",
+                        DECISION_CRASH_WRONG_SHAPE, EXIT_SKIP,
+                        cap=AUTO_RESUME_CRASH_CAP)
+
+    # --- The F2 dependency: never spend an attempt on a death we can predict.
+    status, mwhy = _manifest_status(state, run_path)
+    if status == "mismatch":
+        repin, rwhy = _auto_repin_available()
+        if repin is not True:
+            return Decision(
+                False,
+                "the manifest moved under this run and this resume would die "
+                f"EXIT_MANIFEST_MISMATCH in about one second: {mwhy}. "
+                f"{rwhy}. Spending one of {AUTO_RESUME_CRASH_CAP} crash "
+                "attempts on a death that is certain would leave a fixable "
+                "run with no budget once the pin is cured, so NO attempt was "
+                "spent.",
+                DECISION_MANIFEST_PIN, EXIT_UNDETERMINED,
+                cap=AUTO_RESUME_CRASH_CAP)
+
+    # --- The crash cap, counted over a rolling window, refunds honoured --
+    # in the SEPARATE crash ledger, never the BLOCKED one.
+    counted = _counted_rows(state, now, CRASH_STATE_KEY)
+    if len(counted) >= AUTO_RESUME_CRASH_CAP:
+        newest = max((_parse_at(r.get("at")) for r in counted
+                      if _parse_at(r.get("at"))), default=None)
+        return Decision(False,
+                        f"{len(counted)} automatic crash resume(s) have "
+                        f"already been spent on this run in the last "
+                        f"{AUTO_RESUME_WINDOW_HOURS}h (crash cap "
+                        f"{AUTO_RESUME_CRASH_CAP}; most recent "
+                        f"{newest.isoformat() if newest else 'unknown'}). "
+                        "This run is now left dead for a HUMAN -- three "
+                        "automatic restarts did not keep an engine alive, "
+                        "so it is not the kind of failure another fork "
+                        "fixes.",
+                        DECISION_CRASH_CAP, EXIT_SKIP,
+                        counted=len(counted), cap=AUTO_RESUME_CRASH_CAP)
+
+    # --- Backoff since the previous automatic crash resume (same schedule as
+    # the BLOCKED path: the first retry is immediate, the 2nd and 3rd wait).
+    attempt = len(counted) + 1
+    idx = min(attempt - 1, len(AUTO_RESUME_BACKOFF_MINUTES) - 1)
+    wait_minutes = AUTO_RESUME_BACKOFF_MINUTES[idx]
+    if wait_minutes and counted:
+        last = max((_parse_at(r.get("at")) for r in counted
+                    if _parse_at(r.get("at"))), default=None)
+        if last is not None:
+            elapsed = (now - last).total_seconds() / 60.0
+            if elapsed < wait_minutes:
+                return Decision(
+                    False,
+                    f"crash attempt {attempt} of {AUTO_RESUME_CRASH_CAP} must "
+                    f"wait {wait_minutes} minute(s) after the previous "
+                    f"automatic crash resume ({last.isoformat()}); only "
+                    f"{elapsed:.1f} have passed. Backoff is what stops a run "
+                    "whose engine dies on startup from spending its whole "
+                    "crash cap inside three poller ticks.",
+                    DECISION_BACKOFF, EXIT_SKIP,
+                    counted=len(counted), attempt=attempt,
+                    cap=AUTO_RESUME_CRASH_CAP)
+
+    return Decision(
+        True,
+        f"crash attempt {attempt} of {AUTO_RESUME_CRASH_CAP}: the engine is "
+        f"dead and the run is nonterminal (terminal {terminal or 'unset'!r}) "
+        f"-- {len(counted)} crash attempt(s) spent in the last "
+        f"{AUTO_RESUME_WINDOW_HOURS}h, manifest pin {status}.",
+        DECISION_CRASH_RESUME, EXIT_RESUME,
+        attempt=attempt, counted=len(counted), cap=AUTO_RESUME_CRASH_CAP)
+
+
 def decide(run_dir) -> Tuple[bool, str]:
     """The spec's shape: (resume, why). A thin read over `evaluate`, kept
     because it is the contract other code should depend on -- callers that
@@ -1053,6 +1207,97 @@ def refund_last_attempt(run_dir, reason: str) -> bool:
     return marked["done"]
 
 
+def record_crash_attempt(run_dir, decision: Decision) -> bool:
+    """Append one attempt row to state[CRASH_STATE_KEY], and say whether it landed.
+
+    RECORDED BEFORE THE DISPATCH, deliberately, for the same reason as
+    `record_attempt`. And the return value is load-bearing in the same way:
+    a cap counted from a ledger that could not be written is not a cap, so
+    `main()` treats a failed record as a REFUSAL -- nothing is dispatched.
+    An uncounted crash resume repeats every poller tick forever, which is the
+    exact runaway Fix 35 exists to close.
+    """
+    run_path = Path(run_dir).expanduser()
+    row = {
+        "at": utcnow(),
+        "phase": decision.phase,
+        "class": decision.failure_class,
+        "attempt": decision.attempt,
+        "cap": AUTO_RESUME_CRASH_CAP,
+        "window_hours": AUTO_RESUME_WINDOW_HOURS,
+        "by": "presentation_job.auto_resume",
+        "kind": "crash",
+        "why": decision.why,
+    }
+
+    def _mutate(state: Dict[str, Any]) -> None:
+        # Carry the pin this attempt is made under, so a later tick can prove
+        # the attempt died on a stale manifest and refund it.
+        pin = state.get("manifest_sha256")
+        if isinstance(pin, str) and pin:
+            row["manifest_sha256"] = pin
+        rows = state.setdefault(CRASH_STATE_KEY, [])
+        if isinstance(rows, list):
+            rows.append(row)
+
+    ok = _merge(run_path, _mutate)
+    if not ok:
+        print(f"auto-resume: could not record crash attempt {decision.attempt} "
+              f"in {run_path}/state.json (the run lock stayed busy, or the "
+              "file is missing/unreadable). REFUSING the resume rather than "
+              "spending a crash attempt the cap cannot see -- an uncounted "
+              "attempt repeats every poller tick forever. Retrying next tick.",
+              file=sys.stderr)
+    return ok
+
+
+def refund_last_crash_attempt(run_dir, reason: str) -> bool:
+    """Give the most recent CRASH attempt back, because it bought no engine.
+
+    The crash twin of `refund_last_attempt`: the cap counts ENGINE STARTS,
+    and a crash attempt whose dispatch produced nothing (the launcher
+    refused, or the running-engine proof came back negative) must not eat the
+    crash budget. Marks at most ONE row, the newest un-refunded one, and only
+    a row this module wrote into the CRASH ledger -- it can never touch the
+    BLOCKED ledger, add an attempt, or un-refund one.
+    """
+    run_path = Path(run_dir).expanduser()
+    marked = {"done": False}
+
+    def _mutate(state: Dict[str, Any]) -> None:
+        rows_ = state.get(CRASH_STATE_KEY)
+        if not isinstance(rows_, list):
+            return
+        for row in reversed(rows_):
+            if not isinstance(row, dict) or row.get("refunded"):
+                continue
+            if row.get("by") != "presentation_job.auto_resume":
+                continue
+            if row.get("kind") != "crash":
+                continue
+            row["refunded"] = "no-engine-started"
+            row["refunded_at"] = utcnow()
+            row["refunded_why"] = str(reason)[:400]
+            marked["done"] = True
+            return
+
+    if not _merge(run_path, _mutate):
+        print("auto-resume: could not refund the last crash attempt in "
+              f"{run_path}/state.json -- it stays counted against the crash "
+              "cap", file=sys.stderr)
+        return False
+    if marked["done"]:
+        print(f"auto-resume: refunded the crash attempt just made on "
+              f"{run_path.name} -- no engine started ({str(reason)[:200]}). "
+              "The crash cap counts engine starts, not dispatch attempts.",
+              flush=True)
+    else:
+        print(f"auto-resume: nothing to refund on {run_path.name} (no "
+              "un-refunded crash attempt of this module's own on the ledger)",
+              flush=True)
+    return marked["done"]
+
+
 def _alert_message(run_path: Path, decision: Decision) -> str:
     entry = _scripts_dir() / "presentation_job.py"
     return (
@@ -1129,7 +1374,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="presentation_job.auto_resume",
         description=("Decide whether a BLOCKED presentation run may be "
-                     "resumed automatically. Exit 0 = resume (an attempt has "
+                     "resumed automatically (or, with --crash, whether an "
+                     "engine-dead, nonterminal run may be resumed under the "
+                     "separate crash cap). Exit 0 = resume (an attempt has "
                      "been recorded), 3 = decided not to, 4 = undetermined. "
                      "This command starts nothing; the caller dispatches."))
     p.add_argument("--run-dir", required=True,
@@ -1144,6 +1391,14 @@ def build_parser() -> argparse.ArgumentParser:
                          "proof failed). Makes no decision and never resumes; "
                          "always exits 0 so it can never turn a dispatch "
                          "outcome into a second, unrelated failure."))
+    p.add_argument("--crash", action="store_true",
+                   help=("decide a CRASH resume instead of a BLOCKED one: the "
+                         "engine is dead and the run is nonterminal. Uses the "
+                         "separate crash cap (AUTO_RESUME_CRASH_CAP) and the "
+                         "separate crash ledger "
+                         '(state["auto_resume_crash"]). With --refund, gives '
+                         "back the last crash attempt instead of the last "
+                         "BLOCKED attempt."))
     return p
 
 
@@ -1155,30 +1410,41 @@ def main(argv: Optional[List[str]] = None) -> int:
         # A bookkeeping correction, not a decision. Exit 0 unconditionally:
         # the caller is already inside its dispatch-failure path, and a
         # non-zero here would only add a second failure to that log.
-        refund_last_attempt(run_path, args.refund)
+        # --crash refunds out of the crash ledger, so a refunded crash
+        # attempt never touches the BLOCKED budget (and vice versa).
+        if args.crash:
+            refund_last_crash_attempt(run_path, args.refund)
+        else:
+            refund_last_attempt(run_path, args.refund)
         return EXIT_RESUME
 
     # Refund first, so the cap that is about to be counted is the honest one.
     # Only ever runs when a mismatch is provable RIGHT NOW, and only marks
     # rows whose recorded pin IS the still-stale one.
+    # Fix 35: the crash path gets the same manifest-pin refund as the BLOCKED
+    # path -- a crash attempt spent under a still-stale pin bought a one-second
+    # EXIT_MANIFEST_MISMATCH death, not an engine start, so it must not count
+    # against the crash cap either.
+    ledger_key = CRASH_STATE_KEY if args.crash else STATE_KEY
     if not args.check:
         state, _why = _read_state(run_path)
-        if state is not None and str(state.get("terminal") or "") == "BLOCKED":
+        if state is not None and (str(state.get("terminal") or "") == "BLOCKED"
+                                  or args.crash):
             status, mwhy = _manifest_status(state, run_path)
             repin, _rwhy = _auto_repin_available()
             if status == "mismatch" and repin is not True:
                 now = datetime.now(timezone.utc)
                 probe = json.loads(json.dumps(state))  # cheap deep copy
-                if _refund_manifest_pin_attempts(probe, now):
+                if _refund_manifest_pin_attempts(probe, now, ledger_key):
                     def _refund(live: Dict[str, Any]) -> None:
-                        _refund_manifest_pin_attempts(live, now)
+                        _refund_manifest_pin_attempts(live, now, ledger_key)
                     if _merge(run_path, _refund):
                         print("auto-resume: refunded the attempt(s) spent "
                               f"under the still-stale pin ({mwhy}) -- they "
                               "started no engine, so they do not count "
                               "against the cap", flush=True)
 
-    decision = evaluate(run_path)
+    decision = evaluate_crash(run_path) if args.crash else evaluate(run_path)
     verdict = "RESUME" if decision.resume else "SKIP"
     print(f"auto-resume [{decision.code}] {verdict} {run_path}: "
           f"{decision.why}", flush=True)
@@ -1193,9 +1459,12 @@ def main(argv: Optional[List[str]] = None) -> int:
               "was spent", flush=True)
         return EXIT_RESUME
 
-    if not record_attempt(run_path, decision):
+    record = record_crash_attempt if args.crash else record_attempt
+    if not record(run_path, decision):
         # FAIL-CLOSED. See record_attempt's docstring: a resume the ledger did
-        # not record is a resume no bound can ever stop.
+        # not record is a resume no bound can ever stop. The crash path
+        # (record_crash_attempt) carries the same contract -- an uncounted
+        # crash resume is the exact runaway Fix 35 exists to close.
         return EXIT_UNDETERMINED
     return EXIT_RESUME
 

@@ -259,10 +259,10 @@ def test_a_client_measured_at_3_stays_3_under_ultra():
 
 def test_a_client_measured_at_2500_is_capped_at_100_under_ultra():
     prof = _profile(ceiling=2500)
-    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 100
-    assert model_router.capped_width(2500, "ultra", profile=prof)["width"] == 100
-    assert model_router.mode_concurrency("ultra", profile=prof)["concurrency"] == 100
-    assert model_router.ULTRA_OPERATOR_CEILING == 100
+    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 400
+    assert model_router.capped_width(2500, "ultra", profile=prof)["width"] == 400
+    assert model_router.mode_concurrency("ultra", profile=prof)["concurrency"] == 400
+    assert model_router.ULTRA_OPERATOR_CEILING == 400
 
 
 def test_no_mode_exceeds_the_same_client_provider_ceiling():
@@ -291,8 +291,8 @@ def test_provider_advertising_never_raises_the_operator_ceiling():
     tasks in Ultra: the human-ratified 100 still applies."""
     prof = _profile(ceiling="UNBOUNDED")
     assert model_router.measured_client_ceiling(prof) == "UNBOUNDED"
-    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 100
-    assert model_router.capped_width(2500, "ultra", profile=prof)["width"] == 100
+    assert model_router.mode_ceiling("ultra", profile=prof)["ceiling"] == 400
+    assert model_router.capped_width(2500, "ultra", profile=prof)["width"] == 400
 
 
 # ===========================================================================

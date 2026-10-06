@@ -1,23 +1,28 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v25.0.16 — Private interview renewal and pause/resume on Mac and VPS.** Resume partial onboarding without replacing client identity; preserve service configuration, migrate the correct database and reconcile the client’s standard board foundation. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.1.5**.
+> **v25.3.21 — Paired-release prep: the Command Center pin moves to v7.6.99.** The release cohort names the frozen pair (onboarding c14ed614 / Command Center 2c4e2e8d, candidate freeze-20261005-03) and every version marker rolls together, so the fleet roll deploys the Command Center this release was tested against. Deck-build engine correctness (phase resume, fan-out funding, slide-copy field fixes), provider-routing and Rescue Rangers hardening, and interview-link reliability (ILJ) batches landed in the releases since v25.0.10. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.99**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v25.1.9.
+> **Version:** see `/version` - this repo at v25.3.21.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v25.0.10
+## Current release: v25.3.21
 
-Command Center installation and refresh now require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.1.5 or newer**. Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment. Update Node explicitly on the target machine, then retry; the installer does not replace its runtime automatically. Resumed installs also verify the existing checkout instead of trusting an old completed-phase flag.
+Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
 Fresh and update-only dependency installs use the shipped `package-lock.json` through `npm ci`; a missing lock or failed install stops before migrations/deployment. There is no fallback that resolves a different dependency graph.
 
-The paired pin and minimum are both **v7.1.5**, including authenticated interview launch, verified foundations, the security upgrade and General/CEO fallback execution. Deploy that paired Command Center release before onboarding v25.0.16. Existing update paths still converge to current `origin/main` and preserve local commits; they must pass the security floor and do not detach to an older tag. This follows the CC upgrade to Next 16.3.4 and React 19.2.8. Offline compatibility checks are not a live client deployment or provider verification.
+**Recent releases** (since v25.0.10 — full per-release history in [CHANGELOG.md](CHANGELOG.md)):
 
-Recovery now also handles the exact empty completion stub without deleting state, accepts the verified CEO board alias, and finds the installed invitation CLI under restricted service PATH. Readiness and QC commands have bounded deadlines with private failure diagnostics. Shared paths and the GHL QC probe retain the selected client installation. Scheduler configuration is validated before replacing a working job, including paths with special characters.
+- **v25.1.92-v25.1.95** (Sep 27-28) - Interview prior-completion declaration batch; Presentations Steps 3-4 land on main (attempt-counter reset, engine pid recording, retired text-overlay doctrine, installer-managed watchdog).
+- **v25.1.70-v25.1.91** (Sep 21-27) - Content-pipeline fail-closed guards, interview-link reliability (ILJ waves), the JEV 1.1 decision-engine batch trains, and Presentations Steps 1-2 (Kie.ai spend ceilings, fresh-intake credit preflight, OpenRouter live pricing).
+- **v25.1.33-v25.1.69** (Sep 16-21) - Provider-routing and Stage-D scoring hardening (Ollama Cloud fallback chain, concurrent finalist scoring), plus departments.json and company-id normalization fixes.
+- **v25.1.1-v25.1.32** (Sep 14-16) - Presentation deck-engine correctness pass: phase resume, fan-out funding and budget accounting, and slide-copy metadata-leak fixes.
+- **v25.1.0** (Sep 14) - Added Skill 69 (archify), a verifiable diagram engine, gated in Wave 6.
+- **v25.0.11-v25.0.61** (Sep 6-14) - Presentations department build-out (deck engine resume/retry/budget), social media planner waves W1-W5, Rescue Rangers batches, and the GPT-image-2.5 migration.
 
 ## v25.0.0 major milestone
 
@@ -158,14 +163,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v25.1.9** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v25.3.21** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **69 numbered skill folders (01–69)** — 64 active plus 5 archived (11, 13, 21, 33, 34) — plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **74 numbered skill folders (01–74)**: 69 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -284,11 +289,28 @@ That file is the master instruction file. It contains:
 | 67-kie-video | **KIE Video (v1.0.0)** — the KIE.ai video-generation skill: 37-model registry incl. dedicated Runway and Veo 3.1 API families (never routed through the generic createTask), per-model duration windows, resolutions, media reference caps and prompt limits (Wan 3.0 20K, Seedance 2.5 30K, Kling 3.0 Omni 3,072 chars, MiniMax H3 7K, Kling 3.0 single-shot NOT_PUBLISHED). Deterministic pre-dispatch validators: `validate_prompt.py`, `validate_payload.py`, `select_video_model.py` (capability-hierarchy routing), `normalize_alias.py`. Real video QC checklist (SPEC 9.5: playable file, motion accuracy, subject consistency, audio sync), async completion + dedicated Runway/Veo record/upgrade endpoints, marker-based `wire.sh`. Credential: `KIE_API_KEY`. |
 | 68-kie-audio | **KIE Audio (v1.0.0)** — the KIE.ai audio skill: TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs dialogue-v3 / multilingual-v2 / turbo-2-5 via generic createTask), Suno music/sound-effects (DEDICATED `/api/v1/generate` family — never createTask), and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no endpoint located, `dispatch_enabled: false`, refuses to invent one). Registry `models.json` (10 entries), deterministic `validate_audio_request.py` with HARD-REJECT rules (Suno via createTask, out-of-enum values, any STT dispatch), audio QC checklists (playable file, language, voice identity, pronunciation, clipping), marker-based `wire.sh`. Credential: `KIE_API_KEY`. |
 | 69-archify | **Archify (v2.17.0)** — an agent skill that turns plain-language requirements, pasted Mermaid (`flowchart` / `sequenceDiagram` / `stateDiagram`), or repository evidence into polished, validated architecture / workflow / sequence / data-flow / lifecycle diagrams as self-contained, explorable interactive HTML with inline SVG, dark/light themes, optional trace motion, and PNG/JPEG/WebP/SVG/WebM export. A zero-dependency Node.js CLI (entry `bin/archify.mjs`) whose `doctor` verifies all 15 subsystems, `validate` gates a diagram document against quality profiles, and `render` emits a standalone HTML file. MIT; vendored from `tt-a1i/archify`. Zero runtime dependencies; requires Node ≥ 18. |
+| 70-lean-core-file-system | **Lean Core File System (v1.0.0)**: keeps every core file (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) under 40,000 characters by moving situational blocks into one playbook per system in the master files `playbooks/` folder, behind a one-line pointer reference of one to two sentences (WHAT, WHERE, WHEN); always-on rules stay inline, shortened. `pointer-audit.sh` (sizes, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved` content-preservation proof; exit 0 PASS, 1 FINDINGS, 2 tooling) and a quiet weekly OpenClaw cron job (`lean-core-file-system-weekly`, isolated session, thinking high, DeepSeek V4.1 Flash on Ollama Cloud with the OpenRouter DeepSeek V4.1 Flash as fallback, identifiers discovered from the box, never guessed). Standalone, not part of skill 01. |
+| 71-blackceo-signature-page | **BlackCEO Signature Page (v1.0.0)** — canonical BlackCEO single-page landing-page production skill: Standard or Long-Form copy, wireframes, mockups, image intelligence/prompts, QC, responsive HTML, GHL install/test; delegates image execution to Skill 66 kie-image / Skill 63 agnes-image and GHL build to Skill 6; routes multi-step funnels to Skill 49, DR/VSL to Skill 56, cinematic to Skill 62. Deployed by Skill 23 web-development / landing-page-specialist; SOP cluster universal-sops/signature-page-craft/. |
+| 72-motion-video-plus | **Motion Video Plus (v1.0.0)**: deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume and per-scene frame cleanup, Fish Audio chunked voiceover (s2.1-pro default, drama-3-preview opt-in) with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours. Proven stack only (FFmpeg, Chromium, playwright-core, Fish Audio); Diffusion Studio, Hyperframes, Remotion documented as untested. |
+| 73-diagnose-explain-fix | **Diagnose / Explain / Fix (v1.0.0)** — the `/def` command: finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks exactly one question (which model performs the fix). Instruction-only; no binaries, keys, or config writes. Moved here from a hand-installed slot-70 folder that collided with 70-lean-core-file-system; `update-skills.sh` retires the old `70-diagnose-explain-fix` folder. |
+| 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
 
-**Total: 69 numbered skill folders** (01–69) — **64 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 74 numbered skill folders** (01–74): **69 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
+
+---
+
+## Document delivery: Google Drive, then Notion
+
+Skill 58's Step 12 renders the Episode Package and the Speech Script, then delivers them through a two-tier chain so the documents reach the client wherever the box is provisioned.
+
+1. **Google Drive**, through the client's own Skill 14 credentials (`GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE`, plus `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT`). Each document is uploaded as a Google Doc and shared anyone-with-the-link-can-edit.
+2. **Notion**, the client's own workspace, when Skill 14 is not configured on the box or the Drive call delivers nothing. Needs `NOTION_API_TOKEN` and an explicit client-owned parent page, the same contract `37-zhc-closeout` uses. One `Podcast Episodes` page, then one page per episode, created idempotently. The Notion API cannot upload a file, so the published audio is linked.
+3. **Intent only**, when neither is configured: the plan records what was owed and ONE log line names both prerequisites.
+
+No tier can fail the episode. Agency and operator credentials are refused on both tiers, and the `gws` binary is never invoked because a bare headless call wipes the box's credential store. Details in `58-podcast-production-engine/INSTALL.md` and `universal-sops/podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md` section 2.10.
 
 ---
 
@@ -340,9 +362,14 @@ and `HEARTBEAT.md`.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
-  (`*.bak-unify-<ts>`, never deleted) and any unique content is preserved into
+  (`*.bak-unify-<ts>`) and any unique content is preserved into
   the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run.
+  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  kept per target, oldest deleted first. A second pass at the end of every
+  roll (`reclaim_unify_backups`) bounds the backups the unify scan cannot
+  reach — orphaned role folders, hidden archive dot-dirs, and the out-of-tree
+  `zero-human-company` trees — deleting only names matching
+  `.bak-unify-<8 digits>-<6 digits>`, so a live core file is never touched.
 
 Runs automatically at install (`install.sh` Step 10a) and on every update
 (`update-skills.sh`), and is QC-enforced (check 9.9 in
@@ -382,3 +409,25 @@ Modern validation never falls back to the legacy lane.
 Repository updates and live workflow activation are separate operations. Verify
 actual Google create/append receipts and readback after deployment; a workflow
 being active or a local doctor report does not establish successful posting.
+
+## Harvesting new role playbooks from the fleet (`scripts/fleet-roll/harvest-sop-drafts.py`)
+
+An operator tool. It is not installed on client boxes.
+
+When a box has a role the shared role library does not cover, that box writes its own playbook (a standard operating procedure) and files a copy, with no company details in it, in its `sop-harvest/` folder. This tool gathers those copies from the fleet, throws out the weak or unsafe ones, and prepares the good ones as a proposed change to the library. A person reviews that change. The tool never merges, never pushes, and never opens the pull request.
+
+What it does, in order:
+
+1. **Collect.** It asks the fleet-access tool (`~/.claude/tools/fleet-access.sh`) which boxes answer, then reads each box's `sop-harvest/` folder over headless SSH. It only reads. A box that cannot be read is reported as undetermined, never as empty. If no box answers at all, the run fails instead of reporting "nothing found". `--from-dir DIR` reads a folder you gathered by hand (`DIR/<box>/<department>/<role>.<8 characters>.draft.md` plus the matching `.sop-needed.json`).
+2. **Check.** Each draft is held to the rubric in `templates/role-library/_sop-writer.md`: at least 7,000 bytes of real content, all 18 sections, every playbook block complete, concrete steps, sourced API calls, and a weighted score of at least 8.5 out of 10. Anything with personal data is rejected outright: emails, phone numbers, long account numbers, IP addresses, home folders, private web addresses, keys, and any name on the client-name roster (`~/.openclaw/client-roster.txt`). The report names the kind of problem and the line number, never the text itself. There is no setting that lowers the bar.
+3. **De-duplicate.** If two boxes wrote the same role, the higher score wins. A role already in the library is never replaced and never overwritten.
+4. **Stage.** With `--stage` it creates a new branch from `origin/main`, adds one new file per surviving role, registers each in `_index.json` with its content hash, runs the library's own consistency checks, and makes one commit. It does not touch the version file or the changelog. Without `--stage` it only writes a report.
+
+```bash
+# See what the fleet has, change nothing in the repo
+python3 scripts/fleet-roll/harvest-sop-drafts.py
+# Prepare a reviewable branch (needs a clean checkout)
+python3 scripts/fleet-roll/harvest-sop-drafts.py --stage
+```
+
+The report (`report.md` and `report.json`) is written to `~/Downloads/sop-harvest-<time>/` unless `--out-dir` says otherwise. Staging refuses to run without a client-name roster unless you pass `--allow-no-roster`; the other personal-data checks still run in that case, but a human must then check the draft for client names. Tests: `python3 tests/unit/test_harvest_sop_drafts.py`.

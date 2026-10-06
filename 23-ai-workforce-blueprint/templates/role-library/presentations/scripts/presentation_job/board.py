@@ -503,7 +503,40 @@ class BoardMirror:
         children[phase_id] = task_id
         self.store.save(self.state)
 
-    def child_report(self, phase_id, title, description, status, note):
+    def _registry_path(self):
+        return self.run_dir / "working" / "checkpoints" / "cc-board-deliverables.json"
+
+    def _load_deliverable_registry(self):
+        """task_id -> [absolute paths already registered on that card].
+
+        PD-TEST-195 (adversarial review): the CC route is NOT idempotent, so the
+        client must remember what it has already registered. Kept ON DISK so the
+        skip survives a resume -- the case that actually produces duplicates.
+        Any read/parse failure returns an empty map: re-registering is the safe
+        direction to fail in.""" 
+        try:
+            import json as _json
+            p = self._registry_path()
+            if not p.exists():
+                return {}
+            data = _json.loads(p.read_text())
+            return data if isinstance(data, dict) else {}
+        except Exception:  # noqa: BLE001 -- never block a unit on bookkeeping
+            return {}
+
+    def _save_deliverable_registry(self, reg):
+        try:
+            import json as _json
+            p = self._registry_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(_json.dumps(reg, indent=1, sort_keys=True))
+            tmp.replace(p)
+        except Exception:  # noqa: BLE001 -- never block a unit on bookkeeping
+            pass
+
+    def child_report(self, phase_id, title, description, status, note,
+                     deliverables=None):
         """Ensure a child card exists for `phase_id` (created ONCE, on the
         first call for that phase -- idempotent via the dual state+manifest
         check in _resolve_child_task_id, so a phase reporting progress twice
@@ -574,6 +607,72 @@ class BoardMirror:
                 self._remember_child_task_id(phase_id, child_task_id)
             if status not in cc.CC_TASK_STATUSES:
                 raise ValueError(f"invalid status: {status!r}")
+            # PD-TEST-195: REGISTER THE WORK BEFORE CLOSING THE CARD.
+            #
+            # The CC server refuses a done-transition with no completion
+            # evidence -- measured live on pres-operator-1d269693:
+            #   patch_phase P-STYLE-PREVIEW->done non-OK (HTTP 403):
+            #   {'error': 'Forbidden: cannot mark a task done with no completion
+            #    evidence.', 'hint': '... Register it with POST
+            #    /api/tasks/<id>/deliverables ... {"deliverable_type":"file",
+            #    "title":"<name>","path":"<absolute path>"} ...'}
+            # The phase had genuinely produced its artifacts (nine style samples
+            # on disk) and the engine had verified them, so the board was left
+            # DISAGREEING WITH THE RUN: it showed the phase not-done while the
+            # engine held it done. That is the opposite of an accurate Kanban,
+            # and it is silent -- patch_phase is fail-soft, so nothing stopped.
+            #
+            # NOT IDEMPOTENT SERVER-SIDE -- verified by adversarial review, and
+            # the earlier "idempotent enough" claim here was WRONG. The CC route
+            # (command-center app/src/app/api/tasks/[id]/deliverables/route.ts)
+            # mints a fresh crypto.randomUUID() and does a plain INSERT with NO
+            # ON CONFLICT and NO unique index on task_deliverables, then
+            # broadcasts an SSE event. So a re-run / re-admitted / resumed phase
+            # -- the exact path this engine is built around -- would re-POST
+            # every artifact and accumulate duplicate rows (a re-admitted
+            # 9-sample phase leaves 18 rows, not 9), each POST also forcing the
+            # server to read and sha256 the whole file.
+            #
+            # The client therefore dedupes against a per-run registry ON DISK,
+            # so the skip survives a resume (which is the case that matters).
+            # Still FAIL-SOFT: every call is wrapped, a failure is reported, and
+            # the transition always happens -- a board that cannot be told is
+            # not a reason to hold the deck.
+            if status == "done" and deliverables:
+                _reg = self._load_deliverable_registry()
+                for _path in deliverables:
+                    _p = str(_path or "").strip()
+                    if not _p:
+                        continue
+                    _abs = _p if os.path.isabs(_p) else str(self.run_dir / _p)
+                    if _abs in _reg.get(child_task_id, ()):
+                        continue  # already on the card; a second POST duplicates it
+                    if not os.path.exists(_abs):
+                        self.report.event(
+                            "board.deliverable_missing",
+                            f"child_report({phase_id!r}): artifact not on disk, "
+                            f"not registering it as completion evidence: {_abs}")
+                        continue
+                    try:
+                        ok = cc.register_deliverable(
+                            child_task_id, _abs, meta={"title": os.path.basename(_abs),
+                                                       "type": phase_id},
+                            env=os.environ, deliverable_type="file")
+                    except Exception as exc:  # noqa: BLE001 -- never block the deck
+                        ok = False
+                        self.report.event(
+                            "board.deliverable_error",
+                            f"child_report({phase_id!r}): registering {_abs} raised "
+                            f"{type(exc).__name__}: {exc}")
+                    if ok:
+                        _reg.setdefault(child_task_id, []).append(_abs)
+                        self._save_deliverable_registry(_reg)
+                    else:
+                        self.report.event(
+                            "board.deliverable_unregistered",
+                            f"child_report({phase_id!r}): could not register {_abs} "
+                            "as completion evidence; the done-transition may be "
+                            "refused by the board")
             return cc.patch_phase(self.run_dir, child_task_id, phase_id, status,
                                   note, env=os.environ)
 

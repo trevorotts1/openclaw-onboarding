@@ -41,7 +41,7 @@
 
 **Agent:**
 1. Creates folder: `[BACKUP_FOLDER]/full-backup-March 1 at 4-00 PM/`
-2. Copies: config, all workspace .md files, memory/*.md, secrets, skills, cron list
+2. Copies: config, all workspace .md files, memory/*.md, secrets, custom skills + the installed skills version, cron list (not the onboarding repo's skills)
 3. Verifies file counts
 4. Checks for old full backups beyond the most recent 2, deletes them
 5. Reports: "Full backup complete. [X] files saved to [path]. Kept last 2 backups."

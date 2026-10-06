@@ -121,6 +121,27 @@ def build_parser() -> argparse.ArgumentParser:
                         "(manifest.repin history + manifest_sha256_prev), so --resume can "
                         "continue under the bumped manifest instead of dying with exit 7. "
                         "Mutually exclusive with every other mode.")
+    m.add_argument("--invalidate-phase", metavar="PHASE_ID", default=None,
+                   help="OPERATOR repair action (PD-TEST-132 Gap 2): discard a COMPLETED "
+                        "phase's recorded artifacts and set it back to pending, so "
+                        "--run --phase PHASE_ID re-authors it. Exists because a gate that did "
+                        "not exist (or was not known) when a phase ran can condemn its "
+                        "artifact AFTER the phase is done, and nothing else in the product can "
+                        "replace a completed phase's work: --resume re-admits failed/"
+                        "quarantined/substance-blocked phases but never a done one, "
+                        "_revalidate_banked re-runs only when validation FAILS, and there is no "
+                        "other verb for it. Requires --reason and --confirm. Audited; does NOT "
+                        "clear the durable paid-attempt ledger, so the retry caps still bind.")
+    # NOTE: --reason/--confirm go on the PARSER, not the mutually-exclusive mode
+    # group, because they are MODIFIERS of --invalidate-phase, not modes: adding
+    # them to the group made argparse reject `--invalidate-phase X --reason Y`
+    # with "argument --reason: not allowed with argument --invalidate-phase".
+    p.add_argument("--reason", default=None,
+                   help="mandatory with --invalidate-phase: why the completed artifact must be "
+                        "discarded. Recorded verbatim in the run's audit trail.")
+    p.add_argument("--confirm", action="store_true",
+                   help="with --invalidate-phase: actually perform the invalidation. Without "
+                        "it the command prints exactly what it would discard and exits.")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
     m.add_argument("--reconcile-board", action="store_true",
@@ -302,83 +323,234 @@ def cmd_repin(args, scripts_dir: Path) -> int:
     stranded. Repin is explicit operator action, never a silent fallback.
     """
     run_dir = args.run_dir.expanduser().resolve()
-    store = StateStore(run_dir)
-    if not store.exists():
-        die(EXIT_USAGE, f"no job state in {run_dir} — nothing to repin (run --new first)")
-    state = store.load()
-    old_sha = str(state.get("manifest_sha256") or "")
-    old_ver = state.get("manifest_version")
+    # Fix 33: repin load/modify/saves state.json outside the engine RunLock,
+    # racing the runner watchdog. Hold the run lock for the whole repin.
+    with RunLock(run_dir):
+        store = StateStore(run_dir)
+        if not store.exists():
+            die(EXIT_USAGE, f"no job state in {run_dir} — nothing to repin (run --new first)")
+        state = store.load()
+        old_sha = str(state.get("manifest_sha256") or "")
+        old_ver = state.get("manifest_version")
 
-    manifest_path = Path(state.get("manifest_path") or
-                         resolve_manifest(args.manifest, run_dir, scripts_dir))
-    # --manifest explicitly overrides the pinned path; otherwise repin in place.
-    if args.manifest:
-        manifest_path = Path(args.manifest).expanduser().resolve()
+        manifest_path = Path(state.get("manifest_path") or
+                             resolve_manifest(args.manifest, run_dir, scripts_dir))
+        # --manifest explicitly overrides the pinned path; otherwise repin in place.
+        if args.manifest:
+            manifest_path = Path(args.manifest).expanduser().resolve()
+            if not manifest_path.is_file():
+                die(EXIT_USAGE, f"--manifest {manifest_path} does not exist")
         if not manifest_path.is_file():
-            die(EXIT_USAGE, f"--manifest {manifest_path} does not exist")
-    if not manifest_path.is_file():
-        die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone; "
-                                    "pass --manifest to repin against a copy")
+            die(EXIT_MANIFEST_MISMATCH, f"pinned manifest {manifest_path} is gone; "
+                                        "pass --manifest to repin against a copy")
 
-    new_manifest = Manifest(manifest_path)
-    new_sha = new_manifest.sha256
-    if old_sha and old_sha == new_sha:
-        print(f"repin: manifest unchanged (sha {new_sha[:12]}); nothing to do")
+        new_manifest = Manifest(manifest_path)
+        new_sha = new_manifest.sha256
+        if old_sha and old_sha == new_sha:
+            print(f"repin: manifest unchanged (sha {new_sha[:12]}); nothing to do")
+            return EXIT_OK
+
+        # Phase-id diff: OLD side from the state's own phase rows (the run's real
+        # progress, not the old manifest, which may no longer be readable), NEW
+        # side from the manifest just loaded.
+        old_ids = {ps.get("id") for ps in state.get("phases", []) if ps.get("id")}
+        new_ids = {p.id for p in new_manifest.phases}
+        removed = sorted(old_ids - new_ids)
+        added = sorted(new_ids - old_ids)
+
+        changed = 0
+        for ps in state.get("phases", []):
+            if ps.get("id") in removed and ps.get("status") != "obsolete":
+                ps["status"] = "obsolete"
+                ps["obsolete_reason"] = "removed from manifest at repin (FIX 20)"
+                changed += 1
+        for pid in added:
+            state.setdefault("phases", []).append(
+                {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
+                 "attempts": 0, "heal_events": [], "attested_at": None,
+                 "repin_added": True})
+            changed += 1
+
+        # Record BOTH shas: manifest_sha256_prev keeps the old pin discoverable,
+        # manifest.repin history rows name old and new together, and the live pin
+        # moves forward so verify_pin() lets --resume through.
+        state["manifest_sha256_prev"] = old_sha
+        state["manifest_version_prev"] = old_ver
+        state["manifest_sha256"] = new_sha
+        state["manifest_version"] = new_manifest.version
+        state["manifest_path"] = str(manifest_path)
+        hist = state.setdefault("manifest_repin_history", [])
+        hist.append({
+            "at": utcnow(),
+            "old_sha256": old_sha,
+            "new_sha256": new_sha,
+            "old_manifest_version": old_ver,
+            "new_manifest_version": new_manifest.version,
+            "phases_removed": removed,
+            "phases_added": added,
+        })
+        # An obsolete phase can never satisfy close()'s attestation walk, so the
+        # terminal/blocked state from the old plan must reset — --resume already
+        # clears "blocked"; mark the plan-version bump so the operator sees why.
+        state["repin_applied"] = True
+        store.save(state)
+
+        print(f"repin: manifest v{old_ver} @ {old_sha[:12] if old_sha else '?'} "
+              f"-> v{new_manifest.version} @ {new_sha[:12]}")
+        print(f"  removed phases marked obsolete: {len(removed)}"
+              + (f" {removed}" if removed else ""))
+        print(f"  new phases added pending:       {len(added)}"
+              + (f" {added}" if added else ""))
+        print("  resume with: presentation_job.py --resume --run-dir "
+              f"{run_dir}")
         return EXIT_OK
 
-    # Phase-id diff: OLD side from the state's own phase rows (the run's real
-    # progress, not the old manifest, which may no longer be readable), NEW
-    # side from the manifest just loaded.
-    old_ids = {ps.get("id") for ps in state.get("phases", []) if ps.get("id")}
-    new_ids = {p.id for p in new_manifest.phases}
-    removed = sorted(old_ids - new_ids)
-    added = sorted(new_ids - old_ids)
 
-    changed = 0
-    for ps in state.get("phases", []):
-        if ps.get("id") in removed and ps.get("status") != "obsolete":
-            ps["status"] = "obsolete"
-            ps["obsolete_reason"] = "removed from manifest at repin (FIX 20)"
-            changed += 1
-    for pid in added:
-        state.setdefault("phases", []).append(
-            {"id": pid, "status": "pending", "artifacts": [], "sha256": {},
-             "attempts": 0, "heal_events": [], "attested_at": None,
-             "repin_added": True})
-        changed += 1
 
-    # Record BOTH shas: manifest_sha256_prev keeps the old pin discoverable,
-    # manifest.repin history rows name old and new together, and the live pin
-    # moves forward so verify_pin() lets --resume through.
-    state["manifest_sha256_prev"] = old_sha
-    state["manifest_version_prev"] = old_ver
-    state["manifest_sha256"] = new_sha
-    state["manifest_version"] = new_manifest.version
-    state["manifest_path"] = str(manifest_path)
-    hist = state.setdefault("manifest_repin_history", [])
-    hist.append({
+def cmd_invalidate_phase(args, scripts_dir: Path) -> int:
+    """Discard a COMPLETED phase's banked artifacts so it re-authors (PD-TEST-132 Gap 2).
+
+    WHY THIS EXISTS. A phase can be finished before the rule that condemns its
+    artifact is known. Measured on run pres-operator-1d269693: P3-ARC is
+    status=done and working/copy/arc_allocation.json carries `cost_of_inaction`
+    in substantive values, while `build_deck._chk_pitch_leak` sits on the RENDER
+    preflight path (build_deck.py:10504) and fails on it. The contract that would
+    have prevented the token was corrected afterwards (so the NEXT run is fine),
+    but the existing artifact cannot be replaced by anything the product offers:
+      * --resume re-admits failed/quarantined/substance-blocked phases, never a
+        done one (`_READMITTABLE_PHASE_STATUSES`);
+      * `_revalidate_banked` re-runs a done phase only when validation FAILS, and
+        P3-ARC's own verifier returns ok=True, so it never fires;
+      * there is no other verb for it.
+    The only remaining routes were hand-editing the artifact, deleting it so the
+    phase re-runs, or amending the client's sealed intake -- all forbidden.
+
+    WHAT IT DOES. Renames each recorded artifact aside to
+    `<name>.invalidated-<utc-stamp>` and clears the phase's artifacts/sha256,
+    setting it back to pending. The artifact is MOVED, not deleted: presence must
+    genuinely fail, or a presence-based "already satisfied" check would short-
+    circuit the re-run and the invalidation would silently do nothing -- but the
+    bytes are preserved at a recorded path for the audit.
+
+    GUARDS. Refuses a phase that is not `done`, a phase with no recorded
+    artifacts, a missing --reason, and (without --confirm) performs nothing at
+    all. Records operator_uid, the prior shas and the reason verbatim in both the
+    phase's `invalidations` and the run-level `phase_invalidations`.
+
+    IT DELIBERATELY DOES NOT TOUCH the durable paid-attempt ledger: reopening a
+    phase must not become a way to buy more paid calls than the caps allow."""
+    run_dir = args.run_dir.expanduser().resolve()
+    store = StateStore(run_dir)
+    if not store.exists():
+        die(EXIT_USAGE, f"no job state in {run_dir} — nothing to invalidate")
+    pid = str(args.invalidate_phase).strip()
+    reason = str(args.reason or "").strip()
+    if not reason:
+        die(EXIT_USAGE, "--reason is required with --invalidate-phase: an operator action "
+                        "that discards completed work must state why, in the run's own audit "
+                        "trail")
+    state = store.load()
+    ps = next((r for r in (state.get("phases") or []) if r.get("id") == pid), None)
+    if ps is None:
+        die(EXIT_USAGE, f"phase {pid!r} is not in this run's state")
+    prior = ps.get("status")
+    if prior != "done":
+        die(EXIT_USAGE, f"phase {pid!r} is {prior!r}, not 'done' — --invalidate-phase only "
+                        "discards a COMPLETED phase's artifacts. Failed, quarantined and "
+                        "substance-parked phases are already re-admitted by --resume.")
+    artifacts = [a for a in (ps.get("artifacts") or []) if a]
+    if not artifacts:
+        die(EXIT_USAGE, f"phase {pid!r} is done but records no artifacts — nothing to discard")
+    sha_now = ps.get("sha256") or {}
+
+    # DEFECT 3 (review): artifact paths are recorded data, not trusted input. A
+    # corrupt or hostile state.json must not turn this operator verb into an
+    # arbitrary-path renamer, so every recorded path must stay INSIDE the run
+    # dir. normpath (not realpath) is used deliberately: it blocks `..` and
+    # absolute paths without following a final symlink, so a symlinked artifact
+    # is still moved as the symlink it is, leaving its target untouched (which
+    # the review confirmed is the safe behaviour).
+    root = os.path.normpath(str(run_dir))
+    for a in artifacts:
+        joined = os.path.normpath(os.path.join(root, a))
+        if not (joined == root or joined.startswith(root + os.sep)):
+            die(EXIT_USAGE, f"{a!r} is recorded on {pid} but resolves OUTSIDE the run "
+                            f"directory ({joined}) — refusing to rename a path this run does "
+                            "not own; the run's state and disk disagree, investigate first")
+    # DEFECT 1 (review): the existence guard used to run INSIDE the move loop, so
+    # a multi-artifact phase whose SECOND artifact was missing had the first one
+    # already moved while state.json stayed unchanged -- leaving state and disk
+    # disagreeing and the phase permanently un-invalidatable. Pre-flight the whole
+    # set before touching anything.
+    missing = [a for a in artifacts if not (run_dir / a).exists()]
+    if missing:
+        die(EXIT_USAGE, f"{', '.join(missing)} recorded on {pid} but not on disk — refusing to "
+                        "invalidate a phase whose state and disk disagree; investigate first")
+
+    stamp = utcnow().replace(":", "").replace("-", "")
+
+    # DEFECT 2 (review): os.replace silently clobbers an existing destination, and
+    # a non-empty directory destination raised an uncaught OSError traceback. The
+    # natural collision window is one microsecond, but silent byte loss in an
+    # operator repair is not acceptable, so a taken name is suffixed instead.
+    def _free_dst(name: str) -> str:
+        if not (run_dir / name).exists():
+            return name
+        n = 2
+        while (run_dir / f"{name}-{n}").exists():
+            n += 1
+        return f"{name}-{n}"
+
+    moves = [(a, _free_dst(f"{a}.invalidated-{stamp}")) for a in artifacts]
+    if not args.confirm:
+        print(f"invalidate-phase {pid}: would move {len(moves)} artifact(s) aside and set the "
+              f"phase back to pending:")
+        for src, dst in moves:
+            print(f"  {src}  ->  {dst}")
+        print(f"reason: {reason}")
+        print("Nothing was changed. Re-run with --confirm to proceed.")
+        return EXIT_OK
+
+    # All-or-nothing: if any move fails, put back the ones that succeeded rather
+    # than leaving a half-invalidated phase whose state.json was never saved.
+    done_moves = []
+    try:
+        for src, dst in moves:
+            sp, dp = run_dir / src, run_dir / dst
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(sp, dp)
+            done_moves.append((src, dst))
+    except OSError as exc:
+        for src, dst in reversed(done_moves):
+            try:
+                os.replace(run_dir / dst, run_dir / src)
+            except OSError:
+                pass
+        die(EXIT_USAGE, f"could not move {src!r}: {exc} — rolled back {len(done_moves)} "
+                        "move(s); NOTHING was invalidated and state.json is unchanged")
+
+    rec = {
         "at": utcnow(),
-        "old_sha256": old_sha,
-        "new_sha256": new_sha,
-        "old_manifest_version": old_ver,
-        "new_manifest_version": new_manifest.version,
-        "phases_removed": removed,
-        "phases_added": added,
-    })
-    # An obsolete phase can never satisfy close()'s attestation walk, so the
-    # terminal/blocked state from the old plan must reset — --resume already
-    # clears "blocked"; mark the plan-version bump so the operator sees why.
-    state["repin_applied"] = True
+        "phase": pid,
+        "prior_status": prior,
+        "moved": [{"from": s, "to": d} for s, d in done_moves],
+        "prior_sha256": {a: sha_now.get(a) for a in artifacts},
+        "operator_uid": os.getuid(),
+        "reason": reason,
+    }
+    ps.setdefault("invalidations", []).append(rec)
+    state.setdefault("phase_invalidations", []).append(rec)
+    ps["artifacts"] = []
+    ps["sha256"] = {}
+    ps["status"] = "pending"
+    ps["invalidated_at"] = rec["at"]
+    ps["invalidated_reason"] = reason
     store.save(state)
 
-    print(f"repin: manifest v{old_ver} @ {old_sha[:12] if old_sha else '?'} "
-          f"-> v{new_manifest.version} @ {new_sha[:12]}")
-    print(f"  removed phases marked obsolete: {len(removed)}"
-          + (f" {removed}" if removed else ""))
-    print(f"  new phases added pending:       {len(added)}"
-          + (f" {added}" if added else ""))
-    print("  resume with: presentation_job.py --resume --run-dir "
-          f"{run_dir}")
+    print(f"invalidated {pid}: moved {len(done_moves)} artifact(s) aside, phase is now pending.")
+    for s, d in done_moves:
+        print(f"  {s} -> {d}")
+    print(f"next: python3 presentation_job.py --run-dir {run_dir} --run --phase {pid}")
     return EXIT_OK
 
 
@@ -800,12 +972,27 @@ def _reset_parked_state(state: Dict[str, Any]) -> Dict[str, Any]:
     # re-enters it exactly as _fail_unit's docstring promises. Without this the
     # ready queue could never admit it again, its descendants stayed withheld
     # by _phase_terminal_bad, and every resume re-parked the run identically.
+    # PD-TEST-080: "owns it" now means the dispatcher that wrote the marker is
+    # STILL ALIVE -- a marker left behind by a dispatcher that exited is
+    # adjudicated as orphaned and retired, so a code repair can actually reach
+    # the phases it repaired. The durable paid-attempt ledger is not touched.
     readmitted = readmit_retryable_phases(state)
     state["last_resume_readmissions"] = readmitted
     if readmitted:
         print(f"resume: re-admitted {len(readmitted)} failed/quarantined "
               f"phase(s) for retry: "
               + ", ".join(r["phase"] for r in readmitted), flush=True)
+        orphaned = [r for r in readmitted if r.get("orphaned_park_marker")]
+        if orphaned:
+            print("resume: " + "; ".join(
+                f"{r['phase']} was parked by a dispatcher that is no longer "
+                f"running [{r['orphaned_park_marker']}]"
+                + (" -- orphaned park marker retired"
+                   if r.get("orphaned_park_marker_retired")
+                   else " -- orphaned park marker could not be retired")
+                for r in orphaned)
+                + " (PD-TEST-080; the phase's durable paid-attempt ledger is "
+                  "unchanged and still binds)", flush=True)
     return prior
 
 
@@ -940,9 +1127,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_sweep_undeliverable(args)
     # FIX 20: repin BEFORE the RunLock block — that block verify_pin()s against
     # state's pinned sha and would die(7) on exactly the mismatch repin exists
-    # to cure. cmd_repin does its own state load/save under its own reads.
+    # to cure. cmd_repin takes its own RunLock for its state load/save (Fix 33).
     if args.repin:
         return cmd_repin(args, scripts_dir)
+    # PD-TEST-132 Gap 2: like repin, this mutates state under its own load/save and
+    # must run BEFORE the RunLock block (which verify_pin()s and takes the lease).
+    if getattr(args, "invalidate_phase", None):
+        return cmd_invalidate_phase(args, scripts_dir)
 
     # -----------------------------------------------------------------------
     # FIX 18 — the engine refuses to run without a lease it holds.
@@ -963,7 +1154,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     _signal_handlers_prev = []  # FIX 105: armed only on the run path below
     if args.new or args.status or args.capacity or args.workingset is not None \
             or args.sweep_undeliverable or args.diagnose_only \
-            or getattr(args, "relay_status", False):
+            or getattr(args, "relay_status", False) \
+            or getattr(args, "invalidate_phase", None):
         pass  # read-only / creation / diagnosis modes do not need the run lease
     else:
         # FIX 105: arm the SIGTERM/SIGINT handlers for the run about to start.
@@ -989,6 +1181,11 @@ def main(argv: Optional[List[str]] = None) -> int:
       with RunLock(run_dir):
         store = StateStore(run_dir)
         state = store.load()
+        # FIX 13: the engine records its own pid so the poller's
+        # "already running" check sees runs started through the canonical
+        # entry (which runs the engine directly, not via the launcher).
+        state["engine_pid"] = os.getpid()
+        store.save(state)
         manifest_path = Path(state.get("manifest_path") or
                              resolve_manifest(args.manifest, run_dir, scripts_dir))
         if not manifest_path.is_file():

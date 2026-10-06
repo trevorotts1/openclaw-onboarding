@@ -1,4 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# bash >= 4 required (associative arrays / mapfile / case modifiers); macOS ships 3.2 at /bin/bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
+  for _oc_b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_oc_b" ] && _OC_BASH_REEXEC=1 exec "$_oc_b" "$0" "$@"
+  done
+  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
+fi
 # guard-hook-enforcement-parity.sh
 set -eo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "FATAL -- not a git repository" >&2; exit 1; }
@@ -48,10 +55,10 @@ else
     HAS_PUSH=0; HAS_BRANCH_FILTER=0; IN_PUSH=0
     while IFS= read -r wfline; do
       if [ "$IN_PUSH" -eq 0 ]; then
-        echo "$wfline" | grep -qE '^[[:space:]]*push[[:space:]]*:' && { IN_PUSH=1; HAS_PUSH=1; }
+        grep -qE '^[[:space:]]*push[[:space:]]*:' <<<"$wfline" && { IN_PUSH=1; HAS_PUSH=1; }
       else
-        echo "$wfline" | grep -qE '^[[:space:]]*branches[[:space:]]*:' && HAS_BRANCH_FILTER=1
-        echo "$wfline" | grep -qE '^[a-zA-Z_-]+[[:space:]]*:' && ! echo "$wfline" | grep -qE '^[[:space:]]*branches[[:space:]]*:' && IN_PUSH=0
+        grep -qE '^[[:space:]]*branches[[:space:]]*:' <<<"$wfline" && HAS_BRANCH_FILTER=1
+        grep -qE '^[a-zA-Z_-]+[[:space:]]*:' <<<"$wfline" && ! grep -qE '^[[:space:]]*branches[[:space:]]*:' <<<"$wfline" && IN_PUSH=0
       fi
     done < "$wf_path"
     if [ "$HAS_PUSH" -eq 1 ] && [ "$HAS_BRANCH_FILTER" -eq 1 ]; then

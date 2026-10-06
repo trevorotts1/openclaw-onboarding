@@ -2,7 +2,7 @@
 
 > Canonical IP of the **Trevor Otts** signature funnel method. Every **section NAME**, every
 > **character/word band**, the **page order**, the **upsell/downsell/OTO2 derivation rules**, the
-> **Thank-You spec**, the **3/5/7 matrix**, and the **image-prompt band (5,000–19,000 chars)** are
+> **Thank-You spec**, the **3/5/7 matrix**, and the **image-prompt length budget (owner order 2026-10-05; formerly the 5,000–19,000 band)** are
 > **SACRED** — never changed, floored, reordered, or reinterpreted. This is the spec the
 > `49-signature-funnel` skill + its fail-closed provers honor exactly. Section names are sacred:
 > "never change the name of my page sections."
@@ -16,15 +16,17 @@
 ## 0. What the funnel is
 
 A request-driven pipeline that produces the signature funnel end-to-end: **12-section Hero copy →
-per-section long-form image prompts (5,000–19,000 chars) → Kie.ai `gpt-image-2.5` images in the
-signature look → GHL media folder + uploads → HTML assembly → GHL funnel build with 3/5/7
+per-section long-form image prompts (sized to the model's character budget) → Kie.ai images (the
+newest GPT Image generation by default, via Skills 66 and 74) in the signature look → GHL media folder + uploads → HTML assembly → GHL funnel build with 3/5/7
 configurable steps and accept/decline branching → preview + human approval → optional 10 promo
 emails.** The funnel spans up to seven steps: **Main → (Checkout, 7-step only) → Upsell-1 →
 Downsell-1 → Upsell-2 → Downsell-2 → Thank-You.**
 
 Two things are **SACRED and machine-enforced** (never advisory):
 1. The **12 section names** and every **copy character/word band** below.
-2. The **image-prompt character band: 5,000–19,000 chars** per prompt.
+2. The **image-prompt length budget** per prompt: 95 to 100 percent of the chosen model's character
+   maximum, never below 80 percent (`07-kie-setup/references/kie-common-rules.md` rule 12, which replaced the
+   earlier 5,000–19,000 band).
 
 Both are enforced by fail-closed provers (deterministic measurer, stripped-length, AF-FUN-* autofails
 — never agent self-score).
@@ -134,13 +136,18 @@ jumps past it; **every path terminates at Thank-You** — nobody ends a purchase
 
 ---
 
-## 4. IMAGE SYSTEM (SACRED band: 5,000–19,000 chars per prompt)
+## 4. IMAGE SYSTEM (SACRED length budget: 95 to 100 percent of the model maximum, never below 80 percent)
 
-- **Model:** Kie.ai `gpt-image-2.5`, **text-to-image by default** via the Skill 47 adapter. 16:9 / 2K
-  defaults; Sec 4 → 16:9 (was 21:9); Sec 12 → 3:4 (was 2:3). All Midjourney syntax retired.
-- **Prompt band: 5,000–19,000 characters** (stripped length; whitespace never counts), enforced by
-  `prove_sf_prompt_floor.py` (two-floor gate — length floor + structure/excellence floor). A failing
-  prompt physically cannot reach a paid Kie call.
+- **Model:** Kie.ai, **text-to-image by default**. The default is the newest GPT Image generation in KIE's
+  live catalog (rule 13), resolved by Skill 66 through Skill 74 `latest-family` (GPT Image 2.5 Sunburst
+  today); no model id is written here. Transport is Skill 74 only (`SOP-FUNNEL-03` section 3). 16:9 / 2K
+  defaults; Sec 4 → 16:9 (was 21:9); Sec 12 → 3:4 (was 2:3); both ratios are served as asked on the
+  default model (N43 substitutions only touch 5:4, 4:5, 2:1, 1:2). All Midjourney syntax retired.
+- **Prompt length budget:** 95 to 100 percent of the chosen model's character maximum, never below 80
+  percent (stripped length; whitespace never counts), read from Skill 74 `prompt-budget` (rule 12). This
+  replaced the earlier 5,000–19,000 band. `prove_sf_prompt_floor.py` is the two-floor gate (length floor +
+  structure/excellence floor); `prompt-budget --check` runs before every dispatch. A failing prompt
+  physically cannot reach a paid Kie call.
 - **8-block build order (every prompt):** 1 Subject & Wardrobe · 2 Composition & Shot · 3 Typography
   (text-bearing sections only; dominant for Sec 11) · 4 **Signature Grade Block** (verbatim) · 5
   Lighting · 6 Quality & Render · 7 Facial Intelligence · 8 Brand-Style + Negative Block (final
@@ -155,8 +162,9 @@ jumps past it; **every path terminates at Thank-You** — nobody ends a purchase
   default block 8 / brand-color Signature look — purely additive.
 - **`reference_images` hook** — one optional slot, `mode: none | signature_set | client_uploads |
   signature_set+client_uploads`, **default `none`** (launch state = pure text-to-image; look carried
-  entirely by the Signature Grade Block). When populated, resolved URLs pass to the adapter's
-  `image_input` (≤8 refs; auto image-to-image) with a mandatory style-only guard; references logged in
+  entirely by the Signature Grade Block). When populated, resolved URLs are uploaded with Skill 74 `upload` and
+  placed in the reference field the model's live schema names (image-to-image route; the reference count
+  limit comes from the live schema, never from memory) with a mandatory style-only guard; references logged in
   the certificate.
 
 ### THE SIGNATURE GRADE BLOCK (canonical constant — embedded verbatim in block 4 of every prompt)
@@ -191,8 +199,8 @@ Thank-You gets one celebratory hero or a "WELCOME" gallery-typography treatment.
 
 ## 5. QC GATES (where the pipeline fails closed)
 1. After P1 — copy floor-prover (`prove_sf_copy.py`); any SACRED violation = hard AF.
-2. After P2 — image-prompt two-floor prover (`prove_sf_prompt_floor.py`, 5,000–19,000).
-3. During P3 — Kie taskId provenance (no placeholder/native images).
+2. After P2 — image-prompt two-floor prover (`prove_sf_prompt_floor.py`) and the Skill 74 `prompt-budget --check` before each dispatch.
+3. During P3 — Kie taskId provenance (no placeholder/native images), with each Skill 74 result recorded by `scripts/kie74_receipt.py`.
 4. After P4 — every `<img>` resolves to the GHL media host.
 5. At P5 — a non-empty `pages/<profile>.fragment.html` per 3/5/7 matrix page (`AF-FUN-HTML-FRAGMENT`);
    at P6 — `funnel_graph.json` reachability/branching vs §3 (`prove_sf_graph.py`); at P7 — `build_receipt.json`
@@ -206,7 +214,7 @@ Thank-You gets one celebratory hero or a "WELCOME" gallery-typography treatment.
 ---
 
 ## 6. Delegation seams (never forked)
-- **Images →** Skill 47 `kie_image.py` (text-to-image default + optional `reference_images` hook).
+- **Images →** Skill 66 (model policy) then Skill 74 `kie_live_adapter.py` (text-to-image default + optional `reference_images` hook; the hook maps to the schema's image input field).
 - **GHL media folder + upload →** Skill 6 `ghl_media.py`.
 - **GHL funnel/step/page build + HTML injection →** Skill 6 `ghl_rest_canvas.py` / `ghl_builder.py`.
 - **10 promo emails →** the Email Skill project (post-downsell handoff, P10).

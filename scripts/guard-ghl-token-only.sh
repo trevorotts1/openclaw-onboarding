@@ -206,9 +206,9 @@ scan_code() {
     local code="${codeln#*:}"
     [ -z "$code" ] && continue
     for pat in "${BANNED_PATTERNS[@]}"; do
-      if printf '%s' "$code" | grep -Eq "$pat"; then
+      if grep -Eq "$pat" <<<"$code"; then
         # Forgive read-only detection idioms (failed-seed STOP checks).
-        if printf '%s' "$code" | grep -Eq "$ALLOW_REGEX"; then
+        if grep -Eq "$ALLOW_REGEX" <<<"$code"; then
           continue
         fi
         red "  ✗ FAIL — $label:$lineno reintroduces auto UI-login / 2FA:"

@@ -270,7 +270,12 @@ fi
 # agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
 # dir must never consume its entry budget.
 # ---------------------------------------------------------------------------
-if [ "$PLAN" -eq 0 ]; then
+# FIX 11: a --resume of an existing run is a continuation, not a new
+# attempt — it must not consume the entry budget.
+# FIX 11: declare a safe default so the success-path reset below is a no-op
+# when the increment is skipped (set -u is active; rm -f "" is harmless).
+_ATTEMPT_FILE=""
+if [ "$PLAN" -eq 0 ] && { [ "$RESUME" -eq 0 ] || [ ! -f "$RUN_DIR/state.json" ]; }; then
     _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
     mkdir -p "$(dirname "$_ATTEMPT_FILE")"
     _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
@@ -452,7 +457,7 @@ trace_fail() {
     echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
     echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
     echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
-    echo "  --next/--answer) so the driver writes the transcript itself." >&2
+    echo "  --sig-next/--sig-answer) so the driver writes the transcript itself." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
@@ -593,7 +598,7 @@ check_intake_trace() {
     [ "$PLAN" -eq 1 ] && return 0
     _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
     if [ ! -f "$_INT_TRACE" ]; then
-        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --sig-next/--sig-answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
     fi
     if command -v python3 >/dev/null 2>&1; then
         local _trace_bytes
@@ -609,7 +614,7 @@ print('%d' % len(raw.strip()))
 " 2>/dev/null)"
         _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
         if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
-            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --sig-next/--sig-answer/--sig-record and do NOT hand-write the transcript. No owner override for the trace."
         fi
     else
         # python3 absent: size-only fallback.
@@ -624,6 +629,38 @@ print('%d' % len(raw.strip()))
 check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
+# ===========================================================================
+# GATE 0c — DRIFT GATES (FIX 113, warning-only per D6)
+# ===========================================================================
+# Runs the presentations drift gates BEFORE the build starts. Per D6, drift is
+# a WARNING, never a build-stopper:
+#   - Drift found: log LOUDLY (operator channel, never client-facing), build continues.
+#   - Gate script missing or unrunnable: log an ERROR (still operator channel),
+#     build STILL continues — a missing gate must not brick a render.
+# The _ENGINE_RC reset below ensures a GATE 0c warning never leaks into the
+# engine's exit-code accounting.
+note "GATE 0c — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
+_GATE0C_SCRIPT="$SELF_DIR/presentations-drift-gates.sh"
+_ENGINE_RC=0
+if [ ! -f "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
+elif [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
+else
+  _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
+  _GATE0C_RC=$?
+  if [ "$_GATE0C_RC" -ne 0 ]; then
+    note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
+    note "GATE 0c drift detail (operator channel, never client-facing):"
+    echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+  else
+    note "GATE 0c PASSED (no drift)"
+  fi
+  unset _GATE0C_OUT _GATE0C_RC
+fi
+_ENGINE_RC=0
+unset _GATE0C_SCRIPT
+
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
@@ -673,6 +710,104 @@ _pres35_resolve_entry_interpreter() {
     return 0
 }
 _pres35_resolve_entry_interpreter || exit 2
+# read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
+# Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
+# "standard") then applies. It never guesses ultra -- nothing silently
+# launches at the operator ceiling.
+#
+# The vocabulary is NOT duplicated here: it is read from
+# presentation_job.model_router, the single authority active_mode() itself
+# uses. A tree where that import fails prints nothing and SAYS SO on stderr;
+# an unvalidatable declaration is dropped, never guessed. stderr is
+# deliberately NOT sent to /dev/null (unlike the lease helpers above): a
+# helper that dies inside this heredoc must be loud, not silent.
+# ---------------------------------------------------------------------------
+read_run_mode() {
+    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+scripts_dir = sys.argv[2]
+
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+try:
+    from presentation_job.model_router import MODES, normalize_mode
+except Exception as exc:  # noqa: BLE001 -- a partial deploy must be LOUD
+    print(f"[run-mode] could not import presentation_job.model_router from "
+          f"{scripts_dir} ({exc.__class__.__name__}: {exc}) -- a declared run "
+          f"mode cannot be validated against the one authority, so NONE is "
+          f"passed and the launcher default (standard) applies. Fix the "
+          f"deploy.", file=sys.stderr)
+    raise SystemExit(0)
+
+
+def normalised(raw):
+    """One candidate -> a legal mode, or None (with a loud line for garbage)."""
+    text = str(raw or "").strip().strip("'\"").strip(";,.").strip()
+    if not text:
+        return None
+    try:
+        return normalize_mode(text)
+    except ValueError:
+        print(f"[run-mode] the intake declared {text!r}, which is not one of "
+              f"{'|'.join(MODES)} -- ignoring it and letting the launcher "
+              f"default (standard) apply. A run mode is never guessed.",
+              file=sys.stderr)
+        return None
+
+
+def load(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def entry_value(entries, key):
+    val = entries.get(key)
+    if isinstance(val, dict):
+        return val.get("value", val.get("normalized"))
+    return val
+
+
+candidates = []
+
+# 1) the intake ledger -- where deck-intake-driver._record_run_mode writes it.
+entries = load(run_dir / "working" / "interview" / "intake_ledger.json").get("entries")
+if isinstance(entries, dict):
+    for key in ("RUN_MODE", "run_mode"):
+        candidates.append(entry_value(entries, key))
+    # ... and the structured parent record, when the turn stored the dict form.
+    parent = entries.get("resource_plan")
+    if isinstance(parent, dict) and isinstance(parent.get("value"), dict):
+        candidates.append(parent["value"].get("run_mode"))
+
+# 2) intake.json, for a client whose declaration arrived through a bridge that
+#    writes the run directory's intake rather than the ledger.
+intake = load(run_dir / "working" / "copy" / "intake.json")
+for key in ("RUN_MODE", "run_mode"):
+    candidates.append(intake.get(key))
+capture = intake.get("pre_presentation_capture")
+if isinstance(capture, dict):
+    candidates.append(capture.get("RUN_MODE"))
+
+seen = set()
+for candidate in candidates:
+    text = str(candidate or "").strip()
+    if not text or text.lower() in seen:
+        continue
+    seen.add(text.lower())
+    mode = normalised(candidate)
+    if mode:
+        print(mode)
+        break
+PYMODE
+}
+
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
         if [ -f "$_TEST_CONTEXT_MARKER" ]; then
@@ -1183,6 +1318,17 @@ presentation_type: $_RESOLVE_OUT"
     fi
     note "$_RESOLVE_OUT"
 
+    # FIX 8: the chat path never read the run mode, so the engine silently
+    # fell back to standard even when the intake declared ultra. Read
+    # RUN_MODE from the intake ledger (same read pattern as
+    # presentation-intake-poll.sh read_run_mode) and export it as
+    # PRESENTATION_MODE -- the documented env seam for non-launcher callers
+    # (model_router.active_mode). No --mode flag: this script is deliberately
+    # not a run-mode door.
+    RUN_MODE="$(read_run_mode "$RUN_DIR")"
+    export PRESENTATION_MODE="$RUN_MODE"
+    if [ -n "$RUN_MODE" ]; then note "run mode from intake ledger: $RUN_MODE"; else note "no run mode declared in intake; engine default (standard) applies"; fi
+
     # Step 2: Create the engine job (state.json).
     # This is idempotent -- if state.json already exists, the engine refuses to overwrite.
     _CREATE_OUT="$("$PRESENTATION_PY" "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
@@ -1248,6 +1394,8 @@ $_CREATE_OUT"
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
+    # FIX 11: a successful engine run resets the entry-attempt budget.
+    [ "$_ENGINE_RC" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
     rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
@@ -1350,5 +1498,7 @@ trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM
 
 "${cmd[@]}"
 _rc=$?
+# FIX 11: a successful fallback run resets the entry-attempt budget.
+[ "$_rc" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

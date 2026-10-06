@@ -1,5 +1,5 @@
 {
-  "$schema_note": "GUARD B — RETIRED-DOCTRINE RESIDUAL LINT registry. SINGLE SOURCE OF TRUTH for doctrine VALUES that have been retired and must never silently re-appear in the Presentations tree. scripts/doctrine_residual_check.py greps each entry's `pattern` (regex, IGNORECASE+MULTILINE) over the files matched by `scope` (glob, relative to the presentations/ root). Any match on a line/block that does NOT also carry an allowed_context_marker (an explicit retirement/replacement signal) is an OFFENDER and fails the check non-zero. A retired value is allowed to survive ONLY as documented history — i.e. on a line (or within `context_window` lines) that says it was retired/replaced. RETIRING A DOCTRINE VALUE IS A CONTRACT: add it here (Guard B) so the OLD value can never quietly creep back in as a live instruction. To add a new retired pattern: append an object with a unique `id`, a `pattern` that matches the retired value, a `scope` glob, a one-line `why`, and (optionally) per-pattern `allowed_context_markers` (otherwise the registry-level defaults apply).",
+  "$schema_note": "GUARD B \u2014 RETIRED-DOCTRINE RESIDUAL LINT registry. SINGLE SOURCE OF TRUTH for doctrine VALUES that have been retired and must never silently re-appear in the Presentations tree. scripts/doctrine_residual_check.py greps each entry's `pattern` (regex, IGNORECASE+MULTILINE) over the files matched by `scope` (glob, relative to the presentations/ root). Any match on a line/block that does NOT also carry an allowed_context_marker (an explicit retirement/replacement signal) is an OFFENDER and fails the check non-zero. A retired value is allowed to survive ONLY as documented history \u2014 i.e. on a line (or within `context_window` lines) that says it was retired/replaced. RETIRING A DOCTRINE VALUE IS A CONTRACT: add it here (Guard B) so the OLD value can never quietly creep back in as a live instruction. To add a new retired pattern: append an object with a unique `id`, a `pattern` that matches the retired value, a `scope` glob, a one-line `why`, and (optionally) per-pattern `allowed_context_markers` (otherwise the registry-level defaults apply).",
   "context_window": 2,
   "allowed_context_markers": [
     "retired",
@@ -25,29 +25,59 @@
     },
     {
       "id": "prompt-floor-5000-char",
-      "why": "FIX-PRES-09(v): the presentations image-prompt floor was RAISED from 5,000 chars to 9,000 chars (current HARD floor 9,000, ceiling 18,000; build_deck.py PROMPT_CHAR_FLOOR=9000, AF-P1). The retired 5,000-char floor must never re-appear as a live instruction — a prompt authored to 5,000 chars is now sub-floor and is refused, not run.",
-      "pattern": "5[,.]?000[\\s-]*(?:char|character)",
+      "why": "FIX-PRES-09(v): the presentations image-prompt floor was RAISED from 5,000 chars to 9,000 chars (current HARD floor 9,000, ceiling 18,000; build_deck.py PROMPT_CHAR_FLOOR=9000, AF-P1). The retired 5,000-char floor must never re-appear as a live instruction \u2014 a prompt authored to 5,000 chars is now sub-floor and is refused, not run.",
+      "pattern": "(?<![\\d,])5[,.]?000[\\s-]*(?:char|character)",
       "scope": "**/*.md"
     },
     {
       "id": "master-sop-section-n-citation",
-      "why": "P3-01(c)6 — the doctrine schism: dozens of role/SOP files cited a numbered \"master SOP Section N.N\" that no longer exists in any single file (the monolithic master SOP was decomposed into the universal-sops/ + sops/ SOP-* cluster). universal-sops/PRESENTATION-MASTER-DOCTRINE.md Section 4 is the ratified crosswalk from every legacy section number to its live home; every role/SOP file was repointed to cite the live file directly. The bare 'master SOP Section N' / 'CLIENT-WEBINAR-DECK-SOP.md (Section N' citation form must never re-appear — it points into a void.",
+      "why": "P3-01(c)6 \u2014 the doctrine schism: dozens of role/SOP files cited a numbered \"master SOP Section N.N\" that no longer exists in any single file (the monolithic master SOP was decomposed into the universal-sops/ + sops/ SOP-* cluster). universal-sops/PRESENTATION-MASTER-DOCTRINE.md Section 4 is the ratified crosswalk from every legacy section number to its live home; every role/SOP file was repointed to cite the live file directly. The bare 'master SOP Section N' / 'CLIENT-WEBINAR-DECK-SOP.md (Section N' citation form must never re-appear \u2014 it points into a void.",
       "pattern": "(?:master SOP\\s+Sections?\\s+\\d|CLIENT-WEBINAR-DECK-SOP\\.md\\s*\\(?Sections?\\s+\\d)",
       "scope": "**/*.md",
-      "allowed_context_markers": ["crosswalk", "legacy", "resolves", "PRESENTATION-MASTER-DOCTRINE"]
+      "allowed_context_markers": [
+        "crosswalk",
+        "legacy",
+        "resolves",
+        "PRESENTATION-MASTER-DOCTRINE",
+        "into a void"
+      ]
     },
     {
       "id": "script-composes-prompt-mechanically",
       "why": "P3-01(c)6 / PRESENTATION-MASTER-DOCTRINE.md Section 1 (THE HANDSHAKE BETWEEN THE LAYERS): 'The retired claim that the script composes the KIE prompt mechanically is FALSE for the current engine and is a banned residual pattern.' build_deck.py renders the Layer-A-authored 9,000-18,000-char rich per-slide prompt VERBATIM; it does not compose a prompt from a bare scene+copy pair. This claim must never re-appear as a live instruction in BUILDER-PROMPT.md / SOUL.md / TOOLS.md or any role file.",
       "pattern": "(?:MECHANICALLY\\s+composes?\\s+the\\s+(?:KIE\\s+)?prompt|composes?\\s+the\\s+(?:KIE\\s+)?prompt\\s+mechanically)",
       "scope": "**/*.md",
-      "allowed_context_markers": ["retired", "banned residual", "FALSE for the current engine", "does not compose", "does NOT compose"]
+      "allowed_context_markers": [
+        "retired",
+        "banned residual",
+        "FALSE for the current engine",
+        "does not compose",
+        "does NOT compose"
+      ]
     },
     {
       "id": "role-assembled-slide-legibility-qc-retired",
       "why": "U048 (audit G3). The 'assembled-slide-legibility-qc' role was declared in the live department's ROSTER.md and four SOP mirrors and NEVER existed in the repository (measured: 0 occurrences across 6,635 tree entries), had no role-library file, no manifest role row, no phase, no checker, and its own SOP mirror cited an authoritative role file that does not exist. Its mechanisable obligations are carried by AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED in run_postflight_gate (U047); its unmechanisable obligations are stated as human judgement in the MASTER ruleset's retired-roles crosswalk. The slug must never re-appear as a LIVE routing instruction in a top-level role-library file: doing so would re-create a role with a promise and no code. It may appear as documented history (carry a retirement marker).",
       "pattern": "assembled[-_]slide[-_]legibility[-_]qc",
       "scope": "*.md"
+    },
+    {
+      "id": "pptx-text-overlays-eliminated",
+      "why": "Decision 5C (AF-OVERLAY-DELIVERED). The native PPTX text/element-overlay path (SOP 9.3/9.4) is ELIMINATED: no pptx_text_overlays.json, no add_textbox loop, no strike support, no rendered-height/collision asserts, no gradient scrim. Garbled text is fixed by re-prompt/re-seed, then human escalation -- never an overlay. The retired ledger file must never re-appear as a live instruction.",
+      "pattern": "pptx_text_overlays",
+      "scope": "**/*.md",
+      "allowed_context_markers": [
+        "eliminated",
+        "removed",
+        "former",
+        "legacy",
+        "never",
+        "af-overlay-delivered",
+        "decision 5c",
+        "halt",
+        "auto-fail",
+        "baked"
+      ]
     }
   ]
 }

@@ -25,6 +25,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 from collections import OrderedDict
 from pathlib import Path
 
@@ -111,6 +112,38 @@ def _task_cache_put(key, val):
     _TASK_EMBED_CACHE.move_to_end(key)
     while len(_TASK_EMBED_CACHE) > _TASK_EMBED_CACHE_MAX:
         _TASK_EMBED_CACHE.popitem(last=False)
+
+
+# CONCURRENCY. persona-selector-v2.score_personas() scores the finalists on a
+# ThreadPoolExecutor, and every one of those threads asks for the embedding of
+# the SAME task text. Unlocked, they all miss the cache at once and each fires
+# its own Gemini embed call -- N paid API calls where the G13 contract says
+# exactly ONE per selection -- and the unsynchronised OrderedDict could also
+# have _task_cache_get's move_to_end() race an eviction's popitem() into a
+# KeyError. One lock closes both: the first thread embeds, the rest block and
+# then read its result out of the cache.
+# CEILING: ONE global lock, so two DIFFERENT task texts would serialise their
+# embeds. A selection only ever has one, so the ceiling is unreachable here;
+# key it per cache_key if a caller ever embeds several texts concurrently.
+_TASK_EMBED_LOCK = threading.Lock()
+
+
+def _task_embed(task_text: str, api_key: str):
+    """The task's embedding, computed at most ONCE per process. Thread-safe.
+
+    Sole entry point to _TASK_EMBED_CACHE for both semantic_task_fit() and
+    semantic_persona_ids(), so the shared-embedding contract holds whether the
+    callers are sequential or concurrent. Returns None when the embed fails
+    (callers fall through to keyword overlap, unchanged).
+    """
+    key = ("task", task_text)
+    with _TASK_EMBED_LOCK:
+        vec = _task_cache_get(key)
+        if vec is None:
+            vec = _embed_text(task_text, api_key)
+            if vec is not None:
+                _task_cache_put(key, vec)
+        return vec
 
 # G13: number of persona blueprint chunks to AVERAGE into the persona's
 # representative vector (was LIMIT 1 — whichever chunk sqlite returned first).
@@ -373,12 +406,7 @@ def semantic_task_fit(
         api_key = _get_google_api_key(paths)
         db_path = _gemini_index_path(paths)
         if api_key and db_path.exists():
-            cache_key = ("task", task_text)
-            task_vec = _task_cache_get(cache_key)
-            if task_vec is None:
-                task_vec = _embed_text(task_text, api_key)
-                if task_vec is not None:
-                    _task_cache_put(cache_key, task_vec)
+            task_vec = _task_embed(task_text, api_key)
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(persona_id, db_path)
                 if persona_vec is not None:
@@ -434,14 +462,10 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     if not api_key or not db_path.exists():
         return None
 
-    # Shared task embedding — SAME cache key semantic_task_fit() uses.
-    cache_key = ("task", task_text)
-    task_vec = _task_cache_get(cache_key)
+    # Shared task embedding — SAME cache entry semantic_task_fit() uses.
+    task_vec = _task_embed(task_text, api_key)
     if task_vec is None:
-        task_vec = _embed_text(task_text, api_key)
-        if task_vec is None:
-            return None
-        _task_cache_put(cache_key, task_vec)
+        return None
 
     try:
         import numpy as np

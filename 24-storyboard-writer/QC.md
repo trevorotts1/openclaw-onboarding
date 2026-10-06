@@ -26,7 +26,7 @@ ls scripts/create_storyboard.py \
 |------|----------|---------|
 | `scripts/create_storyboard.py` | Main generator | File exists, non-empty |
 | `scripts/model_database.py` | Model loader module | File exists, non-empty |
-| `scripts/model-database.json` | Canonical model data | File exists, valid JSON |
+| `scripts/model-database.json` | Dated non-authoritative model snapshot | File exists, valid JSON |
 | `scripts/__init__.py` | Package init | File exists |
 | `SKILL.md` | Skill definition | File exists |
 | `INSTALL.md` | Install instructions | File exists |
@@ -56,7 +56,7 @@ grep -n "storyboard-writer" ~/.openclaw/TOOLS.md
 
 ### Storyboard Writer (Skill 24)
 - Location: `~/.openclaw/skills/storyboard-writer/`
-- Purpose: turn a video idea into a structured storyboard that matches model limits (Veo, Sora, etc.)
+- Purpose: turn a video idea into a structured storyboard that matches model limits (Veo, Kling, Seedance, etc.; model choice is owned by Skill 67)
 - Use when: user asks for a storyboard, shot list, scene plan, or "turn this script into a video plan"
 ```
 
@@ -98,11 +98,11 @@ Answer each question from memory (no looking up). Correct answers are provided f
 **Q2: What is the clip duration for `veo-3-1`?**
 > Correct: 8 seconds (fixed)
 
-**Q3: What three duration options does Sora support?**
-> Correct: 10s, 15s, 25s
+**Q3: Is Sora ever a default or an allowed option for this skill?**
+> Correct: No. The Video department prohibits Sora. Any Sora rows in the snapshot are historical data only.
 
-**Q4: Which file is the canonical source of truth for model durations and pricing?**
-> Correct: `scripts/model-database.json`
+**Q4: Is `scripts/model-database.json` the source of truth for models and prices?**
+> Correct: No. It is a dated snapshot (2024-01-15). Model policy is owned by Skill 67; live prices come from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74).
 
 **Q5: What should the agent do before calling the script — and in what order should it ask the user?**
 > Correct: Ask the user ONE AT A TIME: (1) topic, (2) duration, (3) platform, (4) budget, (5) preferred model.
@@ -110,11 +110,11 @@ Answer each question from memory (no looking up). Correct answers are provided f
 **Q6: What is the gateway restart rule during installation?**
 > Correct: Never trigger it autonomously. Stop, notify the user, instruct them to type `/restart` in Telegram, and wait for confirmation.
 
-**Q7: What platform/model pairing is recommended for TikTok/Reels/Shorts?**
-> Correct: `veo-3-1` (8s clips, vertical, under 60s)
+**Q7: How does the agent choose a model when the user names none?**
+> Correct: It runs Skill 67's selector (`67-kie-video/scripts/select_video_model.py`) and uses its answer. This skill has no platform-to-model default.
 
-**Q8: What platform/model pairing is recommended for YouTube (horizontal, 60s–10min)?**
-> Correct: `sora-25s` (fewer cuts)
+**Q8: What happens if the user asks for Sora?**
+> Correct: Decline. Sora is prohibited by the Video department; offer the Skill 67 selector's choice instead.
 
 **Q9: Which two core files is this skill allowed to update?**
 > Correct: `TOOLS.md` and `MEMORY.md` only.
@@ -139,9 +139,6 @@ python3 -c "from scripts.model_database import list_models; print('\n'.join(list
 **PASS** if output includes at minimum:
 - `veo-3-1`
 - `veo-8s`
-- `sora-10s`
-- `sora-15s`
-- `sora-25s`
 - `kling-3`
 - `kling-5s`
 - `kling-10s`
@@ -157,17 +154,17 @@ python3 -c "from scripts.model_database import list_models; print('\n'.join(list
 ```bash
 python3 -c "
 from scripts.model_database import calculate_cost
-result = calculate_cost('sora-25s', 300)
+result = calculate_cost('kling-3', 300)
 print(result)
-assert result['num_clips'] == 12, f'Expected 12, got {result[\"num_clips\"]}'
-assert result['clip_duration'] == 25, f'Expected 25, got {result[\"clip_duration\"]}'
-assert result['total_cost'] == 48.0, f'Expected 48.0, got {result[\"total_cost\"]}'
+assert result['num_clips'] == 30, f'Expected 30, got {result[\"num_clips\"]}'
+assert result['clip_duration'] == 10, f'Expected 10, got {result[\"clip_duration\"]}'
+assert result['total_cost'] == 30.0, f'Expected 30.0, got {result[\"total_cost\"]}'
 print('cost check PASSED')
 "
 ```
 
 **PASS** if output ends with `cost check PASSED`.
-Expected: 300s ÷ 25s = 12 clips × $4.00 = $48.00
+Expected (fallback-constant arithmetic only, not a live price): 300s ÷ 10s = 30 clips × $1.00 = $30.00
 
 ### 4c. Generate a test storyboard
 
@@ -276,8 +273,8 @@ Verify the agent did NOT do any of the following during or after installation.
 
 ```bash
 # Run from inside the skill folder
-python3 -c "from scripts.model_database import list_models; ids = list_models(); assert 'veo-3-1' in ids and 'sora-25s' in ids; print('model list OK')" && \
-python3 -c "from scripts.model_database import calculate_cost; r = calculate_cost('sora-25s', 300); assert r['total_cost'] == 48.0; print('cost calc OK')" && \
+python3 -c "from scripts.model_database import list_models; ids = list_models(); assert 'veo-3-1' in ids and 'kling-3' in ids; print('model list OK')" && \
+python3 -c "from scripts.model_database import calculate_cost; r = calculate_cost('kling-3', 300); assert r['total_cost'] == 30.0; print('cost calc OK')" && \
 python3 scripts/create_storyboard.py --duration 40 --model veo-3-1 --topic "QC Test" --output qc_test && \
 python3 -c "import json; sb=json.load(open('qc_test.json')); assert len(sb['segments'])==5; print('JSON OK')" && \
 grep -q "Segment 5" qc_test.md && echo "Markdown OK" && \

@@ -70,6 +70,40 @@ import loop_escalate as ESC  # noqa: E402
 from loop_ledger import Ledger, now_utc, openclaw_root  # noqa: E402
 
 
+def _feed_findings(evidence, thresholds):
+    """Findings about the WATCHDOG'S OWN instruments (never about the box):
+      blind collector      P2 "watchdog blind: <collector>" - a feed that came back
+                           EMPTY while sessions are demonstrably active. An empty
+                           instrument is a broken check, not a healthy box.
+      subscription burn    D2 WARN (at most) for Ollama-Cloud-style usage-window burn:
+                           it never counts as paid and never goes silent as local.
+    Neither escalates to Rescue Rangers (`escalate` False): an instrument fault is
+    the operator's to read in the ledger/alert, and the escalation intake is a
+    shared, globally rate-limited channel."""
+    out = []
+    for name in evidence.get("blind") or []:
+        f = D._finding("LP-WD1", "P2", "collector:%s" % name,
+                       "watchdog blind: %s returned zero rows while sessions are active "
+                       "- an empty instrument is a broken check, not a healthy box" % name,
+                       "FEED", tier=3)
+        f["escalate"] = False
+        out.append(f)
+    t = thresholds["d2_token_burn_rate"]
+    for w in evidence.get("windows") or []:
+        if int(w.get("initiated_sessions", 0) or 0) != 0:
+            continue
+        sub = int(w.get("subscription_tokens", 0) or 0)
+        streak = int(w.get("idle_consecutive", 1) or 1)
+        if sub > t["warn_tokens_per_hour"] or (sub > 0 and streak >= t["idle_paid_windows_to_p1"]):
+            f = D._finding("LP-A2", "WARN", "%s usage-window" % w.get("label", "window"),
+                           "idle-window usage-window burn %d tok/hr (subscription tier, never "
+                           "priced; it eats the plan's usage window and ends in HTTP 402/429)"
+                           % sub, "D2", tier=2)
+            f["escalate"] = False
+            out.append(f)
+    return out
+
+
 def run_detectors(evidence, thresholds, signatures):
     """Run D1-D7 over injected/collected evidence. Returns a flat findings list."""
     findings = []
@@ -82,6 +116,7 @@ def run_detectors(evidence, thresholds, signatures):
     findings += D.d6_futile_retry_burst(evidence.get("bursts", []), thresholds,
                                         signatures)
     findings += D.d7_cross_run_resend(evidence.get("sends", []), thresholds)
+    findings += _feed_findings(evidence, thresholds)
     return findings
 
 
@@ -134,6 +169,9 @@ def _dedup_ok(led, finding, window_hours):
 # ALONE and ignores `kind`, so an un-namespaced escalation digest would silence
 # the operator alert for the same finding, and vice versa: two channels, one
 # mute button. loop_killcards' resend cooldown namespaces for the same reason.
+# The ledger-only park outcome SKS-002's kill cards report (BR.STATE_PARKED_FLAG). Read
+# by VALUE so this file works on a branch that has not merged that constant yet.
+PARKED_FLAG_STATE = "parked-flag"
 ESCALATION_DIGEST_KIND = "escalation"
 ESCALATION_DIGEST_PREFIX = "escalation|"
 ESCALATION_BACKOFF_PREFIX = "escalate:"
@@ -274,6 +312,10 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
                "by_class": {}}
 
     findings = run_detectors(evidence, thresholds, signatures)
+    # UNDETERMINED is its own answer: every source this run could not read is named
+    # here, so a quiet tick is never mistaken for a healthy one.
+    summary["undetermined"] = list(evidence.get("undetermined") or [])
+    summary["scheduler_managed"] = list(evidence.get("scheduler_managed") or [])
     for f in findings:
         try:
             _handle_finding(f, led, thresholds, armed, box, escalate_transport,
@@ -359,6 +401,7 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
         led.set_meta("last_tick_findings", summary["findings"])
         led.set_meta("last_tick_errors", summary["errors"])
         led.set_meta("last_tick_armed", "true" if armed else "false")
+        led.set_meta("last_tick_undetermined", len(summary["undetermined"]))
     except Exception as exc:  # noqa: BLE001 - reported, never silent
         summary["errors"] += 1
         sys.stderr.write(
@@ -384,8 +427,9 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
     kc["unit"] = f.get("unit")
     # Route by tier. Tier-1 auto-applies ONLY when armed; else it plans. Tier 2/3
     # never auto-apply. The ONE safe in-tick mechanical act is parking a crash-
-    # looping PROCESS unit via the process breaker (LF-6: STOP + park, visible-red,
-    # never respawns) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
+    # looping PROCESS unit via the process breaker (LF-6: a pm2 unit is REALLY stopped;
+    # the gateway is alert-only; no real stop => state parked-flag, finding stays open,
+    # never marked fixed) - it touches NO client config. Only a CONFIRMED loop (a P1 D1
     # finding, which is exactly a process-breaker trip: >=10/tick or >=40/day) parks
     # in-tick; a WARN plans only. Every config-touching kill card (LF-1/2/4/5/7)
     # stays plan-only in the unattended tick and is applied SOLELY by an explicit
@@ -420,7 +464,18 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
             lambda dry_run, _u=_abort_unit: KC.lf12_abort_cross_run_resend(_u, led, dry_run=dry_run))
     result = KC.apply(kc, led, armed=armed, executors=in_tick_executors,
                       verify_failed_last=False)
-    if result["status"] == "applied":
+    # Fix 4: a finding is `fixed` ONLY when something was really stopped/aborted. A
+    # ledger-only park (`parked-flag`: a flag in OUR ledger, nothing stopped) is
+    # recorded as exactly that and the finding STAYS OPEN - marking it fixed is how a
+    # crash-looping process kept crashing while its alert went quiet.
+    flag_only = result.get("state") == PARKED_FLAG_STATE
+    if flag_only:
+        summary["planned"] += 1
+        summary["parked_flag"] = summary.get("parked_flag", 0) + 1
+        led.record_fix(fid, kc.get("fix_class"), unit=f.get("unit"),
+                       what=result.get("detail"), verify_outcome=PARKED_FLAG_STATE,
+                       revert_cmd=kc.get("revert_cmd"), dry_run=False)
+    elif result["status"] == "applied":
         summary["applied"] += 1
         led.record_fix(fid, kc.get("fix_class"), unit=f.get("unit"),
                        what=result.get("detail"), verify_outcome="applied",
@@ -432,7 +487,7 @@ def _handle_finding(f, led, thresholds, armed, box, escalate_transport,
     # Escalate Tier-3 and any healer-breaker escalation via Rescue Rangers -
     # THROUGH the per-key gate (RR-ESC-GATE-20260826). Nothing else in this
     # function changed: the gate decides only WHETHER this key may post now.
-    if result.get("escalate"):
+    if result.get("escalate") and f.get("escalate") is not False:
         gate = _escalation_gate(led, f, thresholds)
         if not gate["ok"]:
             # SUPPRESSED. No payload is built, ESC.send is never reached, and
@@ -531,53 +586,865 @@ def _probes_off():
     return os.environ.get(_PROBES_OFF_ENV, "") == "1"
 
 
-def collect_units(led=None, recs=None):
-    """Best-effort pm2 jlist -> filtered units (name/status/pid/restarts ONLY). Returns
-    [] on any miss (no pm2, not JSON, no git). NEVER dumps env. A probe miss is DATA.
+# =========================================================================== #
+# FEED LAYER (Fix 1) - supported, content-free, READ-ONLY CLI feeds.
+#
+# OpenClaw v2026.7.2-beta.1 moved conversations and trajectory events into a
+# per-agent SQLite database. The session/trajectory FILES the old collectors
+# globbed are never written any more (measured on the operator box: 0 session or
+# trajectory files in 40 days, a 622 MB database written today), so every
+# file-fed detector returned an empty result - and an empty result reads as
+# "healthy". The replacement reads exactly two supported commands and NEVER opens
+# the SQLite file (the live database is write-ahead-log mode with compressed rows;
+# the docs say to use the supported accessors):
+#
+#   openclaw sessions --all-agents --active 1440 --json     D2 token deltas
+#   openclaw audit --kind <agent_run|tool_action> --after <iso8601> --json
+#                                                            D3 / D4 wedge / D5 / D6
+#
+# Audit records are `redaction: metadata_only`: ids, status, sequence, timestamps,
+# tool NAMES. Nothing in either feed carries message content, tool arguments or tool
+# results, and every record is reduced to a small whitelist of fields the moment it
+# is read, so an extra field a future OpenClaw adds can never reach a finding, the
+# ledger or stdout.
+#
+# EVERY feed fails SOFT and says so: a miss yields no rows PLUS a named UNDETERMINED
+# note (never a silent zero). Silence from a broken instrument is the failure this
+# whole rebuild exists to remove; see the blind-collector control below.
+# =========================================================================== #
+AUDIT_OFFSET_PREFIX = "loop-audit:"  # ledger offsets key: loop-audit:<kind>
 
-    `delta` is restarts SINCE THE LAST TICK, baselined per unit in ledger meta.
-    FIRST SIGHT OF A UNIT IS ALWAYS delta=0. This is load-bearing, not a nicety: pm2
-    reports a unit's LIFETIME restart count, so treating that as a per-tick delta
-    made the very first tick on any real box read a long-lived unit's whole history
-    as one storm - an instant false P1, and on an armed box an instant false park.
-    A baseline that only ever measures the gap between two observations cannot do
-    that. A counter that goes BACKWARDS (pm2 resurrected/reset) re-baselines to 0
-    rather than reporting a negative or a bogus spike. `recs` is injectable so the
-    baseline logic is testable without pm2."""
-    if recs is None:
-        if _probes_off():
-            return []
+_FEEDS_DEFAULTS = {"sessions_active_minutes": 1440, "blind_control_active_minutes": 60,
+                   "audit_lookback_minutes": 60, "audit_first_sight_minutes": 20,
+                   "audit_page_limit": 500,
+                   "audit_max_pages": 4, "cli_timeout_seconds": 20}
+
+
+def _feed_cfg(thresholds=None):
+    """config/thresholds.json `feeds` block over the defaults above. A missing or
+    malformed block degrades to the defaults, never to a crash."""
+    cfg = dict(_FEEDS_DEFAULTS)
+    try:
+        raw = (thresholds or C.load_skill_config("thresholds.json")).get("feeds")
+    except Exception:  # noqa: BLE001 - config trouble must never kill the tick
+        raw = None
+    if isinstance(raw, dict):
+        for k in cfg:
+            v = raw.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                cfg[k] = int(v)
+    return cfg
+
+
+def _openclaw_bin():
+    from shutil import which
+    return os.environ.get("OPENCLAW_BIN") or which("openclaw")
+
+
+def _loads_lenient(out):
+    """json.loads, tolerating banner/log lines ahead of the JSON document. None on a
+    miss. A CLI may print a one-line notice before the payload; the document itself
+    is still the first '{' or '['."""
+    try:
+        return json.loads(out)
+    except ValueError:
+        pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(out):
+        if ch in "{[":
+            try:
+                obj, _ = dec.raw_decode(out[i:])
+                return obj
+            except ValueError:
+                continue
+    return None
+
+
+def _openclaw_json(args, timeout=20):
+    """Run `openclaw <args>` and parse its JSON. Returns (data, status); status is
+    'ok' or a short reason (probes-off, no-binary, timeout, exec-error, exit:<rc>,
+    cli-error:<type>, bad-json). Only the status reason is ever surfaced - never the
+    CLI's own text. Read-only commands only; the caller picks the argv."""
+    if _probes_off():
+        return None, "probes-off"
+    binpath = _openclaw_bin()
+    if not binpath:
+        return None, "no-binary"
+    try:
+        proc = subprocess.run([binpath] + list(args), capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except (OSError, subprocess.SubprocessError):
+        return None, "exec-error"
+    out = (proc.stdout or "").strip()
+    data = _loads_lenient(out) if out else None
+    if isinstance(data, dict) and data.get("ok") is False:
+        err = data.get("error") if isinstance(data.get("error"), dict) else {}
+        return None, "cli-error:%s" % str(err.get("type") or "unknown")[:40]
+    if proc.returncode != 0:
+        return None, "exit:%d" % proc.returncode
+    if data is None:
+        return None, "bad-json"
+    return data, "ok"
+
+
+def _ts_any(v):
+    """Epoch seconds, epoch milliseconds, numeric string or ISO-8601 -> aware UTC
+    datetime, else None."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, str) and v.strip().isdigit():
+        v = int(v.strip())
+    if isinstance(v, (int, float)):
+        if v <= 0:
+            return None
+        sec = v / 1000.0 if v > 1e11 else float(v)
         try:
-            out = subprocess.run(["pm2", "jlist"], capture_output=True, text=True,
-                                 timeout=5)
-            recs = json.loads(out.stdout or "[]")
-        except Exception:  # noqa: BLE001 - probe failure is data, never a crash
-            return []
-    seen = {}
-    if led is not None:
-        try:
-            seen = json.loads(led.get_meta("d1_restart_baseline", "{}") or "{}")
-        except (ValueError, TypeError):
-            seen = {}
-        if not isinstance(seen, dict):
-            seen = {}
-    units = []
-    baseline = {}
-    for rec in recs if isinstance(recs, list) else []:
-        f = C.filter_pm2_record(rec)
-        name = f.get("name")
-        if not name:
+            return datetime.fromtimestamp(sec, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    return _parse_ts(v)
+
+
+def _meta_json(led, key):
+    """A JSON dict out of ledger meta; {} on a missing/corrupt/non-dict value."""
+    if led is None:
+        return {}
+    try:
+        got = json.loads(led.get_meta(key, "{}") or "{}")
+    except (ValueError, TypeError):
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+# ---- tier resolution (config/signatures.json paid_tier_markers.tiers) -------- #
+def _resolve_tier(model_id, sig):
+    """'metered' | 'subscription_capped' | 'local' | 'unclassified'.
+
+    Binds to the three-tier STRUCTURE in signatures.json (paid_tier_markers.tiers),
+    first match wins, DATA ONLY - no network call, no runtime lookup. It matches the
+    PROVIDER SEGMENT, never a substring ("ollama/<model>:cloud" must not read as
+    metered just because the model name contains a metered vendor's name).
+
+    'unclassified' is UNDETERMINED: the caller fires nothing on it. That includes
+    a signatures.json that carries no `tiers` block at all (the pre-tier shape) -
+    this reader will not guess which of the old flat markers meant what."""
+    try:
+        pt = (sig or {}).get("paid_tier_markers") or {}
+        tiers = pt.get("tiers")
+        if not isinstance(tiers, dict) or not isinstance(model_id, str) \
+                or not model_id.strip():
+            return "unclassified"
+        norm = pt.get("normalize") or {}
+        s = model_id.strip()
+        if norm.get("lowercase", True):
+            s = s.lower()
+        if norm.get("strip_leading_slashes", True):
+            s = s.lstrip("/")
+        if norm.get("strip_one_trailing_parenthesized_qualifier", True):
+            s = re.sub(r"\([^()]*\)$", "", s)
+        routed = False
+        rp = norm.get("router_prefix") or ""
+        if rp and s.startswith(rp.lower()):
+            s, routed = s[len(rp):], True
+        met = tiers.get("metered") or {}
+        sub = tiers.get("subscription_capped") or {}
+        loc = tiers.get("local") or {}
+        if met.get("include_anthropic_family") and any(
+                s.startswith(str(p).lower())
+                for p in (sig.get("anthropic_family_deny_prefixes") or [])):
+            return "metered"
+        provider = s.split("/", 1)[0] if "/" in s else ""
+        name = s.rsplit("/", 1)[-1]
+        if provider in (loc.get("providers") or []):
+            return "local"
+        if provider in (met.get("providers") or []) or any(
+                provider.startswith(str(p)) for p in (met.get("provider_prefixes") or [])):
+            return "metered"
+        if (provider in (sub.get("providers") or [])
+                or (routed and provider in (sub.get("providers_when_router_prefixed") or []))
+                or any(name.endswith(str(x)) for x in (sub.get("name_suffixes") or []))):
+            return "subscription_capped"
+        if not routed and provider in (loc.get("providers_when_not_router_prefixed") or []):
+            return "local"
+    except Exception:  # noqa: BLE001 - a malformed tier block is UNDETERMINED, not a crash
+        return "unclassified"
+    return "unclassified"
+
+
+def _provider_model_id(row):
+    """`modelProvider` + '/' + `model` as ONE id - the join the tier resolver was
+    written against (signatures.json paid_tier_markers._source, D2 EXPECTATION)."""
+    prov = str(row.get("modelProvider") or "").strip()
+    model = str(row.get("model") or "").strip()
+    return "%s/%s" % (prov, model) if (prov and model) else (model or prov)
+
+
+# ---- D2: sessions feed ------------------------------------------------------- #
+def fetch_sessions(minutes, runner=None, cfg=None):
+    """`openclaw sessions --all-agents --active <minutes> --json` ->
+    {rows|None, status, partial}. `partial` is True when the CLI says hasMore: the
+    rows we hold are NOT the whole picture and the caller must say so."""
+    cfg = cfg or _feed_cfg()
+    runner = runner or _openclaw_json
+    data, status = runner(["sessions", "--all-agents", "--active", str(int(minutes)),
+                           "--json"], timeout=cfg["cli_timeout_seconds"])
+    if status != "ok":
+        return {"rows": None, "status": status, "partial": False}
+    rows = data.get("sessions") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return {"rows": None, "status": "bad-shape", "partial": False}
+    partial = bool(isinstance(data, dict) and data.get("hasMore") is True)
+    return {"rows": rows, "status": "ok", "partial": partial}
+
+
+def _session_row(r):
+    """A raw `sessions --json` row -> the content-free whitelist, or None."""
+    if not isinstance(r, dict) or not isinstance(r.get("key"), str) or not r["key"]:
+        return None
+    total = _coerce_nonneg_int(r.get("totalTokens"))
+    if total is None:
+        parts = [p for p in (_coerce_nonneg_int(r.get("inputTokens")),
+                             _coerce_nonneg_int(r.get("outputTokens"))) if p is not None]
+        total = sum(parts) if parts else None
+    return {"key": r["key"], "total": total, "model_id": _provider_model_id(r),
+            "updated": _ts_any(r.get("updatedAt")),
+            "interaction": _ts_any(r.get("lastInteractionAt"))}
+
+
+def active_session_count(rows, minutes, now=None):
+    """How many session rows were updated inside the last `minutes`."""
+    now = now or datetime.now(timezone.utc)
+    cut = now - timedelta(minutes=minutes)
+    n = 0
+    for r in rows or []:
+        s = _session_row(r)
+        if s and s["updated"] is not None and s["updated"] >= cut:
+            n += 1
+    return n
+
+
+def collect_session_windows(rows, led=None, now=None, signatures=None, notes=None,
+                            stats=None):
+    """D2 evidence: hourly token windows for the trailing 24h, oldest first, from the
+    `sessions` feed.
+
+    DELTA, NEVER LIFETIME. `totalTokens` is a session's lifetime count, so each run
+    charges only the difference from the value stored in ledger meta
+    (d2_session_tokens) - the same rule D1 uses for restart counts. FIRST SIGHT OF A
+    SESSION CHARGES 0 and a counter that goes BACKWARDS (a reset or compaction)
+    re-baselines to 0: reading a long-lived session's whole history as one tick of
+    burn is an instant false P1.
+
+    IDLE IS DECIDED PER SESSION. A session is idle when its `lastInteractionAt` (the
+    last REAL user/channel interaction; cron, heartbeat and exec events do not move
+    it) is older than the current hour. A session with NO `lastInteractionAt` has
+    never had a recorded human interaction, so it is idle too - treating it as
+    undetermined would blind exactly the cron/heartbeat sessions the furnace burns
+    through. Only an idle session's burn is charged; a working session's burn is not.
+
+    THE TIER IS READ FROM DATA. The model id resolves through signatures.json
+    paid_tier_markers.tiers: metered -> paid_tokens (P1 path), subscription_capped
+    (Ollama Cloud) -> subscription_tokens (WARN at most, usage-window burn, never
+    priced), local -> local_tokens (never flagged). An unknown tier - including a
+    signatures.json with no tier block - is UNDETERMINED and fires nothing.
+
+    With led=None (the read-only audit path) nothing is persisted, every delta is 0,
+    and only the human-interaction counts are real."""
+    now = now or datetime.now(timezone.utc)
+    sig = signatures if signatures is not None else C.load_signatures()
+    hour = now.replace(minute=0, second=0, microsecond=0)
+    first_hour = hour - timedelta(hours=23)
+    zero = {"paid": 0, "sub": 0, "local": 0, "undet": 0, "initiated": 0, "sessions": 0}
+    hist = _meta_json(led, "d2_hourly")
+    base = _meta_json(led, "d2_session_tokens")
+    newbase = {}
+    cur = dict(zero)
+    cur.update({k: int(v) for k, v in (hist.get(hour.isoformat()) or {}).items()
+                if k in zero and isinstance(v, (int, float))})
+    cur_in = 0  # humans seen THIS run; recomputed each run, so it is not summed twice
+    unrated = 0
+    burned = 0
+    for raw in rows or []:
+        s = _session_row(raw)
+        if s is None or s["total"] is None:
             continue
-        total = int(f.get("restarts", 0) or 0)
-        prev = seen.get(name)
+        prev = base.get(s["key"])
         try:
             prev = int(prev) if prev is not None else None
         except (TypeError, ValueError):
             prev = None
-        # first sight -> 0; a backwards counter -> 0 (re-baseline, never a spike)
-        f["delta"] = max(0, total - prev) if prev is not None and total >= prev else 0
-        baseline[name] = total
-        units.append(f)
+        delta = max(0, s["total"] - prev) if prev is not None and s["total"] >= prev else 0
+        newbase[s["key"]] = s["total"]
+        human = s["interaction"] is not None and s["interaction"] >= hour
+        if human:
+            cur_in += 1
+        if delta <= 0:
+            continue
+        cur["sessions"] += 1
+        burned += 1
+        if human:
+            continue  # working burn, not idle burn
+        tier = _resolve_tier(s["model_id"], sig)
+        if tier == "metered":
+            cur["paid"] += delta
+        elif tier == "subscription_capped":
+            cur["sub"] += delta
+        elif tier == "local":
+            cur["local"] += delta
+        else:
+            cur["undet"] += delta
+            unrated += 1
+    cur["initiated"] = max(cur["initiated"], cur_in)
+    if stats is not None:
+        stats["burned_sessions"] = burned
+    if notes is not None and unrated:
+        notes.append("D2: %d session(s) burned tokens on a model whose tier is not "
+                     "classifiable - UNDETERMINED, nothing fired on them" % unrated)
+    hist[hour.isoformat()] = cur
+    keep = {}
+    for k, v in hist.items():
+        dt = _parse_ts(k)
+        if dt is not None and dt >= first_hour and isinstance(v, dict):
+            keep[k] = v
+    if led is not None:
+        led.set_meta("d2_session_tokens", json.dumps(newbase, sort_keys=True))
+        led.set_meta("d2_hourly", json.dumps(keep, sort_keys=True))
+    out = []
+    streak = 0
+    h = first_hour
+    while h <= hour:
+        b = keep.get(h.isoformat(), zero)
+        idle = int(b.get("initiated", 0)) == 0
+        streak = streak + 1 if idle else 0
+        nxt = h + timedelta(hours=1)
+        out.append({"label": "%s-%sZ" % (h.strftime("%Y-%m-%d %H:00"), nxt.strftime("%H:00")),
+                    "paid_tokens": int(b.get("paid", 0)),
+                    "subscription_tokens": int(b.get("sub", 0)),
+                    "local_tokens": int(b.get("local", 0)),
+                    "undetermined_tokens": int(b.get("undet", 0)),
+                    "initiated_sessions": int(b.get("initiated", 0)),
+                    "idle_consecutive": streak if idle else 0,
+                    "completions": int(b.get("sessions", 0))})
+        h = nxt
+    return out
+
+
+# ---- D3 / D4 wedge / D5 / D6: audit feed ------------------------------------ #
+def _seq(e):
+    v = e.get("sequence") if isinstance(e, dict) else None
+    return int(v) if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def fetch_audit(kind, led=None, now=None, runner=None, cfg=None):
+    """`openclaw audit --kind <kind> --after <iso8601> --json`, paged by nextCursor.
+
+    Returns {events, raw_count, status, partial, cursor}:
+      events     NEW records only (sequence above the stored cursor), oldest first
+      raw_count  every record the lookback window returned, new or already seen -
+                 the blind-collector control reads THIS, because "no NEW events"
+                 is normal and "no events at all while sessions are active" is not
+      partial    the page budget ran out before the stored cursor was reached, so
+                 older new records exist that this run could not see (UNDETERMINED)
+      cursor     the highest sequence now consumed
+
+    THE CURSOR is persisted in the ledger offsets table under `loop-audit:<kind>`
+    as the highest `sequence` consumed (records come back newest first, so the
+    CLI's own page cursor is only meaningful WITHIN one run). A sequence that goes
+    BACKWARDS (the state database was rebuilt) rewinds to 0 instead of silently
+    discarding every record as already seen."""
+    cfg = cfg or _feed_cfg()
+    runner = runner or _openclaw_json
+    now = now or datetime.now(timezone.utc)
+    key = AUDIT_OFFSET_PREFIX + kind
+    stored = led.get_offset(key) if led is not None else 0
+    after = (now - timedelta(minutes=cfg["audit_lookback_minutes"])) \
+        .replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    allrows = []
+    raw = 0
+    cursor = None
+    status = "ok"
+    partial = False
+    for page in range(cfg["audit_max_pages"]):
+        args = ["audit", "--kind", kind, "--after", after, "--limit",
+                str(cfg["audit_page_limit"]), "--json"]
+        if cursor is not None:
+            args += ["--cursor", str(cursor)]
+        data, st = runner(args, timeout=cfg["cli_timeout_seconds"])
+        if st != "ok":
+            status = st
+            break
+        evs = data.get("events") if isinstance(data, dict) else None
+        if not isinstance(evs, list):
+            status = "bad-shape"
+            break
+        raw += len(evs)
+        allrows += [e for e in evs if isinstance(e, dict) and _seq(e) is not None]
+        reached_old = any((_seq(e) or 0) <= stored for e in evs if isinstance(e, dict))
+        nxt = data.get("nextCursor") if isinstance(data, dict) else None
+        if not nxt or reached_old:
+            break
+        cursor = nxt
+        if page == cfg["audit_max_pages"] - 1:
+            partial = True
+    newest = max((_seq(e) for e in allrows), default=0)
+    if allrows and newest < stored:
+        stored = 0  # sequence went backwards: rebuilt database - rewind, never discard
+    # FIRST SIGHT (no stored cursor, a real ledger): consume only the last few minutes.
+    # An hour of history handed to D3 in one slice reads a healthy 5-minute heartbeat as
+    # twelve identical runs - an instant false P1 on the first tick of every box.
+    first_cut = None
+    if led is not None and stored == 0:
+        first_cut = now - timedelta(minutes=cfg["audit_first_sight_minutes"])
+    fresh = {}
+    for e in allrows:
+        if _seq(e) <= stored:
+            continue
+        if first_cut is not None:
+            at = _ts_any(e.get("occurredAt"))
+            if at is None or at < first_cut:
+                continue
+        fresh[_seq(e)] = e
+    events = [fresh[k] for k in sorted(fresh)]
+    out_cursor = max(newest, stored)
+    if status == "ok" and led is not None and allrows:
+        led.set_offset(key, out_cursor)
+    return {"events": events, "raw_count": raw, "status": status, "partial": partial,
+            "cursor": out_cursor}
+
+
+_AUDIT_STATUS_CLASS = {"succeeded": "OK", "failed": "Failed", "cancelled": "Cancelled",
+                       "timed_out": "TimedOut", "blocked": "Blocked", "unknown": "Unknown"}
+
+
+def _unit_of(e):
+    return "session:%s" % (e.get("sessionKey") or e.get("sessionId") or e.get("agentId")
+                           or "unknown")
+
+
+def audit_evidence(run_events, tool_events, thresholds=None):
+    """Reduce audit records to detector evidence. COUNTS, STATUSES AND TOOL NAMES
+    ONLY - the records carry nothing else, and only whitelisted fields are read.
+
+      runs      D3  one entry per FINISHED run: (status class + the run's tool-name
+                    sequence + session), ordered per session so a streak of the same
+                    run status in one session is contiguous
+      sessions  D5  `tool_action status=blocked` bursts per runId
+      bursts    D6  FAILING-BURST face only: `failed` tool actions per (session, tool)
+                    inside a 60-second window. The auth-marker face needs the tool's
+                    RESULT TEXT, which audit does not carry - the loop-brake plugin
+                    covers it, so failclosed is always 0 here.
+      stats     D4  agent.run.started vs agent.run.finished counts in the slice
+    """
+    th = thresholds or C.load_skill_config("thresholds.json")
+    d5 = th["d5_transcript_poison"]
+    window = float(th["d6_futile_retry_burst"]["window_seconds"])
+    gap = int(d5["gap_records"])
+    trail_n = int(d5["window_records"])
+
+    starts = sum(1 for e in run_events if e.get("action") == "agent.run.started")
+    finished = [e for e in run_events if e.get("action") == "agent.run.finished"]
+    fin_tools = [e for e in tool_events if e.get("action") == "tool.action.finished"]
+    fin_tools.sort(key=lambda e: _seq(e) or 0)
+
+    by_run = {}
+    for e in fin_tools:
+        by_run.setdefault(str(e.get("runId") or ""), []).append(e)
+
+    runs = []
+    for e in finished:
+        st = str(e.get("status") or "unknown")
+        seq_names = [str(t.get("toolName")) for t in by_run.get(str(e.get("runId") or ""), [])
+                     if t.get("toolName")][:50]
+        runs.append({"unit": _unit_of(e), "error_class": _AUDIT_STATUS_CLASS.get(st, "Unknown"),
+                     "tool_sequence": seq_names,
+                     "target": str(e.get("sessionKey") or e.get("sessionId") or "unknown"),
+                     "_seq": _seq(e) or 0})
+    runs.sort(key=lambda r: (r["unit"], r["_seq"]))
+    for r in runs:
+        r.pop("_seq", None)
+
+    sessions = []
+    for rid, evs in by_run.items():
+        blocked = bursts_n = 0
+        cur = since = 0
+        bursts = []
+        tools = set()
+        trail = []
+        for t in evs:
+            is_b = str(t.get("status")) == "blocked"
+            if is_b:
+                blocked += 1
+                tools.add(str(t.get("toolName") or "<tool>"))
+                if cur and since > gap:
+                    bursts.append(cur)
+                    cur = 0
+                cur += 1
+                since = 0
+            else:
+                since += 1
+            trail.append(1 if is_b else 0)
+            if len(trail) > trail_n:
+                trail.pop(0)
+        if cur:
+            bursts.append(cur)
+        if blocked <= 0:
+            continue
+        ratio = sum(trail) / float(max(len(trail), trail_n)) if trail else 0.0
+        sessions.append({"unit": "run:%s" % rid, "path": None, "bytes": 0,
+                         "tail_records": len(evs), "blocked_records": blocked,
+                         "max_burst": max(bursts) if bursts else 0,
+                         "trailing_ratio": round(ratio, 4), "blocked_tools": sorted(tools),
+                         "checkpoint_rows": 0, "poisoned_checkpoints": 0,
+                         "idle_minutes": None,
+                         "session_key": str(evs[0].get("sessionKey") or "")})
+
+    per = {}
+    for e in fin_tools:
+        name = e.get("toolName")
+        at = e.get("occurredAt")
+        if not isinstance(name, str) or not name or isinstance(at, bool) \
+                or not isinstance(at, (int, float)):
+            continue
+        per.setdefault((_unit_of(e), name), []).append(
+            (at / 1000.0, str(e.get("status")) == "failed"))
+    bursts_out = []
+    for (unit, name), seq in sorted(per.items()):
+        seq.sort()
+        best = None
+        i = 0
+        for j in range(len(seq)):
+            while seq[j][0] - seq[i][0] > window:
+                i += 1
+            calls = j - i + 1
+            if best is None or calls > best[0]:
+                best = (calls, sum(1 for k in range(i, j + 1) if seq[k][1]),
+                        seq[j][0] - seq[i][0])
+        if not best or best[1] <= 0:
+            continue  # nothing futile in the heaviest window: no measurement at all
+        bursts_out.append({"unit": unit, "path": None, "tool": name, "calls": best[0],
+                           "errors": best[1], "failclosed": 0,
+                           "span_seconds": round(best[2], 1)})
+    return {"runs": runs, "sessions": sessions, "bursts": bursts_out,
+            "stats": {"starts": starts, "completions": len(finished)}}
+
+
+# ---- blind-collector control ------------------------------------------------- #
+def blind_collectors(sessions_info, run_info, active_now):
+    """Names of collectors that returned ZERO rows while the box is demonstrably
+    active. THE KNOWN-GOOD CONTROL RULE: an empty instrument is a broken check, not
+    a healthy box, so each feed is cross-checked against the OTHER. A feed that
+    FAILED is UNDETERMINED - never blind and never healthy.
+
+      audit:agent_run  the lookback window holds NO agent_run record although the
+                       sessions feed shows sessions updated inside the last hour
+                       (`active_now`; every run emits one record)
+      sessions         the --active 1440 list is EMPTY although the audit feed saw
+                       agent runs inside the lookback window"""
+    blind = []
+    sess_ok = bool(sessions_info) and sessions_info.get("status") == "ok"
+    run_ok = bool(run_info) and run_info.get("status") == "ok"
+    if run_ok and sess_ok and int(run_info.get("raw_count", 0)) == 0 and (active_now or 0) > 0:
+        blind.append("audit:agent_run")
+    if run_ok and sess_ok and not sessions_info.get("rows") \
+            and int(run_info.get("raw_count", 0)) > 0:
+        blind.append("sessions")
+    return blind
+
+
+def feed_health_check(runner=None, now=None, cfg=None):
+    """The read-only live feed-health control (verify.sh --live, `feed-health` CLI).
+
+    Runs `openclaw sessions --all-agents --active 60 --json` as the CONTROL and the
+    agent_run audit feed as the instrument. Returns {verdict, blind, undetermined,
+    active_60, agent_run_events}. verdict: 'healthy' | 'idle' | 'blind' |
+    'undetermined'. Nothing is persisted; no ledger is opened."""
+    cfg = cfg or _feed_cfg()
+    ctl = fetch_sessions(cfg["blind_control_active_minutes"], runner, cfg)
+    run = fetch_audit("agent_run", led=None, now=now, runner=runner, cfg=cfg)
+    und = []
+    if ctl["status"] != "ok":
+        und.append("sessions control: %s" % ctl["status"])
+    if run["status"] != "ok":
+        und.append("audit agent_run: %s" % run["status"])
+    active = len(ctl["rows"]) if ctl["rows"] is not None else None
+    info = {"verdict": None, "blind": [], "undetermined": und,
+            "active_60": active, "agent_run_events": run["raw_count"]}
+    if ctl["status"] == "ok" and run["status"] == "ok":
+        if active and run["raw_count"] == 0:
+            info["blind"] = ["audit:agent_run"]
+            info["verdict"] = "blind"
+        else:
+            info["verdict"] = "healthy" if active else "idle"
+    else:
+        info["verdict"] = "undetermined"
+    return info
+
+
+# ---- D1: restart sources (environment-free) ---------------------------------- #
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _run_text(argv, timeout=10, env=None):
+    """(stdout|None, status). The argv is chosen by the caller and is always a fixed,
+    format-limited or table form: never a command that dumps an environment."""
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                              check=False, env=env)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except (OSError, subprocess.SubprocessError):
+        return None, "exec-error"
+    if proc.returncode != 0:
+        return None, "exit:%d" % proc.returncode
+    return proc.stdout or "", "ok"
+
+
+def _pm2_list_text():
+    """`pm2 list` TABLE form -> text, or None. NEVER `pm2 jlist` and never
+    `pm2 describe`: their output carries every process's environment."""
+    if _probes_off():
+        return None, "probes-off"
+    from shutil import which
+    binpath = os.environ.get("LOOP_PM2_BIN") or which("pm2")
+    if not binpath:
+        return None, "no-binary"
+    env = dict(os.environ, COLUMNS="400", NO_COLOR="1", FORCE_COLOR="0")
+    return _run_text([binpath, "list"], timeout=10, env=env)
+
+
+_PM2_RESTART_HEADS = ("↺", "restarts", "restart")
+
+
+def _parse_pm2_table(text):
+    """Parse the `pm2 list` app table BY HEADER NAME -> [{name, pid, status,
+    restart_time}], or None when no table with the required columns is found.
+
+    None means UNDETERMINED. An unparseable table is NEVER read as "zero restarts":
+    the caller leaves its baseline alone and says so. A name that pm2 truncated
+    (trailing ellipsis) is skipped rather than guessed. The module table (header
+    `module`, not `name`) is ignored."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    text = _ANSI_RE.sub("", text)
+    idx = None
+    recs = []
+    found = False
+    for line in text.splitlines():
+        if "│" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("│").split("│")]
+        low = [c.lower() for c in cells]
+        if low and low[0] == "id":
+            idx = None
+            rcol = next((i for i, c in enumerate(low) if c in _PM2_RESTART_HEADS), None)
+            if "name" in low and "pid" in low and "status" in low and rcol is not None:
+                idx = {"n": low.index("name"), "p": low.index("pid"),
+                       "s": low.index("status"), "r": rcol, "w": len(cells)}
+                found = True
+            continue
+        if idx is None or len(cells) != idx["w"]:
+            continue
+        name = cells[idx["n"]]
+        if not name or name.endswith("…"):
+            continue
+        rs = cells[idx["r"]]
+        pid = cells[idx["p"]]
+        recs.append({"name": name, "status": cells[idx["s"]],
+                     "pid": int(pid) if pid.isdigit() and int(pid) > 0 else None,
+                     "restart_time": int(rs) if rs.isdigit() else 0})
+    return recs if found else None
+
+
+def _launchctl_list_text():
+    """`launchctl list` TABLE form (PID, Status, Label) -> text. NEVER
+    `launchctl print`: it dumps a service's environment."""
+    if _probes_off():
+        return None, "probes-off"
+    from shutil import which
+    binpath = os.environ.get("LOOP_LAUNCHCTL_BIN") or which("launchctl")
+    if not binpath:
+        return None, "no-binary"
+    return _run_text([binpath, "list"], timeout=10)
+
+
+def _parse_launchctl_table(text, prefix="ai.openclaw."):
+    """{label: pid|None} for every label starting with `prefix`; None (UNDETERMINED)
+    when the header is not exactly PID / Status / Label. A '-' PID is a loaded job
+    that is not running right now."""
+    if not isinstance(text, str):
+        return None
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines or [t.lower() for t in lines[0].split()] != ["pid", "status", "label"]:
+        return None
+    out = {}
+    for ln in lines[1:]:
+        parts = ln.split(None, 2)
+        if len(parts) != 3 or not parts[2].startswith(prefix):
+            continue
+        pid = parts[0]
+        out[parts[2].strip()] = int(pid) if pid.isdigit() else None
+    return out
+
+
+def _docker_restart_recs():
+    """VPS host: restart counts for the OpenClaw containers, FORMAT-LIMITED only:
+    `docker ps --format '{{.Names}}'` then `docker inspect -f '{{.Name}}
+    {{.RestartCount}}' <ctr>...`. Never a full `docker inspect`, which carries each
+    container's environment. Returns (recs|None, status)."""
+    if _probes_off():
+        return None, "probes-off"
+    from shutil import which
+    binpath = os.environ.get("LOOP_DOCKER_BIN") or which("docker")
+    if not binpath:
+        return None, "no-binary"
+    out, st = _run_text([binpath, "ps", "--format", "{{.Names}}"], timeout=10)
+    if out is None:
+        return None, st
+    flt = (os.environ.get("LOOP_DOCKER_NAME_FILTER") or "openclaw").lower()
+    names = [n.strip() for n in out.splitlines() if flt in n.lower()]
+    if not names:
+        return [], "ok"
+    out, st = _run_text([binpath, "inspect", "-f", "{{.Name}} {{.RestartCount}}"] + names,
+                        timeout=10)
+    if out is None:
+        return None, st
+    recs = []
+    for ln in out.splitlines():
+        parts = ln.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            recs.append({"name": "docker:%s" % parts[0].lstrip("/"),
+                         "restart_time": int(parts[1]), "status": "running"})
+    return recs, "ok"
+
+
+def _platform():
+    return os.environ.get("LOOP_PLATFORM") or sys.platform
+
+
+def _in_container():
+    return os.path.exists("/.dockerenv")
+
+
+def collect_units(led=None, recs=None, pm2_text=C.MISSING, launchctl_text=C.MISSING,
+                  docker_recs=C.MISSING, notes=None, now=None):
+    """D1 evidence: process restarts per unit per tick from ENVIRONMENT-FREE sources.
+
+      pm2 apps     `pm2 list` TABLE form (never jlist/describe), parsed by header
+      Mac gateway  `launchctl list` TABLE form, every `ai.openclaw.*` label: a pid
+                   change between two observations is one restart
+      VPS host     `docker inspect -f '{{.Name}} {{.RestartCount}}'` (format-limited)
+
+    Every source is reduced to name/status/pid/restarts by the time it leaves its
+    parser, and pm2 records still go through loop_common.filter_pm2_record, the
+    single choke point.
+
+    `delta` is restarts SINCE THE LAST TICK, baselined per unit in ledger meta.
+    FIRST SIGHT OF A UNIT IS ALWAYS delta=0: pm2 and docker report LIFETIME counts,
+    so treating one as a per-tick delta made the first tick on a real box read a
+    long-lived unit's whole history as one storm - an instant false P1 and, on an
+    armed box, an instant false park. A counter that goes BACKWARDS re-baselines to
+    0. An UNPARSEABLE table is UNDETERMINED: it is noted, the baseline is left
+    exactly as it was, and it is never read as zero restarts.
+
+    The gateway findings are ALERT-ONLY: nothing here, and nothing the tick does
+    with these units, stops or kills the gateway."""
+    notes = notes if notes is not None else []
+    now = now or datetime.now(timezone.utc)
+    if recs is not None:  # injected pm2 records = a hermetic call: no live side probes
+        launchctl_text = None if launchctl_text is C.MISSING else launchctl_text
+        docker_recs = None if docker_recs is C.MISSING else docker_recs
+    seen = _meta_json(led, "d1_restart_baseline")
+    baseline = dict(seen)
+    units = []
+
+    def _ingest(recs_in, own):
+        """Fold one source's records in; `own(name)` says which baseline keys the
+        source owns so an UNREADABLE source cannot prune another source's entries."""
+        for k in [k for k in baseline if own(k)]:
+            baseline.pop(k)
+        for rec in recs_in:
+            f = C.filter_pm2_record(rec)
+            name = f.get("name")
+            if not name:
+                continue
+            total = int(f.get("restarts", 0) or 0)
+            prev = seen.get(name)
+            try:
+                prev = int(prev) if prev is not None else None
+            except (TypeError, ValueError):
+                prev = None
+            f["delta"] = max(0, total - prev) if prev is not None and total >= prev else 0
+            baseline[name] = total
+            units.append(f)
+
+    # ---- pm2 -----------------------------------------------------------------
+    if recs is not None:
+        _ingest(recs if isinstance(recs, list) else [], lambda k: not k.startswith("docker:"))
+    else:
+        if pm2_text is C.MISSING:
+            pm2_text, st = _pm2_list_text()
+            if pm2_text is None and st not in ("probes-off", "no-binary"):
+                notes.append("D1: `pm2 list` failed (%s) - restart velocity for pm2 units "
+                             "is UNDETERMINED this run" % st)
+        parsed = _parse_pm2_table(pm2_text) if pm2_text is not None else None
+        if pm2_text is not None and parsed is None:
+            notes.append("D1: `pm2 list` table could not be parsed by header (name, pid, "
+                         "restarts, status) - UNDETERMINED, NOT read as zero restarts; "
+                         "baseline left untouched")
+        elif parsed is not None:
+            _ingest(parsed, lambda k: not k.startswith("docker:"))
+
+    # ---- docker (VPS host) ---------------------------------------------------
+    if docker_recs is C.MISSING:
+        docker_recs = None
+        if _platform() != "darwin" and not _in_container():
+            docker_recs, st = _docker_restart_recs()
+            if docker_recs is None and st not in ("probes-off", "no-binary"):
+                notes.append("D1: docker restart counts unreadable (%s) - UNDETERMINED" % st)
+        elif _in_container():
+            notes.append("D1: inside a container - no host supervisor/docker view; docker "
+                         "restart velocity UNDETERMINED")
+    if docker_recs is not None:
+        _ingest(docker_recs, lambda k: k.startswith("docker:"))
+
+    # ---- launchd (Mac gateway) -----------------------------------------------
+    if launchctl_text is C.MISSING:
+        launchctl_text = None
+        if _platform() == "darwin":
+            launchctl_text, st = _launchctl_list_text()
+            if launchctl_text is None and st not in ("probes-off", "no-binary"):
+                notes.append("D1: `launchctl list` failed (%s) - gateway restart velocity "
+                             "UNDETERMINED" % st)
+    if launchctl_text is not None:
+        table = _parse_launchctl_table(launchctl_text)
+        if table is None:
+            notes.append("D1: `launchctl list` table header is not PID/Status/Label - "
+                         "gateway restart velocity UNDETERMINED (NOT zero)")
+        else:
+            prev_pids = _meta_json(led, "d1_launchd_pids")
+            changes = _meta_json(led, "d1_launchd_changes")
+            cutoff = (now - timedelta(hours=24)).isoformat()
+            new_pids = {}
+            for label, pid in sorted(table.items()):
+                prev = prev_pids.get(label, C.MISSING)
+                new_pids[label] = pid
+                # ONE restart = a live pid replaced by a DIFFERENT live pid. A job going
+                # to or coming from '-' is a StartInterval job idling or a stop, not a
+                # restart - counting those would turn every interval job into a storm.
+                moved = isinstance(prev, int) and isinstance(pid, int) and pid != prev
+                hist = [t for t in changes.get(label, []) if isinstance(t, str) and t >= cutoff]
+                if moved:
+                    hist.append(now.replace(microsecond=0).isoformat())
+                changes[label] = hist
+                units.append({"name": label, "status": "running" if pid else "stopped",
+                              "pid": pid, "restarts": len(hist), "delta": 1 if moved else 0,
+                              "day_restarts": len(hist),
+                              "is_watchdog": "watchdog" in label})
+            if led is not None:
+                led.set_meta("d1_launchd_pids", json.dumps(new_pids, sort_keys=True))
+                led.set_meta("d1_launchd_changes", json.dumps(changes, sort_keys=True))
     if led is not None:
         led.set_meta("d1_restart_baseline", json.dumps(baseline, sort_keys=True))
     return units
@@ -594,6 +1461,22 @@ def _parse_ts(s):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+# --------------------------------------------------------------------------- #
+# LEGACY FILE COLLECTORS (pre-v2026.7.2-beta.1 layout) - NOT WIRED INTO THE TICK.
+# collect_evidence() no longer calls anything below this banner up to the D7
+# section: OpenClaw stopped writing these files, so they return [] on a current
+# box (that silent emptiness is exactly what Fix 1 removed). They are kept, not
+# deleted, because the LF-10 transcript-roll drills and the self-test still prove
+# the D5/D7 detector arithmetic over archived transcripts.
+# ponytail: delete this block when LF-10's file roll is retired (SKS-008 makes it
+# a prepared proposal); no live path depends on it.
+# --------------------------------------------------------------------------- #
+def _legacy_file_evidence(led=None):
+    """The OLD file-fed D2/D3 evidence (trajectory stream). Drills only."""
+    rows, _stats = _read_new_trajectory_rows(led)
+    return {"windows": collect_windows(), "runs": collect_runs(rows)}
 
 
 def _traj_files(max_files=24, max_age_hours=26.0):
@@ -919,35 +1802,54 @@ def collect_runs(rows):
     return runs
 
 
-def _cron_jobs_via_cli(timeout=15):
-    """Best-effort `openclaw cron list --json` -> jobs list. [] on ANY miss (no
-    binary, non-zero exit, bad JSON) - a probe miss is DATA. Read-only command;
-    the {jobs:[...]} / [...] output shape is the documented `cron list --json`
-    contract, parsed defensively (either shape accepted); CONFIRM on the operator
-    canary during burn-in."""
-    if _probes_off():
-        return []
-    from shutil import which
-    binpath = os.environ.get("OPENCLAW_BIN") or which("openclaw")
-    if not binpath:
-        return []
-    try:
-        proc = subprocess.run([binpath, "cron", "list", "--json"],
-                              capture_output=True, text=True, timeout=timeout,
-                              check=False)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    if proc.returncode != 0 or not (proc.stdout or "").strip():
-        return []
-    try:
-        data = json.loads(proc.stdout)
-    except ValueError:
-        return []
+def _cron_list_via_cli(timeout=15, runner=None):
+    """`openclaw cron list --json` -> (jobs, has_more, status).
+
+    `cron list --json` returns `limit: 200, hasMore` and has NO --limit/--offset
+    flag, so a box with more than 200 jobs hands back a PARTIAL list. `has_more` is
+    surfaced so the caller can say so (D4 is UNDETERMINED for the unseen jobs)
+    instead of silently watching a fraction of the box. Read-only. The
+    {jobs:[...]} / [...] shapes are both accepted."""
+    runner = runner or _openclaw_json
+    data, st = runner(["cron", "list", "--json"], timeout=timeout)
+    if st != "ok":
+        return [], False, st
     jobs = data.get("jobs") if isinstance(data, dict) else data
-    return jobs if isinstance(jobs, list) else []
+    if not isinstance(jobs, list):
+        return [], False, "bad-shape"
+    return jobs, bool(isinstance(data, dict) and data.get("hasMore") is True), "ok"
 
 
-def collect_crons(led=None, jobs=None, now=None):
+def _cron_jobs_via_cli(timeout=15):
+    """Back-compat wrapper: the jobs list only. [] on ANY miss - a probe miss is
+    DATA. Use _cron_list_via_cli to also learn `hasMore`."""
+    return _cron_list_via_cli(timeout)[0]
+
+
+_SCHEDULER_FAILED_STATUSES = ("error", "errored", "failed", "failure", "timeout", "timed_out")
+
+
+def _scheduler_managed(job):
+    """Why OpenClaw's OWN scheduler is already handling this job's failures, or None.
+
+    October's cron engine backs recurring failures off (30s, 60s, 5m, 15m, 60m) and
+    AUTO-DISABLES a job after 10 consecutive failures, recording `state.autoDisabled`
+    and `state.consecutiveErrors` (+ `lastRunStatus`). A job in either condition is
+    the SCHEDULER's to handle: this skill records it as EVIDENCE only and never
+    raises or escalates on it (LP-A4's 're-firing a terminally failing job' case)."""
+    st = job.get("state") if isinstance(job.get("state"), dict) else {}
+    if st.get("autoDisabled") or job.get("autoDisabled"):
+        return "auto-disabled by the scheduler"
+    errs = st.get("consecutiveErrors", job.get("consecutiveErrors"))
+    last = str(st.get("lastRunStatus", job.get("lastRunStatus")) or "").lower()
+    if isinstance(errs, int) and not isinstance(errs, bool) and errs >= 1 \
+            and last in _SCHEDULER_FAILED_STATUSES:
+        return "backing off after %d consecutive error(s)" % errs
+    return None
+
+
+def collect_crons(led=None, jobs=None, now=None, has_more=False, notes=None,
+                  managed=None, runner=None):
     """D4 cron evidence: {name, declared_schedule, actual_fires_per_day, announce}
     per enabled recurring job. Fire counting is OBSERVED, not guessed: each tick
     the job's last-run marker (state.lastRunAtMs) is compared with the previous
@@ -956,9 +1858,29 @@ def collect_crons(led=None, jobs=None, now=None):
     (max ~96 observations/day), which still catches any @daily job firing every
     few minutes. Until a fire has been observed actual_fires_per_day is None and
     D4's over-fire branch stays silent (never a false P1 on first tick). With
-    led=None nothing is persisted. `jobs` is injectable for offline tests."""
+    led=None nothing is persisted. `jobs` is injectable for offline tests.
+
+    SCHEDULER-AWARE (Fix 11): a job the scheduler has auto-disabled or is backing
+    off is reported with actual_fires_per_day=None - D4's over-fire branch needs a
+    number, so it stays silent - plus a `scheduler_managed` reason; the job is
+    appended to `managed` (evidence only) and never becomes a finding.
+
+    PARTIAL LIST (Fix 11): when the CLI says `hasMore`, only the first page of
+    jobs was seen. That is recorded in `notes` as UNDETERMINED for the unseen
+    jobs - never read as 'the rest are fine'."""
+    notes = notes if notes is not None else []
+    managed = managed if managed is not None else []
     if jobs is None:
-        jobs = _cron_jobs_via_cli()
+        if runner is None and _probes_off():
+            return []
+        jobs, has_more, st = _cron_list_via_cli(runner=runner)
+        if st != "ok":
+            notes.append("D4: `openclaw cron list --json` unreadable (%s) - cron over-fire "
+                         "check UNDETERMINED this run" % st)
+    if has_more:
+        notes.append("D4: `cron list --json` reported hasMore - jobs beyond the first page "
+                     "were NOT seen; over-fire check is UNDETERMINED for them (never "
+                     "silently partial)")
     if not jobs:
         return []
     now = now or datetime.now(timezone.utc)
@@ -973,7 +1895,14 @@ def collect_crons(led=None, jobs=None, now=None):
     cutoff = (now - timedelta(hours=24)).isoformat()
     out = []
     for j in jobs:
-        if not isinstance(j, dict) or j.get("enabled") is False:
+        if not isinstance(j, dict):
+            continue
+        sm = _scheduler_managed(j)
+        if sm and sm.startswith("auto-disabled"):
+            managed.append({"name": str(j.get("name") or j.get("id") or "<cron>"),
+                            "reason": sm})
+            continue  # auto-disabled: nothing is firing - the scheduler already stopped it
+        if j.get("enabled") is False:
             continue
         sched = j.get("schedule") if isinstance(j.get("schedule"), dict) else {}
         kind = str(sched.get("kind") or "")
@@ -998,9 +1927,14 @@ def collect_crons(led=None, jobs=None, now=None):
         hist[key] = {"marker": marker if marker is not None else rec.get("marker"),
                      "fires": fires}
         delivery = j.get("delivery") if isinstance(j.get("delivery"), dict) else {}
-        out.append({"name": name, "declared_schedule": declared,
-                    "actual_fires_per_day": len(fires) if fires else None,
-                    "announce": delivery.get("mode") == "announce"})
+        entry = {"name": name, "declared_schedule": declared,
+                 "actual_fires_per_day": len(fires) if fires else None,
+                 "announce": delivery.get("mode") == "announce"}
+        if sm:
+            entry["actual_fires_per_day"] = None  # D4 over-fire stays silent
+            entry["scheduler_managed"] = sm
+            managed.append({"name": name, "reason": sm})
+        out.append(entry)
     if led is not None:
         led.set_meta("d4_cron_fires", json.dumps(hist, sort_keys=True))
     return out
@@ -1037,54 +1971,97 @@ def _listener_pid_on(port):
         return None
 
 
-def _read_handoff():
-    """The gateway supervisor restart-handoff marker (<openclaw_root>/
-    gateway-supervisor-restart-handoff.json; expected keys include pid, createdAt,
-    expiresAt - plausible candidates, CONFIRM on the operator canary during
-    burn-in). None when absent/unreadable. Structural fields only; each key read
-    defensively so a name miss degrades to "no orphan finding", never a wrong one."""
-    p = openclaw_root() / "gateway-supervisor-restart-handoff.json"
+def _pid_alive(pid):
+    """True when `pid` is a live process. Signal 0 only: nothing is sent."""
     try:
-        if not p.is_file():
-            return None
-        h = json.loads(p.read_text(encoding="utf-8"))
-        if isinstance(h, dict):
-            h["_mtime"] = p.stat().st_mtime
-            return h
-    except (OSError, ValueError):
-        pass
-    return None
+        pid = int(pid)
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, not ours
+    except (OSError, ValueError, TypeError):
+        return False
 
 
-def _handoff_epoch(value):
-    """createdAt/expiresAt -> aware datetime; accepts ISO strings or epoch ms."""
-    if isinstance(value, str):
-        return _parse_ts(value)
-    if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
-        try:
-            return datetime.fromtimestamp(float(value) / 1000.0, timezone.utc)
-        except (OverflowError, OSError, ValueError):
-            return None
-    return None
+_GATEWAY_LAUNCHD_LABEL = "ai.openclaw.gateway"
+_GATEWAY_SYSTEMD_UNIT = "openclaw-gateway.service"
+
+
+def _supervisor_pid(listener_note=None):
+    """(pid|None, why) - the pid the GATEWAY'S OWN SUPERVISOR says it is running,
+    gathered ENVIRONMENT-FREE. `why` names the source or the reason it is unreadable.
+
+      Mac            `launchctl list` TABLE (PID, Status, Label), label
+                     `ai.openclaw.gateway`. NEVER `launchctl print` (it dumps the
+                     service environment).
+      Linux systemd  `systemctl --user show -p MainPID <unit>` (a single property).
+      inside docker  no host-supervisor view exists: UNDETERMINED.
+
+    None is UNDETERMINED - the caller raises NOTHING on it. A launchd label that is
+    loaded but has no live pid ('-') is also None: there is no live supervisor pid
+    to compare against."""
+    if _probes_off():
+        return None, "probes-off"
+    plat = _platform()
+    if plat == "darwin":
+        out, st = _launchctl_list_text()
+        if out is None:
+            return None, "launchctl list %s" % st
+        table = _parse_launchctl_table(out)
+        if table is None:
+            return None, "launchctl list header is not PID/Status/Label"
+        if _GATEWAY_LAUNCHD_LABEL not in table:
+            return None, "label %s not loaded" % _GATEWAY_LAUNCHD_LABEL
+        pid = table[_GATEWAY_LAUNCHD_LABEL]
+        return (pid, "launchd") if pid else (None, "label loaded, no live pid")
+    if _in_container():
+        return None, "inside a container: no host supervisor view"
+    from shutil import which
+    sc = os.environ.get("LOOP_SYSTEMCTL_BIN") or which("systemctl")
+    if not sc:
+        return None, "no supervisor binary (systemctl) on this host"
+    unit = os.environ.get("LOOP_GATEWAY_SYSTEMD_UNIT") or _GATEWAY_SYSTEMD_UNIT
+    out, st = _run_text([sc, "--user", "show", "-p", "MainPID", unit], timeout=10)
+    if out is None:
+        return None, "systemctl show %s" % st
+    m = re.search(r"^MainPID=(\d+)\s*$", out, re.M)
+    if not m or int(m.group(1)) <= 0:
+        return None, "systemd reports no MainPID"
+    return int(m.group(1)), "systemd"
 
 
 def collect_wedge(led=None, slice_stats=None, gateway_up=None,
-                  handoff=C.MISSING, listener_pid=C.MISSING):
+                  supervisor_pid=C.MISSING, listener_pid=C.MISSING, notes=None,
+                  pid_alive=None):
     """D4 wedge evidence. Two probes, both fail-soft:
 
     (1) hung-but-alive: the no-progress counter increments ONLY when the slice
-        shows DEMAND (prompt.submitted / session.started) with ZERO completions
-        while the gateway process is up; any completion (or a down gateway)
-        resets it; a fully idle box HOLDS it - idleness is never a wedge (no
-        false P1 every quiet night). Persisted in ledger meta
-        'd4_no_progress_ticks'; with led=None nothing is persisted.
-    (2) orphan listener: reported ONLY on a definitive supervisor claim - a
-        restart-handoff file that is EXPIRED or >=1h old (a fresh handoff is a
-        restart in progress, not an orphan) whose pid differs from the live
-        listener on the gateway port. Kill-list semantics stay D4's: the finding
-        names only the orphan.
+        shows DEMAND (agent.run.started) with ZERO completions (agent.run.finished)
+        while the gateway process is up; any completion (or a down gateway) resets
+        it; a fully idle box HOLDS it - idleness is never a wedge (no false P1
+        every quiet night). Persisted in ledger meta 'd4_no_progress_ticks'; with
+        led=None nothing is persisted.
+    (2) orphan listener: the :18789 listener pid compared with the pid the
+        gateway's SUPERVISOR reports (launchd / systemd), never with a handoff
+        file. Reported ONLY when BOTH pids are known, they DIFFER, and the
+        supervisor pid is ALIVE. Anything unreadable is UNDETERMINED and raises
+        nothing.
 
-    `gateway_up`/`handoff`/`listener_pid` are injectable for offline tests."""
+        The legacy gateway-supervisor-restart-handoff.json is IGNORED (never read,
+        never deleted). October keeps the handoff in SQLite, so a leftover July file
+        carried a pid of a long-dead process; comparing it with the live listener
+        raised a false top-priority LP-B3 every 15 minutes - and the prepared fix
+        for LP-B3 (kill the listener) would have killed the healthy gateway itself.
+        Kill-list semantics stay D4's: the finding names only the listener, and the
+        supervisor's own pid can never be the one named.
+
+    `gateway_up`/`supervisor_pid`/`listener_pid` are injectable for offline tests."""
+    notes = notes if notes is not None else []
+    pid_alive = pid_alive or _pid_alive
     th = C.load_skill_config("thresholds.json")["d4_timer_refire"]
     wedge = {}
     st = slice_stats or {}
@@ -1106,31 +2083,24 @@ def collect_wedge(led=None, slice_stats=None, gateway_up=None,
     if ticks:
         wedge["gateway_healthy_no_progress_ticks"] = ticks
 
-    h = _read_handoff() if handoff is C.MISSING else handoff
-    if isinstance(h, dict) and h.get("pid"):
-        now = datetime.now(timezone.utc)
-        created = _handoff_epoch(h.get("createdAt"))
-        if created is None and h.get("_mtime"):
-            try:
-                created = datetime.fromtimestamp(float(h["_mtime"]), timezone.utc)
-            except (OverflowError, OSError, ValueError):
-                created = None
-        age_h = (now - created).total_seconds() / 3600.0 if created else None
-        expires = _handoff_epoch(h.get("expiresAt"))
-        stale = (expires is not None and expires < now) or \
-                (age_h is not None and age_h >= 1.0)
-        if stale:
-            lp = _listener_pid_on(th["gateway_port"]) \
-                if listener_pid is C.MISSING else listener_pid
-            try:
-                sup = int(h["pid"])
-            except (TypeError, ValueError):
-                sup = None
-            if lp and sup and int(lp) != sup:
-                wedge["orphan_listener_pid"] = int(lp)
-                wedge["supervisor_pid"] = sup
-                if age_h is not None:
-                    wedge["handoff_age_hours"] = round(age_h, 1)
+    if supervisor_pid is C.MISSING:
+        supervisor_pid, why = _supervisor_pid()
+    else:
+        why = "injected"
+    if listener_pid is C.MISSING:
+        listener_pid = _listener_pid_on(th["gateway_port"])
+    try:
+        sup = int(supervisor_pid) if supervisor_pid is not None else None
+        lp = int(listener_pid) if listener_pid is not None else None
+    except (TypeError, ValueError):
+        sup = lp = None
+    if sup is None:
+        if why not in ("probes-off",):
+            notes.append("D4: gateway supervisor pid unreadable (%s) - orphan-listener "
+                         "check UNDETERMINED, nothing raised" % why)
+    elif lp and lp != sup and pid_alive(sup):
+        wedge["orphan_listener_pid"] = lp
+        wedge["supervisor_pid"] = sup
     return wedge
 
 
@@ -1633,33 +2603,78 @@ def collect_cross_run_sends(led=None):
     return out
 
 
-def collect_evidence(led=None):
+def collect_evidence(led=None, runner=None, now=None):
     """Assemble the evidence dict from the box, best-effort. Detectors run over
     whatever is available; a missing source contributes no findings, never an
-    error. With a Ledger (the tick path): the D3/D7 slices are offset-tracked
-    (separate namespaces) and the D4 counters persist. With led=None (the
-    read-only audit path): bounded tail PEEK, nothing persisted, no offset
-    advanced.
+    error - but it is NEVER silent about it: every miss is named in
+    evidence["undetermined"], and a collector that came back EMPTY while the box
+    was demonstrably active is named in evidence["blind"] and becomes a P2
+    finding ("watchdog blind: <collector>").
 
-    D5 (transcript poison) attaches via collect_sessions() and is the one collector
-    here that reads a STOCK rather than a flow, so it deliberately does NOT use the
-    offset/slice pattern: re-measuring the same tail every tick is the point - the
-    poison persists until something clears it. D6 (semantic retry burst) attaches
-    via collect_bursts() over those SAME bounded tails, so it costs one extra pass
-    rather than a new probe surface. D7 (cross-run resend) attaches via
-    collect_cross_run_sends(), which DOES use the offset/slice pattern (a separate
-    'loop-sess:<path>' namespace from D3's) since it is a FLOW over the same session
-    transcripts D5/D6 read, not a stock. A completion-rate detector remains unbuilt
-    (windows already carry per-hour `completions` for it)."""
-    rows, slice_stats = _read_new_trajectory_rows(led)
-    return {"units": collect_units(led),
-            "windows": collect_windows(),
-            "runs": collect_runs(rows),
-            "crons": collect_crons(led),
-            "wedge": collect_wedge(led, slice_stats),
-            "sessions": collect_sessions(),
-            "bursts": collect_bursts(),
-            "sends": collect_cross_run_sends(led)}
+    Sources (Fix 1 - the October rebuild):
+      D1  collect_units()               `pm2 list` table, `launchctl list` table,
+                                        `docker inspect -f` (all environment-free)
+      D2  collect_session_windows()     `openclaw sessions --all-agents --active 1440
+                                        --json` token DELTAS
+      D3  audit_evidence() runs         `openclaw audit --kind agent_run` finished
+                                        runs + their tool sequences
+      D4  collect_crons() / collect_wedge()   `openclaw cron list --json`; the
+                                        supervisor pid (launchd/systemd), not a file
+      D5  audit_evidence() sessions     `tool_action status=blocked` bursts per runId
+      D6  audit_evidence() bursts       failed tool actions per (session, tool) in
+                                        60-second windows (FAILING-BURST face only)
+      D7  collect_cross_run_sends()     UNDETERMINED here: no content-free October
+                                        source carries message provenance. The
+                                        loop-brake plugin covers it in real time.
+
+    With a Ledger (the tick path) the audit cursors persist under
+    `loop-audit:<kind>` in the offsets table and the D1/D2/D4 baselines persist in
+    meta. With led=None (the read-only audit path): nothing is persisted and no
+    cursor advances. `runner(args, timeout=...)` is the injectable seam for the two
+    openclaw feeds, so every drill runs offline over fixtures."""
+    cfg = _feed_cfg()
+    now = now or datetime.now(timezone.utc)
+    notes = []
+    managed = []
+
+    sess = fetch_sessions(cfg["sessions_active_minutes"], runner, cfg)
+    run_f = fetch_audit("agent_run", led, now, runner, cfg)
+    tool_f = fetch_audit("tool_action", led, now, runner, cfg)
+    for label, fx in (("sessions", sess), ("audit agent_run", run_f),
+                      ("audit tool_action", tool_f)):
+        if fx["status"] not in ("ok", "probes-off"):
+            notes.append("feed `%s` unreadable (%s) - the detectors it feeds are "
+                         "UNDETERMINED this run, NOT healthy" % (label, fx["status"]))
+        if fx.get("partial"):
+            notes.append("feed `%s` has more pages than the per-run budget - older new "
+                         "records were NOT seen (UNDETERMINED for them)" % label)
+    if sess["status"] == "ok" and sess["partial"]:
+        notes.append("feed `sessions` reported hasMore - sessions beyond the first page "
+                     "were NOT seen (UNDETERMINED for them)")
+
+    active_now = active_session_count(sess["rows"], cfg["blind_control_active_minutes"], now) \
+        if sess["rows"] is not None else None
+    blind = blind_collectors(sess, run_f, active_now)
+
+    sess_stats = {}
+    windows = collect_session_windows(sess["rows"], led, now, notes=notes,
+                                      stats=sess_stats) if sess["rows"] is not None else []
+    audit = audit_evidence(run_f["events"], tool_f["events"])
+    crons = collect_crons(led, notes=notes, managed=managed, runner=runner)
+    wedge = collect_wedge(led, audit["stats"], notes=notes)
+    notes.append("D7: no content-free October source carries inter-session provenance - "
+                 "UNDETERMINED (the loop-brake plugin is the real-time cover)")
+    return {"units": collect_units(led, notes=notes, now=now),
+            "windows": windows,
+            "runs": audit["runs"],
+            "crons": crons,
+            "wedge": wedge,
+            "sessions": audit["sessions"],
+            "bursts": audit["bursts"],
+            "sends": [],
+            "blind": blind,
+            "undetermined": notes,
+            "scheduler_managed": managed}
 
 
 def self_test():
@@ -1844,13 +2859,13 @@ def self_test():
         t0 = (now - timedelta(minutes=90)).replace(microsecond=0)
         rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "s1",
                  "sessionKey": "agent:main:main", "runId": "r0",
-                 "modelId": "minimax-m3:cloud", "provider": "ollama",
+                 "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                  "data": {"trigger": "cron"}}]
         for i in range(12):  # 12 identical SUCCESSFUL runs, 300k paid tokens each
             common = {"ts": (t0 + timedelta(minutes=2 * i)).isoformat(),
                       "sessionId": "s1", "sessionKey": "agent:main:main",
                       "runId": "r%d" % (i + 1), "seq": i,
-                      "modelId": "minimax-m3:cloud", "provider": "ollama"}
+                      "modelId": "z-ai/glm-5.3", "provider": "openrouter"}
             rows.append(dict(common, type="model.completed",
                              data={"usage": {"input": 250000, "output": 50000,
                                              "total": 300000}}))
@@ -1863,7 +2878,7 @@ def self_test():
             "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
 
         led = Ledger()
-        ev = collect_evidence(led)
+        ev = _legacy_file_evidence(led)  # the LEGACY file reader, kept for these drills
         assert ev["windows"], "collect_windows EMPTY over a real trajectory stream"
         assert any(w["paid_tokens"] > 0 for w in ev["windows"])  # D2 sees usage now
         assert all(w["initiated_sessions"] == 0 for w in ev["windows"])  # cron != human
@@ -1875,10 +2890,11 @@ def self_test():
                    for f in fnd), "D2 must flag the idle paid burn"
         assert any(f["detector"] == "D3" and f["severity"] == "P1"
                    for f in fnd), "D3 must flag the repeated identical SUCCESSFUL turn"
-        ev2 = collect_evidence(led)
+        ev2 = _legacy_file_evidence(led)
         assert ev2["runs"] == []  # the slice was offset-consumed
-        print("  collect case: PASS (stub replaced: synthetic loop -> real windows/"
-              "runs; D2+D3 fire; slice offset-consumed)")
+        print("  legacy-file collect case: PASS (the preserved file reader still feeds the "
+              "D2/D3 arithmetic: synthetic loop -> windows/runs; D2+D3 fire; slice "
+              "offset-consumed). NOT wired into the tick any more.")
 
         # _usage_total multi-candidate hardening (0.3.1): the source-confirmed
         # `usage.total` first, then defensive aliases, then the component-sum
@@ -1907,7 +2923,7 @@ def self_test():
             drows = [{"type": "model.completed",
                       "ts": (base + timedelta(minutes=i + 1)).isoformat(),
                       "sessionKey": "agent:main:main", "runId": "rDELTA", "seq": i,
-                      "modelId": "minimax-m3:cloud", "provider": "ollama",
+                      "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                       "data": {"usage": {"input": 100000 * (i + 1)}}} for i in range(8)]
             (sdir / "sD.trajectory.jsonl").write_text(
                 "\n".join(json.dumps(r) for r in drows) + "\n", encoding="utf-8")
@@ -1933,30 +2949,39 @@ def self_test():
         print("  collect-crons case: PASS (marker transitions counted, persisted, "
               "first-sight None)")
 
-        # wedge: demand-without-progress counts; progress resets; idle holds;
-        # a stale handoff + foreign listener = orphan; a fresh handoff never is.
+        # wedge: demand-without-progress counts; progress resets; idle holds.
         w1 = collect_wedge(led, {"starts": 2, "completions": 0}, gateway_up="up",
-                           handoff=None)
+                           supervisor_pid=None)
         collect_wedge(led, {"starts": 1, "completions": 0}, gateway_up="up",
-                      handoff=None)
+                      supervisor_pid=None)
         w3 = collect_wedge(led, {"starts": 3, "completions": 0}, gateway_up="up",
-                           handoff=None)
+                           supervisor_pid=None)
         assert w1["gateway_healthy_no_progress_ticks"] == 1
         assert w3["gateway_healthy_no_progress_ticks"] == 3  # D4 P1 threshold
         wr = collect_wedge(led, {"starts": 0, "completions": 4}, gateway_up="up",
-                           handoff=None)
+                           supervisor_pid=None)
         assert "gateway_healthy_no_progress_ticks" not in wr  # progress resets
-        stale_handoff = {"pid": 222,
-                         "createdAt": (now - timedelta(hours=30)).isoformat()}
-        wo = collect_wedge(led, {}, gateway_up="up", handoff=stale_handoff,
-                           listener_pid=111)
-        assert wo["orphan_listener_pid"] == 111 and wo["supervisor_pid"] == 222
-        fresh_handoff = {"pid": 222, "createdAt": now.isoformat()}
-        wf = collect_wedge(led, {}, gateway_up="up", handoff=fresh_handoff,
-                           listener_pid=111)
-        assert "orphan_listener_pid" not in wf  # mid-restart is not an orphan
-        print("  collect-wedge case: PASS (demand-gated counter; reset on progress; "
-              "stale-handoff orphan only)")
+        # ORPHAN LISTENER (Fix 2): the listener pid is compared with the pid the
+        # SUPERVISOR reports - never with a handoff file. Three cases, all offline.
+        _alive = lambda pid: pid in (222, 111)
+        n_eq = []
+        w_eq = collect_wedge(led, {}, gateway_up="up", supervisor_pid=111,
+                             listener_pid=111, notes=n_eq, pid_alive=_alive)
+        assert "orphan_listener_pid" not in w_eq and not n_eq   # equal: silent
+        w_df = collect_wedge(led, {}, gateway_up="up", supervisor_pid=222,
+                             listener_pid=111, pid_alive=_alive)
+        assert w_df["orphan_listener_pid"] == 111 and w_df["supervisor_pid"] == 222
+        n_un = []
+        w_un = collect_wedge(led, {}, gateway_up="up", supervisor_pid=None,
+                             listener_pid=111, notes=n_un, pid_alive=_alive)
+        assert "orphan_listener_pid" not in w_un                  # unreadable: silent...
+        assert n_un and "UNDETERMINED" in n_un[0]                 # ...but NAMED, never zero
+        w_dead = collect_wedge(led, {}, gateway_up="up", supervisor_pid=999,
+                               listener_pid=111, pid_alive=_alive)
+        assert "orphan_listener_pid" not in w_dead  # a dead supervisor pid is no evidence
+        print("  collect-wedge case: PASS (demand-gated counter; reset on progress; orphan "
+              "= listener != LIVE supervisor pid only; equal silent; unreadable silent "
+              "AND named UNDETERMINED; dead supervisor pid silent)")
 
         # D7 collect case: a provenance-stamped AGENT SESSION transcript (a
         # SEPARATE file in the SAME sessions dir - never the *.trajectory.jsonl
@@ -2060,6 +3085,27 @@ def self_test():
         assert "loop-blocked-session.jsonl" in f5[0]["evidence_path"]
         print("  D5 collect case: PASS (poisoned transcript=P1 LP-A8 incl. the "
               "checkpoint carrier; LARGER clean transcript SILENT)")
+
+        # SKS-008: with the shipped config LF-10 is Tier 2 (sessions.reset proposal), so
+        # an ARMED tick must only PREPARE it and never move a transcript file.
+        led = Ledger()
+        _t0 = __import__("time").time() - 3600
+        for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+            os.utime(str(sdir / _n), (_t0, _t0))
+        s_t2 = tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                     "sessions": collect_sessions()}, led, armed=True, box="box-example")
+        led.close()
+        assert s_t2["applied"] == 0 and s_t2["planned"] >= 1, s_t2
+        assert (sdir / "loop-blocked-session.jsonl").is_file()
+        print("  LF-10 tier-2 case: PASS (armed tick PREPARES sessions.reset, moves no file)")
+        # The cases below keep covering the retained legacy file-move executor and the
+        # D5 re-roll/containment guards, pinned to a TEST-LOCAL Tier-1 view of LF-10.
+        _orig_fcf = KC.fix_class_for
+
+        def _lf10_tier1_for_legacy_tests(loop_class):
+            fc = _orig_fcf(loop_class)
+            return dict(fc, tier=1) if fc and fc.get("id") == "LF-10" else fc
+        KC.fix_class_for = _lf10_tier1_for_legacy_tests
 
         # An ARMED tick archives the poisoned transcript (move, never delete) and
         # leaves the clean one untouched; DRY_RUN mutates nothing.
@@ -2169,6 +3215,7 @@ def self_test():
         assert not (sdir / "good-session.jsonl").exists()   # the one behind it ran
         print("  tick-containment case: PASS (an exception escaping a kill card is "
               "counted in errors and the tick still processes the finding behind it)")
+        KC.fix_class_for = _orig_fcf   # end of the legacy Tier-1 pin
 
         # D1 restart BASELINE: pm2 reports a unit's LIFETIME restart count, so the
         # first sight of any long-lived unit must read as delta 0, never as a storm.
@@ -2295,7 +3342,7 @@ def self_test():
 
 def _cli(argv=None):
     ap = argparse.ArgumentParser(description="Loop Protection per-box watchdog tick.")
-    ap.add_argument("cmd", nargs="?", default="tick", choices=["tick"])
+    ap.add_argument("cmd", nargs="?", default="tick", choices=["tick", "feed-health"])
     ap.add_argument("--no-send", action="store_true",
                     help="do not deliver alerts/escalations (still records findings)")
     # --no-send suppresses DELIVERY only; it does NOT make a tick observe-only. On an
@@ -2310,6 +3357,13 @@ def _cli(argv=None):
     a = ap.parse_args(argv)
     if a.self_test:
         return self_test()
+    if a.cmd == "feed-health":
+        # READ-ONLY live control for verify.sh --live: opens NO ledger, advances NO
+        # cursor, writes nothing. Exit 0 = healthy or genuinely idle, 4 = a collector
+        # is BLIND, 3 = UNDETERMINED (a feed could not be read - never folded into 0).
+        info = feed_health_check()
+        print(json.dumps(info, sort_keys=True))
+        return {"healthy": 0, "idle": 0, "blind": 4}.get(info["verdict"], 3)
     led = Ledger()
     try:
         box = led.get_meta("box", "box")

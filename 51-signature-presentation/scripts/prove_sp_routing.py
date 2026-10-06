@@ -226,8 +226,38 @@ def _check_wiring(engine: Path) -> int:
     if missing:
         print(f"FAIL: engine missing SP wrappers: {', '.join(missing)}")
         return 1
-    print("engine wire-presence: SP wrappers present -> PASS")
+    # Fix 54: a defined wrapper that is not REGISTERED in PREFLIGHT_REQUIRED never
+    # runs. Extract the PREFLIGHT_REQUIRED literal and require each wrapper name
+    # to appear inside it.
+    pre_start = text.find("PREFLIGHT_REQUIRED = [")
+    if pre_start == -1:
+        print("FAIL: PREFLIGHT_REQUIRED literal not found in engine")
+        return 1
+    # Find the matching close bracket (simple depth count from the opening '[').
+    depth = 0
+    pre_end = -1
+    for i in range(pre_start, len(text)):
+        if text[i] == "[":
+            depth += 1
+        elif text[i] == "]":
+            depth -= 1
+            if depth == 0:
+                pre_end = i + 1
+                break
+    if pre_end == -1:
+        print("FAIL: PREFLIGHT_REQUIRED literal is unterminated in engine")
+        return 1
+    preflight_text = text[pre_start:pre_end]
+    unregistered = [f for f in required if f not in preflight_text]
+    if unregistered:
+        print(f"FAIL: SP wrappers not registered in PREFLIGHT_REQUIRED: {', '.join(unregistered)}")
+        return 1
+    print("engine wire-presence: SP wrappers present + registered in PREFLIGHT_REQUIRED -> PASS")
     return 0
+
+
+# Module-level alias (Fix 54): the canonical public name for the wiring check.
+check_wiring = _check_wiring
 
 
 def _self_test() -> int:

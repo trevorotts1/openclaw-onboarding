@@ -6,7 +6,7 @@ Deterministic readiness gate per run. Blocks the entire pipeline (`sys.exit 2`) 
 
 | Check | Threshold | Endpoint (live mode) | AF code |
 |---|---|---|---|
-| Kie.ai credits | **≥ 200** | `https://api.kie.ai/api/v1/chat/credit` | AF-SM-PREFLIGHT-CREDITS |
+| Kie.ai credits | **≥ max(planned image/video estimate x 1.30, 200)** (200 is this skill's absolute floor; estimate via Skill 74 `price`) | `https://api.kie.ai/api/v1/chat/credit` (body `code` must be 200) | AF-SM-PREFLIGHT-CREDITS |
 | OpenRouter balance | **≥ $5** | `https://openrouter.ai/api/v1/credits` | AF-SM-PREFLIGHT-BALANCE |
 | GHL Private Integration Token | valid | `GET /locations/{locationId}` | AF-SM-PREFLIGHT-TOKEN |
 | Required config fields + secrets SET | present | — (never printed) | AF-SM-PREFLIGHT-CONFIG |

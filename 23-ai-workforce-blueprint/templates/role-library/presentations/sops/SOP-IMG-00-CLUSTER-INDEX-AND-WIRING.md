@@ -2,7 +2,7 @@
 
 **Cluster scope:** (1) Kie.ai call mechanics per mode; (2) Design-Intelligence-Library integration + the 5 gaps; (3) signature-style recall.
 **Repo grounded against:** `openclaw-onboarding` @ HEAD 89676f2, repo v12.2.0 (both copies identical; CLAWD copy matches).
-**Principle:** EXTEND the existing Presentations dept + skill 45. None of these SOPs re-authors the analysis engine, the boundary contract, the alias system, or the model manifest. They make existing capability enforceable and wire it in.
+**Principle:** EXTEND the existing Presentations dept + skill 45. None of these SOPs re-authors the analysis engine, the boundary contract, the alias system, or the model catalog. They make existing capability enforceable and wire it in.
 
 ---
 
@@ -38,7 +38,7 @@ These SOPs are the source; the build step folds short pointers into the existing
 
 - **Logo identity / "one locked logo asset"** is enforced at WRITE time here (IMG-01 §7 checks 1-3, IMG-04 §3); the deck-wide "lock one canonical logo, forbid monogram/mountain/tagline variants" rule belongs to the **brand-steward / design-system cluster**. Both are needed; IMG checks are the I2I-mechanics half.
 - **Audience-facing battery** (no build doctrine on slides) is owned by the **slide-craft cluster**; these SOPs only reiterate that all call-mechanics and library content are DATA, never slide copy.
-- **The model manifest** (which model is pinned) stays owned by master SOP §9.0; SOP-IMG-01 chooses the MODE within the pinned family, never the model.
+- **The model ids** a Presentations deck uses are pinned only in `presentation_job/model_catalog.json`; SOP-IMG-01 chooses the MODE within the pinned family, never the model.
 
 ---
 
@@ -46,5 +46,5 @@ These SOPs are the source; the build step folds short pointers into the existing
 
 - Skill 45 is real and complete: PPT-ANALYSIS-SOP v1.1 (rasterize -> 3-8 families -> Deck Style System + SHORT/MEDIUM/LONG templates); INDEX.md v2.0 is empty on every section; SOP-DIU-607 fully specifies the alias/lookbook system; SOP-DIU-611 is the boundary contract; SOP-DIU-612 is the cross-dept request block (CDO sole intake).
 - MODEL-SPECS v1.2: 7 endpoints, none of them image-to-text; GPT-Image-2 I2I takes `input_urls` (<=16, 30MB); the style-reference-only directive is mandatory for style refs.
-- CLIENT-WEBINAR-DECK-SOP §9: GPT-Image-2.5-only manifest; I2I default with logo URL in `input_urls`; the full createTask/recordInfo lifecycle + the `resultUrls` (not `.url`) parse.
+- CLIENT-WEBINAR-DECK-SOP §9: GPT Image 2.5 Sunburst-only manifest; I2I default with logo URL in `input_urls`; the full createTask/recordInfo lifecycle + the `resultUrls` (not `.url`) parse.
 - The forensic reference deck confirmed logo mutation came from per-slide T2I instead of I2I, and that none of the named defects was an auto-fail at the gate. These SOPs make them auto-fails.

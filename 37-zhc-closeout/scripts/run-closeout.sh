@@ -1116,6 +1116,14 @@ export ZHC_QUALITY_HELD="$(state_get '.qualityHeld | join(",")')"
 if [[ -n "$ZHC_QUALITY_HELD" ]]; then
   log "WARN" "delivery: artifacts HELD by quality gate (not delivered): $ZHC_QUALITY_HELD"
 fi
+# OWNER-SENDS HOLD: nothing past this point may message the owner while held.
+# The hold is durable (only owner_sends_hold.py release clears it), so the
+# closeout stops here, records why, and exits 0; the resume paths re-check it.
+if owner_sends_held; then
+  log "WARN" "OWNER SENDS HELD: ${OWNER_SENDS_HOLD_REASON} -- celebration NOT sent; closeout stops before TELEGRAM. Release: python3 <skills>/shared-utils/owner_sends_hold.py release $STATE_FILE"
+  state_set ".closeoutOwnerSendsHeld = $(jq -Rn --arg r "$OWNER_SENDS_HOLD_REASON" '$r')" || true
+  exit 0
+fi
 run_step TELEGRAM "$SKILL_DIR/scripts/send-telegram-celebration.sh"
 
 # PRD-2.8: write closeoutDeliverables.telegramSequenceSent and ccUrlDelivered

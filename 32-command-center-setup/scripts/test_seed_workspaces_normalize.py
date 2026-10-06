@@ -2,9 +2,16 @@
 
 Guards the fix for the `sync-extensions.sh --converge` Step-4 crash:
 `'str' object has no attribute 'get'` raised when departments.json contained
-string entries instead of dicts. The normalizer must accept all three real-world
-shapes (list-of-dicts, list-of-strings, dict-of-dicts) and emit list-of-dicts
-with an `id` and a derived `name` on every entry.
+string entries instead of dicts. The normalizer must accept all four real-world
+shapes (list-of-dicts, list-of-strings, dict-of-dicts, and an object WRAPPING the
+list under "departments") and emit list-of-dicts with an `id` and a derived
+`name` on every entry.
+
+It also guards the second defect: the old dict branch folded EVERY key of a
+wrapped/envelope payload in as a department id, which seeded bogus workspaces
+named "Company", "Total Departments", "Total Roles" and "Departments" onto a live
+client board. An object that carries no department list must now FAIL LOUDLY —
+naming the path and the top-level type — never quietly become departments.
 """
 import importlib.util
 import os
@@ -54,9 +61,135 @@ def test_dict_with_slug_key_only():
     assert out[0]["name"] == "Operations"
 
 
-def test_none_and_non_list_return_safely():
+def test_none_returns_safely():
+    # None means "nothing was loaded" — not malformed. Still a quiet None.
     assert normalize(None) is None
-    assert normalize(42) is None
+
+
+def test_scalar_payload_fails_loudly():
+    # A bare scalar at the top level of departments.json is a malformed file,
+    # not an empty one. It must name the path and the top-level type, never
+    # return a quiet None that a caller reads as "no departments".
+    with pytest.raises(_sw.MalformedDepartmentsError) as exc:
+        normalize(42, path="/box/zero-human-company/acme/departments.json")
+    assert "int" in str(exc.value)
+    assert "/box/zero-human-company/acme/departments.json" in str(exc.value)
+
+
+# ─── The wrapped-object (envelope) shape ─────────────────────────────────────
+# A client Mac carried
+#   {"company": ..., "total_departments": 34, "total_roles": 416,
+#    "departments": [...]}
+# The old dict branch folded EVERY key in as a department id, so the board got
+# four bogus workspaces named "Company", "Total Departments", "Total Roles" and
+# "Departments". These guard that it can never happen again.
+
+_REAL_DEPTS = [
+    {"id": "dept-ceo", "slug": "ceo", "name": "CEO"},
+    {"id": "dept-marketing", "slug": "marketing", "name": "Marketing"},
+]
+_BOGUS_NAMES = {"Company", "Total Departments", "Total Roles", "Departments"}
+
+
+def test_envelope_with_departments_list_is_unwrapped():
+    out = normalize({
+        "company": "Acme Industries",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": _REAL_DEPTS,
+    })
+    assert [d["id"] for d in out] == ["dept-ceo", "dept-marketing"]
+    assert _BOGUS_NAMES.isdisjoint({d["name"] for d in out})
+
+
+def test_retire_script_provenance_shape_is_unwrapped():
+    # retire-confirmed-decline.sh writes {removedWithProvenance, departments};
+    # build-workforce.py preserves that dict shape on later builds.
+    out = normalize({
+        "removedWithProvenance": [{"slug": "legal", "retiredAt": "2026-08-07"}],
+        "departments": _REAL_DEPTS,
+    })
+    assert [d["slug"] for d in out] == ["ceo", "marketing"]
+    assert "Removed With Provenance" not in {d["name"] for d in out}
+
+
+def test_envelope_without_departments_key_fails_loudly():
+    with pytest.raises(_sw.MalformedDepartmentsError) as exc:
+        normalize(
+            {"company": "Acme", "total_departments": 34, "total_roles": 416},
+            path="/box/zero-human-company/acme/departments.json",
+        )
+    msg = str(exc.value)
+    assert "/box/zero-human-company/acme/departments.json" in msg
+    assert "dict" in msg
+    assert "'company'" in msg  # the offending keys are named for the operator
+
+
+def test_departments_key_holding_a_slug_keyed_map_is_folded():
+    # The shape the client Mac actually carries: the envelope's "departments"
+    # key holds an OBJECT keyed by slug, not a list. 34 real departments used
+    # to read as a hard refusal here.
+    out = normalize({
+        "company": "Acme Industries",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": {
+            "account-management-dept": {"name": "Account Management"},
+            "audio-dept": {"name": "Audio"},
+        },
+    }, path="/box/zero-human-company/acme/departments.json")
+    # These entries carry no id/slug/folder, so the key is the only identity
+    # available — minus its "-dept" suffix. See test_entry_folder_beats_the_map_key
+    # for the client artifact where the entry DOES name its folder.
+    assert [d["id"] for d in out] == ["account-management", "audio"]
+    assert [d["slug"] for d in out] == ["account-management", "audio"]
+    assert [d["name"] for d in out] == ["Account Management", "Audio"]
+
+
+def test_folded_entry_keeps_its_own_id_and_slug():
+    out = normalize({"departments": {"acct": {"id": "dept-account",
+                                              "slug": "account",
+                                              "name": "Account"}}})
+    assert out[0]["id"] == "dept-account"
+    assert out[0]["slug"] == "account"
+
+
+def test_departments_key_holding_a_non_object_map_fails_loudly():
+    # A scalar value is what separates a metadata envelope from a department
+    # map. Refuse it rather than seeding a workspace named after a role count.
+    for bad in ({"marketing": "not-an-object"}, {}, 42, "marketing"):
+        with pytest.raises(_sw.MalformedDepartmentsError):
+            normalize({"departments": bad}, path="/x/departments.json")
+
+
+def test_client_envelope_metadata_never_becomes_a_workspace():
+    # The lead regression, stated against the real file shape: folding the
+    # "departments" map must not drag company / total_departments / total_roles
+    # in as departments. These are the four bogus workspaces seen on the board.
+    out = normalize({
+        "company": "Acme", "total_departments": 34, "total_roles": 416,
+        "departments": {"marketing-dept": {"name": "Marketing"}},
+    })
+    produced = {d.get("id") for d in out} | {d.get("name") for d in out}
+    assert produced.isdisjoint(_BOGUS_NAMES)
+    assert produced.isdisjoint({"company", "total_departments", "total_roles",
+                                "departments"})
+    assert produced == {"marketing", "Marketing"}   # key minus its -dept suffix
+
+
+def test_envelope_keys_never_become_department_names():
+    # The exact regression: whatever happens, no normalizer output may carry a
+    # department derived from an envelope's metadata key.
+    for payload in (
+        {"company": "Acme", "total_departments": 2, "total_roles": 18,
+         "departments": _REAL_DEPTS},
+        {"removedWithProvenance": [], "departments": _REAL_DEPTS},
+    ):
+        out = normalize(payload)
+        produced = {d.get("id") for d in out} | {d.get("name") for d in out}
+        assert produced.isdisjoint(_BOGUS_NAMES)
+        assert produced.isdisjoint({"company", "total_departments", "total_roles",
+                                    "departments", "removedWithProvenance"})
 
 
 def test_seed_loop_does_not_crash_on_bare_strings(monkeypatch, tmp_path):
@@ -84,3 +217,159 @@ def test_seed_loop_does_not_crash_on_bare_strings(monkeypatch, tmp_path):
     rows = {r[0] for r in conn.execute("SELECT id FROM workspaces").fetchall()}
     conn.close()
     assert {"marketing", "sales", "operations"} <= rows
+
+
+def test_seed_loop_never_writes_envelope_keys_as_workspaces(tmp_path):
+    # End-to-end: the envelope shape that put "Company" / "Total Departments" /
+    # "Total Roles" / "Departments" workspaces on a live client board must now
+    # seed the REAL departments and nothing else.
+    import sqlite3
+    db = tmp_path / "mc.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT, slug TEXT, industry TEXT, config TEXT);
+        CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT UNIQUE,
+            description TEXT, icon TEXT, company_id TEXT);
+        """
+    )
+    conn.commit()
+    conn.close()
+    company_info = {
+        "name": "Test Co", "slug": "test-co", "industry": "",
+        "brand_primary": "#000", "brand_accent": "#fff", "brand_text": "#111",
+    }
+    payload = {
+        "company": "Test Co",
+        "total_departments": 2,
+        "total_roles": 18,
+        "departments": [
+            {"id": "dept-marketing", "slug": "marketing", "name": "Marketing"},
+            {"id": "dept-legal", "slug": "legal", "name": "Legal"},
+        ],
+    }
+    _sw.seed(str(db), normalize(payload), company_info)
+
+    conn = sqlite3.connect(db)
+    names = {r[0] for r in conn.execute("SELECT name FROM workspaces").fetchall()}
+    conn.close()
+    assert names == {"Marketing", "Legal"}, names
+    assert _BOGUS_NAMES.isdisjoint(names)
+
+
+# ─── The map key loses to the entry's own identity ───────────────────────────
+# A real client artifact is keyed "<name>-dept" while each entry names its
+# actual folder. Folding on the key slugged all 34 departments "…-dept" while
+# other readers took the bare slug off the entry, and _canonical_dept_slug()
+# only strips a "dept-" PREFIX, so nothing collapsed the pair: the board gained
+# a duplicate workspace for every department (40 columns became 74).
+
+_CLIENT_MAP = {
+    "company": "Acme", "total_departments": 3, "total_roles": 34,
+    "departments": {
+        "account-management-dept": {"name": "Account Management",
+                                    "folder": "account-management"},
+        "audio-dept": {"name": "Audio", "folder": "audio"},
+        "legal-dept": {"name": "Legal"},          # no folder: key, minus -dept
+        # folder DELIBERATELY unequal to the key stem, so folding on the key
+        # gives a DIFFERENT answer and the precedence is actually exercised.
+        "client-success-dept": {"name": "Client Success", "folder": "accounts"},
+    },
+}
+
+
+def test_entry_folder_beats_the_map_key():
+    out = normalize(_CLIENT_MAP)
+    assert [d["id"] for d in out] == ["account-management", "audio", "legal", "accounts"]
+    assert [d["slug"] for d in out] == ["account-management", "audio", "legal", "accounts"]
+    assert not any(str(d["id"]).endswith("-dept") for d in out), out
+
+
+def test_entry_own_id_wins_over_slug_folder_and_key():
+    out = normalize({"departments": {
+        "marketing-dept": {"id": "dept-marketing", "slug": "mkt",
+                           "folder": "marketing-folder", "name": "M"}}})
+    assert out[0]["id"] == "dept-marketing"
+    assert out[0]["slug"] == "mkt"          # its own slug is never rewritten
+
+
+def test_entry_slug_beats_folder_and_key():
+    out = normalize({"departments": {
+        "x-dept": {"slug": "real-slug", "folder": "ignored", "name": "X"}}})
+    assert out[0]["slug"] == "real-slug"
+    assert out[0]["id"] == "real-slug"
+
+
+def test_key_without_dept_suffix_is_used_verbatim():
+    out = normalize({"departments": {"marketing": {"name": "Marketing"}}})
+    assert out[0]["id"] == "marketing" and out[0]["slug"] == "marketing"
+
+
+def _hermetic_db(tmp_path):
+    import sqlite3
+    db = tmp_path / "mc.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT, slug TEXT, industry TEXT, config TEXT);
+        CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT UNIQUE,
+            description TEXT, icon TEXT, company_id TEXT);
+        """
+    )
+    conn.commit(); conn.close()
+    return db
+
+
+def test_seed_writes_bare_slugs_and_a_second_run_adds_no_duplicates(tmp_path):
+    # The client's board symptom, end to end: seed the real artifact twice and
+    # require bare slugs and the SAME row count both times.
+    import sqlite3
+    db = _hermetic_db(tmp_path)
+    company_info = {
+        "name": "Test Co", "slug": "test-co", "industry": "",
+        "brand_primary": "#000", "brand_accent": "#fff", "brand_text": "#111",
+    }
+    depts = normalize(_CLIENT_MAP)
+
+    _sw.seed(str(db), depts, company_info)
+    conn = sqlite3.connect(db)
+    first = sorted(r[0] for r in conn.execute("SELECT id FROM workspaces").fetchall())
+    conn.close()
+    assert first == ["account-management", "accounts", "audio", "legal"], first
+    assert not any(s.endswith("-dept") for s in first), first
+
+    _sw.seed(str(db), depts, company_info)
+    conn = sqlite3.connect(db)
+    second = sorted(r[0] for r in conn.execute("SELECT id FROM workspaces").fetchall())
+    conn.close()
+    assert second == first, f"second run changed the board: {first} -> {second}"
+
+
+def test_fold_output_is_already_canonical_so_every_reader_agrees():
+    # THE ACTUAL INVARIANT. seed-workspaces.py never saw the duplicate because
+    # _canonical_dept_slug() collapses BOTH "account-management-dept" and
+    # "dept-account-management" to "account-management" before the insert — this
+    # reader masked the bad fold. The reader that does NOT canonicalise (the
+    # Command Center's phase=6c sync) wrote the "…-dept" slug verbatim, so one
+    # department landed on the board under two identities and 40 columns became
+    # 74. The fix belongs in the FOLD, so its output is canonical on the way out
+    # and no reader has to rescue it.
+    out = normalize(_CLIENT_MAP)
+    for d in out:
+        assert d["id"] == _sw._canonical_dept_slug(d["id"]), d
+        assert d["slug"] == _sw._canonical_dept_slug(d["slug"]), d
+
+
+def test_pre_fix_key_fold_needed_a_reader_to_rescue_it():
+    # NEGATIVE CONTROL. The OLD key-wins fold on the same artifact produced
+    # slugs that were NOT canonical; they only became correct if the reader
+    # happened to canonicalise. That dependency is what this release removes.
+    old_fold = [dict(v, **{"id": v.get("id", k), "slug": v.get("slug", k)})
+                for k, v in _CLIENT_MAP["departments"].items()]
+    raw = [d["id"] for d in old_fold]
+    assert raw == ["account-management-dept", "audio-dept", "legal-dept",
+                   "client-success-dept"], raw
+    assert any(d["id"] != _sw._canonical_dept_slug(d["id"]) for d in old_fold), \
+        "pre-fix fold produced canonical slugs — the control does not reproduce"
+    # and the two folds disagree on every department, which is the drift
+    assert raw != [d["id"] for d in normalize(_CLIENT_MAP)]

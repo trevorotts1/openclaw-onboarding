@@ -388,6 +388,39 @@ def required_missing(canonical, tables):
 # previously len(keys) sized the required-field gate but the key STRINGS routed
 # nothing, so an inbound podcast_survey__barry_q1 fell into unknown_extras instead
 # of landing in q1_answer.
+def _resolve_mode_token(candidates, tables):
+    """Resolve mode before selecting a mode-owned style field."""
+    mode_aliases = tables.get("field_aliases", {}).get("mode", [])
+    raw, _prov, _unknown = resolve_fields(
+        candidates, {"field_aliases": {"mode": mode_aliases}}
+    )
+    return normalize_enum("mode", raw.get("mode"), tables) if "mode" in raw else None
+
+
+def _tables_for_mode(tables, mode_token):
+    """Return a copy with the authoritative style source for this mode.
+
+    Personal intake writes its dedicated Personal selector.  It must not fall
+    back to the shared Interview selector, which may carry a stale value from a
+    prior submission on the same contact.  Missing dedicated Personal data is a
+    needs-input condition, never permission to guess from the shared field.
+    """
+    if mode_token != "personal_podcast_style":
+        return tables
+    variant = "select_your_presentation_style_personal_podcast"
+    shared = "podcast_survey_writing_style"
+    aliases = {field: list(values)
+               for field, values in tables.get("field_aliases", {}).items()}
+    # Generic upstream keys (style / presentationStyle) remain valid because
+    # they carry a payload value rather than an old shared contact field.  Only
+    # the shared survey field is excluded on Personal intake.
+    aliases["style"] = [variant] + [alias for alias in aliases.get("style", [])
+                                  if alias != shared and alias != variant]
+    scoped = dict(tables)
+    scoped["field_aliases"] = aliases
+    return scoped
+
+
 def _resolve_style_token(candidates, tables):
     """Pass 1: resolve ONLY the selected style token from the router field(s)
     (podcast_survey_writing_style, the personal-podcast select field, or any other
@@ -443,8 +476,10 @@ def map_payload(body, tables=None, expected_location_id=None):
     # the main resolve pass, so a blank same-position field from an unselected
     # sibling style can never collide with a q-slot. Enum normalization, the tenant
     # check, and required_missing keep reading the base tables (unchanged behavior).
-    style_token = _resolve_style_token(candidates, tables)
-    eff_tables = _augment_field_aliases_for_style(tables, style_token)
+    mode_token = _resolve_mode_token(candidates, tables)
+    mode_tables = _tables_for_mode(tables, mode_token)
+    style_token = _resolve_style_token(candidates, mode_tables)
+    eff_tables = _augment_field_aliases_for_style(mode_tables, style_token)
     raw, provenance, unknown = resolve_fields(candidates, eff_tables)
     canonical, warnings = validate_and_normalize(raw, tables)
 
@@ -723,7 +758,7 @@ def self_test():
     def ghl_survey(style_label, extra=None, contact="CNTe1routetesttest01"):
         cd = {
             "podcast_mode": "Personal Podcast Style",
-            "podcast_survey_writing_style": style_label,
+            "select_your_presentation_style_personal_podcast": style_label,
             # every per-style branch key present; only the selected style's are filled
             "podcast_survey__barry_q1": "", "podcast_survey__barry_q6": "",
             "podcast_survey__brene_q1": "", "podcast_survey__brene_q6": "",

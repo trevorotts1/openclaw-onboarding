@@ -1,32 +1,31 @@
 {
   "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key (and each listed cfg_key_alias). A hook may also carry assert_contains_dept:true to require that this dept's slug is present in the resolved JSON file.",
   "dept": "presentations",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "connection_points": [
     {
       "name": "kie-api-key",
-      "description": "Kie.ai API key required for the Slide Submitter role to generate images via GPT-Image-2.5. Without this key the presentation pipeline cannot produce slides.",
+      "description": "Kie.ai API key required for the Slide Submitter role to generate images via GPT Image 2.5 Sunburst. Without this key the presentation pipeline cannot produce slides. The client's own key; the accepted alias family is defined once in shared-utils/secret_names.json (see alias_source), never restated here.",
       "cfg_key": "env.vars.KIE_API_KEY",
+      "alias_source": "shared-utils/secret_names.json",
       "required": true
-    },
-    {
-      "name": "kie-images-per-batch",
-      "description": "Kie.ai image batch size (images per 10-second window). Governs rate limiting for the Slide Submitter role.",
-      "cfg_key": "env.vars.KIE_IMAGES_PER_BATCH",
-      "required": false
     },
     {
       "name": "ghl-api-key",
       "description": "GoHighLevel LOCATION Private Integration Token (PIT) used by the Media Librarian + Delivery Concierge to upload slide PNGs and the final deliverables to the GHL media library via POST services.leadconnectorhq.com/medias/upload-file. MUST be the LOCATION token, NOT an agency token (the agency PIT returns 401 for media ops). The upload tool (ghl_media.py) reads GOHIGHLEVEL_API_KEY first, then the legacy alias GHL_API_KEY; verify-wiring accepts either.",
       "cfg_key": "env.vars.GOHIGHLEVEL_API_KEY",
-      "cfg_key_aliases": ["env.vars.GHL_API_KEY"],
+      "cfg_key_aliases": [
+        "env.vars.GHL_API_KEY"
+      ],
       "required": true
     },
     {
       "name": "ghl-location-id",
       "description": "GHL location (sub-account) ID so the media upload targets the correct media library (multipart field locationId). The upload tool reads GOHIGHLEVEL_LOCATION_ID first, then the legacy alias GHL_LOCATION_ID; verify-wiring accepts either.",
       "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
-      "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
+      "cfg_key_aliases": [
+        "env.vars.GHL_LOCATION_ID"
+      ],
       "required": true
     },
     {
@@ -37,31 +36,44 @@
       "required": true
     },
     {
-      "name": "delivery-destination-drive",
-      "description": "Google Drive folder ID where the Delivery Concierge deposits the final PPTX/PDF deliverable.",
-      "cfg_key": "env.vars.GOOGLE_DRIVE_DELIVERY_FOLDER_ID",
-      "required": false
-    },
-    {
       "name": "command-center-api",
       "description": "CC base URL for producer-side board writes (job-start ingest via POST /api/tasks/ingest + per-phase PATCH). Used by cc_board.ingest_deck_task and cc_board.patch_phase; absent => clean no-op (logged, run continues ungrouped). verify-wiring.sh reads COMMAND_CENTER_URL first, then the alias MISSION_CONTROL_URL.",
       "cfg_key": "env.vars.COMMAND_CENTER_URL",
-      "cfg_key_aliases": ["env.vars.MISSION_CONTROL_URL"],
+      "cfg_key_aliases": [
+        "env.vars.MISSION_CONTROL_URL"
+      ],
       "required": true
     },
     {
       "name": "command-center-token",
       "description": "CC bearer token for producer-side board writes and deliverable registration (Authorization: Bearer). FIX-14 (Error 8 / D-8): the token MUST be wired into the gateway service-env (and be a member of OPENCLAW_SERVICE_MANAGED_ENV_KEYS) or every board write silently 401s for days. cc_board reads CC_API_TOKEN first, then the alias MC_API_TOKEN; the FIX-14 regression guard (check_agent_env.py) verifies the runtime env carries it. Absent => the phase0_preflight guard refuses (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED).",
       "cfg_key": "env.vars.MC_API_TOKEN",
-      "cfg_key_aliases": ["env.vars.CC_API_TOKEN"],
+      "cfg_key_aliases": [
+        "env.vars.CC_API_TOKEN"
+      ],
       "required": true
     },
     {
       "name": "command-center-webhook-secret",
       "description": "HMAC-SHA256 secret for the x-webhook-signature header on CC board writes (POST /api/tasks/ingest + PATCH). Absent => signature omitted and the endpoint no-ops the check (dev/no-secret mode). cc_board reads WEBHOOK_SECRET first, then the alias CC_WEBHOOK_SECRET.",
       "cfg_key": "env.vars.WEBHOOK_SECRET",
-      "cfg_key_aliases": ["env.vars.CC_WEBHOOK_SECRET"],
+      "cfg_key_aliases": [
+        "env.vars.CC_WEBHOOK_SECRET"
+      ],
       "required": false
+    },
+    {
+      "name": "llm-provider-key",
+      "description": "LLM provider API key for the Presentations pipeline's model routing (model_router.py _PROVIDER_KEY_NAMES): DeepSeek, OpenRouter, Ollama Cloud / Ollama, and Agnes AI. At least ONE of the six must resolve \u2014 the router picks the provider from the configured model, and every provider needs its key present. verify-wiring accepts the first resolving key (any-of).",
+      "cfg_key": "env.vars.DEEPSEEK_API_KEY",
+      "cfg_key_aliases": [
+        "env.vars.OPENROUTER_API_KEY",
+        "env.vars.OLLAMA_CLOUD_API_KEY",
+        "env.vars.OLLAMA_API_KEY",
+        "env.vars.AGNES_AI_API_KEY",
+        "env.vars.AGNES_API_KEY"
+      ],
+      "required": true
     }
   ]
 }

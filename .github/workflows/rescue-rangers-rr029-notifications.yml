@@ -1,0 +1,32 @@
+name: rescue-rangers-rr029-notifications
+
+on:
+  push:
+    paths:
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "65-rescue-receiver/rescue-notification.py"
+      - "tests/rescue/RR-029/**"
+      - ".github/workflows/rescue-rangers-rr029-notifications.yml"
+  pull_request:
+    paths:
+      - "65-rescue-receiver/rescue-poll.sh"
+      - "65-rescue-receiver/rescue-notification.py"
+      - "tests/rescue/RR-029/**"
+      - ".github/workflows/rescue-rangers-rr029-notifications.yml"
+
+jobs:
+  rr029-notification-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Receiver and worker syntax
+        run: |
+          bash -n 65-rescue-receiver/rescue-poll.sh
+          python3 -m py_compile 65-rescue-receiver/rescue-notification.py
+      - name: Durable notification and result contracts
+        run: |
+          python3 tests/rescue/RR-029/test_notification_worker.py
+          python3 tests/rescue/RR-029/test_notification_poll.py
+          python3 tests/rescue/RR-029/test_notification_recovery.py
+          python3 tests/rescue/RR-029/test_acceptance_probe.py
+          bash tests/rescue/RR-029/test_structured_result.sh

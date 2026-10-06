@@ -58,17 +58,21 @@ except Exception:
   [ -n "$_ws" ] && AGENTS_FILE="$_ws/AGENTS.md"
 fi
 
-# Step 2: agents.list[main].workspace from openclaw.json
+# Step 2: main's workspace from openclaw.json (agents.entries.main on OpenClaw
+# 2026.9.x, else the legacy agents.list[main])
 if [ -z "$AGENTS_FILE" ] && [ -f "$OC_ROOT/openclaw.json" ]; then
   _ws=$(python3 -c "
 import json, os, sys
 try:
     cfg = json.load(open('$OC_ROOT/openclaw.json'))
-    for ag in cfg.get('agents', {}).get('list', []) or []:
-        if isinstance(ag, dict) and ag.get('id') == 'main':
+    a = cfg.get('agents', {}) or {}
+    e = a.get('entries') if isinstance(a.get('entries'), dict) else {}
+    ws = (e.get('main') or {}).get('workspace')
+    for ag in (a.get('list') if isinstance(a.get('list'), list) else []):
+        if not ws and isinstance(ag, dict) and ag.get('id') == 'main':
             ws = ag.get('workspace')
-            if ws:
-                print(os.path.expanduser(ws)); sys.exit(0)
+    if ws:
+        print(os.path.expanduser(ws)); sys.exit(0)
 except Exception:
     pass
 " 2>/dev/null) || _ws=""
@@ -124,7 +128,7 @@ fi
 # The stamp uses "mac", "mac-legacy", "vps-hostinger", "vps-contabo", "vps-unknown".
 # We accept any stamp that STARTS WITH the detected platform prefix.
 # (e.g. stamp="vps-hostinger" matches detected="vps")
-if echo "$STAMPED_PLATFORM" | grep -qE "^${DETECTED_PLATFORM}"; then
+if grep -qE "^${DETECTED_PLATFORM}" <<<"$STAMPED_PLATFORM"; then
   echo "PASS — PLATFORM_FACTS_V1 present in $AGENTS_FILE (platform=${STAMPED_PLATFORM}, detected=${DETECTED_PLATFORM})"
   exit 0
 else

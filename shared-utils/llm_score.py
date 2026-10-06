@@ -6,17 +6,50 @@ owner_values / company_kpis / dept_kpis) against persona blueprints.
 Returns a single float in [0.0, 1.0] with a short reasoning string.
 
 Per company policy (memory: feedback-no-anthropic-for-subagents) no
-Anthropic models are used in this pipeline. The model chain is:
+Anthropic models are used in this pipeline. THE CHAIN IS DATA —
+default_scoring_chain() is the one ordered table and scoring_chain() is what
+score_layer walks. Every step speaks the same OpenAI-compatible
+/chat/completions shape, a step whose key does not resolve is SKIPPED
+SILENTLY without opening a socket, and the first HTTP 200 carrying a
+parseable {score, reasoning} wins:
 
-    1. Ollama Cloud  — DeepSeek V4 Pro (primary, cheap + 1M context)
-       Env: OLLAMA_CLOUD_API_KEY, OLLAMA_CLOUD_URL
-            (default: https://ollama.com/api)
+    1. ollama-cloud     minimax-m3                    measured 3.1s 2026-09-21
+    2. openrouter       minimax/minimax-m3            $0.30/M in, $1.20/M out
+    3. agnes            agnes-3.0-flash               falls back once to
+                                                      agnes-2.5-flash on a
+                                                      400/404 (not served)
+    4. deepseek-direct  deepseek-flash                = DeepSeek-V4.1-Flash
+    5. ollama-cloud     ollama_cloud_model()          backstop, measured 1.5s
+    6. openrouter       google/gemini-3.1-flash-lite  backstop, cheapest
 
-    2. OpenRouter    — DeepSeek V4 Pro (same model, paid fallback)
-       Env: OPENROUTER_API_KEY
+Step 5 is the one id a box can move on its own: it resolves through
+ollama_cloud_model() / OLLAMA_CLOUD_SCORING_MODEL, the same value
+decompose-task.py and verify-persona-adherence.py use, so a provider
+retiring a tag stays a config change. openrouter_model() /
+OPENROUTER_SCORING_MODEL still serves those two callers; this chain routes
+its OpenRouter budget through MiniMax and Gemini Lite instead.
 
-    3. OpenRouter    — Gemini 3.1 Flash Lite (cheapest last-resort)
-       Env: OPENROUTER_API_KEY
+Endpoints and credentials, one line each:
+
+    ollama-cloud     <OLLAMA_CLOUD_URL>/chat/completions, default base
+                     https://ollama.com/v1 — NOT /api, which 404s.
+                     Key: OLLAMA_CLOUD_API_KEY first; if that is unset or the
+                     call comes back 401, the gateway's OWN provider key from
+                     openclaw.json is tried once as a last resort — see
+                     ollama_cloud_api_keys().
+    openrouter       https://openrouter.ai/api/v1/chat/completions.
+                     Key: OPENROUTER_API_KEY.
+    agnes            https://apihub.agnes-ai.com/v1/chat/completions.
+                     Key: AGNES_API_KEY (the canon makes AGNES_AI_API_KEY and
+                     AGNES_KEY the same family), then the gateway's own
+                     provider key — see agnes_api_keys().
+    deepseek-direct  https://api.deepseek.com/chat/completions.
+                     Key: DEEPSEEK_API_KEY.
+
+LLM_SCORE_CHAIN replaces the whole table: a comma list of "provider:model"
+split on the FIRST colon so a tagged Ollama id keeps its own, e.g.
+"ollama-cloud:minimax-m3,openrouter:google/gemini-3.1-flash-lite". An entry
+naming an unknown provider is skipped with one warning to stderr.
 
 Every one of those names is resolved by _env(), which since F25 reads the
 box's SECRETS STORES as well as the process environment — see the
@@ -46,6 +79,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sqlite3
 import sys
 import time
@@ -53,8 +87,84 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+#: Ollama Cloud's OpenAI-compatible chat surface lives under /v1, never /api.
+#: The default here used to be https://ollama.com/api, so step 1 of the chain
+#: POSTed to /api/chat/completions -- measured on a live client box 2026-09-21,
+#: that path answers HTTP 404 `path "/api/chat/completions" not found`, while
+#: the identical request to /v1/chat/completions answers 200 in 0.7s. Step 1 of
+#: this chain had therefore NEVER once succeeded: every scoring call fell
+#: through to paid OpenRouter at ~4s. OLLAMA_CLOUD_URL is still honoured, but a
+#: box still pinned to the old https://ollama.com/api default is normalised to
+#: /v1 rather than left broken -- see ollama_cloud_chat_url().
+OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
+
+#: DEFAULTS, not hard-codes. A provider renaming or retiring a tag must be a
+#: config change on the box, never a code change and a fleet roll -- the cloud
+#: tag deepseek-v4-pro:cloud was deleted out from under this chain on
+#: 2026-08-17 and every scoring call failed silently until someone read a
+#: 404. GET https://ollama.com/api/tags on 2026-09-21 lists exactly
+#: deepseek-v4.1-flash, deepseek-v4-flash:0731 and deepseek-v4-pro:0813;
+#: openrouter.ai/api/v1/models lists deepseek/deepseek-v4.1-flash at 1048576
+#: context, $0.15/M prompt and $0.60/M completion. Flash is the scoring
+#: chain's model on both steps: these calls are 200-token judgements, not
+#: generation.
+OLLAMA_CLOUD_MODEL_DEFAULT = "deepseek-v4.1-flash"
+OPENROUTER_MODEL_DEFAULT = "deepseek/deepseek-v4.1-flash"
+
+
+def ollama_cloud_model() -> str:
+    """Step-1 model tag; OLLAMA_CLOUD_SCORING_MODEL overrides the default."""
+    return _env("OLLAMA_CLOUD_SCORING_MODEL", OLLAMA_CLOUD_MODEL_DEFAULT)
+
+
+def ollama_cloud_model_id() -> str:
+    """The provider-qualified id this module REPORTS for a step-1 answer."""
+    return "ollama/" + ollama_cloud_model()
+
+
+def openrouter_model() -> str:
+    """The OpenRouter DeepSeek id; OPENROUTER_SCORING_MODEL overrides it.
+
+    NOT a step of the chain below — the chain spends its OpenRouter budget on
+    MiniMax and Gemini Lite. This is the id decompose-task.py and
+    verify-persona-adherence.py use for their own single bounded calls, kept
+    overridable for the same reason ollama_cloud_model() is.
+    """
+    return _env("OPENROUTER_SCORING_MODEL", OPENROUTER_MODEL_DEFAULT)
+
+
+#: The other three transports. All four are OpenAI-compatible
+#: /chat/completions surfaces, which is why ONE attempt function
+#: (_attempt_chat) serves every step and the chain can stay a data table.
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
+DEEPSEEK_DIRECT_CHAT_URL = "https://api.deepseek.com/chat/completions"
+
+#: The chain's own model ids. Measured on a live client box 2026-09-21 with a
+#: scoring-shaped request, max_tokens 200: deepseek-v4.1-flash 1.5s,
+#: minimax-m3 3.1s, glm-5.3-flash 3.3s, OpenRouter DeepSeek ~4s.
+OLLAMA_CLOUD_CHAIN_MODEL = "minimax-m3"
+OPENROUTER_CHAIN_MODEL = "minimax/minimax-m3"
+OPENROUTER_BACKSTOP_MODEL = "google/gemini-3.1-flash-lite"
+
+#: agnes-3.0-flash is listed on an authenticated GET
+#: https://apihub.agnes-ai.com/v1/models (2026-09-21), but a given box's Agnes
+#: provider may not carry it. A 400/404 on this id retries once with the 2.5
+#: tag every account has — see _attempt_chat's model_fallback.
+AGNES_MODEL = "agnes-3.0-flash"
+AGNES_FALLBACK_MODEL = "agnes-2.5-flash"
+
+#: DeepSeek's own API. `deepseek-flash` is DeepSeek-V4.1-Flash
+#: (api-docs.deepseek.com/quick_start/pricing, read 2026-09-21).
+DEEPSEEK_DIRECT_MODEL = "deepseek-flash"
+
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60   # 30 days
-HTTP_TIMEOUT_SECONDS = 30
+
+#: PER-STEP HTTP budget. A scoring call that has not answered in 20s is worth
+#: less than the next step in the chain: every model above was measured at
+#: 1.5-4s, and the selector that calls this runs ~22 of these inside the
+#: Command Center's spawn budget. 30s bought nothing and cost a whole step.
+HTTP_TIMEOUT_SECONDS = 20
 NEUTRAL_FALLBACK_SCORE = 0.6
 
 
@@ -150,11 +260,18 @@ def _secret_helper():
     Returns the module, or None when it cannot be imported. Fails OPEN by
     design: a missing or broken canon degrades resolution to the exact name,
     it never raises and never takes scoring down.
+
+    THREAD SAFETY. score_layer() now runs concurrently (persona-selector-v2
+    scores its finalists on a thread pool), so _SECRET_HELPER_TRIED is set only
+    AFTER _SECRET_HELPER has its final value. Setting it first left a window in
+    which a second thread saw TRIED=True with the module still None and
+    silently degraded to exact-name-only resolution -- a key stored under an
+    ALIAS would not have resolved for that one call. A racing thread now simply
+    redoes the import, which sys.modules makes free and idempotent.
     """
     global _SECRET_HELPER, _SECRET_HELPER_TRIED
     if _SECRET_HELPER_TRIED:
         return _SECRET_HELPER
-    _SECRET_HELPER_TRIED = True
     try:
         here = os.path.dirname(os.path.abspath(__file__))
         if here not in sys.path:
@@ -163,6 +280,7 @@ def _secret_helper():
         _SECRET_HELPER = secret_helper
     except Exception:
         _SECRET_HELPER = None
+    _SECRET_HELPER_TRIED = True
     return _SECRET_HELPER
 
 
@@ -396,7 +514,8 @@ def env_report(names=None) -> str:
     a log.
     """
     watched = list(names) if names else [
-        "OLLAMA_CLOUD_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_CLOUD_URL",
+        "OLLAMA_CLOUD_API_KEY", "OPENROUTER_API_KEY", "AGNES_API_KEY",
+        "DEEPSEEK_API_KEY", "OLLAMA_CLOUD_URL", "LLM_SCORE_CHAIN",
     ]
     lines = []
     for name in watched:
@@ -652,66 +771,366 @@ def _parse_score_json(text: str) -> dict:
 # Provider attempts
 # ───────────────────────────────────────────────────────────────────────
 
-def _attempt_ollama_cloud(prompt: str) -> dict:
-    api_key = _env("OLLAMA_CLOUD_API_KEY")
-    if not api_key:
-        return {"ok": False, "error": "OLLAMA_CLOUD_API_KEY not set", "model": "ollama/deepseek-v4-pro:cloud"}
-    base_url = _env("OLLAMA_CLOUD_URL", "https://ollama.com/api")
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+def ollama_cloud_chat_url() -> str:
+    """The Ollama Cloud chat-completions URL for THIS box.
+
+    OLLAMA_CLOUD_URL is honoured verbatim except for one normalisation: a box
+    still carrying this module's OLD default, https://ollama.com/api, is
+    rewritten to /v1. That old base makes the request 404 (see
+    OLLAMA_CLOUD_DEFAULT_URL), so honouring it literally would leave every
+    already-provisioned box on the broken path this fix exists to close.
+    """
+    base = _env("OLLAMA_CLOUD_URL", OLLAMA_CLOUD_DEFAULT_URL).rstrip("/")
+    if base.endswith("/api"):
+        base = base[: -len("/api")] + "/v1"
+    return base + "/chat/completions"
+
+
+#: An apiKey field that NAMES an environment variable instead of carrying a
+#: secret: "${OLLAMA_CLOUD_API_KEY}", "$OLLAMA_CLOUD_API_KEY", "env:NAME", or
+#: the bare SHOUTING_NAME. Resolving one of those as a bearer token would send
+#: the literal string to the provider and earn a 401.
+_ENV_REF_RE = re.compile(r"^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$")
+_SHOUTING_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _is_literal_key(value: str) -> bool:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return False
+    if _ENV_REF_RE.match(candidate):
+        return False
+    if candidate.lower().startswith(("env:", "secret:", "file:")):
+        return False
+    if _SHOUTING_NAME_RE.match(candidate):
+        return False
+    return True
+
+
+def _openclaw_provider_key(host_fragment: str, environ=None) -> str:
+    """The gateway's OWN apiKey for the provider whose baseUrl names `host_fragment`.
+
+    Read from models.providers in the openclaw.json of the SAME installation
+    _openclaw_roots() selects -- no new file discovery, and a pinned root still
+    confines the search to one client. Both shapes the config takes are
+    accepted: providers as a NAME -> config mapping, and providers as a list of
+    configs. Only a LITERAL key counts (_is_literal_key); a field that merely
+    names an env var is not a credential. Returns "" when there is nothing to
+    return, and NEVER logs or raises -- the value goes straight into an
+    Authorization header and nowhere else.
+    """
+    for root in _openclaw_roots(environ):
+        path = os.path.join(root, "openclaw.json")
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path) as handle:
+                data = json.load(handle)
+            providers = ((data.get("models") or {}).get("providers") or {})
+            entries = providers.values() if isinstance(providers, dict) else providers
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                base = str(entry.get("baseUrl") or entry.get("base_url") or "")
+                if host_fragment not in base:
+                    continue
+                key = str(entry.get("apiKey") or entry.get("api_key") or "").strip()
+                if _is_literal_key(key):
+                    return key
+        except Exception:
+            continue
+    return ""
+
+
+def ollama_cloud_api_keys() -> list:
+    """Bearer tokens to try against Ollama Cloud, best first.
+
+    1. OLLAMA_CLOUD_API_KEY through the F25 chain (process env, aliases, the
+       box's secrets stores, the openclaw.json env block).
+    2. LAST RESORT -- the key the OpenClaw gateway itself uses for its
+       ollama.com provider, from models.providers in openclaw.json.
+
+    Measured on a live client box 2026-09-21: the resolved OLLAMA_CLOUD_API_KEY
+    answered 401 on ollama.com while the gateway's provider key answered 200
+    for the identical request. The gateway key is the proven-working one, so it
+    is tried when the first name resolves nothing AND when the first key is
+    rejected -- see _attempt_ollama_cloud. This is RESOLUTION ONLY: nothing is
+    written back to any env file or store.
+    """
+    keys = []
+    env_key = _env("OLLAMA_CLOUD_API_KEY")
+    if env_key:
+        keys.append(env_key)
+    provider_key = _openclaw_provider_key("ollama.com")
+    if provider_key and provider_key not in keys:
+        keys.append(provider_key)
+    return keys
+
+
+def openrouter_api_keys() -> list:
+    """Bearer tokens for OpenRouter: the resolved OPENROUTER_API_KEY, or none.
+
+    No gateway-provider fallback here, deliberately. OpenRouter is the step
+    that has always resolved from its env name, and reaching into
+    openclaw.json for it would be new credential behaviour this chain does not
+    need. Ollama Cloud and Agnes get that fallback because their env name is
+    the one measured absent or rejected on live boxes.
+    """
+    key = _env("OPENROUTER_API_KEY")
+    return [key] if key else []
+
+
+def agnes_api_keys() -> list:
+    """Bearer tokens for Agnes AI, best first.
+
+    1. AGNES_API_KEY through the F25 chain. The secret-name canon
+       (secret_names.json) puts AGNES_AI_API_KEY and AGNES_KEY in the same
+       family, so a box that wrote any of the three resolves here.
+    2. LAST RESORT — the gateway's own key for the provider whose baseUrl
+       names apihub.agnes-ai.com, through the SAME _openclaw_provider_key()
+       the Ollama Cloud step uses. No new file discovery, a pinned root still
+       confines the search to one installation, and only a LITERAL key counts.
+
+    Resolution only: nothing is written back to any env file or store.
+    """
+    keys = []
+    env_key = _env("AGNES_API_KEY")
+    if env_key:
+        keys.append(env_key)
+    provider_key = _openclaw_provider_key("agnes-ai.com")
+    if provider_key and provider_key not in keys:
+        keys.append(provider_key)
+    return keys
+
+
+def deepseek_direct_api_keys() -> list:
+    """Bearer tokens for DeepSeek's own API: the resolved DEEPSEEK_API_KEY.
+
+    The canon also accepts DEEPSEEK_KEY and DEEP_SEEK_API_KEY. Most boxes
+    carry no DeepSeek credential at all, and that step then costs nothing:
+    a chain step with no key is skipped without touching the network.
+    """
+    key = _env("DEEPSEEK_API_KEY")
+    return [key] if key else []
+
+
+def _attempt_chat(provider: str, model: str, prompt: str, url: str, keys: list,
+                  extra_headers: dict = None, extra_body: dict = None,
+                  model_fallback: str = "") -> dict:
+    """ONE chain step. -> {ok, score, reasoning, model} | {ok: False, error, model}
+
+    `model` in the returned dict is always the STEP LABEL, "<provider>/<model>"
+    — so the winning step's own name is what score_layer caches and what
+    persona_selection_log records. The chain carries TWO Ollama Cloud steps and
+    TWO OpenRouter steps, so a label naming only the family could not say which
+    one served a score. ollama_cloud_model_id() is unchanged and still reports
+    the "ollama/<tag>" form for the callers that are not chain steps.
+
+    NO KEY IS A SKIP, NOT A FAILURE. An empty `keys` returns ok=False without
+    opening a socket, and the caller simply advances. That is what lets the
+    table carry a DeepSeek step on a fleet where almost no box has a DeepSeek
+    credential.
+
+    KEY ORDER. A 401 means THIS key is rejected, not that the provider is
+    down, so the next candidate is tried. Any other HTTP status and any
+    transport error ends the step — a 500 is the provider being down, and
+    retrying would double every outage's cost.
+
+    MODEL FALLBACK. With `model_fallback` set, an HTTP 400 or 404 retries once
+    with that id, keeping the keys that already authenticated. Those two codes
+    are how an OpenAI-compatible surface says "I do not serve that model".
+    This is deliberately broader than matching the error BODY for "model not
+    found": the wording is provider-specific and reading the body can itself
+    fail, while the retry costs one call against a step that has already
+    failed. The retry carries no fallback of its own, so it happens at most
+    once.
+
+    NO KEY VALUE IS EVER RETURNED OR LOGGED. A key goes into an Authorization
+    header and nowhere else; urllib's HTTPError carries the status line, never
+    the request headers.
+    """
+    label = f"{provider}/{model}"
+    if not keys:
+        return {"ok": False, "error": "no API key resolved", "model": label}
+
+    headers_base = {"Content-Type": "application/json"}
+    if extra_headers:
+        headers_base.update(extra_headers)
     body = {
-        "model": "deepseek-v4-pro:cloud",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": 200,
     }
-    try:
-        payload = _post_chat(url, headers, body)
+    if extra_body:
+        body.update(extra_body)
+
+    outcome = {"ok": False, "error": "no attempt made", "model": label}
+    for index, api_key in enumerate(keys):
+        headers = dict(headers_base)
+        headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            payload = _post_chat(url, headers, body)
+        except urllib.error.HTTPError as e:
+            # HTTPError before URLError: it is a SUBCLASS, and only it carries
+            # .code.
+            outcome = {"ok": False, "error": f"HTTPError: {e}", "model": label}
+            if e.code == 401 and index + 1 < len(keys):
+                continue
+            if e.code in (400, 404) and model_fallback:
+                return _attempt_chat(provider, model_fallback, prompt, url,
+                                     keys[index:], extra_headers, extra_body)
+            return outcome
+        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError,
+                # socket.timeout AND OSError. On Python 3.9 `socket.timeout` is
+                # an OSError but NOT a TimeoutError — they were unified only in
+                # 3.10. A read timeout on a step therefore ESCAPED this handler
+                # on 3.9, propagated out of pool.map in the selector's
+                # score_personas, and killed the whole persona selection (rc 1)
+                # instead of falling through to the next step in the chain.
+                #
+                # OSError alone would cover socket.timeout on every version;
+                # socket.timeout is named anyway so the fix is findable by the
+                # obvious grep. OSError is what additionally catches the
+                # connection-reset family, which escaped on EVERY version. Do
+                # not narrow either back to TimeoutError.
+                #
+                # urllib.error.HTTPError is caught ABOVE, so a 401/400/404/500
+                # still takes its own key-advance / model-fallback path and is
+                # never recorded as a transport failure.
+                socket.timeout, OSError,
+                AttributeError, KeyError, TypeError) as e:
+            # Recorded as a TRANSPORT failure: score_layer folds this string
+            # into last_error and then into the degraded reasoning, so the
+            # marker is what distinguishes "the socket gave up" from an
+            # HTTP status or an unparseable 200 when reading a failed run.
+            return {"ok": False,
+                    "error": f"transport: {type(e).__name__}: {e}",
+                    "model": label}
         text = _extract_message(payload)
         parsed = _parse_score_json(text)
         if parsed["score"] is None:
-            return {"ok": False, "error": f"unparseable: {parsed['reasoning']}", "model": "ollama/deepseek-v4-pro:cloud"}
-        return {"ok": True, "score": parsed["score"], "reasoning": parsed["reasoning"],
-                "model": "ollama/deepseek-v4-pro:cloud"}
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError) as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}", "model": "ollama/deepseek-v4-pro:cloud"}
+            return {"ok": False, "error": f"unparseable: {parsed['reasoning']}",
+                    "model": label}
+        return {"ok": True, "score": parsed["score"],
+                "reasoning": parsed["reasoning"], "model": label}
+    return outcome
+
+
+def _step_ollama_cloud(prompt: str, model: str) -> dict:
+    return _attempt_chat("ollama-cloud", model, prompt,
+                         ollama_cloud_chat_url(), ollama_cloud_api_keys())
+
+
+def _step_openrouter(prompt: str, model: str) -> dict:
+    return _attempt_chat(
+        "openrouter", model, prompt, OPENROUTER_CHAT_URL, openrouter_api_keys(),
+        extra_headers={
+            "HTTP-Referer": "https://github.com/trevorotts1/openclaw-onboarding",
+            "X-Title": "OpenClaw persona-selector",
+        },
+        # Ask OpenRouter thinking models to suppress reasoning tokens so
+        # content is always a plain string — avoids the content=null crash.
+        # Non-thinking models silently ignore it. It is OpenRouter's OWN
+        # extension, so it is not sent to the other three surfaces, where an
+        # unknown body field is a 400 waiting to happen.
+        extra_body={"reasoning": {"exclude": True}},
+    )
+
+
+def _step_agnes(prompt: str, model: str) -> dict:
+    return _attempt_chat(
+        "agnes", model, prompt,
+        AGNES_BASE_URL.rstrip("/") + "/chat/completions", agnes_api_keys(),
+        model_fallback=AGNES_FALLBACK_MODEL if model == AGNES_MODEL else "",
+    )
+
+
+def _step_deepseek_direct(prompt: str, model: str) -> dict:
+    return _attempt_chat("deepseek-direct", model, prompt,
+                         DEEPSEEK_DIRECT_CHAT_URL, deepseek_direct_api_keys())
+
+
+#: provider name -> step runner. The ONLY place a provider name is legal,
+#: in default_scoring_chain() and in an LLM_SCORE_CHAIN override alike.
+_STEP_RUNNERS = {
+    "ollama-cloud": _step_ollama_cloud,
+    "openrouter": _step_openrouter,
+    "agnes": _step_agnes,
+    "deepseek-direct": _step_deepseek_direct,
+}
+
+
+def default_scoring_chain() -> list:
+    """THE CHAIN, AS DATA — (provider, model) in the operator's order.
+
+    A function and not a module constant for one reason: step 5's tag is box
+    CONFIGURATION (ollama_cloud_model(), OLLAMA_CLOUD_SCORING_MODEL), and a
+    constant would freeze whatever the environment looked like at import —
+    which under launchd and the openclaw cron is nothing at all. Every other
+    id here is a literal.
+
+    The order is deliberate and is not a price ranking: the two fastest models
+    measured on a live box sit at 1 and 5, with a paid mirror of each in
+    between, so no single provider outage empties the chain. A step whose key
+    does not resolve is skipped silently, so a box holding only an OpenRouter
+    credential simply runs steps 2 and 6 and pays for nothing else.
+    """
+    return [
+        ("ollama-cloud",    OLLAMA_CLOUD_CHAIN_MODEL),
+        ("openrouter",      OPENROUTER_CHAIN_MODEL),
+        ("agnes",           AGNES_MODEL),
+        ("deepseek-direct", DEEPSEEK_DIRECT_MODEL),
+        ("ollama-cloud",    ollama_cloud_model()),
+        ("openrouter",      OPENROUTER_BACKSTOP_MODEL),
+    ]
+
+
+def scoring_chain() -> list:
+    """The ordered [(provider, model)] this box will walk.
+
+    default_scoring_chain() unless LLM_SCORE_CHAIN resolves, in which case the
+    override wins OUTRIGHT: an operator naming a chain is naming the whole
+    chain, and silently merging the default back in would make the setting
+    unreadable. The override is a comma list of "provider:model" split on the
+    FIRST colon, so a tagged Ollama id keeps its own
+    ("ollama-cloud:deepseek-v4-pro:0813").
+
+    An entry naming an unknown provider is skipped with ONE warning per
+    offending name, to stderr. This module degrades; it does not raise, and it
+    does not take a scoring pass down over a typo in a setting.
+    """
+    raw = _env("LLM_SCORE_CHAIN")
+    if not raw:
+        return default_scoring_chain()
+    steps, warned = [], set()
+    for item in raw.split(","):
+        provider, _, model = item.strip().partition(":")
+        provider, model = provider.strip(), model.strip()
+        if not provider or not model:
+            continue
+        if provider not in _STEP_RUNNERS:
+            if provider not in warned:
+                warned.add(provider)
+                print(f"[llm_score] LLM_SCORE_CHAIN: unknown provider "
+                      f"{provider!r} — step skipped (known: "
+                      f"{', '.join(sorted(_STEP_RUNNERS))})", file=sys.stderr)
+            continue
+        steps.append((provider, model))
+    return steps
+
+
+# ── Back-compat entry points ───────────────────────────────────────────
+# verify-persona-adherence.py imports BOTH of these by name at module level,
+# and an ImportError there switches that script's whole LLM path off. They are
+# the same two steps the chain runs, under the names that call site uses.
+
+def _attempt_ollama_cloud(prompt: str, model: str = "") -> dict:
+    return _step_ollama_cloud(prompt, model or ollama_cloud_model())
 
 
 def _attempt_openrouter(prompt: str, model_id: str) -> dict:
-    api_key = _env("OPENROUTER_API_KEY")
-    if not api_key:
-        return {"ok": False, "error": "OPENROUTER_API_KEY not set", "model": model_id}
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/trevorotts1/openclaw-onboarding",
-        "X-Title": "OpenClaw persona-selector",
-    }
-    body = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 200,
-        # Ask OpenRouter thinking models to suppress reasoning tokens so content
-        # is always a plain string — avoids the content=null crash.
-        # Non-thinking models silently ignore this field.
-        "reasoning": {"exclude": True},
-    }
-    try:
-        payload = _post_chat(url, headers, body)
-        text = _extract_message(payload)
-        parsed = _parse_score_json(text)
-        if parsed["score"] is None:
-            return {"ok": False, "error": f"unparseable: {parsed['reasoning']}", "model": model_id}
-        return {"ok": True, "score": parsed["score"], "reasoning": parsed["reasoning"],
-                "model": model_id}
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
-            TimeoutError, AttributeError, KeyError, TypeError) as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}", "model": model_id}
+    return _step_openrouter(prompt, model_id)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -747,15 +1166,12 @@ def score_layer(
 
     prompt = _build_prompt(layer, persona_id, persona_blueprint_summary, context)
 
-    chain = [
-        ("ollama-cloud-deepseek-pro", lambda: _attempt_ollama_cloud(prompt)),
-        ("openrouter-deepseek-pro",   lambda: _attempt_openrouter(prompt, "deepseek/deepseek-v4-pro")),
-        ("openrouter-gemini-lite",    lambda: _attempt_openrouter(prompt, "google/gemini-3.1-flash-lite")),
-    ]
-
-    last_error = ""
-    for name, attempt in chain:
-        result = attempt()
+    # scoring_chain() only ever yields providers _STEP_RUNNERS knows, so the
+    # lookup below cannot miss -- an unknown name was already dropped, with a
+    # warning, where the override was parsed.
+    last_error = "no step ran: the scoring chain resolved to zero steps"
+    for provider, model in scoring_chain():
+        result = _STEP_RUNNERS[provider](prompt, model)
         if result.get("ok"):
             if verbose:
                 print(f"[llm_score] {layer}/{persona_id} via {result['model']} → {result['score']:.2f}",
@@ -768,9 +1184,10 @@ def score_layer(
                 "cached": False,
                 "fallback": False,
             }
-        last_error = f"{name}: {result.get('error', 'unknown')}"
+        last_error = f"{result['model']}: {result.get('error', 'unknown')}"
         if verbose:
-            print(f"[llm_score] {name} failed: {result.get('error')}", file=sys.stderr)
+            print(f"[llm_score] {result['model']} failed: {result.get('error')}",
+                  file=sys.stderr)
 
     return {
         "score": NEUTRAL_FALLBACK_SCORE,

@@ -40,7 +40,7 @@ EXPECTED_PHASES = (
     ("P0-INTAKE", "prove_sf_intake.py"),
     ("P1-COPY", "prove_sf_copy.py"),
     ("P2-PROMPTS", "prove_sf_prompt_floor.py"),
-    ("P3-IMAGES", "kie_image.py"),          # Skill 47 delegation (provenance checked at P4/P9)
+    ("P3-IMAGES", "kie_live_adapter.py"),   # Skill 66 policy + Skill 74 transport (provenance checked at P4/P9)
     ("P4-MEDIA", "ghl_media.py"),           # Skill 6 delegation
     ("P5-HTML", "html_fragments"),          # artifact-backed gate (pages/<profile>.fragment.html)
     ("P6-COMPOSE", "prove_sf_graph.py"),    # funnel_graph.json vs MASTERDOC §3

@@ -8,7 +8,7 @@ The real operator-delegated run
 working/copy/intake.json that DID carry a requester -- but only in the FLAT
 shape:
 
-    "requester_chat_id": "5252140759",
+    "requester_chat_id": "<operator-chat-id>",
     "requester_channel": "telegram",
 
 and the engine died on its first instruction with

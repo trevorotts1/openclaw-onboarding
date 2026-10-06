@@ -11,6 +11,38 @@ oc_detect_platform() {
   esac
 }
 
+# Canonicalize a directory path so two SPELLINGS of one directory compare equal.
+# A container image whose /data is a symlink to the node user's home makes
+# /data/.openclaw and $HOME/.openclaw the same inode reached by two names; a
+# string comparison calls that two installations and aborts the updater.
+# Portable on purpose: `cd -P` + `pwd -P` are POSIX builtins that work in bash
+# 3.2 and in the minimal shells the Docker images ship. `readlink -f` is GNU
+# only (macOS shipped no -f for years) and python3 is not present in every
+# image, so both are fallbacks, tried only when the builtin cannot answer.
+# Never fails: an unresolvable path is returned unchanged, so a caller can
+# always still compare and report what it was handed.
+oc_canonical_path() {
+  local target resolved
+  target="$1"
+  resolved=""
+  [ -n "$target" ] || return 1
+  if [ -d "$target" ]; then
+    resolved="$(cd -P -- "$target" 2>/dev/null && pwd -P)" || resolved=""
+  fi
+  if [ -z "$resolved" ]; then
+    resolved="$(readlink -f -- "$target" 2>/dev/null)" || resolved=""
+  fi
+  if [ -z "$resolved" ] && command -v python3 >/dev/null 2>&1; then
+    resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$target" 2>/dev/null)" || resolved=""
+  fi
+  [ -n "$resolved" ] || resolved="$target"
+  case "$resolved" in
+    /) ;;
+    *) resolved="${resolved%/}" ;;
+  esac
+  printf '%s\n' "$resolved"
+}
+
 oc_container_marked() {
   [[ -f /.dockerenv || -f /run/.containerenv ]] && return 0
   [[ -r /proc/1/cgroup ]] && grep -qE '(^|/)(docker|kubepods|libpod)(/|[-.])' /proc/1/cgroup && return 0
@@ -26,7 +58,7 @@ oc_runtime_topology() {
 }
 
 oc_set_platform_paths() {
-  local detected root workspace configured
+  local detected root workspace configured home_canonical data_canonical
   detected="$(oc_detect_platform)" || return 1
   if [[ -n "${OPENCLAW_PLATFORM:-}" && "${OPENCLAW_PLATFORM}" != "$detected" ]]; then
     echo "OPENCLAW_PLATFORM=${OPENCLAW_PLATFORM} conflicts with the actual OS ($detected)." >&2
@@ -41,11 +73,23 @@ oc_set_platform_paths() {
     # directory on a native VPS is not evidence of Docker or client ownership.
     root="$HOME/.openclaw"
     if [[ "$detected" == vps && -d /data/.openclaw ]]; then
-      if [[ -d "$HOME/.openclaw" && "$HOME/.openclaw" != /data/.openclaw ]]; then
-        echo "Two OpenClaw roots exist; set OPENCLAW_ROOT to the intended client installation." >&2
-        return 1
-      fi
       root=/data/.openclaw
+      if [[ -d "$HOME/.openclaw" && "$HOME/.openclaw" != /data/.openclaw ]]; then
+        # Two names can be one directory. Resolve both before deciding, and
+        # abort only when they are genuinely separate installations.
+        home_canonical="$(oc_canonical_path "$HOME/.openclaw")"
+        data_canonical="$(oc_canonical_path /data/.openclaw)"
+        if [[ "$home_canonical" == "$data_canonical" ]]; then
+          echo "One OpenClaw root reached by two paths: $HOME/.openclaw and /data/.openclaw both resolve to $home_canonical." >&2
+          echo "Using $HOME/.openclaw; no OPENCLAW_ROOT is needed." >&2
+          root="$HOME/.openclaw"
+        else
+          echo "Two OpenClaw roots exist; set OPENCLAW_ROOT to the intended client installation." >&2
+          echo "  $HOME/.openclaw resolves to $home_canonical" >&2
+          echo "  /data/.openclaw resolves to $data_canonical" >&2
+          return 1
+        fi
+      fi
     elif [[ "$detected" == vps && "$OPENCLAW_RUNTIME_TOPOLOGY" == container && -d /data && ! -d "$HOME/.openclaw" ]]; then
       root=/data/.openclaw
     fi

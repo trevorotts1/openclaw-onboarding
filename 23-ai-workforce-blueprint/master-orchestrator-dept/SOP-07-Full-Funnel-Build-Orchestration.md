@@ -1,5 +1,5 @@
 # SOP-07 — Full-Funnel Build Orchestration
-**Version:** 1.1.0 | 2026-06-22
+**Version:** 1.2.0 | 2026-10-01
 **Applies to:** Master Orchestrator / CEO Agent (all installs — Mac and VPS)
 **Status:** CANONICAL — cross-platform fleet standard
 
@@ -88,7 +88,7 @@ For each of the seven stages below, POST one child card (P2e is the email-sequen
 | P2 | `p2-copy` | `marketing` | `copy.md` / `copy.json` APPROVED | P1 done |
 | P2e | `p2e-email-copy` | `marketing` | Email sequence copy APPROVED | P1 done (parallel with P2) |
 | P3 | `p3-assets` | `graphics` | `assets-manifest.json` | P2 APPROVED |
-| P4 | `p4-build` | `web-development` | Page IDs, preview URLs, Gate-3 match | P2 APPROVED + P3 done |
+| P4 | `p4-build` | `web-development` | Page IDs, preview URLs, Gate-3 match; page family resolved at STEP 0 (71 single BlackCEO page via native skill catalog / 49 multi-step / 56 DR-VSL / 62 cinematic via funnel-engine selector) | P2 APPROVED + P3 done |
 | P5 | `p5-automation` | `crm` | Skill-44 WF-1..21 PASS + rubric ≥ 8.5 | P2e APPROVED + P4 verified |
 
 **Child card POST body (template):**
@@ -221,19 +221,38 @@ Parent funnel epic: <parent_task_id>
 Child idempotency key: <p2e_key>
 ```
 
-### P3 — Assets (Graphics dept)
+### P3 — Assets (Graphics dept; single BlackCEO pages use Skill 71 `blackceo-signature-page` image intelligence/prompts)
 
 ```
 Produce assets-manifest.json mapping all copy slot IDs to CDN-hosted image/video links.
+When the P4 page family resolves to Skill 71 (single BlackCEO page), the image intelligence
+and prompt authoring for those pages follows Skill 71's own system; this stage still
+produces the CDN-hosted assets-manifest.json.
 Input: approved copy.md from P2.
 Output: assets-manifest.json at working/funnels/<slug>/assets-manifest.json.
 Parent funnel epic: <parent_task_id>
 Child idempotency key: <p3_key>
 ```
 
-### P4 — Page Build (Web Development dept — Funnel Builder or Landing Page Specialist)
+### P4 — Page Build (Web Development dept — page-family STEP-0 resolution)
 
 ```
+STEP 0 (engine-first): resolve the page family BEFORE any selector call.
+  (a) Single focused BlackCEO page families -- landing / opt-in / squeeze / lead-generation /
+  webinar-event registration / 5-day challenge / booking, Standard or Long-Form system --
+  resolve via the NATIVE SKILL CATALOG (23-ai-workforce-blueprint/skill-department-map.json,
+  skill "71" intent_triggers; one source of truth per universal-sops/native-skill-invocation.md
+  Rule 2) and the Landing Page Specialist SOP 9.0 Page-Family Routing Gate
+  (23-ai-workforce-blueprint/templates/role-library/web-development/landing-page-specialist.md).
+  These resolve to Skill 71 blackceo-signature-page and NEVER enter the funnel-engine
+  selector.
+  (b) The funnel-engine selector + registry (06-ghl-install-pages/tools/funnel_engine_selector.py
+  + funnel-engines/registry.json) stays the STEP-0 instrument for MULTI-STEP page families only:
+  a multi-step 3/5/7 Signature Funnel -> Skill 49; a DR/VSL/high-ticket/order-bump stack -> Skill 56;
+  a cinematic/scroll page -> Skill 62.
+  (c) If a single BlackCEO page request ever returns NO_ENGINE_MATCH from the selector, that is
+  NOT a template-first fallback and NOT a hand-author case: it confirms Skill 71 ownership.
+  Never hand-author a single BlackCEO page in this stage.
 Run v2-autonomous-build-sop.md (06-ghl-install-pages).
 Inputs: approved copy.md (P2) + assets-manifest.json (P3) + funnel-spec.json (P1).
 Gate-3 verbatim copy match required.
@@ -346,5 +365,6 @@ The `POST /api/tasks/ingest` endpoint returns `{ok:true, task_id:"...", deduped:
 
 | Version | Date | Change |
 |---------|------|--------|
+| 1.2.0 | 2026-10-01 | Named the page-type owner at P3 and P4: P4 resolves the page family at STEP 0 (Skill 49 multi-step / Skill 71 single BlackCEO page / Skill 56 DR-VSL / Skill 62 cinematic) and P3 points at Skill 71's image intelligence/prompt system for single-page assets, while P3 still produces the CDN assets-manifest.json and P4 still runs the v2 build SOP (Skill 6 delivery rail). No change to the routing/gating contract. |
 | 1.1.0 | 2026-06-22 | Added executable enforcement for the previously prose-only contract: `funnel_rollback.py` implements §7 (byte-identical revert + idempotent delete + `funnel_rollback.json`); `funnel_fixture_harness.py` runs the full P0→P5 value stream offline and emits the evidence tree (offer-spec.json, funnel-spec.json, hormozi persona-selection-log, copy.md APPROVED, ecosystem receipts, `logs/final-preview-verify.json` 7/7 rollup, `scorecard/verify-summary.json`); `funnel_rubrics.py` scores the 11 acceptance rubrics from RAW evidence; CI workflow `full-funnel-pipeline.yml` gates all of it. No change to the routing/gating contract below. |
 | 1.0.0 | 2026-06-22 | Initial canonical SOP. Defines P0→P5 value-stream: full-funnel intent detection, parent funnel_epic, 7 staged child cards (P0, P1, P2, P2e, P3, P4, P5 — P2e is the parallel email-sequence card) with depends_on edges, waiting_on_dependency sub-state (not counted against bounce cap), Iron Rule (routes via POST /api/tasks/ingest to persistent agent:<dept>), funnel_rollback on child FAILED, and parent/child idempotency key derivation. Sibling to SOP-00 and SOP-01 in master-orchestrator-dept/. |

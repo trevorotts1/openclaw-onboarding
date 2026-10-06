@@ -40,6 +40,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from loop_ledger import openclaw_root  # noqa: E402
+from loop_identity import canonical_box, client_label, identity_state  # noqa: E402
 
 WEBHOOK_ENV = "RESCUE_RANGERS_WEBHOOK_URL"
 SECRET_ENV = "RESCUE_RANGERS_WEBHOOK_SECRET"
@@ -64,11 +65,16 @@ def build_payload(box, loop_class, finding, evidence_path, proposed_fix,
     requires one of message|problem|problem_text|problemText and this payload
     only ever carried `finding`, so a correctly-detected loop was refused at the
     door. `finding` is KEPT so nothing downstream that reads it breaks."""
-    return {
+    # RR plan F17: the intake joins on the canonical fleet slug, never a hostname.
+    box = canonical_box(box)
+    unresolved = identity_state() == "unresolved"
+    payload = {
         "action": "escalate",
         "source": "skill-61-loop-protection",
         "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "box": box,
+        "boxName": box,
+        "clientName": client_label(box),
         "role": role,
         "driver": loop_class,
         "finding": finding,
@@ -85,6 +91,10 @@ def build_payload(box, loop_class, finding, evidence_path, proposed_fix,
             "revert_line": revert_cmd,
         },
     }
+    if unresolved:
+        # Fix 7: no fleet slug could be resolved - Rescue Rangers is told the box name is a fallback.
+        payload["identity"] = "unresolved"
+    return payload
 
 
 class EscalationRefused(Exception):
@@ -486,6 +496,26 @@ def drain(limit=None, transport=None, url=None, dry_run=False, spacing=None):
 
 
 def self_test():
+    """Run the self-test with LOOP_STATE_DIR pinned to a scratch dir for the WHOLE run.
+
+    Fix 7 side effect: build_payload() -> canonical_box() syncs the ledger meta `box`
+    when a fleet slug resolves, and the first payload case runs before the inner
+    blocks set their own state dir. Without this sandbox a self-test on an installed
+    box wrote the slug into the box's REAL ledger. The prior value is restored."""
+    import tempfile
+    prior = os.environ.get("LOOP_STATE_DIR")
+    with tempfile.TemporaryDirectory(prefix="loop-escalate-selftest-") as sandbox:
+        os.environ["LOOP_STATE_DIR"] = sandbox
+        try:
+            return _self_test_body()
+        finally:
+            if prior is None:
+                os.environ.pop("LOOP_STATE_DIR", None)
+            else:
+                os.environ["LOOP_STATE_DIR"] = prior
+
+
+def _self_test_body():
     import tempfile
     print("[loop_escalate] self-test: payload shape, OFFLINE UNSENT fallback, no-secret, live-transport OK")
 

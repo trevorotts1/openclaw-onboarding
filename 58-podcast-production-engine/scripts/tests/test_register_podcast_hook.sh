@@ -181,9 +181,11 @@ if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
   [ "$(printf '%s' "$R" | jq -r '.controllerId')" = "webhooks/podcast-intake-acme-media" ] || ok=1
   jq -e '.hooks.allowedAgentIds | index("dept-podcast") != null' "$CFG" >/dev/null || ok=1
   jq -e '.hooks.allowedSessionKeyPrefixes | index("podcast:") != null' "$CFG" >/dev/null || ok=1
-  # sibling route + sibling hook mapping preserved byte-for-byte where untouched
+  # sibling route + sibling hook mapping preserved (the podcast mapping is
+  # PREPENDED, so the sibling moves down the list but must survive intact)
   [ "$(jq -r '.plugins.entries.webhooks.config.routes["other-skill-route"].sessionKey' "$CFG")" = "other:thing" ] || ok=1
-  [ "$(jq -r '.hooks.mappings[0].id' "$CFG")" = "ghl-inbound" ] || ok=1
+  [ "$(jq -r '[.hooks.mappings[] | select(.id == "ghl-inbound")] | length' "$CFG")" = "1" ] || ok=1
+  [ "$(jq -r '[.hooks.mappings[] | select(.id == "ghl-inbound")][0].match.path' "$CFG")" = "ghl-inbound" ] || ok=1
   # the secret VALUE never lands in the config; only the label
   if grep -q "synthetic-fixture-secret" "$CFG"; then ok=1; fi
   if printf '%s' "$OUT" | grep -q "synthetic-fixture-secret"; then ok=1; fi
@@ -544,6 +546,122 @@ if run_script 0 env -u PODCAST_CLIENT_LOCATION_ID \
   check "service-env: no-op rerun heals the missing service-env labels" "$ok"
 else
   fail "service-env heal on rerun (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 22. GATEWAY HOOK MAPPING (ISSUE-03). The flat-body trigger. Without this
+#     mapping a Convert and Flow survey POST reaches the box, the plugin route
+#     rejects it (it accepts only {"action":"create_flow"}), and no podcast
+#     agent turn is ever dispatched: intake sits at received forever.
+# --------------------------------------------------------------------------- #
+write_cfg '{
+  "plugins": {"entries": {"webhooks": {"enabled": true, "config": {"routes": {}}}}}
+}'
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  M="$(jq -c '[.hooks.mappings[] | select(.id == "podcast-intake-acme-media")]' "$CFG")"
+  ok=0
+  [ "$(printf '%s' "$M" | jq -r 'length')" = "1" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].match.path')" = "podcast-intake-acme-media" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].action')" = "agent" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].agentId')" = "dept-podcast" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].sessionKey')" = "podcast:intake:acme-media" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].sessionMode')" = "persistent" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].wakeMode')" = "now" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].deliver')" = "false" ] || ok=1
+  [ "$(printf '%s' "$M" | jq -r '.[0].allowUnsafeExternalContent')" = "false" ] || ok=1
+  check "hook mapping: written with action agent, agentId dept-podcast, deliver false" "$ok"
+
+  # The messageTemplate must carry the WHOLE body ({{.}} is the installed
+  # resolver's only whole-payload expression; {{payload}} renders empty) and
+  # must name the deterministic handler and the step driver, not a daemon.
+  TPL="$(jq -r '[.hooks.mappings[] | select(.id == "podcast-intake-acme-media")][0].messageTemplate' "$CFG")"
+  ok=0
+  printf '%s' "$TPL" | grep -q '{{\.}}' || ok=1
+  printf '%s' "$TPL" | grep -q '{{payload}}' && ok=1
+  printf '%s' "$TPL" | grep -q 'intake_handler.py handle --payload' || ok=1
+  printf '%s' "$TPL" | grep -q -- '--mode trigger-flow' || ok=1
+  printf '%s' "$TPL" | grep -q 'podcast_step_driver.py --json next --job-id' || ok=1
+  printf '%s' "$TPL" | grep -q 'checkpoint.begin_command' || ok=1
+  printf '%s' "$TPL" | grep -q 'record-show-notes' || ok=1
+  check "hook mapping: messageTemplate carries {{.}} and drives checkpointed handler/step worker" "$ok"
+
+  # hooks ingress on, and ONE secret across both surfaces.
+  ok=0
+  [ "$(jq -r '.hooks.enabled' "$CFG")" = "true" ] || ok=1
+  [ "$(jq -r '.hooks.token' "$CFG")" = '${PODCAST_INTAKE_HOOK_SECRET}' ] || ok=1
+  grep -q "synthetic-fixture-secret" "$CFG" && ok=1
+  check "hook mapping: hooks ingress enabled, token is the env reference, no plaintext" "$ok"
+
+  # The gateway refuses to start when a prefix allow-list is set, no
+  # defaultSessionKey exists, and "hook:" is missing. Adding podcast: without
+  # hook: would take the whole box's hooks down.
+  ok=0
+  jq -e '.hooks.allowedSessionKeyPrefixes | index("podcast:") != null' "$CFG" >/dev/null || ok=1
+  jq -e '.hooks.allowedSessionKeyPrefixes | index("hook:") != null' "$CFG" >/dev/null || ok=1
+  check "hook mapping: hook: prefix added when defaultSessionKey is unset (gateway start-up rule)" "$ok"
+else
+  fail "hook mapping registration (rc=$LAST_RC): $OUT"
+fi
+
+# 23. --verify is a real read-back: PASS on the registered slug, FAIL (exit 2)
+#     on an unregistered one. This is the surface provision gates activation on.
+if run_script 0 "$SCRIPT_UNDER_TEST" --verify --client-slug acme-media \
+   && printf '%s' "$OUT" | grep -q "verify: PASS"; then
+  pass "--verify reports PASS for a registered client"
+else
+  fail "--verify on a registered client (rc=$LAST_RC): $OUT"
+fi
+if run_script 2 "$SCRIPT_UNDER_TEST" --verify --client-slug never-registered \
+   && printf '%s' "$OUT" | grep -q "verify: FAIL"; then
+  pass "--verify exits 2 for an unregistered client"
+else
+  fail "--verify on an unregistered client (rc=$LAST_RC): $OUT"
+fi
+
+# 24. --remove takes the mapping away with the route (symmetric teardown), and
+#     leaves the box-wide hooks ingress and token alone: another integration may
+#     hold that token, and dropping it would be a box outage, not a revocation.
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" "$SCRIPT_UNDER_TEST" --remove acme-media; then
+  ok=0
+  [ "$(jq -r '[.hooks.mappings[]? | select(.id == "podcast-intake-acme-media")] | length' "$CFG")" = "0" ] || ok=1
+  [ "$(jq -r '.plugins.entries.webhooks.config.routes["podcast-intake-acme-media"]' "$CFG")" = "null" ] || ok=1
+  [ "$(jq -r '.hooks.enabled' "$CFG")" = "true" ] || ok=1
+  [ "$(jq -r '.hooks.token' "$CFG")" = '${PODCAST_INTAKE_HOOK_SECRET}' ] || ok=1
+  check "--remove drops the hook mapping but never the box hooks ingress or token" "$ok"
+else
+  fail "--remove with mapping (rc=$LAST_RC): $OUT"
+fi
+
+# 25. An existing hooks.token belonging to another integration is NEVER
+#     overwritten, and the operator is told which token the sender must carry.
+write_cfg '{
+  "hooks": {"enabled": true, "token": "a-token-another-integration-owns", "allowedSessionKeyPrefixes": ["hook:"]},
+  "plugins": {"entries": {"webhooks": {"enabled": true, "config": {"routes": {}}}}}
+}'
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  ok=0
+  [ "$(jq -r '.hooks.token' "$CFG")" = "a-token-another-integration-owns" ] || ok=1
+  printf '%s' "$OUT" | grep -q "NOT overwritten" || ok=1
+  check "an existing hooks.token from another integration is preserved" "$ok"
+else
+  fail "existing-token preservation (rc=$LAST_RC): $OUT"
+fi
+
+# 26. hooks.enabled explicitly false fails closed: the mapping could never fire,
+#     and silently flipping a switch the box turned off is not this script's call.
+write_cfg '{
+  "hooks": {"enabled": false},
+  "plugins": {"entries": {"webhooks": {"enabled": true, "config": {"routes": {}}}}}
+}'
+if run_script 2 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" "$SCRIPT_UNDER_TEST" --client-slug acme-media \
+   && printf '%s' "$OUT" | grep -q "hooks.enabled is explicitly false"; then
+  pass "hooks.enabled false fails closed with a message naming the key"
+else
+  fail "hooks.enabled false guard (rc=$LAST_RC): $OUT"
 fi
 
 # --------------------------------------------------------------------------- #

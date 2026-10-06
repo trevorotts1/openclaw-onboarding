@@ -161,8 +161,35 @@ run_guard --strict "${BOX_ARGS[@]}" > "$WORK/sev-strict.log" 2>&1 || SEV_STRICT_
 
 # --- 4. route binding shape check (B4) ----------------------------------------
 echo "--- route binding shape (B4) ---"
+# B4 now checks BOTH halves of the binding: the plugin route (the TaskFlow
+# control surface) and the gateway hook mapping (the trigger that converts an
+# inbound survey POST into a turn of the bound session). A box carrying the
+# route and no mapping accepts intake, creates a QUEUED flow, dispatches
+# nothing, and stalls at `received` forever, so it is a FAIL, not a PASS.
 cat > "$WORK/openclaw.json" <<'JSON'
 {
+  "hooks": { "mappings": [
+    {
+      "id": "podcast-intake-acme-media",
+      "match": { "path": "podcast-intake-acme-media" },
+      "action": "agent",
+      "agentId": "dept-podcast",
+      "sessionKey": "podcast:intake:acme-media",
+      "sessionMode": "persistent",
+      "deliver": false,
+      "messageTemplate": "run the deterministic intake handler"
+    },
+    {
+      "id": "podcast-intake-zeta-corp",
+      "match": { "path": "podcast-intake-zeta-corp" },
+      "action": "agent",
+      "agentId": "dept-podcast",
+      "sessionKey": "podcast:intake:zeta-corp",
+      "sessionMode": "persistent",
+      "deliver": false,
+      "messageTemplate": "run the deterministic intake handler"
+    }
+  ] },
   "plugins": { "entries": { "webhooks": { "config": { "routes": {
     "podcast-intake-acme-media": {
       "enabled": true,

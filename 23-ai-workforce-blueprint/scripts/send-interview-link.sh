@@ -72,6 +72,15 @@ if [ "$IS_COMPLETE" = "1" ]; then
   exit 3
 fi
 
+COMPLETION_READER="$SCRIPT_DIR/../../shared-utils/interview_completion.py"
+if [ ! -f "$COMPLETION_READER" ]; then COMPLETION_READER="$SCRIPT_DIR/../../../shared-utils/interview_completion.py"; fi
+COMPLETION_STATUS="$(python3 "$COMPLETION_READER" "$STATE_FILE" 2>/dev/null)" || COMPLETION_STATUS="UNKNOWN"
+case "$COMPLETION_STATUS" in
+  COMPLETE|DECLARED) echo "[send-interview-link] REFUSED: prior interview completion recorded." >&2; exit 3 ;;
+  INCOMPLETE) ;;
+  *) echo "[send-interview-link] PENDING: completion scope/store unknown; no invitation sent." >&2; exit 8 ;;
+esac
+
 # Started = a handoff exists AND we have a slug to build the resume link with.
 MODE="start"
 if [ "$RESUME_REQUESTED" = "1" ] || { [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; }; then
@@ -112,7 +121,7 @@ Welcome back, $FIRST_NAME — continue your AI Workforce Interview here: $LINK
 You can stop and return later. Any saved answers will resume after sign-in.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -122,7 +131,7 @@ Hi $FIRST_NAME — your company's standard foundation is already set up, and you
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
@@ -132,7 +141,7 @@ Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversati
 Answers are saved as you go. You can stop and return later.
 
 Bookmark your private interview page after signing in: $DASH/interview
-If sign-in has expired, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
+If asked to sign in again, re-open this same link — no fresh link needed; it stays valid until your interview is complete and can be opened again on any device. If you lost this link, tell your Telegram assistant “resume my interview” to get a fresh private link. Your saved answers stay in place.
 EOF
 
 fi
@@ -162,7 +171,7 @@ MASKED="…${CHAT_ID: -4}"
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
   echo "----- preview only: enrollment is issued at send time -----"
-  sed 's/{{INVITATION_VALIDITY}}/The exact expiry is included when the private sign-in link is issued./g' "$TMP_MSG"
+  sed 's/{{INVITATION_VALIDITY}}/The link'"'"'s validity is stated in the message when the private sign-in link is issued./g' "$TMP_MSG"
   echo "-------------------"
   exit 0
 fi

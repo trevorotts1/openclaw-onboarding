@@ -30,6 +30,59 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# JEV A36 (spec 10.3): backfill-job late gate through the EXISTING D23 module
+# (shared-utils/decision_engine/commit/dispatch.py) — imported by path, never
+# restated. A backfill that races a newer committed decision fails closed
+# instead of clobbering its head.
+_COMMIT_DIR = (Path(__file__).resolve().parent.parent.parent
+               / "shared-utils" / "decision_engine" / "commit")
+sys.path.insert(0, str(_COMMIT_DIR))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 -- JEV A36 late gate
+except Exception:  # noqa: BLE001 -- bare box: job still backfills, gate reports
+    _cas_dispatch = None
+
+
+def gate_backfill_result(task_key, result_revision, state_dir=None,
+                         scope=None):
+    """Backfill-job late gate (A36) through existing D23 check_late_result.
+
+    Returns (ok, detail): ok True when the backfill result is current; False
+    with the typed D23 failure when a stale backfill must not clobber the
+    newer head. kind is fixed to "backfill" (D23 closed late-kind set).
+    """
+    if _cas_dispatch is None:
+        return False, {"error": "cas_unavailable"}
+    import sqlite3 as _sqlite3  # noqa: PLC0415 (stdlib, deferred for import cost)
+    con = None
+    try:
+        if state_dir is not None:
+            cand = Path(state_dir) / "decision_revisions.db"
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            con = _sqlite3.connect(str(cand), timeout=30)
+            con.row_factory = _sqlite3.Row
+        if con is None:
+            _commit = _cas_dispatch._load_commit()
+            store = _commit.fresh_state(
+                input_hash=_cas_dispatch.scope_hash(scope or {}))
+        else:
+            _commit, store = _cas_dispatch.load_cas_store(
+                con, task_key,
+                _cas_dispatch.scope_hash(scope or {}) if scope is not None else None)
+        ok = _cas_dispatch.guard_late_result(store, "backfill",
+                                             int(result_revision))
+        return True, {"revision": store["decision_revision"], "ok": ok}
+    except Exception as exc:  # noqa: BLE001 -- typed D23 failure surfaces here
+        return False, {"error": type(exc).__name__, "detail": str(exc),
+                       "kind": "backfill", "result_revision": result_revision}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except _sqlite3.Error:
+            pass
+from pathlib import Path
+
 
 def find_build_state_path() -> Path:
     """Return the build-state path (VPS first, Mac fallback)."""
@@ -148,6 +201,15 @@ def main() -> int:
         print(f"[backfill-build-state] Build-state not found at {state_path}; will create minimal stub")
         state = {"version": 1, "interviewComplete": False, "ownerChat": 0, "departments": {}}
 
+    # JEV A36 (spec 10.3): the decision revision this backfill result is
+    # computed against. Read BEFORE the detection scan below; the write is
+    # refused if the head has moved since (a late backfill must not clobber a
+    # newer committed decision). 0 == no committed decision yet.
+    _cas_state_dir = state_path.parent
+    _cas_task_key = "backfill-build-state"
+    _rev_at_start = (_cas_dispatch.head_revision(_cas_state_dir, _cas_task_key)
+                     if _cas_dispatch is not None else 0)
+
     now = datetime.now(timezone.utc).isoformat()
     changed = False
 
@@ -234,6 +296,19 @@ def main() -> int:
         print("[backfill-build-state] DRY-RUN: would write:")
         print(json.dumps(state, indent=2))
         return 0
+
+    # JEV A36 (spec 10.3): late-result gate immediately before the clobbering
+    # write. A False return refuses the write (exit 2) -- the stale backfill is
+    # re-runnable; the newer committed decision is not recoverable if clobbered.
+    if _cas_dispatch is not None:
+        _ok, _detail = gate_backfill_result(_cas_task_key, _rev_at_start,
+                                            state_dir=_cas_state_dir)
+        if not _ok:
+            print("[backfill-build-state] STALE: decision head moved while this "
+                  "backfill ran (basis r%s; %s); refusing to write -- re-run"
+                  % (_rev_at_start,
+                     _detail.get("detail") or _detail.get("error")), file=sys.stderr)
+            return 2
 
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)

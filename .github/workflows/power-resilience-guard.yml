@@ -18,6 +18,11 @@ name: power-resilience-guard
 #   - tunnel tokens go to a mode-600 token-FILE, never a cleartext CLI arg
 #   - the 3 hand-rolled pm2 launchd names collapse into ONE
 #   - the gateway is not blindly converted to a LaunchDaemon on a GUI-coupled box
+#   - LAYER E BITES: a rescue connector that is alive but has NEVER registered
+#     (repeated RFC1918:7844 dial targets, zero registrations) IS kicked, one
+#     that DID register is not, a cooldown prevents a restart storm, an
+#     unreadable log window is UNDETERMINED rather than zero, and a disabled
+#     sshd is re-enabled and proven with a real connection attempt
 #
 # The test is fully offline: every macOS system command (fdesetup, pmset,
 # defaults, ioreg, networksetup) is faked through the library's injectable seams,
@@ -29,6 +34,9 @@ on:
       - platform/mac/power-resilience/**
       - platform/mac/bootstrap.sh
       - platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+      - platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh
+      - platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh
+      - platform/mac/tunnel-hardening/com.blackceo.rescue-tunnel-watchdog.plist.template
       - 32-command-center-setup/scripts/setup-tunnel-daemon.sh
       - scripts/fix-power-resilience.sh
       - tests/unit/power-resilience-gate.test.sh
@@ -38,6 +46,9 @@ on:
       - platform/mac/power-resilience/**
       - platform/mac/bootstrap.sh
       - platform/mac/tunnel-hardening/harden-mac-tunnel.sh
+      - platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh
+      - platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh
+      - platform/mac/tunnel-hardening/com.blackceo.rescue-tunnel-watchdog.plist.template
       - 32-command-center-setup/scripts/setup-tunnel-daemon.sh
       - scripts/fix-power-resilience.sh
       - tests/unit/power-resilience-gate.test.sh
@@ -57,6 +68,8 @@ jobs:
             platform/mac/power-resilience/lib-power-resilience.sh \
             platform/mac/bootstrap.sh \
             platform/mac/tunnel-hardening/harden-mac-tunnel.sh \
+            platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh \
+            platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh \
             32-command-center-setup/scripts/setup-tunnel-daemon.sh \
             scripts/fix-power-resilience.sh \
             tests/unit/power-resilience-gate.test.sh; do

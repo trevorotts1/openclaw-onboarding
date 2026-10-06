@@ -184,6 +184,7 @@ When a persona is present, this file is subordinate to it.
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **24** storyboard-writer | "plan my video" · "storyboard this" · "script for a video" | `~/.openclaw/skills/24-storyboard-writer/` | `universal-sops/video-pipeline-craft/` |
+| **72** motion-video-plus | "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" | `~/.openclaw/skills/72-motion-video-plus/` | `universal-sops/video-pipeline-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures

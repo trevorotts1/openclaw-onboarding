@@ -50,6 +50,8 @@ CC_BOARD_TEST="${SKILL_DIR}/scripts/test_cc_board.py"
 AD_MODELSOV="${SKILL_DIR}/scripts/ad_model_sovereignty.py"
 AD_UNPARK="${REPO_ROOT}/scripts/unpark-ad-run.sh"
 AD_FIXTURES="${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
+# Paid fixtures need a synthetic key + stubbed balance (a keyless paid run aborts, exit 4).
+AD_STUB="${SKILL_DIR}/test-fixtures/run-foreman-stubbed.py"
 AD_CI="${REPO_ROOT}/.github/workflows/ad-pipeline-lockstep.yml"
 
 assert "AD-PIPELINE-MANIFEST.json present (single source of truth)" "[ -f \"${AD_MANIFEST}\" ]"
@@ -113,6 +115,8 @@ assert "test_cc_board.py — board caller fail-soft + auth/HMAC parity + legal-p
   "python3 \"${CC_BOARD_TEST}\" >/dev/null 2>&1"
 assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested+recovery (exit 0)" \
   "python3 \"${AD_GUARDA}\" >/dev/null 2>&1"
+assert "test_kie_adapter_resultjson_decode.py — Skill 48 rides the Skill 47 adapters (Skill 74 transport): result extraction proven (exit 0)" \
+  "python3 \"${SKILL_DIR}/scripts/test_kie_adapter_resultjson_decode.py\" >/dev/null 2>&1"
 assert "ad_model_sovereignty.py — model-content-receipt + no-Anthropic gate (self-test exit 0)" \
   "python3 \"${AD_MODELSOV}\" --self-test >/dev/null 2>&1"
 
@@ -121,10 +125,10 @@ QC_TMP="$(mktemp -d 2>/dev/null || echo /tmp/fbad-qc-$$)"
 if [ -f "${AD_FIXTURES}" ]; then
   bash "${AD_FIXTURES}" "${QC_TMP}/adfix" >/dev/null 2>&1
   assert "foreman HARD-ABORTS the BAD bypass run (AF-FBAD-DEP-SKIPPED, exit 2)" \
-    "python3 \"${AD_DRIVER}\" --run-dir \"${QC_TMP}/adfix/bad-run\" --phase S5-IMAGE-GEN >/dev/null 2>&1; [ \$? -eq 2 ]"
+    "python3 \"${AD_STUB}\" \"${QC_TMP}/adfix/bad-run\" S5-IMAGE-GEN >/dev/null 2>&1; [ \$? -eq 2 ]"
   GOOD_OK=1
   for ph in S0-INTAKE S1-OVERLAYS PICK-10 S2-PRIMARY-TEXT S3-HEADLINES S4-IMAGE-PROMPTS S5-IMAGE-GEN S6-TARGETING S7-DELIVER PUBLISH; do
-    python3 "${AD_DRIVER}" --run-dir "${QC_TMP}/adfix/good-run" --phase "$ph" >/dev/null 2>&1 || GOOD_OK=0
+    python3 "${AD_STUB}" "${QC_TMP}/adfix/good-run" "$ph" >/dev/null 2>&1 || GOOD_OK=0
   done
   assert "foreman ATTESTS the GOOD run through PUBLISH (exit 0 each phase)" "[ \"${GOOD_OK}\" = 1 ]"
   rm -rf "${QC_TMP}" 2>/dev/null

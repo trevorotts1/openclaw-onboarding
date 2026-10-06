@@ -1,5 +1,13 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [2.1.2] - 2026-09-17 - fix(shell): qc-built-workflow.sh re-execs under bash 4+ on macOS
+
+The QC script used four `declare -A` tables and two `${VAR^^}` case modifiers, all
+bash 4.0+. Under launchd or cron on a client Mac, `#!/usr/bin/env bash` resolves to
+/bin/bash 3.2 and every table silently degraded to a scalar. A `_OC_BASH_REEXEC`
+guard now re-execs through Homebrew bash, or exits 3 with a loud FATAL when none is
+installed. Locked by tests/unit/bash4-syntax-guard.test.sh.
+
 ## [2.0.0] - 2026-09-03 — safe contact upsert policy: default upsert, verified writes, 18-behavior regression suite
 
 ### Changed

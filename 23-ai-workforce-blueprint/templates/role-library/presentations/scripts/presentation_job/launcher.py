@@ -820,7 +820,9 @@ def _write_engine_pid(run_dir: str | Path, pid: int) -> None:
 
 
 def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
-    """Read the recorded engine PID: state.json first, .engine.pid sidecar second."""
+    """Read the recorded engine PID: state.json first, .engine.pid sidecar
+    second, .job.lock third (FIX 13: RunLock writes "<pid> <timestamp>" there,
+    so a directly-run engine is visible even before state.json records it)."""
     run_path = Path(run_dir).expanduser().resolve()
     state_path = run_path / "state.json"
     if state_path.is_file():
@@ -838,6 +840,14 @@ def _read_engine_pid(run_dir: str | Path) -> Optional[int]:
             if pid > 0:
                 return pid
         except (OSError, ValueError):
+            pass
+    job_lock = run_path / ".job.lock"
+    if job_lock.is_file():
+        try:
+            pid = int(job_lock.read_text(encoding="utf-8").split()[0])
+            if pid > 0:
+                return pid
+        except (OSError, ValueError, IndexError):
             pass
     return None
 
@@ -1181,6 +1191,38 @@ def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]
     except Exception:  # noqa: BLE001 -- an unreadable store is not a plan
         return None
     plan = _router.model_plan(profile)
+    # FIX 61.4: Ultra checks run BEFORE the early exit. In ultra, every
+    # non-mechanical phase must have a route, and the OpenRouter model (if
+    # declared) must be on the live list. This stops a fake-ultra run that
+    # declares nothing and silently gets standard.
+    _mode_norm = str(mode or "").strip().lower()
+    if _mode_norm == "ultra":
+        try:
+            from . import credit_preflight as _cp
+        except ImportError:
+            import credit_preflight as _cp  # type: ignore[no-redef]
+        # Check the declared OpenRouter model against the live list.
+        _or_model = (plan or {}).get("openrouter_model") if isinstance(plan, dict) else None
+        if _or_model:
+            _ok, _reason = _cp.check_openrouter_model(str(_or_model))
+            if not _ok:
+                print(f"MODEL PLAN REFUSED: {_reason}", file=sys.stderr)
+                return 3  # DISPATCH_MODEL_PLAN_REFUSED
+        # Refuse non-mechanical phases with no route.
+        for _phase_id, _cap in _router.PHASE_CAPABILITY.items():
+            if _cap == "mechanical":
+                continue
+            try:
+                _decision = _router.resolve_route(_phase_id, profile=profile,
+                                                   mode="ultra")
+            except Exception:
+                continue  # router error is not a verdict here
+            if _decision.get("route") is None:
+                print(f"MODEL PLAN REFUSED: ultra: phase {_phase_id!r} "
+                      f"(capability {_cap!r}) has no eligible route -- "
+                      f"ultra launch refused BEFORE any spend",
+                      file=sys.stderr)
+                return 3  # DISPATCH_MODEL_PLAN_REFUSED
     if not plan:
         # No client declaration: this gate does not exist for this run. No
         # sidecar, no banner, no refusal -- byte-for-byte the pre-fix launch.
@@ -1941,6 +1983,11 @@ def dispatch_resume(run_dir: str, background: bool = True,
 # CLI entry point -- for shell-script callers (poll.sh, canonical entry)
 # ---------------------------------------------------------------------------
 def main(argv: Optional[list] = None) -> int:
+    # Fix 3 (PRES-035 regression): load the box env store into THIS process
+    # before anything else, so PRESENTATION_NOTIFY_CMD / OPENROUTER_API_KEY
+    # are present for everything the launcher spawns.
+    from .env_store import load_into_process
+    load_into_process()
     import argparse
     p = argparse.ArgumentParser(
         prog="launcher.py",

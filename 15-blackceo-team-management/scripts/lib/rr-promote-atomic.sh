@@ -34,7 +34,10 @@ if [ "$CAND_DIR" != "$LIVE_DIR" ]; then
 fi
 
 # Adopt the live file's mode so a 0600 config does not become world-readable.
-MODE="$(stat -f '%Lp' "$LIVE" 2>/dev/null || stat -c '%a' "$LIVE" 2>/dev/null || echo '')"
+# GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+# failing, which handed chmod a multi-line "mode" on Linux.
+MODE="$(stat -c '%a' "$LIVE" 2>/dev/null || stat -f '%Lp' "$LIVE" 2>/dev/null)"
+[[ "$MODE" =~ ^[0-7]+$ ]] || MODE=""
 if [ -n "$MODE" ]; then
   chmod "$MODE" "$CAND"
 fi

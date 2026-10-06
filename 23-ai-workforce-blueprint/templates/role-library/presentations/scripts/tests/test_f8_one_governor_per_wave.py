@@ -7,7 +7,7 @@ keeps its token bucket, in-flight counter, rolling-10s event list and the
 does NOT inherit it -- every child re-imported governor with an EMPTY bucket.
 
 Consequence: `max_inflight`, the 10 s window ceiling and the 429 penalty bound one
-CHILD, never the wave.  At 100 workers against deepseek (`burst: 20`) that is up to
+CHILD, never the wave.  At 100 workers against deepseek (`burst: 400`, FIX 61.6 D4) that is up to
 2,000 admissions per 10 s at one account bucket, and a 429 seen by one child never
 slowed its 99 peers -- the account bucket is over-subscribed, and the leases are
 not actually shared.
@@ -119,8 +119,10 @@ def test_wave_units_share_one_governor(wave_env, monkeypatch):
     seen_pids: list[int] = []
     seen_threads: set[int] = set()
 
+    # PD-TEST-189: the seam gained an OPTIONAL `prior_reasons`; an existing
+    # 6-arg implementation must accept it or every attempt dies with TypeError.
     def _governed_provider(slide, routing, attempt, run_dir_, owning_role,
-                           n_slides):
+                           n_slides, prior_reasons=None):
         lease = governor.acquire(PROBE_PROVIDER, timeout_s=20)
         try:
             with seen_lock:

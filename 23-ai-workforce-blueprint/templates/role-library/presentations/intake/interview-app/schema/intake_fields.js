@@ -416,10 +416,86 @@ export const INTAKE_CONTRACT = {
         default: "",
         allowed_values: ["ultra", "standard", "economy"],
         value_labels: {
-          "ultra": "Ultra — highest concurrency and strongest model mix (fastest, most expensive)",
+          "ultra": "Ultra: the strongest models you choose, up to 16x faster",
           "standard": "Standard — the department default",
           "economy": "Economy — leaner and cheaper"
         }
+      }
+    },
+    {
+      // FIX 62: Ollama Cloud plan choice ($20/month = 3 at once, $100/month = 8).
+      // Shown only when Ollama Cloud is selected (frontend handles the conditional).
+      id: "ollama_plan",
+      canonical_path: "pre_presentation_capture.OLLAMA_PLAN",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: false,
+      block_gate: false,
+      allowed_values: ["$20/month", "$100/month"],
+      legacy_aliases: ["OLLAMA_PLAN", "ollama_plan"],
+      question: {
+        id: "ollama_plan",
+        order: 11.55,
+        kind: "enum",
+        prompt: "Are you on the Ollama Cloud $20/month or $100/month plan?",
+        help: "The $20 plan runs 3 at once; the $100 plan runs 8 at once.",
+        label: "Ollama Cloud plan",
+        required: false,
+        storeOn: "pre_presentation_capture.OLLAMA_PLAN",
+        default: "",
+        allowed_values: ["$20/month", "$100/month"],
+        value_labels: {
+          "$20/month": "$20/month — 3 at once",
+          "$100/month": "$100/month — 8 at once"
+        }
+      }
+    },
+    {
+      id: "deepseek_variant",
+      canonical_path: "pre_presentation_capture.DEEPSEEK_VARIANT",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: false,
+      block_gate: false,
+      allowed_values: ["flash", "pro"],
+      legacy_aliases: ["DEEPSEEK_VARIANT", "deepseek_variant"],
+      question: {
+        // FIX 61.2 — the client's DeepSeek variant pick.
+        id: "deepseek_variant",
+        order: 11.6,
+        kind: "enum",
+        prompt: "Which DeepSeek variant for the heavy writing?",
+        help: "Flash is fast and cheap; Pro is the strongest.",
+        label: "DeepSeek variant",
+        required: false,
+        storeOn: "pre_presentation_capture.DEEPSEEK_VARIANT",
+        default: "",
+        allowed_values: ["flash", "pro"],
+        value_labels: {
+          "flash": "Flash — fast and cheap",
+          "pro": "Pro — strongest"
+        }
+      }
+    },
+    {
+      id: "openrouter_model",
+      canonical_path: "pre_presentation_capture.OPENROUTER_MODEL",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: false,
+      block_gate: false,
+      legacy_aliases: ["OPENROUTER_MODEL", "openrouter_model"],
+      question: {
+        // FIX 61.2 — the client's OpenRouter model pick (free text).
+        id: "openrouter_model",
+        order: 11.7,
+        kind: "text",
+        prompt: "Which OpenRouter model should Ultra use? (e.g. z-ai/glm-5.3-flash)",
+        help: "In Ultra mode this model replaces any Ollama-routed step.",
+        label: "OpenRouter model",
+        required: false,
+        storeOn: "pre_presentation_capture.OPENROUTER_MODEL",
+        default: ""
       }
     },
     {

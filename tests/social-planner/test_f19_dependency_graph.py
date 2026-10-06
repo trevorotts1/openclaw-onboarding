@@ -142,10 +142,13 @@ class TestRequiredDependencyRemovedWaitsWithRepair(unittest.TestCase):
 class TestCostEstimateFromPlan(unittest.TestCase):
     def test_client_exact_estimate_wins(self):
         cfg = _base(postTypes=["carousel"], creditEstimates={"images": 300})
-        cfg["probes"]["kieCredits"] = 250  # above the default band 200, below the plan estimate
+        # Credit rule (kie-common-rules rule 6): required = max(estimate x 1.30, 200) = 390 here.
+        cfg["probes"]["kieCredits"] = 350  # above the estimate 300, below the required 390
         fails = pg.evaluate(cfg, live=False)
         self.assertTrue(any(c == pg.AF_CREDITS for c, _m in fails))
-        self.assertTrue(any("300" in m for c, m in fails if c == pg.AF_CREDITS))
+        self.assertTrue(any("390" in m for c, m in fails if c == pg.AF_CREDITS))
+        cfg["probes"]["kieCredits"] = 390
+        self.assertFalse(any(c == pg.AF_CREDITS for c, _m in pg.evaluate(cfg, live=False)))
 
     def test_balance_estimate_text_branch(self):
         cfg = _base(creditEstimates={"text": 50})

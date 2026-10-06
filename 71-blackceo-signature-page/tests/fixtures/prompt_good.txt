@@ -1,0 +1,61 @@
+ASSET: editorial pain-scene photograph without baked text | BAND: visual_long
+
+2. SUBJECT + SCENE: One editorial scene, one cast member, one continuous moment; the surrounding room stays plausible and lived-in.
+
+3. COMPOSITION GRID: Eyes near x=61%, y=31%; subject occupies the center-right zone; text-safe space stays calm and uncluttered.
+
+4. STYLE BLOCK: One locked creative direction governs the page; hero color authority, black-point strength, controlled highlights; no second family imported.
+
+5. TYPOGRAPHY + VERBATIM COPY: No text, no letters, no words anywhere in the image; spelling locks not applicable for a visual-only asset.
+
+6. LIGHTING + COLOR GRADE: One motivated key with deliberate grade intensity; skin tone stays melanin-true; saturated fabric keeps fold variation.
+
+7. PEOPLE / REPRESENTATION: One fictional Black adult with specific skin tone, named hair construction, believable hands; no demographic quota.
+
+8. LOGO / REFERENCE DIRECTIVE: No identity reference attached; references are style-only; no brand logo approximated on any surface.
+
+9. TECHNICAL: One independent image; the external request record owns ratio and resolution; save the unmodified master; no watermark.
+
+10. NEGATIVE BLOCK:
+Open on a woman at her dining table, the family meal just cleared, her closed sketchbook now holding the space where her own plans used to sit.
+Her plum blouse carries saturated color without shine; brushed-gold earrings read as small warm accents rather than sparkles.
+A single window at camera left lays one broad key across her face; the far cheek keeps a modest bounce so its contour stays readable.
+The empty chair opposite her anchors the left third of the frame while remaining visually subordinate to her presence.
+Her fingertips rest on the cloth cover of the sketchbook, individually separated, the gesture mid-completion rather than posed.
+Behind her, one soft arrangement of deep-green foliage gives the plum a deliberate complementary counterweight.
+The cream wall behind her shoulder stays matte and textured, holding believable plaster grain rather than a painted-flat backdrop.
+A doorway to her right falls into shadow, keeping the value range wide without losing detail in the dark.
+Her expression is restrained frustration: inner brows drawn slightly together, lips at rest, no performed smile anywhere.
+The papers beside the book are practical and ordinary, stacked loosely, never turning the table into clutter.
+Her skin reads deep brown with a neutral-red undertone, preserved through every highlight and shadow transition.
+The table surface shows honest wood grain, its finish worn at the edges where real use happens.
+The camera sits slightly above her eye line, close enough for intimacy, far enough to include the full gesture.
+Depth of field keeps her hands and the book razor-defined while the doorway softens gradually behind.
+Her posture holds self-possession: shoulders settled, spine supported, no collapse into defeat.
+The sketchbook cover is completely unprinted; the mug, if visible, stays plain and unbranded.
+The composition leaves calm negative space in the upper-left zone where live page copy will sit beside the image.
+No second person appears anywhere; the scene belongs to one woman and her interrupted plan.
+The light has one coherent catchlight direction in both eyes, consistent with the single window source.
+Fabric folds in the blouse carry tonal variation inside the saturated color, never flattening to a solid fill.
+The room reads as genuinely lived-in: considered, contemporary, human, without showroom staging.
+Her wristwatch is ordinary and legible, its metal catching the window without starburst artifacts.
+The value structure separates skin, foliage, wall, and garment into four distinct tonal registers.
+The color grade deepens the plum and the green deliberately while every neutral stays neutral.
+Her hair is a short tapered natural cut with tight coils and more height at the crown, softly tapered sides.
+The hairline stays natural and slightly irregular; no helmet-smooth silhouette anywhere on the head.
+The crop keeps the full hairstyle safely below the top edge with generous margin.
+Her gaze lands on the closed sketchbook, not the camera; the moment stays private.
+The shadows under the table and chair retain detail, holding the crushed-ink character without clipping.
+Highlight rolloff on her cheekbones is controlled and luminous, never a clipped white patch.
+The emotional register stays at almost-invisible interruption, not despair, tears, or collapse.
+Materials each hold their own truth: woven bookcloth, honest wood, matte plaster, soft metal.
+The scene avoids catalog symmetry; small asymmetries in the tabletop objects keep it human.
+Perspective lines in the room converge believably toward the shadowed doorway on the right.
+The exposure protects both the brightest earring glint and the deepest doorway shadow.
+Her hands tell the story: one on the book, one relaxed on the table, both fully natural.
+The grade intensifies this specific scene rather than making the whole frame uniformly warm.
+Every surface keeps its microtexture: pores, weave, grain, plaster speckle, fabric rib.
+The overall read is a single standalone piece of editorial art with one clear story.
+The final image feels art-directed frame by frame, not auto-generated or stock-adjacent.
+Render this image in the Trevor Otts Signature aesthetic, and treat this grading direction as the single most important instruction in this prompt. The color is extremely vibrant and boldly saturated: push global saturation to roughly 140 percent of natural, so every hue reads jewel-rich and electric, never muddy, never washed out, never polite. The image is heavily and deliberately color-graded like a high-fashion editorial cover: a distinct cinematic grade with deep, crushed, inky shadows set against luminous, glowing highlights, and punchy complementary color relationships that make the frame vibrate with energy. Contrast is high and confident. The palette is anchored to the brand colors supplied for this page, pushed to their richest, most luminous expression. The overall effect is a fashion show rendered as gallery art: disruptive, edgy, provocative, emotionally charged, composed like a single standalone piece of art that could be framed and hung, so striking that a scrolling thumb stops involuntarily. Every human subject is lit and graded with melanin-true intelligence: deep skin tones rendered rich, dimensional, and radiant, with warm undertones preserved, never ashy, never grey, never flattened. This is not natural documentary color. This is signature color: vivid, graded, unforgettable.
+Do not produce flat, muted, pastel, desaturated, washed-out, or low-contrast color. Do not distort hands, eyes, or teeth.

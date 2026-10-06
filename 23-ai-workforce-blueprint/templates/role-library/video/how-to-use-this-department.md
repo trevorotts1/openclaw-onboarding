@@ -30,7 +30,7 @@ figures out who handles it and routes it for you.
 
 Reach for this department when you want any of the following:
 
-- Pika, Runway, Sora, HeyGen, Synthesia.
+- Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo.
 - Pure animation work - explainer videos, character animation, whiteboard animation.
 - Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers).
 - Color correction + creative color grading.
@@ -72,7 +72,7 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 | Specialist | What it is for |
 | --- | --- |
-| **AI Video Generator Specialist** | Pika, Runway, Sora, HeyGen, Synthesia. |
+| **AI Video Generator Specialist** | Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo. |
 | **Animation Specialist 2D 3D Whiteboard** | Pure animation work - explainer videos, character animation, whiteboard animation. |
 | **Captioning Subtitling Specialist** | Burned-in captions for short-form (Reels/TikTok need captions for sound-off scrollers). |
 | **Color Grading Specialist** | Color correction + creative color grading. |
@@ -86,13 +86,18 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Video SEO Specialist** | YouTube metadata, titles, descriptions, tags, end screens, chapters. |
 | **VSL Video Sales Letter Specialist** | Long-form sales videos that convert cold to customer. |
 | **Automated Video Production Specialist (OpenMontage Pipeline Operator)** | You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video. |
+| **Animation Specialist Phase2** | You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work. |
+| **CRM Specialist Phase2** | For the department of the company, working in the workspace toward the company mission (). |
+| **Long Form Video Specialist Phase2** | You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics. |
+| **Short Form Video Specialist Phase2** | For the department of the company, reporting to the . |
+| **VSL Specialist Phase2** | For the department of the company, reporting to the . |
 
 ### What each specialist is for, with an example request
 
 **AI Video Generator Specialist**
 
-- *What it is for:* Pika, Runway, Sora, HeyGen, Synthesia.
-- *Example request:* "Have the AI Video Generator Specialist take this on: Pika, Runway, Sora, HeyGen, Synthesia."
+- *What it is for:* Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo.
+- *Example request:* "Have the AI Video Generator Specialist take this on: Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo."
 
 **Animation Specialist 2D 3D Whiteboard**
 
@@ -159,6 +164,31 @@ and it will pick the right one, or you can ask for a specialist by name.
 - *What it is for:* You own the end-to-end operation of the OpenMontage agentic video production system - the only role in the video.
 - *Example request:* "Have the Automated Video Production Specialist (OpenMontage Pipeline Operator) take this on: You own the end-to-end operation of the OpenMontage agentic video production system."
 
+**Animation Specialist Phase2**
+
+- *What it is for:* You take a locked motion brief and produce the moving asset that carries the client's brand onto a screen - work.
+- *Example request:* "Have the Animation Specialist Phase2 take this on: You take a locked motion brief and produce the moving asset that carries the client's."
+
+**CRM Specialist Phase2**
+
+- *What it is for:* For the department of the company, working in the workspace toward the company mission ().
+- *Example request:* "Have the CRM Specialist Phase2 take this on: For the department of the company, working in the workspace toward the company mission ()."
+
+**Long Form Video Specialist Phase2**
+
+- *What it is for:* You own the entire pipeline of a long-form asset from the beat-spine brief to post-publish retention forensics.
+- *Example request:* "Have the Long Form Video Specialist Phase2 take this on: You own the entire pipeline of a long-form asset from the beat-spine brief."
+
+**Short Form Video Specialist Phase2**
+
+- *What it is for:* For the department of the company, reporting to the .
+- *Example request:* "Have the Short Form Video Specialist Phase2 take this on: For the department of the company, reporting to the ."
+
+**VSL Specialist Phase2**
+
+- *What it is for:* For the department of the company, reporting to the .
+- *Example request:* "Have the VSL Specialist Phase2 take this on: For the department of the company, reporting to the ."
+
 
 ---
 
@@ -175,6 +205,7 @@ You never have to know these by name or type a command. Just say what you want i
 | "cut this video" · "trim this clip" · "resize this clip for social" · "edit this footage" | Local video editing (FFmpeg/yt-dlp/Whisper/PySceneDetect) |
 | "make a cinematic ad" · "make a cinematic reel" · "produce a polished video" · "a high-end branded video" | End-to-end AI video production concept-to-upload (VEO via KIE.ai, ElevenLabs/Suno audio, FFmpeg assembly) |
 | "produce a full finished video from a brief" · "make me a documentary" · "make me a VSL" · "make me a whole video end to end" | Autonomous multi-pipeline video production (OpenMontage) |
+| "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" · "produce a kinetic typography video" | Deterministic motion-graphics video production |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->

@@ -10,8 +10,8 @@ Architect high-ticket long-form page (6,500–7,100 words), 40–80-word order-b
 and a slice-covered image plan — produced from one "Ultimate AI Sales Page Writer" survey. The role OWNS
 routing + delivery orchestration; it never authors or "fixes" copy/prompts — all authorship happens inside
 the engine where eight fail-closed provers gate it (`56-sales-page-assets/scripts/prove_sp_*.py`). Two
-engines, one delivery rail: this door delegates image generation to Skill 47 (or the client's own image
-provider) and ALL GHL media + build to Skill 6, and routes the bump to Skill 44.
+engines, one delivery rail: this door delegates KIE image generation to Skill 66 (model policy) then Skill 74 (the one KIE transport; Skill 63
+when the client selected Agnes) and ALL GHL media + build to Skill 6, and routes the bump to Skill 44.
 
 ---
 
@@ -107,7 +107,7 @@ role) if a band or section rule changes. Never change the rule to make a gate pa
 - `56-sales-page-assets/SKILL.md`, `MASTERDOC.md`, `structure/sales_page_structure.json`,
   `structure/labeling-grammar.json` (56 OWNS the grammar; reciprocal with Skill 49).
 - The ONE sanctioned build command: `56-sales-page-assets/sales-page-assets-entry.sh` →
-  `run_sales_page_assets.py` (never a hand-rolled GHL REST call, ImgBB re-host, raw image `createTask`, or
+  `run_sales_page_assets.py` (never a hand-rolled GHL REST call, ImgBB re-host, raw image `createTask`, copied KIE client script, or
   mail sender — those are AF-SP56-CANONICAL-BYPASS; a direct orchestrator call without the front-door nonce
   is AF-SP56-FRONT-DOOR).
 - The eight fail-closed provers: `scripts/prove_sp_intake.py`, `prove_sp_image_plan.py`,
@@ -116,8 +116,8 @@ role) if a band or section rule changes. Never change the rule to make a gate pa
 - The shared STEP-0 funnel-engine selector: `06-ghl-install-pages/funnel-engines/registry.json` (Skill 56
   is the 2nd registered engine) + `tools/funnel_engine_selector.py`.
 - The delivery rail (DELEGATED): Skill 6 `ghl_media.py` (media folder + upload) and
-  `ghl_rest_canvas.py` / `ghl_builder.py` (funnel/page build + HTML injection). Images: Skill 47
-  `kie_image.py` OR the client's own image provider. Order-bump widget: Skill 44.
+  `ghl_rest_canvas.py` / `ghl_builder.py` (funnel/page build + HTML injection). Images: Skill 66 policy
+  then Skill 74 `kie_live_adapter.py` (each result recorded with `56-sales-page-assets/scripts/kie74_receipt.py`), or Skill 63 when the client selected Agnes. Order-bump widget: Skill 44.
 - Owned SOP cluster: `universal-sops/sales-page-craft/` (SOP-SALESPAGE-01; 56 OWNS it), which EXTENDS the
   shared `universal-sops/funnel-craft/` (SOP-FUNNEL-01..05 + the AF-code ruleset) for the common build/certify steps.
 
@@ -127,6 +127,7 @@ role) if a band or section rule changes. Never change the rule to make a gate pa
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -231,8 +232,8 @@ JSON; cheapest → catalog / poll).
    that is the design working. Read the AF code, map it to the brief field or structure rule that caused
    it, correct that. Never edit the prover, never hand-edit generated copy to slip past a band, never
    rename or reorder a mandated section. "Never change the name of my page sections."
-6. **Announce the paid call before P2 renders.** Image generation is the first spend (Skill 47
-   `kie_image.py`, or the client's own image provider). Announce the USD estimate and the budget cap and
+6. **Announce the paid call before P2 renders.** Image generation is the first spend (Skill 66 policy, then Skill 74
+   `submit --mode active`, or Skill 63 when the client selected Agnes). Announce the USD estimate and the budget cap and
    get the go. A stack that renders twelve images the owner never approved is a Rule-Zero breach even with
    every prover green.
 7. **Keep `<RUN_DIR>` as the only state.** Brief, image plan, copy assets, task IDs, media URLs, fragments
@@ -241,7 +242,7 @@ JSON; cheapest → catalog / poll).
 **Outputs:** an engine-authored, slice-covered image plan; rendered images with real task IDs; the seven
 copy assets clearing all four structure/band provers; the composed fragments and docs — all inside
 `<RUN_DIR>` with prover exit-0 records at each gate.
-**Hand to:** Skill 47 or the client's own image provider (rendering, invoked by the engine); Skill 6 (media
+**Hand to:** Skill 66 and Skill 74, or Skill 63 when the client selected Agnes (rendering, invoked by the engine); Skill 6 (media
 upload and page build — picked up in SOP 9.3); Skill 44 (the order-bump widget seam, bump COPY only); the
 operator on an `AF-SP56-HASH-PIN` drift; the owner on any abort that would require reinterpreting a
 mandated rule.
@@ -419,7 +420,7 @@ page does not say, and the mismatch is discovered by the customer, on the page, 
   `funnel-builder` routing, Skill 38 conversation, or the Marketing Sales Page Assets Specialist.
 
 ### You hand work off to:
-- Skill 47 (or the client's own image provider) for images, Skill 6 (media + funnel/page build), Skill 44
+- Skills 66 and 74 (or Skill 63 when the client selected Agnes) for images, Skill 6 (media + funnel/page build), Skill 44
   (the order-bump widget), and — on the email offer — the Email Engine (Skill 50). The owner receives
   preview URLs + Downloads bundle + signed certificate.
 
@@ -469,13 +470,14 @@ Honor the requested subset EXACTLY (e.g. main + bump only). The engine still enf
 assets that ARE produced; never add or drop an asset against the owner's stated choice.
 
 ### Edge Case 17.2 — Client supplies brand reference images
-Pass resolved reference URLs to Skill 47's `image_input` (or the client's own provider) with the
+Pass resolved reference URLs through Skill 74 `upload` into the reference field the live schema names (or to Skill 63) with the
 style-only guard; references are logged on the certificate. Never re-host through ImgBB on the client path.
 
 ### Edge Case 17.3 — A signature (12-section) funnel request
 If the STEP-0 selector routes to `signature-funnel` (Skill 49) rather than `sales-page-assets`, this is not
 your build — hand it to the Signature Funnel Specialist. If it returns NO_ENGINE_MATCH, it falls through to
 the template-first funnel matcher and the generic Skill-6 build (Funnel Builder Specialist).
+A focused single-page BlackCEO landing / opt-in / squeeze / event / challenge / booking request is Skill 71 `blackceo-signature-page` (Landing Page Specialist's routing gate) — not a Direct-Response asset stack and not a template-first funnel build.
 
 ## 18. Update Triggers (When to Revise This Document)
 

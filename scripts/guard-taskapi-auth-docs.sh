@@ -130,29 +130,31 @@ SUFFIXES = {"activities", "deliverables", "events", "return-to-orchestrator"}
 # through the shared, already-authenticated board client (_cc_board / cc_board /
 # _post_json / mc_route) is auth-aware even if the word "Bearer" only lives
 # INSIDE that helper module. This keeps a docstring/prose mention of a DELEGATED
-# endpoint from false-failing — e.g. ghl_survey_builder.py's
+# endpoint from false-failing — e.g. in ghl_survey_builder.py,
 # _board_register_deliverable() describes "POST … /deliverables" but actually
 # calls _cc_board._post_json(), which injects the header. The call site never
 # hand-crafts the request, so there is nothing to leave unauthenticated.
 DELEGATION_RE = re.compile(r'\b(_cc_board|cc_board|_post_json|mc_route)\b')
 
 VERB_RE = re.compile(r'\b(POST|PATCH)\b')
-TRAIL_PUNCT = '`\'"),.:;|]}*'
+# \x60 \x27 \x22 \x29 = backtick, apostrophe, double quote, close paren: literal
+# ones in this heredoc (nested in a command substitution) break bash 3.2 parsing.
+TRAIL_PUNCT = "\x60\x27\x22\x29,.:;|]}*"
 
 def strip_trail(tok):
     return tok.rstrip(TRAIL_PUNCT)
 
 def strip_lead_quote(tok):
     # Only used to test "is this token a quoted string" — do not mutate tok.
-    return tok[:1] in ('"', "'")
+    return tok[:1] in ("\x22", "\x27")
 
 def fence_ranges(lines):
     """Return list of (start_idx, end_idx) 0-based inclusive index ranges for
-    ``` fenced code blocks (handles nested-looking runs by simple toggle)."""
+    \x60\x60\x60 fenced code blocks (handles nested-looking runs by simple toggle)."""
     ranges = []
     open_at = None
     for i, line in enumerate(lines):
-        if line.strip().startswith('```'):
+        if line.strip().startswith("\x60\x60\x60"):
             if open_at is None:
                 open_at = i
             else:
@@ -232,7 +234,7 @@ for relpath in files:
             first_seg = segs[0]
 
             # (a) ingest — HMAC path, never a candidate.
-            if first_seg.rstrip('`\'"') .lower().startswith('ingest'):
+            if first_seg.rstrip("\x60\x27\x22") .lower().startswith('ingest'):
                 continue
 
             # (c) server source-path citation: Next.js bracket segment or an
@@ -257,8 +259,8 @@ for relpath in files:
                 s, e = blk
                 window_text = '\n'.join(lines[s:e + 1])
             elif relpath.endswith('.py') or relpath.endswith('.sh'):
-                # .py/.sh implementation files document auth ONCE (a module
-                # docstring's "AUTH PARITY" section, a shared _api()/cc_call()/
+                # .py/.sh implementation files document auth ONCE (the
+                # "AUTH PARITY" section of a module docstring, a shared _api()/cc_call()/
                 # _post_json() helper) rather than repeating it beside every
                 # call site or log-tag string literal — a tight local window
                 # would false-positive on real, already-authenticated code

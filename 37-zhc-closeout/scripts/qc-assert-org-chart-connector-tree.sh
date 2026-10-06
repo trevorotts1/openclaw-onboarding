@@ -104,7 +104,7 @@ if [[ -n "$HTML_PATH" && -f "$HTML_PATH" ]]; then
   # 1. Check for legacy cluster-card anti-pattern (the card-grid layout).
   #    The old layout used class="cluster-card" or a standalone .cards wrapper
   #    with NO .connector or svg line children.
-  if echo "$html_content" | grep -q 'class=["\x27][^"]*cluster-card[^"]*'; then
+  if grep -q 'class=["\x27][^"]*cluster-card[^"]*' <<<"$html_content"; then
     log "WARN" "cluster-card class detected -- checking for connector-line coexistence"
     # If cluster-card exists but connectors also exist, it might be a hybrid.
     # We still flag it as a potential anti-pattern.
@@ -113,20 +113,20 @@ if [[ -n "$HTML_PATH" && -f "$HTML_PATH" ]]; then
 
   # 2. Check for SVG connector lines (the explicit connector architecture).
   #    The workforce-org-chart renderer emits <line> elements with class "connector".
-  if echo "$html_content" | grep -qiE '<(line|path|polyline)[^>]*class="[^"]*connector'; then
+  if grep -qiE '<(line|path|polyline)[^>]*class="[^"]*connector' <<<"$html_content"; then
     CONNECTOR_FOUND=1
     log "INFO" "SVG connector elements found (line/path/polyline with .connector class)"
   fi
 
   # 3. Check for CSS-only connectors (::before/::after pseudo-element lines).
   #    Some renderers use border-based connectors with pseudo-elements.
-  if echo "$html_content" | grep -qiE '(::before|::after|:before|:after)[^{]*\{[^}]*(border|height\s*:\s*[0-9])'; then
+  if grep -qiE '(::before|::after|:before|:after)[^{]*\{[^}]*(border|height\s*:\s*[0-9])' <<<"$html_content"; then
     CONNECTOR_FOUND=1
     log "INFO" "CSS pseudo-element connectors found (::before/::after border/height pattern)"
   fi
 
   # 4. Check for explicit .tree-connector or .org-connector CSS classes.
-  if echo "$html_content" | grep -qiE 'class="[^"]*(-connector|tree-line|org-line|branch-line)'; then
+  if grep -qiE 'class="[^"]*(-connector|tree-line|org-line|branch-line)' <<<"$html_content"; then
     CONNECTOR_FOUND=1
     log "INFO" "org-tree connector CSS class found"
   fi
@@ -134,9 +134,9 @@ if [[ -n "$HTML_PATH" && -f "$HTML_PATH" ]]; then
   # 5. Hierarchy level check: must have owner, ceo, and department elements.
   #    The renderer uses data-level or class="owner"|"ceo"|"dept".
   lvl_owner=0; lvl_ceo=0; lvl_dept=0
-  echo "$html_content" | grep -qiE '(class|data-level|id)=["\x27][^"]*owner' && lvl_owner=1
-  echo "$html_content" | grep -qiE '(class|data-level|id)=["\x27][^"]*ceo'   && lvl_ceo=1
-  echo "$html_content" | grep -qiE '(class|data-level|id)=["\x27][^"]*dept'  && lvl_dept=1
+  grep -qiE '(class|data-level|id)=["\x27][^"]*owner' <<<"$html_content" && lvl_owner=1
+  grep -qiE '(class|data-level|id)=["\x27][^"]*ceo'   <<<"$html_content" && lvl_ceo=1
+  grep -qiE '(class|data-level|id)=["\x27][^"]*dept'  <<<"$html_content" && lvl_dept=1
   HIERARCHY_LEVELS=$(( lvl_owner + lvl_ceo + lvl_dept ))
   log "INFO" "hierarchy levels detected: owner=$lvl_owner ceo=$lvl_ceo dept=$lvl_dept (sum=$HIERARCHY_LEVELS / 3 needed)"
 

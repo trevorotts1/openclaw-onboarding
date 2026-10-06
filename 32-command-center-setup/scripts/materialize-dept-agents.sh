@@ -101,7 +101,15 @@ fi
 # pre-interview is exactly the "rogue/default board" failure. REPORT and exit 0
 # (not an error) so callers/crons see "interview not completed yet", not a crash.
 # --dry-run is exempt (it mutates nothing and is used for inspection).
-_MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# Same resolution as run-full-install.sh: the workspace that ACTUALLY holds the
+# file wins over the one openclaw.json configures (resolve-oc-root.sh is
+# already sourced above).
+if declare -F resolve_build_state_workspace >/dev/null 2>&1 \
+   && _MATERIALIZE_WS="$(resolve_build_state_workspace)"; then
+  _MATERIALIZE_STATE_FILE="$_MATERIALIZE_WS/.workforce-build-state.json"
+else
+  _MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+fi
 if [[ $DRY_RUN -eq 0 ]]; then
   if [[ ! -f "$_MATERIALIZE_STATE_FILE" ]] || \
      [[ "$(python3 -c "import json,sys; sys.stdout.write('true' if json.load(open('$_MATERIALIZE_STATE_FILE')).get('interviewComplete') is True else 'false')" 2>/dev/null || echo false)" != "true" ]]; then
@@ -191,6 +199,26 @@ fi
 # the canonical copy.
 DEPT_SCAN_ROOTS=()
 
+# Root 0: the build state's own companyRoot -- the build knows where it wrote
+# (build-workforce.py resolve_company_paths records it). Covers layouts the
+# fixed roots below do not, e.g. <workspace>/zero-human-company on a Contabo
+# /home/node box. Skipped when it names a different company than the slug.
+if [[ -f "$_MATERIALIZE_STATE_FILE" ]]; then
+  _state_company_root="$(python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(sys.argv[1])).get("companyRoot") or ""
+except (OSError, ValueError, AttributeError):
+    r = ""
+sys.stdout.write(r if isinstance(r, str) and os.path.isabs(r) else "")
+' "$_MATERIALIZE_STATE_FILE" 2>/dev/null || true)"
+  if [[ -n "$_state_company_root" && -d "$_state_company_root/departments" ]] && \
+     [[ -z "$_MATERIALIZE_COMPANY_SLUG" || "$(basename "$_state_company_root")" == "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+    DEPT_SCAN_ROOTS+=("$_state_company_root/departments")
+    echo "[materialize-dept-agents] including build-state companyRoot dept path: $_state_company_root/departments"
+  fi
+fi
+
 # Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
 # authoritative source and must win any slug collision under setdefault().
 # Scoped to THIS BOX'S OWN company (_MATERIALIZE_COMPANY_SLUG, resolved
@@ -199,7 +227,8 @@ DEPT_SCAN_ROOTS=()
 # the box's own slug could not be resolved (already warned above).
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
-    "/data/openclaw-master-files/zero-human-company"; do
+    "/data/openclaw-master-files/zero-human-company" \
+    "$OC_ROOT/workspace/zero-human-company"; do
   [[ -d "$_mf_root" ]] || continue
   if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
     _dept_d="$_mf_root/$_MATERIALIZE_COMPANY_SLUG/departments"
@@ -231,6 +260,14 @@ export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
 export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+# The Command Center DB, resolved ONCE by the shared resolver
+# (shared-utils/resolve_db.py: env/.env.local first, 0-byte decoys skipped,
+# layout candidates only with a `workspaces` table). Empty when unresolvable;
+# both Python blocks below then fall back to their own candidate lists.
+_RESOLVE_DB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/resolve_db.py"
+OC_CC_DB=""
+[[ -f "$_RESOLVE_DB" ]] && OC_CC_DB="$(python3 "$_RESOLVE_DB" --path 2>/dev/null || true)"
+export OC_CC_DB
 
 python3 <<'PYEOF'
 import json
@@ -244,6 +281,27 @@ CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
 OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
 DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+
+# STRIP A DEPT AFFIX, nothing else.
+#
+# A department FOLDER can be named "<name>-dept" (the same key-vs-folder shape
+# that produced "-dept" slugs in phase 6c). This block keys the registry on
+# f"dept-{slug}", so that folder became "dept-app-development-dept" -- 22 such
+# rows on a client box, none of which the parity guard could match to its
+# workspace.
+#
+# Deliberately NOT canonical_dept_slug(): every OTHER normalisation (case,
+# spaces, "&", collision detection) is already done downstream where the
+# entries key is built, and doing it here instead drops folders that step
+# knows how to rescue. Affix only.
+def _strip_dept_affix(raw):
+    t = (raw or "").strip()
+    if t.lower().startswith("dept-"):
+        t = t[5:]
+    if t.lower().endswith("-dept"):
+        t = t[:-5]
+    return t.strip("-") or (raw or "")
 
 # Pretty-name map: dept slug → friendly C-suite-style role title.
 # For any slug not listed, we titlecase the slug ('-' → ' ').
@@ -297,6 +355,42 @@ def is_valid_dept_dir(p: Path) -> bool:
 # first — canonical master-files ZHC build output, then the command-center
 # workspace root, then the legacy workspace/departments root last — is the
 # one that sticks. Do not reorder DEPT_ROOTS without keeping this rule true.
+def _live_workspace_slugs():
+    """Canonical slugs of workspaces that are on the board, or None if unknown.
+
+    None means "could not determine" -- the caller then writes every discovered
+    department, i.e. exactly the pre-v25.1.69 behaviour. Never fail closed here:
+    a missing DB must not silently empty a client's runtime roster.
+    """
+    import sqlite3
+    for cand in (os.environ.get("OC_CC_DB"),
+                 os.environ.get("DASHBOARD_DB_PATH"), os.environ.get("DATABASE_PATH"),
+                 "/data/projects/command-center/mission-control.db",
+                 "~/projects/command-center/mission-control.db"):
+        cand = os.path.expanduser(cand.strip()) if cand else ""
+        if not cand or not os.path.isfile(cand) or os.path.getsize(cand) == 0:
+            continue
+        try:
+            con = sqlite3.connect(cand)
+            cols = [r[1] for r in con.execute("PRAGMA table_info(workspaces)")]
+            if not cols:
+                con.close()
+                continue
+            where = " WHERE archived_at IS NULL" if "archived_at" in cols else ""
+            rows = con.execute("SELECT slug, id FROM workspaces" + where).fetchall()
+            con.close()
+        except sqlite3.Error:
+            continue
+        out = set()
+        for slug, wid in rows:
+            for v in (slug, wid):
+                c = _strip_dept_affix(v).lower() if isinstance(v, str) else ""
+                if c:
+                    out.add(c)
+        return out or None
+    return None
+
+
 discovered = {}  # slug → absolute workspace path
 for root in DEPT_ROOTS:
     rp = Path(root)
@@ -305,7 +399,9 @@ for root in DEPT_ROOTS:
     for child in sorted(rp.iterdir()):
         if not is_valid_dept_dir(child):
             continue
-        discovered.setdefault(child.name, str(child.resolve()))
+        # Canonical slug, never the raw folder name: a "<name>-dept" folder
+        # must not become the agent id "dept-<name>-dept".
+        discovered.setdefault(_strip_dept_affix(child.name), str(child.resolve()))
 
 if not discovered:
     print(f"[materialize-dept-agents] WARN: no department folders found under {DEPT_ROOTS} — nothing to materialize")
@@ -469,7 +565,16 @@ updated = 0
 
 manifest_rows = []  # (roster_key, pretty name, workspace path, dept slug)
 
-for slug, workspace_path in discovered.items():
+# A department with no LIVE workspace row gets no runtime entry. Measured on a
+# client box: entries were written for departments whose workspace was archived
+# or absent, and two of them were attributed to the `default` workspace. Absent
+# or unreadable DB => write everything, exactly as before: the folder scan is
+# the primary source and this is an extra guard, never a new dependency.
+_live = _live_workspace_slugs()
+for slug, workspace_path in sorted(discovered.items()):
+    if _live is not None and slug not in _live:
+        print(f"[materialize-dept-agents] SKIP {slug}: no ACTIVE workspace row on the board -- no runtime entry written (archived, or never seeded)")
+        continue
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
 
@@ -554,9 +659,30 @@ for slug, workspace_path in discovered.items():
             "memorySearch": default_memory_search(),
         }
 
+    existing = by_id.get(roster_key)
+    if existing is None:
+        # Already registered under ANOTHER key that serves this same workspace?
+        # That entry IS this department's registration: never add a duplicate
+        # beside it, and never touch it (its model/name stay the owner's).
+        _ws_real = os.path.realpath(workspace_path)
+        _other = next((k for k, v in by_id.items() if isinstance(v, dict) and v.get("workspace")
+                       and os.path.realpath(os.path.expanduser(v["workspace"])) == _ws_real), None)
+        if _other is not None:
+            print(f"  = kept    {_other:40s} (already serves {workspace_path}; no duplicate {roster_key})")
+            continue
+
+    else:
+        # An agent already running from a workspace that still exists stays there.
+        # A rebuild that wrote a second, sparse company tree (scanned first as the
+        # most authoritative root) re-pointed every department agent to it and the
+        # workforce lost its SOPs. Only an entry whose workspace is gone moves.
+        _cur_ws = existing.get("workspace")
+        if _cur_ws and _cur_ws != workspace_path and os.path.isdir(os.path.expanduser(_cur_ws)):
+            print(f"  = kept    {roster_key:40s} (runs from {_cur_ws}; not re-pointed to {workspace_path})")
+            workspace_path = _cur_ws
+
     manifest_rows.append((roster_key, name, workspace_path, slug))
 
-    existing = by_id.get(roster_key)
     if existing is None:
         if ROSTER_MODE == "entries":
             roster[roster_key] = desired_entry
@@ -725,10 +851,10 @@ if [[ $RC -ne 0 ]]; then
   exit $RC
 fi
 
-# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + symlinks ───
+# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + shared copies ─
 # Trevor's agent-file architecture (v10.14.29):
-#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (one copy at
-#     $OC_ROOT/workspace/, each dept-head agent symlinks to them)
+#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (canonical at
+#     $OC_ROOT/workspace/, each dept-head agent holds a REAL-FILE copy -- N29)
 #   - PER-AGENT (each agent has its own): IDENTITY.md, SOUL.md, MEMORY.md,
 #     HEARTBEAT.md (in the agent's workspace folder)
 #   - Sub-agents (role folders inside a dept) are EXCLUDED — they have their
@@ -826,7 +952,8 @@ if not db_path:
         "/app/mission-control.db",
         "/data/projects/command-center/mission-control.db",
     ]:
-        if os.path.isfile(c):
+        # Never a 0-byte decoy (a stray `touch` shadowing the live board).
+        if os.path.isfile(c) and os.path.getsize(c) > 0:
             db_path = c
             break
 
@@ -835,6 +962,13 @@ if not db_path:
     sys.exit(0)
 
 # Read manifest written by Phase 1
+def _ws_has_archived_at(conn):
+    try:
+        return any(r[1] == "archived_at" for r in conn.execute("PRAGMA table_info(workspaces)"))
+    except Exception:
+        return False
+
+
 manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
 if not os.path.isfile(manifest_path):
     # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
@@ -842,6 +976,7 @@ if not os.path.isfile(manifest_path):
         db = sqlite3.connect(db_path)
         cur = db.execute(
             "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
+            + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
         rows = cur.fetchall()
         db.close()
@@ -863,6 +998,15 @@ total_healer = 0
 total_qc = 0
 total_research = 0
 total_da = 0
+skipped_archived = 0
+
+# archived_at is absent on older schemas; probe once rather than per workspace.
+try:
+    _HAS_ARCHIVED_AT = any(
+        r[1] == "archived_at" for r in db.execute("PRAGMA table_info(workspaces)")
+    )
+except Exception:
+    _HAS_ARCHIVED_AT = False
 
 for ws_id_or_none, dept_name, dept_slug in entries:
     if not dept_name:
@@ -879,6 +1023,26 @@ for ws_id_or_none, dept_name, dept_slug in entries:
         ws_id = row[0]
     else:
         ws_id = ws_id_or_none
+
+    # An ARCHIVED workspace gets nothing. Measured on a client box during a
+    # roll: 48 head/qc/research/devils-advocate rows were re-seeded into 12
+    # workspaces whose archived_at was set, because neither the workspaces
+    # query above nor the manifest path filtered on it. Archiving is the
+    # client's decision; re-populating an archived department silently undoes
+    # it. This guard sits AFTER ws_id resolution on purpose, so it covers both
+    # entry paths (workspaces table and manifest) with one check, and it never
+    # writes archived_at -- nothing here un-archives anything.
+    if _HAS_ARCHIVED_AT:
+        try:
+            arow = db.execute(
+                "SELECT archived_at FROM workspaces WHERE id=? LIMIT 1", (ws_id,)
+            ).fetchone()
+        except Exception:
+            arow = None
+        if arow and arow[0]:
+            skipped_archived += 1
+            print(f"  [materialize] SKIP {dept_slug}: workspace is archived (archived_at={arow[0]}) -- no agents, no head link")
+            continue
 
     try:
         counts = ensure_trio_quad_rows(db, ws_id, dept_name, dept_slug, "")
@@ -899,6 +1063,7 @@ print(
     f" +{total_research} research,"
     f" +{total_da} da"
     f" (idempotent)"
+    + (f"; {skipped_archived} archived workspace(s) skipped" if skipped_archived else "")
 )
 PHASE3EOF
 fi

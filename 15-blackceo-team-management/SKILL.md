@@ -91,7 +91,7 @@ When Trevor, Spaulding, or LeAnne DM the client's bot to manage the box, they mu
 
 **How this skill achieves it (as of v6.7.0):**
 
-The `remote-rescue` agent in `agents.list` is a BOUND management agent, not an unbound stub. It has:
+The `remote-rescue` agent in `agents.entries` (or legacy `agents.list`) is a BOUND management agent, not an unbound stub. It has:
 - `workspace`: a dedicated directory (physically separate from the `main` agent's session storage)
 - `telegram.allowFrom`: lists the operator chat IDs, so OpenClaw routes their DMs to `remote-rescue` before falling back to `main`
 - Operator IDs are in `channels.telegram.allowFrom` (bot accepts their DMs) but NOT in `channels.telegram.groupAllowFrom`
@@ -104,7 +104,7 @@ These are fully disjoint. No `/agent` switch needed. No message can leak between
 
 **What breaks isolation (never do these):**
 - Adding operator IDs to `groupAllowFrom` (group-session collision vector)
-- Adding `remote-rescue` to `agents.list` WITHOUT `telegram.allowFrom` (falls through to `main`)
+- Adding `remote-rescue` to `agents.entries` (or legacy `agents.list`) WITHOUT `telegram.allowFrom` (falls through to `main`)
 - Adding `remote-rescue` WITHOUT a `workspace` field (session storage not isolated)
 - Relying on the per-message `/agent remote-rescue` toggle (not sticky, not reliable)
 

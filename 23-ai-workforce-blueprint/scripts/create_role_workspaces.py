@@ -11,8 +11,10 @@ v10.6.1 (Wave 5b) changes:
   - Added library template-fill: when creating a role's how-to.md, check
     templates/role-library/_index.json for a matching pre-written doc. If
     one exists, read it from templates/role-library/[dept]/[slug].md, fill
-    company-specific tokens, and use that instead of the stub. Falls back
-    to the stub when no library match.
+    company-specific tokens, and use that instead of a placeholder. When no
+    library match exists the role's work is routed to the general-task
+    department and a machine-readable SOP-needed record is emitted
+    (record_sop_needed → SOP-NEEDED.json); PENDING stubs are never written.
 
 Per-role workspace layout:
     [DEPT]/[role-slug]/
@@ -20,15 +22,18 @@ Per-role workspace layout:
     ├── SOUL.md             (unique, with Persona Governance Framework clause)
     ├── MEMORY.md           (unique, starts empty)
     ├── HEARTBEAT.md        (unique)
-    ├── how-to.md           (from library if available, else stub)
-    ├── AGENTS.md → workspace_root/AGENTS.md   (symlink)
-    ├── TOOLS.md  → workspace_root/TOOLS.md    (symlink)
-    └── USER.md   → workspace_root/USER.md     (symlink)
+    ├── how-to.md           (from library if available, else a ROUTING notice
+    │                        sending the role's work to general-task + a
+    │                        SOP-needed record — never a PENDING stub)
+    ├── TOOLS.md            (real-file copy of workspace_root/TOOLS.md, N29)
+    └── USER.md             (real-file copy of workspace_root/USER.md, N29)
+    (no AGENTS.md in role folders -- U053 disposition)
 
 For master-orchestrator, SOUL.md and IDENTITY.md use the CEO variant of the
 deferral clause (mission/owner override persona on conflict).
 """
 import argparse
+import filecmp
 import json
 import os
 import re
@@ -67,6 +72,240 @@ def _crw_get_capability_class(role_slug: str, dept_slug: str, role_type: str = "
         return _msf_infer_class(role_slug, dept_slug, role_type)
     except Exception:  # noqa: BLE001
         return {}
+
+# ─── SOP-NEEDED REGISTRY (no silent placeholders) ─────────────────────────────
+# v25.4.0: PENDING stubs are NEVER written to disk. When the role-library match
+# fails for a role, the installer (a) routes that role's work to the general-task
+# department (the mandatory catch-all) and (b) records a machine-readable
+# "SOP needed" entry here. The records are flushed to SOP-NEEDED.json at the
+# company root by write_sop_needed_manifest(). The authoring step
+# (scripts/author-missing-sops.py) consumes that file: every record is authored
+# into a real SOP, the SOP is written as the role's how-to.md AND upstreamed
+# into templates/role-library/, and the record is marked "authored". A build
+# with un-authored records fails the library gate — the gap can never go quiet.
+#
+# Why: a spawned worker becomes a role ONLY by loading and executing that
+# role's SOP step by step. A PENDING stub is a role with no executable
+# instructions, so workers improvise. This registry makes every library miss
+# loud, routed, and self-healing.
+
+SOP_NEEDED_RECORDS: list = []
+
+GENERAL_TASK_DEPT_SLUG = "general-task"
+
+# Statuses for SOP-NEEDED.json records.
+SOP_NEEDED_ROUTED = "routed"      # work routed to general-task; SOP not yet authored
+SOP_NEEDED_AUTHORED = "authored"  # real SOP authored, written, and upstreamed
+
+
+def record_sop_needed(role_name, dept_slug, reason, role_folder=None,
+                      how_to_path=None, role_description=""):
+    """Append a machine-readable "SOP needed" record for a library miss.
+
+    Returns the record dict (including its stable id).
+    """
+    rec = {
+        "id": f"sop-needed-{len(SOP_NEEDED_RECORDS) + 1:04d}",
+        "role": role_name,
+        "department": dept_slug,
+        "role_folder": str(role_folder) if role_folder else "",
+        "how_to_path": str(how_to_path) if how_to_path else "",
+        "reason": reason,
+        "routed_to": GENERAL_TASK_DEPT_SLUG,
+        "status": SOP_NEEDED_ROUTED,
+        "recorded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "role_description": role_description or "",
+    }
+    SOP_NEEDED_RECORDS.append(rec)
+    print(f"  [SOP-NEEDED] {rec['id']}: '{role_name}' ({dept_slug}) — {reason}; "
+          f"work routed to {GENERAL_TASK_DEPT_SLUG}", file=sys.stderr)
+    return rec
+
+
+def get_sop_needed_records():
+    """Return the in-memory SOP-needed records accumulated so far."""
+    return list(SOP_NEEDED_RECORDS)
+
+
+def routing_how_to(role_name, dept_name, dept_slug, company_name, industry,
+                   record_id, role_description=""):
+    """Build the ROUTING how-to.md written when no library template matched.
+
+    This is NOT a placeholder: it is a real, functional document that tells a
+    spawned worker exactly what to do — route the work to the general-task
+    department — and points at the SOP-needed record that the authoring step
+    will use to close the gap permanently. It deliberately contains NO
+    procedure for the role itself, because a procedure written without a
+    matched playbook would be improvisation, the exact failure this exists
+    to prevent.
+    """
+    company_name = company_name or _load_company_config().get("companyName", "")
+    industry = industry or _load_company_config().get("industry", "")
+    desc = role_description.strip() or "(no description supplied in the install spec)"
+    return f"""# {role_name} — how-to.md  [ROUTED — WORK HANDLED BY GENERAL-TASK]
+
+**Department:** {dept_name}
+**Company:** {company_name}
+**Industry:** {industry}
+**Status:** ROUTED — no role-library template matched this role at install time.
+**Work routing:** every task for this role is handled by the `{GENERAL_TASK_DEPT_SLUG}` department until a dedicated SOP is authored.
+**SOP-needed record:** `{record_id}` (see `SOP-NEEDED.json` at the company root)
+
+## Why this document exists instead of a procedure
+
+A spawned worker becomes this role ONLY by loading and executing this role's SOP
+step by step. No library playbook matched "{role_name}" when this workforce was
+installed, so writing a procedure here would mean inventing one — and an invented
+procedure is improvisation dressed as instructions. This notice refuses that trade:
+it contains no role procedure on purpose. Instead it routes the work to where it
+can be done correctly right now, and records exactly what must be authored so the
+gap is closed permanently. A silent placeholder would have let the gap sit for
+months. This one cannot sit quietly: the install is not complete until record
+`{record_id}` is authored (the library gate fails while any record is un-authored).
+
+## Routing procedure (follow exactly)
+
+1. When a task arrives for {role_name}, do NOT attempt it from this folder. There
+   is no vetted procedure here to execute, and executing without one is forbidden.
+2. Hand the task to the `{GENERAL_TASK_DEPT_SLUG}` department's triage classifier.
+   That department is the mandatory catch-all: it exists precisely to absorb work
+   that has no dedicated playbook yet.
+3. The handoff MUST include, verbatim: (a) the original request, (b) who asked
+   (department + role), (c) the deadline or urgency, (d) any files, links, or
+   context the requester supplied, and (e) this record id (`{record_id}`) so the
+   general-task worker can see why the work was routed.
+4. The general-task department executes the work per its own SOPs and reports the
+   result back through the chain of command (below) — never directly to the
+   requester, never by skipping a level.
+5. If the SAME kind of task arrives repeatedly (more than a handful of times),
+   tell your department director: repeated routed work is the signal that this
+   role's SOP should be prioritized in the authoring queue.
+
+## Chain of command
+
+Work flows through levels; it never skips one. The AI CEO talks only to
+department directors. A director talks only to the workers in their own
+department. Reports flow back up the same chain: worker → director → AI CEO →
+owner. A general-task worker executing routed work reports to the general-task
+director, who reports up — the routed work does not create a shortcut around
+any level.
+
+## What happens next (self-healing)
+
+Record `{record_id}` feeds the SOP-authoring step
+(`23-ai-workforce-blueprint/scripts/author-missing-sops.py`). That step authors a
+real, rubric-grounded SOP for {role_name} (≥3072 bytes of executable procedure,
+no boilerplate), writes it as this folder's `how-to.md` — replacing this routing
+notice — and adds it back into `templates/role-library/` so the NEXT install
+matches immediately. Every install permanently closes the gaps it found. Until
+then, this routing notice is the role's operating document: follow it literally.
+
+## Role description (from the install spec)
+
+{desc}
+
+## Hard rules for this role until its SOP is authored
+
+- NEVER invent a procedure for {role_name} and follow it as if it were vetted.
+- NEVER leave a task unacknowledged: every routed task gets a handoff to
+  `{GENERAL_TASK_DEPT_SLUG}` with the five handoff items above.
+- NEVER mark record `{record_id}` authored yourself — only the authoring step
+  (or a human reviewer who verified the authored SOP) changes that status.
+- If a task is urgent and general-task is unreachable, escalate to your
+  department director immediately. Do not improvise.
+"""
+
+
+def write_sop_needed_manifest(company_dir):
+    """Flush accumulated SOP-NEEDED records to SOP-NEEDED.json at the company root.
+
+    Merges with an existing manifest (resume-safe): records already marked
+    "authored" are never downgraded; new "routed" records are appended,
+    de-duplicated by (role, department). Also writes a human-readable
+    SOP-NEEDED.md companion. Returns the json path, or None when company_dir
+    is not resolvable.
+    """
+    if not company_dir:
+        print("[SOP-NEEDED] company_dir not resolved; skipping manifest",
+              file=sys.stderr)
+        return None
+    company_dir = Path(company_dir)
+    try:
+        company_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"[SOP-NEEDED] cannot create {company_dir}: {e}", file=sys.stderr)
+        return None
+
+    merged = {}  # (role, department) -> record; authored wins
+    json_path = company_dir / "SOP-NEEDED.json"
+    if json_path.is_file():
+        try:
+            existing = json.loads(json_path.read_text(encoding="utf-8"))
+            for rec in existing.get("records", []):
+                merged[(rec.get("role", ""), rec.get("department", ""))] = rec
+        except (OSError, ValueError) as e:
+            print(f"[SOP-NEEDED] WARN: could not read {json_path}: {e}",
+                  file=sys.stderr)
+    for rec in SOP_NEEDED_RECORDS:
+        key = (rec.get("role", ""), rec.get("department", ""))
+        prev = merged.get(key)
+        if prev and prev.get("status") == SOP_NEEDED_AUTHORED \
+                and rec.get("status") != SOP_NEEDED_AUTHORED:
+            continue  # never downgrade an authored record
+        merged[key] = rec
+
+    records = sorted(merged.values(),
+                     key=lambda r: (r.get("department", ""), r.get("role", "")))
+    payload = {
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generator": "create_role_workspaces.write_sop_needed_manifest",
+        "record_count": len(records),
+        "open_count": sum(1 for r in records
+                          if r.get("status") != SOP_NEEDED_AUTHORED),
+        "records": records,
+    }
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    # Human-readable companion.
+    md_lines = [
+        "# SOP-NEEDED.md — roles awaiting an authored SOP",
+        "",
+        f"Generated: {payload['generated']}",
+        f"Open records: {payload['open_count']} of {payload['record_count']}",
+        "",
+        "Every role below had NO role-library template match at install time. "
+        "No PENDING stub was written — each role's `how-to.md` is a routing "
+        "notice sending its work to the `general-task` department, and each "
+        "gap is tracked here as a machine-readable record in `SOP-NEEDED.json`.",
+        "",
+    ]
+    if payload["open_count"]:
+        md_lines += [
+            "Run `23-ai-workforce-blueprint/scripts/author-missing-sops.py` "
+            "to author the missing SOPs. The library gate fails until every "
+            "record is `authored`.",
+            "",
+            "| Record | Role | Department | Reason | Status |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        for r in records:
+            md_lines.append(
+                f"| `{r.get('id', '')}` | {r.get('role', '')} | "
+                f"{r.get('department', '')} | {r.get('reason', '')} | "
+                f"{r.get('status', '')} |")
+        md_lines.append("")
+    else:
+        md_lines += [
+            "All records authored. Every role has a real SOP. ✅",
+            "",
+        ]
+    (company_dir / "SOP-NEEDED.md").write_text("\n".join(md_lines),
+                                               encoding="utf-8")
+    print(f"[SOP-NEEDED] Wrote {json_path} "
+          f"({payload['open_count']} open / {payload['record_count']} total)",
+          file=sys.stderr)
+    return str(json_path)
+
 
 # ─── DEFERRAL CLAUSES ─────────────────────────────────────────────────────────
 
@@ -174,6 +413,7 @@ Before dispatching ANY task, in this order:
 """
 
 from ceo_execution_policy import block as _ceo_policy_block, upgrade as _upgrade_ceo_policy
+from shared_core_copy import ensure_core_copy
 CEO_OPERATING_PROTOCOL = _ceo_policy_block()
 
 # ─── STUB GENERATORS (used as fallback when library has no match) ────────────
@@ -250,46 +490,18 @@ Dept: {dept_name}
 4. Read your latest entries in `MEMORY.md`
 """
 
-def stub_how_to(role_name, dept_name, is_ceo):
-    """Placeholder used when the library has no matching doc.
+def stub_how_to(*args, **kwargs):
+    """REMOVED (v25.4.0): PENDING stubs are never written to disk.
 
-    Gap-3: NOT a silent empty stub. Headed PENDING with the EXACT one-shot
-    token-fill instruction (fill FROM the nearest library template family, NOT a
-    free-form essay). The 'how-to.md (stub)' marker is what PENDING-SOPS.md scans
-    for so the orchestrator gets a manifest of everything still to fill.
+    On a role-library miss the installer now writes a ROUTING how-to.md
+    (routing_how_to: the role's work goes to the general-task department) and
+    emits a machine-readable SOP-needed record (record_sop_needed), flushed to
+    SOP-NEEDED.json by write_sop_needed_manifest(). Any caller still reaching
+    for a stub is a bug — fail loudly instead of writing a placeholder.
     """
-    deferral = CEO_DEFERRAL if is_ceo else STANDARD_DEFERRAL
-    return f"""# {role_name} — how-to.md (stub)  [PENDING — FILL FROM LIBRARY]
-
-**Department:** {dept_name}
-**Status:** PENDING — no pre-written library doc matched this role.
-**Generated:** {_now_iso()}
-
-> ONE-SHOT FILL INSTRUCTION (do exactly this, do NOT write a free-form essay):
-> 1. Find the nearest template family in
->    `23-ai-workforce-blueprint/templates/role-library/` for the
->    `{dept_name}` department (closest role title). If this department has no
->    library docs, use the closest department's family.
-> 2. Copy that template and TOKEN-FILL only the placeholders (role =
->    `{role_name}`, department = `{dept_name}`, plus the company/industry tokens).
-> 3. Keep the template's Section-9 SOP structure intact. Reserve free-form
->    generation with `templates/universal-how-to-template.md` ONLY if there is
->    genuinely no comparable library template.
-> 4. Once filled, remove this PENDING header so this role drops off PENDING-SOPS.md.
-
-## 1. Role Identity
-
-### Who You Are
-{role_name} in {dept_name}.
-
-### What This Role Is NOT
-(Pending fill — see the one-shot instruction above.)
-
-## 2. Persona Governance Override
-{deferral}
-
-## 3-19. Pending fill — read the one-shot instruction at the top of this file.
-"""
+    raise RuntimeError(
+        "stub_how_to() was removed in v25.4.0: PENDING stubs are never "
+        "written to disk. Use routing_how_to() + record_sop_needed() instead.")
 
 # ─── LIBRARY TEMPLATE-FILL (Wave 5b) ──────────────────────────────────────────
 
@@ -676,6 +888,12 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     owner_comms = (cfg.get("ownerCommunicationStyle") or cfg.get("owner_communication_style")
                    or "direct, no jargon")
 
+    # AI CEO name — a CONFIG TOKEN, never a hardcoded string. Every install may
+    # name its AI CEO differently; the chain-of-command pattern is structural.
+    # Falls back to the neutral literal "AI CEO" (never an owner's personal name).
+    ai_ceo_name = (cfg.get("aiCeoName") or cfg.get("ai_ceo_name")
+                   or cfg.get("aiCEOName") or "AI CEO")
+
     # Detect CRM from connected_systems list (GoHighLevel is the default fleet CRM)
     _connected = cfg.get("connectedSystems") or cfg.get("connected_systems") or []
     _crm = "GoHighLevel"
@@ -748,6 +966,10 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
         "FirstName": owner_name,
         "OWNER_VOICE_SAMPLE": owner_voice,
         "OWNER_COMMUNICATION_STYLE": owner_comms,
+        # AI CEO name — config token (never hardcoded). The AI CEO template's
+        # chain-of-command section addresses the CEO by this token.
+        "AI_CEO_NAME": ai_ceo_name,
+        "AiCeoName": ai_ceo_name,
         # Dates
         "ISO_DATE": _iso_date,
         "GENERATION_DATE": _iso_date,
@@ -1234,8 +1456,9 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
 def try_library_fill(role_name, dept_path, is_ceo, lib_key=None):
     """
     Look up the library for a pre-written how-to.md, token-fill it, and return
-    the filled content. Returns None if no library match (caller falls back
-    to stub_how_to).
+    the filled content. Returns None if no library match (caller routes the
+    role's work to general-task + emits a SOP-needed record; PENDING stubs are
+    never written).
 
     lib_key: optional explicit library lookup key (the canonical role slug). When
     provided it is tried FIRST so a decorated display name can never defeat the
@@ -1388,16 +1611,50 @@ def create_role_workspace(dept_path, role_name, workspace_root, role_metadata=No
     write_new(role_path / "HEARTBEAT.md",
         stub_heartbeat(role_name, dept_name), encoding="utf-8")
 
-    # how-to.md: library first, stub fallback. Feed the explicit canonical slug
-    # as the lookup key so a decorated display name can never defeat the fill.
-    filled = try_library_fill(role_name, Path(dept_path), is_ceo,
-                              lib_key=(explicit_slug or None))
+    # how-to.md: library first, then the no-stub fallbacks. Feed the explicit
+    # canonical slug as the lookup key so a decorated display name can never
+    # defeat the fill.
+    #
+    # v25.4.0 order:
+    #   1. Scaffolded director with no dept director template → the generic
+    #      director scaffold (a director is never routed; headless is forbidden).
+    #   2. Role-library template match → token-filled real SOP.
+    #   3. No match → ROUTING notice to general-task + SOP-needed record
+    #      (PENDING stubs are never written).
+    _scaffold_key = (role_metadata or {}).get("_director_template_key")
+    _via_scaffold = False
+    if _scaffold_key == "_director-scaffold":
+        filled = _fill_director_scaffold(role_name, dept_name, is_ceo)
+        if filled is None:
+            raise RuntimeError(
+                f"[installer] scaffolded director '{role_name}' has no "
+                f"department director template and the generic "
+                f"_director-scaffold.md could not be filled — refusing to "
+                f"leave the department headless.")
+        _via_scaffold = True
+    else:
+        filled = try_library_fill(role_name, Path(dept_path), is_ceo,
+                                  lib_key=(explicit_slug or None))
     if filled is not None:
         write_new(role_path / "how-to.md", filled, encoding="utf-8")
-        print(f"  [library-fill] {folder_name} ← templates/role-library/...")
+        _src = "_director-scaffold.md" if _via_scaffold else "templates/role-library/..."
+        print(f"  [library-fill] {folder_name} ← {_src}")
     else:
-        write_new(role_path / "how-to.md",
-            stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
+        # v25.4.0: NO silent placeholders. On a library miss the role's work is
+        # routed to the general-task department and a machine-readable
+        # SOP-needed record is emitted (never a PENDING stub on disk).
+        _dept_slug = Path(dept_path).name.replace("-dept", "").strip().lower()
+        _how_to_path = role_path / "how-to.md"
+        _rec = record_sop_needed(
+            role_name, _dept_slug, "no role-library template matched",
+            role_folder=role_path, how_to_path=_how_to_path,
+            role_description=(role_metadata or {}).get("description", ""))
+        write_new(_how_to_path,
+            routing_how_to(role_name, dept_name, _dept_slug, "", "",
+                           _rec["id"],
+                           role_description=(role_metadata or {}).get(
+                               "description", "")),
+            encoding="utf-8")
 
     # v10.9.0 P1-E: SOP/ subfolder per role (N19 requirement)
     # Per-role SOP folder holds the how-to docs the role uses on the job.
@@ -1456,21 +1713,9 @@ When a new SOP is added, append a line to the table below.
             encoding="utf-8",
         )
 
-    # Symlinks for shared files
-    for shared in ["AGENTS.md", "TOOLS.md", "USER.md"]:
-        link_path = role_path / shared
-        target = Path(workspace_root) / shared
-        try:
-            if link_path.exists() or link_path.is_symlink():
-                link_path.unlink()
-            link_path.symlink_to(target)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared} in {role_path}: {e}",
-                  file=sys.stderr)
-            link_path.write_text(
-                f"# {shared} — see workspace root\n\n"
-                f"Symlink to {target} failed. Re-run create_role_workspaces.py "
-                f"with appropriate permissions.\n")
+    # Shared files: real-file copies (N29), same set and same rule as the augment
+    # path below -- role folders carry TOOLS.md + USER.md, never AGENTS.md (U053).
+    _link_shared_files_only(role_path, workspace_root)
 
     return role_path
 
@@ -1526,7 +1771,19 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
                 fpath.write_text(filled, encoding="utf-8")
                 print(f"  [library-fill] {role_slug} ← templates/role-library/...")
             else:
-                fpath.write_text(stub_how_to(role_name, dept_name, is_ceo), encoding="utf-8")
+                # v25.4.0: NO silent placeholders (same as create_role_workspace
+                # above) — route to general-task + emit the SOP-needed record.
+                _dept_slug = Path(dept_path).name.replace("-dept", "").strip().lower()
+                _rec = record_sop_needed(
+                    role_name, _dept_slug, "no role-library template matched",
+                    role_folder=role_path, how_to_path=fpath,
+                    role_description=(role_metadata or {}).get("description", ""))
+                fpath.write_text(
+                    routing_how_to(role_name, dept_name, _dept_slug, "", "",
+                                   _rec["id"],
+                                   role_description=(role_metadata or {}).get(
+                                       "description", "")),
+                    encoding="utf-8")
         written.append(filename)
 
     # v10.9.0 P1-E: ensure SOP/ folder exists in augmented roles too
@@ -1550,13 +1807,83 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             "converted": link_info["converted"]}
 
 
+UNIFY_BAK_KEEP_DEFAULT = 3
+
+
+def _unify_bak_keep():
+    """Retention count for .bak-unify-* files; $UNIFY_BAK_KEEP overrides."""
+    try:
+        n = int(os.environ.get("UNIFY_BAK_KEEP", UNIFY_BAK_KEEP_DEFAULT))
+    except (TypeError, ValueError):
+        return UNIFY_BAK_KEEP_DEFAULT
+    return n if n >= 0 else UNIFY_BAK_KEEP_DEFAULT
+
+
+def _unify_backup(path):
+    """Retire `path` into a bounded, de-duplicated <name>.bak-unify-<ts> sibling.
+
+    `path` ALWAYS leaves this function removed from its original name -- the
+    caller's disposition (delete, or replace with a symlink/copy) is unchanged.
+    What changes is how much disk that costs:
+
+      * DE-DUPE  -- if the newest existing .bak-unify-* for this target is
+        byte-identical to `path`, no second copy of the same bytes is written;
+        `path` is simply unlinked. Its content is still fully preserved, in the
+        backup that already holds it.
+      * PRUNE    -- after a new backup is made, only the $UNIFY_BAK_KEEP newest
+        .bak-unify-* siblings are kept (default 3, 0 keeps none); older ones are
+        deleted oldest-first.
+
+    Before this, the backup set was UNBOUNDED and every roll added a full-size
+    copy. Measured live on a client Mac Mini 2026-09-21: 25,604
+    AGENTS.md.bak-unify-* files / 4.3 GB across the department tree, written
+    daily since 2026-06-23, disk at 95%. Only this target's OWN timestamped
+    unify backups are ever touched.
+
+    Returns the new backup Path, or None when the content was already backed up.
+    Raises OSError if the rename itself fails (callers already handle that).
+    """
+    path = Path(path)
+    existing = sorted(path.parent.glob(path.name + ".bak-unify-*"))
+    if existing:
+        try:
+            if filecmp.cmp(str(path), str(existing[-1]), shallow=False):
+                path.unlink()
+                return None
+        except OSError:
+            pass  # unreadable backup: fall through and make a real one
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    bak = path.with_name(f"{path.name}.bak-unify-{ts}")
+    # Two calls in the same second would otherwise land on the same name and
+    # silently overwrite a backup -- the one thing this function must never do.
+    # "-<n>" sorts after the bare timestamp, so newest-last ordering holds.
+    _n = 2
+    while bak.exists():
+        bak = path.with_name(f"{path.name}.bak-unify-{ts}-{_n}")
+        _n += 1
+    path.replace(bak)
+    existing.append(bak)
+    keep = _unify_bak_keep()
+    for old in (existing[:-keep] if keep else existing):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return bak
+
+
 def _link_shared_files_only(role_path, workspace_root):
     """
-    U054: link shared files in a container that is correctly excluded from
-    role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
-    hold stale regular copies of TOOLS.md/USER.md.  Never writes stubs or
+    Place TOOLS.md / USER.md in a role folder or a SKIP_NAMES container as
+    REAL-FILE copies of the workspace root (N29). A symlink -- rejected by the
+    runtime's workspace-root boundary guard -- is migrated to a real copy; a
+    real, non-empty file is never deleted or overwritten (the updater's
+    link_shared_core_files() refreshes it with backup). Never writes stubs or
     touches AGENTS.md (AGENTS.md is deleted by the caller per U053's
     disposition).
+
+    Keys kept for callers: "symlinked" lists files newly placed (now copies),
+    "converted" lists symlinks migrated to real copies.
     """
     role_path = Path(role_path)
     workspace_root = Path(workspace_root)
@@ -1564,26 +1891,11 @@ def _link_shared_files_only(role_path, workspace_root):
     converted = []
     for shared in V21_SYMLINKS:
         link_path = role_path / shared
-        target = workspace_root / shared
-        if link_path.is_symlink():
-            if link_path.resolve() == target.resolve():
-                continue                      # already correct
-            link_path.unlink()                # wrong target: relink
-        elif link_path.exists():
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
-            try:
-                link_path.replace(bak)
-            except OSError as e:
-                print(f"  WARN: could not back up {shared} before converting: {e}",
-                      file=sys.stderr)
-                continue
-            converted.append(shared)
-        try:
-            link_path.symlink_to(target)
+        was_link = link_path.is_symlink()
+        if ensure_core_copy(workspace_root / shared, link_path) == "copied":
             symlinked.append(shared)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
+            if was_link:
+                converted.append(shared)
     return {"symlinked": symlinked, "converted": converted}
 
 def _is_sops_library_dir(path):
@@ -1631,7 +1943,8 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     SKIP_NAMES = {"memory", "devils-advocate", "_archive", "_index",
                   "_compliance_audit", "_pending_rewrite", "_stage1_drafts",
                   "sops", "scripts", "roles", "_drafts", "artifacts",
-                  "templates", "assets"}
+                  "templates", "assets", "intake", "runs", "fish-audio",
+                  "intake-miniapp", "release-matrix", "contract"}
 
     results = []
     for entry in sorted(dept_path.iterdir()):
@@ -1677,11 +1990,13 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
                 print(f"    [DRY-RUN] would delete AGENTS.md from {entry.name}")
                 _AGENTS_DELETED.append(entry.name)
                 continue
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
             try:
-                agents_path.replace(bak)
-                print(f"    {entry.name}: backed up & deleted AGENTS.md -> {bak.name}")
+                bak = _unify_backup(agents_path)
+                if bak is None:
+                    print(f"    {entry.name}: deleted AGENTS.md "
+                          f"(identical copy already backed up)")
+                else:
+                    print(f"    {entry.name}: backed up & deleted AGENTS.md -> {bak.name}")
                 _AGENTS_DELETED.append(entry.name)
             except OSError as e:
                 print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
@@ -1708,11 +2023,13 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
         # Delete AGENTS.md with backup (U053 disposition = delete)
         agents_path = entry / "AGENTS.md"
         if agents_path.is_file():
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
             try:
-                agents_path.replace(bak)
-                print(f"    [{entry.name}] backed up & deleted AGENTS.md -> {bak.name}")
+                bak = _unify_backup(agents_path)
+                if bak is None:
+                    print(f"    [{entry.name}] deleted AGENTS.md "
+                          f"(identical copy already backed up)")
+                else:
+                    print(f"    [{entry.name}] backed up & deleted AGENTS.md -> {bak.name}")
             except OSError as e:
                 print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
                       file=sys.stderr)
@@ -2910,6 +3227,41 @@ def verify_scripts_materialization(lib_scripts_root, scripts_target,
         dst_hash = _hashlib.sha256(dest_file.read_bytes()).hexdigest()
         if src_hash != dst_hash:
             problems.append({"path": str(rel_path), "issue": "hash-mismatch"})
+        # FIX-201 (v25.2.27) — ghl_media.py's co-located _skill48_ghl_media.py
+        # is the ONE library path whose dept copy legitimately comes from a
+        # SIBLING skill, not from the library: BOTH copiers
+        # (scaffold_department and refresh-dept-scripts._mirror_skill48_ghl_media)
+        # deliberately overwrite the dept copy from
+        # <skills_root>/48-facebook-ad-generator/tools/ghl_media.py so a
+        # deployed department is self-contained, and
+        # presentations/scripts/ghl_media.py resolves that co-located copy
+        # FIRST (ghl_media._find_canonical_ghl_media). Comparing the dept copy
+        # against the LIBRARY's stale pre-Fix-32 bytes failed every roll:
+        # refresh-dept-scripts rc 3 "hash-mismatch: _skill48_ghl_media.py" ->
+        # updater exit 1 -> version stamp withheld (measured on the v25.2.26
+        # operator roll 2026-10-01). Verify against the pair that is genuinely
+        # supposed to match — the same source the copiers use. When that
+        # source is not resolvable the library copy remains the intended bytes
+        # and the strict comparison above stands (fail-closed).
+        if rel_path.name == "_skill48_ghl_media.py":
+            try:
+                _ghl_sibling = (_resolve_skill_dir().parent
+                                / "48-facebook-ad-generator" / "tools"
+                                / "ghl_media.py")
+            except OSError:
+                _ghl_sibling = None
+            if _ghl_sibling is not None and _ghl_sibling.is_file():
+                _sib_hash = _hashlib.sha256(_ghl_sibling.read_bytes()).hexdigest()
+                problems = [p for p in problems
+                            if not (p["path"] == str(rel_path)
+                                    and p["issue"] in ("missing", "hash-mismatch"))]
+                if dest_file.is_file():
+                    _dst_hash = _hashlib.sha256(dest_file.read_bytes()).hexdigest()
+                else:
+                    _dst_hash = None
+                if _dst_hash != _sib_hash:
+                    problems.append({"path": str(rel_path),
+                                     "issue": "hash-mismatch"})
     return problems
 
 def scaffold_department(dept_path, dept_slug, dry_run=False):
@@ -3114,6 +3466,125 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
 
     return written
 
+# ─── DIRECTOR REQUIRED (no headless departments) ────────────────────────────────
+# v25.4.0: the installer cannot complete a department without a director role.
+# A director is persistent (always alive, holds department memory); workers are
+# ephemeral (spawned per task, execute the role's SOP step by step, report back,
+# terminated when done). If the install spec names no director, one is
+# scaffolded from the director template and flagged for human review — a
+# headless department is structurally impossible.
+
+def _role_is_director(role):
+    """True when a role dict looks like the department's director/head."""
+    name = str(role.get("name", "")).lower()
+    slug = str(role.get("slug", "")).lower()
+    if "director" in name or "director" in slug:
+        return True
+    if "head-of" in slug or name.startswith("head of"):
+        return True
+    try:
+        if int(role.get("number", -1)) == 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    if str(role.get("role_type", "")).lower() == "department head":
+        return True
+    return False
+
+
+def ensure_director_role(roles, dept_slug, dept_name=""):
+    """Ensure the roles list contains a director; scaffold one if missing.
+
+    Returns the (possibly extended) roles list. The scaffolded director is
+    marked with _scaffolded_director=True and _needs_human_review=True so the
+    build output flags it loudly. The scaffold prefers the department's own
+    director template from the role-library (via library_lookup); when the
+    department has none, the generic _director-scaffold.md template is used so
+    the director ALWAYS ships with a real, substantive how-to.md — a routed
+    (SOP-less) director would be headless in practice, which this rule forbids.
+    """
+    roles = list(roles or [])
+    if any(_role_is_director(r) for r in roles):
+        return roles
+
+    dept_name = dept_name or dept_slug.replace("-", " ").title()
+    director_slug = f"director-of-{dept_slug}"
+    # Prefer the department's own director template from the role-library.
+    template_path, role_entry = (None, None)
+    for key in (director_slug, "director", f"head-of-{dept_slug}"):
+        try:
+            template_path, role_entry = library_lookup(key, dept_slug)
+        except Exception:  # noqa: BLE001 — lookup must never break the build
+            template_path, role_entry = (None, None)
+        if template_path:
+            break
+
+    director_role = {
+        "name": f"Director of {dept_name}",
+        "slug": director_slug,
+        "number": 0,
+        "role_type": "Department Head",
+        "description": (
+            f"Persistent director of the {dept_name} department. Holds "
+            f"department memory, dispatches work to ephemeral sub-agents who "
+            f"execute role SOPs step by step, and reports up to the AI CEO. "
+            f"SCAFFOLDED BY THE INSTALLER — no director was named in the "
+            f"install spec. Human review required."
+        ),
+        "sops": [],
+        "persona_traits": "",
+        "is_qc": False,
+        "_scaffolded_director": True,
+        "_needs_human_review": True,
+    }
+    if template_path:
+        # Pin the lookup so try_library_fill resolves the director template
+        # even if the display name is decorated.
+        director_role["_director_template_key"] = (
+            role_entry.get("slug") if role_entry else director_slug)
+    else:
+        # No dept-specific director template: fall back to the generic
+        # director scaffold (carries the full persistent-director doctrine).
+        director_role["_director_template_key"] = "_director-scaffold"
+    print(f"  [DIRECTOR-SCAFFOLD] department '{dept_slug}' named no director — "
+          f"scaffolded '{director_role['name']}' from "
+          f"{'role-library' if template_path else 'generic director scaffold'}; "
+          f"FLAGGED FOR HUMAN REVIEW", file=sys.stderr)
+    # Director leads: insert at the front so folder numbering starts at 00.
+    roles.insert(0, director_role)
+    return roles
+
+
+def _fill_director_scaffold(role_name, dept_name, is_ceo):
+    """Fill the generic director scaffold for a scaffolded director.
+
+    Used ONLY when the department has no director template of its own in the
+    role-library. Guarantees the director ships with real, substantive content
+    (the persistent-director/ephemeral-worker doctrine) — a director must never
+    be routed to general-task, which would leave the department headless in
+    practice. Returns the filled text, or None if the scaffold file is missing
+    or below the substance floor (caller then records the miss loudly).
+    """
+    scaffold = (_resolve_skill_dir() / "templates" / "role-library"
+                / "_director-scaffold.md")
+    if not scaffold.is_file():
+        print(f"  [DIRECTOR-SCAFFOLD] WARN: generic scaffold missing at "
+              f"{scaffold}", file=sys.stderr)
+        return None
+    try:
+        raw = scaffold.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"  [DIRECTOR-SCAFFOLD] WARN: cannot read {scaffold}: {e}",
+              file=sys.stderr)
+        return None
+    filled = fill_tokens(raw, role_name, dept_name, is_ceo)
+    if len(filled.encode("utf-8")) < 3072:
+        print(f"  [DIRECTOR-SCAFFOLD] WARN: filled scaffold below 3072B floor",
+              file=sys.stderr)
+        return None
+    return filled
+
+
 def instantiate_department(dept_path, dept_slug, roles, workspace_root,
                            dry_run=False):
     """
@@ -3128,8 +3599,24 @@ def instantiate_department(dept_path, dept_slug, roles, workspace_root,
     """
     dept_path = Path(dept_path)
     workspace_root = Path(workspace_root)
-    summary = {"dept": dept_path.name, "roles_created": [], "dept_files": [],
+    summary = {"dept": dept_path.name, "roles_created": [],
+               "dept_files": [],
                "sops_copied": 0, "scripts_copied": 0}
+
+    # v25.4.0 — NO EMPTY DEPARTMENTS: refuse to create a department with zero
+    # roles. An empty department is a shell that can never do work.
+    if not roles:
+        raise ValueError(
+            f"[installer] REFUSING to create department '{dept_slug}': the "
+            f"install spec supplied zero roles. A department with no roles is "
+            f"forbidden — remove it from the spec or give it roles.")
+
+    # v25.4.0 — DIRECTOR REQUIRED: a department without a director is headless.
+    # Scaffold one from the director template when the spec names none, and
+    # flag it loudly for human review.
+    roles = ensure_director_role(roles, dept_slug)
+    summary["director_scaffolded"] = any(
+        r.get("_scaffolded_director") for r in roles)
 
     if dry_run:
         print(f"[instantiate] DRY-RUN dept={dept_path.name} ({len(roles)} roles)")

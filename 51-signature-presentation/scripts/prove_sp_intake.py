@@ -1162,7 +1162,18 @@ def _valid_turn_ledger_provenance(deck_type, commit_id, question_ids=None,
 def _valid_runtime_fixture_paced():
     """Fixture A (GK-23/D18 BINARY acceptance): a driver-paced interview —
     the base valid runtime record PLUS a genuine, correctly-signed turn-ledger
-    provenance block. Must PASS every gate including AF-SP-INTAKE-UNPACED."""
+    provenance block. Must PASS every gate including AF-SP-INTAKE-UNPACED.
+
+    NOT a fully-valid record since 2026-09-15. This fixture deliberately
+    carries NO `answer_provenance`, so it is exactly the *pre-provenance
+    driver* shape: it is used ONLY to pin the CONTENT-PROVENANCE migration
+    boundary (cases 21/22 below, which inject `today=` to sit on either side
+    of PROVENANCE_GRACE_WINDOW_UNTIL). Every test that wants "a record the
+    engine must ACCEPT today" must use `_valid_runtime_fixture_provenanced()`;
+    reaching for this one there was the PD-TEST-147 defect — the provenance
+    gate correctly refused it and masked the rotation/pacing property under
+    test, turning the whole self-test red for every PR once the window shut.
+    """
     f = _valid_runtime_fixture()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])
     return f
@@ -1307,7 +1318,7 @@ def self_test():
     # gate can fail. Top-level `mode` is deliberately left as a DEPTH-looking
     # value ("IN-DEPTH") to prove delivery.mode -- not the depth field -- is what
     # decides the outcome.
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["mode"] = "IN-DEPTH"
     f["delivery"] = {"mode": "batched", "record_committed_atomically": True,
                       "asked_all_at_once": True}
@@ -1361,7 +1372,7 @@ def self_test():
 
     # Fixture A: a driver-paced interview (one turn per question, valid HMAC
     # signature) -> record PASSES.
-    check_pass("GK-23-fixtureA-driver-paced", _valid_runtime_fixture_paced())
+    check_pass("GK-23-fixtureA-driver-paced", _valid_runtime_fixture_provenanced())
 
     # Fixture B: IDENTICAL answers assembled WITHOUT the driver / batch-dumped
     # (no turn_ledger_provenance at all) -> REFUSED with AF-SP-INTAKE-UNPACED
@@ -1380,19 +1391,19 @@ def self_test():
     # (the literal "ledger shows multi-question turns" case) fails regardless
     # of the grace window — this is direct evidence of batching, not merely
     # an old-shape record.
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"]["turns"][1]["turn"] = f["turn_ledger_provenance"]["turns"][0]["turn"]
     check_fail("unpaced-multi-question-turn", f, AF_UNPACED)
 
     # 12) a tampered/forged signature (turns look fine but don't match the
     # HMAC) — must fail even though the shape is otherwise well-formed.
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"]["signature"] = "0" * 64
     check_fail("unpaced-bad-signature", f, AF_UNPACED)
 
     # 13) an answered required question with no corresponding turn-ledger entry
     # (answered outside the turn gate, e.g. direct --answer with no --next).
-    f = _valid_runtime_fixture_paced()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"]["turns"] = [
         t for t in f["turn_ledger_provenance"]["turns"] if t["question_id"] != "q3"
     ]
@@ -1405,7 +1416,7 @@ def self_test():
     #     verifies inside the migration window. Also proves the one-time signer
     #     sign_turn_ledger() emits the full new-shape envelope with the
     #     CURRENT key id stamped (a signer never signs with the previous key).
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = sign_turn_ledger(
         _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"],
         f["deck_type"], f["record_commit_ids"])
@@ -1417,7 +1428,7 @@ def self_test():
     #     window, and the acceptance emits the audit event (stderr line
     #     SP-INTAKE-KEY-AUDIT with the key ID + envelope timestamp, no bytes).
     before = old_key_acceptance_count()
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"], mode="legacy")
     check_pass("fix29-previous-key-within-window", f)
@@ -1426,7 +1437,7 @@ def self_test():
     # 15b) legacy KEY-ID-LESS envelope signed under the pre-rotation key
     #      (now the previous key) verifies inside the window — the pre-rotation
     #      fleet shape.
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     _legacy_turns = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"]
     f["turn_ledger_provenance"] = {
         "turns": _legacy_turns,
@@ -1438,20 +1449,20 @@ def self_test():
 
     # 16) ONE SECOND AFTER THE CUTOFF the previous-key envelope fails closed.
     _test_now = datetime(2026, 7, 28, 0, 0, 1, tzinfo=timezone.utc)
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"], mode="legacy")
     check_fail("fix29-old-key-rejected-after-cutoff", f, AF_UNPACED)
 
     # 16b) the CURRENT-key envelope still verifies one second after the cutoff.
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"])
     check_pass("fix29-current-key-still-passes-after-cutoff", f)
 
     # 16c) a legacy key_id-less envelope after the cutoff also fails closed —
     #      every envelope must carry its key id once the window has shut.
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     _legacy_turns = _valid_turn_ledger_provenance(f["deck_type"], f["record_commit_ids"])["turns"]
     f["turn_ledger_provenance"] = {
         "turns": _legacy_turns,
@@ -1462,7 +1473,7 @@ def self_test():
     check_fail("fix29-legacy-shape-after-cutoff", f, AF_UNPACED)
     #     signature mismatch.
     _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"], key_id="sp-tl-someone-elses-key")
     check_fail("fix29-unknown-key-id", f, AF_UNPACED)
@@ -1470,7 +1481,7 @@ def self_test():
     # 18) new-shape envelope missing signed_at is a configuration failure
     #     (absent timestamp never degrades open).
     _rotation_state = None
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"])
     del f["turn_ledger_provenance"]["signed_at"]
@@ -1479,7 +1490,7 @@ def self_test():
     # 19) a rotation clock moving backward (now earlier than
     #     rotation_started_at) is a launch/configuration failure: the verifier
     #     must FAIL CLOSED, never pass the record through.
-    f = _valid_runtime_fixture()
+    f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"] = _valid_turn_ledger_provenance(
         f["deck_type"], f["record_commit_ids"])
     _rotation_state = None
@@ -1492,9 +1503,22 @@ def self_test():
                                                  _PREVIOUS_KEY_ENV, _PREVIOUS_KEY_ID_ENV,
                                                  _ROTATION_STARTED_ENV, _EXPIRES_ENV)}
     _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)  # in-window
-    _nokey_fixture = _valid_runtime_fixture_paced()  # envelope built while keys cached
+    _nokey_fixture = _valid_runtime_fixture_provenanced()  # envelope built while keys cached
     for k in _saved_env:
         os.environ.pop(k, None)
+    # PD-TEST-140: clearing the six env vars is NOT sufficient to simulate
+    # "nothing is provisioned". _load_key_record() falls through to the
+    # operator's DEFAULT record file (_default_keys_file(), i.e.
+    # ~/.openclaw/state/presentation/sp-turn-ledger-keys.json), which exists on
+    # every box that has ever run the department. There the real record wins,
+    # its rotation_started_at (2026-09-01) is LATER than this test's synthetic
+    # in-window clock (2026-07-20), and the earlier clock-backward guard fires
+    # first -- so this assertion could never pass on the operator's own box,
+    # while passing on a clean CI runner that has no such file. Neutralise the
+    # default-file step as well, so the test asserts the property it names on
+    # BOTH an unprovisioned runner and a live box.
+    _saved_default_keys_file = globals().get("_default_keys_file")
+    globals()["_default_keys_file"] = lambda: None
     _rotation_state = None
     failures = evaluate(_nokey_fixture)
     assert any("no current turn-ledger key" in m for _, m in failures), (
@@ -1502,13 +1526,15 @@ def self_test():
     ok = ok and True
     print("  [PASS] VIOLATION %-18s -> missing current key fails closed"
           % "fix29-no-current-key")
+    if _saved_default_keys_file is not None:
+        globals()["_default_keys_file"] = _saved_default_keys_file
     for k, v in _saved_env.items():
         if v is not None:
             os.environ[k] = v
     _rotation_state = None
     # restore the in-window clock and cached state for any later cases
     _test_now = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
-    assert evaluate(_valid_runtime_fixture_paced()) == [], (
+    assert evaluate(_valid_runtime_fixture_provenanced()) == [], (
         "post-restore current-key pass expected")
 
     # ---- 2026-08-27 live defect — AF-SP-PROVENANCE (content provenance:

@@ -156,8 +156,113 @@ _ARC_MARKER_RE = re.compile(r"<!--\s*ARC:\s*[^>]*?-->|\[ARC:\s*[^\]]*?\]")
 #: Engine metadata field lines that are NOT rendered copy. The P4-COPY contract
 #: requires both on the slide block, but slides.schema.json defines copy[] as
 #: "the EXACT text that must appear rendered on the slide" -- so these stay out.
+#:
+#: PD-TEST-158 (2026-09-16). The vocabulary below was INCOMPLETE, and that was not
+#: cosmetic: `copy[]` drives `build_deck._load_slide_copy_map` -> the
+#: AF-P-VERBATIM check, which FAILS a slide until every `copy[]` string is baked
+#: verbatim into the image prompt. So any metadata left in `copy[]` is not merely
+#: untidy -- the engine demands that its own bookkeeping be PAINTED ONTO THE
+#: SLIDE. Measured live on run pres-operator-1d269693, whose
+#: working/checkpoints/prompt-worker-results-attempts.jsonl carries:
+#:
+#:   AF-P-VERBATIM ... measured='copy not baked' required='SECTION: decision-rerank'
+#:   AF-P-VERBATIM ... measured='copy not baked' required='PURPOSE: Force the
+#:                     priority question out loud...'
+#:
+#: The list now matches the field vocabulary the P4-COPY contract actually
+#: prescribes (sops/slide-copywriter-sops.md step 2, which every field is
+#: mandatory in). Those NOT rendered on the slide, and therefore excluded:
+#:
+#:   SECTION        arc-section name (engine routing)
+#:   PURPOSE        the one big idea, a brief addressed to the WRITER
+#:   ARCHETYPE      A1-A5 layout id (design routing)
+#:   LADDER         offer-ladder position (commercial routing)
+#:   PROOF USED     proof-inventory item name
+#:   RESEARCH_USED  research_map item_ids
+#:   PEOPLE         yes/no + representation group
+#:   HOOK_REFRAIN   yes/no + where the hook sits
+#:   TEXT_ANCHOR    a layout token (bottom band | left block | ...)
+#:   PRESENTER NOTE the SOP says these are "sentences the speaker says aloud that
+#:                  are NOT on the slide"; demanding them be baked would put the
+#:                  presenter's script ON the slide, which SOP step 1 forbids
+#:   HOOK VARIANT   which hook variant was used (engine metadata)
+#:   MOVE TAG       PD-TEST-173. Which of the eight build-move beats this slide
+#:                  carries (PRIORITY_STACK | PRESENT_COST | HIGHER_PRIORITY |
+#:                  VALUE_ANCHOR | URGENCY_SCARCITY | ABILITY_UNBLOCK |
+#:                  RERANK_DEMAND | TRIGGER). build_deck.AF-NO-SHIFT REQUIRES
+#:                  >=5 of those tags to appear in slides_copy.md, monotonic, so
+#:                  the writer MUST record them in the copy file -- but the
+#:                  copy-block template never said HOW, so the live run invented
+#:                  `MOVE TAG: TRIGGER`. Nothing stripped it, so it became
+#:                  copy[0] -- THE HEADLINE -- shifting every positional reader
+#:                  by one for that slide.
+#:
+#:                  RETRACTED CLAIM (independent review): an earlier revision of
+#:                  this comment said AF-P-VERBATIM then demanded the metadata be
+#:                  PAINTED AS THE HEADLINE, citing slide-08.txt's single
+#:                  occurrence of "MOVE TAG". That is FALSE. slide-08.txt:48 says
+#:                  "This beat carries the structural tag MOVE TAG: TRIGGER. ...
+#:                  Render nothing from that tag as visible artwork" -- the writer
+#:                  mentioned it in a metadata section and expressly forbade
+#:                  rendering it, and AF-P-VERBATIM is a substring-presence test,
+#:                  so the mention SATISFIED it. The live run's checkpoints carry
+#:                  56 AF-P-VERBATIM failures, ZERO of which name MOVE TAG.
+#:
+#:                  The real, measured harm is POSITIONAL, not verbatim:
+#:                  slide_craft AF-OBI-1 counted the metadata line as a text block
+#:                  (8 slides -> 2 with PD-TEST-169 -> 1 with this fix), and
+#:                  build_deck AF-COPY-BAND graded slide 08's real subhead as an
+#:                  over-long KICKER (5 -> 4 failing fields).
+#:
+#: Deliberately STILL RENDERED, and therefore still in `copy[]`: HEADLINE,
+#: SUBHEAD and SUPPORTING (plus the bullets beneath SUPPORTING). Those are the
+#: slide's words -- and, since PD-TEST-169, they appear WITHOUT their labels.
+#:
+#: EMPHASIS joined this set in PD-TEST-169. The engine's OWN P4-PROMPT contract
+#: (dispatcher.py, the AF-C8 point) says the fields counting toward the on-slide
+#: word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING",
+#: and that "SECTION, PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PROOF USED, PEOPLE,
+#: HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata
+#: never rendered on the slide". The accent word already appears INSIDE the
+#: headline, so the EMPHASIS entry is redundant for the renderer as well.
 _FIELD_LINE_RE = re.compile(
-    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS)\s*:")
+    r"(?i)^\s*(?:HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS"
+    r"|SECTION|PURPOSE|ARCHETYPE|PROOF\s+USED|PEOPLE|TEXT_ANCHOR"
+    r"|PRESENTER\s+NOTE|HOOK\s+VARIANT|EMPHASIS|MOVE\s+TAG)\s*:")
+
+#: PD-TEST-169 -- the RENDERED fields carry a LABEL that must not be rendered.
+#: slides.schema.json is explicit: copy[] is "the EXACT text that must appear
+#: rendered on the slide, in reading order. Index 0 is treated as the HEADLINE"
+#: and its own example is ["Northwind Co", "Three moves that doubled our
+#: pipeline in 90 days"] -- BARE text, no `HEADLINE:` prefix. So the label is
+#: stripped and the VALUE kept. A bare `SUPPORTING:` (label, no value) collapses
+#: to nothing, which is right: its bullets are their own lines beneath it.
+#:
+#: This also puts copy[] into the shape its POSITIONAL consumers already assume:
+#: build_deck._chk_copy_density reads fields[0] as the headline, [1] as the
+#: subhead, [2] as the kicker and [3:] as bullets; slide_craft.AF-OBI-2
+#: (check_obi_headline_words) grades copy[0] as the headline. With labels present
+#: those reads were grading "HEADLINE: ..." and "EMPHASIS: ..." as slide text.
+_LABEL_STRIP_RE = re.compile(r"(?i)^\s*(?:HEADLINE|SUBHEAD|SUPPORTING)\s*:\s*")
+
+#: ANY HTML comment is engine bookkeeping, not pixels -- not just the ARC marker.
+#: PD-TEST-158, review finding: the P4-COPY contract itself INSTRUCTS the writer
+#: to "flag the gap in a comment in slides_copy.md" (slide-copywriter SOP 9.1), so
+#: the live copy carries lines like
+#:     <!-- QC-NOTE: AF-NO-BRANDED-METHOD -- intake.json has no named_methodology -->
+#: `_ARC_MARKER_RE` matched ONLY `<!-- ARC: ... -->`, so those 12 comments survived
+#: into copy[] and AF-P-VERBATIM then demanded them be BAKED INTO THE IMAGE PROMPT.
+#: Measured on the live run: 12 QC-NOTE comments plus one `---` rule still reached
+#: copy[] after the first version of this fix, and on slide 8 two of the six
+#: remaining verbatim misses were these comments. Contract-sanctioned input, never
+#: rendered text.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+#: A standalone horizontal rule is markdown structure, not slide copy. The P4-COPY
+#: template wraps each slide block in `---` fences; `_LEADING_MARKUP_RE` never
+#: matched one, so a stray rule reached copy[] (live: slide 3) and was demanded
+#: verbatim like any other line.
+_RULE_LINE_RE = re.compile(r"^\s*-{3,}\s*$")
 
 #: Optional per-slide art-direction line inside a copy block. When the writer
 #: supplies one it is the honest scene; otherwise the scene is derived.
@@ -340,17 +445,25 @@ def style_directive(run_dir: Path) -> Optional[str]:
 def copy_lines(body: str) -> List[str]:
     """The RENDERED copy lines of one slide block, in reading order.
 
-    Strips ONLY what is not pixels: ARC marker syntax (engine metadata),
-    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/...), and leading
-    markdown decoration. Every other character is preserved, because
-    ``_chk_research_map`` condition 3 matches research anchors as SUBSTRINGS of
-    the render copy and ``build_deck`` bakes these words verbatim.
+    Strips ONLY what is not pixels: ARC marker syntax and ALL other HTML
+    comments (engine bookkeeping -- the P4-COPY contract tells the writer to
+    leave QC notes in comments), standalone `---` rules (block structure),
+    engine field lines (HOOK_REFRAIN/LADDER/RESEARCH_USED/SECTION/PURPOSE/
+    PRESENTER NOTE/... -- the vocabulary the contract prescribes and the
+    engine's own P4-PROMPT contract calls "internal production metadata never
+    rendered on the slide"), and leading markdown decoration. Every other
+    character is preserved, because ``_chk_research_map`` condition 3 matches
+    research anchors as SUBSTRINGS of the render copy and ``build_deck`` bakes
+    these words verbatim.
     """
     out: List[str] = []
     for raw_line in body.splitlines():
-        line = _ARC_MARKER_RE.sub("", raw_line)
+        line = _HTML_COMMENT_RE.sub("", _ARC_MARKER_RE.sub("", raw_line))
+        if _RULE_LINE_RE.match(line):
+            continue
         if _FIELD_LINE_RE.match(line):
             continue
+        line = _LABEL_STRIP_RE.sub("", line)
         line = _LEADING_MARKUP_RE.sub("", line).strip()
         if line:
             out.append(line)

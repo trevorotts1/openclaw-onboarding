@@ -165,7 +165,7 @@ none is assigned. Always honor the workspace SOUL.md mission and USER.md values.
 ## 6. Escalation & Boundaries
 
 Hand aging/SLA items to the Dispatcher, who decides re-dispatch, tier bump, or page
-per the three-tier order (director's doctrine, §3) — the Operator `5252140759` is
+per the three-tier order (director's doctrine, §3) — the Operator is
 paged only after the client's agent was instructed (outcome b) and the rescue AI's
 own self-fix via our access was attempted, or on a one-way-door class that pages on
 the class alone. Never write ticket state as root. Never fabricate a metric — every

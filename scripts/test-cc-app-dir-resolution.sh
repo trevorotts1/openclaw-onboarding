@@ -149,6 +149,10 @@ make_cc_origin() {
   git -C "$seed" branch -M main >/dev/null 2>&1
   git -C "$seed" remote add origin "$bare"
   git -C "$seed" push --quiet -u origin main >/dev/null 2>&1
+  # A real Command Center origin carries the release onboarding pins; the
+  # update-only refresh deploys that tag (cc-compat.json pinnedTag).
+  git -C "$seed" tag "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commandCenter"]["pinnedTag"])' "$REPO_ROOT/cc-compat.json")"
+  git -C "$seed" push --quiet origin --tags >/dev/null 2>&1
   # Point the bare repo's HEAD at the branch we actually pushed. `git init
   # --bare` seeds HEAD from init.defaultBranch, which is `master` on stock
   # Linux/CI and frequently `main` on a developer Mac. When HEAD names a branch

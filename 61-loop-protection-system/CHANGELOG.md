@@ -3,6 +3,105 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [1.1.0] - 2026-10-03
+
+**October OpenClaw update (OpenClaw 2026.9.6).** Skill 61's July-era detectors read conversation and trajectory
+JSON Lines files that OpenClaw stopped writing in `v2026.7.2-beta.1` (conversations now live in a per-agent SQLite
+database). Five of seven detectors were blind, the "orphan gateway" alarm was false on every run, weekly crons were
+flagged as over-firing, and "park" changed nothing outside the ledger. This release fixes 13 findings from
+`skill-61-october-openclaw-update-spec-20261003.md`: 5 High, 4 Medium, 4 Low.
+
+Rollout posture is unchanged: `config/rollout.json` `fleet_rollout_enabled` stays `false`; the new `loop-brake`
+plugin ships DISABLED behind that gate; turning on OpenClaw's own loop guard on client boxes stays a prepared
+proposal (Tier 2); no approval gate is added (no `requireApproval`); zero model calls
+(`scripts/guard-no-anthropic-runtime.py` still passes). Nothing is deleted - what is stopped is disabled.
+
+### High
+
+- **Fix 1 - rebuild the blind detectors on supported October data sources.** D2 reads `openclaw sessions --all-agents
+  --active 1440 --json` (per-session token delta, never lifetime); D3, D4 wedge, D5 and D6 read
+  `openclaw audit --kind agent_run|tool_action --after <cursor> --json` with the cursor kept in the ledger offsets table
+  (`loop-audit:<kind>`); D7 is retired pending Fix 9. Adds a feed-health control: recent sessions but zero collector
+  rows raises a P2 "watchdog blind: <collector>" finding (new class `LP-WD1`, never escalated to Rescue Rangers). Where: `scripts/loop_watchdog.py` collectors,
+  `verify.sh --live`, `config/thresholds.json` `tick.max_tick_seconds`, new fixtures (`LOOP_NO_PROBES=1`).
+- **Fix 2 - stop the false "orphan gateway" P1 (D4 / LP-B3).** The supervisor pid now comes from the supervisor itself
+  (`launchctl list` table on Mac, `systemctl --user show -p MainPID` on Linux), never from the stale handoff file.
+  Orphan only when the listener differs from a live supervisor pid; supervisor unreadable or docker = UNDETERMINED,
+  no finding. Legacy handoff file ignored, never deleted. Where: `collect_wedge()` / `_read_handoff()` in
+  `scripts/loop_watchdog.py`; LF-3 text no longer names the supervisor's own pid.
+- **Fix 3 - stop weekly crons being flagged as over-firing (D4 / LP-A4).** Expected bound floored at one fire per day
+  (`declared = max(declared, 1.0)`). Where: `d4_timer_refire()` in `scripts/loop_detectors.py`.
+- **Fix 4 - make "park" real, or stop calling it fixed (LF-6 / LF-12).** LF-6 stops pm2 units for real with
+  `pm2 stop <name>` and records the revert `pm2 start <name>` (never the OpenClaw gateway: alert-only). LF-12 calls
+  `sessions.abort` with `"clearQueued": true`. A unit with no real stop is recorded `parked-flag`, finding kept open,
+  alert dedup 6 hours. Where: `scripts/loop_killcards.py`, `scripts/loop_breaker.py`, `scripts/loop_watchdog.py`.
+- **Fix 5 - use and verify OpenClaw's own tool-loop guard on every agent.** New daily read-only "native guard off"
+  check over `tools.loopDetection` and each `agents.entries.<id>.tools.loopDetection`, WARN when the effective value is
+  not `enabled: true`. The fix is Tier 2, prepared only (`openclaw config set tools.loopDetection.enabled true
+  --strict-json`, revert = prior value); never applied by the unattended run. Finding class `NATIVE-GUARD-OFF`.
+  Where: new `scripts/check_native_loop_guard.py` (run through `loop-companion.sh`), `tests/native-loop-guard-test.sh`.
+
+### Medium
+
+- **Fix 6 - D1 drops the environment-bearing pm2 JSON dump and covers launchd and docker restarts.** D1 reads pm2
+  `pm2 list` table form (header-validated; an unparseable table is UNDETERMINED, never zero), the `launchctl list`
+  row for each `ai.openclaw.*` label (pid change per tick = one restart) and the format-limited
+  `docker inspect -f '{{.Name}} {{.RestartCount}}'`. Gateway findings are alert-only. Where: `scripts/loop_watchdog.py`,
+  `config/thresholds.json` `d1_restart_velocity._source`, `SKILL.md`; secret-leak drill added.
+- **Fix 7 - finish the fleet-slug identity fix at run time.** `canonical_box()` resolves the fleet slug first and
+  refreshes the ledger `box` meta; falls back to the stored name with `"identity": "unresolved"` in the payload. Dedup
+  keys change once per box. Where: `scripts/loop_identity.py`; test `tests/rescue/RR-030/test_loop_escalate_identity.py`.
+- **Fix 8 - bring the post-update restore script up to date.** Section 1 (code patch) is skipped on OpenClaw 2026.7.2
+  or later with the reason printed; Section 6 checks only `tools.loopDetection.enabled == true` and
+  `agents.entries.*.tools.loopDetection.enabled` for an explicit `false`; it refuses to `config set` any path that
+  answers "Unknown config path". Where: `scripts/openclaw-loop-protection-restore.sh`.
+- **Fix 9 - small real-time `loop-brake` plugin for resends (D7) and reworded retries (D6).** `before_tool_call`
+  blocks the third identical `sessions_send` within 300 seconds and the third failed auth-refusal call to one tool in
+  one run; `after_tool_call` counts. Counts and hashes only, nothing written but counters, block only, never
+  `requireApproval`. Ships DISABLED behind the existing rollout gate; proven on the operator box first. Where: new
+  `loop-brake` plugin in this skill folder.
+
+### Low
+
+- **Fix 10 - re-tier which models count as "paid" for D2.** Three tiers: `metered` (P1 on idle burn),
+  `subscription_capped` (Ollama Cloud, WARN as usage-window burn) and `local` (never flagged); matched on the provider
+  segment after any `9router/` prefix. Where: `config/signatures.json` `paid_tier_markers`.
+- **Fix 11 - let the scheduler's own failure protection handle failing crons; keep D4 for over-firing.** No LP-A4
+  raise or escalation for a job the scheduler auto-disabled or is backing off (evidence only); `hasMore: true` on
+  `cron list --json` reports D4 UNDETERMINED for the unseen jobs, never silently partial. Where:
+  `_cron_jobs_via_cli()` in `scripts/loop_watchdog.py`.
+- **Fix 12 - point the heartbeat fix (LF-8) at October's heartbeat settings.** LF-8's prepared proposal becomes
+  `agents.defaults.heartbeat.isolatedSession=true` plus `lightContext=true` via `openclaw config set ... --strict-json`;
+  the heartbeat model is never changed. Stays Tier 2. Where: `config/fix-classes.json` LF-8.
+- **Fix 13 - correct the documentation that describes July behavior.** D1 sentence in `SKILL.md` matches what D1 reads;
+  the D5/D6/D7 descriptors in `SKILL.md` and `docs/LOOP-CLASS-CATALOG.md` now describe the `openclaw audit` sources
+  and the Fix 9 hand-off; LF-9 re-pointed to the `sessions.abort` RPC (Tier 2), LF-10 to `sessions.reset`
+  (gateway-mediated, history kept, never applied to a session with an active run), LF-11 retired; the
+  `d5.rearm_risk_bytes` comment no longer cites the 2 MiB `forceFlushTranscriptBytes` default. Where: `SKILL.md`,
+  `docs/LOOP-CLASS-CATALOG.md`, `config/fix-classes.json`, `config/thresholds.json`.
+
+## [1.0.1] - 2026-10-03
+
+### Fix - the box is named by its fleet slug, never its hostname (RR plan F17)
+
+`install.sh` defaulted the box name to `hostname`, and `loop_escalate.build_payload` sent only that as
+`box`. A hostname is not a join key at Rescue Rangers, so these escalations matched no client, could not
+be coached, paged the operator, and two clients' boxes could fold into one ticket (970 of about 2,600
+pre-clear tickets came from this skill).
+
+- New `scripts/loop_identity.py`: the name is `FLEET_STANDING_BOX_SLUG`, then `RR_BOX_SLUG`, then
+  `openclaw.json` `env.vars.FLEET_STANDING_BOX_SLUG` (read only; the secrets file is never read).
+  A name that looks like a hostname (a dot, `.local`, `.lan`, `.home`), a docker container id, or a
+  placeholder (`TBD`, `unknown`, `n/a`, blank) is REFUSED, never guessed.
+- `install.sh` checks identity FIRST (before preflight creates the ledger) and refuses with exit 4 and a
+  plain message when it cannot name the box, or when `--box` is hostname-shaped. Nothing is installed.
+  The existing watchdog cron is matched by its `loop-tick-*` prefix, so a re-install keeps the running job.
+- `build_payload` now also sends `boxName` (the canonical slug) and `clientName`
+  (`FLEET_STANDING_CLIENT_LABEL` when set, else the slug). `box`, `message` and `finding` are unchanged.
+- Fleet impact: identity keys change once (new dedup buckets). Reaches boxes only through a fleet roll.
+
+Test: `tests/rescue/RR-030/test_loop_escalate_identity.py`.
+
 ## [1.0.0] - 2026-08-26
 
 **What 0.6.5 got wrong about other people's decisions.** 0.6.5 shipped the idempotent

@@ -166,15 +166,25 @@ INJECT_CODE="$(strip_bash "$INJECT_SH")"
 SEED_CODE="$(strip_python "$SEED_PY")"
 
 # Fail closed if the Python strip could not tokenize the seed file.
-if printf '%s' "$SEED_CODE" | grep -q 'GUARD-ERROR-UNPARSEABLE-PYTHON'; then
+if grep -q 'GUARD-ERROR-UNPARSEABLE-PYTHON' <<<"$SEED_CODE"; then
   red "  ✗ FAIL — seed-ghl-auth.py could not be tokenized (fail-closed); cannot verify R6."
   FAILS=$((FAILS + 1))
 fi
 
 # code_has <CODE_BLOB> <ERE>  → grep the code-only blob (case-sensitive).
-code_has() { printf '%s' "$1" | grep -Eq "$2"; }
+#
+# HERE-STRING, NEVER `printf ... | grep -q`.  The blob is ~40 KB.  `grep -q`
+# exits on the FIRST match and closes the pipe while printf is still writing,
+# printf takes SIGPIPE (141), `set -o pipefail` propagates 141, and a marker
+# that IS present is reported ABSENT.  Intermittent by scheduling: it failed
+# PR #1184's run (`line 175: printf: write error: Broken pipe` immediately
+# before `✗ FAIL — R3 ABSENT`) while the identical tree passed on main.
+# A here-string feeds grep from bash itself — no second process, no SIGPIPE.
+# (`<<<` appends one newline; no pattern here can match an empty line, so the
+# match result is identical.)  Regression test: tests/unit/code-has-no-sigpipe.test.sh
+code_has() { grep -Eq "$2" <<<"$1"; }
 # code_has_i — case-insensitive variant.
-code_has_i() { printf '%s' "$1" | grep -Eqi "$2"; }
+code_has_i() { grep -Eqi "$2" <<<"$1"; }
 
 # require <label> <human-name> <pass|fail>  — print + tally.
 require_result() {
@@ -323,7 +333,7 @@ fi
 # Split the bash code on the __GHL_SEED__ staging line; anything after must not
 # re-open/navigate the page.
 INJECT_POST_SEED="$(printf '%s\n' "$INJECT_CODE" | awk 'f{print} /__GHL_SEED__/{f=1}')"
-if printf '%s' "$INJECT_POST_SEED" | grep -Eq '\bAB\b[^"]*\b(open|navigate)\b'; then
+if grep -Eq '\bAB\b[^"]*\b(open|navigate)\b' <<<"$INJECT_POST_SEED"; then
   f3_reload=present
 fi
 forbid_result "F3" "post-seed reload / location.assign / location.href= / AB open|navigate after seeding (wipes the seeded session)" "$f3_reload"
@@ -334,7 +344,7 @@ forbid_result "F3" "post-seed reload / location.assign / location.href= / AB ope
 # We match a quoted route literal that embeds /location/<alnum id>. We scan CODE
 # only so a comment mentioning the route cannot trip it.
 f4_deeproute=clean
-if printf '%s' "$INJECT_CODE" | grep -Eq "['\"\`]/location/[A-Za-z0-9]{6,}"; then
+if grep -Eq "['\"\`]/location/[A-Za-z0-9]{6,}" <<<"$INJECT_CODE"; then
   f4_deeproute=present
 fi
 forbid_result "F4" "hardcoded deep /location/<id>/ route literal in the activate path (seed has 16 locations; use '/')" "$f4_deeproute"

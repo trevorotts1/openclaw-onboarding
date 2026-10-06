@@ -6,9 +6,9 @@ description: >
   generation (DEDICATED /api/v1/generate family — never createTask), supported
   audio processing operations, and speech-to-text CAPABILITY DETECTION
   (ADVERTISED_NOT_YET_VERIFIED — no endpoint, dispatch_enabled false).
+version: v2.1.1
 metadata:
-
-  version: "1.0.0"
+  version: "2.1.1"
   priority: HIGH
 ---
 
@@ -107,6 +107,18 @@ replace-section below 10s or above 50%, instrumental-true with prompt+vocalGende
 on extend, or ANY STT dispatch attempt. Validation happens BEFORE credits are
 charged.
 
+## Registry role and Skill 74 dispatch
+
+`models.json` is this skill's CURATED POLICY and verified-override registry (TTS and Suno
+limits, enums, owner rulings, the closed STT gate). It is not the exhaustive KIE catalog and
+not the live source of limits or prices: Skill 74 `validate` (live schema, registry
+fallback), `price` and `preflight` (balance must cover price x 1.30) are. TTS dispatch runs
+`validate`, `preflight`, then `submit --mode active` (production batches add `--callback-url`
+of the Skill 46 relay), then this skill's audio QC; see INSTRUCTIONS.md. A model missing from
+`models.json` is DISCOVERED, never an automatic default (no auto-latest for audio). Suno keeps
+its curated dedicated route. The STT gate stays fail-closed: the validator may report, from a
+free catalog GET, that a speech-to-text model exists, and still refuses dispatch.
+
 ## Async completion
 
 - Prefer `callBackUrl` (public HTTPS, idempotent handler, record task id/state/
@@ -115,7 +127,7 @@ charged.
   with initial delay 2-3s then stepped backoff; respect 429; never hammer.
 - Suno: get music details every 30 seconds (sounds page guidance).
 - A 200 on create = accepted, not complete.
-- Media expires after ~14 days — persist when long-term access is needed.
+- Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## Audio QC (MANDATORY after completion)
 

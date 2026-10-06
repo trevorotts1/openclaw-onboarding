@@ -41,6 +41,26 @@ ANTHROPIC_MARKERS = ('anthropic/', 'claude-')
 OLLAMA_FAMILY = {'ollama', 'ollama-cloud'}
 
 
+def registered_agents(cfg):
+    """(id, entry) for every registered agent in BOTH roster shapes:
+    `agents.entries` (OpenClaw 2026.9.x, keyed by id, no "id" in the body) and
+    legacy `agents.list[]`. Same union as update-skills.sh _registry_snapshot();
+    entries wins when both carry an id."""
+    agents = cfg.get('agents') if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return []
+    out, seen = [], set()
+    entries = agents.get('entries')
+    for k, v in (entries.items() if isinstance(entries, dict) else ()):
+        if isinstance(v, dict) and str(k).lower() not in seen:
+            out.append((str(k), v)); seen.add(str(k).lower())
+    lst = agents.get('list')
+    for a in (lst if isinstance(lst, list) else ()):
+        if isinstance(a, dict) and a.get('id') and str(a['id']).lower() not in seen:
+            out.append((str(a['id']), a)); seen.add(str(a['id']).lower())
+    return out
+
+
 def provider_of(mid):
     return mid.split('/', 1)[0] if isinstance(mid, str) and '/' in mid else None
 
@@ -75,7 +95,7 @@ def main():
         return 2
 
     agents = cfg.get('agents') or {}
-    lst = agents.get('list') or []
+    lst = registered_agents(cfg)
     defs = agents.get('defaults') or {}
     allow = set((defs.get('models') or {}).keys())
     provs = set(((cfg.get('models') or {}).get('providers') or {}).keys())
@@ -101,8 +121,8 @@ def main():
 
     no_fallback, all_ollama = [], []
 
-    for i, a in enumerate(lst):
-        label = f'agents.list[{i}]:{a.get("id") or "?"}'
+    for i, (aid, a) in enumerate(lst):
+        label = f'agents[{i}]:{aid}'
         m = a.get('model')
         if m is None:
             continue

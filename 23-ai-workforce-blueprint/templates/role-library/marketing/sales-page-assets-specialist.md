@@ -10,8 +10,8 @@ high-ticket long-form page (6,500–7,100 words), 40–80-word order-bump copy w
 slice-covered image plan — produced from one "Ultimate AI Sales Page Writer" survey. Marketing owns the
 offer/campaign framing and the 10-email follow-up decision; the engine owns authorship, gated by eight
 fail-closed provers (`56-sales-page-assets/scripts/prove_sp_*.py`). Two engines, one delivery rail: this
-door NEVER authors or "fixes" copy/prompts and delegates image generation to Skill 47 (or the client's own
-image provider) and ALL GHL media + build to Skill 6, routing the bump to Skill 44.
+door NEVER authors or "fixes" copy/prompts and delegates KIE image generation to Skill 66 (model policy) then Skill 74 (the one KIE transport; Skill 63 when the client
+selected Agnes) and ALL GHL media + build to Skill 6, routing the bump to Skill 44.
 
 ---
 
@@ -108,7 +108,7 @@ changes. Never change the rule to make a gate pass.
   `tools/prove-email.py`.
 - Owned SOP cluster: `universal-sops/sales-page-craft/` (SOP-SALESPAGE-01; 56 OWNS it), which EXTENDS the
   shared `universal-sops/funnel-craft/` (SOP-FUNNEL-01..05 + the AF-code ruleset) for the common build/certify steps. Order-bump
-  widget: Skill 44. Images: Skill 47 or the client's own image provider.
+  widget: Skill 44. Images: Skill 66 policy then Skill 74 transport, or Skill 63 when the client selected Agnes.
 
 <!-- SKILLS_YOU_OPERATE_V1 -->
 **Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
@@ -116,6 +116,7 @@ changes. Never change the rule to make a gate pass.
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
+| **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
@@ -149,13 +150,13 @@ provers; nothing in this section edits copy or a prompt by hand.
 **Inputs:** The locked `brief.json`, the run dir, `56-sales-page-assets/sales-page-assets-entry.sh`, the `SALESPAGE-MANIFEST.json` phase spine (P0-INTAKE → P9-HANDOFF), the pinned enforcement-core hash, and the CLIENT's own provider chain (strongest tier authors the 7 copy assets and QC-verifies; mid tier does image prompts / HTML / JSON; cheapest does catalog / poll).
 **Steps:**
 1. **Invoke the one sanctioned command:** `bash 56-sales-page-assets/sales-page-assets-entry.sh --run-dir <RUN_DIR>`. The entry runs five fail-closed guards in order — DEPS → VERSION → HASH-PIN → BYPASS-SCAN → run-scoped 0600 nonce — then dispatches `run_sales_page_assets.py` across P0 → P9 with no phase skips. A direct `python3 run_sales_page_assets.py` dies `AF-SP56-FRONT-DOOR`.
-2. **Do not write a driver, ever:** a hand-rolled GHL REST call, an ImgBB re-host, a raw image `createTask`, or a mail sender anywhere in the run dir trips the bypass scan (`AF-SP56-CANONICAL-BYPASS`). Images go through Skill 47 or the client's own image provider and are re-hosted by Skill 6 `ghl_media.py`; the order bump routes to Skill 44 as COPY. A missing seam is an escalation, never an invitation.
+2. **Do not write a driver, ever:** a hand-rolled GHL REST call, an ImgBB re-host, a raw image `createTask`, a copied KIE client script, or a mail sender anywhere in the run dir trips the bypass scan (`AF-SP56-CANONICAL-BYPASS`; Skill 74 result files directly inside `receipts/kie74/` are the one allow-listed exception). Images go through Skill 66 (policy) then Skill 74 (transport), or Skill 63 when the client selected Agnes, and are re-hosted by Skill 6 `ghl_media.py`; the order bump routes to Skill 44 as COPY. A missing seam is an escalation, never an invitation.
 3. **Get the A/B variants from the right source:** Version A and Version B are required for both the main page and the upsell. A/B comes from two of the CLIENT's models or two persona prompts on one client model — never an Anthropic or Gemini split, and the variant label says `v01a`/`v01b`, never the model name (rule R1, enforced at bundle time by `AF-SP56-BUNDLE-LABEL-GRAMMAR`).
 4. **Watch the structural gates; do not "help" them:** `prove_sp_main_structure.py` requires the 8 sections present and IN ORDER (header → hero → problem/solution → benefits → product-details → credibility → final-CTA → footer) in both variants, each with its countdown timer (`AF-SP56-MAIN-NO-COUNTDOWN`). `prove_sp_upsell_structure.py` requires the Trevor Otts 9 sections in exact order (hook → pain 1 → pain 2 → pain 3 → hope → solution → value-stack → logical-justification → identity-challenge) in both variants. `prove_sp_highticket_band.py` measures 6,500–7,100 STRIPPED words. `prove_sp_bump_band.py` measures 40–80 body words ending with the `[X] Yes, add this to my order` checkbox close, counting the body only.
 5. **Never edit copy by hand and never pad to a band:** an edit outside the engine is un-gated, and padding the high-ticket page toward 6,500 words is separately caught by the content-authenticity grade (no 6+ word phrase repeated more than ~3 times, no vocabulary-list dumps). The only deterministic repair in this pipeline is the P5 fragment-strip; every other fix is a re-author through the engine.
 6. **Escalate a stuck gate instead of reinterpreting a rule:** if the only way forward is to floor the high-ticket band, cap the bump, drop a section, or reorder the upsell, stop and escalate to the owner. The section counts and word bands are mandated; when a gate and an input disagree, the input is wrong.
 **Outputs:** `image_plan.json` with every stage slice populated, the seven copy assets (main A/B, upsell A/B, downsell, high-ticket, bump), `media_ledger.json`, per-page fragments with copy-tokens, the Track-1 Google Docs set and the Track-2 Skill-6 build bundle — each phase stamped pass in the ledger.
-**Hand to:** Skill 47 or the client's own image provider (generation) and Skill 6 `ghl_media.py` (re-host + build) — both delegated by the engine; Skill 44 (the order-bump widget seam, which receives the bump as copy); the Web-Development Sales Page Assets Specialist for delivery-side build QC ≥ 8.5. Nothing reaches the owner until SOP 9.3.
+**Hand to:** Skill 66 and Skill 74, or Skill 63 when the client selected Agnes (generation) and Skill 6 `ghl_media.py` (re-host + build) — both delegated by the engine; Skill 44 (the order-bump widget seam, which receives the bump as copy); the Web-Development Sales Page Assets Specialist for delivery-side build QC ≥ 8.5. Nothing reaches the owner until SOP 9.3.
 **Failure mode:** Trimming the high-ticket page to make the ceiling. A 7,400-word Sovereign Architect page is genuinely tempting to cut by hand — it is prose, the cut looks editorial, and the band goes green. But the edited page is no longer the text the QC grade evaluated, the phase chain breaks (`AF-SP56-PROCESS-INTEGRITY`), and the certificate either refuses to mint or certifies a document that no longer exists. Re-author the asset through the engine; the whole affected asset re-proves, which is the point.
 
 ### SOP 9.3 — Certify the stack, route the bump, and present for the owner's publish approval
@@ -197,7 +198,8 @@ provers; nothing in this section edits copy or a prompt by hand.
 **Steps:**
 1. **Run the STEP-0 selector rather than eyeballing the request:** it reads the registry and returns `ROUTE_TO_ENGINE` with an engine id or `NO_ENGINE_MATCH`. The selector's `anti_signals` exist precisely because the two engines sound alike in a client's words; the selector's decision is the record, not your read.
 2. **Recognize the Direct-Response signals:** "a sales page", "direct-response sales page", a VSL, an order bump, upsell/downsell A/B copy, a countdown timer, a high-ticket long-form page. That is this door.
-3. **Recognize the signature engine's signals:** "signature funnel", "signature landing page", a 12-section Hero page, a 3/5/7 step chain with accept/decline branching. That is Skill 49 and the Signature Funnel Specialist. The two are siblings on one delivery rail with one reciprocal labeling grammar, and they are NEVER merged into a hybrid.
+3. **Recognize the signature engine's signals:** "signature funnel" (the multi-step 3/5/7 chain -- a bare "signature landing page" phrase alone is Skill 71 unless the 12-section multi-step funnel is explicitly requested), a 12-section Hero page, a 3/5/7 step chain with accept/decline branching. That is Skill 49 and the Signature Funnel Specialist. The two are siblings on one delivery rail with one reciprocal labeling grammar, and they are NEVER merged into a hybrid.
+3a. **Single-page BlackCEO requests route to Skill 71 first:** ONE focused BlackCEO single page (landing / opt-in / squeeze / event-registration / challenge / booking / lead-generation) is Skill 71 `blackceo-signature-page` -- not this stack. This door takes the Direct-Response asset family only (main A/B + countdown, upsell, downsell, high-ticket, order bump).
 4. **On `NO_ENGINE_MATCH`, route out instead of forcing a fit:** hand the request to the Funnel Strategist and the template-first path. A generic marketing page pushed through this engine fights bands written for a different artifact, and the owner pays for the fight in elapsed days.
 5. **Confirm the route back to the requester in one line** — which engine, which seven assets (or which subset), and which approval sits at the end — before opening SOP 9.1.
 **Outputs:** A recorded routing decision (engine id or `NO_ENGINE_MATCH`), the one-line confirmation to the requester, and — when it routes here — an opened build slot ready for the SOP 9.1 intake.
@@ -234,8 +236,8 @@ provers; nothing in this section edits copy or a prompt by hand.
 - The STEP-0 funnel-engine selector, the CMO, the Funnel Strategist, or Skill 38 conversation.
 
 ### You hand work off to:
-- The Web-Development Sales Page Assets Specialist / Skill 6 for delivery, Skill 47 (or the client's own
-  image provider) for images, Skill 44 for the order-bump widget, and the Email Campaign Strategist / Email
+- The Web-Development Sales Page Assets Specialist / Skill 6 for delivery, Skills 66 and 74 (or Skill 63 when the client selected Agnes)
+  for images, Skill 44 for the order-bump widget, and the Email Campaign Strategist / Email
   Engine (Skill 50) for the 10-email follow-up.
 
 ## 12. Escalation Paths
@@ -278,7 +280,7 @@ Honor the owner's explicit offer choices; the engine still enforces the section 
 regardless of the offer content.
 
 ### Edge Case 17.3 — A signature (12-section) funnel request
-If the STEP-0 selector routes to `signature-funnel` (Skill 49), hand it to the Signature Funnel Specialist.
+If it is ONE focused BlackCEO page, hand it to Skill 71 `blackceo-signature-page`. If the STEP-0 selector routes to `signature-funnel` (Skill 49), hand it to the Signature Funnel Specialist.
 If it returns NO_ENGINE_MATCH, route to the Funnel Strategist / template-first path, not this engine.
 
 ## 18. Update Triggers (When to Revise This Document)

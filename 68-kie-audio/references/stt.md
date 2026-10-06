@@ -43,6 +43,12 @@ through Skill 68 is REJECTED by the bundled validator —
 — exit 2 with the negative-result reference. An STT request must NEVER be
 silently routed to a TTS engine or to an invented transcription path.
 
+Live catalog check (free GET, report only): `python3 scripts/validate_audio_request.py
+--domain stt --payload <file>` also asks Skill 74 `discover` (a read-only catalog GET) whether
+KIE now lists a model that looks like speech-to-text (task type or id). It reports the answer
+and nothing else: a candidate does NOT enable dispatch. The gate stays closed, fail-closed,
+until the re-proof below passes and the registry, docs and version are updated.
+
 ## How to re-prove (when the page appears)
 
 1. Find the first-party STT model page in docs.kie.ai (sitemap or market).

@@ -11,12 +11,16 @@ set -euo pipefail
 # board_config() in cc_board.py reads COMMAND_CENTER_URL (preferred) or
 # MISSION_CONTROL_URL (fallback) from the environment. Without this, every
 # reconcile sweep is a no-op (board_disabled). Added 2026-08-10 per WI-04b fix.
-if [ -f "${HOME}/.openclaw/secrets/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${HOME}/.openclaw/secrets/.env"
-  set +a
-fi
+# Safe env reader: parses KEY=VALUE, never sources a client-owned file.
+_ENVLOAD_C=""
+for _c in "$HOME/.openclaw/skills/shared-utils/env-load.sh" \
+          "/data/.openclaw/skills/shared-utils/env-load.sh"; do
+  [ -f "$_c" ] && { _ENVLOAD_C="$_c"; break; }
+done
+# shellcheck source=/dev/null
+[ -n "$_ENVLOAD_C" ] && . "$_ENVLOAD_C"
+_env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [ -f "$1" ] && { set -a; . "$1"; set +a; }; fi; }
+_env_read "${HOME}/.openclaw/secrets/.env" || true
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="${HOME}/Library/Logs/openclaw/board-reconcile-sweep.log"

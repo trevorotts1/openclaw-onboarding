@@ -405,7 +405,8 @@
    ],
    "intent_triggers": [
     "build my funnel",
-    "build me a landing page",
+    "signature funnel",
+    "3/5/7 step funnel",
     "an opt-in and upsell chain",
     "a full funnel"
    ],
@@ -1297,6 +1298,156 @@
    "name": "archify",
    "client_facing": false,
    "description": "Diagram engine: turns plain-language requirements, pasted Mermaid, or repository evidence into validated architecture / workflow / sequence / data-flow / lifecycle diagrams as self-contained interactive HTML (inline SVG, dark/light themes, optional trace motion, PNG/JPEG/WebP/SVG/WebM export). Zero-dependency Node.js CLI (bin/archify.mjs, Node >= 18); invoked BY other skills and departments rather than routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
+   "skill": "70",
+   "slug": "lean-core-file-system",
+   "name": "lean-core-file-system",
+   "client_facing": false,
+   "description": "Install-time and weekly upkeep: the Lean Core File System keeps the agent's core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) under 40,000 characters each using pointer references (situational blocks move into one playbook per system; a one-to-two-sentence WHAT, WHERE, WHEN pointer stays behind; always-on rules stay inline). Ships an audit script and a quiet weekly OpenClaw cron job. Runs for the agent itself, not routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
+   "skill": "71",
+   "slug": "blackceo-signature-page",
+   "name": "blackceo-signature-page",
+   "client_facing": true,
+   "description": "Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system: copy, font/action plan, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, responsive implementation, and GHL handoff. Owns focused single-page requests (landing, opt-in, squeeze, lead-generation, webinar/event registration, 5-day challenge, booking); delegates image execution to the installed image-provider skills and GHL delivery to Skill 6.",
+   "departments": [
+    "web-development",
+    "marketing",
+    "funnels"
+   ],
+   "roles": [
+    {
+     "dept": "web-development",
+     "slug": "landing-page-specialist",
+     "primary": true
+    },
+    {
+     "dept": "marketing",
+     "slug": "funnel-strategist",
+     "primary": false
+    },
+    {
+     "dept": "marketing",
+     "slug": "conversion-copywriter",
+     "primary": false
+    },
+    {
+     "dept": "marketing",
+     "slug": "webinar-event-marketing-specialist",
+     "primary": false
+    },
+    {
+     "dept": "web-development",
+     "slug": "signature-funnel-specialist",
+     "primary": false
+    },
+    {
+     "dept": "marketing",
+     "slug": "signature-funnel-specialist",
+     "primary": false
+    },
+    {
+     "dept": "web-development",
+     "slug": "sales-page-assets-specialist",
+     "primary": false
+    },
+    {
+     "dept": "marketing",
+     "slug": "sales-page-assets-specialist",
+     "primary": false
+    },
+    {
+     "dept": "funnels",
+     "slug": "ghl-funnel-build-specialist",
+     "primary": false
+    },
+    {
+     "dept": "funnels",
+     "slug": "funnel-qa-conversion-verification-specialist",
+     "primary": false
+    }
+   ],
+   "intent_triggers": [
+    "build me a landing page",
+    "build my landing page",
+    "create a BlackCEO landing page",
+    "create a signature landing page",
+    "build an opt-in page",
+    "build a squeeze page",
+    "build an event registration page",
+    "build a webinar registration page",
+    "build a 5-day challenge page",
+    "build a booking page",
+    "build a lead generation page",
+    "use the BlackCEO standard landing page",
+    "use the BlackCEO long-form landing page"
+   ],
+   "execution_sops": [
+    "signature-page-craft"
+   ]
+  },
+  {
+   "client_facing": true,
+   "departments": [
+    "video"
+   ],
+   "description": "Deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume, per-scene frame cleanup, Fish Audio chunked voiceover with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours.",
+   "execution_sops": [
+    "video-pipeline-craft"
+   ],
+   "intent_triggers": [
+    "make me a motion graphics video",
+    "make me an animated promo video",
+    "make me an animated explainer video",
+    "produce a kinetic typography video",
+    "animate my brand video",
+    "render my video from the animation code"
+   ],
+   "name": "motion-video-plus",
+   "roles": [
+    {
+     "dept": "video",
+     "primary": true,
+     "slug": "video-editor"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "storyboard-pre-production-specialist"
+    },
+    {
+     "dept": "video",
+     "primary": false,
+     "slug": "head-of-video-production"
+    }
+   ],
+   "skill": "72",
+   "slug": "motion-video-plus"
+  },
+  {
+   "skill": "73",
+   "slug": "diagnose-explain-fix",
+   "name": "diagnose-explain-fix",
+   "client_facing": false,
+   "description": "Operator command (/def): finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks one question (which model performs the fix) and never asks whether to fix. Runs for the agent itself, not routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
+  },
+  {
+   "skill": "74",
+   "slug": "kie-live-adapter",
+   "name": "kie-live-adapter",
+   "client_facing": false,
+   "description": "Setup/reference: live KIE adapter (standard-library Python) for skills 66, 67 and 68; reads the live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls, and saves results. Shadow mode by default: records drift, never dispatches a paid job, never chooses or changes a model.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []

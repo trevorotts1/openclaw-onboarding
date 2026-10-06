@@ -14,6 +14,10 @@ on:
       - 35-social-media-planner/scripts/prove_content_conversation_loop.py
       - 35-social-media-planner/scripts/pregen_prompt_gate.py
       - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 35-social-media-planner/scripts/kie_media_plan.py
+      - 35-social-media-planner/scripts/test_kie_media_plan.py
+      - 35-social-media-planner/scripts/validate_podcast_publish_payload.py
+      - 35-social-media-planner/scripts/test_validate_podcast_publish_payload.py
       - 57-social-media-in-a-box/run_social_media.py
       - 57-social-media-in-a-box/scripts/ghl_contracts.py
       - shared-utils/social_cycle_service.py
@@ -28,6 +32,10 @@ on:
       - 35-social-media-planner/scripts/prove_content_conversation_loop.py
       - 35-social-media-planner/scripts/pregen_prompt_gate.py
       - 35-social-media-planner/scripts/run-publishing-cycle.sh
+      - 35-social-media-planner/scripts/kie_media_plan.py
+      - 35-social-media-planner/scripts/test_kie_media_plan.py
+      - 35-social-media-planner/scripts/validate_podcast_publish_payload.py
+      - 35-social-media-planner/scripts/test_validate_podcast_publish_payload.py
       - 57-social-media-in-a-box/run_social_media.py
       - 57-social-media-in-a-box/scripts/ghl_contracts.py
       - shared-utils/social_cycle_service.py
@@ -86,9 +94,12 @@ jobs:
           python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q \
             >>"$SUITE_LOG" 2>&1
           rc3=$?
-          echo "=== suite rcs: discover=$rc1 cycle-test=$rc2 pytest=$rc3 ==="
+          (cd 35-social-media-planner/scripts && python3 test_kie_media_plan.py && python3 test_validate_podcast_publish_payload.py) \
+            >>"$SUITE_LOG" 2>&1
+          rc4=$?
+          echo "=== suite rcs: discover=$rc1 cycle-test=$rc2 pytest=$rc3 media-podcast=$rc4 ==="
           cat "$SUITE_LOG"
-          if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rc3" -ne 0 ]; then
-            echo "::error::social-planner suite failed (discover=$rc1 cycle=$rc2 pytest=$rc3)"
+          if [ "$rc1" -ne 0 ] || [ "$rc2" -ne 0 ] || [ "$rc3" -ne 0 ] || [ "$rc4" -ne 0 ]; then
+            echo "::error::social-planner suite failed (discover=$rc1 cycle=$rc2 pytest=$rc3 media-podcast=$rc4)"
             exit 1
           fi

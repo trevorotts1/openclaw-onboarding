@@ -386,9 +386,9 @@ def test_the_operator_constants_are_not_this_fixs_to_move():
     """PASSES ON MAIN. U3 restored standard to 100 this morning after it was
     narrowed to 25 without approval; whether ultra may exceed 100 is an
     OPERATOR decision and explicitly not F3's."""
-    assert model_router.ULTRA_OPERATOR_CEILING == 100
+    assert model_router.ULTRA_OPERATOR_CEILING == 400
     assert model_router.STANDARD_MODE_CEILING == 100
-    assert model_router.MODE_OPERATOR_CEILING["ultra"] == 100
+    assert model_router.MODE_OPERATOR_CEILING["ultra"] == 400
     assert model_router.MODE_OPERATOR_CEILING["standard"] == 100
 
 

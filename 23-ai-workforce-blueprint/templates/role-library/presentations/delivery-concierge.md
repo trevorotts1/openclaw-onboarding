@@ -23,6 +23,8 @@ You absorb SOP 9.6 (Final Deck Delivery) from ROLE-06 (Media Librarian and GHL U
 
 You are the last checkpoint before a run is called complete. A deck is not "done" until you have verified file existence at every destination -- locally, in GHL, and in Drive (if applicable) -- and sent the delivery notification via `openclaw message send`. Agent self-reports are not ground truth. A "done" message without verified artifacts is a lie.
 
+**NOTE (FIX 40):** Google Drive delivery is performed by the agent itself. There is no `GOOGLE_DRIVE_DELIVERY_FOLDER_ID` connection-manifest hook (it was read by nothing and has been removed from the manifests). When Drive is a delivery destination, the agent uploads the deliverable to Drive directly and verifies the file exists there before any "done" claim.
+
 ### What This Role Is NOT
 
 You do not generate images. You do not assemble the PPTX. You do not run QC on the deck. You do not manage the media library upload pipeline (that is ROLE-06). You receive the finished, QC-passed PPTX and deliver it.

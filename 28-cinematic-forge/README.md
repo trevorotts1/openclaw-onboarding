@@ -12,17 +12,17 @@ Cinematic Forge is an OpenClaw skill that produces complete videos using AI. It 
 | **Version** | 1.0 |
 | **Author** | (redacted for client-generic distribution) |
 | **Prerequisite** | Teach Yourself Protocol |
-| **Primary Tools** | VEO 3.1 Fast, Nano Banana Pro, ElevenLabs, Suno, FFmpeg |
+| **Primary Tools** | VEO 3.1 Fast, image via Skill 66, voice and music via Skill 68, FFmpeg |
 | **API Provider** | KIE.ai (all generation models) |
 | **Primary Format** | 9:16 vertical |
-| **Cost Example** | ~$8.50 for a 90-second video |
+| **Cost Example** | see the budget estimate in SKILL.md Phase 0 (live prices) |
 
 ## What It Does
 
 1. **Intake** - 14 structured questions asked one at a time
 2. **Pre-Production** - Storyboard, reference images, scripts
 3. **Video Generation** - VEO 3.1 Fast segments with Extend chaining
-4. **Audio Production** - ElevenLabs voices + Suno music + SFX (all separate from video)
+4. **Audio Production** - voice, music and SFX via Skill 68 (all separate from video)
 5. **Assembly** - FFmpeg merges video + audio layers
 6. **Delivery** - Upload to GHL media library, return link to user
 7. **Revision** - User requests changes, agent re-generates affected parts

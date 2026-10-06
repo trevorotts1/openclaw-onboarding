@@ -11,6 +11,18 @@
 #   rr-readiness.sh --reconcile    # reconcile the cron (add/edit/dedupe) then report
 #   rr-readiness.sh --probe        # safe test claim -> receipt, then report
 #
+# RR plan F61: it also reports two enrollment flags, names only (never the token):
+#   claim_unauthorized  the receiver refused this box's credential (written by
+#                       rescue-poll.sh to state/rr-receiver/claim-unauthorized.json;
+#                       cleared by the first claim the receiver accepts again)
+#   slug_mismatch       RR_BOX_SLUG (receiver enrollment) differs from the box's
+#                       canonical FLEET_STANDING_BOX_SLUG, the split that left one
+#                       box enrolled under a different slug than the escalations name
+# Flags are information only: they never change the state or the exit code.
+# # It ALSO surfaces state/rr-intake-auth.flag in the human report. That flag is
+# written by the daily rr-intake-auth-check.sh cron and covers the ESCALATION
+# INTAKE, the leg this tool does NOT probe.
+#
 # WHAT "SAFE TEST CLAIM" MEANS HERE (RR-028 required behaviour 7):
 #   * It is a CLAIM-shaped request with capacity 0 and mode dry_run, carrying a
 #     probe marker — the receiver is asked for a structured answer, not work.
@@ -138,6 +150,90 @@ if [ "$OCD_LOADED" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# rr_intake_auth_flag_line
+#
+# The daily-report surface for the ESCALATION INTAKE auth self-check. This tool
+# reports on the RETURN leg (RR_RECEIVER_URL with RR_BOX_TOKEN); it says nothing
+# about whether this box can still get INTO the queue. A box whose
+# RESCUE_RANGERS_WEBHOOK_SECRET went stale after an operator-side rotation can
+# sit at VERIFIED while every escalation it makes is refused.
+#
+# rr-intake-auth-check.sh (the daily cron) writes state/rr-intake-auth.flag when
+# it finds a non-OK class and removes it on an OK. This prints it so the flag
+# reaches an operator instead of sitting unread on disk. No flag means nothing
+# is printed: the absence of a flag is not a claim that the channel works, it is
+# only the absence of a recorded problem.
+#
+# HUMAN MODE ONLY. --json emits exactly one JSON object that callers parse with
+# json.load, so an extra stdout line there would break every consumer.
+# ---------------------------------------------------------------------------
+rr_intake_auth_flag_line() {
+  [ "$MODE" = "human" ] || return 0
+  _iaf="$RR_ROOT/state/rr-intake-auth.flag"
+  [ -r "$_iaf" ] || return 0
+  _iaf_class="$(sed -n 's/.*"class"[[:space:]]*:[[:space:]]*"\([A-Z_]*\)".*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  _iaf_http="$(sed -n 's/.*"http"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  _iaf_ts="$(sed -n 's/.*"ts"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_iaf" 2>/dev/null | head -1)"
+  [ -n "$_iaf_class" ] || _iaf_class="UNREADABLE"
+  echo "rr-readiness: FLAG intake-auth=$_iaf_class http=${_iaf_http:-none} since=${_iaf_ts:-unknown} file=$_iaf"
+  case "$_iaf_class" in
+    RR_SECRET_STALE|RR_SECRET_MISSING)
+      echo "rr-readiness: FLAG remedy: operator must re-provision RESCUE_RANGERS_WEBHOOK_SECRET on this box. Escalations from here are being refused."
+      ;;
+    RR_OLD_RELAY_URL)
+      echo "rr-readiness: FLAG remedy: RESCUE_RANGERS_WEBHOOK_URL points at the OLD relay on this box; re-provision the URL."
+      ;;
+    UNDETERMINED)
+      echo "rr-readiness: FLAG the last intake check could not establish anything (transport, throttle or 5xx). This is NOT a claim that the credential is stale."
+      ;;
+  esac
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# RR plan F61 flags. Names only: slug names, an HTTP code and timestamps.
+#   RRF_UNAUTH      "" or "<http>|<since>|<count>"
+#   RRF_MISMATCH    "" or "<enrolled_slug>|<canonical_slug>"
+# ---------------------------------------------------------------------------
+rrf_collect() {
+  RRF_UNAUTH=""; RRF_MISMATCH=""
+  _rrf_f="$RRR_STATE_DIR/claim-unauthorized.json"
+  if [ -r "$_rrf_f" ]; then
+    _rrf_doc="$(cat "$_rrf_f" 2>/dev/null)"
+    _rrf_http="$(printf '%s' "$_rrf_doc" | sed -n 's/.*"http"[[:space:]]*:[[:space:]]*"\([0-9]*\)".*/\1/p' | head -1)"
+    _rrf_since="$(printf '%s' "$_rrf_doc" | sed -n 's/.*"first_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    _rrf_count="$(printf '%s' "$_rrf_doc" | sed -n 's/.*"count"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+    RRF_UNAUTH="${_rrf_http:-none}|${_rrf_since:-unknown}|${_rrf_count:-0}"
+  fi
+  # The canonical slug comes from the shared descriptor (env, then openclaw.json). A
+  # hostname fallback is not a canonical slug, so it never raises a mismatch.
+  _rrf_canon=""
+  if [ "$OCD_LOADED" = "1" ]; then
+    case "${OCD_BOX_SOURCE:-}" in
+      env|openclaw.json*) _rrf_canon="${OCD_BOX_SLUG:-}" ;;
+    esac
+  elif [ -n "${FLEET_STANDING_BOX_SLUG:-}" ]; then
+    _rrf_canon="$FLEET_STANDING_BOX_SLUG"
+  fi
+  if [ -n "$_rrf_canon" ] && [ "$_rrf_canon" != "unknown" ] && [ "${RRR_HAS_SLUG:-0}" = "1" ] && [ "$_rrf_canon" != "$RRR_SLUG" ]; then
+    RRF_MISMATCH="$RRR_SLUG|$_rrf_canon"
+  fi
+}
+
+rr_enrollment_flag_lines() {
+  [ "$MODE" = "human" ] || return 0
+  if [ -n "$RRF_UNAUTH" ]; then
+    echo "rr-readiness: FLAG claim_unauthorized http=${RRF_UNAUTH%%|*} since=$(printf '%s' "$RRF_UNAUTH" | cut -d'|' -f2) count=${RRF_UNAUTH##*|} slug=${RRR_SLUG:-unknown}"
+    echo "rr-readiness: FLAG remedy: the receiver refused this box's credential. RR_BOX_SLUG or RR_BOX_TOKEN does not match an enrollment; the operator must re-enroll or correct it. The token is never printed."
+  fi
+  if [ -n "$RRF_MISMATCH" ]; then
+    echo "rr-readiness: FLAG slug_mismatch enrolled=${RRF_MISMATCH%%|*} canonical=${RRF_MISMATCH##*|}"
+    echo "rr-readiness: FLAG remedy: RR_BOX_SLUG (receiver enrollment) differs from FLEET_STANDING_BOX_SLUG (what escalations name). Pick one canonical slug with the operator."
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # rrr_report <exit-mapped> — resolve inputs, run the state machine, print.
 # ---------------------------------------------------------------------------
 rr_report() {
@@ -146,7 +242,18 @@ rr_report() {
     rrr_receipt_read "$RRR_STATE_DIR" "$RRR_DIGEST"
   fi
   rrr_evaluate
-  if [ "$MODE" = "json" ]; then rrr_report_json; else rrr_report_line; fi
+  rrf_collect
+  if [ "$MODE" = "json" ]; then
+    # one JSON object, flags spliced in before the closing brace (the engine owns the rest)
+    _rr_json="$(rrr_report_json)"
+    _rr_flags="$(printf '{"claim_unauthorized":%s,"slug_mismatch":%s}' \
+      "$([ -n "$RRF_UNAUTH" ] && echo true || echo false)" "$([ -n "$RRF_MISMATCH" ] && echo true || echo false)")"
+    printf '%s,"flags":%s}\n' "${_rr_json%\}}" "$_rr_flags"
+  else
+    rrr_report_line
+  fi
+  rr_enrollment_flag_lines
+  rr_intake_auth_flag_line
   case "$RRR_STATE" in
     VERIFIED)         return 0 ;;
     SCHEDULED)        return 1 ;;

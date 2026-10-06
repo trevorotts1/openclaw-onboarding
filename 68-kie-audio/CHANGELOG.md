@@ -4,6 +4,41 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-10-06 - fix: speech to text cannot pass the TTS path
+
+- `_validate_tts_via_adapter` accepted any capability containing "speech", so a named "Speech to Text" model would pass the tts domain and bypass the closed STT gate. It now accepts only a capability matching `text[ -]to[ -]speech` and refuses anything matching `speech[ -]to[ -]text` (including a mixed list) or an unknown capability. Three new self-test cases (Speech to Text, mixed, none) all exit 2; self-test 28 became 31 checks. The STT gate is unchanged. Version roll to v2.1.1 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
+## [v2.1.0] - 2026-10-06 - feat: TTS dispatch runs through Skill 74; STT stays gated
+
+- `INSTRUCTIONS.md` and `SKILL.md`: TTS (Market createTask) first runs `kie_live_adapter.py validate` and `preflight --units <thousands of characters>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then audio QC. `skipped` falls back to curl. Suno keeps its curated dedicated route.
+- `validate_audio_request.py` (same wiring Skill 66 got in v1.1): a TTS model NOT in `models.json` is validated by Skill 74 against its live schema and must report a Text to Speech capability; otherwise (or adapter absent) the old "unknown or unsupported model" rejection stands. New `scripts/adapter_bridge.py`. Self-test 21 became 28 checks.
+- STT gate unchanged and fail-closed: `--domain stt` now also asks Skill 74 `discover` (a free, read-only catalog GET) whether the live catalog lists a speech-to-text candidate and REPORTS it; any dispatch attempt still exits 2 and `dispatch_enabled` stays false until the re-proof in `references/stt.md` passes. Tested: candidate listed, still gated.
+- `models.json` is described as the CURATED POLICY and verified-override registry (`registry_policy.role`). No auto-latest for audio.
+
+### Open item (owner decision, not changed here)
+- KIE's live catalog (Skill 74 registry snapshot, 2026-10-06) lists `ai-music-api/*` whose schema declares `/api/v1/jobs/createTask`, while this skill's curated route is the dedicated `/api/v1/generate` family. This change keeps the curated route as the dispatch route and only adds `price` and `preflight` for the matching catalog id. Which route is authoritative is the owner's call.
+- Version roll to v2.1.0 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
+## [v2.0.3] - 2026-10-05 - fix: dead credit endpoint, version drift, registry and test counts, retention prose
+
+### Fixed
+- Dead credit endpoint: `INSTALL.md` (Test 2 and checklist) and `QC.md` used `GET /api/v1/account/balance`. They now use `GET https://api.kie.ai/api/v1/chat/credit`, response `{code,msg,data:<number>}`, and say to check the body `code` (401 key wrong, 402 zero credits), not only the HTTP status. Live probe 2026-10-05 (known-good and fake-path controls): GET /api/v1/chat/credit, POST /api/v1/jobs/createTask, GET /api/v1/models and GET /api/v1/veo/record-info answered; /api/v1/account/balance, /api/v1/user/credits, /api/v1/jobs/create and /api/v1/veo/task returned HTTP 404.
+- Version drift: `SKILL.md` carried a nested `metadata.version` of 1.0.0 and `QC.md` asserted v1.0.0 while `skill-version.txt` said v2.0.2. `SKILL.md` now has top-level `version: v2.0.3` (nested rolled) and `QC.md` asserts v2.0.3.
+- Registry count: the 2.0.0 entry said `models.json` has 9 entries; it has 10 (TTS 5, Suno 4, STT 1). Prose corrected. `QC.md` and the 2.0.0 entry said the validator self-test has 13 checks; it runs 21. Corrected.
+- Retention: Result retention prose now reads: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately. Edited in `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `references/music.md`, `references/qc.md`. `EXAMPLES.md` notes that `data.response.resultUrls` is the parsed copy of `resultJson`.
+- The speech-to-text safety gate is untouched and stays fail-closed (`dispatch_enabled: false`, validator exit 2).
+
+### Migration Notes
+- No core-file block changed; no re-wire needed.
+- The prebuilt `68-kie-audio.skill` archive was not regenerated here.
+- Risk level: LOW.
+
+---
+
 ## [2.0.0] - 2026-08-26
 
 ### Added
@@ -35,12 +70,12 @@ All notable changes to this skill are documented here.
     speech-to-text/deepgram/google/speech; the KIE docs elevenlabs directory
     holds exactly 4 models, all TTS or audio isolation; `kie.ai/market` returned
     HTTP 403 to WebFetch; WebSearch variants returned zero results.
-- Machine-readable capability registry `models.json` (SPEC 12): 9 entries —
+- Machine-readable capability registry `models.json` (SPEC 12): 10 entries —
   TTS 5, Suno 4 families (generate, extend, sounds, other-operations with a
   14-operation records table), STT 1 special entry. Every entry carries
   source_url from the first-party docs page verified 2026-08-26.
 - Deterministic validator `scripts/validate_audio_request.py` (SPEC 14) with
-  `--self-test` (13 checks): per-turn 10,000/combined 5,000 caps, enum checks,
+  `--self-test` (13 checks at release; 21 now): per-turn 10,000/combined 5,000 caps, enum checks,
   Suno family guard (never createTask), duration advisory, sounds 500, mashup
   exactly 2 URLs, persona window, replace-section bounds, instrumental-true
   prohibition, STT dispatch hard-rejected with the negative-result reference.

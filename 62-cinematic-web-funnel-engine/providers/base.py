@@ -491,6 +491,10 @@ class ModelRegistry:
                 amount = by_res[resolution]
             elif resolution is None and len(by_res) == 1:
                 amount = next(iter(by_res.values()))
+            elif resolution is None and price.get("default_resolution") in by_res:
+                # Model declares which tier an unspecified resolution bills as
+                # (veo-3-1: KIE's own default is 720p).
+                amount = by_res[price["default_resolution"]]
         price["resolved_amount"] = amount
         if strict and (amount is None or not price.get("verified", False)):
             raise UnpricedModelError(

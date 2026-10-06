@@ -258,8 +258,11 @@ report_interview_not_complete() {
   local detail="${1:-not complete}"
   # Throttle: skip if we reported within the window.
   if [[ -f "$INTERVIEW_REPORT_MARKER" ]]; then
-    local age_h
-    age_h=$(( ( $(date -u +%s) - $(stat -f %m "$INTERVIEW_REPORT_MARKER" 2>/dev/null || stat -c %Y "$INTERVIEW_REPORT_MARKER" 2>/dev/null || echo 0) ) / 3600 ))
+    local age_h m
+    # GNU `stat -c` first (GNU `stat -f` prints filesystem status, not a number).
+    m="$(stat -c %Y "$INTERVIEW_REPORT_MARKER" 2>/dev/null || stat -f %m "$INTERVIEW_REPORT_MARKER" 2>/dev/null)"
+    [[ "$m" =~ ^[0-9]+$ ]] || m=0
+    age_h=$(( ( $(date -u +%s) - m ) / 3600 ))
     [[ "$age_h" -lt "$REPORT_THROTTLE_HOURS" ]] && { log "interview-report: throttled (${age_h}h < ${REPORT_THROTTLE_HOURS}h)"; return 0; }
   fi
   local msg="[INTERVIEW-GATE] AI Workforce interview not completed yet (${detail}). The Command Center / zero-human company is gated until the interview is complete — no departments are being built. Finish the interview to proceed."
@@ -1327,6 +1330,16 @@ if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   # per dept automatically, but run regenerate-dept-roster.py inline here as a
   # deterministic backstop so a partial/resume materialization can NEVER leave a
   # stale roster that under-reports the roles the agent actually has on disk.
+  # v25.4.0: SOP-NEEDED.json runner — deterministically fill every ROUTED role
+  # how-to.md (work sent to general-task, no library match) that has a
+  # comparable role-library template (no model, never touches a filled file).
+  # Also fills legacy PENDING stubs. Roles with no comparable template stay
+  # routed for SOP authoring (author-missing-sops.py --apply).
+  _fill_script="$SCRIPT_DIR/fill-pending-howtos.py"
+  if [[ -f "$_fill_script" ]]; then
+    log "[PENDING-FILL-RESUME] token-filling PENDING role how-to.md files from the nearest library template"
+    "$WORKFORCE_PYTHON" "$_fill_script" --apply >>"$LOG_FILE" 2>&1 || true
+  fi
   _roster_script="$SCRIPT_DIR/regenerate-dept-roster.py"
   if [[ -f "$_roster_script" ]]; then
     log "[ROSTER-RESUME] refreshing every department ROSTER.md from on-disk role folders"
@@ -1362,6 +1375,12 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
       break
     fi
   done
+  # Owner-sends hold: never launch the owner-facing closeout while held.
+  _osh_out="$(python3 "$SCRIPT_DIR/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
+  if [[ "$_osh_rc" -ne 1 ]]; then
+    log "HOP-4: OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- run-closeout.sh NOT launched."
+    _CLOSEOUT_SCRIPT=""
+  fi
   if [[ -n "$_CLOSEOUT_SCRIPT" ]]; then
     log "HOP-4 (v12.6.0): in-process exec of run-closeout.sh (PRIMARY -- deterministic, no Telegram required)"
     # Fire detached so this cron returns immediately; run-closeout.sh runs in background.

@@ -1,3 +1,3688 @@
+## [v25.3.21]  -  2026-10-06  -  Merge train: #1497 docs(07): canonical KIE common rules (single source of truth); #1506 fix(docs,06): correct KIE credential docs and key ownership; #1511 fix(38): QC follow-ups (66 prereq, fixtures, comments); #1513 fix(62): align Veo createTask model ids with live KIE schema
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1497 — docs(07): canonical KIE common rules (single source of truth)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1506 — [v25.3.21]  -  2026-10-06  -  Correct KIE credential docs and Skill 06 key ownership
+
+##### What changed
+- Root docs (CREDENTIALS.md, KNOWN-ISSUES.md, VPS environment setup) now describe the KIE credential and its ownership correctly.
+- Skill 06 (ghl-install-pages) image staging reads the KIE key from its owner location; added test_ghl_image_stage_kie_key.py. Skill 06 and Skill 23 versions roll with the repo version.
+
+### #1511 — fix(38): QC follow-ups (66 prereq, fixtures, comments)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1513 — fix(62): align Veo createTask model ids with live KIE schema
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.3.19]  -  2026-10-05  -  Paired-release prep (R03): Command Center pin moves to v7.6.99; release cohort names the frozen pair
+
+Prepared release for the Company Headquarters paired release. Content is release plumbing only: the Command Center pin, the dependency cohort and the version markers move together so the fleet roll deploys the Command Center this onboarding release was tested against.
+
+#### What changed
+- **Command Center pin moves to v7.6.99.** `cc-compat.json` `commandCenter.pinnedTag` and `release-cohort.json` `cc_version` both move from v7.6.98 to v7.6.99 (both files written by `scripts/pin-cc-tag.py`, so the pair can never split). minVersion is unchanged at v7.4.0: v7.6.99 adds no endpoint and no mission-control.db schema change. fleet-refresh and Skill 32 resolve the pin as the deploy target, so the roll ships the Command Center carrying the Headquarters merge wave.
+- **Release cohort names the frozen pair.** `release-cohort.json` now binds `onb_sha` c14ed614670cbe28304fbbda5ee1bba2075edd4b to `cc_sha` 2c4e2e8d052c99a7581f0bd3ac416adbe66302f5 (candidate freeze-20261005-03) with `contract` 1.1.0, so the decision-engine trainer's `check_release_cohort()`/`promote()` gate the exact tested pair.
+- **Version markers.** All 10 tracked version markers move from v25.3.18 to v25.3.19, and the two hand-authored paired-release lines follow the pin: `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` "pairs with Command Center v7.6.99" and `docs/interview-launch-recovery.md` "Paired releases: onboarding v25.3.19 / Command Center v7.6.99".
+
+#### Version
+- All 10 version markers move from v25.3.18 to v25.3.19.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself. The Command Center onboarding release is tagged only after the release council votes; this branch carries the prepared release, not a mint.
+
+## [v25.3.18]  -  2026-10-05  -  Update fix: the updater no longer stops with "SKILLS_DIR: unbound variable" right after taking its lock
+
+Release v25.3.17 could not complete an update. On a box it printed `line 4409: SKILLS_DIR: unbound variable` straight after `[lock] acquired` and exited 1 before changing anything. This release fixes that, so the update runs through again.
+
+#### What changed
+- **Skills folder is resolved before the front door uses it.** The one-front-door step looks for `lib-frontdoor.sh` and `oct4_frontdoor.py` in the installed `shared-utils` folder, but the updater only worked out that folder later in the run. It now resolves the skills folder first, and still resolves it again afterwards exactly as before. No other use of the variable ran before its assignment.
+- **Regression test.** `tests/unit/update-skills-skillsdir-before-frontdoor.test.sh` runs the real front-door lookup text from `update-skills.sh` with the skills folder unset and checks it finds the installed copy. It fails on v25.3.17 and passes on this release.
+
+#### Version
+- All 10 version markers move from v25.3.17 to v25.3.18.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself.
+
+## [v25.3.17]  -  2026-10-05  -  9Router boxes: the 999 step in a fleet roll now runs only the skills-only path behind a checksum guard
+
+A fleet roll used to run the 999 installer's link path on every box. On a box that already runs 9Router, that path replaces the installed `nine-router-setup` skill and can touch the `claude-nine` launcher. This release makes the roll safe for those boxes.
+
+#### What changed
+- **9Router boxes get skills-only.** The roll detects a 9Router box (the `~/.9router` folder, the `claude-nine` launcher, and the health endpoint answering) and hands the 999 installer exactly `--skills-only`, never the link or full-install path.
+- **Checksum guard.** `shared-utils/nine_router_guard.py` takes a checksum snapshot of the router config, the router database and the launcher files before and after the 999 step. Any difference fails that box and rolls it back.
+- **Unreachable boxes are skipped, not failed.** An unreachable box (ssh exit 255) is now listed as SKIPPED instead of FAILED.
+- **Wiring and tests.** `scripts/fleet-refresh.sh`, `shared-utils/fleet_refresh_runner.py` and `shared-utils/lib-frontdoor.sh` carry the new path. `tests/unit/nine-router-skills-only-roll.test.py` is the regression test and `.github/workflows/nine-router-skills-only-roll-guard.yml` runs it on every push and pull request.
+
+#### Version
+- All 10 version markers move from v25.3.16 to v25.3.17.
+
+#### Not changed
+No client box, credential, model or provider setting is touched by this release itself.
+
+## [v25.3.16] - 2026-10-05 - Repair and library batch: 14 fixes so existing boxes get the same quality as new installs
+
+This release closes the gap between a fresh install and a box that was installed earlier. New installs already got the five installer rules in v25.3.15. Boxes installed before that now get repaired by the same update that brings them current, through one shared front door, and the role library grows to cover the departments that were still thin.
+
+#### What changed
+- **SOP authoring no longer writes into the installed library.** Newly authored SOPs go to a separate harvest folder, so the shipped library stays exactly as released. Authoring now uses the box's own default model instead of a hard-coded one.
+- **Repair scripts for existing boxes.** `repair-placeholder-sops.py` replaces placeholder how-to files with real content, `repair-userlinks.py` fixes broken user links, `repair-directors-doctrine.py` puts the director doctrine back where it is missing, and `ensure-revenue-goal.py` asks the owner once for the yearly revenue goal. All four are safe to run twice.
+- **General Task department.** `ensure-general-task-dept.py` creates the department on boxes that lack it, `general-task-check.sh` verifies it has a real playbook, and a task that matches no other department now lands there in every routing mode (auto, shadow, legacy, off) instead of being dropped.
+- **One front door for updates.** The shared updater (`update-skills.sh`) now runs one repair stage, then the library health gate, in a fixed order. The force update and the weekly update both run that updater, so they get the same stage. A repair script that is missing on a box is reported as a gap, never skipped silently and never counted as a pass. The health gate now also runs the General Task check.
+- **Library health gate.** `scripts/health/library-gate-check.sh` fails a box whose library, director files, revenue goal or General Task department are incomplete.
+- **Harvest and reporting tools.** `harvest-sop-drafts.py` collects authored SOP drafts from boxes, and `report-missing-999.sh` gives a read-only list of boxes that do not have the 999 setup installed.
+- **Routing safety switch.** `scripts/routing-mode.sh` lets an operator switch routing mode safely, with a status check that treats a corrupt mode store as "cannot tell", never as a pass. A CI guard covers every mode.
+- **Role library.** The library grows from 438 to 538 roles and from 36 to 68 departments, with the index, content hashes and per-department counts regenerated in lockstep. The reconciliation test fixture now uses a different custom department name so the canonical school-of-ai department stays canonical. No test or guard was loosened.
+- **Wording.** The role-library token reference now uses a neutral example name.
+
+#### Version
+- All 10 version markers move from v25.3.15 to v25.3.16.
+
+## [v25.3.15]  -  2026-10-04  -  fix(installer): no silent placeholders — the 5 installer rules (director required, SOP-needed routing, self-healing authoring, doctrine in templates, no empty departments)
+
+## [v25.3.14] - 2026-10-03 - Operator personal chat id scrub: deterministic script + CI guard
+
+The operator's personal Telegram chat id was still written into agent-facing text that a fleet roll copies to every client box. D13 already removed it from the agent escalation template. This release removes the rest and guards it so it cannot return.
+
+#### What changed
+- **New** `scripts/scrub-operator-chat-id.py` (Python 3, stdlib only, no model calls). `--report` lists every occurrence as KEEP or FIX, `--apply` rewrites only FIX lines from an explicit rule table and is idempotent, `--check` exits 1 if any FIX-class occurrence exists. Classification is a reviewed path-glob table in the script, never a runtime guess. An unclassified new occurrence counts as FIX and fails the guard.
+- **FIX (15 files, 30 occurrences)**: the Rescue Rangers role-library files (director, SOP-RR-01, ticket clerk, QC and postmortem specialist) now say "Operator" and route escalation through the Rescue Rangers escalation section instead of naming a personal chat. `cron-prompt.txt`, `23-ai-workforce-blueprint/resume-prompt.txt`, `15-blackceo-team-management/` (`INSTALL.md`, `QC.md`, `qc-blackceo-team-management.sh`, `scripts/install-remote-rescue.sh`), `platform/vps/VPS-ENVIRONMENT-SETUP.md`, `scripts/u126-remediate.sh` and the comments in `install.sh` and `shared-utils/nudge-incomplete-interviews.py` no longer carry the literal. Where a script needs the operator id list it reads `OPERATOR_CHAT_IDS_SH` from `shared-utils/resolve-owner-chat.sh`, the single authority. `scripts/u126-remediate.sh` now skips the disk alert re-registration when no operator escalation chat is configured, instead of falling back to a literal.
+- **KEEP (operator-only files, tests, deny-list guards)**: `shared-utils/resolve-owner-chat.sh`, `scripts/configure-operator-telegram.sh`, `scripts/diagnose-telegram-config.sh`, `scripts/ensure-pipeline-crons.sh`, `docs/OPERATOR-MAINTENANCE.md`, `**/qc-no-personal-data.sh`, `tests/**`, the deny-list sets in `install.sh` and `shared-utils/nudge-incomplete-interviews.py`, and the CI guard patterns. Each is justified in the script's rule table.
+- **Guard**: `.github/workflows/qc-static.yml` runs `--check` and the new unit test `tests/unit/scrub-operator-chat-id.test.sh` on every push and pull request.
+
+- **Required side effects of editing those files**: `15-blackceo-team-management/skill-version.txt` v7.1.2 to v7.1.3 (the skill-version gate); `docs/interview-launch-recovery.md` paired onboarding version rolled to v25.3.14 (the doc-currency gate); `hash-content-manifest.py` re-stamp of `templates/role-library/_index.json` (content hash, render hash and content version for 3 roles, 1 SOP and the rescue-rangers department; every entry's timestamp also moves, which is why that file shows a large line count).
+
+#### Not changed
+Operator-side behavior on the operator box is unchanged. No client box, credential, model or provider setting is touched.
+
+## [v25.3.13]  -  2026-10-03  -  Merge train: #1448 Skill 72: motion-video-plus (deterministic motion-graphics video…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1448 — Skill 72: motion-video-plus (deterministic motion-graphics video pipeline)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.3.12]  -  2026-10-03  -  Merge train: #1450 fix(rescue): wave 4 repo lane - unauthorized-claim trace,…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1450 — [v25.3.11] - 2026-10-03 - Rescue Rangers wave 4 (repo): unauthorized-claim trace, interrupted-attempt guard, rr03 --local, plain final update, EWS identity fields, mc-route escalation
+
+Rescue Rangers n8n plan, wave 4, repo lane (F61, F62, F66, F71, F78, F79, F88, F89). The n8n side of wave 4 lands separately in n8n and is not in this PR.
+
+##### What changed
+- **F61** `65-rescue-receiver/rescue-poll.sh`: a claim the receiver refuses as unauthorized (401/403, or a 2xx body `status:"unauthorized"`) now writes `state/rr-receiver/claim-unauthorized.json` (slug, HTTP code, first/last time, count; never the token) and logs ONE `claim-unauthorized slug=...` line per hour; the first accepted claim clears it. `rr-readiness.sh` reports `claim_unauthorized` and `slug_mismatch` (RR_BOX_SLUG differs from FLEET_STANDING_BOX_SLUG) as FLAG lines and a `flags` object in `--json`; flags never change the state or exit code.
+- **F62** `rescue-poll.sh`: an instruction whose journal already holds an `effect_started` / `effect_executed` row for the same `instruction_id` with no done record is not run again; it is acked `failed` / `interrupted_prior_attempt` (new ack reason). Orphan rows older than 30 days move to `reconcile/` (never deleted). **Boxes only send the new reason after the next fleet roll; the RR-07 `Parse Request` allow-list that accepts it ships in the n8n wave 4.**
+- **F66** `rescue-poll.sh`: an `rr03-` instruction runs `openclaw agent ... --local`, so a gateway-down fix is not delivered through the dead gateway. Other instructions are unchanged. Try it on the operator box first, before the fleet roll.
+- **F88** `65-rescue-receiver/rescue-notification.py final-body` (used by `rescue-poll.sh`): the client-facing final update is three plain sentences ("Fixed and checked." / "We are still working on this: ..." / "A specialist will follow up."). Machine fields stay in the ack only.
+- **F89** `scripts/lib/rescue_admission.py`: `admit()` takes optional `client`, `person`, `return_to`, falling back to the box env (`FLEET_STANDING_CLIENT_LABEL`, `RESCUE_RANGERS_PERSON`, `RESCUE_RANGERS_RETURN_TO`, the names the other repo senders already use; clientName last falls back to the slug). They never enter `operation_id`.
+- **F71** `scripts/mc-route.sh` (and the two byte-identical stamper copies in `apply-fleet-standards.sh` and `apply-routing-fix.sh`): with `MC_ROUTE_RR_ESCALATE=1` a failed routing also files one Rescue Rangers admission from the box (background, bounded, fail-soft). It names the box by `FLEET_STANDING_BOX_SLUG` (nothing is sent without it), carries a fixed reason class in plain words (never the owner's words), and uses `<reason-class>:<UTC hour>` as the event id, so an outage is one ticket per class per hour, not one per message. `rescue_admission.py` gains `--event-id`. **Off unless the flag is set; enable on the operator box first. Needs the n8n F45 operation-id dedupe live.**
+- **F78** Already satisfied on main: `cc-compat.json` `pinnedTag` is `v7.6.98` (released tag `v7.6.98` contains Command Center PR #481, the F18/F51 fixes) since v25.3.9. No pin edit in this PR.
+- **F79** `scripts/fleet-standing/NEW-BOX-WIRING.md`: the new-box test step now says to put the suppress marker at the START of the problem text (or `clientName` `__AUTHTEST__` / `ROUTING-TEST...`), which works under today's anywhere-in-body matching and the stricter matching the n8n lane will bring.
+- **Test fix (not a product change)** `tests/unit/mc-route-heredoc-sync.test.sh` grepped for the pre-JEV-804 spelling `"${1:-}" = "task"`; the helper has tested `$_CMD` since v25.2.22, so the stamped-helper check failed on main. It now accepts both spellings. The embedded copies had also drifted (missing the cancel-truth block); they are re-stamped from `scripts/mc-route.sh` and the sync test passes 7/7.
+
+##### Tests
+New under `tests/rescue/RR-030/` (all hermetic: loopback stubs, dead-port proxies, synthetic ids): `test_claim_unauthorized.sh` (17), `test_journal_reconcile.sh` (9), `test_rr03_local_flag.sh` (8), `test_final_body.py` (15), `test_mc_route_escalation.sh` (13), plus `lib-w4-poll-harness.sh`. `tests/rescue/RR-015/test_rescue_admission_client.py` case 12 (F89); `rescue_admission.py --self-test` 47 -> 55 checks. Each new test fails against the previous source files.
+
+##### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO (D19). Nothing here touches a client box. Skill 65 `v23.5.3` -> `v23.6.0` (receiver 1.7.2 -> 1.8.0); skills 06 and 23 rolled to the repo version by `scripts/bump-version.sh`.
+
+## [v25.3.11]  -  2026-10-03  -  Skill 61 (Loop Protection System) v1.1.0: October OpenClaw update, 13 fixes
+
+Skill 61's July-era detectors read conversation and trajectory files that OpenClaw stopped writing in `v2026.7.2-beta.1` (conversations now live in a per-agent SQLite database). Five of seven detectors were blind, the "orphan gateway" alarm was false on every run, weekly crons were flagged as over-firing, and "park" changed nothing outside the ledger. This release ships all 13 fixes from `skill-61-october-openclaw-update-spec-20261003.md` (5 High, 4 Medium, 4 Low) in ONE branch. Re-bumped to v25.3.11 because main already released v25.3.10 (Rescue Rangers wave 3 repo lane).
+
+**Rollout posture is unchanged.** `61-loop-protection-system/config/rollout.json` stays `fleet_rollout_enabled: false`. The new `loop-brake` plugin ships DISABLED behind that gate. Turning on OpenClaw's own loop guard on client boxes is a prepared Tier 2 proposal, never applied by the unattended run. No approval gate was added (no `requireApproval`). Zero model calls (`guard-no-anthropic-runtime.py` passes). Nothing was deleted: what stopped being used is disabled or retired.
+
+#### What changed (skill 61, v1.0.1 -> v1.1.0; full detail in `61-loop-protection-system/CHANGELOG.md`)
+- **Fix 1 (High)** D2, D3, D4-wedge, D5 and D6 now read `openclaw sessions --json` and `openclaw audit --json` (content-free, read-only) instead of dead files, with a feed-health control that raises a P2 "watchdog blind" finding when a feed is empty while sessions are active. D7 is named UNDETERMINED and covered by the loop-brake plugin.
+- **Fix 2 (High)** The orphan-gateway check compares the listener pid with the supervisor's own pid (launchd or systemd), never the legacy handoff file. Unreadable supervisor or docker is UNDETERMINED and raises nothing.
+- **Fix 3 (High)** The cron over-fire bound is floored at one fire per day, so a weekly job firing once is silent.
+- **Fix 4 (High)** LF-6 really runs `pm2 stop` on a pm2 unit (gateway is alert-only); with no real stop the state is `parked-flag` and the finding stays open. LF-12 sends `sessions.abort` with `clearQueued: true`.
+- **Fix 5 (High)** New read-only daily check `scripts/check_native_loop_guard.py` warns when OpenClaw's built-in tool-loop guard is off; the fix is a prepared proposal only.
+- **Fix 6 (Medium)** D1 no longer runs the pm2 JSON listing that dumps process environments; it parses the `pm2 list` table, the `launchctl list` table and a format-limited `docker inspect`.
+- **Fix 7 (Medium)** The fleet slug wins over a stored dotless hostname at run time; the escalation payload carries `identity: unresolved` when no slug resolves. `loop_escalate.py --self-test` now sandboxes its state directory so it can never write the real ledger.
+- **Fix 8 (Medium)** The restore script skips the built-file patch on OpenClaw 2026.7.2 and later and checks only `tools.loopDetection.enabled` and `agents.entries.<id>`; it never writes an unknown config key.
+- **Fix 9 (Medium)** New `loop-brake` plugin (block only): third identical `sessions_send` in 300 seconds, and third failed-with-auth-refusal call to one tool in one run. Disabled behind the rollout gate.
+- **Fix 10 (Low)** `signatures.json` paid tiers split into metered, subscription_capped (Ollama Cloud, WARN only) and local.
+- **Fix 11 (Low)** D4 records, and does not escalate, a cron the scheduler already auto-disabled or is backing off; `hasMore` makes unseen jobs UNDETERMINED.
+- **Fix 12 (Low)** LF-8 prepared proposal is `agents.defaults.heartbeat.isolatedSession=true` plus `lightContext=true` (never the heartbeat model).
+- **Fix 13 (Low)** Docs and fix classes corrected to October behavior; LF-9 re-pointed to `sessions.abort`, LF-10 to `sessions.reset` (Tier 2), LF-11 retired.
+
+#### Integration notes
+- Nine lane branches (`s61/SKS-001` .. `s61/SKS-009`) merged clean in id order; the integrator then applied the cross-lane hunks the lane receipts named (LF-10 Tier 2 self-tests, Fix 10 test fixtures, hermetic `pm2` stub in `verify.sh`, `identity` payload field, LF-3 and LF-6 wording).
+- `docs/interview-launch-recovery.md` paired-release line moved to v25.3.11 to satisfy `scripts/check-doc-currency-guards.sh`.
+## [v25.3.10]  -  2026-10-03  -  Rescue Rangers wave 3 (repo): per-box 429 contract, agent template answer table, alarm senders carry a box name
+
+Rescue Rangers n8n plan, wave 3, repo lane (F47, F49, F50). The n8n side of wave 3 lands separately in n8n and is not in this PR.
+Re-bumped to v25.3.10 because main already released v25.3.9 (Command Center v7.6.98 repin); main was merged into this branch (no rebase).
+
+#### What changed
+- **F47** `scripts/lib/rescue_admission.py`: a 429 whose body is a JSON object is the intake's own rate-limit answer, and RR-01 has already
+  minted a shed ticket for it. The client now treats it as TERMINAL for the attempt (new `AdmissionShed`, receipt status `refused` with
+  `shed: true`, journaled as `shed`) instead of retrying into the burst. A 429 with a non-JSON body (a proxy in front of the intake) and
+  every 5xx stay retryable. The per-box rate limit and the plain 429 message live in RR-01 (n8n lane W3-RR01), not here.
+- **F49** `scripts/rescue-escalation-section.md.tpl` (and the byte-identical role-library copy): the escalation recipe now captures the
+  HTTP status and prints one `rescue_rangers_state=` line from the answer; a short table says what the agent does for each state
+  (accepted, already being worked, relay the message and stop, not an incident, secret problem, fix the payload, retry once in 2 minutes,
+  unknown). `returnTo` is described as audit-only (no workflow posts an answer there). The "25 exchanges, ping Trevor's chat" line is
+  replaced by the `notificationCapped` rule. **Trevor approved plan decision D13 (2026-10-03): the two lines that sent agents to his personal
+  chat are gone from BOTH template copies (a missing `RESCUE_RANGERS_WEBHOOK_URL` or `FLEET_STANDING_BOX_SLUG` now means "tell your owner it
+  is a setup problem", the `secret_problem` state), and the chat id appears in neither copy.** No marker bump: the stamper replaces by
+  content inside the existing `RESCUE_ESCALATION_BOXNAME_V3` pair.
+- **F50** `scripts/disk-usage-alert.sh`, `scripts/pre-july14-embedding-migration-check.sh` and the circuit-breaker trip in
+  `06-ghl-install-pages/tools/browser_manager.sh` posted `client=$(hostname)` with no `boxName`, so RR-01 answered 400 "unresolvable
+  box" and `|| true` hid it. They now send `boxName` from `FLEET_STANDING_BOX_SLUG` (and `clientName` from
+  `FLEET_STANDING_CLIENT_LABEL`, default the slug), never the hostname; with no slug they log a WARN and send nothing; a non-2xx answer
+  logs a WARN instead of staying silent.
+
+#### Tests
+`tests/rescue/RR-015/test_rescue_admission_client.py` case 11 (JSON 429 posted once, journaled `shed`, terminal; non-JSON 429 retryable);
+`tests/rescue/RR-030/test_escalation_tpl_snippets.sh` grows from 15 to 34 checks (every canned answer prints the right state line);
+new `tests/rescue/RR-030/test_alarm_senders.sh` (33 checks, loopback stub only). The new F47, F49 and F50 checks fail against the
+previous code and pass with the fix.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skills 06 and 23 are rolled to this version by
+`scripts/bump-version.sh`.
+
+## [v25.3.9]  -  2026-10-03  -  Repin Command Center v7.6.98 (escalations use the fleet box slug; Rescue Rangers allow-list)
+
+### Why
+Command Center v7.6.98 (PR #481, merge 1b4f095be) carries two Rescue Rangers fixes:
+- **F18** - an escalation named the box by hostname, which matches no `fleet_standing` row, so the intake marked it unmatched and
+  paged the operator. The box now identifies itself by its fleet box slug.
+- **F51** - rung 1 of `notifySystem()` becomes an allow-list: only a genuine `escalate` outage reaches Rescue Rangers; board
+  housekeeping stays on the box.
+
+### What changed
+- `cc-compat.json` pinnedTag v7.6.97 -> **v7.6.98**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN -> v7.6.98; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pair line,
+  docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.9`: all ten version markers agree.
+
+## [v25.3.8]  -  2026-10-03  -  Rescue Rangers wave 1 (repo): agent template safety, skill-61 identity, reconciler duplicate slug, no-op receipts
+
+Rescue Rangers n8n plan, wave 1, repo lane. Five fixes; the n8n side of wave 1 lands separately in n8n and is not in this PR.
+
+#### What changed
+- **F15** The agent's "it is fixed" post never sent the `X-Rescue-Secret` header, so the intake answered 403 and the ticket stayed open
+  while the agent believed it had reported success. The resolution block of `scripts/rescue-escalation-section.md.tpl` now builds the
+  header itself and prints the HTTP status (200 recorded, 403 header, 409 incident id).
+- **F16** The escalation recipe built its JSON with an unquoted heredoc, so text the agent pasted ran on the client box (backticks,
+  `$(...)`) and `$RESCUE_RANGERS_WEBHOOK_SECRET` in a problem text was posted as its value. Free text now goes through quoted heredocs
+  and python3 `json.dumps`; only the box slug is a shell variable. Role-library copy is byte-identical. No marker bump: the stamper
+  replaces by content inside the existing `RESCUE_ESCALATION_BOXNAME_V3` pair.
+- **F17** Skill 61 (v1.0.1) named the box by hostname. It now uses the fleet slug and refuses a hostname-shaped name; escalations
+  carry `boxName` and `clientName`.
+- **F37** `reconcile-rr-agent-map.sh` aborted the whole fleet when one slug had duplicate rows. A duplicated slug is now PENDING
+  (reason `duplicate_rows rows=N`, with an owner), never written; every other slug still reconciles. The run still ends
+  `complete=0`, exit 1.
+- **F63** Skill 65 (v23.5.3, receiver 1.7.2) treated a `recorded:false` receipt for a closed or unknown ticket like a delivery
+  receipt. It now settles as journal phase `ack_settled_noop` (pending ack removed, resend loop ends), never `ack_confirmed`.
+
+#### Tests
+New `tests/rescue/RR-030/`: `test_escalation_tpl_snippets.sh` (15), `test_loop_escalate_identity.py` (9),
+`test_reconcile_duplicate_slug.sh` (15), `test_receipt_noop.sh` (12). The F37 and F63 tests fail against the previous code
+(8 of 15 and 5 of 12 fail) and pass with the fix.
+
+#### Fleet impact
+Repo changes reach client boxes only through a fleet roll, which needs Trevor's GO. Skill 61 identity keys change once (new dedup buckets).
+
+## [v25.3.7]  -  2026-10-02  -  Merge train: #1439 [DRAFT] v25.3.7 — repin Command Center v7.6.96 (operator-relay mute)
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1439 — [v25.3.7]  -  2026-10-02  -  Repin Command Center v7.6.97 (operator-relay mute + board reminders stop filing Rescue Rangers tickets)
+
+#### Why
+Two Command Center fixes ride the paired release together:
+1. **v7.6.96 (0c66db809)** — the 2026-10-02 "boards boards boards" Telegram flood: since v7.6.77 every client
+   box forwarded every `notifySystem()` board alert to the fleet-standing-operator-alert n8n webhook. A
+   gate-configured client box now ends at the durable record + its own board; the relay carries only the
+   fleet-roll stream. Rescue Rangers AGENT escalation untouched.
+2. **v7.6.97 (PR #480, merge cb5c3db2)** — the same sweeps' board reminders (stale-task-sweep, board
+   hygiene and similar automated system chatter) no longer FILE Rescue Rangers tickets: board noise is
+   the box's own concern, not a range-wide incident. Rescue escalation for a client's real AGENT
+   distress remains the one lane into Rangers.
+
+#### What changed
+- `cc-compat.json` pinnedTag v7.6.96 → **v7.6.97**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN → v7.6.97; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md
+  pair line, docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.7`: all ten version markers agree (bump already applied this release train).
+
+### #1439 — [v25.3.7-history]  -  2026-10-02  -  (superseded head entry: see the v7.6.97 entry above)
+
+#### Why
+The 2026-10-02 operator Telegram flood ("boards boards boards"): since Command Center v7.6.77 every
+client box forwarded every `notifySystem()` board alert ([BOARD-HYGIENE], [stopped], persona-grounding,
+QC starvation, dispatch holds) to the fleet-standing-operator-alert n8n webhook — one DM to Trevor per
+box per minute. Fixed at Command Center source (v7.6.96, its 0c66db809): gate-configured client boxes
+end at the durable record + their own board; the n8n relay carries only the fleet-roll stream. Rescue
+Rangers agent escalation untouched.
+
+#### What changed
+- `cc-compat.json` pinnedTag v7.6.95 → **v7.6.96**; `release-cohort.json` cc_version paired.
+- `tests/unit/cc-runtime-preflight.test.py` CC_PIN → v7.6.96; README paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pair line, docs/interview-launch-recovery.md paired-releases line rolled.
+- `scripts/bump-version.sh v25.3.7`: all 10 version markers agree.
+
+## [v25.3.6]  -  2026-10-02  -  chore(cc-compat): repin Command Center v7.6.95 (intake ACC-001-09: a change request is never dropped, whatever verdict the classifier chain returns) — version bump in the SAME pull request so the release is actually cut
+
+#### Why
+The v7.6.94 repin (#1433) merged through batch automation WITHOUT a version bump of its own, so no v25.3.5 release was cut from it: boxes received nothing from that repin until a separate release-cut PR (#1435) corrected it. This repin carries its own version bump in the same pull request, so the merge cuts the release in one step — the shape required after today's missing-release incident.
+
+#### What changed
+- Command Center v7.6.95 carries the ACC-001-09 never-drop intake fix: a change request is never dropped, whatever verdict the classifier chain returns.
+- `cc-compat.json` `commandCenter.pinnedTag` v7.6.94 → v7.6.95, and `release-cohort.json` `cc_version` in lockstep (rolled by `scripts/pin-cc-tag.py`; `minVersion` v7.4.0 untouched).
+- Version bump v25.3.5 → v25.3.6 via `scripts/bump-version.sh` (all 10 markers in lockstep), in the same pull request.
+- `README.md` paired Command Center token rolled to v7.6.95; `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` pairs line and `docs/interview-launch-recovery.md` "Paired releases" line rolled to v25.3.6 / v7.6.95.
+- `tests/unit/cc-runtime-preflight.test.py` `CC_PIN` v7.6.95.
+
+## [v25.3.5]  -  2026-10-02  -  Merge train: #1431 fix(59-anthology-engine): ordered JUDGE fallback chain (one-main-model boxes install); #1433 chore(cc-compat): repin Command Center v7.6.94 (ACC-001-09 question-phrased change updates its card; ACC-001-11 two jobs make two cards)
+
+## [v25.3.4]  -  2026-10-01  -  Merge train: #1427 chore(cc-compat): repin Command Center v7.6.93 (cc-health-check no…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1427 — chore(cc-compat): repin Command Center v7.6.93 (cc-health-check no false RED on transient deep-probe miss)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.3.3]  -  2026-10-02  -  Skill 71 methodology fixes: authority-map delegation seams + SOP v1 Stage 8 image-routing line (both owner-authorized, 2026-10-01)
+
+## [v25.3.2]  -  2026-10-01  -  Merge train: #1424 Release v25.3.1: fix Fix-55 content gate wrong-pair comparison, sync…; #1425 Skill 71 QC fixes: routing resolution path + signature-landing-page…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1424 — [v25.3.1]  -  2026-10-01  -  Fix-55: content-completeness gate compared the wrong pair (unblocked v25.2.26 version stamp) + sync _skill48_ghl_media.py copies
+
+##### Why
+The v25.2.26 release update was withheld on the operator box: the post-materialization content-completeness gate (`verify_scripts_materialization`) compared the department copy of `_skill48_ghl_media.py` against the LIBRARY's copy, instead of the sibling source the two department copiers actually mirror from (`48-facebook-ad-generator/tools/ghl_media.py`). The library copy still held pre-Fix-32 bytes, so every roll failed closed with `hash-mismatch: _skill48_ghl_media.py`, the refresh step exited 3, the updater exited 1, and the version stamp never landed.
+
+##### What changed
+- `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`: `verify_scripts_materialization` now verifies `_skill48_ghl_media.py` against the pair that is genuinely supposed to match — the sibling `48-facebook-ad-generator/tools/ghl_media.py` source both copiers (`scaffold_department` and `refresh-dept-scripts._mirror_skill48_ghl_media`) use. When that source is not resolvable the strict library comparison above stands (fail-closed). All other library paths keep the original strict comparison.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/_skill48_ghl_media.py`: library copy rolled to be byte-identical with the skill-48 source (`sha256 1bcf435f4439fdbfc43fbb59f73f01230b1e1c4c3879bc77f03417b55c974483`), carrying the Fix-32 retry-safety changes (non-retryable OS errors and transport timeouts during upload are re-raised immediately instead of retried).
+- `scripts/bump-version.sh` v25.3.1 (all markers in lockstep).
+
+##### Risk
+The carve-out is scoped to the single `_skill48_ghl_media.py` basename and only relaxes the comparison when the sibling source file exists; the failure direction stays closed. No other gate behavior changes.
+
+### #1425 — [v25.3.2]  -  2026-10-01  -  Skill 71 QC fixes: page-family resolution path, signature-landing-page ownership sweep, docs alignment
+
+##### Why
+QC of the Skill 71 batch found routing and text defects that let a single BlackCEO page request fall through the STEP-0 funnel-engine selector (NO_ENGINE_MATCH) into a template-first hand-author path that SOP-07 forbids, and left the phrase "signature landing page" claiming Skill 49 ownership in several role and doc files, contradicting the merged Skill 71 wiring.
+
+##### What changed
+- SOP-07 P4 STEP-0 amended: single focused BlackCEO page families resolve via the native skill catalog (skill-department-map.json skill 71) and the Landing Page Specialist SOP 9.0 Page-Family Routing Gate; the funnel-engine selector + registry stays the STEP-0 instrument for multi-step families only (49 / 56 / 62); a NO_ENGINE_MATCH on a single-page request confirms Skill 71 ownership, never a hand-author path.
+- universal-sops/sales-page-craft/README.md routing disambiguation narrowed: the 12-section multi-step chain is Skill 49; a standalone BlackCEO landing page (Standard or Long-Form) is Skill 71. Intent-triggers block region unchanged.
+- funnel-strategist.md Skill 49 tools-table row narrowed to "signature funnel" + multi-step 3/5/7 wording, with the single-page Skill 71 carve-out (mirrors SOP 9.5 step 1.6).
+- signature-funnel-specialist.md (marketing) role-identity prose reworded to "signature funnel" + multi-step qualifier, agreeing with step 1a and the web-development sibling.
+- sales-page-assets-specialist.md signal list drops the bare "signature landing page" trigger and qualifies the 12-section multi-step case.
+- web-development-suggested-roles.md Signature Funnel Specialist entry reworded with the multi-step qualifier and the Skill 71 carve-out.
+- Start Here.md Skill 49 engine bullet reworded: multi-step chain routes via the STEP-0 selector; a standalone BlackCEO landing page routes to Skill 71.
+- 71-blackceo-signature-page/repo-integration/skill-department-map-entry.json snapshot refreshed to equal the live skill-department-map.json skill 71 entry (departments web-development + marketing + funnels, all 10 roles, 13 intent_triggers, execution_sops signature-page-craft); verified equal by JSON comparison.
+
+## [v25.3.0]  -  2026-10-01  -  Skill 71 BlackCEO Signature Page: single-page landing engine + repo registration
+
+#### Why
+BlackCEO production needed one governed owner for focused-conversion pages (landing, opt-in, squeeze, webinar registration, 5-day challenge, and booking). Those page types were split across skills 49, 56, and 62, with no single owner for the full chain: copy, font and action planning, wireframes, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GoHighLevel installation and testing, and authorized publishing.
+
+#### What changed
+- New standalone skill `71-blackceo-signature-page` (v1.0.0): BlackCEO single-page production end to end, covering Standard and Long-Form copy, font and action planning, desktop and mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation and testing, and authorized publishing.
+- Departments wired to skill 71: web-development (landing-page-specialist), marketing, funnels, and graphics.
+- Page-type routing moved: landing, opt-in, squeeze, webinar registration, 5-day challenge, and booking pages now route to skill 71; the skill 49, 56, and 62 boundary rules are retained alongside it.
+- New `signature-page-craft` SOP cluster added.
+- Command Center verified at pinned release v7.6.92; no Command Center change required for this release.
+- `scripts/bump-version.sh` v25.3.0 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, and docs/interview-launch-recovery.md "Paired releases" line rolled to v25.3.0 / v7.6.92.
+
+## [v25.2.26]  -  2026-10-01  -  Remove non-English intake acceptance message (ACC-001-16); add English-only reply rule for every test (PR #1420)
+
+#### Why
+The operator-box intake acceptance set had one Spanish message (ACC-001-16, brochure cancel). It is dropped, so every count of the set now says 15. In its place the set gains one rule that applies to EVERY test: the agent's reply must always be in English; any reply that is not in English is a FAIL for that test. There are no non-English input messages.
+
+#### What changed
+- Removed item ACC-001-16 (`non_english_message`) from `tests/acceptance/intake/messages.json` (15 items; every count updated).
+- `tests/acceptance/intake/messages.json`: added top-level `reply_language` metadata field — every test requires the agent's reply to always be in English; any non-English reply is a FAIL for that test; no non-English input messages.
+- `tests/acceptance/intake/README.md`: added the English-only reply rule for every test; counts rolled 16 to 15 (heading, prose, and the two run-sizing lines).
+- `scripts/bump-version.sh` v25.2.26 (all markers in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.26.
+
+## [v25.2.25]  -  2026-10-01  -  Merge train: #1414 AGN-201: Agnes 3.0 step report-only mode (would-change per box); #1415 MCR-202: mc-route.sh cancel/update honest replies (matches CANC-101…; #1416 Release v25.2.25: Command Center pin v7.6.92 (cancel/update reach…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1414 — AGN-201: Agnes 3.0 step report-only mode (would-change per box)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1415 — MCR-202: mc-route.sh cancel/update honest replies (matches CANC-101 CC contract)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1416 — [v25.2.25]  -  2026-10-01  -  Command Center pin v7.6.92 (cancel/update reach in-flight runs)
+
+##### Why
+Command Center v7.6.92 shipped cancel/update reaching in-flight runs plus a security dependency bump, so the onboarding pin moves one step to stay paired with the tested cohort.
+
+##### What changed
+- CC pin v7.6.91 to v7.6.92 via scripts/pin-cc-tag.py (cc-compat.json + release-cohort.json in lockstep).
+- Reason: PR 475 merge (cancel archives + kills in-flight run through real route; owner notes delivered live with honest fallbacks) plus dependencies next 16.3.8 (GHSA-vcvr-r3jv-pc5j remote code execution in next/og ImageResponse).
+- `scripts/bump-version.sh` v25.2.25 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.25 / v7.6.92.
+
+## [v25.2.24]  -  2026-10-01  -  Command Center pin v7.6.91 (intake chain + Agnes 3.0 + next 16.3.6 security)
+
+#### Why
+Command Center v7.6.91 shipped the merged intake chain and Agnes catalog connector plus a security dependency bump, so the onboarding pin moves one step to stay paired with the tested cohort.
+
+#### What changed
+- CC pin v7.6.90 to v7.6.91 via scripts/pin-cc-tag.py (cc-compat.json + release-cohort.json in lockstep).
+- Reason: PR 473 merge (intake classifier chain + Agnes catalog connector) plus dependencies next 16.3.6 (GHSA-vcvr-r3jv-pc5j remote code execution in next/og ImageResponse) and brace-expansion audit fix.
+- `scripts/bump-version.sh` v25.2.24 (all markers in lockstep). README.md paired line, DIRECT-TO-AGENT-UPDATE-MESSAGE.md pairs line, docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.24 / v7.6.91.
+
+## [v25.2.23]  -  2026-10-01  -  Intake classifier chain, Agnes 3.0 Flash upgrade, decision-engine kill switch, Command Center pin helper, intake acceptance set
+
+#### Why
+Owner intake needed a deterministic classifier chain in front of the decision engine, the fleet's Agnes text model needed to move 2.x to 3.0 Flash, the decision engine needed a supported off switch that stops engine calls without stopping cards, and the Command Center pin plus intake acceptance coverage needed to stay in lockstep. This release ships all four as one batch train with one version bump.
+
+#### What changed
+- Intake classifier chain (CLS-001, v25.2.23-intake-chain): `scripts/intake-classifier-chain.sh`, `shared-utils/intake_classifier_policy.txt`. Tests: `tests/unit/test_intake_classifier_chain.sh`.
+- Agnes 3.0 Flash upgrade (AGN-001, v25.2.23-agnes-3-0): `63-agnes-image/` (CORE_UPDATES.md, INSTALL.md, PREREQS.json, QC.md, SKILL.md, agnes-image-full.md, wire.sh), `64-agnes-video/` (INSTALL.md, PREREQS.json), `install.sh`, `shared-utils/fleet_refresh_runner.py` (new agnes-30-upgrade step). Tests: `tests/unit/test_agnes_30_upgrade.py`.
+- Command Center pin helper and intake acceptance set (ACC-001, v25.2.23-cc-pin-and-intake-tests): `scripts/pin-cc-tag.py`, `tests/acceptance/intake/messages.json`, `tests/acceptance/intake/README.md`. Tests: `tests/unit/pin-cc-tag.test.py`.
+- Decision-engine kill switch (KIL-001, v25.2.23-kill-switch): `shared-utils/ceo_execution_policy.py`, `shared-utils/fleet_refresh_runner.py` (kill-mode resolution and loaded-verifier kill-on branch), `extensions/ceo-routing-doctrine/dist/index.js`, `scripts/apply-fleet-standards.sh`, `scripts/apply-routing-fix.sh`, `scripts/verify-routing.sh`. Tests: `tests/unit/test_kill_switch_preamble.py`. `echo off > ~/.openclaw/decision-engine-mode.conf` stops engine calls, not cards; corrupt store fails loud.
+- `scripts/bump-version.sh` v25.2.23 (all markers in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.23; Command Center pin unchanged at v7.6.90.
+
+## [v25.2.22]  -  2026-09-30  -  JEV intake routing fixes 1-11: one-door intake via mc-route.sh task; exact-match update/cancel; NO_LOOPHOLES V4_3; fail-closed verbs; status honesty; harness aligned real script; housekeeping
+
+#### Why
+Review of the v25.2.21 intake routing stack surfaced eleven faults across doctrine, the router, and the harness: department-first intake paths still existed beside the task door, existing-mode matched on raw substrings with a partial score, the NO_LOOPHOLES block lagged across carriers, a failed task call re-routed into duplicate cards, unreadable Command Center replies reported NOT_FOUND, archived cards read as missing, three helpers depended on a department slug, the acceptance harness did not mirror the real script, and release housekeeping lagged. This release fixes all eleven. The Command Center pin is unchanged, so no Command Center change ships with it.
+
+#### What changed
+- Fix 1, one-door intake: new work goes ONLY through `mc-route.sh task`; Command Center creates the card and picks the department (General Task when nothing fits). The older presentation-routing reflex and department-first forms are superseded across AGENTS.md, SOP-00, `shared-utils/ceo_execution_policy.py`, the plugin dist build, and both stampers.
+- Fix 2, exact-match existing-mode: `existing status|update|cancel` matches by exact id, exact title, or whole-word only. The raw-substring match and the 0.5 partial score are gone. Several differently-titled matches answer AMBIGUOUS. Same-title cards are one job carded twice: the newest is acted on, and cancel archives every one of them.
+- Fix 3, NO_LOOPHOLES V4_3: the block is carried identically across AGENTS.md, SOP-00, the plugin dist build, and both stamper copies. The runner and `verify-routing.sh` accept exactly V4_3 (new G3b checks the plugin dist heading); a box left on V4 or V3 reports not loaded.
+- Fix 4, escalate never re-route: if the task call fails or prints no ROUTED line, tell the owner an escalation to the operator is underway, then stop. No second route through ingest, through general-task, or by any other path, and no retry in the same turn.
+- Fix 5, fail-closed verbs: an unreadable or empty task or department list exits 1 with FAILED plus ESCALATE_TO_OPERATOR, never NOT_FOUND. NOT_FOUND is said only of a list that loaded successfully and genuinely holds no match.
+- Fix 6, status honesty: existing-mode reads with includeArchived=true, so an archived card is not reported missing. At the page limit the reply says the board page was full instead of implying the whole board was read.
+- Fix 7, off the department slug: `scripts/ghl-mcp-probe.sh`, the avatar SOP, and the brand-positioning role now open cards via `mc-route.sh task` with no department named, so a card opens even where no marketing department exists. The probe's failed-card-route warning keeps a durable probe.log trace, with the count emitted only when greater than zero, so the happy path stays byte-identical.
+- Fix 8, harness mirrors the script: `tests/acceptance/intake/run_intake_acceptance.py` now answers the real per-subcommand NOT_FOUND texts, AMBIGUOUS, and whole-word matching, with the paid sweep still requiring Trevor's go.
+- Fix 9, housekeeping: `release-cohort.json` onb_sha bound to the v25.2.21 tip (275bf5ae); cc_sha unchanged.
+- Fix 10, housekeeping: stale CEO_ROUTING_NO_LOOPHOLES_V2 marker comments removed; `mc-route.sh` command words are case-insensitive (titles and slugs stay exact).
+- Fix 11, housekeeping: both stampers' embedded `mc-route.sh` copies are byte-identical to `scripts/mc-route.sh`.
+- `scripts/bump-version.sh` v25.2.22 (10 markers; Skill 23 skill-version.txt in lockstep). Command Center pin unchanged at v7.6.90.
+
+## [v25.2.21]  -  2026-09-30  -  JEV intake V4.3: mc-route.sh existing status/update/cancel; unknown first words never create cards; per-command NOT_FOUND; CEO intake policy V4.3; intake test kit fixes
+
+#### Why
+Acceptance testing of the v25.2.20 intake policy (V4) found it faulty: unknown first words to `mc-route.sh` created cards instead of being rejected, and a single shared NOT_FOUND message across subcommands made status/update/cancel failures unreadable. This release supersedes that faulty V4 intake policy with V4.3.
+
+#### What changed
+- `scripts/mc-route.sh` existing-mode (jev601/mc-route-existing-mode @ 36212e52): adds `existing status|update|cancel` subcommands. Unknown first words no longer create cards. Each subcommand prints its own NOT_FOUND text instead of one shared message. Both embedded copies in `scripts/apply-fleet-standards.sh` and `scripts/apply-routing-fix.sh` stay byte-identical. Tests: `tests/unit/mc-route-existing-mode.test.sh`.
+- CEO intake policy V4.3 (jev602/ceo-policy-v4-1 @ 7f75f44e): one card per job, the only command allowed is `mc-route.sh`, and the SOP/AGENTS.md/policy worked examples no longer leak the examples they were meant to illustrate. `shared-utils/ceo_execution_policy.py`, `AGENTS.md`, SOP-00, and `fleet_refresh_runner.py` all carry the V4.3 marker.
+- Intake test kit fixes (jev603/intake-harness-realistic @ 45d1985a): `tests/acceptance/intake/run_intake_acceptance.py` and the frozen/train corpora are corrected to exercise the V4.3 rule realistically; `department_labels.json` added.
+- `scripts/bump-version.sh` v25.2.21 (10 markers; Skill 23 is the only skill these branches touched, and its skill-version.txt is in lockstep). docs/interview-launch-recovery.md "Paired releases" line rolled to v25.2.21; Command Center pin is unchanged at v7.6.90.
+
+## [v25.2.20]  -  2026-09-29  -  The CEO decides task or question and runs `mc-route.sh task` once per job; CEO policy V4; measured department picker; intake acceptance harness; CC pin v7.6.90
+
+#### Why
+Review JGT-401 found that word rules cannot reliably tell a task from a question, and that the backup rules dropped about half of real tasks whenever the decision engine was off, slow or missing. The fix is for the CEO AI, which already reads every message and sees the conversation, to decide. When it sees work, or is unsure, it makes exactly one card per job. Command Center only picks the department, and General Task is the fallback. This release integrates the four QC-passed onboarding branches for that change and pairs them with Command Center v7.6.90.
+
+#### What changed
+- `scripts/mc-route.sh` task mode (JEV-503, jev503/mc-route-task-mode @ 19004d21): `mc-route.sh task "<short title>" "<owner's exact words>"` posts one card with no department, so Command Center picks it (its picker, then General Task) and never re-classifies it. It prints the same `ROUTED` line. A repeat of the same call within 60 seconds reuses the same operation key, so it never makes a double card. A failed call prints `mc-route: FAILED` plus ESCALATE_TO_OPERATOR and exits 1. `auto` and department modes are unchanged. Both embedded copies in `scripts/apply-fleet-standards.sh` and `scripts/apply-routing-fix.sh` are byte-identical. Tests: `tests/unit/mc-route-task-mode.test.sh`, `tests/unit/mc-route-heredoc-sync.test.sh`.
+- CEO execution policy V4 (JEV-504, jev504/ceo-policy-v4 @ 71466e94): the new intake rule is identical in all 5 places (`shared-utils/ceo_execution_policy.py`, the Skill 23 loader, `AGENTS.md`, SOP-00 and the ceo-routing-doctrine plugin). Any work, even asked as a question, or any doubt, runs `mc-route.sh task` once per job and then answers the question part. A question, an opinion or small talk gets no call. Work already underway is acted on, not given a new card. The marker is now V4. `apply-fleet-standards.sh` and `apply-routing-fix.sh` re-stamp a V3 box to V4 and keep the owner's own text. `verify-routing.sh` accepts V4 (and V3 during the transition). `fleet_refresh_runner.py` looks for the V4 marker, accepts V3, and no longer counts the stale V2 marker as loaded.
+- Intake acceptance harness (JEV-505, jev505/intake-acceptance-harness @ a4e3cbc3): `tests/acceptance/intake/` holds the 295-message team corpus plus 252 new owner-style messages, split 2/3 train and 1/3 frozen. The frozen third is pinned by `corpus_frozen.sha256`. `run_intake_acceptance.py` scores dropped, double and extra cards over 3 runs against the review pass mark. It calls models and costs money, so the paid sweep was not run and needs Trevor's go. The offline self-test `tests/unit/test_intake_acceptance_harness.py` uses a fake model. With V4 merged, the harness takes the live rule without `--allow-legacy-policy`.
+- Department picker (JEV-506, jev506/department-routing @ 4f0cf640): the decision engine's department choice in `shared-utils/decision-engine.py` now uses one weighted ranker built from department names, a per-department word list, the floor one-liner and role titles. Common words count less, and generic verbs and filler count zero. A tie, a low score, or people or HR work with no HR department goes to General Task. The intent word rules are frozen and are a backup only. `tests/unit/test_jev_department_routing.py` has 183 labeled owner task messages. Acceptable department or General Task went from 63.4% to 96.2% (gate 90%), and landing in an acceptable department (not General Task) went from 56.7% to 84.8% (gate 75%).
+- cc-compat.json pinnedTag v7.6.89 -> v7.6.90, with the README banner, DIRECT-TO-AGENT "pairs with", docs/interview-launch-recovery.md "Paired releases" and cc-runtime-preflight CC_PIN. In Command Center v7.6.90 the raw message door leans to a card. When it is unsure, or when the decision engine is off, shadow, legacy, slow or missing, it still makes one card, so the kill switch stops engine calls, not cards. "Change ... to" and "use ... instead" apply only when a question is actually pending, and a failed engine check is retried instead of sticking until restart. release-cohort.json is bound to onboarding main 3bdf0ce6 and the peeled v7.6.90 commit 0f19b771 (`scripts/roll-release-cohort.py`). The bridge contract stays 1.1.0 on both sides.
+- **Update order: this onboarding release REQUIRES Command Center v7.6.90.** A box on v25.2.20 with an older Command Center would run the new `task` intake against the old message door. The fleet roll deploys both together: `update-skills.sh` refreshes cc-compat.json, and the Command Center refresh checks out its pinnedTag v7.6.90 in the same roll. Do not roll this onboarding release to a box whose Command Center update is held back or failed.
+- `scripts/bump-version.sh` v25.2.20 (10 markers; Skill 23 and Skill 06 skill-version.txt in lockstep). Skill 23 is the only skill these branches touched (SOP-00 and `scripts/build-workforce.py`).
+
+## [v25.2.19]  -  2026-09-29  -  JEV classifier splits comma- and and-joined run-ons, so a task after a question is never dropped and a social closer never makes a card
+
+#### Why
+Final QC of v25.2.17 found three holes in the decision engine (JEV) intent heuristic. It split clauses only on . ! ? ; and "then", so a run-on joined by a comma or "and" was classified whole by its first words. "What time works, reset the client's password." and "Do you know if the deploy finished, and roll back if it broke anything?" came back answer_only, so the task was dropped. "Thanks so much, that's perfect." came back task_request and would have made a card. A fourth hole turned up while testing: the quote stripper paired the apostrophes in "what's ... it's" as a quote and deleted the task between them. v25.2.18 is skipped because that tag already exists on main from another release, and tags are never moved.
+
+#### What changed
+- `shared-utils/decision-engine.py` (JGT-301): each sentence is split into segments on a comma or a bare and/but/also/then, but only when the next words start a clause. That means a question word, an aux lead, a polite request, a conditional lead, a social closer, a listed action verb or a verb followed by its object. A noun list such as "red, blue and green" stays one segment, and so does a shared "how do I X and Y?" question. Each segment is a question, filler/social, neutral or action. A segment after a soft boundary does not take the sentence's trailing "?" as its own, and an unclear segment counts as action. A conditional lead ("if you have time", "when you get a chance") joins its neighbour and is never an action on its own. "when you ..." is no longer read as a question. Social closers ("that's perfect", "no worries", "sounds good", "you're the best") are filler. A single-quote span must open and close at a word edge, so contractions are no longer read as quotes. The intent mapping is unchanged: action plus question gives mixed_answer_and_task, action only gives task_request, question plus filler gives answer_only, and filler only gives social_conversation. Schema stays 1.1.0 and the response shape is unchanged.
+- `tests/unit/test_jev_live_decision.py`: the 3 QC holes run end to end through `--evaluate`, plus 30 new adversarial cases (comma- and and-joined question and task in both orders, social closers, conditional leads, noun lists, polite requests, a quote with an inner apostrophe). All 81 existing tests still pass. With the old engine, 23 of the 33 new tests fail.
+- `scripts/bump-version.sh` v25.2.19 (10 markers; Skill 23 and Skill 06 skill-version.txt in lockstep). release-cohort.json is bound to onboarding main e277a3ba and the peeled Command Center v7.6.89 commit d30574ab. The Command Center pin is unchanged. The "Paired releases" line in docs/interview-launch-recovery.md now reads v25.2.19. A v25.2.18 entry records the tag-only v25.2.18 so the G2/G2-EXT gates can account for it.
+
+## [v25.2.18]  -  2026-09-29  -  Tag only: no release of its own; the annotated tag sits on the v25.2.17 merge commit e277a3ba
+
+The annotated tag v25.2.18 (tagger message: "presentations: Step 11 release ...") peels to e277a3ba, the merge-train commit for #1394 (presentations Step 11) and #1398 (v25.2.17). Nothing changed between v25.2.17 and v25.2.18, and /version was never v25.2.18. The tag stays where it is, because tags are never moved. This entry exists so the G2/G2-EXT tag-to-CHANGELOG gates can account for the tag. For what shipped, see the v25.2.17 entry below. The next release is v25.2.19.
+
+## [v25.2.17]  -  2026-09-29  -  Merge train: #1394 presentations: Step 11 — everything else, by severity (Fix 15-60); #1398 release v25.2.17: JEV never drops a task; A36 race deterministic;…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1394 — presentations: Step 11 — everything else, by severity (Fix 15-60)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1398 — [v25.2.17]  -  2026-09-29  -  JEV classifier never drops a task and routes invoices to billing; A36 race test deterministic; v* tag off main fails loudly; CC pin v7.6.89
+
+#### Why
+The v25.2.16 decision engine (JEV) could answer a message that also asked for work (an unknown verb such as refund or reconcile fell to "question"), let a throwaway lead ("Quick question.") turn a task into a question, and missed billing for "invoice" because the catalog says "Invoices". The A36 real-database race test flaked under load (a test ordering fault, not a lost update). And a v25.2.16 tag was once pushed onto an unmerged commit with nothing to catch it.
+
+#### What changed
+- `shared-utils/decision-engine.py` (JGT-201): the intent heuristic now sorts every clause as question, filler, neutral or action after stripping leading filler; anything not provably a question or filler is action, so a task is never dropped to an answer. "Can/could/would/will you <verb>" is action unless the verb is explain/tell/describe/clarify. Fixtures still win. Light stemming lets "invoice" meet "Invoices", so "Send the invoice to the client" routes to billing-finance. `tests/unit/test_jev_live_decision.py` covers every QC case plus 18 adversarial cases.
+- `tests/unit/test_a36_gate_wiring.py` (JGT-205): the rendezvous moved inside `recompute_fn`, after the head read and before the insert, so both racers always compete from revision 1; it also asserts revision 2 is the winner's write.
+- `scripts/check-tag-on-main.sh <tag>` plus `.github/workflows/tag-on-main-guard.yml` (JGT-203): every pushed v* tag must peel to a commit on origin/main, or the workflow fails. Test: `tests/unit/check-tag-on-main.test.sh`.
+- cc-compat.json pinnedTag v7.6.88 -> v7.6.89 (Command Center migration 167 moves agents mis-filed into General Task back to their live same-company department; the route scorer no longer calls an open but unplaceable fallback "blocked"), with the README banner, DIRECT-TO-AGENT "pairs with", docs/interview-launch-recovery.md "Paired releases" and cc-runtime-preflight CC_PIN. release-cohort.json is bound to onboarding main b1a8836e and the peeled v7.6.89 commit d30574ab.
+- `scripts/bump-version.sh` v25.2.17 (10 markers; Skill 23 and Skill 06 skill-version.txt in lockstep).
+
+## [v25.2.16]  -  2026-09-29  -  Merge train: #1395 release v25.2.16: JEV decides live; pin Command Center v7.6.88…; #1396 fix(fleet-roll): container PATH without a login profile; Hostinger…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1395 — [v25.2.16]  -  2026-09-29  -  JEV decides live (bridge intent + route, general-task fallback); mc-route.sh auto intake; General Task landing no longer escalates; CEO policy V3 NEW INTAKE uses JEV; p209 probe; release-cohort rolled by bump-version.sh; CC pin v7.6.88
+
+#### Why
+The decision engine (JEV) only recommended a role and never decided anything live: every owner message was sorted by prose in the CEO policy, so questions became cards and work landed in whatever department the agent guessed. A card that correctly fell to the General Task catch-all printed ESCALATE_TO_OPERATOR. release-cohort.json had been stuck at v25.1.94 / v7.6.68 since nothing rolled it on a bump, which failed test_release_cohort_manifest.py and blocked JEV promotion.
+
+#### What changed
+- `shared-utils/decision-engine.py` (JGT101): `--evaluate` adds `intent` (the 7 Command Center intents; exact fixture, normalized fixture, then a stdlib heuristic that returns task_request for anything it cannot place, so work is never dropped), `intentSource` and `route` {action answer/route/none, department, confidence, fallback, catalog}. Departments rank against the caller's catalog or the standard floor; nothing fits -> `general-task` with fallback=true. Schema stays 1.1.0, additive only; roleId stays none_suitable and no forbidden assignment key is emitted. A task clause followed by a question stays task_request.
+- `scripts/mc-route.sh auto "<owner message verbatim>"` (JGT103, see docs/MC-ROUTE.md): posts {message} to the signed ingest door and prints `JEV_ANSWER_DIRECTLY intent=<x>` (answer, no card) or `ROUTED workspace=.. department=..` (one card). A card landing on General Task prints INFO, not ESCALATE_TO_OPERATOR; ->ceo, ->unrouted and no-workspace outcomes still escalate. The MC_ROUTE_SH heredocs in apply-fleet-standards.sh and apply-routing-fix.sh are re-stamped so a roll ships the same helper (byte-identity guard: tests/unit/mc-route-heredoc-sync.test.sh).
+- CEO_EXECUTION_POLICY_V3 NEW INTAKE bullet hands each new owner message to `mc-route.sh auto`, with the old fallback when the helper fails or JEV is off; identical in shared-utils/ceo_execution_policy.py, AGENTS.md, SOP-00-Owner-Task-Routing.md and the ceo-routing-doctrine plugin. The NO UNIVERSAL DECISION-CALL clause is byte-for-byte unchanged.
+- `scripts/probe/p209-jev-live-decision-probe.py` (JGT104): read-only per-box proof that the installed bridge is the live-routing build, plus the kill-switch mode.
+- `scripts/roll-release-cohort.py` (JGT102): rolls release-cohort.json onb_version/cc_version (and the SHAs when given); `bump-version.sh` calls it on every bump and in `--check`.
+- cc-compat.json pinnedTag v7.6.87 -> v7.6.88 (the Command Center side: routeTaskDecision takes JEV's department, the ingest raw door takes JEV's intent, migration 166 adds the general-task workspace). release-cohort.json is bound to onboarding main 209208696 and the peeled v7.6.88 commit.
+- Kill switch (default on): `echo off > ~/.openclaw/decision-engine-mode.conf` turns JEV off with no restart; delete the file or write `auto` to turn it back on. Nothing writes this file and updates keep it.
+
+### #1396 — fix(fleet-roll): container PATH without a login profile; Hostinger pm2 as node; bytecode caches self-heal
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.2.15]  -  2026-09-29  -  Merge train: #1368 fix(prove-zhe, prove-board-join): stray role-library template dept…; #1373 fix(wiring-gate): presentations intake/ runs/ fish-audio/ are runtime…; #1374 fix(cc-seed): explicit COMPANY_SLUG wins; repair-board-company…; #1376 fix(cc-seed): no head agent or departments/ folder for the structural…; #1378 fix(workforce-completion): artifact digest skips department runtime…; #1384 feat(embeddings): free local Ollama persona index +…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1368 — [v25.2.15]  -  2026-09-29  -  Stray role-library template department folders WARN, never block (prove-zhe, prove-board-join)
+
+#### Why
+Role-library template copies nobody chose (client-experience-booking, founding-member-concierge, launch-operations, product-production, rescue-rangers) sit under departments/ on most client boxes. prove-zhe (phase 7z) required a dept agent and a board lane for every folder, and prove-board-join scored their trees as drift, so prebuild exited 7 and update-skills exited 8. No supported path seeds a lane or an agent for a folder the client never chose.
+
+#### What changed
+- `prove-zhe.py`: the required departments are the client's departments.json plus the standard floor (minus provenanced declines), not a folder scan. Other folders are reported as `stray_template_folders` / receipt warnings, never failed, never deleted. An alias folder (legal-compliance) is checked against its canonical agent and lane. rescue-rangers (operator-only) is exempt from the client agent requirement as well as the lane.
+- `prove-board-join.py`: a role-library template tree that is not a floor department and is neither chosen nor on the board is a WARN (`stray_template_departments`), not AF-BOARD-JOIN-DRIFT. A chosen department with no column, an un-chosen floor tree, and a stray with a board column still drift.
+
+### #1373 — [v25.2.15]  -  2026-09-29  -  Wiring gate: presentations intake/ runs/ fish-audio/ are runtime dirs, not roles
+
+#### Why
+verify-wiring.sh walked every department subdirectory not named in NON_ROLE_DIR_NAMES as a role. presentations/intake (created by refresh-dept-intake.py), runs (the deck launcher's run dirs) and fish-audio (the Fish Audio tag library) have no how-to.md, so the department failed materialization on client boxes.
+
+#### What changed
+- `verify-wiring.sh` NON_ROLE_DIR_NAMES adds intake, runs, fish-audio, intake-miniapp, release-matrix and contract (exact names; a real role folder is still checked, and a real role missing its how-to.md still fails).
+- `create_role_workspaces.py` SKIP_NAMES carries the same names, so no stub how-to.md is written into them.
+- `test-wiring-gate-role-dir-walk.sh` gains the case and now runs in CI.
+
+### #1374 — [v25.2.15]  -  2026-09-29  -  Command Center seed keeps the build's company slug; board repair can move only the chosen lanes
+
+#### Why
+seed-workspaces.py derived the company slug from COMPANY_NAME whenever it was set, so a build with companySlug "temple-mother-earth" seeded a second company "temple-mother-earth-ecosystem" and refused on master-orchestrator every roll. repair-board-company.py moved every 'default' lane as one set (engine queues with the client's podcast), refused whenever another company row existed, and copied the whole database (864 MB on one box) before every apply.
+
+#### What changed
+- `seed-workspaces.py` (Skill 32 v13.1.39): an explicit COMPANY_SLUG wins; the name only fills the display name.
+- `repair-board-company.py`: new `--chosen-only` moves and seeds only the departments in departments.json, never an unchosen engine/system queue and never a lane another company has rows in, so it runs with other company rows present. `--apply` writes a row-level backup (`<db>.repair-board-company-<ts>.rows.json`); `--restore` undoes it.
+
+### #1376 — [v25.2.15]  -  2026-09-29  -  No head agent or departments/ folder for the Command Center's 'default' lane
+
+#### Why
+seed-dashboard-content.py seeded a head agent ("General Lead") for the Command Center's own placeholder 'default' workspace, and scaffold-agent-files.sh then created ~/.openclaw/workspace/departments/default, a department folder no client chose, which fails the ZERO HUMAN EXPERIENCE gate.
+
+#### What changed
+- `seed-dashboard-content.py` (Skill 32 v13.1.39): a structural workspace (`default`) gets no head agent, no starter task and no scaffold call.
+- `scaffold-agent-files.sh`: never scaffolds a structural workspace as a department (prints SKIP, exits 0). An existing departments/default is not removed.
+
+### #1378 — [v25.2.15]  -  2026-09-29  -  Workforce completion digest ignores department runtime dirs
+
+#### Why
+The artifact digest hashed every .md/.json under the departments tree, including presentations/runs/*.json, which the presentations scheduler rewrites every few minutes. Minutes after finalize, evaluate() reported changed-or-missing-artifacts and finalize_closeout failed.
+
+#### What changed
+- `workforce_completion.py`: files under `<dept>/{memory,conversational-logs,logs,artifacts,runs,scripts,intake,intake-miniapp,fish-audio,release-matrix,contract}/` are not hashed; content folders (sops, roles, devils-advocate, templates, assets) still are.
+- The digest is versioned (`digestVersion: 2`). Evidence recorded earlier is re-checked with the old algorithm, so no verified build flips on update; a build picks up v2 at its next `workforce_completion.py <state> --refresh`.
+
+### #1384 — feat(embeddings): free local Ollama persona index + provisioning/health support (explicit per-box opt-in)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.2.14]  -  2026-09-29  -  Merge train: #1367 release v25.2.14: Contabo master files (company folders) live on the…; #1375 feat(burn-guard): keep OpenClaw's weekly skill-collection-review…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1367 — [v25.2.14]  -  2026-09-29  -  Contabo: master files (company folders) live on the container volume
+
+#### Why
+On Contabo, HOME (`/home/node`) is the container's temporary layer; only `~/.openclaw` is a volume. With no `/data/.openclaw`, `detect_platform` took the Mac branch and put master files in `~/Downloads/openclaw-master-files`, where the workforce build writes the company folder. A container recreate deleted one client's whole company folder (`departments.json`, the org-design research manifest).
+
+#### What changed
+- `shared-utils/detect_platform.py` (and the Skill 23 copy, verbatim): when `~/.openclaw` is a mount point and `~/Downloads` is not, master files are `~/.openclaw/openclaw-master-files`; `known_company_roots` follows. A Mac (nothing mounted) is unchanged; `MASTER_FILES_DIR` still overrides.
+- `platform/vps/contabo/container-startup.sh` exports `MASTER_FILES_DIR` onto the volume; the Contabo README's compose `environment:` carries it.
+- No existing folder is moved.
+
+### #1375 — feat(burn-guard): keep OpenClaw's weekly skill-collection-review crons off on every install and roll
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.2.13]  -  2026-09-29  -  Merge train: #1360 release v25.2.13: a roll deploys the pinned Command Center release…; #1361 fix(skill39): real master-files path in RE cron messages; retire RE…; #1363 fix(fleet-refresh): update-skills exit 8 is launch-pending, not a…; #1364 fix(hostinger): a recreated container resurrects pm2 and starts a…; #1366 fix(fleet-refresh): provisioning DEPARTMENTS is n/a while the client…; #1369 fix(fleet-refresh): each roll reads its own summary (parallel rolls…; #1371 fix(fleet-refresh): a dropped SSH session still brings the box's…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1360 — [v25.2.13]  -  2026-09-29  -  A roll deploys the pinned Command Center release, never main; pin Command Center v7.6.85
+
+#### Why
+The wrapper exported Command Center main at roll start as the deploy target, so cc-compat.json's pinnedTag was only a label: a roll on 2026-09-29 deployed v7.6.78 to a client box minutes after it merged, while the pin said v7.6.77.
+
+#### What changed
+- `scripts/fleet-refresh.sh` no longer pins Command Center main (and clears an inherited `CC_UPDATE_TARGET`).
+- `shared-utils/fleet_refresh_runner.py`: before anything changes on a box, the runner reads pinnedTag from cc-compat.json at the roll's commit (`git show FLEET_ROLL_SHA:cc-compat.json` in the roll copy), resolves that tag's commit in the box's Command Center checkout and exports it as `CC_UPDATE_TARGET` (read by update-skills' Command Center refresh and by pull-cc). Unresolvable = the box is SKIPPED with nothing changed. pull-cc never falls back to origin/main.
+- Skill 32 (v13.1.38) `--update-only`: resolves the same pin from `<skills>/cc-compat.json` when run outside a roll (fails the refresh, deploying nothing, when it cannot); both its zero-downtime and merge paths deploy the pin; a checkout already at or past the pin is left as it is.
+- `update-skills.sh` refreshes `<skills>/cc-compat.json` from the release it installs (it was never refreshed: one box still carried July's).
+- Pins Command Center v7.6.85 (tenant-wall health probe fix v7.6.81, rollback receipt before the restored release starts v7.6.82, Command Center missing from pm2 is RED and started by the watchdog v7.6.83, operator alerts from an operator-owned box through the operator webhook v7.6.84, atomic-deploy always passes --canonical-dir to the health check v7.6.85).
+
+### #1361 — fix(skill39): real master-files path in RE cron messages; retire RE crons on non-RE boxes (v2.1.0)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1363 — fix(fleet-refresh): update-skills exit 8 is launch-pending, not a rollback; post-rollback checks run the roll's code; CC version re-read
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1364 — fix(hostinger): a recreated container resurrects pm2 and starts a missing Command Center
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1366 — fix(fleet-refresh): provisioning DEPARTMENTS is n/a while the client is still in the interview
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1369 — fix(fleet-refresh): each roll reads its own summary (parallel rolls clobbered the table and the alert)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1371 — fix(fleet-refresh): a dropped SSH session still brings the box's runner log back (no more 0-byte box logs)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v25.2.12]  -  2026-09-29  -  Merge train: #1357 fix(verify-routing): G1 counts the ROLE_DISCIPLINE_V1 marker, not…; #1358 fix(skill23): record-vertical-pack.py operator declaration + pack…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1357 — fix(verify-routing): G1 counts the ROLE_DISCIPLINE_V1 marker, not pointer mentions
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1358 — [v25.2.12]  -  2026-09-29  -  Skill 23: record-vertical-pack.py, an operator-directed vertical declaration the phase 3b guard accepts and prints
+
+#### Why
+A box built before build-state carried a `verticalPacks` record fails the phase 3b vertical-derivation guard
+closed on departments its owner wants, blocking every Command Center refresh. The only writer of that record
+ran inside a build, so there was no supported way to record the owner's decision.
+
+#### What changed
+- `23-ai-workforce-blueprint/scripts/record-vertical-pack.py` (new): merges one `verticalPacks.detectedPacks`
+  entry with `source: "operator-directive"`, `by`, `at`, `reason`; the pack must exist in the naming map; every
+  other key is kept; the state is backed up beside itself and written atomically; re-recording is a no-op.
+- `vertical-derivation-guard.py`: an operator-directive entry counts only with `by`, `at` and `reason`, and each
+  is printed on every run (warning + receipt `operatorDeclarations`). There is still no flag that disables it.
+- Pack keywords match their listed inflected forms: `department-naming-map.json` personal-pro-dev carries
+  `auto_add_keyword_variants` (coach: coaches/coaching/coached; consultant: consult/consults/consulted/
+  consultants/consulting), read by all three keyword matchers (build-workforce `_detect_vertical_packs`,
+  department-floor `matched_vertical_pack_departments`, the guard's `declared_packs_from_core_answers`).
+  Explicit forms, never a stem: "stagecoach", "coachella", "consultative" still match nothing. A coaching
+  business described as "financial coaching and consulting" was declared no pack at all.
+- `record-vertical-pack.py` run from outside the skills tree validates against the box's installed guard.
+- `test-record-vertical-pack.sh`, `test-pack-keyword-variants.sh` (new, in skill23-provisioning-tests).
+
+## [v25.2.11]  -  2026-09-29  -  Roll follow-ups: one CEO session reset per roll, bounded fix attempts, prove-zhe receipts out of the skill tree, config applied; pin Command Center v7.6.77
+
+### Why
+From the 2026-09-28 re-rolls:
+- One owner's live Telegram chat was reset 10 times in 3.5 hours: the CEO session reset ran before the gate,
+  again in every fix attempt and again on rollback.
+- Each fix attempt reran a whole update-skills.sh pass (20-55 min) even when the last one had changed nothing.
+- prove-zhe.py (run by the Command Center refresh's zhe-gate AFTER update-skills recorded the release digest)
+  wrote its receipts inside skills/23-ai-workforce-blueprint: every box that had no older receipt failed the
+  role-library check and was rolled back (6 of 6 re-rolled boxes).
+- Three openclaw.json writes in 32 s superseded a gateway reload: the file held config the live gateway never ran.
+- A client's Command Center sent stop-cards to the first id in allowFrom (the owner's spouse), for installer-seeded
+  "Welcome to <Dept>" cards the intake sweep dispatched right after install.
+
+### What changed
+- `shared-utils/fleet_refresh_runner.py`: `reset_ceo_once` resets the CEO session once per roll, after the gate
+  settles, never within 30 minutes of the last reset of that session; no fix attempt and no rollback resets it; a
+  box with no owner session yet is ok. A fix attempt that changed nothing does not repeat a finished
+  update-skills pass. The gate checks the running gateway applied the config on disk (`config.get`
+  configRevisionHash == appliedConfigHash, 60 s for a reload in flight); a mismatch is healed with the platform's
+  supported gateway restart.
+- `scripts/fleet-config-applied.py`: read-only fleet check of the same (prints APPLIED / PENDING / UNDETERMINED).
+- `23-ai-workforce-blueprint/scripts/prove-zhe.py`: receipts go to `<openclaw root>/state/zhe-receipts`; old ones
+  move out of the skill tree on the next write.
+- Skill 32: `.env.local` carries `OPENCLAW_OWNER_CHAT_ID` from the box's own owner record; seeded starter cards
+  (seed-dashboard-content.py, add-department.sh) are inserted with `dispatch_hold = 1`.
+- Pins Command Center v7.6.77 (explicit owner record, owner-sends hold, silent seeded starters, operator webhook).
+
+## [v25.2.10]  -  2026-09-28  -  Fleet roll: one commit per roll, true check results, clear preflights
+
+### Why
+The 2026-09-28 30-box roll reported false failures on most boxes and rolled back boxes that were fine:
+- embedding-health read `agents.defaults.memorySearch`; current OpenClaw keeps it at `memory.search`.
+- sessions-reset-CEO looked only for an agent named `main`; many boxes' owner agent has another id.
+- advisories (update-skills.sh exit 2) were listed under "checks failing"; a billing-held update was a failure.
+- a PR merged mid-roll reached every box that cloned or self-synced after it: boxes pulled v25.2.5 on a
+  v25.2.3 roll, failed the role-library gate and were rolled back.
+- a Command Center clone whose refspec names one tag never moved `origin/main`, so pull-cc refused it.
+- a Mac refusing ~/Downloads to SSH crashed the runner with a traceback; detect failed on boxes with no
+  Command Center.
+
+### What changed
+- `shared-utils/embedding_health.py`: reads `memory.search`, falls back to the old key.
+- `shared-utils/fleet_refresh_runner.py`: owner session resolved from the Telegram-bound agent; advisories
+  reported separately; billing hold is SKIPPED; the updater's own output kept on failure; explicit fetch
+  refspec in pull-cc; Command Center pm2 preflight; no spare rebuild when the served build is already
+  current; unreadable folders named with the Full Disk Access fix; detect tolerates no Command Center;
+  update-skills.sh never self-syncs the roll's copy to main.
+- `scripts/fleet-refresh.sh` + `scripts/fleet-roll-copy.sh`: main resolved once per roll; every box's roll
+  copy is held at that commit.
+- `32-command-center-setup/scripts/run-full-install.sh`, `update-skills.sh`: explicit fetch refspecs.
+- The roll's Command Center commit is also resolved once per roll and exported as `CC_UPDATE_TARGET`:
+  pull-cc and the Command Center's update.sh (v7.6.76+) deploy it, not a main that moved mid-roll.
+- update-skills.sh never self-syncs the runner's clone, including the operator's own clone on a `--local`
+  run (a reset to origin/main there moved the clone the roll itself ran from).
+- A dropped SSH session (exit 255) waits for the runner on the box and reads its own result, instead of
+  reporting a box that updated fine as FAILED.
+- A warning before a Command Center deploy when the load is over twice the cores.
+- Provisioning checks read the workforce from `workspace/zero-human-company/<slug>/` when the flat paths do
+  not exist, and the build state from the owner agent's own workspace when only that one has it.
+- `refresh-stale-roles.py` never creates a roles-only `.workforce-build-state.json` on a box with no build.
+- `scripts/skill-content-hash.sh` excludes `23-ai-workforce-blueprint/scripts/receipts/` (prove-zhe.py's run
+  receipts, written inside the skill dir after an update). They failed the roll's role-library digest and
+  rolled back boxes that had updated fine; with the exclusion a live box's installed digest equals the release's.
+- The Drive box-list backup always publishes the whole fleet (`~/.openclaw/fleet/boxes.json`), never the
+  subset a roll ran on.
+- Contabo: `platform/vps/contabo/` ships the container startup script and compose settings that make pm2 work
+  the Hostinger way; the pm2 preflight also catches a split PM2_HOME without spawning a daemon.
+- Pins Command Center v7.6.76 (deploy gate on build/serve rows only, rollback verify through the startup
+  grace, non-blocking deep health, `CC_UPDATE_TARGET`).
+
+## [v25.2.9]  -  2026-09-28  -  Merge train: #1328 presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE…; #1343 fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD;…; #1344 fix(skill23): build is non-destructive on a box with existing…; #1347 fix(skill23): one company-root resolution order + durable owner-sends…; #1348 fix(skill23): PENDING role how-tos are queued for SOP authoring +…; #1349 fix(skill23): role folders use canonical library slugs and meet the…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1328 — presentations: Step 6 — Fix 8 (chat path exports PRESENTATION_MODE from intake ledger RUN_MODE)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1343 — fix(update-skills): two silent exit-1 aborts (missing CC origin/HEAD; foreign-owned file in scripts/)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1344 — [v25.2.6]  -  2026-09-28  -  Skill 23: the build no longer breaks a box that already has departments and agents
+
+#### Why
+Running the Skill 23 build on a client box that already had departments and agents broke it:
+- `build-workforce.py` `create_department_workspace()` deleted each department's real `AGENTS.md`,
+  `TOOLS.md` and `USER.md` and replaced them with symlinks to the workspace root. The runtime's
+  workspace-root boundary guard rejects those symlinks and injects a ~107-char stub, so every
+  department agent silently ran with no instructions (N29, amended 2026-07-31).
+- The role-folder writers (`create_role_workspaces.py`, `add-role.sh`,
+  `shared-utils/create-role-workspaces.py`) and Skill 32's `scaffold-agent-files.sh` (run by
+  `materialize-dept-agents.sh`) created the same symlinks, and the role-folder augment pass turned
+  real `TOOLS.md` / `USER.md` files back into symlinks.
+- A department already registered under a key other than `dept-<slug>` got a second registration
+  from both `add_agent_to_config()` and `materialize-dept-agents.sh`, the build's copy carrying a
+  build-resolved model beside the owner's.
+- On an `agents.entries` box, `add_agent_to_config()` dropped the box's own `agents.list` key and
+  stripped fields from entries it did not change.
+
+#### What changed
+- `23-ai-workforce-blueprint/scripts/shared_core_copy.py` (new; lives in the Skill 23 scripts tree so it
+  travels with every delivered layout, flattened `.scripts` included): `ensure_core_copy()` places a shared core file as a real
+  copy. It keeps a real, non-empty file byte-identical, migrates a symlink to a real copy, and is
+  fail-open (an unreadable or empty canonical leaves the file as it was). Refreshing an existing
+  real file is still the job of `link_shared_core_files()` in `update-skills.sh` / `install.sh`.
+- `create_department_workspace()`, `create_role_workspaces.py` (`create_role_workspace()` and
+  `_link_shared_files_only()`), `add-role.sh`, `shared-utils/create-role-workspaces.py` and
+  `32-command-center-setup/scripts/scaffold-agent-files.sh` all write real copies and never symlink.
+  Role folders carry `TOOLS.md` + `USER.md` only, matching the existing U053 disposition, so a new
+  role no longer gets an `AGENTS.md` that the next augment pass deletes.
+- `add_agent_to_config()` and `materialize-dept-agents.sh` treat an agent whose workspace is the
+  department's folder as that department's registration. They add no second entry and leave its
+  model and name alone. The post-build wiring asserts accept it too, so the build does not fall into
+  a materialize "repair" that would add the duplicate.
+- `add_agent_to_config()` on an `agents.entries` box writes unchanged entries back exactly as found
+  and keeps the box's own `agents.list` key. An agent that already exists is never given a model or
+  changed model, and `agents.defaults` is never touched by registration.
+- Tests: `tests/unit/test_skill23_build_nondestructive.py` (new, 13 hermetic tests, 11 of which fail
+  on the previous main) covers real core files kept byte-identical across two build runs, symlinks
+  migrated, role folders, `scaffold-agent-files.sh`, existing models untouched in both schemas,
+  registration under another key, a second-run no-op on an `agents.entries` box, and an end-to-end
+  `materialize-dept-agents.sh` run. `test_role_workspace_symlinks.py` was updated to the N29
+  contract. Both now run in `skill23-provisioning-tests.yml`.
+- A NEW department agent gets no `model` key and no `subagents.model`: it inherits `agents.defaults`.
+  The build used to write a resolved primary plus hardcoded fallbacks
+  (`openrouter/moonshotai/kimi-k2.6`, `ollama/deepseek-v4-pro:cloud`,
+  `openrouter/deepseek/deepseek-v4-pro`). Those were not on client allowlists, and a bare `ollama/`
+  id hits the provider-namespace trap on boxes that register the provider as `ollama-cloud`.
+  `resolve_dept_agent_model()` now feeds only the Command Center `dept-default-models.json` artifact.
+- The non-interactive build no longer writes `agents.defaults.tools.allow=["*"]`. OpenClaw 2026.6.8
+  and later rejects any `agents.defaults.tools` key (`agents.defaults: Unrecognized key "tools"`),
+  so the next gateway restart failed. `scripts/apply-fleet-standards.sh` still owns that baseline
+  in its schema-valid form.
+- When registration turns a single-agent `agents.entries` roster into a multi-agent one,
+  `add_agent_to_config()` sets `agents.ownership="explicit"` (only if absent and no entry is marked
+  `default`). Without it the config fails validation. This is the same rule
+  `materialize-dept-agents.sh` already applies.
+- The build hands `create_role_workspace()` the workspace root, not the company root, so role
+  folders copy the canonical `TOOLS.md` / `USER.md`. Previously they got dangling symlinks into the
+  company tree.
+- `materialize-dept-agents.sh` no longer re-points an agent whose current workspace still exists.
+  It scans the master-files company tree first, as the most authoritative root. A rebuild that
+  wrote a second, sparse company tree there moved every department agent into it, and a workforce
+  that had passed its audit came back with a failed zero-human check. An existing agent now keeps
+  its workspace, and the scaffold manifest follows it. Only an entry whose workspace is gone is
+  re-pointed.
+- `tests/unit/test_skill23_build_nondestructive.py` now has 14 tests (12 fail on the previous
+  main). The new materialize test sets up a complete live tree plus a sparse rebuild tree. It
+  asserts the live agents stay put, and its control asserts that an entry with a deleted
+  workspace is re-pointed. The other additions are: new agents carry no model and `agents.defaults` is unchanged; a source guard
+  that the build never writes into `agents.defaults`; and the post-build config passes the real
+  `openclaw config validate`. That last test is pinned to OpenClaw 2026.9.4 in CI and includes a
+  control proving the validator rejects the old key.
+- Skill 32 bumped to v13.1.34 (`scaffold-agent-files.sh`, `materialize-dept-agents.sh`).
+
+### #1347 — [v25.2.7]  -  2026-09-28  -  Skill 23: one company-root resolution order (build state first); durable owner-sends hold; board lanes under one company
+
+#### Why
+The build writes the company where `resolve_company_paths()` puts it and records that as
+`companyRoot` in `.workforce-build-state.json`. The readers each guessed a location of their own,
+so on some layouts the build never completed.
+
+- **Mac.** The Skill 23 `lib/detect_platform.py` answered `~/clawd/zero-human-company`
+  (or `<workspace>/zero-human-company`) while the build wrote
+  `~/Downloads/openclaw-master-files/zero-human-company/<slug>`. `_qc_company_info.py` also
+  rejected every path under `openclaw-master-files` as a "template", including the build's own
+  company. qc-completeness audited a stale tree, `completionVerification` stayed pending, and
+  `buildCompletedAt` was never written.
+- **Contabo `/home/node`.** The shared resolver looked only in `/data/openclaw-master-files/zero-human-company`,
+  which is empty there. The workforce lives in `<workspace>/zero-human-company/<slug>`, so
+  `company_dir` was `None` and the reconcile and DEPARTMENTS checks failed.
+- **Floor-fill stubs audited instead of the build.** The QC checker's first choice was the live
+  `<workspace>/departments` tree, and floor-fill wrote there too. On a box whose build wrote the
+  zero-human-company tree, where `materialize-dept-agents.sh` registers the department agents, the
+  gate audited floor-fill stubs instead of the workforce the agents run.
+
+#### What changed
+- `shared-utils/detect_platform.py` and `23-ai-workforce-blueprint/lib/detect_platform.py` now
+  share one resolver, byte-identical and pinned by a test: `build_state_company()`,
+  `known_company_roots()` and `resolve_active_company_dir()`. The order is:
+  1. the build state's `companyRoot`, unless `$OPENCLAW_COMPANY_SLUG` names another company;
+  2. the explicit slug, then the build state's `companySlug`;
+  3. the single company in the first layout that holds one: master-files, then
+     `<workspace>/zero-human-company`, then the legacy clawd tree.
+
+  `company_root`, the write target, is unchanged.
+- `_qc_paths.departments_root_for()` (new) and `live_departments_dir()` put the build state's
+  `companyRoot/departments` first, then `<workspace>/departments`. The QC checker,
+  `department-floor.py`, `detect-stale-artifacts.py`, `floor-fill-driver.py` (default, or with the
+  new `--workspace-root` option) and `migrate-existing-workforce.sh` all use it, so the checker and
+  the repairer measure the same tree.
+- `_qc_company_info.py` `_is_template_path()` no longer rejects
+  `openclaw-master-files/zero-human-company/<slug>`, where the build writes every company. All other
+  `openclaw-master-files` content is still treated as a template and rejected.
+- `materialize-dept-agents.sh` scans the build state's `companyRoot/departments` first, and also
+  `$OC_ROOT/workspace/zero-human-company`. Skill 32 bumped to v13.1.35.
+- Tests:
+  - `tests/unit/test_company_root_resolution.py` (new, 9 tests; 8 fail on the previous main).
+    Layouts covered: Mac with `~/clawd` plus master-files, Mac master-files only, Hostinger `/data`,
+    Contabo `/home/node`, and the build tree against floor-fill stubs. It also checks that a genuine
+    template dir is still rejected and that both resolver copies are identical.
+  - `test-gate-company-dir-resolution.sh` T2 and `qc-departments-tree-resolution.test.sh` S7/S8 now
+    encode the corrected template rule. They run in `qc-departments-tree-guard.yml`.
+
+#### Owner-sends hold (ships with the resolver: a newly-passing gate must not message owners)
+Once the gate measures the real build tree, boxes that used to fail against a stub tree pass at the
+next roll. Without a hold, that pass fires the Presentations welcome, and the closeout can reach the
+celebration. Both are unrequested owner messages.
+- `shared-utils/owner_sends_hold.py` (new) stores an OPT-IN hold in `.workforce-build-state.json`:
+  only an explicit `ownerSendsHold: true` holds; absent or anything else changes nothing. No box is
+  ever held by default. The protection against a gate that newly passes is the full-gate-pass rule
+  below, plus this hold wherever the operator sets it.
+
+  `check` exits 1 only when sends are clear. Anything else counts as HELD: python or the helper
+  missing, or unreadable state. `hold` and `release` are the only writers. Once set, the hold is
+  durable and nothing auto-clears it; the stall-fingerprint reset in `resume-closeout-cron.sh`
+  touches only its own `closeoutResumePaused` keys.
+- The hold is checked in:
+  - `send-presentation-dept-welcome.sh` (`--force` does not bypass it);
+  - `send-telegram-celebration.sh` (the sink);
+  - `run-closeout.sh`, before `TELEGRAM`: it records `closeoutOwnerSendsHeld` and exits 0;
+  - `resume-closeout-cron.sh`, before any dispatch;
+  - `resume-workforce-build.sh` HOP-4, before launching `run-closeout.sh`.
+
+  A hold logs, sends nothing and exits 0. Set or clear it with
+  `python3 <skills>/shared-utils/owner_sends_hold.py hold|release <state-file>`.
+- `verify-library-gate.sh` fires the welcome only on a FULL pass (`GATE_RC=0`). A ZHE failure (rc 9)
+  used to leave every status "done" and still fire it.
+
+#### Command Center URL, board company, openclaw.json validity
+- `interview-launch.py initialize` seeds `commandCenterUrl` from the slug default on EVERY
+  initialize, not only a fresh one. `run-full-install.sh` phase 6h also seeds it when it is absent.
+  Before this, an existing box exported an empty `CC_TUNNEL_EXPECTED_HOST` and `create-tunnel.sh`
+  aborted before its POST.
+- `seed-dashboard-content.py` derives a company slug with the same rule as `seed-workspaces.py`
+  ("Acme Rocket!" becomes `acme-rocket`, not `acme rocket!`). The canonical company id
+  (`MC_COMPANY_ID`, else the build state's `companyId`) is updated in place, and a second company
+  row is never inserted.
+- `seed-workspaces.py` skips a Command Center system queue under the CC's `default` company that
+  cannot be adopted, and leaves it exactly as it is. It still seeds the client's own departments;
+  that queue used to roll back the whole seed, so custom departments never got a board. A queue
+  owned by another real company still refuses the seed. `engine-bootstrap-real-db.test.py` is
+  updated to this contract.
+- `repair-board-company.py` (new; Skill 32) is a dry run by default. `--apply` first backs up the
+  DB, then:
+  1. merges a duplicate company row into the canonical one, moving every row that references it;
+  2. on a single-company board only, moves the client's `default` lanes (its departments and
+     recorded engine queues) to its company;
+  3. seeds the missing lanes.
+
+  The department set is the union of `departments.json`, the build state's `departments[]` and the
+  department folders under the build's `companyRoot`, which is the tree the zero-human check audits.
+  A dry run on a client board showed four on-disk departments that `departments.json` did not list,
+  so `departments.json` alone under-reported them. Lanes are matched on the canonical slug of both
+  the workspace id and its slug, so a CEO lane with id `master-orchestrator` and slug `ceo` counts as
+  the `ceo` department. It is not reported missing and no second CEO lane is seeded. Only the
+  missing departments go to the seeder. The dry run names the `canonical_slug` module it loaded.
+  `seed-workspaces.py` now also finds the installed `shared-utils`
+  (`~/.openclaw/skills/shared-utils`, `/data/.openclaw/skills/shared-utils`) when it runs from a
+  copy outside the skill tree, instead of falling back to the inline slugger.
+
+  It is idempotent. It was not run on any box.
+- Phase 6e of `run-full-install.sh` seeds the "Welcome to <department>" starter tasks only on a
+  full install whose build has closed out (`closeoutStatus == done`). The Command Center's intake
+  sweep auto-dispatches every seeded card and the notifier messages the owner, so a card seeded
+  before closeout was an owner message nobody asked for. Update-only rolls
+  (`update-skills.sh` -> `run-full-install.sh --update-only`) already passed `--no-starter-tasks`,
+  and still do. The gate matters on the bootstrap path, where `update-skills.sh` runs a full
+  install on a box that has no Command Center yet.
+- `retire-confirmed-decline.sh` no longer writes openclaw.json through the build-state writer,
+  which stamped a root `stateRevision` that `openclaw config validate` rejects.
+- Tests:
+  - `tests/unit/test_owner_sends_hold.py` (11 tests; 6 fail on main).
+  - `tests/unit/test_board_company_repair.py` (8 tests; all fail on main). This includes a
+    field-shaped fixture: a duplicate company, podcast and anthology under `default`, the CEO lane
+    under another id, and four departments only on disk. After `--apply`, every department has
+    exactly one lane under the company, and a second `--apply` changes nothing.
+  - `tests/unit/test_starter_tasks_gate.sh` (new, 4 cases) runs the real `starter_tasks_allowed()`
+    extracted from `run-full-install.sh`. It fails on main, where the gate is absent.
+  - `interview-launch.test.py` gains a URL-seeding test.
+  - `retire-decline-separate-workspace.test.py` now asserts that openclaw.json gains no root keys,
+    and runs `openclaw config validate` when the CLI is present.
+  - The new tests run in `owner-sends-hold-guard.yml` (new).
+- Skill 37 bumped to v13.1.5.
+
+### #1348 — [v25.2.8]  -  2026-09-29  -  Skill 23: PENDING role how-tos are queued for SOP authoring and have a scripted fill runner
+
+#### Why
+- Vertical-pack departments whose roles arrived as PENDING `how-to.md` stubs have no numbered
+  `0N-*.md` SOP stubs, so `build-workforce.py` wrote `sop_files=[]` for them in the research
+  manifest. `populate-sops-from-manifest.py dept_already_authored()` read an empty list as "already
+  authored", and its CLI had no `--dept` or `--force`, so those departments (for example a
+  real-estate pack's lead-generation, showings, closing-coordinator and local-market-intelligence)
+  could never be queued.
+- `PENDING-SOPS.md` lists every role whose `how-to.md` is a PENDING stub (hundreds on some boxes),
+  each carrying a one-shot "copy the nearest template and token-fill it" instruction. No script ran
+  that instruction, so nothing ever picked the list up.
+
+#### What changed
+- `populate-sops-from-manifest.py` scans each department at run time for PENDING or stub role
+  `how-to.md` files and adds them as SOP targets. This covers manifests already on disk, and such a
+  department is queued, not skipped. New flags: `--dept` (repeatable or comma-separated; an unknown
+  id exits 1) and `--force` (re-queue departments whose SOPs look authored; the boundary gate still
+  applies).
+- `fill-pending-howtos.py` (new) is the `PENDING-SOPS.md` runner. It is deterministic (no model
+  call) and a dry run by default; `--apply` does the writes.
+  - Match order: an exact library match, then the nearest template in the same library department
+    (title similarity >= 0.6), then the nearest across the library, only above a strict 0.85. A
+    loose cross-department match (for example "Buyer Agent" to a QC agent) would plant the wrong
+    SOPs.
+  - It token-fills with `create_role_workspaces.fill_tokens`, enforces the same 3072-byte floor,
+    and stamps workforce-provenance.
+  - It writes only a `how-to.md` that is still PENDING, and it is idempotent. Roles with no
+    comparable template stay PENDING for authoring (populate-sops now queues them). Exit 3 means
+    some roles are still pending.
+- `resume-workforce-build.sh` runs the fill runner on the library-resume path, so the list is
+  picked up.
+- Tests: `tests/unit/test_pending_sops_runner.py` (3 tests, all fail on the previous main), run by
+  `pending-sops-runner-guard.yml` (new).
+
+### #1349 — [v25.2.9]  -  2026-09-29  -  Skill 23: role folders use canonical library slugs and meet the role-library floor; reconcile-role-floor.py repairs existing trees
+
+#### Why
+A client's interview build fell below the department floor that the fleet prover enforces, and
+there were two causes in the build's legacy lane (`build-workforce.py` `create_role_workspace()`):
+
+- **Role folders named from the roster headers.** The suggested-roles headers carry employment tags
+  and have no `**Slug:**` line, for example `### 1. Director of CRM (full-time-permanent)`. The raw
+  name became the folder: `01-director-of-crm-full-time-permanent`,
+  `09-deep-research-role-crm-on-call`. The prover matches role-library slugs (`director-of-crm`), so
+  none of those roles counted.
+- **Only roster roles were built.** Library roles that the roster does not list were never created:
+  the healer, the devil's advocate and the SOP writer. For example, CRM got 9 role folders against
+  the library's 12.
+
+#### What changed
+- `build-workforce.py` passes the parsed roster through `library_floor_roles()` before building:
+  - A role with no explicit slug takes its role-library slug. The lookup is the existing
+    `create_role_workspaces.library_lookup()` normalizer, which already drops employment tags and
+    "flagship" decorations.
+  - Every library role of the department that is not yet present is appended, numbered after the
+    roster.
+  - A role or folder already on disk that resolves to a library slug counts as present, so a second
+    build adds nothing.
+- `reconcile-role-floor.py` (new) brings an existing tree up to the floor in place:
+  1. It renames every role folder that resolves to a library slug but is not named with it. The
+     rename moves the whole folder, so every written how-to and SOP is kept byte-for-byte.
+  2. It fills the library roles that are still missing through `floor-fill-driver.py`, the existing
+     fill-missing-only materializer. That driver uses library content, never overwrites, and keeps
+     its industry gate.
+  3. With `--add-floor-departments`, it also fills the standard-floor departments the tree lacks.
+     The floor is `department-floor.py`: mandatory departments plus universal primaries, minus the
+     owner's declines. Library departments outside that floor are never added.
+
+  4. With `--add-library-departments`, it fills to the prover's floor instead: every role-library
+     department in `_index.json` (which the prover's floor manifest is generated from), under its
+     exact library name, with every library role. The prover counts a department only by its
+     exact name.
+
+  In both department modes:
+  - the owner's provenance-gated declines are honored;
+  - floor-fill's industry gate still refuses an absent vertical the box never declared (`listings`);
+  - a department whose alias is already on disk (`legal` for `legal-compliance`) is reported under
+    `alias_present_not_added` and is not duplicated.
+
+  A folder is not renamed, and is reported instead, when a folder for the same library role already
+  exists or when `openclaw.json` references its path. The script is a dry run by default and is
+  idempotent. It was not run on any box.
+- Tests:
+  - `tests/unit/test_build_library_role_floor.py` builds crm, sales and marketing. It checks that
+    there are no suffixed folders, that every library role is present with one folder per role, and
+    that a second build is a no-op. On main it fails and reproduces the nine suffixed crm folders.
+  - `tests/unit/test_reconcile_role_floor.py` uses a field-shaped crm tree: the nine suffixed
+    folders with written how-tos and none of the library-only roles, plus a conflicting pair. It
+    checks that the dry run changes nothing and that `--apply` renames the folders, keeps the how-to
+    bytes and fills the floor. It also checks that a second `--apply` is a no-op, and that floor
+    departments never include a library department outside the standard floor. A fourth test runs
+    `--add-library-departments` and checks that every `_index.json` department reaches full role
+    coverage, except an owner decline, an alias already on disk and the gated `listings`, and that
+    a second run is a no-op.
+  - Both run in `skill23-role-floor-guard.yml` (new).
+- Merge after #1344. On main, the engine still symlinks `AGENTS.md`, `TOOLS.md` and `USER.md` into
+  new role folders; #1344 makes them real copies.
+
+## [v25.2.6]  -  2026-09-28  -  Merge train: #1339 No full copies of the skills folder or onboarding repo in backups;…; #1341 fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1339 — [v25.2.4]  -  2026-09-28  -  No full copies of the skills folder or the onboarding repo in backups; updates keep a no-copy rollback
+
+#### Why
+Every update wrote a full `skills-backup-<ts>` copy of the skills folder (hundreds of MB) into `~/Downloads/openclaw-backups` (`/data/Downloads/openclaw-backups` on a VPS), and the Back Yourself Up full backup copied the whole skills folder into every backup. Agents following skill 02 also put the skills folder and onboarding clones into backup jobs they set up themselves, nightly ones included. All of it is re-installable from this repo: a fleet-wide cleanup on 2026-09-28 removed 314 such copies (about 63 GB).
+
+#### What changed
+- `scripts/skills-rollback.sh` (new): `snapshot` records the previous commit (content manifest `src_git_sha`, else the version tag) plus a patch of the box's own changes to the repo-owned folders (edits, deletions, extra files; caches such as node_modules and __pycache__ left out). The patch is made by staging the installed files over that commit in a temporary git index, so nothing is copied. `restore <dir>` checks the commit back out, re-applies the patch, removes repo-owned folders the update added, and restores the version stamp and manifest.
+- `update-skills.sh` (NO-SKILLS-BACKUP-COPY-V1): records the no-copy rollback in `skills-rollback-<ts>` (a few KB; retention as before). Only a box with no recorded commit (exit 3: fresh or pre-manifest install) or a failed record falls back to the old one-time full copy, so an update is never left without a way back.
+- Skill 02 (Back Yourself Up) v7.1.0: `scripts/full-backup.sh` records the installed version and copies only custom skills (folders the manifest does not list); with no manifest the whole folder is still copied. The projects copy skips an `openclaw-onboarding/` clone. The protocol docs tell agents to leave the skills folder and every onboarding clone out of any backup job, nightly ones included. The `.skill` bundle is rebuilt.
+- `ONBOARDING-TRIGGERS.md`: the update output now shows the rollback line.
+
+#### Not changed
+The fleet roll runner is untouched: the current roll keeps one persistent clone per box (`scripts/fleet-roll-copy.sh`), and no code in this repo creates `roll-XXXXXX` temp clones, `skills.bak-*`, `skills-pre-v*` or `onboarding.bak-*` copies any more; those on boxes were left by older code.
+
+#### Tests
+`tests/unit/skills-rollback-no-copy.test.sh` (13 pass): the snapshot holds no directories and a few KB; the patch carries edits, deletions and extra files but no caches; after an update, restore returns the previous commit's files plus local changes, removes the added folder, keeps a custom skill and restores stamp + manifest; a box with no commit exits 3 and writes nothing; a version-tag-only box resolves; the updater's normal path copies nothing. Control: a real full copy fails the no-copy predicate. `tests/unit/full-backup-no-repo-skills-copy.test.sh` (6 pass, with a no-manifest control). `backup-retention` 40/40, `full-backup-prune-after-verify` 12/12. Guarded by `.github/workflows/no-backup-copies-guard.yml`.
+
+### #1341 — fix(tests): eight unit tests stop leaking temp files into $TMPDIR
+
+(This pull request carried no CHANGELOG entry of its own.)
+## [v25.2.5]  -  2026-09-28  -  Skill 25: video-creator venv out of the skill root; no duplicate SKILL.md registration
+
+### Why
+On a live box, `25-video-creator/wire.sh` built its ~215 MB venv at `<VC_DIR>/venv`, inside the
+OpenClaw skill root (`~/.openclaw/skills`, VPS `/data/.openclaw/skills`). OpenClaw's skill discovery
+walks every skill root up to depth 6 on every scan, skipping only dot-prefixed names and
+`node_modules` — never `venv` — so every rescan walked the whole venv, contributing to a gateway that
+wedged and was watchdog-restarted every ~8 minutes. The runtime copy also carried its own `SKILL.md`,
+identical to `25-video-creator/SKILL.md`, so OpenClaw registered `video-creator` twice and logged a
+precedence collision on every scan.
+
+### What changed
+- 25-video-creator/wire.sh (skill v7.0.1): the venv now defaults to
+  `$(dirname "$SKILLS_PARENT")/venvs/video-creator` (Mac `~/.openclaw/venvs/video-creator`, VPS
+  `/data/.openclaw/venvs/video-creator`), outside every skill root, still overridable by `VENV_DIR`.
+  A legacy `<VC_DIR>/venv` is migrated idempotently: moved (not rebuilt) when found alone; when both
+  the legacy and new venv exist, the new one wins if its python can `import moviepy.editor`,
+  otherwise the legacy one replaces it. A relocated venv's stale `bin/activate` is repaired in place
+  (`python -m venv --without-pip`); pip is always invoked as `"$VENV_DIR/bin/python" -m pip`, never
+  bare `pip` or `source activate`. The install-copy step now excludes `SKILL.md`, `venv`, and
+  `.venv`, and removes any stale `<VC_DIR>/SKILL.md` left over from an older install on every pass,
+  so only `25-video-creator` ever registers the `video-creator` skill. wire.sh's fail-soft contract
+  (always exit 0, no `set -e`/`set -u`) is unchanged.
+- scripts/tool-drift-check.sh: the `video-creator` registry entry's probe binary path updated to the
+  new venv location (`../../venvs/video-creator/bin/python`, relative to the install dir).
+- 25-video-creator/INSTALL.md, QC.md, INSTRUCTIONS.md, SKILL.md, CORE_UPDATES.md: every reference to
+  the old in-skill-root venv path and the runtime copy's `SKILL.md` updated to match.
+- 25-video-creator/tests/test_wire_contracts.py (new, 4 tests, hermetic — no network, no pip): the
+  legacy-only, both-present-new-healthy, both-present-new-broken, and no-duplicate-registration /
+  no-copied-venv cases.
+
+### Tests
+`python3 -m pytest 25-video-creator/tests -q`: 97 passed (93 existing + 4 new). `bash -n` clean on
+`wire.sh` and `tool-drift-check.sh`. Manual end-to-end simulation of `wire.sh` (fake skills root,
+throwaway `$HOME`) covering the legacy-only, new-only, and both-present migration cases, run twice to
+confirm the second pass is a no-op; venv ends outside the skills root, `<VC_DIR>/venv` never exists,
+no `SKILL.md` in the runtime copy, exit code 0 in every case.
+## [v25.2.3]  -  2026-09-28  -  Pin Command Center v7.6.74 (zero-downtime update)
+
+### Why
+v25.2.2 routes update-only Command Center refreshes through origin/main's `update.sh`. Command Center v7.6.74 is the release whose `update.sh` builds beside the running release and promotes it, and the paired pin should name that release.
+
+### What changed
+- cc-compat.json: `pinnedTag` v7.6.72 -> v7.6.74. `minVersion` is unchanged (v7.4.0); v7.6.74 adds no endpoint and no schema change.
+- README.md, DIRECT-TO-AGENT-UPDATE-MESSAGE.md, docs/interview-launch-recovery.md: paired Command Center v7.6.74.
+- tests/unit/cc-runtime-preflight.test.py: `CC_PIN` = v7.6.74.
+
+## [v25.2.2]  -  2026-09-28  -  Zero-downtime Command Center update; a box's own update names its client
+
+### Why
+A client's Command Center was down for about 35 minutes during the 2026-09-28 fleet roll. The update-only installer merged origin/main into the LIVE Command Center checkout and ran `npm ci` in the LIVE directory before building. From then on, every restart during the build was refused by the Command Center's content guard (exit 78). Separately, a box running its own Sunday update named itself by hostname in the operator's alert, not by the client's name.
+
+### What changed
+- 32-command-center-setup/scripts/run-full-install.sh (Skill 32 v13.1.33): when the Command Center update is a clean fast-forward and origin/main's `update.sh` carries the zero-downtime path (blackceo-command-center v7.6.74), `--update-only` neither merges nor runs `npm ci` in the live tree. It runs origin/main's `update.sh`, which builds the new release beside the running one and promotes it. Any other checkout keeps the merge path, unchanged.
+- shared-utils/fleet_refresh_runner.py: pull-cc runs origin/main's `update.sh`, not the live checkout's (the old release's), and allows it the atomic deploy's full time window.
+- scripts/fleet-roll-copy.sh, scripts/fleet-refresh.sh: the operator's roll writes `<OpenClaw root>/fleet-refresh/client.json` beside the roll copy. A box's own `--local` run reads it, so its summary, result and operator alert name the client ("Client Name (Platform)"), not the hostname.
+
+### Tests
+scripts/test-cc-update-only-credential-and-git-sync.sh (22 pass): zero-downtime readiness only fetches, is refused by an old updater, a dirty tree or a local commit, and the update-only phase skips the live merge and live npm ci and runs origin/main's updater. tests/unit/fleet-refresh-roll-safety.test.py (77 pass): pull-cc runs the target updater; the roll writes client.json; a box's own run names its client. tests/unit/cc-runtime-preflight.test.py updated for the gated call site.
+
+## [v25.2.1]  -  2026-09-28  -  Merge train: #1327 skill31: nightly memory maintenance — prune dead embedding-cache…; #1329 Skill 01: adopt the Lean Core File System (skill 70) pointer standard…; #1331 Skill 70: Lean Core File System; #1332 fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test…; #1334 fleet roll: each box's own Command Center, the roll's own onboarding…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1327 — [v25.1.105]  -  2026-09-28  -  Skill 31: nightly memory maintenance — prune dead embedding-cache rows, report index drift (never re-embeds)
+
+#### Why
+Nothing ever deleted a `memory_embedding_cache` row. Rows under an old provider key, and rows whose chunk was edited or deleted, stayed in every agent DB forever: one box held 7,133 of them (0.47 GB) across 5 agents. The 2026.9.6 schema migration also left 2.6 GB of free pages behind on that box. And an agent whose index stamp drifted from the live embedding identity lost vector search silently.
+
+#### What changed
+- `31-upgraded-memory-system/scripts/memory-cache-prune.sh` deletes stale-key rows and orphans older than 7 days. It judges each agent by its own index stamp, compacts DBs holding 256 MB or more of free pages when the disk has room, and uses python3 stdlib only.
+- `31-upgraded-memory-system/scripts/memory-index-check.sh` is a READ-ONLY drift report. It never reindexes or re-embeds.
+- `31-upgraded-memory-system/install.sh` schedules both as silent `openclaw cron --command` jobs (`memory-index-check` 02:00, `memory-cache-prune` 02:40, `--no-deliver`). It is idempotent by name and honors tombstones. Root `install.sh` calls it on a fresh install; `update-skills.sh` runs it through the per-skill wiring loop on every roll, on Mac and Docker.
+- Skill 31 is now v8.1.0. Guarded by `tests/unit/memory-cache-prune.test.sh` and `.github/workflows/memory-cache-prune-guard.yml`.
+
+#### Risk
+Low. The prune runs while the gateway is up (SQLite locking and WAL); a busy DB is skipped until the next run. The worst case of an orphan prune is one extra embed call for text restored after 7 days. Nothing re-embeds automatically.
+
+### #1329 — Skill 01: adopt the Lean Core File System (skill 70) pointer standard for core-file entries (v7.0.1)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1331 — [v25.2.0]  -  2026-09-28  -  Skill 70 Lean Core File System: lean core files through pointer references, one playbook per system, weekly cron job
+
+#### Why
+Core files (AGENTS.md, TOOLS.md, MEMORY.md, USER.md, IDENTITY.md, SOUL.md) are sent to the model with every message. They grow without limit, which slows every reply, raises cost, brings compaction sooner, and past the configured limit OpenClaw silently cuts the middle out of the file (verified in the installed OpenClaw 2026.9.4 code: 75 percent head plus 25 percent tail kept; AGENTS.md 45 percent head, a policy digest, 15 percent tail; MEMORY.md loads last and is cut first). Nothing in the fleet kept them lean over time. Skill 01 (Teach Yourself Protocol) covers learning and storage, not ongoing upkeep, and its 10-to-25-line summary size conflicts with a one-line pointer.
+
+#### What changed
+- New standalone skill `70-lean-core-file-system` (Lean Core File System, v1.0.0), not part of skill 01. The technique it uses is called pointer references. Contents: the full playbook (doctrine, pointer format with good and bad examples, earn-your-place rule with always-on rules kept inline, one system one playbook, master index, contradiction handling with dated superseded rules, backup and content-preservation proof, first-run dry-run diff, step-by-step and weekly procedures, test battery, landmines, sourced rationale); `scripts/pointer-audit.sh` (sizes against 40,000, candidate blocks, broken pointers, orphans, duplicates, index consistency, `--backup`, `--prove-moved`, `--dry-run`; exit 0 PASS, 1 FINDINGS, 2 tooling; macOS bash 3.2 and Linux); `scripts/install-weekly-cron.sh` (idempotent weekly OpenClaw cron job `lean-core-file-system-weekly`: isolated session, thinking high, no delivery, primary DeepSeek V4.1 Flash on Ollama Cloud and fallback DeepSeek V4.1 Flash on OpenRouter, both discovered from the box's own model list, refuses with exit 4 rather than guess, checks every flag against `--help`); `wire.sh` (AGENTS.md pointer and MEMORY.md core-files definition, backup first, replace-in-place, idempotent; runs automatically on every update through the existing `wire.sh` hook in `update-skills.sh`); `qc-70-lean-core-file-system.sh` and three fixture batteries.
+- For core-file content only, skill 70 supersedes skill 01's 10-to-25-line summary size and four-part pointer block (skill 70 is the newer rule; the INSTALL.md conflict rule already says the skill governs core-file content). Skill 01's own files are reconciled in the paired pull request #1329; its storage paths are shared unchanged.
+- One pointer standard repo-wide: the Teach Yourself Protocol storage rule in the root `AGENTS.md`, `TOOLS.md` and `USER.md` templates, the core-file rules and quality-control checklist in `Start Here.md`, and the text `scripts/typ-migrate.sh` injects (its AGENTS.md rule block and both migration notices) now all say the same thing: a situational block longer than about five sentences moves to the master files folder and leaves a one-to-two-sentence pointer (WHAT, WHERE, WHEN); always-on rules stay inline, shortened; skill 70 owns core-file size (40,000 characters per file) and the weekly audit. The old "10-25 lines" and "~25 lines" guidance is gone. `typ-migrate.sh` detection (BLOAT_THRESHOLD) and its rule marker are unchanged.
+- `lib-onboarding-state.sh`: `70-lean-core-file-system` gated in Wave 6 (its qc gate needs only bash and python3 and never the gateway, so it cannot wedge the wave).
+- Skill counts: README.md (70 folders, 65 active, new inventory row), Start Here.md (65 active), install.sh (65 active, Wave 6 gates 49 of 65), ONBOARDING-TRIGGERS.md (70 folders, 65 active, Wave 6 roster adds 70).
+- `23-ai-workforce-blueprint/skill-department-map.json`: skill 70 entry (not client facing, owner openclaw-maintenance), so the repo-consistency gate's skill-folder coverage check passes.
+- Version markers rolled v25.1.105 -> v25.2.0 via `scripts/bundle-release-in-branch.sh` (minor: new skill).
+
+#### Migration notes
+- Existing boxes pick the skill up on the next fleet update: the generic `[0-9]*/` copy plus the skill's own `wire.sh`. A box whose configured model list lacks either DeepSeek V4.1 Flash identifier gets the core-file wiring and a named refusal for the cron job (retried each update); nothing substitutes another model.
+- The first weekly run on each box changes no core file; it saves a dry-run diff. Risk: LOW.
+- `agents.defaults.bootstrapMaxChars` and `agents.defaults.bootstrapTotalMaxChars` are never read or written.
+
+#### Tests
+`bash 70-lean-core-file-system/qc-70-lean-core-file-system.sh` (PASS: audit battery, cron installer battery and wire battery, under macOS bash 3.2 and bash 5); `python3 scripts/qc-assert-wave-list-integrity.py` (PASS, 49 entries); `bash scripts/bump-version.sh --check` (all markers agree); `scripts/typ-migrate.sh` run against throwaway fixture workspaces (section bloat, whole-file bloat, missing rule, re-run) with the same exit codes as the previous version.
+
+### #1332 — fix(PRES-057): bypass the ephemeral-root guard in the fix61 VPS test harness
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1334 — [v25.2.1]  -  2026-09-28  -  Fleet roll: each box's own Command Center, the roll's own onboarding copy, rollback never blocked
+
+#### Why
+The first real fleet rolls failed on three client boxes and the operator's Mac for reasons that had nothing to do with the release. The runner looked for the Command Center at one fixed path, while every box keeps its own elsewhere. The roll ran from whichever old onboarding clone a box had, and one was shallow and tag-only. A modified file blocked a rollback. The main-agent session store moved out of sessions.json. The duck test ran on the wrong Node, and a 20-minute updater cap left an orphaned updater running during a rollback.
+
+#### What changed
+- shared-utils/fleet_refresh_runner.py: the Command Center code checkout is found ON each box: the process serving the Command Center port (lsof, ss, or /proc in a slim container), then pm2's app, then update-skills.sh's validated candidate list plus the OpenClaw root's command-center. A folder that holds the live mission-control.db but not the code is never chosen and never touched; the database is still located through resolve_db.py. When none is found, the Command Center steps are skipped as "Command Center not found on this box" and the other steps still run.
+- shared-utils/fleet_refresh_runner.py: 999-setup with the owner's local changes is SKIPPED ("999 has local changes, not updated"), not failed. The main-agent session key is read through `openclaw sessions list` (sessions.json no longer exists on 2026.8+), and agent:main:main counts as the owner's session. On rollback, modified tracked files in the Command Center checkout are saved beside the snapshot and the reset is then forced. update-skills.sh gets 90 minutes, and on timeout its whole process tree is stopped. The duck test runs with the Node that can load the Command Center's native modules. A Command Center step that failed without changing anything reports "onboarding updated to vX, Command Center NOT updated (still vY, healthy)".
+- shared-utils/fleet_notify.py: the operator alert's Telegram leg failed on any '_' in the text. The webhook's Telegram node sends legacy Markdown, so Telegram answered "can't parse entities" and the webhook returned HTTP 500. The four legacy-Markdown markers are now escaped.
+- scripts/fleet-roll-copy.sh (new), scripts/fleet-refresh.sh, scripts/weekly-full-update.sh: the roll runs from ONE dedicated copy per box, <OpenClaw root>/fleet-refresh/onboarding (inside the container on Docker boxes), refreshed to origin/main every run. The box's own clones are never used, changed or deleted.
+
+#### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (75 pass): code checkout found past a live-DB folder (DB untouched), the serving process wins, a Contabo root Command Center, none found is a named skip; session key from the session store and from legacy sessions.json; 999 local changes skipped; rollback saves a dirty file and forces the reset; the updater timeout kills the whole process tree; the duck-test Node; the explicit Command Center-only failure; the roll copy with a shallow tag-only client clone left untouched; the Sunday update's copy.
+
+## [v25.1.105]  -  2026-09-28  -  Merge train: #1323 docs(batch-merger-proof): remove the scratch proof docs; #1324 Fix qc-system-integrity.sh CHECK 2.3: real-file copies PASS, symlinks…; #1326 fix(PRES-057): reconcile refuses a live cron edit from an ephemeral…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1323 — docs(batch-merger-proof): remove the scratch proof docs
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1324 — [v25.1.104]  -  2026-09-28  -  qc-system-integrity.sh CHECK 2.3 scored the opposite of CHECK 9.9/N29 — fixed
+
+#### Why
+While rewriting SYSTEM-DIAGNOSTIC-CHECKLIST.md (v25.1.102) it surfaced that `scripts/qc-system-integrity.sh`'s own CHECK 2.3 (department AGENTS.md/TOOLS.md/USER.md) directly contradicted CHECK 9.9 in the same script: 2.3 printed a green PASS when those files were SYMLINKED and a yellow WARN ("should be symlinked") when they were real-file copies, while 9.9 hard-fails a symlink and requires a real-file copy. N29 (amended 2026-07-31) made real-file copies canonical — the runtime's workspace-root boundary guard rejects a symlink outright, regardless of target — so 2.3 had been printing a misleading warning on every healthy, N29-compliant box since the boundary guard landed. 2.3's logic was never touched after it was written (PR #1059) and had simply never been updated when N29 was amended.
+
+#### What changed
+- scripts/qc-system-integrity.sh CHECK 2.3: swapped the pass/warn branches so real-file copies (COPIED>0, SYMLINKED=0) now PASS and symlinks (SYMLINKED>0, COPIED=0) now WARN, with corrected messages and remedies pointing at `update-skills.sh`/`install.sh` Step 10a (`link_shared_core_files`) and cross-referencing CHECK 9.9. The mixed-copies-and-symlinks branch is unchanged (still WARN) — nothing else in the file was touched.
+- tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh (new): extracts the real CHECK 2.3 block and the real green/yellow/na helpers from the script and runs them, unmodified, against synthetic department trees — real-file copies only, symlinks only, and mixed — asserting the PASS/WARN counters move the way N29/9.9 require. A mutation-proof step reverts the extracted block to the pre-fix (backwards) condition ordering and proves the test would have failed against the original bug (verified directly against the pre-fix script content, not just the synthetic mutation, before this entry was written).
+- version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.103 -> v25.1.104 via `scripts/bump-version.sh`; docs/interview-launch-recovery.md's paired-release line hand-fixed to match (check-doc-currency-guards.sh guard #2).
+
+#### Tests
+`bash tests/unit/qc-check-2-3-real-file-copy-is-pass.test.sh` (new, 7/7 pass; independently confirmed to fail 3/7 when run against the pre-fix script); `bash -n` on both changed files; `scripts/check-doc-currency-guards.sh` and `scripts/bump-version.sh --check` (both pass at v25.1.104).
+
+### #1326 — fix(PRES-057): reconcile refuses a live cron edit from an ephemeral OPENCLAW_ROOT
+
+(This pull request carried no CHANGELOG entry of its own.)
+## [v25.1.104]  -  2026-09-28  -  Merge train: #1311 fix(shared-utils): fleet_notify.send_telegram returns the delivered…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1311 — [v25.1.101]  -  2026-09-28  -  fleet_notify.send_telegram returns the delivered Telegram message_id
+
+#### Why
+The `fleet-standing-operator-alert` n8n webhook was switched from `responseMode: onReceived`
+(a canned `{"ok": true}`) to `responseMode: lastNode`, so its HTTP response is now the
+Telegram API's own result. That lets a caller prove delivery directly from the response, with
+no n8n execution data needing to be stored — storing it would also retain the shared
+`fleetStandingCheck` header-auth secret in plaintext inside the execution record, which every
+other fleet-standing webhook shares.
+
+#### What changed
+- shared-utils/fleet_notify.py: `send_telegram()` now parses the webhook's response body and
+  returns `(ok, detail, message_id)` instead of `(ok, detail)`. Both existing call sites
+  (`notify()`'s roll alert, and the `--test` path) already store the returned tuple in a
+  dict that gets printed/logged, so the delivered `message_id` now shows up in the roll's
+  result and log automatically — no other call-site changes were needed.
+
+#### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60/60 pass unchanged (existing mocks return
+2-tuples for `send_telegram`; nothing indexed past `[0]`/`[1]`, so they are unaffected by the
+added third element). Verified live against the (already-updated) n8n workflow end to end: a
+real webhook call now returns `{"ok": true, "result": {"message_id": ...}}`.
+## [v25.1.103]  -  2026-09-28  -  Merge train: #1298 presentations: Step 5 — Fix 7, then Fix 31; #1316 Rewrite SYSTEM-DIAGNOSTIC-CHECKLIST.md — 16-release stale content pass; #1317 docs(batch-merger-proof): isolation proof A (clean); #1318 docs(batch-merger-proof): isolation proof B (clean); #1319 docs(batch-merger-proof): isolation proof C (clean); #1321 fleet-refresh: name every box by its client, not its box id; per-box…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1298 — [v25.1.102]  -  2026-09-28  -  Presentations Step 5 lands on main: signature driver unification (Fix 7), skill-level signature retirement (Fix 31)
+
+#### Why
+This entry documents the Step 5 release (Fixes 7, 31) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.100 -> v25.1.102 via scripts/bump-version.sh (v25.1.101 is claimed by open PR #1312; G3: skill content changed under 23-ai-workforce-blueprint/).
+
+#### What changed
+- Fix 7 (signature turn-gate points at the legacy driver): moved signature turn-gate documentation and error messages to the canonical department driver (deck-intake-driver.py with --sig-* flags); the department driver now rejects --signature --next and --signature --answer with non-zero status and names the correct replacement flags; added department-driver --selftest; entry.sh error messages updated (both copies). Test: intake-conversation test gains (H2) dept --selftest.
+- Fix 31 (skill-level signature interview bypasses the canonical driver): skill-level signature mode retired -- it now delegates to the canonical department driver, translating legacy flags (--next/--answer to --sig-next/--sig-answer, --plan/--record to --sig-plan/--sig-record); standard-mode delegation unchanged; --run-dir optional for --selftest. Test: --plan assertion updated to the department-driver shape (frame_question).
+- Step 5 check fixes: bare --signature delegation named an unfollowable --sig-next pointer on the skill-level driver (fixed via an optional next_command_rewrite hook rewriting --sig-next to --next; suite 97/97 PASS); 2 stale content_sha entries from Fix 7 doc changes restamped via the mechanical content-manifest rehash.
+- Version markers rolled v25.1.100 -> v25.1.102 across all markers via scripts/bump-version.sh (G3).
+
+#### Tests
+New/updated tests per the fix orders (dept --selftest (H2), --plan assertion update; not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.100 entry below.
+
+### #1316 — [v25.1.102]  -  2026-09-28  -  SYSTEM-DIAGNOSTIC-CHECKLIST.md content rewrite: 16-release stale content pass
+
+#### Why
+SYSTEM-DIAGNOSTIC-CHECKLIST.md still described the stack as it worked around v9.6.2 — a fixed 12-tag/6-tag persona taxonomy that no longer exists, a hand-typed "17 departments" floor the repo now computes at runtime (`department-floor.py`), a 4-check Gemini Engine section that predates the sqlite-backed coaching-personas pipeline, an interview model ("2-3 mandatory + up to 7 conditional questions") superseded by the phase-based spec in INSTRUCTIONS.md, symlink guidance for AGENTS.md/TOOLS.md/USER.md that N29 (amended 2026-07-31) reversed to real-file copies, stale script paths (`~/.openclaw/scripts/gemini-indexer.py` instead of the workspace `scripts/` tree), a persona-selector funnel-key example (`after_keyword`/`after_semantic`) that no longer matches the shipped output (`pool`/`category`/`semantic`), and zero coverage of the 2.11-2.15 and X.2-X.14 checks `qc-system-integrity.sh` has grown since. A version-number swap would not have fixed any of this; the checklist needed re-verifying line by line against the current runner script and the skill folders it inspects.
+
+#### What changed
+- SYSTEM-DIAGNOSTIC-CHECKLIST.md: full content rewrite. Every row now either matches an exact check ID in `scripts/qc-system-integrity.sh` (marked **(runner ...)**) or is explicitly marked **(manual)** where the runner does not automate it — the old doc silently mixed the two. Added CHECK 2.11-2.15 (role-library materialization, provenance, IDENTITY.md coverage, legacy-tree detection, exposed-file census) and the CROSS-CUTTING X.2-X.14 table (provider-capability invariants, Ollama platform standard, no-client-names, workspace-department materialization, repo-consistency, GHL MCP supervision x3, platform-facts stamp) that the runner has carried for several releases with no doc coverage. Removed the fixed 12-tag/6-tag domain taxonomy assertion (the vocabulary is now open and book-derived), the hand-typed department-count claims, and the "SYMLINKED, not copied" guidance for dept core files (replaced with the current real-file-copy doctrine, cross-referenced against the runner's own 9.9 check). Corrected the Gemini script paths, the CC health-check paths and ports (gateway `:18789/health`, Command Center `:4000/api/health`, sourced from `shared-utils/fleet_refresh_runner.py`), the persona-selector funnel JSON keys, the GHL MCP quota check's script path and thresholds, and the CHECK 3 persona-blueprint section list (14 sections, current names, per `22-book-to-persona-coaching-leadership-system/CHECKLIST.md`). Added a "Schedule" subsection describing the actual Sunday health gate (`fleet_refresh_runner.py`'s five health probes) in place of the old one-line schedule note.
+- version, install.sh, update-skills.sh, 23-ai-workforce-blueprint/skill-version.txt, 23-ai-workforce-blueprint/templates/role-library/_index.json, README.md (x2), DIRECT-TO-AGENT-UPDATE-MESSAGE.md, cc-compat.json, 23-ai-workforce-blueprint/SKILL.md: v25.1.101 -> v25.1.102 via `scripts/bump-version.sh`.
+
+#### Tests
+`scripts/check-doc-currency-guards.sh` (pass — unaffected by this file, confirms no other doc drifted while this PR was open); `scripts/check-readme-current-release.sh` (pass); `scripts/bump-version.sh --check` (all 10 markers agree at v25.1.102); every file path and script name cited in the rewritten checklist verified to exist on disk before publishing.
+
+### #1317 — docs(batch-merger-proof): isolation proof A (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1318 — docs(batch-merger-proof): isolation proof B (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1319 — docs(batch-merger-proof): isolation proof C (clean)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #1321 — [v25.1.103]  -  2026-09-28  -  Fleet roll names every box by its client, not its box id; per-box pass note
+
+#### Why
+Trevor's standing rule: people are named, never referred to by ids. The fleet roll printed box ids and hostnames in every line, the summary table and the operator alerts, so a person had to translate each one into a client. He also asked to hear the moment each box passes.
+
+#### What changed
+- scripts/make-fleet-boxes-file.py: every box in the private boxes file carries "client", the client's name from the operator's private roster. A trailing business or device note is dropped, and kept only to tell apart two boxes of one client on one platform. "client" is the first column of the private Drive sheet. A box with no roster client is written as "UNKNOWN CLIENT (<box id>)" with a loud warning, so it gets fixed.
+- scripts/fleet-refresh.sh: queue lines, per-box progress, the per-box summary lines and the outcome table name each box "Client Name (Platform)". The box id appears once, on the queue line, to find the box's log. Each box result gets "client" and "label" from the boxes file. The runner on the box does not know whose box it is, and a new runner flag would break boxes still on an older runner in a dry run.
+- shared-utils/fleet_notify.py: roll-back and failure alerts read "<Client> (<Platform>) rolled back: <why>". The new --passed mode sends "✅ <Client> (<Platform>) updated and passed. Onboarding <version>, Command Center <version>" by Telegram only, as each box passes on an operator --apply roll. Email stays for failures and roll-backs.
+- scripts/fleet-boxes.example.json: placeholder "client" on every example box.
+
+#### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (63 pass): client names in the boxes file, the sheet, the queue and summary lines, the outcome table, the result JSON, the alerts and the pass note; the pass note goes by Telegram only and never for a roll-back, a failure or a box that needs attention; the UNKNOWN CLIENT fallback. All fixtures use placeholder names.
+
+## [v25.1.101]  -  2026-09-28  -  Doc/CHANGELOG/number staleness sweep: fixed drifted persona counts, DIRECT-TO-AGENT and interview-launch-recovery paired-release prose, Skill 38 reference count; added G2-EXT full-history CHANGELOG-tag guard and check-doc-currency-guards.sh CI checks
+## [v25.1.100]  -  2026-09-28  -  Credential key aliases (xiaomi/mimo, 9router), CC status from live health
+
+### Why
+`check-credential.sh` rejected known-good secrets whenever a provider was referenced under an alternate name (xiaomi vs mimo, 9router's several spellings), and its SecretRef handling did not cover the dict-with-apiKey shape. Separately, the skill-32 daily-update path derived `commandCenterStatus` from a throwaway rebuild instead of asking the running Command Center whether it was actually healthy and current. Version markers rolled v25.1.99 -> v25.1.100 via scripts/bump-version.sh (v25.1.98 and v25.1.99 were claimed by open PR #1296's obsolete pin commits and PR #1306 respectively; no Command Center pin change — main already pins v7.6.72).
+
+### What changed
+- shared-utils/secret_names.json: added credential key aliases so xiaomi/mimo and the several 9router spellings resolve to the same secret.
+- shared-utils/check-credential.sh: agnes/xiaomi/moonshot/9router alias maps; a hermetic `OC_CONFIG_FILE`-scoped self-test; SecretRef dict `apiKey` handling so a `{apiKey: ...}` shaped ref is read correctly instead of failing closed.
+- shared-utils/key_resolver.py: alias resolution support for the new key names.
+- 32-command-center-setup/scripts/run-full-install.sh: the daily-update `commandCenterStatus` now comes from the live Command Center's `/api/health` returning 200 with migrations current, not from a spare rebuild that could pass while the running instance was actually unhealthy or behind.
+- tests/unit/check-credential-aliases-secretref.test.sh: chmod 600 the temp secrets/.env fixture so the test does not leave a world-readable secrets file behind.
+- 32-command-center-setup/skill-version.txt: v13.1.31 -> v13.1.32 (G3: run-full-install.sh content changed).
+
+### Tests
+tests/unit/check-credential-aliases-secretref.test.sh (hermetic self-test, alias maps, SecretRef dict apiKey, chmod 600 fixture); tests/unit/cc-status-from-live-health.test.sh; tests/probe/test-cc-route-update-canonical-path.sh; tests/unit/full-update-path-contract.test.sh.
+
+## [v25.1.99]  -  2026-09-28  -  Fleet roll: fix first then roll back, content integrity checks, operator alerts, Drive backup of the box list, Command Center pin v7.6.72
+
+### Why
+Trevor's scope for the fleet roll: a failed check after an update must be FIXED before anything is undone, the box must be proven to hold the release's content (not just to have exited 0), he must hear about every roll-back or failure without a client ever hearing, and the private box list must survive the loss of his Mac. Version markers rolled v25.1.97 -> v25.1.99 via scripts/bump-version.sh (v25.1.98 is claimed by open PR #1296).
+
+### What changed
+- shared-utils/fleet_refresh_runner.py: after the update, failing checks get up to 3 fix attempts chosen by what is failing (restart the gateway; re-run the failed step; rebuild and restart the Command Center; re-run update-skills.sh for a content gap; reset the main session), with every attempt recorded in the per-box result, before the existing roll-back to the snapshot. Gateway restart: Mac `launchctl kickstart -k` (a booted-out label is bootstrapped from its plist first, as the gateway watchdog does; exit 125/126 falls back to `launchctl stop`); Hostinger `docker compose up -d --force-recreate <service>` and Contabo `docker restart <container>`, run on the host by fleet-refresh.sh (runner exits 4 and is resumed with --continue-heal; a failed host restart resumes without it, and no box is ever left pending).
+- Content integrity gate (same signals as update-skills.sh's own probes): persona index sentinel == manifest release_tag; persona embeddings vs the manifest count (honest deferral receipts count); SOP library rows vs the canonical count; SOP embeddings coverage vs the embeddings manifest; the installed skill-23 digest (role library) vs the digest update-skills.sh recorded from the release; the department intake receipt from this run and role folders for every declared department. A gap that was already there before the update is reported and alerted but never rolled back.
+- shared-utils/fleet_notify.py + shared-utils/operator_google.py: on ROLLED_BACK, FAILED or a pre-existing content gap, the operator (only) gets a Telegram note through his own agent's bot via the fleet-standing-operator-alert webhook (reachable from client boxes with the credentials they already carry, so a box's own Sunday update alerts too) and, on his Mac, an email sent through his Google service account. Never the gws CLI; never a client chat; secrets scrubbed.
+- scripts/make-fleet-boxes-file.py: refreshes a private Google Sheet backup of the box list on every run (env-var names only), records each roll's result, date and 999 presence (--record-roll, called by fleet-refresh.sh after every --apply), and rebuilds boxes.json from the sheet with --from-sheet or automatically when the local roster is missing.
+- cc-compat.json: Command Center pinnedTag v7.6.70 -> v7.6.72 (newest tag at release time).
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py: 60 tests (fix-first healing, 3-attempt cap then roll-back, content gaps, pre-existing gaps not rolled back, container host-restart hand-off and resume for Hostinger and Contabo end to end through fake ssh/docker, failed host restart, Mac launchd restart incl. booted-out label, each content check both ways, parity of the SOP checks with update-skills.sh's own probe, operator alerts and operator-only email, Drive sheet round trip and rebuild). scripts/test-fleet-refresh.sh 40/40.
+
+## [v25.1.97]  -  2026-09-28  -  Fleet roll safety: 999-setup refresh, post-update health gate with automatic rollback, waves, boxes-file generator, Sunday = operator roll, Command Center pin v7.6.70
+
+### Why
+A fleet roll must spend no AI tokens and prove every client box is still up afterwards. fleet-refresh.sh could deploy but could not tell whether it broke a box, could not undo it, and the box's own Sunday update ran a different (onboarding-only) path. Version markers rolled v25.1.96 -> v25.1.97 via scripts/bump-version.sh.
+
+### What changed
+- shared-utils/fleet_refresh_runner.py: before any change, snapshots the box (onboarding stamp + clone SHA/tag, Command Center SHA/tag/version, a tarball of only the onboarding-managed skill trees, a copy of openclaw.json) and its health. After the update a read-only, platform-aware health gate runs: gateway process, gateway /health, Telegram Bot API getMe (a read, never sendMessage), Command Center /api/health three times, and the main-agent session reset. A check that passed before and fails after, or a half-applied onboarding step (or Command Center step whose checkout moved), rolls the box back to the snapshot (clone, skill trees, stamp, Command Center rebuilt and restarted at its previous SHA through atomic-deploy.sh), re-checks health, and records ROLLED_BACK with the failing check named. No restorable snapshot means no update. Each box reports UPDATED / ROLLED_BACK / FAILED / SKIPPED. A per-box lock keeps the operator roll and the Sunday run from interleaving.
+- New step update-999: where 999-setup is already cloned it is fast-forwarded and its installer's own skill-link routine is re-run; hand-managed skill copies are left alone; absent = "999 not installed" (never installed fresh). The full 999 orchestrator is not run because it ends with a live model call.
+- atomic-deploy.sh is now run with bash 4+ (macOS /bin/bash is 3.2 and made it exit 2), --app-dir, and an outer timeout above its own 18-minute health window. atomic-deploy.sh already builds in a private candidate directory, so a failed build leaves the previous build serving (exit 2); build-cc says so.
+- update-skills.sh exit 2 (content current, infrastructure advisory) is no longer a failed step; the pinned onboarding version is re-read after the updater self-syncs the clone; the Wave-5 preflight is checked before the first change instead of mid-deploy.
+- scripts/fleet-refresh.sh: --wave first|rest (the first wave is one client box per platform, rolled and checked before every other client box); runs inside the client container (docker exec) or a Mac login shell; syncs the box's clone to origin/main before the runner on --apply (dry-run never touches it); survives a dropped SSH session; keeps runner logs in ~/.openclaw/fleet/runs/; one-screen outcome table; refuses --local --apply from a dirty or non-main checkout. Fixed: the fleet summary JSON was always empty, and every --apply run crashed in the retirement heredoc (a backticked gh) before reporting its exit code.
+- scripts/make-fleet-boxes-file.py: builds the --boxes-file from the operator's roster and box registry, outside any git tree, mode 600, putting one client box per platform (one Mac, one Hostinger, one Contabo) in the first wave. scripts/fleet-boxes.example.json holds placeholders only. Run outputs that carry box names are now gitignored.
+- Sunday path: scripts/weekly-full-update.sh runs fleet-refresh.sh --local --apply from the box's clone; setup-weekly-update.sh, cron-prompt.txt RULE 9 auto-apply and RULE 10(a), and update-skills.sh's cron heal (for boxes already installed) all point at it. RULE 9's low/medium-risk auto-apply semantics are unchanged.
+- cc-compat.json: Command Center pinnedTag v7.6.68 -> v7.6.70.
+
+### Tests
+tests/unit/fleet-refresh-roll-safety.test.py (31 tests, wired into qc-static): snapshot, gate pass, gate fail -> full rollback, half-applied step -> rollback, Command Center step failure without a checkout move -> no rollback, rollback that does not restore health -> FAILED, pre-existing failures not blamed, update-skills exit 2 advisory, build exit 2 = old build serving, 999 present / absent / archive extract / hand-managed / found via skill link / dry-run, Telegram getMe only with the token never reported, box lock, boxes-file generator with a fixture roster, waves and the outcome table through fake ssh/docker, the --local --apply checkout guard, weekly-full-update.sh, and the Sunday cron heal. scripts/test-fleet-refresh.sh 40/40, fleet-refresh-cc-main-convergence and cc-runtime-preflight pass.
+
+## [v25.1.96]  -  2026-09-28  -  Batch auto-merge: A47 accepts any route, ACC-052 batch docs, README current-release refresh
+
+### Why
+The batch auto-merge (PR #1305) rolled the version markers v25.1.95 -> v25.1.96 and was tagged without a CHANGELOG header; the G2 gate requires one for every v11+ annotated tag. This entry records what that release contains (from its commits).
+
+### What changed
+- fix(A47): accept any route (no allowlist, never block) while keeping requested-vs-served recording.
+- docs(jev11): ACC-052 batch tick state machine, daemon skip and fail-open rationale, batch-train label governs enrollment, daemon required contexts.
+- readme: refresh the current-release section and guard against future drift (scripts/check-readme-current-release.sh + its test).
+
+## [v25.1.95]  -  2026-09-28  -  Presentations Step 4 lands on main: retired text-overlay doctrine (Fix 4), canonical assembler steps (Fix 20), installer-managed watchdog (Fix 49)
+
+### Why
+This entry documents the Step 4 release (Fixes 4, 20, 49) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.94 -> v25.1.95 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 4 (retired text-overlay path still taught as live in three role docs): replaced SOP 9.3/9.4 sections, Gate 5, overlay KPI rows and the add_textbox code in pptx-assembly-specialist.md with the SOP file's ELIMINATED text (re-prompt/re-seed, then human escalation, never an overlay); eliminated the pptx_text_overlays.json write/fallback/outputs/handoff in slide-image-creator.md and the overlay reads/asserts in qc-specialist-presentations.md; added the RETIRED appendix the AF-OVERLAY-DELIVERED manifest trigger claims exists; added a pptx_text_overlays pattern to retired-doctrine-patterns.json.
+- Fix 20 (hand-rolled assembler steps in the SOP and role doc): SOP file Step 4 now reads "Reference only: canonical build_deck.assemble_pptx() behaves as follows (do not write this file)"; Step 5 runs scripts/run_signature_deck.py (P8-ASSEMBLE); role doc SOP 9.1 replaced with the SOP file's version; L72 maintenance line deleted; phrase swap to "The canonical assembler (build_deck.assemble_pptx)" in the universal ruleset, department copy and SOP-PITCH-05; ran scripts/hash-universal-sops-manifest.py and re-synced the content manifest.
+- Fix 49 (capacity SOP makes agents install a second, hand-made crontab watchdog): replaced SOP 9.2 steps 1-7 and the Failure mode paragraph in both the SOP file and capacity-reliability-engineer.md with installer-watchdog verification (launchctl list / openclaw cron list; run update-skills.sh if absent; never write or install a per-deck watchdog). Records watchdog: installer-managed in capacity_plan.json.
+- Version markers rolled v25.1.94 -> v25.1.95 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+The fix orders required no new test files for Fixes 4, 20, 49 (only procedural: hash-universal-sops-manifest.py run, done); JSON validated by parse, syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.94 entry below.
+
+## [v25.1.94]  -  2026-09-28  -  Presentations Step 3 lands on main: attempt-counter reset (Fix 11), engine pid recording (Fix 13), unified lease format (Fix 14)
+
+### Why
+This entry documents the Step 3 release (Fixes 11, 13, 14) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.93 -> v25.1.94 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 11 (canonical-entry attempt counter never resets): reset .canonical-entry-attempts on engine success (both main and fallback paths); skip the increment when RESUME=1 and state.json exists; both script copies. QC caught an unbound-variable crash under set -u on resume (fixed with _ATTEMPT_FILE="" init); resume test strengthened. Test: test_fix11_attempt_counter_reset.py.
+- Fix 13 (engine never records its own pid): state["engine_pid"]=os.getpid() + store.save(state) inside RunLock after store.load(); poller already-running check uses read_engine_pid with .job.lock fallback; launcher._read_engine_pid gains the same fallback. Integration test added (skipped_running via real RunLock+StateStore path). Test: test_fix13_engine_pid.py.
+- Fix 14 (poller and engine write different lease formats): optional pid= on lease.acquire; poller PYLEASE/PYREL heredocs replaced with python3 -c calls using lease.acquire(pid=$$, holder={"holder":"intake-poll-bridge"}); both actors now write ISO acquired_at + expires_at via the same code path. Test: test_fix14_lease_format.py.
+- Version markers rolled v25.1.93 -> v25.1.94 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+New tests added per fix (not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.93 entry below.
+
+## [v25.1.93]  -  2026-09-28  -  Presentations: Docker release-matrix pin to deb13u7, #1273 Fix 3 test fixture, #1277 test-isolation fixes
+
+### Why
+Three fix PRs (#1282, #1283, #1284) each change content under 23-ai-workforce-blueprint/, so each one alone fails G3 (a skill content change needs a skill-version.txt bump), and three separate bumps would collide. This release lands all three with one lockstep bump, cut from current main (v25.1.92, #1286). It supersedes #1287, #1282, #1283 and #1284. #1287 carried the same three fixes as v25.1.93 but conflicted after #1286 merged. It never merged, and no v25.1.93 tag exists.
+
+### What changed
+- #1282 (Docker release-matrix legs): the libreoffice-impress pin moves from 4:25.2.3-2+deb13u6 to 4:25.2.3-2+deb13u7 in release-matrix/Dockerfile.hostinger, release-matrix/Dockerfile.contabo and release-matrix/pins.yaml. The Docker failure came from Debian's trixie-security update to libreoffice 4:25.2.3-2+deb13u7: the unpinned libreoffice-uiconfig-impress dependency moved to deb13u7, so the deb13u6 pin could no longer install. PR #1277 did not cause it.
+- #1283 (#1273 Fix 3 test fixture): tests/test_fix03_env_store_restored.py writes its scratch store inside the client root (tmp_path/home/.openclaw/secrets/.env), so oc_paths no longer rejects it as escaping the client installation. Test-only.
+- #1284 (#1277 test isolation): test_fix10_daily_cap_failclosed.py resets the governor_store._STORE singleton for each test, and test_fix6_openrouter_pricing.py reads rate_source with .get() on the catalog-fallback row. Test-only.
+- Version markers rolled v25.1.92 -> v25.1.93 by `scripts/bump-version.sh` (G3).
+- `release-cohort.json` restamped to onb_version v25.1.93 and onb_sha = the origin/main tip this release was tested on, so `tests/unit/test_release_cohort_manifest.py` stays green after the bump. #1288 fixed the same drift after v25.1.92.
+
+## [v25.1.92]  -  2026-09-28  -  Interview prior-declaration batch (INT-001..INT-005) lands on main; supersedes the unmerged PR #1249
+
+### Why
+PR #1249 carried this batch as "v25.1.85", but it never merged and that version was later used on main by PR #1247. The batch is re-applied onto current main under the next free version. The v25.1.85 tag is unchanged.
+
+### What changed
+- `shared-utils/interview_completion.py` (new): a read-only check that decides whether the owner may be prompted about the interview. It returns COMPLETE (the state says so), DECLARED (the owner recorded a prior completion in the Command Center table `interview_prior_completion_declarations`), INCOMPLETE (proven not done), or UNKNOWN (identity missing, store not pinned, or table not there yet). Only INCOMPLETE allows a prompt. It never writes state, and it never counts as permission to build or to pass QC.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: refuses (exit 3) on COMPLETE or DECLARED, and stays pending (exit 8) on UNKNOWN. `interview-nudge-cron.sh`: sends no reminder unless the status is INCOMPLETE.
+- `shared-utils/interview_invitation.py`: gates public-origin resolution and re-checks just before enrollment. `shared-utils/nudge-incomplete-interviews.py`: completion is terminal (a stale false can no longer overwrite a completed handoff), and the reminder is skipped on COMPLETE, DECLARED, UNKNOWN or a company slug mismatch.
+- Tests: `tests/unit/interview-completion.test.py` (new). `test_interview_invitation.py` fixtures now pin identity and the database. `interview-launch.test.py` checks that completed state and tenant registry selectors survive a reprovision. `standard-first-cron-awareness.test.sh` nudge fixtures stub the completion reader as INCOMPLETE, so they still reach the paths behind the new gate. `.github/workflows/interview-launch-contract.yml` now runs the new test (the follow-up #1249 left open).
+- Pairs with the Command Center declaration table, which is present at the pinned CC v7.6.68. The CC pin is unchanged.
+- Version markers rolled v25.1.91 -> v25.1.92 by `scripts/bump-version.sh` (G3: skill 23 content changed).
+
+## [v25.1.91]  -  2026-09-27  -  Presentations Step 2 lands on main: Kie.ai spend ceilings fail-closed (Fix 10), fresh-intake credit preflight gate (Fix 5), OpenRouter live pricing (Fix 6)
+
+### Why
+This entry documents the Step 2 release (Fixes 10, 5, 6) cut by the auto-tag workflow on merge. The G2 gate requires a CHANGELOG header for every v11+ annotated tag. Version markers rolled v25.1.90 -> v25.1.91 via scripts/bump-version.sh (G3: skill content changed under 23-ai-workforce-blueprint/).
+
+### What changed
+- Fix 10 (Kie.ai spend ceilings fail-open): Added GovernorDailyCapReached(GovernorTimeout), raised at the daily-cap check in governor.py; both _gov_acquire functions (build_deck.py, kie_tasks.py) re-raise it and re-raise submit-side (poll=False) rate timeouts; fail-soft kept only for governor module absent. Test: test_fix10_daily_cap_failclosed.py.
+- Fix 5 (fresh-intake preflight bypass): presentation-intake-poll.sh runs python3 -m presentation_job.credit_preflight before the --new engine call when RUN_MODE is set; non-zero exit counts the run as refused and the engine never starts. credit_preflight.main returns 0 for the flag-off skipped result. Test: test_fix5_fresh_intake_preflight.py.
+- Fix 6 (OpenRouter pricing): _alias_for_route matches served_ids[provider] == model; OpenRouter routes price from the live https://openrouter.ai/api/v1/models list (cached per run), static catalog as fallback; unpriceable paid phase in ultra blocks before spending (model named), standard/economy keep the warning. Test: test_fix6_openrouter_pricing.py.
+- Version markers rolled v25.1.90 -> v25.1.91 across all markers via scripts/bump-version.sh (G3).
+
+### Tests
+New tests added per fix (not run locally per repo policy); syntax checks passed. G1, G1b, G3 and version-marker checks expected green on merge; G2 passes via this entry and the v25.1.90 entry below.
+
+## [v25.1.90]  -  2026-09-27  -  Batch train (KEY-001): direct-JEV resolves operator-store key name JEV_TYPESAFE_API_KEY
+
+- KEY-001 (A01, spec 16.2): `credential_resolver.DIRECT_KEYS` and `typesafe_direct.DIRECT_KEY_NAMES` gain `JEV_TYPESAFE_API_KEY` additively and LAST — the operator store's own key name, previously absent from both closed sets, which fell through to OpenRouter when the box carried only that name. Precedence unchanged for every name that resolved before. Runnable probe `scripts/probe/probe-key001-offline.py` committed with raw output; at base the box-as-configured case fails, post-fix it passes with zero OpenRouter selection calls. Folded from branch `jev11/KEY-001-keyname` (be418995).
+- Version markers rolled v25.1.89 -> v25.1.90 by `scripts/bump-version.sh` (15 marker files, one consistent entry). A60 (REP-060) already landed on main via PR #1272 ahead of this train; not re-folded.
+
+## [v25.1.89]  -  2026-09-27  -  JEV 1.1 batch train lands on main: decision-engine continuation and modes, owner-direct execution policy, A36 selector-gate repair, D12/D28/D34 regressions, skill-version lockstep
+
+### Why
+`auto-tag-on-merge.yml` cut the annotated tag `v25.1.89` at main tip (`44f272fa0`) on the merge of PR #1257 (jev11/d33-batch-trains, 2026-09-27T19:16:35Z) and the version markers were rolled v25.1.88 -> v25.1.89, but no CHANGELOG entry was written for the release. The G2 gate requires a CHANGELOG header for every v11+ annotated tag, so the missing v25.1.89 entry failed G2 on main and, because that gate is a required status check, failed it on pull requests that had nothing to do with the release — PR #1258 among them. This entry documents the release that was already cut; no code, version marker, tag or pin is touched.
+
+### What changed
+- `shared-utils/decision_engine/continuation/{__init__,continuation}.py` (new), `shared-utils/decision_engine/modes/{__init__,cohort,modes}.py` (new), `shared-utils/decision_engine/parts/__init__.py` (new), `shared-utils/decision_engine/ladder/ladder.py`, `shared-utils/decision_engine/producer/producer_bundle.py`, `shared-utils/decision_engine/commit/dispatch.py` and `shared-utils/decision_engine_train/train.py`: decision-engine continuation policy, D34 cohort/modes wiring, part propagation and producer bundle gates.
+- `shared-utils/execution_policy/__init__.py` (new) and `shared-utils/ceo_execution_policy.py`: owner-direct execution policy (JEV-A35), with `shared-utils/persona_for_job.py` and `shared-utils/comms_audience_trigger.py`.
+- `23-ai-workforce-blueprint/scripts/backfill-build-state.py` and `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`: REP-212 (A36) selector-gate wiring to real callers and the JEV-028 managed CEO/role instruction clause.
+- `59-anthology-engine/scripts/intake_router.py` and `59-anthology-engine/scripts/nudge_send.py`: decision-engine intake and nudge routing. `32-command-center-setup/scripts/move-task.py`: redispatch caller parity. `57-social-media-in-a-box/scripts/ledger.py` with its restamped `ENGINE-PIN.sha256` late gate. `06-ghl-install-pages/tools/browser_manager.{py,sh}`. `scripts/agent-browser-reaper.sh`, `scripts/guard-agent-browser-managed.sh` and `scripts/apply-fleet-standards.sh`. `extensions/ceo-routing-doctrine/dist/index.js` and `docs/EMBEDDINGS.md`.
+- Version markers rolled v25.1.88 -> v25.1.89 and skill dirs 23/32/57/59 bumped in lockstep (G3).
+- New tests: `tests/unit/test_a36_gate_wiring.py`, `test_a36_selector_gate_repair.py`, `test_continuation_policy.py`, `test_d12_assignment_races.py`, `test_d34_modes_cohort.py`, `test_d34_wiring.py`, `test_execution_policy.py`, `test_jev28_managed_instructions.py`, `test_move_task_redispatch_caller.py`, `test_part_propagation.py`, `test_producer_bundle.py`.
+
+### Tests
+Measured on `44f272fa0` (origin/main): G1, G1b, G3 and the version-marker check all pass; G2 fails solely for the missing v25.1.89 header this entry adds.
+
+## [v25.1.88]  -  2026-09-26  -  JEV 1.1 batch 003 lands on main: decision-engine gates, offline evaluation harness, skill-version reconciliations
+
+### Why
+PR #1254 (jev11/integration-batch-003) merged the JEV 1.1 batch to main, and the release markers were rolled to v25.1.88 in the same window (`a0f20af7b`), but no CHANGELOG entry was written for the release. The G2 gate requires a CHANGELOG header for every v11+ annotated tag, so the missing v25.1.88 entry failed G2 on main and, because that gate is a required status check, failed it on pull requests that had nothing to do with the release. This entry documents the release that was already cut.
+
+### changed
+- `23-ai-workforce-blueprint/scripts/backfill-build-state.py` and `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-00-Owner-Task-Routing.md`: JEV-A36 CAS selector, backfill, producer and audience-rescore gates; the owner-direct execution policy record; the D28 managed CEO/role instruction clause.
+- `59-anthology-engine/scripts/intake_router.py` and `59-anthology-engine/scripts/nudge_send.py`: decision-engine intake and nudge routing.
+- `32-command-center-setup/scripts/move-task.py`: redispatch caller parity.
+- Skills 32, 35, 57 and 59 reconciled against origin/main to v13.1.30, v3.6.7, v1.7.2 and v1.0.5; the Skill 57 late gate re-pinned; MRG-103 QC path made repo-relative; the frozen D29 corpus and the D30 offline evaluation harness landed.
+
+### Tests
+Measured on `718f2b0ab` (origin/main): G1, G1b, G3 and the version-marker check all pass; G2 fails solely for the missing v25.1.88 header this entry adds.
+
+## [v25.1.87]  -  2026-09-26  -  Interview transcript-lock correctness pinned, cross-repo pin proof, reusable-link wording
+
+### Why
+The paired Command Center pin sat at v7.4.1 while the interview transcript lock could still burn its full 10-second deadline and wedge the single-threaded Node event loop when a transcript's parent directory did not exist, and the answer route did not append under the transcript lock. Separately the pin was asserted only as a local string: nothing read the Command Center repo, so a typo or a deleted tag would pass CI and only fail on a client box. Client-facing recovery copy still called the interview ticket single-use, while the actual contract is re-openable until the interview is complete.
+
+### What changed
+- `cc-compat.json`: `pinnedTag` v7.4.1 to v7.6.68 — the Command Center release carrying the ILJ-003 seam atomic merge with `decrypt_failed` surfaced (answer route appends under the transcript lock) and the ILJ-011 lock fix (creates its missing parent directory, treats `ENOENT` as missing-parent, never spins the 10 s deadline). `minVersion` is UNCHANGED at v7.4.0 and `maxVersion` stays null, so the schema contract (pinnedTag >= minVersion) holds and boxes still mid-update are not blocked by `assert_min_version`.
+- `tests/unit/cc-runtime-preflight.test.py`: new `test_cc_pin_is_real_annotated_tag_and_main_gte_pin` reads the public Command Center repo over git (no auth) and FAILS CLOSED, never skips: the pinned tag must exist, must be an ANNOTATED tag object (`git cat-file -t` prints `tag`), and Command Center `main` must be at or above the pin. The test-mirror literal `CC_PIN` moves to v7.6.68 in the same change (deliberately NOT derived from the file under test).
+- `docs/interview-launch-recovery.md`: the ticket is documented as re-openable until the interview is complete, with no expiry clock and re-openable on any device, instead of single-use.
+- Version markers rolled to v25.1.87 by `scripts/bump-version.sh`.
+
+### Tests
+`tests/unit/cc-runtime-preflight.test.py`: 7 passed — includes the live cross-repo probe against `github.com/trevorotts1/blackceo-command-center` (tag present, peeled ref present, tag object type `tag`, Command Center main >= pin). `tests/unit/test_interview_invitation.py`: 60 passed. `scripts/bump-version.sh --check`: all markers agree.
+
+## [v25.1.86]  -  2026-09-24  -  Nudge links use the configured public interview page, gateway receipts verified, state dir via canonical resolver
+
+### Why
+Reminder ("nudge") links carried no usable ticket: the worker built a placeholder bot URL, or a resume-slug path the invitation lane forbids, and fell back to a localhost-configured dashboard value. A gateway rc==0 was counted as delivered without reading the acknowledgement receipt, and the scan recorded the nudge before delivery was proven. `update-interview-state.sh` hand-rolled its own /data-else-HOME workspace choice, so it could stamp a different state file than the installer, sender, and Command Center route use.
+
+### What changed
+- `shared-utils/nudge-incomplete-interviews.py`: new `resolve_interview_link()` builds the stable `/interview` link from the configured public origin only (verified `commandCenterPublicOrigin` record, `MC_TENANT_PUBLIC_URL`, `commandCenterUrl`, `OPENCLAW_DASHBOARD_URL`; all present sources must agree); unknown, conflicting, non-HTTPS, loopback, or IP-literal origins are skip-with-reason, never a fabricated link. Gateway send adds `--json` and accepts only an acknowledged receipt (`_gateway_ack`, same contract as `interview_invitation.py acknowledgement()`); unverified sends are not recorded as sent and increment a new `send_failed` count beside `skipped_no_link` in the run summary.
+- `23-ai-workforce-blueprint/scripts/update-interview-state.sh`: STATE_DIR prefers the canonical `platform/common.sh oc_set_platform_paths` workspace when it holds the state file, with the legacy /data-else-HOME check as fallback; the fail-closed error is unchanged.
+- `scripts/update-skills.sh` + root `update-skills.sh`: verified — the scripts-path copy is the retired loud-failing shim (17/17 entrypoint-guard checks pass) and the root copy is the maintained updater; the flagged Contabo comment regions are accurate path notes, no defect; no edits made.
+- `docs/interview-state-source-of-truth.md`: does not exist at `origin/main` (verified against the tree); recorded as NOT-DONE.
+- New tests: `tests/unit/test_nudge_interview_link.py` (11 tests: resolver sources/conflicts/refusals, skip-before-gateway, rc==0-without-ack failure, acknowledged send, operator rejection), `tests/unit/test_state_dir_resolver.py` (3 tests: canonical resolver, legacy fallback, fail-closed error).
+
+### Tests
+`tests/unit/test_nudge_interview_link.py`: 11 passed. `tests/unit/test_state_dir_resolver.py`: 3 passed. `tests/unit/test_interview_invitation.py`: 60 passed. `tests/unit/interview-launch.test.py`: 20 run, OK (1 skipped, pre-existing). `test-interview-experience.sh`: 19 passed, 0 failed. `build-state-path-resolution.test.sh`: 14 passed, 0 failed. `cron-owner-chat-guard.test.sh`: 167 passed, 0 failed. `standard-first-cron-awareness.test.sh`: 44 passed, 0 failed. `test-single-update-skills-entrypoint.sh`: 17 passed, 0 failed. `scripts/bump-version.sh --check`: 10 markers agree.
+
+## [v25.1.85]  -  2026-09-24  -  Interview invitation link is query-form, reusable until complete (skill 32 v13.1.28)
+
+### Why
+The paired Command Center (v7.6.65) mints enrollment links as `/interview?enroll=<ticket>`, but the onboarding validator accepted only the legacy `/interview#enroll=<ticket>` fragment form and rejected an empty or missing URL with a crash-shaped error instead of a Pending refusal. The CI contract still pinned Command Center v7.1.5, which mints only fragment links. Client-facing copy promised a fresh link on re-sign-in and quoted a 24-hour clock, while the actual contract is reusable until the interview is complete.
+
+### What changed
+- `shared-utils/interview_invitation.py`: `issue_invitation` accepts the canonical `/interview?enroll=<ticket>` query form and keeps the legacy `/interview#enroll=<ticket>` fragment form for older issuers; exactly one ticket in exactly one place, nothing else beside it. Missing, empty, and non-string URLs are refused as Pending.
+- `tests/unit/test_interview_invitation.py`: all minted fixtures use the query form; the legacy fragment form is covered by a dedicated case plus mixed-form and empty-URL rejections. Fixture guard allows the PATH-resolved `bash` interpreter entrypoint (Homebrew on operator Macs, system bash on Linux).
+- `.github/workflows/interview-launch-contract.yml`: paired Command Center pin v7.1.5 to v7.6.65; new step asserts the paired `invitation.ts` mints query-form, the `send-link` route requires query `enroll`, and the minted URL passes this repo's validator.
+- `23-ai-workforce-blueprint/scripts/send-interview-link.sh`: sign-in lines now say to re-open the same link (valid until the interview is complete, re-openable on any device) instead of promising a fresh link on expiry.
+- `docs/interview-launch-recovery.md`, `32-command-center-setup/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`: link copy updated to reusable-until-complete with `?enroll=` canonical and legacy `#enroll=` noted; `TENANT-CONFIGURATION.md` needed no link-lifetime copy. `docs/tenant-interview-rollout.md` and `docs/interview-state-source-of-truth.md` do not exist in this repo (verified against `origin/main` tree), recorded as NOT-DONE.
+- Skill 32 v13.1.27 to v13.1.28.
+
+### Tests
+`tests/unit/test_interview_invitation.py`: 60 passed, 99 subtests passed. `send-interview-link.sh --dry-run` path covered inside that suite. Workflow YAML parses (29 steps). Contract assertion proven locally against CC v7.6.65 sources.
+
+## [v25.1.84]  -  2026-09-24  -  Interview sign-in works on fresh installs (skill 32 v13.1.27)
+
+### Why
+The Command Center refuses every interview sign-in with 409 `access_identity_unregistered` unless the public host's `MC_TENANT_REGISTRY_JSON` entry names its Cloudflare Access `issuer`, `audience` and `subjects`. `interview-launch.py provision` wrote only `kind`, `tenantId`, `companyId` and `installationId`, and nothing else in this repo ever wrote the other three, so every fresh install produced an interview link that errored for the owner. Each box had to be patched by hand.
+
+### What changed
+- New stage `interview-launch.py register-access`. It requests `<public origin>/interview` without following redirects (explicit `User-Agent`: Cloudflare answers the stock Python agent with 403 before Access runs) and accepts only a 302/303/307 to `https://<team>.cloudflareaccess.com/cdn-cgi/access/login/<this host>?kid=<audience>`. It fills `issuer`/`audience`, and `subjects` from the owner's `contactEmail` when none is registered (`pending+` placeholders refused). Matching loopback aliases get the same values. Present values are kept; conflicting ones are refused, never replaced. Atomic write, mode 0600. Exit 3 means the registry changed.
+- `run-full-install.sh` runs it inside the interview gate after `prebuild` and before the readiness verifier. On exit 3 it restarts the Command Center through `cc_pm2_start_canonical` (the registry is read at boot only) and waits for `/api/health` 200. On failure it stops at `interviewLaunch.status = "access-registration-pending"`, exit 8, before any invitation.
+- `TENANT-CONFIGURATION.md` documents the stage and the Access-app prerequisite.
+
+### Tests
+`tests/unit/interview-launch.test.py`: 5 new tests (fill + idempotent rerun with no network, existing subjects kept and conflicting audience refused, six non-Access responses refused with the file byte-identical, placeholder email refused, live request sends the explicit User-Agent) plus gate-ordering assertions. 20 run, OK (1 skipped, pre-existing). Mutation check: dropping the login-path check fails the refusal test. Live control: the stage's own request against a real client host returned 302 to its Access login with a 64-character `kid`.
+
+## [v25.1.83]  -  2026-09-24  -  Scripts read the new agent roster, find the real Command Center database, and work on Linux
+
+### Why
+OpenClaw 2026.9.x keeps agents under `agents.entries`, an object keyed by agent id, instead of the `agents.list` array. Scripts that read only `agents.list` found zero agents on those boxes. Scripts that wrote `agents.list` produced a config the gateway rejects. Several scripts also picked the first `mission-control.db` file that existed, which on some boxes is an empty decoy. On Linux, others ran `stat` the BSD way first and captured junk.
+
+### What changed (#1243, with #1244 folded in)
+- **Agent roster.** Readers combine `agents.entries` and `agents.list`, with `entries` winning, the same rule as `update-skills.sh`. Writers write to whichever shape the box already has. Examples: heartbeat defaults, the conversational-AI hook scripts, memory activation, fleet standards and the Telegram diagnosis.
+- **Command Center database.** `shared-utils/resolve_db.py` resolves the database the way the app does:
+  1. `$DASHBOARD_DB_PATH`
+  2. `$DATABASE_PATH`
+  3. the app's `.env.local`
+  4. the standard install locations, skipping empty files and requiring a `workspaces` table.
+
+  The healer backfill, department materialisation, integrity check and the updater's SOP repair path now use it.
+- **GNU `stat`.** Scripts try GNU `stat -c` first and check that the result is a plain number. Covered: install lock, file mode and owner, and the Rescue Rangers config lock and promote.
+- **Retiring a declined department** removes its agent from either roster shape and archives (never deletes) its workspace folder. It also works when the build state has no company slug.
+- **Update-only runs** now record `commandCenterBuildFresh`, so a verified update is no longer reported as "done-degraded".
+- **The embedding probe** judges rows imported from the shipped embeddings asset by release, not by the asset's build date. A box on the current release is no longer reported "dark".
+- **Platform detection** follows `platform/common.sh`: the operating system decides the label. This affects the credential check, the remediation reports and the agent-browser verification.
+- Skill versions: 07 v7.0.3, 15 v7.1.2, 31 v8.0.1, 32 v13.1.26, 38 v2.0.3, 41 v2.0.1, 58 v1.0.12, 60 v1.2.2, 63 v2.1.3, 64 v2.0.2, 66 v2.0.3, 67 v2.0.1, 68 v2.0.2. Skill 32 took the next patch over main's v13.1.25 (from #1240).
+
+### Tests
+Each class has a regression test that fails on the previous main and passes here. A new CI guard runs all seven. `test-sop-library-phase-wiring.sh` after merging main: 48 passed, 1 failed. The failure is the INSTALL.md "Phase 6c" heading check, which fails on main too.
+
+## [v25.1.82]  -  2026-09-24  -  The SOP library reaches every box, and prove-zhe checks the right places
+
+### What changed since v25.1.81
+- **Phase 6i runs on every box again (#1242).** The Command Center refresh stopped before Phase 6i on Linux boxes (`_cc_mtime` crashed under `set -u` when GNU `stat -f` printed filesystem status). On Macs, Phase 6i skipped itself entirely when no client slug resolved. It now uses the GNU `stat` form first, falls back to the `default` slug like update-skills U6c, and counts symlinked role `how-to.md` files. Skill 32 v13.1.23.
+- **Phase 6i reaches the role-library import on boxes that already hold the library (#1245, re-land of #1237).** An already-populated box makes the ingest print "downloaded 0 SOP records (skipped)". Phase 6i read that 0 as an empty asset and stopped before `converge(scope=sops)`, so `importRoleLibrary()` never ran on an existing box. The skip now uses the canonical count it verified and continues to the converge. #1237 was first merged before its Command Center dependency and reverted (#1238). It was re-landed on top of #1242, with every #1242 change kept. It depends on blackceo-command-center#416 (the role-library import makes no per-box embedding calls), which is merged. Skill 32 v13.1.24.
+- **SOP library v3 and central role-library vectors (#1240).** The 145 department SOPs are now in the library asset (`sop-library-v3.0.0`, 2,763 records; all 2,618 V2 records carried over unchanged). Role-library rows get their vectors from the central `sop-embeddings-v1.2.0` asset, so a box makes no embedding calls for them. Phase 6i provisions embeddings again after the converge, because the earlier provisioning runs before the role rows exist. Skill 32 v13.1.25.
+- **The updater keeps the Anthology engine's owner pins (#1239).** `update-skills.sh` no longer wipes `59-anthology-engine` owner pins when it replaces the skill folder.
+- **prove-zhe measures the live Command Center board and the new agent roster (#1241).** Phase 7z failed on a box whose ZHE steps had all landed:
+  - it read only `agents.list`, while OpenClaw 2026.9.x keeps the roster in `agents.entries`;
+  - it took the first `mission-control.db` it found, which was a 0-byte decoy;
+  - it matched lane slugs literally (`legal-compliance` against the `legal` lane).
+
+  It now reads both roster shapes, resolves the Command Center database the way the app does (and never creates one), and accepts the canonical lane slug.
+
+### Tests
+- `test-sop-library-phase-wiring.sh`: 48 passed, 1 failed. The one failure is the INSTALL.md "Phase 6c" heading check, which fails on main too.
+- `tests/unit/test_prove_zhe_cc_db_and_agents_entries.py`: 9 new tests.
+- `tests/unit/sop-library-v3-build.test.py`: 15 new tests.
+- `updater-preserves-skill-box-state.test.sh`: 39 passed.
+
+## [v25.1.81]  -  2026-09-22  -  Fail closed on the podcast publish success response (T0-21)
+
+### Why
+The success branch of `IF -- Episode Created Successfully` in the shipped n8n publish workflow fanned out to three siblings in PARALLEL: the client Gmail notification, the caller-facing `Respond -- Publish Success` node, and `Idempotency -- Mark Completed` — the durable row that prevents a repeat publish. The workflow is synchronous (`responseMode: responseNode`), the response node had no dependency on the completion write, and that write carried `onError: continueRegularOutput`. An episode could publish to a live client feed, the caller could be told it succeeded, and the ledger row recording it as `completed` could silently never land. `Idempotency -- Determine Verdict` only returns `replay` for `status === 'completed'`, so a lost write leaves the row `in_flight`: a requeue with a new idempotency key finds no completed row and republishes the same episode to the live feed a second time — the exact near-miss that prompted this fix.
+
+`settings.executionOrder: v1` sequences siblings by canvas y-coordinate, and the completion write (y=1250) likely ran before the response (y=1400) already — that ordering does not save it. `onError: continueRegularOutput` defeats it regardless of order (a failed write continued silently and the 200 was sent anyway, which is the actual fail-open), and the ordering itself was incidental — two y-coordinates on a canvas, not a structural guarantee, and dragging a node in the n8n UI would silently reverse it with nothing to notice.
+
+### What changed
+- `Respond -- Publish Success` moved out of the gate's parallel fan-out and chained BEHIND `Idempotency -- Mark Completed`, so the caller cannot be told the publish succeeded before the durable row lands.
+- Removed `onError: continueRegularOutput` from `Idempotency -- Mark Completed`. With the response now downstream, continue-on-error would let a FAILED write flow straight into a 200; removing it restores n8n's default (`stopWorkflow`), matching the sibling claim nodes (`Lookup By Key`, `Upsert Row Received`, `Mark In Flight`). A lost record now surfaces as an execution error instead of a false success.
+- `Respond -- Publish Success`'s response body re-pointed at `$('Podbean -- Publish Episode').first()`, required by the reorder: downstream of the data-table node, `$json` is now the updated row (no `.episode`), which would have silently emptied `permalink_url` and returned the row id as `episode_id`.
+- Deliberately not changed: the Gmail notification stays a sibling of the gate (a courtesy email, not a durability claim); the false/failure branch is left parallel, since a lost `Idempotency -- Mark Failed` write leaves the row `in_flight` and the next attempt is refused (already fail-closed in that direction — hardening it further would convert a recoverable stuck row into a hard error for no safety gain).
+
+### Tests
+`tests/unit/podbean-publish-workflow-response-ordering.test.py` was not detecting this defect at all. Its four node-name constants used an em dash; the workflow had been re-exported with double-hyphen names, and the constants were never updated, so `_targets(GATE, 0)` returned `[]` and the assertion guarding this exact defect (`test_the_gate_does_not_answer_the_caller_directly`) was passing VACUOUSLY — the suite was red only on a node-not-found check. Six string literals corrected; no assertion, message, threshold, or test body changed.
+
+Proof of non-vacuity: with the graph fix applied, 9/9 pass. With the graph change reverted and the corrected test kept, 4 fail (matching this repo's own prior "4 FAILED against untouched origin/main" record), naming the defect directly: *"the success gate still answers the webhook in parallel with the completion write — the caller can be told the publish succeeded while the idempotency row never landed."* Restored, 9/9 again.
+
+Also run: `validate_n8n_workflow.py` on the edited export (`VALID: version=1.0.0 nodes=70 connections=43`); `scripts/tests/test_validate_n8n_workflow.py` (14 passed); `scripts/tests/test_n8n_idempotency_fail_closed.py` (3 passed); `scripts/qc-assert-no-n8n-plaintext-secrets.sh` (PASS, 17 files); `podcast-smoke-test-blind-not-green.test.py` (39/39, control proving the runner itself works).
+
+### Not changed here
+A repo file that is never imported changes nothing on a host. The corrected graph still needs importing to the live n8n instance — a separate operator decision, deliberately not done here. Verified read-only against the live instance: the ACTIVE publish workflow still carries the parallel fan-out and `continueRegularOutput` as of this writing.
+
+## [v25.1.80]  -  2026-09-22  -  test(podcast): repair the channel-scoping suite the engine outgrew (T0-19), plus two more drifted tests (T0-21, T0-22)
+
+### Why
+`tests/unit/podcast-engine-fail-closed.test.sh` (T0-19/T0-20) had been red on main for two months, and the job's masking of later steps kept T0-21 and T0-22 invisible the whole time. Verdict: the guard in `podbean_publish.sh` is intact and working — the TEST drifted. Three mandatory preconditions landed on the script after the suite was written (`PODBEAN_LOCAL_MODE_OK=1` 2026-08-01, `--description` >= 200 chars 2026-08-05, `--cover` in the same hardening wave). Every one of them aborts before the isolation guard ever runs, so all five scenarios died in argument/mode validation having issued zero HTTP requests — and the suite reported that silence as a dead guard. The `(got: )` diagnostics were `${OUT: -200}`, which yields the empty string on a negative offset larger than the string in bash (zsh returns the whole string, which is why the code read as correct); every refusal message is under 200 chars, so all three printed empty. The script was talking the whole time.
+
+Corrected timeline: last green was `9b48985d7` (2026-07-23T23:46:23Z) — two months, not seven weeks. The very next run was the first red, and in THAT run this shell suite was 19/19 — the job failed on the next step, T0-22. The shell suite only started failing later, once the precondition hardening landed. Two different causes produced one unbroken red bar.
+
+### What changed — test files only, no source file touched
+- **`tests/unit/podcast-engine-fail-closed.test.sh`** (19 -> 23 assertions): supplies the three now-mandatory preconditions plus `PODBEAN_RETRY_BASE_DELAY=0` (retry count unchanged, sleeps removed); `tail_of()` replaces the broken `${OUT: -200}`; fake curl now records `<METHOD> <url>` so an episode-count GET can no longer satisfy an episode-create assertion (both hit the same URL, differing only by method); fake curl's `-K` config read is fixed to survive being read twice (a process-substitution pipe empties on the second read); every refusal fixture now answers the whole downstream happy path, since without it a refusal run starved at `uploadAuthorize` regardless of the guard and made every "no episode-create request was sent" assertion vacuously true; 4 new assertions confirm each refusal actually reached the guard (issued at least one request), so a future mandatory flag will name itself instead of printing `(got: )`.
+- **`tests/unit/podbean-publish-workflow-response-ordering.test.py`**: six node-name constants re-spelled from an em dash to the shipped double-hyphen form the graph actually uses.
+- **`tests/unit/podcast-state-ledger-linkage.test.py`** (T0-22, a third drifted test): `podcast_state.py` is safer than the suite expected — `cmd_advance` now rolls back a broken ledger linkage transition instead of committing it with a `ledger_sync: broken` marker, so the old assertions expecting a committed-but-marked record no longer apply. Replaced with what the code now guarantees: no record is emitted, and the job is still in its previous status, read straight from SQLite (strictly stronger, since it checks the database rather than CLI output).
+
+### Counts
+| step | before | after |
+|---|---|---|
+| T0-19/T0-20 channel scoping + loudness | 15 passed, 4 failed | 23 passed, 0 failed |
+| T0-21 webhook ordering | 8 failures + 1 error (bogus "node not found") | 4 failures (real, see below) |
+| T0-22 ledger linkage | 9 passed, 1 error | 10 passed, 0 errors |
+
+### Proof
+Mutation-proved on `podbean_publish.sh`, each applied then reverted (source is byte-identical to origin/main on this branch): reintroducing the original T0-19 defect (every listing failure warns and carries on) turns 5 red; letting a scoped-token failure carry on with the account-wide token turns 4 red; removing the single-channel branch's proof-of-scope turns 2 red the other direction (a healthy account must still publish); simulating a new mandatory flag landing (the exact class of change that caused this drift) turns 8 red, each naming the precondition it died on instead of printing empty. `podcast_state.py` mutation-proved for T0-22: dropping the `LedgerLinkageError` so a broken linkage commits reports "a broken ledger linkage still reported a clean advance"; committing instead of rolling back while keeping the raise names the exact roster/ledger split-brain.
+
+### Not fixed here — a live defect, found not repaired
+Repairing the T0-21 node lookups made the suite report what it exists to detect: the shipped n8n workflow's success branch fans `IF -- Episode Created Successfully` out in PARALLEL to the client notification, the caller-facing response, AND the durable idempotency write — and that write has no outgoing dependency and `onError: continueRegularOutput`. The caller can be told "published" while the completion write that prevents a duplicate publish never lands. This is the exact duplicate-publish fail-open a 2026-07-21 commit claimed to close; it is not closed. Changing the shipped n8n graph is a separate decision (the guard workflow's own header already notes a repo file that is never imported changes nothing on the running host, so the real repair is a fleet action, not a file edit) — tracked and fixed in the next PR.
+## [v25.1.79]  -  2026-09-22  -  The duplicate guard compares the GUEST, not two incompatible fingerprint formats
+
+### Why
+A podcast job was queued for a guest whose episode had **already been published**, and it sat one advance away from re-publishing to a live client feed. It was caught by hand. Three holes had to line up, and all three were in `58-podcast-production-engine/scripts/podcast_state.py`, the engine's declared SOLE writer.
+
+**1. The duplicate guard compared bytes, not identity.** `cmd_create` keys idempotency off a single exact-match lookup on `(client_id, submission_fingerprint)` — but that column holds **two different hash formats**:
+
+```
+fingerprint = job_key if job_key else compute_fingerprint(args.contact_id, args.style, payload)
+```
+
+A submission arriving through the webhook stores the webhook's canonical `job_key`; a standalone CLI create stores a local sha256 over a narrower field set (`contact_id + style + q1..q10 + additional_info`). The two hash different things and can never be equal, so the same guest stored one way was **invisible** to a submission stored the other way. The swap itself was deliberate (SK2-14, closing a never-create hole) — the gap is that a byte-comparison was left as the only guard. `contact_id`, the guest's actual identity and already indexed (`idx_pj_contact`), was never compared at all.
+
+**2. A rescue-advanced job was indistinguishable from an organic one.** SOP-PODCAST-07 Section 3 names advancing a **real** job parked in `received` as the *preferred* activation-proof path. That advance left no marker, so a job a test pushed into the live queue looked exactly like one its own production run had moved.
+
+**3. Nothing stopped a package that admitted it had no source material** from reaching a publish step.
+
+And `resume` had no gate of any kind: a held job restores `status = resume_stage` directly, and that stage can itself be `publishing`.
+
+### What changed
+One new section in `podcast_state.py` plus three gated call sites. The fix is at the sole writer, so every caller (`podcast_step_driver.py`, `credit_queue.py`, `podbean_publish.sh`, the intake webhook) inherits it without a single call site changing.
+
+- **`canonical_guest_id()`** folds case and punctuation, so `MayaRandleGuest01`, `mayarandleguest01` and `maya-randle-guest-01` are ONE guest. This is what lets the guard match across the two fingerprint formats, which cannot be compared to each other directly. It deliberately over-matches: it feeds a BLOCK, and a false stop costs a human release while a false pass costs a client a duplicate episode.
+- **`published_jobs_for_guest()`** finds any job for the same client and canonical guest already carrying a publish timestamp, a Podbean permalink, or status `complete`. Scoped to one client — another client's episode is never this client's duplicate.
+- **`assert_release_gates()`** is the ONE chokepoint, called by both `advance` and `resume`. On any publish-ward transition (`publishing`, `enrolling`, `complete`) it hard-stops on an already-published guest, on a rescue/force-advanced job, and on a package that admits it had no transcript. Earlier production stages stay free to move, so a blocked job is still workable.
+- **`rescue_advance_notes()`** reads the free-text labels actually recorded (`SOP-PODCAST-07`, `activation rescue`, `rescue proof`, …) as well as the new canonical marker. A forward-only structured marker would have left every already-queued job unguarded — precisely the population this fix exists for.
+- **`advance --rescue-proof`** stamps that durable marker so future rescue advances are structurally identifiable.
+- **Release is per-job, never a boolean.** `PODCAST_OPERATOR_RELEASE` must NAME the job id (or, at create time, the guest) being released. A stray `=1` in a shell profile releases nothing, and every lifted gate is audited to the job event log inside the same transaction as the transition.
+
+`source_material_verdict()` blocks only on a POSITIVE admission ("no raw interview transcript was provided"). Absence of answers returns **unknown**, which does not block — the engine accepts minimal payloads, and a "nothing found, therefore nothing exists" rule would false-stop legitimate jobs.
+
+### Proof
+`58-podcast-production-engine/scripts/tests/test_duplicate_guest_guard.py` — 27 tests, stdlib unittest, hermetic (temp SQLite, no network, no client data), wired into `podcast-engine-fail-closed-guard.yml`, which already triggers on `podcast_state.py`.
+
+Reverting **only** the source and re-running proves the suite is not vacuous. Five cases fail on the shipped code for behavioural reasons:
+
+| case | on v25.1.74 |
+|---|---|
+| `test_create_refuses_a_second_submission_for_a_published_guest` | exit `0` — the duplicate was created |
+| `test_advance_to_publishing_refused_with_exit_4` | exit `0`, `from=producing_audio to=publishing` — **the near-miss itself** |
+| `test_resume_into_publishing_is_gated_too` | exit `0`, `resumed_to=publishing` |
+| `test_rescue_proof_flag_stamps_a_durable_marker` | exit `2` — no such flag |
+| `test_named_release_lets_a_blocked_advance_through_and_audits_it` | `0` audit events — a lifted gate was silent |
+
+`test_create_still_works_for_a_guest_with_no_published_episode` **passes on both**: the known-good control proving the suite discriminates rather than failing everything. The remaining 21 error on v25.1.74 with `AttributeError` because they unit-test functions the fix introduces.
+
+The engine's Python suite goes 396 -> 423, all green; no existing test was weakened, changed or deleted.
+
+### Known gap (not introduced here)
+`58-podcast-production-engine/scripts/tests/` is wired into **no** CI workflow — those 423 tests have never run in CI. This change wires only the new suite. `tests/unit/podcast-state-ledger-linkage.test.py` carries one pre-existing local failure, identical with and without this change (verified on a clean checkout).
+
+## [v25.1.78]  -  2026-09-22  -  A scheduled job that fails four times and cannot tell anyone: the cron announce route was fail-closed
+
+### Why
+
+On `rescue-<client>`, `bootstrap-validate-daily` had failed **four times** and its delivery read:
+
+```
+announce -> last (last -> no route, will fail-closed: Refusing implicit isolated cron delivery ...)
+```
+
+The job was doing its job correctly — it found 11 real bootstrap-file defects and exited 1. It simply could not tell anyone. OpenClaw 2026.9.x refuses to deliver an isolated cron whose target would be inherited from the shared agent-main session bucket's last recipient, because that target is ambiguous across conversations and can deliver to the wrong room. So the alert was dropped, every time, by design.
+
+Two causes, both in `scripts/ensure-pipeline-crons.sh`, and the second is why it could never self-heal:
+
+1. **Born loud.** `openclaw cron add` DEFAULTS a new job to delivery mode `announce`, channel `last`. This is not inference — it is OpenClaw's own create-time contract (`src/cron/service/initial-delivery.ts`, *"Resolves create-time default delivery for new cron jobs"*), gated by:
+
+```js
+function shouldDefaultCronDeliveryToAnnounce(params) {
+  if (params.payloadKind !== "agentTurn" && params.payloadKind !== "command" && params.payloadKind !== "script") return false;
+  return params.sessionTarget === "isolated" || params.sessionTarget === "current" || ...
+}
+```
+
+A **command**-kind job with sessionTarget **isolated** — exactly what `_register_command_cron` creates — takes the announce default whenever the caller omits explicit delivery. `_register_command_cron`'s modern `--command` branch never passed `--no-deliver`, so every command cron it registered was born in the fail-closing shape. The code's own `Silent (no --channel/--to)` comment was only ever true because `_reconcile_managed_crons` stripped the delivery afterwards.
+
+2. **Never repaired.** `MANAGED_RECONCILE_CRONS` is the only list the reconcile pass may edit, and its header says *"Keep in lockstep with the registrars + main() audit list above."* When v14.2.0 added `bootstrap-validate-daily` and `bootstrap-compact-weekly`, they went into the registrars and into the audit list — but not into that list. The registrars only ADD a missing cron; only reconcile REPAIRS an existing one. So those two were born loud and were never touched again.
+
+Measured 2026-09-22 across 8 boxes, every probe with a known-good control (total job count, non-empty):
+
+| Box | Platform | State |
+|---|---|---|
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error (4x)** |
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-<client> | Mac | both crons `announce -> last`, validate = **error** |
+| rescue-<client> | Mac | crons absent |
+| openclaw-a3go, openclaw-hy5t | Hostinger VPS | crons absent |
+| oc-<client>, oc-<client> | Contabo | crons absent |
+
+**3 of 3 boxes that carry the cron are broken.** It is not box-local. The same 19 crons on a client box sit at `mode=none, channel=last` and are all `ok` — a vestigial channel string with mode `none` is harmless, which is exactly why the inner reconcile gate is correct as written and was left alone.
+
+### What changed
+
+**`scripts/ensure-pipeline-crons.sh` (v14.2.1)**
+
+- `_register_command_cron` passes `--no-deliver` on the `--command` path, so a command cron is born silent instead of relying on a later reconcile. A CLI that rejects the flag falls back to registering without it and logs a WARN naming reconcile as the silencer — a loud cron that can be repaired beats no cron at all.
+- `bootstrap-validate-daily` and `bootstrap-compact-weekly` added to `MANAGED_RECONCILE_CRONS`, so the ~3 Macs already carrying the broken shape converge on their next roll.
+
+**`scripts/bootstrap-validate-daily.sh`**
+
+Silence must not mean unheard. A failing run now escalates to the **operator** — the Rescue Rangers webhook, the same channel `scripts/disk-usage-alert.sh` already escalates on. A client chat is never a destination for a technical failure and is never used as a fallback. With no operator route configured the run prints `ALERT-UNDELIVERED` on stderr instead of failing quietly. Escalation never changes the exit code.
+
+Its header also said *"NOT WIRED TO A CRON BY THIS REPO — deliberately. Nothing here schedules itself."* That has been wrong since v14.2.0 wired it at 05:00 daily. Corrected.
+
+### Proof
+
+`tests/unit/cron-announce-fail-closed.test.sh` — 12 cases, hermetic (private `$HOME`, fake `openclaw` and `curl`, no network). Reverting only the two source files turns **8 of 12 red**:
+
+- A1, A1b — command crons registered with `mode=announce`; no `--no-deliver` on any add
+- A2 x2 — both bootstrap crons left at `mode=announce`, reconcile never touched them
+- A3 — the regression case: a cron remains in the unresolvable `announce -> last` shape, so a failing run is silently refused rather than reported
+- A4b — a failing validation with no operator route is silently swallowed
+- A5a, A5b — nothing reaches the operator webhook
+
+A4a, A5c, A5d and A6 stay green by design: the exit code was always right, no client-leak path ever existed (those two are guards against introducing one), and reconcile was already convergent.
+
+`tests/fixtures/fake-openclaw-cron.py` now models what the real CLI does — a job born `announce`/`last`, `--no-deliver` silencing it, and `cron edit --no-deliver` actually applying. Purely additive; all 9 existing consumers of the fixture were re-run and are unchanged.
+
+`.github/workflows/cron-announce-fail-closed-guard.yml` enforces both causes mechanically, including C2, which derives the managed set from `main()`'s audit list and fails when any name is missing from `MANAGED_RECONCILE_CRONS`. The lockstep rule was a comment; it is now a gate.
+
+### Not fixed here
+
+`cloud-backup-daily` on `rescue-<client>` also shows `error`, but its stored cause is `cron: job interrupted by gateway restart` — an interrupted run, not a script fault, and its delivery is already silent. It has **no definition anywhere in this repo** (`git log --all -S"cloud-backup-daily"` returns nothing) and is absent from all 7 other boxes probed. It is box-local and out of scope for a repo fix.
+
+## [v25.1.77]  -  2026-09-22  -  A blind daily smoke test is not a green one: Skill 58 stops rendering "could not check" as "checked, found nothing"
+
+### Why
+The Skill 58 daily smoke test is the ONLY recurring job this skill ships, one cron per client at 06:00. It has been reporting success while blind, on every box, every day.
+
+Recorded on a live client box: the run stored status `ok`, and its own stored diagnostic contained, at the same moment, `"services": {"podcast_engine": "UNKNOWN"}`, `"stale_jobs": {"stale_count": 0, "stale_jobs": []}` on stdout and, on stderr, `smoke-test: stale-job sweep could not read .../podcast-engine.db (unable to open database file)`. An episode job died the same day and no check ever mentioned it.
+
+Reproduced here from untouched `origin/main` before anything was changed, with a known-good control: a WAL database seeded with 2 job rows, made unreadable, produced exactly that stdout, that stderr and exit 0; opening the same file read-write at the same moment returned both rows, one of them dead. The database was healthy; the check was not.
+
+Four independent mechanisms, each of which alone turns "I could not check" into "checked, found nothing":
+
+1. **`find_stale_jobs()` caught `sqlite3.Error`, warned to stderr and returned `[]`.** An unreadable database became "zero stale jobs".
+2. **`do_run()` wrapped the sweep in `except Exception` and substituted `{"stale_count": 0}`**, so even a raise became a clean zero.
+3. **`load_endpoints()` ended in `data.get("providers", data)`.** The shipped `config/smoke-endpoints.json` has no `"providers"` key, so the whole file was used as the provider map. Its only dict-valued top-level key is the config wrapper `podcast_engine`, so every run probed one imaginary provider by that name, found it had no url, marked it UNKNOWN and exited 0. **The five real pinned providers - ollama_cloud, openrouter, kie_ai, fish_audio, perplexity - were never probed on any box on any day.** That is the `podcast_engine: UNKNOWN` in the diagnostic: not a provider at all, a config key cosplaying as one.
+4. **A job that had already DIED was structurally invisible.** `failed` is in `_JOB_TERMINAL_STATES`, so the stale sweep skips it before any threshold is consulted, and nothing in the script looked at failed jobs anywhere. Lowering the threshold would not have caught it at any value.
+
+An audit for the same pattern found two more: `self_meter()` returned `0.0` on every failure path, and the caller computes `overspend = run_cost > max_cost`, so a broken or absent cost ledger silently **disarmed the overspend alarm** - the one check that catches a paid call wired into the free health check; and `load_run_config()` fell back to embedded defaults when a config file existed but would not parse, so a run could use thresholds nobody chose while looking exactly like a healthy one.
+
+### What changed
+Every `podcast_jobs` read now routes through one `_read_podcast_jobs()` chokepoint that raises `PodcastDbUnreadable` carrying filesystem diagnostics (modes, ownership, sidecar presence - metadata only, never file content, so it cannot leak a value). An **absent** database still returns `[]`: that is the unprovisioned case and a real answer. A database that EXISTS and will not open is a finding.
+
+The run now carries a `blind_spots` ledger and an `overall` field that is never `PASS` while that list is non-empty, and exits a new `EXIT_BLIND` (6). Provider `FAIL` and stale/failed job findings remain DATA routed through alert-dedup and still exit 0 - those are things the check SAW. Only "could not check" fails the run.
+
+`UNKNOWN` no longer coexists with a pass. Each probe result carries `blind`: false means unknown-by-design (no free endpoint pinned, `--offline`, an optional provider the client never wired), true means we were supposed to be able to check and could not. `ollama_cloud`'s only method 2 is a **billed POST**, so it is deliberately not mapped to a probe - UNKNOWN by policy, never spend, exactly as the file's own `unknown_provider_policy` requires.
+
+`find_failed_jobs()` reports jobs that have already died, within a lookback window so an old corpse stops re-alerting. `self_meter()` returns `None` rather than `0.0` when the cost cannot be measured, and the summary reports `run_cost_measured` so an unmeasured run can never read as a measured zero.
+
+`config/furnace.json` was **unreachable** by `_find_skill_config()` - it was absent from the candidate list - so every box silently used the embedded defaults and no operator could tune a threshold by editing the file that documents it. Added. The stale threshold drops 24h to 4h: every status this sweep looks at is machine-driven and the slowest legitimate step is under an hour, so 24h meant a stage runner could die minutes after the daily check and the next morning was the first moment anything could notice.
+
+### Not changed
+`mode=ro` is kept, deliberately, against the report that prompted this work. The claim that a read-only URI cannot read a WAL database was **measured against sqlite 3.53.4 and is false**: `mode=ro` opened a WAL database with no `-wal`/`-shm` sidecars present and returned its rows, creating the `-shm` itself. Every condition that DOES produce `unable to open database file` - db file unreadable, `-wal` sidecar unreadable, containing directory not searchable - produces the **identical** error under `mode=rw`. Switching the access mode fixes nothing and would only trade away the read-only guarantee this sweep is supposed to hold. The measurement is recorded in the source so the line is not "fixed" again. The bug was never the access mode; it was swallowing the error.
+
+The HTTP probe helpers still return `None` on a network error, which `probe_provider()` turns into `FAIL`, never into a pass - that is fail-closed already and was left alone. The alert-dedup invocation failure path still leaves the alert spooled, which is the designed durable queue, not a swallowed result. Provider `FAIL` semantics, the single-writer doctrine, the cost budget, and what the run is allowed to spend are all unchanged.
+
+### Tests
+`tests/unit/podcast-smoke-test-blind-not-green.test.py` (T0-23), wired into the existing `podcast-engine-fail-closed-guard` workflow alongside the four fail-closed suites it belongs with, plus a step that runs the script's own hermetic self-test. It drives the REAL CLI against temp WAL databases with `HOME` redirected: no network, no client data, no live database, no secret read or printed.
+
+The pair that matters is asserted together: a healthy WAL database that exists and holds rows IS read, and an existing-but-unreadable one fails loudly rather than reporting zero. It carries its own known-good control - the same unreadable file, made readable, yields its row - so an empty result can never pass as proof, and it skips rather than fakes the unreadable case when run as root, where `chmod` does not bite.
+
+**39/39.** Proven non-vacuous: revert the source to untouched `origin/main`, keep the suite, and the suite reports **7/39** - **32 cases turn red**. The 7 that stay green are the controls that must pass either way: the WAL fixture really is in WAL mode; a readable WAL database with rows IS read (pre-fix too, which is what makes the unreadable case a real difference rather than a broken probe); a readable run is not blind on the sweep; the same unreadable file made readable yields its row; a failed job is terminal for the stale sweep; a 5h-hung step was NOT caught at the old 24h threshold; and an absent config file is a clean default. Restored, all 39 pass.
+
+The script's own self-test goes 20 checks to **29/29**. One existing assertion was **strengthened**, not weakened: `rc == EXIT_OK` became `rc == EXIT_BLIND`, because that fixture's two providers have deliberately unset keys and the run genuinely cannot tell whether the client has credit. It passing while blind was the defect in miniature.
+
+Pre-existing suites unchanged and green: `pytest 58-podcast-production-engine/scripts/tests` **404 passed**; `guard-no-anthropic-runtime` PASS; `guard-cron-inventory --self-test` PASS.
+
+### Fleet note, not executed here
+This is a repo change only. No box was touched, no updater was run, no podcast job was triggered. When it rolls, a box whose cron environment does not carry the provider keys will now report BLIND instead of a false green - that is the true answer, and it is the signal that the daily check was never able to verify credit on that box.
+
+## [v25.1.75]  -  2026-09-22  -  The installer repairs the company id the Command Center actually reads, on every install path
+
+### Why
+`cc_check_company_id_against_board()` in `32-command-center-setup/scripts/run-full-install.sh` already detects that the mirrored company id disagrees with the company owning the Command Center's workspaces. It repaired ONE copy: the `MC_COMPANY_ID` scalar in `.env.local`.
+
+That is not the copy in use. The Command Center resolves a request's tenant through `tenantRegistration()` (`src/lib/auth/tenant-context.ts`), which reads the per-host `companyId` inside `MC_TENANT_REGISTRY_JSON`. `interview-launch.py` stamps that registry once from the launch state and then refuses to rebind a registered host, so a wrong value is sticky and no later install corrected it.
+
+Measured on a client box: six registered hosts all still carried `companyId: default` after an install that reported success. Paired with the company-resolver defect fixed in blackceo-command-center v7.6.60, the client's board rendered zero of their 40 active departments while they sat fully logged in.
+
+The second half: the repair ran on FULL installs only. `--update-only` warned and changed nothing, on the reasoning that rewriting a client's tenant id during a routine code roll is a surprise. That reasoning was sound and it was outweighed — the state it declined to repair is a blank board, and a code roll is frequently the only thing that ever runs on a provisioned box again.
+
+### Fixed
+- **Both copies of the company id are repaired, in one atomic write of `.env.local`.** New `cc_repair_company_id()` rewrites `MC_COMPANY_ID` AND the `companyId` on every registration inside `MC_TENANT_REGISTRY_JSON`. Values are re-encoded through the shared `service_env` writer (the same encoder `interview-launch.py` and `cc_env_set_if_absent` use), so a value carrying a newline, a `$` or a `#` survives losslessly, every other assignment is carried through untouched, and nothing is echoed — the file holds the client's API token and session secret.
+- **The repair runs on every install path,** `--update-only` included. It only ever moves the id to the company that demonstrably owns the rows in that box's own database, it is a no-op when both copies already agree, and it is logged and stamped on the state file either way.
+- **It fails closed rather than half-repairing.** An unparseable `MC_TENANT_REGISTRY_JSON` rewrites NOTHING — not even the scalar — and says so at WARN. A half-repair that moved the scalar while leaving the registry behind is the exact state that produced the blank board; the repair is not allowed to recreate it from the other direction.
+- The old "strip the key with `grep -v` into `$envf.tmp.$$`, then `cc_env_set_if_absent`" dance is gone. It rewrote the file twice, left a temp file behind on a partial failure, and could not express a two-key change at all.
+
+### Tests
+- `tests/unit/cc-company-id-registry-repair.test.sh` (new, 19 assertions, hermetic — stdlib python3 + bash, no network, no box, no real credentials): the shipping `cc_repair_company_id` is extracted VERBATIM from the real installer by function-name-anchored awk, never reimplemented. Asserts both copies repaired across all six registered hosts; the `--update-only` path repairing too; every neighbouring assignment surviving byte-for-byte including the API token and session secret; no secret value reaching the log; the registry's other identity fields (`kind`, `tenantId`, `installationId`) untouched; mode still 0600; already-correct input producing a byte-identical file and saying so; an unparseable registry rewriting nothing and reporting it; an absent `.env.local` never created; and an in-suite MUTATION PROOF that a scalar-only repair (the shipped behaviour) leaves all six hosts wrong.
+- Mutation-proved by RUNNING each revert, not by assertion. Reverting the installer entirely: the suite FATALs at extraction (exit 2) rather than passing vacuously on a missing function. Disabling only the registry repair: 3 assertions red. Restoring only the `--update-only` early return: 2 assertions red. All restored, 19/19 green.
+- `.github/workflows/cc-company-id-registry-repair-guard.yml` (new) runs it on every push and PR touching the installer, the shared env writer, the test, or the workflow.
+
+### Not changed
+- `interview-launch.py`'s refusal to rebind a registered host is left alone. It is the right posture for provisioning — a host silently changing identity mid-flight is a real hazard — and the repair path deliberately sits outside it, after the board itself has been consulted about who owns the rows.
+- The owner-detection logic is untouched: the catch-all workspace's owner is the authority, and absent a catch-all, the company owning the most live workspaces is.
+
+## [v25.1.74]  -  2026-09-22  -  A roll reclaims the `.bak-unify` backlog the unify scan cannot see: orphans, hidden archives and the out-of-tree company trees
+
+### Why
+v25.1.72 bounded each target's backup set; v25.1.73 made the prune run on every branch, so a roll reclaims the backlog it wrote. Both prune in the same place: **inside** `link_shared_core_files()`, once per enumerated `LINKPATH`. The pruner can therefore only ever reach a path the unify **scan** enumerated — and that scan is structurally blind to most of the fleet's remaining backlog.
+
+The scan builds its list from `$OC_ROOT/workspaces`, `<workspace>/agents` and `<workspace>/departments`, keeping only dirs that still carry a live `AGENTS.md` / `IDENTITY.md` / `SOUL.md`. Measured across 6 client boxes on 2026-09-22: **71,805** `*.bak-unify-*` files, **~8.4 GB**, oldest **2026-06-07**, still growing. It sits in three populations the scan never visits:
+
+1. **Orphans.** A role folder whose live core files were all deleted or moved still holds its backlog, but now fails the scan's live-file filter, so it is never enumerated and nothing ever reclaims it. Hidden archive dot-dirs (a `.billing-LEGACY-DUPLICATE-ARCHIVED` folder) are the same shape.
+2. **Out of tree.** `<workspace>/zero-human-company/<co>/departments/...` (~400 files on one box) and `~/clawd/zero-human-company/<co>/departments/...` sit under neither `agents/` nor `departments/`, so the scan never descends into them.
+3. **An early exit.** A roll whose unify step refuses (workspace unresolved), is skipped, or filters a workspace out bounds nothing at all for that run.
+
+Each was reproduced against the shipped v25.1.73 code before the fix: a seeded backlog of 5 came back as 5 in all four shapes, while the scanned control dir correctly came back as 3. The control proves the probe discriminates.
+
+### What changed
+A new `reclaim_unify_backups()` is defined in **both** `install.sh` and `update-skills.sh` — mirrored the way `_lsc_prune_baks` already is — and called **once at the end of every roll**, right after the unify step and regardless of whether that step succeeded.
+
+It walks this box's own resolved roots (the OpenClaw root, the resolved workspace, `~/clawd`, `~/.clawdbot`), groups every backup by its target prefix and keeps the newest `$UNIFY_BAK_KEEP`, then reports the count reclaimed. It always returns success: a reclaim must never be the thing that fails a roll. Roots nest, so groups are collected per real directory — a second visit to the same subtree is a no-op rather than a doubled list that over-deletes.
+
+A file is deletable **only** when its basename matches `<target>.bak-unify-<8 digits>-<6 digits>[-<n>]` exactly (the `-<n>` tail is the python writer's same-second de-dupe suffix). A live `AGENTS.md` / `TOOLS.md` / `USER.md` cannot match that pattern, and neither can a `.bak-manual` or an `AGENTS.md.bak-unify-notatimestamp`. Symlinks and non-regular files are never unlinked.
+
+`UNIFY_BAK_KEEP` stays the single knob and is now documented as a table in `docs/SHARED-CORE-FILES.md`: unset → 3, *N* → *N*, `0` → keep none, non-numeric → 3. `0` keeps the meaning it already carried in both shipped pruners; it is safe because the pattern above makes a live core file unmatchable, so `0` can empty the backup set, never the tree.
+
+### Not changed
+The per-target prune, the retention default, the python writer's de-dupe, and what unify writes to `AGENTS.md` are all exactly as v25.1.73 shipped. This adds a pass; it removes none.
+
+One suspected gap was **not** real and nothing was changed for it: CI already fails if an unconditional backup write is reintroduced (`tests/unit/unify-backup-retention.test.sh` T1 asserts a second roll over unchanged content creates zero new backups) or if the per-target prune call is removed (T6), both gated by `.github/workflows/unify-backup-retention-guard.yml`. Only the **new** end-of-roll call needed a guard.
+
+### Tests
+`tests/unit/unify-backup-global-reclaim.test.sh` — 31 legs, sitting beside the v25.1.72/73 retention suite and wired into the same workflow. It runs the REAL extracted `link_shared_core_files()` and `reclaim_unify_backups()` out of `install.sh`, never a re-implementation, in a `mktemp -d` sandbox with `HOME` redirected and `resolve_oc_root` pinned to it.
+
+Orphan dir → 3; hidden dot-dir archive → 3; the `workspaces/` (plural) tree reached; the in-workspace and `~/clawd` `zero-human-company` trees both reached; the `-<n>` de-dupe suffix counted and ordered correctly; `AGENTS.md.bak-unify-notatimestamp`, `.bak-manual` and `.bak` decoys all survive; a live `AGENTS.md` beside 5 backups survives with the backups at 3 and the 3 **newest** kept; `UNIFY_BAK_KEEP=1` → 1, `=0` → none with every live file and every decoy intact, garbage → 3; nested roots do not over-delete; and a second identical roll writes zero new backups.
+
+**31/31**, and the v25.1.72/73 suite still **18/18**.
+
+Proven non-vacuous three ways before merge: delete the reclaim call from `install.sh` → 1 leg red; delete it from `update-skills.sh` → 1 leg red; neuter the body to `return 0` → **12 of 31** red. Restored, all 31 pass.
+
+### Reclaiming an existing box
+A normal roll now does it. To run the reclaim alone (tested as written):
+
+```bash
+note(){ echo "$@"; }; . <(sed -n "/^reclaim_unify_backups() {/,/^}$/p" ~/openclaw-onboarding/install.sh); reclaim_unify_backups
+```
+
+## [v25.1.73]  -  2026-09-22  -  A roll now reclaims the `.bak-unify` backlog it already wrote, and v25.1.72 gets its CHANGELOG entry
+
+### Why
+v25.1.72 bounded the `.bak-unify` backup set to the newest `$UNIFY_BAK_KEEP` (default 3) per target. It pruned in one place only: immediately after writing a NEW backup. That leaves the shape that actually holds the fleet's 4.3 GB untouched.
+
+A role folder's `AGENTS.md` is **deleted** by the U053 disposition pass in `create_role_workspaces.py`. On the next roll the unify step finds no file there and takes its `absent -> leave absent` branch, writing no backup — while the folder still carries thousands of `AGENTS.md.bak-unify-<ts>` files. A pruner that only fires after a new backup walks straight past them, forever. The same is true of the no-op path, where the file is already byte-identical to canonical.
+
+So v25.1.72 capped future growth but reclaimed none of the 25,604 files already on disk. An operator still had to run `find` by hand on every box.
+
+Separately, v25.1.72 merged and was auto-tagged **without a CHANGELOG entry**, which turned `main` RED on gate G2 ("every v11+ annotated tag must have a CHANGELOG entry") and, because `version-consistency.yml` also runs on `pull_request`, would have failed G2 on every other open PR in the repo. The entry should have ridden in that PR via `scripts/bundle-release-in-branch.sh`; it did not.
+
+### What changed
+`link_shared_core_files()` in `install.sh` and `update-skills.sh` now prunes each target's existing `.bak-unify` set **on every run**, before deciding what to do with the file — covering all four branches: symlink, byte-identical, divergent, and absent. The post-backup prune stays, so a run that writes a new backup still lands on exactly `$UNIFY_BAK_KEEP`.
+
+A roll therefore reclaims the backlog it created, on its own, with no operator action.
+
+The missing **v25.1.72** CHANGELOG entry is added below, repairing G2 on `main`.
+
+### Not changed
+The retention count, the `UNIFY_BAK_KEEP` override, the python writer's de-dupe, and what unify writes to `AGENTS.md` are all exactly as v25.1.72 shipped. Only a target's OWN `.bak-unify-<ts>` siblings are ever pruned.
+
+### Tests
+`tests/unit/unify-backup-retention.test.sh` gains T8, which seeds five leftover backups and runs the real unify step twice: once with the target file **absent** (the U053 shape) and once with it **unchanged**. Both must come back at 3, and the absent target must stay absent. **18/18.**
+
+Proven to discriminate: run against v25.1.72's `install.sh`, T8 fails both legs with 5 backups still on disk.
+
+## [v25.1.72]  -  2026-09-21  -  The `.bak-unify` backup set is bounded; a 25,604-file / 4.3 GB disk furnace stops
+
+### Why
+The shared-core-file unification (N29) backed up a divergent `AGENTS.md` / `TOOLS.md` / `USER.md` to `<file>.bak-unify-<ts>` and kept **every** backup forever. Nothing in any code path ever deleted one.
+
+Measured live on a client Mac Mini, 2026-09-21: **25,604** `AGENTS.md.bak-unify-<ts>` files totalling **4.3 GB** across the department tree, written daily since 2026-06-23, with the disk at 95%.
+
+The loop that fed it runs on every roll. `create_role_workspaces.py` creates each role folder's `AGENTS.md` as a **symlink** to the workspace-root canonical. `link_shared_core_files()` then MIGRATES every symlink to a **real copy**, because the runtime's workspace-root boundary guard rejects symlinks. The same script's U053 disposition pass then finds a real `AGENTS.md` in a role folder, backs it up and deletes it. Next roll, repeat: one full-size copy of canonical `AGENTS.md`, per role folder, per roll, retained forever.
+
+Four writers produced the files, not one: `install.sh`, `update-skills.sh`, and three sites in `23-ai-workforce-blueprint/scripts/create_role_workspaces.py`.
+
+### What changed
+**Retention is bounded.** After a backup is written, only the `$UNIFY_BAK_KEEP` newest `.bak-unify-<ts>` siblings of that target are kept — default **3**, `0` keeps none — deleted oldest-first. Only that target's OWN timestamped unify backups are ever touched.
+
+**The python writer de-dupes.** When the newest existing backup is byte-identical to the file being retired, no second copy of the same bytes is written. The file is still removed; its content is still fully preserved, in the backup that already holds it. This is the leg that collapses the daily loop above, where the same canonical bytes were re-backed-up every roll.
+
+**Same-second collision guard.** Two python calls in one second previously landed on the same backup name and silently overwrote it, which is the one thing a backup function must never do. They now take a `-<n>` suffix that still sorts newest-last.
+
+### Not changed
+What unify **writes** to `AGENTS.md` is untouched. `install.sh` / `update-skills.sh` already skipped the backup entirely when the target was byte-identical to canonical, via the sha256 fast path; that guard is left exactly as-is.
+
+"Never deleted" narrows to "the last N are never deleted". It does **not** widen: no file outside `<target>.bak-unify-<ts>` is ever removed. `AGENTS.md` (N29), `README.md` and `docs/SHARED-CORE-FILES.md` are corrected to say so.
+
+The three-writer disposition conflict itself is **left open** and recorded here: N29 says every agent workspace carries a real copy of the core files, U053 says role folders must not carry `AGENTS.md`. Bounding the backups caps the cost of that disagreement; it does not settle it.
+
+### Tests
+`tests/unit/unify-backup-retention.test.sh` + `.github/workflows/unify-backup-retention-guard.yml`. The suite runs the **real** extracted `link_shared_core_files()` and the **real** `_unify_backup()`, not a re-implementation: a second run over an unchanged tree creates no backup, a real change does create one, the 5th prunes to the 3 newest, `UNIFY_BAK_KEEP` overrides the count and garbage falls back to 3, and a sibling file's backups plus a non-unify backup both survive. **14/14 at the time it shipped.**
+
+Proven to discriminate: with the pruner reverted the suite fails outright, and with the pruner present but its call site neutered it still fails four legs.
+
+### Known gap, fixed in v25.1.73
+The prune fired only after a NEW backup was written, so the 25,604 files already on disk were never reclaimed by a roll. See the v25.1.73 entry above.
+
+## [v25.1.71]  -  2026-09-21  -  The audience-rule change is reverted; a NO-WEAKENING lock guards the doctrine it relaxed
+
+### Why
+v25.1.70 shipped a narrowing of `persona_blend.resolve_audience()` so a company with one ICP, or none, would stop parking every content task at the audience gate. It merged at a commit that predated its own revert, and `main` is RED as a result.
+
+**Two required checks fail on it**, `Persona-blend matcher` and `Communication trigger + audience-confirmation prompt`, and the finding names the guard by its own label:
+
+```
+23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py:211
+  [FAIL] NO-WEAKENING failed: single ICP auto-proceeded without confirm_required
+```
+
+That assertion exists specifically to stop a single high-confidence ICP from auto-writing without confirmation, which is exactly what the change enables. `shared-utils/comms_audience_trigger.py` describes the same rule as `resolve_audience`'s "own always-confirm resolution verbatim".
+
+Silencing a guard named NO-WEAKENING in order to land the change it was written to stop is not a call a release train gets to make. CI proved the conflict; it was not a judgement call about style.
+
+### What changed
+`23-ai-workforce-blueprint/scripts/persona_blend.py` is reverted **byte-identical to v25.1.69** (`diff` against `c55bd9edc` is empty). `AUDIENCE_HARD_HOLD_DEPARTMENTS`, the `department=` parameter and the relaxed `confirm_required` branches are all gone.
+
+`tests/unit/test_bundle_v25_1_70.py` drops the ten audience assertions and gains one that pins the revert, so it cannot drift back in unnoticed. **Delete that test first** in whichever release decides the doctrine.
+
+### Not changed
+The other four items v25.1.70 shipped, all of which are unaffected and stay: the safe env loader and its eight converted readers, the contract-check hook, Skill 59's `agents.entries` roster shape, and the explicit `agents.defaults.maxConcurrent`.
+
+### The decision this leaves open
+The original complaint is real: a single-ICP or no-ICP company still waits out the full confirm window on every content task. Resolving it means amending the ALWAYS-confirm doctrine and the two locks that encode it, deliberately and in one place, not as a side effect of a bundle.
+
+### Tests
+`23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py` **57/57**. `tests/unit/u116-comms-audience-trigger-proof.test.py`, `tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py` and `23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py` all pass. `tests/unit/test_bundle_v25_1_70.py` 37/37.
+
+## [v25.1.70]  -  2026-09-21  -  Content stops parking at an audience gate with nothing to ask, a client's env file stops being executed, and four other findings
+
+### 1. The audience gate asked when there was nothing to ask
+`persona_blend.resolve_audience()` returned `confirm_required=True` on every branch but an explicit override. A company with ONE ICP, or none at all, parked every content task at the audience gate for the full confirm window before it could write a word. A gate that fires when there is nothing to disambiguate is not a gate, it is a delay.
+
+Confirmation is now required only on real ambiguity:
+
+| Situation | Before | Now |
+|---|---|---|
+| 2+ ICP descriptors | confirm | confirm |
+| department in the hard-hold list | confirm | confirm |
+| exactly 1 ICP descriptor | confirm | no confirm |
+| 0 descriptors (an operator or internal lane lands here) | confirm | no confirm |
+| explicit `audience: none` | confirm | no confirm |
+
+`AUDIENCE_HARD_HOLD_DEPARTMENTS` is `marketing` + `web-development`, the list D23 ratified as corrected on 2026-07-16 (the ruling's original `funnels` is not a department and could never fire). An explicit `audience: none` is treated as an ANSWER, not a missing value, so it is never re-asked. The `ask` text is still returned in the 0 and 1 cases, so a caller that wants to prompt still can; it just is not forced to. `resolve_audience` gains an optional `department=` argument and is otherwise signature-compatible.
+
+### 2. A client's env file was being executed, not read
+Eight scripts read a client-owned secrets file with `set -a; . "$file"; set +a`. That hands the file to the SHELL: every line runs, a stray backtick or `$(...)` executes, and a malformed line reaches the log on its way to failing. Worse, `. file` cannot represent a key the shell will not accept, so a line like `9R_GATEWAY_KEY=...` is a syntax error that stops the load THERE and silently drops every key after it.
+
+**`shared-utils/env-load.sh`** parses instead. Only `^[A-Za-z_][A-Za-z0-9_]*=` lines become variables; anything else is skipped and COUNTED, never printed, so an operator learns the file has junk without the junk landing in a receipt. `env_valid_key` lets a WRITER reject an identifier the shell cannot export before it writes one.
+
+Converted, each keeping an inline fallback so an older box still loads: `38-conversational-ai-system/scripts/{14,15,24,26,28,29}`, `35-social-media-planner/qc-skill35.sh`, and the presentations `board-reconcile-sweep.sh`.
+
+### 3. The contract check runs before the refresh it checks
+`update-skills.sh` now runs the Command Center's `scripts/openclaw-contract-check.mjs` before refreshing, WARN-only, because a code-only roll must not be blocked by it. `run-full-install.sh` runs the same check and makes it FATAL on a FULL install: a fresh box must not ship against a contract it fails. A Command Center that does not carry the script, or a box without node, is reported and skipped, never failed.
+
+### 4. Skill 59 wired a department the gateway could not see
+`provision-anthology-client.sh` step 3.6 appended to `agents.list` while the box carries `agents.entries` (measured: 100 entries, 66 `dept-` prefixed, matching 66 runtime dirs). The gateway prefers entries, so the entry was written and ignored. It also set `workspace` to `workspace/departments/<slug>` where every live sibling points at `workspaces/command-center/<slug>`, and wrote a flat `memorySearch` where live entries use nested `memory.search`.
+
+Step 3.6 now writes whichever shape the box already has, entries preferred, with the live workspace path and the nested memory block, and drops a stale flat `memorySearch` when it migrates an entry. **It pins no model**: sibling `dept-` entries carry none and inherit `agents.defaults`, so hardcoding one would tie this department to a model the client never chose. The read-back verifies the shape it actually wrote.
+
+### 5. An explicit agents.defaults.maxConcurrent, where the runtime has that key
+OpenClaw 2026.9.5 changes this key's DEFAULT from `clamp(8..16, cpus)` to `max(8, cpus*4)` with no ceiling. On a 12-core box an absent key silently goes from 12 to 48 the moment the fleet rolls onto 9.5.
+
+**This is not written unconditionally, and that is deliberate.** `install.sh` and `scripts/capacity-monitor.sh` both already document a PRESENT-ONLY rule for this key, because `AgentDefaultsSchema` is `.strict()`: creating it on a runtime that predates it makes that runtime reject the client's ENTIRE config. So the installer creates it only when the installed runtime is **>= 2026.9.5**, where the key provably exists, and on anything older leaves it absent, which is still correct there. An existing value is ALWAYS preserved, since it is an operator choice or a capacity-monitor heal.
+
+The version gate is a real probe of `openclaw --version`, not an assumption.
+
+### Tests
+**`tests/unit/test_bundle_v25_1_70.py`, 47 assertions, new.**
+
+Every audience branch including the hard-hold list and a normal department; the loader's self-check, a bad key not stopping the file, a command in the file NOT executing, a skipped line never reaching the log, a missing file returning non-zero, `env_valid_key` across six inputs, and all eight converted readers routing through the loader; the contract check running before the refresh, fatal only on a full install, and absent-script tolerated; Skill 59's entries mode, workspace path, nested memory, no model pin, and shape-aware read-back; the maxConcurrent preserve path, the version gate's existence, and the 2026.9.5 boundary across seven versions.
+
+`shared-utils/env-load.sh` also carries its own runnable self-check (`bash shared-utils/env-load.sh`).
+
+**Mutation-proved**: restoring always-confirm and making the loader `eval` its input turns **7 assertions red**. `bash -n` clean on all ten edited shell files; `py_compile` clean on `persona_blend.py`.
+
+### Pre-existing, untouched
+Five failures reproduce identically on pristine `c55bd9edc`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `tests/unit/test_interview_invitation.py`, one in `test_dept_scripts_suffix_coverage.py`.
+
+## [v25.1.69]  -  2026-09-21  -  The parity guard can see the roster it is checking, and a department folder stops becoming a doubled agent id
+
+### Why
+Three findings from the client box at the v25.1.66 skills roll.
+
+**1. The parity guard was blind to the roster.** `guard-department-runtime-parity.py` read only `agents.list`. The box carries `agents.entries` (100 entries, 66 of them `dept-` prefixed). On an entries-mode box the guard therefore saw **zero** agent ids and reported **every** department as having no runtime, which failed the roll. That is the whole reason phase 6e2 was red, and it is a bigger defect than the archived handling it was blamed on.
+
+  The archived exclusion was already correct: `archived_at IS NOT NULL` rows have been excluded with `"reason": "archived"` since migration 095's guard landed. Proven with a fixture rather than assumed.
+
+**2. The runtime materializer wrote doubled agent ids.** `materialize-dept-agents.sh` keys `discovered` on the raw department FOLDER name and builds `f"dept-{slug}"`. The client's folders are named `<name>-dept`, the same key-vs-folder shape phase 6c had, so 22 rows landed as `dept-app-development-dept`. Nothing could match those to a workspace.
+
+**3. A department with no live workspace still got a runtime entry**, and two were attributed to the `default` workspace because `engineering` and `master-orchestrator` had no matching active row.
+
+### What changed
+- **`guard-department-runtime-parity.py`** reads `agents.entries` as well as `agents.list`, taking both the object KEY and each entry's own `id`. A genuinely missing runtime is still a FAIL, asserted by its own test.
+
+- **`materialize-dept-agents.sh`** strips a leading `dept-` or trailing `-dept` from the folder name at the scan, so the agent id can never carry the affix twice.
+
+  This is **`_strip_dept_affix()`, not `canonical_dept_slug()`**, and the difference is load-bearing. The first attempt used the full canonicaliser and broke `materialize-dept-agents-roster-shape.test.sh` T4: a folder named `Sales & Marketing` was DROPPED, because case, spaces, `&` and agent-id collision detection are already handled downstream where the entries key is built, and normalising early takes that step's input away. Affix only; everything else stays where it already worked. A test pins that `Sales & Marketing` survives this step untouched.
+
+- **The materializer skips a department with no ACTIVE workspace row**, with one log line naming it. The board is read through the same archived-aware query; when no database is readable it writes everything, exactly as before, because a missing database must never silently empty a client's runtime roster.
+
+- **A parity finding is no longer a failed refresh.** On an `--update-only` roll, `run-full-install.sh` now WARNs and lets the roll finish; the updater prints `parity guard WARN: <n> department(s) ... CC refresh itself SUCCEEDED` instead of `Command Center refresh failed or rolled back`. The pull, build and restart had all succeeded; saying the app was broken when only the roster disagreed sent the operator after the wrong thing. A FULL install still refuses, because a fresh box must not ship a board whose departments have no runtime.
+
+### Tests
+**`32-command-center-setup/scripts/test_runtime_parity_and_slug.py`, 16 assertions, new.** Real sqlite boards and real openclaw.json files.
+
+The guard reads entries, still reads list, reads an entry whose `id` differs from its key, and still fails on a genuinely missing runtime; an archived workspace is ignored rather than counted missing, and an archived-only board passes; the affix strip handles the client's shape, an already-prefixed name, a bare name and a mixed-case affix, and leaves `Sales & Marketing` alone; the scan uses the stripper; the no-live-workspace skip runs before the entry is written and is conditional on having read the board; the update-only WARN and the full-install refusal both exist, in that order.
+
+**Mutation-proved**: removing the entries reader and restoring the raw folder name turns **4 assertions red**, including the archived case, which is only green because the guard can now see the roster at all.
+
+Green alongside: `materialize-dept-agents-roster-shape` (the suite that caught the over-normalisation), `materialize-dept-agents-company-scope`, `test-updater-traps-1-and-3` 48/48, `content-recheck-convergence-probes` 61/61, `build-state-path-resolution` 14/14, `cc-currency-untracked-is-not-dirty`. 304 Python tests pass across Skill 32 and shared-utils. `bash -n` clean on both edited shell files.
+
+### Pre-existing, untouched
+Three failures in `shared-utils/test_e10_engine_drift_guard.py` reproduce on pristine `c31a6b1c0`.
+
+## [v25.1.68]  -  2026-09-21  -  The v25.1.67 prose uses the standard vocabulary, so the docs-language guard goes green
+
+### Why
+v25.1.67 merged with the term this repo retired in U93 still present in its CHANGELOG entries, one code comment, and one test header. The **Docs-language guard** is red on `main` as a result.
+
+The guard was not bypassed and nothing about it is wrong: the repo retired that word in U93's doctrine scrub, and the standard replacement is "the operator box". The reword had been written and pushed to the branch before the merge, but the pull request was merged at its previous head, so the corrected commit never landed.
+
+### What changed
+Prose only. Six lines across five files swap the retired term for "the operator's own box" / "the operator box":
+
+- `CHANGELOG.md` (the v25.1.67 entry, two lines)
+- `32-command-center-setup/CHANGELOG.md` (one line)
+- `32-command-center-setup/scripts/run-full-install.sh` (one comment line)
+- `shared-utils/resolve-oc-root.sh` (one comment, reflowed)
+- `tests/unit/build-state-path-resolution.test.sh` (header and one echo label)
+
+**No behaviour changes.** No resolver logic, no test assertion, no installer step. The v25.1.67 fix stands exactly as merged.
+
+### Tests
+`scripts/check-docs-language.py`: **PASS, 0 new unexplained occurrences** (it was the failing gate). `tests/unit/build-state-path-resolution.test.sh` 14/14 with the reworded label. `32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py` 17/17. `bash -n` clean on both touched shell files.
+
+## [v25.1.67]  -  2026-09-21  -  The installer finds the build state where it actually is, not where openclaw.json says it should be
+
+### Why
+Verified on the operator's own box. `run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there: `~/clawd`). The real file lives at `~/.openclaw/workspace/.workforce-build-state.json`.
+
+With no state file found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null`, and the run **exited 8 demanding an interactive interview on a fully built box**. Control: the same inspector returns `false, blackceo` against the real path. Exporting `OPENCLAW_WORKSPACE_PATH` by hand fixed that one run, which is the workaround, not the fix.
+
+A configured path is a hint, not evidence. The installer trusted it and never checked whether the file was there.
+
+### What changed
+- **`shared-utils/resolve-oc-root.sh`** gains `resolve_build_state_workspace()`, which returns the FIRST candidate that actually contains `.workforce-build-state.json`, trying in order: `OPENCLAW_WORKSPACE_PATH` (which carries `agents.defaults.workspace`), `$OC_ROOT/workspace`, `~/.openclaw/workspace`, `/data/.openclaw/workspace`. Duplicates are searched once. It sets `OC_BUILD_STATE_SEARCHED` to every path tried, so a caller that finds nothing can NAME what it checked instead of asserting a bare absence.
+
+  It went here because this file is already the one shared root resolver and is already sourced by ten scripts. A new module would have been a second place to drift.
+
+- **`run-full-install.sh`** resolves through it, and logs which workspace won whenever that differs from the configured one. When NO candidate has the file it falls back to the configured path and says so, naming every path searched. That fallback is deliberate: a genuinely fresh install has no state file anywhere, and the configured path is the correct place to WRITE one. Only then does the inspector legitimately demand initialization.
+
+- **`materialize-dept-agents.sh`** and **`backfill-per-dept-healer.sh`** use the same resolver instead of hard-coding `$OC_ROOT/workspace`, so no two scripts can read different copies.
+
+### Also, carried from v25.1.66
+The name fallback added in v25.1.66 could match an **archived** workspace and UPDATE it, putting a department the client archived back on the board under its old id. Both lookups in `_find_existing_workspace` now exclude `archived_at IS NOT NULL`, schema-tolerantly. That was the one place v25.1.66's archived rule had a back door: the agent seeder was guarded, the match path was not.
+
+### Not changed
+`company-config.json` readers. `backfill-dept-agent-personalization.sh` already walks an ordered candidate list (company dir, then `workspace/zero-human-company/`, then legacy `workspace/`), and `seed-dashboard-content.py` already tries the VPS path then `~/.openclaw`. Both already do what this release adds elsewhere; a rewrite would be churn.
+
+`platform/common.sh` still sets `OPENCLAW_WORKSPACE_PATH` from `agents.defaults.workspace`. That value is a legitimate default for everything else on the box, and the fix belongs at the point that needs a file to exist, not in the general workspace default.
+
+### Tests
+**`tests/unit/build-state-path-resolution.test.sh`, 14 assertions, new**, wired into the existing `resolve-oc-root-guard` workflow alongside the resolver it extends. It extracts the function verbatim and exits 2 if it is renamed.
+
+The operator-box shape resolves to the workspace that has the file, not the configured one; the configured path still wins when it really holds the file; the `~/.openclaw` fallback is reached; nothing anywhere returns non-zero AND reports all four searched paths; a duplicate candidate is searched once; all three shell readers route through the resolver; and the fresh-install write target plus its searched-paths message are both still present.
+
+**Mutation-proved**: replacing the file check with `if true` (take the first candidate blindly, the pre-fix behaviour) turns **6 assertions red**, including the not-found case and every searched-path report.
+
+`32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py` 15 to 17: an archived row is never resurrected by a name match, and an archived slug collision is never un-archived.
+
+`bash -n` clean on the resolver and all three readers. Green alongside: `resolve-oc-root`, `cc-currency-untracked-is-not-dirty`, `test-updater-traps-1-and-3` 48/48, `content-recheck-convergence-probes` 61/61, both `materialize-dept-agents` suites.
+
+### Pre-existing, untouched
+Four failures reproduce identically on pristine `844c2f184`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `tests/unit/test_interview_invitation.py`.
+
+## [v25.1.66]  -  2026-09-21  -  The installer stops re-seeding archived departments, stops duplicating a renamed one, and says which company owns the board
+
+### Why
+All four findings were measured on one client box during a v7.6.35 roll, by diffing the Command Center database against the pre-deploy backup.
+
+**1. 48 agents were seeded into 12 ARCHIVED workspaces.** `materialize-dept-agents.sh` selects departments two ways, and neither filtered `archived_at`: the workspaces query (`WHERE type != 'main' AND type != 'system'`) and the manifest path, which resolves a workspace by slug and never touches that query. Archiving is the client's decision; silently re-populating an archived department undoes it.
+
+**2. A renamed department became two board columns.** A board row whose slug matches nothing in the source, but whose NAME is the same department, was inserted a second time.
+
+**3. The company guard fired with nothing to act on.** The database held three company rows (`default`, `wakeuphappysis`, `wake-up-happy-sis`) and the operator saw only `department X belongs to a different company`, with no way to see the split.
+
+**4. The installer mirrored `MC_COMPANY_ID=default`** into the Command Center's `.env.local` while the live workspaces sat 31 under `wakeuphappysis` and 9 under `default`. The Command Center's ingest is company-scoped, so the catch-all `general-task` (owned by `wakeuphappysis`) became unresolvable and every routed task landed unrouted.
+
+### What changed
+- **`32-command-center-setup/scripts/materialize-dept-agents.sh`** - the workspaces query gains `AND archived_at IS NULL`, and a per-workspace check sits AFTER `ws_id` resolution so it covers the manifest path too, which that query never reaches. An archived department gets no agents and no head link, the run prints one SKIP line naming its `archived_at`, and the summary counts them. Nothing here writes `archived_at`: skipping is the fix, un-archiving would be a different bug. Both probes are schema-tolerant, since `archived_at` is absent on older boards.
+
+- **`32-command-center-setup/scripts/seed-workspaces.py`** - before inserting, the seeder looks for the same department already on the board under a different slug, by case-insensitive NAME, scoped to this company. A hit UPDATES that row instead of inserting, and the summary reports it separately from inserts.
+
+  **No alias table was added.** `shared-utils/canonical_slug.py` already maps `billing` to `billing-finance` and `legal-compliance` to `legal`, and every id here already goes through it, so both pairs the client hit were already collapsed. A second table would have been a duplicate rule to drift. What was genuinely missing is the case no slug alias can cover, and that is what the name fallback adds. A test pins the canonical map so the pairs cannot quietly fall out of it.
+
+  It also prints ONE `[company-split]` line naming every company id that owns live workspaces, which one owns the catch-all, and whether that differs from the id being seeded as. **The company guard itself is unchanged** - it was correct, and the problem was that its refusal was unreadable.
+
+- **`32-command-center-setup/scripts/run-full-install.sh`** - after the cc-env mirror loop, when a Command Center database exists, the installer compares the mirrored `MC_COMPANY_ID` against the company that owns the catch-all (or, absent a catch-all, the most live workspaces). A mismatch prints one loud `[cc-env] MC_COMPANY_ID MISMATCH: env=<a> but workspaces/catch-all belong to <b> (split: …)` line and writes a state marker. A FULL install then corrects the value; `--update-only` warns and changes nothing, because rewriting a client's tenant id during a routine code roll is exactly the kind of surprise this guard exists to prevent. The rewrite reuses the existing `cc_env_set_if_absent` writer rather than duplicating its encoding.
+
+### Not done, and why: the hard DELETE of 22 archived rows
+**It is not in this repository.** The delete lives in the Command Center's `scripts/sync-departments-from-build-state.py`, at its `--prune` path (line 658) and its duplicate-collapse path (line 539). Searched: every `DELETE FROM workspaces` in every `*.py` and `*.sh` here; the only matches are inside one test fixture, `23-ai-workforce-blueprint/scripts/test-board-join-chain.sh`.
+
+Onboarding also never triggers it: Phase 6c invokes that script as `python3 "$SYNC_SCRIPT" --company-slug "$CLIENT_SLUG"`, with no `--prune`, and `--prune` appears nowhere in `run-full-install.sh` or `update-skills.sh`. Stopped on this item per instruction; it needs a Command Center change.
+
+A regression test pins that no onboarding installer script gains a workspace delete.
+
+### Also: the v25.1.65 fold fixtures now discriminate
+v25.1.65's headline client-shape tests used departments whose `folder` equalled the key minus `-dept`, so folding on the key produced the same answer and an id-only mutation passed them. Each now carries a department whose `folder` deliberately differs from its key stem (`client-success-dept` holding `folder: accounts`). Re-running the same mutation takes the suites from **3 red to 6 red**, including both headline tests.
+
+### Tests
+**`32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py`, 15 assertions, new**, wired into `full-funnel-pipeline.yml`. Fixtures are real sqlite databases.
+
+Name match updates instead of inserting, and is case-insensitive; a genuinely new department still inserts; a name match never reaches across a company boundary; both client slug pairs stay one column; the `[company-split]` line names every company and the catch-all owner, stays quiet when aligned, and never raises on a board with no `archived_at` column; the archived guard excludes archived rows from the query AND carries a reachable per-workspace check that runs before any agent row is written; nothing writes `archived_at`; no installer script hard-deletes a workspace.
+
+**Mutation-proved**, three separate mutations: disabling the name fallback turns 2 tests red; dropping `AND archived_at IS NULL` turns 1 red; making the per-workspace guard unreachable with `if False:` turns 1 red. That last one initially slipped past a source-level string check, so the assertion was tightened to pin the whole reachable guard and its position before `ensure_trio_quad_rows`.
+
+`bash -n` clean on `run-full-install.sh` and `materialize-dept-agents.sh`; `py_compile` clean on `seed-workspaces.py`. The two normalizer suites stay at 43 passing.
+
+## [v25.1.65]  -  2026-09-21  -  A department's own slug beats the map key it is filed under, so one department stops being two
+
+### Why
+Verified on a client box. The artifact's department map is keyed `<name>-dept` while each entry names its actual folder:
+
+```
+"departments": {
+  "account-management-dept": {"name": "Account Management",
+                              "folder": "account-management", ...},
+  ...
+}
+```
+
+v25.1.61 folded that map using the KEY as the entry's `id` and `slug`. So all 34 departments were slugged `…-dept`, while readers that take the slug off the entry produced the bare name. One department, two identities.
+
+Nothing collapsed the pair. `_canonical_dept_slug()` in this repo does strip a trailing `-dept`, so `seed-workspaces.py` happened to write the bare slug and looked fine. The reader that does not canonicalise, the Command Center's `phase=6c sync-departments`, wrote `…-dept` verbatim. The board gained a duplicate workspace for every department: **40 columns became 74**.
+
+That split is also what the client's `department company belongs to a different company` refusal was standing on. Two readers disagreeing about a department's identity is the whole defect; one of them masking it locally is not a fix.
+
+### What changed
+- **`shared-utils/departments_payload.py`** is re-mirrored against the Command Center twin at `f73ae663` (CC v7.6.35), byte-identical from the `WHY THIS EXISTS` heading down. The fold now resolves identity by precedence:
+
+  ```
+  id  ->  slug  ->  folder  ->  the map key
+  ```
+
+  The key is used ONLY when the entry carries none of the three, and a slug taken FROM the key loses a trailing `-dept`. An entry's own value is never rewritten, never trimmed, never stripped: an entry whose own slug really is `legal-dept` keeps it. `id` and `slug` are filled from the resolved slug only when the entry carries none of its own.
+
+- **All six vendored `except ImportError` copies** carry the same precedence: `seed-workspaces.py` and `materialize-missing-departments.py` (strict), and `department-floor.py`, `prove-zhe.py`, `prove-board-join.py`, `upgrade-company-config.py` (lenient). Each was extracted and executed against the client shape and four precedence cases; all six agree with the shared module, difference count zero.
+
+### The fix belongs in the fold, not in the readers
+`seed-workspaces.py` never showed the duplicate, because `_canonical_dept_slug()` rescued the bad slug on the way to the insert. That is exactly why the fold is where this is fixed: its output is canonical on the way OUT, so no reader has to rescue it and no reader can disagree. Both sides of the client's board now derive the same slug from the same module, which is the condition the `phase=6c` sync and `seed-workspaces.py` were failing.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **27 to 43 passing.**
+
+New: the real client artifact folds to `account-management` / `audio`; the full precedence table as four parametrised cases (own `id` wins over slug, folder and key; own `slug` wins over folder and key; `folder` wins over the key; a bare key is used as-is); `-dept` stripped ONLY when the slug came from the key, proven both ways in one test; a key that is only the suffix is kept whole; seeding the real artifact twice on a hermetic sqlite tree yields bare slugs and an identical row set on the second run; and the invariant that the fold's output already equals `_canonical_dept_slug()` of itself, so every reader agrees without rescuing anything.
+
+**Negative control**: the old key-wins fold is rerun on the same artifact and must produce `account-management-dept`, `audio-dept`, `legal-dept`, values that are NOT canonical and disagree with the new fold on every department. That is the drift, reproduced in the suite.
+
+Three assertions written in v25.1.61 asserted the key-wins behaviour and were updated rather than deleted; each now carries a comment pointing at the precedence test that covers the client shape.
+
+The reconcile path was checked directly: `reconcile_command_center_runtime.py` and `fleet_refresh_runner.py` both import the shared module and both return `account-management`, `audio`, `legal` for the client artifact.
+
+### Pre-existing, untouched
+Five failures reproduce identically on pristine `c718291ca`: three in `shared-utils/test_e10_engine_drift_guard.py`, one in `test_dept_scripts_suffix_coverage.py`, one in `tests/unit/test_interview_invitation.py`.
+
+## [v25.1.64]  -  2026-09-21  -  The dirty-checkout rule moves back inline, because a helper is an undefined command inside the blocks that carry it
+
+### Why
+v25.1.63 narrowed "dirty" to tracked files and factored the rule into a top-level `cc_tracked_changes()`. That release turned `main` RED on `.clawdbot pre-clear refuses on a live box; CC bootstrap never clones a second board`, whose job runs `scripts/test-updater-traps-1-and-3.sh`: **43 pass, 5 fail**, including the assertion that the installer is never invoked against a dirty checkout.
+
+All three Command Center gates live inside marker-delimited blocks that the repo's own suites extract VERBATIM and source STANDALONE — `TRAP3-CC-GUARD-HELPERS` and `TRAP3-CC-BOOTSTRAP-BRANCH` for the traps suite, `CONTENT-RECHECK-CONVERGENCE-PROBES` for the convergence suite. A call to a function defined at the top of `update-skills.sh` is an **undefined command** in that context. It does not merely error: the command substitution yields an EMPTY string, which the gate reads as "clean" and lets through. The failure is silent and it fails in the least conservative direction, which is the opposite of what a refusal gate is for.
+
+On a live box the shipped script runs whole, so the helper was defined and the gates behaved correctly. The defect was confined to the extraction suites, which is exactly what they exist to catch, and they caught it.
+
+### What changed
+- **`update-skills.sh`** — the rule is written out at each of the three gates and the top-level helpers are gone:
+
+  ```
+  git -C "$DIR" status --porcelain 2>/dev/null | grep -v '^??' || true
+  ```
+
+  The `[CC CURRENCY]` probe, the fast-path `reset --hard` repair, and the DIRTY-CHECKOUT GUARD each carry it, each with a comment naming why it is not factored out. The header comment at the top of the file now records the canonical spelling, the silent-empty-result failure mode, and the measured evidence, so the next reader does not re-derive the helper and re-break the suites.
+
+  Behaviour is unchanged from v25.1.63: dirty still means modified or staged TRACKED files, untracked files are still an INFO count, and the refusal for genuinely modified tracked files still stands.
+
+- **`tests/unit/cc-currency-untracked-is-not-dirty.test.sh`** — 17 to 18 assertions. It no longer extracts helper functions (there are none). It LIFTS the expression out of the DIRTY-CHECKOUT GUARD and runs that against the fixtures, so it judges the shipped rule. Section 7 now asserts all three gates carry the inline rule **and that no gate depends on a top-level helper**, which is the assertion that would have caught v25.1.63 before it merged.
+
+### Not changed
+The narrowing itself, the INFO lines, the operator-facing wording, and the v25.1.63 CHANGELOG entry, which is tagged and shipped and describes a real release.
+
+### Tests
+`scripts/test-updater-traps-1-and-3.sh`: **43/5 on `main` at v25.1.63, 48/0 on this branch.** Its CASE 10 dirties its fixture by appending to a COMMITTED `package.json`, so it is independent confirmation that narrowing the definition did not cost the real protection.
+
+`tests/unit/cc-currency-untracked-is-not-dirty.test.sh` 18/18. `tests/unit/content-recheck-convergence-probes.test.sh` 61/61. Green alongside: `update-skills-full-scripts-tree`, `update-skills-pending-flag-staleness`, `update-skills-resume-cron`, `update-skills-u6c-set-e-continuation`, `cc-done-degraded-retry-gate`, `cc-tunnel-ingress-guard`, `cc-watchdog-cron-registration`. `bash -n` clean on `update-skills.sh` and `run-full-install.sh`.
+
+**Pre-existing and untouched**: `scripts/test-fleet-refresh.sh` passes once on a fresh tree and then fails at "Test 3: Mac layout — dry-run is inert" on every later run in the same checkout. Reproduced three times in a row on pristine `7f6b230e2` with none of this branch's changes present, so it is state left behind between runs, not a regression from here.
+
+## [v25.1.63]  -  2026-09-21  -  Untracked files are not dirt, so a box with stray files finally gets its Command Center refresh
+
+### Why
+Verified on a client Mac. `update-skills.sh` printed
+
+```
+✗ [CC CURRENCY] state=dirty head=bc06e9c0 — Command Center has UNCOMMITTED
+  changes, so it cannot fast-forward and will NOT be refreshed
+```
+
+against a checkout whose `git status --porcelain` showed **zero modified tracked files**. All ten entries were untracked (`??`): old database safety copies, a leftover script, a scratch markdown. The Command Center's own `update.sh` pulled that same tree five times the same day, stashing and restoring around those files without complaint.
+
+Three separate Command Center gates each spelled "dirty" as `[ -n "$(git status --porcelain)" ]`. Porcelain lists untracked files too. So any box that had ever accumulated a stray file stopped receiving a Command Center refresh through the updater, silently and permanently, while every log line insisted the operator had uncommitted work to deal with.
+
+Untracked files cannot cause what those gates are protecting against. A fast-forward does not touch them. `reset --hard` does not touch them. A pull refuses only when it would overwrite one by name. The gates were refusing on a condition that was never the hazard.
+
+### What changed
+- **`update-skills.sh` — one definition of dirty, at the top of the file.** `cc_tracked_changes()` returns the porcelain lines for tracked changes only, and `cc_untracked_count()` counts the `??` entries. Dirty now means modified or staged TRACKED files. Untracked files are reported as a one-line INFO count and block nothing.
+
+  Single-sourced deliberately: the bug was three copies of the definition, so the fix is one definition the copies call.
+
+- **The three gates**, all in `update-skills.sh`:
+  - the `[CC CURRENCY]` probe, which reported `state=dirty` and wrote that state into the marker file post-roll readers consume;
+  - the fast-path repair, which skipped its `reset --hard` to `origin/main`;
+  - the DIRTY-CHECKOUT GUARD, the one that actually skips the refresh before `run-full-install.sh --update-only` runs its `git pull`.
+
+  The first and third call `cc_tracked_changes()`. The fast-path carries the identical rule **inline** rather than calling it, because that block is extracted verbatim and sourced standalone by `tests/unit/content-recheck-convergence-probes.test.sh` and must stay self-contained. A comment at the inline copy names the helper as the definition of record, and the new test asserts the inline rule is present, so the two cannot quietly diverge.
+
+- **Both operator-facing refusals now say TRACKED**, so the message matches what the gate actually tested.
+
+### Not changed, deliberately
+The refusal for genuinely modified tracked files. That protection is correct and is asserted by three of the new tests: a modified file, a staged file, and a mixed tree where an untracked file must not mask a real tracked edit.
+
+`update-skills.sh`'s self-sync check on the **onboarding** checkout (the one guarding a `git reset --hard` of this repo) still treats any porcelain output as dirty. It is a different repository, a different hazard, and was not part of the report.
+
+`32-command-center-setup/scripts/run-full-install.sh` has **no** porcelain or dirty check to align. Searched: every `status --porcelain` occurrence in every `*.sh` in the repo. The only production hits are the four in `update-skills.sh`; the DIRTY-CHECKOUT GUARD that mentions `run-full-install.sh` lives in `update-skills.sh` and guards the call into it.
+
+### Tests
+**`tests/unit/cc-currency-untracked-is-not-dirty.test.sh`, 17 assertions, new.** It extracts both helpers verbatim from `update-skills.sh` and fails loudly (exit 2) if either is renamed, so it cannot silently test nothing. Fixtures are real `git init` repositories, so the assertions run against real porcelain output rather than a mocked string.
+
+- untracked-only, rebuilt with the same ten strays the client box carried: no tracked changes, count 10, refresh proceeds;
+- modified tracked file: still dirty, refusal still fires;
+- staged tracked file: dirty;
+- clean tree: clean;
+- mixed tree: the tracked edit still refuses while the untracked file is counted separately;
+- every gate is checked at source level for the tracked-only rule, and no gate may assign unfiltered porcelain;
+- both refusal messages and both INFO lines are asserted by exact string.
+
+**Pre-fix control**: the old one-line definition is rerun against the same untracked-only fixture and must still call it dirty. It does, which is the live incident reproduced in the suite, and test 1 is what proves the fix no longer does it.
+
+Wired into `qc-static.yml` beside the sibling Command Center regression lock. An unwired test never runs.
+
+Green alongside on this branch: `update-skills-full-scripts-tree`, `update-skills-pending-flag-staleness`, `update-skills-resume-cron`, `update-skills-u6c-set-e-continuation`, `cc-done-degraded-retry-gate`, `cc-tunnel-ingress-guard`, `cc-watchdog-cron-registration`, and `content-recheck-convergence-probes` 61/61. That last one **failed 13 assertions** on the first attempt at this fix, because routing the fast-path through a top-level helper broke the self-contained block it extracts. That is what the inline copy is for, and it is why the comment there exists. `bash -n` clean on `update-skills.sh` and `run-full-install.sh`.
+
+## [v25.1.62]  -  2026-09-21  -  The departments normalizer is re-mirrored against the Command Center twin, so one artifact gets one refusal message
+
+### Why
+v25.1.61 taught `shared-utils/departments_payload.py` to fold a slug-keyed `departments` map. The Command Center shipped the twin rule the same day as v7.6.30 (`8828dec6e`), and its module header states the contract out loud: the two repos read the SAME artifact off the SAME box, so they must agree on its shape byte for byte, and either side changes only by re-mirroring the other.
+
+The two were compared case by case rather than by eye. **The fold behaviour already agreed exactly** — non-empty map, every value an object, key order preserved, key filling `id` and `slug` only where the entry carries none, an entry's own `id` always winning. Across 18 payloads there were **zero behaviour differences**.
+
+What did not agree was the wording, and on this module the wording is the product. An operator staring at a refused `departments.json` is reading that sentence to decide what is wrong with the file. Two repos describing the same rejected artifact two different ways is the drift the mirror exists to prevent, and the onboarding side had collapsed two distinct failures into one message:
+
+| Payload | Onboarding v25.1.61 | Command Center v7.6.30 |
+|---|---|---|
+| `{"departments": {"m": "yes"}}` | `'departments' key holds dict, expected a list or an object keyed by slug whose values are all objects` | `'departments' key holds an object that is not a department map (it is empty, or a value is not an object); expected a list, or an object keyed by department slug whose values are all objects` |
+| `{"departments": {}}` | same single message | same department-map message |
+| `{"departments": 42}` | same single message | `'departments' key holds int, expected a list` |
+
+An object that is ALMOST a department map and a value that was never a map at all are different operator problems. The Command Center says so; onboarding did not.
+
+### What changed
+- **`shared-utils/departments_payload.py`** is now byte-identical to the Command Center's copy at `8828dec6e` from the `WHY THIS EXISTS` heading down, verified with `diff`. Only the mirror header differs, and only in direction: this one names blackceo-command-center and its TypeScript twin `src/lib/departments-payload.ts` as the far side.
+
+  The rule now reads through two named helpers rather than one returning a sentinel: `_is_department_map(obj)` answers whether an object is a non-empty map of objects, and `_fold_keyed(obj)` folds it preserving key order. Both branches, the top level and the value under the `departments` key, go through the same pair, so the two positions cannot drift apart. The refusal for a non-map object under the key gains its own message.
+
+- **`shared-utils/test_departments_payload.py`** gains two tests pinning the exact text of both refusals, with a comment naming the mirror and the Command Center commit. If either sentence is reworded here without re-mirroring there, these fail. That is the only thing standing between a shared contract and a slow divergence nobody notices.
+
+### Not changed
+Behaviour, in any case: 27 tests passed before the mirror and still pass, none of them edited to fit. The six vendored `except ImportError` fallbacks re-synced in v25.1.61 are untouched, because they carry the fold logic only, never the error text, and their logic already matches. The Command Center repo was cloned read-only and nothing in it was written.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **27 to 29 passing**, the two additions being the wording pins.
+
+The mirror was proved, not assumed. Both modules were loaded side by side and run over the same 18 payloads, comparing returned value AND raised message: **0 differences** after the change, against 3 message differences and 0 behaviour differences before it. `diff` from `WHY THIS EXISTS` down reports the files byte-identical. The module's own `_demo()` self-check passes under `python3 shared-utils/departments_payload.py`.
+
+## [v25.1.61]  -  2026-09-21  -  A departments.json whose "departments" key holds an object keyed by slug now reads, instead of being refused
+
+### Why
+Verified on a client Mac. The real `departments.json` written on the box is:
+
+```
+{"company": ..., "total_departments": 34, "total_roles": N,
+ "departments": {"account-management-dept": {...}, "audio-dept": {...}, ...}}
+```
+
+The `departments` KEY holds an OBJECT keyed by slug. It is not a list. v25.1.57's `shared-utils/departments_payload.py` accepted a slug-keyed object only at the TOP level, and under the `departments` key it accepted a list and nothing else. So a real file carrying 34 real departments raised
+
+```
+departments.json: 'departments' key holds dict, expected a list
+```
+
+and every reader that routes through the normalizer, the seeder included, got a hard error instead of 34 departments.
+
+### What changed
+- **`shared-utils/departments_payload.py`** - the slug-keyed fold moved into one helper, `_fold_slug_keyed`, and is now applied in BOTH positions: to the value of the `departments` key, and to the top-level object when there is no such key. The key fills `id` and `slug` only when the entry does not already carry its own, so an entry that names itself keeps its identity, and insertion order is preserved so the folded list reads in the file's own order.
+
+  The fold refuses, and the loud `MalformedDepartmentsError` stands, unless EVERY value is an object. A scalar value is exactly what marks an object as a metadata envelope, and an envelope's keys are never departments. An empty object is refused too: the shipped empty default is `[]`, and the provisioning completeness gate treats `{}` as invalid on purpose.
+
+- **Six vendored copies re-synced.** The `except ImportError` fallbacks that run on a box whose shared-utils predates the module all carry the identical rule now: `32-command-center-setup/scripts/seed-workspaces.py` and `23-ai-workforce-blueprint/scripts/materialize-missing-departments.py` (strict, still raise), and `department-floor.py`, `prove-zhe.py`, `prove-board-join.py` and `upgrade-company-config.py` (lenient, still degrade to `[]`). A stale copy would have made a box silently report zero departments on a file the shared module reads fine, which is the same false negative in a new place.
+
+### The writer
+**No writer in this repository emits that shape.** Named, so the claim can be checked:
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py:7612` `generate_departments_json()` returns a bare LIST of `{id, emoji, name, headTitle, workspacePath, slug?}` with `dept-` PREFIXED ids.
+- `23-ai-workforce-blueprint/scripts/build-workforce.py:1925` `_make_artifact_payload()` returns that list, or `{removedWithProvenance: [...], departments: [...]}` where `departments` is a LIST.
+- `23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh:507` writes `departments` as a LIST.
+
+The three places that DO build `"departments"` as a dict keyed by slug all write `23-ai-workforce-blueprint/templates/role-library/_index.json`, which is the ROLE LIBRARY index and a different file: `register-library-additions.py:329`, `32-command-center-setup/scripts/add-department.sh:532`, `working/wire-index.py:100`. That file has no `company` key and its keys are bare slugs (`account-management`), where the client file is `account-management-dept`.
+
+So the client shape is **not canonical and not produced here**. It is a foreign or client-side producer, and per instruction no writer was changed. Searched: every `*.py`, `*.sh`, `*.js` and `*.ts` in the repo for `total_departments`, for `departments.json` write sites, and for `"company"` near `depart`. NOT searched: the blackceo-command-center repo, and anything generated on a client box that does not live in this repo.
+
+### seed-workspaces.py
+The `ValueError: department company belongs to a different company or an active/custom system queue` the client hit is that guard doing its job on damage an OLDER key-folding bug had already written: bogus workspaces named `company`, `total_departments`, `total_roles` and `departments` sitting under company_id `default`. **The guard is untouched.** What changes is that a correct file can no longer hand it a department named `company`: when the `departments` key is present its value is folded and returned before any top-level key is iterated, so the envelope's metadata keys are never candidates. Proven end to end through `seed-workspaces.py`'s own `_normalize_departments` plus `_canonical_dept_slug` on a 34-department envelope: 34 departments out, first canonical ids `account-management`, `audio`, `marketing`, and zero of the four metadata names. The stale rows already on a client board are data, not code, and are out of scope here.
+
+### Tests
+`shared-utils/test_departments_payload.py` and `32-command-center-setup/scripts/test_seed_workspaces_normalize.py`: **18 to 27 passing**. New: the envelope whose `departments` key is a slug-keyed map folds, with ids AND slugs from the keys and file order preserved; an entry carrying its own `id`/`slug` keeps them rather than being overwritten by the key; a non-object value, an empty map, an int and a string under the `departments` key are each still refused with the path named; and the lead regression restated against the real shape, asserting the output contains `marketing-dept` and nothing named `company`, `total_departments`, `total_roles` or `departments`.
+
+One pre-existing test was replaced, not deleted: `test_departments_key_that_is_not_a_list_fails_loudly` asserted that `{"departments": {"marketing": {}}}` must raise. That is the shape this release deliberately accepts, so it is now `test_departments_key_holding_a_slug_keyed_map_is_folded` plus a refusal test covering the cases that must still fail.
+
+**Mutation-proved**: deleting the two-line fold call under the `departments` key makes the module self-check die with `MalformedDepartmentsError: 'departments' key holds dict`, which is the client's exact error; restoring it returns all checks green. The pre-fix module was run against the same payload and refused it, so the fix is the measured difference between two runs. All six vendored copies were extracted and executed against the client shape: both strict copies fold it and still refuse a metadata envelope, and all four lenient copies fold it and still return `[]` for one.
+
+`py_compile` clean on every edited file. `scripts/bump-version.sh --check`: all 10 markers agree at v25.1.61.
+
+### Not changed, deliberately
+The writer, per instruction. `seed-workspaces.py`'s shared-client mutation guard. `shared-utils/engine-script-drift-baseline.json`, which reports 7 unreviewed drifts in `58-podcast/` and `59-anthology/` scripts. Those pre-date this branch, none of the files here are among the 3 it tracks, and accepting someone else's unreviewed drift with `--update-baseline` is not this train's call. `shared-utils/test_e10_engine_drift_guard.py` fails 3 of 7 on pristine `0a908cf40` as well, so that is also pre-existing and untouched.
+
+## [v25.1.60]  -  2026-09-21  -  Skill 58's two version files agree again, turning the frontmatter drift guard green
+
+### Why
+The "SKILL.md frontmatter vs skill-version.txt drift guard" has been red on `main` since commit `e6ac726`, with exactly one finding:
+
+```
+58-podcast-production-engine   SKILL.md version=1.0.6   != skill-version.txt=1.0.7
+```
+
+`e6ac726` ("bump skill 58 to v1.0.7 for podcast universal fix") moved `58-podcast-production-engine/skill-version.txt` to `v1.0.7` and left the SKILL.md frontmatter at `v1.0.6`. The skill loader reads the frontmatter; CI G3 in `version-consistency.yml` only enforces `skill-version.txt`. That is the precise gap `scripts/qc-assert-skill-frontmatter-version.sh` exists to close, and it closed it. The gate fired correctly and then stayed red, because nobody rolled the other half.
+
+A permanently red required check is worse than no check. It trains everyone to read red as normal, so the next real drift lands unnoticed.
+
+### What changed
+Both of Skill 58's version files roll together to **v1.0.8**:
+
+- **`58-podcast-production-engine/SKILL.md`** - frontmatter `version: v1.0.6` to `version: v1.0.8`.
+- **`58-podcast-production-engine/skill-version.txt`** - `v1.0.7` to `v1.0.8`.
+
+Rolling both is the drift guard's own documented remedy ("roll each SKILL.md frontmatter `version:` to match its skill-version.txt, **or bump both together**"), and here it is the only remedy that is not a lie. Touching SKILL.md alone was tried first and CI G3 rejected it: G3 requires a skill's `skill-version.txt` to move in the same diff as any other file in that skill directory, so a frontmatter-only edit trades a red drift guard for a red G3. The other direction, rolling `skill-version.txt` back to `v1.0.6`, would have satisfied both gates by undoing a deliberate bump and telling every box the podcast universal fix was never shipped. A shared bump to `v1.0.8` satisfies both gates and keeps the recorded history honest.
+
+The `v` prefix is kept on both files: the guard normalizes one leading `v` before comparing, and the two files have always been spelled the same way.
+
+- **Repo version v25.1.59 to v25.1.60** via `scripts/bump-version.sh`, which rolls all 10 tracked markers plus the `06-ghl-install-pages` and agent-browser version strings it maintains.
+
+### Not changed, deliberately
+No Skill 58 behaviour: no pipeline step, no prompt, no module, no script, no test. Only the two numbers that describe the skill moved. `58-podcast-production-engine/CHANGELOG.md` is left alone as well; it still tops out at `[1.0.6]` because `e6ac726` added no entry for `1.0.7`, and inventing release notes for someone else's shipped change would be worse than the gap. No CI gate covers the per-skill changelog, so this is a known gap, recorded here rather than papered over.
+
+The guard script itself is untouched. Editing a gate to silence its own finding is how a fleet loses a gate.
+
+### Risk
+None to runtime. Both changed values are metadata strings that no executable path branches on. Boxes on the weekly roll will see Skill 58 report `v1.0.8` instead of `v1.0.7` with byte-identical content underneath.
+
+### Tests
+`bash scripts/qc-assert-skill-frontmatter-version.sh` on this branch: **exit 0**, `PASS - 23 skill(s) checked; every SKILL.md frontmatter version == skill-version.txt` (47 skills skipped as designed, having no top-level frontmatter `version:`). The same command on the pre-fix tree returns **exit 1** with the single `58-podcast-production-engine` line quoted above, so the fix is the measured difference between two runs rather than an assumption about one. The gate's own `--self-test` passes both fixtures - exit 0 on the match tree, exit 1 on the mismatch tree - which is the control proving the gate went green by losing the drift and not by losing its teeth. `bash -n` clean on the gate script. `scripts/bump-version.sh --check`: all 10 version markers agree at v25.1.60. `scripts/check-docs-language.py`: PASS, 0 new unexplained occurrences. G3 was confirmed red against the frontmatter-only attempt (run 35615023876) and both of Skill 58's files are in this diff, which is the condition G3 tests.
+
+## [v25.1.59]  -  2026-09-21  -  Name socket.timeout in the tuple, and mark a timed-out step as a transport failure
+
+### Why
+v25.1.58 fixed the Python 3.9 escape by adding `OSError` to `_attempt_chat`'s per-step except tuple. That is correct and complete — `socket.timeout` is an `OSError` on 3.9 and, from 3.10, an alias of `TimeoutError` which is itself an `OSError` — but it is **not findable**. The obvious verification a reviewer runs is `grep socket.timeout shared-utils/llm_score.py`, and on v25.1.58 that returns nothing but a comment. A fix nobody can confirm by the obvious check gets re-reported as missing, which is exactly what happened.
+
+The failed-step record had the same problem in miniature: a timed-out step and an HTTP 500 both produced a bare `<Type>: <message>` string, so a degraded run's reasoning could not tell "the socket gave up" from "the provider answered with a status".
+
+### What changed
+- **`shared-utils/llm_score.py`** — `import socket`, and `socket.timeout` named alongside `OSError` in the per-step except tuple. Redundant by class, deliberate by intent: the grep now lands on the code. `OSError` stays, because it is what additionally catches the connection-reset family, which escaped on every Python version and still would if the tuple named only the timeout.
+- **The step outcome is recorded as a transport failure** — that branch's error string is now `transport: <Type>: <message>`. `score_layer` already folds each failed step's error into `last_error` and then into the degraded reasoning, so the marker surfaces without a new field and without a new consumer. `urllib.error.HTTPError` is caught in its own clause **above** the tuple, so a 401/400/404/500 keeps its key-advance and model-fallback paths and never picks up the marker.
+- **The PRES-053 vendored copy** re-vendored byte-identical (both SHA-1 `acfc5b24352f8ca61e69d861449d4f5164f0f271`, verified with `diff`).
+
+### Not changed
+No behaviour. Every exception the widened tuple catches was already caught by v25.1.58's `OSError`; this release changes which NAMES appear in the source and what the failed-step string says. `PERSONA_SCORE_WORKERS` is already 3 (v25.1.58) and is untouched here.
+
+### Risk
+None to the chain's control flow. The one observable change is the `transport: ` prefix in a degraded run's `reasoning`, which nothing parses — the two existing reasoning assertions match on a model name and on `"zero steps"`, both unaffected.
+
+### Tests
+`shared-utils/test_llm_score_fallback_chain.py` 34 → 36. A timed-out step's degraded reasoning must carry `transport:`; and a CONTROL that an HTTP 500 must **not** — and must still walk the full six-step chain. That control is the real guard on this edit: `HTTPError` is a `URLError`, hence an `OSError`, so widening the tuple could have swallowed it and silently killed the 401 and 400/404 paths. **Mutation-proved both ways.** Removing `socket.timeout, OSError` fails the transport leg with `ConnectionResetError: peer reset` raised out of the call. Disabling the `HTTPError` clause so status codes fall into the transport tuple fails 5 tests, the new control among them, at the `"transport:" not in reasoning` assertion. Restoring returns 36/36. Green alongside: `test_f25_llm_score_secrets.py` and `test_ollama_cloud_endpoint_and_key.py` (84 passed across the three suites), `stage-d-parallel-scoring` 6/6. `engine_script_drift_guard.py` byte-identical to pristine after the re-vendor. `py_compile` clean on every edited file.
+
+## [v25.1.58]  -  2026-09-21  -  A read timeout on one scoring step stops killing the whole selection, and Stage-D stops outbidding the fleet for Ollama Cloud
+
+### Why
+Two findings from one client Mac running Python 3.9.6 on the v25.1.56 chain.
+
+**A. `socket.timeout` escaped the per-step handler on Python 3.9.** `_attempt_chat`'s except tuple named `TimeoutError` but not `OSError`. On 3.9 `socket.timeout` is an `OSError` and **not** a `TimeoutError` — the two were unified only in 3.10. So an Ollama Cloud read timeout on step 1 did not return a failed-step dict; it propagated out of `_attempt_chat`, out of `executor.map` in the persona selector's `score_personas`, and killed the entire persona selection with rc 1. The chain has five more steps and never got to try one of them. A transport error on one provider must cost that provider's turn, never the run.
+
+**B. Stage-D's 6-wide scoring burst was bidding against the rest of the fleet.** Ollama Cloud's concurrency limit is **account-wide** (10), and the operator's standing ceiling is 8 shared by every running agent on every box — it is not a per-process budget. Six concurrent scoring calls therefore queued behind whatever agents were already live and step 1 timed out. Measured on the client box: 0 of 3 scoring calls were served by `ollama-cloud/minimax-m3`; all fell through to OpenRouter and Agnes at 4-20s each. Defect A is what turned that queueing into a crash.
+
+### What changed
+- **`shared-utils/llm_score.py`** — `OSError` added to `_attempt_chat`'s per-step except tuple, with a comment naming the 3.9/3.10 `socket.timeout` split so nobody narrows it back to `TimeoutError`. `OSError` covers `socket.timeout` on **every** Python version and takes the connection-reset family with it, which was never caught on any version either. `urllib.error.HTTPError` is still caught first and keeps its own 401-advances / 400-404-model-fallback path, and the returned dict already carries `type(e).__name__`, so the step outcome names the transport error without a new field. The failed step returns a dict, `score_layer` walks to the next one, and the run survives.
+- **`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`** — `PERSONA_SCORE_WORKERS` default 6 → 3, with the account-wide-ceiling reasoning in the comment. Three is wide enough to hide per-call latency without spending the fleet's shared concurrency. The env override is unchanged, and `PERSONA_SCORE_WORKERS=1` is still the literal sequential escape hatch.
+- **The PRES-053 vendored copy** of `llm_score.py` re-vendored byte-identical (both SHA-1 `67afec3445d63f542150cdfb0f23a694c0d926ff`, verified with `diff`).
+
+### Not changed, deliberately
+`socket` is not imported into `llm_score.py`. Catching `OSError` already covers `socket.timeout` on 3.9 and on 3.10+, so an explicit `socket.timeout` in the tuple would be a redundant name and a redundant import; the comment carries the reason instead. The scoring chain, its order, the credential resolvers, the 20s per-step timeout and the cache are all untouched — this release changes only what happens when a step's socket gives up.
+
+### Risk
+Low. Defect A's fix strictly widens an existing except clause, so the only behaviour change is that a transport failure that used to raise now degrades the way every other step failure already did. Defect B's fix makes Stage-D ask for less shared capacity, never more; the worst case is that six personas score in two waves instead of one, about 0.2s of added wall clock against 4-20s of fallback latency it avoids.
+
+### Tests
+`shared-utils/test_llm_score_fallback_chain.py` 31 → 34: a `socket.timeout` on step 1 is served by step 2; a version-aware control asserting `socket.timeout` is an `OSError` and, below 3.10, is **not** a `TimeoutError` (the relationship the fix turns on, asserted rather than assumed from the runner's version); and a leg walking `socket.timeout`, `ConnectionResetError`, `OSError` and `TimeoutError` that requires each to return a dict and to let the full six-step chain run. **Mutation-proved**: deleting the `OSError` line makes that last leg fail with `ConnectionResetError: peer reset` raised out of the call, which is the exact escape the client hit; restoring it returns 34/34. On a 3.10+ runner the `socket.timeout` leg alone would pass without the fix, so the `ConnectionResetError` case is what gives this suite teeth on a modern CI box. `tests/unit/stage-d-parallel-scoring.test.py` 5 → 6: the overlap test now runs at the **shipped default** instead of a pinned 6, so a default that stops overlapping fails here rather than passing against a width nothing ships (6 personas × 0.2s at 3 workers is ~0.4s, inside the unchanged 0.6s bound — verified), plus one assertion pinning the default at 3 with the account-wide-ceiling reason. Green alongside: `test_f25_llm_score_secrets.py` and `test_ollama_cloud_endpoint_and_key.py` (82 passed across the three llm_score suites), `persona-fallback-invariant` 8/8, `model-selector` 37/37, `persona-grounding-health-probe` 21/21. `engine_script_drift_guard.py` output is byte-identical to pristine main after the re-vendor. `py_compile` clean on every edited file.
+
+## [v25.1.57]  -  2026-09-21  -  An update-only roll stops writing welcome cards, and a wrapped departments.json stops becoming departments
+
+### Why
+Two defects observed together on one client Mac, both in the Command Center install path.
+
+**A. A code roll wrote content into a live backlog.** `32-command-center-setup/scripts/seed-dashboard-content.py` seeds a "Welcome to <workspace>" starter card so a BRAND-NEW board renders something on first load. Its per-workspace guard is "this workspace has zero tasks" — which on a MATURE board is true of every department the client has simply never used. Phase 6e of `run-full-install.sh` ran the seeder in BOTH full and `--update-only` mode, so a routine code roll dropped ten fresh welcome cards into a live client backlog months after install. The Command Center's grooming loop then spawned "Author SOP: Welcome to X" follow-on work off those cards, which failed. An update path must never author board content.
+
+**B. A legitimate departments.json shape was read as departments.** `<company_dir>/departments.json` ships in two shapes. A bare LIST is what `build-workforce.py::generate_departments_json()` returns. An OBJECT that WRAPS that list under a `departments` key is equally real: `23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh:507` writes `{removedWithProvenance, departments}`, and `build-workforce.py::_make_artifact_payload` deliberately PRESERVES that dict shape on every later apply-diff build so the retirement audit trail survives. The client's file carried a build envelope of the same family, `{company, total_departments, total_roles, departments}`.
+
+Every reader gated on `isinstance(data, list)` and treated the object shape as "no departments" — a false negative on a valid artifact. `seed-workspaces.py::_normalize_departments` was worse: its dict branch folded EVERY key in as a department id, so on 2026-08-07 the client's board gained four bogus workspaces named "Company", "Total Departments", "Total Roles" and "Departments", and today install phases 6b and 6c exited non-zero while the 6e2 department-runtime-parity guard failed listing exactly those four. The Command Center's own `scripts/sync-departments-from-build-state.py` iterates the same payload and calls `.get("id")` on each item, which on a dict yields string KEYS — the `'str' object has no attribute 'get'` AttributeError behind Phase 6c's non-zero exit. That script lives in the blackceo-command-center repo and is NOT changed here.
+
+### What changed
+- **`shared-utils/departments_payload.py` (NEW)** — the ONE envelope normalizer. `normalize_departments()` accepts a list, an object wrapping the list under `departments`, and a genuine dict-of-dicts keyed by slug (every value a dict). Anything else — a metadata envelope with no department list, an empty `{}`, a scalar — raises `MalformedDepartmentsError` naming the PATH and the TOP-LEVEL TYPE. A dict's keys are never iterated as departments. `departments_or_empty()` is the same unwrapping for readers that must emit a verdict rather than crash: one loud stderr line, then the `[]` they already produced. The module carries a runnable self-check (`python3 shared-utils/departments_payload.py`).
+- **Seven readers now route through it**, so the object shape reads correctly everywhere and a metadata envelope can never seed anything: `32-command-center-setup/scripts/seed-workspaces.py` (raises — seeding garbage is the harm), `23-ai-workforce-blueprint/scripts/materialize-missing-departments.py`, `prove-zhe.py`, `prove-board-join.py`, `department-floor.py`, `upgrade-company-config.py`, and `shared-utils/fleet_refresh_runner.py` + `shared-utils/reconcile_command_center_runtime.py`. Each keeps a small inline fallback so a box whose `shared-utils` predates this module still behaves.
+- **`materialize-missing-departments.py` also stopped a data-loss path.** It read the chosen artifact, fell back to `existing = []` on the object shape, then WROTE the merged list back — overwriting the client's real departments and destroying the `removedWithProvenance` audit trail. It now unwraps, writes back in the shape it read (a wrapped artifact stays wrapped), and REFUSES to touch an artifact it cannot read rather than clobbering it.
+- **`seed-dashboard-content.py` gained `--no-starter-tasks` / `SEED_STARTER_TASKS=0`.** Off, it writes zero tasks; the companies row and the per-department head-agent rows are still ensured, because those are idempotent identity/runtime rows, not board content. The final "one or more tables still empty" warning no longer fires on an empty tasks table when starter tasks were deliberately disabled. Default is ON, so a full install is unchanged.
+- **`run-full-install.sh` Phase 6e passes `--no-starter-tasks` when `UPDATE_ONLY=true`** and logs one INFO line saying starter tasks were skipped because this is an update-only roll. The argument goes through the `${arr[@]+...}` guard this installer already uses, so bash 3.2 under `set -u` is safe.
+
+### Canonical shape finding
+The WRITER is a LIST: `build-workforce.py::generate_departments_json()` (line 7612) returns `entries`, a list of `{id, slug, emoji, name, headTitle, workspacePath}` dicts. The OBJECT shape is equally canonical and is introduced by `retire-confirmed-decline.sh:507` and preserved by `build-workforce.py::_make_artifact_payload`. Neither writer is changed. No script in this repo writes the `company` / `total_departments` / `total_roles` keys into a departments.json — those names appear only in `_index.json` and build-state — so the client's particular envelope came from outside this repo's writers. The readers accept it either way now.
+
+### Risk
+Low and bounded. The only behaviour REMOVED is the dict-key folding that produced the bogus workspaces; a genuine dict-of-dicts keyed by slug still folds, because every value there is a dict. `{}` and a top-level scalar now fail loudly instead of returning a quiet `None` — which the provisioning-completeness gate already required of `{}`, and that gate's output is byte-identical to pristine main. Phases 6b and 6e are WARN-only, so a loud refusal lands in the install log without blocking an install. An update-only roll now writes fewer rows than before, never more.
+
+### Tests
+NEW: `shared-utils/test_departments_payload.py` (4) and `32-command-center-setup/scripts/test_seed_dashboard_starter_tasks.py` (17 — zero tasks written with the flag or the env var while companies + head agents are still ensured; the full-install default still seeds; a disabled re-run is idempotent and leaves the client's real task untouched). EXTENDED: `32-command-center-setup/scripts/test_seed_workspaces_normalize.py` 7 -> 14, including an end-to-end `seed()` proving the client's exact envelope writes only the real departments into `workspaces`. Pre-existing suites re-run green: `test-board-join-chain.sh` 65/65, `test-materialize-missing-departments.sh` 14/14, `test-materialize-missing-departments-join.sh` 15/15, `update-command-center-runtime-config.test.sh` 16/16, `qc-departments-tree-resolution.test.sh` 11/11, `test-converge.sh` 10/10, `full-update-path-contract.test.sh` 29/29, `fleet-refresh-cc-main-convergence.test.py`, and `provisioning-completeness-gate.test.py` (output diffed byte-for-byte against pristine main). `bash -n` clean on the installer under bash 5.3 AND bash 3.2; `py_compile` clean on every edited Python file. The Skill 58 `SKILL.md` / `skill-version.txt` drift is PRE-EXISTING — `scripts/qc-assert-skill-frontmatter-version.sh` exits 1 with that same single line on pristine `79cb8e2d`.
+
+## [v25.1.56]  -  2026-09-21  -  The scoring fallback chain is a data table, and it starts on MiniMax
+
+### Why
+v25.1.54 and v25.1.55 fixed what step 1 of the persona-scoring chain SENT. This release fixes what the chain IS.
+
+Three hard-coded lambdas inside `score_layer` were the whole chain: two OpenRouter steps and one Ollama Cloud step, with the order, the models and the credential rules tangled into one block that nothing could assert on. When Ollama Cloud deleted a tag, the failure was invisible for five weeks partly because there was no table to read and no test that could pin an order. Adding a provider meant editing the function.
+
+The operator also asked for a different chain. Measured on a live client box on 2026-09-21 with a scoring-shaped request at `max_tokens` 200: Ollama Cloud `deepseek-v4.1-flash` 1.5s, `minimax-m3` 3.1s, `glm-5.3-flash` 3.3s; OpenRouter DeepSeek about 4s a call. Two providers the fleet already holds credentials for were not in the chain at all: Agnes AI (`AGNES_AI_API_KEY`, OpenAI-compatible at `https://apihub.agnes-ai.com/v1`) and DeepSeek's own API (`DEEPSEEK_API_KEY`, `https://api.deepseek.com/chat/completions`, `deepseek-flash` = DeepSeek-V4.1-Flash per api-docs.deepseek.com/quick_start/pricing read 2026-09-21). `agnes-3.0-flash` is listed on an authenticated `GET https://apihub.agnes-ai.com/v1/models`, but not every box's Agnes provider carries it.
+
+### What changed
+- **`shared-utils/llm_score.py`** - the chain is now DATA. `default_scoring_chain()` returns the ordered `(provider, model)` table and `scoring_chain()` is what `score_layer` walks. Shipped order: `ollama-cloud/minimax-m3`, `openrouter/minimax/minimax-m3`, `agnes/agnes-3.0-flash`, `deepseek-direct/deepseek-flash`, `ollama-cloud/<ollama_cloud_model()>`, `openrouter/google/gemini-3.1-flash-lite`. It is a function and not a constant because step 5's tag is box configuration - v25.1.55's `ollama_cloud_model()` / `OLLAMA_CLOUD_SCORING_MODEL` - and a module constant would freeze whatever the environment held at import, which under launchd and the openclaw cron is nothing at all. The order is not a price ranking: the two fastest measured models sit at 1 and 5 with a paid mirror of each in between, so no single provider outage empties the chain.
+- **One transport for four providers.** All four surfaces are OpenAI-compatible `/chat/completions`, so `_attempt_chat()` serves every step and the only per-provider facts left are the URL, the bearer tokens, and whether the surface wants an extra header or body field. OpenRouter's `reasoning: {exclude: true}` is now sent to OpenRouter ONLY; on the other three an unknown body field is a 400 waiting to happen. The single 401-advances-to-the-next-key rule and the "a 500 is the provider being down, do not retry" rule are unchanged, and now apply to every step rather than only to Ollama Cloud.
+- **A step whose key does not resolve is skipped silently, without opening a socket.** That is what lets the table carry a DeepSeek step on a fleet where almost no box holds a DeepSeek credential, at zero cost to the boxes that do not.
+- **New credential resolvers.** `agnes_api_keys()` returns the resolved `AGNES_API_KEY` (the `secret_names.json` canon makes `AGNES_AI_API_KEY` and `AGNES_KEY` the same family) and then, as a LAST RESORT, the gateway's own key for the provider whose `baseUrl` names apihub.agnes-ai.com - through the SAME `_openclaw_provider_key()` the Ollama Cloud step already used, so there is no new file discovery and a pinned root still confines the search to one installation. `deepseek_direct_api_keys()` and `openrouter_api_keys()` are the one-name equivalents. OpenRouter deliberately gets no gateway fallback: its env name has always resolved, and borrowing a key out of `openclaw.json` for it would be new credential behaviour this chain does not need.
+- **Agnes 3.0 falls back to 2.5 once.** An HTTP 400 or 404 on `agnes-3.0-flash` retries with `agnes-2.5-flash`, keeping the key that already authenticated. Those two codes are how an OpenAI-compatible surface says "I do not serve that model". This is deliberately broader than matching the error BODY for "model not found": the wording is provider-specific and reading the body can itself fail, while the retry costs one call against a step that has already failed. The retry carries no fallback of its own, so it happens at most once, and a 500 does not trigger it at all.
+- **`LLM_SCORE_CHAIN`** overrides the whole table: a comma list of `provider:model` (`ollama-cloud`, `openrouter`, `agnes`, `deepseek-direct`), split on the FIRST colon so a tagged Ollama id keeps its own. An entry naming an unknown provider is skipped with ONE warning per offending name to stderr - this module degrades, it does not take a scoring pass down over a typo in a setting. An override that resolves to zero steps still wins, and the degraded reasoning says so.
+- **The result's `model` field now names the WINNING STEP**, `<provider>/<model>`, so `persona_selection_log` records which step served a score. The chain carries two Ollama Cloud steps and two OpenRouter steps, so a label naming only the family could not say which one answered. `ollama_cloud_model_id()` is unchanged and still reports the `ollama/<tag>` form for the callers that are not chain steps.
+- **`HTTP_TIMEOUT_SECONDS` 30 -> 20**, the per-step budget. Every model in the table was measured at 1.5-4s, and the selector runs about 22 of these inside the Command Center's spawn budget; 30s bought nothing and cost a whole step.
+- **`shared-utils/model-capabilities.json`** - `ollama/minimax-m3`, `openrouter/minimax/minimax-m3` and `deepseek/deepseek-flash` added to `verified_slugs`, so the Intelligent Model Selector can name every id this chain calls. `deepseek-flash` in particular matches no family regex, which is exactly what the inventory exists for.
+- **`.github/workflows/interview-launch-contract.yml`** - the new regression suite is gated next to the two llm_score suites it sits beside. A check nothing runs is not a check.
+- The PRES-053 vendored copy of `llm_score.py` is re-vendored byte-identical to its canonical (both SHA-256 `dfcb5280...` at authoring time; verified with `diff`).
+
+### Not changed, deliberately
+The 30-day SQLite cache and its key. The F25 credential-resolution precedence. The endpoint helper and its `/api` -> `/v1` normalisation. v25.1.55's `ollama_cloud_model()` / `openrouter_model()` resolvers and their override names - `openrouter_model()` is no longer a chain step (this chain spends its OpenRouter budget on MiniMax and Gemini Lite) but it still serves `decompose-task.py` and `verify-persona-adherence.py`, so it stays exactly as v25.1.55 left it. The `model-selector-guard.yml` inventory fixture also stays on `ollama/deepseek-v4.1-flash`: it is an inventory of what a box has available for the sovereignty sweep to choose from, not a copy of the scoring chain, and the sweep smoke test was re-run locally to prove it.
+
+### Risk
+Moderate and bounded by the module's contract, which is to degrade rather than raise. The two steps that served every score until today - OpenRouter and Ollama Cloud - are both still in the table, so a box whose new steps all lack keys behaves as it did, only reaching its OpenRouter backstop through `minimax/minimax-m3` first. The new steps cost nothing on a box without their credentials: no key means no socket. The worst case of the Agnes retry is one extra HTTPS call against a step that already failed. The label change is visible in `persona_selection_log` and in the cache's `model` column; nothing reads that column for routing, and the persona selector only records it.
+
+### Tests
+`shared-utils/test_llm_score_fallback_chain.py` - 31 hermetic cases, no network: HOME redirected, `OPENCLAW_ROOT` pinned to a scratch installation, every credential name the chain reads scrubbed from the process environment, `_post_chat` monkeypatched in every leg that would call. Pins the default table literally and the order the steps are actually attempted in (models and URLs both); that the first parseable 200 wins and later steps are not called, with a control that an unparseable 200 advances instead; that a step with no key is skipped and that no credential anywhere opens no socket at all; DeepSeek-direct present only with its key, and both the DeepSeek and Agnes alias families; the Agnes gateway-provider key as last resort with controls that another host's provider is not borrowed and that OpenRouter takes no gateway key; the override, its first-colon split, one warning per unknown provider, and that the override is what actually gets walked; the Agnes 3.0 -> 2.5 retry on both 400 and 404 with controls that it happens at most once, that a 500 does not trigger it, and that an explicitly-named 2.5 step does not fall back to itself; the 401-to-gateway-key ladder through the generalised transport; that no sentinel key reaches the result, the verbose log or `env_report()`; that the winning label survives the cache round trip; and that the cache TTL and the 20s per-step timeout are what they claim. `shared-utils/test_ollama_cloud_endpoint_and_key.py` re-run green at 17/17 after adapting its three step-label assertions to `ollama-cloud/<tag>`. `shared-utils/test_f25_llm_score_secrets.py` 31/31, with the Agnes and DeepSeek names added to its scrub list - that suite runs the REAL chain with the REAL `_post_chat`, so a `DEEPSEEK_API_KEY` left in a runner's environment would have turned its degraded-mode leg into a live network call. Pre-existing suites green: `tests/unit/model-selector.test.py` (37/37), `stage-d-parallel-scoring` (5/5), `persona-fallback-invariant` (8/8), `persona-grounding-health-probe` (21/21), `test_pres053_persona_service` (18/18). `py_compile` clean on every edited Python file. The model-selector-guard repair-sweep smoke test was re-run locally with `--shared-utils` pinned to this checkout: 3 offenders, graphics -> vision, gate clean after apply.
+
+## [v25.1.55]  -  2026-09-21  -  The scoring chain runs on V4.1 Flash, and both model ids are now config
+
+### Why
+v25.1.54 fixed the Ollama Cloud endpoint and moved step 1 off the tag Ollama Cloud deleted on 2026-08-17, landing on `deepseek-v4-pro:0813`. Two corrections on top of that, both verified live on 2026-09-21.
+
+`GET https://ollama.com/api/tags` lists exactly `deepseek-v4.1-flash`, `deepseek-v4-flash:0731` and `deepseek-v4-pro:0813`. `https://openrouter.ai/api/v1/models` lists `deepseek/deepseek-v4.1-flash` at 1,048,576 context, $0.15/M prompt and $0.60/M completion. Flash is the right model on both steps: these calls are 200-token judgements against a rubric, not generation, so Pro's price buys nothing the scorer can use.
+
+And the deeper lesson of the deleted tag is not which tag replaces it. A provider can retire a tag out from under this chain at any time, and when that happened every scoring call failed silently for five weeks. A model id that a third party controls belongs in configuration, not in a constant that needs a code change and a fleet roll to correct.
+
+### What changed
+- **`shared-utils/llm_score.py`** - `OLLAMA_CLOUD_MODEL_DEFAULT` is `deepseek-v4.1-flash` and `OPENROUTER_MODEL_DEFAULT` is `deepseek/deepseek-v4.1-flash`. They are DEFAULTS: `ollama_cloud_model()` and `openrouter_model()` resolve `OLLAMA_CLOUD_SCORING_MODEL` and `OPENROUTER_SCORING_MODEL` through the same F25 precedence chain every other name uses, so an override set in a box's secrets store works under launchd and the openclaw cron, where the process environment is empty. Step 3 is unchanged at `google/gemini-3.1-flash-lite`. The endpoint is unchanged at `https://ollama.com/v1/chat/completions`, as is the provider-key fallback and its single 401 retry.
+- **`23-ai-workforce-blueprint/scripts/decompose-task.py`** and **`23-ai-workforce-blueprint/scripts/verify-persona-adherence.py`** - both take the ids from those resolvers, so an override set for the scorer applies to sub-task decomposition and adherence verification in the same breath.
+- **`shared-utils/model-capabilities.json`** - `ollama/deepseek-v4.1-flash` and `openrouter/deepseek/deepseek-v4.1-flash` added to `verified_slugs` as deepseek-flash.
+- **`.github/workflows/model-selector-guard.yml`** - the repair-sweep inventory fixture carries `ollama/deepseek-v4.1-flash`.
+- The PRES-053 vendored copies are re-vendored byte-identical to their canonicals.
+
+### Risk
+Low. The chain's shape, endpoint, credential resolution and retry behaviour are all untouched; only the two model ids move, and each now has an escape hatch that does not require a release. A box that sets neither override sees the new defaults. A box that sets one gets exactly what it asked for.
+
+### Tests
+`shared-utils/test_ollama_cloud_endpoint_and_key.py` grew to 17 hermetic cases: the request body carries `deepseek-v4.1-flash` and the reported id is `ollama/deepseek-v4.1-flash`; both overrides are honoured, including a round trip that sets `OLLAMA_CLOUD_SCORING_MODEL` and proves the overridden tag reaches the request body and the reported id; and a control that an override in the secrets store resolves with nothing in the process environment. The two override names are scrubbed from the environment by the fixture, so no leg can pass because of a value on the developer's box. Pre-existing suites re-run green: `test_f25_llm_score_secrets` (31/31), `tests/unit/model-selector.test.py` (37/37), `stage-d-parallel-scoring` (5/5), `persona-fallback-invariant` (8/8), `persona-grounding-health-probe` (21/21), `test_pres053_persona_service` (18/18). The model-selector-guard repair-sweep smoke test was re-run locally against the new fixture with `--shared-utils` pinned to this checkout: 3 offenders, graphics -> vision, gate clean after apply.
+
+## [v25.1.54]  -  2026-09-21  -  Ollama Cloud scoring never once worked: wrong path, deleted tag, rejected key
+
+### Why
+Step 1 of the persona-scoring chain - the primary, cheap one - has never succeeded on any box. Three separate faults, all three repo constants, all three measured on a live client box on 2026-09-21.
+
+1. **The endpoint does not exist.** `_attempt_ollama_cloud` POSTed to `OLLAMA_CLOUD_URL` + `/chat/completions` with a default base of `https://ollama.com/api`. ollama.com answers that path `HTTP 404 path "/api/chat/completions" not found`. The identical request body against `https://ollama.com/v1/chat/completions` answers `HTTP 200` in 0.7s. Every scoring call therefore fell through to paid OpenRouter at roughly 4s a call, and the fall-through is silent because this module's contract is to degrade rather than raise.
+2. **The model tag was deleted.** `deepseek-v4-pro:cloud` was removed from Ollama Cloud fleet-wide on 2026-08-17. `GET https://ollama.com/api/tags` on 2026-09-21 lists `deepseek-v4-pro:0813`, `deepseek-v4-flash:0731` and `deepseek-v4.1-flash`.
+3. **The resolved key is not the working key.** On that box the `OLLAMA_CLOUD_API_KEY` the F25 chain resolves answered 401, while the key the OpenClaw gateway itself uses - `models.providers.<name>.apiKey` for the provider whose `baseUrl` names ollama.com - answered 200 for the same request.
+
+Each fault alone hides the other two: a 404 looks the same to the caller as a dead tag, which looks the same as a rejected key. All three had to be fixed in one pass to prove any of them.
+
+### What changed
+- **`shared-utils/llm_score.py`** - three new module constants and two new helpers own the Ollama Cloud call. `OLLAMA_CLOUD_DEFAULT_URL` is `https://ollama.com/v1`; `ollama_cloud_chat_url()` honours an `OLLAMA_CLOUD_URL` override verbatim but rewrites a base still ending in `/api` to `/v1`, so an already-provisioned box pinned to the old default is not left on the 404 path. `OLLAMA_CLOUD_MODEL` is `deepseek-v4-pro:0813`. `ollama_cloud_api_keys()` returns the resolved `OLLAMA_CLOUD_API_KEY` first and, as a LAST RESORT, the gateway's own provider key read out of `openclaw.json` through the existing `_openclaw_roots()` path logic - no new file discovery, and a pinned root still confines the search to one installation. Only a LITERAL key counts: an `apiKey` field holding `${NAME}`, `$NAME`, `env:NAME` or a bare SHOUTING_NAME names an environment variable and is not a credential. `_attempt_ollama_cloud` now retries exactly once, with the second key, on a 401 and on nothing else - a 500 is the provider being down, not this key being wrong. No value is ever logged, returned or written back to any env file; this is resolution only.
+- **`23-ai-workforce-blueprint/scripts/decompose-task.py`** and **`23-ai-workforce-blueprint/scripts/verify-persona-adherence.py`** - both call sites now take the URL, the model tag and the key order from `llm_score` instead of restating them, so the three cannot drift apart again. Both carry the same single 401 retry.
+- **`shared-utils/model-capabilities.json`** - `ollama/deepseek-v4-pro:0813` added to `verified_slugs` as a deepseek-pro / ollama-cloud slug, so the Intelligent Model Selector can name the tag Ollama Cloud actually serves.
+- **`.github/workflows/model-selector-guard.yml`** - the repair-sweep inventory fixture carries `ollama/deepseek-v4-pro:0813`. A fixture pinned to the deleted tag would have this guard re-approving a model no box can reach.
+- The PRES-053 vendored copies of `llm_score.py` and `decompose-task.py` under `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/` are re-vendored byte-identical to their canonicals, as `docs/LEGACY-RETIREMENT.md` requires.
+
+The native `https://ollama.com/api/chat` surface also exists and was deliberately NOT adopted: it answered 401 with the env key, and its request and response shapes are not the OpenAI-style ones `_extract_message` parses. `/v1/chat/completions` is the surface that matches the code already written.
+
+### Risk
+Low, and strictly one-directional: the path being changed has never returned a usable answer, so there is no working behaviour to regress. A box with no Ollama Cloud credential at all is unaffected - the chain still falls through to OpenRouter exactly as before. The worst case of the provider-key fallback is one extra HTTPS attempt that also fails, against a step that currently fails 100% of the time. Remaining `deepseek-v4-pro:cloud` references elsewhere in the repo (the model-selector fixtures, the anthology engine's model map, the GHL router defaults, install.sh's guidance text) are NOT touched here; they are a separate inventory sweep.
+
+### Tests
+`shared-utils/test_ollama_cloud_endpoint_and_key.py` - 15 hermetic cases, no network: HOME redirected and `OPENCLAW_ROOT` pinned to a scratch installation, `_post_chat` monkeypatched in every leg that makes a call. Pins the default URL and the `/api` -> `/v1` normalisation, with a control that a deliberate override is still honoured verbatim; the `deepseek-v4-pro:0813` tag in the request body and the absence of any `:cloud` string literal in the module; the provider-key fallback for both config shapes, with controls that a provider for another host is not borrowed and that an env-NAME in `apiKey` resolves nothing; the single 401 retry, that a lone key does not retry, and that a 500 does not burn the second key; and that neither sentinel key appears in the returned dict or in `env_report()`. Pre-existing suites re-run green: `shared-utils/test_f25_llm_score_secrets.py` (31/31), `tests/unit/model-selector.test.py` (37/37), `tests/unit/stage-d-parallel-scoring.test.py` (5/5), `tests/unit/persona-fallback-invariant.test.py` (8/8), `tests/unit/persona-grounding-health-probe.test.py` (21/21), `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pres053_persona_service.py` (18/18). The model-selector-guard repair-sweep smoke test was run locally against the new fixture with `--shared-utils` pinned to this checkout: 3 offenders, graphics -> vision, gate clean after apply.
+
+## [v25.1.53]  -  2026-09-21  -  Stage-D scores its finalists concurrently, so the selector stops dying at the spawn budget
+
+### Why
+A `--blend` run of the persona selector was profiled on a live client box. 43.7 seconds of its 46.6-second wall clock, 94%, sat inside `llm_score._post_chat` waiting on a socket: 22 sequential HTTPS chat calls, four per finalist, one per scoring layer. Other runs measured 206 and 258 seconds. The Command Center kills the selector at its spawn budget, so the blend never landed and content tasks stalled behind it. The work was never CPU-bound; it was a queue of network waits taken one at a time.
+
+### What changed
+- **`23-ai-workforce-blueprint/scripts/persona-selector-v2.py`** - Stage-D's scoring list comprehension is now `score_personas()`, which maps `score_persona` over the finalists on a `ThreadPoolExecutor`. `executor.map` yields in INPUT order, not completion order, so the returned list is element-for-element what the comprehension produced and every downstream stage (variety sampling, perspective and craft bonuses, tie-breaks) is untouched. `PERSONA_SCORE_WORKERS` sets the width, default 6, capped at the finalist count; `PERSONA_SCORE_WORKERS=1` takes a literal sequential path that creates no thread at all.
+- **`shared-utils/semantic_task_fit.py`** - the task-embedding cache gained a lock, reached through one new `_task_embed()` used by both `semantic_task_fit()` and `semantic_persona_ids()`. Unlocked, every worker would have missed the cache at the same instant and fired its own Gemini embed call, turning the G13 "one embed per selection" contract into one embed per finalist. The lock also removes a race in which `_task_cache_get`'s `move_to_end` could hit a key an eviction had just popped.
+- **`shared-utils/llm_score.py`** - `_secret_helper()` sets its `_SECRET_HELPER_TRIED` latch only after `_SECRET_HELPER` holds its final value. Setting it first left a window where a second thread saw the latch with the module still `None` and silently degraded to exact-name-only credential resolution, so a key stored under an alias would not have resolved for that call.
+- The PRES-053 vendored copies under `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/` are re-vendored, so they stay byte-identical to their canonicals as `docs/LEGACY-RETIREMENT.md` requires and the presentation department gets the same fix.
+
+`decompose-task.py`'s sub-task loop is deliberately NOT parallelised. Its own comment states the ordering it depends on: each sub-task's `record_selection` write is what the NEXT sub-task's variety penalty and sticky-assignment read sees. Running the sub-tasks concurrently would have every one of them read a database missing its predecessors' picks, so the whole decomposition could converge on a single persona. That is a behaviour change, not a speed-up.
+
+### Risk
+Low. Nothing on the per-persona path writes: `apply_weight_overrides` is a read on its own per-call sqlite connection, and `llm_score`'s score cache likewise opens and closes a connection per call and swallows `sqlite3.Error`. `_COMPANY_CONFIG_CACHE` is keyed by the one config path every thread in a selection shares, so its worst race is a duplicate file read. An exception from a scorer still propagates rather than being absorbed by the pool. Heuristic mode gains the same overlap and loses nothing, since it makes no network calls.
+
+### Tests
+`tests/unit/stage-d-parallel-scoring.test.py` - five cases, hermetic: input order survives when the LAST persona is made the FASTEST; six personas that each block 0.2s finish inside 0.6s with six workers; `PERSONA_SCORE_WORKERS=1` runs on the calling thread; an empty and a single-persona list never ask for a pool; `scoring_mode` reaches the scorer on both paths; a raised exception still reaches the caller. Fail-first proven against the pre-fix comprehension: 1.19s, over the 0.6s bound. Pre-existing suites re-run green: `tests/unit/semantic-task-fit-lru.test.py` (8/8), `tests/unit/semantic-task-fit-failure-cache.test.py` (17/17), `tests/unit/persona-fallback-invariant.test.py` (8/8), `tests/unit/persona-grounding-health-probe.test.py` (21/21), `shared-utils/test_f25_llm_score_secrets.py` (31/31).
+
+## [v25.1.52]  -  2026-09-18  -  An interview origin must be a hostname, never an IP address
+
+### Why
+Both copies of the origin rule asked only whether an IP literal was globally routable. `https://8.8.8.8`, `https://1.1.1.1` and any other public address therefore passed as a legitimate interview origin. No certificate exists for an address under the hostname the tenant registry selects configuration by, so an accepted literal would have carried a client's private sign-in link to an origin no tenant is registered under. Rejecting only private addresses was the wrong axis: the question is not whether an address is routable, it is whether an address can be a tenant at all.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** - `public_origin()` refuses every IP literal, loopback, private and global alike. The `is_global` test it replaces is gone, so there is no routable-address branch left to pass.
+- **`32-command-center-setup/scripts/interview-launch.py`** - the launcher's own copy of the rule, held to the same bar. Two copies drifting apart is how one of them keeps a hole after the other is fixed.
+
+Hostnames are unaffected, so nothing about an ordinary client origin changes.
+
+### Risk
+Low. No fleet box is configured with an IP-literal Command Center origin: the installer writes a tunnel hostname, and `cc-compat.json` and the tenant registry are keyed by hostname. A box that somehow held a literal was already unable to serve a valid certificate for it.
+
+### Tests
+`tests/unit/test_interview_invitation.py` - eight literals across IPv4, IPv6, loopback, private and public ranges are refused, a real hostname still resolves, and a literal is refused before any network call is attempted. `tests/unit/interview-launch.test.py` - the same battery against the launcher's copy.
+
+## [v25.1.51]  -  2026-09-18  -  The interview link is not spent by being used either: it re-opens until the interview is complete
+
+### Why
+v25.1.50 took the clock off the interview link. A clock was not the only thing killing it early. The Command Center burned the link's nonce on first redemption, so the moment a client opened it on their phone and later reached for a laptop, or cleared cookies, or came back after the 30-day browser session lapsed, the same link answered "already used" on an interview nobody had finished. That is the same failure as an expiry, reached by a different route, and the ruling covers both: the link does not stop working until the job is done.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** - a receipt must now declare a redemption contract this sender understands, and either answer is accepted: `redeemable: "until-interview-complete"` from a current Command Center, or `oneUse: true` from an older one. A receipt declaring neither is refused rather than delivered on a guess.
+- **`shared-utils/interview_invitation.py`** - `invitation_validity_sentence()` gained the issuer's redemption contract, and the delivery receipt records it as `invitationReopenable`. A client is told they can open the link again **only when the issuer actually allows it**. Promising reopening against a Command Center that burns the link would strand the client at exactly the moment they trusted the sentence.
+- **`23-ai-workforce-blueprint/SKILL.md`, `INSTRUCTIONS.md`** - state that the link is not spent by being used, with the single-use issuer described as the compatibility case.
+
+### Risk
+Low, and bounded by the marker, exactly as in v25.1.50. An older Command Center sends no `redeemable` field, still satisfies the contract check through `oneUse`, and its client is never promised reopening. The signature, identity, origin, expiry and URL-binding checks are untouched.
+
+The behaviour this depends on lives in the paired Command Center release (blackceo-command-center#366): a link is only genuinely re-openable once that box stops burning the nonce. Until it is deployed, this release changes what the client is told, not what the link does.
+
+### Tests
+`tests/unit/test_interview_invitation.py` - a receipt declaring either contract is accepted and one declaring neither is refused; `invitationReopenable` is recorded only when the issuer declares it; the validity sentence promises reopening only for a reopenable issuer; the delivered message says so end to end through the real shell; and a single-use issuer's message never promises it.
+
+## [v25.1.50]  -  2026-09-18  -  The interview link is valid until the interview is complete, not for 24 hours
+
+### Why
+A client who opened their Telegram interview link the morning after it was sent was refused. The link carried a 24-hour deadline (15 minutes before the paired Command Center release), and the interview it opened was not finished, so the refusal bought nothing and cost an operator a fresh mint and a second message. Validity now belongs to the job: the link works until the interview is complete, and only then is it refused.
+
+### What changed
+- **`shared-utils/interview_invitation.py`** — new `invitation_expiry()` reads the issuer's contract instead of assuming one. A receipt marked `validUntil: "interview-complete"` has no deadline to police: whatever `expiresAt` it carries (long past, far future, wrong type, or absent) is accepted, and `invitationExpiresAt` is recorded as null. Every other receipt came from an issuer that really does expire its links, so its stated expiry is bounded exactly as before — a legacy 900-second TTL and a full 24-hour one are both accepted, anything unbounded is still refused. Only the exact marker string lifts the bound; a near miss does not. New `invitation_validity_sentence()` is what the client is told, so a completion-bound link says it stays valid until the interview is complete and never quotes a date it does not have.
+- **`32-command-center-setup/scripts/interview-launch.py`** — the automatic launcher read a missing deadline as an expired one and would have declared `renewal-required` on a link that had just been accepted and delivered. A recorded null now means live. A stated deadline is honoured as before, and a missing field, a wrong type or a time already past still means the client needs a fresh link.
+- **`23-ai-workforce-blueprint/scripts/send-interview-link.sh`** — the `--dry-run` preview no longer promises "the exact expiry"; it says the link's validity is stated in the message when the link is issued, which is true of both issuers.
+- **`23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/INSTRUCTIONS.md`** — the 24-hour claim is replaced with the completion contract, with the older bounded issuer described as the compatibility case it now is.
+
+### Risk
+Low, and bounded by the marker. A Command Center that does not send `validUntil` is validated byte-for-byte as before, which is every box on the fleet until the paired Command Center release lands (blackceo-command-center#366; its version number moved repeatedly while both PRs were open, so the PR is the stable reference, not the number). The signature, identity, origin, one-use and URL-binding checks are untouched; only the deadline check learned that a deadline can be absent. The one way a link can still stop working before the interview is complete is its one-use redemption ledger on the Command Center side, which is a replay protection and not a clock; the documented recovery — ask the Telegram assistant to resume the interview — mints a fresh link and is unchanged.
+
+### Tests
+`tests/unit/test_interview_invitation.py` — a completion-bound receipt is accepted with any stamp or none and records no deadline; only the exact marker lifts the legacy bound; identity, host, protocol, one-use and URL binding are still refused when wrong; the delivered message says the link stays valid until the interview is complete and never quotes a date; the passage of time alone never reissues it; a completed interview still refuses `--renew`. `tests/unit/interview-launch.test.py` — the launcher accepts a null deadline as live and still demands renewal when the field is missing entirely.
+## [v25.1.49]  -  2026-09-18  -  Compact core: the SOP and the tool that shrink OWNER-authored bootstrap text, on a schedule, on every box
+
+### What Changed
+- **v25.1.48 fixed half of the lean-bootstrap problem and left the other half on one box.** The roll now stamps SCRIPT-OWNED blocks as pointers (`scripts/bootstrap-pointerize.py`), and `scripts/validate-core-references.py` measures the result. But the OWNER-AUTHORED prose in the same six files — procedures, tables of detail, dated incident notes — had no mechanism at all, and the procedure for moving it safely existed as a single document on the operator's own machine with fifteen hardcoded paths in it. A fleet of 37 boxes cannot run a procedure that names one box's home directory.
+
+  **Fix:** `docs/COMPACT-CORE-SOP.md` and `scripts/compact-bootstrap.py`. The SOP is the full 13-section procedure generalized to the fleet: a per-platform path table verified live on a Mac client, a Hostinger VPS container and a Contabo container on 2026-09-18, the five decision classes with their reasons, verbatim-or-nothing with sha256 proof, the existing-doc-first destination rule keyed to `INDEX.md`, the collision rule, the two-copy improve-on-move rule, the four-line pointer standard, the two check layers, the ledger, rollback, cadence, and the checklist.
+
+- **ONE pointer standard, not two.** `compact-bootstrap.py` IMPORTS `build_pointer` and `POINTER_SENTINEL` from `bootstrap-pointerize.py` rather than re-implementing the format. Two implementations of one shape is how a box ends up with pointers only half of its own tooling can resolve, and `validate-core-references.py`'s dangling-pointer check would silently skip the half it no longer recognised. A unit test asserts the import, and asserts that the validator resolves every pointer the tool writes.
+
+- **Nothing is hardcoded to one box.** Workspaces come from `openclaw.json`: `agents.defaults.workspace` plus every `agents.entries[].workspace`, handling both the dictionary shape a current box uses and the list shape older configs use, then **deduplicated by resolved real path**. That dedupe is load-bearing rather than tidy: on a Mac client box `~/clawd` is a symlink to `~/.openclaw/workspace`, and treating those as two workspaces would compact the same file twice in one run, write the ledger twice, and stamp the second pointer over the first. Two genuinely distinct directories both survive, which is what an operator box with a second root workspace needs. The reference root is resolved by probing for what EXISTS across the three live layouts, with an env and a config override, because the three do not follow one rule: Mac keeps it under `$HOME/Downloads/openclaw-master-files/`, a Hostinger VPS container under `/data/openclaw-master-files/`, and a Contabo container under `$HOME/.openclaw/master-files/`. Pure `python3`, no `jq`, nothing newer than 3.9 syntax — the oldest interpreter on the fleet is a Mac's 3.9.6 and the Contabo container has no `jq` at all.
+
+- **Two standing jobs, registered fleet-wide, both zero-token.** `scripts/ensure-pipeline-crons.sh` — the single registrar both `install.sh` and `update-skills.sh` already call — now also asserts `bootstrap-validate-daily` (05:00 daily, measures only, writes nothing) and `bootstrap-compact-weekly` (Sunday 04:30 America/New_York, runs `scripts/bootstrap-compact-weekly.sh`). Both are COMMAND-kind crons: pure shell and `python3`, no model invoked, no delivery to any chat. Neither names a model anywhere, and a CI step fails the build if one ever does; the weekly wrapper reads `agents.defaults.model` only to PRINT which model the box would use if the job were ever converted to an agent cron.
+
+- **The timezone on the weekly job is load-bearing, not decoration.** It has to land after `weekly-onboarding-update` (`0 3 * * 0 America/New_York`), the skill update that rewrites these very files. "04:30 local" is not reliably after "03:00 New York" on a box set to another zone — it can land hours BEFORE it, compacting a file that is about to be rewritten. So `_register_command_cron` and `_ensure_health_cron` gained an optional timezone argument, and a CLI build that rejects `--tz` is retried without it rather than losing the registration: a cron in the wrong zone still beats no cron.
+
+- **The weekly job writes NOTHING until an operator turns it on.** `agents.defaults.bootstrapCompactMode` / `$OC_CONFIG/bootstrap-compact.conf` / `$OPENCLAW_BOOTSTRAP_COMPACT_MODE`, default `report`. A box's first scheduled week produces a reviewable plan, not a surprise edit on 37 boxes. An unrecognised value is treated as `report` and warns, because honouring a typo as `apply` would write to a bootstrap file nobody authorised. Sample config in `config/bootstrap-compact.conf.example`; the switch is documented in the SOP.
+
+- **What the tool refuses to do, enforced three ways.** It never moves a SCRIPT-OWNED block: marker match (now matching the `NAME_Vn` sentinel SHAPE rather than a list of names, so a reflex that ships next month is covered the day it lands), heading match, and a blanket guard that refuses any section containing an HTML comment of any kind. It never auto-moves a HOT section; an over-target file that has run out of movable content gets a proposal listing the hot candidates and the script-owned remainder, and moves nothing. It never rewrites what it moves; an improvement is a proposal with a diff against the verbatim copy.
+
+- **A suffixed anchor now MEANS something.** `-2` says a real collision happened: two blocks under one heading, both kept verbatim, both addressable, with a reconcile proposal written for the owner. The doc's own H1 title is deliberately not counted when picking an anchor, because a new doc is titled after the block it was created for and counting that title stamped a `-2` on every first move, making a real collision indistinguishable from a fresh file.
+
+- **A check that was shipped and could not fire is now wired.** `tests/unit/bootstrap-pointerize.test.sh` landed in v25.1.48 with no workflow running it, so the ten properties it proves were free to regress on the next commit. `.github/workflows/lean-bootstrap-guard.yml` runs it alongside the new compact-core suite, because the two halves are one contract: a change to the pointer shape in one file must keep both suites green.
+
+### QC
+- New `tests/unit/compact-bootstrap.test.sh`: 17 passed, 0 failed. Covers verbatim move, the ledger sha256 recomputing from the destination block, byte-identical idempotency on a second run, a script-owned block refused with its marker pair intact, the whole-file rollback copy, a hot section becoming a proposal instead of a move, `--check` catching a broken anchor and a changed hash, symlink workspace dedupe, two distinct workspaces surviving, the imported pointer writer, the validator resolving what the tool wrote, and a file under target being left alone.
+- **Anti-vacuity:** the `--check` CONTROL runs BEFORE either failure assertion. `--check` returns `ok` on a healthy tree, then `FAIL` with `anchor not in target` when the anchor is removed, then `FAIL` with `sha256 drift` when the stored block is edited. A negative from that check is a fact about the box, not a broken instrument.
+- `tests/unit/bootstrap-pointerize.test.sh` 10/0 (now CI-wired for the first time).
+
+## [v25.1.48]  -  2026-09-18  -  Lean bootstrap: the roll stamps POINTERS, not full text; environment failure can no longer ratchet every skill to qc-failed
+
+### What Changed
+- **Every fleet roll was stamping full rule text into files that are re-billed to the model on EVERY turn, and nothing ever took it back out.** Measured on a live box, `AGENTS.md` was 92,068 characters, of which the managed blocks were: 13,171 in seven `<!-- BEGIN skill:NN:agents -->` blocks written by `wire_core_updates()`, 9,726 in six sections whose own headings say "stamped by apply-fleet-standards.sh — do NOT edit manually", 3,140 in a `## UPDATE PENDING` notice, and 3,039 in "## Managed skill blocks (do not remove)". Moving any of it out by hand does not hold: every stamper guards itself with `grep -qF "<marker>"`, so a hand-cleaned box simply has the full text re-appended on the next roll.
+
+  **Fix:** `scripts/bootstrap-pointerize.py` plus `scripts/lib-bootstrap-pointer.sh`. Each managed block is written as a compact POINTER — heading, one-line summary, the trigger phrases and hard gates that must bind inline, and ONE absolute path — while the VERBATIM full text is written to `<master-files>/bootstrap-references/<FILE>` under its own `<!-- BEGIN REF ... -->` pair. Marker names are unchanged, so every idempotency guard, pair-balance check and dedup pass in the repo keeps working untouched.
+
+  Because fixing only the writers would leave every already-wired box fat forever, the change ships as a marker-driven SWEEP that runs at the end of `scripts/apply-fleet-standards.sh` and again in `update-skills.sh` before the verification gate. Measured on a copy of a live box's workspace:
+
+  ```
+  AGENTS.md   89,872 -> 61,988 chars   (25 blocks pointerized)
+  TOOLS.md    12,265 ->  4,877 chars   ( 5 blocks)
+  MEMORY.md    6,427 ->  5,885 chars   ( 1 block)
+  ```
+
+  Second run byte-identical on all three. Every substantial line of moved text was verified verbatim against the original file: zero content lost.
+
+- **What the sweep deliberately will not touch.** A block already written as a pointer; a block under `OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS` (default 800), where a pointer would cost more than it saves; and any sentinel that owns a matching `<!-- END NAME -->`. That last exclusion is not caution, it is a bug that was caught in test: `PRESENTATION_ROUTING_REFLEX_V2`, `SKILL_INTENT_ROUTING_REFLEX_V1` and `CEO_ROUTING_NO_LOOPHOLES_V3` are rewritten wholesale on every roll by the strip/upgrade branches in `apply-fleet-standards.sh`, which regex on that pair — the first cut of the sweep ran the body to the next `##` heading and SWALLOWED the END marker, orphaning the pair.
+
+- **Trigger extraction harvested prose fragments.** Also caught in test: matching a bare "NEVER" anywhere in a line pulled mid-sentence fragments out of wrapped prose and joined them into a `**Triggers:**` line that read as gibberish. A pointer that garbles the rule it points at is worse than the bloat it replaces. The test is now anchored to the START of a line and capped.
+
+- **Fail-closed.** If the reference file cannot be written, the pointer is NOT stamped and the bootstrap file is left exactly as it was — a pointer to a file that does not exist is worse than the text it replaced. Both sweep call sites are non-fatal: a failure leaves a correct, merely larger file and never fails a roll.
+
+- **Box-level override.** `OPENCLAW_BOOTSTRAP_POINTER_MODE`, else `$OC_CONFIG/bootstrap-pointer.conf`, else `agents.defaults.bootstrapPointerMode`, else `pointer`. `full` restores the previous behaviour verbatim. An unrecognised value is treated as `pointer` and warns, because honouring a typo as `full` would silently re-bloat the box. Sample config in `config/bootstrap-pointer.conf.example`.
+
+- **One cron run without the CLI on PATH permanently marked EVERY skill qc-failed, and that is why `## UPDATE PENDING` never went away.** `update-skills.sh` removes that notice only when `obs_gate_summary` returns 0, which requires every skill at `qc-passed`. On a live box, 66 skills were rewritten to `qc-failed` inside a SIX-SECOND window with zero QC diagnostics written — while the box itself was healthy: `openclaw skills info` returned `✓ Ready`, all 49 `CORE_UPDATES` sentinels were present, and the sampled `qc-*.sh` scripts exited 0. `run-with-deadline.py` creates its diagnostics directory unconditionally before running anything, so a run that produced no diagnostics never executed check (a) or check (c) at all — the only reason it could have collected is the CLI-absent branch, which is the one branch that fails without invoking the helper. `command -v openclaw` fails under a cron or launchd PATH, which carries none of the directories an OpenClaw install uses.
+
+  Three fixes, none of which weaken the fail-closed doctrine:
+  1. `obs_verify_skill` now LOOKS for the CLI in the known install locations before declaring it absent. `command -v` proves only that a name resolves on the current PATH; declaring "absent" from that is a claim about the environment of the check, not about the box.
+  2. An ENVIRONMENT failure can no longer demote a skill that previously reached `qc-passed`. This is not fail-open: a skill that has never passed still fails, and the reason is still recorded and still returned to the caller.
+  3. `obs_set_status` now RECORDS the reason. The live state file carried 68 `qc-failed` entries with no reason on any of them, so it could not say whether the skills were broken or the gate was.
+
+- **Operator Telegram: per-box tokens are now mandatory and enforced.** `docs/OPERATOR-MAINTENANCE.md` said one operator bot "can be reused across the fleet, or one per box — operator's choice". Reuse is not a choice, it is broken: Telegram allows exactly ONE active long-poll consumer per bot token, so two boxes holding the same token race for the stream, each `getUpdates` invalidates the other's, and messages are silently lost to whichever box polled second. This shipped twice as a live incident (2026-09-11/12 across client boxes, 2026-09-17/18 inside a containerised VPS box) and both times looked like duplicated and dropped operator messages rather than a config error. `scripts/configure-operator-telegram.sh` now REFUSES a token whose bot id matches the operator box's own, exiting 2 with `STATUS: operator-telegram=REFUSED_SHARED_BOT_TOKEN`. The comparison uses only the bot ID — the digits before the colon, which are public — so the secret half of the token is never read, compared, logged or printed. When neither `OPERATOR_BOX_BOT_ID` nor `OPERATOR_BOX_TELEGRAM_BOT_TOKEN` is known the script says the check is UNDETERMINED rather than reporting a pass it cannot back up.
+
+- **The lean-bootstrap check now ships with the repo** instead of living only on one box. `scripts/validate-core-references.py` checks per-file budgets, marker balance, fence balance, and that every referenced path actually exists; budgets are overridable by `--budget NAME=CHARS`, `--budget-file`, `OPENCLAW_BOOTSTRAP_BUDGETS`, or `--from-config` (reads `agents.defaults.bootstrapMaxChars`). It also validates POINTER targets specifically, which is what makes pointer stamping safe to ship. `scripts/bootstrap-validate-daily.sh` runs it against every workspace on the box and reads the real caps from `openclaw.json` rather than hardcoding them. **No cron is wired by this repo** — the scripts ship, scheduling stays the operator's call.
+
+### QC
+- New `tests/unit/bootstrap-pointerize.test.sh`: 10 passed, 0 failed. Covers shrinkage, marker preservation, the swallowed-END defect, zero content loss, absolute-and-existing pointer targets, byte-identical idempotency, the size floor, the prose-fragment defect, `mode=full`, and fail-closed on an unwritable reference.
+- `tests/unit/onboarding-state-obs-api.test.sh` 18/0 · `tests/unit/install-state-fail-open.test.sh` 12/0 · `tests/unit/dedup-agents-md.test.sh` 29/0 · `scripts/test-single-update-skills-entrypoint.sh` 17/0.
+- `scripts/check-embedded-python-syntax.py`: 984 shell files, 900 heredocs, 963 `python -c` bodies, 0 parse failures.
+- `qc-assert-platform-facts-stamped.sh`, `qc-assert-fail-closed-doctrine.sh`, `qc-assert-no-secret-printing-grep.sh`, `qc-assert-telegram-streaming-mode.sh`, `qc-assert-no-full-env-dump.py`, `qc-assert-no-type-f-census.py`, `check-docs-language.py`: all pass.
+- Dangling-pointer detection proven with a known-good control: with the reference present the validator returns `ok: true`; with it removed it reports 25 dangling pointers.
+
+## [v25.1.47]  -  2026-09-17  -  Fleet roll converges the Mac gateway health watchdog; watchdog clears the 2026.9.x session-store migration gate
+
+### What Changed
+- **The fleet roll never converged the one safety net that covers a dark gateway.** `platform/mac/service-selfheal/install-service-remediate.sh` installs `remediate.sh`, `gateway-health-watchdog.sh` and the `com.openclaw.service-remediate` LaunchAgent that drives them every 5 minutes. `grep -rn install-service-remediate` found it called from exactly two places: `install.sh` (first-time onboarding only) and `38-conversational-ai-system/scripts/14-install-cloudflared-service.sh`. `update-skills.sh`, the only thing that touches every box on every release, never ran it.
+
+  That mattered because a detached OpenClaw 2026.9.2 to 2026.9.4 upgrade **stops the gateway LaunchAgent for the whole update** and restarts it only if the update finishes. Measured on Mac fleet boxes: 10 to 20 minutes routinely, one box spent 8 minutes inside a single `git clone`, and a third stalled outright and sat dark for **about two hours** with nothing restarting it. On the affected box `launchctl list` showed no `com.openclaw.service-remediate`, `~/.openclaw/service-env/` held no `gateway-watchdog.sh`, and the only gateway watchdog present was a hand-installed May 2026 CPU-threshold script that logged `Gateway process not found; clearing state` every 5 minutes for 20 minutes without ever restarting anything.
+
+  **Fix:** `update-skills.sh` now converges the self-heal on its Mac leg on every roll, mirroring the Layer E rescue-tunnel converge that sits beside it. It is convergence, not installation: when `remediate.sh` and `gateway-watchdog.sh` on disk already match the bundle byte for byte, the plist exists and the LaunchAgent is loaded, nothing is touched. One greppable line per roll:
+
+  ```
+  [GATEWAY-WATCHDOG] state=installed | already-current | skipped-not-mac | warn
+  ```
+
+  Mac login user only (skipped inside a container, on a VPS, and as root, because `com.openclaw.service-remediate` is a per-user GUI-domain LaunchAgent and `gui/0` is not the client session). Deliberately fail-soft: every failure path prints `state=warn` and returns, so it never fails a roll and never withholds the version stamp. `warn` names a staged copy under `$OC_CONFIG/scripts/service-selfheal/` that outlives the temp clone.
+
+- **Installing the watchdog had REMOVED the gateway's only bootstrap.** `launchctl kickstart -k gui/<uid>/<label>` against a label that is not bootstrapped does nothing at all, and `remediate.sh` hands its entire gateway leg to `gateway-watchdog.sh` the moment that file exists on disk, so its own `heal_label` bootstrap stopped running for the gateway. A gateway that was **dead AND booted out**, which is exactly what a stalled detached upgrade leaves behind, was therefore unhealable.
+
+  **Fix:** on a Mac the watchdog now bootstraps from `~/Library/LaunchAgents/<label>.plist` first and then kickstarts, under the same consecutive-failure threshold, the same post-action cooldown, and the same maintenance-lock stand-down as every other action. Booted out with no plist escalates rather than guessing. Label resolution also stopped matching the siblings: a box commonly carries other labels containing both `openclaw` and `gateway` (an operator box runs `ai.openclaw.gateway-watchdog` right next to `ai.openclaw.gateway`) and `launchctl list` is not ordered, so the old first-match `awk` could kickstart the wrong job while the gateway stayed dark.
+
+- **OpenClaw 2026.9.x refuses to START the gateway while a legacy JSON session store is on disk**, so restarting it only re-hits the same refusal and a watchdog can restart a box forever without ever reviving it. From the 2026.9.4 build installed on the operator box, `dist/startup-migration-BQjPMV_C.mjs` line 124 (built from `src/config/sessions/startup-migration.ts`, `assertSessionStoreMigrationComplete`):
+
+  ```
+  Legacy session store requires migration: <path>. Run "openclaw doctor --fix"
+  against the same state/config before starting OpenClaw.
+  ```
+
+  The error class is line 26 of the same file, carries kind `legacy-session-store`, and the gateway run loop turns it into a `startup_failed` with code `gateway.maintenance_required`.
+
+  **Fix:** when the gateway is down and that string is in the gateway log (`~/Library/Logs/openclaw/gateway.log`, falling back to `~/.openclaw/logs/gateway.log` then `/data/.openclaw/logs/gateway.log`), the watchdog runs `openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes --non-interactive` once per cooldown, logs it, then applies the normal heal. That narrow import is the command that actually unparked the stalled box, and it is **non-destructive**: the legacy JSON files stay on disk. The message's own broader suggestion, `openclaw doctor --fix`, is deliberately not what runs unattended.
+
+### Tests
+- New: `tests/unit/roll-converges-gateway-watchdog.test.sh`, 50 assertions. It extracts the converge block verbatim from `update-skills.sh` between named anchors and drives it, and drives the real watchdog with `launchctl`, `curl` and `openclaw` stubbed on PATH. Proven non-vacuous: deleting the converge block, reverting the Mac heal to kickstart-only, and dropping the migration-gate clear each turn it red.
+- Wired by `.github/workflows/roll-converges-gateway-watchdog-guard.yml`, which carries all three of those mutations as meta-checks.
+- `tests/unit/full-update-path-contract.test.sh` now registers the new suite as a stage and asserts the converge sits before the temp-clone Cleanup.
+
+
+
+## [v25.1.45]  -  2026-09-17  -  Rescue Rangers reachability train: 15 client-reported issues fixed, podcast activation, updater hardening, Command Center v7.4.1 pin
+
+## [v25.1.44]  -  2026-09-17  -  The speech fallback fails over the CREDENTIAL, not just the model
+
+### What Changed
+- **PD-TEST-196 — "Ollama Cloud primary, OpenRouter fallback" was not a failover, and `P9-SPEECH` died on it.** `resolve_api_key()` returned the first **non-empty** name from a precedence list — a string, never a *working* credential — while `resolve_base_url()` chose the endpoint from a **different** list, so the two were picked independently. The only actual failover switched the **model** and reused the **same `api_key`**, so a 401 from a dead key was retried against the same endpoint with the same rejected credential and could only fail again.
+
+  Measured live on `pres-operator-1d269693`, on this box, through the department's own resolution path:
+
+  | sent | endpoint | result |
+  |---|---|---|
+  | `OLLAMA_API_KEY` (21 chars) | `ollama.com` | **HTTP 401** `{"error":{"message":"Unauthorized","type":"api_error","param":null,"code":null}}` |
+  | `OPENROUTER_API_KEY` (73 chars) | `openrouter.ai` | **HTTP 200** |
+
+  The 401 body is byte-for-byte the one in the live engine log. **A working key was in the same environment the whole time.**
+
+  **Fix:** `resolve_candidates()` returns ordered `(label, endpoint, key, model)` **pairs**. The primary stays first, so the happy path is unchanged; on a `HardAPIError` the transport advances to the next candidate **carrying its own endpoint, its own credential and its own model**.
+
+- **A credential pair alone is NOT sufficient, and I only found that by probing the real store.** With the primary's Ollama model name (`gpt-oss:120b`) against OpenRouter the answer is **HTTP 400, not 200** — the key is *accepted* and the *request* is wrong. So each fallback also carries a model valid for its endpoint (`deepseek/deepseek-chat`, `gpt-4o-mini`), overridable with `SPEECH_LLM_FALLBACK_MODEL`.
+
+  **The chain, probed for real:** primary → **401**; openrouter → **200** (first working, the run resumes here); openai → **200**. The old code retried the rejected key and re-quarantined.
+
+  **Controls** (`tests/test_pd196_speech_failover_paired_credential.py`, 6 cases): the primary is first (happy path unchanged), the OpenRouter candidate carries the OpenRouter key and endpoint (**the rejected key never travels to the other service**), every candidate is a paired endpoint+key, no alternative key means no phantom candidate, each fallback carries its own model with an override, and an explicit operator override still wins the primary slot.
+
+### Why It Mattered
+`P9-SPEECH` is a real deliverable (`working/deliverables/PRESENTERS-SPEECH.md`) and it had been quarantined across resumes on a credential the system never needed to use. The defect was not the dead key — that is the operator's to replace — but that a **fallback which cannot change the credential is not a fallback**, and it masked a working path that was sitting right beside it.
+
+## [v25.1.43]  -  2026-09-16  -  A phase's work is registered on the board before its card is closed
+
+### What Changed
+- **PD-TEST-195 — the board refused the engine's own phase-done transition, so the Kanban silently disagreed with the run.** Measured live on `pres-operator-1d269693`:
+
+  ```
+  [cc_board/presentations] patch_phase P-STYLE-PREVIEW->done non-OK (HTTP 403):
+    {'error': 'Forbidden: cannot mark a task done with no completion evidence.',
+     'hint': '... Register it with POST /api/tasks/<id>/deliverables --
+              {"deliverable_type":"file","title":"<name>","path":"<absolute path>"} ...'}
+  ```
+
+  The phase had genuinely produced its artifacts — nine style samples and a manifest on disk — and the engine had already verified them, yet `child_report(..., "done", ...)` closed the child card **without ever telling the board what was produced**. The board refused, and the result was a board that **disagrees with the run**: the card showed the phase not-done while the engine held it `done` with artifacts on disk. It was also **silent** — `patch_phase` is fail-soft, so nothing stopped and nothing failed.
+
+- **The capability existed and was never called.** `cc_board.register_deliverable` has been there since FIX-12; the phase-completion path simply never invoked it. It also could not have registered a local artifact correctly, because it **hard-coded `deliverable_type="url"`** while `CreateDeliverableSchema`'s enum is `file|url|artifact|image` and a produced **file** must be registered as `file` with an **absolute path**.
+
+  **Fix:** `register_deliverable` takes a `deliverable_type` (default `"url"`, so every existing caller is untouched; unknown values degrade to `url` rather than 400-ing the board), and `child_report` takes an optional `deliverables` list which it registers as `file` deliverables **before** the terminal patch. The engine passes `sorted(shas.keys())` — the *same* mapping it checkpoints three lines earlier as `artifacts=`, so the board is told the exact set the phase is claiming rather than a re-derivation.
+
+  **Fail-soft throughout:** an artifact missing from disk is **skipped and reported** rather than claimed as evidence, a registration failure is reported, and in both cases the transition still happens. A board that cannot be told is not a reason to hold the deck.
+
+  **INDEPENDENT ADVERSARIAL REVIEW — SOUND WITH CAVEATS, no blocker, and it found TWO REAL DEFECTS IN THIS CHANGE, both now fixed.** The review verified every central claim by its own instrumentation (its own wire probe recorded the sequence `['POST','POST','PATCH']`, so registration genuinely precedes the transition) and matched every number exactly. It also **refuted my own idempotency claim**:
+
+  * **Idempotency was FALSE, and the comment asserting it was wrong.** The earlier text here said *"Registering is idempotent enough for this purpose."* It is not: the CC route (`command-center .../api/tasks/[id]/deliverables/route.ts`) mints a fresh `crypto.randomUUID()` and performs a plain `INSERT` **with no `ON CONFLICT` and no unique index** on `task_deliverables`, then broadcasts an SSE event. A re-run, a re-admission or a resume — **the exact path this engine is built around** — would therefore re-POST every artifact and accumulate duplicate rows (a re-admitted 9-sample phase leaves 18 rows, not 9), each POST also forcing the server to read and sha256 the whole file. **Fixed:** the client now dedupes against a per-run registry kept **on disk** (`working/checkpoints/cc-board-deliverables.json`), so the skip survives a resume — the case that actually produces the duplicates. A failed or unparseable registry returns empty and re-registers, which is the safe direction to fail in.
+  * **Delay, not a block.** One **sequential** POST per artifact, each with an 8 s default timeout, now sits in the phase-done path, so a phase with many artifacts can add N×8 s to a single transition. Confirmed non-blocking on **every** path (raise, non-2xx, timeout all fall through to `patch_phase`), and no sensitive data leaks (`meta` carries only a basename and the phase id). Recorded as a bounded, accepted cost rather than left unsaid.
+  * **Cosmetic, fixed:** `cc_board.py` logged `url=…` for a `file`-typed registration; it now logs `type=` and `path=`.
+
+  **Controls** (`tests/test_pd195_register_deliverables_before_done.py`, now 10 cases): removing the registration turns the suite **4 failed / 3 passed**; hard-coding the type back to `url` gives **1 failed / 6 passed**; removing the **dedupe** turns it **3 failed / 7 passed**. Neighbours: **106 passed**, with the single failure (`TestQCAggregatePhaseEndToEnd::test_flawless_six_reports_reach_done`) **verified pre-existing against the PR's actual diff parent `f708a0ece`** — a stronger check than the older commit this entry originally cited.
+
+  **Controls** (`tests/test_pd195_register_deliverables_before_done.py`, 10 cases): the ordering (register, register, patch — asserted as a sequence), absolute `file`-typed registration, non-`done` transitions registering nothing, a missing artifact skipped-but-not-blocking, a failing and a raising client both non-blocking, back-compat when no deliverables are passed, and the client's own type handling. Removing the registration turns the suite **4 failed / 3 passed**; hard-coding the type back to `url` turns it **1 failed / 6 passed**; removing the dedupe turns it **3 failed / 7 passed**. Neighbours: **106 passed**, with one failure in `tests/test_presentation_job.py::TestQCAggregatePhaseEndToEnd::test_flawless_six_reports_reach_done` that is **pre-existing** — verified to fail identically at BASE `dbd628c5d`.
+
+### Why It Mattered
+"Accurate Kanban progression" is part of what this run must demonstrate, and this was the live evidence that it was not happening: the department's own board was refusing the department's own progress reports. The failure was invisible because every layer is deliberately fail-soft — which is the right design for a board that must never block a deck, and exactly why the *pass* had to be verified rather than assumed.
+
+## [v25.1.42]  -  2026-09-16  -  A substance park can finally be re-entered, so a repaired checker reaches it
+
+### What Changed
+- **PD-TEST-194 — PD-TEST-135's re-open path was INERT on the very park it was written for.** `_block_is_verifier_sourced` decides whether a `blocked` phase is the engine's own substance park (re-openable, "so the repaired checker actually reaches it") or an owner-decision park (never re-admitted). On the live run `pres-operator-1d269693` **both of its gates passed and it still returned False**: the `blocked_reason` does begin with the checker's own prefix, the newest heal event **is** a `verifier_substance` event, and there is **no** dispatcher park marker. It failed on the last line — the episode match — which compares the two verdicts as **text**:
+
+  * `blocked_reason` → `… slide-1: AF-WORLD-SCALE — ; … AF-FACE-PROMPT-MISSING …`
+  * `heal ev_reason` → `… slide-1: AF-FACE-PROMPT-MISSING — ; … AF-P-DENSITY …`
+
+  Neither `reason.startswith(ev_reason)` nor `ev_reason[:60] in reason` can hold, because the two lists differ in **both order and membership** — `AF-WORLD-SCALE` appears only in the block, `AF-P-DENSITY` only in the heal event. **The consequence was exactly the defect PD-TEST-135 exists to fix**: the park could not be re-entered on *any* resume, its 34 downstream phases stayed withheld, and the run re-parked identically forever — even with the repaired checker installed.
+
+- **Not a freak.** PD-TEST-190 measured that this checker's omissions are **non-deterministic** (which required token family is missing varies per draw), so the verdict's head *and* tail move between two attempts of the **same episode**. A text-prefix episode test cannot survive the checker it is testing.
+
+- **Fix:** test the one thing that is invariant — the **identity** of the failing checks, as a **set**, not their order or the prose between them. Every existing protection is preserved: the caller still requires the checker's own verdict prefix (so operator prose cannot reach the match), and the newest heal event must still be a `verifier_substance` event (so a stale verifier heal cannot reopen a later dispatcher budget park — that text does not carry the prefix and is rejected at the first gate).
+
+  **INDEPENDENT ADVERSARIAL REVIEW — verdict SOUND WITH CAVEATS, no reachable false positive, and it corrected three of this entry's own claims.** All four findings were fixed rather than disclosed away:
+
+  * **F1 (MEDIUM) — "the same episode by identity" was FALSIFIED.** `phase_verifiers` hard-codes the literal label `AF-PROMPT-FLOOR` on *every* line that checker emits, so intersecting all `AF-` tokens was a **tautology** for the only pairing that occurs in reality (block and heal are written by the same verifier call). The review measured two draws with wholly disjoint autofails (`AF-AAA` vs `AF-ZZZ`) matching **on the constant label alone**. Fixed: the autofails are now extracted **structurally, from after `slide-<n>:`**, which is where the grammar puts them. Verified on the real record — the match now rests on **three real autofails** (`AF-FACE-PROMPT-MISSING`, `AF-LIGHT-PROMPT-MISSING`, `AF-HAIR-INAUTHENTIC`) and the label is excluded, so the fix never depended on it.
+  * **F2 (MEDIUM) — the headline claim was TOO BROAD.** The heal event's `class` is **derived**, not authoritative: `phases.py` writes it as `heal.classify_failure(sub_reason)` and `_PROVIDER_ERROR_MARKERS` matches bare words — `provider`, `timeout`, `connection`, `quota`, `429`. A genuine substance verdict that merely *mentions the transport* was therefore labelled `provider_error` and rejected by gate (b), leaving a measurable class of substance parks **permanently unreopenable**. Fixed: gate (b) now also accepts a heal event whose **reason** is itself verdict-shaped, because the reason is the structural fact and the label is an inference from it.
+  * **F3 (LOW/MEDIUM, latent) — the docstring's safety argument was factually wrong.** It claimed "all its call sites pass engine-authored text beginning with this prefix"; an AST sweep of all 21 `_block`/`_fail_unit` call sites found **exactly one** that does. Corrected in place, and the real guarantee — the call-site inventory plus `_block` being the sole writer — is now stated as such. A future call site that prefixed operator prose with the verdict string **would** be misread; that hole is latent, not reachable today, and is recorded rather than implied away.
+  * **F4 (LOW) — the fixture was a paraphrase.** The test called a 4-item paraphrase "the live P4-PROMPT pair, verbatim in shape". The fixture now carries the **real verdict strings**, copied from the run's own `state.json`.
+
+  **ONE MORE HOLE, FOUND BY PROBING MY OWN FIX RATHER THAN BY THE REVIEW.** F1's extractor fell back to "all `AF-` tokens" when a verdict did not follow the `slide-<n>:` grammar — and that path is **reachable**, because `phase_verifiers` emits two grammar-less verdicts (`"AF-PROMPT-FLOOR: check_prompt_qc_deterministic returned pass:false"` and `f"AF-PROMPT-FLOOR: {verdict}"`). On that path the constant-label tautology F1 removed **came straight back**. The fallback is now **CLOSED**: the set match applies only when **both** verdicts yield structural autofails; otherwise only the original text tests apply, and a park that cannot be identified is **not** reopened. Measured: a grammar-less pair the original tests do not match now stays closed, while the pair they *did* already match behaves exactly as it did on BASE (verified against the base commit — the 60-char test matched there too, so that behaviour is **pre-existing, not introduced here**). The F2 fixture was also corrected: the earlier cut used a grammar-less **block**, which the set match cannot identify, so it was testing an unrealistic shape; both verdicts now carry the real grammar, as production emits them.
+
+  **A FALSE NEGATIVE THE DELTA REVIEW FOUND, CLOSED RATHER THAN DOCUMENTED.** Closing the all-`AF-` fallback made the **mixed-grammar** case fail: `phase_verifiers` emits BOTH a detailed shape (`"AF-PROMPT-FLOOR slide-<n>: <code> — <detail>"`) and a summary-only one (`"AF-PROMPT-FLOOR: <verdict>"`), the heal comes from one draw and the block from the **next**, so a phase whose verdict flips shape between draws landed there. Measured: **BASE `True`, my closure `False`** — one narrow shape of the very defect this PR exists to fix, still unrecoverable. The review called it a defensible choice; **failing closed on a genuine verifier park is still failing**, so it is fixed: when **exactly one** side carries autofails, that side cannot be *contradicted* by a side naming none, so the park is accepted. This does **not** reopen F1 — two **structured** verdicts with disjoint autofails still match only on the constant label, which the intersection rejects. The other reported looseness (a `slide-N: AF-X` appearing inside a `detail` being scanned as an autofail) is recorded as a **known residual**: the review could not demonstrate it is reachable from production text, and anchoring the scan is a larger change than this fix warrants.
+
+  **Controls** (`tests/test_pd194_verifier_episode_match.py`, now 16 cases): reverting only the set match turns the suite **4 failed / 12 passed**; restored, **16 passed**. Neighbours **33 passed** (pd135 + pd060 readmission). The review also independently confirmed the central numbers — PRE-FIX `False` / POST-FIX `True` on the real record, intersection of four ids, and an end-to-end readmit of `blocked -> pending` for `P4-PROMPT` — and established that **no other caller** depends on the old text-matching behaviour (`_block_is_verifier_sourced` is referenced only at `phases.py:963`).
+
+  **One DISCLOSED WIDENING, measured against the base commit.** Every verdict from this checker carries the check NAME (`AF-PROMPT-FLOOR`) as well as the autofails, so two verdicts from different attempts can share **only** the generic name. Measured: `BASE -> False`, `after this fix -> True`. That is a real behaviour change, and it is now **pinned as a test** rather than left as an accident. It is not a false positive in the sense that matters — reaching the set match at all still requires the checker's own verdict prefix **and** a newest heal event of class `verifier_substance`, so an operator park cannot pass it (probed: operator prose quoting autofails, owner-park text, a dispatcher budget park with a stale verifier heal, and a non-verifier heal class are all still rejected). What it relaxes is **episode separation** between two verdicts that are both verifier parks — the case this function exists to reopen. Also pinned: a degenerate empty verdict (`"substance check failed: "`) returns True at **BASE as well**, via the original `startswith` path this fix preserves, so it is pre-existing and not introduced here.
+
+  **Controls** (`tests/test_pd194_verifier_episode_match.py`, 9 cases): the live reordered verdict, a single shared failing check, identical verdicts, operator prose (plain **and** quoting autofails verbatim), a stale verifier heal against a later budget park, absent/non-verifier heal history, and the extractor itself. Reverting only the match — restoring the pre-fix `False` — turns the suite **3 failed / 6 passed**. The 5 protections pass under both, which is the point: the widening did not weaken them. Neighbours green (**33 passed** across pd135 + pd060 readmission).
+
+### Why It Mattered
+This is the mechanism that made the run un-recoverable. A phase parked by a substance check is supposed to be re-enterable precisely so a fixed checker gets another look; with the match inert, **no** supported recovery — not `--resume`, not `--run`, not a funded repair receipt — could reach `P4-PROMPT`. Verified against the live state: before the fix `_block_is_verifier_sourced(P4-PROMPT)` is `False`; after it is `True`, on four shared check ids.
+
+## [v25.1.41]  -  2026-09-16  -  A dead per-attempt paid-attempt settle is now audible instead of silent
+
+### What Changed
+- **PD-TEST-187 — the per-attempt settle introduced by PD-TEST-179 (#1169) swallowed every failure in a bare `except Exception: pass`, so a DEAD settle was indistinguishable from a working one.** Found by that PR's own adversarial review, which measured the consequence rather than arguing it: deleting the whole block, or mutating it four ways —
+
+  * a `str` instead of the outcome list → `TypeError` on **every** retry,
+  * a typo'd phase id → the settle targets a ledger that does not exist,
+  * `"ok"` instead of `"failed"` → the retry is refused as *"already succeeded … refusing to regenerate"*,
+
+  — **all leave the repo's own neighbour suites GREEN at 46/46 (pd179 + pd124 + pd161) while the end-to-end wave silently degrades to ONE provider call.** That is a return of the PD-TEST-177 defect with nothing anywhere saying so. The dispatcher's own settle failure records a consequence row; the worker's recorded nothing at all.
+
+  **Fix:** the settle stays **fail-soft** — bookkeeping must never break a unit — but a dead settle is now **reported on two channels**: stderr, which is read live, carrying the slide, the attempt and the (sanitised, length-bounded) reason; and the phase sidecar, which is read after the fact, under `fanout_paid_settle_dead` with the consequence spelled out. The diagnostic itself is guarded, so even the warning cannot break a unit.
+
+  **This fix was itself reviewed adversarially, and its first version was too narrow.** It caught only a settle that **raises** — and **two of the four mutants above never raise.** A settle whose phase id reads an empty ledger returns *normally* (`dispatcher.py`, `if not led: return`), and a settle that records `"ok"` for a unit we reported `"failed"` returns normally too, writing the wrong durable row and leaving the reservation in flight — the exact state that makes the unit's own retry resolve as `budget_deferred`. Both were still invisible, with the first version's tests passing 2/2 under that mutant. So the **post-condition is asserted as well**: after settling, the ledger is read back and the outcome row must exist, have been written by *this* settle, and record the status we asked for. An exception-only guard cannot see silence — and silence is the failure mode that matters here.
+
+  **Controls** (`tests/test_pd187_settle_failure_is_visible.py`, 5 cases): the raising settle, the **silent** settle (returns normally, settles nothing), the settle that records the **wrong** outcome, the sidecar row and its bounded reason, and a healthy settle staying quiet. Neutering only the post-condition — regressing to the except-only first version — turns the suite **3 failed / 2 passed**, so the silent cases are genuinely pinned rather than decorative. The tests also assert the fail-soft property directly: a settle failure must not abort the attempt sequence. Neighbours re-run green (91 passed across pd187 + pd179 + pd124 + pd161 + pd183 + pd068).
+
+### Why It Mattered
+The settle is the mechanism that lets a unit retry at all. Its failure mode was silence, which is the worst property a recovery mechanism can have: the suite stays green, the ledger looks fine, and the only symptom is that retries stop happening — the exact defect PD-TEST-179 was written to repair.
+
+## [v25.1.40]  -  2026-09-16  -  The provider seam's env stub accepts the argument the worker now passes
+
+### What Changed
+- **PD-TEST-189 — PD-TEST-183 extended the provider seam with an OPTIONAL `prior_reasons` and left the seam's OWN environment stub at six parameters, so with `PRESENTATION_PROMPT_PROVIDER_STUB` set EVERY attempt died.** Found by PD-TEST-183's adversarial review, after that PR had already merged and been installed.
+
+  The reasoning error is worth stating precisely, because it is easy to repeat: **a defaulted CALLEE parameter makes a function compatible with its CALLERS — it does not make an existing IMPLEMENTATION compatible with a new keyword.** `_execute_slide` passes `prior_reasons=` unconditionally, `_resolve_provider()` can return the documented `_StubSpec` env stub, and `_StubSpec.__call__` still took six arguments.
+
+  **Measured with the stub set** (`{"default":"succeed"}`): BASE **1 provider call / attempt 1**; #1173 **0 calls / attempts 3 / `verify_failed`** — every attempt dead, the whole wave a non-result, and `_classify` mapping the `TypeError` to exactly the class this seam exists to diagnose. The PR's own comment (*"a stub that ignores it still satisfies the call"*) was false.
+
+  **Fix:** `_StubSpec.__call__` accepts `prior_reasons=None`, and the `ProviderCall` alias — which described the old six-argument call — is widened. Verified directly: the stub's signature now carries the parameter and a real call returns a 11,593-character prompt.
+
+- **The same review found a second 6-arg implementation in the repo's OWN suite, which PD-TEST-183 had broken.** `tests/test_f8_one_governor_per_wave.py::test_wave_units_share_one_governor` binds `provider_call` to a six-argument `_governed_provider`: **BASE 3 passed; #1173 1 failed / 2 passed** (*"governor recorded peak in-flight 0 for a 4-wide wave"*). It was the ONLY differential failure across a 19-file neighbour sweep, and **no workflow runs that file**, so CI merged the breakage green.
+
+  **This is the FIFTH time this session a change of mine moved something another test pinned** — after PD-TEST-179 (#1167/pd124), PD-TEST-184 (#1171's two allowance witnesses), PD-TEST-185 (#1171's operator-marker assertion) and PD-TEST-183 itself (the pd161 stub). Every one was caught by running the surrounding suite by hand; **none by CI.** Fixed here: the stub accepts the keyword, and the file is green again.
+
+  **Verified:** `test_f8_one_governor_per_wave.py` **3 passed** (was 1 failed / 2 passed); neighbour sweep across pd161 + pd183 + pd179 + pd124 + f8 **51 passed**.
+
+### Why It Mattered
+The env stub is the documented way to run the prompt worker deterministically without a provider, and it is the seam every proof harness in this area stubs. A change that silently kills it does not fail loudly — it fails as `verify_failed` on every slide, which reads like a content problem and is the exact confusion PD-TEST-183 was written to remove.
+
+## [v25.1.38]  -  2026-09-16  -  A retry is told WHICH check failed, not just that one did
+
+### What Changed
+- **PD-TEST-183 — a verifier failure was retried with a CONTENT-FREE instruction, and the live run is the proof that it does not work.** On retry the worker composed the next attempt's prompt as `"attempt {n} failed verification; re-author slide {ordinal}"` — naming neither the failing check nor the requirement. The engine **had** the real findings (the verify path records them as `attempt {n}: verify failed (AF-FACE-PROMPT-MISSING; …)`) but they went only to the attempt log, the settle outcome and the final report.
+
+  **Measured end to end on `pres-operator-1d269693`, 2026-09-16:** after PD-TEST-182's repair receipt was issued and consumed (`should_dispatch` returned `True` for the first time, `slide-01` re-authored at 17:47), the re-authored prompt **failed the same checks** — `AF-FACE-PROMPT-MISSING`, `AF-LIGHT-PROMPT-MISSING`, `AF-HAIR-INAUTHENTIC` — and **added `AF-WORLD-SCALE`**, spending the entire allowance plus the retry pool for the same non-result. A model told only *that* it failed has no signal about *which* token is missing, so it omits the same ones.
+
+  **Fix:** the provider seam gains an **optional** `prior_reasons` parameter, and `_execute_slide` passes the accumulated `base["_reasons"]` into it, so the composer can instruct the re-author to fix the **named** gap. Optional and defaulted, so the call stays backward-compatible; the in-repo stub in `test_pd161_prompt_fanout_fair_budget.py` is updated to tolerate it, and the seam-wide contract change is documented here rather than left implicit.
+
+  **Controls** (`tests/test_pd183_retry_carries_the_real_reasons.py`, 2 cases): with the fix **2 passed**; reverting the reasons-passing fails exactly the case that pins it (**1 failed / 1 passed**); a first attempt is still told nothing about failures. Neighbours re-run green: **48 passed** across pd161 + pd183 + pd179 + pd124.
+
+  **Harness note, recorded because it cost two rounds:** the composition happens in `_default_provider_call`, **not** `_execute_slide`. Replacing `ppw.provider_call` therefore skips the code under test and the capture comes back empty — stub one level lower, at `dispatcher.dispatch_complete`.
+
+### Why It Mattered
+This is the same masking family as PD-TEST-162 and PD-TEST-177: the durable record knows the real reason and the actor that could act on it is not told it. It also means **the next repair receipt would have been wasted the same way** — the engine would re-dispatch and reproduce the failure for the same spend. The one-shot operator instrument has to buy a different outcome, which requires the retry to carry the reason.
+
+## [v25.1.37]  -  2026-09-16  -  The repair-receipt bound is described by the ceiling it actually enforces
+
+### What Changed
+- **PD-TEST-185 — PD-TEST-182 raised the repair-receipt allowance ceiling from `DISPATCH_RETRY_CAP` (3) to `PHASE_TOTAL_PAID_HARD_CAP` (128) and left FOUR descriptions still advertising `1..3` — including the one the operator actually reads.** Found by PD-TEST-182's own adversarial review, after that PR had already merged:
+
+  | site | what it said | who reads it |
+  |---|---|---|
+  | `dispatcher.py` BLOCKED marker | `allowance 1..3` | **the operator**, in the park reason that tells them how to repair the phase |
+  | `_repair_receipt_is_actionable` docstring | "positive int within `DISPATCH_RETRY_CAP`" | whoever maintains the validator |
+  | the refusal-site comment | "accepts any `allowance` in `1..DISPATCH_RETRY_CAP`" | maintainers |
+  | the re-arm comment | "re-arms `paid_attempts` as `DISPATCH_RETRY_CAP - allowance`" | maintainers (the code now clamps at 0) |
+
+  A message that under-states the range is not cosmetic: the BLOCKED marker is the operator's **instruction sheet**, and after PD-TEST-182 it told them a bound the engine no longer enforces — while the very problem PD-TEST-182 fixed was that this marker's sibling message printed an instruction that could not be satisfied.
+
+  **Left deliberately unchanged**, because they are correct as history or as arithmetic: the comment explaining *why* capping at `DISPATCH_RETRY_CAP` was wrong, and the two lines describing the actual clamped re-arm.
+
+### Why It Mattered
+The ceiling moved, and four descriptions of it did not. Two of them are the operator-facing text of the recovery path — the same text that had already misled once.
+
+## [v25.1.36]  -  2026-09-16  -  A repair receipt can finally FUND the re-authoring it exists to pay for
+
+### What Changed
+- **PD-TEST-182 — the local-operator repair receipt was PERMANENTLY UNSATISFIABLE for any fan-out larger than three units, which walled the live run behind a contradiction in its own recovery path.** `authorize_paid_retry_reset` is the control-plane verb that clears an exhausted paid-retry wall after a deployed code repair. Its consumer refuses to act unless the allowance covers **every** unit the fan-out would invalidate:
+
+  ```python
+  _n_units = len(wanted_items)
+  if _allowance < _n_units:
+      _force_reauthor = False        # bank left INTACT, receipt ignored
+  ```
+
+  but the producer capped the allowance at `DISPATCH_RETRY_CAP`, which is **3**:
+
+  ```python
+  if allowance < 1 or allowance > DISPATCH_RETRY_CAP:
+      raise ValueError(f"allowance must be 1..{DISPATCH_RETRY_CAP}")
+  ```
+
+  On `pres-operator-1d269693`, `P4-PROMPT` fans out over **8** units. The engine therefore demanded `allowance >= 8` while itself rejecting anything above 3 — and its own refusal text asked the operator to *"Re-issue with `--reset-allowance >= 8` (max 3)"*, a value it would refuse. Verified directly against the live runtime: `authorize_paid_retry_reset(run, 'P4-PROMPT', allowance=8)` → **`ValueError: allowance must be 1..3`**.
+
+  **This is PD-TEST-124's theme inside the recovery instrument.** The fair-budget work gave the prompt fan-out a bounded total of `min(128, units + pool)` precisely because the legacy per-phase cap of 3 starved an 8-unit fan-out — but the receipt that must fund the re-authoring those starved units need was left on that same legacy ceiling. The fix is the ceiling itself: **`PHASE_TOTAL_PAID_HARD_CAP` (128)**, the exact bound `_declare_phase_paid_budget` already enforces, so a receipt can always be sized to cover the units it invalidates.
+
+  **THE FIRST VERSION OF THIS FIX WAS INERT, and that is recorded here rather than quietly corrected.** Changing only the producer's ceiling would have had no effect: the CONSUMER's own validator, `_repair_receipt_is_actionable`, independently required `1 <= allowance <= DISPATCH_RETRY_CAP`, so an 8-unit receipt would have been **issued and then rejected as invalid** — the fan-out still never re-authoring. Worse, the re-arm at the consumption site is `paid = DISPATCH_RETRY_CAP - receipt["allowance"]`, which for an 8-unit receipt is **`3 - 8 = -5`**: a NEGATIVE phase counter makes the `paid >= cap` bound unsatisfiable, i.e. **unbounded re-dispatch**, strictly worse than the bug being fixed. Both are corrected in this commit — the validator now shares the producer's ceiling, and the re-arm is clamped at zero (where "reopen by more than the cap" correctly means "fully reopened", the phase bound still governing from there) — and both are pinned by tests that fail when either is reverted.
+
+  **Spend is unchanged and still bounded** by the same two things as before: `PHASE_TOTAL_PAID_HARD_CAP` at issue time, and the consumer's own `_allowance >= _n_units` check. The per-unit and phase ceilings still bind at dispatch. The receipt still binds the **installed dispatcher sha** and the durable `generation`, so it cannot be replayed against different bytes.
+
+  **Controls** (`tests/test_pd182_repair_receipt_allowance.py`, 4 cases): reverting the ceiling to `DISPATCH_RETRY_CAP` fails exactly the two cases that need an 8-unit allowance — **2 failed / 2 passed** — while the bound tests pass either way; with the fix, **4 passed**. The suite also pins that an allowance above `PHASE_TOTAL_PAID_HARD_CAP` is refused, that zero/negative is refused, and that the receipt records the installed dispatcher sha and the prior generation.
+
+### Why It Mattered
+The run's only route forward was: re-author the 8 slide prompts that fail the substance verifier, which required clearing an exhausted paid budget, whose only instrument could not be issued at a size the engine would honour. **No operator action could clear it** — the wall was an internal contradiction, not a missing prerequisite, which is why it read as "stuck" from the outside.
+
+## [v25.1.35]  -  2026-09-16  -  A unit's retry is allowed because NOTHING IS IN FLIGHT -- the double-reserve guarantee is restored
+
+### What Changed
+- **PD-TEST-179 — PD-TEST-177 restored the retry by WEAKENING THE GUARD, and that repeal is undone here.** PD-TEST-177 correctly found that a unit's in-run retry was refused by its own attempt-1 reservation, because the dispatcher settles a whole wave only *after* `run_worker` returns while the retry loop runs inside it. But its fix relaxed the double-reserve guard to accept any later reservation from the same `(pid, thread)` — which admits a **genuinely in-flight** second attempt too, repealing the contract the guard's own docstring states (*"the unit already has an in-flight paid reservation"*).
+
+  **Measured on main before this fix:** `tests/test_pd124_sibling_starvation.py` → **2 failed, 22 passed** (`test_two_logical_attempts_for_one_unit_cannot_both_reserve`, `test_a_restart_preserves_successes_reservations_and_failure_history`); with the test file's own helpers the ledger moved `count 2→3, phase_paid 9→10` where it previously refused at `2→2 / 9→9`. **No CI workflow runs that suite**, which is why the regression merged green.
+
+  **The fix is in the worker, not the guard.** `parallel_prompt_worker._execute_slide` now **settles the attempt that just ended before starting the next one**, so at the moment of a retry the unit holds no in-flight reservation and the guard admits it on its own unchanged terms. The guard is **restored byte-for-byte** to its original condition; no new identity field, no thread inference.
+
+  **Measured after:** `test_pd124_sibling_starvation.py` **24 passed** (previously 2 failed), `test_pd161_prompt_fanout_fair_budget.py` **18 passed**, and the new `test_pd179_per_attempt_settle.py` **4 passed**, which pins the correct contract through the real seam: an UNSETTLED reservation still refuses a second attempt; once SETTLED the retry is allowed **and charged**; the per-unit ceiling still binds; settling never refunds spend.
+
+  **The old test file asserted the wrong contract and was deleted.** `test_pd177_unit_own_retry_not_refused.py` drove `_reserve_paid_attempt` directly and *demanded that an in-flight reservation be bypassed* — precisely what must not happen — so it could not see the harm its mechanism caused. Two of its five cases (the ones asserting the guard still refuses) were true and are carried into the new file; the three that encoded the relaxation are gone.
+
+  **What is NOT claimed:** the new tests pin the seam contract, and the worker change that consumes it is not covered end-to-end here. Proving the retry in situ — a wave whose transport raises a transient 5xx and which makes `RETRY_CAP` provider calls — needs a wave-driving harness and remains **outstanding**. The honest status is: guarantee restored, mechanism in place and unit-tested, end-to-end proof still owed.
+
+### Why It Mattered
+The retry restoration and the double-reserve guarantee are not in tension — but PD-TEST-177 resolved them in the wrong place, and its own tests could not tell, because they asserted the mechanism rather than the invariant. Settling where the attempt actually ends satisfies both, and leaves the guard's documentation true.
+
+## [v25.1.34]  -  2026-09-16  -  P4-PROMPT stops declaring an artifact its own fan-out cannot produce
+
+### What Changed
+- **PD-TEST-168 (part A of 2) — `P4-PROMPT` declared a NON-SLIDE product while its fan-out is strictly per-slide, so the phase could never satisfy its own completion predicate and the run parked forever.**
+
+  `presentation_job/phases.py:3491` sets **`waiting_for = list(phase.produces_artifact)`** — a phase parks on its own declared outputs. `P4-PROMPT` declared **two**: `working/prompts/slide-*.txt` **and** `working/prompts/infographic-prompt.txt`. But its `fanout` is `{"by": "slide"}` and `fanout._slides_for_units` returns **slides only** — *"no unit is ever invented"*. So the infographic prompt was not any unit's job and could never appear.
+
+  **Measured on the live run `pres-operator-1d269693`:** `P4-PROMPT` status `quarantined`, `attempts: 7`, `waited_seconds: 3157`, `waiting_for` exactly those two patterns — and `working/prompts/` contains `slide-01..08.txt` and **nothing else**. With `engine_pid` naming no live process, the run is stalled at 31 done / 29 pending with `out.pptx` absent.
+
+  **Three independent sources agree the author is NOT `prompt-author-presentations`:**
+  1. `build_infographic.py:714-718`, the engine's own failure text — *"P8.3-INFOGRAPHIC consumes …infographic-prompt.txt, **authored by role slide-image-creator**"*;
+  2. `sops/slide-image-creator-sops.md` step 5 — *"Save the prompt to `working/prompts/infographic-prompt.txt`"* — with steps 3–9 the full authoring procedure and the path listed under its own **Outputs**;
+  3. the `prompt-author-presentations` role file and SOP mention **"infographic" zero times**.
+
+  `manifest.py:915` records the entry was added as *"the FIX 2 fanout extra unit"* — but **no extra-unit mechanism exists anywhere in the engine**, so the design note was never implemented. The declaration is therefore unrealizable **by construction**, not merely unsatisfied.
+
+  **Fix:** remove `working/prompts/infographic-prompt.txt` from `P4-PROMPT.produces_artifact`. One line. `P4-PROMPT` then completes on the slide prompts it genuinely owns.
+
+  **This is HALF the fix, and is deliberately not presented as more.** `P8.3-INFOGRAPHIC` is **pending** on this run and its verifier (`phase_verifiers.py:3541-3589`) has **no skip path** — it hard-requires the PNG (≥102,400 bytes), `status: "ready"`, `qc_passed: true` and a passing QC verdict. So removing the declaration alone would **move** the deadlock to `P8.3` rather than clear it. Part B — a path-applicability route-around for a legitimately skipped infographic (the engine already has the pattern: `P-CONVERTER`'s `converter_path: true`, skipped on this run as *"not applicable to this deck"*), which must **fail open** when the deciding signal is unknown — is required before the run can proceed.
+
+  **And for this deck the skip is the contract-correct outcome**, not a shortcut: `slide-image-creator-sops.md` step 1 says skip when `deliverable_bundle.checklist_items` is absent/empty and the run is not a converter origin — measured `deliverable_bundle: null`, `checklist_items: null`, `creation_mode: "from_scratch"`. `build_infographic.py:702-711` already honours an `infographic_skipped: true` marker.
+
+- **PD-TEST-168 part B — the infographic stage is now deck-conditional, so a LEGITIMATELY SKIPPED infographic cannot deadlock it.** Part A alone moved the deadlock rather than clearing it: `P8.3-INFOGRAPHIC` is pending on the live run and `phase_verifiers` has **no skip path** — it hard-requires `working/deliverables/infographic.png` (≥102,400 bytes), `status: "ready"`, `qc_passed: true` and a passing QC verdict. But `sops/slide-image-creator-sops.md` step 1 tells the role to **skip** the infographic when the deck does not need one, and `build_infographic.py:702-711` already honours an `infographic_skipped: true` marker. The walk did not agree with either.
+
+  Added a **third deck-conditional branch**, mirroring the two the engine already has (`P-CONVERTER`'s `converter_path: true`, and the `_SP_ONLY_PHASE_IDS` signature-only stages): a phase may declare `infographic_path: true`, and `Engine._phases_applicable_to_this_deck` routes it around — `status=done`, **no executor and no verifier run**, `verifier_ok=None`, `artifacts=[]`, plus `routed_around` / `routed_around_reason` so the decision is never disguised as a verified execution.
+
+  **It FAILS OPEN, which is the property the mechanism rests on.** `_deck_infographic_required()` returns `None` — meaning *keep the phase* — for an absent, unreadable or unparseable `intake.json`, for an unconfirmed `creation_mode`, and it returns `True` for a non-empty `deliverable_bundle.checklist_items` or a content-first `creation_mode`. Only a **positively read** intake that carries no checklist items *and* a confirmed non-content-first creation mode routes the phase around. The rule is not invented here: it is SOP 9.10 step 1, verbatim.
+
+  **Controls** (`tests/test_pd168b_infographic_skip_not_a_deadlock.py`, 11 cases): reverting the wiring fails exactly the **2** cases that pin the skip, while the 9 fail-open / still-walks-it cases pass either way — **11 passed** with it, **2 failed / 9 passed** without.
+
+  **One existing test was updated, and it is stated rather than hidden:** `test_pd010_signature_only_phase_gating.py` hard-coded the routed-around COUNT (`len(phases) == len(manifest.phases) - 5  # 4 SP-only + P-CONVERTER`). That fixture deck is `from_scratch` with no checklist items, so it correctly gains a 6th routed-around phase. The assertion now expects **6** and additionally asserts `"P8.3-INFOGRAPHIC" not in walked` **by name**, so it stays a real check instead of a magic number. (Verified the two files pass at base and that the failure was only that count: 16 passed at base, 27 passed after the update.)
+
+- **Manifest restamp.** `PIPELINE-MANIFEST.json` is hash-locked by GATE 2 against **both** `MANIFEST-SOURCE.txt` (`content_sha256=`) and `universal-sops/_content-manifest.json`. Both are restamped here; `scripts/hash-universal-sops-manifest.py` regenerates the latter but **not** `MANIFEST-SOURCE.txt`, so that stamp is updated explicitly. `manifest_version` stays **69** (no phase, order, or version changed) and `MIN_MANIFEST_VERSION` is untouched. Editing by JSON round-trip was checked to be **byte-identical** to the original (`indent=2, ensure_ascii=False`) so the diff is one removed line, not a reformat: **3 files, +6/−7**.
+
+  Gates: `scripts/ci/presentations-drift-gates.sh` **ALL 8 PASSED** (GATE 2 manifest-lockstep, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift, GATE 7 phase-doc value lockstep all read this file).
+
+### Why It Mattered
+A declared-but-unproducible artifact is a deadlock with no operator remedy that does not involve fabricating something: `owner_skip_approval` is not available either, because `presentation_job/approvals.py` requires an `owner_msg_id` that resolves through the owner oracle to a real owner-authored message, and rejects a hand-written record as `AF-FORGED-APPROVAL`. The declaration had to be corrected.
+
+## [v25.1.33]  -  2026-09-16  -  A unit's own retry is no longer refused by its own in-flight paid reservation
+
+### What Changed
+- **PD-TEST-177 — PD-TEST-161 introduced a REGRESSION that made `DISPATCH_RETRY_CAP` unreachable and mislabelled the cause of every transient fault.** `_reserve_paid_attempt`'s double-reserve guard refuses a second attempt while the unit already holds a `reserved` row, unless the row's owner process is provably gone — and `_reservation_owner_is_gone()` answers `False` for `pid == os.getpid()` (fail-closed), so a process's **own** row is treated as live. But a unit's retries run **inside** the worker (`parallel_prompt_worker._execute_slide`'s `while attempt < RETRY_CAP` loop), and the rows are settled only **after the whole wave returns** (`_settle_unit_paid_attempts`, called by `_dispatch_prompt_phase_parallel`). Each attempt opens its own `paid_unit_scope`, so it carries a **different** token and never takes the same-token idempotent early return.
+
+  Measured by an independent delta review driving the real wave with only `urllib.request.urlopen` stubbed — identical 1-slide wave whose transport raises HTTP 500:
+
+  | | transport calls | `paid_attempts` | reported class |
+  |---|---|---|---|
+  | pre-PD-TEST-161 | **3** | 3 | `server_error` ×3 |
+  | PD-TEST-161 (shipped) | **1** | 1 | `server_error`, then `budget_deferred` ×2 |
+
+  Reproduced with **no declaration at all** (`phase_paid_budget: null`, paid 1 vs 3), which rules the declaration out as the cause. So **one transient 5xx / 429 / timeout lost the slide for the whole wave**, and the durable record named a *budget* problem where the **provider** had actually failed — the same masking class as PD-TEST-162.
+
+  **Fix:** the guard now treats a reservation left by **this same thread** for **this same unit** as what it provably is — an attempt that has already ENDED, because a worker task runs one unit sequentially and a unit's retries all happen inside that one task. The guard's real job is unchanged: stopping two **concurrent** attempts for one unit. A different thread (even in this process), a different process, or a row that predates this field still refuses.
+
+  **Why the thread and not `worker_id`:** the prompt path calls `dispatch_complete(system_prompt, user_prompt, phase_id=…, run_dir=…)` and deliberately does **not** pass `worker_id` (`parallel_prompt_worker.py`), so it is `None` there and cannot identify an owner. Thread identity can, paired with the `unit_key` the lookup is already keyed on. Threads are reused across units (`ThreadPoolExecutor(thread_name_prefix="p4prompt")` — `p4prompt_0` handled slides 1 and 4 in one measured run), so a thread name alone identifies no unit; the pair does. The reservation records its `thread`, and a row **without** that field still refuses, so the change is fail-closed on any already-reserved row.
+
+  **Spend is unchanged and still bounded:** the per-unit ceiling (`spent >= DISPATCH_RETRY_CAP`) and the declared phase bound (`paid >= cap`) both run *before* this check, and every replacement still increments `seq` and `paid` — a retry is charged, not a free re-roll.
+
+  **Controls** (`tests/test_pd177_unit_own_retry_not_refused.py`, 5 cases): reverting the fix fails exactly the three that pin the regression (**3 failed / 2 passed**), and the two that assert the guard still refuses pass either way. Verified additionally that the full `DISPATCH_RETRY_CAP` is now reachable and the ceiling still stops the next attempt; that a **different thread** is still refused and the refusal is never charged; and that a row with no `thread` field is still refused (fail-closed).
+
+### Why It Mattered
+The retry allowance the engine believes it has was not the allowance it had: for transient provider faults a slide got **one** attempt while the ledger, the retry cap and the operator-facing reason all described a budget policy. Restoring the retry is a prerequisite for a deck whose prompts can survive a single 5xx — and for the failure class recorded against a slide to be the real one.
+
+## [v25.1.32]  -  2026-09-16  -  `MOVE TAG:` was the engine's own routing metadata sitting in `copy[0]` — so a slide's HEADLINE was a field name
+
+### What Changed
+- **PD-TEST-173 — the copywriter's build-move tag line was the one field-shaped line in `slides_copy.md` that `copy[]` did not classify, and it landed at index 0, the HEADLINE.** `build_deck.AF-NO-SHIFT` **requires** ≥5 of the eight build-move tags (`PRIORITY_STACK`, `PRESENT_COST`, `HIGHER_PRIORITY`, `VALUE_ANCHOR`, `URGENCY_SCARCITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER`) to appear in `slides_copy.md`, monotonic — so the copywriter *has* to record them in the copy file. But the copy-block template never said **how**, so the live run invented `MOVE TAG: TRIGGER`. `_FIELD_LINE_RE` listed `TAG|TAGS` but matches those only at the **start** of a line, and this line starts with `MOVE`, so nothing stripped it.
+
+  The consequence is the worst possible position. `copy[0]` is the field `slide_craft` **AF-OBI-2** word-counts, the field `build_deck._chk_copy_density` measures against the **headline** band, the field `workbook_mapper._title_from_copy` prints as the workbook's slide title, and — through `AF-P-VERBATIM` — a string the image prompt must render **verbatim**.
+
+  **Measured on the live run, `pres-operator-1d269693`:** `slides_copy.md` line 140 carries the line, and slide 08's `copy[]` was
+
+  ```
+  ['MOVE TAG: TRIGGER', 'Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.', 'Telegram channel is open']
+  ```
+
+  — the real headline at index 1, every positional reader shifted by one. And the demand was **obeyed**: `working/prompts/slide-08.txt` contains the string `MOVE TAG` **exactly once**, while all seven other slide prompts contain it **zero** times. The per-slide art direction carried it too.
+
+  **Fix:** `MOVE TAG` joins the non-rendered field set in `slides_assembly._FIELD_LINE_RE`, **and the copy contract now says how to record the tags** — `MOVE TAG: [the ONE build-move beat this slide carries: PRIORITY_STACK | … | TRIGGER — engine metadata, NEVER rendered on the slide]` is added to the copy-block template in **both** `sops/slide-copywriter-sops.md` and `slide-copywriter.md`. Classifying the field without documenting it would have left the next writer to invent the form again; the contract mandates the information, so the contract must state the shape.
+
+  **Measured after the fix**, through the real extractor, slide 08's `copy[]` is exactly the schema's shape:
+
+  ```
+  ['Submit Your First Request Now',
+   'The nine-question intake takes minutes, not an afternoon.',
+   'Telegram channel is open']
+  ```
+
+  and the `slide-craft` **AF-OBI-1** (3-block ceiling) offender count across the deck went **8 slides → 2 → 1** (PD-TEST-169 took it to 2; this fix removes slide 8's). The single survivor is slide 1 at 5 blocks — three bullets under a headline and a subhead, a genuine density question, **not** claimed as fixed here.
+
+- **The leak was found by auditing rather than by guessing, and it is the only one in the live copy.** Every field-shaped line in the live `slides_copy.md` was enumerated and checked against the extractor: 15 distinct field names, and of them only `MOVE TAG` (×1) was unclassified. `HEADLINE` / `SUBHEAD` / `SUPPORTING` are not leaks — they are the **rendered** fields, whose values must reach `copy[]` while their labels must not (the rule PD-TEST-169 established).
+
+  **"Complete fix" was an overstatement and is corrected (independent review).** The classification is *name- and form-specific*. Measured on this fix, `copy[0]` still leaks for **7 of 11 realistic spellings** — `MOVE-TAG:`, `MOVE BEAT:`, `MOVETAG:`, `**MOVE TAG:**`, `- MOVE TAG:`, `> MOVE TAG:`, `1. MOVE TAG:`. Handled: `MOVE TAG:`, `MOVE  TAG:`, `MOVE TAG :`, lowercase. The root cause is pre-existing and generic: `_FIELD_LINE_RE` anchors `^\s*` but `_LEADING_MARKUP_RE` runs **after** it, so any decorated field line survives for *every* field, not just this one. The SOP now prescribes the plain form, so the live risk is low — but the honest claim is "the only leak in this copy", not "complete".
+
+  **Also disclosed (independent review): the live deck FAILS `AF-NO-SHIFT`.** Measured: *"only 4/8 build-move beat tags are present in slides_copy.md (need >=5 …)"* — `HIGHER_PRIORITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER`, doctrine active. So the invented `MOVE TAG: TRIGGER` line did **not** discharge the gate's demand on this deck; one line cannot satisfy a ≥5 rule. The narrative that the tag was recorded *to satisfy* `AF-NO-SHIFT` explains why the writer produced the line, but it does not mean the deck complied. Filed as PD-TEST-174.
+
+  **A tripwire that could not have caught it, now documented.** `tests/test_pd158_copy_metadata_not_rendered.py`'s `test_every_field_regex_token_is_a_contract_field` checks regex-token → contract-field, one direction only; and `test_every_contract_field_is_classified` reads its field list **from the SOP template** — which never mentioned `MOVE TAG`. A field the contract omits but the writer must emit is invisible to both. The template addition above closes that specific hole, and the fixture now carries the real `MOVE TAG: TRIGGER` line so the leak is pinned by `test_move_tag_never_becomes_the_headline`.
+
+  **Controls:** removing `MOVE TAG` from `_FIELD_LINE_RE` while leaving everything else intact fails **3** tests — `test_move_tag_never_becomes_the_headline`, `test_every_non_rendered_field_is_stripped_from_copy`, and `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` — versus 7 passed with the fix. The new test asserts the *positional* consequence (that `copy[0]` is the real headline), not merely that a string is absent.
+
+### Why It Mattered
+A slide whose headline is `MOVE TAG: TRIGGER` is not a styling defect — it is the engine's internal routing label occupying the single most important text position on the slide, in the demand list handed to the image model, and in the workbook's title field. It also silently shifted **every** positional consumer for that slide by one, so the word-count, density and craft gates were all grading the wrong strings. The copy phase had no way to avoid it: the gate required the information and the contract never said where to put it.
+
+## [v25.1.31]  -  2026-09-16  -  `copy[]` is the slide's TEXT, not a labelled form — so the engine stops demanding its own field labels be painted onto the slide
+
+### What Changed
+- **PD-TEST-169 — PD-TEST-158 got the metadata OUT of `copy[]` and left the LABELS in, so 8 of 8 slide prompts still failed on exactly that.** `slides.schema.json` defines `copy[]` as "The EXACT text that must appear rendered on the slide, in reading order. **Index 0 is treated as the HEADLINE**; remaining entries are subheads/body lines", and its own worked example is `["Northwind Co", "Three moves that doubled our pipeline in 90 days"]` — **bare text**. But `copy_lines()` preserved the `HEADLINE:` / `SUBHEAD:` prefixes, so `copy[]` looked like `["HEADLINE: Department First, or Back on Your Plate?", "EMPHASIS: Department First", "SUBHEAD: ..."]`. `AF-P-VERBATIM` then failed every slide because the *label* — a form artifact that is never pixels — was not baked into the image prompt. Measured live on `pres-operator-1d269693`: **4–6 `AF-P-VERBATIM` failures on every one of the 8 slides**, each naming a label-prefixed string as `required=`.
+
+  Two changes in `slides_assembly`:
+  1. **`EMPHASIS:` is now a non-rendered field.** The engine's OWN P4-PROMPT contract says the fields counting toward the on-slide word total are "exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING", and that "SECTION, PURPOSE, ARCHETYPE, LADDER, **EMPHASIS**, PROOF USED, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata **never rendered on the slide**". The accent word already appears inside the headline, so the `EMPHASIS` line was redundant for the renderer as well.
+  2. **`_LABEL_STRIP_RE` removes the `HEADLINE:` / `SUBHEAD:` / `SUPPORTING:` label and keeps the value.** A bare `SUPPORTING:` (label, no value) collapses to nothing — correct, since its bullets are their own lines beneath it.
+
+  Measured through the live verifier against the run's 8 real prompts: `AF-P-VERBATIM` failures went **4–6 per slide → 0 on every slide**; slides failing the whole prompt gate went **8/8 → 5/8**; slides **02, 03 and 05 now PASS**. The 3 residual failures are a *different* defect (prompt content: `AF-FACE-PROMPT-MISSING` / `AF-LIGHT-PROMPT-MISSING` / `AF-HAIR-INAUTHENTIC`), tracked separately and not claimed as fixed here.
+
+- **PD-TEST-163 — the positional gates were reading engine labels as slide text, and now read the real fields.** `copy[]` has positional consumers that assume the schema's shape: `build_deck._chk_copy_density` reads `fields[0]` as the headline, `[1]` the subhead, `[2]` the kicker and `[3:]` the bullets; `slide_craft.AF-OBI-2` (`check_obi_headline_words`) grades `copy[0]` as the headline. With labels present, those gates were grading `"HEADLINE: ..."` and — worse — `"EMPHASIS: Department First"` as the slide's *subhead*. After the fix `copy[0]` is the real 6-word headline, `copy[1]` the real subhead and `copy[2]` the first real bullet.
+
+  **Measured effect on `build_deck.AF-COPY-BAND`** (a *fatal* preflight — a non-empty return makes `build_deck` print `FATAL: PROCESS PREFLIGHT FAILED` and `sys.exit(3)`), run over the live run's own `slides_copy.md` at `850b81034` vs this commit:
+
+  | | slides with offenders | offender lines |
+  |---|---|---|
+  | before | **8 of 8** | 26 |
+  | after | **5 of 8** | 5 |
+
+  `SLIDE TOTAL` offenders fell **5 → 0** and `BULLET` offenders **9 → 0**. The 5 survivors are **not** fixed here: all five are `KICKER <n> over 40`, and on inspection they are a **copy-content** defect, not a gate defect — every one of the five is an *inline* `SUPPORTING:` value of 41–115 chars (slide 03's `Research helps you make better decisions.` clears the 40-char ceiling by **one** character), and the SOP defines `SUPPORTING` as "third text block if any — **stat, label, or CTA chip** — or NONE". Each also exceeds the 30-char bullet ceiling, so the verdict does not depend on which band is applied. Filed as PD-TEST-171.
+
+  **Correction to an earlier draft of this entry, and a defect this fix does NOT repair: slide 08's `copy[0]` is still `MOVE TAG: TRIGGER`, i.e. an engine metadata line is still that slide's HEADLINE.** The label strip does not touch it, because `MOVE TAG:` is a *different* field that `_FIELD_LINE_RE` has never listed. `slides_copy.md` line 140 carries it for slide 8 only, so every positional reader is shifted by one for that slide. Filed as **PD-TEST-173** and **not** claimed as fixed here.
+
+  **A claim I made about this was FALSE and is retracted (independent review).** An earlier draft said `AF-P-VERBATIM` "demanded `MOVE TAG: TRIGGER` be painted as the headline — and it was: `slide-08.txt` contains the string `MOVE TAG` exactly once". The count is right; the inference is not. `slide-08.txt:48` reads *"This beat carries the structural tag MOVE TAG: TRIGGER. … **Render nothing from that tag as visible artwork**, as a caption, or as a corner stamp."* — the writer mentioned the tag in a metadata section and **explicitly prohibited rendering it**, and the prompt's own VERBATIM COPY section lists only Headline / Emphasis / Subhead / Supporting. `AF-P-VERBATIM` is a substring-presence test, so a metadata mention satisfies it. Decisive: the live run's checkpoints carry **56 `AF-P-VERBATIM` failures and ZERO of them name `MOVE TAG`**. So the gate was *satisfied* for slide 8 and the tag was correctly quarantined — no metadata was ever painted onto that slide.
+
+  **The real harm, measured through the production gates, which is why the fix still stands:** `slide_craft` **AF-OBI-1** counts the metadata line as a text block (**8 slides → 2** with PD-TEST-169 → **1** with this fix, survivor slide 1 at 5 blocks), and `build_deck` **AF-COPY-BAND** stops grading slide 08's real subhead as an over-long `KICKER` (**5 → 4** failing fields). `slide_craft.check_aud_credentials` also scans `copy[1:]` as "non-headline", so it was scanning the real headline while exempting the metadata line.
+
+- **Two further fatal preflight failures were measured on the live copy and are NOT caused by, nor repaired by, this change — recorded so the delivery path is not mistaken for clear.** `build_deck.PREFLIGHT_REQUIRED` gates were run directly against the live run: **`AF-NO-SHIFT` fails** — `_chk_priority_shift` returns *"only 4/8 build-move beat tags are present in slides_copy.md (need >=5 of PRIORITY_STACK, PRESENT_COST, HIGHER_PRIORITY, VALUE_ANCHOR, URGENCY_SCARCITY, ABILITY_UNBLOCK, RERANK_DEMAND, TRIGGER)"* (doctrine active; `HIGHER_PRIORITY`, `ABILITY_UNBLOCK`, `RERANK_DEMAND`, `TRIGGER` found; monotonic). Both are `sys.exit(3)` gates, so the copy phase reported success while producing copy that several later fatal preflights reject — filed as PD-TEST-174.
+
+  **Controls (each pinning one behaviour, so neither change can silently no-op):** reverting the label strip ⇒ `test_every_rendered_VALUE_survives_and_its_LABEL_does_not` fails on the label half; removing `EMPHASIS` from `_FIELD_LINE_RE` ⇒ `test_every_non_rendered_field_is_stripped_from_copy` fails; the pre-existing reverse-direction tripwire (`test_every_field_regex_token_is_a_contract_field`) still proves no *invented* token silently deletes real copy.
+
+- **The same defect was reaching a DELIVERABLE, not just a gate: the workbook's slide titles were the labels.** `workbook_mapper._title_from_copy` documents itself as taking `copy[0]` *"verbatim"* and `_first_n_copy_lines` takes `copy[:n]` *"verbatim"* — so `copy[]` is the workbook's own text source. Measured on the live run's `working/copy/slides.json` vs the same block re-extracted through this fix, using the real workbook functions' own selection rules:
+
+  | | slides whose workbook title carried a field label or engine metadata |
+  |---|---|
+  | before | **8 of 8** |
+  | after | **0 of 8** |
+
+  Every one of the eight workbook titles was the literal string `"HEADLINE: <the real headline>"`, and `body[:3]` carried `HEADLINE:` / `EMPHASIS:` / `SUBHEAD:` as if they were workbook body text. Slide 08 remains `MOVE TAG: TRIGGER` — the PD-TEST-173 defect, here confirmed independently through a *second* consumer.
+
+- **`slides.schema.json` and the field regexes can no longer drift apart silently.** `tests/test_pd158_copy_metadata_not_rendered.py` reads the P4-COPY contract's own slide-block template out of `sops/slide-copywriter-sops.md` and asserts that **every** field it prescribes is classified here as either rendered or non-rendered, and that no token in `_FIELD_LINE_RE` names a field the contract never prescribes — the same tripwire shape that caught PD-TEST-156. A field added to the contract now fails this suite until someone decides whether it reaches the slide.
+
+### Why It Mattered
+`copy[]` is not a report — it is the **verbatim demand list** handed to the image model. Anything left in it is ordered to be painted into the pixels. So a label prefix is not cosmetic: it converts the engine's own form syntax into a QC failure that no writer can ever satisfy, because satisfying it would mean rendering the word "HEADLINE:" onto the client's slide. That is what kept 8 of 8 prompts red.
+
+## [v25.1.30]  -  2026-09-16  -  The prompt fan-out is funded per slide, and budget exhaustion stops masquerading as a provider fault
+
+### What Changed
+- **PD-TEST-161 — PD-TEST-124's fair-admission fix reached the COPY fan-out and never the PROMPT one, so 5 of 8 slides could never get a first attempt.** `paid_unit_scope` — the seam that makes a fan-out's budget declared, bounded and accounted per unit — is referenced in exactly **one** production place, `dispatcher._dispatch_phase_fanout_units`. `presentation_job/parallel_prompt_worker.py` calls `dispatcher.dispatch_complete` directly, so its reservations fell through to the **legacy phase-level clause** (`paid >= DISPATCH_RETRY_CAP`, i.e. **3**). An 8-slide prompt wave therefore had 8 units racing for 3 attempts.
+
+  Measured live on `pres-operator-1d269693` (`working/checkpoints/prompt-worker-results-attempts.jsonl`): slides **02/03/04/05/06** each failed at attempt 1 with **ZERO verification codes**, all at the **same second** (13:07:55) — they never reached a provider, they lost the reservation race — while 01/07/08 got real attempts and died on attempt 2. The ledger ended `paid_attempts: 3`, `status: exhausted`; the checkpoint recorded `failed_count: 8`, `missing_ordinals: [1..8]`.
+
+  **Fix, in the two places that make the accounting real:**
+  1. `_dispatch_prompt_phase_parallel` now **declares** the wave's bounded total — through the same single writer, `_declare_phase_paid_budget`, keyed on each slide's own `slide_id` — **before** the wave runs. Without a declaration `_effective_phase_paid_cap` returns the legacy cap, so the scope alone would have changed nothing. Strictly fail-soft, recording `paid_budget_declaration_failed` and the consequence (legacy cap, i.e. the pre-fix behaviour) so a declaration failure is never silent.
+  2. `parallel_prompt_worker._execute_slide` enters `paid_unit_scope(slide_id)` **once per attempt**, so each attempt is accounted to its slide with its own logical token — the same predicate the copy fan-out has used since PD-TEST-124. Outside such a declaration the legacy CAP AND SPEND are unchanged (measured: 3 ok / 5 `budget_exhausted`, `paid_attempts: 3`), though the CLASSIFICATION of a refusal does change — see the F7 note below; serial phases are untouched.
+
+  Measured after the fix, through the **real** `_reserve_paid_attempt` seam: all **8 of 8** slides reserve a first attempt; undeclared, the legacy cap still stops at exactly **3** with `PaidBudgetExhausted`. At the seam, `total_cap` is `4/5/6/11/23` for 1/2/3/8/20 slides, hard-capped at 128; a 200-slide wave funds 128 and refuses the rest.
+
+- **PD-TEST-162 — a LOCAL SCHEDULING event was reported as a non-retryable PROVIDER fault, which is why PD-TEST-161 was invisible.** `parallel_prompt_worker._classify` ends in a deliberate catch-all ("everything unknown is non-retryable so garbage never consumes the provider budget"), and `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from `DeepSeekCallError(RuntimeError)` — not from `ValueError`/`KeyError`/`TypeError`, and carrying none of the 401/403/429/5xx/timeout markers. Measured before the fix:
+
+  ```python
+  _classify(PaidBudgetExhausted('paid retry budget exhausted: 3 provider attempts'))
+      -> ('provider_error', False)
+  ```
+
+  Two harms, both observed: it sent the reader hunting credentials and endpoints when the cause was local, and it marked the unit **abandoned** as if the provider had failed. They are now matched **by type first** — `budget_exhausted` / `budget_deferred`, both **retryable** — so no future wording change can re-mask them. The catch-all still catches: a plain `RuntimeError` stays `provider_error`/non-retryable, and 401 / 429 / 5xx / timeout / shape errors keep their existing classes exactly.
+
+  **Why `retryable=True` is safe here, measured rather than assumed.** `_execute_slide` retries up to `RETRY_CAP` (3), so a retryable classification is only safe if a *refused* reservation is free. It is: the refusal is raised in `_reserve_paid_attempt` **before** any transport call. Measured — after exhausting the legacy cap, three retries of a starved unit left `paid_attempts` at exactly **3**, unchanged. So this cannot burn the budget it is waiting for; it only stops the refusal from being mislabelled. (An earlier draft of this entry said the unit is "deferred until budget exists". That overstates what an immediate-retry loop does and is corrected: the unit is refused and retried, and its refusal is now reported for what it is.)
+
+### Tests
+- New `tests/test_pd161_prompt_fanout_fair_budget.py` — **8 cases at the time of that commit and 18 at the head of this branch** as the review's findings were answered; driven through the **real** reservation seam (`_declare_phase_paid_budget` + `paid_unit_scope` + `_reserve_paid_attempt`), not a stub: every slide gets a first attempt under a declared budget; **undeclared, the legacy cap of exactly 3 still binds** (the before-state, and the no-regression guarantee); a later, narrower declaration cannot shrink the bound; budget exhaustion and deferral classify as scheduling and **retryable**; genuine provider/auth/rate/5xx/timeout/shape faults keep their classes; and two structural pins assert the per-attempt `paid_unit_scope(slide_id)` and that the dispatcher **declares before** `run_worker` and stays fail-soft.
+- The before/after pair is measured through the REAL seam, not asserted: **undeclared**, the first sweep is `3 ok / 5 budget_exhausted` with `paid_attempts: 3` (precisely the live defect); **declared**, it is `8 ok / 0` with `total_cap: 11` (= `min(128, 8*1 + 3)`) and `paid_attempts: 8`.
+- **Negative controls (all measured):** removing the per-attempt scope fails the scope pin; reverting the classification fails both budget-class cases; removing the declaration fails the ordering pin; **removing the `dispatcher` binding fails the executing test with the reviewer's exact `NameError`**. Restored, **12 passed**.
+
+### Corrections required by the independent review (all applied)
+
+The review returned **DO-NOT-MERGE** and found a blocker that every test in the first revision missed. Verified here before changing anything.
+
+- **[BLOCKER — the change could not run] `dispatcher` was not bound in `parallel_prompt_worker`.** The per-attempt scope was written as `with dispatcher.paid_unit_scope(slide_id):`, but `dispatcher` is **not a module global** in that module — every other use is a function-local import (`_provider_call`, `_verify_prompt`, `_dept_root_from`, …), because `dispatcher` imports this module at its own line 119, so a module-level import would be circular. Every slide therefore raised `NameError: name 'dispatcher' is not defined` **before any provider call**: the wave produced nothing, spent nothing, and reported it as a provider fault. (Correction: the ledger FILE was written — it simply carried no paid attempts; an earlier phrasing said "never wrote a ledger" and was wrong.). It was strictly worse than the defect. Fixed with the same function-local import the rest of the module uses.
+  **Why the tests missed it, and what now covers it:** they drove `_reserve_paid_attempt` directly and asserted the worker by **source-text grep** — and a grep proves a line EXISTS, not that it RUNS. There is now a test that **executes the real `_execute_slide`** end to end with a stubbed transport, asserts the provider was actually reached, and asserts the paid scope was genuinely **bound** to the slide during the attempt. Negative control: removing the binding again reproduces the reviewer's exact failure (`error_message: "name 'dispatcher' is not defined"`, class `provider_error`, retryable False) and the new test fails on it.
+- **[INFO — accepted as defensive only] `claim_lost` is currently UNREACHABLE from this path.** The delta review measured that `dispatch_complete` is called here with `worker_id=None`, so the claim-ownership check is skipped and that hard stop cannot fire from the prompt fan-out today. The classification is still correct and worth keeping — a mislabelled hard stop would be silently retried the moment a worker id is threaded through — but it is a DEFENSIVE fix, not an observed harm, and the earlier phrasing implied otherwise.
+- **[HIGH — one hard stop was swept into the budget classes] `"paid attempt refused: claim ownership changed"`** (the fixed literal in `_reserve_paid_attempt`; the line number moved as this branch grew, so the source string is the reliable cite) means another worker took the phase; retrying achieves nothing. The type alone cannot distinguish it, so it is matched by that fixed literal and classified **`claim_lost`, non-retryable**. Both new budget classes were also missing from `_RETRYABLE_CODES` / `_NONRETRYABLE_CODES`, which `_finalize_failure` re-derives `retryable` from — so the classification could have been silently undone. All three classes are now declared in the right tuple.
+- **[HIGH — the sidecar recorded nulls] `_declare_phase_paid_budget` returns a NESTED document** (`{"budget": {...}, "admitted": [...], "not_admitted": {...}}`); the copy caller reads `["budget"]["total_cap"]` while the first version of this sidecar read the keys at top level, so the audit row carried four nulls (measured). Fixed, and the copy path's explicit **cannot-fund-all** record is now written here too, so slides outside the bound are visibly NOT ATTEMPTED rather than silently absent.
+- **[MEDIUM — wording] "the legacy path is unchanged byte-for-byte" is OVERSTATED.** The cap and the spend are identical when undeclared, but the *classification and retry behaviour* of a refusal changes (honest `budget_exhausted`/retryable instead of a phantom `provider_error`/non-retryable). The claim is corrected here rather than left standing.
+
+- **[HIGH — PD-TEST-165, FIXED HERE] The prompt wave never settled its reservations, so every retry was dead.** The copy path settles each batch through `_settle_unit_paid_attempts`; `_dispatch_prompt_phase_parallel` had **no equivalent call anywhere**. A slide's attempt-1 reservation therefore stayed **in flight**, and because the wave runs in the dispatcher's own process the unit's own distinct second attempt was refused — the review measured attempts 2-3 all resolving as `budget_deferred`, with the final row's class being the refusal rather than what had actually failed (`verify_failed`, HTTP 500). So without this, PD-TEST-161 bought every slide a **first attempt and no working retry**. The wave now settles each slide's outcome immediately after `run_worker` returns, in the same `(unit, ok|failed, reasons)` shape the copy path uses, recording `fanout_paid_attempts_settled` and staying fail-soft (`fanout_paid_settle_failed` plus its consequence).
+  Measured at the seam: with the first reservation **unsettled**, a distinct later attempt for that slide is refused `budget_deferred` (the bug, now pinned by a test); after settling, the same retry is **admitted**.
+
+**Still open and NOT fixed by this change** (recorded as numbered issues):
+- **PD-TEST-164 (the important one)** — the declaration lives *inside* `_dispatch_prompt_phase_parallel`, but `should_dispatch` refuses that dispatch while the phase sits at the legacy cap — a bootstrap deadlock. Measured: still refused after backoff expiry and after reissuing the work order. **The live `P4-PROMPT` therefore needs an operator receipt (or an input amendment) regardless of this PR.**
+- **PD-TEST-166** — the declaration names ALL slides rather than only the PENDING ones; the copy path declares only units that still need paid work, because funding banked ones "would only shrink the pool". With the settlement now in place the harm is reduced (8 first attempts + 3 retry slots out of a cap of 11) but not eliminated.
+- **PD-TEST-167** — the other multi-unit prompt path still has no `paid_unit_scope`: `PRESENTATION_PROMPT_PARALLEL=0` selects `_dispatch_prompt_phase` (the serial loop), which is a different path from `_dispatch_prompt_phase_fanout`; the fan-out is the one lacking the scope. The earlier parenthetical named the wrong selector.
+
+### Not fixed here, deliberately
+- **PD-TEST-163** — `_chk_copy_density` / `check_copy_qc_teeth` (AF-COPY-BAND) and `check_obi_headline_words` (AF-OBI-2) read `copy[]` **by index**; a separate change.
+- **PD-TEST-158 is narrowed, not closed** — field LABELS (`HEADLINE:`/`EMPHASIS:`/`SUBHEAD:`/`SUPPORTING:`) are still in `copy[]`; the engine's own contract calls `EMPHASIS` metadata.
+
+## [v25.1.29]  -  2026-09-16  -  Engine bookkeeping stops reaching `copy[]` (the metadata leak is narrowed, not closed)
+
+### What Changed
+- **PD-TEST-158 — `copy[]` carried engine metadata, and the verifier then DEMANDED that metadata be baked into the image prompt.** `slides.schema.json` defines `copy[]` as *"the EXACT text that must appear rendered on the slide"*, and `slides_assembly._FIELD_LINE_RE` exists to keep metadata out of it. But that regex listed only `HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS`, while the P4-COPY contract (`sops/slide-copywriter-sops.md` step 2, whose every field is mandatory) prescribes a **larger** field set. `SECTION`, `PURPOSE`, `ARCHETYPE`, `PROOF USED`, `PEOPLE`, `TEXT_ANCHOR`, `PRESENTER NOTE` and `HOOK VARIANT` were all missing from it.
+
+  This is not cosmetic. `copy[]` drives `build_deck._load_slide_copy_map` and hence the **AF-P-VERBATIM** check, which fails a slide until every `copy[]` string is baked verbatim into the image prompt. So metadata left in `copy[]` makes the engine insist its own bookkeeping be **painted onto the rendered slide**. The live run's `working/checkpoints/prompt-worker-results-attempts.jsonl` carries it verbatim:
+
+  ```
+  AF-P-VERBATIM ... measured='copy not baked' required='SECTION: decision-rerank'
+  AF-P-VERBATIM ... measured='copy not baked' required='PURPOSE: Force the
+                    priority question out loud...'
+  ```
+
+  Worst of all it applied to **`PRESENTER NOTE`**, which the SOP itself defines as *"sentences the speaker says aloud that are **NOT on the slide**"* — with step 1 adding *"never put the presenter's spoken words on the slide"*. Demanding it be baked does exactly what the doctrine forbids.
+
+  **Fix: complete the field vocabulary** in `_FIELD_LINE_RE` (the review found one token, `VISUAL_ANCHOR`, that I had invented — removed, and the test now guards that direction), **and strip ALL HTML comments and standalone `---` rules**, which the first revision left behind. Measured on the live run's own copy, rebuilding the index through the real producer: **slide 1 15 copy lines → 7 with the named metadata fields 8 → 0**, and — after the review's correction — **bookkeeping lines in `copy[]` 13 → 0** deck-wide (12 contract-sanctioned `<!-- QC-NOTE … -->` comments plus one `---`). The earlier 8 → 0 figure described only the NAMED fields and was materially incomplete as a claim about metadata. What survives for slide 1 is exactly the slide's words:
+
+  ```
+  HEADLINE: The List You Already Run On
+  EMPHASIS: Already Run On
+  SUBHEAD: Your plate holds the deck work. The department is missing.
+  SUPPORTING:
+  Take a stance on this list
+  Carrying deck work alone
+  Reusing old familiar files
+  ```
+
+  `HEADLINE`, `EMPHASIS`, `SUBHEAD` and `SUPPORTING` are deliberately **still rendered** and still in `copy[]`. `EMPHASIS:` keeps its label because the live verifier demands `EMPHASIS: <word>` verbatim and prompts are already authored to it; changing that is a visibly-rendering decision and is not bundled into a fix whose purpose is to stop metadata reaching the slide.
+
+### Corrections required by the independent review (all applied)
+
+The review returned MERGE-WITH-CHANGES and found that the first revision **did not close the defect it named**. Each finding was verified here before changing anything.
+
+- **[HIGH — the fix was incomplete] 13 bookkeeping lines STILL reached `copy[]`.** The first revision only widened the `FIELD:` vocabulary. But the P4-COPY contract *instructs* the writer to "flag the gap in a comment in slides_copy.md" (SOP 9.1), so the live copy carries `<!-- QC-NOTE: AF-NO-BRANDED-METHOD … -->` lines — and `_ARC_MARKER_RE` matched **only** `<!-- ARC: … -->`. Measured on the live run: **12 QC-NOTE comments plus one standalone `---`** survived the first revision, and on slide 8 two of the six remaining verbatim misses were those comments. `copy_lines()` now strips **all** HTML comments (`_HTML_COMMENT_RE`) and standalone horizontal rules (`_RULE_LINE_RE`). Re-measured through the real producer on the live copy: **bookkeeping lines in `copy[]` 13 → 0.**
+- **[HIGH — a token I INVENTED] `VISUAL_ANCHOR` was in the regex and in NO contract.** `grep -rn VISUAL_ANCHOR` over the whole repo returns exactly one hit — the regex line itself. It is in no SOP, role file or schema, and `git log --all -S` shows it appears only in that commit. The earlier claim that the vocabulary was *"grounded in the contract rather than guessed"* was therefore **false as written**; it is corrected here and the token is **removed**. The test now also runs the tripwire in the **reverse** direction, so a regex token the contract does not prescribe fails the suite.
+- **[HIGH — my `EMPHASIS` classification was wrong] The engine's own contract says `EMPHASIS` is metadata.** `dispatcher.py:1137-1144` states that the fields counting toward AF-C8 are *"exactly: HEADLINE, SUBHEAD, and every line under SUPPORTING"* and that *"SECTION, PURPOSE, ARCHETYPE, LADDER, **EMPHASIS**, PROOF USED, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR, and HOOK VARIANT are internal production metadata never rendered on the slide"*. My justification for keeping it ("the live verifier demands `EMPHASIS: <word>` verbatim and prompts are already authored to it") was **circular** — the verifier demands it *because* the label is in `copy[]` — and factually wrong on this run: `EMPHASIS: Already Run On` is reported MISSING both before and after, and the live prompt's only `EMPHASIS` line is a typography section header.
+  **This is deliberately NOT changed here.** Dropping the field *labels* (`HEADLINE:`, `EMPHASIS:`, `SUBHEAD:`, `SUPPORTING:`), which is what `slides.schema.json`'s own examples show and what the contract above implies, is a visible-rendering change that also moves several positional consumers — it belongs in its own reviewed change, with the consumers fixed in the same breath. **So the defect is NARROWED, not closed**, and this entry and the PR title say so.
+- **[MEDIUM — recorded, not fixed] Two positional gates change verdicts.** `build_deck._chk_copy_density` / `check_copy_qc_teeth` (AF-COPY-BAND) and `slide_craft.check_obi_headline_words` (AF-OBI-2) read `copy[]` by INDEX (`fields[0]` as headline). Removing metadata that used to sit at those indices changes their arithmetic — on the live deck AF-COPY-BAND still fails either way (75 → 38 offenders), but a synthetic case flips PASS → FAIL because metadata had been padding the character total. Recorded as **PD-TEST-163** with the reproduction; the honest fix is for those gates to read field labels rather than positions.
+
+### Tests
+- New `tests/test_pd158_copy_metadata_not_rendered.py` (**6 cases**). It reads the **contract document itself** — parsing the field list out of the `SLIDE [N]` template in `sops/slide-copywriter-sops.md` — and asserts that every contract field is classified, that every NON-RENDERED field is stripped by `copy_lines()`, and that every RENDERED field survives **with its text intact**. The SOP is the single source of truth for *which* fields exist; only the rendered/non-rendered split is asserted, each with its reason.
+- Its fixture is the **REAL live block shape** — including a contract-sanctioned `<!-- QC-NOTE: … -->` comment and a standalone `---` — because the first version's idealized fixture is exactly why the incomplete fix passed its own tests. A second, separate case asserts non-field bookkeeping (comments, rules) is stripped.
+- The classification tripwire is now **bidirectional**: contract → classification (a new SOP field must be classified) **and** regex → contract (a token no contract prescribes fails). The reverse direction is what would have caught the invented `VISUAL_ANCHOR`.
+- **Negative controls (all measured):** reverting `_FIELD_LINE_RE` fails the strip assertion naming the exact fields; adding a field to the SOP template fails the classification assertion; re-adding `VISUAL_ANCHOR` fails the reverse tripwire naming it; not stripping HTML comments fails the bookkeeping assertion naming `QC-NOTE`; dropping `PEOPLE` from the regex fails the strip assertion; over-stripping a RENDERED field fails the survival assertion; making `copy_lines` a passthrough fails two. Restored, 6 passed.
+- Regression **unchanged and re-measured** across the seven files this change could touch: **5 failed / 64 passed**, all five pre-existing and identical on a pristine `origin/main` archive (`test_pd081::test_empty_copy_never_yields_a_silently_empty_slides_json` = PD-TEST-123, plus the four `test_fanout_prompt_phase.py` cases).
+
+## [v25.1.28]  -  2026-09-16  -  The prompt phase declares the render index it reads, unblocking the deck
+
+### What Changed
+- **PD-TEST-156 — the deck's render index had no producer, and the one seam that could write it was keyed on a declaration the phase needing it did not make. A CIRCULAR deadlock.** `working/copy/slides.json` is the renderer's structured index. **No manifest phase declares it as `produces_artifact`**; instead the engine materialises it at dispatch time, immediately before the executor branch, via `slides_assembly.ensure_slides_json()` (`phases.py:2516`) — and that seam is deliberately keyed on the phase's own declaration:
+
+  ```python
+  if not slides_assembly.phase_consumes_slides_json(phase.consumes):
+      return                      # no-op
+  ```
+
+  `P4-PROMPT` is a phase that **needs** the index but did **not declare** it. `_dispatch_prompt_phase_parallel` (`dispatcher.py:4642`) reads `working/copy/slides.json` directly to normalize its per-slide payloads and refuses with *"P4-PROMPT parallel dispatch could not normalize any slide payloads from slides.json/arc_allocation.json"* — the exact string on the live ledger.
+
+  **The circle:** the only phases that DID declare the index were `P-STYLE-PREVIEW`, `P-STYLE-SPEC` and `P4-RENDER` — and `P-STYLE-PREVIEW` and `P4-RENDER` consume `working/prompts/slide-*.txt`, which is what `P4-PROMPT` **produces**. So those two could only trigger the producer **downstream** of the phase that was failing for want of the artifact. `P4-PROMPT` itself could never succeed, so the render could never be reached.
+  **CORRECTION (independent review, F4).** An earlier revision of this entry called the failure a *circular deadlock* and claimed **every** declaring phase consumes the prompts glob. That is **false**: `P-STYLE-SPEC` does **not** consume `working/prompts/slide-*.txt`, is **not** a descendant of `P4-PROMPT`, and is scheduled **three waves earlier**. The live log shows what actually happened to it:
+
+  ```
+  [2026-09-15T08:42:03-04:00] phase.slides_index_unavailable: P-STYLE-SPEC:
+    working/copy/slides.json not produced (no_copy_source: working/copy/slides_copy.md
+    is absent -- P4-COPY has not written the deck's copy yet ...)
+  ```
+
+  `P-STYLE-SPEC` went `done` at 08:44:03 that morning; `P4-COPY` only wrote the copy **26 hours later** (2026-09-16T11:14:07). Because a `done` phase short-circuits (`dispatcher.py` `already_done_in_state -> skipped_satisfied`), that one-shot trigger **never fired again**. So the true mechanism is: *a dispatch-time seam that fires ONCE per phase, on a phase that ran before its own input existed, and is never retried once that phase is `done`* — recorded as **PD-TEST-159**. The one-field fix is still correct and necessary (it adds a trigger that fires **after** `P4-COPY`), but the earlier diagnosis was wrong and is corrected here rather than left standing.
+
+  **Fix: add `working/copy/slides.json` to `P4-PROMPT`'s `consumes`.** One field, and **DAG-NEUTRAL by construction**: because no phase PRODUCES the index, declaring it creates **no artifact edge** at all — verified by comparing `execution_plan.build_edges()` before and after, which is byte-identical. So the fix turns the producer seam ON without reordering the plan and without any cycle risk. Declaring set: `P-STYLE-PREVIEW`, `P-STYLE-SPEC`, `P4-RENDER` → **plus `P4-PROMPT`**.
+
+  **The producer itself was never missing code.** `test_pd081_slides_json_producer.py` is 17 passed / 1 failed, and the single failure is the already-numbered PD-TEST-123 (`build_deck._count_output_slides` returns 3 on a run dir with no copy and no slides.json, instead of `None`). This was purely a **declaration** gap.
+
+### Tests
+- New `tests/test_pd156_prompt_phase_declares_slides_index.py` (3 cases). It is derived from the **code**, and the review made that derivation actually true: the first version matched phase ids with the regex `\b(P4-[A-Z]+|P-[A-Z0-9.\-]+)\b`, which detects only **43 of the 62** real ids — `P0A-INTAKE`, `P0B-PRIORITY`, `P3-ARC`, `P1Q-COPY-QC`, `PF-DESIGN`, `P8-ASSEMBLE`, `P7-TELEPROMPTER`, the `P8.x` and `P9*` families and others were **invisible** to it, so adding `P9-SPEECH`, `P8-ASSEMBLE`, `PF-DESIGN` or `P0A-INTAKE` to the fan-out function left the guard **green**. It now collects the phase ids from the **manifest's own id set** and scans only the function's `ast.Constant` string literals (so a comment mentioning an id can no longer trigger a false demand). Measured after the correction — each of these now **fails** the guard: `P9-SPEECH`, `P8-ASSEMBLE`, `PF-DESIGN`, `P0A-INTAKE`, `P-IMAGE-QC`.
+- The **DAG-neutrality** case was also shape-fragile: comparing only the producer→dependent adjacency missed a broad-glob producer, and the review showed a `working/copy/*.json` producer produced **3 passed**. It now compares `execution_plan.build_edge_records()` (which carries the `via` artifact) as well as the adjacency — and that same glob control now **fails**. Both claims are asserted against the real graph functions rather than stated in prose.
+- **Negative control:** removing the one declaration again fails the guard with the offending phase and the exact remediation, `"these phases read working/copy/slides.json during DISPATCH but do not DECLARE it in consumes: ['P4-PROMPT']"`. Restored, 3 passed.
+- **THIS FIX ALSO TRIPPED AN EXISTING TRIPWIRE, AND CI DID NOT CATCH IT — disclosed rather than quietly repaired.** `tests/test_pd081_slides_json_producer.py::test_producer_matches_every_manifest_consumer_of_the_index` asserts the manifest's consumer set EXACTLY against a hard-coded `EXPECTED_CONSUMERS`, precisely so that adding a consumer "fails loudly instead of silently starving that phase". Adding `P4-PROMPT` tripped it — the tripwire **working as designed**, not a defect in the fix. The required response is to update the expectation deliberately and record why, which the second commit does. Measured: pristine `origin/main` **1 failed / 17 passed** (the 1 being PD-TEST-123, pre-existing) → the first push **2 failed / 16 passed** → after answering the tripwire **1 failed / 20 passed**. **Zero new failures.**
+  The gap this exposed is real and separately numbered: of the **215** test files under `scripts/tests/`, only **29** are referenced by any workflow, and `test_pd081_slides_json_producer.py` is **not** one of them — so a change can pass all 115 CI checks while breaking a repo test.
+  The tripwire also has a blind spot that is exactly how this defect arose: a phase that **READS** the index without **DECLARING** it is invisible to `consumes`, and therefore invisible to the PD-081 test. The new guard closes that side by deriving the reader set from `dispatcher.py` instead of from the manifest, so both directions now fail loudly.
+
+### End-to-end proof that the fix actually unblocks the phase
+The claim is not "the matcher now matches". Against a scratch run dir seeded with the live run's real `slides_copy.md` (8 SLIDE sections) and `arc_allocation.json`, `slides_assembly.ensure_slides_json()` returns `AssemblyResult(status='ok', written=True, n=8)` and writes a **13,064-byte** index. Running `dispatcher._dispatch_prompt_phase_parallel`'s **exact** normalization block over that file yields **8 payload rows** with ids `slide-01`…`slide-08` and 15/13/15/14/14/14/12/15 copy lines — non-empty, so **the old error would not fire**.
+
+### Deploying this to a live run (review F7 — unstated in the first revision)
+The manifest sha moves, so the live run needs a **repin** and *transiently* loses the PRES-002 predecessor gate: the run pins `08b03ece…` and this release ships `519d304c…`; `Manifest.verify_pin` dies `EXIT_MANIFEST_MISMATCH` on a plain `--resume`, and `load_persisted_graph` returns `None` on a sha mismatch so the runtime DAG admission gate returns "no gate" until the graph is re-persisted. `launcher.auto_repin_gate` cures it automatically and `Engine.run` re-persists the graph, so the window is transient — but it **contradicts the PD-TEST-081 rationale quoted at `phases.py:1983-1990`** ("no EXIT_MANIFEST_MISMATCH and no gated `--repin`, which is what lets this reach an IN-FLIGHT run"). The supported sequence is the same as for PD-TEST-151: **deploy → `--repin` → `--resume`**.
+
+### Risk this fix does NOT remove (review F3 — verified mechanism, not measured end-to-end)
+Dispatch is unblocked; the **next** gate very likely is not. The assembled `copy[]` is **79% structural metadata**: `slides_assembly._FIELD_LINE_RE` strips only `HOOK_REFRAIN|LADDER|RESEARCH_USED|ARC|BEAT|TAG|TAGS`, so the live P4-COPY block's `SECTION:`, `PURPOSE:`, `ARCHETYPE:`, `PROOF USED:`, `PEOPLE:`, `TEXT_ANCHOR:` and `PRESENTER NOTE:` lines **pass through** into `copy[]` — slide 1 carries 12 metadata-shaped lines out of 15. `parallel_prompt_worker.py` joins **all** of `copy[]` into its `VERBATIM COPY` block, and `build_deck.check_prompt_qc_deterministic` raises `AF-P-VERBATIM` (severity `reauthor`) for any string not present verbatim in the prompt. So either engine metadata gets quoted into the image prompt (metadata painted onto the rendered slide) or the phase fails verification. **No provider call was made, so "fatal vs. merely wrong text" is NOT measured** — recorded as **PD-TEST-158**, and it is the probable next dead end.
+
+## [v25.1.27]  -  2026-09-16  -  A phase stranded `running` by a dead engine is reclaimed on resume
+
+### What Changed
+- **PD-TEST-155 — a run could be UNBLOCKED and still completely INERT.** `Engine._ready_set()` treats `running` as a status it neither plans nor expires: the phase is collected into the `running` bucket and `continue`d. Only the phase's OWN wait loop (`phases.py:3438-3446`) can time it out, and that loop only runs while an engine is executing that phase. So when an engine dies mid-wait — a crash, an OOM, a reboot, or an operator stopping a spinning engine — the phase stays `running` **forever**: `_phase_terminal_bad` does not apply to it, so its descendants are not even quarantined, they just emit `waiting_dependency` on it for the rest of the run's life.
+
+  Measured live on `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, immediately after the PD-TEST-151 repin + `--resume` had correctly cleared the block:
+  * three phases (`P1Q-COPY-QC`, `P-TYPO-QC`, `P4-PROMPT`) left `status: running` by the previous engine; every one of their dispatch ledgers named `dispatcher-64201-…`, a pid that no longer existed;
+  * `waited_seconds` **frozen** at 602 / 600 / 450 across minutes of sampling while `state.json`'s `updated_at` kept advancing every ~15 s — i.e. the checkpoint/timeout loop for those phases was not running at all;
+  * **zero** provider requests for the whole 11-minute window;
+  * the engine log carried **only** identical `phase.waiting_dependency` lines (the PD-TEST-116 loop), so the sweep never reached the phase loops and F11's `_respawn_dispatcher_if_dead` never got a chance to fire;
+  * all **29** pending phases were downstream of those three.
+
+  Two of the three had already been judged satisfied by the dispatcher (`status: skipped_satisfied`) with their artifacts **on disk** (912 B and 2,006 B) — they needed only to be re-entered so the existing wait/verify path could finish them. **No supported verb could fix this**: `--invalidate-phase` refuses a phase that is not `done`, and `--watchdog` only scans and reports. Hand-editing `state.json` was and remains unacceptable.
+
+  **Fix.** `readmit_retryable_phases` — the shared `--run`/`--resume` unpark helper, called only from `__main__._reset_parked_state` on the startup path *inside* `RunLock`'s exclusive `flock` — now also reclaims a `running` phase whose dispatcher worker is provably gone. The verdict comes from the existing orphan-adjudication seam, not from the lock argument alone: a new `dispatcher.running_worker_owner_state()` mirrors `park_marker_owner_state()` exactly (same four-state vocabulary, same pid-reuse guard via `_autospawn._process_start_epoch` against the ledger's own `last_seen_at`, same fail-closed degradation to `"unknown"` when the module will not import). Only a positive `"orphaned"` verdict re-opens the phase; `"live"` **and** `"unknown"` are honoured, so a phase whose worker might still be finishing its artifact is never reclaimed out from under it. The reclaim is recorded in the readmission audit trail together with the `waiting_for` artifact and the frozen `waited_seconds`, so the record says why a `running` phase is suddenly pending again.
+
+  **The paid budget is not bypassed.** The durable ceiling remains the per-phase ledger (`.dispatch-state/<phase>.json`: `blocked`, `paid_attempts`, `DISPATCH_RETRY_CAP`), enforced by `should_dispatch`/`_reserve_paid_attempt` — neither of which this touches. The reclaim only re-opens the phase for planning; it grants no attempt.
+
+### Corrections required by the independent review (all four applied)
+
+The review returned MERGE-WITH-CHANGES and found defects in the FIRST cut of this fix. Each was verified here before changing anything.
+
+- **[HIGH — a real false reclaim, now fixed] The helper keyed on the wrong owner record.** It adjudicated on the ledger's `worker` + `last_seen_at`. But those are written by `record_outcome` at **outcome-fold** time, while the pre-transport reservation (`_reserve_paid_attempt`) writes `last_reservation_worker` + `last_reserved_at` and **never refreshes them** — and the outcome-fold dict deliberately rebuilds the ledger, so the reservation pair exists ONLY while an attempt is genuinely IN FLIGHT (the PD-TEST-092 note on that dict says so explicitly, and both real stranded ledgers carry `last_reserved_at: None`, confirming it). So mid-dispatch the helper read a record naming the **previous** attempt, and if that pid had since been recycled by the **current** dispatcher, the start-time comparison fired and a phase with a LIVE worker was reported `orphaned`. **Fix: select the owner record and ITS OWN timestamp as a pair** — the in-flight pair when a reservation exists, the settled pair otherwise — so a worker is never compared against another attempt's clock. Measured: reverting to the settled-pair-only selection reproduces the false reclaim exactly (`- live / + orphaned`) and the new test catches it; restored, 15 passed. The claim in the first cut that "a phase whose worker might still be finishing its artifact is never reclaimed out from under it" was **false as written** and is now true by construction.
+- **[MEDIUM — a phantom symbol] `Engine._ready_set()` does not exist.** The real method is `Engine._ready_queue_tick()` (already named correctly elsewhere in the same file). The invented name had been propagated into five places by this commit. All replaced.
+- **[MEDIUM — an overstated firing condition] The reclaim is not self-healing.** `--resume` calls `_reset_parked_state` **unconditionally**, but `--run` calls it **only when the job is already parked** (`if state.get("terminal") or state.get("blocked")`). The incident this fixes was an UNPARKED run held by a live, spinning engine — so `--run` would not have cured it, and the supervisor that might have is **disarmed by default** (`PRESENTATION_SUPERVISE_APPLY` is asserted ABSENT by the repo's own installer test, so `supervise(apply=False)` restarts nothing). This is therefore an **operator/`--resume`-triggered repair**, and the earlier framing ("the shared `--run`/`--resume` unpark helper") reads as though both verbs cure it. Stated plainly in the code and here; a self-healing path (calling the reclaim on every engine start, not only on a parked `--run`) is a deliberate follow-up rather than a silent behaviour change to the paid path.
+- **[MEDIUM — a test hole that hid the above] The pid-reuse guard was exercised by ZERO tests.** The "live worker" case used `os.getpid()`, which short-circuits at the self check before `_pid_is_alive`/`_process_start_epoch` are ever reached. Five cases were added: a **genuinely spawned** live process drives the full path; a real process whose pid was recorded *after* the record is reported `orphaned`; the **in-flight live worker** case above; the `absent` verdict through the real `readmit_retryable_phases` entry point; and ledger/attempts invariance (the reclaim flips the status to `pending` while the ledger stays **byte-identical** and `attempts` is untouched). 10 cases → **15**.
+
+### Tests
+- New `tests/test_pd155_orphaned_running_reclaim.py` (15 cases), pinning both directions: a `running` phase whose governing ledger record names a DEAD worker is re-admitted to `pending` (with the audit record carrying `reclaimed_orphaned_running`, the `waiting_for` artifact and `waited_seconds`); a phase whose worker is **alive**, one whose ledger is **corrupt**, one whose ledger names **no adjudicable worker**, and one that is already `done` are each left exactly as they are. Non-regression cases cover FAILED / QUARANTINED re-admission, an operator park still being honoured, and the reclaim coexisting with the old readmission in a single pass.
+- **Negative controls:** disabling the `running` branch fails exactly the two reclaim cases and nothing else; reverting the pair-selection to the settled-only version fails exactly the in-flight case. Restored, this file plus `test_pd135_blocked_readmission.py` is **43 passed**.
+- Broader engine set (`pd155`, `pd135`, `pd060`, `f9f10f11`, `f16`, `fanout_no_second_engine`, `fault17`, `pd010`): **100 passed, 3 failed** — and those identical **3** cases fail on pristine `origin/main` too, so they are pre-existing, not regressions from this change.
+- **Verified against the real run**: the fixed helper adjudicates the three genuinely stranded phases (`P1Q-COPY-QC`, `P-TYPO-QC`, `P4-PROMPT`) as `orphaned` with the precise detail "the settled worker dispatcher-64201-… is gone: pid 64201 names no process" — read-only, matching the live evidence.
+
+## [v25.1.26]  -  2026-09-16  -  A gate that reads the rendered slides now WAITS for them
+
+### What Changed
+- **PD-TEST-151 — `P-SHIFT-QC` ran BEFORE the artifacts its own gate reads, and it parked the live run.** (An earlier draft of this entry said the phase was "unsatisfiable by construction" and that this change "makes the gate earnable". BOTH CLAIMS WERE OVERSTATED and are corrected here — see "What this does NOT fix" below. The phase is agent-executed, and the agent did produce the right `schema` and `pass` on one attempt; only its row keys were wrong. What is true and measured is narrower, and is stated below.) The phase declares `produces_artifact: working/qc/priority_shift_report.json` and dispatches the preflight checker `_chk_priority_shift_ledger`. That checker opens with `pngs = _gather_rendered_pngs(run_dir); if not pngs: return ""` — it only writes the report once `renders/slide-*.png` exist, and the phase's own `preflight.label` says so in words ("the ONLY phase where copy+design+rendered images coexist ... DEFERS pre-render"). But the manifest gave the phase only `consumes: [priority_shift_spec.json, slides_copy.md]`, and `execution_plan.build_edges()` builds the DAG purely from `produces -> consumes` intersections — so there was **no edge from `P4-RENDER`** and the ready-queue scheduler admitted the phase as soon as the copy existed, i.e. pre-render. Its checker deferred and never wrote the file, while the phase VERIFIER (`runfacts.verify_priority_shift`, reached via `phase_verifiers`'s `'P-SHIFT-QC': _registry_gate_verifier('qc:priority_shift')`) requires exactly that file in exactly that schema. The gate could not be earned: the phase spent its whole paid retry budget and parked the run, offering only an `owner_skip_approval` token as the way past it.
+  Measured live on run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: `P-SHIFT-QC` prerequisites were `['P0B-PRIORITY','P4-COPY']`, **zero** slide PNGs existed, and the block reason was `schema='', expected 'priority_shift_report/v1'`. The QC worker had in fact written a genuine, substantive 14-row report in its own shape (rows keyed `status`), which the verifier refuses because it re-derives from the deterministic ledger instead.
+  **Fix: add `renders/slide-*.png` to `P-SHIFT-QC`'s `consumes`.** One field; it creates `P4-RENDER -> P-SHIFT-QC`, so the phase now runs AFTER the render its own label always said it needed, with the PNGs on disk. This WEAKENS NO GATE — no checker, verifier, schema, threshold or autofail list was touched, and it **adds** an ordering constraint rather than relaxing one. No owner skip was minted.
+  It is a NECESSARY step, not a sufficient one. See below.
+
+### What this does NOT fix (established by the independent review, and verified here)
+
+**The deterministic writer still never fires post-render.** `_chk_priority_shift_ledger` has NO intra-module caller: the only reference outside its own definition is its registration in `PREFLIGHT_REQUIRED`, which `run_preflight()` iterates — and `run_preflight()` is called from exactly one place, `main()` line 13234, which is **before** `render_slides_batch()` at 13400. No phase re-enters `build_deck.py` post-render, and no engine code resolves a manifest `preflight.checker` at runtime. `build_deck.py`'s own pre-existing docstring says the same thing ("the 14-item ledger ... never actually fires", and a genuine fix needs a post-render dispatch). So ordering the phase correctly does **not** by itself make the ledger appear.
+
+**The residual failure is a SHAPE mismatch, not a timing one.** `runfacts.verify_priority_shift` wants `obj["items"][i]["pass"] is True`; the QC worker wrote its (genuine, substantive) 14 rows keyed `status` under `ledger`. On one attempt it did emit the right `schema` and `pass: true` — only the row keys were wrong every time. Nothing in this commit tells the worker which keys to write.
+
+**So resuming on this commit alone can still park at `P-SHIFT-QC`**, at the cost of a full paid render. The two candidate fixes, neither of which is improvised here, are: add the post-render dispatch of `_chk_priority_shift_ledger` (what the module's own docstring asks for), or make the phase's OUTPUT CONTRACT name the exact keys its verifier enforces (`schema`, `pass`, `items[].pass`). Recorded as **PD-TEST-154**; this commit deliberately fixes only the ordering defect it can prove.
+
+**Operational prerequisite for the parked run.** The live run pins `.../Presentations/sops/PIPELINE-MANIFEST.json` at the PRE-fix sha `094d898f`. `--resume` alone dies `EXIT_MANIFEST_MISMATCH` on a changed on-disk manifest; the supported sequence is **deploy the merged manifest to that path → `--repin` (which rebuilds the plan and graph) → `--resume`**. Merging this PR changes nothing for the run until that happens.
+
+### Tests
+- New `tests/test_pd151_render_dependent_gates.py`. It derives BOTH halves from the real artifacts rather than restating the fix: it reads `build_deck.py`'s intra-module call graph to find every function that transitively calls `_gather_rendered_pngs`, reads the real `PIPELINE-MANIFEST.json` to find which phases make those functions REQUIRED (`preflight.checker` **and** `additional_preflights[].checker` — a sibling key, not a child), and asserts each such phase transitively depends on the producer of `renders/slide-*.png`. The three members today are `P-IMAGE-QC`'s `_chk_image_qc`, `P-IMAGE-QC`'s `_chk_salience_apex`, and `P-SHIFT-QC`'s `_chk_priority_shift_ledger` — named in the test, so a change to that set is a visible, deliberate edit. Two anti-vacuity guards assert the analysis finds something on both sides.
+  Reading only `preflight.checker` was a REAL gap in the first version of this test, found by the independent review: `P-IMAGE-QC` carries `additional_preflights: [_chk_salience_apex]` and `_chk_salience_apex` reads rendered PNGs, so it was covered only by accident. Both spellings are now collected by one helper.
+  **Negative controls (measured):** (i) removing the `consumes` line fails the test naming `P-SHIFT-QC`, its full prerequisite list and the missing producer; (ii) a mutation giving `P4-COPY` a PNG-reading `additional_preflights` entry with no render dependency is caught too — which the FIRST version of this test would have missed. Restored, it passes.
+
+### Manifest lockstep
+`PIPELINE-MANIFEST.json` is hash-locked by CI GATE 2, so BOTH registries were restamped in the same commit: `MANIFEST-SOURCE.txt` (`content_sha256` -> `08b03ece…`) and `universal-sops/_content-manifest.json` (regenerated by `scripts/hash-universal-sops-manifest.py`, 201,333 bytes). `manifest_version` stays 69 — no phase id was added, removed or renamed, so the phase-doc lockstep (GATE 4/7) holds unchanged.
+
+## [v25.1.25]  -  2026-09-16  -  Bound reasoning on the FIRST attempt, and fund every fan-out unit fairly
+
+### What Changed
+- **PD-TEST-124, generation half — the production default stops being the one setting that fails.** `DEEPSEEK_REASONING_EFFORT` was `"max"`, copied from this box's `openclaw.json` declaration for the **harness agent**. That declaration governs the harness's own interactive turns; it does not govern this module, which sends ONE very large authoring prompt. Measured on the **byte-identical production request** (155,379 chars, `max_tokens=64,000`, same endpoint/model/temperature), four live sends:
+  - `max` -> `reasoning 64,000` (100.0% of the budget), `content` **ZERO**, `finish_reason="length"` — **FAIL**
+  - `medium` -> `reasoning 9,788` (15.3%), `content` 1,494, `finish_reason="stop"` — **PASS**
+  - `low` -> `reasoning 13,445` (21.0%), `content` 1,063, `stop` — **PASS**
+  - `thinking.type="disabled"` -> `reasoning 0`, `content` 1,297, `stop` — **PASS** *(DIAGNOSTIC ONLY; not shipped)*
+
+  Every PASS carried all 7 required fields and validated against the module's own `_validate_copy_section`. The ceiling was therefore never the binding constraint, and raising it a fourth time would buy nothing: reasoning expands to fill whatever ceiling it is given (8,000 -> 32,000 -> 64,000 each saturated). The default becomes `medium`; the operator's declared value is retained as `DEEPSEEK_REASONING_EFFORT_DECLARED_BY_OPERATOR` for audit, and the divergence is now pinned by a test rather than left to a comment.
+
+- **The effort ladder was RECOVERY-ONLY, and is no longer a dead-end.** It fired only when a unit's stored `last_error` already contained the empty-completion marker, so no unit's **first** attempt was ever protected — and for the seven units whose `last_error` was `PaidBudgetExhausted` it never fired at all. Wire evidence from the live run's 74 captured requests: **70 were sent at `"max"`**, 2 at `medium`, 2 at `low`.
+
+- **PD-TEST-124, scheduling half — one unit can no longer starve its siblings.** `DISPATCH_RETRY_CAP` capped paid calls **per phase**, so run `pres-operator-1d269693`'s `section-01` spent all three attempts and sections 02-08 were **never attempted at all**. The fan-out budget is now bounded and explicit:
+  `total_cap = min(PHASE_TOTAL_PAID_HARD_CAP, eligible_units * FANOUT_FIRST_ATTEMPT_RESERVE_PER_UNIT + PHASE_RETRY_POOL_ATTEMPTS)`
+  with one funded **first** attempt per eligible unit, first attempts prioritised over retries, per-unit accounting, admissions taken under the existing phase-budget lock, and an explicit recorded outcome naming the bound when it cannot fund every unit ("it did NOT fail"). **A serial (non-fan-out) phase keeps the legacy cap byte-for-byte** — this is deliberately not eight unrestricted three-attempt allowances.
+
+### Tests
+- New `tests/test_pd124_sibling_starvation.py`: an eight-unit phase where one unit always fails (every eligible unit gets a first attempt while the budget supports it; successes are not regenerated; aggregate spend stays within the declared bound; concurrent workers cannot duplicate a reservation; a simulated restart preserves successes, reservations and failure history).
+- The two `test_pd065_fanout_empty_completion.py` wire tests now assert the NEW contract — the default is `medium`, the step-down is `low`, and the worker's default must DIFFER from the operator's declared value. (An earlier draft of this entry also claimed "a new property test asserts the ladder never repeats the rung that just failed." That claim was FALSE and is withdrawn — see PD-TEST-148 below.)
+- `tests/test_f6_fanout_width.py`: its `_sidecar_rows` helper selected its audit trail with `sorted(rglob(...))[0]` and could pick a `.dispatch-state/` file whose single line is a JSON *string*, raising `AttributeError: 'str' object has no attribute 'get'`. A correct product change therefore read as a fan-out width regression (PD-TEST-139). It now resolves the path from the WRITER itself (`dispatcher._sidecar_log_path`) and requires dict rows, so a non-sidecar file can never masquerade as the audit trail. Verified against BOTH trees — 6 passed with this dispatcher and 6 passed with the pristine dispatcher — so the test fix is independent of the product change.
+- `tests/test_pd070_reasoning_effort_ladder.py`: its premise moved with the default. PD-070's cases asserted `LADDER[1]` and `len(ladder) >= 2`; no documented thinking-ENABLED value below `low` exists, so the invariant now asserted is the one PD-070 actually protected — a re-attempt after an empty completion is never re-sent the worker's DEFAULT — and the bounded repeat at the cap is documented rather than hidden.
+- **PD-TEST-148 (found by the independent review).** The shipped one-rung ladder CLAMPED to its last rung, so an always-empty unit's real wire sequence was `medium -> low -> low`: attempt 3 re-sent attempt 2 and was billed for a request already known to fail, while the comment above the ladder claimed each retry differed. The test named to prevent exactly that asserted only properties of the constants (`default not in ladder`, no duplicate rungs) and so passed even with the pre-fix constants. Fixed here: the walk moved out of `_unit_worker` into a real module-level `effort_for_paid_attempt()` so a test can drive the actual attempt sequence, the test was rewritten and renamed `test_the_step_down_never_repeats_the_effort_that_just_failed`, and the docstrings now state the honest bound (only "attempt 2 differs from attempt 1" is guaranteed). Non-vacuity measured: forcing the rung to equal the default → 2 failed; neutering the walk → 2 failed; as shipped → 9 passed. KNOWN REMAINING LIMIT, deliberately not changed under time pressure: a unit past the ladder still spends one speculative paid call — making exhaustion terminal would save it, but the refusal must also make the phase park or the sweep can spin without reaching a terminal phase state, and that phase-level behaviour is unverified.
+- Targeted regression on the rebased tree (the six files this change touches or that pin its constants — `test_pd124_sibling_starvation`, `test_pd065_fanout_empty_completion`, `test_pd070_reasoning_effort_ladder`, `test_f6_fanout_width`, `test_pd068_paid_retry_receipt_gate`, `test_pd135_blocked_readmission`): **114 passed, 0 failed**. An independent review separately ran 184 tests across ten files on the pre-rebase candidate: **0 failed**. An earlier draft of this entry cited "240 passed" from a wider set that was not re-run under review; that figure is withdrawn because the reviewer could not reproduce it.
+
+### Risk
+- The reasoning default changes for **every** agent-authored phase, not only P4-COPY. That is intended — `max` demonstrably returns zero-length content on this worker's prompt size — but it does reduce thinking depth on smaller prompts where `max` was working. The ladder remains available, and the operator's declared value is preserved in code and in the ledger.
+- Scope of the scheduling change is the fan-out paid path. Serial phases, the PD-TEST-068 receipt machinery and every verifier are untouched.
+
+### Recovery note
+A fan-out phase already exhausted under the OLD per-phase cap needs the sanctioned PD-TEST-068 repair receipt (`--authorize-paid-retry-reset`) before it can dispatch, because `should_dispatch` gates on the undeclared-cap fallback until a budget is declared, and the declaration happens inside the fan-out dispatch. A never-dispatched phase needs no receipt.
+
+## [v25.1.24]  -  2026-09-16  -  A substance-parked phase is re-admitted on resume, and a completed phase's artifact can finally be replaced
+
+### What Changed
+- **PD-TEST-135 — `BLOCKED` was the one status that was terminal-bad yet never re-admittable.** `phases._phase_terminal_bad` treats `{QUARANTINED, FAILED, BLOCKED, OBSOLETE}` as terminal and withholds every descendant, but `_READMITTABLE_PHASE_STATUSES` listed only `(FAILED, QUARANTINED)`. A phase parked by a substance check could therefore not be re-entered by ANY resume, so its descendants stayed withheld and the run re-parked identically forever — even after the checker that parked it had been fixed. Measured live: `P4-COPY` sat `blocked` on a stale `AF-NO-VILLAIN` reason while the installed `check_copy()` returned ZERO problems, and 33 phases waited behind that one string.
+  The fix re-admits a BLOCKED phase **only when its block is the engine's own substance park**: the reason must BEGIN with the checker's verdict prefix AND the phase's most recent heal event must be a `verifier_substance` event whose reason the current block quotes (the same episode, so a stale heal cannot reopen a later budget park). An OPERATOR park stays blocked. Both independent reviews recommended deferring to `heal.classify_failure`, and that was measured and rejected: it tests owner-decision markers FIRST, and every substance park carries the `owner_skip_approval` boilerplate, so it returns `owner_decision` for the very reason `P4-COPY` carries.
+- **PD-TEST-132 Gap 2 — a COMPLETED phase's artifact can now be replaced.** A phase can be finished before the rule that condemns its artifact is known. Nothing in the product could replace it: `--resume` re-admits failed/quarantined/substance-blocked phases but never a `done` one; `_revalidate_banked` re-runs only when validation FAILS, and `P3-ARC`'s verifier returns `ok=True`; there is no other verb. The new operator verb `--invalidate-phase PHASE_ID --reason TEXT --confirm` renames each recorded artifact aside to `<name>.invalidated-<stamp>` — **moved, not deleted**, because presence must genuinely fail or a presence-based "already satisfied" check would make the invalidation a silent no-op — clears the phase's artifacts/sha256, and sets it back to `pending` so `--run --phase PHASE_ID` re-authors it. It refuses without `--reason`, refuses without `--confirm` (printing exactly what it would move), refuses a phase that is not `done`, refuses when the recorded artifacts are not on disk, and refuses a path that escapes the run directory. It deliberately does **not** touch the durable paid-attempt ledger. It waives nothing: the gate still runs and still fails until the phase is genuinely re-authored.
+- **The P3-ARC contract now names the rules its own artifact is judged by**, AST-derived from the gates that enforce them rather than hand-copied. A hand-copied version of the suppressed-token list missed 3 of the gate's 26 variants on first writing, which is why the list is derived.
+
+### Tests
+- New `tests/test_pd135_blocked_readmission.py`: 15 crafted OPERATOR park reasons (all refused), a stale verifier heal plus budget park (refused), the engine's exact substance shape (accepted), and `prior_reason` status-conditional so a reopened block records the reason actually being cleared. Negative control: reverting `phases.py` gives 16 failed / 10 passed.
+- Verified live: `--invalidate-phase P3-ARC --confirm` then `--run --phase P3-ARC` re-authored the arc, which came back with **zero** forbidden tokens and is no longer reported by `_chk_pitch_leak` at all.
+
+### Risk
+- The invalidation verb is operator power and is audited (operator uid, prior sha256 per artifact, the moves, and the reason verbatim). It runs without the run lease, so it should not be used while an engine is running.
+
+## [v25.1.23]  -  2026-09-16  -  AF-PITCH-LEAK scans the artifact's content, not its serialization
+
+### What Changed
+- **PD-TEST-131 — the pitchless-deck leak check failed on the RECORD of its own compliance.** `build_deck._chk_pitch_leak` lowercased the whole file and tested each of its 24 forbidden tokens as a bare substring. On live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4` — a pitchless webinar — that produced two failures which are **not pitch content at all**:
+
+  1. **The record of absence.** The arc allocation documents its own suppression using the forbidden vocabulary, verbatim:
+     ```
+     "...intake declares pitch_included:false, so there is no anchor price, value stack, or price ladder in this deck."
+     "...no offer, anchor, price-ladder, or re-pitch beats are authored."
+     "...no offer, price, ladder, vip, or re-pitch content is included because intake.json records pitch_included:false."
+     ```
+     The producer did exactly what a pitchless deck requires **and then said so** — and the saying is what failed. A check for content must not be tripped by a sentence denying that content.
+
+  2. **Null-valued schema keys.** The same file carries the schema's own field names with null values — `"price_ladder_section": null`, `"value_stack_section": null`, `"re_pitch_section": null`, `"anchor_price_section": null`, `"offer_price_ladder_included": false`. A key declaring a thing **absent** was scanned as if it declared it **present**; the last case trips on the key name alone.
+
+- **The fix scans content, not serialization.** For JSON artifacts the scan now walks the **values** and never the keys, so a field *name* can never be a match; and it skips fields that are prose **about** the artifact rather than part of it (`*_reason`, `*_note`, `*_notes`, `validation_notes`), because those exist to explain decisions — including the decision to suppress. Non-JSON artifacts (the `.md` copy) are prose by nature and stay whole-text.
+
+  **An unparseable JSON artifact degrades to the whole-text scan**, i.e. the old, stricter behaviour, so a broken artifact can never become a **silent pass**.
+
+- **Effect on the live run, measured:** the flag narrows from three mechanisms to one. What remains is a **true positive** — the arc really does carry `"section_id": "cost_of_inaction"` with a slide named *"the cost of carrying it yourself"*, and that token is on the forbidden list. That is a doctrine question (the same list forbids a beat the felt-stakes engine otherwise wants), not a scanning bug, and it is deliberately left to a reviewed decision rather than patched away here.
+
+### Tests
+- New `tests/test_pd131_pitch_scan.py`, nine cases: null-valued schema keys do not leak; the record of absence does not leak; **four negative controls** proving a genuine leak in a *substantive* field (`section_id`, `name`, `move_tag`, `slide_title`) and in the copy STILL fails — without which this would be a "make the check pass" patch; an unparseable artifact still fails; and the helper returns values, never keys.
+- **Negative control: the three new-behaviour cases fail against the pre-fix tree** and the six genuine-leak guards pass on both — the correct asymmetry.
+- Broader regression: 43 passed.
+
+### Risk
+- Scope is `_chk_pitch_leak`'s scan. A genuine leak in a substantive field or in the copy is caught exactly as before; the only behaviour removed is failing on key names and on prose that explains the suppression. The `price_ladder.json`-must-not-exist half of the check is untouched.
+
+## [v25.1.22]  -  2026-09-16  -  The commercial-beat engines are pitch-aware, so a pitchless deck is no longer asked to fabricate them
+
+### What Changed
+- **PD-TEST-125 — six DECK-LEVEL beats were enforced on the assembled deck and owned by no unit; the first fix for that ordered FABRICATION, and this is the correction.**
+
+  Every `P4-COPY` unit authors **exactly one section**, while the writing engines require six deck-level beats in a fixed order (`intelligence_engines_check.check_narrative_harmony`):
+
+  ```
+  HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP
+  ```
+
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: the assembled `working/copy/slides_copy.md` (9,324 B, all 8 `SLIDE` markers, all 8 units admitted) contained **zero** villain tokens across all eleven `VILLAIN_TOKENS`, and four `ARC` markers — of which `PROMISE HERO` **is** a story beat, so the deck carried PROMISE and still omitted VILLAIN and FELT_STAKES. The producer *was* told: a rebuilt per-unit prompt (system 50,954 + user 103,895 chars) already carried `AF-NO-VILLAIN`, `VILLAIN beat` and `<!-- ARC: VILLAIN -->`. So this is a **division-of-labour** defect, not a contract gap — the contract states the beats as whole-deck properties (*"must be the FIRST slide that carries either the VILLAIN prose/marker or the PROMISE prose/marker"*) that a section-scoped author cannot evaluate, and the equilibrium is that no section claims them.
+
+- **THE CORRECTION, and it matters more than the original fix.** The first version assigned each ordered beat to a section **unconditionally**. Independent review measured that this deck is a **pitchless webinar** (`intake.json` `pitch_included: false`, `deck_type: webinar`), that the P4-COPY contract's **FIRST rule** states commercial ARC beats (VILLAIN, FELT_STAKES, NAMED_METHOD, EXPECTATION, PRICE) *"are not applicable and must not be fabricated"* on such a deck, and that `build_deck._chk_pitch_leak` **already** reported `AF-PITCH-LEAK` on the same copy (`slides_copy.md: 'cost of inaction'`).
+
+  **The conflict is CONTRACT-versus-ENGINE, not checker-versus-checker.** An earlier draft of this sentence claimed "no text satisfies both"; the independent review **falsified** it by writing a pitchless copy that satisfies both. The real problem is that the contract **ordered** `<!-- ARC: COST_OF_INACTION -->` at point 9 while `AF-PITCH-LEAK` forbids that token — the two checkers *can* agree, but only on copy the contract forbade. So the author was told to write the leak, wrote it faithfully (`slides_copy.md:23-24`), and was refused for it.
+
+- **The fix, now:** `intelligence_engines_check.check_copy` **defers** the `AF-NO-FELT-STAKES` and `AF-NO-VILLAIN` engines and the narrative-harmony walk when `pitch_engines_check.pitch_applicability` returns an **explicit pitchless verdict** — through the SAME authority the pitch checker already honours, so the two cannot drift — and the beat assignment is gated on that same verdict, so a pitchless deck receives **no** assignment rather than a fabricated one.
+
+  **Fail direction is deliberate:** only `applicable is False` with **no refusal** defers. A refusal (missing or malformed `pitch_included`) or an unimportable authority keeps today's behaviour, so `AF-PITCH-APPLICABILITY-UNSET` is still what reports the problem instead of the engines silently switching off.
+
+- Verified on the live run: `check_copy` problems are now `[]` and **`phase_verifiers.verify("P4-COPY")` is `True`** — the deck's copy phase passes. (Stated precisely, because an earlier draft overclaimed: the *deck* is not yet cleared. `build_deck._chk_pitch_leak` still reports AF-PITCH-LEAK on the EXISTING copy, which was authored under the ungated contract; it clears when that copy is re-authored under the gated points 8/9/12 below.)
+
+### Tests
+- New `tests/test_pd125_deck_beat_ownership.py`: every beat owned exactly once; the owner of an earlier beat sits at an earlier deck position; a section beyond the beat list is told **nothing**; the clause reaches the unit and names the literal `<!-- ARC: <BEAT> -->` form; a **drift guard** against `check_narrative_harmony`'s own beats list; a pitchless deck gets **no** assignment while a pitched deck still gets one; an unset selection keeps the assignment **on**.
+- **The order test was a TAUTOLOGY and the review proved it**: it asserted against `D.DECK_ORDERED_BEATS`, the same constant the assignment read, so inverting that constant still passed. It now derives the canonical order **from the verifier's own source** and measures against `first_ordinal`. Verified **failing when the constant is inverted in memory** and passing otherwise.
+
+### Also in this change (independent review of the first version)
+- **The harmony walk is no longer deferred whole.** The contract's FIRST rule exempts only VILLAIN / FELT_STAKES / NAMED_METHOD / EXPECTATION / PRICE, and contract point 2 still names `AF-NARRATIVE-HARMONY` — the `HOOK -> PROMISE -> RECAP` ordering is required of a pitchless deck. The first version skipped the entire walk, which short-circuited a contract-required check and bought nothing (harmony only orders beats that are PRESENT, so it exerts no fabrication pressure). `check_narrative_harmony` now takes `commercial_beats_apply` and drops **only** the exempt beats.
+- **Contract points 8, 9 and 12 now carry an explicit pitchless applicability gate.** They previously ordered price-rung, re-pitch and `<!-- ARC: COST_OF_INACTION -->` content unconditionally — tokens `AF-PITCH-LEAK` refuses — which is the measured cause of this run's leak.
+
+### Risk
+- Scope is the pitch applicability of the commercial-beat engines, the gated contract points, and the beat assignment. Pitched decks are unaffected; pitchless decks now defer instead of demanding fabricated content. It does not weaken any check the contract actually requires of a pitchless deck.
+
+## [v25.1.21]  -  2026-09-15  -  The bank-void sufficiency gate must count the units it WANTS, not the units it enumerated
+
+### What Changed
+- **PD-TEST-119 follow-up — v25.1.19's sufficiency gate made its own fix INERT on exactly the phases it was written for.** The gate (added in response to the independent review of PR #1150) refuses to void a bank unless the receipt's `allowance` covers every unit the void would invalidate. It compared that allowance against **`len(items)` — the ENUMERATED count** — but a `by: slide` fan-out enumerates **one unit per slide** while authoring only `desired_count` of them.
+
+  Measured on live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`. The page-design phases **enumerate 8 and want 3**, so the gate evaluated `3 < 8`, refused, and recorded three `bank_void_refused_insufficient_allowance` rows for **`P-U-DESIGN-SALES`** and three for **`P-U-DESIGN-VSL`** — while the receipt was genuinely actionable and every step looked correct. (The independent review corrected an overstatement here: `P-U-DESIGN-CHECKOUT` has the same shape but recorded **zero** such rows, because its log ends `verified`/`already_satisfied` and the gate was never consulted for it.)
+
+  ```
+  P-U-DESIGN-SALES  units: slide-01/02/03 all 'banked'
+                    receipt: prior_generation 2, allowance 3, actionable=True
+                    sweep:   exhausted (attempts=3), reasons = the SAME AF-R3/AF-P13
+                    after:   sales.design.txt unchanged at 13,512 chars, still banked
+  ```
+
+  The artifact never changed, no paid attempt was spent, and the unit store was never touched. The void was a no-op for a reason no log line names — the refusal message said "would invalidate 8 unit(s)" about a phase that owns three.
+
+- **Fix:** `desired_count` and `wanted_items` are hoisted above the gate and the comparison is made against **`len(wanted_items)`**, the number of units the void would actually invalidate. The later line reuses the hoisted value rather than recomputing it, so the enumerated count and the wanted count can never disagree in two places.
+
+  Verified against the live phases: `P-U-DESIGN-SALES` and `P-U-DESIGN-VSL` enumerate 8, want 3, and `allowance 3` is now correctly judged **sufficient**; `P4-COPY` enumerates 8 and wants 8, so a 3-attempt receipt is still correctly refused there.
+
+### Known limitation, recorded rather than hidden
+`authorize_paid_retry_reset` caps `allowance` at `DISPATCH_RETRY_CAP` (3), so a receipt can never cover a fan-out of **more than three** units: for such a phase the void will always be refused and its bank can only be invalidated by a genuine input or status change. That is the correct trade — the whole point of the gate is that a phase must not destroy a bank it cannot pay to rebuild — but it means the void is a lever for **small** fan-outs only. `P4-COPY` is exactly that case: it holds **8 banked sections** and an allowance-3 receipt, so with this fix its void remains **refused** and its bank can only be invalidated by a genuine input or status change. (The independent review corrected this sentence too: an earlier draft said its records read `admitted` rather than `banked` — that was true when measured mid-run and false by the time the review read the store, which is a good reminder that a state claim belongs with its timestamp.)
+
+### Tests
+- New `test_sufficiency_gate_counts_WANTED_units_not_ENUMERATED_ones`: a fixture with **eight slides** and a fan-out that wants **three**, asserting allowance 3 DOES void the bank and author exactly the three wanted units. Verified **RED against `origin/main`** (fails on the refusal) and GREEN with the fix, so it pins the enumerated-vs-wanted confusion rather than restating it.
+- Both suites pass: 22 tests, including all 10 `test_pres014_unit_records.py` cost-contract tests.
+
+### Risk
+- Scope is one comparison and one hoist inside `_dispatch_phase_fanout_units`. With the gate satisfied the behaviour is unchanged from v25.1.19; with it unsatisfied the bank is left intact exactly as before.
+
+## [v25.1.19]  -  2026-09-15  -  A repair receipt now voids a fan-out's bank, so a rejected aggregate can actually be re-authored
+
+### What Changed
+- **PD-TEST-119 / 120 / 121 — three defects that interlock into a loop with no exit.** On live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4` the design phase `P-U-DESIGN-SALES` could never re-author:
+
+  1. **PD-TEST-119 — a banked unit is reusable on its INPUT hash alone.** All three units sat `status=ok, banked=true, attempts=0`, and `prompts/sales.design.txt` was bit-for-bit `"\n\n".join(working/fanout/P-U-DESIGN-SALES/slide-0{1,2,3}.out)`. The assembled file failed the gate its consumer applies (`AF-R3` + `AF-P13`), so every dispatch rebuilt the identical rejected artifact from the identical parts — forever, with zero paid calls. The parts are not individually wrong: PD-TEST-098 correctly tells the three units to author ONE prompt between them, so a part is *expected* to fail the whole gate in isolation.
+  2. **PD-TEST-120 — the paid-attempt cap is PER PHASE, not per unit.** `DISPATCH_RETRY_CAP=3` caps provider calls per approved-input generation, and a 3-unit design phase spends all three on its FIRST authoring pass, so there is normally no budget left to re-author with.
+  3. **PD-TEST-121 — nothing sanctioned un-banks a unit set.** `unit_store.validate_banked` refuses only on a changed input hash or a missing/corrupt output, and the dispatcher CLI has no unit or bank reset at all.
+
+- **The fix hangs on the repair receipt, because that is the one operator act that resolves all three at once.** While a receipt is actionable, `_dispatch_phase_fanout_units` refuses to reuse banked units, so every unit re-authors against the current approved input — and the reservations that pay for that re-author consume that same receipt. The receipt is therefore:
+
+  * **budget-aware** — `authorize_paid_retry_reset` reopens `allowance` paid attempts, so the re-author is paid for by the same deliberate act (this is what PD-TEST-120 requires);
+  * **audited and single-use** — bound to owner uid, dispatcher sha256, phase, approved input revision and ledger generation, and spent exactly once, so the bound is the generation clause rather than a new flag;
+  * **opt-in** — no receipt means behaviour is byte-identical to before, so a verifier that can never pass cannot loop; it simply behaves as it does today.
+
+- **A phase-verifier-driven invalidation was implemented first and REFUTED by independent review — it is not in this change.** With no budget left it destroyed the bank and left the phase parked **and unbuildable**: the units came back `failed` with every reservation denied, so the aggregate could no longer even be rebuilt. The review also showed the anti-loop bound such a design needs (a hash of the verifier's reasons) is defeatable, because the AF-P13 reason embeds the *subset* of mandated classes the prompt failed to name, so a re-authored prompt yields a different signature and units are re-billed every second dispatch. Invalidation must be *paid for*, and the only component that can promise payment is the receipt.
+
+### Tests
+- `tests/test_pres001_fanout_dispatch_e2e.py`, three new cases: an actionable receipt forces a re-author; the bound holds once the ledger generation advances past the receipt's `prior_generation`; and with no receipt the bank is untouched. Negative control: reverting `dispatcher.py` fails the two defect-detecting cases.
+- `tests/test_pres014_unit_records.py` — **10/10 pass**, unchanged. The unit-level cost contract ("first run 20 units with 1 failure → retry exactly one") is untouched by construction, which is the property the refuted design broke.
+- Broader sweep: 397 passed, 1 skipped, 3 failed — and all three failures are **pre-existing and environmental**, reproduced identically with `dispatcher.py` reverted to HEAD.
+- Note, honestly: these suites stub `dispatch_complete`, which sits ABOVE the reservation seam (`dispatcher.py:2409`), so they cannot observe receipt *consumption*. The new bound test therefore asserts the generation property that decides single-use rather than claiming an observed consumption.
+
+### Risk
+- Scope is the fan-out reuse decision in `_dispatch_phase_fanout_units`. With no receipt on disk the code path is unchanged.
+- A receipt now costs a full re-author of the phase's units rather than only re-running failed ones. That is the intended meaning of the operator act, and it is bounded by the receipt's own `allowance` and by the generation clause.
+
+## [v25.1.18]  -  2026-09-15  -  Four builders were reading a front-door nonce the engine stopped minting
+
+### What Changed
+- **PD-TEST-115 — FOUR scripts could never pass their own front-door nonce check in an engine run.** FIX 25 (`phases._run_script_phase`, phases.py:2298-2323) mints a **PER-PHASE** nonce and delivers BOTH:
+
+  ```
+  OC_DECK_ENTRY_NONCE      = <nonce>
+  OC_DECK_ENTRY_NONCE_FILE = <sanitized phase token>      -> <run>/working/checkpoints/.nonce-<token>
+  ```
+
+  `build_infographic.py` and `build_deck.py` were migrated and read `OC_DECK_ENTRY_NONCE_FILE`. `sales_checkout_builder.py`, `workbook_builder.py`, `vsl_builder.py` and `build_webinar_video.py` were **not**: they compared `OC_DECK_ENTRY_NONCE` against the legacy run-scoped `working/checkpoints/.canonical-entry-nonce` file. The environment variable therefore carried the *per-phase* secret while the comparison target was a file the engine **no longer mints at all** — two different values, so the comparison could never succeed.
+
+  Measured live on run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, where 0 nonce files existed under the run's checkpoints dir:
+
+  ```
+  P-U-CHECKOUT-BUILD  quarantined after 3 attempts:
+    FATAL [AF-CANONICAL-RENDER-BYPASS]: sales_checkout_builder.py must run via
+    presentation-canonical-entry.sh, which mints the per-run front-door nonce.
+  ```
+
+  The scope is all four manifest-invoked scripts, not the two the failure happened to expose: `sales_checkout_builder.py` (`P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`), `vsl_builder.py` (`P-U-VSL-BUILD`), `workbook_builder.py` (`P8.25-WORKBOOK`) and `build_webinar_video.py` (`P9.6-WEBINAR-VIDEO`). `run_signature_deck.py` and `presentation_job/runfacts.py` are **deliberately left alone** (the independent review corrected my original reason: neither defines a nonce verifier of its own — `run_signature_deck.py` delegates to `build_deck._verify_entry_nonce`, which IS post-FIX-25, and `runfacts.py`'s only mention is a docstring) — neither is invoked by the manifest; `run_signature_deck.py` is dispatched *by* `presentation-canonical-entry.sh`, which mints the legacy run-scoped nonce, so the legacy path is correct for it.
+
+- **The fix is a port, not a redesign.** `_entry_nonce_phase_file` plus the `OC_DECK_ENTRY_NONCE_FILE` branch of `_verify_entry_nonce` are taken from `build_infographic.py`, including the path-form confinement (a path value is accepted only when it resolves inside this run's checkpoints dir with a `.nonce-` basename) and the fail-closed handling of a missing/short/mismatched nonce. The legacy run-scoped handshake is preserved for the standalone canonical entry, so nothing that works today stops working.
+
+- **Two shortcuts were deliberately NOT taken.** Adding `--no-push` to the manifest executors would silence the refusal — but `--no-push` is the documented **offline smoke** flag: it skips the GHL push and its receipt, so it would ship a deck with no delivery. Minting the legacy `.canonical-entry-nonce` in the engine would also silence it — by resurrecting the handshake FIX 25 replaced and discarding the per-phase confinement that stops one concurrent wave's script from authorizing another.
+
+### Tests
+- New `tests/test_pd115_perphase_nonce_port.py`, 88 cases over all four builders x six phase ids. It pins: the engine's per-phase handshake is **accepted** (the case that was impossible before the port); a **negative control** re-implements the pre-port body and asserts it **refuses** that same handshake, so the test cannot pass vacuously; the legacy handshake still works when `OC_DECK_ENTRY_NONCE_FILE` is unset; every malformed input fails closed (missing env var, short env nonce, absent file, short file nonce, a foreign phase's file, a path outside the checkpoints dir, a traversal path, a mismatched nonce); and a **drift guard** asserts each builder's `_entry_nonce_phase_file` equals `presentation_job.phases._entry_nonce_phase_file` for every phase id — if the mint and the compare target ever diverge, every script phase fails its front door, which is exactly this defect's shape.
+
+### Risk
+- Scope is the front-door nonce check in four scripts. No other control flow changes; the legacy path is byte-equivalent for callers that never set `OC_DECK_ENTRY_NONCE_FILE` (this is asserted).
+- A script invoked by hand, outside the engine and outside `presentation-canonical-entry.sh`, still fails closed — that is the point of the guard and it is unchanged.
+
+## [v25.1.17]  -  2026-09-15  -  The design-prompt verifier applies the whole render gate, not just its length clause
+
+### What Changed
+- **PD-TEST-113 — a phase verifier that was a strict SUBSET of its consumer's gate, so the paid re-author loop could not converge.** `phase_verifiers._pu_check_design_prompt` enforced exactly two rules of the shared prompt gate — AF-P1 (the 9,000-char floor) and AF-P2 (the 18,000-char ceiling). `prompt_gate.prompt_problems` applies more than that, and the CONSUMER (`build_infographic.resolve_design_prompt`, reached from `P-U-DESIGN-RENDER-*`) calls the whole gate. A design prompt could therefore clear the verifier, be attested `done` by the engine, and then be refused by its own render phase on a rule this seam never checked.
+
+  The re-author loop was **structurally incapable** of recovering: the producer contract is composed from the reasons the verifier emits, so a rule the verifier never applied could never appear in `prior_reasons`. Measured live on run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, after the three page-design prompts were re-authored into the band (13,513 / 14,612 / 12,296 chars, all three `verify -> (True, [])`):
+
+  ```
+  P-U-DESIGN-RENDER-VSL   exit 1: AF-P13: negative block does not name defect class(es):
+                                   placeholder/bracket tokens
+  P-U-DESIGN-RENDER-SALES exit 1: AF-R3: forbidden hardcoded demographic default
+                                   'default demographic'
+                          exit 1: AF-P13: negative block does not name defect class(es):
+                                   placeholder/bracket tokens, anatomical artifacts
+  ```
+
+  Two quarantined render units, one full paid re-author per undiscovered rule, discovered one gate code at a time.
+
+- **The fix is delegation, not restatement.** `_pu_check_design_prompt` now returns `prompt_gate.prompt_problems(text)` — the same accumulating, non-raising function the render path and `build_deck`'s provers call, so the phase fails on exactly the rules its consumer enforces, with no second copy of any rule to drift. `copy_val` stays `None` deliberately: AF-P-VERBATIM needs a slide's exact copy, which is a property of the consuming slide, not of the aggregate page prompt.
+
+  Verified against the live run before the fix was written: `prompt_problems` on the three banked artifacts returns byte-identical findings to the render refusals above — 2 / 0 / 1 problems, including AF-R3 and both AF-P13 class lists.
+
+- **The producer is told the rules it is graded on (PD-TEST-113, producer half).** `_design_page_prompt_contract` point 3 stated only that a `DO-NOT BLOCK` heading and one `Do not ` imperative were required — which a one-line stub satisfies, while AF-P13 does not. New point **3a** names all eight mandatory negative-block defect classes **read from `prompt_gate.NEGATIVE_BLOCK_CLASS_TOKENS` at call time** (never retyped), each with its tolerant tokens, so a class added to the gate reaches the contract with no second edit. New point **3b** states the AF-R3 prohibition. It deliberately does NOT quote the forbidden two-word phrase: models echo instructions, and a contract containing the landmine would be refused by the very gate it documents (asserted in test).
+
+### Tests
+- `tests/test_pd098_design_verifier_band.py`: the negative control previously authored every "in-band" artifact as `"d" * size` — byte padding. That fixture only ever tested the length clause; once the verifier applied the whole gate it failed for the right reason (1 distinct word against a 220 floor, no brand HEX, no type size, no composition token, no structural block). It now builds a **gate-clean** prompt of exactly the requested length, from a filler vocabulary that is **provably gate-neutral** (the neutrality assert runs on first fixture use, not at module import) — the first version contained `monogram` and `lockup`, so deleting the negative block's logo clause left AF-P13's logo class satisfied by the filler and a mutation test passed for the wrong reason. Neutrality is asserted on first fixture use (size is exact by construction), never assumed.
+- New `test_verifier_agrees_with_the_consumer_gate` pins the broken invariant directly: for an artifact INSIDE the band, `verify()` must return the same verdict as `prompt_gate.prompt_problems`, and must forward every one of the consumer's reasons into `prior_reasons`. Driven by three mutations reproducing the live refusals (AF-P13 via a `no text` stub, AF-R3, AF-P14). Verified RED against the pre-fix verifier and GREEN against the fixed one.
+
+### Review
+- Independent review of PR #1148 returned **MERGE-WITH-CHANGES** and found four real items, all fixed here.
+  **D1** the verifier passed `text` while the consumer passes `text.strip()` -- `prompt_gate` matches the
+  literal `'Do not '` *including its trailing space*, so a truncated file whose only such literal is a
+  trailing-space EOF passed the verifier and was refused by the render phase. One-word fix, plus a test.
+  **D2 (MEDIUM)** `artifacts.validate_design_prompt` still enforced only the length band, and *that* is the
+  arm which decides whether an already-`done` phase is re-opened (`_revalidate_banked` -> `validate_artifact`;
+  `dispatcher._phase_already_done` short-circuits before its verifier pre-check). A prompt that was in-band
+  but failed AF-P13/AF-R3 was therefore still treated as reusable banked work, the strict verifier was never
+  consulted, and the consuming render phase stayed refused -- measured live, where `P-U-DESIGN-SALES`
+  (2 problems) and `P-U-DESIGN-VSL` (1) were `done` while their render phases were quarantined, and
+  `P-U-DESIGN-RENDER-CHECKOUT` was `done` with 0 problems. Fixed by delegating to the same whole gate.
+  **D3** this entry originally said the contract grew by "~340 chars"; the measured figure is 1,255. Corrected.
+  **D4** "asserted at import" -- the neutrality assert runs on first fixture use. Wording corrected.
+
+### Risk
+- Scope is the three page-design phases (`P-U-DESIGN-SALES` / `-CHECKOUT` / `-VSL`) only; no other phase's verifier is touched. A design prompt that previously passed and was later refused by its render phase now fails one phase EARLIER and cheaper — no paid render call is made in either case (`build_infographic.resolve_design_prompt` refuses before submission).
+- The producer's contract grew by **1,255 chars** for every page (measured with the same call: sales 2,267 -> 3,522; checkout 2,279 -> 3,534; vsl 2,259 -> 3,514). It is a prompt to the authoring model, not an artifact, so it is not itself gated. (An earlier draft of this entry said "~340 chars" -- an estimate, not a measurement; the independent review measured it and corrected it.)
+
+## [v25.1.16]  -  2026-09-15  -  A section unit's payload must carry its own ordinal range
+
+### What Changed
+- **PD-TEST-099 — P4-COPY spent its entire paid retry budget twice on a PAYLOAD defect.** The live ledger (`working/work-orders/.dispatch-state/P4-COPY.json`, run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`) reads `status: exhausted`, `paid_attempts: 3`, `generation: 2`, `reasons: ["section-01: unit payload carries no ordinal range"]`, on an **unchanged approved input**. The refusal is raised at `dispatcher.py:5530` in `_validate_copy_section`:
+  ```python
+  lo, hi = payload.get("first_ordinal"), payload.get("last_ordinal")
+  if not isinstance(lo, int) or not isinstance(hi, int):
+      return False, ["unit payload carries no ordinal range"]
+  ```
+  That is a check on the **payload**, and it is only reached **after** the model has answered — so every attempt was paid for before it was refused, three times, twice.
+- **Where the payload is built, and what was missing.** `_unit_payload_enrichment` (`dispatcher.py:6006`) sets `first_ordinal`/`last_ordinal` for `scope == "section"` from `_section_ordinal_ranges`, a **second** derivation that looks the section NAME up against the arc slots' labels. The section LIST, meanwhile, comes from `fanout._sections_for_units`, which names sections from **three** sources: the allocation's `sections` array (its first priority — its own docstring calls it "its declared shape"), its slots, or the existing `slides_copy.md` headings. Two derivations that can disagree is the defect: whenever they did, the payload carried no range.
+- **PD-TEST-081 did not prevent this, and this is the finding, not a guess.** `git show --stat b250df84f` lists **three** files — `phases.py`, `slides_assembly.py`, `tests/test_pd081_slides_json_producer.py`. PD-TEST-081 fixed the **downstream** producer of `working/copy/slides.json`; it never touched `dispatcher.py` or `fanout.py`. `_section_ordinal_ranges` itself came from **PRES-001** (`148d8cd4f`, 2026-09-09), not PD-081. So the seam that builds the payload a section unit actually **receives** was never in PD-081's diff. PD-TEST-067 (`5014e34b8`) later fixed the label-key half of the join for the slots shape — which is why the live artifact joins today (`units_enumerated: 8` at 14:21:49Z, verified offline: all eight payloads carry `(n, n)` and pass the validator) — but the other section sources stay unrangeable, and the cost half stayed open.
+- **The empty-output/reasoning line is the SAME payload wearing a different hat.** Until 14:21:49Z every live tick enumerated **one** unit named `whole` (`units_enumerated: 1` in `P4-COPY.dispatcher-log.jsonl`), so `_unit_scope_text` emitted its no-range placeholder — `"AUTHORS EXACTLY ONE SECTION: 'whole' (section 1 of 1) — its own slide range"`. That one payload produced all three strings: `unit returned empty output` ×3 (generation 1, before the validator existed), then `unit payload carries no ordinal range` ×2, plus one empty completion that spent its whole budget on reasoning — `completion_tokens=63999, reasoning_tokens=63999 of max_tokens=64000`. `_unit_worker` chooses between the two reasons on the model's **output**, not on two defects: no text → `EMPTY_COMPLETION_MARKER`; text → `contract.validator(payload, text)`. **Stated honestly:** that the two log lines share the payload is proven from the ledger and the code path; that the missing range *caused* the 64k reasoning blow-up cannot be proven without a paid call, so it is not claimed.
+- **Fix, at the wire seam — one derivation instead of two.** `fanout._sections_for_units` now carries each section's **own** declared range on the section entry, from the SAME object that named it (`sections[].slides`, or a declared scalar ordinal; or the very slots that carried the arc label), and `enumerate_fanout_items(by=section)` carries it onto the unit item. `_unit_payload_enrichment` then takes the range from the **item** (`_section_payload_range`), keeping `_section_ordinal_ranges` as the fallback for a hand-built item — which is why the existing direct-call test `test_section_payload_carries_ordinal_range_and_hashes` still passes unchanged.
+- **The cost half: refuse before paying, never after.** `_preflight_section_payload_ranges` refuses a section-scoped fan-out whose units carry no derivable range **before any paid call**. A range-less section unit can never come back ok — `_validate_copy_section` refuses its payload unconditionally and `_reduce_markdown_sections` refuses it too — so a paid attempt on it is guaranteed waste. `_UNIT_CONTRACT_SCOPE` has exactly one `"section"` entry (P4-COPY), so no other phase's behaviour changes.
+- **Tests — `tests/test_pd099_section_ordinal_payload.py` (5 cases) drive the REAL `_dispatch_phase_fanout_units` with the paid call stubbed** (zero network, zero tokens) and assert the **wire shape** — the payload a section unit is dispatched with, and the range its prompt names — rather than the helper. That distinction is exactly why PD-081's fix did not hold. Before/after on the identical file:
+  ```
+  3 failed, 2 passed   pristine origin/main (b2d0487e9)
+  5 passed             this commit
+  ```
+  The declared-section-list case reproduced the live ledger verbatim: `status: exhausted`, **8 paid calls**, eight `section-NN: unit payload carries no ordinal range` reasons. The underivable case paid for two units that could never validate before the fix; now it pays for none. The live P3-ARC shape is pinned at the wire as the no-regression case.
+- **Regression.** `test_pd081_slides_json_producer` **17 passed / 1 failed** — the documented PRE-EXISTING `test_empty_copy_never_yields_a_silently_empty_slides_json` (`assert 3 is None`), reproduced identically on pristine `origin/main`, not chased. `test_pd068` **38 passed**, `test_pd092` **23 passed**, `test_pd095` **27 passed**, `test_pres001_fanout_dispatch_e2e` **7 passed**, `test_pres001_unit_contracts` **39 passed**, `test_pd067_section_join` **7 passed**, `test_pd067_arc_slide_shape_contract` **27 passed**, `test_fanout_zero_units_ceiling` **26 passed**, `test_pd060_failed_phase_readmission` **5 passed**, `test_pd065_fanout_empty_completion` **8 passed**. A wider 23-file fan-out/dispatcher set: **9 failed / 290 passed** here against **12 failed / 287 passed** on pristine `origin/main` — the same nine names on both sides (fan-out-prompt, QC-aggregate, pres013-deadline and fix112 fixtures that fail on a clean checkout), the only difference being the three PD-099 cases this change turns green.
+- `python3 sync_check.py --json` -> `in_sync: true`, `drift: []`, manifest version 69, 62 phases / 195 autofails / 35 roles. `CANONICAL-RENDERER-PIN.sha256` **unaffected and proven**: `cat build_deck.py run_signature_deck.py | sha256sum` = `294ffdabc95f41d0ff040d738eea2d02272578d9285fe58c77569ce71d2ef598` == pinned. No manifest change, no repin.
+- **COST DISCIPLINE, RECORDED.** No paid-retry repair receipt was issued, no paid attempt was spent, and the live run was not re-driven by this change; the live run directory was read only. **The coordinator must decide when to spend the next receipt.** Two consequences of this diff are reported rather than worked around: (1) it changes `dispatcher.py`, so a receipt bound to the currently-installed hash (`f7e3984a…`) stops matching once this is installed and must be re-issued against the new hash (`_repair_receipt_is_actionable`); (2) `enumerate_fanout_items(by=section)` now carries two more keys on the unit item, which feeds `unit_store.input_hash_for_unit` — on the live run **no** P4-COPY unit is banked-ok (`working/fanout/P4-COPY/` does not exist; statuses are `admitted`/`failed`), so no already-paid work is invalidated.
+
+### Files Changed
+Line counts are `git diff --numstat` against `b2d0487e9`.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+85/-4 — the item-first range, the pre-flight refusal, and the docstrings that record the live measurement)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/fanout.py` (+84/-8 — the section's own declared range, carried from the source that named it)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd099_section_ordinal_payload.py` (+315, new — 5 wire-shape cases)
+
+## [v25.1.15]  -  2026-09-15  -  The design-page producer obeys the shared prompt band, and a banked design prompt is re-validated against it
+
+> **This entry was written AFTER the release shipped, to repair a G2 failure on main.** PR #1146 merged at
+> 2026-09-15T16:22:08Z as `0ff92de0b023` and auto-tag-on-merge cut the annotated tag **v25.1.15**, but the PR
+> rolled the 10 version markers **without adding a CHANGELOG entry** — so `G2 — every v11+ annotated tag must
+> have a CHANGELOG entry` went **red on main**, exactly as PD-TEST-061 predicted for a different version. The
+> entry is added here in its correct ladder position. See PD-TEST-108 for why the PR-time gates let it through.
+
+### What Changed
+- **PD-TEST-098 — the page-design producer authored 2.7–3.2× the ceiling its own consumer enforces, and nothing bounded it.** The three upsell page-design phases are a **3-unit fanout whose reducer CONCATENATES into ONE prompt**, and the 18,000-character ceiling applies to the **AGGREGATE**. `dispatcher.ARTIFACT_CONTRACTS` had **no `P-U-DESIGN-*` entry**, so all three phases fell through to `GENERIC_CONTRACT`, whose entire length guidance was *"real prose long enough to be substantive (not a one-line stub)"* — no band, no floor, no ceiling. `P4-PROMPT`, by contrast, states `LENGTH: 9,000-18,000` explicitly, which is why slide prompts never hit this.
+- **Measured on the live run, and the arithmetic closes exactly.** Unit outputs `20,917 + 20,024 + 17,537 = 58,478`, plus the 4 separator characters `_reduce_text_concat` inserts `= 58,484` — the size of the artifact on disk. `grep -c '^\[ARCHETYPE'` returns **3** in each file: three complete competing prompts concatenated behind one filename. checkout `17,031+14,312+18,178+4 = 49,526`; vsl `16,944+16,322+18,063+4 = 51,334`. The only other signal a unit received was the `slide-image-creator` role SOP's 9,000–14,000 **per prompt**, which each unit reasonably spent on itself.
+- **The unit validator could not catch it.** `_validate_text`'s mechanical floor was *non-empty*, so three over-budget units each reported `ok`, and the aggregate ceiling was not discovered until three phases later at the paid render gate — `FATAL: … FAILS the shared rich-prompt gate … AF-P2: prompt is 58482 chars, over the hard ceiling of 18000`, `rc=3`, all three render phases quarantined.
+- **Fix 1 — the producer is told the band, as a SHARED budget.** A new design-page contract derives each part's share from **`prompt_gate`'s own constants** (imported; no second copy of 9000/18000 anywhere in the diff) minus the separator, through ONE shared separator constant that the reducer also uses; the scope text tells each unit it is authoring **PART k OF n of ONE prompt** and names its own slide identity; and `_validate_design_page_unit` bounds each part to its share so an over-budget part fails **its own cheap text validation** for free. Shares sum into the band for n=1,2,3,4,8 — at n=3 each part gets 2,999…5,998, and the assembled artifact lands 9,001…17,998. **`admitted_count` is used, not the enumerated `unit_count`**: the live sidecars report `units_enumerated: 8, units_desired: 3`, and budgeting by 8 would have assembled a **3,376…6,748-character** artifact — **under** the 9,000 floor.
+- **Fix 2 — a banked design prompt is now re-validated against the same band.** `artifacts.validate_artifact` had **no per-type predicate** for `prompts/<page>.design.txt`; it fell to the F15 catch-all, which checks only existence, non-emptiness and sha256 identity, and returned `True` with *"no per-type predicate, verified by recorded hash"*. A new arm enforces the band, beside the existing `working/prompts/slide-\d+\.txt` → `validate_text(path, _PROMPT_FLOOR)` precedent and reading the band from the same shared source. This is what makes `Engine._revalidate_banked` reset an over-ceiling phase to PENDING instead of skipping it as banked work.
+- **Fix 3 — the band is enforced in the SUBSTANCE VERIFIER, which is the seam that actually heals.** The first cut put the predicate only in `_revalidate_banked`, and an independent review proved that insufficient: the phase was reset to PENDING and then **immediately re-attested `done` on the same artifact with ZERO model calls**, because `phase_verifiers.verify` returned `(True, [])` — its arm was existence + ≥40 chars — and two authorities consult it: `phases._phase_artifact_satisfied` (via `phases.py:2813`'s `wo_satisfied`) and `dispatch_one`'s `already_satisfied` pre-check. A new `_pu_check_design_prompt` arm closes both. `_phase_already_done` (the third authority, a pure `state.json` status read) is closed by the reset the predicate causes.
+- **Acceptance, measured with the model STUBBED — no paid call.** At status `pending`, `dispatch_one` returns **`ok`**, makes **3 model calls**, and the artifact goes **58,482 → 17,858 stripped chars** with the real `prompt_gate.prompt_problems` returning **`[]`**; at status `done` it still returns `skipped_satisfied` with 0 calls. Through the real `Engine.run_phase` on a copy of the live run: `phase.banked_invalid` fires, the phase is **not re-attested `done`**, and **no `phase.work_order_satisfied` event fires**. Blast radius: across 168 verdicts (24 fixtures × 7 phases) **no non-design phase changes verdict or reason**.
+- **A reuse regression the first cut introduced, found by review and fixed.** The unit-scoped reuse loop validated against the **enumerated** `unit_count` (8) before `admitted_count` (3) was stamped, computing a share of (1124, 2248) while the producer's budget was `floor_share(3) = 2999`. Since 2999 > 2248, **no compliant part could ever be reused**: re-dispatch cost **3 model calls every time** where it should cost 0. `wanted_items` and `admitted_count` are now computed **before** both the reuse and banked-validation loops, and the later duplicate computation is deleted so the two cannot disagree — `admitted_count` now has exactly one assignment site.
+- **Ablation.** Reverting only `phase_verifiers.py` to its pristine bytes (md5 `26eaaf5e…`) gives **15 failed, 5 passed**, and the 5 pass on pristine `main` too — genuinely fix-independent controls. One existing test was updated deliberately: `test_design_text_units_join_in_order` matched the OLD scope text and returned a 25-character per-slide prompt and a 79-character artifact with 8 gate problems, i.e. **it encoded this defect**; its ordering assertion is preserved verbatim and the test now additionally asserts the call count and that the joined artifact lands inside the band.
+- **The send-back-through routeback is deliberately NOT wired here.** §5.5's re-author half has no engine consumer (`presentation_job/` contains zero `routeback` occurrences and there is no exit-6 handler in the phase walk), so exiting 6 from the design gate would change nothing. That remains PD-TEST-102/103.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/artifacts.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py`
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd098_design_prompt_band.py` (new)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd098_banked_design_revalidation.py` (new)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd098_design_verifier_band.py` (new)
+- plus the version markers rolled by `scripts/bump-version.sh`
+
+## [v25.1.14]  -  2026-09-15  -  The dispatch backoff must saturate, never overflow
+
+### What Changed
+- **PD-TEST-095 — one unbounded counter froze the ENTIRE dispatcher, permanently.** `_backoff_delay_s(repeat)` computed `min(CAP, BASE * (MULT ** (repeat - 1)))`. The power is evaluated **before** `min()` can clamp it, so it overflows float range before the cap is ever applied: at exponent 1024, `2.0 ** 1024` raises `OverflowError(34, 'Result too large')`. `repeat` is **not** bounded by `DISPATCH_REPEAT_CEILING` — a work order that *lingers* on a phase whose status stopped changing is re-folded on **every sweep tick**, so `consecutive` climbs without limit.
+- **Measured on the live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`.** Two phases had reached `consecutive == 1025` (`P-0.5-RESEARCH`, `P0A-INTAKE`), with observations in the 1000s, and the dispatcher log filled with `sweep error: OverflowError(34, 'Result too large')` — **271 at first observation, still climbing** (292 / 300 / 320 / 326 on later samples), across two live dispatcher processes, with `active_units: 0` and `last_claim_phase: null` — i.e. **zero dispatches**. The independent review re-measured this and correctly flagged `271` as a stale snapshot rather than a fixed figure.
+- **It is a self-locking stall, not a slow backoff.** `record_outcome` computes the delay **before** it writes the ledger, so the raise aborts the fold and `consecutive` can never advance past the boundary — and because the exception escapes `sweep_run_dir`, whose caller logs `sweep error` per tick, **no phase in the run is ever dispatched again**. Reproduced on a copy of the live run, with the exact traceback:
+  ```
+  dispatcher.py  delay = _backoff_delay_s(consecutive - 1)
+  dispatcher.py  DISPATCH_BACKOFF_BASE_S * (DISPATCH_BACKOFF_MULTIPLIER ** (repeat - 1))
+  OverflowError: (34, 'Result too large')
+  consecutive AFTER = 1025   # unchanged: the fold never wrote
+  ```
+- **Why it mattered here specifically.** A fresh `P4-COPY` repair receipt had just been issued and correctly bound to the installed dispatcher, and it was **never consumed** — not because of anything to do with receipts, but because the dispatcher could no longer reach *any* phase. This is a general dispatcher stall that would eventually stop **every** run on this box; the receipt was merely the first thing blocked behind it.
+- **Fix — saturate by repeated multiplication, never by a power.** The delay is built in a bounded loop that stops as soon as the cap is reached, and it cannot overflow.
+  **Scope of the equivalence claim, stated precisely** (the review flagged the first draft's wording as overbroad, and it was): the result equals `min(cap, base * mult**exp)` for every input this function can actually be called with — `repeat` is an `int`, and its sole call site passes `consecutive - 1` where `consecutive` is `int(...) + 1`. Verified by sweeping `repeat ∈ [-10, 1300)` plus bools, integral floats, `Fraction` and `Decimal`: **zero** divergences wherever the old expression returned a value. It is **not** bit-identical for out-of-contract inputs — a non-integral float `repeat`, `NaN`, or a negative multiplier can differ — and the docstring now says so rather than claiming a universal equivalence it does not have.
+- **A second, worse call path is covered by the same fix.** `_ScanRootScheduler.run()` invokes `record_outcome` inside a `try/finally` with **no `except`**, so the identical error would have killed the scheduler process outright — and the scan-root scheduler is **enabled by default**. The live box happens to use `--run-dir --watch`, which is why the symptom appeared as per-tick log lines instead of a dead process. One fix at the arithmetic level repairs every `record_outcome` call site in the module — **8 sites across 3 functions** (`sweep_run_dir` 4, `_scan_one_run` 2, `_reap` 2; counted by AST after the review corrected this entry's earlier imprecise "all four") — including the four on the scheduler path, which is the one with no `except`.
+- **The review also found a latent O(repeat) path, now closed.** With `MULT <= 1` the cap is never reached, so the loop walked `repeat` steps — correct, but unbounded (measured 0.25s for 1e7 steps at `MULT == 1.0`, i.e. ~25s at 1e9). A non-growing multiplier cannot overflow a power (it stays 1 or underflows to 0), so that branch now uses the power directly and is O(1). Pinned by value **and** by a constant-time assertion.
+- **Tests — `tests/test_pd095_backoff_overflow.py` (27 cases).** The exact live boundary (`1025`); large repeats (`10**6`, `10**9`, `2**31`, `2**63`) saturating instead of raising; equivalence with the old expression across the whole usable range; monotonicity and the cap; an early-exit check so a correct-but-quadratic implementation cannot pass; **and the end-to-end proof** — a ledger seeded with a *real* signature/revision and a counter pinned at the live boundary must complete its fold **and persist the incremented counter**, on the same fixture where the pre-fix expression raises. A sweep over that run dir must return normally instead of aborting.
+- **One fixture lesson, recorded because it is the same class of error as everything else in this test.** The first version of the stall fixture wrote `consecutive` directly and the end-to-end test failed with `assert 3 == (10000000 + 3)`. That was the fixture's fault, not the product's: `record_outcome` only **increments** `consecutive` when `same` is true, i.e. when the ledger already carries the signature and revision that fold computes — otherwise it resets to 1 and the overflow is never reached. The fixture now performs one real fold to let the engine write its own signature/revision, then pins only the counter, which reproduces the live shape instead of merely looking like it.
+- **Ablation proof:** restoring **only** the pre-fix expression turns `27 passed` into **`15 failed, 12 passed`** (the 12 remaining passers are the equivalence and control tests, which legitimately hold on the old code).
+- **A vacuous assertion of mine was found and replaced.** The review spotted `assert led["backoff_s"] if "backoff_s" in led else True`, which parses as `assert (X if cond else True)` — a no-op whenever the key is absent. It is now a real assertion that the persisted `backoff_s == CAP`.
+- **Regression:** `test_pd095` + `test_pd068` + `test_pd092` + `test_pd080` = **105 passed**.
+- **REQUIRED AFTER DEPLOY — a fresh receipt, because this fix changes `dispatcher.py` and the receipt pins that file's hash.** The current `P4-COPY` receipt is bound to `dispatcher_sha256 52a98603…` (the deployed mirror, i.e. this commit's base); the merged file hashes to `f7e3984a…` (recomputed from the FINAL head, after every review fix — twice before this the value was measured too early and went stale, which is the same error class this test keeps finding)). The gate refuses a receipt whose hash does not match the running source, so **installing v25.1.14 invalidates the current receipt and a new one must be issued afterwards** — otherwise `P4-COPY` stays blocked and the deck stays unreachable. This is the documented design (`_repair_receipt_is_actionable`'s docstring: *"re-issue after the repair is deployed"*), and the ceremony issues the receipt *after* the install for exactly this reason. It is called out here because without it "merge this and the stall is fixed" would be read as "the deck unblocks", which is not true. `CANONICAL-RENDERER-PIN.sha256` unchanged and still equals a fresh recomputation; `PIPELINE-MANIFEST.json` byte-unchanged.
+
+### Files Changed
+Line counts are `git diff --numstat` against `c74dcdd64`, measured AFTER the review's findings were folded in rather than estimated — an earlier draft carried the pre-review numbers, and stale counts are the exact error class two reviewers have now caught in this test's CHANGELOG entries.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+52/-3 — the saturating loop, the O(1) non-growing branch, and the docstring that records the live measurement)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd095_backoff_overflow.py` (+266, new — 27 cases)
+
+## [v25.1.13]  -  2026-09-15  -  A consumed repair receipt no longer latches the phase forever
+
+### What Changed
+- **PD-TEST-092 — one spent receipt permanently closed a phase's paid budget.** `_repair_receipt_is_actionable` gated on the bare bool `repair_receipt_consumed`:
+  ```python
+  if led.get("repair_receipt_consumed"):
+      return False, "paid-retry repair receipt already consumed"
+  ```
+  **Nothing ever clears that field.** `authorize_paid_retry_reset` writes only the receipt and never touches the ledger, and `_reserve_paid_attempt` is its sole writer, setting it `True` . So once a phase consumed its *first* receipt, **every later receipt was refused** however valid it was — right phase, right run, right owner, allowance within cap, matching approved-input revision, matching ledger generation, and a `dispatcher_sha256` equal to the running source.
+- **Measured on the real live bytes, read-only.** Probes against a copy of `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`'s ledger with only the run path rewritten (the live ledger was re-hashed afterwards and was unchanged — `d88ce8e12ad0adcb1bb29db2`, `repair_receipt_consumed` still `True`, `generation` still `1`):
+
+  | probe | input | verdict |
+  |---|---|---|
+  | A | live ledger + live fresh receipt | `(False, 'paid-retry repair receipt already consumed')` |
+  | B | flip **only** `repair_receipt_consumed` to `False` | `(True, 'valid unconsumed paid-retry repair receipt')` |
+  | C | the already-spent receipt (`prior_generation` 0) vs ledger `generation` 1 | `(False, 'repair receipt does not match the ledger generation')` |
+
+  Probe B shows that single bool was the **sole** blocker — every other clause already passed. Probe C is the decisive one: **the generation clause already enforces exactly-once**, which is the very property the bool claims to provide.
+- **Why the latch was redundant.** Consumption is the *only* writer of the ledger generation anywhere in the package (`led["generation"] = int(led.get("generation", 0)) + 1` inside `_reserve_paid_attempt`) and it only ever increments; a receipt must carry `prior_generation ==` the ledger's **current** generation (the `prior_generation` clause of `_repair_receipt_is_actionable`). So the instant a receipt is consumed the generation moves past it and that same receipt can never match again — in this process or any later one.
+- **Why this was critical path, not cosmetic.** The latch bites **P4-COPY**, the phase that produces `working/copy/slides_copy.md` — the input `slides_assembly.py` needs to produce `working/copy/slides.json` (PD-TEST-081), which `build_deck.py` hard-requires as `positional[0]` and exits 2 without. With the latch in place P4-COPY could never be retried, so **no run could ever produce a deck**, however many other repairs landed. The live ledger shows exactly that history: `generation` 1, `repair_receipt_consumed` true, `paid_attempts` 3 — the first receipt was consumed and its three paid attempts spent at 11:48:12Z on `section-01: unit payload carries no ordinal range`, i.e. **before** the PD-081/PD-068 repairs were installed, so a second reset is precisely the designed repair path and it was being refused.
+- **Fix — the bool stops being a gate.** It is still written on consumption as an audit record, now beside a new `repair_receipt_consumed_generation` recording *which* generation was spent, so no later reader has to infer it. Single-use is left to the generation clause, which provably provides it. Two stale comments were corrected at the same time — the predicate's docstring bullet ("a ledger must … be still un-consumed") **and** the comment inside `_reserve_paid_attempt` that still called the bool "the durable claim" — because a stale comment is how this recurs.
+- **The audit field had to be made durable, and the independent review is why.** `record_outcome` REBUILDS the ledger from a fresh dict, so any field it does not name is erased on the next tick. The review measured the new field present after `_reserve` and **gone after one fold** — i.e. the advertised audit trail was fiction as first written. It is now carried forward explicitly (in `record_outcome`'s rebuild dict), and there is a test that crosses a fold (`test_the_audit_record_survives_an_outcome_fold`); deleting only that one carry-forward line fails exactly that one test (`1 failed, 22 passed`).
+- **Tests — `tests/test_pd092_second_receipt_is_not_latched.py` (23 cases).** A second receipt is admitted *and actually lifts `should_dispatch`*; three successive repairs all work; the second receipt is consumed and restores its allowance; the live ledger shape (`generation` 1, bare bool true, fresh receipt for generation 1) is actionable; exactly-once survives — the spent receipt is refused **by the generation clause** and the granted allowance **drains to exhaustion rather than being re-granted**; and all nine forged-field refusals plus missing-receipt and absent-ledger still fail closed. **Ablation proof:** restoring **only** the pre-fix latch clause turns `23 passed` into `19 failed, 4 passed`.
+- **A test was holding the defect in place.** `test_pd068_paid_retry_receipt_gate.py::test_consumed_flag_alone_refuses_a_fresh_looking_receipt` documented itself as proving that "a receipt re-copied onto disk after consumption must not re-arm anything" — but its fixture issued a receipt whose `prior_generation` **equalled** the ledger's generation, i.e. a genuinely fresh and valid receipt, so only the latch made it pass. It is replaced by its honest pair: one test that really spends a receipt and requires the **generation** clause to refuse the re-copied bytes, and its complement asserting that `consumed=True` alone must not refuse a receipt fresh for the current generation.
+- **One of the author's own tests was wrong and was corrected.** The first draft asserted that reserving again after consumption raises `PaidBudgetExhausted`. It does not — consumption deliberately resets `paid_attempts` to `DISPATCH_RETRY_CAP - allowance`, which is the whole point of a receipt. The test now asserts the real property (the receipt is spent once and the grant drains) rather than the assumed one.
+- **Exactly-once was attacked, not assumed.** The independent review's own sequences against the real shipped functions: a full gate→reserve→`record_outcome` loop ×10 granted **exactly 3 paid provider calls** with 1 reset firing (identical on base and head); **6 concurrent OS processes** sharing one receipt and one run dir produced **3 paid calls total and 1 reset firing**, identical on base and head; a simulated `_write_ledger` failure during reservation left the ledger unchanged and **never reached the provider call** (fail-closed). Disabling the generation clause independently breaks **13 tests** across the two suites. The only re-arm it could construct requires hand-tampering the ledger to move `generation` BACKWARDS, which no code path does — and the realistic whole-file rollback re-arms the receipt on the old code too, so the latch never protected that case either.
+- **Regression.** `test_pd068` + `test_pd080` + `test_pd092` = **78 passed** (measured after this entry's own added test). The wider neighbour set = 73 passed, 1 failed, and that failure is **pre-existing**: `test_pd081_slides_json_producer::test_empty_copy_never_yields_a_silently_empty_slides_json` reproduces identically on a pristine `origin/main` `b822384b8` worktree with none of this change (registered separately as PD-TEST-093).
+- **Blast radius — and an operational requirement, stated plainly.** `dispatcher.py` **is** the file the receipt pins, so installing this repair **invalidates any receipt issued before it**, and a fresh receipt **must** be issued afterwards. Measured by the independent review: the live run's receipt is bound to `dispatcher_sha256 63cb70f2…` (== main == the runtime mirror), so on the fixed dispatcher (this PR's own dispatcher.py, `148034db…`) it is refused `'repair receipt does not match the running dispatcher source'` even with the latch gone. **This PR does not by itself reopen P4-COPY** — deploy it, then re-issue the receipt. That is the documented design (`_repair_receipt_is_actionable`'s docstring, "re-issue after the repair is deployed") and exactly what the ceremony does, but it is worth saying out loud because the rest of this entry could be read as "merge this and the deck unblocks". `CANONICAL-RENDERER-PIN.sha256` is unchanged and still equals a fresh recomputation (`294ffdabc95f41d0ff040d738eea2d02272578d9285fe58c77569ce71d2ef598`); `PIPELINE-MANIFEST.json` is byte-unchanged.
+
+### Files Changed
+Line counts are `git diff --numstat` against `002507390c22` (main at the time of writing), measured after the review's findings were folded in, not estimated.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+39/-8 — the latch clause removed from the gate; the audit generation recorded AND carried across outcome folds; the two stale comments corrected)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd092_second_receipt_is_not_latched.py` (+377, new — 23 cases, including the fold-survival case the review's finding required)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd068_paid_retry_receipt_gate.py` (+41/-9 — the latch-encoding test replaced by its honest pair; the module docstring's mechanism attribution corrected)
+
+## [v25.1.12]  -  2026-09-15  -  Read the page-design prompt where the pipeline actually writes it
+
+### What Changed
+- **PD-TEST-091 — every upsell page-design render phase was quarantined by a path that disagreed with all four components that name it.** `build_infographic.py::_design_prompt_rel()` resolved the agent-authored page-design prompt to `working/prompts/<page>.design.txt`. Nothing writes there. The **run root** `prompts/<page>.design.txt` is what the pipeline declares, produces and verifies — so `--spec design` failed its own input lookup and exited 1.
+- **Measured on the live run `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`, not theorised.** All three script phases died identically — `FATAL: design prompt not found: <run>/working/prompts/sales.design.txt` — and were recorded `phase.quarantined: ... unit quarantined (run continues past it): script executor failed after 3 attempts`. The prompt they could not find was sitting at the run root the whole time: `prompts/sales.design.txt`, **58,484 bytes**, sha256 `508059c3b58b0240bda4ff7026ddbc9ec16e8b14760ff7d35b30b999197ad84c` — byte-identical to the hash the engine had already **banked** for `P-U-DESIGN-SALES`. The bank was truthful; only the reader was wrong. The same shape killed `P-U-DESIGN-RENDER-CHECKOUT` and `P-U-DESIGN-RENDER-VSL`.
+- **The four authorities, and which one was the outlier.** (a) `PIPELINE-MANIFEST.json` declares `prompts/<page>.design.txt` as `P-U-DESIGN-<page>.produces_artifact` **and** as `P-U-DESIGN-RENDER-<page>.consumes`; (b) the fanout producer's target is **derived from that same manifest** -- `resolve_target_paths` -> `Phase.resolve_artifact_patterns` -> `_first_concrete_path`, which returns `run_dir / pattern` -- so the agent phase physically wrote `<run>/prompts/sales.design.txt`. (`_UNIT_CONTRACT_OUTPUTS`, `dispatcher.py:5297-5299`, carries the same string but is a declaration with **no runtime reader**; it is not the writer); (c) `phase_verifiers._make_pu_verifier` resolves the manifest **canonically** (`_pu_manifest_declared_artifacts`, `phase_verifiers.py:4353`), which is why `P-U-DESIGN-SALES` legitimately passed its own presence check; (d) the fanout producer's own e2e asserts the run root — `target = rd / "prompts" / "sales.design.txt"` (`test_pres001_fanout_dispatch_e2e.py:306`). Only `build_infographic.py` said `working/prompts/`. The script had been careful to align its **output** with the manifest ("writes `design/<page>-design.png` AT THE RUN ROOT — the exact `produces_artifact` path `PIPELINE-MANIFEST.json` declares"): the **input** path was simply never aligned.
+- **A test was holding the defect in place.** `test_fix28_design_producer.py::_make_fixture_run_dir` wrote its fixture prompt to `working/prompts/` — the one directory no producer has ever written — so the FIX-28 suite stayed green while all three live render phases quarantined. The fixture now writes the prompt where the pipeline puts it.
+- **Fix — one path, read from the run root.** `_design_prompt_rel()` returns `Path("prompts") / f"{page}.design.txt"`; the module header, the `CONTRACT:` block and the `FATAL` message now say the same thing, because a stale comment is how this recurs.
+- **The disagreement is now a gate, not a convention.** Added a lockstep guard asserting `build_infographic`'s reader equals the manifest's `produces_artifact` **and** `consumes` for all three pages, equals `_UNIT_CONTRACT_OUTPUTS`, plus a **behavioural control** that calls the real `phase_verifiers.verify()` and requires it to PASS on a run-root prompt and FAIL when the prompt exists only at the nested path. **Ablation proof:** reverting **only** the one reader line turns the suite from `21 passed, 1 skipped` into **`11 failed, 10 passed`** — the guard fails on exactly the code it was written to catch.
+- **No pin change, therefore no re-pin and no new receipt.** `CANONICAL-RENDERER-PIN.sha256` covers `build_deck.py` + `run_signature_deck.py`; `build_infographic.py` is not in it, and the recomputed value on this tree is still `294ffdabc95f41d0ff040d738eea2d02272578d9285fe58c77569ce71d2ef598`. A `P4-COPY` repair receipt already issued against the installed dispatcher therefore stays valid — this repair does not invalidate it.
+
+### Files Changed
+Line counts are `git diff --numstat` against `b822384b8`; an earlier draft of this entry
+carried a wrong split (+24/-6 and +88/-5) which the independent review caught and which is
+corrected here rather than left to read as measured.
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_infographic.py` (+22/-8 — the reader, the header, the `CONTRACT:` block, the `FATAL` text)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix28_design_producer.py` (+91/-2 — fixture writes the real path; manifest↔reader↔dispatcher lockstep; verifier behavioural control)
+## [v25.1.11]  -  2026-09-15  -  GHL MCP probe: no restart on one slow check, one alert per outage, operator off-switch
+
+### What Changed
+- **The liveness probe was the outage.** On a loaded operator box one `/health` check exceeded the old 5-second limit; `scripts/ghl-mcp-probe.sh --heal` force-restarted a HEALTHY server, waited only 20 seconds while a cold start on that box takes 60 to 120 seconds, declared NO_LISTENER and filed a Command Center card. Every 15 minutes. Measured: 347 forced restarts in the probe log, 72 identical cards on one board in ten days, each card un-groomable (no SOP, no persona) and therefore re-pinging the operator through the stale-task sweep.
+- **Timeouts fit a loaded box.** `/health` gets its own 20-second ceiling (`GHL_MCP_HEALTH_TIMEOUT`); the JSON-RPC default rises from 10 to 30 seconds (`GHL_MCP_PROBE_TIMEOUT`, `--timeout` still wins). `ghl-mcp-autostart.sh` bakes the new default into the plist and cron line it writes.
+- **A restart needs a streak.** `--heal` no longer restarts on the first failing tick; the previous tick must already have failed. After a restart the re-probe waits up to 180 seconds (`GHL_MCP_PROBE_HEAL_WAIT_SECONDS`) instead of 20.
+- **One alert per outage.** The operator card and the Rescue Rangers page now fire TOGETHER on the 3rd consecutive identical failure (`GHL_MCP_PROBE_ALERT_STREAK`, ~45 minutes), exactly once per unbroken streak. The card used to go out on every failing tick while only the page was throttled. The RECOVERED card only follows an outage that was actually alerted, still one per hour per box.
+- **Operator off-switch.** `GHL_MCP_PROBE_DISABLED=1` or a marker file at `$HOME/.openclaw/.ghl-mcp-probe-disabled` (VPS: `/data/.openclaw/.ghl-mcp-probe-disabled`) makes every probe run report `DISABLED` and exit 0, and `install_periodic_probe()` in `ghl-mcp-autostart.sh` removes the launchd job or managed cron line and installs nothing, so a fleet roll cannot quietly re-arm a probe the operator turned off. `GHL_MCP_PROBE_DISABLED=0` forces the probe on for one run (markers ignored).
+- **The unit test can no longer file real cards.** `tests/unit/ghl-mcp-probe.test.sh` resolved the real signed ingest helper next to the probe and POSTed genuine `GHL MCP DOWN (no listener)` cards onto the board of whichever box ran it. Cards and restarts are now stubbed (`GHL_MCP_PROBE_ROUTE_CMD`, `GHL_MCP_PROBE_HEAL_CMD`) and asserted on: 8 new cases (15 to 22) prove one card per outage, streak-gated heal, and both forms of the off-switch. 22/22 pass.
+- **Not fixed here, known:** `tests/unit/ghl-mcp-supervised.test.sh` cases (J) and (T) fail identically on pristine main before this change.
+
+### Files Changed
+- `scripts/ghl-mcp-probe.sh` (streak-gated heal, longer timeouts, one alert per outage, off-switch, test hooks)
+- `scripts/ghl-mcp-autostart.sh` (probe timeout default 30s; off-switch honoured by `install_periodic_probe`)
+- `tests/unit/ghl-mcp-probe.test.sh` (+8 cases, cards and restarts stubbed)
+- `36-ghl-mcp-setup/CHANGELOG.md`, `36-ghl-mcp-setup/skill-version.txt` (2.0.1)
+- Version markers rolled to v25.1.11 by `scripts/bump-version.sh`
+
+## [v25.1.10]  -  2026-09-15  -  A dispatcher park marker stops outliving the dispatcher that wrote it
+
+### What Changed
+- **PD-TEST-080 — a phase parked at its retry ceiling could never be revived by fixing the code that parked it.** `readmit_retryable_phases` skipped any phase whose `.dispatch-blocked.txt` marker was on disk, on the rationale *"the dispatcher owns this generation's durable budget."* That rationale is true only while the dispatcher exists — and the marker routinely outlives its owner. **Measured on `pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4`: all six markers on that run were owned by dispatchers (pids 55801, 71266, 87833) that were long dead.** The result was a closed loop: the code repair is deployed, `--resume` runs, readmission skips the phase because a dead dispatcher's marker is still on disk, the phase stays quarantined, `_phase_terminal_bad` withholds its descendants, and **the run re-parks identically** — precisely the failure PD-TEST-060 was written to eliminate.
+- **Why the marker outlives its owner.** The engine *does* clear the marker when it quarantines a phase (`phases.py:3546`). But the dispatcher **re-arms on that same state change** — its own comment at `phases.py:3537-3539` says `should_dispatch` "already re-arms on the phase's own state.json status change (quarantined is a change)" — so it sweeps again, fails identically, **re-parks and re-writes the marker after the engine cleared it**, then reaches `state.terminal` and exits. None of the three marker-clearing sites can fire for a phase parked by a *code* bug: the reservation clears only on a new approved-input generation, a work-order reissue needs a runnable phase, and the quarantine clear has already been undone.
+- **Fix — a marker is honoured only while its writer is alive.** A new `dispatcher.park_marker_owner_state()` returns **`absent` / `live` / `orphaned` / `unknown`** by parsing the `worker: dispatcher-<pid>-<id>` line that `_park_blocked` **already** wrote — so there is **no marker-format change** and an existing run's markers adjudicate with **zero migration**. Readmission re-admits on `orphaned` and then **retires the ownerless marker before the status flip**, so it cannot make the Engine's own F9 park reaction fire for a park nobody holds.
+- **Pid reuse is handled, not ignored.** POSIX recycles pids, so "the pid resolves" is not evidence its holder is the author. The marker's own `blocked_at` is the discriminator its writer cannot fake: a new `autospawn._process_start_epoch()` measures with `ps -o etime=` against a clock read **before** the probe (so error can only make a live owner look *older*, never a dead one look alive), and a process starting **after** `blocked_at` is a recycled pid.
+- **Every doubt resolves to LIVE.** No `worker:` line, no timestamp, no `ps`, unparseable output, or our own pid all count as live, so the marker is honoured. Honouring a marker too long is safe; wrongly clearing one whose owner is alive would weaken the protection the marker exists for.
+- **One place answers every pid question.** Liveness reuses the package's existing `autospawn._pid_is_alive` rather than adding a second test, because two liveness tests are how two components end up disagreeing about whether a process is alive.
+- **The durable budget is explicitly NOT touched.** Retirement happens without a reservation, and the operator-facing message says so: *"the phase's durable paid-attempt ledger is unchanged and still binds"* — so this repair cannot be mistaken for, or accidentally act as, a budget reset (the thing PD-TEST-068's receipt exists to bound).
+- **Measured before and after**, on a copy of the live run: readmission went from **`['P4-COPY']`** to **all five** phases, with exactly the **four** orphaned markers retired and the two belonging to `done` phases left alone. On the real markers, `park_marker_owner_state` returns `orphaned` for **all six**. Controls in a throwaway temp dir returned `live` for a live owner (protection intact), `orphaned` for a dead pid, and `absent` for no marker.
+
+### Files Changed
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py` (+102 — the marker-owner verdict)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py` (+87/-2 — readmit on orphaned, retire before the flip)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/autospawn.py` (+55 — `_process_start_epoch`, beside `_pid_is_alive`)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/__main__.py` (+15 — name the orphaned phases and the fact that the ledger still binds)
+- `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_pd080_orphaned_park_marker.py` (+554, new)
+
 ## [v25.1.9]  -  2026-09-15  -  Produce working/copy/slides.json, the renderer's orphan input
 
 ### What Changed
@@ -295,9 +3980,9 @@
 - SKIP messaging now reads `N SOPs covered >= manifest M` instead of `N rows >= manifest M`, so the log states what was actually measured.
 
 ### Fleet evidence (read-only sweep, 2026-09-12)
-- 18 reachable Mac boxes probed. **7 affected**: `aurelia-gardner` (82% of SOPs unembedded), `er-spaulding` (100%), `maria-anderson` (76%), `sheila-reynolds` (99%), `star-bobatoon` (100%), `stephanie-wall` (77%), `talaya-kelley` (100%).
-- **6 of those 7 were permanently stuck** behind the raw-row gate — only `maria-anderson` (835 rows < 2555) would ever have re-triggered. This release is what makes the other six repairable.
-- 9 boxes healthy, 1 without a Command Center, 1 unreachable at sweep time (`teresa-pelham`).
+- 18 reachable Mac boxes probed. **7 affected**: `box-a` (82% of SOPs unembedded), `er-spaulding` (100%), `box-b` (76%), `box-c` (99%), `box-d` (100%), `box-e` (77%), `box-f` (100%).
+- **6 of those 7 were permanently stuck** behind the raw-row gate — only `box-b` (835 rows < 2555) would ever have re-triggered. This release is what makes the other six repairable.
+- 9 boxes healthy, 1 without a Command Center, 1 unreachable at sweep time (`box-g`).
 
 ### Tests
 - `tests/unit/provision-sop-embeddings-hashed-id.test.py` grows to 9 checks: a full-but-orphaned table plus a success-claiming marker must NOT be skipped and must end fully covered; and a genuinely covered box must still SKIP, so the stricter gate adds no re-download noise. **Fail-first verified** — the orphan case returns `SKIP` against the raw-row gate.

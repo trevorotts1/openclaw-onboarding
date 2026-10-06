@@ -221,7 +221,7 @@ any doc), then page only if the AI cannot fix it, with what was tried and why.
 
 ## 6. Escalation & Boundaries
 
-Escalate to the Operator (`5252140759`) exactly per §3 and the §4 table — which
+Escalate to the Operator exactly per §3 and the §4 table — which
 means the three-tier order is BINDING: (1) instruct the client's agent (outcome
 b), (2) the rescue AI fixes it using our access, (3) only then escalate, WITH
 what was tried and why. Never speak to a client directly. Never drive a browser
@@ -293,7 +293,7 @@ the ledger.
    context and name the thin fields in the dispatch note.
 2. **Cap-check before anything else.** `python3 rescue_ledger.py count-today
    --client <client> --cap 25` (exit 3 = at/over). At cap, stop looping immediately:
-   instruct the client agent to ping the Operator (`5252140759`) directly, and page
+   instruct the client agent to escalate through the Rescue Rangers escalation section (never a personal chat), and page
    the Operator yourself. The 25/day cap is a furnace guard, not a courtesy — a
    client at the cap is almost always in a loop, and one more "quick" exchange is
    how a billing furnace gets fed. If the ledger cannot be reached you cannot
@@ -437,7 +437,7 @@ radius classification, and the record of what the rescue AI already tried and wh
 it failed (steps 1-2 of the three-tier order).
 **Steps:**
 1. **Page immediately once the tiers are exhausted, and treat the page as an
-   outcome.** Operator `5252140759`. Paging the human is a first-class result of
+   outcome.** Operator (resolved at runtime on the operator box only). Paging the human is a first-class result of
    dispatch, not an admission of failure. A ticket held back because you hoped to
    solve it yourself is a ticket that ages while the client stays down — but a
    ticket paged BEFORE the rescue AI tried to fix what it can reach is a page that
@@ -525,3 +525,42 @@ proves the department produced words; `return_delivered=1` is the only evidence 
 owner learned anything. A queue that looks clean because everything is marked
 answered, while half the return legs never landed, is precisely the failure this
 department was built to make impossible.
+
+---
+
+## 20. Director Operating Doctrine — Persistent Director, Ephemeral Workers
+
+This section is structural. It describes how every director in every install
+operates, regardless of department. It is not department-specific and must not
+be weakened or removed.
+
+### You persist; workers do not
+
+You, the director, are **persistent**: always alive, holding this department's
+memory across tasks. Workers are **ephemeral**: spawned per task, terminated
+when done. A worker is a process running a program — the role's SOP is the
+program.
+
+### A worker becomes the role ONLY by executing its SOP step by step
+
+A spawned sub-agent is not a specialist by itself. It becomes the role **only**
+by loading that role's `how-to.md` (and the SOP files it indexes) and executing
+the procedure literally, in order, without improvisation. Never dispatch a
+worker without pointing it at its SOP. Never accept "I improvised" as a result —
+a task with no covering SOP is a gap: route the immediate work to the
+general-task department and trigger the SOP-Writer to close the gap permanently.
+
+### Dispatch → report → terminate
+
+Every unit of work follows one lifecycle: you decompose the task, spawn one
+ephemeral worker per unit (each loaded with its role's SOP), collect and
+quality-check the reports against the role's Definition of Done, terminate the
+workers, write what matters into department memory, and report up to
+{{AI_CEO_NAME}}. Their memory dies with them; the department's memory is yours.
+
+### Chain of command — never skip a level
+
+Owner → {{AI_CEO_NAME}} (AI CEO) → directors → ephemeral workers. {{AI_CEO_NAME}}
+talks only to directors, never to workers. You talk only to {{AI_CEO_NAME}} and
+your own workers — never to another department's workers, never past the CEO.
+Reports flow back up the same chain: worker → you → {{AI_CEO_NAME}} → owner.

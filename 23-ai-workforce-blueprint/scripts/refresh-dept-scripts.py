@@ -346,6 +346,26 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
     return {"copied": copied, "skipped_owned": skipped_owned, "copy_failed": copy_failed}
 
 
+def _mirror_skill48_ghl_media(scripts_target, dept_slug, apply_):
+    if dept_slug.lower() != "presentations":
+        return False, None
+    _ghl_src = SKILL_DIR.parent / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+    _ghl_dst = Path(scripts_target) / "_skill48_ghl_media.py"
+    if not _ghl_src.is_file():
+        return False, None
+    if not apply_:
+        return False, None
+    try:
+        shutil.copy2(_ghl_src, _ghl_dst)
+        _src48 = hashlib.sha256(_ghl_src.read_bytes()).hexdigest()
+        _dst48 = hashlib.sha256(_ghl_dst.read_bytes()).hexdigest()
+        if _src48 != _dst48:
+            raise RuntimeError("_skill48_ghl_media.py diverged from source")
+        return True, None
+    except OSError as e:
+        return False, "%s: %s" % (type(e).__name__, e)
+
+
 def _write_receipt(workspace, ok, depts, failed_inscope, apply_):
     receipt = {
         "ok": bool(ok),
@@ -409,6 +429,16 @@ def main(argv=None):
 
         result = mirror_dept_scripts(lib_scripts_root, scripts_target, args.apply)
         total_copied += len(result["copied"])
+        # Fix 55: refresh the co-located _skill48_ghl_media.py for presentations
+        # on every roll (Skill-48 GHL fixes must reach existing boxes).
+        _ghl_copied, _ghl_err = _mirror_skill48_ghl_media(
+            scripts_target, dept_slug, args.apply)
+        if _ghl_copied:
+            total_copied += 1
+        if _ghl_err:
+            result["copy_failed"].append(
+                {"path": "_skill48_ghl_media.py", "issue": "copy-failed",
+                 "reason": _ghl_err})
 
         # Re-derive the verdict from the filesystem AFTER the write -- never
         # from mirror_dept_scripts()'s own "copied" counter (see "NOT A

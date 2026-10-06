@@ -1,0 +1,53 @@
+"""D34 explicit mode preservation + revision fencing (JEV spec 1.1, s 3.6/17.4)."""
+
+from .cohort import (
+    check_rollback_compat,
+    cohort_summary,
+    evaluate_pairing,
+    is_hex_sha,
+    validate_cohort,
+)
+from .modes import (
+    EFFECTIVE_JEV,
+    EFFECTIVE_NO_JEV,
+    MODES,
+    ShadowCommitError,
+    bump_fence,
+    decisions_equivalent,
+    fence_reason,
+    is_fenced,
+    jev_traffic_permitted,
+    normalize_no_jev,
+    normalized_key,
+    preserve_explicit_mode,
+    refuse_shadow_commit,
+    resolve_effective_path,
+    rollback_to_off,
+    shadow_dedup_key,
+    shadow_sample_allowed,
+)
+
+__all__ = [
+    "EFFECTIVE_JEV",
+    "EFFECTIVE_NO_JEV",
+    "MODES",
+    "ShadowCommitError",
+    "bump_fence",
+    "check_rollback_compat",
+    "cohort_summary",
+    "decisions_equivalent",
+    "evaluate_pairing",
+    "fence_reason",
+    "is_fenced",
+    "is_hex_sha",
+    "jev_traffic_permitted",
+    "normalize_no_jev",
+    "normalized_key",
+    "preserve_explicit_mode",
+    "refuse_shadow_commit",
+    "resolve_effective_path",
+    "rollback_to_off",
+    "shadow_dedup_key",
+    "shadow_sample_allowed",
+    "validate_cohort",
+]

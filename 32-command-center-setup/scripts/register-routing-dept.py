@@ -248,10 +248,15 @@ def main() -> None:
         config = _load_json(config_path)
     except Exception as e:
         die(f"Cannot parse openclaw.json: {e}")
-    agents_list = config.get("agents", {}).get("list", [])
-    for agent in agents_list:
-        if isinstance(agent, dict) and args.dept in str(agent.get("id", "")):
-            info(f"Department '{args.dept}' already registered (agent id: {agent.get('id')}). Skipping.")
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id) and
+    # the legacy agents.list[].
+    _agents = config.get("agents", {}) or {}
+    _entries = _agents.get("entries")
+    agent_ids = [str(k) for k in (_entries if isinstance(_entries, dict) else {})]
+    agent_ids += [str(a.get("id", "")) for a in (_agents.get("list") or []) if isinstance(a, dict)]
+    for agent_id in agent_ids:
+        if args.dept in agent_id:
+            info(f"Department '{args.dept}' already registered (agent id: {agent_id}). Skipping.")
             sys.exit(0)
 
     # 2) Already in the sidecar ledger.

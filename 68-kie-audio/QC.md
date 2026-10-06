@@ -24,8 +24,10 @@ pretend otherwise.
 - [ ] The references document the correct model ids (`google/gemini-3-1-flash-tts`, etc.)
       and endpoints (`https://api.kie.ai/api/v1/jobs/createTask` for TTS;
       `/api/v1/generate` family for Suno).
-- [ ] `skill-version.txt` reads `v1.0.0`.
+- [ ] `skill-version.txt` reads `v2.1.1`.
 - [ ] No real credential value appears anywhere in the skill files.
+
+- [ ] Skill 74 wiring: for TTS, `kie_live_adapter.py validate` and `preflight` run before `submit --mode active` (INSTRUCTIONS.md); with the adapter absent the skill works on `models.json` and curl. `validate_audio_request.py --domain stt` may report a live-catalog candidate but dispatch stays rejected (exit 2) and `dispatch_enabled` stays false.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first.
@@ -47,15 +49,16 @@ pretend otherwise.
 - [ ] Confirm `KIE_API_KEY` loads into the environment (presence only; value
       never echoed).
 - [ ] Endpoint reachability + key validity:
-      `curl -sS -m 30 https://api.kie.ai/api/v1/account/balance -H "Authorization: Bearer $KIE_API_KEY"`
-      — JSON body expected; 401 = key wrong, 402 = zero credits. This is the
-      zero-cost install check; do NOT run a real generation as the install test.
+      `curl -sS -m 30 https://api.kie.ai/api/v1/chat/credit -H "Authorization: Bearer $KIE_API_KEY"`
+      — body `{"code":200,"msg":"success","data":<number>}` expected; check the
+      body `code`, not just the HTTP status: 401 = key wrong, 402 = zero credits.
+      This is the zero-cost install check; do NOT run a real generation as the install test.
 - [ ] Validator self-tests pass deterministically (exit 0, same output twice):
-      - `python3 scripts/validate_audio_request.py --self-test` (13 checks)
+      - `python3 scripts/validate_audio_request.py --self-test` (21 checks)
       - `python3 scripts/normalize_alias.py --self-test`
 - [ ] Confirm the agent can explain: 200 = task accepted, NOT complete;
       Suno callback stages `text` → `first` → `complete` (only complete is
-      finished output); media expires after ~14 days; Suno must NEVER go
+      finished output); retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately); Suno must NEVER go
       through `createTask`; STT dispatch is rejected with exit 2.
 
 ## 6. Real Audio QC (SPEC 9.5 verbatim lists) — after generation, MANDATORY
@@ -130,7 +133,7 @@ escalate to owner).
 | All skill .md files read before any execution | 1.0 | SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md, references read BEFORE any command. |
 | INSTALL.md steps executed in order | 1.5 | No skipping/reordering/improvising. |
 | Credential confirmed, value never printed | 1.5 | KIE_API_KEY SET; never echoed/catted/logged. |
-| Functional checks pass | 1.5 | Balance endpoint returns JSON; both validators pass self-test twice. |
+| Functional checks pass | 1.5 | Credit endpoint returns body code 200; both validators pass self-test twice. |
 | CORE_UPDATES.md applied surgically (via wire.sh) | 1.0 | Only labeled sections into labeled core files via `bash wire.sh`. No SOUL/IDENTITY/USER/HEARTBEAT touched. |
 | Skill-specific QC items above all checked | 1.5 | Every checkbox in sections 2-7 ticked. |
 | Security | 0.5 | No secret leaked into chat/logs/commits/.md files. |

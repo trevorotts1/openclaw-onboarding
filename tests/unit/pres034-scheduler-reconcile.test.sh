@@ -42,6 +42,11 @@
 #   (I) EXISTING GUARD UNBROKEN — the F12 presentation-schedules-installed
 #       suite still passes against the edited lib (Mac render, F12c pin,
 #       idempotence, VPS create path, negative control).
+#   (J) PRES-057 — an OPENCLAW_ROOT under $TMPDIR/tmp//var/folders can't
+#       reach a real job by name: with no bypass, a reconcile call against a
+#       job seeded under that name is refused, logs why, mutates nothing
+#       (byte-identical store before/after) — and the same call succeeds once
+#       _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 marks it as a real isolated harness.
 #
 # Fully sandboxed: OPENCLAW_ROOT/HOME=mktemp, a mock `openclaw` backed by a
 # JSON job store on disk, a stub launchctl. Never touches the live gateway,
@@ -219,7 +224,7 @@ PYEOF
     exit $?
     ;;
   disable|enable)
-    log "${action^^} $*"
+    log "$(printf '%s' "$action" | tr '[:lower:]' '[:upper:]') $*"
     MOCK_STORE="$MOCK_STORE" MOCK_E_ID="${1:-}" MOCK_E_ON="$action" python3 -c '
 import json, os, sys
 store = os.environ["MOCK_STORE"]
@@ -307,6 +312,7 @@ run_reconcile() { # $1=name $2=expr ; extra env via caller's environment
   PATH="$STUB:$PATH" \
   OPENCLAW_PLATFORM=vps \
   OPENCLAW_ROOT="$SANDBOX/root" \
+  _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 \
   OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
   PRESENTATIONS_SCRIPTS_SRC="$DEPT" \
   bash -c '
@@ -495,7 +501,7 @@ EOF
 set +e
 MOCK_STORE="$MOCK_STORE" MOCK_LOG="$MOCK_LOG" \
 PATH="$STUB:$PATH" OPENCLAW_PLATFORM=vps \
-OPENCLAW_ROOT="$SANDBOX/root" OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+OPENCLAW_ROOT="$SANDBOX/root" _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
 PRESENTATIONS_SCRIPTS_SRC="$DEPT" MOCK_LIST_MODE=unreadable \
 bash -c '
   set -euo pipefail
@@ -564,7 +570,7 @@ EOF
 set +e
 MOCK_STORE="$MOCK_STORE" MOCK_LOG="$MOCK_LOG" \
 PATH="$STUB:$PATH" OPENCLAW_PLATFORM=vps \
-OPENCLAW_ROOT="$SANDBOX/root" OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+OPENCLAW_ROOT="$SANDBOX/root" _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
 PRESENTATIONS_SCRIPTS_SRC="$DEPT" MOCK_EDIT_MODE=reject \
 bash -c '
   set -euo pipefail
@@ -600,6 +606,7 @@ run_reconcile_and_finish() { # $1=name $2=expr $3=desired ; extra env via caller
   PATH="$STUB:$PATH" \
   OPENCLAW_PLATFORM=vps \
   OPENCLAW_ROOT="$SANDBOX/root" \
+  _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 \
   OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
   PRESENTATIONS_SCRIPTS_SRC="$DEPT" \
   bash -c '
@@ -660,7 +667,7 @@ echo "--- (G) NEGATIVE CONTROL ---"
 set +e
 MOCK_STORE="$MOCK_STORE" MOCK_LOG="$MOCK_LOG" \
 PATH="$STUB:$PATH" OPENCLAW_PLATFORM=vps \
-OPENCLAW_ROOT="$SANDBOX/root" OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+OPENCLAW_ROOT="$SANDBOX/root" _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
 PRESENTATIONS_SCRIPTS_SRC="$DEPT" \
 bash -c 'set -euo pipefail; source "$1"; [ "$(type -t _presched_reconcile_cron)" = "function" ]' _ "$SCHED_LIB" \
   > /dev/null 2>&1
@@ -672,7 +679,7 @@ set -e
 set +e
 MOCK_STORE="$MOCK_STORE" MOCK_LOG="$MOCK_LOG" \
 PATH="$STUB:$PATH" OPENCLAW_PLATFORM=vps \
-OPENCLAW_ROOT="$SANDBOX/root" OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+OPENCLAW_ROOT="$SANDBOX/root" _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
 PRESENTATIONS_SCRIPTS_SRC="$DEPT" MOCK_LIST_MODE=unreadable \
 bash -c 'set -euo pipefail; source "$1"; _PRESCHED_DESIRED_PROMPT=x _presched_reconcile_cron noid "*/5 * * * *" "America/New_York" main x' _ "$SCHED_LIB" \
   > /dev/null 2>&1
@@ -681,6 +688,50 @@ set -e
 [ "$G2_RC" -ne 0 ] \
   && pass "G2: unreadable scheduler + unknown job returns NONZERO (guard can fail)" \
   || fail "G2: guard returned 0 on an unverifiable schedule — it passes on everything"
+
+# ---------------------------------------------------------------------------
+# (J) PRES-057 — AN EPHEMERAL ROOT CANNOT MUTATE A REAL JOB BY NAME
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (J) EPHEMERAL ROOT CANNOT MUTATE A REAL JOB BY NAME (PRES-057) ---"
+printf '{"jobs":[]}' > "$MOCK_STORE"; : > "$MOCK_LOG"
+seed_stale "presentation-watchdog" "*/10 * * * *"   # stands in for "the real production job"
+REAL_BEFORE="$(MOCK_STORE="$MOCK_STORE" python3 -c 'import json,os; print(json.dumps(json.load(open(os.environ["MOCK_STORE"]))))')"
+set +e
+MOCK_STORE="$MOCK_STORE" MOCK_LOG="$MOCK_LOG" \
+PATH="$STUB:$PATH" OPENCLAW_PLATFORM=vps \
+OPENCLAW_ROOT="$SANDBOX/root" OPENCLAW_WORKSPACE_PATH="$WS" OPENCLAW_WORKSPACE_ROOT="$WS" \
+PRESENTATIONS_SCRIPTS_SRC="$DEPT" \
+bash -c '
+  set -euo pipefail
+  oc_cron_tombstoned() { return 1; }
+  oc_cron_present() { return 1; }   # matches run_reconcile()'"'"'s own stub
+  source "$1"
+  _PRESCHED_DESIRED_PROMPT="$4" _presched_reconcile_cron "$2" "$3" "America/New_York" "main" "$4"
+' _ "$SCHED_LIB" "presentation-watchdog" "*/10 * * * *" "$DESIRED_WD" > "$SANDBOX/reconcile.out" 2>&1
+J_RC=$?
+set -e
+# Deliberately NO _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 above — this is the
+# default (unbypassed) path every real install/roll/debug session uses.
+[ "$J_RC" -ne 0 ] \
+  && pass "J1: reconcile from an ephemeral OPENCLAW_ROOT (no bypass) returns NONZERO" \
+  || fail "J1: reconcile from an ephemeral root returned 0 — the real job was reachable"
+grep -qE '^(CREATE|EDIT) ' "$MOCK_LOG" \
+  && fail "J2: reconcile from an ephemeral root still mutated the real job (the PRES-057 defect)" \
+  || pass "J2: no CREATE/EDIT call reached the mock CLI — the real job was never touched"
+REAL_AFTER="$(MOCK_STORE="$MOCK_STORE" python3 -c 'import json,os; print(json.dumps(json.load(open(os.environ["MOCK_STORE"]))))')"
+[ "$REAL_BEFORE" = "$REAL_AFTER" ] \
+  && pass "J3: the real job's stored JSON is byte-for-byte unchanged" \
+  || fail "J3: the real job's JSON changed despite the guard"
+grep -qi 'ephemeral' "$SANDBOX/reconcile.out" \
+  && pass "J4: refusal is logged and names the reason (ephemeral OPENCLAW_ROOT)" \
+  || fail "J4: no explanation logged for the refusal — $(head -3 "$SANDBOX/reconcile.out" | tr '\n' ' ')"
+# Escape hatch still works for a real isolated test harness (same store,
+# same desired prompt, same job — only the bypass flag differs).
+set +e; run_reconcile "presentation-watchdog" "*/10 * * * *" "$DESIRED_WD"; J5_RC=$?; set -e
+[ "$J5_RC" -eq 0 ] \
+  && pass "J5: the SAME ephemeral root reconciles fine once _PRESCHED_ALLOW_EPHEMERAL_ROOT=1 (test escape hatch)" \
+  || fail "J5: bypass flag did not restore normal reconcile behavior — $J5_RC"
 
 # ---------------------------------------------------------------------------
 echo ""

@@ -233,7 +233,15 @@ def test_live_non_signature_deck_does_not_walk_signature_only_stages(tmp_path, s
     # router, MUST still walk (it runs for real on EVERY deck).
     assert SP_CLAIM in walked
     assert CONVERTER not in walked  # the original converter routing, unchanged
-    assert len(phases) == len(eng.manifest.phases) - 5  # 4 SP-only + P-CONVERTER
+    # PD-TEST-168 part B added a THIRD deck-conditional branch: P8.3-INFOGRAPHIC
+    # is routed around when the deck POSITIVELY does not require an infographic
+    # (no deliverable_bundle.checklist_items and a non-content-first
+    # creation_mode -- slide-image-creator SOP 9.10 step 1). These fixture decks
+    # are exactly that shape, so the routed-around count is now 6, and the extra
+    # one is asserted BY NAME rather than left as a magic number.
+    assert "P8.3-INFOGRAPHIC" not in walked
+    assert len(phases) == len(eng.manifest.phases) - 6, (
+        "4 SP-only + P-CONVERTER + P8.3-INFOGRAPHIC (PD-TEST-168 part B)")
 
 
 @pytest.mark.parametrize("source", _NON_SIG_SOURCE_IDS)

@@ -1,0 +1,39 @@
+{
+  "brand_id": "blackceo-fixture",
+  "note": "Fixture brand file for tests/fixtures/page_good. Stand-in font name; never the real blackceo-brand.json (real fonts are TREVOR_MUST_SUPPLY).",
+  "palette": {
+    "gold": "#C9A227",
+    "navy": "#1A1A2E",
+    "cream": "#F5F0E8"
+  },
+  "logo_only_colors": {
+    "black": "#000000",
+    "white": "#FFFFFF"
+  },
+  "color_tolerance": 3,
+  "fonts": {
+    "display": "Georgia",
+    "body": "Georgia",
+    "accent": "Georgia"
+  },
+  "banned_fonts": [
+    "Inter",
+    "Arial",
+    "Helvetica",
+    "Helvetica Neue",
+    "Roboto",
+    "Open Sans",
+    "system-ui",
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "Segoe UI",
+    "sans-serif-only"
+  ],
+  "logo": {
+    "files": ["tests/fixtures/page_good/logo.png"]
+  },
+  "founder_photos": [
+    "sha256:7f923975006e736ad6adf85ffbfbc69952a94e43fbfcf536bb37fa50f9605d78"
+  ],
+  "is_blackceo": true
+}

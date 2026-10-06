@@ -1,6 +1,6 @@
 {
   "name": "signature-presentation",
-  "version": "2.1.0",
+  "version": "2.1.5",
   "description": "Trevor Otts Signature Presentation deck type \u2014 governed 4-phase, min-100-slide methodology that runs through the Presentations department engine.",
   "entry": "bin/presentation",
   "platforms": [

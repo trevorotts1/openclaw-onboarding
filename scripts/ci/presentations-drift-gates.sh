@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# FIX 45: CI COPY of presentations-drift-gates.sh (scripts/ci/) -- the two same-named canonical-entry copies (Fix 53) live at 23-ai-workforce-blueprint/scripts/ and 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/. Do not rename any of them.
 # scripts/ci/presentations-drift-gates.sh
 #
 # Four CI drift gates for the presentation pipeline. The first three were added
@@ -635,10 +636,34 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "== GATE 9: canonical-entry copy parity (Fix 52) =="
+# SOPs call 23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh.
+# The role-library ships a second copy. They must stay byte-identical; a silent
+# divergence means the SOPs and the shipped department run different launchers.
+CANON_A="23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+CANON_B="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-canonical-entry.sh"
+if [ ! -f "$REPO_ROOT/$CANON_A" ]; then
+  echo "GATE 9 FAILED: $CANON_A not found" >&2
+  FAILED=1
+elif [ ! -f "$REPO_ROOT/$CANON_B" ]; then
+  echo "GATE 9 FAILED: $CANON_B not found" >&2
+  FAILED=1
+elif cmp -s "$REPO_ROOT/$CANON_A" "$REPO_ROOT/$CANON_B"; then
+  echo "GATE 9 PASSED: both canonical-entry copies are byte-identical."
+else
+  echo "GATE 9 FAILED: the two canonical-entry copies differ -- see diff below." >&2
+  diff "$REPO_ROOT/$CANON_A" "$REPO_ROOT/$CANON_B" | head -20 >&2
+  echo "               Fix: port the change to the other copy so SOPs and the" >&2
+  echo "               shipped department run the same launcher." >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep, GATE 8 shared-script hash-lock)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep, GATE 8 shared-script hash-lock, GATE 9 canonical-entry parity)."
 exit 0

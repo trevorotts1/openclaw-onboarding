@@ -50,7 +50,10 @@ case "$OS" in
     ;;
   Linux)
     PLATFORM="vps"
+    # Same root rule as platform/common.sh oc_set_platform_paths: /data/.openclaw
+    # when it exists (Hostinger/Contabo Docker), else ~/.openclaw (native Linux).
     OC_HOME="/data/.openclaw"
+    [[ -d "$OC_HOME" ]] || OC_HOME="${HOME}/.openclaw"
     ;;
   *)
     echo "$SKILL_TAG OS: $OS UNSUPPORTED"

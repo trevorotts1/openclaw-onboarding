@@ -94,6 +94,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import hashlib
 import json
 import os
@@ -153,6 +154,13 @@ SECRET_ENV = "RESCUE_RANGERS_WEBHOOK_SECRET"          # v1 shared fleet secret
 BOX_CRED_ENV = "RR_BOX_CRED"                          # v2 per-enrollment credential
 BOX_ID_ENV = "RR_BOX_ID"                              # v2 public enrollment id
 BOX_SLUG_ENV = "FLEET_STANDING_BOX_SLUG"              # canonical per-box slug
+# RR plan F89. Optional identity fields, read from the SAME box env names the other repo
+# senders already use (loop_identity.py / disk-usage-alert.sh read FLEET_STANDING_CLIENT_LABEL;
+# ghl-mcp-probe.sh reads RESCUE_RANGERS_PERSON and RESCUE_RANGERS_RETURN_TO). They only fill
+# fields the payload would otherwise send empty, and they never enter operation_id.
+CLIENT_LABEL_ENV = "FLEET_STANDING_CLIENT_LABEL"
+PERSON_ENV = "RESCUE_RANGERS_PERSON"
+RETURN_TO_ENV = "RESCUE_RANGERS_RETURN_TO"
 TIMEOUT_ENV = "EWS_RESCUE_ADMISSION_TIMEOUT"
 DEFAULT_TIMEOUT = 120.0
 BODY_READ_LIMIT = 65536
@@ -188,6 +196,14 @@ class AdmissionRefused(Exception):
     """The intake was REACHED and explicitly refused the payload. Terminal for
     this attempt; distinct from a transport failure."""
 
+
+class AdmissionShed(AdmissionRefused):
+    """RR plan F47. The intake was REACHED and answered a JSON-bodied 429: the
+    rate limiter shed this request, and RR-01 mints a shed ticket for every
+    shed ('Prepare Shed Ticket Mint'), so the incident EXISTS. The sender
+    contract is that this is TERMINAL for the attempt -- an immediate retry
+    only adds load to the burst that caused the shed. Subclass of
+    AdmissionRefused so every existing `except AdmissionRefused` stays correct."""
 
 class AdmissionTransportError(Exception):
     """The intake was NOT reached (network, timeout, non-2xx). Retryable."""
@@ -278,6 +294,10 @@ def operation_id(box, source, dedup_key, event_id, signal=""):
         str(dedup_key or ""), str(event_id or ""),
     ]))[:32]
 
+
+def _env_text(name, limit=200):
+    """A trimmed, single-line value of an optional env var ('' when unset)."""
+    return " ".join(_unquote_env(os.environ.get(name, "")).split())[:limit]
 
 def admission_url() -> str:
     return _unquote_env(os.environ.get(WEBHOOK_URL_ENV, "")) or DEFAULT_WEBHOOK_URL
@@ -405,14 +425,26 @@ def _ticket_id(doc):
     return None
 
 
+def _is_json_object(text) -> bool:
+    try:
+        return isinstance(json.loads(text), dict)
+    except (TypeError, ValueError):
+        return False
+
 def _handle_http_error(exc):
-    """Classify a urllib HTTPError: 5xx/429 = transport/retryable, other 4xx =
-    explicit refusal (terminal for this attempt)."""
+    """Classify a urllib HTTPError: 5xx = transport/retryable, a 429 whose body
+    is a JSON object = the intake's own shed answer (AdmissionShed, terminal,
+    F47), any other 4xx = explicit refusal (terminal for this attempt). A 429
+    with a non-JSON body came from a proxy in front of the intake, not from
+    RR-01, so no shed ticket exists and it stays retryable."""
     code = int(getattr(exc, "code", 0) or 0)
     try:
         detail = exc.read(BODY_READ_LIMIT).decode("utf-8", "replace")
     except Exception:  # noqa: BLE001
         detail = ""
+    if code == 429 and _is_json_object(detail):
+        raise AdmissionShed(
+            "intake HTTP 429: %s" % trim(detail)) from exc
     if code == 429 or code >= 500:
         raise AdmissionTransportError(
             "intake HTTP %d: %s" % (code, trim(detail))) from exc
@@ -504,11 +536,15 @@ def urllib_transport(url, payload_bytes, timeout=None):
 def admit(state_dir=None, box="", problem_text="", *,
           source="skill-60-ews", signal="", key_path="", dedup_key="",
           event_id=None, tick_ts="", transport=None, url=None,
-          dry_run=False, ledger=None, meta_box=None):
+          dry_run=False, ledger=None, meta_box=None,
+          client="", person="", return_to=None):
     """Attempt rescue admission. Returns a STRUCTURED RECEIPT dict:
         {
           "status": "admitted"|"replay"|"refused"|"failed"|"dry_run"|
                     "no_enrollment"|"client_unavailable",
+          ("shed": True is added to a "refused" receipt when the intake
+           answered a JSON 429 -- journaled as status `shed`, never retried
+           in-attempt, because RR-01 already minted a shed ticket (F47))
           "operation_id": str,
           "ticket_id": str|None,
           "admission_schema": "v2"|"v1"|"none",
@@ -516,6 +552,11 @@ def admit(state_dir=None, box="", problem_text="", *,
           "reply_digest": sha256 of the verified reply body (never the body),
           "attempted_at": iso,
         }
+    F89: optional `client`, `person` and `return_to` fill the clientName / person /
+    returnTo payload fields; each falls back to the box env (FLEET_STANDING_CLIENT_LABEL,
+    RESCUE_RANGERS_PERSON, RESCUE_RANGERS_RETURN_TO), then to the old empty value. clientName
+    falls back to the box slug last, like every other repo sender. None of the three enters
+    operation_id, so the same event keeps the same identity with or without them.
     Journaling: every NON-dry-run attempt writes a durable row in the EWS
     ledger rescue_admissions table (the ledger is the sole EWS state writer).
     Failure/uncertainty NEVER consumes an incident: the caller decides state
@@ -561,7 +602,10 @@ def admit(state_dir=None, box="", problem_text="", *,
         # 2. validate the payload BEFORE posting (caller-error vs refusal).
         payload = build_payload(box, problem_text, source=source, signal=signal,
                                 key_path=key_path, dedup_key=dedup_key,
-                                event_id=event_id, tick_ts=tick_ts)
+                                event_id=event_id, tick_ts=tick_ts,
+                                client=(client or _env_text(CLIENT_LABEL_ENV) or box),
+                                person=(person or _env_text(PERSON_ENV)),
+                                return_to=(return_to if return_to else (_env_text(RETURN_TO_ENV) or None)))
         problems = validate_payload(payload)
         if problems:
             receipt["status"] = "failed"
@@ -579,6 +623,15 @@ def admit(state_dir=None, box="", problem_text="", *,
         except AdmissionRefused as exc:
             receipt["detail"] = trim(str(exc))
             receipt["detail_sanitized"] = True
+            # F47: the intake shed this request (JSON 429) and minted a shed
+            # ticket. Terminal for this attempt, journaled as `shed`, never
+            # retried here. The receipt status stays `refused` so the EWS
+            # callers (which switch on it) treat it as terminal too.
+            if isinstance(exc, AdmissionShed):
+                receipt["status"] = "refused"
+                receipt["shed"] = True
+                journal("shed", receipt["detail"], None)
+                return receipt
             # RR-015: "Record missing enrollment as pending repair with owner;
             # do not report admission because a group send succeeded." An auth
             # refusal is an OWNED SETUP REPAIR of this box's enrollment, NOT a
@@ -883,6 +936,47 @@ def self_test():
             check("no_enrollment" != r3["status"],
                   "a policy refusal is NOT misclassified as a pending repair")
 
+            # F47: a JSON-bodied 429 is the intake's own shed answer -> terminal,
+            # journaled `shed`, never retried; a non-JSON 429 (proxy) stays retryable.
+            import io as _io
+            import urllib.error as _ue
+            def _http429(body):
+                return _ue.HTTPError("https://intake.invalid/x", 429, "Too Many",
+                                     {}, _io.BytesIO(body))
+            try:
+                _handle_http_error(_http429(b'{"accepted":false,"status":"rate_limited"}'))
+                check(False, "JSON 429 raises AdmissionShed")
+            except AdmissionShed:
+                check(True, "JSON 429 raises AdmissionShed (terminal)")
+            try:
+                _handle_http_error(_http429(b"<html>429</html>"))
+                check(False, "non-JSON 429 raises AdmissionTransportError")
+            except AdmissionTransportError:
+                check(True, "non-JSON 429 stays retryable (proxy, not RR-01)")
+            _shed_calls = []
+            def shed_transport(url, body):
+                _shed_calls.append(1)
+                raise AdmissionShed('intake HTTP 429: {"status":"rate_limited"}')
+            _saved_secret = os.environ.get(SECRET_ENV)
+            os.environ[SECRET_ENV] = "fixture-v1-shared-secret-not-real"
+            try:
+                r3s = admit(td, box="box-admission-example",
+                            problem_text="fixture problem 1234 5678",
+                            source="skill-60-ews", signal="S6",
+                            dedup_key="S6|config.owner", event_id=11,
+                            transport=shed_transport, url="https://intake.invalid/x")
+            finally:
+                if _saved_secret is None:
+                    os.environ.pop(SECRET_ENV, None)
+                else:
+                    os.environ[SECRET_ENV] = _saved_secret
+            check(len(_shed_calls) == 1 and r3s["status"] == "refused" and r3s.get("shed") is True,
+                  "shed receipt is terminal: one post, status refused, shed flag", r3s)
+            with _led.Ledger(td) as led:
+                _shed_row = led.latest_admission(r3s["operation_id"])
+            check(_shed_row is not None and _shed_row["status"] == "shed",
+                  "shed journaled under its own status", _shed_row)
+
             # RR-015: a missing/unaccepted ENROLLMENT is a PENDING REPAIR with an
             # owner -- not an admission, and not a policy refusal either.
             def auth_refuse_transport(url, body):
@@ -942,6 +1036,59 @@ def self_test():
             else:
                 os.environ["EWS_STATE_DIR"] = prev
 
+    # F89: client / person / return_to come from the box env when the caller passes none,
+    # the explicit argument wins over the env, and operation_id never depends on any of them.
+    _f89_env = (CLIENT_LABEL_ENV, PERSON_ENV, RETURN_TO_ENV)
+    _f89_saved = {k: os.environ.pop(k, None) for k in _f89_env}
+    try:
+        def _f89_post(**kw):
+            seen = []
+            def tx(url, body):
+                seen.append(json.loads(body.decode("utf-8")))
+                return '{"accepted":true,"ticketId":"T-F89"}'
+            with tempfile.TemporaryDirectory(prefix="rescue-admission-f89-") as td89:
+                receipt = admit(td89, box="box-f89", problem_text="f89 fixture",
+                                source="skill-60-ews", signal="S6", dedup_key="k89",
+                                event_id=89, transport=tx,
+                                url="https://intake.invalid/x", **kw)
+            return seen[0], receipt
+        _p0, _r0 = _f89_post()
+        check(_p0["clientName"] == "box-f89" and _p0["person"] == "" and _p0["returnTo"] is None,
+              "F89 no env: clientName falls back to the box slug, person empty, returnTo None", _p0)
+        os.environ[CLIENT_LABEL_ENV] = "Example Client Co"
+        os.environ[PERSON_ENV] = "Example Owner"
+        os.environ[RETURN_TO_ENV] = "telegram:example-room"
+        _p1, _r1 = _f89_post()
+        check(_p1["clientName"] == "Example Client Co" and _p1["person"] == "Example Owner"
+              and _p1["returnTo"] == "telegram:example-room",
+              "F89 env set: clientName / person / returnTo filled from the box env", _p1)
+        _p2, _r2 = _f89_post(client="Explicit Client", person="Explicit Person", return_to="x:y")
+        check(_p2["clientName"] == "Explicit Client" and _p2["person"] == "Explicit Person"
+              and _p2["returnTo"] == "x:y",
+              "F89 explicit arguments win over the env", _p2)
+        check(_r0["operation_id"] == _r1["operation_id"] == _r2["operation_id"],
+              "F89 operation_id is identical with and without the identity fields",
+              (_r0["operation_id"], _r1["operation_id"], _r2["operation_id"]))
+        check(_p1["operation_id"] == _p0["operation_id"] and _p1["machine"]["source_op_id"] == _p0["machine"]["source_op_id"],
+              "F89 payload operation ids unchanged by the identity fields")
+    finally:
+        for _k, _v in _f89_saved.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+
+    # F71: --event-id is part of the CLI and feeds operation_id (same event id -> same
+    # operation, a different hour/class -> a different one).
+    _e1 = operation_id("box-f71", "mc-route", "", "transport-failed:2026100312")
+    check(_e1 == operation_id("box-f71", "mc-route", "", "transport-failed:2026100312"),
+          "F71 same event id -> same operation_id (folds at the intake)")
+    check(_e1 != operation_id("box-f71", "mc-route", "", "transport-failed:2026100313")
+          and _e1 != operation_id("box-f71", "mc-route", "", "ingest-rejected:2026100312"),
+          "F71 a different hour or reason class -> a different operation_id")
+    _cli_help = subprocess.run([sys.executable, __file__, "--help"], capture_output=True, text=True, timeout=30).stdout
+    check("--event-id" in _cli_help, "F71 the CLI exposes --event-id")
+
     print("[rescue_admission] self-test: %s checks done" % n)
     # A failed check MUST fail the gate (exit 1), or a mutant passes the
     # aggregate gate green. fail() recorded every failure above.
@@ -956,11 +1103,14 @@ def _cli(argv=None):
     ap.add_argument("--box", default="")
     ap.add_argument("--problem", default="")
     ap.add_argument("--source", default="skill-60-ews")
+    # F71: a stable event identity so a repeat of the SAME event (same reason class, same UTC
+    # hour) folds at the intake instead of minting a ticket per message.
+    ap.add_argument("--event-id", default=None)
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
     r = admit(None, box=args.box, problem_text=args.problem,
-              source=args.source, dry_run=args.dry_run)
+              source=args.source, event_id=args.event_id, dry_run=args.dry_run)
     sys.stdout.write(json.dumps(r, sort_keys=True) + "\n")
     return 0 if r["status"] in ("admitted", "replay", "dry_run") else (
         3 if r["status"] == "refused" else 1)

@@ -36,7 +36,7 @@ const skillDir = path.resolve(here, '..');
 const workerMod = await import(path.join(skillDir, 'worker/src/index.js'));
 const worker    = workerMod.default;
 const { KieKvPoller }      = require(path.join(skillDir, 'box-kv-poller.js'));
-const { KieSlideSubmitter } = require(path.join(skillDir, 'kie-slide-submitter.js'));
+const { KieSlideSubmitter, normalizeAdapterTask } = require(path.join(skillDir, 'kie-slide-submitter.js'));
 
 // ── tiny assert harness ───────────────────────────────────────────────────────
 let passed = 0;
@@ -75,11 +75,11 @@ const WEBHOOK_KEY  = 'kie-webhook-hmac-key-fixture';
 const SLUG         = 'client-alpha';
 
 // =============================================================================
-await section('Worker: /healthz reports version 1.1.0', async () => {
+await section('Worker: /healthz reports version 2.0.4', async () => {
   const res = await worker.fetch(new Request('https://w/healthz'), {}, makeCtx().ctx);
   ok(res.status === 200, 'healthz -> 200');
   const body = await res.json();
-  ok(body.version === '1.1.0', `healthz version == 1.1.0 (got ${body.version})`);
+  ok(body.version === '2.0.4', `healthz version == 2.0.4 (got ${body.version})`);
 });
 
 await section('Worker: /kv-read auth + preimage (fixes B/C/F/G)', async () => {
@@ -263,6 +263,115 @@ await section('box-kv-poller: KV path still resolves a real url as done (no regr
   const marker = await p.waitForTask('sub-kv', 'task-kv', 'secret', { timeoutMs: 200 });
   ok(marker.status === 'done', `KV path with an allowlisted URL -> done (got ${marker.status})`);
   ok(marker.source === 'callback-kv', 'resolved via the callback-KV path');
+});
+
+// =============================================================================
+// Real KIE result shapes (live-probed 2026-10-05; KIE kie-models contract):
+//   Market success: data.state 'success', data.resultJson is a JSON STRING
+//   '{"resultUrls":[...]}', data.response is the parsed copy.
+//   Suno audio success: tracks at response.data[].audio_url.
+const MARKET_URL = 'https://tempfile.aiquickdraw.com/m/real-market.png';
+const marketData = () => ({ taskId: 'task-m', model: 'gpt-image-2-text-to-image', state: 'success', successFlag: 1,
+  failCode: null, failMsg: null,
+  resultJson: JSON.stringify({ resultUrls: [MARKET_URL] }), response: { resultUrls: [MARKET_URL] } });
+const SUNO_URL = 'https://tempfile.aiquickdraw.com/s/track1.mp3';
+const sunoData = () => ({ taskId: 'task-s', state: 'success', successFlag: 1,
+  response: { data: [{ audio_url: SUNO_URL, stream_audio_url: 'https://evil.example.com/stream', title: 't', duration: 30 }] } });
+
+await section('box-kv-poller: REAL Market shape (resultJson string + response.resultUrls) -> done', async () => {
+  // both fields present
+  let p = fallbackPoller(tmpWorkspace(), { code: 200, data: marketData() });
+  let marker = await p.waitForTask('sub-m1', 'task-m1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done', `Market success -> done (got ${marker.status})`);
+  ok(marker.resultUrls.length === 1 && marker.resultUrls[0] === MARKET_URL, 'resultJson + response de-duplicated to one URL');
+  // only the resultJson STRING (no response copy)
+  const d = marketData(); delete d.response;
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: d });
+  marker = await p.waitForTask('sub-m2', 'task-m2', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done' && marker.resultUrls[0] === MARKET_URL, 'resultJson string alone parses to resultUrls');
+  // only response.resultUrls (no resultJson)
+  const d2 = marketData(); delete d2.resultJson;
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: d2 });
+  marker = await p.waitForTask('sub-m3', 'task-m3', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done' && marker.resultUrls[0] === MARKET_URL, 'response.resultUrls alone is accepted');
+  // legacy images:[{url}] still works
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success', resultJson: { images: [{ url: MARKET_URL }] } } });
+  marker = await p.waitForTask('sub-m4', 'task-m4', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done', 'legacy images:[{url}] still resolves done');
+  // Market success whose resultUrls are on a foreign host -> still failed (allowlist stays strict)
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success',
+        resultJson: JSON.stringify({ resultUrls: ['https://evil.example.com/x.png'] }) } });
+  marker = await p.waitForTask('sub-m5', 'task-m5', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'failed' && marker.reason === 'allowlist-rejected', 'foreign-host Market URL -> failed/allowlist-rejected');
+});
+
+await section('box-kv-poller: images array with null/garbage items does not throw (QC follow-up)', async () => {
+  let p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success', resultJson: { images: [null] } } });
+  let marker = await p.waitForTask('sub-n1', 'task-n1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'failed' && marker.source === 'kie-poll', `images:[null] -> failed via the poll path, not a swallowed TypeError (got ${marker.status}/${marker.source})`);
+  p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success',
+        resultJson: { images: [null, undefined, 5, { url: MARKET_URL }] } } });
+  marker = await p.waitForTask('sub-n2', 'task-n2', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done' && marker.resultUrls.length === 1 && marker.resultUrls[0] === MARKET_URL, 'null items skipped, the real URL still resolves done');
+});
+
+await section('box-kv-poller: all-null images array falls through to resultUrls and completes (no hang)', async () => {
+  const p = fallbackPoller(tmpWorkspace(), { code: 200, data: { state: 'success',
+        resultJson: { images: [null, {}], resultUrls: [MARKET_URL] } } });
+  const guard = new Promise((_, rej) => setTimeout(() => rej(new Error('poller hung past 5s')), 5000));
+  const marker = await Promise.race([
+    p.waitForTask('sub-f1', 'task-f1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 }), guard]);
+  ok(marker.status === 'done' && marker.resultUrls[0] === MARKET_URL, `all-null images + resultUrls -> done (got ${marker.status})`);
+  ok(marker.source === 'kie-poll', 'completed through the poll path within the guard');
+});
+
+await section('box-kv-poller: Suno shape (response.data[].audio_url) -> done', async () => {
+  const p = fallbackPoller(tmpWorkspace(), { code: 200, data: sunoData() });
+  const marker = await p.waitForTask('sub-s1', 'task-s1', 'secret', { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
+  ok(marker.status === 'done', `Suno success -> done (got ${marker.status})`);
+  ok(marker.resultUrls.length === 1 && marker.resultUrls[0] === SUNO_URL, 'audio_url taken; stream_audio_url not used');
+});
+
+await section('box-kv-poller: KV path recovers Market URLs from rawData when an old Worker sent resultUrls: []', async () => {
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: tmpWorkspace(),
+                              kvReadToken: 'tk', pollIntervalMs: 1 });
+  p._pollKv = async () => ({ submitId: 'sub-kv2', code: 200, resultUrls: [], rawData: marketData(), receivedAt: 'now' });
+  const marker = await p.waitForTask('sub-kv2', 'task-kv2', 'secret', { timeoutMs: 200 });
+  ok(marker.status === 'done' && marker.resultUrls[0] === MARKET_URL, 'rawData.resultJson recovered on the KV path');
+});
+
+await section('box-kv-poller: result-host allowlist stays strict', async () => {
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: tmpWorkspace(), kvReadToken: 'tk' });
+  const r = (u) => p._resolveOutcome([u], 200, 't', 'kie-poll').status;
+  ok(r('https://tempfile.redpandaai.co/a.png') === 'done', 'tempfile.redpandaai.co allowed');
+  ok(r('https://tempfile.aiquickdraw.com/a.png') === 'done', 'tempfile.aiquickdraw.com allowed');
+  ok(r('https://file.aiquickdraw.com/v/a.mp4') === 'done', 'file.aiquickdraw.com (documented Veo result host) allowed');
+  ok(r('https://file.aiquickdraw.com.evil.com/a.png') === 'failed', 'suffix look-alike host rejected');
+  ok(r('https://redpandaai.co/a.png') === 'failed', 'bare redpandaai.co is not allowlisted (exact hosts only)');
+  ok(r('https://evil.example.com/a.png') === 'failed', 'foreign host rejected');
+});
+
+await section('Worker: /cb stores REAL Market + Suno result URLs (extractResultUrls)', async () => {
+  const perClientCb = hmacHex(SLUG, MASTER_CB);
+  const now = Math.floor(Date.now() / 1000);
+  const run = async (submitId, taskId, data) => {
+    const env = { KIE_WEBHOOK_HMAC_KEY: WEBHOOK_KEY, KIE_CALLBACK_HMAC_KEY: MASTER_CB, KVREAD_TOKEN: MASTER_KVR, KIE_CALLBACK_KV: makeKV() };
+    const { ctx, settle } = makeCtx();
+    const url = `https://w/cb?c=${SLUG}&j=${submitId}&s=${hmacHex(`${SLUG}:${submitId}`, perClientCb)}&h=${hmacHex('x', perClientCb)}`;
+    const res = await worker.fetch(new Request(url, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-timestamp': String(now), 'x-webhook-signature': kieSig(taskId, now, WEBHOOK_KEY) },
+      body: JSON.stringify({ code: 200, msg: 'success', data: { ...data, taskId } }) }), env, ctx);
+    await settle();
+    return { res, stored: JSON.parse(env.KIE_CALLBACK_KV.store.get(`result:${SLUG}:${submitId}`) || 'null') };
+  };
+  let out = await run('c'.repeat(32), 'task-cbm', { state: 'success', resultJson: JSON.stringify({ resultUrls: [MARKET_URL] }) });
+  ok(out.res.status === 200 && out.stored && out.stored.resultUrls[0] === MARKET_URL, 'Market callback resultJson string -> resultUrls');
+  out = await run('d'.repeat(32), 'task-cbr', { state: 'success', response: { resultUrls: [MARKET_URL] } });
+  ok(out.stored && out.stored.resultUrls[0] === MARKET_URL, 'Market callback response.resultUrls -> resultUrls');
+  out = await run('e'.repeat(32), 'task-cbs', { callbackType: 'complete', data: [{ audio_url: SUNO_URL }] });
+  ok(out.stored && out.stored.resultUrls[0] === SUNO_URL, 'Suno callback data[].audio_url -> resultUrls');
+  out = await run('f'.repeat(32), 'task-cbl', { info: { result_urls: ['https://tempfile.aiquickdraw.com/legacy.png'] } });
+  ok(out.stored && out.stored.resultUrls[0] === 'https://tempfile.aiquickdraw.com/legacy.png', 'legacy info.result_urls unchanged');
 });
 
 await section('box-kv-poller: BOTH paths share ONE outcome rule (_resolveOutcome)', async () => {
@@ -459,6 +568,74 @@ await section('kie-slide-submitter: a RESUMED slide is reconciled against disk (
 });
 
 // ── summary ───────────────────────────────────────────────────────────────────
+
+// =============================================================================
+// Skill 74 handoff: prepareCallback -> `kie_live_adapter.py submit --callback-url` -> adoptAdapterTask.
+// =============================================================================
+await section('kie-slide-submitter: Skill 74 normalized task handoff', async () => {
+  const mk = () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kie74-'));
+    return { ws, s: new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws,
+      kvWorkerUrl: 'https://relay.invalid', callbackHmacKey: hmacHex(SLUG, MASTER_CB), kvReadToken: hmacHex(SLUG, MASTER_KVR) }) };
+  };
+
+  const n = normalizeAdapterTask({ task_id: 't1', model_id: 'm1', state: 'queued', data: { callback_url: 'https://x/cb?j=1' } });
+  ok(n.taskId === 't1' && n.modelId === 'm1' && n.callbackUrl === 'https://x/cb?j=1', 'normalizes the adapter result shape (data.callback_url)');
+  const f = normalizeAdapterTask({ task_id: 't2', model_id: 'm2', callback_url: 'https://x/cb?j=2' });
+  ok(f.taskId === 't2' && f.callbackUrl === 'https://x/cb?j=2', 'normalizes the flat shape (callback_url)');
+  ok(normalizeAdapterTask(null).taskId === null, 'null input normalizes without throwing');
+
+  const { ws, s } = mk();
+  const target = path.join(ws, 'out', 'a.png');
+  const { submitId, callBackUrl } = s.prepareCallback({ deckId: 'd', slideId: 's1', targetPath: target, model: 'm1' });
+  const u = new URL(callBackUrl);
+  ok(u.searchParams.get('c') === SLUG && u.searchParams.get('j') === submitId, 'prepared URL carries c= and j=submitId');
+  ok(u.searchParams.get('s') === hmacHex(`${SLUG}:${submitId}`, hmacHex(SLUG, MASTER_CB)), 's= validator matches the Worker derivation');
+  const reg = s._readRegistry(submitId);
+  ok(reg.status === 'submitting' && reg.callBackUrl === callBackUrl && !!reg.perTaskSecret, 'registry row written before submit with the per-task secret');
+  ok(!callBackUrl.includes(reg.perTaskSecret), 'raw per-task secret is not in the URL');
+
+  const origWait = KieKvPoller.prototype.waitForTask;
+  let waitedFor = null;
+  KieKvPoller.prototype.waitForTask = async (sid, tid, secret) => {
+    waitedFor = { sid, tid, secret };
+    return { status: 'done', resultUrls: ['https://tempfile.aiquickdraw.com/a.png'], code: 200 };
+  };
+  try {
+    s._downloadFirst = async (urls, dest) => { fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, 'img'); return dest; };
+    const r = await s.adoptAdapterTask({ state: 'queued', task_id: 'task-74', model_id: 'm1', data: { callback_url: callBackUrl, callback_sent: true } });
+    ok(waitedFor && waitedFor.tid === 'task-74' && waitedFor.sid === submitId && waitedFor.secret === reg.perTaskSecret, 'adopted task is waited on with the stored submitId and secret');
+    ok(r.status === 'done' && r.localPath === target && fs.existsSync(target), 'adopted task reconciles to a real file on disk');
+    ok(s._readRegistry(submitId).taskId === 'task-74', 'registry row records the Skill 74 taskId');
+    ok(fs.existsSync(path.join(s.indexDir, 'task-74.json')), 'taskId -> submitId index written');
+
+    // Foreign / tampered callback URL is refused and never waited on.
+    waitedFor = null;
+    let refused = false;
+    try { await s.adoptAdapterTask({ state: 'queued', task_id: 'x', model_id: 'm', data: { callback_url: callBackUrl + '&z=1' } }); }
+    catch (e) { refused = /does not match a prepared callback/.test(e.message); }
+    ok(refused && waitedFor === null, 'tampered callback_url refused, no wait');
+    refused = false;
+    try { await s.adoptAdapterTask({ state: 'queued', task_id: 'x', model_id: 'm' }); }
+    catch (e) { refused = true; }
+    ok(refused, 'result with no callback_url refused');
+
+    // Shadow-mode skip: no task, failed result, no wait.
+    const p2 = s.prepareCallback({ deckId: 'd', slideId: 's2', targetPath: path.join(ws, 'out', 'b.png'), model: 'm1' });
+    const r2 = await s.adoptAdapterTask({ state: 'skipped', fallback_used: true, task_id: null, data: { callback_url: p2.callBackUrl } });
+    ok(r2.status === 'failed' && waitedFor === null, 'skipped (shadow) submit returns failed without waiting');
+    ok(s._readRegistry(p2.submitId).status === 'failed-submit', 'skipped submit marks the registry row failed-submit');
+  } finally {
+    KieKvPoller.prototype.waitForTask = origWait;
+  }
+
+  // Callback mode needs the Worker secrets.
+  const bare = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: fs.mkdtempSync(path.join(os.tmpdir(), 'kie74b-')) });
+  let threw = false;
+  try { bare.prepareCallback({ deckId: 'd', slideId: 's', targetPath: '/x' }); } catch (_) { threw = true; }
+  ok(threw, 'prepareCallback without callbackHmacKey/kvReadToken throws');
+});
+
 console.log(`\n${'='.repeat(60)}`);
 if (failures.length === 0) {
   console.log(`PASS - ${passed} assertions passed`);

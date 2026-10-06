@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/unit/ghl-mcp-probe.test.sh — v21.5.0
+# tests/unit/ghl-mcp-probe.test.sh — v25.1.10
 #
 # Proves that scripts/ghl-mcp-probe.sh can actually DETECT the failure that hid
 # from every other check for two days: a GHL community MCP that is running,
@@ -36,6 +36,24 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 # Export it for the WHOLE run, and assert at the end that the production path was
 # not touched.
 export GHL_MCP_LOG_DIR="$(mktemp -d)"
+# ── v25.1.10: THIS TEST MUST NOT FILE REAL COMMAND CENTER CARDS ──────────────
+# alert_operator() resolves the repo's own signed ingest helper (scripts/
+# mc-route.sh sits right next to the probe), so every failing case below used
+# to POST a genuine "GHL MCP DOWN (no listener)" card onto the box's live board.
+# Route every card into a file instead, for the WHOLE run, and assert on it.
+CARD_STUB_DIR="$(mktemp -d)"
+export CARD_LOG="$CARD_STUB_DIR/cards.log"
+cat > "$CARD_STUB_DIR/route-stub.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "${CARD_LOG}"
+SH
+chmod +x "$CARD_STUB_DIR/route-stub.sh"
+export GHL_MCP_PROBE_ROUTE_CMD="$CARD_STUB_DIR/route-stub.sh"
+# The box running this test may carry the operator off-switch marker
+# ($HOME/.openclaw/.ghl-mcp-probe-disabled). Force the probe ON for every case
+# except the two that test the switch itself.
+export GHL_MCP_PROBE_DISABLED=0
+card_count() { if [ -f "$CARD_LOG" ]; then wc -l < "$CARD_LOG" | tr -d ' '; else echo 0; fi; }
 PROD_LOG_DIR="${HOME}/Library/Logs/ghl-mcp"
 [ -d /data/logs ] && PROD_LOG_DIR="/data/logs"
 PROD_LOG="$PROD_LOG_DIR/probe.log"
@@ -43,7 +61,7 @@ PROD_LOG="$PROD_LOG_DIR/probe.log"
 PROD_LOG_BEFORE="absent"
 [ -f "$PROD_LOG" ] && PROD_LOG_BEFORE="$(wc -c < "$PROD_LOG" 2>/dev/null | tr -d ' ')"
 
-echo "=== ghl-mcp-probe.test.sh (v21.5.0) ==="
+echo "=== ghl-mcp-probe.test.sh (v25.1.10) ==="
 echo ""
 
 if [ ! -f "$PROBE" ]; then
@@ -274,6 +292,175 @@ if [ "$(esc_count)" = "$ESC_BEFORE" ]; then
   pass "(13) with no FLEET_STANDING_BOX_SLUG the probe sends NO escalation (identity is fail-closed)"
 else
   fail "(13) sent an unattributable escalation with no box slug ($ESC_BEFORE -> $(esc_count))"
+fi
+
+# ── v25.1.10: cards are ONE PER OUTAGE, not one per tick ─────────────────────
+# The 2026-09-15 operator incident: 72 identical cards on one board in ten days,
+# each filed by a single failing tick. The card now fires with the Rangers page,
+# on the 3rd consecutive identical failure, exactly once per streak.
+CARD_STREAK_DIR="$(mktemp -d)"
+: > "$CARD_LOG"
+run_card_probe() {
+  GHL_MCP_LOG_DIR="$CARD_STREAK_DIR" FLEET_STANDING_BOX_SLUG="unit-test-box" \
+    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+}
+run_card_probe; run_card_probe
+if [ "$(card_count)" = "0" ]; then
+  pass "(15) two consecutive failures file NO Command Center card"
+else
+  fail "(15) filed $(card_count) card(s) after only two failures — the per-tick card furnace is back"
+fi
+run_card_probe
+if [ "$(card_count)" = "1" ]; then
+  pass "(16) the 3rd consecutive failure files exactly ONE card"
+else
+  fail "(16) expected exactly 1 card on the 3rd failure, got $(card_count)"
+fi
+run_card_probe; run_card_probe
+if [ "$(card_count)" = "1" ]; then
+  pass "(17) a continuing outage does NOT file a card per tick"
+else
+  fail "(17) re-carded on a continuing outage — now $(card_count) cards"
+fi
+if grep -q 'GHL MCP DOWN (no listener)' "$CARD_LOG" 2>/dev/null; then
+  pass "(18) the one card carries the DOWN title and the general-task route"
+else
+  fail "(18) the card that was filed does not carry the DOWN title"
+fi
+
+# ── JEV-118: a failed card route must leave a DURABLE trace ───────────────────
+# say() prints nothing under --quiet and the sole quiet caller
+# (ghl-mcp-autostart.sh) discards both streams, so a WARNING via say() alone
+# used to vanish while the streak file still recorded escalated=1 and
+# suppressed every later attempt. This case runs the exact quiet-tick shape
+# (--quiet, both streams to /dev/null) against a route hook that always fails,
+# then asserts the WARNING is on disk in probe.log anyway.
+JEV118_DIR="$(mktemp -d)"
+cat > "$JEV118_DIR/fail-route.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$JEV118_DIR/fail-route.sh"
+JEV118_LOG_DIR="$(mktemp -d)"
+for _ in 1 2 3; do
+  GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
+    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+done
+if grep -q 'WARNING — the operator alert card was NOT created' "$JEV118_LOG_DIR/probe.log" 2>/dev/null; then
+  pass "(18b) a failed card route under --quiet still leaves a WARNING in probe.log"
+else
+  fail "(18b) a failed card route under --quiet left no WARNING in probe.log — the swallow is back"
+fi
+# ── JEV-124: the durable record names the attempted target ──────────────────
+# Spec clause 3: timestamp + title + reason were already on disk; the attempted
+# target was not. The record must carry target= so the next reader knows WHICH
+# route hook failed without guessing.
+if grep 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | grep -q 'fail-route.sh'; then
+  pass "(18c) the card-route-failure record names the attempted route target"
+else
+  fail "(18c) the card-route-failure record does not name the attempted target — target field missing"
+fi
+# ── JEV-124 (JEV-127 repair): STATUS surfaces the TRUE count ────────────────
+# The old assertion (one STATUS line matching card-route-failures=1) PASSED on
+# the defective code by arithmetic coincidence: the phantom counter counted its
+# own STATUS lines, so tick 2 emitted `=1` with zero real failures on disk.
+# Assert semantics, not the digit: count the genuine failure records first.
+# One more quiet tick (streak now 4, already escalated, so no second warning):
+# report() must surface card-route-failures=N_REAL on its latest STATUS line.
+GHL_MCP_LOG_DIR="$JEV118_LOG_DIR" GHL_MCP_PROBE_ROUTE_CMD="$JEV118_DIR/fail-route.sh" \
+  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+N_REAL="$(grep -c 'card-route-failure target=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null)"
+case "$N_REAL" in ''|*[!0-9]*) N_REAL=0 ;; esac
+LAST_STATUS="$(grep 'STATUS: ghl-mcp-probe=' "$JEV118_LOG_DIR/probe.log" 2>/dev/null | tail -1)"
+if [ "$N_REAL" = "1" ]; then
+  pass "(18d) positive control: exactly one real card-route-failure record on disk"
+else
+  fail "(18d) positive control FAILED — expected 1 real card-route-failure record, found N_REAL=$N_REAL"
+fi
+case "$LAST_STATUS" in
+  *"card-route-failures=${N_REAL}") pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
+  *"card-route-failures=${N_REAL} "*) pass "(18d) latest STATUS surfaces card-route-failures=${N_REAL} (escalated-once)" ;;
+  *) fail "(18d) latest STATUS does not surface card-route-failures=${N_REAL} — N_REAL=${N_REAL}, last line: ${LAST_STATUS}" ;;
+esac
+# ── JEV-127 (18e): zero failures ⇒ byte-identical STATUS, no count token ────
+# QC evidence: on the defective code three quiet dead-port ticks wrote
+# `card-route-failures=0`, then `=1`, then `=2` with ZERO real failure records
+# on disk. Fresh isolated log; the file-global route stub exits 0, so the card
+# routes SUCCEED and no failure record is ever written.
+JEV127_LOG_DIR="$(mktemp -d)"
+for _ in 1 2 3; do
+  GHL_MCP_LOG_DIR="$JEV127_LOG_DIR" FLEET_STANDING_BOX_SLUG="unit-test-box" \
+    bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+done
+JEV127_STATUS_N="$(grep -c 'STATUS: ghl-mcp-probe=NO_LISTENER' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+JEV127_REAL_N="$(grep -c 'card-route-failure target=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+JEV127_TOKEN_N="$(grep -c 'card-route-failures=' "$JEV127_LOG_DIR/probe.log" 2>/dev/null)"
+case "$JEV127_STATUS_N" in ''|*[!0-9]*) JEV127_STATUS_N=0 ;; esac
+case "$JEV127_REAL_N" in ''|*[!0-9]*) JEV127_REAL_N=0 ;; esac
+case "$JEV127_TOKEN_N" in ''|*[!0-9]*) JEV127_TOKEN_N=0 ;; esac
+if [ "$JEV127_STATUS_N" = "3" ]; then
+  pass "(18e) positive control: 3 NO_LISTENER STATUS lines in the fresh log"
+else
+  fail "(18e) positive control FAILED — expected 3 NO_LISTENER STATUS lines, found $JEV127_STATUS_N"
+fi
+if [ "$JEV127_REAL_N" = "0" ] && [ "$JEV127_TOKEN_N" = "0" ]; then
+  pass "(18e) zero failures ⇒ no card-route-failures= token anywhere (STATUS byte-identical)"
+else
+  fail "(18e) count token leaked with zero real failures — real=$JEV127_REAL_N token_lines=$JEV127_TOKEN_N"
+fi
+rm -rf "$JEV127_LOG_DIR"
+rm -rf "$JEV118_DIR" "$JEV118_LOG_DIR"
+
+# ── v25.1.10: --heal needs a STREAK; one slow check must never restart ────────
+# The restart is stubbed (GHL_MCP_PROBE_HEAL_CMD) so this test can never
+# kickstart the box's real com.clawd.ghl-mcp service.
+HEAL_DIR="$(mktemp -d)"
+export HEAL_LOG="$HEAL_DIR/heals.log"
+cat > "$HEAL_DIR/heal-stub.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'restart\n' >> "${HEAL_LOG}"
+SH
+chmod +x "$HEAL_DIR/heal-stub.sh"
+heal_count() { if [ -f "$HEAL_LOG" ]; then wc -l < "$HEAL_LOG" | tr -d ' '; else echo 0; fi; }
+run_heal_probe() {
+  GHL_MCP_LOG_DIR="$HEAL_DIR/log" GHL_MCP_PROBE_HEAL_CMD="$HEAL_DIR/heal-stub.sh" \
+  GHL_MCP_PROBE_HEAL_WAIT_SECONDS=1 \
+    bash "$PROBE" --once --quiet --heal --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+}
+run_heal_probe
+if [ "$(heal_count)" = "0" ]; then
+  pass "(19) --heal does NOT restart the server on the first failing tick"
+else
+  fail "(19) --heal restarted on the FIRST failing tick ($(heal_count) restart(s)) — the self-inflicted outage loop is back"
+fi
+run_heal_probe
+if [ "$(heal_count)" = "1" ]; then
+  pass "(20) --heal restarts exactly once when the previous tick also failed"
+else
+  fail "(20) expected exactly 1 restart on the 2nd consecutive failure, got $(heal_count)"
+fi
+
+# ── v25.1.10: operator off-switch makes an installed schedule inert ───────────
+DIS_DIR="$(mktemp -d)"
+GHL_MCP_PROBE_DISABLED=1 GHL_MCP_LOG_DIR="$DIS_DIR" \
+  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+RC_DIS=$?
+if [ "$RC_DIS" = "0" ] && grep -q 'ghl-mcp-probe=DISABLED' "$DIS_DIR/probe.log" 2>/dev/null; then
+  pass "(21) GHL_MCP_PROBE_DISABLED=1 turns a dead-port probe into exit 0 + DISABLED"
+else
+  fail "(21) off-switch env ignored (exit $RC_DIS)"
+fi
+DIS_HOME="$(mktemp -d)"
+mkdir -p "$DIS_HOME/.openclaw"
+: > "$DIS_HOME/.openclaw/.ghl-mcp-probe-disabled"
+DIS_DIR2="$(mktemp -d)"
+GHL_MCP_PROBE_DISABLED= HOME="$DIS_HOME" GHL_MCP_LOG_DIR="$DIS_DIR2" \
+  bash "$PROBE" --once --quiet --timeout 2 --url "http://127.0.0.1:${DEAD_PORT}" >/dev/null 2>&1
+RC_DIS2=$?
+if [ "$RC_DIS2" = "0" ] && grep -q 'ghl-mcp-probe=DISABLED' "$DIS_DIR2/probe.log" 2>/dev/null; then
+  pass "(22) the \$HOME/.openclaw/.ghl-mcp-probe-disabled marker file has the same effect"
+else
+  fail "(22) marker file ignored (exit $RC_DIS2)"
 fi
 
 kill "$ESC_PID" 2>/dev/null || true

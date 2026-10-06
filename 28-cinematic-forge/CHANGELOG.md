@@ -1,5 +1,34 @@
 # Changelog — Skill 28: Cinematic Forge
 
+## v7.0.3 - 2026-10-06 - model-choice wording defers to Skills 66 and 68; changelog order
+
+- Removed the parenthetical that spelled out the retired audio ids; Skill 68 is the only authority for audio model ids.
+- Image model naming (Nano Banana Pro) and Suno naming replaced with "image via Skill 66" and "music via Skill 68" wherever this skill stated a model choice (SKILL.md, INSTALL.md, QC.md, README.md, CORE_UPDATES.md). The "VEO 3.1 Fast only" rule is unchanged.
+- imgBB wording: dropped "(free)" and "free account" so nothing implies a KIE cost; the facts about imgBB are unchanged.
+- The v7.0.0 entry moved to its chronological position, above v6.6.0.
+- Added PREREQS.json (Skills 01, 66, 67, 68 and the KIE_API_KEY credential) so the Skill 66, 67 and 68 requirements in SKILL.md are enforced by the prerequisite check.
+
+## v7.0.2 — 2026-10-05 — QC follow-ups for the Skill 68 delegation
+
+- The missing-Skill-68 guard in Phase 3 now stops (returns or exits non-zero) instead of only printing a message.
+- Lines that named ElevenLabs as the voice vendor now say "voice via Skill 68"; Skill 68 owns the text-to-speech vendor choice.
+- The Phase 0 budget template no longer hard-codes any price or voice vendor; each line takes its price from the live adapter `price` command for the model Skill 66, 67 or 68 chose. INSTALL.md and README.md follow the same rule (price and vendor wording).
+- Single price authority across the whole skill: the COST REFERENCE table, Phase 2 cost line, progress-update example, intake math note, Quality-model note and the 90-second example no longer state any dollar figure; prices come from the Skill 74 `price` command (or the KIE catalog `pricingDesc` until Skill 74 is installed). A note near the top says so.
+- Sound-effects payloads must carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` applies its sounds checks (confirmed by reading that script).
+
+## v7.0.1 — 2026-10-05 — remove dead KIE endpoints; delegate audio to Skill 68
+
+Live probes on 2026-10-05 (known-good control and fake-path control, no paid calls) returned HTTP 404 for `GET /api/v1/user/credits` and `POST /api/v1/jobs/create`, while `GET /api/v1/chat/credit` (body `{code,msg,data:<number>}`) answered. The task API is `POST /api/v1/jobs/createTask` and `GET /api/v1/jobs/recordInfo`.
+
+- Credit check (SKILL.md Phase 0, QC.md 5.1) now uses `/api/v1/chat/credit` and requires the body `code` to be checked before reading `data`.
+- Phase 3 audio (dialogue, narrator, sound effects, music) no longer calls KIE directly. The dead `/api/v1/jobs/create` calls and the model ids `eleven_multilingual_v2`, `eleven_sound_effects` and `suno_v4` are removed. Skill 68 (`68-kie-audio`) owns model ids, routes and validation; the agent runs its `scripts/validate_audio_request.py` before dispatch and its `references/qc.md` after. Skill 68 has no ElevenLabs sound-effects model, so sound effects use its sound-effect route.
+- API reference table: image rows corrected from `/jobs/create` and `/jobs/query` to `/jobs/createTask` and `/jobs/recordInfo` (Skill 66 owns the image model id); audio rows replaced by a pointer to Skill 68; `/veo/generate`, `/veo/record-info` and `/veo/extend` left as is (they match Skill 67's registry).
+- INSTALL.md, QC.md and cost table wording updated to match. The "VEO 3.1 Fast only" rule, intake, assembly and delivery gates are unchanged.
+
+## [7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
+
 ## v6.6.0 — SK1-32: the delivered artifact is the REQUESTED artifact, and the gate that says so checks the approved intake
 
 - **T0-47 (BLOCKER) — the un-transformed file was the one that shipped.** Phase 5
@@ -68,7 +97,3 @@ CI: `.github/workflows/cinematic-forge-delivery-guard.yml`.
 - VPS-awareness: SKILL.md Phase 0 resolves SECRETS_ENV / OUTPUT_ROOT / SKILL_DIR by detecting `/data/.openclaw`; `qc-cinematic-forge.sh` fallback resolver is now VPS-aware and adds `set -o pipefail`; INSTALL.md and QC.md reference the VPS secrets path.
 - Canonicalized GoHighLevel credential names away from the drifted `GHL_API_KEY` / `GHL_LOCATION_ID` to `GOHIGHLEVEL_API_KEY` / `GOHIGHLEVEL_LOCATION_ID` across SKILL.md and QC.md; removed an operator-name reference from QC.md.
 - Anthropic scrub: removed the external `summarize`-tool Anthropic credential option from the key lists (kept `GEMINI_API_KEY` / `OPENAI_API_KEY`, which keep the tool working) in SKILL.md and QC.md; minimally removed the two stale Anthropic client-model recommendations (vision line + executor line) from the `cinematic-forge.skill` bundle and repacked it. The existing "never Anthropic" / "BANNED: Anthropic" vision and executor guidance was left intact.
-
-## [7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
-
-No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

@@ -684,6 +684,243 @@ else
 fi
 rm -rf "$TMP16"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-09-17: THE ROLE-PROVENANCE RE-FLAGGING LOOP (scenarios 17-22)
+# ─────────────────────────────────────────────────────────────────────────────
+# The drain restamped .workforce-build-state.json's artifactProvenance for
+# kind=="sop" and kind=="dept" rows ONLY -- never for kind=="role". But
+# detect-stale-artifacts.py's FAST PATH (load_built_from_state) reads ONLY that
+# state file; its own comment calls the path filesystem-blind. So a role whose
+# how-to.md had just been refilled kept its OLD source_content_sha in build
+# state, was re-classified STALE on the very next run, and the roll's D2 gate
+# withheld the version stamp -- forever. A live box sat on one version with 10
+# roles looping exactly this way across five consecutive rolls while every roll
+# printed "REFRESHED" for them.
+#
+#  17. End-to-end: refresh --apply then detect-stale-artifacts.py classifies the
+#      role CURRENT. (Against the pre-fix tree the role comes back STALE.)
+#  18. The restamp lands the manifest sha in BOTH places (how-to.md marker and
+#      artifactProvenance.roles[key]) and carries the builder's record shape.
+#  19. CONTROL: sop/dept restamps and persona/unrelated state keys are
+#      byte-for-byte unchanged by the role restamp.
+#  20. Dry-run (no --apply) restamps NOTHING.
+#  21. ONE LIBRARY PER DRAIN: create_role_workspaces.py resolves the role-library
+#      with different precedence than this consumer does, so a decoy library
+#      reachable through ITS resolver used to supply the bytes while this
+#      consumer's own SKILL_DIR supplied the queue. Pinned now.
+#  22. CONTROL for 21: an operator who sets ROLE_LIBRARY_PATH explicitly still
+#      wins -- the pin never overrides a deliberate override.
+# ─────────────────────────────────────────────────────────────────────────────
+
+DETECT="$REPO_ROOT/23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
+MANIFEST="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_index.json"
+ROLE_KEY="account-management/client-relationship-manager"
+
+# _mk_prov_state <state-path> <role-sha>
+# Seeds artifactProvenance with the role under test (at <role-sha>) plus
+# SENTINEL sop / dept / persona records and an unrelated top-level key, so the
+# control scenarios can prove the role restamp touches nothing else.
+_mk_prov_state() {
+  python3 - "$1" "$2" <<'PYEOF'
+import json, sys
+path, role_sha = sys.argv[1], sys.argv[2]
+json.dump({
+    "clientSlug": "fixture-client",
+    "interviewComplete": True,
+    "artifactProvenance": {
+        "manifestVersion": "0.0.1-fixture",
+        "roles": {
+            "account-management/client-relationship-manager": {
+                "source_content_sha": role_sha,
+                "source_content_version": "0.0.1",
+                "instantiatedAt": "2020-01-01",
+                "sourcePath": "templates/role-library/account-management/client-relationship-manager.md",
+            },
+            "graphics/untouched-sentinel-role": {"source_content_sha": "sha256:SENTINEL_ROLE"},
+        },
+        "sops": {"graphics/SOP--chief-design-officer-sops": {"source_content_sha": "sha256:SENTINEL_SOP"}},
+        "depts": {"research": {"source_content_sha": "sha256:SENTINEL_DEPT"}},
+        "personas": {"the-operator": {"source_content_sha": "sha256:SENTINEL_PERSONA"}},
+    },
+}, open(path, "w"), indent=2)
+PYEOF
+}
+
+_mk_role_queue() {
+  # <queue-path> <current-sha>
+  python3 - "$1" "$2" <<'PYEOF'
+import json, sys
+path, cur = sys.argv[1], sys.argv[2]
+json.dump({
+    "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+    "items": [{
+        "key": "account-management/client-relationship-manager",
+        "kind": "role", "label": "Client Relationship Manager", "status": "STALE",
+        "built_from": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "current": cur,
+    }],
+}, open(path, "w"), indent=2)
+PYEOF
+}
+
+_section "Scenario 17 - after a role refresh, detect-stale-artifacts.py classifies the role CURRENT (the loop is closed)"
+TMP17="$(mktemp -d)"
+_mk_workspace_at "$TMP17" "account-management"
+_mk_prov_state "$TMP17/.workforce-build-state.json" "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+_mk_role_queue "$TMP17/.artifact-refresh-queue.json" "$REAL_ROLE_INFO"
+
+# Pre-condition: the role is STALE before the drain (the fixture is real).
+PRE17="$(python3 "$DETECT" --workspace "$TMP17" --manifest "$MANIFEST" --json 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(next((i['status'] for i in d['items'] if i['key']=='$ROLE_KEY'), 'ABSENT'))
+")"
+if [ "$PRE17" = "STALE" ]; then
+  _pass "pre-condition: detect-stale-artifacts.py reports the seeded role STALE"
+else
+  _fail "fixture is not STALE before the drain (got '$PRE17') -- the scenario would prove nothing"
+fi
+
+OUT17="$(python3 "$CONSUMER" --workspace "$TMP17" --apply 2>&1)"
+RC17=$?
+POST17="$(python3 "$DETECT" --workspace "$TMP17" --manifest "$MANIFEST" --json 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(next((i['status'] for i in d['items'] if i['key']=='$ROLE_KEY'), 'ABSENT'))
+")"
+if [ "$RC17" -eq 0 ] && [ "$POST17" = "CURRENT" ]; then
+  _pass "role classifies CURRENT after the drain -- the refill no longer re-flags STALE every roll"
+else
+  _fail "role did NOT return to CURRENT (rc=$RC17, status='$POST17') -- the re-flagging loop is still open: $OUT17"
+fi
+
+_section "Scenario 18 - the CURRENT manifest sha lands in BOTH the how-to.md marker AND artifactProvenance.roles"
+HOWTO18="$TMP17/departments/account-management/05-client-relationship-manager/how-to.md"
+if grep -q "$REAL_ROLE_INFO" "$HOWTO18"; then
+  _pass "how-to.md provenance marker carries the CURRENT manifest content_sha"
+else
+  _fail "how-to.md marker does not carry the current content_sha"
+fi
+STATE18="$(python3 -c "
+import json
+ap = json.load(open('$TMP17/.workforce-build-state.json'))['artifactProvenance']
+r = ap['roles'].get('$ROLE_KEY', {})
+print(r.get('source_content_sha'))
+print(r.get('source_content_version'))
+print(r.get('instantiatedAt'))
+print(r.get('sourcePath'))
+print(r.get('generator'))
+")"
+S18_SHA="$(echo "$STATE18" | sed -n '1p')"
+S18_VER="$(echo "$STATE18" | sed -n '2p')"
+S18_AT="$(echo "$STATE18" | sed -n '3p')"
+S18_PATH="$(echo "$STATE18" | sed -n '4p')"
+S18_GEN="$(echo "$STATE18" | sed -n '5p')"
+if [ "$S18_SHA" = "$REAL_ROLE_INFO" ]; then
+  _pass "artifactProvenance.roles['$ROLE_KEY'].source_content_sha restamped to the CURRENT manifest sha"
+else
+  _fail "build-state role sha not restamped (got '$S18_SHA', want '$REAL_ROLE_INFO') -- THIS is the defect"
+fi
+if [ -n "$S18_VER" ] && [ "$S18_VER" != "None" ] && [ "$S18_VER" != "0.0.1" ] \
+   && [ -n "$S18_AT" ] && [ "$S18_AT" != "None" ] && [ "$S18_AT" != "2020-01-01" ] \
+   && echo "$S18_PATH" | grep -q "role-library/account-management/client-relationship-manager.md" \
+   && [ "$S18_GEN" = "refresh-stale-roles.py" ]; then
+  _pass "restamped record carries the builder's shape (source_content_version / instantiatedAt / sourcePath) + drain provenance"
+else
+  _fail "restamped record shape wrong (ver='$S18_VER' at='$S18_AT' path='$S18_PATH' gen='$S18_GEN')"
+fi
+
+_section "Scenario 19 - CONTROL: sop / dept / persona provenance and unrelated state keys are untouched by the role restamp"
+CTRL19="$(python3 -c "
+import json
+s = json.load(open('$TMP17/.workforce-build-state.json'))
+ap = s['artifactProvenance']
+print(ap['sops'].get('graphics/SOP--chief-design-officer-sops', {}).get('source_content_sha'))
+print(ap['depts'].get('research', {}).get('source_content_sha'))
+print(ap['personas'].get('the-operator', {}).get('source_content_sha'))
+print(ap['roles'].get('graphics/untouched-sentinel-role', {}).get('source_content_sha'))
+print(s.get('clientSlug'))
+print(s.get('interviewComplete'))
+print(ap.get('manifestVersion'))
+")"
+if [ "$(echo "$CTRL19" | sed -n '1p')" = "sha256:SENTINEL_SOP" ] \
+   && [ "$(echo "$CTRL19" | sed -n '2p')" = "sha256:SENTINEL_DEPT" ] \
+   && [ "$(echo "$CTRL19" | sed -n '3p')" = "sha256:SENTINEL_PERSONA" ] \
+   && [ "$(echo "$CTRL19" | sed -n '4p')" = "sha256:SENTINEL_ROLE" ] \
+   && [ "$(echo "$CTRL19" | sed -n '5p')" = "fixture-client" ] \
+   && [ "$(echo "$CTRL19" | sed -n '6p')" = "True" ] \
+   && [ "$(echo "$CTRL19" | sed -n '7p')" = "0.0.1-fixture" ]; then
+  _pass "sop/dept/persona records, the untouched sibling role, and every unrelated state key survive byte-identical"
+else
+  _fail "the role restamp clobbered unrelated state: $CTRL19"
+fi
+rm -rf "$TMP17"
+
+_section "Scenario 20 - dry-run (no --apply) restamps NOTHING in .workforce-build-state.json"
+TMP20="$(mktemp -d)"
+_mk_workspace_at "$TMP20" "account-management"
+_mk_prov_state "$TMP20/.workforce-build-state.json" "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+_mk_role_queue "$TMP20/.artifact-refresh-queue.json" "$REAL_ROLE_INFO"
+STATE_BEFORE20="$(cat "$TMP20/.workforce-build-state.json")"
+python3 "$CONSUMER" --workspace "$TMP20" >/dev/null 2>&1   # no --apply
+STATE_AFTER20="$(cat "$TMP20/.workforce-build-state.json")"
+if [ "$STATE_BEFORE20" = "$STATE_AFTER20" ]; then
+  _pass "dry-run left .workforce-build-state.json byte-identical"
+else
+  _fail "dry-run mutated the build state -- --apply gating on the role restamp is broken"
+fi
+rm -rf "$TMP20"
+
+# ─── Scenario 21: ONE LIBRARY PER DRAIN ─────────────────────────────────────
+# create_role_workspaces.py's _resolve_skill_dir() probes
+# $ROLE_LIBRARY_PATH -> $OPENCLAW_WORKSPACE_PATH/skills/23-ai-workforce-blueprint
+# -> the INSTALLED skills dir -> the directory the module was imported from.
+# refresh-stale-roles.py's own resolver probes $OPENCLAW_SKILL23_DIR -> the
+# directory the SCRIPT was run from -> the installed dirs. The two therefore
+# disagree whenever the drain runs from a tree that is not the installed one:
+# how-to.md gets refilled from a library that has nothing to do with the queue
+# this drain is consuming, and a role the running tree ships but the other tree
+# does not comes back "library_fill produced no usable content" -- a refresh
+# that fails for exactly the newest roles while the same command run from the
+# other tree succeeds. It is also a correctness bug now that the role restamp
+# certifies the running tree's manifest sha.
+#
+# The decoy below is a valid-but-EMPTY role-library reachable only through
+# create_role_workspaces.py's resolver. Against the pre-fix tree the drain reads
+# it and fails; with the pin it reads this repo's library and succeeds.
+_section "Scenario 21 - a decoy library reachable only via create_role_workspaces.py's resolver can no longer supply the bytes"
+TMP21="$(mktemp -d)"
+DECOY21="$(mktemp -d)"
+mkdir -p "$DECOY21/skills/23-ai-workforce-blueprint/templates/role-library"
+printf '{"version":"0.0.0-decoy","roles":[],"departments":{},"sops":[],"personas":[],"content_manifest":{"manifest_schema":"1.0"}}' \
+  > "$DECOY21/skills/23-ai-workforce-blueprint/templates/role-library/_index.json"
+_mk_workspace_at "$TMP21" "account-management"
+_mk_prov_state "$TMP21/.workforce-build-state.json" "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+_mk_role_queue "$TMP21/.artifact-refresh-queue.json" "$REAL_ROLE_INFO"
+OUT21="$(OPENCLAW_WORKSPACE_PATH="$DECOY21" python3 "$CONSUMER" --workspace "$TMP21" --apply 2>&1)"
+RC21=$?
+HOWTO21="$TMP21/departments/account-management/05-client-relationship-manager/how-to.md"
+if [ "$RC21" -eq 0 ] && grep -q "$REAL_ROLE_INFO" "$HOWTO21"; then
+  _pass "the drain refilled from ITS OWN skill tree, not the decoy (rc 0, current sha on disk)"
+else
+  _fail "decoy library supplied the drain (rc=$RC21) -- refresh and create_role_workspaces disagree on the library: $OUT21"
+fi
+rm -rf "$TMP21"
+
+_section "Scenario 22 - CONTROL: an explicit operator \$ROLE_LIBRARY_PATH still wins over the pin"
+TMP22="$(mktemp -d)"
+_mk_workspace_at "$TMP22" "account-management"
+_mk_prov_state "$TMP22/.workforce-build-state.json" "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+_mk_role_queue "$TMP22/.artifact-refresh-queue.json" "$REAL_ROLE_INFO"
+OUT22="$(ROLE_LIBRARY_PATH="$DECOY21/skills/23-ai-workforce-blueprint" python3 "$CONSUMER" --workspace "$TMP22" --apply 2>&1)"
+RC22=$?
+if [ "$RC22" -eq 3 ] && echo "$OUT22" | grep -q "library_fill produced no usable content"; then
+  _pass "an explicitly-set ROLE_LIBRARY_PATH is still honored (the pin never overrides a deliberate override)"
+else
+  _fail "the pin overrode an explicit operator ROLE_LIBRARY_PATH (rc=$RC22): $OUT22"
+fi
+rm -rf "$TMP22" "$DECOY21"
+
 _section "SUMMARY"
 echo "  Passed: $PASS_COUNT   Failed: $FAIL_COUNT"
 if [ "$FAIL_COUNT" -gt 0 ]; then

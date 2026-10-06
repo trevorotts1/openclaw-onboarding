@@ -328,8 +328,9 @@ def evaluate_storyboard(rec, bands):
                 fails.append((sc_band["af"], "scene %d has no numeric duration" % i))
             else:
                 total += float(dur)
-    # R6: 25.0s is the Sora lane's real API constraint (kept). A client-exact
-    # override (overrides.storyboard_seconds) opens the non-Sora creative-video
+    # R6: 25.0s is the contract of the 25-second duration lane (one single-clip
+    # render; the model is picked by the Skill 67 selector). A client-exact
+    # override (overrides.storyboard_seconds) opens the other-duration creative-video
     # lane; default stays EXACTLY 25.0s.
     sec_lo, sec_hi, sec_ovr = _resolve(obj, "storyboard_seconds", sec_band)
     if sec_ovr:

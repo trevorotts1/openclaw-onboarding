@@ -14,10 +14,14 @@
 # Steps 5 to 8 (box hygiene) are recorded PENDING.
 #
 # ACTIVATION TEARDOWN (symmetric to provision STEP 8; fleet guarantee reversed:
-# revoke => processor gone). Step 5 unregisters the inbound hook and the new step
-# 5b stops and unregisters the client's podcast scheduler, both through the
-# activation-layer helpers (register-podcast-hook.sh --remove --client-slug <slug>,
-# install-podcast-scheduler.sh --remove --client-slug <slug>). The department
+# revoke => processor gone). Step 5 unregisters the inbound intake route AND the
+# gateway hook mapping that triggers production, through the activation-layer
+# helper (register-podcast-hook.sh --remove --client-slug <slug>). There is no
+# scheduler to stop: the engine has no controller daemon and no scheduler daemon
+# (no-daemon doctrine), so with the route and mapping gone and the secrets
+# rotated, no new flow can land and the bound session has no queue to poll. The
+# box-wide hooks ingress and hooks token are deliberately left alone: another
+# integration on the box may hold that token. The department
 # install is intentionally NOT removed: it is box-level shared infrastructure
 # for every client on the box, and removing it would down other clients'
 # processors (a FAILED revocation per the hard rules below).
@@ -561,19 +565,22 @@ else
   else
     BOX_MSG="no secrets file; "
   fi
-  # Scheduler residue (activation teardown proof; a running scheduler is a live processor).
-  SCHED_INSTALLER="${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
-  if [ -x "$SCRIPT_DIR/$SCHED_INSTALLER" ] && runas "$SCRIPT_DIR/$SCHED_INSTALLER" --check --client-slug "$SLUG" >/dev/null 2>&1; then
-    BOX_MSG="${BOX_MSG}scheduler STILL ACTIVE; "
-  elif command -v openclaw >/dev/null 2>&1 && runas openclaw cron list 2>/dev/null | grep -qi "podcast-scheduler-${SLUG}"; then
-    BOX_MSG="${BOX_MSG}scheduler STILL ACTIVE; "
+  # Dead-daemon residue (activation teardown proof). There is no scheduler
+  # installer to interrogate: the engine ships none (no-daemon doctrine, and the
+  # dead act-2/act-4 slice was removed from this skill). What IS worth proving
+  # is that no cron naming either dead daemon was ever left behind on this box,
+  # which is the same contract guard-cron-inventory.py and
+  # guard-activation-health.py enforce.
+  if command -v openclaw >/dev/null 2>&1 \
+     && runas openclaw cron list 2>/dev/null | grep -Eqi 'podcast[-_ ]?(scheduler|controller)'; then
+    BOX_MSG="${BOX_MSG}a cron naming a podcast daemon is STILL ACTIVE (no-daemon violation); "
   else
-    BOX_MSG="${BOX_MSG}scheduler not detected; "
+    BOX_MSG="${BOX_MSG}no podcast daemon cron detected; "
   fi
   GW_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${GATEWAY_PORT}/" 2>/dev/null; echo " rc=$?")"
   if printf '%s' "$GW_CODE" | grep -qE 'rc=0$|rc=22$'; then
     if printf '%s' "$BOX_MSG" | grep -q 'STILL ACTIVE'; then
-      ledger_step "9d-box-clean" "WARN" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy, but the podcast processor scheduler is STILL LIVE for $SLUG; stop it and re-run"
+      ledger_step "9d-box-clean" "WARN" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy, but podcast daemon residue is STILL LIVE for $SLUG; remove it and re-run"
     else
       ledger_step "9d-box-clean" "PASS" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy (a revocation that downs a live box is a FAILED revocation)"
     fi

@@ -1,5 +1,154 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.20 - 2026-09-21 - The parity guard can see agents.entries, and a dept folder stops becoming a doubled agent id
+
+Three findings from the client box at the v25.1.66 skills roll.
+
+**The parity guard was blind to the roster.** `scripts/guard-department-runtime-parity.py` read only `agents.list`; the box carries `agents.entries` (100 entries, 66 `dept-` prefixed). On an entries-mode box it saw ZERO agent ids and reported EVERY department as having no runtime, failing the roll. It now reads both shapes, taking the object key and each entry's own `id`. A genuinely missing runtime is still a FAIL.
+
+The archived exclusion was already correct — `archived_at IS NOT NULL` rows have been excluded with `"reason": "archived"` since migration 095's guard. Proven with a fixture rather than assumed.
+
+**The runtime materializer wrote doubled agent ids.** `scripts/materialize-dept-agents.sh` keys on the raw department FOLDER name and builds `f"dept-{slug}"`; the client's folders are named `<name>-dept`, so 22 rows landed as `dept-app-development-dept`. The scan now strips a leading `dept-` or trailing `-dept`.
+
+That is an affix strip, NOT `canonical_dept_slug()`. The first attempt used the full canonicaliser and broke `materialize-dept-agents-roster-shape.test.sh` T4, dropping a folder named `Sales & Marketing`: case, spaces, `&` and collision detection are already handled downstream where the entries key is built.
+
+**A department with no ACTIVE workspace row now gets no runtime entry**, with one log line naming it. Absent or unreadable board means write everything, as before.
+
+**A parity finding is no longer a failed refresh.** On `--update-only`, `scripts/run-full-install.sh` WARNs and lets the roll finish; a FULL install still refuses.
+
+New: `scripts/test_runtime_parity_and_slug.py`, 16 assertions on real sqlite boards, mutation-proved (4 red).
+
+## v13.1.18 - 2026-09-21 - The installer finds the build state where it actually is
+
+Verified on the operator's own box: `scripts/run-full-install.sh --update-only` built `STATE_FILE` from `OPENCLAW_WORKSPACE_PATH`, which `oc_set_platform_paths` sets from openclaw.json's `agents.defaults.workspace` (there `~/clawd`), while the real file lives at `~/.openclaw/workspace/.workforce-build-state.json`. With no state found, `interview-launch.py`'s inspector returned `requiresInitialization: true, companySlug: null` and the run exited 8 demanding an interactive interview on a fully built box.
+
+A configured path is a hint, not evidence. `shared-utils/resolve-oc-root.sh` gains `resolve_build_state_workspace()`, which returns the first candidate that actually contains the file — `OPENCLAW_WORKSPACE_PATH`, `$OC_ROOT/workspace`, `~/.openclaw/workspace`, `/data/.openclaw/workspace` — and records every path tried. `run-full-install.sh`, `scripts/materialize-dept-agents.sh` and `scripts/backfill-per-dept-healer.sh` all resolve through it, so no two scripts read different copies.
+
+When NO candidate has the file the installer falls back to the configured path and names every path searched. That is deliberate: a fresh install has no state file anywhere and the configured path is the correct place to write one.
+
+Also: v25.1.66's name fallback could match an ARCHIVED workspace and update it, resurrecting a department the client archived. Both lookups in `_find_existing_workspace` now exclude archived rows.
+
+## v13.1.17 - 2026-09-21 - Archived departments stay archived, a renamed one stays one column, and the company split is legible
+
+Four findings from one client box during a v7.6.35 roll, measured by diffing the Command Center DB against the pre-deploy backup.
+
+**48 agents were seeded into 12 ARCHIVED workspaces.** `scripts/materialize-dept-agents.sh` picks departments two ways and neither filtered `archived_at`: the workspaces query, and the manifest path which resolves by slug and never touches that query. The query gains `AND archived_at IS NULL`, and a per-workspace check sits after `ws_id` resolution so it covers both paths with one guard. An archived department gets no agents and no head link. Nothing writes `archived_at` — skipping is the fix; un-archiving would be a different bug.
+
+**A renamed department became two columns.** `scripts/seed-workspaces.py` now looks for the same department already on the board by case-insensitive NAME, scoped to this company, before inserting. A hit UPDATES that row. No alias table was added: `shared-utils/canonical_slug.py` already maps `billing` → `billing-finance` and `legal-compliance` → `legal`, which is both pairs the client hit, and a second table would be a duplicate rule to drift.
+
+**The company guard fired with nothing to act on.** The DB held three company rows (`default`, `wakeuphappysis`, `wake-up-happy-sis`). The seeder now prints ONE `[company-split]` line naming every company owning live workspaces, which owns the catch-all, and whether that differs from the id being seeded as. The guard itself is unchanged.
+
+**The installer mirrored `MC_COMPANY_ID=default`** while live workspaces sat 31 under `wakeuphappysis` and 9 under `default`; the CC's ingest is company-scoped, so the catch-all `general-task` became unresolvable and routed tasks landed unrouted. `scripts/run-full-install.sh` now compares the mirrored value against the catch-all's owner after the cc-env mirror step, prints one loud `[cc-env] MC_COMPANY_ID MISMATCH` line and a state marker, corrects it on a FULL install, and in `--update-only` warns without touching it.
+
+**Not done here:** the hard DELETE of 22 archived rows is in the Command Center's `scripts/sync-departments-from-build-state.py` (`--prune`, line 658; duplicate collapse, line 539), not in onboarding, and Phase 6c never passes `--prune`. A test pins that no installer script here gains a workspace delete.
+
+New: `scripts/test_seed_workspaces_installer_hardening.py`, 15 assertions on real sqlite fixtures, wired into `full-funnel-pipeline.yml`, mutation-proved three ways.
+
+## v13.1.16 - 2026-09-21 - A department's own slug beats the map key, so the board stops gaining a twin per department
+
+The client artifact's department map is keyed `<name>-dept` while each entry names its real folder (`"account-management-dept": {"folder": "account-management", ...}`). v25.1.61 folded on the KEY, so all 34 departments were slugged `…-dept` while readers that take the slug off the entry produced the bare name.
+
+`scripts/seed-workspaces.py` never showed it: `_canonical_dept_slug()` strips a trailing `-dept`, so this reader rescued the bad slug on the way to the insert. The Command Center's `phase=6c sync-departments`, which does not canonicalise, wrote `…-dept` verbatim. One department, two identities, a duplicate workspace for each, and 40 board columns became 74.
+
+The fold now resolves identity by precedence `id` → `slug` → `folder` → the map key, using the key only when the entry carries none of the three and stripping a trailing `-dept` only from a key-derived slug. The inline `except ImportError` fallback in `scripts/seed-workspaces.py` carries the identical rule.
+
+The fold's output is now canonical on the way OUT, so no reader has to rescue it and no two readers can disagree — which is the condition `seed-workspaces.py` and the `phase=6c` sync were failing, and what the client's `department company belongs to a different company` refusal was standing on.
+
+## v13.1.15 - 2026-09-21 - A departments.json whose "departments" key holds an object keyed by slug now seeds
+
+Verified on a client Mac: the real `departments.json` on the box is
+
+```
+{"company": ..., "total_departments": 34, "total_roles": N,
+ "departments": {"account-management-dept": {...}, ...}}
+```
+
+The `departments` KEY holds an OBJECT keyed by slug, not a list. The shared envelope normalizer refused that outright, so 34 real departments read as a hard error and `seed-workspaces.py` could not seed the board.
+
+A slug-keyed object of department objects now folds into a list wherever it appears, under the `departments` key or at the top level. The key fills `id` and `slug` only when the entry does not carry its own, and file order is preserved. The fold is refused unless EVERY value is an object, which is what keeps a metadata envelope from ever being read as a department map.
+
+`scripts/seed-workspaces.py`'s inline `except ImportError` fallback (the copy marked KEEP IN SYNC, used on a box whose shared-utils predates the module) carries the identical rule.
+
+**The metadata keys can no longer reach the board.** When `departments` is present its value is folded and returned before any top-level key is iterated, so `company`, `total_departments` and `total_roles` are never candidates. That is the guarantee behind the four bogus workspaces named "Company", "Total Departments", "Total Roles" and "Departments" that an older key-folding bug put on a live client board. `seed-workspaces.py`'s shared-client mutation guard is untouched; a correct file simply stops handing it a department named `company`.
+
+
+## v13.1.14 - 2026-09-21 - Starter cards are for a new board only, and a wrapped departments.json is not a list of departments
+
+Two defects seen together on one client Mac.
+
+`scripts/seed-dashboard-content.py` seeds a "Welcome to <workspace>" card so a brand-new board renders something on first load. Its guard is "this workspace has zero tasks", which on a mature board is true of every department the client has never used, and `scripts/run-full-install.sh` Phase 6e ran the seeder in `--update-only` mode too. A routine code roll therefore dropped ten fresh welcome cards into a live backlog months after install, and the Command Center's grooming loop spawned failing "Author SOP: Welcome to X" work off them. The seeder now takes `--no-starter-tasks` (or `SEED_STARTER_TASKS=0`) and Phase 6e passes it whenever `UPDATE_ONLY=true`, logging one INFO line that says so. Companies and per-department head-agent rows are still ensured either way — those are idempotent identity and runtime rows, not board content. A full install is unchanged.
+
+`scripts/seed-workspaces.py` folded EVERY key of a dict-shaped departments.json in as a department id. `<company_dir>/departments.json` legitimately ships wrapped — `23-ai-workforce-blueprint/scripts/retire-confirmed-decline.sh` writes `{removedWithProvenance, departments}` and `build-workforce.py` preserves that shape — and the client's file carried `{company, total_departments, total_roles, departments}`. The board gained four bogus workspaces named "Company", "Total Departments", "Total Roles" and "Departments"; install phases 6b and 6c exited non-zero and the 6e2 department-runtime-parity guard failed listing those four. The envelope layer now goes through one shared normalizer, `shared-utils/departments_payload.py`: a list is used, an object with a `departments` list is unwrapped, and anything else fails loudly naming the path and the top-level type. A dict's keys are never departments.
+
+The Command Center's own `scripts/sync-departments-from-build-state.py` reads the same file and calls `.get("id")` per item, which on a dict yields string keys — the `'str' object has no attribute 'get'` behind Phase 6c's non-zero exit. That script lives in blackceo-command-center and is not changed here.
+
+Tests: `scripts/test_seed_dashboard_starter_tasks.py` (new, 17) and `scripts/test_seed_workspaces_normalize.py` (7 -> 14, including an end-to-end `seed()` on the client's exact envelope). Onboarding v25.1.57.
+
+## v13.1.13 - 2026-09-18 - An invitation origin must be a hostname, never an IP address
+
+`scripts/interview-launch.py`'s `public_origin()` asked only whether an IP literal was globally routable, so `https://8.8.8.8` and any other public address were accepted as an invitation origin. No certificate exists for an address under the hostname the tenant registry selects configuration by, so an accepted literal would have carried a client's private sign-in link to an origin no tenant is registered under. Every literal is now refused, loopback and private ones included; hostnames are unaffected. Test added in `tests/unit/interview-launch.test.py`.
+
+## v13.1.12 - 2026-09-18 - Cross-reference the paired Command Center pull request, not its version
+
+Documentation only. The paired Command Center release was renumbered five times while both pull requests were open, because that repo shipped several patches from unrelated branches. Every line naming the number went stale within minutes. The entries now point at the pull request, which does not move.
+
+## v13.1.11 - 2026-09-18 - Correct the paired Command Center release number
+
+Documentation only. The v13.1.10 entry named a paired Command Center version that kept moving: that repo released several patches from unrelated branches while the paired PR was open. The entry now points at the pull request instead of a number that rots. No script, no behaviour change.
+
+## v13.1.10 - 2026-09-18 - The automatic launcher reads a deadline-free interview link as live
+
+`scripts/interview-launch.py` decided an invitation was spent by requiring `invitationExpiresAt` to be an integer in the future. A Command Center whose links stay valid until the interview is complete records no deadline at all, so a link the sender had just minted and delivered successfully would have been declared `renewal-required` and the launch would have raised. A recorded null now means live. A stated deadline is honoured exactly as before, and a missing field, a wrong type or a time already past still mean this client needs a fresh link, so absence and null stay distinguishable. Paired with onboarding v25.1.50 and the Command Center release in blackceo-command-center#366.
+
+## v13.1.9 - 2026-09-17 - universal-sops craft-cluster SOP ingest (ISSUE-12)
+
+`scripts/ingest-sop-library.py` gained a `--craft-clusters` mode that reads `universal-sops/<cluster>/SOP-*.md` and upserts each file into the Command Center SOP library, mapping `podcast-craft` to department `podcast`. Those SOPs were in neither source the ingester knew about: not the shared `sops.jsonl` release asset, and not `23-ai-workforce-blueprint/templates/role-library/<dept>/sops/` (role-library/podcast ships roles but no `sops/` directory), so the podcast department showed zero SOPs in the dashboard and in semantic SOP search on every box.
+
+Identity is the same `sop_ + sha256(slug)` the JSONL pass uses, so the ingest is idempotent by slug and cannot collide with a shared-library row. It performs a local sqlite upsert only: no download, no network, zero embedding API calls, and nothing is ever deleted. The caller is `update-skills.sh` step U6c1b, which runs on every roll regardless of what the shared-library check decided, so a box already at canonical population gets the rows too. `scripts/ingest-sop-library.sh` is deliberately left alone: its already-populated skip gate is a contractual no-write path, and `tests/unit/sop-library-update-path-ingest.test.sh` asserts the database is byte-identical after it.
+## v13.1.8 - 2026-09-17 - ISSUE-04: the Command Center self-heal watchdog is finally SCHEDULED
+
+The Command Center ships `scripts/watchdog-cc.sh` (a */5 self-heal for pm2 crash
+loops, EADDRINUSE, duplicate/legacy app-name zombies, `cc-start.sh` stale-build
+refusal receipts, and the scheduler-stalled class), and this installer's own pm2
+app-name contract block has NAMED that file since v16.1.7 - but no installer in
+this repo ever registered it as a cron. `mac-mini-bootstrap.sh` wires the pm2
+launchd job and nothing else. So the watchdog shipped to every box and fired on
+none of them: a live client Mac reported "healthy" for 41 hours with no card
+moving until an operator ran `pm2 restart` by hand. A self-heal that nothing
+schedules is the same as no self-heal.
+
+- `scripts/run-full-install.sh` now registers an openclaw cron named
+  `cc-watchdog` on `*/5 * * * *`, delivery none, with `WATCHDOG_SELF_HEAL=1`,
+  `WATCHDOG_PORT` and `WATCHDOG_CANONICAL_DIR` (the three variables
+  `watchdog-cc.sh` actually reads; it has no pm2-app-name variable, the
+  canonical name is compiled into both repos).
+- Registered as PHASE 6j, deliberately OUTSIDE the phase-6 if/elif/else, so all
+  three of its branches converge on it: a fresh full install, an `--update-only`
+  refresh, and the already-done skip all schedule the watchdog. It sits in
+  BLOCK A, above the interview gate, because a wedged board needs restarting
+  whether or not the client has finished their interview. Existing boxes pick it
+  up on the next fleet roll with no separate remediation pass.
+- Idempotent by `--declaration-key skill32-cc-watchdog` (the CLI's own
+  add-or-converge identity - `cron add` has no dedupe of its own, which is how
+  one box accumulated nine copies of the same tick). On a CLI without the flag,
+  an explicit remove-then-add by resolved job id reaches the same one-job end
+  state. A job found DISABLED is re-enabled; a durable tombstone is never
+  overridden.
+- The cron payload stays a single plain command string. Environment travels via
+  `--command-env` when the installed CLI advertises it, otherwise through a
+  generated wrapper at `$OC_ROOT/scripts/cc-watchdog-run.sh`.
+- Fail-soft, matching `install.sh`'s own cron registrars: no openclaw CLI, a
+  failing `cron add`, or a Command Center checkout too old to carry
+  `scripts/watchdog-cc.sh` each log a loud PENDING or SKIPPED line and let the
+  install continue. None of them fails the run.
+- `qc-command-center-setup.sh` now asserts the installer still carries the
+  registration, and warns when the job is not live on the box.
+- New coverage: `tests/unit/cc-watchdog-cron-registration.test.sh` (11 cases,
+  45 assertions) extracts the registrar and its helpers verbatim and drives
+  them against a fake openclaw CLI. Falsified against the pre-fix tree: 40
+  failures there, 0 after the fix. Enforced by
+  `.github/workflows/cc-watchdog-cron-guard.yml`.
+
 ## v12.9.57 — 2026-08-31 — FIX 26: non-self-issuable signoff + gated CC-API status writes (scripts/move-task.py)
 
 - `move-task.py` can no longer self-issue a signoff: any status write that would

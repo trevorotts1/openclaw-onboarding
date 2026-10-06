@@ -20,11 +20,15 @@ every caller (never a forked copy):
 
 RATE LOGIC IS SHARED, NOT FORKED. Two layers:
 
-1. Wave spacing (always on): at most 20 createTask submits per rolling
-   10 s window — the documented KIE ceiling (``providers.yaml`` ``kie``
-   row: 20 submits / 10 s burst, max_inflight 100, daily cap 5000). The
-   pre-PRES-032 CLI spaced waves the same way; this lifecycle keeps that
-   bound instead of firing N back-to-back POSTs for an N-slide deck.
+1. Wave spacing (always on): at most ``submit_wave_cap`` (20) createTask
+   submits per rolling ``submit_wave_window_s`` window. The KIE limit is 20
+   per 10 s (07-kie-setup/references/kie-common-rules.md); the default
+   window here is 15 s, deliberately slower than that limit, and
+   kie_generate.py passes 10 s. The ``providers.yaml`` ``kie`` row paces
+   governor leases separately (1.33 per second, 13 per rolling 10 s,
+   max_inflight 100, daily cap 5000). The pre-PRES-032 CLI spaced waves the
+   same way; this lifecycle keeps that bound instead of firing N
+   back-to-back POSTs for an N-slide deck.
 2. Governor leases (opt-in): pass ``governor="auto"`` (or set
    ``KIE_TASKS_USE_GOVERNOR=1``) and every createTask POST acquires the
    canonical deck-renderer governor (``presentation_job.governor``) with
@@ -173,12 +177,14 @@ def _now_iso():
 GOVERNOR_PROVIDER = "kie"
 GOVERNOR_ACQUIRE_TIMEOUT_S = 90.0
 
-# Documented KIE ceiling (providers.yaml ``kie`` row): at most 20 createTask
-# submits per rolling 10 s window. The pre-PRES-032 CLI already spaced waves
+# KIE ceiling: at most 20 createTask submits per rolling 10 s window
+# (kie-common-rules.md). The default window below is 15 s, i.e. slower than the
+# ceiling. The pre-PRES-032 CLI already spaced waves
 # this way; the lifecycle keeps the bound so an N-slide deck never fires N
 # back-to-back POSTs. Pure wave spacing — no governor needed.
 SUBMIT_WAVE_CAP = 20
-SUBMIT_WAVE_WINDOW_S = 10.0
+# FIX 61.6: 15s window (was 10s) to match kie rps 1.33.
+SUBMIT_WAVE_WINDOW_S = 15.0
 
 
 def _import_governor(scripts_dir=None):
@@ -255,12 +261,23 @@ def _resolve_governor(governor, scripts_dir=None):
 
 
 def _gov_acquire(gov, enabled, *, poll):
+    """FIX 10: daily-cap exhaustion (GovernorDailyCapReached) and submit-side
+    (poll=False) rate timeouts are NEVER fail-soft — they are re-raised so
+    the phase parks instead of spending unthrottled. Only "governor module
+    absent" (the _NoopGovernor twin, whose acquire never raises) proceeds
+    unthrottled."""
     if not enabled:
         return None
     try:
         return gov.acquire(GOVERNOR_PROVIDER, n=1,
                            timeout_s=GOVERNOR_ACQUIRE_TIMEOUT_S, poll=poll)
-    except Exception:  # noqa: BLE001 — never let the limiter block the render
+    except Exception as exc:  # noqa: BLE001 — classified below, never masked blindly
+        daily_cap_cls = getattr(gov, "GovernorDailyCapReached", None)
+        if daily_cap_cls is not None and isinstance(exc, daily_cap_cls):
+            raise
+        timeout_cls = getattr(gov, "GovernorTimeout", None)
+        if not poll and timeout_cls is not None and isinstance(exc, timeout_cls):
+            raise
         return None
 
 

@@ -116,6 +116,14 @@ if [[ "${WORKFORCE_RUNNER_OWNER:-}" != "$PPID" ]]; then
   exec "$WORKFORCE_PYTHON" "$_WORKFORCE_STATE_DIR/workforce_state.py" run "$STATE_FILE.closeout-resume" bash "$0" "$@"
 fi
 
+# ---- owner-sends hold: no closeout dispatch while held (durable; this cron
+# never clears it -- the stall-fingerprint reset below touches only its own
+# closeoutResumePaused keys) ----
+if owner_sends_held; then
+  log "OWNER SENDS HELD: ${OWNER_SENDS_HOLD_REASON} -- run-closeout.sh NOT dispatched."
+  exit 0
+fi
+
 # ---- run count (defense-in-depth cap) ----
 run_count=0
 if [[ -f "$RUN_COUNT_FILE" ]]; then

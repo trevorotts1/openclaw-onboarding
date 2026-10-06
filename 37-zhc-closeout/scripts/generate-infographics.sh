@@ -12,20 +12,24 @@
 #        Driven by templates/workforce-org-chart/render.mjs.
 #
 #   workflow  (Infographic #2 - How Work Flows)
-#     -> KIE.AI Nano Banana 2 (Gemini 3.1 Flash Image). Much better text
-#        rendering than GPT Image 2.5, and the workflow diagram is stylized
-#        enough that AI image gen is fine. Fallback: gpt-image-2-5-sunburst-text-to-image.
+#     -> KIE.AI GPT Image 2.5 sunburst (gpt-image-2-5-sunburst-text-to-image)
+#        is the PRIMARY: AGENTS.md N43 (AF-KIE-IMAGE-MODEL-PIN) pins the fleet
+#        to gpt-image-2-5-sunburst-*, and Skill 66 (kie-image) names it the
+#        default. The workflow diagram is stylized enough that AI image gen is
+#        fine. Fallback: nano-banana-2 (Nano Banana 2 / Gemini 3.1 Flash Image).
 #        Override the primary with env var ZHC_IMAGE_MODEL.
+#        Order matches generate-visual-intelligence.sh (sunburst first,
+#        nano-banana-2 fallback). Before v13.1.6 this script ran the reverse
+#        order, which contradicted N43 and its sibling script.
 #        v10.X.4: corrected slug from gemini-3-1-flash-image (KIE 422,
-#        not supported) to nano-banana-2. Confirmed accepted by
-#        api.kie.ai/api/v1/jobs/createTask on 2026-05-26.
-#        v10.X.8: nano-banana-2 availability is ACCOUNT/REGION-dependent on
-#        KIE. It returned 422 "model name not supported" on a client's
+#        not supported) to nano-banana-2.
+#        v10.X.8: model availability is ACCOUNT/REGION-dependent on KIE.
+#        nano-banana-2 returned 422 "model name not supported" on a client's
 #        KIE account on 2026-05-27 even though it worked on other accounts.
-#        This is expected. nano-banana-2 stays the PRIMARY; the retry loop
-#        falls back to gpt-image-2-5-sunburst-text-to-image (the proven safety net) on
-#        attempt 3, which succeeded. Do NOT change
-#        the primary slug; the fallback chain is the fix. See KNOWN-ISSUES.md.
+#        That 422 handling is kept below: if the CURRENT model is rejected as
+#        not supported, the loop switches to the other model immediately
+#        instead of burning a second attempt. See KNOWN-ISSUES.md.
+#        Canonical KIE rules: 07-kie-setup/references/kie-common-rules.md
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since
 # production state files have been observed using both.
@@ -213,9 +217,8 @@ if [[ "$KIND" == "structure" ]]; then
 fi
 
 # ----------------------------------------------------------------------
-# Workflow infographic = KIE.AI (stylized diagram, less text density).
-# Primary model: nano-banana-2 (Gemini 3.1 Flash Image / Nano Banana 2).
-# Fallback:      gpt-image-2-5-sunburst-text-to-image (older but reliable).
+# Workflow infographic = KIE.AI through Skill 74 (stylized diagram, less text density).
+# Primary model: gpt-image-2-5-sunburst-text-to-image (N43). Fallback: nano-banana-2.
 # ----------------------------------------------------------------------
 if [[ ! -f "$TEMPLATE" ]]; then
   log "ERROR" "prompt template not found: $TEMPLATE"
@@ -284,56 +287,14 @@ PROMPT="$(_literal_replace "$PROMPT" '{{INDUSTRY}}'         "$INDUSTRY")"
 PROMPT="$(_literal_replace "$PROMPT" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
 PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
-FALLBACK_MODEL="gpt-image-2-5-sunburst-text-to-image"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
+FALLBACK_MODEL="nano-banana-2"
 
-submit_job() {
-  local model="$1"
-  local prompt_json
-  prompt_json=$(jq -Rs . <<< "$PROMPT")
-  local body
-  body=$(jq -n \
-    --arg model "$model" \
-    --argjson prompt "$prompt_json" \
-    '{model: $model, input: {prompt: $prompt, aspect_ratio: "16:9", resolution: "2K", output_format: "png"}}')
-  curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-    -H "Content-Type: application/json" \
-    -d "$body"
-}
-
-poll_job() {
-  local task_id="$1"
-  local elapsed=0
-  local wait_sec
-  while (( elapsed < 600 )); do
-    local resp
-    resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
-    local state
-    state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
-    case "$state" in
-      success)
-        echo "$resp" | jq -r '.data.resultJson' | jq -r '.resultUrls[0] // .resultUrl // .imageUrl // .url // empty' 2>/dev/null
-        return 0
-        ;;
-      fail)
-        local msg
-        msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown failure"')
-        log "ERROR" "KIE job $task_id failed: $msg"
-        return 1
-        ;;
-    esac
-    if (( elapsed < 30 )); then wait_sec=3
-    elif (( elapsed < 120 )); then wait_sec=8
-    else wait_sec=20
-    fi
-    sleep "$wait_sec"
-    elapsed=$((elapsed + wait_sec))
-  done
-  log "ERROR" "KIE job $task_id timed out after ${elapsed}s"
-  return 1
-}
+# One KIE path: Skill 74 does the validate, createTask, poll (lib-kie74.sh). This script keeps the policy:
+# model order, the 3-attempt loop and the account-dependent 422 early switch.
+# shellcheck source=lib-kie74.sh disable=SC1090,SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-kie74.sh"
+kie74_locate || exit 1
 
 # ---- retry loop ----
 attempt=0
@@ -346,32 +307,24 @@ while (( attempt < 3 )); do
     model="$FALLBACK_MODEL"
     log "INFO" "attempt $attempt/3: falling back to $model"
   fi
-  log "INFO" "attempt $attempt/3: submitting job with model=$model"
-  submit_resp=$(submit_job "$model" || true)
-  task_id=$(echo "$submit_resp" | jq -r '.data.taskId // empty' 2>/dev/null)
-  if [[ -z "$task_id" ]]; then
-    submit_err=$(echo "$submit_resp" | head -c 300)
-    log "WARN" "attempt $attempt: submit failed, response: $submit_err"
-    # nano-banana-2 availability is account/region-dependent on KIE. If the
-    # primary slug is rejected as not-supported (422 "model name not
-    # supported"), do not waste a second primary attempt; jump straight to the
-    # gpt-image-2-5-sunburst-text-to-image safety net. (Added for a client launch, 2026-05-27.)
-    if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
-       && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
-      log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
-      PRIMARY_MODEL="$FALLBACK_MODEL"
-    fi
-    sleep $((2 ** attempt))
-    continue
-  fi
-  log "INFO" "attempt $attempt: submitted taskId=$task_id; polling..."
-  if result_url=$(poll_job "$task_id"); then
+  log "INFO" "attempt $attempt/3: submitting job with model=$model (Skill 74)"
+  if kie74_image_url "$model" "$PROMPT" 600; then
+    result_url="$KIE74_URL"
     if [[ -n "$result_url" && "$result_url" != "null" ]]; then
       log "INFO" "attempt $attempt: success url=$result_url"
       break
     fi
   fi
-  log "WARN" "attempt $attempt: did not produce a usable URL"
+  log "WARN" "attempt $attempt: no usable URL: ${KIE74_ERR:-unknown}"
+  # Model availability is account/region-dependent on KIE. If the primary slug is rejected as
+  # not-supported (422 "model name not supported", or Skill 74's schema / validation refusal), do not
+  # waste a second primary attempt; jump straight to the fallback (nano-banana-2 by default).
+  # (Added for a client launch, 2026-05-27.)
+  if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
+     && echo "${KIE74_ERR:-}" | grep -qiE 'model name not supported|not supported|422|schema|validation_failed'; then
+    log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
+    PRIMARY_MODEL="$FALLBACK_MODEL"
+  fi
   result_url=""
   sleep $((2 ** attempt))
 done

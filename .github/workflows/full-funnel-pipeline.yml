@@ -146,6 +146,8 @@ jobs:
           set -euo pipefail
           python3 -m pytest 32-command-center-setup/scripts/test_seed_workspaces_normalize.py -q
           echo "✓ departments.json str/dict/dict-of-dicts shapes all normalize"
+          python3 -m pytest 32-command-center-setup/scripts/test_seed_workspaces_installer_hardening.py -q
+          echo "✓ installer hardening: archived workspaces skipped, name match updates, company split logged"
 
   rubric-scorecard-gate:
     name: "rubric scorecard gate (11 GRADUATED rubrics >= 8.5 from RAW evidence)"

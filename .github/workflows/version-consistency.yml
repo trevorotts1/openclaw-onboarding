@@ -90,6 +90,46 @@ jobs:
             exit 1
           fi
 
+      - name: "README current-release freshness (scripts/check-readme-current-release.sh)"
+        shell: bash
+        run: bash scripts/check-readme-current-release.sh
+
+      - name: "Doc currency guards (scripts/check-doc-currency-guards.sh)"
+        shell: bash
+        run: bash scripts/check-doc-currency-guards.sh
+
+      - name: "Self-test: check-readme-current-release.sh (tests/unit/check-readme-current-release.test.sh)"
+        shell: bash
+        run: bash tests/unit/check-readme-current-release.test.sh
+
+      - name: "Self-test: check-doc-currency-guards.sh (tests/unit/check-doc-currency-guards.test.sh)"
+        shell: bash
+        run: bash tests/unit/check-doc-currency-guards.test.sh
+
+      - name: "Fix 9: exactly one presentation-intake wrangler.toml (deployed-r2) - no name collision"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -- Fix 9 (wrangler name collision) --------------------------------
+          # The intake-miniapp worker wrangler.toml used to claim
+          # name = "presentation-intake" too; a deploy from that quarantined
+          # template would hijack the live /api/* route owned by the
+          # deployed-r2 worker. This gate fails the build unless exactly one
+          # wrangler.toml under .../presentations/ carries
+          # name = "presentation-intake", and it is the deployed-r2 one.
+          PRES_DIR="23-ai-workforce-blueprint/templates/role-library/presentations"
+          EXPECTED="$PRES_DIR/intake/interview-app/deployed-r2/wrangler.toml"
+          MATCHES=$(grep -rl '^name[[:space:]]*=[[:space:]]*"presentation-intake"' "$PRES_DIR" --include=wrangler.toml 2>/dev/null || true)
+          COUNT=$(printf '%s\n' "$MATCHES" | grep -c .)
+          if [ "$COUNT" -ne 1 ] || [ "$MATCHES" != "$EXPECTED" ]; then
+            echo "FAIL: wrangler name collision - expected exactly one wrangler.toml with"
+            echo "  name = \"presentation-intake\" at $EXPECTED; found:"
+            printf '  - %s\n' "${MATCHES:-<none>}"
+            exit 1
+          fi
+          echo "OK: exactly one name = \"presentation-intake\" wrangler.toml: $EXPECTED"
+
   # ── PRD 2.2 Guard G1: version file changed → annotated tag must exist ──────
   # On push to main: if /version changed vs the previous commit, the new
   # version string must already be present as an annotated git tag.
@@ -368,6 +408,40 @@ jobs:
 
           echo "✓ All v11+ annotated tags have CHANGELOG entries."
 
+  # ── PRD 2.2 Guard G2-EXT: every annotated tag (full history) needs a
+  # CHANGELOG entry, or a documented pre-v11 gap ────────────────────────────
+  # G2 above is scoped to v11+ on purpose (pre-v11 tags predate the
+  # CHANGELOG-on-tag discipline; see its comment). That floor means a gap
+  # ANYWHERE below v11 — new or old — is invisible to G2 forever. G2-EXT walks
+  # every annotated tag with no floor, using the identical header matcher, and
+  # grandfathers the known pre-v11 backlog through
+  # .github/known-changelog-gap-tags.txt (same bidirectional-ledger pattern as
+  # .github/known-untagged-releases.txt / known-orphan-tags.txt): a gap NOT in
+  # the ledger fails the build, and a ledger entry that is no longer a gap
+  # ALSO fails the build, so the ledger can only shrink. See
+  # scripts/check-changelog-full-history.py for the full rationale.
+  check-tag-changelog-full-history:
+    name: G2-EXT — every annotated tag (all history) must have a CHANGELOG entry or a documented gap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify every annotated tag has a CHANGELOG entry or a documented gap
+        shell: bash
+        run: python3 scripts/check-changelog-full-history.py
+
+      - name: "Self-test: check-changelog-full-history.py (tests/unit/check-changelog-full-history.test.sh)"
+        shell: bash
+        run: bash tests/unit/check-changelog-full-history.test.sh
+
   # ── PRD 2.2 Guard G3: skill content change → skill-version.txt must bump ───
   # If any file inside a skill directory (XX-<name>/ pattern) changed on this
   # push or PR, the skill's own skill-version.txt must also have changed.
@@ -427,6 +501,15 @@ jobs:
 
             # Skip ARCHIVED skills.
             if [[ "$SKILL_DIR" == *-ARCHIVED ]]; then
+              continue
+            fi
+
+            # Skip 23-ai-workforce-blueprint: it's the blueprint container, not an
+            # independently-versioned skill. Its version tracks the main repo
+            # version via the standard version markers (bump-version.sh --check).
+            # G3 false-positives on it because the directory name matches the
+            # skill pattern but it's versioned with the repo, not separately.
+            if [[ "$SKILL_DIR" == "23-ai-workforce-blueprint" ]]; then
               continue
             fi
 

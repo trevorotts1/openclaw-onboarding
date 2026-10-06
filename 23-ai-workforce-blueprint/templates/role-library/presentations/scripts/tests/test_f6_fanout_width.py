@@ -234,15 +234,35 @@ def test_width_is_the_routed_capacity_when_units_exceed_it(tmp_path, monkeypatch
 
 def _sidecar_rows(run_dir: Path) -> list:
     import presentation_job.dispatcher as d
-    path = d._sidecar_path(run_dir, PHASE) if hasattr(d, "_sidecar_path") else None
-    if path is None:
-        # locate the sidecar the writer actually used, without guessing a name
-        cands = sorted((run_dir / "working" / "work-orders").rglob(f"*{PHASE}*"))
-        cands = [c for c in cands if c.is_file() and c.suffix in (".jsonl", ".log", ".json")]
-        assert cands, f"no sidecar file found for {PHASE} under working/work-orders"
-        path = cands[0]
+    # THE WRITER'S OWN PATH -- one source of truth.
+    #
+    # This used to guess: `d._sidecar_path(...)` when that attribute existed
+    # (it never did -- the dispatcher's writer is `_sidecar_log_path`, see
+    # `_append_sidecar`), else `sorted(rglob(f"*{PHASE}*"))[0]`. That guess was
+    # fragile in a way PD-TEST-124 exposed: the dispatcher now DECLARES a
+    # fan-out phase's bounded paid budget before any paid call, so
+    # `working/work-orders/.dispatch-state/<PHASE>.json` -- the paid LEDGER --
+    # exists even on a dispatch that pays nothing, and `.` sorts before `P`:
+    #
+    #     [0] working/work-orders/.dispatch-state/P-STYLE-SPEC.json   <-- picked
+    #     [1] working/work-orders/P-STYLE-SPEC.dispatcher-log.jsonl   <-- wanted
+    #     [2] working/work-orders/_units/P-STYLE-SPEC.units.jsonl
+    #
+    # The ledger is pretty-printed JSON, and one of its lines is a bare JSON
+    # string, so `json.loads` succeeded and yielded a `str` that blew up on
+    # `r.get("status")` in the caller. Two guards now make that class of
+    # mistake impossible: the path comes from the writer itself, and every
+    # parsed row must be a dict -- a non-sidecar file can never masquerade as
+    # the audit trail. The assertions below are unchanged.
+    resolver = (getattr(d, "_sidecar_log_path", None)
+                or getattr(d, "_sidecar_path", None))
+    assert callable(resolver), (
+        "the dispatcher no longer exposes the sidecar path resolver that "
+        "_append_sidecar writes to; point this helper at whatever it uses now")
+    path = Path(resolver(run_dir, PHASE))
+    assert path.is_file(), f"the dispatcher's own sidecar path is missing: {path}"
     rows = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -250,6 +270,10 @@ def _sidecar_rows(run_dir: Path) -> list:
             rows.append(json.loads(line))
         except json.JSONDecodeError:
             continue
+    bad = [type(r).__name__ for r in rows if not isinstance(r, dict)]
+    assert not bad, (
+        f"{path.name} is not a JSONL audit trail (non-dict rows: {bad}); "
+        "the sidecar path resolved to the wrong file")
     return rows
 
 

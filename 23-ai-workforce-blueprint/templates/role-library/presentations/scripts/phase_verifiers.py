@@ -4284,6 +4284,106 @@ def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
     return []
 
 
+# The three page-design prompts: `prompts/<page>.design.txt`. Kept as ONE
+# pattern so the verifier arm and the producer's own registry agree.
+_DESIGN_PROMPT_REL_RE = re.compile(r"^prompts/[A-Za-z0-9_-]+\.design\.txt$")
+
+
+def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
+    """PD-TEST-098: a page-design prompt (`prompts/<page>.design.txt`) must sit
+    inside the SHARED prompt band its render phase enforces.
+
+    THE DEFECT THIS CLOSES -- and why the artifacts.py predicate alone was NOT
+    enough. `_pu_check_text` accepted these files on ">= 40 chars" alone, so
+    `phase_verifiers.verify('P-U-DESIGN-SALES', run)` returned `(True, [])` on
+    the live 58,482-char prompt. Two authorities then re-blessed the artifact
+    that `Engine._revalidate_banked` had just announced as invalid:
+
+      1. `Engine._phase_artifact_satisfied` (phases.py:2670) is presence AND
+         this verifier, and `wo_satisfied` (phases.py:2813) uses it to complete
+         a phase WITHOUT dispatching -- so the engine re-attested the phase
+         `done`, rc=0, artifact byte-unchanged;
+      2. the dispatcher's own idempotent pre-check (dispatcher.py:5121-5160)
+         consults the same verifier and returned `skipped_satisfied`;
+      3. and because that re-attestation path is NOT gated on
+         `status == 'done'`, it also covers `running`/`pending` phases -- the
+         DEADLOCK-1 window, where `_revalidate_banked` never runs at all.
+
+    Net effect before this check: 0 model calls, artifact unchanged, render
+    phases refused exactly as before. This verifier IS the seam all three
+    consult, so the band belongs here (and the `artifacts.validate_artifact`
+    arm stays as the banked re-validation half).
+
+    The band is READ FROM `prompt_gate` -- the same shared source the render
+    gate and the producer use, never a second copy. Length is measured on the
+    stripped text, exactly as `build_infographic.resolve_design_prompt` and
+    `prompt_gate.prompt_problems` measure it."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    length = len(text.strip())
+    if length < 40:
+        return [f"{rel}: only {length} chars of content -- too small to "
+                "be a real authored fragment"]
+    try:
+        import prompt_gate as _pg
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED, deliberately: this gate decides whether a phase may be
+        # marked DONE without re-authoring, so an unverifiable band must not
+        # silently re-bless the artifact. (The artifacts.py arm degrades the
+        # other way on purpose -- it must not turn every banked design prompt
+        # into a permanent re-author loop -- and DISCLOSES that in its verdict.)
+        return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
+                f"could not be imported ({type(exc).__name__}: {exc}); refusing "
+                "to attest an unverifiable design prompt"]
+    # PD-TEST-113 -- THE WHOLE GATE, NOT JUST ITS LENGTH CLAUSE.
+    #
+    # This verifier used to enforce exactly two rules of the shared gate:
+    # AF-P1 (floor) and AF-P2 (ceiling). `prompt_gate.prompt_problems` applies
+    # more than that, and the CONSUMER
+    # (`build_infographic.resolve_design_prompt`) calls the WHOLE gate. So a
+    # design prompt could clear this verifier, be attested `done` by the
+    # engine, and then be refused by its own render phase on a rule this seam
+    # never checked -- and `prior_reasons` could never carry that requirement
+    # back to the producer, because the producer is only ever told the reasons
+    # THIS function emits. The re-author loop was therefore structurally
+    # incapable of converging on the unstated rules.
+    #
+    # Measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    # all three design prompts PASSED this verifier at 13,513 / 14,612 /
+    # 12,296 chars, and P-U-DESIGN-RENDER-SALES / -VSL then refused them with
+    # `AF-R3: forbidden hardcoded demographic default 'default demographic'`
+    # and `AF-P13: negative block does not name defect class(es): placeholder/
+    # bracket tokens, anatomical artifacts` -- one full paid re-author plus a
+    # quarantined render phase per undiscovered rule, discovered one gate code
+    # at a time.
+    #
+    # THE FIX: delegate to the ONE shared authority rather than restate a
+    # subset of it. `prompt_problems` is the same accumulating, non-raising
+    # function the render path and build_deck's provers call, so this phase now
+    # fails on exactly the rules its consumer enforces -- no more, no fewer,
+    # and no second copy of any rule to drift. Verified against the live run:
+    # `prompt_problems` on the three banked artifacts returns byte-identical
+    # findings to the render refusals above (2 / 0 / 1 problems), including
+    # AF-R3 and both AF-P13 class lists.
+    #
+    # `copy_val` stays None deliberately -- AF-P-VERBATIM needs a slide's exact
+    # copy, which is a property of the CONSUMING slide, not of this aggregate
+    # page prompt; the render path applies it per slide with the copy in hand.
+    # The floor/ceiling constants this function already imported remain the
+    # single source for the length rule, now applied by `prompt_problems`
+    # itself.
+    # D1 (independent review of PR #1148): the CONSUMER feeds the STRIPPED text (`build_infographic.resolve_design_prompt` does `stripped = text.strip()` then `prompt_gate.prompt_problems(stripped)`). `prompt_gate`'s structural check matches the literal `'Do not '` INCLUDING its trailing space, so a file whose only such literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED by the consumer. Passing `text` here reproduced that divergence one layer up; pass exactly what the consumer passes.
+    problems = _pg.prompt_problems(text.strip())
+    if problems:
+        return [f"{rel}: {problem}" for problem in problems]
+    return []
+
+
 def _pu_check_form_gate(run_dir: Path, rel: str) -> List[str]:
     """P-U-FORM-GATE's two declared Skill-44 plan artifacts. Each must be a
     parseable JSON OBJECT with the Skill-44 operation shape: gate-form.json
@@ -4473,6 +4573,12 @@ def _make_pu_verifier(phase_id: str, artifacts: List[str]):
                 reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
             elif shape == "collection":
                 reasons.extend(_pu_check_collection(run_dir, rel))
+            elif _DESIGN_PROMPT_REL_RE.match(rel):
+                # PD-TEST-098: the page-design prompt carries the SHARED prompt
+                # band, not just ">= 40 chars". This is the seam the engine's
+                # wo_satisfied re-attestation AND the dispatcher's
+                # already_satisfied pre-check both consult.
+                reasons.extend(_pu_check_design_prompt(run_dir, rel))
             elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
                 reasons.extend(_pu_check_json_object(run_dir, rel))
             else:

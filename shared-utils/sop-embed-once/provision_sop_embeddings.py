@@ -22,6 +22,12 @@ CONTRACT (mirrors the persona pipeline):
     the CC app (backfill-sop-embeddings.ts) can detect "the shared library is
     already covered" and refuse a wasteful full re-embed (step 3).
 
+LOCAL-MODE GUARD: a box opted into free local Ollama SOP embeddings (the CC's
+SOP_EMBEDDING_PROVIDER=ollama + backfill-sop-embeddings.ts, which stamps the
+`sop_embeddings_local_provider` marker table) holds vectors in a DIFFERENT
+space than the Gemini asset. Importing the asset there would overwrite them
+with vectors the box cannot query, so this SKIPs such a box outright.
+
 PROVISION_DRY_RUN=1 (env) prints the gate decision and returns BEFORE any
 network I/O — mirrors provision-persona-index.sh's PROVISION_DRY_RUN gate,
 used by tests/unit/provision-sop-embeddings-idempotency.test.sh.
@@ -49,6 +55,28 @@ CREATE TABLE IF NOT EXISTS sop_embeddings_shipped_asset (
     imported_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
+# Role-library rows (the CC's importRoleLibrary(), source='role-library') are
+# written by converge AFTER the SOP library ingest, with random ids and no
+# vector. This marker records how many of them the last import saw, so a
+# converge that adds role rows re-arms provisioning instead of being SKIPped
+# forever by the release-tag gate above.
+ROLE_MARKER_SQL = """
+CREATE TABLE IF NOT EXISTS role_library_embeddings_shipped (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    release_tag     TEXT NOT NULL,
+    role_rows_seen  INTEGER NOT NULL
+);
+"""
+
+
+def _role_rows(conn: sqlite3.Connection) -> int:
+    """Live role-library rows on this box (0 on a CC that predates sops.source)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sops)")}
+    if "source" not in cols:
+        return 0
+    return conn.execute(
+        "SELECT COUNT(*) FROM sops WHERE source = 'role-library' AND deleted_at IS NULL"
+    ).fetchone()[0]
 
 
 def _sha256_file(path: str) -> str:
@@ -81,6 +109,20 @@ def _current_marker(db_path: str) -> Optional[dict]:
         if row is None:
             return None
         return {"release_tag": row[0], "sop_count": row[1], "sha256": row[2], "imported_at": row[3]}
+    except sqlite3.Error:
+        return None
+
+
+def _local_provider_marker(db_path: str) -> Optional[tuple]:
+    """(provider, model, dims) when the CC opted this box into local embeddings, else None."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            return conn.execute(
+                "SELECT provider, model, dims FROM sop_embeddings_local_provider WHERE id=1"
+            ).fetchone()
+        finally:
+            conn.close()
     except sqlite3.Error:
         return None
 
@@ -123,6 +165,15 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
     if not os.path.isfile(db_path):
         return {"status": "WARN", "reason": f"target DB not found: {db_path} — install/ingest the SOP library first"}
 
+    local = _local_provider_marker(db_path)
+    if local:
+        return {
+            "status": "SKIP",
+            "reason": f"box is in local embedding mode ({local[0]}/{local[1]} @{local[2]}, "
+                      "sop_embeddings_local_provider marker) — the Gemini asset would overwrite "
+                      "vectors this box queries with its local model; not importing",
+        }
+
     # ── Idempotency gate ──────────────────────────────────────────────────────
     marker = _current_marker(db_path)
     try:
@@ -144,11 +195,21 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
                 "SELECT COUNT(*) FROM sops s WHERE EXISTS "
                 "(SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id)"
             ).fetchone()[0]
+        role_rows = _role_rows(conn)
+        conn.execute(ROLE_MARKER_SQL)
+        role_marker = conn.execute(
+            "SELECT release_tag, role_rows_seen FROM role_library_embeddings_shipped WHERE id=1"
+        ).fetchone()
+        conn.commit()
         conn.close()
     except sqlite3.Error as exc:
         return {"status": "WARN", "reason": f"could not read target DB: {exc}"}
 
-    if marker and marker["release_tag"] == release_tag and installed_count >= sop_count:
+    roles_current = (
+        not manifest.get("role_library_count")
+        or (role_marker is not None and role_marker[0] == release_tag and role_rows <= role_marker[1])
+    )
+    if marker and marker["release_tag"] == release_tag and installed_count >= sop_count and roles_current:
         return {
             "status": "SKIP",
             "reason": f"already canonical (release={release_tag}, {installed_count} SOPs covered "
@@ -193,6 +254,14 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
             (model, dims),
         )
         mismatched = cur.fetchone()[0]
+        has_role_table = conn.execute(
+            "SELECT COUNT(*) FROM shipped.sqlite_master WHERE type='table' AND name='role_library_embeddings'"
+        ).fetchone()[0] > 0
+        if has_role_table:
+            mismatched += conn.execute(
+                "SELECT COUNT(*) FROM shipped.role_library_embeddings "
+                "WHERE embedding_model != ? OR embedding_dims != ?", (model, dims),
+            ).fetchone()[0]
         if mismatched:
             conn.commit()  # close out the implicit read transaction before DETACH
             conn.execute("DETACH DATABASE shipped")
@@ -251,7 +320,22 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
                  AND s.id NOT IN (SELECT sop_id FROM shipped.sop_embeddings)"""
         )
         imported_by_slug = max(cur.rowcount, 0)
-        imported = imported_by_id + imported_by_slug
+
+        # pass 3 — role-library rows, matched on the EXACT slug importRoleLibrary()
+        # wrote (`role-library:<dept>/<role>`); their ids are random uuids, and the
+        # 60-char rule of pass 2 would collide on these long slugs.
+        imported_roles = 0
+        if has_role_table and _role_rows(conn):
+            cur = conn.execute(
+                """INSERT OR REPLACE INTO main.sop_embeddings
+                       (sop_id, embedding, embedding_model, embedding_dims, embedded_at)
+                   SELECT s.id, r.embedding, r.embedding_model, r.embedding_dims, r.embedded_at
+                   FROM main.sops s
+                   JOIN shipped.role_library_embeddings r ON r.slug = s.slug
+                   WHERE s.source = 'role-library' AND s.deleted_at IS NULL"""
+            )
+            imported_roles = max(cur.rowcount, 0)
+        imported = imported_by_id + imported_by_slug + imported_roles
 
         # HONEST OUTCOME. Zero rows here is a FAILURE, never a success: the
         # idempotency gate above already returned SKIP for an
@@ -290,6 +374,12 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
             "VALUES (1, ?, ?, ?, datetime('now'))",
             (release_tag, sop_count, sha256_expected),
         )
+        conn.execute(ROLE_MARKER_SQL)
+        conn.execute("DELETE FROM role_library_embeddings_shipped WHERE id=1")
+        conn.execute(
+            "INSERT INTO role_library_embeddings_shipped (id, release_tag, role_rows_seen) VALUES (1, ?, ?)",
+            (release_tag, _role_rows(conn)),
+        )
         conn.commit()
         conn.close()
 
@@ -299,7 +389,8 @@ def provision_sop_embeddings(manifest_path: str, db_path: str, dry_run: Optional
             # two differ whenever the library and the asset disagree, and quoting
             # the manifest is what made a zero-row import read as a success.
             "reason": f"imported {imported} shared-library sop_embeddings row(s) "
-                      f"({imported_by_id} matched by id + {imported_by_slug} by slug rule; "
+                      f"({imported_by_id} matched by id + {imported_by_slug} by slug rule + "
+                      f"{imported_roles} role-library row(s) by exact slug; "
                       f"release={release_tag}, manifest sop_count={sop_count}, "
                       "sha256 verified, 0 embedding API calls)",
             "imported_rows": imported,

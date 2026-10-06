@@ -199,7 +199,7 @@
           "code": "E",
           "name": "Grounded Image Context",
           "hard_gate": false,
-          "note": "Scene descriptions anchoring Kie/GPT-Image-2.5 renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"
+          "note": "Scene descriptions anchoring Kie/GPT Image 2.5 Sunburst renders to THIS source's method; checked by Gate 5 and AF-CONVERTER-PARITY gate"
         },
         {
           "code": "F",
@@ -1069,8 +1069,7 @@
         "prompt-author-presentations-sops.md"
       ],
       "produces_artifact": [
-        "working/prompts/slide-*.txt",
-        "working/prompts/infographic-prompt.txt"
+        "working/prompts/slide-*.txt"
       ],
       "gate_codes": [
         "AF-PROMPT-FLOOR"
@@ -1091,7 +1090,8 @@
       "heartbeat_minutes": 30,
       "consumes": [
         "working/copy/slides_copy.md",
-        "working/research/design-brief-*.md"
+        "working/research/design-brief-*.md",
+        "working/copy/slides.json"
       ],
       "workers": 12
     },
@@ -1497,7 +1497,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/copy/priority_shift_spec.json",
-        "working/copy/slides_copy.md"
+        "working/copy/slides_copy.md",
+        "renders/slide-*.png"
       ]
     },
     {
@@ -1643,7 +1644,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/infographic-prompt.txt"
-      ]
+      ],
+      "infographic_path": true
     },
     {
       "id": "P9-SPEECH",
@@ -1872,7 +1874,7 @@
         "AF-U-SALES-BUILD"
       ],
       "preflight": null,
-      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie GPT-Image-2.5 design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
+      "routing_note": "Conditional executor, upsell branch (intake/upsell-questions.json want_sales_checkout, default YES). sales_checkout_builder.py builds BOTH sales.html and checkout.html plus the GHL push plan in ONE invocation (no --mode flag exists -- corrected 2026-08-19 after C2's script landed; the executor's own gate (resolve_sales_checkout_gate) DEFERS -- exits 0, writes nothing new -- unless intake.json pre_presentation_capture.WANT_SALES_CHECKOUT == 'yes'). A 'no' is a logged CLIENT WAIVER (pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON, the client's own words, non-empty -- silence is never consent) and gates the whole branch OUT, mirroring the P-CONVERTER / P-SP-* conditional-executor pattern. THIS is the phase that actually runs the build (copy -> kie GPT Image 2.5 Sunburst design -> HTML -> 06-ghl-install-pages/tools/ghl_rest_canvas.py push-plan); P-U-CHECKOUT-BUILD and P-U-FORM-CHECKOUT re-invoke the SAME script with --skip-design (no fresh kie.ai spend, per its own documented contract) purely to re-verify their half of the single receipt. Template: LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md.",
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
@@ -2184,7 +2186,7 @@
       "code": "AF-P1",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "rich prompt missing, under the reconciled 9,000-char floor (PROMPT_CHAR_FLOOR), or missing a required structural block ([ARCHETYPE ...] / NEGATIVE BLOCK / 'Do not ')",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_rich_prompts"
@@ -2193,7 +2195,7 @@
       "code": "AF-P2",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "composed prompt over the 18000 ceiling",
       "enforced_by": "build_deck",
       "py_symbol": "PROMPT_CHAR_CEILING"
@@ -2202,7 +2204,7 @@
       "code": "AF-R3",
       "stage": "Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "hardcoded demographic default in the slide spec (60/30/10 landmine)",
       "enforced_by": "build_deck",
       "py_symbol": "FORBIDDEN_DEMOGRAPHIC_DEFAULTS"
@@ -2211,7 +2213,7 @@
       "code": "AF-RESEARCH-GATE",
       "stage": "1Q",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "research_complete not true",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_research_brief"
@@ -2242,7 +2244,7 @@
       "code": "AF-BUNDLE-COMPLETE",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "postflight completeness gate — one or more required deliverables missing or below size threshold",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
@@ -2251,7 +2253,7 @@
       "code": "AF-BUNDLE-INCOMPLETE",
       "stage": "Postflight/Bundle",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) — one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
       "enforced_by": "fix_bundle_complete",
       "py_symbol": null,
@@ -2306,7 +2308,7 @@
       "code": "AF-SPEECH-SHORT",
       "stage": "9",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "presenter speech word count below target_talk_minutes x 120 wpm floor",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_speech_length"
@@ -2324,7 +2326,7 @@
       "code": "AF-DELIVER",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "delivery interlock — the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -2333,7 +2335,7 @@
       "code": "AF-DH1",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "delivery human-handoff gate not satisfied",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -2342,7 +2344,7 @@
       "code": "AF-DELIVERY-COMPLETE",
       "stage": "Done",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "six-file bundle / infographic / GHL upload incomplete",
       "enforced_by": "closeout_gate",
       "py_symbol": null
@@ -2974,7 +2976,7 @@
       "stage": "Intake/2",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as GPT-Image-2.5 input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
+      "trigger": "Decision 1C. The client provided assets but assets_manifest.json is absent/invalid, OR a provided asset is not provably consumed downstream — it lacks a resolvable public_url and/or a non-empty consumed_by list (so it is never fed to the Brand Steward + Slide Image Creator as GPT Image 2.5 Sunburst input_urls). Collected-but-ignored assets fail. Defers when no assets were provided.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_assets_manifest",
       "secondary_py_symbols": [
@@ -3056,7 +3058,7 @@
       "stage": "5/6/Postflight",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed image (GPT-Image-2.5 default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6). Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
+      "trigger": "Decision 5C. The native PPTX text/element-overlay path is ELIMINATED. Fires when the eliminated legacy native-text-overlay ledger file is present in the run dir (its former name is recorded in the RETIRED appendix of pptx-assembly-specialist.md; its mere presence at assembly is a violation), OR any delivered slide carries a native (non-notes) on-slide text run instead of a single composed image (GPT Image 2.5 Sunburst default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6). Persistent garble escalates to a re-prompt/re-seed loop then human escalation — never a native overlay. Strengthens (does not replace) AF-BAKED / AF-I14. The only legitimate PPTX text part is the off-slide speaker-notes pane.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_no_overlay",
       "secondary_py_symbols": [
@@ -3069,7 +3071,7 @@
       "stage": "4/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai path (GPT-Image-2.5 default; the legacy gpt-image-2 route is equally canonical for 3:1 / 1:3 / 9:21 per Ruling 6, 2026-09-09). Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). The deck — or any slide PNG — was produced by a path other than the ONE canonical render surface scripts/build_deck.py + scripts/run_signature_deck.py kie.ai path (GPT Image 2.5 Sunburst default; the legacy gpt-image-2 route is equally canonical for 3:1 / 1:3 / 9:21 per Ruling 6, 2026-09-09). Fires when working/checkpoints/process_manifest.json carries no phase=='render' attestation written by build_deck.py (write_process_manifest), when a hand-rolled / per-deck renderer or assembler under working/*.py (a direct kie createTask, a slide-canvas builder, or a native PowerPoint text-box overlay assembler) produced or could produce the pixels, or when any delivered slide cannot be tied to a real canonical kie taskId / recordInfo trace. The build_deck-enforced, NON-NULL successor of the toothless closeout-only AF-RENDERER (which it strengthens, never replaces). MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -3081,7 +3083,7 @@
       "stage": "4/5/6",
       "level": "slide",
       "in_ruleset": true,
-      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai (GPT-Image-2.5 default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6) — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. The ONLY Pillow/PIL step permitted anywhere is the locked-logo image composite (SOP-IMG-05); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
+      "trigger": "SHARED CONTRACT (FIX 2 + FIX 9). A slide image was fabricated LOCALLY instead of baked by kie.ai (GPT Image 2.5 Sunburst default, or the legacy gpt-image-2 route for 3:1 / 1:3 / 9:21 per Ruling 6) — the local-Pillow/PIL slide-canvas signature. Fires when a working/*.py script constructs a 2048x1152 (or any full-bleed) slide canvas via PIL Image.new / ImageDraw to draw a cream or color typography card, when a slide PNG falls below the 51,200-byte kie-bake floor (PLACEHOLDER_MIN_BYTES — the flat-cream-card signature), or when a pure-typography hook slide carries no real kie taskId. No Pillow/PIL step is permitted on a slide: the only logo step is assemble_pptx placing the local logo file at assembly (SOP-IMG-05 Rule A mechanism 2, Rule C); never a slide canvas, surface, or text. 'skip kie.ai for this slide' is doctrine-illegal and appears in no role, SOP, or script. Strengthens (does not replace) AF-BAKED / AF-I14. MAY be skipped ONLY by an explicit, logged owner/founder approval token recorded in process_manifest.json (owner_skip_approval) — never silently, never by an agent's own choice.",
       "enforced_by": "build_deck",
       "py_symbol": "check_canonical_render_path",
       "secondary_py_symbols": [
@@ -3716,7 +3718,7 @@
       "code": "AF-PHASE-REPORT-MISSING",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a phase is attested without confirmed AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records (gateway_msg_id present) for it",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3725,7 +3727,7 @@
       "code": "AF-PHASE-REPORT-START",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "phase dispatched without a client start-report emitted via openclaw message send",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3734,7 +3736,7 @@
       "code": "AF-PHASE-REPORT-DONE",
       "stage": "Process",
       "level": "phase",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "phase substance-validated but no client done-report emitted",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3743,7 +3745,7 @@
       "code": "AF-PROCESS-INTEGRITY",
       "stage": "Delivery",
       "level": "deck",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "prove-deck.py: a declared step was skipped, ran out of order, was unvalidated, or unreported",
       "enforced_by": "runner",
       "py_symbol": null
@@ -3995,7 +3997,7 @@
       "code": "AF-KIE-AUTH",
       "stage": "Phase-0",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched — an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
       "enforced_by": "build_deck",
       "py_symbol": "_preflight_kie_auth",
@@ -4007,7 +4009,7 @@
       "code": "AF-FORGED-APPROVAL",
       "stage": "1Q/QC",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending — a phase can never be skipped on an approval that is not a real owner message.",
       "enforced_by": "build_deck",
       "py_symbol": "check_phase_preconditions",
@@ -4097,7 +4099,7 @@
       "code": "AF-IMAGE-GROUNDING-PARK",
       "stage": "Image-QC/closeout",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the image-grounding-steward verdict is missing or failing at closeout: working/qc/image_qc_report.json carries NO image_grounding sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, or its reviewed_by is a builder/self identity — the run PARKS for human vision review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_image_grounding at P-IMAGE-QC) as a closeout gate so an un-parked deck proves its grounding verdict exists; the companion scene-grounding/anchor-parity findings ride the same verifier as AF-IMAGE-GROUNDING. Defers (pass) only when the run has no prompts/anchors to judge and no report at all — at closeout, after render+assembly, the park is binding.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
@@ -4106,7 +4108,7 @@
       "code": "AF-CASTING-PARK",
       "stage": "Prompt-QC/closeout",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the representation-casting-director verdict is missing or failing at closeout: working/qc/prompt_qc_report.json carries NO representation_casting sub-verdict ({pass:true, reviewed_by:<independent identity>}), the verdict marks pass!=true, its reviewed_by is a builder/self identity, or the verifier's cast-parity checks fail (an invented demographic default, or a declared representation_mix no people-bearing prompt honors — the verifier's own AF-CASTING / AF-CASTING-MIX-PARITY findings) — the run PARKS for human review (working/qc/human-review/) instead of shipping. FIX 92 registers the FIX 16 sub-verdict (emitted by phase_verifiers._verify_representation_casting at P-PROMPT-QC) as a closeout gate. Defers (pass) only when the client declined representation_mix capture and no forbidden default is present.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
@@ -4115,7 +4117,7 @@
       "code": "AF-IMAGE-GROUNDING",
       "stage": "Image-QC/Render",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a people/scene-bearing render prompt carries NO client-specific research anchor (research_map.json assigns no anchored item to the slide, or the assigned anchor token appears in neither the prompt nor the render copy — observed-render parity fails), or the prompt/copy contains an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS). Generic scenes are ungrounded; pure abstract/typography slides are exempt. Emitted by the image-grounding-steward sub-verifier at P-IMAGE-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_image_grounding_verdict"
@@ -4124,7 +4126,7 @@
       "code": "AF-CASTING",
       "stage": "Prompt-QC/P-IMAGE-QC",
       "level": "slide",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "a people-bearing prompt carries an invented demographic default (FORBIDDEN_DEMOGRAPHIC_DEFAULTS) instead of cast targets drawn from intake.json's captured representation_mix, or the representation_casting sub-verdict in prompt_qc_report.json marks pass!=true / names no reviewed_by / names a builder-self identity. Emitted by the representation-casting-director sub-verifier at P-PROMPT-QC; P-IMAGE-QC performs the observed-render parity half.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
@@ -4133,7 +4135,7 @@
       "code": "AF-CASTING-MIX-PARITY",
       "stage": "Prompt-QC",
       "level": "DECK",
-      "in_ruleset": false,
+      "in_ruleset": true,
       "trigger": "the representation mix declares cast targets but NO people-bearing prompt names any declared cast target — the prompt-level casting does not reflect the client's captured mix. Emitted by the representation-casting-director sub-verifier (phase_verifiers._verify_representation_casting) at P-PROMPT-QC.",
       "enforced_by": "closeout_gate",
       "py_symbol": "_chk_representation_casting_verdict"
@@ -4372,6 +4374,10 @@
       "id": "infographic-checklist",
       "owns_phase": null,
       "description": "FIX 112 infographic-checklist QC unit: independent reviewer of the rendered infographic (working/deliverables/infographic.png + working/checkpoints/infographic_status.json). Writes working/qc/infographic_checklist_verdict.json — the verdict file P-STYLE-PREVIEW-era bundle table always named and nothing implemented."
+    },
+    {
+      "id": "scripts-specialist",
+      "owns_phase": null
     }
   ]
 }

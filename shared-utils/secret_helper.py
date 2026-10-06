@@ -213,17 +213,30 @@ _REALISH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-:.+/=]{9,}$")
 _LOW_WORDS = {
     "true", "false", "yes", "no", "null", "none", "undefined", "n/a", "na",
 }
-_PLACEHOLDER_SUBSTRINGS = (
-    "xxxxx", "your_key", "your-key", "your_api", "your-api", "yourkey",
-    "your_token", "replace_me", "replace-me", "replaceme", "changeme",
-    "change_me", "change-me", "placeholder", "example", "sample_key",
-    "sample-key", "dummy", "demo_key", "demo-key", "test_key", "test-key",
-    "fake_key", "fake-key", "sk-test", "sk-xxx", "sk-example", "sk-replace",
+# Placeholder WORDS (2026-10 whole-token rule). A word only counts when it is a whole
+# token: preceded by the start of the value or a non-alphanumeric delimiter, and not
+# followed by a letter or digit (it must end at the end or at a delimiter). It never matches inside a
+# random alphanumeric run, so genuine keys that happen to contain "demo", "todo",
+# "sample" and so on are no longer falsely rejected. Kept in step with install.sh
+# looks_like_real_key (same token list, same boundary rule).
+_PLACEHOLDER_TOKENS = (
+    "your_key", "your-key", "your_api", "your-api", "yourkey", "your_token",
+    "replace_me", "replace-me", "replaceme", "changeme", "change_me", "change-me",
+    "here", "placeholder", "example", "sample", "dummy", "demo",
+    "test_key", "test-key", "fake_key", "fake-key",
     "todo", "tbd", "fill_in", "fill-in", "fillin", "paste-your", "paste_your",
     "paste-real", "paste_real", "pastereal", "insert_your", "insert-your",
     "enter_your", "enter-your", "set_your", "set-your", "no_key", "nokey",
     "none_yet", "not_set", "not-set", "unset", "missing",
+    "your_client", "key_here", "token_here",
 )
+# A run of five or more x (xxxxx) is filler wherever it appears (a random key never has one).
+_PLACEHOLDER_TOKEN_RE = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(
+        re.escape(t) for t in sorted(_PLACEHOLDER_TOKENS, key=len, reverse=True))
+    + r")(?![a-z0-9])|x{5,}")
+# Documented placeholder PREFIXES (sk-test..., sk-xxx..., sk-example..., sk-replace...).
+_PLACEHOLDER_PREFIX_RE = re.compile(r"^sk-(?:test|xxx|example|replace)")
 
 # Provider shape regexes (canonical var name -> anchored regex). Mirrors the
 # stage-1 table in install.sh looks_like_real_key; extend both together.
@@ -264,9 +277,10 @@ def is_placeholder(value: str) -> bool:
     low = value.lower()
     if low in _LOW_WORDS:
         return True
-    for sub in _PLACEHOLDER_SUBSTRINGS:
-        if sub in low:
-            return True
+    if _PLACEHOLDER_PREFIX_RE.search(low) or _PLACEHOLDER_TOKEN_RE.search(low):
+        return True
+    if low.endswith("example"):  # the gitleaks documentation suffix (AKIAIOSFODNN7EXAMPLE)
+        return True
     # Template shapes: <TODO>, [REPLACE], {{var}}
     if value.startswith("<") and value.endswith(">"):
         return True
@@ -331,6 +345,7 @@ if __name__ == "__main__":
 
     # Placeholders rejected (QC FIX 67: PASTE_REAL_TOKEN rejected by every reader)
     for bad in ("PASTE_REAL_TOKEN", "your_key_here", "CHANGE_ME_LATER",
+                "YOUR_CLIENT_KIE_API_KEY_HERE",
                 "<TODO>", "{{SECRET}}", "sk-example123", "short", "",
                 "BRAVE_TOKEN_REPLACE_ME"):
         check(f"placeholder {bad!r}", is_placeholder(bad), True)

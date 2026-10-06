@@ -7,10 +7,14 @@ set -euo pipefail
 
 FLEET_AUDIT_VERSION="v1.0.0"
 
+# Root: /data/.openclaw when present, else ~/.openclaw. Platform LABEL: the
+# OS, as platform/common.sh oc_detect_platform (a Linux box with ~/.openclaw
+# is "vps", never "mac").
+case "$(uname -s)" in Linux) PLATFORM="vps" ;; *) PLATFORM="mac" ;; esac
 if [[ -d /data/.openclaw ]]; then
-  OC_ROOT="/data/.openclaw"; PLATFORM="vps"
+  OC_ROOT="/data/.openclaw"
 elif [[ -d "${HOME}/.openclaw" ]]; then
-  OC_ROOT="${HOME}/.openclaw"; PLATFORM="mac"
+  OC_ROOT="${HOME}/.openclaw"
 else
   echo "[fleet-audit-remediate] ERROR: no OpenClaw root found" >&2; exit 2
 fi
@@ -220,10 +224,11 @@ dv=disk[0].get('delivery',{}) or {}; print(json.dumps({'id':disk[0].get('id','')
     if [[ "$_APPLY" -eq 1 ]]; then
       local script_path; script_path="$(_find_health_script "disk-usage-alert.sh")" || true
       if [[ -z "${script_path:-}" ]]; then _finding "F3" "FAILED" "disk-usage-alert.sh not found"; return 0; fi
+      if [[ -z "${OPERATOR_IDS:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ]]; then _finding "F3" "SKIP" "no operator escalation chat configured (set OPERATOR_TELEGRAM_CHAT_ID)"; return 0; fi
       if openclaw cron rm "$jid" >/dev/null 2>&1; then _fix "F3: removed broken cron ${jid}"; fi
       if openclaw cron add --name "disk-usage-alert" --cron "47 * * * *" \
            --command "bash ${script_path}" --channel telegram \
-           --to "${OPERATOR_IDS:-5252140759}" >/dev/null 2>&1; then
+           --to "${OPERATOR_IDS:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" >/dev/null 2>&1; then
         _finding "F3" "FIXED" "rewired with explicit --channel telegram"
       else _finding "F3" "FAILED" "re-registration failed"; fi
     fi
@@ -243,7 +248,12 @@ check_f4_decoy_db() {
   _log "F4: checking for 0-byte mission-control.db decoys..."
   local decoy_paths=()
   local candidate
-  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db"; do
+  # Includes the layout paths DB consumers probe FIRST ($OC_ROOT/workspaces/
+  # command-center, $OC_ROOT/data): a 0-byte file there shadows the live board.
+  # The CC's own configured DB is never a decoy, even while still 0 bytes.
+  for candidate in "/mission-control.db" "/data/mission-control.db" "${HOME}/mission-control.db" "${WORKSPACE}/mission-control.db" "${OC_ROOT}/mission-control.db" \
+                   "${OC_ROOT}/workspaces/command-center/mission-control.db" "${OC_ROOT}/data/mission-control.db"; do
+    [[ "$candidate" == "${DATABASE_PATH:-}" || "$candidate" == "${DASHBOARD_DB_PATH:-}" ]] && continue
     if [[ -f "$candidate" ]]; then
       local sz; sz=$(stat -f%z "$candidate" 2>/dev/null || stat -c%s "$candidate" 2>/dev/null || echo "1")
       if [[ "$sz" == "0" ]]; then decoy_paths+=("$candidate"); fi

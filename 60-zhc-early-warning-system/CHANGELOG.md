@@ -3,6 +3,64 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.2.1] - 2026-09-17
+
+ISSUE-07: the tick cron no longer auto-disables itself the moment the sentinel
+finds something. A live client box was carrying `lastRunStatus: error`,
+`exitCode: 10`, 61 findings, and a tick the scheduler had switched off three
+times.
+
+- Root cause: `install.sh` registered the cron as `ews-entry.sh tick`, which
+  passes the sentinel's exit code through verbatim. `ews_sentinel.py` exits 10
+  when findings are present, which is the system working. The OpenClaw
+  scheduler has no findings exit: it records any non-zero exit as a failed run
+  and auto-disables the job after 10 consecutive failures. A box holding a
+  standing finding therefore failed every 15 minutes until the scheduler
+  silenced its own guard, and every install, repair and fleet roll re-registered
+  the same bare command, so the box healed and re-broke on a loop.
+- New `ews-entry.sh cron-tick` subcommand: runs the identical sentinel tick,
+  then maps exit 10 to 0 at the scheduler boundary only. Every other non-zero
+  exit (1 error, 2 usage, 6 missing python3) passes through unchanged, so a
+  genuinely broken tick still fails the job loudly. `tick` is untouched and
+  keeps the honest exit contract for by-hand runs and scripts.
+- `install.sh` registers `cron-tick`, and the by-hand `openclaw cron add` hint
+  it prints on an install failure now prints `cron-tick` too, because that line
+  gets copy-pasted verbatim. The command value stays a single plain
+  "path + subcommand" string with no `;` or `||`: `dedupe_legacy_cron_dupes`
+  compares it to a job's `argv[-1]` verbatim, so any shell operator would
+  silently defeat duplicate detection.
+- Pre-existing duplicates of the OLD command string get their own cleanup pass.
+  `dedupe_legacy_cron_dupes` matches on the exact command, so a pass using only
+  the new string would never see them. Both passes keep the existing
+  conservative contract: disable only on proven duplication (2 or more), never
+  delete, never touch a lone legacy registration.
+- New `reenable_cron_if_disabled`: `cron add --declaration-key` converges an
+  existing job's name, schedule and command but never re-enables a disabled one,
+  so every box the bug had already switched off would have stayed dark through
+  any number of installs. After each converge the installer looks the job up by
+  `declarationKey` in `openclaw cron list --all --json` and runs
+  `openclaw cron enable <id>` if the scheduler had switched it off. Fails soft:
+  a missing `openclaw`, a failed list, bad JSON, no matching job or a failed
+  enable are logged and swallowed, and only the registration call itself can
+  fail the install.
+- The operator aggregator gets the re-enable pass but deliberately NO exit
+  remap and no second dedupe pass. `ews_fleet.py`'s exit contract is 0 OK /
+  1 error / 2 usage with no findings code, so it never emits the
+  non-zero-but-successful exit the tick did, and its command string is unchanged
+  by this fix.
+- Three new failable self-test cases in `install.sh --self-test`: a static check
+  that no cron-add command value in the file ends in the bare `tick` subcommand
+  (it joins backslash continuations, resolves a shell variable back to its
+  assignment, and fails on a value it cannot resolve rather than passing it), a
+  re-enable case proving a scheduler-disabled tick comes back on across a
+  re-install, and the existing legacy-duplicate case now exercising the
+  old-command cleanup pass. Each was mutation-proved: reintroducing the bare
+  `tick` registration, dropping the re-enable call, and dropping the old-command
+  dedupe pass each fail the self-test with the matching message.
+- `ews-entry.sh usage()` printed a fixed line range that both leaked the first
+  lines of executable code into the help text and would have truncated the
+  header as soon as it grew. It now prints the banner-delimited header block.
+
 ## [1.1.0] - 2026-09-09
 
 RR-015 (Rescue Rangers wave 3, RR-W3-EWS): EWS escalations now route through

@@ -305,7 +305,34 @@ def spawn_inline(dept_entry, prompt, model_id, timeout, dry_run=False):
 SOP_SUBSTANCE_MIN = 256  # bytes — mirrors HOW_TO_MIN in resume-workforce-build.sh:442
 # Placeholder markers that prove a SOP file is still a stub (the authoring step
 # replaces "[Step 1 - to be personalized]" / "[PENDING ...]" with real DMAIC content).
-_SOP_PLACEHOLDER_MARKERS = ("[PENDING", "to be personalized", "[Step 1 -")
+_SOP_PLACEHOLDER_MARKERS = ("[PENDING", "to be personalized", "[Step 1 -", "how-to.md (stub)")
+
+
+def pending_howto_targets(entry):
+    """Role how-to.md files in this dept that are still PENDING stubs.
+
+    A role that arrived with no library template (vertical-pack departments,
+    custom roles) has NO numbered 0N-*.md stubs -- its SOPs belong in how-to.md,
+    which build-workforce.py writes as a PENDING stub. The manifest then lists
+    sop_files=[] for the dept, and an empty list used to read as "already
+    authored", so those departments could never be queued. Scanned at run time
+    so manifests already on disk are covered too.
+    """
+    out = []
+    dept_dir = Path(entry.get("dept_dir", ""))
+    if not dept_dir.is_dir():
+        return out
+    for role_dir in sorted(p for p in dept_dir.iterdir()
+                           if p.is_dir() and p.name not in ("memory", "devils-advocate")
+                           and not p.name.startswith(".")):
+        how_to = role_dir / "how-to.md"
+        try:
+            head = how_to.read_text(encoding="utf-8", errors="replace")[:600]
+        except OSError:
+            continue
+        if "PENDING - FILL FROM LIBRARY" in head or "how-to.md (stub)" in head:
+            out.append({"role_folder": role_dir.name, "sop_file": "how-to.md", "role_dir": str(role_dir)})
+    return out
 
 
 def _sop_path_for(entry, sf):
@@ -356,6 +383,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Don't spawn; just print what would happen")
     parser.add_argument("--max-parallel", type=int, default=None, help="Override manifest's max_parallel_sub_agents")
     parser.add_argument("--timeout", type=int, default=1800, help="Sub-agent timeout in seconds (default 1800 / 30 min)")
+    parser.add_argument("--dept", action="append", default=None,
+                        help="Only these department ids (repeatable, or comma-separated)")
+    parser.add_argument("--force", action="store_true",
+                        help="Queue the selected departments even when their SOPs look authored "
+                             "(bypasses the furnace skip; the boundary gate still applies)")
     args = parser.parse_args()
 
     # 1. Find manifest
@@ -380,6 +412,20 @@ def main():
     if not instructions:
         print("[POPULATE-SOPS] ERROR: Manifest missing sub_agent_instructions template.", file=sys.stderr)
         return 1
+
+    if args.dept:
+        wanted = {d.strip() for arg in args.dept for d in arg.split(",") if d.strip()}
+        unknown = wanted - {e.get("dept_id", "") for e in depts}
+        if unknown:
+            print(f"[POPULATE-SOPS] ERROR: --dept not in manifest: {sorted(unknown)}", file=sys.stderr)
+            return 1
+        depts = [e for e in depts if e.get("dept_id", "") in wanted]
+
+    # PENDING how-to.md stubs are SOP targets too (see pending_howto_targets).
+    for e in depts:
+        listed = {(sf.get("role_dir"), sf.get("sop_file")) for sf in e.get("sop_files", [])}
+        e["sop_files"] = list(e.get("sop_files", [])) + [
+            t for t in pending_howto_targets(e) if (t["role_dir"], t["sop_file"]) not in listed]
 
     max_parallel = args.max_parallel or manifest.get("max_parallel_sub_agents", 10)
     company_name = manifest.get("company", "the company")
@@ -488,7 +534,7 @@ def main():
         # FURNACE GUARD: skip depts whose SOPs are already authored on disk. On a
         # resume re-fire this is what stops a fresh 1800s heavy-tier sub-agent from
         # re-authoring a dept that is already done. --dry-run still reports the skip.
-        if dept_already_authored(entry):
+        if not args.force and dept_already_authored(entry):
             authored_skips += 1
             print(
                 f"[POPULATE-SOPS] SKIP {dept_id}: all {len(entry.get('sop_files', []))} SOP file(s) "

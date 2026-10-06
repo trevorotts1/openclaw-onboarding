@@ -150,7 +150,7 @@ if [[ "$rc1" -eq 0 ]]; then
 else
   fail "1c: default mode exited $rc1 (expected 0). Output: $out1"
 fi
-if printf '%s\n' "$out1" | grep -q 'KNOWN DEBT'; then
+if grep -q 'KNOWN DEBT' <<<"$out1"; then
   pass "1d: the baselined finding is reported as KNOWN DEBT"
 else
   fail "1d: expected a KNOWN DEBT line in output, not found. Output: $out1"
@@ -186,20 +186,20 @@ else
 fi
 
 new_line_out="$(printf '%s\n' "$out2" | grep "scripts/demo-writer.sh:${new_lineno} ")"
-if [[ -n "$new_line_out" ]] && printf '%s' "$new_line_out" | grep -q 'NEW VIOLATION'; then
+if [[ -n "$new_line_out" ]] && grep -q 'NEW VIOLATION' <<<"$new_line_out"; then
   pass "2b: output names scripts/demo-writer.sh:${new_lineno} and tags it NEW VIOLATION"
 else
   fail "2b: expected a NEW VIOLATION line for scripts/demo-writer.sh:${new_lineno}. Output: $out2"
 fi
 
 orig_line_out="$(printf '%s\n' "$out2" | grep "scripts/demo-writer.sh:${orig_lineno} ")"
-if [[ -n "$orig_line_out" ]] && printf '%s' "$orig_line_out" | grep -q 'KNOWN DEBT'; then
+if [[ -n "$orig_line_out" ]] && grep -q 'KNOWN DEBT' <<<"$orig_line_out"; then
   pass "2c: the ORIGINAL baselined finding (line ${orig_lineno}) is still KNOWN DEBT, not swept up as new"
 else
   fail "2c: the original baselined finding was not reported as KNOWN DEBT alongside the new one. Output: $out2"
 fi
 
-if printf '%s\n' "$out2" | grep -q '^\[qc-config-write-chown\] FAIL  1 NEW config write'; then
+if grep -q '^\[qc-config-write-chown\] FAIL  1 NEW config write' <<<"$out2"; then
   pass "2d: summary reports exactly 1 new violation"
 else
   fail "2d: summary did not report exactly 1 new violation. Output: $out2"
@@ -227,7 +227,7 @@ if [[ "$rc3" -eq 0 ]]; then
 else
   pass "3b: missing baseline did not silently pass (exit != 0)"
 fi
-if printf '%s\n' "$out3" | grep -q 'UNDETERMINED'; then
+if grep -q 'UNDETERMINED' <<<"$out3"; then
   pass "3c: output is tagged UNDETERMINED"
 else
   fail "3c: output did not contain an UNDETERMINED tag. Output: $out3"
@@ -250,12 +250,12 @@ if [[ "$rc4" -eq 1 ]]; then
 else
   fail "4a: --strict exited $rc4, expected 1. Output: $out4"
 fi
-if printf '%s\n' "$out4" | grep -q 'FAIL.*scripts/demo-writer.sh'; then
+if grep -q 'FAIL.*scripts/demo-writer.sh' <<<"$out4"; then
   pass "4b: --strict output names the baselined-but-still-failing finding as FAIL"
 else
   fail "4b: --strict output did not FAIL demo-writer.sh. Output: $out4"
 fi
-if printf '%s\n' "$out4" | grep -q 'KNOWN DEBT'; then
+if grep -q 'KNOWN DEBT' <<<"$out4"; then
   fail "4c: --strict output must not classify anything as KNOWN DEBT (baseline must be ignored)"
 else
   pass "4c: --strict output contains no KNOWN DEBT classification (baseline genuinely ignored)"
@@ -288,7 +288,7 @@ if [[ "$rc5" -eq 0 ]]; then
 else
   fail "5a: exited $rc5 after fixing the baselined finding (expected 0 -- fixing must never break the build). Output: $out5"
 fi
-if printf '%s\n' "$out5" | grep -q 'baseline entry resolved'; then
+if grep -q 'baseline entry resolved' <<<"$out5"; then
   pass "5b: output reports the baseline entry as resolved"
 else
   fail "5b: output did not report a resolved baseline entry. Output: $out5"
@@ -338,7 +338,7 @@ else
   fail "6c: CRITICAL REGRESSION -- a 3rd identical occurrence exited $rc6, expected 1. If this is 0, count-awareness has regressed and the bypass this unit closed is open again. Output: $out6"
 fi
 
-if printf '%s\n' "$out6" | grep -q 'demo-writer.sh' && printf '%s\n' "$out6" | grep -q '3 occurrence(s), baseline allows 2'; then
+if grep -q 'demo-writer.sh' <<<"$out6" && grep -q '3 occurrence(s), baseline allows 2' <<<"$out6"; then
   pass "6d: message names the file and both counts (3 occurrence(s), baseline allows 2)"
 else
   fail "6d: expected a message naming the file and both counts ('3 occurrence(s), baseline allows 2'). Output: $out6"
@@ -370,7 +370,7 @@ if [[ "$rc7" -eq 0 ]]; then
 else
   fail "7a: exited $rc7 after removing one occurrence (expected 0 -- fixing must never break the build, even partially). Output: $out7"
 fi
-if printf '%s\n' "$out7" | grep -qi 'partially resolved'; then
+if grep -qi 'partially resolved' <<<"$out7"; then
   pass "7b: output reports the reduced count as partially resolved"
 else
   fail "7b: expected a 'partially resolved' INFO line. Output: $out7"
@@ -406,7 +406,7 @@ if [[ "$rc8_legacy_only" -eq 0 ]]; then
 else
   fail "8a: exited $rc8_legacy_only against a legacy baseline with one matching occurrence (expected 0). Output: $out8_legacy_only"
 fi
-if printf '%s\n' "$out8_legacy_only" | grep -qi 'legacy'; then
+if grep -qi 'legacy' <<<"$out8_legacy_only"; then
   pass "8b: output advises upgrading the legacy baseline format (via --write-baseline)"
 else
   fail "8b: expected an INFO advisory about the legacy baseline format. Output: $out8_legacy_only"

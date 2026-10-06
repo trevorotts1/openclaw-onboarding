@@ -32,6 +32,18 @@ import tempfile
 import time
 from pathlib import Path
 
+# JEV A36 (spec 10.3) — NOTE ON THE producer_report LATE GATE:
+# commit 9217feb18 added a `gate_producer_report` helper HERE, but this file has
+# no producer-report flow to gate: its commands are init|add|status|summary|
+# record|dedup|dedup-snapshot, none of which ingests a producer report. The
+# producer_report late gate shipped by d253d78a6 lives at its real production
+# entry point — 59-anthology-engine/scripts/intake_router.py (the
+# producer-ingest door), verified wired there. The orphaned duplicate was
+# DELETED (ONB-212 repair) rather than wired to an invented flow: gating
+# set_status/record_post on a D23 chain this skill never writes would refuse
+# every live post on a box with no decision chain, and one late kind must have
+# ONE gate implementation (the same rule the selector-gate repair applied).
+
 EXIT_OK = 0
 EXIT_FLOOR = 2
 EXIT_DOUBLE = 2  # AF-SM-DOUBLE-POST (same fail-closed exit as a floor violation)

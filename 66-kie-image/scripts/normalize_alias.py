@@ -32,8 +32,12 @@ ALIAS_MAP = {
     "seed dream": "seedream",
     "idiogram": "ideogram",
     "imagine 4": "imagen 4",
-    "gpt-img2": "gpt image 2.5",
-    "gpt-image 2.0": "gpt image 2.5",
+    # Owner correction 2026-10-06: names that carry version 2 are the legacy family, not the auto-latest default.
+    "gpt-img2": "gpt image 2",
+    "gpt-image 2.0": "gpt image 2",
+    "gpt image": "gpt image 2.5",
+    "gpt-image": "gpt image 2.5",
+    "openai image": "gpt image 2.5",
     "gpt-img2.5": "gpt image 2.5",
     "gpt-image 2.5": "gpt image 2.5",
     "nano banana light": "nano banana 2 lite",
@@ -69,7 +73,7 @@ FAMILY_OF = {
         "seedream/5-lite-text-to-image",
         "seedream/5-lite-image-to-image",
         "seedream/4.5-text-to-image",
-        "seedream/4-5-edit",
+        "seedream/4.5-edit",
     ],
     "nano banana 2": ["nano-banana-2"],
     "nano banana 2 lite": ["nano-banana-2-lite"],
@@ -126,8 +130,10 @@ def main(argv=None) -> int:
         assert normalize_alias("imagine 4") == "imagen 4"
         # Ruling 2026-09-09 (Ruling 6): short GPT-image aliases now resolve to
         # the 2.5 Sunburst default, not the retained legacy family.
-        assert normalize_alias("gpt-img2") == "gpt image 2.5"
-        assert normalize_alias("GPT-image 2.0") == "gpt image 2.5"
+        assert normalize_alias("gpt-img2") == "gpt image 2"
+        assert normalize_alias("GPT-image 2.0") == "gpt image 2"
+        assert normalize_alias("gpt image") == "gpt image 2.5"
+        assert normalize_alias("OpenAI image") == "gpt image 2.5"
         assert normalize_alias("gpt-img2.5") == "gpt image 2.5"
         assert normalize_alias("GPT-image 2.5") == "gpt image 2.5"
         # Legacy family stays resolvable directly (not deleted, just unaliased).

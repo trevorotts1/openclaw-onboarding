@@ -23,15 +23,21 @@ EXIT_OK = 0
 EXIT_INVALID_PAYLOAD = 1
 EXIT_INPUT_ERROR = 2
 
+# Contract v2 (playbook.md Section 15): the roster identity is client_last_name + client_email,
+# the SAME idempotency_key never creates a second episode, and any other contract_version is refused.
 REQUIRED_FIELDS = (
+    "contract_version",
     "podcast_id",
-    "audio_url",
-    "image_url",
+    "client_last_name",
+    "client_email",
     "title",
     "description",
+    "audio_url",
+    "image_url",
     "publish_date",
-    "client_email",
+    "idempotency_key",
 )
+CONTRACT_VERSION = "2"
 
 
 def _is_empty(value: Any) -> bool:
@@ -52,6 +58,9 @@ def validate_payload(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
         field for field in REQUIRED_FIELDS
         if field in payload and _is_empty(payload[field])
     ]
+    if "contract_version" in payload and "contract_version" not in invalid \
+            and str(payload["contract_version"]).strip() != CONTRACT_VERSION:
+        invalid.append("contract_version")
     return missing, invalid
 
 
@@ -73,7 +82,7 @@ def _load_payload(path: str | None) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate the seven required Podbean publish webhook fields before POSTing. "
+            "Validate the ten required Podbean publish webhook (contract v2) fields before POSTing. "
             "No network calls are made."
         )
     )

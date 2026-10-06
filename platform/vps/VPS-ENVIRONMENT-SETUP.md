@@ -51,7 +51,7 @@ Set these in the hPanel Environment section BEFORE running install.
 |----------|-------|-------|
 | `TELEGRAM_BOT_TOKEN` | `123456:ABC...` | Client's bot token |
 | `TELEGRAM_CLIENT_CHAT_ID` | `1234567890` | Client's Telegram user ID |
-| `TELEGRAM_TREVOR_CHAT_ID` | `5252140759` | Always Trevor's ID |
+| `TELEGRAM_TREVOR_CHAT_ID` | `<operator chat id>` | Operator box only; resolved at runtime, never hardcoded |
 | `TELEGRAM_SPAULDING_CHAT_ID` | TBD | Add when known |
 | `TELEGRAM_LEANNE_CHAT_ID` | TBD | Add when known |
 
@@ -86,7 +86,7 @@ Set these in the hPanel Environment section BEFORE running install.
 |----------|--------------|
 | `GITHUB_TOKEN` | GitHub access |
 | `TAVILY_API_KEY` | Web search |
-| `KIE_API_KEY` | Image generation |
+| `KIE_API_KEY` | KIE.ai media generation: image, video, music, and speech (the client's own key) |
 | `VERCEL_TOKEN` | Vercel deployments |
 | `CONTEXT7_API_KEY` | API documentation |
 

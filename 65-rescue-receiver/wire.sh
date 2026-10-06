@@ -188,6 +188,15 @@ unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
 
 _NAME="rescue-rr-box-poll"
 _LEGACY_NAME="rescue-rangers-poll"
+# RR INTAKE AUTH SELF-CHECK (daily). Separate leg, separate cron, separate name.
+# The poll cron above covers the RETURN leg. Nothing covered the ESCALATION
+# INTAKE, so a box whose RESCUE_RANGERS_WEBHOOK_SECRET went stale after an
+# operator-side rotation 401s silently for as long as nobody escalates.
+_AUTH_NAME="rr-intake-auth-check"
+_AUTH_CHECK="$_OCROOT/skills/65-rescue-receiver/rr-intake-auth-check.sh"
+# Off-peak and on an odd minute so a fleet-wide roll does not put every box on
+# the intake at the same second.
+_AUTH_CRON="23 7 * * *"
 # The updater invokes installers with a stripped environment; on Mac boxes
 # /opt/homebrew/bin is NOT on that PATH, so `command -v openclaw` fails even
 # though the CLI exists. Fall back to the standard install locations before
@@ -209,6 +218,45 @@ fi
 case "$_OC_BIN" in
   */*) _BIN_DIR="${_OC_BIN%/*}"; [ -d "$_BIN_DIR" ] && PATH="$_BIN_DIR:$PATH";;
 esac
+
+# ---------------------------------------------------------------------------
+# register_intake_auth_cron
+#
+# Declares the DAILY escalation-intake auth self-check as its own openclaw cron.
+# Idempotent by DECLARATION KEY (the cron name): present means leave it alone,
+# absent means add it once.
+#
+# GUARDED ON THE SCRIPT EXISTING. A cron whose command is not on disk is a cron
+# that fails every day forever, and an older bundle that predates this file must
+# not get one. This is the same gate wire.sh already applies to rescue-poll.sh.
+#
+# DELIVERY NONE IS NOT OPTIONAL. This check runs unattended every day on a
+# client box. If the CLI will not accept --no-deliver, NOTHING is registered and
+# the refusal is reported: a delivering daily cron would put operator-facing
+# credential diagnostics into the client's chat. A missing check is a gap; a
+# delivering one is client spam, and the gap is the lesser harm.
+# ---------------------------------------------------------------------------
+register_intake_auth_cron() {
+  if [ ! -f "$_AUTH_CHECK" ]; then
+    echo "65-rescue-receiver: $_AUTH_NAME NOT registered - rr-intake-auth-check.sh is not installed at $_AUTH_CHECK (older bundle); a cron whose command does not exist would fail every day" >&2
+    return 0
+  fi
+  if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_AUTH_NAME\""; then
+    echo "65-rescue-receiver: cron $_AUTH_NAME already declared (idempotent by name; not re-added)"
+    return 0
+  fi
+  if "$_OC_BIN" cron add --name "$_AUTH_NAME" --cron "$_AUTH_CRON" --no-deliver \
+       --command "sh $_AUTH_CHECK" >&2; then
+    if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_AUTH_NAME\""; then
+      echo "65-rescue-receiver: registered cron $_AUTH_NAME ($_AUTH_CRON, delivery none) -> sh $_AUTH_CHECK (READ BACK)"
+    else
+      echo "65-rescue-receiver: cron $_AUTH_NAME add returned 0 but did NOT read back; not claiming it is scheduled" >&2
+    fi
+  else
+    echo "65-rescue-receiver: cron $_AUTH_NAME NOT registered - the CLI refused the add with --no-deliver. Nothing was registered WITHOUT it on purpose: a delivering daily auth check would route operator-facing credential diagnostics into the client chat." >&2
+  fi
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 # RR-028 engine. Absent (an older skills bundle, or a self-test fixture that
@@ -324,6 +372,7 @@ if [ -n "$_ENGINE" ]; then
   if [ "$RRR_STATE" != "VERIFIED" ]; then
     echo "65-rescue-receiver: receiver readiness NOT verified — prove it in the intended runtime: bash $_OCROOT/skills/65-rescue-receiver/rr-readiness.sh --probe"
   fi
+  register_intake_auth_cron
   # The exit code repeats the reconciler's own verdict (see the header contract):
   # 3/4/5/7 mean the desired cron is NOT proven, so this script must not exit 0;
   # 6/8 are deliberate no-mutation outcomes (operator intent respected, or a
@@ -342,6 +391,7 @@ fi
 echo "65-rescue-receiver: readiness=UNKNOWN reason=engine_not_installed detail=shared-utils/rr-readiness.sh not found beside rescue-env.sh; registration falls back to the presence-only path (no readback)" >&2
 if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_NAME\""; then
   echo "65-rescue-receiver: cron $_NAME already registered (presence only; NOT read back)"
+  register_intake_auth_cron
   exit 0
 fi
 if "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --no-deliver --command "sh $_POLL" >&2; then
@@ -352,3 +402,4 @@ else
   echo "65-rescue-receiver: cron add FAILED" >&2; exit 1
 fi
 echo "65-rescue-receiver: registered cron $_NAME (*/2) -> sh $_POLL (presence path; NOT read back)"
+register_intake_auth_cron

@@ -40,6 +40,14 @@
 # =============================================================================
 set -uo pipefail
 
+# NO BYTECODE. This helper is called by BOTH install.sh and update-skills.sh,
+# and it also runs standalone, so it cannot rely on a caller having exported
+# this. A __pycache__ directory written by a python that ran as root inside a
+# container cannot be removed by the node user the updater runs as, and the
+# updater's skill removal step then fails. See the matching block in
+# update-skills.sh for the measurement (2026-09-17).
+export PYTHONDONTWRITEBYTECODE=1
+
 SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/$(basename "${BASH_SOURCE[0]:-$0}")"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/.." && pwd)"
@@ -111,7 +119,11 @@ run_skill_installer() {
     [ "$NO_CRON" -eq 1 ] && _args="$_args --no-cron"
     _note "installing $_label (role=$ROLE, DRY_RUN observe-only, never arms)..."
     # shellcheck disable=SC2086
-    bash "$_inst" $_args || _rc=$?
+    # PYTHONDONTWRITEBYTECODE is restated on the invocation rather than left to
+    # inheritance alone: a per-skill install.sh that scrubs or resets its
+    # environment would otherwise be free to write root-owned bytecode into the
+    # very skill tree the next update has to remove.
+    PYTHONDONTWRITEBYTECODE=1 bash "$_inst" $_args || _rc=$?
     if [ "$_rc" -eq 0 ]; then
         _note "$_label install OK."
     elif [ "$_rc" -eq 4 ]; then

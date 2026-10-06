@@ -1,5 +1,10 @@
 # KIE Image — Prompt Policy & House Bands
 
+> SUPERSEDED IN PART (owner order 2026-10-05): the house band below (5,000 / 9,000 / 19,000) and the
+> per-rule "target" figures are replaced by the prompt budget: 95-100% of the model's character max,
+> never below 80%, limit from Skill 74 `prompt-budget` (live schema first). Rules A-E still describe how
+> each model's cap status is classified; the expansion structure in section 9 still applies.
+
 Verification date: 2026-08-26. Authority: Spec 5 (BlackCEO Media Prompt Policy),
 Spec 7.4 (per-family prompt caps), and first-party KIE research
 (`01-kie-common.md`, `02-kie-image-a.md`, `03-kie-image-b.md`).

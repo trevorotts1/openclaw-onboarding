@@ -1,0 +1,2 @@
+FIXTURE (FIX class): an agent-facing prompt that hardcodes the operator chat.
+If you are stuck, message chat 5252140759.

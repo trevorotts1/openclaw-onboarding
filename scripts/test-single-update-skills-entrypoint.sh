@@ -35,53 +35,17 @@ ok()  { printf '  \033[32m✓ PASS\033[0m — %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  \033[31m✗ FAIL\033[0m — %s\n' "$1"; FAIL=$((FAIL+1)); }
 hdr() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-[ -f "$LEGACY" ] || { echo "FATAL: $LEGACY not found"; exit 2; }
+# OCT4 issue #10: the retired shim was DELETED outright. Its absence IS the
+# guard: any file at this path is an instant regression.
+if [ -e "$LEGACY" ]; then
+  bad "scripts/update-skills.sh exists — the retired shim must stay deleted (OCT4 issue #10)"
+else
+  ok "scripts/update-skills.sh is deleted (single updater entrypoint holds)"
+fi
 [ -f "$ROOT_UPDATER" ] || { echo "FATAL: $ROOT_UPDATER not found"; exit 2; }
 
 # ============================================================================
 # (A) The legacy path can NEVER be invoked successfully.
-# ============================================================================
-hdr "(A) scripts/update-skills.sh cannot succeed under any invocation"
-
-bash -n "$LEGACY" && ok "shim parses (bash -n)" || bad "shim has a syntax error"
-
-run_and_expect_fail() {
-  local desc="$1"; shift
-  local sandbox rc out
-  sandbox="$(mktemp -d)"
-  out="$(cd "$sandbox" && HOME="$sandbox" bash "$LEGACY" "$@" 2>&1)"; rc=$?
-  if [ "$rc" = "0" ]; then
-    bad "$desc — exited 0 (should be non-zero, always)"
-  else
-    ok "$desc — exited non-zero ($rc)"
-  fi
-  # Mutation check: the shim must not have written anything into the sandbox
-  # HOME (proves it does not silently do partial update work before failing).
-  local created
-  created="$(find "$sandbox" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "$created" != "0" ]; then
-    bad "$desc — wrote $created file(s)/dir(s) into HOME (should mutate nothing)"
-  else
-    ok "$desc — wrote nothing to HOME"
-  fi
-  echo "$out" | grep -qi "RETIRED" || bad "$desc — output does not identify itself as retired"
-  rm -rf "$sandbox"
-}
-
-run_and_expect_fail "no arguments"
-run_and_expect_fail "--dry-run flag"
-run_and_expect_fail "--setup-cron flag (an INSTALL.md typo once told an agent to pass this)"
-run_and_expect_fail "an arbitrary unknown flag"          --totally-made-up-flag
-run_and_expect_fail "positional args (as a version arg)" v99.0.0
-
-# The shim's own guidance must name the real script.
-guidance="$(bash "$LEGACY" 2>&1 || true)"
-echo "$guidance" | grep -qF "raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh" \
-  && ok "shim points to the canonical root-updater URL" \
-  || bad "shim does not name the canonical root-updater URL"
-
-# ============================================================================
-# (B) The root updater remains the real, substantial implementation.
 # ============================================================================
 hdr "(B) update-skills.sh (repo root) is still the real updater, not a stub"
 
@@ -124,10 +88,11 @@ ALLOWLIST=(
   "scripts/setup-weekly-update.sh"                                # self-heal DETECTS this string on purpose
   "scripts/test-config-injection-shapes.sh"                       # negative-assertion test (asserts absence of a bad literal)
   "scripts/test-single-update-skills-entrypoint.sh"               # this file
-  "scripts/update-skills.sh"                                      # the shim itself
   "tests/test-ungated-claim-points.sh"                            # comment, substring-filtered from a write-site scan
   "tests/unit/cron-owner-chat-guard.test.sh"                      # test assertions against the shim
   "tests/unit/full-update-path-contract.test.sh"                  # negative-assertion tests
+  "tests/unit/one-front-door-full-path.test.sh"                   # asserts the shim stays DELETED (OCT4 issue #10)
+  "tests/unit/fleet-refresh-roll-safety.test.py"                 # asserts the cron heal repoints the legacy URL away
   "update-skills.sh"                                              # root script's own self-heal + LEGACY_UPDATER_PATH_FRAGMENT
 )
 
