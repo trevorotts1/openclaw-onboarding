@@ -55,7 +55,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.0 -- Client-Asset Ingest + Scratch-Deck Parser (Decision 1C)
 
-**When to run:** At intake, whenever `intake.json.assets_provided:true` (the client answered the Brainstorming Buddy ASSET BRANCH with materials). Runs BEFORE Phase 2 so the Brand Steward + Slide Image Creator can consume the provided assets as gpt-image-2.5 `input_urls`.
+**When to run:** At intake, whenever `intake.json.assets_provided:true` (the client answered the Brainstorming Buddy ASSET BRANCH with materials). Runs BEFORE Phase 2 so the Brand Steward + Slide Image Creator can consume the provided assets as GPT Image 2.5 Sunburst `input_urls`.
 
 **Inputs:**
 - intake.json (`assets_provided`, the captured asset list / uploads)
@@ -116,7 +116,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
          proof-assets/            (before/after photos, testimonial screenshots, product images)
      working/
        prompts/                   (per-slide prompt files: slide-NN-prompt.txt)
-       renders/                   (raw downloads from Phase 4 -- pre-QC: slide-NN-raw.png)
+       renders/                   (downloads from Phase 4 -- pre-QC: `slide-NN.png` as the renderer writes it, each with a `slide-NN.ocr.json` readback sidecar; the render receipts live in `checkpoints/pending_tasks.json`)
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)

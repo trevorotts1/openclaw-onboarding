@@ -7,8 +7,8 @@
 **Role type:** specialist
 **Role number:** ROLE-06
 **Persona:** —
-**Version:** 1.1
-**Last updated:** 2026-06-14
+**Version:** 1.2
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -152,7 +152,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
          proof-assets/            (before/after photos, testimonial screenshots, product images)
      working/
        prompts/                   (per-slide prompt files: slide-NN-prompt.txt)
-       renders/                   (raw downloads from Phase 4 -- pre-QC: slide-NN-raw.png)
+       renders/                   (downloads from Phase 4 -- pre-QC: `slide-NN.png` as the renderer writes it, each with a `slide-NN.ocr.json` readback sidecar; the render receipts live in `checkpoints/pending_tasks.json`)
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)
@@ -434,7 +434,7 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 - Uploading to the wrong GHL location (operator's media library instead of client's).
 - Moving (not copying) images from renders/ to media-library/ -- QC may need the original renders for re-review.
 - Skipping Step 0 because "the directory probably exists from a previous run" -- never assume, always verify.
-- Supplying a LOGO_URL that returns 403 or 404 -- Kie.ai i2i requires a publicly reachable https URL; an inaccessible URL silently produces a slide without the logo.
+- Supplying a LOGO_URL that returns 403 or 404 -- Kie.ai i2i requires a publicly reachable https URL; the SOP-IMG-01 preflight halts the render on an unreachable logo URL, and a hand-patched text-to-image fallback would reinvent the mark on every slide.
 - Proceeding to Phase 2 with LOGO_URL = null when LOGO_ON_SLIDES = true -- the prompt writer has no reference URL to embed.
 - Leaving [PROOF PENDING] items unresolved at Phase 1A -- the owner approval gate must close with every asset resolved or marked [CLIENT TO SUPPLY].
 - Sending the final delivery notification before verifying every destination -- a "done" message with unverified artifacts is a lie.

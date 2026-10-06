@@ -33,8 +33,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "role_library_sha256": "04fa052674b01026db173bcf163541c6d3d46321efa0cdbae8975ad79fe3c2e7",
-      "universal_sops_sha256": "925022e81c9c1757de18a3af8cf3a4b55da6882f1739bbdc478c8b7091ad5321",
+      "role_library_sha256": "438963454bb449f2c6005ff8957cdb0275c88ecac148aef191dbaa62f542bfee",
+      "universal_sops_sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -44,8 +44,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
-      "role_library_sha256": "d98667cb48a4d1ff8a7f0c880ed27ad9db303b098674446206e4ac0e347eccb7",
-      "universal_sops_sha256": "8c797ace1198d2b29ac7042d98cebe75305b81926e5315199cb3ca5ed3543b71",
+      "role_library_sha256": "5deb4b89a6022a85db57676fdc1b6598ce97c2e822377c6edb0ea61bb5b7e36a",
+      "universal_sops_sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -55,8 +55,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md",
-      "role_library_sha256": "d78269dcecef51d0551811b83cca748fcf8116d8cd28c694de996f294e2d9928",
-      "universal_sops_sha256": "1a4de5ae069a91d5e261713ad572aa8d594190b59af29032751c6cb9eefbc1ce",
+      "role_library_sha256": "cb583e7e2f9a2d35488e441b2cd7b7fea6be4fed7aa507fb19ef5b9d17243268",
+      "universal_sops_sha256": "42256e79764d4014a29ef5409fed0de5d07b9b3a6e5cc8adad46a34882d398ba",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -66,8 +66,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "role_library_sha256": "2138a0234fba8b71c36d61a123943e887ad315749a1c656b3aa8a7dde99192f7",
-      "universal_sops_sha256": "946198d36f99bae09946d0b6a6a9e0223f1ec3752598f05db401b351a0a6dc08",
+      "role_library_sha256": "3fc4a78084f62369394830e8db8f200f9091bb07a687370ef8f19b4867080dc1",
+      "universal_sops_sha256": "5a88394709fa4070fc1036a87bead6bedc2f4113983b440f59134dd14375c0d1",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
