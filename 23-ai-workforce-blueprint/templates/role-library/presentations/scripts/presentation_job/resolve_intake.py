@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -76,6 +77,10 @@ class MissingRequester(RuntimeError):
     UnknownPresentationType -- never catch it to fabricate a chat_id or to
     write an intake anyway. See main()'s EXIT CODES doc (exit 4)."""
 
+class UnknownExecutionSelection(ValueError):
+    """A validated run-mode/model entry cannot be projected safely."""
+
+
 class UnknownIntakeDepth(ValueError):
     """FIX 36(3): an explicit --intake-depth / PRESENTATION_INTAKE_DEPTH value
     outside the QUICK|IN-DEPTH vocabulary. Loud, blocking, exit 5 — never
@@ -93,6 +98,15 @@ _UPSELL_FIELDS = (
     ("SALES_CHECKOUT_DECLINED_REASON", "sales_checkout_declined_reason"),
     ("WANT_VSL_PAGE", "want_vsl_page"),
     ("VSL_PAGE_DECLINED_REASON", "vsl_page_declined_reason"),
+    # Core deliverables and destinations share the same sealed capture path.
+    # Carry only captured values into the engine's immutable input; no defaults.
+    ("DELIVERABLE_SET", "deliverable_set"),
+    ("WANT_TELEPROMPTER", "want_teleprompter"),
+    ("WANT_SPEECH_SCRIPT", "want_speech_script"),
+    ("WANT_AUDIO_DELIVERABLE", "want_audio_deliverable"),
+    ("WANT_AUDIO_DEMO", "want_audio_demo"),
+    ("WANT_GHL_UPLOAD", "want_ghl_upload"),
+    ("DELIVERY_DESTINATIONS", "delivery_destinations"),
 )
 
 
@@ -131,6 +145,101 @@ def _entry_raw_value(entries: dict, key: str) -> Optional[str]:
     if isinstance(entry, str) and entry:
         return entry
     return None
+
+
+_RUN_MODES = frozenset(("ultra", "standard", "economy"))
+_MODEL_SPEC_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _execution_entry(entries: dict, *keys: str) -> Optional[str]:
+    """Read a validated execution alias without treating the prose resource
+    summary as an execution declaration.
+
+    The resource-plan parent can legitimately say ``use conservative default``
+    while its typed child fields carry a client-selected model and run mode.
+    Prefer the upper-case storeOn aliases, whose writer already strips the
+    merged-turn delimiter, then tolerate the lower-case canonical aliases.
+    """
+    for key in keys:
+        entry = entries.get(key)
+        if isinstance(entry, dict) and entry.get("validated") is not True:
+            continue
+        value = _entry_raw_value(entries, key)
+        if value:
+            return str(value)
+    return None
+
+
+def _profile_workhorse_slot() -> Optional[str]:
+    """Return the resource profile's declared workhorse slot as model@provider.
+
+    FIX 41 helper. An unreadable or absent profile (new client, or the
+    PRESENTATION_RESOURCE_PROFILE=0 rollback) yields None -- the consistency
+    check is then vacuous, never an error. Mirrors the slot-shape handling in
+    deck-intake-driver.py's load_preferences().
+    """
+    try:
+        from presentation_job import resource_profile as _rp
+    except Exception:  # noqa: BLE001 -- partial deploy must not break intake
+        return None
+    try:
+        prof = _rp.load_profile()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(prof, dict):
+        return None
+    try:
+        plan = _rp.model_plan(profile=prof) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    spec = plan.get("workhorse")
+    if isinstance(spec, dict) and spec.get("model") and spec.get("provider"):
+        return f"{spec['model']}@{spec['provider']}"
+    if isinstance(spec, str) and spec.strip():
+        return spec.strip()
+    return None
+
+
+def _resolve_execution_selection(entries: dict) -> dict:
+    """Project validated run execution selections into engine intake.
+
+    Only the schema's merged-turn separators are removed; arbitrary user prose
+    is never parsed here. Missing selections remain absent so launcher defaults
+    keep their documented behavior. Present-but-invalid selections fail before
+    a launch can silently fall back to another mode or model.
+
+    FIX 41: workhorse_model is NOT projected (M17 -- nothing downstream reads
+    selection["workhorse_model"], so the projection was dead). A validated
+    workhorse declaration is instead checked for consistency against the
+    resource profile's workhorse slot; a disagreement raises
+    UnknownExecutionSelection rather than launching under a model the client
+    did not declare. With no profile slot on file the check is vacuous.
+    """
+    selection: dict = {}
+    raw_mode = _execution_entry(entries, "RUN_MODE", "run_mode")
+    if raw_mode is not None:
+        mode = raw_mode.strip().rstrip(";,. ").lower()
+        if mode not in _RUN_MODES:
+            raise UnknownExecutionSelection(
+                f"validated run_mode {raw_mode!r} is not one of {sorted(_RUN_MODES)}")
+        selection["run_mode"] = mode
+
+    raw_workhorse = _execution_entry(entries, "WORKHORSE_MODEL", "workhorse_model")
+    if raw_workhorse is not None:
+        workhorse = raw_workhorse.strip().rstrip(";,. ")
+        if not _MODEL_SPEC_RE.fullmatch(workhorse):
+            raise UnknownExecutionSelection(
+                f"validated workhorse_model {raw_workhorse!r} is not a model@provider selection")
+        # FIX 41 (M17): the workhorse_model projection was dead -- nothing
+        # downstream reads it -- so it is not projected. The validated
+        # declaration is checked for consistency against the profile's
+        # workhorse slot instead; a mismatch fails loudly here.
+        profile_workhorse = _profile_workhorse_slot()
+        if profile_workhorse is not None and profile_workhorse != workhorse:
+            raise UnknownExecutionSelection(
+                f"validated workhorse_model {workhorse!r} disagrees with the "
+                f"resource profile's workhorse slot {profile_workhorse!r}")
+    return selection
 
 
 def _read_json_dict(path: Path) -> dict:
@@ -186,7 +295,24 @@ def _resolve_intake_depth(explicit: Optional[str], entries: dict,
     INVALID refusal (via UnknownIntakeDepth), never a silent QUICK fallback
     -- this is what keeps run-mode vocabulary (ultra|standard|economy) from
     ever leaking into the intake-depth axis."""
+    def _unwrap(val):
+        """Tolerate dict-shaped ledger values: the interview_depth entry's
+        `value`/`normalized` can be {"standard_mode": "IN-DEPTH"} (real
+        driver shape, measured 2026-09-01) — unwrap the standard_mode
+        sub-key when it is a string; any other non-string shape is None
+        (skip to the next candidate, never invent a value)."""
+        if isinstance(val, dict):
+            for k in ("standard_mode", "value", "normalized"):
+                sub = val.get(k)
+                if isinstance(sub, str):
+                    return sub
+            return None
+        if isinstance(val, str):
+            return val
+        return None
+
     def _canon(val) -> Optional[str]:
+        val = _unwrap(val)
         if val is None:
             return None
         s = str(val).strip().lower().replace("_", "-").replace(" ", "-")
@@ -275,6 +401,11 @@ def _resolve_upsell_capture(entries: dict, intake_copy: dict) -> dict:
         if not val:
             val = _entry_raw_value(entries, qid) or _entry_raw_value(entries, field)
         if val:
+            # These two fields are structured list values in the declared
+            # schema. The merged-turn writer may retain its final separator;
+            # remove only that delimiter, never punctuation in free-form text.
+            if field in {"DELIVERABLE_SET", "DELIVERY_DESTINATIONS"} and isinstance(val, str):
+                val = val.rstrip("; ")
             capture[field] = val
     return capture
 
@@ -359,6 +490,29 @@ def resolve(ledger_path: Path, source: str,
     intake_copy_path = ledger_path.parent.parent / "copy" / "intake.json"
     intake_copy = _read_json_dict(intake_copy_path)
 
+    # FIX 25/48: emit deck_slug so the board reconcile sweep stops rejecting
+    # every engine run as "not a run dir" (no deck_slug resolvable). The
+    # sweep's _deck_slug() reads state.json["intake"]["deck_slug"] first and
+    # working/copy/intake.json["deck_slug"] second -- both are fed from the
+    # engine's --new intake JSON, which is THIS file's output. So the
+    # emission lives HERE, derived from the run directory's own name (the
+    # ledger lives at <run_dir>/working/interview/intake_ledger.json, so
+    # ledger_path.parent.parent.parent is the run dir) -- exactly the step-5
+    # fallback the sweep (sweep.py _deck_slug), curate._resolve_deck_slug
+    # (curate.py:594) and manifest._resolve_deck_slug (manifest.py:451) all
+    # already use, and what phases.py passes to board.open_card. Slugified
+    # to [a-z0-9-] with the SAME regex those three consumers slugify with,
+    # so the emitted value round-trips through their own slugifiers
+    # unchanged. An intake_copy deck_slug explicitly stamped by an upstream
+    # step wins (same precedence as curate/manifest pass 1); the run-dir
+    # name is the derived default, never a fabricated one.
+    _deck_slug = str(
+        intake_copy.get("deck_slug")
+        or ledger_path.parent.parent.parent.name
+        or "deck"
+    )
+    _deck_slug = re.sub(r"[^a-z0-9]+", "-", _deck_slug.lower()).strip("-") or "deck"
+
     client = str(
         intake_copy.get("client_name")
         or ledger.get("client_name") or ledger.get("client")
@@ -399,6 +553,12 @@ def resolve(ledger_path: Path, source: str,
         # intake.json deck_type field derive_legacy_fields() writes
         # (deck-intake-driver.py) and is not read by the SP claim gate.
         "deck_type": ptype,
+        # FIX 25/48: emit deck_slug so the sweep's _deck_slug() resolves it
+        # from state.json["intake"]["deck_slug"] instead of rejecting every
+        # engine run as "not a run dir". Derived above from the run dir name
+        # (or an upstream-stamped intake_copy.deck_slug), slugified the same
+        # way every consumer slugifies.
+        "deck_slug": _deck_slug,
         "source": source,
     }
     if ptype == "signature":
@@ -445,6 +605,14 @@ def resolve(ledger_path: Path, source: str,
     if capture:
         intake["pre_presentation_capture"] = capture
 
+    # PD-TEST-035: execution selections are typed children of resource_plan,
+    # not resource-plan prose. Carry only validated aliases so the launcher
+    # can enforce the client-declared mode. FIX 41: the validated workhorse
+    # declaration is consistency-checked against the profile's workhorse slot
+    # inside _resolve_execution_selection -- it is not projected (the old
+    # projection was dead, M17).
+    intake.update(_resolve_execution_selection(entries))
+
     # FIX 36(3): intake depth (QUICK|IN-DEPTH) — resolved explicitly, never
     # silently defaulted: the schema default only applies when the question
     # was genuinely never answered anywhere. An explicit caller value that is
@@ -463,6 +631,24 @@ def resolve(ledger_path: Path, source: str,
     return intake
 
 
+def _intake_run_dir_of(intake_out: Path) -> Optional[Path]:
+    """FIX 109 helper: resolve the deck run dir from an intake.json path — the
+    nearest ancestor that contains a working/ subtree (mirrors build_deck's
+    _intake_run_dir so the provenance log lands beside the run's own
+    checkpoints, wherever the run dir actually is)."""
+    try:
+        cur = intake_out.resolve().parent
+    except OSError:
+        return None
+    for _ in range(8):
+        if (cur / "working").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return None
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ledger", required=True, type=Path,
@@ -471,7 +657,14 @@ def main(argv=None) -> int:
                    help="path to write the engine's --new intake JSON")
     p.add_argument("--source", default="resolve-intake",
                    help="tag recorded in intake.source (which caller ran this)")
-    p.add_argument("--intake-depth", default=None, choices=list(INTAKE_DEPTH_LEGAL),
+    p.add_argument("--writer-phase", default="resolve-intake",
+                   help="FIX 109: the writer_phase recorded in the intake "
+                        "provenance row appended for this sanctioned write "
+                        "(defaults to 'resolve-intake'; the intake phase's own "
+                        "caller passes its phase id)")
+    p.add_argument("--intake-depth", default=None,
+                   type=lambda v: str(v).strip().lower().replace("_", "-").replace(" ", "-"),
+                   choices=list(INTAKE_DEPTH_LEGAL),
                    help="FIX 36(3): the deck's intake depth, quick|in-depth "
                         "(the interview_depth question's standard_mode). "
                         "Distinct from run-mode --mode (Ultra|Standard|Economy) "
@@ -491,12 +684,59 @@ def main(argv=None) -> int:
     except UnknownIntakeDepth as exc:
         print(f"AF-INTAKE-DEPTH-INVALID: {exc}", file=sys.stderr)
         return 5
+    except UnknownExecutionSelection as exc:
+        print(f"AF-EXECUTION-SELECTION-INVALID: {exc}", file=sys.stderr)
+        return 6
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    # FIX 109: capture the pre-write sha BEFORE the atomic replace lands, so
+    # the provenance row's sha_before is the intake this write replaces.
+    _sha_before = None
+    if args.out.is_file():
+        from presentation_job.runfacts import _sha256_file as _sha_fn
+        _sha_before = _sha_fn(args.out)
     tmp = args.out.with_suffix(args.out.suffix + ".tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(intake, fh, indent=2)
     os.replace(tmp, args.out)
+
+    # FIX 109 — approval-path provenance. THIS file is one of the two sanctioned
+    # intake.json writers (the owner's approval path; the intake phase is the
+    # other). Every sanctioned write appends one row —
+    #   {writer_phase, writer_pid, ts, sha_before, sha_after}
+    # — to <run_dir>/working/checkpoints/intake.provenance.jsonl, which is what
+    # makes the engine's refusal oracle (intake_sha_has_provenance) accept the
+    # run again after an out-of-band edit, and what lets
+    # check_intake_provenance() invalidate exactly the phases whose manifest
+    # consumes[] include intake.json so they re-run on the new intake.
+    # The append fires only when --out IS an intake.json inside a run dir
+    # (name intake.json with a working/ ancestor): resolve_intake.py can also
+    # be pointed at arbitrary out paths by tests, and those are not run
+    # artifacts. A failed append is LOUD on stderr and non-zero-tolerated: the
+    # write already happened, and the engine will refuse every phase until a
+    # row exists — fail-closed, never fail-open.
+    if args.out.name == "intake.json":
+        run_dir = _intake_run_dir_of(args.out)
+        if run_dir is not None:
+            try:
+                from presentation_job.runfacts import append_intake_provenance
+                row = append_intake_provenance(
+                    run_dir, writer_phase=args.writer_phase,
+                    previous_sha=_sha_before,
+                    note=f"resolve_intake.py --source {args.source}")
+                print(f"provenance: appended row ts={row['ts']} "
+                      f"sha_before={row['sha_before'][:12]}... "
+                      f"sha_after={row['sha_after'][:12]}... -> "
+                      f"{run_dir / 'working/checkpoints/intake.provenance.jsonl'}")
+            except Exception as exc:  # noqa: BLE001 — loud, never silent
+                print(
+                    f"AF-INTAKE-PROVENANCE: intake.json was written but the "
+                    f"provenance row could NOT be appended ({exc!r}). Every "
+                    "engine phase will refuse this run until a sanctioned "
+                    "rewrite appends the row — fix the provenance log, then "
+                    "re-run resolve_intake.py.",
+                    file=sys.stderr)
+
     print(f"resolved presentation_type={intake['presentation_type']!r} "
           f"client={intake['client']!r} -> {args.out}")
     return 0

@@ -10,10 +10,13 @@
 # What it does (every step is idempotent — safe to re-run):
 #   1. Validates the target department exists (workspaces table + $OC_ROOT dir)
 #   2. Creates the role workspace directory under departments/<dept-slug>/roles/
-#   3. Writes IDENTITY.md, SOUL.md, MEMORY.md, how-to.md (stub) for the new role
+#   3. Writes IDENTITY.md, SOUL.md, MEMORY.md, how-to.md for the new role —
+#      library-filled when a template matches; otherwise a ROUTING notice
+#      (work → general-task) + a SOP-needed record in SOP-NEEDED.json.
+#      PENDING stubs are never written (v25.4.0).
 #   4. Inserts an agent row into the CC mission-control.db for the role
 #      (specialist_type='specialist', status='standby')
-#   5. Inherits (symlinks) USER.md, AGENTS.md, TOOLS.md from workspace root
+#   5. Places USER.md, TOOLS.md as real-file copies of the workspace root (N29)
 #   6. Creates a placeholder persona governance file for the role
 #   7. Touches .persona-index-stale so persona-selector-v2.py rebuilds its cache
 #
@@ -180,34 +183,29 @@ def upsert_role_into_index(dept_slug, role_slug, oc_root, script_dir, now):
         print(f"  [role-index] role '{role_slug}' already in _index.json for dept '{dept_slug}' — no-op")
         return False
 
+    # v25.4.0: NEVER write a PENDING stub into the shipped role-library, and
+    # never register membership-without-a-file. A library registration requires
+    # a REAL template. Refuse loudly when none exists — the operator authors
+    # one first (scripts/author-missing-sops.py), then re-runs add-role.sh.
+    sys.path.insert(0, str(Path(script_dir).resolve()))
+    try:
+        import create_role_workspaces as _crw
+        _doc, _ = _crw.library_lookup(role_slug, dept_slug)
+    except Exception:
+        _doc = None
+    if not _doc:
+        print(f"  [role-index] REFUSING to register '{role_slug}' in _index.json: "
+              f"no real library template exists for this role. Author one first "
+              f"(scripts/author-missing-sops.py --apply), then re-run add-role.sh. "
+              f"PENDING stubs are never written — not to the workforce, not to "
+              f"the library.", file=sys.stderr)
+        sys.exit(1)
+
     roles.append(role_slug)
     roles.sort()
     dept_entry["roles"] = roles
     dept_entry["count"] = len(roles)
-
-    # Scaffold a LIBRARY how-to.md stub for the role so it is a COMPLETE,
-    # registerable library artifact (not membership-without-a-file, which
-    # register-library-additions.py --check would correctly flag as a half-add).
-    # Folder-form <dept>/<slug>/how-to.md is the canonical library layout.
-    lib_role_dir = target.parent / dept_slug / role_slug
-    lib_how_to = lib_role_dir / "how-to.md"
-    if not lib_how_to.exists():
-        try:
-            lib_role_dir.mkdir(parents=True, exist_ok=True)
-            lib_how_to.write_text(
-                f"# {role_slug.replace('-', ' ').title()} — how-to.md (stub)  "
-                f"[PENDING — FILL FROM LIBRARY]\n\n"
-                f"**Department:** {dept_slug}\n"
-                f"**Role type:** specialist\n"
-                f"**Status:** PENDING — fill this file with the role's SOPs before "
-                f"assigning work.\n\n"
-                f"## Responsibilities\n(Fill from interview or a sibling role template.)\n\n"
-                f"## Section 9 — Standard Operating Procedures\n(Add per-task SOPs here.)\n",
-                encoding="utf-8")
-            print(f"  + library-stub   {lib_how_to}")
-        except OSError as e:
-            print(f"  [role-index] WARN: could not scaffold library stub {lib_how_to}: {e}",
-                  file=sys.stderr)
+    print(f"  + library-register {_doc} (real template verified)")
 
     # Recompute global totals
     idx["total_roles"] = sum(len(d.get("roles", [])) for d in deps.values())
@@ -307,7 +305,7 @@ else:
 - Read `how-to.md` FIRST before executing any task.
 - Follow the matching SOP in `SOP/00-INDEX.md` for this task.
 - If no SOP covers the task, escalate to the department head (do not guess).
-- Use the symlinked TOOLS.md, AGENTS.md, USER.md to know tools, behavior, and owner.
+- Use the shared TOOLS.md and USER.md to know tools and owner.
 
 ## Operating Protocol — Read the SOP Before You Work (binding)
 
@@ -372,27 +370,42 @@ Before executing ANY task you are spawned for, in this order:
     memory_path.write_text(memory_content, encoding="utf-8")
     print(f"  + MEMORY.md      {memory_path}")
 
-    # ── 4. how-to.md (stub) ───────────────────────────────────────────────────
+    # ── 4. how-to.md — library fill, else ROUTING notice (never a stub) ────────
+    # v25.4.0: PENDING stubs are never written. Try the role-library first; on
+    # a miss, write the routing notice (work → general-task) and emit a
+    # machine-readable SOP-needed record, flushed to SOP-NEEDED.json.
+    sys.path.insert(0, SCRIPT_DIR)
+    import create_role_workspaces as crw
     how_to_path = role_dir / "how-to.md"
-    how_to_content = f"""# {ROLE_NAME} — how-to.md (stub)  [PENDING — FILL FROM LIBRARY]
-
-**Department:** {DEPT_SLUG}
-**Status:** PENDING — fill this file with the role's SOPs before assigning work.
-
-## Quick-start
-1. Read IDENTITY.md to understand who this role is.
-2. Read SOUL.md to understand the mission and values.
-3. Read this file (how-to.md) for the operating procedures.
-4. Consult SOP/00-INDEX.md if it exists for this dept.
-
-## Responsibilities
-(Fill from role-library template or write from interview)
-
-## Section 9 — Standard Operating Procedures
-(Add per-task SOPs here, or create a SOP/ subfolder with 00-INDEX.md)
-"""
-    how_to_path.write_text(how_to_content, encoding="utf-8")
-    print(f"  + how-to.md      {how_to_path}")
+    filled = crw.try_library_fill(ROLE_NAME, dept_dir, False, lib_key=ROLE_SLUG)
+    if filled is not None:
+        how_to_path.write_text(filled, encoding="utf-8")
+        print(f"  + how-to.md (library-filled) {how_to_path}")
+    else:
+        rec = crw.record_sop_needed(
+            ROLE_NAME, DEPT_SLUG,
+            "no role-library template matched (add-role.sh)",
+            role_folder=role_dir, how_to_path=how_to_path,
+            role_description=DESCRIPTION)
+        how_to_path.write_text(
+            crw.routing_how_to(ROLE_NAME, DEPT_SLUG.replace("-", " ").title(),
+                               DEPT_SLUG, "", "", rec["id"],
+                               role_description=DESCRIPTION),
+            encoding="utf-8")
+        print(f"  + how-to.md (ROUTING notice → general-task) {how_to_path}")
+        print(f"  + SOP-needed record {rec['id']} — work routed, gap tracked")
+        try:
+            sys.path.insert(0, str(Path(SCRIPT_DIR).parent / "lib"))
+            from detect_platform import get_openclaw_paths
+            _company_dir = get_openclaw_paths().get("company_dir")
+        except Exception:
+            _company_dir = None
+        if _company_dir:
+            crw.write_sop_needed_manifest(_company_dir)
+        else:
+            print(f"  [add-role] WARN: company_dir not resolved — "
+                  f"SOP-needed record {rec['id']} not flushed to SOP-NEEDED.json",
+                  file=sys.stderr)
 
     # ── 5. Persona governance placeholder ────────────────────────────────────
     pg_path = role_dir / "governing-personas.md"
@@ -406,24 +419,15 @@ See `../governing-personas.md` for the department-level pool.
     pg_path.write_text(pg_content, encoding="utf-8")
     print(f"  + governing-personas.md  {pg_path}")
 
-    # ── 6. Symlink shared files (USER.md, AGENTS.md, TOOLS.md) ───────────────
-    for fname in ("USER.md", "AGENTS.md", "TOOLS.md"):
-        src = workspace_root / fname
-        dst = role_dir / fname
-        if not src.is_file():
-            print(f"  [symlink] {fname} not found at {src}, skipping")
-            continue
-        if dst.is_symlink() and dst.resolve() == src.resolve():
-            continue  # already correct
-        if dst.exists() or dst.is_symlink():
-            dst.unlink()
-        try:
-            dst.symlink_to(src)
-            print(f"  ~ symlink        {fname} → {src}")
-        except OSError as e:
-            import shutil
-            shutil.copy2(str(src), str(dst))
-            print(f"  ~ copy (symlink fallback) {fname}")
+    # ── 6. Shared files (USER.md, TOOLS.md): real-file copies (N29) ──────────
+    # A symlink is rejected by the runtime's workspace-root boundary guard; a
+    # real, non-empty file already here is never deleted or overwritten. Role
+    # folders carry no AGENTS.md (U053 disposition, create_role_workspaces.py).
+    sys.path.insert(0, SCRIPT_DIR)
+    from shared_core_copy import ensure_core_copy
+    for fname in ("USER.md", "TOOLS.md"):
+        _r = ensure_core_copy(workspace_root / fname, role_dir / fname)
+        print(f"  ~ {_r:7s}        {fname}")
 
 # ─── 7. Insert agent row in CC DB ────────────────────────────────────────────
 agent_status = "skipped_no_db"
@@ -560,10 +564,11 @@ fi
 echo ""
 echo "[add-role] Done. Role '$ROLE_NAME' added under dept '$DEPT_SLUG'."
 echo "  Next steps (ALL REQUIRED):"
-echo "    1. Fill how-to.md from the role-library template (remove the [PENDING — FILL FROM LIBRARY] marker)."
-echo "       Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md"
+echo "    1. how-to.md is library-filled, or — on a library miss — a ROUTING notice"
+echo "       (work → general-task) with a SOP-needed record in SOP-NEEDED.json."
+echo "       Close the gap: python3 23-ai-workforce-blueprint/scripts/author-missing-sops.py --apply"
 echo "    2. Run generate-governing-personas.sh to update persona pools."
-echo "    3. Re-stamp the content manifest so content_sha reflects the FILLED how-to.md:"
+echo "    3. Re-stamp the content manifest so content_sha reflects the how-to.md:"
 echo "       python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
 echo "    4. Run converge: bash 32-command-center-setup/scripts/sync-extensions.sh --converge"
 echo "       This updates build-state, ORG-CHART.md, infographic, Notion, and the CC dashboard."

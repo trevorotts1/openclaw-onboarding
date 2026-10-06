@@ -31,14 +31,41 @@ assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's 
   "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 06-ghl-install-pages -q"
 SK="$SKILLS_DIR_DEFAULT/06-ghl-install-pages"
 assert "Skill 06 folder present" "[ -d \"$SK\" ]"
+
+# ── Adaptive capability probe (plan 2.4-1 / 9.6): probe → classify → select ──
+# The probe writes working/skill6-capability.json (secret VALUES never emitted —
+# booleans only). Fail-closed contract: a missing probe module or a null
+# selectedLane must FAIL the QC — a box with zero browser lanes can never score
+# green (plan 2.2). Probe-run hiccups are best-effort WARN; secret gaps surface
+# as probe WARNINGS (the Firebase token itself is hard-asserted below).
+CAP_PROBE="$SK/tools/capability_probe.py"
+CAP_JSON="$SK/working/skill6-capability.json"
+assert "capability probe module present (adaptive lane probe)" "[ -f \"$CAP_PROBE\" ]"
+warn_only "capability probe ran (best-effort; writes working/skill6-capability.json)" \
+  "python3 \"$CAP_PROBE\" --out \"$CAP_JSON\" >/dev/null 2>&1"
+assert "capability probe selected a browser lane (selectedLane set; never CUA last resort)" \
+  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));lane=d.get(\"selectedLane\");assert lane is not None and lane != \"cua_last_resort\", lane'"
+assert "capability probe reports no hard blockers (no-browser-lane)" \
+  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert not d.get(\"blockers\"), d.get(\"blockers\")'"
+if [ -f "$CAP_JSON" ]; then
+  assert "capability probe iframeDrag.available is a boolean (schema contract)" \
+    "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert isinstance(d.get(\"iframeDrag\",{}).get(\"available\"),bool)'"
+  warn_only "cross-origin tile/drag hybrid available (else: cross-origin tile/drag degraded — Playwright required)" \
+    "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert d.get(\"iframeDrag\",{}).get(\"available\") is True'"
+else
+  warn_only "capability JSON present for iframeDrag degraded-lane check" "[ -f \"$CAP_JSON\" ]"
+fi
 assert "v3.0 hardened reference present" "[ -f \"$SK/ghl-browser-builder-full.md\" ]"
 assert "auth-seed module present"   "[ -f \"$SK/tools/seed-ghl-auth.py\" ]"
 assert "auth-inject script present" "[ -f \"$SK/tools/inject-ghl-auth.sh\" ]"
 assert "builder helper present"     "[ -f \"$SK/tools/ghl_builder.py\" ]"
 assert "gate registry present"      "[ -f \"$SK/tools/gates.json\" ]"
-# D8 contract: exactly 2 captured gates (login form + auth storage), 26 runtime snapshot-gates.
+# D8 contract: exactly 2 captured gates (login form + auth storage), 28 runtime
+# snapshot-gates (26 pre-existing + the two multi-iframe protocol gates 29-30,
+# plan Part 3.5 row 4), 30 total.
 assert "gate registry has 2 captured gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"captured\"))' 2>/dev/null)\" = '2' ]"
-assert "gate registry has 26 runtime gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"runtime\"))' 2>/dev/null)\" = '26' ]"
+assert "gate registry has 28 runtime gates"  "[ \"\$(python3 -c 'import json;print(sum(1 for g in json.load(open(\"$SK/tools/gates.json\"))[\"gates\"] if g.get(\"status\")==\"runtime\"))' 2>/dev/null)\" = '28' ]"
+assert "gate registry has 30 total gates"    "[ \"\$(python3 -c 'import json;print(len(json.load(open(\"$SK/tools/gates.json\"))[\"gates\"]))' 2>/dev/null)\" = '30' ]"
 # Version-marker consistency gate (repo version-bump hygiene, v19.0.1 fix):
 # skill-version.txt and SKILL.md's metadata.version are repo-locked in
 # lockstep by scripts/bump-version.sh (same pattern as
@@ -69,9 +96,17 @@ warn_only "GHL manual-only login password set (operator last resort, optional)" 
 assert "Secrets file chmod 600"         "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
-warn_only "agent-browser installed (PRIMARY engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
+# Plan 2.2: fail closed when zero browser lanes — agent-browser (PRIMARY lane 1,
+# with its Mac npm-global fallback path) is now a hard assert.
+assert "agent-browser installed (PRIMARY engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
+# Playwright stays warn_only — it is the FALLBACK lane (D7-adjacent doctrine;
+# SKILL.md: known-hard flows only), so its absence degrades but must not fail QC.
 warn_only "Playwright installed (FALLBACK)"   "npm list -g playwright 2>/dev/null | grep -q playwright || npm list playwright 2>/dev/null | grep -q playwright || command -v playwright"
-warn_only "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${CAF_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${GHL_FIREBASE_REFRESH_TOKEN:-}\" ]"
+# Plan 2.4-1: the Firebase refresh token is the ONLY unattended auth path
+# (TOKEN-ONLY doctrine) — now a hard assert. CAF_FIREBASE_REFRESH_TOKEN stays as
+# a legacy-compat alias in this test string; it is NOT secret canon (the
+# canonical chain is GOHIGHLEVEL_ -> GHL_ -> FIREBASE_REFRESH_TOKEN).
+assert "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${CAF_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${GHL_FIREBASE_REFRESH_TOKEN:-}\" ]"
 warn_only "Chrome/Chromium present" "command -v chromium || command -v google-chrome || ls '/Applications/Google Chrome.app' 2>/dev/null"
 warn_only "Client white-label URL stored" "grep -qiE 'app\\.gohighlevel\\.com|app\\.convertandflow\\.com|app\\.[a-z0-9]+\\.com' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
 assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*[A-Za-z0-9]' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"

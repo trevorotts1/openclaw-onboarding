@@ -110,6 +110,7 @@ import prove_budget as pbud  # noqa: E402
 import state_engine as se  # noqa: E402
 from providers import base as providers_base  # noqa: E402
 from providers import kie as kie_provider  # noqa: E402
+from providers import prompt_depth  # noqa: E402
 
 EXIT_OK = 0
 EXIT_FAIL = 2
@@ -261,7 +262,12 @@ def _paid_video_call(
     to_scene_id: Optional[str],
     destination: Path,
     registry_path: Optional[str],
+    sections: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    # Owner rule 12: the prompt must land in 95-100 percent of the model maximum (never under 80).
+    # Skill 74 prompt-budget supplies the numbers; real production direction (prompt_depth) fills them.
+    budget = provider.prompt_budget(model_id) if hasattr(provider, "prompt_budget") else None
+    prompt = prompt_depth.fit_prompt(prompt, sections or [], budget)
     params: Dict[str, Any] = {
         "purpose": purpose,
         "scene_id": scene_id,
@@ -507,6 +513,7 @@ def generate_draft_clips(
                 model_id=model_id, prompt=prompt, aspect_ratio=aspect_ratio,
                 resolution=_DEFAULT_DRAFT_RESOLUTION, duration_seconds=duration,
                 input_urls=(first_url, last_url), purpose="draft_scene",
+                sections=prompt_depth.video_sections(anchor["style_contract"], scene),
                 scene_id=scene_id, from_scene_id=None, to_scene_id=None,
                 destination=destination, registry_path=registry_path,
             )
@@ -691,6 +698,7 @@ def generate_final_scene_clips(
                 model_id=model_id, prompt=prompt, aspect_ratio=aspect_ratio,
                 resolution=resolution, duration_seconds=duration,
                 input_urls=(first_url, last_url), purpose="final_scene",
+                sections=prompt_depth.video_sections(anchor["style_contract"], scene),
                 scene_id=scene_id, from_scene_id=None, to_scene_id=None,
                 destination=raw_destination, registry_path=registry_path,
             )
@@ -842,6 +850,7 @@ def generate_connector_clips(
                 model_id=model_id, prompt=prompt, aspect_ratio=aspect_ratio,
                 resolution=resolution, duration_seconds=duration,
                 input_urls=(first_url, last_url), purpose="connector",
+                sections=prompt_depth.video_sections(anchor["style_contract"], from_scene, to_scene),
                 scene_id=None, from_scene_id=from_scene_id, to_scene_id=to_scene_id,
                 destination=raw_destination, registry_path=registry_path,
             )
@@ -976,6 +985,11 @@ class FixtureKieTransport:
 
     def get_json(self, url, *, headers, params, timeout):
         from providers.kie import HttpResponse  # local import: test-support only
+        from providers._fixture_support import kie_discovery_response  # Skill 74 reads catalog/schema first
+
+        discovery = kie_discovery_response(url)
+        if discovery is not None:
+            return discovery
 
         task_id = (params or {}).get("taskId", "unknown")
         result_url = f"https://fixtures.example/result-{task_id}.mp4"
@@ -1010,7 +1024,7 @@ def build_verified_media_registry_copy(dest_dir: Path, *, source_registry_path: 
     """TEST-SUPPORT ONLY. Writes a copy of providers/model-registry.json to
     dest_dir/model-registry-verified-media.json with price.verified flipped
     true (and, for Seedance, a concrete test amount set) on every model this
-    module's own pipeline touches: the two gpt-image-2 image models (needed
+    module's own pipeline touches: the two gpt-image-2-5 image models (needed
     to drive the real P6/P7 pipeline that must precede P8/P9 in an end-to-end
     self-test) plus kie-bytedance-seedance-1.5-pro (the draft_motion /
     final_connected_motion tier this module itself calls) -- all three are
@@ -1024,7 +1038,7 @@ def build_verified_media_registry_copy(dest_dir: Path, *, source_registry_path: 
     source_path = Path(source_registry_path or providers_base.DEFAULT_REGISTRY_PATH)
     data = json.loads(source_path.read_text(encoding="utf-8"))
     for entry in data["models"]:
-        if entry["model_id"] in ("kie-gpt-image-2-text-to-image", "kie-gpt-image-2-image-to-image"):
+        if entry["model_id"] in ("kie-gpt-image-2-5-sunburst-text-to-image", "kie-gpt-image-2-5-sunburst-image-to-image"):
             entry["price"]["verified"] = True
             entry["price"]["note"] = (
                 "TEST FIXTURE ONLY — verified flipped true for an offline self-test; NOT a real "

@@ -68,7 +68,7 @@ class GenerateImagesTestCase(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# AF-CWFE-PAID-GATE wiring: the REAL registry's unverified gpt-image-2
+# AF-CWFE-PAID-GATE wiring: the REAL registry's unverified gpt-image-2-5
 # pricing must fail-closed today.
 # ---------------------------------------------------------------------------
 class PaidGateFailClosedTests(GenerateImagesTestCase):
@@ -122,7 +122,7 @@ class ConceptBoardHappyPathTests(GenerateImagesTestCase):
         self.assertEqual(len({c["hash_sha256"] for c in anchor["concept_candidates"]}), 3)
         for candidate in anchor["concept_candidates"]:
             self.assertTrue(Path(candidate["local_path"]).is_file())
-            self.assertEqual(candidate["model_id"], "kie-gpt-image-2-text-to-image")
+            self.assertEqual(candidate["model_id"], "kie-gpt-image-2-5-sunburst-text-to-image")
 
     def test_run_concept_board_is_idempotent(self) -> None:
         gi.run_concept_board(

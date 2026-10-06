@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 Enables the agent to generate images through the KIE.ai Market API across 14
-image families (GPT Image 2, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
 Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
 Imagen 4), with machine-readable registry, model-aware prompt validation
 (spec 5 rules A-E), payload validation before dispatch, async createTask +
@@ -17,7 +17,7 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       every entry has `source_url` and `last_verified_at` and a `cap_status`.
 - [ ] The skill zip does NOT contain `wire.sh` (installers are not shipped in
       the bundle).
-- [ ] `skill-version.txt` reads `v1.0.0`.
+- [ ] `skill-version.txt` reads `v2.2.0`.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first (PREREQS.json).
@@ -41,14 +41,17 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
       taskId answers non-401 (404/400 = key authenticates, endpoint alive).
 - [ ] Confirm the agent can explain: createTask 200 ≠ done; state enum
       waiting/queuing/generating/success/fail; 429 = rate limited (back off);
-      callbacks are HMAC-SHA256 signed; result URLs expire ~24h, media 14 days;
-      GPT Image 2 ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21), "auto"
-      → 1K only, 1:1 never 4K.
+      callbacks are HMAC-SHA256 signed; retention (KIE documents 14 days for generated media but result URLs typically expire after 24 hours; persist immediately);
+      GPT Image 2.5 (default) ratio exclusions at 2K/4K (27:16, 16:27, 9:8,
+      8:9 — 1K only); GPT Image 2 (legacy, retained for 3:1/1:3/9:21 only)
+      ratio exclusions at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21), "auto" → 1K only,
+      1:1 never 4K — two separate rule sets, never merged.
 - [ ] Run validator test suites — every one must print PASS and exit 0:
       `python3 scripts/normalize_alias.py --self-test` (PASS)
       `python3 scripts/select_image_model.py --self-test` (PASS)
       `python3 scripts/validate_prompt.py --self-test` (PASS)
       `python3 scripts/validate_payload.py --self-test` (PASS)
+- [ ] Skill 74 wiring: with the adapter folder present, `python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py validate --model <id> --payload input.json --json` and `preflight --model <id> --json` run before submit (INSTRUCTIONS.md Step 5); with the adapter absent the skill still works on `models.json` and curl.
 - [ ] wire.sh run twice against a scratch workspace: second run reports no
       change for all three targets; exactly one BEGIN/END block per target;
       exactly one sentinel.
@@ -56,9 +59,11 @@ recordInfo/callback waiting, and MANDATORY real visual QC (spec 7.6).
 ## 6. Real Visual Asset QC (spec 7.6)
 - [ ] Visual asset inspection: download the full-resolution asset and inspect
       it — never QC from a filename or a 200 OK.
-- [ ] Dimensions vs requested: GPT Image 2 auto→1K only, 1:1 never 4K, excluded
-      ratios never silently returned at 2K/4K; Seedream tier maps to the
-      expected resolution; refs respect Wan's min 240 px INPUT rule.
+- [ ] Dimensions vs requested: GPT Image 2 (legacy) auto→1K only, 1:1 never
+      4K; GPT Image 2.5 (default) 27:16/16:27/9:8/8:9 are 1K only — either
+      way, excluded ratios never silently returned at 2K/4K; Seedream tier
+      maps to the expected resolution; refs respect Wan's min 240 px INPUT
+      rule.
 - [ ] Reference & edit fidelity: subject identity/faces/product geometry/
       colors; edit preservation; logo I2I actually used; style-reference-only
       directive present whenever style refs attached.

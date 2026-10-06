@@ -75,6 +75,9 @@ esac
 
 ## Images (every image)
 
+- [ ] Image was generated with KIE GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference), or the newer GPT Image generation that rule 13 resolved; Nano Banana is never allowed (the only fallback is legacy gpt-image-2 under the N43 ratio rules)
+- [ ] The job ran the Skill 74 chain (playbook.md Section 8c): `prompt-budget --check` passed (95 to 100 percent of the model maximum, never below 80), `validate` clean, `preflight` ok, `run --mode active` saved the file; the receipt names the model id used
+- [ ] `cycle-manifest.json` `media.violations` is empty, or each entry was reviewed (a Nano Banana, Midjourney or Sora id in a config file was ignored)
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
 - [ ] Image contains NO violent or inappropriate imagery
@@ -172,12 +175,12 @@ esac
 
 ## Video Content QC Checklist
 
-- [ ] Duration exactly 60 seconds (`ffprobe -v quiet -show_entries format=duration -of csv=p=0 final.mp4`)
+- [ ] Duration within the 55-60 second target window (`ffprobe -v quiet -show_entries format=duration -of csv=p=0 final.mp4`)
 - [ ] Resolution 1080x1920 (9:16) (`ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x final.mp4`)
 - [ ] Video codec H.264 (`ffprobe -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 final.mp4`)
 - [ ] Audio codec AAC 192kbps (`ffprobe -v quiet -select_streams a:0 -show_entries stream=bit_rate,codec_name -of csv=p=0:s=,x final.mp4`)
 - [ ] Frame rate 30fps (`ffprobe -v quiet -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 final.mp4`)
-- [ ] Smooth crossfade transitions between segments (visual inspection)
+- [ ] Transitions match the storyboard (hard cuts or crossfades as declared per scene; visual inspection)
 - [ ] 3-second brand intro (first frames match [from identity.md: brand colors/logo])
 - [ ] 3-second brand outro with CTA
 - [ ] ffprobe no errors (`ffprobe final.mp4` returns clean streams)

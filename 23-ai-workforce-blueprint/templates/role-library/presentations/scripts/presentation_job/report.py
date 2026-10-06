@@ -28,6 +28,68 @@ def _parse_minutes(ts: str) -> float:
         return 0.0
 
 
+#: FIX 64 (MASTER Part 8): the subsystem alert names callers pass in place of
+#: a real chat id -- watchdog.py (dispatch("watchdog", "stall", ...)),
+#: supervisor.py (dispatch("supervisor", event, ...)) and launcher.py's
+#: capacity path (dispatch("capacity", "capacity_undetermined", ...)). These
+#: are LABELS naming the subsystem raising the alert, never Telegram targets:
+#: a raw "watchdog" chat id is not a chat, and a transport that does not
+#: resolve it either drops the alert silently (the exact silence FIX 22
+#: exists to kill) or, worse, resolves it to garbage on the far side.
+#:
+#: F1 adds "auto-resume" -- presentation_job.auto_resume raises exactly one
+#: alert, when a parked run has spent its automatic-resume cap and now needs a
+#: person. It is registered HERE, in the one choke point, for the reason this
+#: list exists at all: an unregistered label reaches the transport unresolved,
+#: presentation-notify.py exits 4, and the alert that says "stop waiting, this
+#: run needs you" is the one message that must not be the one that lands
+#: nowhere.
+KNOWN_SUBSYSTEM_IDS = ("watchdog", "supervisor", "capacity", "auto-resume")
+
+#: The operator chat env var the transports already read as their fallback
+#: (presentation-notify.py's exit-4 contract; the retired
+#: tools/presentation-notify.sh read the same variable). FIX 64 resolves the
+#: subsystem label to this real chat id INSIDE dispatch3 -- the single choke
+#: point every transport-boundary call already flows through -- so the
+#: payload's chat_id is a deliverable target by the time any transport sees
+#: it, and no transport has to grow its own resolution logic.
+OWNER_CHAT_ID_ENV = "OWNER_CHAT_ID"
+
+
+def resolve_subsystem_chat(chat_id: str, env: Optional[Dict[str, str]] = None) -> str:
+    """FIX 64: map a known subsystem alert label to the operator chat id.
+
+    A chat_id in KNOWN_SUBSYSTEM_IDS is a label, not a target -- resolve it
+    to OWNER_CHAT_ID (env-provided; kept verbatim when unset so an
+    unconfigured box degrades to today's behaviour, never to a fabricated
+    id). Any other chat_id -- real requester ids, numeric operator ids --
+    passes through untouched. Test seams env=None means os.environ, matching
+    the rest of this module.
+    """
+    source = os.environ if env is None else env
+    if chat_id in KNOWN_SUBSYSTEM_IDS:
+        return (source.get(OWNER_CHAT_ID_ENV) or "").strip() or chat_id
+    return chat_id
+
+#: FIX 64 (W14a-B3): a numeric Telegram chat id (optionally signed --
+#: negative for groups, including the -100... supergroup prefix) is a
+#: deliverable gateway target. Anything non-numeric reaching dispatch3
+#: UNRESOLVED is a label the gateway cannot deliver to; the payload must
+#: carry the label so the transport boundary (presentation-notify.py's
+#: resolve_chat_id_for_transport) can still try the operator fallback, but
+#: the send itself would land nowhere.
+_NUMERIC_CHAT_ID_PREFIX = "-"
+
+def is_numeric_chat_id(chat_id: str) -> bool:
+    """FIX 64: True only for a numeric (optionally signed) Telegram chat id.
+    A subsystem label is never numeric."""
+    raw = str(chat_id or "").strip()
+    if not raw:
+        return False
+    body = raw[1:] if raw.startswith(_NUMERIC_CHAT_ID_PREFIX) else raw
+    return body.isdigit()
+
+
 def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     """Transport boundary, three-valued. This is the ONLY implementation of the
     PRESENTATION_NOTIFY_CMD dispatch path anywhere in this package -- dispatch()
@@ -36,6 +98,14 @@ def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     exactly how U069 shipped with a live shell-injection hole: the class method
     got the tokenise-first fix and a module-level twin did not, so watchdog.py
     (which imports the dispatch path directly) stayed exploitable.
+
+    FIX 64 (MASTER Part 8): the chat_id reaching this boundary is RESOLVED
+    before dispatch -- a known subsystem label (watchdog/supervisor/capacity)
+    is swapped for OWNER_CHAT_ID by resolve_subsystem_chat() so a stall alert
+    lands in the operator chat instead of dying on a literal "watchdog"
+    target. Unresolvable (env unset) keeps the label verbatim: the transport
+    still runs, and a stub in a test still observes the unresolved label --
+    never a silently dropped send, never an invented id.
 
     CheckResult.PASS         -- the notify command ran and exited 0. CONFIRMED delivery.
     CheckResult.FAIL         -- PRESENTATION_NOTIFY_CMD is unset. A known, stable fact
@@ -51,6 +121,21 @@ def dispatch3(chat_id: str, kind: str, message: str) -> CheckResult:
     cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
     if not cmd:
         return CheckResult.FAIL
+    chat_id = resolve_subsystem_chat(chat_id)
+    # FIX 64 (W14a-B3): resolution can keep the label verbatim when
+    # OWNER_CHAT_ID is unset (never a fabricated id). That is correct --
+    # the transport boundary (presentation-notify.py) re-checks and, if IT
+    # also cannot resolve a numeric operator id, exits 4 (undeliverable,
+    # queued for --sweep-undeliverable) so the alert retries instead of
+    # dying silently. Log the unresolved-label shape here so the run log
+    # says why the transport returned 4 -- loud, not silent.
+    if not is_numeric_chat_id(chat_id):
+        print(f"notify: chat_id {chat_id!r} is a subsystem label, not a "
+              "numeric Telegram chat id -- handing it to the transport "
+              "unresolved so it can attempt the operator fallback "
+              "(transport exits 4 and the message is queued for "
+              "--sweep-undeliverable when that fallback also fails)",
+              flush=True)
     # U069: tokenise, refuse on unparseable, shell=False.
     try:
         argv = shlex.split(cmd)
@@ -109,13 +194,22 @@ class Reporter:
     def to_requester(self, kind: str, message: str, *,
                      phase_id: Optional[str] = None,
                      reason: Optional[str] = None) -> None:
-        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours."""
+        """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours.
+
+        PRES-052: every dispatch outcome is ALSO observed into the supervised
+        relay ledger (presentation_job.relay.observe_dispatch) with the
+        phase as the stage — the relay is the live, acknowledged view active
+        from job start; state["undeliverable"] remains the sweeper's retry
+        queue. The relay call is best-effort and never changes the
+        dispatch/retry semantics below.
+        """
         req = self.state.get("requester") or {}
         chat_id = req.get("chat_id")
         self.event(f"report.{kind}", message, requester=bool(chat_id))
         if not chat_id:
             self.event("report.undeliverable",
                        f"no requester chat_id on this job -- {kind} message not sent")
+            self._relay_observe(kind, message, "fail", phase_id)
             return
 
         should_send = self._throttle_decision(kind, message, phase_id, reason)
@@ -126,6 +220,7 @@ class Reporter:
             return
 
         result = self._dispatch3(chat_id, kind, message)
+        self._relay_observe(kind, message, result.value, phase_id)
         if result is CheckResult.PASS:
             self._stamp_sent(kind)
             if kind == "blocked" and phase_id and reason:
@@ -233,6 +328,29 @@ class Reporter:
             if m in message:
                 return True
         return False
+
+    def _relay_observe(self, kind: str, message: str, outcome: str,
+                       phase_id: Optional[str]) -> None:
+        """PRES-052: mirror one dispatch outcome into the supervised relay.
+
+        Best-effort by contract: the relay module never raises, and this
+        wrapper swallows even an import failure (a deployment carrying an
+        old report.py beside a new relay.py, or vice versa, keeps its
+        pre-fix notify behavior byte-for-byte).
+        """
+        try:
+            try:
+                from . import relay as _relay
+            except ImportError:
+                import relay as _relay  # type: ignore[no-redef]
+            run_dir = self.state.get("run_dir") or ""
+            if not run_dir:
+                return
+            _relay.observe_dispatch(self.state, run_dir, kind, message,
+                                    outcome, stage=phase_id or "",
+                                    store=self.store)
+        except Exception:  # noqa: BLE001 — never let the relay break notify
+            pass
 
     def _dispatch3(self, chat_id: str, kind: str, message: str) -> CheckResult:
         # U069: delegates to the module-level dispatch3() -- do not re-derive

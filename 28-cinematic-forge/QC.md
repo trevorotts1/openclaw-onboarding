@@ -112,7 +112,7 @@ The agent should answer these correctly without inventing details.
 > **Expected:** It is discarded and replaced with separately generated audio layers.
 
 **Q8.** What tools/models are used for audio layers?
-> **Expected:** ElevenLabs TTS, ElevenLabs SFX, and Suno via KIE.ai.
+> **Expected:** Text-to-speech, sound effects and music, all requested through Skill 68 (`68-kie-audio`), which owns the model ids, routes and validator. Cinematic Forge does not hand-write KIE audio calls.
 
 **Q9.** Where are text overlays and logos added?
 > **Expected:** In post-production with FFmpeg, not inside VEO.
@@ -268,11 +268,11 @@ Run only if credentials are available and you are intentionally testing live gen
 ### 5.1 Check KIE credits endpoint
 
 ```bash
-curl -s "https://api.kie.ai/api/v1/user/credits" \
+curl -s "https://api.kie.ai/api/v1/chat/credit" \
   -H "Authorization: Bearer $KIE_API_KEY" | python3 -m json.tool | head -20
 ```
 
-**Expected:** Valid JSON response, not 401/403.
+**Expected:** Valid JSON `{"code":200,"msg":"success","data":<number>}`. Check the body `code`; not 401/403/404.
 
 ### 5.2 Verify GHL upload auth can at least read location info
 

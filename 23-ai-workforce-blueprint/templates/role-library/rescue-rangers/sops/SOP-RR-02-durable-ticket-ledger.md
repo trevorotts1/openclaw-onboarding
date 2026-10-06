@@ -4,9 +4,18 @@
 **Owner:** Ticket Clerk
 **Type:** Always-on, per-ticket
 **Scope:** All ticket state written by both operator transports.
-**HARD RULE:** The SQLite ledger (`~/clawd/fleet-heartbeat/rescue/tickets.db`, WAL) is
-the SYSTEM OF RECORD. The n8n `workflowStaticData` queue remains only a transport
-buffer. `rescue_ledger.py` is the SOLE writer — one writer, no races.
+
+> **RR-017 CORRECTION (2026-09-08, BINDING):** the LIVE system of record for the
+> current-v2 pipeline is the **RR-04 n8n Data Tables ledger** (subworkflow
+> `RR-04-ledger` — the sole ticket-state writer, fail-closed status gate). The
+> SQLite ledger this SOP originally described is **compatibility-only**: use it
+> for offline drills and historical migration, NEVER against production ticket
+> state. Starting it beside the live pipeline would be a competing writer —
+> prohibited. Authoritative contract: `blackceo-fleet-ops:rescue/contract-manifest.json`.
+
+**HARD RULE:** RR-04 Data Tables are the SYSTEM OF RECORD. The legacy SQLite
+ledger (`~/clawd/fleet-heartbeat/rescue/tickets.db`) is compatibility-only.
+`RR-04-ledger` is the SOLE production writer — one writer, no races.
 
 ---
 
@@ -15,7 +24,9 @@ buffer. `rescue_ledger.py` is the SOLE writer — one writer, no races.
 ### SOP 9.1 — Open on Ticket-In (idempotent)
 
 **Steps:**
-1. On escalate, the receiver/poller calls `rescue_ledger.py open --ticket-id <id>`
+1. On escalate, the current-v2 pipeline mints/folds the ticket through the
+   `RR-04-ledger` subworkflow (`op: mint-or-recur`, dedup_key identity). For
+   OFFLINE DRILLS only, the legacy path is `rescue_ledger.py open --ticket-id <id>`:
    with the nine-field context (+ `--incomplete --missing-fields …` for degraded
    tickets). `open_ticket` is INSERT-OR-IGNORE on `ticket_id` — a re-delivered
    escalation is a no-op, never a double-open — and logs one `escalate` exchange
@@ -26,9 +37,9 @@ the toolchain — the tool WARNs loudly).
 
 ---
 
-### SOP 9.2 — Answer + Resolve (idempotent)
+### SOP 9.2 — Answer + Resolve (idempotent) — OFFLINE DRILLS ONLY
 
-**Steps:**
+**Steps (drill tooling; live answers close through `RR-04-ledger op: close`):**
 1. On answer-out: `rescue_ledger.py answer --ticket-id <id> --answer "…"
    --fix-class <class> --fix-mode <dry-run|live>`. `record_answer` fills only an
    empty answer, so a re-pulled ticket is never re-answered.
@@ -37,15 +48,16 @@ the toolchain — the tool WARNs loudly).
 
 ---
 
-### SOP 9.3 — The 25/day Cap (durable counter)
+### SOP 9.3 — The 25/day Cap (drill counter; live cap is `rr_cap_counters`)
 
-**Steps:** The per-client daily cap is the durable replacement for the volatile n8n
-counter. Answer the Dispatcher's cap question from `rescue_ledger.py count-today
---client <client> --cap 25` (exit 3 = at/over) — ground truth, never an estimate.
+**Steps:** For OFFLINE DRILLS, the per-client daily cap is answered from
+`rescue_ledger.py count-today --client <client> --cap 25` (exit 3 = at/over).
+The LIVE current-v2 cap lives in the intake pipeline's `rr_cap_counters` table —
+never answer a live cap question from the drill ledger.
 
 ---
 
-### SOP 9.4 — Schema (the row is the record)
+### SOP 9.4 — Schema (drill ledger; the row is the record)
 
 `tickets(ticket_id, ts_open, ts_answered, ts_resolved, client, person, agent_name,
 box, box_type, oc_version, problem, already_tried, return_to, answer, tier,
@@ -56,7 +68,7 @@ platform)`. Status vocabulary: `open | in_progress | answered | resolved | incom
 
 ---
 
-### SOP 9.5 — Migration on Redeploy
+### SOP 9.5 — Migration on Redeploy (historical migration tooling)
 
 **When to run:** Before any n8n relay redeploy (which would wipe staticData).
 

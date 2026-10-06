@@ -30,6 +30,7 @@ If you have not read the contract, STOP and read it now.
 | **02 — Back Yourself Up Protocol** | Required before any config change for this skill. |
 | **22 — Book-to-Persona** | Content uses persona governance (5-layer alignment). Without it, content defaults to soul.md tone only. |
 | **31 — Upgraded Memory System** | Weekly content logs go into memory-core. Without it, logs land in MEMORY.md directly. |
+| **07 KIE Setup, 66 KIE Image, 67 KIE Video, 74 KIE Live Adapter** | Image and video generation. Images are GPT Image 2.5 Sunburst through Skill 66 policy; every paid job runs the Skill 74 chain (playbook.md Section 8c); video models are picked by Skill 67. The client's own `KIE_API_KEY` is required; shared rules are in `07-kie-setup/references/kie-common-rules.md`. |
 | **36 — GHL MCP Setup** | **STRONGLY RECOMMENDED.** When installed, ALL GHL operations in this skill route through MCPs first (Tier 1 → Tier 2 → fall to raw API as last resort). Without skill 36, this skill falls back to direct GHL Social Planner API. |
 | **30 — Fish Audio API Reference** | OPTIONAL. Required only if the client wants podcast episodes. If absent, podcast production is skipped and other content continues. |
 
@@ -129,7 +130,7 @@ Before any system change:
    - `INSTALL.md` — this file
    - `CORE_UPDATES.md` — what to add to client core files
    - `QC.md` — quality control (with new 0–10 rubric in v2.0.0)
-   - `references/playbook.md` — the 1,656-line production playbook
+   - `references/playbook.md` — the production playbook
 
 Do NOT proceed until all 5 are read.
 
@@ -281,6 +282,41 @@ ffmpeg -version | head -1 || { echo "FFmpeg missing — install: brew install ff
 
 ### Step 7: Run First-Run Protocol (references/playbook.md Section 0)
 
+**F34 — setup is TRANSACTIONAL and RESUMABLE (run this way, not the legacy imperative path):**
+The install is driven by the durable bootstrap state machine
+(`shared-utils/social_bootstrap.py`) with ONE checkpoint file per company at
+`<openclaw-root>/data/social-bootstrap/<company_id>::<planner_kind>/state.json`.
+Steps 4/4a–4f below describe WHAT the machine does; the bootstrap runner owns
+WHEN each is safe to run. Record the verified identity FIRST, then run
+`python3 shared-utils/social_bootstrap.py bootstrap --config request.json`
+(from the skill entry) — it resumes from the last durable checkpoint after any
+crash and never provisions a second sheet: step 2 re-POSTs the SAME
+`company_id::planner_kind` provisioning key and the F15 webhook returns the
+already-created sheet (`deduped: true`). A crash AFTER Google created the file
+but BEFORE the registry step re-uses it — the file is adopted, never duplicated.
+The five steps, each saved to the durable state file before the next begins:
+
+1. `identity` — VERIFIED company_id, owner, notification destination,
+   timezone, deployment type and engine ownership recorded FIRST. Model/
+   provider preferences and a READ-ONLY GHL account-access test are collected
+   here; absent optional channels are recorded EXCLUSIONS (never silent
+   failures, never asked-for-later promises).
+2. `planner` — create-or-adopt EXACTLY ONE company planner via the
+   `social-planner-sheet-create` webhook under the F15 provisioning key.
+3. `registry` — verify the F02 sharing contract (anyone/writer), the expected
+   tabs/schema with the SAME credential class the appends use (F14), persist
+   the durable sheet registry (`unique(company_id, planner_kind)`) and
+   synchronize local references (MEMORY.md/env are copies, never ownership).
+4. `readiness` — verify worker/board/mini-app readiness receipts and register
+   ONE schedule (the durable cycle engine claims ownership; legacy triggers
+   are superseded, never both armed — F17).
+5. `deliver` — deliver the REAL planner + intake links. `ready: true` is
+   written ONLY when every prior step has a verified receipt in the state
+   file; a webhook 200 alone is NEVER treated as installation complete.
+
+Resume after any crash: re-run the same bootstrap command — completed steps
+re-verify (never re-create) and only the interrupted step re-executes.
+
 Read brand info from core files, then ask only what's missing:
 1. Read `identity.md`, `soul.md`, `memory.md`, `agents.md`, `heartbeat.md`
 2. Extract: brand name, founder, target audience, brand colors, tone, voice, products/services
@@ -293,22 +329,26 @@ Read brand info from core files, then ask only what's missing:
 
    **4b. Check if an existing sheet ID was provided during onboarding** (the client may have shared one during their interview). If yes, adopt it — skip to 4d.
 
-   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass a stable `idempotencyKey` so the webhook never makes a second sheet for the same client:**
+   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass the stable provisioning key `company_id::planner_kind` so the webhook never makes a second sheet for the same client and planner kind:**
    ```bash
-   # Stable per-client key: same client slug => same key => at most one sheet, ever.
-   IDEMPOTENCY_KEY="skill35-sheet-${COMPANY_SLUG}"
+   # Stable per-company key (run/contracts/sheet_registry.json: unique(company_id, planner_kind)).
+   PROVISIONING_KEY="${COMPANY_ID}::${PLANNER_KIND}"   # PLANNER_KIND is e.g. "social-planner"
    # 1) Record intent FIRST (atomic write), so a crash before 4d is detectable in 4a-bis.
+   #    This local marker is the DURABLE CLAIM — the caller owns the ledger; the
+   #    webhook itself stays stateless-safe via its Google Drive readback (F15).
    mkdir -p ~/.openclaw/data/skill35
-   printf 'content_sheet_pending: %s\n' "$IDEMPOTENCY_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
+   printf 'content_sheet_pending: %s\n' "$PROVISIONING_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
    mv ~/.openclaw/data/skill35/.sheet-create.pending.tmp ~/.openclaw/data/skill35/.sheet-create.pending
-   # 2) Create (idempotent on the server by idempotencyKey).
+   # 2) Create (idempotent on the server: the webhook reads back Drive files by the
+   #    skill35_provisioning_key app property BEFORE copying; a replay returns the
+   #    EXISTING sheet with "deduped": true instead of making a second one).
    RESPONSE=$(curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
      -H "Content-Type: application/json" \
-     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"idempotencyKey\":\"$IDEMPOTENCY_KEY\"}")
+     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"company_id\":\"$COMPANY_ID\",\"planner_kind\":\"$PLANNER_KIND\",\"templateSheetId\":\"$TEMPLATE_SHEET_ID\",\"timezone\":\"$TZ\"}")
    SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
    SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
    ```
-   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the idempotency key rather than creating another sheet.)
+   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the provisioning key rather than creating another sheet.)
 
    **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
    ```bash
@@ -325,12 +365,18 @@ Read brand info from core files, then ask only what's missing:
    rm -f ~/.openclaw/data/skill35/.sheet-create.pending
    ```
 
+   **4d-bis. Verify the planner sharing contract (F02).** The provisioned sheet MUST have Drive permission `type=anyone`, `role=writer` — anyone with the link can edit without an individual invitation. This is INTENTIONAL, not a defect: verify it during provisioning (Drive permissions readback on the new sheetId) and never migrate the planner to named-user-only sharing. This sharing setting does not change GHL account ownership or mini-app identity, and it does not authorize API access to another company's data.
+
+   **4d-ter. Registry verification with the SAME credential the appends use (F14).** BEFORE provisioning completes, sheet metadata is read with the SAME credential class the append workflow uses (`googleSheetsOAuth2Api` on the row-append path) and the expected tabs/schema are checked; the resulting sheetId is stored in the durable company registry (`run/contracts/sheet_registry.json` shape — unique per `company_id::planner_kind`). Legacy MEMORY.md/env copies are synchronized references, never competing ownership records. A 404 (nonexistent/deleted sheet ID) is an **identity repair** (`sheet_not_found`): correct the registered sheetId — the webhooks NEVER silently create a replacement sheet. A 403 is an **access repair** (`sheet_access_denied`): re-grant the operator credential access to the EXISTING sheet. Transient errors get bounded retries (3x/2s) and surface as `transient` for the caller to re-queue. Pending keyed rows replay from the F15 idempotency ledger exactly once once verified access is restored — the readback upsert updates the existing row in place and never duplicates it.
+
    **4e. Verify the agent knows the link:**
    After writing config, the agent MUST be able to answer "what is my social media planner link?" by reading `content_sheet_url` from MEMORY.md. Test this before proceeding.
 
    **4f. Google Sheets write auth — TWO webhooks, TWO purposes (do NOT confuse them):**
-   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets permissions). Payload: `{brandName, clientEmail}`. Never call this for row logging.
-   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to append a content row to the client's existing sheet. Payload: `{sheetId, row: {Week Of, Theme of the Week, Core Content, ..., Notes}}`. This is the row-log step in the Media Delivery Contract. **Image cells MUST be sent as `=IMAGE("https://...", 1)` formula strings, not raw URLs** — raw URLs render as unclickable text. The webhook writes the value verbatim with `valueInputOption: USER_ENTERED`, so a formula string is evaluated by Sheets into an inline image. The webhook also resizes the target image column to 108px wide and the data row to 133px tall so the thumbnail displays at full size.
+   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets the anyone/writer link permission). Payload: `{brandName, clientEmail, company_id, planner_kind, templateSheetId, timezone?}`; receipt: `{status, deduped, sheetId, sheetUrl, sheetName, sharedWith, provisioning_key, schema_version}`. Never call this for row logging.
+   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to **upsert** one keyed row per content revision and destination account into the client sheet's **Posts** tab, then update the Weekly Overview summary. Payload (schema_version 1.1.0): `{sheetId, company_id, cycle_id, content_revision, account_id, platform, account_name, format, scheduled_local, scheduled_utc, state, qc_state, preview_url?, remote_url?, theme?, week_of?, title?, notes?}`; receipt: `{success, sheetId, posts_updatedRange, overview_updatedRange, row_key, overview_key, mode, schema_version}`. The webhook is idempotent: it reads Posts back first — an existing `row_key` (`cycle_id::content_revision::account_id`) is UPDATED in place (upsert), never duplicated. A new content revision updates only its own keyed row. **platform is written verbatim** — no generic-platform fallback into TikTok or any named column; unfamiliar platform labels get their own Posts rows.
+
+   **4f-bis. Posts table + Weekly Overview summary (F23).** The Posts tab is the normalized source of truth — one row per content revision and destination account, keyed by `row_key`. Multiple accounts on the same platform and unfamiliar platform labels all get distinct keyed rows. Weekly Overview stays a summary derived from the Posts rows (new summary rows carry the technical key `OV::<cycle_id>::<content_revision>` in column U; legacy overview rows are retained untouched). The webhook also resizes the preview columns and appended data row (real `spreadsheet.batchUpdate` `updateDimensionProperties` calls) so `=IMAGE()` thumbnails display at full size.
 
    The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Both webhooks run on the BlackCEO Automations operator n8n and use the operator's Google service account — clients need no Google credentials. **The agent itself never calls the Google Sheets API directly.** If either webhook is unavailable, log to `~/.openclaw/data/skill35/content-log.jsonl` and queue for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json".
 
@@ -427,6 +473,31 @@ The script:
 - Marker path: `~/.openclaw/data/skill35/weekly-theme-last-run.json` (persistent across reboots; written by the cron on each fire to skip double-fires within the same ISO week).
 - Model: cheap/free (flash or free OpenRouter fallback) — NOT the metered primary pro model.
 
+**F07/F17 — forwarding adapter, not the owner (important):** the registered trigger is a
+LIGHTWEIGHT forwarding adapter. The invitation/reminder/cutoff cadence is owned by the DURABLE
+cycle service (`shared-utils/social_cycle_service.py` on ONB-only boxes; the Command Center's
+`node-cron` engine `cc-cycle-service` wherever CC is live). The trigger's message contains no
+multi-hour wait and no noon/6PM fallback — the durable service owns that timing and records it
+in the engine-ownership record (`~/.openclaw/data/social-cycle/engine-ownership.json`).
+Verify the handover after the CC side is deployed:
+
+```bash
+bash "$REGISTER_SCRIPT" --verify   # exit 0 = durable engine owns the schedule (one active owner/company)
+```
+
+Exit 5 means the CC cycle service has not claimed ownership yet (the lightweight trigger remains
+the fallback owner) — that is the expected state until the deployment step below runs.
+
+**Deployment-phase handover (disable the superseded trigger only after proving the replacement):**
+once the Command Center's `social-cycle` job is live on the box (visible in `job_liveness` and
+`social_engine_ownership` with exactly one active `cc-cycle-service` row per company), retire the
+legacy gateway trigger: `openclaw cron delete --name skill35-weekly-theme`, then re-run the verify
+above. Do NOT disable the legacy trigger before the durable engine's ownership record verifies —
+that order is what prevents a week with zero invitations. The n8n weekly-theme trigger
+(VXRfHv2UT6QbD7Sg) is likewise superseded: the export README documents the versioned-schema
+requirement, and disabling the live n8n trigger is the same deployment-phase step (prove the
+replacement first, then disable).
+
 **If the client's HEARTBEAT.md already contains the Saturday theme-request block** (from a prior install of this skill), remove it:
 
 ```bash
@@ -445,6 +516,53 @@ else
   echo "No ungated Saturday block found — nothing to remove"
 fi
 ```
+
+### Step 9-bis: Install the durable service contract (F21 — portable deployment health)
+
+After the weekly trigger registers, install the SERVICE layer that survives
+reboots and is verifiable on ANY supported profile (Mac launchd, Docker VPS
+systemd) — never a Mac-only proof:
+
+```bash
+SHARED_UTILS="${HOME}/.openclaw/skills/shared-utils"
+[ -d "$SHARED_UTILS" ] || SHARED_UTILS="/data/.openclaw/skills/shared-utils"
+
+# 1) Install/upgrade the durable cycle service (one SHORT advance step per
+#    tick; correct service-user HOME, canonical secret paths, CLIENT timezone):
+bash "$SHARED_UTILS/social-service.sh" --install --timezone "$TZ" \
+  --runner "$SHARED_UTILS/social_cycle_cli.py" || {
+  echo "HARD FAIL: social-service.sh install failed — fix the error above; the install MUST NOT claim completion." >&2
+  exit 1
+}
+
+# 2) Record the n8n contract version the deployment carries (the doctor reads
+#    this; stale mappings are a FAILED health check, not a warning):
+mkdir -p ~/.openclaw/data/skill35
+: "${SHEET_CREATE_WORKFLOW_ID:?Use the activated public router ID from deployment}"
+: "${ROW_APPEND_WORKFLOW_ID:?Use the activated public router ID from deployment}"
+cat > ~/.openclaw/data/skill35/n8n-mapping.json <<EOF
+{"schema_version":"1.1.0","sheet_create_workflow_id":"${SHEET_CREATE_WORKFLOW_ID}","row_append_workflow_id":"${ROW_APPEND_WORKFLOW_ID}","persisted_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+
+# 3) Run the ONE doctor command (portable proof the install is healthy):
+python3 "$SHARED_UTILS/social-planner-doctor.py"
+```
+
+The doctor checks (each maps to a WF-owned durable record): company identity,
+active engine + scheduler registration, worker acknowledgement (a stopped
+worker is reported as a HEALTH PROBLEM — never as work progressing), last/next
+cycle, GHL credential resolution (`--live`), recorded sheet schema/registry,
+n8n contract version, unresolved retries/overdue dispatch. Exit 0 healthy /
+1 degraded / 2 unhealthy. Run it again after any restart/recovery; save the
+JSON with the install receipt. Doctor output is preflight evidence only: it does not itself prove a real GHL
+account-discovery response, live n8n Google credentials, or a successful sheet
+write. Complete the live compatibility acceptance in `config/n8n/compat/README.md`
+and verify an approved GHL post separately.
+
+The service layer sends NOTHING itself (silence doctrine): overdue states are
+surfaced by the doctor and, on boxes with the Command Center, by the
+`social-publish-dispatcher` overdue sweep through the authorized notification
+path (`notifySystem` → rescue webhook / owner chat).
 
 ### Step 10: Run QC.md and require 8.5+ to pass
 
@@ -511,3 +629,17 @@ Send the client this exact summary:
 - **Made the install order explicitly numbered** with Step 0 (contract check) at the top. Steps are no longer reorderable.
 - **Added 8.5/10 QC gate** — the install isn't complete until QC scores 8.5+. Loop and fix below threshold.
 - **Resolved the long-pending `PPSA` placeholder** — removed (was unused for 9 months).
+
+
+### Final reliability deployment gate (F14–F16, F22–F26, F38)
+
+Follow `config/n8n/README.md` for compiled imports, isolated acceptance and
+the compatibility compiler and migration of existing sheet ownership. Keep the
+shared URLs on the contract router: exact legacy document requests use the
+public-edit document lane, while modern identity-bearing requests use the strict
+versioned graph. Never point an upgraded client at the strict append graph before
+its verified Sheets ownership metadata and headers are ready. The create initializer is for new/private initializing
+copies only; it is not a migration tool for client content. A `formatted`
+checkpoint resumes modern sharing without erasing cells. Legacy creation always creates a fresh copy; it never searches existing documents by name/email. Reconcile execution history after an ambiguous legacy copy/append result before retrying. Treat an `error`/partial
+receipt as a visible repair requirement, never as permission to activate weekly
+work or mark a post published. Always preserve intentional anyone-link edit.

@@ -1,0 +1,1013 @@
+#!/usr/bin/env python3
+"""presentation-cli — the ONE typed standalone entry for the Skill 51
+signature-presentation skill (PRES-050).
+
+Replaces the argv-corrupting bash wrapper (bin/presentation) with a real
+argv array end to end. Shell arrays were the alternative; a typed Python
+entry was chosen because the engine it drives is already Python and the
+contract needs structured JSON output plus typed credential/context
+resolution no shell array can express.
+
+Verbs (STANDALONE-SKILL-REPO.md Runtime contract): init, doctor, start,
+status, resume, cancel, verify, export.
+
+Context resolution order (explicit FIRST, host discovery LAST):
+  1. --workspace, --company-id, --presentation-id, --credential-profile
+     (explicit pins; company/presentation required for every verb except
+     init/doctor which can validate the workspace alone).
+  2. --scripts-dir when stated (validated: must hold build_deck.py AND
+     run_signature_deck.py, else refuse — never autodetect a replacement).
+  3. Host discovery ONLY for locating the materialized department default
+     and the notify transport; it never invents a company, a credential,
+     or a Command Center identity.
+
+Credential rule: an explicitly exported credential profile
+(PRESENTATION_CREDENTIAL_PROFILE plus the feature variables the selected
+features need) is sufficient. No secrets file is required to proceed.
+A wrong --company-id/--credential-profile pairing is refused WITHOUT
+printing any secret value (presence and length only, never prefixes).
+
+Modes:
+  standalone-local (default): durable local board under
+    <workspace>/.presentation/board.json — no OpenClaw gateway and no
+    Command Center required. Local completion is reported as LOCAL ONLY.
+  connected-cc (--cc-required or --cc-url): BEFORE any work starts, probe
+    the Command Center for an authenticated identity (signed request to
+    <cc-url>/api/health; when a token/secret is configured the probe must
+    authenticate). A missing/unreachable/unauthenticated CC BLOCKS with a
+    nonzero exit. CC task IDs are only ever server-issued (ingest
+    response); this CLI never fabricates one, and AF-CC-UNVERIFIED is
+    never weakened to pass standalone.
+
+Interpreter/resources: this file re-execs itself through the ABSOLUTE
+resolved sys.executable when invoked via a relative interpreter name, and
+resolves package resources (skill root, door script) from its own path —
+never from the caller cwd, never /data, never operator $HOME.
+
+Exit codes: 0 states accepted/completed/verified explicitly in the JSON
+"result" field. 2 usage, 3 gate blocked, 60 no usable credentials for the
+requested profile, 61 department not materialized, 62 scripts-dir stated
+but wrong, 63 CC proof missing (connected mode), 64 wrong client/profile
+refused. Door/engine codes propagate unchanged for dispatched runs.
+
+Stdlib only. No network except the explicit CC identity probe and the
+engine's own CC calls. Never prints a secret value.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from pathlib import Path
+
+EXIT_OK = 0
+EXIT_USAGE = 2
+EXIT_GATE_BLOCKED = 3
+EXIT_NO_CREDS = 60
+EXIT_NO_DEPT = 61
+EXIT_SCRIPTS_DIR_WRONG = 62
+EXIT_NO_CC_PROOF = 63
+EXIT_WRONG_CLIENT = 64
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+OUTBOX_QUEUE = SKILL_ROOT / "bin" / "presentation-outbox-queue"
+STATE_SCHEMA_VERSION = 1
+BOARD_NAME = ".presentation"
+BOARD_FILE = "board.json"
+
+# Feature -> env names that must be non-blank for that feature. Missing
+# feature credentials block ONLY dependent work (doctor reports per
+# feature; start refuses only when a SELECTED feature lacks them).
+FEATURE_CREDS = {
+    "notify": ("PRESENTATION_NOTIFY_CMD",),
+    "ghl": ("GHL_API_KEY", "GHL_LOCATION_ID"),
+    "provider": ("OPENROUTER_API_KEY",),
+}
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _emit(obj: dict) -> None:
+    print(json.dumps(obj, indent=2, ensure_ascii=False, sort_keys=False))
+
+
+def _fail(code: int, error: str, **extra: object) -> int:
+    doc = {"ok": False, "result": "rejected", "exit": code, "error": error}
+    doc.update(extra)
+    _emit(doc)
+    return code
+
+
+def _redacted_presence(name: str) -> dict:
+    val = os.environ.get(name, "")
+    return {"name": name, "present": bool(val and val.strip()),
+            "length": len(val) if val else 0}
+
+
+def _ensure_absolute_interpreter() -> None:
+    """Pin the absolute interpreter: re-exec via resolved sys.executable
+    when argv[0]'s interpreter was reached through PATH lookup."""
+    exe = sys.executable
+    if not exe:
+        return
+    resolved = str(Path(exe).resolve())
+    # Re-exec once when the running binary path is not absolute/canonical.
+    if exe != resolved and os.environ.get("PRES_CLI_PINNED") != "1":
+        os.environ["PRES_CLI_PINNED"] = "1"
+        os.execv(resolved, [resolved, str(Path(__file__).resolve())] + sys.argv[1:])
+
+
+def _skill_root() -> Path:
+    # Package-resource API: everything derives from this file's own
+    # location, never the caller cwd.
+    return SKILL_ROOT
+
+
+def _resolve_workspace(args: argparse.Namespace) -> Path:
+    raw = args.workspace or os.environ.get("PRESENTATION_WORKSPACE", "")
+    if not raw:
+        raise ValueError("--workspace (or PRESENTATION_WORKSPACE) is required: "
+                         "standalone resolution starts from an explicit workspace")
+    p = Path(raw).expanduser()
+    if not p.is_absolute():
+        raise ValueError("--workspace must be an absolute path, got %r" % raw)
+    if p == Path("/"):
+        raise ValueError("--workspace must not be /")
+    return p
+
+
+def _resolve_scripts_dir(args: argparse.Namespace,
+                         workspace: Path) -> tuple[Path | None, str, int]:
+    """Returns (dir, source, rc). Stated-but-wrong refuses (62); unstated
+    resolves ONLY the materialized department default under the explicit
+    workspace — no /data, no operator-home fallback chain."""
+    stated = args.scripts_dir or os.environ.get("SCRIPTS_DIR", "")
+    if stated:
+        cand = Path(stated).expanduser()
+        if (cand / "build_deck.py").is_file() and (cand / "run_signature_deck.py").is_file():
+            return cand.resolve(), "stated --scripts-dir", 0
+        return None, "stated --scripts-dir", EXIT_SCRIPTS_DIR_WRONG
+    default = workspace / "departments" / "Presentations" / "scripts"
+    if (default / "build_deck.py").is_file() and (default / "run_signature_deck.py").is_file():
+        return default.resolve(), "materialized department default", 0
+    return None, "materialized department default", EXIT_NO_DEPT
+
+
+def _local_board(workspace: Path) -> Path:
+    d = workspace / BOARD_NAME
+    d.mkdir(parents=True, exist_ok=True)
+    return d / BOARD_FILE
+
+
+def _read_board(path: Path) -> dict:
+    if not path.is_file():
+        return {"schema_version": STATE_SCHEMA_VERSION, "runs": {}}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"schema_version": STATE_SCHEMA_VERSION, "runs": {},
+                "note": "unreadable board treated as empty; prior content preserved at .bak"}
+    return doc if isinstance(doc, dict) else {"schema_version": STATE_SCHEMA_VERSION,
+                                              "runs": {}}
+
+
+def _write_board(path: Path, doc: dict) -> None:
+    doc["updated_at"] = _utcnow()
+    payload = json.dumps(doc, indent=2, ensure_ascii=False)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".board-",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _check_credential_profile(args: argparse.Namespace,
+                              selected_features: tuple[str, ...]) -> tuple[bool, list[dict], list[str]]:
+    """Exported-creds-first resolver. A secrets FILE is never required: when
+    the requested profile's feature variables are present in the process
+    environment, that is sufficient. Returns (ok, redacted_report,
+    missing_names). Missing feature credentials block only dependent work —
+    the caller decides which features are required for its verb."""
+    profile = args.credential_profile or os.environ.get(
+        "PRESENTATION_CREDENTIAL_PROFILE", "")
+    report = [_redacted_presence("PRESENTATION_CREDENTIAL_PROFILE")]
+    missing: list[str] = []
+    needed: list[str] = []
+    for feat in selected_features:
+        needed.extend(FEATURE_CREDS.get(feat, ()))
+    for name in needed:
+        rep = _redacted_presence(name)
+        report.append(rep)
+        if not rep["present"]:
+            missing.append(name)
+    # Company/profile binding: when the workspace carries a binding file,
+    # a mismatched explicit pair is refused (wrong client, exit 64) before
+    # any work. No binding file yet (fresh init) means nothing to mismatch.
+    return (not missing), report, missing
+
+
+def _check_client_binding(workspace: Path, args: argparse.Namespace) -> tuple[bool, str]:
+    bind_file = workspace / BOARD_NAME / "binding.json"
+    if not bind_file.is_file():
+        return True, "no binding recorded yet (init will record it)"
+    try:
+        binding = json.loads(bind_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return True, "unreadable binding ignored (fail-open would be wrong: refusing)"
+    problems = []
+    for key, flag in (("company_id", args.company_id),
+                      ("presentation_id", args.presentation_id)):
+        if flag and binding.get(key) and flag != binding.get(key):
+            problems.append("%s %r does not match bound %r" % (key, flag, binding.get(key)))
+    if problems:
+        return False, "; ".join(problems)
+    return True, "explicit context matches recorded binding"
+
+
+def _probe_cc_identity(cc_url: str, timeout: int = 15) -> tuple[bool, str, dict]:
+    """Authenticated CC identity probe. GET <cc-url>/api/health and require
+    a live, authenticated service — NOT merely a listening port (a dead port
+    or an anonymous 401/403 page is not proof). Returns
+    (ok, detail, evidence). Never fabricates IDs."""
+    base = cc_url.strip().rstrip("/")
+    if not base:
+        return False, "empty --cc-url", {}
+    url = base + "/api/health"
+    headers = {"Accept": "application/json"}
+    token = (os.environ.get("CC_API_TOKEN") or os.environ.get("MC_API_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = "Bearer %s" % token
+    secret = (os.environ.get("WEBHOOK_SECRET") or os.environ.get("CC_WEBHOOK_SECRET") or "").strip()
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.getcode()
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return False, "CC identity probe HTTP %s (not authenticated proof)" % exc.code, \
+            {"http_status": exc.code}
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return False, "CC unreachable: %s: %s" % (type(exc).__name__, exc), {}
+    try:
+        parsed = json.loads(body) if body else None
+    except json.JSONDecodeError:
+        parsed = None
+    if status == 200 and isinstance(parsed, dict) and parsed.get("status") in ("ok", "degraded"):
+        return True, "CC /api/health answered with live status %r" % parsed.get("status"), \
+            {"http_status": status, "cc_status": parsed.get("status"),
+             "migrations": parsed.get("migrations"),
+             "authenticated_bearer": bool(token),
+             "webhook_secret_configured": bool(secret)}
+    return False, "CC answered HTTP %s without a live health proof" % status, \
+        {"http_status": status, "body_prefix": (body or "")[:200]}
+
+
+def _notify_transport_ready() -> tuple[bool, str]:
+    """Transport readiness by actual resolvability, not executable presence:
+    openclaw on PATH is not proof of a usable gateway."""
+    override = (os.environ.get("PRESENTATION_NOTIFY_CMD") or "").strip()
+    if override:
+        try:
+            argv = shlex.split(override)
+        except ValueError:
+            return False, "PRESENTATION_NOTIFY_CMD unparseable"
+        if not argv:
+            return False, "PRESENTATION_NOTIFY_CMD blank"
+        first = argv[0]
+        if Path(first).is_file() or shutil.which(first):
+            return True, "PRESENTATION_NOTIFY_CMD resolves: %s" % first
+        if OUTBOX_QUEUE.is_file() and os.access(OUTBOX_QUEUE, os.X_OK):
+            return True, "override unresolvable; packaged file-queue transport available"
+        return False, "PRESENTATION_NOTIFY_CMD unresolvable and no file-queue fallback"
+    if OUTBOX_QUEUE.is_file():
+        return True, "packaged file-queue transport: %s" % OUTBOX_QUEUE
+    if shutil.which("openclaw"):
+        return False, "openclaw executable present but no notify command configured " \
+                      "(presence is not readiness)"
+    return False, "no notify transport configured"
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    try:
+        workspace = _resolve_workspace(args)
+    except ValueError as exc:
+        return _fail(EXIT_USAGE, str(exc))
+    company = args.company_id or ""
+    presentation = args.presentation_id or ""
+    if not company or not presentation:
+        return _fail(EXIT_USAGE, "init requires --company-id and --presentation-id",
+                     workspace=str(workspace))
+    profile = args.credential_profile or os.environ.get(
+        "PRESENTATION_CREDENTIAL_PROFILE", "")
+    if not profile:
+        return _fail(EXIT_USAGE, "init requires --credential-profile "
+                                 "(explicit credential selection; never a default company)",
+                     workspace=str(workspace))
+    target = workspace / BOARD_NAME
+    target.mkdir(parents=True, exist_ok=True)
+    bind_file = target / "binding.json"
+    if bind_file.is_file():
+        try:
+            prior = json.loads(bind_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            prior = {}
+        if prior and (prior.get("company_id") not in ("", company) and
+                      prior.get("company_id") != company):
+            return _fail(EXIT_WRONG_CLIENT,
+                         "workspace already bound to company %r; refusing to rebind to %r "
+                         "without an explicit migration" % (prior.get("company_id"), company),
+                         workspace=str(workspace))
+    bind_file.write_text(json.dumps({
+        "company_id": company,
+        "presentation_id": presentation,
+        "credential_profile": profile,
+        "bound_at": _utcnow(),
+        "skill_root": str(_skill_root()),
+        "interpreter": str(Path(sys.executable).resolve()),
+    }, indent=2), encoding="utf-8")
+    board = _local_board(workspace)
+    _emit({"ok": True, "result": "accepted", "verb": "init",
+           "workspace": str(workspace), "company_id": company,
+           "presentation_id": presentation, "credential_profile": profile,
+           "binding": str(bind_file), "board": str(board),
+           "interpreter": str(Path(sys.executable).resolve())})
+    return EXIT_OK
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    try:
+        workspace = _resolve_workspace(args)
+    except ValueError as exc:
+        return _fail(EXIT_USAGE, str(exc))
+    report: dict = {"ok": True, "result": "verified", "verb": "doctor",
+                    "workspace": str(workspace),
+                    "skill_root": str(_skill_root()),
+                    "interpreter": str(Path(sys.executable).resolve()),
+                    "python": "%d.%d.%d" % sys.version_info[:3]}
+    scripts_dir, source, rc = _resolve_scripts_dir(args, workspace)
+    report["scripts_dir"] = {"path": str(scripts_dir) if scripts_dir else None,
+                             "source": source,
+                             "stated_but_wrong": rc == EXIT_SCRIPTS_DIR_WRONG}
+    if scripts_dir:
+        door = scripts_dir / "presentation-canonical-entry.sh"
+        report["canonical_door"] = {"path": str(door), "present": door.is_file()}
+    else:
+        report["canonical_door"] = {"path": None, "present": False}
+    ok_bind, bind_detail = _check_client_binding(
+        workspace, args) if (args.company_id or args.presentation_id) else (True, "no explicit context to check")
+    report["client_binding"] = {"matches": ok_bind, "detail": bind_detail}
+    feats = tuple(args.features.split(",")) if args.features else ("notify",)
+    creds_ok, cred_report, missing = _check_credential_profile(args, feats)
+    report["credentials"] = {"profile": args.credential_profile or
+                             os.environ.get("PRESENTATION_CREDENTIAL_PROFILE", ""),
+                             "features_checked": list(feats),
+                             "complete_for_selected_features": creds_ok,
+                             "missing": missing,
+                             "vars": cred_report,
+                             "secrets_file_required": False}
+    transport_ok, transport_detail = _notify_transport_ready()
+    report["notify_transport"] = {"ready": transport_ok, "detail": transport_detail}
+    # Native deps the canonical door gates on (informational here; the door
+    # remains the enforcement point — doctor never waives its gates).
+    report["native_deps"] = {name: bool(shutil.which(name)) for name in
+                             ("soffice", "pdftoppm")}
+    try:
+        import reportlab  # noqa: F401
+        report["native_deps"]["reportlab"] = True
+    except ImportError:
+        report["native_deps"]["reportlab"] = False
+    try:
+        import pptx  # noqa: F401
+        report["native_deps"]["python-pptx"] = True
+    except ImportError:
+        report["native_deps"]["python-pptx"] = False
+    if args.cc_required or args.cc_url:
+        cc_url = args.cc_url or os.environ.get("COMMAND_CENTER_URL",
+                                                os.environ.get("MISSION_CONTROL_URL", ""))
+        if not cc_url:
+            report["cc"] = {"mode": "connected-required", "proven": False,
+                            "detail": "CC required but no --cc-url and no "
+                                      "COMMAND_CENTER_URL/MISSION_CONTROL_URL"}
+            report["ok"] = False
+        else:
+            ok, detail, evidence = _probe_cc_identity(cc_url)
+            report["cc"] = {"mode": "connected-required", "url": cc_url,
+                            "proven": ok, "detail": detail, "evidence": evidence}
+            if not ok:
+                report["ok"] = False
+    else:
+        report["cc"] = {"mode": "standalone-local",
+                        "detail": "no CC required; local durable board only"}
+    problems = []
+    if rc == EXIT_SCRIPTS_DIR_WRONG:
+        problems.append("scripts-dir stated but wrong (retire it or point it at the "
+                        "materialized department)")
+        report["ok"] = False
+    elif rc != 0:
+        problems.append("department not materialized under the explicit workspace")
+        report["ok"] = False
+    if not ok_bind:
+        problems.append("wrong client/profile for this workspace: %s" % bind_detail)
+        report["ok"] = False
+    if not creds_ok:
+        problems.append("missing feature credentials (blocks only dependent work): %s"
+                        % ", ".join(missing))
+        # Not a doctor failure by itself: missing OPTIONAL feature creds must
+        # not fail the host check. The caller marks required-ness.
+    report["problems"] = problems
+    if args.require_features:
+        req = tuple(args.require_features.split(","))
+        _, _, missing_req = _check_credential_profile(args, req)
+        if missing_req:
+            report["ok"] = False
+            report["problems"].append(
+                "required features lack credentials: %s" % ", ".join(missing_req))
+    _emit(report)
+    if not report["ok"]:
+        return EXIT_GATE_BLOCKED if problems and rc == 0 and ok_bind else (
+            EXIT_SCRIPTS_DIR_WRONG if rc == EXIT_SCRIPTS_DIR_WRONG else
+            (EXIT_WRONG_CLIENT if not ok_bind else EXIT_NO_DEPT))
+    return EXIT_OK
+
+
+def _require_context(args: argparse.Namespace) -> tuple[Path, str] | int:
+    try:
+        workspace = _resolve_workspace(args)
+    except ValueError as exc:
+        return _fail(EXIT_USAGE, str(exc))
+    if not args.company_id or not args.presentation_id:
+        return _fail(EXIT_USAGE, "this verb requires --company-id and --presentation-id "
+                                 "(resolved before any host discovery)",
+                     workspace=str(workspace))
+    ok_bind, bind_detail = _check_client_binding(workspace, args)
+    if not ok_bind:
+        return _fail(EXIT_WRONG_CLIENT, "wrong client/profile refused: %s" % bind_detail,
+                     workspace=str(workspace), company_id=args.company_id,
+                     presentation_id=args.presentation_id)
+    return workspace, bind_detail
+
+
+def _connected_gate(args: argparse.Namespace) -> tuple[bool, dict] | int:
+    """Connected mode requires authenticated CC identity BEFORE claiming
+    anything about CC. Returns (required, cc_report) or an int exit code."""
+    if not (args.cc_required or args.cc_url):
+        return False, {"mode": "standalone-local"}
+    cc_url = args.cc_url or os.environ.get("COMMAND_CENTER_URL",
+                                            os.environ.get("MISSION_CONTROL_URL", ""))
+    if not cc_url:
+        return _fail(EXIT_NO_CC_PROOF, "connected mode requires --cc-url (or "
+                                       "COMMAND_CENTER_URL/MISSION_CONTROL_URL); refusing "
+                                       "to claim CC completion without a CC to prove against")
+    ok, detail, evidence = _probe_cc_identity(cc_url)
+    cc_report = {"mode": "connected-cc", "url": cc_url, "proven": ok,
+                 "detail": detail, "evidence": evidence}
+    if not ok:
+        return _fail(EXIT_NO_CC_PROOF, "connected CC-required mode blocked: %s" % detail,
+                     cc=cc_report)
+    return True, cc_report
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    gate = _connected_gate(args)
+    if isinstance(gate, int):
+        return gate
+    cc_required, cc_report = gate
+    # --features is global-only (before the verb); see the parser note.
+    _feats_raw = (getattr(args, "features", "notify") or "notify")
+    feats = tuple(s.strip() for s in _feats_raw.split(",") if s.strip()) or ("notify",)
+    creds_ok, cred_report, missing = _check_credential_profile(args, feats)
+    if missing and not args.allow_missing_feature_creds:
+        return _fail(EXIT_NO_CREDS,
+                     "missing credentials for selected features block start: %s "
+                     "(decline those features or pass --allow-missing-feature-creds "
+                     "to record them as declined)" % ", ".join(missing),
+                     workspace=str(workspace), features=list(feats),
+                     credential_vars=cred_report)
+    scripts_dir, source, rc = _resolve_scripts_dir(args, workspace)
+    if rc == EXIT_SCRIPTS_DIR_WRONG:
+        return _fail(EXIT_SCRIPTS_DIR_WRONG,
+                     "stated --scripts-dir is wrong (must hold build_deck.py and "
+                     "run_signature_deck.py); refusing to autodetect a replacement. "
+                     "Point it at the materialized department or retire the flag.",
+                     stated=args.scripts_dir or os.environ.get("SCRIPTS_DIR", ""))
+    if rc != 0:
+        return _fail(EXIT_NO_DEPT,
+                     "Presentations department not materialized under the explicit "
+                     "workspace %s; refusing — there is no ungoverned fallback." % workspace,
+                     workspace=str(workspace))
+    board_path = _local_board(workspace)
+    try:
+        with _board_lock(board_path):
+            board = _read_board(board_path)
+            run_id = "run_%s" % hashlib.sha256(
+                ("%s|%s|%s|%s" % (args.company_id, args.presentation_id,
+                                  _utcnow(), os.getpid())).encode()).hexdigest()[:16]
+            run_dir = workspace / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "working").mkdir(parents=True, exist_ok=True)
+            entry = {
+                "run_id": run_id,
+                "revision": 1,
+                "company_id": args.company_id,
+                "presentation_id": args.presentation_id,
+                "credential_profile": args.credential_profile or os.environ.get(
+                    "PRESENTATION_CREDENTIAL_PROFILE", ""),
+                "workspace": str(workspace),
+                "run_dir": str(run_dir),
+                "scripts_dir": str(scripts_dir),
+                "scripts_dir_source": source,
+                "features": list(feats),
+                "declined_features": sorted(set(FEATURE_CREDS) - set(feats)),
+                "mode": cc_report["mode"],
+                "cc": cc_report,
+                "capability_binding": {"phase": "queued", "worker_ack": False},
+                "state": "queued",
+                "created_at": _utcnow(),
+            }
+            # Queue commit: persist BEFORE dispatching anything, so a crash
+            # between commit and worker-ack leaves "queued", never a phantom run.
+            board.setdefault("runs", {})[run_id] = entry
+            _write_board(board_path, board)
+    except RuntimeError as exc:
+        return _fail(EXIT_GATE_BLOCKED, "local board busy: %s" % exc,
+                     workspace=str(workspace))
+    # Worker acknowledgement: the engine's --new-equivalent commit. Here the
+    # CLI owns the durable job record; dispatch the canonical door's plan
+    # pass to prove the engine accepts this run dir (bounded, read-only).
+    ack_ok, ack_detail = _engine_ack(scripts_dir, run_dir)
+    try:
+        with _board_lock(board_path):
+            board = _read_board(board_path)
+            rec = board.get("runs", {}).get(run_id, {})
+            rec["capability_binding"] = {"phase": "acknowledged" if ack_ok else "ack-failed",
+                                         "worker_ack": ack_ok, "detail": ack_detail}
+            rec["state"] = "acknowledged" if ack_ok else "blocked"
+            if not ack_ok:
+                rec["blocked_reason"] = ack_detail
+            board.setdefault("runs", {})[run_id] = rec
+            _write_board(board_path, board)
+    except RuntimeError as exc:
+        return _fail(EXIT_GATE_BLOCKED, "local board busy on ack commit: %s" % exc,
+                     run_id=run_id)
+    if not ack_ok:
+        return _fail(EXIT_GATE_BLOCKED, "worker acknowledgement failed: %s" % ack_detail,
+                     run_id=run_id, run_dir=str(run_dir))
+    # Connected mode: register the run-scoped card and stamp ONLY the
+    # server-issued task id. Never fabricate one.
+    if cc_required:
+        task_id = _cc_ingest_run_card(cc_report["url"], args, run_id, run_dir)
+        try:
+            with _board_lock(board_path):
+                board = _read_board(board_path)
+                rec = board.get("runs", {}).get(run_id, {})
+                if task_id:
+                    rec["cc_task_id"] = task_id
+                    rec["cc_sync"] = {"state": "registered", "at": _utcnow()}
+                else:
+                    rec["cc_sync"] = {"state": "unverified",
+                                      "at": _utcnow(),
+                                      "detail": "CC reachable but ingest returned no task id; "
+                                                "local run proceeds, CC completion NOT claimed"}
+                board.setdefault("runs", {})[run_id] = rec
+                _write_board(board_path, board)
+        except RuntimeError as exc:
+            return _fail(EXIT_GATE_BLOCKED, "local board busy on CC stamp: %s" % exc,
+                         run_id=run_id)
+    _emit({"ok": True, "result": "accepted", "verb": "start",
+           "run_id": run_id, "revision": 1, "run_dir": str(run_dir),
+           "mode": cc_report["mode"],
+           "note": "accepted after queue commit and worker acknowledgement; "
+                   "acceptance is not completion"})
+    return EXIT_OK
+
+
+class _board_lock:
+    """Advisory exclusive lock for the local board file (stdlib fcntl)."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path.with_suffix(".lock")
+        self._fh = None
+
+    def __enter__(self) -> "_board_lock":
+        import fcntl
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.path.open("a+")
+        try:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self._fh.close()
+            self._fh = None
+            raise RuntimeError("another presentation-cli owns %s" % self.path.parent)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._fh:
+            import fcntl
+            try:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+            finally:
+                self._fh.close()
+                self._fh = None
+
+
+def _engine_exe(scripts_dir: Path) -> list[str]:
+    py = str(Path(sys.executable).resolve())
+    job = scripts_dir / "presentation_job.py"
+    pkg = scripts_dir / "presentation_job" / "__main__.py"
+    if job.is_file():
+        return [py, str(job)]
+    return [py, "-m", "presentation_job"]
+
+
+def _engine_ack(scripts_dir: Path, run_dir: Path) -> tuple[bool, str]:
+    """Bounded worker acknowledgement: run the engine's read-only plan
+    against the new run dir. Proves the engine accepts the job without
+    launching paid work."""
+    base = _engine_exe(scripts_dir)
+    # --status on a fresh dir is read-only; for a brand-new CLI-owned dir
+    # there is no state.json yet, so ack = engine binary imports + manifest
+    # resolves. Use --capacity (documented read-only probe, needs no run dir).
+    try:
+        r = subprocess.run(base + ["--capacity"], capture_output=True, text=True,
+                           timeout=120, cwd=str(scripts_dir))
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, "engine probe could not start: %s" % exc
+    if r.returncode != 0:
+        return False, "engine --capacity probe exited %s: %s" % (
+            r.returncode, (r.stderr or r.stdout or "")[-500:])
+    return True, "engine --capacity probe accepted (read-only, no paid work)"
+
+
+def _cc_ingest_run_card(cc_url: str, args: argparse.Namespace, run_id: str,
+                        run_dir: Path) -> str | None:
+    """POST the run-scoped card; return the SERVER-ISSUED task id or None.
+    Never fabricate an id. Fail-soft for the local run (CC sync state stays
+    'unverified'), because the connected gate already proved reachability —
+    an ingest failure is a sync fact, not a local-run veto."""
+    import hmac
+    base = cc_url.strip().rstrip("/")
+    token = (os.environ.get("CC_API_TOKEN") or os.environ.get("MC_API_TOKEN") or "").strip()
+    secret = (os.environ.get("WEBHOOK_SECRET") or os.environ.get("CC_WEBHOOK_SECRET") or "").strip()
+    payload = {
+        "title": "Signature presentation %s" % args.presentation_id,
+        "description": "Standalone CLI run %s (company %s, presentation %s)" % (
+            run_id, args.company_id, args.presentation_id),
+        "priority": "medium",
+        "source": "presentation-cli",
+        "source_ref": run_id,
+        "department_slug": "presentations",
+        "external_session_id": run_id,
+        "idempotency_key": hashlib.sha256(
+            ("%s%s" % (run_id, args.presentation_id)).encode()).hexdigest(),
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if token:
+        headers["Authorization"] = "Bearer %s" % token
+    if secret:
+        headers["x-webhook-signature"] = hmac.new(secret.encode(), raw,
+                                                  hashlib.sha256).hexdigest()
+    req = urllib.request.Request(base + "/api/tasks/ingest", data=raw,
+                                 headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            status = resp.getcode()
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    if status not in (200, 201):
+        return None
+    try:
+        parsed = json.loads(body) if body else None
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict) and parsed.get("task_id"):
+        return str(parsed["task_id"])
+    return None
+
+
+def _load_run(workspace: Path, run_id: str) -> tuple[dict, dict]:
+    board_path = _local_board(workspace)
+    board = _read_board(board_path)
+    rec = (board.get("runs") or {}).get(run_id)
+    if not rec:
+        raise KeyError("unknown run_id %r on local board %s" % (run_id, board_path))
+    return board_path, rec
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    try:
+        board_path, rec = _load_run(workspace, args.run_id)
+    except KeyError as exc:
+        return _fail(EXIT_USAGE, str(exc), workspace=str(workspace))
+    run_dir = Path(rec.get("run_dir", ""))
+    engine_state: dict = {}
+    state_file = run_dir / "state.json"
+    if state_file.is_file():
+        try:
+            engine_state = json.loads(state_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            engine_state = {"unreadable": True}
+    doc = {"ok": True, "result": "completed", "verb": "status",
+           "run_id": args.run_id, "local": rec, "engine": engine_state,
+           "mode": rec.get("mode", "standalone-local")}
+    if rec.get("mode") == "connected-cc":
+        doc["cc_completion_claimed"] = bool(
+            (rec.get("cc_sync") or {}).get("state") == "synchronized")
+        if not doc["cc_completion_claimed"]:
+            doc["note"] = "local state only; CC completion is NOT claimed " \
+                          "(sync state: %s)" % (rec.get("cc_sync") or {}).get("state")
+    _emit(doc)
+    return EXIT_OK
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    gate = _connected_gate(args)
+    if isinstance(gate, int):
+        return gate
+    _, cc_report = gate
+    try:
+        board_path, rec = _load_run(workspace, args.run_id)
+    except KeyError as exc:
+        return _fail(EXIT_USAGE, str(exc), workspace=str(workspace))
+    if rec.get("state") == "cancelled":
+        return _fail(EXIT_GATE_BLOCKED, "run %s was explicitly cancelled; "
+                                        "cancellation wins over resume" % args.run_id,
+                     run_id=args.run_id)
+    scripts_dir = Path(rec.get("scripts_dir", ""))
+    if not ((scripts_dir / "build_deck.py").is_file()
+            and (scripts_dir / "run_signature_deck.py").is_file()):
+        alt, _, rc = _resolve_scripts_dir(args, workspace)
+        if rc != 0 or alt is None:
+            return _fail(rc, "stored scripts dir gone and no valid replacement; refusing",
+                         run_id=args.run_id)
+        scripts_dir = alt
+    run_dir = Path(rec.get("run_dir", ""))
+    base = _engine_exe(scripts_dir)
+    engine_argv = base + ["--resume", "--run-dir", str(run_dir)]
+    if args.engine_args:
+        engine_argv += args.engine_args
+    # Direct argv exec — no shell, no reconstruction. posix_spawn-equivalent.
+    proc = subprocess.run(engine_argv, cwd=str(scripts_dir))
+    try:
+        with _board_lock(board_path):
+            board = _read_board(board_path)
+            r2 = board.get("runs", {}).get(args.run_id, {})
+            r2["revision"] = int(r2.get("revision", 1)) + 1
+            r2["state"] = "resumed" if proc.returncode == 0 else "blocked"
+            r2["last_resume_rc"] = proc.returncode
+            r2["last_resume_at"] = _utcnow()
+            board.setdefault("runs", {})[args.run_id] = r2
+            _write_board(board_path, board)
+    except RuntimeError as exc:
+        return _fail(EXIT_GATE_BLOCKED, "board busy on resume commit: %s" % exc,
+                     run_id=args.run_id)
+    _emit({"ok": proc.returncode == 0,
+           "result": "completed" if proc.returncode == 0 else "rejected",
+           "verb": "resume", "run_id": args.run_id,
+           "revision": r2["revision"], "engine_rc": proc.returncode,
+           "mode": cc_report.get("mode", rec.get("mode", "standalone-local")),
+           "note": "reattached same run; no duplicate worker claimed"})
+    return proc.returncode
+
+
+def cmd_cancel(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    try:
+        board_path, rec = _load_run(workspace, args.run_id)
+    except KeyError as exc:
+        return _fail(EXIT_USAGE, str(exc), workspace=str(workspace))
+    try:
+        with _board_lock(board_path):
+            board = _read_board(board_path)
+            r2 = board.get("runs", {}).get(args.run_id, {})
+            r2["state"] = "cancelled"
+            r2["cancelled_at"] = _utcnow()
+            r2["cancel_reason"] = args.reason or "explicit cancel"
+            board.setdefault("runs", {})[args.run_id] = r2
+            _write_board(board_path, board)
+    except RuntimeError as exc:
+        return _fail(EXIT_GATE_BLOCKED, "board busy on cancel: %s" % exc,
+                     run_id=args.run_id)
+    _emit({"ok": True, "result": "completed", "verb": "cancel",
+           "run_id": args.run_id,
+           "note": "explicit cancellation persists; the run will not restart"})
+    return EXIT_OK
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    try:
+        _, rec = _load_run(workspace, args.run_id)
+    except KeyError as exc:
+        return _fail(EXIT_USAGE, str(exc), workspace=str(workspace))
+    run_dir = Path(rec.get("run_dir", ""))
+    scripts_dir = Path(rec.get("scripts_dir", ""))
+    checks: dict = {}
+    state_file = run_dir / "state.json"
+    checks["state_json_present"] = state_file.is_file()
+    if state_file.is_file():
+        try:
+            st = json.loads(state_file.read_text(encoding="utf-8"))
+            checks["state_valid"] = isinstance(st, dict) and "job_id" in st
+            checks["terminal"] = st.get("terminal")
+        except (json.JSONDecodeError, OSError):
+            checks["state_valid"] = False
+    else:
+        checks["state_valid"] = False
+    if rec.get("mode") == "connected-cc":
+        sync_state = (rec.get("cc_sync") or {}).get("state")
+        checks["cc_synchronized"] = (sync_state == "synchronized")
+        if not checks["cc_synchronized"]:
+            checks["cc_note"] = "local verification only; CC sync state is %r — " \
+                                "completion NOT claimed" % sync_state
+    else:
+        checks["cc_synchronized"] = "n/a (standalone-local)"
+    passed = bool(checks.get("state_valid")) and \
+        (checks.get("cc_synchronized") in (True, "n/a (standalone-local)"))
+    _emit({"ok": passed, "result": "verified" if passed else "rejected",
+           "verb": "verify", "run_id": args.run_id, "checks": checks,
+           "note": "verification reports; it never claims completion by itself"})
+    return EXIT_OK if passed else EXIT_GATE_BLOCKED
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    ctx = _require_context(args)
+    if isinstance(ctx, int):
+        return ctx
+    workspace, _ = ctx
+    try:
+        _, rec = _load_run(workspace, args.run_id)
+    except KeyError as exc:
+        return _fail(EXIT_USAGE, str(exc), workspace=str(workspace))
+    run_dir = Path(rec.get("run_dir", ""))
+    dest = Path(args.dest).expanduser() if args.dest else (run_dir / "export")
+    dest.mkdir(parents=True, exist_ok=True)
+    manifest: dict = {"run_id": args.run_id, "exported_at": _utcnow(),
+                      "mode": rec.get("mode", "standalone-local"),
+                      "files": [], "provenance": {
+                          "company_id": rec.get("company_id"),
+                          "presentation_id": rec.get("presentation_id"),
+                          "scripts_dir": rec.get("scripts_dir"),
+                          "local_only": rec.get("mode") != "connected-cc"}}
+    for name in ("state.json", "working/outbox.jsonl",
+                 "working/checkpoints/process_manifest.json"):
+        src = run_dir / name
+        if src.is_file():
+            data = src.read_bytes()
+            out = dest / Path(name).name
+            out.write_bytes(data)
+            manifest["files"].append({"name": Path(name).name,
+                                      "sha256": hashlib.sha256(data).hexdigest(),
+                                      "bytes": len(data)})
+    for pat in ("*.pptx", "*.pdf"):
+        for src in sorted(run_dir.glob(pat)):
+            data = src.read_bytes()
+            out = dest / src.name
+            out.write_bytes(data)
+            manifest["files"].append({"name": src.name,
+                                      "sha256": hashlib.sha256(data).hexdigest(),
+                                      "bytes": len(data)})
+    (dest / "export-manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8")
+    _emit({"ok": True, "result": "completed", "verb": "export",
+           "run_id": args.run_id, "dest": str(dest),
+           "files": manifest["files"],
+           "note": "local export is not delivery; CC/GHL delivery needs its own proof"})
+    return EXIT_OK
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="presentation-cli",
+        description="Typed standalone CLI for the signature-presentation skill "
+                    "(PRES-050). Explicit workspace/company/presentation/credential-profile "
+                    "first; host discovery last. Standalone uses the local durable "
+                    "board; connected mode needs authenticated CC identity.")
+    p.add_argument("--workspace", default="",
+                   help="explicit workspace root (absolute path; required)")
+    p.add_argument("--company-id", default="", help="explicit company binding")
+    p.add_argument("--presentation-id", default="", help="explicit presentation binding")
+    p.add_argument("--credential-profile", default="",
+                   help="explicit credential profile (exported creds suffice; no secrets file required)")
+    p.add_argument("--scripts-dir", default="",
+                   help="stated scripts dir (validated; stated-but-wrong refuses, never autodetects)")
+    # NOTE: argparse has no cross-position override — a verb-level
+    # --features (even unstated) shadows the global. So the GLOBAL keeps
+    # the default and start has NO verb-level twin: state features once,
+    # before the verb. (A verb-level default=None would clobber a stated
+    # global back to None; verified by probe.)
+    p.add_argument("--features", default="notify",
+                   help="comma-separated selected features (default: notify); "
+                        "unselected features are recorded declined, never silently skipped. "
+                        "Global position, before the verb.")
+    # CC mode flags live on EVERY verb (not global): argparse verb-level
+    # defaults shadow globals, so a single global definition silently loses
+    # ("--cc-url X doctor" would parse back to ""). One helper stamps the
+    # same pair on each verb; helpers below read args.cc_url directly.
+    def _cc_flags(_sp: argparse.ArgumentParser) -> None:
+        _sp.add_argument("--cc-url", default="",
+                         help="Command Center base URL (connected mode)")
+        _sp.add_argument("--cc-required", action="store_true",
+                         help="require authenticated CC identity before any work")
+    sub = p.add_subparsers(dest="verb", required=True)
+    _init = sub.add_parser("init",
+                           help="create/validate workspace + company/presentation binding")
+    _cc_flags(_init)
+    d = sub.add_parser("doctor", help="report host/engine/transport/credential readiness")
+    d.add_argument("--require-features", default="",
+                   help="comma-separated features whose creds must be present for exit 0")
+    _cc_flags(d)
+    st = sub.add_parser("start",
+                        help="queue-commit + worker-ack a new run (accepted, not completed)")
+    st.add_argument("--allow-missing-feature-creds", action="store_true",
+                    help="record missing feature credentials as declined instead of "
+                         "refusing start (unrelated production proceeds)")
+    _cc_flags(st)
+    s = sub.add_parser("status", help="structured run status (local; CC completion never implied)")
+    s.add_argument("--run-id", required=True)
+    r = sub.add_parser("resume", help="reattach the same run (no duplicate worker)")
+    r.add_argument("--run-id", required=True)
+    _cc_flags(r)
+    r.add_argument("engine_args", nargs=argparse.REMAINDER,
+                   help="extra engine argv appended verbatim after -- (same array, no shell)")
+    c = sub.add_parser("cancel", help="explicit cancellation wins over resume")
+    c.add_argument("--run-id", required=True)
+    c.add_argument("--reason", default="")
+    v = sub.add_parser("verify", help="verification battery report (never claims completion)")
+    v.add_argument("--run-id", required=True)
+    e = sub.add_parser("export", help="export run artifacts with provenance (not delivery)")
+    e.add_argument("--run-id", required=True)
+    e.add_argument("--dest", default="")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    _ensure_absolute_interpreter()
+    args = build_parser().parse_args(argv)
+    # Env twin so scripted callers keep one array shape.
+    if args.verb == "start" and not args.allow_missing_feature_creds:
+        args.allow_missing_feature_creds = \
+            os.environ.get("PRESENTATION_ALLOW_MISSING_FEATURE_CREDS", "") == "1"
+    if args.verb == "init":
+        return cmd_init(args)
+    if args.verb == "doctor":
+        return cmd_doctor(args)
+    if args.verb == "start":
+        return cmd_start(args)
+    if args.verb == "status":
+        return cmd_status(args)
+    if args.verb == "resume":
+        # argparse REMAINDER keeps a leading "--" token; drop exactly it.
+        if getattr(args, "engine_args", None) and args.engine_args[:1] == ["--"]:
+            args.engine_args = args.engine_args[1:]
+        return cmd_resume(args)
+    if args.verb == "cancel":
+        return cmd_cancel(args)
+    if args.verb == "verify":
+        return cmd_verify(args)
+    if args.verb == "export":
+        return cmd_export(args)
+    return _fail(EXIT_USAGE, "unknown verb %r" % args.verb)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

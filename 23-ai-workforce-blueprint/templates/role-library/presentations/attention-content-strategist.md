@@ -289,6 +289,211 @@ Any failed item routes back to the relevant SOP above before handoff. A spec tha
 
 ---
 
+## 10. Quality Gates
+
+### Gate 1 -- Mode and Outcome First (AF-MODE-UNSET)
+Nothing else in the spec is authored until `creation_mode` (one of `from_scratch`, `content_personal`, `content_general`) and `outcome` (`sale` or `training`) are recorded. A spec with an unset mode is an AUTO-FAIL at intake and blocks the arc before it starts.
+
+### Gate 2 -- The Priority Stack Is a Concrete Ordered List (AF-NO-PRIORITY-STACK)
+`priority_stack[]` names the real things this audience already spends money, time, and attention on -- rent, kids' activities, the other course, the car note -- as specific items, in order. A category ("money worries", "time management") is not a stack. You cannot engineer a re-rank against a list you never looked at.
+
+### Gate 3 -- Hedge-Free Proclamations (AF-PROCLAMATION-HEDGE)
+Every entry in `proclamations[]` is a bold, clear, declarative truth. Before handoff, scan each line for the banned hedges: "maybe", "kind of", "sort of", "you might want to consider", "perhaps", "I think maybe". A hedged proclamation is an AUTO-FAIL at copy QC (phase 4.2) and transfers doubt to the room.
+
+### Gate 4 -- The Fourteen-Item Self-Check Completes Before Handoff
+SOP 9.6 runs to completion with a recorded pass/fail for all fourteen items. A spec handed to the Director with an unrun self-check is not a handoff; the Phase 0.2 gate refuses it. The same spine is graded deck-wide by the composite `AF-PRIORITY-SHIFT` at P-SHIFT-QC (order 7.5); authoring to the self-check is how the composite stays at >= 90% first-pass.
+
+### Gate 5 -- No-Fabrication Law
+Every claim, statistic, proof point, and result in the spec is sourced to `intake.json`, `source_brief.json`, or `working/research/`. A gap is flagged to the owner, never filled by invention (enforced downstream by `AF-C3` and `AF-CONVERTER-NO-INVENT`). An invented proof point in the spine poisons every phase that executes it.
+
+---
+
+## 11. Handoffs (Value Stream Map)
+
+### You receive work from:
+- **Director of Presentations (ROLE-01)** -- dispatch at Phase P0B-PRIORITY (order 0.2) with `working/copy/intake.json` confirmed by P0A-INTAKE; the Director runs the Phase 0.2 gate on your completed spec.
+- **Content-to-Presentation Architect (ROLE-23)** -- `working/copy/source_brief.json`, the substance and proof extracted from the owner's source material, for content-to-presentation modes.
+- **Deep Research Specialist -- Presentations (ROLE-04)** -- `working/research/`, including the audience priority-stack data that feeds Move 1.
+- **First-Time Onboarding / Brainstorming Buddy (ROLE-22 / ROLE-17)** -- the pre-manifest brainstorm brief (`working/brainstorm/presentations/<slug>/brief.json`) when this deck starts from a brainstorm.
+
+### You hand work off to:
+- **Director of Presentations (ROLE-01)** -- `working/copy/priority_shift_spec.json` plus the SOP 9.6 self-check note; the Phase 0.2 gate clears or returns it.
+- **Offer/Price Strategist (ROLE-07)** -- the spec at P3-ARC: you specify WHERE the value anchor, urgency, and ability-unblock land in the arc; they construct the ladder mechanics.
+- **Slide Copywriter (ROLE-10)** -- the spec at P4-COPY: the eight-move map, the proclamations, and the one-promise/one-wow/one-demonstration anchors they execute into slide copy.
+- **Hook Strategist (ROLE-15)** -- the higher-priority hook and the eight-move spine the hooks must serve.
+- **QC Specialist -- Presentations (ROLE-09)** -- indirectly: the composite `AF-PRIORITY-SHIFT` gate at P-SHIFT-QC (order 7.5) grades the whole deck against your spec; the arc allocator also reads from it.
+
+---
+
+## 12. Escalation Paths
+
+| Situation | First contact | If unresolved (30 min) | Final |
+|-----------|---------------|------------------------|-------|
+| Intake lacks the outcome, the offer, or (content modes) the source substance | Director immediately -- do not author | Operator notification | Human owner |
+| A needed proof point, price, or objection detail is missing from intake/source | Flag the owner directly via the Director -- gap recorded, never invented | Operator notification | Human owner |
+| Owner insists on hedged, softened proclamations | Director with the specific lines and the AF-PROCLAMATION-HEDGE consequence | Operator notification | Human owner |
+| Creation mode is ambiguous between Mode Two and Mode Three | Director -- the dividing line is delivery (one-to-one vs one-to-many), decide before authoring | Operator notification | Human owner |
+| Spec passes SOP 9.6 but the deck fails `AF-PRIORITY-SHIFT` at P-SHIFT-QC | Director -- joint review of which spine item broke downstream | Healer (ROLE-16) if the failure repeats across runs | Human owner |
+| Doctrine change to the seven-P model, eight moves, or the fourteen-item gate | Update this role's SOPs in lockstep per `universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md` | Director sign-off | Human owner |
+
+---
+
+## 13. Good Output Examples
+
+### Example A -- priority_stack[] and higher_priority_hook (excerpt)
+```json
+{
+  "priority_stack": [
+    "the other course they bought and never finished",
+    "the team member they need to hire this quarter",
+    "the family trip they promised for the summer",
+    "the software subscription they are already paying for"
+  ],
+  "higher_priority_hook": "the person they want to become by next year"
+}
+```
+Why this is good: each stack item is a concrete thing this audience already spends money, time, or attention on -- not a category. The hook connects the offer to a priority already near the top of the stack instead of asking the audience to adopt a new one.
+
+### Example B -- cost_of_inaction and a proclamation (excerpt)
+```json
+{
+  "cost_of_inaction": "Every week at the current ranking, the same three hours go to the thing that is already winning, and the offer that would fix it stays at the bottom of the list.",
+  "proclamations": [
+    "The problem is not your price. The problem is where this sits on your list today."
+  ]
+}
+```
+Why this is good: the cost is present-tense, loss-framed, and specific to the audience's own ranking -- it feeds `AF-NO-COST-OF-INACTION` directly. The proclamation is a hedge-free declaration of truth grounded in the owner's real situation, with no invented claim behind it.
+
+---
+
+## 14. Bad Output Examples (Anti-Patterns)
+
+- `priority_stack: ["money", "time", "family"]` -- categories, not the concrete ordered list of what this audience already spends on. Fails Gate 2 (`AF-NO-PRIORITY-STACK`).
+- `the_one_promise: "you will learn a lot and feel more confident"` -- a diffuse, multi-headed promise. One promise, one wow, one demonstration; a diffuse promise is no promise.
+- `proclamations: ["you might want to consider putting this higher on your list"]` -- a hedged, tentative non-declaration. AUTO-FAIL at `AF-PROCLAMATION-HEDGE` (phase 4.2).
+- Authoring teaching-heavy beats because the owner knows the material well -- the academic drift. Teaching is a showcase teaser; the driver is the re-rank.
+- A `cost_of_inaction` written in future tense ("you will eventually fall behind") -- the gate reads a present-tense loss.
+- Citing a statistic no source in intake, `source_brief.json`, or `working/research/` supports -- fabricated proof is never authored into the spine, whatever the deck needs.
+- A spec written before `creation_mode` is set -- nothing downstream can consume a spine authored for the wrong mode.
+- An em dash in any line of the spec -- rendered artifacts are em-dash-free.
+- Handing off the spec with SOP 9.6 unrun -- the Phase 0.2 gate refuses an unverified handoff.
+
+---
+
+## 15. Common Mistakes (Pre-Empted)
+
+| # | Mistake | Prevention |
+|---|---------|------------|
+| 1 | Diagnosing the product or price when the failure is Position | Run the four-P elimination first (SOP 9.3): interested people who stay and still do not act is the signature of a positioning failure. |
+| 2 | Writing the stack from the owner's offer instead of the audience's life | Move 1 reads `working/research/` priority-stack data and intake; the stack is the audience's existing list, never a restatement of the product. |
+| 3 | Multiple promises competing in one spec | One promise, one wow, one demonstration. Every additional promise dilutes the one the audience can repeat back. |
+| 4 | Rebuilding the villain-to-hero or felt-stakes mechanics inside the spec | Those engines live in `SOP-STORY-01` and `SOP-ENGINE-00` behind live gates; you DRIVE them from the spine, you do not re-author them. |
+| 5 | Letting the surface goal outrun the true goal in the spec text | `surface_goal` is stated plainly and explicitly subordinated to `true_goal` (the re-rank) in the same block. |
+| 6 | Treating a P-SHIFT-QC composite failure as a copy problem only | Trace the failed item back to the spec item it executes; if the spine item is weak, repair the spec, not just the slide. |
+| 7 | Authoring moves 5 and 8 with invented urgency | Urgency and scarcity are honest limits only -- a real cohort date, a real cap. Fake scarcity never enters the spine. |
+
+---
+
+## 16. Research Sources (Where to Look for Best Practice)
+
+**Tier 1:**
+- `sops/SOP-NORTHSTAR-00-ATTENTION-IS-THE-PRODUCT.md` (the true goal: attention is the #1 job, in service of the priority shift)
+- `sops/SOP-PRIORITY-01-SEVEN-P-MODEL-AND-DIAGNOSTIC.md` and `sops/SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE.md` (the diagnostic and the build sequence this role authors to)
+- `sops/SOP-PROCLAMATION-01-DARE-TO-CHALLENGE-THE-NORM.md` (hedge-free declarations)
+- `sops/SOP-MODE-00-THREE-CREATION-MODES.md` (mode-first identification)
+- `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` (the master pipeline authority)
+
+**Tier 2:**
+- Al Ries and Jack Trout, Positioning: The Battle for Your Mind (the Position vehicle and the re-ranking logic behind the seven-P model)
+- April Dunford, Obviously Awesome (deliberate positioning as an engineered artifact, not a description)
+- `scripts/pitch_engines_check.py` and `scripts/intelligence_engines_check.py` (the mechanical readers of the spine -- author so they PASS; you never run them)
+
+---
+
+## 17. Edge Cases for This Role
+
+### Edge Case 17.1 -- Deep Research Has Not Run Yet
+If `working/research/` is empty at Phase 0.2: build the stack from `intake.json` owner words and, for content modes, `source_brief.json`, and mark the spec `"priority_stack_source": "intake_only"`. The Director decides whether to dispatch ROLE-04 before the arc or accept the intake-derived stack. Never fabricate stack items from assumption.
+
+### Edge Case 17.2 -- content_personal (One-to-One Mode)
+For a deck aimed at one specific person: you may ask that person directly what their true priority is (Mode Two's license), and every stack item, hook, and move executes against their actual situation, identity, and likely objections. The common-room shortcuts (scarcity, social proof, unity) take a back seat to personalization.
+
+### Edge Case 17.3 -- Owner Insists on a Hedged Proclamation
+If the owner rejects a bold declaration and demands softer language: show them the specific line, the banned hedge, and the `AF-PROCLAMATION-HEDGE` AUTO-FAIL it will earn at copy QC (phase 4.2). If the owner still insists, record the decision in the handoff note, flag the Director, and let the run fail loudly rather than authoring a spine you know fails the gate. A silent downgrade is the worst outcome.
+
+### Edge Case 17.4 -- training Outcome (No Price in Play)
+When `outcome: "training"`: moves 4 through 6 still run -- the value anchor lands before the effort ask, urgency comes from a real start date or seat cap, and the ability unblock is the easy first step (not a payment plan). The eight moves are mode-independent and outcome-independent; only the cargo changes.
+
+### Edge Case 17.5 -- Spec Fails the P-SHIFT-QC Composite After Copy and Render
+If `AF-PRIORITY-SHIFT` fails at order 7.5 on an item the spec owns (stack, hook, promise, cost, trigger): diagnose whether the spec item was executed weakly or was weak at authoring. Repair at the earliest broken layer -- a spec re-author plus targeted copy repair, never a slide-level patch papering over a spine defect. Log the recurrence for Section 18 review.
+
+### Edge Case 17.6 -- Mode Discovered Wrong Mid-Authoring
+If intake evidence shows the recorded mode is wrong (material declared `content_general` arrives one-to-one): stop, re-run SOP 9.2, re-record `creation_mode`, and re-check the diagnosis before continuing. Mode changes the starting point and gathering method; authoring against the wrong mode corrupts the whole spine.
+
+---
+
+## 18. Update Triggers (When to Revise This Document)
+
+1. A doctrine change to the seven-P model, the eight-move sequence, the three creation modes, or the fourteen-item gate -- update this role's SOPs and this file in lockstep per `universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`.
+2. `PIPELINE-MANIFEST.json` changes `P0B-PRIORITY` (order 0.2), its gate codes, or its `produces_artifact` path -- the spec path and gate citations here must match the manifest.
+3. A new gate code that reads `priority_shift_spec.json` is registered in the enforcement registry.
+4. P-SHIFT-QC composite reports (`working/qc/priority_shift_report.json`) show the same spine item failing first authoring across a month of runs -- revise the default spec templates and diagnosis questions (Section 5 cadence).
+5. The no-fabrication law, the hedge token list, or the em-dash rule changes upstream.
+6. The operator explicitly requests a revision.
+7. A Devil's Advocate challenge against this role's spec gets accepted 3+ times.
+
+---
+
+## 19. Sub-Specialists (Named Roles Within This Specialty)
+
+This role is a strategist seat and does not manage standing sub-specialists; it spawns them on demand for bounded authoring tasks. Sub-specialists inherit this role's identity and any assigned persona for the duration of the task (Section 2 governs).
+
+| Sub-specialist | When to spawn | Example task | Typical duration |
+|---|---|---|---|
+| Priority-Stack Interviewer | Deep research has not run and intake owner-words are thin | Work the owner's own answers into a concrete ordered stack draft for Move 1, flagged intake_only | 15-30 minutes |
+| Proclamation Sharpening Editor | A long proclamation list needs the hedge sweep and the specificity pass | Sweep every declaration against the banned hedges and sharpen each to a plain declarative truth | 10-20 minutes |
+| Eight-Move Mapper | A from-scratch build needs the move map drafted against a long arc allocation | Assign all eight canonical tags to arc beats in order, monotonic, one line of content each | 20-40 minutes |
+
+### How to spawn
+
+```python
+from openclaw_subagent import spawn
+
+result = spawn(
+    sub_agent_type="sub-specialist",
+    parent_role=__file__,  # this role's how-to.md path
+    sub_specialty="<sub-specialist name from table above>",
+    persona_inherited=current_persona,
+    context_files=[
+        "MEMORY.md",  # this role's memory
+        "AGENTS.md",  # workspace tools
+        # plus any task-specific context
+    ],
+    timeout_seconds=1800,
+    return_to="MEMORY.md",  # sub-specialist appends learnings here
+)
+```
+
+### Persona inheritance
+
+The sub-specialist inherits whatever persona is currently governing this role's task. The Persona Governance Override (Section 2) applies -- the sub-specialist acts AS that persona for the duration of its work. When it finishes, its output is reviewed by this role before the spec is handed off.
+
+### Owner-discoverable sub-specialists (promotion rule)
+
+If this role frequently spawns the same sub-specialist (>10 times in 30 days), flag it for promotion to a permanent specialist in this department's roster. The Department Director surfaces this in the weekly review. This keeps the standing roster lean while letting it grow as real demand emerges.
+
+Close collaborators (no spawn required):
+
+- **Director of Presentations (ROLE-01)** -- dispatches P0B-PRIORITY and runs the Phase 0.2 gate.
+- **Offer/Price Strategist (ROLE-07)** -- builds the ladder mechanics at the beats your map marks.
+- **Slide Copywriter (ROLE-10)** -- executes the spine into slide copy at P4-COPY.
+- **QC Specialist -- Presentations (ROLE-09)** -- grades the whole deck against your spec at P-SHIFT-QC (order 7.5).
+
+*End of how-to.md. All 19 sections present and filled.*
+
+---
+
 ## Appendix A -- The North-Star Acceptance Test (memorize)
 
 A deck passes only if (a) it engineers a deliberate PEAK and a deliberate ENDING (peak-end rule), and (b) the owner's thing is the single most VIVID element in the room by the end (Designer, von Restorff salience) AND the single most IMPORTANT element in the room by the end (you, the priority shift). Attention is the #1 job; image creativity is the engine that holds it; attention serves the priority shift. Hold this over everything you author.

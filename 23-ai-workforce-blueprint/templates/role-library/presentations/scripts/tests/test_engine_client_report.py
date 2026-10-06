@@ -113,7 +113,7 @@ def _engine(tmp_path, deck_type=None, creation_mode=None, no_intake=False) -> En
 # ---------------------------------------------------------------------------
 class TestEnforcedCountUnchanged:
     def test_manifest_has_36_phases(self):
-        assert len(_manifest().phases) == 55  # 36 + Wave C unit C1's 4 upsell phases (manifest_version 51)
+        assert len(_manifest().phases) == 62  # 36 + Wave C unit C1's 4 upsell phases + W05-B2's 4 + FIX 28's 3 P-U-DESIGN-RENDER-* producer phases (integration 2026-09-02, manifest v64)
 
     def test_client_visible_phases_never_mutates_input(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
@@ -139,7 +139,7 @@ class TestClientVisibleCounts:
     def test_standard_from_scratch_is_31(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         visible = eng._client_visible_phases(eng.manifest.phases)
-        assert len(visible) == 44  # 31 + 4 upsell phases (flags unset -> unknown widens)
+        assert len(visible) == 50  # 31 + 15 P-U (4 upsell + 3 DESIGN-RENDER + style/closeout set) at manifest v64
         ids = {p.id for p in visible}
         assert "P-CONVERTER" not in ids
         for pid in _SP_ONLY:
@@ -148,7 +148,7 @@ class TestClientVisibleCounts:
     def test_signature_is_35(self, tmp_path):
         eng = _engine(tmp_path, deck_type="signature_presentation", creation_mode="from_scratch")
         visible = eng._client_visible_phases(eng.manifest.phases)
-        assert len(visible) == 48  # 35 + 4 upsell phases (flags unset -> unknown widens)
+        assert len(visible) == 54  # 35 + 15 P-U additions at manifest v64
         ids = {p.id for p in visible}
         assert "P-CONVERTER" not in ids
         for pid in _SP_ONLY:
@@ -157,7 +157,7 @@ class TestClientVisibleCounts:
     def test_content_conversion_is_32(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="content_personal")
         visible = eng._client_visible_phases(eng.manifest.phases)
-        assert len(visible) == 45  # 32 + 4 upsell phases (flags unset -> unknown widens)
+        assert len(visible) == 51  # 32 + 15 P-U additions (4 upsell + 3 DESIGN-RENDER + style/closeout set) at manifest v64
         ids = {p.id for p in visible}
         assert "P-CONVERTER" in ids
         for pid in _SP_ONLY:
@@ -165,20 +165,20 @@ class TestClientVisibleCounts:
 
     def test_content_conversion_general_mode_also_32(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="content_general")
-        assert len(eng._client_visible_phases(eng.manifest.phases)) == 45  # 32 + 13 P-U (merged 2026-09-01)
+        assert len(eng._client_visible_phases(eng.manifest.phases)) == 51  # 32 + 15 P-U additions at manifest v64
 
     def test_unknown_intake_fails_safe_to_full_36(self, tmp_path):
         eng = _engine(tmp_path, no_intake=True)
-        assert len(eng._client_visible_phases(eng.manifest.phases)) == 55
+        assert len(eng._client_visible_phases(eng.manifest.phases)) == 62
 
     def test_empty_intake_object_fails_safe_to_full_36(self, tmp_path):
         eng = _engine(tmp_path)  # writes {} -- both fields absent
-        assert len(eng._client_visible_phases(eng.manifest.phases)) == 55
+        assert len(eng._client_visible_phases(eng.manifest.phases)) == 62
 
     def test_unreadable_intake_json_fails_safe(self, tmp_path):
         eng = _engine(tmp_path)
         (eng.run_dir / "working" / "copy" / "intake.json").write_text("{not valid json")
-        assert len(eng._client_visible_phases(eng.manifest.phases)) == 55
+        assert len(eng._client_visible_phases(eng.manifest.phases)) == 62
 
     def test_deck_type_known_but_creation_mode_unknown_only_filters_sp(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode=None)
@@ -205,14 +205,14 @@ class TestClientPhaseIndexConsistency:
     def test_counted_phase_gets_a_real_k_within_n(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-0.5-RESEARCH", eng.manifest.phases)
-        assert n == 44
+        assert n == 50
         assert k is not None and 1 <= k <= n
 
     def test_deferred_phase_gets_k_none_but_real_n(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-CONVERTER", eng.manifest.phases)
         assert k is None
-        assert n == 44
+        assert n == 50
 
     def test_every_visible_phase_has_a_unique_k_covering_1_to_n_exactly(self, tmp_path):
         """The hard consistency proof, mirroring test_client_step_count.py's
@@ -222,9 +222,9 @@ class TestClientPhaseIndexConsistency:
         unfiltered k' -- the failure mode the work order names as most
         likely."""
         for deck_type, creation_mode, expected_n in (
-            ("webinar", "from_scratch", 44),
-            ("signature_presentation", "from_scratch", 48),
-            ("webinar", "content_personal", 45),
+            ("webinar", "from_scratch", 50),
+            ("signature_presentation", "from_scratch", 54),
+            ("webinar", "content_personal", 51),
         ):
             eng = _engine(tmp_path / f"consist-{deck_type}-{creation_mode}",
                           deck_type=deck_type, creation_mode=creation_mode)
@@ -244,7 +244,7 @@ class TestClientPhaseIndexConsistency:
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         k, n = eng._client_phase_index("P-DOES-NOT-EXIST", eng.manifest.phases)
         assert k is None
-        assert n == 44
+        assert n == 50
 
 
 # ---------------------------------------------------------------------------
@@ -281,9 +281,9 @@ class TestRenderClientReportMsgNoLiteralBraces:
         ph = eng.manifest.phase("P-0.5-RESEARCH")
         assert ph.name == "Deep Research"
         msg = eng._render_client_report_msg(ph, "start")
-        assert msg == "Step 1 of 44 — Deep Research — starting", msg
+        assert msg == "Step 1 of 50 — Deep Research — starting", msg
         done = eng._render_client_report_msg(ph, "done")
-        assert done == "Step 1 of 44 — Deep Research — complete", done
+        assert done == "Step 1 of 50 — Deep Research — complete", done
 
     def test_name_field_used_not_bare_phase_id(self, tmp_path):
         """{name} resolves to the manifest's declared 'name' (a human string),
@@ -326,14 +326,14 @@ class TestRenderClientReportMsgNoLiteralBraces:
         msg = eng._render_client_report_msg(ph, "start")
         assert "Step" not in msg or "35-step plan" in msg
         assert "P-CONVERTER" in msg
-        assert "44" in msg  # still names the honest total for context
+        assert "50" in msg  # still names the honest total for context
         assert "{" not in msg and "}" not in msg
 
     def test_sp_only_phase_deferred_on_standard_deck(self, tmp_path):
         eng = _engine(tmp_path, deck_type="webinar", creation_mode="from_scratch")
         ph = eng.manifest.phase("P-SP-INTAKE")
         msg = eng._render_client_report_msg(ph, "start")
-        assert "44-step plan" in msg
+        assert "50-step plan" in msg
         assert "{" not in msg and "}" not in msg
 
     def test_malformed_template_falls_back_to_default_not_a_crash_or_leak(self, tmp_path):

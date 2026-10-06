@@ -1,0 +1,566 @@
+{
+  "name": "Social planner compatible live entrypoints [2026-09-09]",
+  "nodes": [
+    {
+      "name": "Create Compatibility Hook",
+      "id": "create-compatibility-hook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "social-planner-sheet-create",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "name": "Create Contract",
+      "id": "create-contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        150,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b=$input.first().json.body;\nif(!b||typeof b!=='object'||Array.isArray(b))throw new Error('Expected a single request object');\nconst allowed=[\"brandName\", \"clientEmail\"];\nconst legacy=Object.keys(b).every(k=>allowed.includes(k))&&allowed.every(k=>Object.prototype.hasOwnProperty.call(b,k));\nreturn [{json:{body:b,legacy}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Create Legacy Shape",
+      "id": "create-legacy-shape",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "legacy",
+              "leftValue": "={{ $json.legacy }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Create Strict Workflow",
+      "id": "create-strict-workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://main.blackceoautomations.com/webhook/social-planner/v1.1.0/social-planner-sheet-create",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Create Legacy Workflow",
+      "id": "create-legacy-workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://main.blackceoautomations.com/webhook/social-planner-compat-20260909/legacy-sheet-create",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Create Checked Response",
+      "id": "create-checked-response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(!Number.isInteger(r.statusCode)||r.statusCode<200||r.statusCode>599||!r.body||typeof r.body!=='object'||Array.isArray(r.body))throw new Error('Downstream response could not be verified');return [{json:{statusCode:r.statusCode,body:r.body}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Create Response",
+      "id": "create-response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Create Error",
+      "id": "create-error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: \"error\", publication_verified: false, message: \"Planner workflow did not return a verified result; reconcile before retrying\" }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      }
+    },
+    {
+      "name": "Append Compatibility Hook",
+      "id": "append-compatibility-hook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "path": "social-planner-row-append",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "name": "Append Contract",
+      "id": "append-contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b=$input.first().json.body;\nif(!b||typeof b!=='object'||Array.isArray(b))throw new Error('Expected a single request object');\nconst allowed=[\"sheetId\", \"row\"];\nconst legacy=Object.keys(b).every(k=>allowed.includes(k))&&allowed.every(k=>Object.prototype.hasOwnProperty.call(b,k));\nreturn [{json:{body:b,legacy}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Append Legacy Shape",
+      "id": "append-legacy-shape",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "legacy",
+              "leftValue": "={{ $json.legacy }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Append Strict Workflow",
+      "id": "append-strict-workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://main.blackceoautomations.com/webhook/social-planner/v1.1.0/social-planner-row-append",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Append Legacy Workflow",
+      "id": "append-legacy-workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://main.blackceoautomations.com/webhook/social-planner-compat-20260909/legacy-row-append",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Append Checked Response",
+      "id": "append-checked-response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1950,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(!Number.isInteger(r.statusCode)||r.statusCode<200||r.statusCode>599||!r.body||typeof r.body!=='object'||Array.isArray(r.body))throw new Error('Downstream response could not be verified');return [{json:{statusCode:r.statusCode,body:r.body}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Append Response",
+      "id": "append-response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2100,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Append Error",
+      "id": "append-error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2250,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, status: \"error\", publication_verified: false, message: \"Planner workflow did not return a verified result; reconcile before retrying\" }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Create Compatibility Hook": {
+      "main": [
+        [
+          {
+            "node": "Create Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Contract": {
+      "main": [
+        [
+          {
+            "node": "Create Legacy Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Strict Workflow": {
+      "main": [
+        [
+          {
+            "node": "Create Checked Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Legacy Workflow": {
+      "main": [
+        [
+          {
+            "node": "Create Checked Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Checked Response": {
+      "main": [
+        [
+          {
+            "node": "Create Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Legacy Shape": {
+      "main": [
+        [
+          {
+            "node": "Create Legacy Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Strict Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Compatibility Hook": {
+      "main": [
+        [
+          {
+            "node": "Append Contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Contract": {
+      "main": [
+        [
+          {
+            "node": "Append Legacy Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Strict Workflow": {
+      "main": [
+        [
+          {
+            "node": "Append Checked Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Legacy Workflow": {
+      "main": [
+        [
+          {
+            "node": "Append Checked Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Checked Response": {
+      "main": [
+        [
+          {
+            "node": "Append Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Legacy Shape": {
+      "main": [
+        [
+          {
+            "node": "Append Legacy Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Strict Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  }
+}

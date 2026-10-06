@@ -97,7 +97,7 @@ export function validateTokenRow(row, nowMs) {
 /**
  * Misfit check: the URL's slug/phase must equal the binding's slug/phase.
  * The binding is the SOLE authority; a mismatched URL gets a 401 even if the
- * token itself is valid (a karen-vaughn token cannot open sheila-reynolds).
+ * token itself is valid (a fixture-client-b token cannot open fixture-client-c).
  * @param {object} row       valid binding row
  * @param {string|null} slug from URL path
  * @param {string|null} phaseId from URL path

@@ -23,7 +23,7 @@
     },
     "IMAGE": {
       "provider": "kie",
-      "model": "kie/gpt-image-2"
+      "model": "kie/gpt-image-2-5-sunburst-text-to-image"
     }
   }
 }

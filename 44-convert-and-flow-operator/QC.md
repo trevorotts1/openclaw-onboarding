@@ -32,6 +32,10 @@ human-readable companion checklist. All items below are machine-asserted by the 
 - [ ] Location whitelist enforced (cross-location write rejected)
 - [ ] Snapshot dir exists at `~/.openclaw/tools/convert-and-flow-cli/data/snapshots/`
 - [ ] Internal-write lock file mechanism present
+- [ ] `caf contacts upsert --help` documents merge-safe tag behavior and explicit-only `--create-new-if-duplicate-allowed`
+- [ ] `caf contacts update --tag x` REFUSED (exit 2, points at add-tag/remove-tag/upsert)
+- [ ] `caf contacts upsert` without `--email/--phone` REFUSED (exit 2)
+- [ ] Contact upsert regression suite green (`tests/test_contacts_upsert.py` — 18 behaviors)
 
 ## Section E: TRINITY and self-test
 

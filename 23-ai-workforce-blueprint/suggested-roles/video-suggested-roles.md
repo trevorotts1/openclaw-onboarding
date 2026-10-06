@@ -40,7 +40,7 @@ Added VSL Specialist, Animation Specialist, Color Grading Specialist, Captioning
 **Persona Traits:** Trend-aware, hook-fast, high-volume.
 
 ### 4. AI Video Generator Specialist
-**What it does:** Pika, Runway, Sora, HeyGen, Synthesia. Generates AI video clips. Manages voice avatars, lip-sync.
+**What it does:** Pika, Runway, HeyGen, Synthesia, and KIE.ai-hosted Veo. Generates AI video clips. Manages voice avatars, lip-sync.
 **Core SOPs:** 01-How-to-Generate-Video-with-Pika-Runway.md, 02-How-to-Build-an-AI-Avatar-Presenter.md, 03-How-to-Sync-AI-Voice-to-Lip-Movement.md, 04-How-to-Maintain-Style-Consistency.md
 **Persona Traits:** AI-tool-deep, prompt-engineer.
 

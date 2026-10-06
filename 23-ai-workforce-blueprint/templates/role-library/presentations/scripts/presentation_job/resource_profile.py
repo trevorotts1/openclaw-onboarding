@@ -41,10 +41,10 @@ SCHEMA (version 1)
     "<provider-id>": {
       "provider":       "ollama-cloud",
       "plan_tier":      "$100/month" | null,     # non-detectable -> asked ONCE
-      "concurrency_ceiling": 10 | "UNBOUNDED" | null,
+      "concurrency_ceiling": 8 | "UNBOUNDED" | null,   # 8, not 10: see below
       "ceiling_source": "cap-table" | "declared" | "interview" | "probe",
       "consented":      true/false,
-      "wired_models":   ["deepseek-v4-flash", ...],   # probed (FIX 9)
+      "wired_models":   ["deepseek-flash", ...],   # probed (FIX 9)
       "detected":       true/false,
       "plan_known":     true/false,
       "creative_prefs": {...},                        # free-form, redacted
@@ -91,12 +91,21 @@ providers and "plan detected/unknown" ONLY. Redaction is per-section and
 runs on every write and every read-export; the raw store on disk is
 written already-redacted, so a leak of the FILE is not a leak of secrets.
 
-CAPACITY INTEROPERATION
------------------------
+CAPACITY INTEROPERATION (per provider -- do not "simplify" this back)
+----------------------------------------------------------------------
 The profile NEVER bypasses capacity.py's doctrine. is_plan_locked() and
 intake questions consult capacity.CAP_TABLE; capacity.probe() remains the
 dispatch-path authority. FIX 8 adds persistence and the ask-once lock --
 it does not move the gate.
+
+F2 (2026-09-07): this profile is THE store for the plan answer, per
+provider. record_plan_answer() no longer projects the answer into
+capacity_override.json -- capacity.detect() reads the locked entry from
+here (capacity._plan_from_profile) for the provider it was asked about.
+capacity_override.json survives only as a per-provider operator
+self-throttle (schema 2), honoured for the provider it names. Two stores
+encoding "the client answered once" is exactly how ONE provider's tier
+came to cap a multi-provider client's whole run.
 
 Rollout flag
 ------------
@@ -111,10 +120,17 @@ the existing capacity probe, exactly as before this fix.
 
 from __future__ import annotations
 
+import threading  # noqa: F401 -- [PRES-044] unique tmp naming in save_profile
+
+import contextlib
+import errno
+import fnmatch
 import json
 import os
 import re
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -128,9 +144,25 @@ FLAG_DEFAULT = "1"
 DIR_ENV = "PRESENTATION_RESOURCE_PROFILE_DIR"
 
 #: The secrets-adjacent store: under the openclaw state root, sibling of
-#: ~/.openclaw/secrets/ -- the same ownership boundary the operator's
-#: secrets already live behind. Never inside any repository checkout.
-DEFAULT_STORE_DIR = Path.home() / ".openclaw" / "state" / "presentation"
+#: secrets/ -- the same ownership boundary the operator's secrets already
+#: live behind. Never inside any repository checkout.
+#: FIX 68/B3: the root resolves through presentation_job/oc_paths.py
+#: (state_dir() is exactly this path, platform-aware: /data/.openclaw/state/
+#: presentation on the docker VPS, ~/.openclaw/state/presentation on a Mac),
+#: degrading to the legacy Mac path when oc_paths is not deployed beside this
+#: module (a partial deploy keeps the pre-FIX-68 behavior, never a hard
+#: break). The override envs below still win, in the documented order.
+def _default_store_dir() -> Path:
+    try:
+        try:
+            from . import oc_paths as _op  # package-relative (python3 -m)
+        except ImportError:  # pragma: no cover - direct file run
+            import oc_paths as _op  # type: ignore[no-redef]
+        return Path(_op.state_dir())
+    except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+        return Path.home() / ".openclaw" / "state" / "presentation"
+
+DEFAULT_STORE_DIR = _default_store_dir()
 
 
 def flag_enabled() -> bool:
@@ -203,6 +235,20 @@ def new_profile() -> Dict[str, Any]:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+#: [PRES-044] Monotonic suffix for profile_version tokens: two saves inside
+#: the same wall-clock second must never mint the same token (the token IS
+#: the store revision -- see save_profile's expected_profile_version lock).
+_PROFILE_VERSION_SEQ = 0
+
+def _profile_version_token() -> str:
+    """A distinct-per-write optimistic-lock token: UTC timestamp (the
+    pre-existing format, kept for operator readability) plus a monotonic
+    sequence counter so two writes in one second still differ."""
+    global _PROFILE_VERSION_SEQ
+    _PROFILE_VERSION_SEQ += 1
+    return (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            + f"Z{_PROFILE_VERSION_SEQ:04d}")
 
 
 # ---------------------------------------------------------------------------
@@ -290,22 +336,191 @@ def load_profile(config_dir: Optional[Path] = None) -> Dict[str, Any]:
     return redact_record(raw)
 
 
+class StoreRevisionConflict(RuntimeError):
+    """[PRES-044] A caller's expected_profile_version no longer matches the
+    store -- another writer's update is on disk and is preserved. Raised
+    instead of silently overwriting their fields; the caller may re-read,
+    re-merge and retry."""
+
+
+class StoreWriteError(RuntimeError):
+    """[PRES-044] The profile could not be written durably (disk full,
+    un-renameable tmp, ...). The previous file is untouched and the failure
+    is VISIBLE -- never a success claim over a lost write."""
+
+
+def _store_lock(path: Path):
+    """[PRES-044] One lock per store path spanning the whole
+    read -> validate -> merge -> write transaction: a re-entrant
+    process-local mutex layered under a cross-process fcntl.flock on
+    `<name>.lock`. flock() is per-open-file-description, so two threads of
+    one process do NOT exclude each other without the mutex; a crashed
+    writer never wedges the advisory lock (the OS drops it with the
+    process)."""
+    from . import capacity as _cap_locks
+    try:
+        return _cap_locks._store_lock(path)
+    except Exception:  # noqa: BLE001 -- standalone module, no capacity
+        with threading.Lock():
+            pass
+
+        @contextlib.contextmanager
+        def _locked():
+            yield
+        return _locked
+
+
+def _atomic_write_locked(path: Path, payload: dict) -> None:
+    """[PRES-044] The durable profile write, called WITH the store lock held.
+
+    Unique tmp (pid + thread + monotonic counter), fsync of the file, atomic
+    os.replace, fsync of the directory. Any failure removes the tmp and
+    re-raises as StoreWriteError with the previous file intact -- the old
+    data stays recoverable on disk and no success is ever claimed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(
+        f".json.tmp-{os.getpid()}-{threading.get_ident()}-{time.monotonic_ns()}")
+    try:
+        with open(str(tmp), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, indent=2) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:  # pragma: no cover - best effort on exotic filesystems
+            pass
+    except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:  # pragma: no cover
+            pass
+        raise StoreWriteError(
+            f"{path}: durable profile write failed: {exc.__class__.__name__}: "
+            f"{exc}") from exc
+
+
 def save_profile(profile: Dict[str, Any],
-                 config_dir: Optional[Path] = None) -> Optional[Path]:
-    """Redact, then atomically write the profile. Returns the written path.
+                 config_dir: Optional[Path] = None,
+                 expected_profile_version: Optional[Any] = None) -> Optional[Path]:
+    """Redact, then transactionally write the profile. Returns the written path.
 
     Refused (returns None) when the flag is off -- the documented rollback
-    selects the no-persistence safe path."""
+    selects the no-persistence safe path.
+
+    [PRES-044] TRANSACTIONAL: the write is a unique tmp (pid+thread) +
+    fsync + atomic os.replace + directory fsync, all inside ONE lock
+    (`resource_profile.json.lock`, process-local mutex + cross-process
+    flock) that every load-modify-save caller must hold across its read
+    AND write -- use `with profile_transaction(config_dir) as prof:` so
+    concurrent writers for different providers serialise and BOTH persist
+    instead of last-write-wins. A write failure raises StoreWriteError with
+    the old file intact -- a visible, durable configuration error, never a
+    silent success over a lost write. Pass `expected_profile_version` (the
+    `profile_version` string read earlier) to have a stale writer REJECTED
+    with StoreRevisionConflict instead of clobbering a concurrent update.
+
+    `read of legacy state must not rewrite it` holds unchanged: load_profile
+    never writes; only save_profile does, under the lock."""
     if not flag_enabled():
         return None
     cleaned = redact_record(profile)
     cleaned["updated_at"] = _now()
     cleaned.setdefault(".schema_version", SCHEMA_VERSION)
+    # [PRES-044] ROTATE the optimistic-lock token on every successful save.
+    # The token is the store's revision (save_profile's
+    # expected_profile_version compares against it); a token that never
+    # moved would make every stale writer's expectation match forever and
+    # the conflict would never fire. Monotonic within the second so two
+    # writes inside the same wall-clock second still get distinct tokens.
+    cleaned["profile_version"] = _profile_version_token()
     path = profile_path(config_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cleaned, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    with _store_lock(path):
+        if expected_profile_version is not None:
+            current_version = None
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    current_version = raw.get("profile_version")
+            except (OSError, ValueError):
+                pass
+            if current_version != expected_profile_version:
+                raise StoreRevisionConflict(
+                    f"{path} changed under us: expected profile_version "
+                    f"{expected_profile_version!r}, found "
+                    f"{current_version!r} -- another writer's update is on "
+                    f"disk and is preserved; re-load, re-merge, retry. "
+                    f"Refusing to clobber their fields.")
+        _atomic_write_locked(path, cleaned)
+    return path
+
+
+@contextlib.contextmanager
+def profile_transaction(config_dir: Optional[Path] = None):
+    """[PRES-044] The one sanctioned read-modify-write shape for callers that
+    need read-merge-write atomicity on the profile:
+
+        with resource_profile.profile_transaction() as prof:
+            resource_profile.upsert_provider(prof, "ollama-cloud", plan_tier="$100/month")
+        # released: saved under the lock automatically
+
+    The lock (`resource_profile.json.lock`: process-local mutex +
+    cross-process flock) spans the whole read -> modify -> write, so two
+    simultaneous transactions serialise and BOTH persist. The profile dict
+    handed out is redacted-on-save as always; a StoreWriteError propagates
+    with the old file intact. Read-only consumers (load_profile, get_provider)
+    need no lock: the atomic replace guarantees they see either the old or
+    the new complete document, never a torn one."""
+    if not flag_enabled():
+        yield load_profile(config_dir)
+        return
+    path = profile_path(config_dir)
+    with _store_lock(path):
+        prof = load_profile(config_dir)
+        yield prof
+        save_profile(prof, config_dir)
+
+
+def migrate_profile_schema(profile: Dict[str, Any],
+                           target_version: int = SCHEMA_VERSION,
+                           config_dir: Optional[Path] = None) -> Path:
+    """[PRES-044] Explicit, backup-first schema migration.
+
+    A profile written by an OLDER `.schema_version` is migrated to
+    `target_version` ONLY through this function: it copies the current bytes
+    to `resource_profile.json.pre-schema<m>.bak` BEFORE writing, refuses the
+    migration when the backup cannot be written, and stamps the migration in
+    the document (`schema_migration_history`). load_profile never rewrites
+    legacy state -- the read of an old file must stay a read."""
+    path = profile_path(config_dir)
+    with _store_lock(path):
+        current_version = None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                current_version = raw.get(".schema_version")
+        except (OSError, ValueError):
+            pass
+        if current_version is None or current_version >= target_version:
+            # nothing to migrate (absent / current / newer-than-code)
+            return path
+        backup = path.with_suffix(f".json.pre-schema{current_version}.bak")
+        try:
+            backup.write_bytes(path.read_bytes())
+        except OSError as exc:
+            raise StoreWriteError(
+                f"{path}: refusing .schema_version {current_version} -> "
+                f"{target_version} migration: pre-migration backup "
+                f"{backup} could not be written: {exc}") from exc
+        history = profile.setdefault("schema_migration_history", [])
+        history.append({"from": current_version, "to": target_version,
+                        "backup": str(backup), "migrated_at": _now()})
+        profile[".schema_version"] = target_version
+        _atomic_write_locked(path, redact_record(profile))
     return path
 
 
@@ -344,20 +559,36 @@ def _normalize(provider: str, plan: str):
 def record_plan_answer(provider: str, plan: str,
                        config_dir: Optional[Path] = None) -> Dict[str, Any]:
     """THE one intake answer for the plan-tier question -- persisted ONCE,
-    then LOCKED.
+    then LOCKED. THIS PROFILE IS THE STORE.
 
     Raises ValueError on a provider/plan pair the cap table does not know --
     an unknown tier is never silently persisted as if it were measured. The
     intake's other choice, "use conservative default", is NOT an answer about
     the account and never reaches this function: pass plan=None through
-    record_conservative_default() for that. The gate-side projection is
-    written too: capacity.persist_plan_answer() writes capacity_override.json
-    (the file dispatch's detection chain reads at step (a)), so the SECOND
-    run does not merely skip the question -- it DISPATCHES against the
-    locked ceiling. The profile stays the richer store; the override stays
-    the gate's projection of it. A NO_CAP_PROVIDERS plan (deepseek-direct's
-    v4-pro/v4-flash metadata labels) records into the profile WITHOUT
-    writing an override file -- there is no ceiling left to project."""
+    record_conservative_default() for that.
+
+    F2 -- WHAT WAS REMOVED AND WHY. This function used to ALSO project the
+    answer into capacity.persist_plan_answer() -> capacity_override.json,
+    "the gate's projection of the profile". That projection was the defect.
+    The override file was step (a) of a detection chain that answered ONE
+    question for the whole box, so a client answering "ollama-cloud,
+    $100/month" pinned their DeepSeek and OpenRouter routes to 8 as well --
+    a plan answer about one account wearing the whole client's clothes. Two
+    stores encoding one fact ("the client answered once") is the same drift
+    class the governor's tier-map-vs-cap-table fix removed; the second store
+    was single-provider, and its mere existence was misread as "measured for
+    every provider". So: ONE store (this profile), ONE lock
+    (pending_questions / is_plan_locked), per provider.
+
+    The concurrency_ceiling write below STAYS -- the governor's operator
+    reserve reads it (governor._plan_tier_inflight / _plan_tier_rps), and
+    that is a per-provider read, not a global cap.
+
+    The ONE case that still needs a durable declaration is the documented
+    rollback PRESENTATION_RESOURCE_PROFILE=0: with the profile switched off
+    nothing here persists, so the answer is written through
+    capacity.declare_capacity() as a per-provider schema-2 record instead --
+    honoured only for the provider it names."""
     norm_provider, norm_plan = _normalize(provider, plan)
     if not norm_provider or not norm_plan:
         raise ValueError(
@@ -374,11 +605,18 @@ def record_plan_answer(provider: str, plan: str,
         raise ValueError(
             f"refusing to record a plan for ({norm_provider!r}, {norm_plan!r}) -- "
             f"not a cap-table row and not a NO_CAP_PROVIDERS entry; known: {known}")
-    # The gate-side projection: capacity_override.json (the file dispatch's
-    # detection chain reads at step (a)), so the SECOND run does not merely
-    # skip the question -- it DISPATCHES against the locked ceiling.
-    if structural and _capacity is not None:
-        _capacity.persist_plan_answer(norm_provider, norm_plan, config_dir)
+    # F2: NO projection into capacity_override.json. The profile below is the
+    # store; capacity.detect() reads THIS provider's locked entry directly
+    # (capacity._plan_from_profile), so the second run dispatches against the
+    # locked ceiling without a second file having to agree with this one.
+    #
+    # The single exception is the documented rollback: with the profile
+    # switched off every write below is a no-op, so the answer would have no
+    # durable home at all. Then -- and only then -- declare it, scoped to the
+    # one provider it is about.
+    if structural and _capacity is not None and not flag_enabled():
+        _capacity.declare_capacity(norm_provider, plan=norm_plan,
+                                   config_dir=config_dir)
     profile = load_profile(config_dir)
     entry = upsert_provider(
         profile, norm_provider,
@@ -747,10 +985,10 @@ RECOMMENDED_PRESENTATION_MODELS: List[Dict[str, Any]] = [
                  "slide batch at typical pricing)"),
     },
     {
-        "alias": "deepseek-v4-flash-0731",
-        "label": "DeepSeek V4 Flash (0731)",
+        "alias": "deepseek-flash",
+        "label": "DeepSeek V4.1 Flash",
         "providers": ("deepseek-direct", "openrouter", "ollama-cloud"),
-        "patterns": ("deepseek-v4-flash", "deepseekv4flash"),
+        "patterns": ("deepseek-flash", "deepseekflash", "deepseek-v4-flash", "deepseekv4flash"),
         "excludes": ("pro", "reasoner"),
         "unlocks": ("the department's workhorse authoring tier -- parallel "
                     "slide waves and QC passes run fastest and cheapest on "
@@ -777,6 +1015,445 @@ def _norm_model_id(text: Any) -> str:
     run collapsed to a single dash. 'zai/glm-5.3-flash:free', 'GLM 5.3 Flash'
     and 'glm_5_3_flash' all land on one comparable shape."""
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+
+
+# ---------------------------------------------------------------------------
+# THE CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
+#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#    forced to do anything. So as a client should be able to choose whatever
+#    they want to be their primary workhorse or authoring model."
+#
+# The plan lives HERE, in the profile, and nowhere else. It is the only store
+# every consumer already reaches: model_router.resolve_route() loads the
+# profile on every call, and the P4-PROMPT fan-out children re-resolve in a
+# SEPARATE process (parallel_prompt_worker) that inherits the env-resolved
+# profile path but has no run_dir -- a run-directory sidecar would be
+# invisible to exactly the phase that fans out widest.
+#
+# KEY NAMING (binding): redact_record() above DROPS every key matching
+# (api[-_]?key|key|token|secret|password|passwd|auth|credential|cookie|bearer)
+# on every save AND every load. "auth" is a substring of "authoring", so a slot
+# named "authoring_model" would silently vanish from the store. The slot is
+# named "workhorse"; "model_plan", "workhorse", "reasoning", "judge",
+# "thinking", "floor_waivers", "provider", "model" all survive the filter, and
+# tests/test_model_plan.py pins that with a real save/load round trip.
+# ---------------------------------------------------------------------------
+
+#: The client-choosable slots. Mirrors model_router.SLOT_CLASSES; used only as
+#: the fallback vocabulary when the router module is not importable beside this
+#: one (a partial deploy), never as a second source of truth for the mapping.
+MODEL_PLAN_SLOTS: tuple = ("workhorse", "reasoning", "judge")
+
+#: The thinking-level vocabulary the intake offers. Recorded now; wiring it
+#: into per-call reasoning_effort is deliberately NOT part of this change.
+THINKING_LEVELS: tuple = ("max", "high", "medium", "low", "off")
+
+
+def _model_router_module():
+    """The router module, or None. Its SLOT_CLASSES/floor_verdict are the one
+    definition of what a slot governs and what a class demands; this module
+    never re-implements them."""
+    try:
+        from . import model_router as _mr  # package-relative
+        return _mr
+    except ImportError:  # pragma: no cover - direct file run
+        try:
+            import model_router as _mr  # type: ignore[no-redef]
+            return _mr
+        except ImportError:
+            return None
+
+
+def parse_model_spec(text: Any) -> Optional[Dict[str, str]]:
+    """Parse the intake's `model@provider` vocabulary into {provider, model}.
+
+    Returns None for an empty answer (an omitted slot keeps the department
+    default -- silence is not a declaration). Raises ValueError on anything
+    that is not exactly one model id, one '@' and one provider id, naming the
+    shape instead of guessing which half is which. Trailing separators are
+    tolerated because the merged-turn label parser hands values through with
+    the client's own punctuation attached ("...@deepseek-direct; qc: ...").
+
+    The provider is folded through the ONE provider-id canon
+    (model_router._norm_provider -> capacity.normalize_provider), so
+    `ollama_cloud`, `Ollama Cloud` and `ollama-cloud` are one provider and
+    `deepseek` resolves to `deepseek-direct`. Folding a name is never evidence
+    the provider exists -- record_model_plan checks that separately."""
+    raw = str(text or "").strip().strip(";,.").strip()
+    if not raw:
+        return None
+    if raw.count("@") != 1:
+        raise ValueError(
+            f"model choice {raw!r} is not in the required 'model@provider' "
+            f"shape (exactly one '@'), for example "
+            f"'deepseek-flash@deepseek-direct' (legacy deepseek-v4-flash still accepted via the catalog compat shim)")
+    model, provider = raw.rsplit("@", 1)
+    model = model.strip().strip(";,.").strip()
+    provider = provider.strip().strip(";,.").strip()
+    if not model or not provider:
+        raise ValueError(
+            f"model choice {raw!r} is missing its "
+            f"{'model' if not model else 'provider'} half; the shape is "
+            f"'model@provider', for example 'glm-5.3-flash@ollama-cloud'")
+    mr = _model_router_module()
+    if mr is not None:
+        provider = mr._norm_provider(provider) or provider
+    elif _capacity is not None:
+        provider = _capacity.normalize_provider(provider) or provider
+    return {"provider": provider, "model": model}
+
+
+def _wired_match(model: str, wired: List[Any]) -> bool:
+    """Is `model` in this provider's wired inventory? Same comparison
+    model_router._eligible uses: exact match on the folded shape, plus
+    fnmatch either way so a probe's explicit family wildcard is honored.
+    Folding spelling drift is never a family/prefix inference."""
+    nm = _norm_model_id(model)
+    for w in wired:
+        ws = str(w)
+        if nm and nm == _norm_model_id(ws):
+            return True
+        if fnmatch.fnmatch(model, ws) or fnmatch.fnmatch(ws, model):
+            return True
+    return False
+
+
+def model_plan(profile: Optional[Dict[str, Any]] = None,
+               config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """The client's declared model plan, or {} when none is declared."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    plan = (prof or {}).get("model_plan")
+    return plan if isinstance(plan, dict) else {}
+
+
+def _adopt_declared_providers(profile: Dict[str, Any],
+                              declared: Dict[str, Dict[str, str]]) -> List[str]:
+    """F17: adopt a provider THIS BUILD has never heard of onto the profile
+    when the client NAMED it in their model plan. Returns the ids adopted.
+
+    WHY. `model_router._eligible` routes only to a provider the profile
+    CARRIES, and nothing but the capacity/provider probe ever put one there
+    -- and that probe only knows the handful of providers it was written for
+    (openrouter, ollama-cloud, agnes, deepseek, kie). So adopting a model on
+    any other provider required a code change, which is exactly what the
+    standing operator ruling forbids: nobody is forced onto a model, and a
+    new one must work WITHOUT one. For a provider no probe can discover, the
+    client naming {provider, model} IS the ownership evidence.
+
+    NOT a relaxation of the gates that matter -- all three still stand:
+      * a provider this build DOES know (a cap-table id, or a token the table
+        deliberately refuses such as a local Ollama) is never adopted here.
+        The probe can find those, so the profile's silence about one is
+        evidence, and the existing "does not carry provider X" refusal below
+        still fires -- a typo can never mint a provider;
+      * a plan on a profile with NO providers at all is still refused (the
+        empty-profile check runs after this, on the adopted result);
+      * `_eligible` still requires a RESOLVABLE, plausible key (FIX 114)
+        before anything routes to an adopted provider, so one with no
+        credential parks with the key gate named, exactly as before.
+
+    The entry records WHERE the evidence came from (`client_declared`,
+    `detection_source: client-declaration`) so nothing downstream can mistake
+    a declaration for a probe reading."""
+    adopted: List[str] = []
+    for slot, spec in sorted(declared.items()):
+        raw = str(spec.get("provider") or "")
+        if not raw:
+            continue
+        if _capacity is not None and _capacity.is_known_provider(raw):
+            continue  # the probe owns this one -- its absence is evidence
+        token = raw
+        if _capacity is not None:
+            token = _capacity.canonical_provider_token(raw) or raw
+        spec["provider"] = token  # plan and profile key can never disagree
+        existing = profile.get("providers")
+        if isinstance(existing, dict) and token in existing:
+            continue
+        entry = upsert_provider(
+            profile, token,
+            presence=True,
+            client_declared=True,
+            declared_in="model_plan",
+            declared_slot=slot,
+            declared_at=_now(),
+            detection_source="client-declaration",
+        )
+        entry.setdefault("provider", token)
+        adopted.append(token)
+    return adopted
+
+
+def record_model_plan(plan: Dict[str, Any], *,
+                      source: str = "interview",
+                      config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Persist ONE client model plan. Validates BEFORE anything is written.
+
+    `plan` accepts each slot as {"provider","model"}, as a "model@provider"
+    string, or as None/"" (omitted -- keeps the department default), plus
+    optional "thinking" and "floor_waivers".
+
+    REFUSES (ValueError, nothing written) when:
+      * the profile carries no providers at all -- a plan on a profile with no
+        providers is INVISIBLE, not merely unused: resolve_route reports
+        profile_state "absent" for an empty providers map and the dispatcher
+        falls back to its pre-router DeepSeek default, so the client would be
+        told "recorded" and then silently overridden on every call. The
+        message names the capacity probe that fixes it;
+      * the declared provider is one this build KNOWS (a cap-table id) and
+        the profile does not carry it -- the probe can find those, so its
+        silence is evidence (the message names the providers that DO exist).
+        F17: a provider this build has NEVER heard of is ADOPTED instead of
+        refused (see _adopt_declared_providers) -- no probe could ever have
+        found it, so refusing would mean no new provider without a code
+        change. The FIX 114 key gate in _eligible still stands over it;
+      * the provider HAS a wired inventory and the declared model is not in it
+        (the message names the inventory it was checked against);
+      * the declared model's MODALITY cannot do the slot's job (a vision or
+        image model in a text slot). Modality is physics, not preference, and
+        is the one floor no waiver crosses;
+      * "thinking" is outside THINKING_LEVELS.
+
+    HONOURS, with a recorded waiver (Trevor: not forced), a model whose
+    CONTEXT class falls short of a class floor -- e.g. a standard-window
+    model named explicitly for the reasoning slot. The class is appended to
+    floor_waivers, the reason is written into the audit row, and
+    model_router.resolve_route stamps floor="waived" on the decision so the
+    launcher banner and the client report both say it out loud.
+
+    A later, different answer UPDATES the plan and appends another audit row:
+    a client changing their workhorse never needs an operator. UPDATE means
+    exactly that -- an answer that names only one slot (the intake asks each
+    subfield in its own turn) overlays that slot and PRESERVES every other
+    declared slot already in the store. It never nulls a slot this answer did
+    not mention; see the PRESERVE-BEFORE-OVERLAY note at the write below."""
+    if not flag_enabled():
+        return load_profile(config_dir)
+
+    profile = load_profile(config_dir)
+
+    mr = _model_router_module()
+    slot_classes = getattr(mr, "SLOT_CLASSES", None) if mr is not None else None
+    if not isinstance(slot_classes, dict):
+        slot_classes = {s: () for s in MODEL_PLAN_SLOTS}
+
+    declared: Dict[str, Dict[str, str]] = {}
+    for slot in slot_classes:
+        raw = (plan or {}).get(slot)
+        if raw is None or raw == "":
+            continue
+        if isinstance(raw, dict):
+            spec = parse_model_spec(f"{raw.get('model', '')}@{raw.get('provider', '')}") \
+                if raw.get("model") and raw.get("provider") else None
+            if spec is None:
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: a declaration needs "
+                    f"BOTH a model and a provider (got {raw!r})")
+        else:
+            spec = parse_model_spec(raw)
+        if spec is None:
+            continue
+        # Saved-config compat: an older stored Flash id folds to the live id
+        # at the door, so a client plan saved before the V4.1 rename validates
+        # against the CURRENT probe inventory instead of breaking. The stored
+        # plan keeps what the client declared; only the check folds.
+        try:
+            from . import model_catalog as _mc_compat  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            try:
+                import model_catalog as _mc_compat  # type: ignore[no-redef]
+            except ImportError:
+                _mc_compat = None  # type: ignore[assignment]
+        if _mc_compat is not None:
+            fold = getattr(_mc_compat, "fold_legacy_flash_model_id", None)
+            if callable(fold):
+                try:
+                    spec = dict(spec)
+                    spec["model"] = fold(spec.get("model"))
+                except Exception:  # noqa: BLE001 -- a fold failure never records
+                    pass
+        declared[slot] = spec
+
+    unknown_slots = [s for s in (plan or {})
+                     if s not in slot_classes
+                     and s not in ("thinking", "floor_waivers", "source",
+                                   "declared_at", "openrouter_model")]
+    if unknown_slots:
+        raise ValueError(
+            f"refusing to record a model plan: unknown slot(s) "
+            f"{sorted(unknown_slots)}; the client-choosable slots are "
+            f"{sorted(slot_classes)}")
+
+    # F17: adopt any provider this build has never heard of that the client
+    # NAMED here, BEFORE the provider checks below -- otherwise the only way
+    # to reach a new provider is a code change (see the helper's docstring).
+    adopted = _adopt_declared_providers(profile, declared)
+
+    providers = profile.get("providers")
+    providers = providers if isinstance(providers, dict) else {}
+    if not providers:
+        raise ValueError(
+            "refusing to record a model plan: this profile carries NO "
+            "providers, and a plan on a provider-less profile is invisible -- "
+            "model_router.resolve_route reports profile_state 'absent' and the "
+            "dispatcher falls back to its default model on every call. Run the "
+            "capacity/provider probe first "
+            "('python3 -m presentation_job --capacity'), then record the plan.")
+
+    thinking = (plan or {}).get("thinking")
+    thinking = str(thinking).strip().lower() if thinking not in (None, "") else None
+    # FIX 61.2: the client's OpenRouter model pick rides the plan.
+    openrouter_model = (plan or {}).get("openrouter_model")
+    openrouter_model = str(openrouter_model).strip() if openrouter_model not in (None, "") else None
+    if thinking is not None and thinking not in THINKING_LEVELS:
+        raise ValueError(
+            f"refusing to record thinking level {thinking!r}: the vocabulary is "
+            f"{list(THINKING_LEVELS)}")
+
+    # --- validation, all of it, before a single byte is written ------------
+    waivers = {str(w).strip() for w in ((plan or {}).get("floor_waivers") or [])
+               if str(w).strip()}
+    waiver_reasons: List[Dict[str, str]] = []
+    for slot, spec in declared.items():
+        provider, model = spec["provider"], spec["model"]
+        entry = providers.get(provider)
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"refusing to record the {slot!r} slot: this profile does not "
+                f"carry provider {provider!r}. Providers on this profile: "
+                f"{sorted(providers)}. Run the capacity/provider probe first, "
+                f"or name one of those.")
+        if entry.get("consented") is False:
+            raise ValueError(
+                f"refusing to record the {slot!r} slot: provider {provider!r} "
+                f"is recorded as NOT consented on this profile.")
+        alias_def = None
+        if mr is not None:
+            alias_def, _src = mr.declared_alias_def(spec)
+        wired = entry.get("wired_models")
+        if isinstance(wired, list) and wired:
+            # Check the declared id AND the id this provider's endpoint would
+            # actually be sent. A client may legitimately name a catalog alias
+            # ("glm-flash") whose served id on openrouter is
+            # "z-ai/glm-5.3-flash" -- that is the id the wired inventory holds,
+            # and the id _eligible() will judge at route time. Comparing only
+            # the alias would refuse a declaration that routes perfectly.
+            served = (mr._served_model(alias_def, provider)
+                      if (mr is not None and alias_def) else "")
+            # Saved-config compat: the live Flash id is accepted when the
+            # inventory still carries the older id, and vice versa -- a probe
+            # inventory taken before the V4.1 rename must not refuse the live
+            # id the router now sends, and an older saved plan must not break
+            # against a refreshed inventory. Both spellings name one model.
+            compat_ids = [model]
+            if _mc_compat is not None:
+                fold = getattr(_mc_compat, "fold_legacy_flash_model_id", None)
+                legacy = getattr(_mc_compat, "LEGACY_FLASH_MODEL_IDS", ())
+                if callable(fold):
+                    try:
+                        compat_ids.append(fold(model))
+                    except Exception:  # noqa: BLE001 -- fold never validates
+                        pass
+                try:
+                    if model == fold(model) if callable(fold) else False:
+                        compat_ids.extend(str(m) for m in (legacy or ()))
+                except Exception:  # noqa: BLE001 -- compat never validates
+                    pass
+            if not any(_wired_match(m, wired) for m in compat_ids) and not (
+                    served and _wired_match(served, wired)):
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: model {model!r} is "
+                    f"not in {provider}'s wired inventory"
+                    + (f" (nor its served id {served!r})"
+                       if served and served != model else "")
+                    + f". Checked against "
+                    f"{sorted(str(w) for w in wired)} ({len(wired)} wired).")
+        # Floors. Modality is refused; context is honoured with a waiver.
+        if mr is None or not alias_def:
+            continue
+        for capability in slot_classes.get(slot, ()):  # noqa: B007
+            verdict = mr.floor_verdict(alias_def, capability)
+            if verdict["ok"]:
+                continue
+            if verdict["modality"] != verdict["required"].get("modality"):
+                raise ValueError(
+                    f"refusing to record the {slot!r} slot: {model!r} is a "
+                    f"{verdict['modality']} model and capability "
+                    f"{capability!r} requires a "
+                    f"{verdict['required'].get('modality')} model. Modality is "
+                    f"a capability, not a preference -- no waiver crosses it.")
+            # Context-class shortfall on an EXPLICITLY named slot: honour it.
+            waivers.add(capability)
+            waiver_reasons.append({"capability": capability, "slot": slot,
+                                   "detail": verdict["reason"]})
+
+    # --- write --------------------------------------------------------------
+    # PRESERVE-BEFORE-OVERLAY (PD-TEST-064). A model plan arrives one subfield
+    # at a time -- the intake asks `workhorse_model`, `reasoning_model`,
+    # `qc_model` and `thinking_mode` as SEPARATE answers, and the real driver
+    # calls here once per answer -- so most calls declare exactly ONE slot.
+    #
+    # This block used to be built from scratch with every undeclared slot
+    # pinned to None, which made the two halves of this function disagree: the
+    # PARSE loop above skips an omitted slot ("an omitted slot keeps the
+    # department default -- silence is not a declaration", parse_model_spec),
+    # while the WRITE loop below nulled that same slot IN THE STORE. The result
+    # was that answering the judge subfield one second after declaring a
+    # workhorse ERASED the workhorse: `model_plan.workhorse` went null, the
+    # Command Center operator-contract re-dispatch path then failed closed
+    # against the profile's workhorse slot (intake_bridge.
+    # _verified_operator_model_plan), and the client's declared authoring
+    # route stopped driving model selection.
+    #
+    # Silence must not ERASE a declaration either, so the block now starts from
+    # what is already stored and this answer overlays only the slots it
+    # actually declared. A first-ever declaration is unaffected: with no prior
+    # block the result is byte-for-byte the document the old code wrote.
+    prior_plan = profile.get("model_plan")
+    prior_plan = prior_plan if isinstance(prior_plan, dict) else {}
+    block: Dict[str, Any] = dict(prior_plan)
+    for slot in slot_classes:
+        block.setdefault(slot, None)
+    # An omitted slot is carried over, so its floor waivers must be carried too:
+    # model_router.client_plan_for() honours a declared model only while its
+    # capability appears in THIS list (`waived`), so dropping them would
+    # silently un-honour a declaration this answer never touched. Waivers
+    # belonging to a slot re-declared HERE are dropped -- they are recomputed
+    # below against the new declaration.
+    redeclared_capabilities = {capability for slot in declared
+                               for capability in slot_classes.get(slot, ())}
+    prior_waivers = {str(w).strip() for w in (prior_plan.get("floor_waivers") or [])
+                     if str(w).strip()}
+    waivers |= {w for w in prior_waivers if w not in redeclared_capabilities}
+    # Same rule for the recorded thinking level: "off" is a real, explicit
+    # choice in THINKING_LEVELS, so only an OMITTED answer leaves the stored
+    # one standing.
+    block["thinking"] = thinking if thinking is not None else block.get("thinking")
+    # FIX 61.2: record the OpenRouter model alongside thinking.
+    if openrouter_model is not None:
+        block["openrouter_model"] = openrouter_model
+    block["floor_waivers"] = sorted(waivers)
+    block["source"] = str(source or "interview")
+    block["declared_at"] = _now()
+    for slot, spec in declared.items():
+        block[slot] = dict(spec)
+    profile["model_plan"] = block
+
+    interview = profile.setdefault("interview", {})
+    log = interview.setdefault("model_plan", [])
+    log.append({
+        "declared": {s: dict(v) for s, v in declared.items()},
+        "thinking": thinking,
+        "floor_waivers": sorted(waivers),
+        "waiver_reasons": waiver_reasons,
+        # F17: providers this build had never heard of, adopted from THIS
+        # declaration. Named in the audit row so an adopted provider is never
+        # indistinguishable from one a probe actually found.
+        "adopted_providers": adopted,
+        "source": str(source or "interview"),
+        "answered_at": _now(),
+    })
+    save_profile(profile, config_dir)
+    return profile
 
 
 def _catalog_alias_resolver(catalog: Any):
@@ -1166,3 +1843,161 @@ def open_gap_records(profile: Optional[Dict[str, Any]] = None,
         "additions_pending_probe": [r for r in _addition_rows(prof)
                                     if r.get("reprobe_required")],
     }
+
+
+# ---------------------------------------------------------------------------
+# PRES-015 -- profile reconciliation: DECLARED facts vs DERIVED facts.
+# Spec step 4: "version client declarations, entitlements, reserves and
+# derived provider facts separately; reconcile only derived facts."
+#
+# The classes, on one provider entry:
+#   DECLARED (client/operator statements -- reconciliation NEVER touches):
+#       provider, plan_tier, plan_known, consented, locked, answered_at,
+#       locked_choice, ceiling_source in {"interview", "declared",
+#       "conservative-default"}, max_concurrent (the explicit allocation),
+#       model_plan, creative_prefs, notes, wired_models.
+#   DERIVED (machine projections of the current cap table / probes --
+#       reconciliation may refresh these, and ONLY these):
+#       concurrency_ceiling when ceiling_source is "cap-table" or "probe"
+#       (derived FROM plan_tier by CAP_TABLE), plus the reconciliation
+#       stamp itself.
+# A tier change that used to drop an explicit max_concurrent (the PRES-044
+# defect class) cannot happen here: max_concurrent is a DECLARED field and
+# the derived write below merges around it.
+# ---------------------------------------------------------------------------
+
+#: Entry keys whose values are CLIENT/OPERATOR statements. Reconciliation
+#: never writes them; unknown root keys and unknown provider keys are
+#: preserved the same way (the merge is additive, never a rebuild).
+_DECLARED_ENTRY_KEYS = frozenset({
+    "provider", "plan_tier", "plan_known", "consented", "locked",
+    "locked_choice", "answered_at", "max_concurrent",
+    "ceiling_source_declared", "model_plan", "creative_prefs", "notes",
+})
+
+#: ceiling_source values that mark concurrency_ceiling as DERIVED (safe to
+#: refresh from the current cap table). "interview"/"declared"/
+#: "conservative-default" ceilings are statements -- never overwritten.
+_DERIVED_CEILING_SOURCES = frozenset({"cap-table", "probe"})
+
+#: The reconciliation marker stamped on the entry (not a decision field:
+#: diagnostics only).
+RECONCILE_SOURCE = "reconcile"
+
+
+def _entry_declared_keys(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """The subset of one provider entry that reconciliation must preserve
+    verbatim -- every key that is NOT a known derived projection. Unknown
+    keys (operator metadata, future fields) land here too: preservation is
+    the default, overwriting needs a reason."""
+    derived = {"ceiling_source", "concurrency_ceiling", "detected"}
+    out = {}
+    for key, value in entry.items():
+        if key in derived and key in ("ceiling_source",):
+            # ceiling_source IS the classifier -- keep it (it says whether the
+            # ceiling beside it is a statement or a projection) but do not
+            # count it as an untouchable declaration when it marks a derived
+            # ceiling.
+            if value in _DERIVED_CEILING_SOURCES:
+                continue
+            out[key] = value
+        elif key in derived:
+            continue
+        else:
+            out[key] = value
+    return out
+
+
+def reconcile_profile(declarations: Dict[str, Any],
+                      config_dir: Optional[Path] = None,
+                      *,
+                      profile: Optional[Dict[str, Any]] = None,
+                      ) -> Dict[str, Any]:
+    """Fold DERIVED provider facts (cap-table ceilings for the CURRENT
+    plan_tier) into the store WITHOUT touching any declared field.
+
+    `declarations` is the one-revision client picture reconcile callers
+    hold (the same shape load_profile() returns: {"providers": {...}}).
+    Only entries whose ceiling_source marks the ceiling DERIVED are
+    refreshed, and only to what the CURRENT CAP_TABLE says for the entry's
+    CURRENT (provider, plan_tier) -- a tier change flows through, an
+    explicit max_concurrent does not.
+
+    Idempotent by construction: running it twice over the same inputs
+    yields the same document (the second run refreshes the same derived
+    values to the same numbers and re-stamps reconcile_at). Explicit
+    reserve/allocation fields (`max_concurrent`) and unknown fields
+    (`operator_notes`, future keys) survive untouched -- the PRES-044
+    acceptance, asserted by the PRES-015 tests. Never raises on a broken
+    store: a read error degrades to "reconciled nothing" with the reason.
+
+    With `profile` given, THAT dict is reconciled and returned WITHOUT
+    persisting (the pure half a caller with its own transaction uses);
+    without it, the on-disk store is read, reconciled and saved under the
+    store's own process lock (the PRES-044 single-lock contract)."""
+    try:
+        base = profile if profile is not None else load_profile(config_dir)
+    except Exception as exc:  # noqa: BLE001 -- a broken store never blocks
+        return {"reconciled": False, "reason": f"load failed: "
+                f"{exc.__class__.__name__}: {exc}"}
+    if not isinstance(base, dict) or base.get("error"):
+        return {"reconciled": False,
+                "reason": str(base.get("error") or "profile-not-a-dict")}
+    if not flag_enabled() and profile is None:
+        return {"reconciled": False, "reason": "flag-disabled"}
+    changed: List[str] = []
+    providers = base.setdefault("providers", {})
+    decl_providers = (declarations or {}).get("providers") or {}
+    for provider_id, decl in decl_providers.items():
+        if not isinstance(decl, dict):
+            continue
+        entry = providers.get(provider_id)
+        if not isinstance(entry, dict):
+            # A declared provider the store has never heard of is NOT
+            # invented here: reconciliation folds derived facts INTO
+            # existing entries, it does not create clients.
+            continue
+        # Preserve EVERY declared/unknown key verbatim.
+        preserved = _entry_declared_keys(entry)
+        source = entry.get("ceiling_source")
+        if source not in _DERIVED_CEILING_SOURCES:
+            # The ceiling on this entry is a statement (or there is none):
+            # nothing derived to refresh. Preserve the entry whole.
+            continue
+        norm_provider = (_capacity.normalize_provider(provider_id)
+                         if _capacity is not None else provider_id)
+        norm_plan = (decl.get("plan_tier") or entry.get("plan_tier"))
+        if _capacity is not None and norm_provider:
+            norm_plan = _capacity.normalize_plan(norm_plan, norm_provider)
+        if _capacity is not None and norm_provider and norm_plan \
+                and (norm_provider, norm_plan) in _capacity.CAP_TABLE:
+            derived_ceiling = _capacity.CAP_TABLE[(norm_provider, norm_plan)]
+            if entry.get("concurrency_ceiling") != derived_ceiling:
+                entry["concurrency_ceiling"] = derived_ceiling
+                changed.append(f"{provider_id}: ceiling -> {derived_ceiling}")
+        # ceiling_source stays "cap-table"; the entry keeps every declared
+        # field (plan_tier included) from BEFORE the fold.
+        for key, value in preserved.items():
+            entry.setdefault(key, value)
+        entry[RECONCILE_SOURCE] = {
+            "reconciled_at": _now(),
+            "changed": bool(provider_id in changed
+                            or any(c.startswith(f"{provider_id}:") for c in changed)),
+        }
+    if changed:
+        base["reconcile_log"] = list(base.get("reconcile_log") or [])[-7:] + [
+            {"at": _now(), "changes": changed}]
+    if profile is not None:
+        return {"reconciled": True, "persisted": False,
+                "changes": changed, "profile": base}
+    if not changed:
+        # Nothing moved: still stamp diagnostics on the in-memory copy, but
+        # skip the write (an idempotent no-op does not dirty the store).
+        return {"reconciled": True, "persisted": False, "changes": []}
+    try:
+        save_profile(base, config_dir)
+    except Exception as exc:  # noqa: BLE001 -- a failed write is visible, never silent
+        return {"reconciled": True, "persisted": False,
+                "write_error": f"{exc.__class__.__name__}: {exc}",
+                "changes": changed}
+    return {"reconciled": True, "persisted": True, "changes": changed}

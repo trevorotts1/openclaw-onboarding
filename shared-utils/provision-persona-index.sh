@@ -345,6 +345,26 @@ except Exception:
 
     mkdir -p "$COACHING_DB_DIR"
 
+    # ── LOCAL-MODE GUARD ─────────────────────────────────────────────────────
+    # A box opted into free local Ollama embeddings (embedding_engine.py
+    # --reembed-local) carries provider='ollama' rows. The prebuilt asset is
+    # Gemini: downloading it would replace vectors this box queries locally with
+    # ones it cannot use. KEEP the index. Ceiling: personas added by a newer
+    # asset do not reach this box until an operator moves the index aside,
+    # re-provisions, and re-runs --reembed-local.
+    if [ -f "$COACHING_DB" ]; then
+        local _PIDX_LOCAL
+        _PIDX_LOCAL="$(python3 -c 'import sqlite3,sys
+try:
+    c=sqlite3.connect(sys.argv[1]); print(c.execute("SELECT COUNT(*) FROM embeddings WHERE provider = \"ollama\"").fetchone()[0]); c.close()
+except Exception:
+    print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
+        if [ "${_PIDX_LOCAL:-0}" -gt 0 ] 2>/dev/null; then
+            _pidx_skip_warn "persona index is in local Ollama mode ($_PIDX_LOCAL provider=ollama rows) — KEEPING it; the Gemini prebuilt asset (release=$_PIDX_TAG) is not installed over it. To take personas from a newer asset: move gemini-index.sqlite aside, re-provision, then run python3 shared-utils/embedding_engine.py --reembed-local"
+            return 0
+        fi
+    fi
+
     # ── Canonical idempotency gate ───────────────────────────────────────────
     local _COLS_OK=1 _CHUNK_OK=0 _DIR_OK=0 _SENT_OK=0 _COVERAGE_OK=0
     local _INSTALLED_CHUNKS="n/a" _INSTALLED_TAG="" _PERSONA_DIR_COUNT=0
@@ -388,20 +408,33 @@ try:
 except Exception:
     print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
 
-        # Raw DISTINCT embedded-persona count (persona slug = the dir one level
-        # above each chunk's file_path, per embedding_engine.get_persona_name).
-        # Scoped to PERSONA rows only ('%/personas/%', the same filter
-        # embedding_engine uses to identify persona chunks) so non-persona rows
-        # shipped in the asset (e.g. hormozi_leads_rows) can NEVER inflate the
-        # count and spuriously flip the local-delta decision.
+        # Raw DISTINCT embedded-persona count — COUNT(DISTINCT persona_id),
+        # the same column build-and-publish.sh stamps embedded_persona_count
+        # from and the same thing the manifest's persona_count refers to.
+        # FAIL-SAFE DIRECTION: when in doubt this gate prefers RE-DOWNLOAD
+        # over skip. A false "already canonical" silently ships stale data to
+        # the fleet (live-proven: a mis-constructed index printed "already
+        # canonical" and self-stamped its sentinel, never re-downloading);
+        # a false "needs download" costs one sha256-verified download.
+        # NULL/empty persona_id rows NEVER count as coverage — that IS the
+        # stale state (rows present, persona_ids untagged/under-counted).
+        # Falls back to the file_path-dir derivation ONLY when the
+        # persona_id column does not exist (legacy pre-section index), so
+        # old boxes still converge instead of error-looping.
         _INDEX_PERSONAS="$(python3 -c 'import sqlite3,sys,os
 try:
     c=sqlite3.connect(sys.argv[1])
-    seen=set()
-    for (fp,) in c.execute("SELECT DISTINCT file_path FROM embeddings WHERE file_path LIKE ?", ("%/personas/%",)):
-        if not fp: continue
-        seen.add(os.path.basename(os.path.dirname(fp)))
-    c.close(); print(len(seen))
+    cols=[r[1] for r in c.execute("PRAGMA table_info(embeddings)").fetchall()]
+    n=0
+    if "persona_id" in cols:
+        n=c.execute("SELECT COUNT(DISTINCT persona_id) FROM embeddings WHERE persona_id IS NOT NULL AND TRIM(persona_id) != \"\"").fetchone()[0]
+    else:
+        seen=set()
+        for (fp,) in c.execute("SELECT DISTINCT file_path FROM embeddings WHERE file_path LIKE ?", ("%/personas/%",)):
+            if not fp: continue
+            seen.add(os.path.basename(os.path.dirname(fp)))
+        n=len(seen)
+    c.close(); print(n)
 except Exception:
     print(0)' "$COACHING_DB" 2>/dev/null || echo 0)"
 

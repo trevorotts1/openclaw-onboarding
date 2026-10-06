@@ -20,7 +20,7 @@
 #       (>=3072 bytes/role, the same LIBRARY_FILL_MIN_BYTES floor
 #       create_role_workspaces.py itself enforces -- never a stub), department-
 #       floor.py reports floor_met=True afterward, and the two PRE-EXISTING
-#       depts are BYTE-IDENTICAL before/after (checksum-proven additive-only).
+#       files remain BYTE-IDENTICAL while incomplete departments gain real roles.
 #   T2. IDEMPOTENT RE-RUN: running --apply again on an already-complete board
 #       is a byte-identical no-op ("none -- floor already met").
 #   T3. DECLINES RESPECTED: a build-state decline for two depts survives
@@ -93,8 +93,15 @@ mkdir -p "$DD1/sales/some-role" "$DD1/engineering/some-role" \
          "$DD1/marketing/some-role" "$DD1/research/some-role" "$DD1/crm/some-role"
 echo "PRE-EXISTING sales marker -- must survive untouched" > "$DD1/sales/MARKER.txt"
 echo "PRE-EXISTING engineering marker -- must survive untouched" > "$DD1/engineering/MARKER.txt"
-BEFORE_SALES_SUM="$(checksum_tree "$DD1/sales")"
-BEFORE_ENG_SUM="$(checksum_tree "$DD1/engineering")"
+# Snapshot every owner-authored file; additive repair may create missing roles.
+echo "Owner process note -- preserve exactly" > "$DD1/sales/some-role/how-to.md"
+echo "Owner memory -- preserve exactly" > "$DD1/engineering/some-role/MEMORY.md"
+python3 - "$DD1" "$TMP/original-files.json" <<'PRESERVE'
+import hashlib,json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+json.dump({str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for dept in ('sales','engineering') for p in (root/dept).rglob('*') if p.is_file()},open(sys.argv[2],'w'))
+PRESERVE
 
 python3 "$MATERIALIZE" --departments-dir "$DD1" --build-state-file "$NEUTRAL_BS" --apply --json > "$TMP/t1-result.json" 2>"$TMP/t1-stderr.log"
 T1_RC=$?
@@ -106,25 +113,32 @@ else
   bad "T1a: expected floor_met=True after --apply, got $AFTER_MET (see $TMP/t1-stderr.log)"
 fi
 
-# Additive-only: every byte of the two PRE-EXISTING depts is untouched.
+# Additive-only: every pre-existing file survives; missing roles may be added.
 if [ -f "$DD1/sales/MARKER.txt" ] && grep -q "PRE-EXISTING sales marker" "$DD1/sales/MARKER.txt" \
    && [ -f "$DD1/engineering/MARKER.txt" ] && grep -q "PRE-EXISTING engineering marker" "$DD1/engineering/MARKER.txt"; then
   ok "T1b: pre-existing sales/ + engineering/ marker files survived --apply untouched"
 else
   bad "T1b: a pre-existing marker file was lost or modified -- additive-only contract broken"
 fi
-AFTER_SALES_SUM="$(checksum_tree "$DD1/sales")"
-AFTER_ENG_SUM="$(checksum_tree "$DD1/engineering")"
-if [ "$BEFORE_SALES_SUM" = "$AFTER_SALES_SUM" ]; then
-  ok "T1c: sales/ (pre-existing, flat-.md library dept) is byte-identical before/after --apply"
-else
-  bad "T1c: sales/ subtree changed -- a pre-existing dept was touched (additive-only contract broken)"
-fi
-if [ "$BEFORE_ENG_SUM" = "$AFTER_ENG_SUM" ]; then
-  ok "T1c2: engineering/ (pre-existing, subdir-layout library dept) is byte-identical before/after --apply"
-else
-  bad "T1c2: engineering/ subtree changed -- a pre-existing dept was touched (additive-only contract broken)"
-fi
+for dept in sales engineering; do
+  if python3 - "$DD1" "$TMP/original-files.json" "$dept" <<'PRESERVE'
+import hashlib,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);original=json.load(open(sys.argv[2]));dept=sys.argv[3]
+for name,digest in original.items():
+    if name.startswith(dept+'/'):
+        p=root/name
+        assert p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==digest, name
+roles=[p for p in (root/dept).iterdir() if p.is_dir() and p.name[:2].isdigit()]
+assert roles, 'partial department must gain actual canonical role directories'
+assert any((p/'IDENTITY.md').is_file() and (p/'SOUL.md').is_file() and (p/'how-to.md').is_file() for p in roles), 'repair must create runtime artifacts'
+PRESERVE
+  then
+    ok "T1c: $dept original files unchanged and missing runtime roles repaired additively"
+  else
+    bad "T1c: $dept owner files changed or partial department was not repaired"
+  fi
+done
 
 # Real content, not stubs: spot-check the flat-.md-layout materialization.
 FLAT_HOWTO="$(find "$DD1/billing-finance" -name how-to.md 2>/dev/null | head -1)"

@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [7.0.0] - 2026-09-03 — safe contact upsert policy: generic add/save defaults to upsert
+
+### Changed
+- **Contact write decision table in INSTRUCTIONS.md.** Generic "add/save this
+  person" routes to POST /contacts/upsert (match keys + supplied fields only);
+  POST /contacts/ is labeled explicit-new-record only; known contactId reads
+  first then PUTs supplied fields. Safe payload rule (no empty/null/blank, no
+  tags array in write bodies) and verify-after-write (GET read-back; never
+  re-fire the write to check) documented.
+- **`references/contacts.md` routing header + upsert-first endpoint notes** and
+  **`references/modules.md`** endpoint labels match the same policy.
+  "Contact Created" workflow triggers untouched (event names, not instructions).
+
 ## [v6.9.0] - 2026-08-03 — five-version model, reversals after independent web validation
 
 ### Reverted — two "corrections" from v6.7.0 that were themselves WRONG
@@ -281,3 +294,7 @@ Skill 36's router now routes Tier 0 (Convert and Flow CLI, skill 44) first. Skil
 - `references/modules.md` medias block updated: key endpoint line + deep reference pointer to medias.md added.
 
 ## [v6.5.6] - prior
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

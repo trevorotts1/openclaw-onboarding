@@ -48,6 +48,11 @@ on:
       - "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
       - "23-ai-workforce-blueprint/department-naming-map.json"
       - "tests/unit/qc-departments-tree-resolution.test.sh"
+      - "shared-utils/detect_platform.py"
+      - "23-ai-workforce-blueprint/lib/detect_platform.py"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh"
+      - "tests/unit/test_company_root_resolution.py"
       - ".github/workflows/qc-departments-tree-guard.yml"
   pull_request:
     branches: [main]
@@ -61,6 +66,11 @@ on:
       - "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
       - "23-ai-workforce-blueprint/department-naming-map.json"
       - "tests/unit/qc-departments-tree-resolution.test.sh"
+      - "shared-utils/detect_platform.py"
+      - "23-ai-workforce-blueprint/lib/detect_platform.py"
+      - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh"
+      - "tests/unit/test_company_root_resolution.py"
       - ".github/workflows/qc-departments-tree-guard.yml"
 
 jobs:
@@ -98,7 +108,7 @@ jobs:
             23-ai-workforce-blueprint/scripts/department-floor.py
           echo "OK: syntax checks passed"
 
-      - name: "Run the departments-tree resolution suite (7 scenarios, 11 assertions)"
+      - name: "Run the departments-tree resolution suite (8 scenarios, 12 assertions)"
         shell: bash
         run: |
           set -uo pipefail
@@ -107,3 +117,14 @@ jobs:
           # case-insensitive macOS volume it passes trivially.
           chmod +x tests/unit/qc-departments-tree-resolution.test.sh
           bash tests/unit/qc-departments-tree-resolution.test.sh
+
+      # One company-root resolution order on every layout (build state first):
+      # Mac ~/clawd + master-files, Mac master-files only, Hostinger /data,
+      # Contabo /home/node, and build tree vs floor-fill stubs.
+      - name: Company-root resolution per layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 32-command-center-setup/scripts/materialize-dept-agents.sh
+          python3 tests/unit/test_company_root_resolution.py
+          bash 23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh

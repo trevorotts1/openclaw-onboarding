@@ -359,13 +359,14 @@ class TestShowSettingsAltRoutePrior:
 
     def test_alt_route_does_not_change_gate_counts(self):
         # The harden run owns the gate-array selector priors; the QC asserts
-        # exactly 2 captured / 26 runtime / 28 total — the alt route is a
+        # exactly 2 captured / 28 runtime / 30 total (the two multi-iframe
+        # protocol gates 29-30 ARE array members) — the alt route is a
         # top-level prior, NOT a member of the gates array.
         cap = b.captured_gates()
         run = b.runtime_gates()
         assert len(cap) == 2
-        assert len(run) == 26
-        assert len(b.load_gates()["gates"]) == 28
+        assert len(run) == 28
+        assert len(b.load_gates()["gates"]) == 30
 
 
 # ── CLI surface ───────────────────────────────────────────────────────────────

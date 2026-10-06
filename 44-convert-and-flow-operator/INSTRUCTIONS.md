@@ -27,6 +27,20 @@ error. Also: never use `grep -P` on macOS (BSD grep has no -P); use `python3 -c`
 
 Full lookup routing table and all failure modes: `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md`.
 
+## Contact Write Routing (READ BEFORE any contact add/save/create/update)
+
+**Generic "add/save this person" → `caf contacts upsert`** (email and/or phone
+match keys, supplied fields only — never empty/null/blank values, never a tags
+array; tags merge afterwards via `caf contacts add-tag`). HighLevel's Upsert
+endpoint resolves create-vs-update per the Location-level Allow Duplicate
+Contact configuration and its matching priority. `--create-new-if-duplicate-allowed`
+travels ONLY on explicit new-record request. **Explicit "create a NEW contact"
+→ `caf contacts create`.** **Known contactId → `caf contacts update <id>`**
+(non-tag fields; `--tag` is refused destructive — PUT replaces the whole set).
+Every write ends with a read-back (`caf contacts get <id>`); a succeeded write
+with a failed read-back is "WRITE SUCCEEDED — VERIFICATION INCOMPLETE" — never
+re-fire the write to check.
+
 ---
 
 ## Step 0 — Model Check Pre-flight (READ BEFORE ANY BUILD OR MODIFY ACTION)
@@ -164,6 +178,14 @@ the agent does NOT silently "improve" a value the client pinned.
 **A3. BEST APPROACH** — design which trigger, which nodes, and which actions actually reach A1
 (e.g. Contact Created vs Form Submitted vs Tag Added; SMS vs email vs both; If/Else branches;
 Wait durations; Stop-on-Response). This is a reasoning step, not a template fill.
+
+**A4. TIMING BASIS** — for every scheduled action, determine whether it is relative
+to registration, an event/appointment/transaction, or the previous step. Read
+`references/workflow-timing.md` and generate the timing outline before selecting
+Wait nodes. Automatically include/configure **Set event start time** where relevant;
+resolve genuinely missing dates, not technical-node choices, with the owner. Include
+the `timing` contract in API plans and Skill 6 handoffs. Review timing even when a
+matched template or older handoff omitted that field.
 
 ### Step B — DEPENDENCY PRE-CHECK (skill 41 dependency-first contract)
 

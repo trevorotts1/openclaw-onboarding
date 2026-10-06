@@ -3,6 +3,151 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.2.1] - 2026-09-17
+
+ISSUE-07: the tick cron no longer auto-disables itself the moment the sentinel
+finds something. A live client box was carrying `lastRunStatus: error`,
+`exitCode: 10`, 61 findings, and a tick the scheduler had switched off three
+times.
+
+- Root cause: `install.sh` registered the cron as `ews-entry.sh tick`, which
+  passes the sentinel's exit code through verbatim. `ews_sentinel.py` exits 10
+  when findings are present, which is the system working. The OpenClaw
+  scheduler has no findings exit: it records any non-zero exit as a failed run
+  and auto-disables the job after 10 consecutive failures. A box holding a
+  standing finding therefore failed every 15 minutes until the scheduler
+  silenced its own guard, and every install, repair and fleet roll re-registered
+  the same bare command, so the box healed and re-broke on a loop.
+- New `ews-entry.sh cron-tick` subcommand: runs the identical sentinel tick,
+  then maps exit 10 to 0 at the scheduler boundary only. Every other non-zero
+  exit (1 error, 2 usage, 6 missing python3) passes through unchanged, so a
+  genuinely broken tick still fails the job loudly. `tick` is untouched and
+  keeps the honest exit contract for by-hand runs and scripts.
+- `install.sh` registers `cron-tick`, and the by-hand `openclaw cron add` hint
+  it prints on an install failure now prints `cron-tick` too, because that line
+  gets copy-pasted verbatim. The command value stays a single plain
+  "path + subcommand" string with no `;` or `||`: `dedupe_legacy_cron_dupes`
+  compares it to a job's `argv[-1]` verbatim, so any shell operator would
+  silently defeat duplicate detection.
+- Pre-existing duplicates of the OLD command string get their own cleanup pass.
+  `dedupe_legacy_cron_dupes` matches on the exact command, so a pass using only
+  the new string would never see them. Both passes keep the existing
+  conservative contract: disable only on proven duplication (2 or more), never
+  delete, never touch a lone legacy registration.
+- New `reenable_cron_if_disabled`: `cron add --declaration-key` converges an
+  existing job's name, schedule and command but never re-enables a disabled one,
+  so every box the bug had already switched off would have stayed dark through
+  any number of installs. After each converge the installer looks the job up by
+  `declarationKey` in `openclaw cron list --all --json` and runs
+  `openclaw cron enable <id>` if the scheduler had switched it off. Fails soft:
+  a missing `openclaw`, a failed list, bad JSON, no matching job or a failed
+  enable are logged and swallowed, and only the registration call itself can
+  fail the install.
+- The operator aggregator gets the re-enable pass but deliberately NO exit
+  remap and no second dedupe pass. `ews_fleet.py`'s exit contract is 0 OK /
+  1 error / 2 usage with no findings code, so it never emits the
+  non-zero-but-successful exit the tick did, and its command string is unchanged
+  by this fix.
+- Three new failable self-test cases in `install.sh --self-test`: a static check
+  that no cron-add command value in the file ends in the bare `tick` subcommand
+  (it joins backslash continuations, resolves a shell variable back to its
+  assignment, and fails on a value it cannot resolve rather than passing it), a
+  re-enable case proving a scheduler-disabled tick comes back on across a
+  re-install, and the existing legacy-duplicate case now exercising the
+  old-command cleanup pass. Each was mutation-proved: reintroducing the bare
+  `tick` registration, dropping the re-enable call, and dropping the old-command
+  dedupe pass each fail the self-test with the matching message.
+- `ews-entry.sh usage()` printed a fixed line range that both leaked the first
+  lines of executable code into the help text and would have truncated the
+  header as soon as it grew. It now prints the banner-delimited header block.
+
+## [1.1.0] - 2026-09-09
+
+RR-015 (Rescue Rangers wave 3, RR-W3-EWS): EWS escalations now route through
+actual rescue admission — a durable ticket with a validated receipt — instead of
+a gateway Telegram message to the Rescue Rangers group.
+
+- New shared versioned admission client `scripts/lib/rescue_admission.py`
+  (STDLIB, offline-testable, injected transport): payload carries the nine-field
+  legacy intake contract plus a stable `operation_id` (same event + inputs =
+  same id, so replays fold at the intake), resolved enrollment schema (`v2`
+  per-enrollment `RR_BOX_CRED`/`RR_BOX_ID`, else `v1` shared
+  `RESCUE_RANGERS_WEBHOOK_SECRET`, else no enrollment at all), bounded HTTP
+  (120s default timeout = 4x the measured 30.3s admission path, 64 KiB body
+  read), structured receipt statuses (admitted/replay/refused/failed/dry_run/
+  no_enrollment/client_unavailable) and the Skill 61 verdict rule — a 2xx body
+  whose verdict says refuse is a REFUSAL, an unparseable answer is UNDETERMINED
+  (never a success, never a refusal). Responses carrying a credential shape are
+  dropped whole; journal detail carries ids and statuses only.
+  Drift repaired against the CURRENT live intake contract (verified in the
+  shipped FLEET export `rescue/workflows/RR-01-intake.json`, node "Webhook Auth
+  Check"): the intake reads ONLY `x-rescue-secret` and fails closed with 403
+  `{"status":"unauthorized"}`, so (a) the v2 per-enrollment headers are NO LONGER
+  emitted by default — they are unread until an intake-side reader lands
+  (`EWS_RESCUE_ADMISSION_SEND_V2_HEADERS=1` opts a box in), and a box holding
+  both credentials authenticates as v1, the credential the live intake actually
+  accepts; (b) a missing enrollment is now REACHABLE and is recorded as a
+  PENDING REPAIR with a named owner (`operator-seeder-D08`, per the FLEET
+  contract manifest's `rr_box_auth` writer) and a next action — never reported
+  as an admission, and never swallowed as a policy refusal; (c) a duplicate fold
+  (`{"accepted":true,"status":"duplicate_ignored"}`) is reported `replay` under
+  its own journal status and stays ack-eligible, because a fold proves a durable
+  ticket exists. Both repaired states are asserted at the client level AND at
+  both EWS paths (escalate + dead-man).
+- Durable per-attempt journal in the ledger (`rescue_admissions` table via the
+  sole state writer `ews_ledger.py`): operation_id, status, ticket_id, reply
+  DIGEST (never the body), schema, sanitized detail. A journal row never changes
+  incident state.
+- `ews_alert.py escalate()` rewired: ONLY a validated admission receipt marks
+  the event `escalated` (admitted OR replay); a failed/refused/undetermined/
+  unavailable admission leaves the P1 event OPEN and retry-eligible (the RR-005
+  ack-loss defect stays fixed), and a missing enrollment additionally records a
+  `rescue_admission_pending_repair` digest naming the owner and the next
+  action. Dry run branches before every ledger mutation and every network
+  action. Box identity for the payload is the enrolled canonical slug
+  (`FLEET_STANDING_BOX_SLUG`) first, never a display/hostname fallback. The
+  Telegram group send remains, but as supplemental visibility only, recorded
+  under its own digest kinds and never able to consume an incident.
+- `ews_fleet.py` dead-man path rewired the same way: the sentinel-dark P1 goes
+  through admission, is acked on a validated receipt, and stays open (and
+  owner-retryable via the 30-minute escalate sweep) on failure — including a
+  missing enrollment, which records the same pending-repair digest with its
+  owner. `cmd_cycle()`
+  gained an injectable `admission` seam so the self-test never reaches the
+  network.
+- Docs updated: HOW-TO-USE.md, REPAIRS.md, docs/SIGNAL-CATALOG.md, ews-entry.sh
+  usage block. The Skill 61 UNSENT autonomous drain is NOT touched — its
+  deliberately disarmed backlog policy is preserved (this client never drains
+  and never replays autonomously).
+
+## [1.0.0] - 2026-09-03
+
+Fixed a self-amplifying alert-storm bug: `route_finding()`'s "no operator alert
+target configured" branch (`ews_alert.py`) wrote a fresh, undeduped `S7`/`P2`
+event on every finding, every tick, for as long as no operator target env var
+was set - measured at 27,841 undeduped rows on one live box (49.9% of that
+box's entire `events` table), because the branch never checked or recorded a
+digest, so nothing could ever suppress a repeat.
+
+- The branch now uses the same check-then-record `recent_digest()` /
+  `record_digest()` idiom every other repeat condition in the function already
+  uses, keyed on one fixed, condition-level key (`S7|no_operator_target`)
+  instead of the per-finding key - the condition resurfaces once per
+  `dedup_window_hours` (default 6h) while it stays broken, never silenced,
+  never appended forever.
+- Severity bumped P2 -> P1: this condition disables every alert the box's
+  sentinel can raise, not just the one finding that triggered it - P1 also
+  means an unacked one older than 30 minutes reaches Rescue Rangers via
+  `escalate()`, the one path still able to reach a human when the operator
+  target itself is what's missing.
+- `ews_ledger.py`'s `record_event()` gained a write-layer guard: `dedup_key`
+  is derived (`"<signal>|<key_path>"`) when a caller passes none, so the
+  column is never NULL again. Hygiene/defense-in-depth, not a throttle -
+  `record_event()` still does not itself enforce dedup; that stays the
+  caller's job.
+- Existing rows from the live flood are NOT cleaned up by this change
+  (recommendation only, nothing destructive implemented).
+
 ## [0.1.0] - unreleased (build in progress)
 
 Initial build of the fleet Early Warning System - a deterministic, zero-model-call
@@ -105,3 +250,68 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   frontmatter bumped 0.1.4 -> 0.1.5 in this same commit (the prior merge to main
   landed the `install.sh` fix without the version bump, tripping the repo's G3
   skill-content-change gate; this closes that gap).
+
+- **Unit 7 - cron registration is now declaration-keyed, closing the
+  N-duplicate-tick defect** (version 0.1.7) - `install.sh` registered its tick
+  (and, on the operator box, the aggregator) via plain `openclaw cron add
+  --name/--cron/--command`, with NO dedupe-by-name guard - the CLI itself has
+  none. Every install/repair/fleet-skills-roll run therefore created ANOTHER
+  identical registration under the same name, schedule, and command; a live box
+  was found carrying NINE copies of the same tick, each firing every 15
+  minutes (9x the intended wall time and load). FIX: both `cron add` calls now
+  pass `--declaration-key` (verified against the installed OpenClaw CLI's own
+  `cron add --help`, which documents it as an "Idempotent declaration identity
+  key" and implements add-or-converge semantics in the gateway's `cron.add`
+  handler - it updates the one existing job in place if anything differs,
+  no-ops if nothing changed, and creates exactly one job the first time), so
+  re-running the installer any number of times now always converges to ONE job
+  per key. A new `dedupe_legacy_cron_dupes()` runs before each registration
+  and separately cleans up registrations made BEFORE this fix existed (which
+  the declaration key alone cannot retroactively adopt, since it only matches
+  jobs that already carry it): it lists existing jobs, and only when 2+ share
+  the exact name + command + schedule with no declaration key (proven
+  duplication - a box with a single, ordinary, never-duplicated legacy
+  registration is left untouched) does it DISABLE all of them (never delete -
+  fully reversible via `openclaw cron list --all` / re-enable), logging every
+  id + creation time; the declaration-keyed registration immediately following
+  becomes the one enabled survivor. Self-test: 5 -> 10 cases. The two new
+  cases beyond the direct dedupe checks are a static extension of the existing
+  cron-flag guard (every `cron add` invocation must carry
+  `--declaration-key`, reconstructed across `\` continuations exactly like the
+  existing `--schedule`/`--cron` check) and a dynamic suite against a fake
+  `openclaw` CLI (a tiny JSON-file cron store backing `cron add/list/disable`)
+  proving: fresh install registers exactly one cron; running install.sh TWICE
+  still leaves exactly one (the regression guard); an existing registration
+  whose command/schedule drifted is converged back in place rather than
+  duplicated; 3 seeded legacy duplicates are all disabled (never deleted) with
+  exactly one declaration-keyed survivor left enabled; and a lone
+  (non-duplicated) legacy registration is left completely untouched (no false
+  positives). Mutation-proven twice: (1) deleting `--declaration-key` from a
+  real invocation is caught by the static guard; (2) disabling the fake CLI's
+  own declaration-key match logic (simulating a CLI that accepts the flag but
+  never dedupes) passes "fresh install" but correctly fails "run install.sh
+  TWICE" with 2 crons registered - proving that check is a real functional
+  guard, not a restatement of the static one. `skill-version.txt` + SKILL.md
+  frontmatter bumped 0.1.6 -> 0.1.7 in this same commit.
+
+  Fleet-wide audit (same investigation): every other `openclaw cron add`
+  registrar in this repo already guards against duplication via
+  `shared-utils/cron-lib.sh`'s `oc_cron_present()` (an exact JSON name-match
+  presence check called BEFORE registering - built after the documented "6x
+  duplicate cron" incidents in Skill 38/39 and the FIX-XC-08a incident in
+  Skill 37) or an equivalent local copy of that same check (the four
+  `06-ghl-install-pages/scripts/install-*-cron.sh` installers,
+  `35-social-media-planner/scripts/register-weekly-cron.sh`). Skill 60's
+  `install.sh` was the one remaining registrar with no guard of any kind - not
+  even the older list-then-check idiom. `59-anthology-engine/scripts/
+  provision-anthology-client.sh` was also found still passing the
+  non-existent `--schedule` flag (the exact defect class this skill fixed in
+  itself back in 0.1.4/0.1.5) - a silent zero-registration bug, not a
+  duplication bug, and out of scope for this unit; flagged for its own owner.
+  No other repo file was changed - fixing those sites, or building a shared
+  `--declaration-key` helper for them, is a separate, explicitly-scoped
+  follow-up (touches more than a handful of skills).
+
+## [v1.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

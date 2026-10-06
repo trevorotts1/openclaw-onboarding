@@ -34,10 +34,26 @@ from .scan_roots import (
 
 
 def _find_state_files(scan_root: Path, depth: int):
-    """Bounded walk -- NOT rglob, which can stall for minutes on a large tree."""
+    """Bounded walk -- NOT rglob, which can stall for minutes on a large tree.
+
+    F4: a directory whose NAME starts with "_" is a shelf, not a run --
+    _parked/, _archive/, _retired/. Path.glob("*") matches those names, so the
+    watchdog was walking straight into the park shelf and reporting the runs a
+    human had deliberately shelved as stalled, every single pass, forever.
+    (The supervisor reaches its own run set through this generator, so it
+    inherits the same blindness and the same cure.) Nothing about a shelved
+    run is news; a permanent finding is a finding an operator learns to
+    ignore, which is how a real stall gets missed.
+    """
     seen: Set[Path] = set()
     for d in range(1, depth + 1):
         for state_path in scan_root.glob("/".join(["*"] * d) + "/state.json"):
+            try:
+                parts = state_path.relative_to(scan_root).parts[:-1]
+            except ValueError:  # not under scan_root after all -- do not guess
+                parts = ()
+            if any(part.startswith("_") for part in parts):
+                continue
             resolved = state_path.resolve()
             if resolved not in seen:
                 seen.add(resolved)
@@ -257,6 +273,28 @@ def watchdog(
         )
         from .report import dispatch
         dispatch("watchdog", "stall", msg)
+        # PRES-052: stalled state visible per run in the supervised relay,
+        # even when the transport cannot deliver (dispatch is best-effort).
+        # Never raises out of the watchdog.
+        try:
+            try:
+                from . import relay as _relay
+            except ImportError:
+                import relay as _relay  # type: ignore[no-redef]
+            from .state import StateStore
+            for run_dir, pid, age, interval, threshold, source, job_id in findings:
+                try:
+                    _rd = Path(run_dir)
+                    _store = StateStore(_rd)
+                    _state = _store.load()
+                    _relay.emit(_state, _rd, _relay.KIND_STALLED,
+                                f"{pid} stalled — last checkpoint {age} min ago "
+                                f"(threshold {threshold} min).",
+                                stage=pid, store=_store)
+                except Exception:  # noqa: BLE001 — one bad run never stops scan
+                    continue
+        except Exception:  # noqa: BLE001 — relay must never break watchdog
+            pass
 
     # WI-04a fix: when --enforce is on, mark each stalled job's CC card as blocked.
     # Resolve the task_id from state.json (board.task_id) first, then fall back to

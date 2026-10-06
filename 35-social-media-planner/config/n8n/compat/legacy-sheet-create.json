@@ -1,0 +1,691 @@
+{
+  "name": "Social planner legacy document creator compatibility",
+  "nodes": [
+    {
+      "name": "Legacy Create Hook",
+      "id": "legacy-create-hook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "social-planner-compat-20260909/legacy-sheet-create",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "name": "Validate Legacy Create",
+      "id": "validate-legacy-create",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b=$input.first().json.body;\nif(!b || typeof b!=='object' || Array.isArray(b))throw new Error('Expected one legacy object');\nif(Object.keys(b).some(k=>!['brandName','clientEmail'].includes(k)))throw new Error('Use current company-bound route for non-legacy fields');\nconst modern=['company_id','companyId','schema_version','schemaVersion','planner_kind','provisioning_key','templateSheetId','cycle_id','content_revision','account_id'];\nif(modern.some(k=>Object.prototype.hasOwnProperty.call(b,k)))throw new Error('Modern request must use strict company-bound create route');\nfor(const k of ['brandName','clientEmail'])if(typeof b[k]!=='string'||!b[k].trim()||/[\\x00-\\x1f]/.test(b[k]))throw new Error('Legacy create requires '+k);\nconst brand=b.brandName.trim(),email=b.clientEmail.trim();\nconst bytes=s=>encodeURIComponent(s).replace(/%[A-F0-9]{2}/g,'x').length;\nif(bytes('skill35_legacy_brand')+bytes(brand)>124||bytes('skill35_legacy_email')+bytes(email)>124)throw new Error('Use current company-bound setup for long identity fields');\nif(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))throw new Error('Invalid clientEmail');\nreturn [{json:{brand,email,name:brand+' Social Media Planner'}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Copy Legacy Template",
+      "id": "copy-legacy-template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/drive/v3/files/__LEGACY_TEMPLATE_ID__/copy?fields=id,name,mimeType",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Validate Legacy Create').first().json.name, parents: ['root'], appProperties: { skill35_legacy_brand: $('Validate Legacy Create').first().json.brand, skill35_legacy_email: $('Validate Legacy Create').first().json.email, skill35_legacy_document: 'true', skill35_legacy_state: 'initializing' } }) }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Resolve Legacy Sheet",
+      "id": "resolve-legacy-sheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,c=$('Validate Legacy Create').first().json;\nif(typeof r.id!=='string'||!/^[A-Za-z0-9_-]{10,160}$/.test(r.id))throw new Error('No valid copied sheet ID');\nif(r.existing!==true&&r.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('Copy is not a spreadsheet');\nreturn [{json:{...c,id:r.id,state:r.state||'initializing'}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Read Legacy Permissions",
+      "id": "read-legacy-permissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1260,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $json.id + '/permissions?fields=permissions(id,type,role,deleted,expirationTime),nextPageToken&pageSize=100' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Check Legacy Sharing",
+      "id": "check-legacy-sharing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(!Array.isArray(r.permissions)||r.nextPageToken)throw new Error('Cannot verify sharing');\nconst shared=r.permissions.some(p=>p.type==='anyone'&&p.role==='writer'&&!p.deleted&&!p.expirationTime);\nconst c=$('Resolve Legacy Sheet').first().json;if(c.state==='initializing'&&r.permissions.some(p=>!p.deleted&&p.role!=='owner'))throw new Error('Refusing to clear a shared legacy document');\nreturn [{json:{...c,shared}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Legacy Needs Initialization",
+      "id": "legacy-needs-initialization",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "init",
+              "leftValue": "={{ $json.state === 'initializing' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Read New Copy Tabs",
+      "id": "read-new-copy-tabs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Resolve Legacy Sheet').first().json.id + '?fields=spreadsheetId,sheets(properties)' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Build New Copy Clear",
+      "id": "build-new-copy-clear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,c=$('Resolve Legacy Sheet').first().json;\nif(r.spreadsheetId!==c.id||!Array.isArray(r.sheets)||!r.sheets.some(s=>s.properties?.title==='Weekly Overview'))throw new Error('Unexpected copied template layout');\nreturn [{json:{ranges:r.sheets.map(s=>\"'\"+s.properties.title.replace(/'/g,\"''\")+\"'!A:ZZZ\")}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Clear New Copy Sample Values",
+      "id": "clear-new-copy-sample-values",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Resolve Legacy Sheet').first().json.id + '/values:batchClear' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Write Clean Legacy Headers",
+      "id": "write-clean-legacy-headers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + $('Resolve Legacy Sheet').first().json.id + '/values/Weekly%20Overview!A1:T2?valueInputOption=RAW' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"values\": [[\"SOCIAL MEDIA PLANNER - WEEKLY OVERVIEW\"], [\"Week Of\", \"Theme of the Week\", \"Research\", \"Core Content\", \"Images\", \"Videos\", \"Facebook\", \"Instagram\", \"LinkedIn\", \"YouTube\", \"TikTok\", \"Pinterest\", \"Carousels\", \"Blog\", \"Podcast\", \"Email\", \"QC\", \"Scheduled\", \"Overall\", \"Notes\"]]}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Mark Legacy Formatted",
+      "id": "mark-legacy-formatted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2520,
+        0
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Resolve Legacy Sheet').first().json.id + '?fields=id,appProperties' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"appProperties\": {\"skill35_legacy_state\": \"formatted\"}}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Legacy Public Writer",
+      "id": "legacy-public-writer",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "shared",
+              "leftValue": "={{ $('Check Legacy Sharing').first().json.shared }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Share Legacy Copy",
+      "id": "share-legacy-copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Resolve Legacy Sheet').first().json.id + '/permissions' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"role\":\"writer\",\"type\":\"anyone\"}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Validate Legacy Share Result",
+      "id": "validate-legacy-share-result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3060,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const c=$('Resolve Legacy Sheet').first().json,r=$input.first().json;\nif(!$('Check Legacy Sharing').first().json.shared && !(r.id&&r.type==='anyone'&&r.role==='writer'&&!r.deleted&&!r.expirationTime))throw new Error('Sharing was not confirmed');\nreturn [{json:{status:'success',sheetId:c.id,sheetUrl:'https://docs.google.com/spreadsheets/d/'+c.id+'/edit',sheetName:c.name,sharedWith:'anyone with the link can edit',clientEmail:c.email,deduped:false,retry_policy:'reconcile_execution_before_retry; legacy create always creates a new document',mode:'legacy_document_only',company_registration_verified:false,publication_verified:false}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Mark Legacy Ready",
+      "id": "mark-legacy-ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3240,
+        0
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $('Resolve Legacy Sheet').first().json.id + '?fields=id,appProperties' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"appProperties\": {\"skill35_legacy_state\": \"ready\"}}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Legacy Create Receipt",
+      "id": "legacy-create-receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json,c=$('Validate Legacy Share Result').first().json;if(r.id!==c.sheetId||r.appProperties?.skill35_legacy_state!=='ready')throw new Error('Legacy readiness tag not confirmed');return [{json:c}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Legacy Created",
+      "id": "legacy-created",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3600,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "name": "Legacy Create Error",
+      "id": "legacy-create-error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3780,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"error\", success: false, mode: \"legacy_document_only\", publication_verified: false, message: \"Legacy sheet creation failed; reconcile before retrying\", detail: $json.error?.message || $json.message || \"Unknown error\" }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Legacy Create Hook": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Legacy Create": {
+      "main": [
+        [
+          {
+            "node": "Copy Legacy Template",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy Legacy Template": {
+      "main": [
+        [
+          {
+            "node": "Resolve Legacy Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Legacy Sheet": {
+      "main": [
+        [
+          {
+            "node": "Read Legacy Permissions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Legacy Permissions": {
+      "main": [
+        [
+          {
+            "node": "Check Legacy Sharing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Legacy Sharing": {
+      "main": [
+        [
+          {
+            "node": "Legacy Needs Initialization",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read New Copy Tabs": {
+      "main": [
+        [
+          {
+            "node": "Build New Copy Clear",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build New Copy Clear": {
+      "main": [
+        [
+          {
+            "node": "Clear New Copy Sample Values",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear New Copy Sample Values": {
+      "main": [
+        [
+          {
+            "node": "Write Clean Legacy Headers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Clean Legacy Headers": {
+      "main": [
+        [
+          {
+            "node": "Mark Legacy Formatted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Legacy Formatted": {
+      "main": [
+        [
+          {
+            "node": "Legacy Public Writer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Share Legacy Copy": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Share Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Legacy Share Result": {
+      "main": [
+        [
+          {
+            "node": "Mark Legacy Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Legacy Ready": {
+      "main": [
+        [
+          {
+            "node": "Legacy Create Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Legacy Create Receipt": {
+      "main": [
+        [
+          {
+            "node": "Legacy Created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Legacy Needs Initialization": {
+      "main": [
+        [
+          {
+            "node": "Read New Copy Tabs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Legacy Public Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Legacy Public Writer": {
+      "main": [
+        [
+          {
+            "node": "Validate Legacy Share Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Share Legacy Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  }
+}

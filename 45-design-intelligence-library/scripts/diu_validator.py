@@ -21,7 +21,7 @@ WHAT IT ENFORCES (three sub-commands)
 
   prompt-band  — GRAPHICS IMAGE PROTOCOL (GIP) PROMPT BANDS (_system/prompt-bands.json).
       The MAX-only cap tiers were necessary but not SUFFICIENT: a one-line prompt
-      could reach Kie.ai/GPT-Image 2 unchallenged (no MIN floor anywhere in graphics).
+      could reach Kie.ai/GPT-Image 2.5 unchallenged (no MIN floor anywhere in graphics).
       This is the graphics analogue of the Presentations 9,000-char floor gate. A
       prompt is checked against its asset-class BAND:
         * length below the band MIN  -> HARD FAIL (exit 3, AF-GIP-PROMPT-FLOOR):
@@ -36,7 +36,7 @@ WHAT IT ENFORCES (three sub-commands)
           attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
           (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
           Two text-bearing bands exist because one endpoint cannot serve both:
-          `text_bearing_long` (5,000-19,000) targets GPT-Image 2 T2I/I2I; the
+          `text_bearing_long` (5,000-19,000) targets GPT-Image 2.5 T2I/I2I; the
           mandatory Ideogram V3 DESIGN quote-card/text-led route (see
           social-media-designs/_RULES.md) targets `text_bearing_medium`
           (1,600-4,500) instead, sized to Ideogram's own verified 5,000-char API
@@ -511,7 +511,7 @@ GIP_SPELLING_LOCK_TOKENS = [
 ]
 
 # STYLE-REFERENCE-ONLY directive tokens (mandatory whenever refs are attached for style —
-# MODEL-SPECS §4 "MANDATORY … applies equally to GPT-Image 2 I2I").
+# MODEL-SPECS §4 "MANDATORY … applies equally to GPT-Image 2.5 I2I").
 GIP_STYLE_REF_ONLY_TOKENS = [
     "style reference only", "style-reference only", "style-reference-only",
     "only as style reference", "as style reference", "only for style reference",
@@ -650,7 +650,7 @@ def band_quality_problems(prompt_text: str, band: dict, band_id: str,
     if style_ref and not any(t in prompt_lc for t in GIP_STYLE_REF_ONLY_TOKENS):
         problems.append(
             "AF-GIP-PROMPT-QUALITY: style reference image(s) attached (--style-ref) but the "
-            "STYLE-REFERENCE-ONLY directive is absent (MODEL-SPECS §4, MANDATORY for GPT-Image 2 "
+            "STYLE-REFERENCE-ONLY directive is absent (MODEL-SPECS §4, MANDATORY for GPT-Image 2.5 "
             "I2I / Nano Banana 2): add 'Use the attached images only as style reference for color "
             "grading, lighting, and composition — do not copy their subjects, faces, or text.'")
 

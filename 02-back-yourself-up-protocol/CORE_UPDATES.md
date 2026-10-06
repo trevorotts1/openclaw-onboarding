@@ -35,7 +35,7 @@ Add under config management:
 - Date format: Human-readable. Example: models-backup-February 28 at 3-00 PM.txt
 - Date bash: date +'%B %-d at %-I-%M %p'
 - Rule: Every config edit gets a backup. No exceptions. Backup fails = STOP.
-- Full instance backup: Cron every 2 weeks (1st and 15th). Backs up config, .md files, memory, secrets, skills.
+- Full instance backup: Cron every 2 weeks (1st and 15th). Backs up config, .md files, memory, secrets, custom skills. Never the onboarding repo's skills or any openclaw-onboarding clone (they re-install from GitHub).
 - Full protocol: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/02-back-yourself-up-protocol/back-yourself-up-protocol-full.md
 ```
 
@@ -76,7 +76,8 @@ Add under routine tasks:
 ```
 ## Full Instance Backup - Automated
 - Cron: 1st and 15th of month at 3:00 AM
-- Backs up: config, workspace .md files, memory logs, secrets, installed skills, cron list
+- Backs up: config, workspace .md files, memory logs, secrets, custom skills + the installed skills version, cron list
+- Never backs up the onboarding repo's skills or any openclaw-onboarding clone (re-installed from GitHub)
 - Keeps only last 2 full backups
 - If cron fails, fix immediately
 ```

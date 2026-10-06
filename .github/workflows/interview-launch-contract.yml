@@ -1,0 +1,198 @@
+name: Interview launch contract
+on:
+  pull_request:
+    paths:
+      - 'scripts/run-with-deadline.py'
+      - 'scripts/onboarding-state.sh'
+      - 'lib-shared.sh'
+      - 'lib-onboarding-state.sh'
+      - '05-ghl-setup/qc-ghl-setup.sh'
+      - '23-ai-workforce-blueprint/scripts/workforce_completion.py'
+      - '23-ai-workforce-blueprint/scripts/resume-workforce-build.sh'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/model_router.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/research_web.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py'
+      - '23-ai-workforce-blueprint/templates/presentation-render/kie_generate.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/oc_paths.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/env_store.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py'
+      - 'shared-utils/llm_score.py'
+      - 'shared-utils/secret_helper.py'
+      - 'shared-utils/secret_names.json'
+      - 'shared-utils/test_f25_llm_score_secrets.py'
+      - 'shared-utils/test_ollama_cloud_endpoint_and_key.py'
+      - 'shared-utils/test_llm_score_fallback_chain.py'
+      - 'tests/unit/test_intake_poll_plist.py'
+      - '23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py'
+      - 'tests/unit/test_shared_client_paths.py'
+      - 'tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh'
+      - 'tests/unit/test_preidentity_closeout.py'
+      - 'tests/unit/test_prebuild_board_alias.py'
+      - 'tests/unit/test_onboarding_qc_deadline.py'
+      - 'install.sh'
+      - 'update-skills.sh'
+      - '32-command-center-setup/scripts/**'
+      - '23-ai-workforce-blueprint/scripts/send-interview-link.sh'
+      - '23-ai-workforce-blueprint/scripts/build-workforce.py'
+      - '37-zhc-closeout/scripts/**'
+      - 'tests/unit/test_build_company_identity.py'
+      - 'scripts/prebuild-standard-workforce.py'
+      - 'scripts/onboarding-identity.py'
+      - 'tests/unit/test_onboarding_identity.py'
+      - 'shared-utils/interview_invitation.py'
+      - 'shared-utils/canonical_slug.py'
+      - 'shared-utils/service_env.py'
+      - 'platform/common.sh'
+      - 'platform/mac/bootstrap.sh'
+      - 'platform/vps/bootstrap.sh'
+      - '23-ai-workforce-blueprint/scripts/generate-governing-personas.sh'
+      - 'tests/unit/test_service_env.py'
+      - 'tests/unit/test_portable_bootstrap.py'
+      - 'tests/unit/test_governing_persona_portability.py'
+      - 'tests/unit/test_installation_recovery.py'
+      - 'tests/unit/test_pm2_boot.py'
+      - 'tests/unit/test_contabo_docker_topology.py'
+      - 'shared-utils/resolve-oc-root.sh'
+      - 'shared-utils/cc-tunnel-ingress.sh'
+      - 'tests/unit/engine-bootstrap-real-db.test.py'
+      - 'docs/interview-launch-recovery.md'
+      - 'docs/portable-onboarding-platforms.md'
+      - 'tests/unit/interview-launch.test.py'
+      - 'tests/unit/test_interview_invitation.py'
+      - 'shared-utils/interview_completion.py'
+      - 'tests/unit/interview-completion.test.py'
+      - '.github/workflows/interview-launch-contract.yml'
+  workflow_dispatch:
+jobs:
+  isolated-launch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the paired released Command Center
+        uses: actions/checkout@v4
+        with:
+          repository: trevorotts1/blackceo-command-center
+          ref: v7.6.65
+          path: paired-command-center
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: paired-command-center/package-lock.json
+      - name: Install the paired Command Center's reviewed dependencies
+        working-directory: paired-command-center
+        run: npm ci --engine-strict --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Mac, native VPS, Hostinger and Contabo container topology fixtures
+        run: python3 tests/unit/test_portable_bootstrap.py
+      - name: Contabo per-client Docker topology (own Command Center per container)
+        run: python3 tests/unit/test_contabo_docker_topology.py
+      - name: Validate literal scheduler configuration before replacing a working job
+        run: python3 tests/unit/test_intake_poll_plist.py
+      - name: Install scheduler regression test runner
+        run: python3 -m pip install pytest
+      - name: Poller source resolution, client paths and loud failure regression
+        run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix61_intake_poll_schedule_install.py
+      - name: Presentation worker client path and credential isolation
+        run: python3 -m pytest -q 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_credential_reader_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_oc_paths_isolation.py 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_poller_env_store.py
+      # F25 -- the residual half of the env-loading class the step above
+      # pins. shared-utils/llm_score.py read os.environ and openclaw.json
+      # only, so a persona-scoring pass spawned by launchd or the openclaw
+      # cron resolved no key at all while the key sat, present and non-blank,
+      # in the box's secrets store. Same store, same precedence contract, one
+      # directory away -- so it is gated here, next to its sibling.
+      - name: Scoring helper resolves credentials from the box secrets store
+        run: python3 -m pytest -q shared-utils/test_f25_llm_score_secrets.py
+      # The other half of the same step-1 failure: credentials that DO resolve
+      # were being sent to a path that does not exist (/api/chat/completions,
+      # HTTP 404) for a model tag deleted from Ollama Cloud on 2026-08-17. A
+      # check nothing runs is not a check, so the regression test is gated
+      # here, next to the resolver test it depends on.
+      - name: Ollama Cloud endpoint, model tag and provider-key fallback
+        run: python3 -m pytest -q shared-utils/test_ollama_cloud_endpoint_and_key.py
+      # The chain those steps live in. v25.1.56 turned it into a data table
+      # walked by one transport, which made the ORDER, the per-step key gating
+      # and the LLM_SCORE_CHAIN override assertable for the first time. A
+      # table nothing checks drifts straight back into hard-coded lambdas.
+      - name: Scoring fallback chain order, key gating and override
+        run: python3 -m pytest -q shared-utils/test_llm_score_fallback_chain.py
+      - name: Shared client paths and credential isolation
+        run: python3 tests/unit/test_shared_client_paths.py
+      - name: GHL credential aliases through the delivered shared library
+        run: bash tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh
+      - name: Real governing persona writer with the system Bash and service PATH
+        run: python3 tests/unit/test_governing_persona_portability.py
+      - name: Native Linux PM2 startup registration and pending failure modes
+        run: python3 tests/unit/test_pm2_boot.py
+      - name: Interrupted installation, identity and migration recovery
+        run: python3 tests/unit/test_installation_recovery.py
+      - name: Pre-identity closeout does not create unowned build state
+        run: python3 tests/unit/test_preidentity_closeout.py
+      - name: Prebuild verifies active company-scoped canonical board aliases
+        run: python3 tests/unit/test_prebuild_board_alias.py
+      - name: Readiness and QC deadlines terminate stalled subprocess groups
+        run: python3 tests/unit/test_onboarding_qc_deadline.py
+      - name: Literal environment through the actual Next and PM2 loaders (no skips)
+        env:
+          SERVICE_ENV_TEST_CC_ROOT: ${{ github.workspace }}/paired-command-center
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          import unittest
+          spec = importlib.util.spec_from_file_location('service_env_contract', 'tests/unit/test_service_env.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit('Service environment acceptance must exercise the actual Next/PM2 boundary; skips are forbidden')
+          if not result.wasSuccessful() or result.testsRun == 0:
+              raise SystemExit(1)
+          PY
+      - name: Real migrations, client engine adoption, convergence and restart
+        env:
+          CC_REPO: ${{ github.workspace }}/paired-command-center
+        run: python3 tests/unit/engine-bootstrap-real-db.test.py
+      - name: First onboarding owner and company intake (including real terminal)
+        run: python3 tests/unit/test_onboarding_identity.py
+      - name: Fresh missing-state launch, scoped database, and full canonical prebuild
+        env:
+          RUN_LAUNCH_PREBUILD_FIXTURE: '1'
+        run: python3 tests/unit/interview-launch.test.py
+      - name: Authenticated public origin and acknowledged gateway invitation fixtures
+        run: python3 tests/unit/test_interview_invitation.py
+      - name: Interview prior-declaration prompt admission (INT-001..INT-005)
+        run: python3 tests/unit/interview-completion.test.py
+      - name: Paired Command Center invitation URL passes onboarding validator
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, subprocess, time
+          from pathlib import Path
+          from unittest.mock import patch
+          src = Path('paired-command-center/src/lib/interview/invitation.ts').read_text()
+          assert '/interview?enroll=' in src, 'paired CC no longer mints query-form enrollment URL'
+          assert '/interview#enroll=' not in src, 'paired CC regressed to fragment-form enrollment URL'
+          route = Path('paired-command-center/src/app/api/interview/send-link/route.ts').read_text()
+          assert "searchParams.get('enroll')" in route, 'paired CC send-link route no longer requires query enroll'
+          spec = importlib.util.spec_from_file_location('invitation', 'shared-utils/interview_invitation.py')
+          module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          receipt = {'protocol': 'interview-invitation.v1', 'tenantId': 'tenant-a', 'companyId': 'client-a',
+                     'installationId': 'install-a', 'host': 'client.example.com',
+                     'expiresAt': int(time.time()) + 900, 'oneUse': True,
+                     'url': 'https://client.example.com/interview?enroll=fixture.signature'}
+          resolved = {'origin': 'https://client.example.com', 'host': 'client.example.com',
+                      'companyId': 'client-a', 'tenantId': 'tenant-a', 'installationId': 'install-a'}
+          with patch.object(module.subprocess, 'run',
+                             return_value=subprocess.CompletedProcess([], 0, json.dumps(receipt) + '\n200', '')):
+              assert module.issue_invitation(resolved, {'MC_API_TOKEN': 'fixture-secret'}, '123456789') == receipt['url']
+          print('paired CC query-form invitation accepted by onboarding validator')
+          PY
+      - name: Canonical company identity through real post-interview builder
+        run: python3 tests/unit/test_build_company_identity.py
+      - name: Client-owned Notion creation and recovery with isolated transport
+        run: python3 37-zhc-closeout/scripts/test-notion-client-ownership.py

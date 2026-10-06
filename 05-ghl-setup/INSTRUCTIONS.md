@@ -56,11 +56,24 @@ GET /contacts/{contactId}
 ```
 Replace {contactId} with the actual contact ID.
 
-**Create a new contact:**
+**Add or save a contact (DEFAULT — generic add/save):**
+```
+POST /contacts/upsert
+```
+Send match keys (email and/or phone) plus ONLY the fields the owner supplied
+(plus locationId). HighLevel's Upsert endpoint resolves create-vs-update per the
+Location-level Allow Duplicate Contact configuration and its matching priority.
+Omit createNewIfDuplicateAllowed unless the owner explicitly asked for a new
+record. Never send a `tags` array here — tag additions go through
+POST /contacts/{contactId}/tags. Read the record back after every write.
+
+**Create a brand-new contact (explicit new record ONLY):**
 ```
 POST /contacts/
 ```
-Send the contact details in the request body as JSON (name, email, phone, etc.).
+Use ONLY when the owner explicitly asked for a NEW record even if a match
+exists. Send the contact details in the request body as JSON (name, email,
+phone, etc.).
 
 **Update an existing contact:**
 ```

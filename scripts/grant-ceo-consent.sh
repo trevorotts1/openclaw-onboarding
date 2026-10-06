@@ -177,7 +177,14 @@ gated_json = os.environ.get("GATED_JSON", "")
 gate_backup = Path(os.environ["GATE_BACKUP"])
 cfg_path = Path(sys.argv[1])
 cfg = json.loads(cfg_path.read_text())
-agents = cfg.get("agents", {}).get("list", []) or []
+# Both roster shapes. agents.entries (OpenClaw 2026.9.x) is keyed by id with
+# no "id" in the body, so pair each LIVE entry dict with its id; edits below
+# land in whichever shape the box has.
+_a = cfg.get("agents", {}) or {}
+_e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+_l = _a.get("list") if isinstance(_a.get("list"), list) else []
+roster = [(k, v) for k, v in _e.items() if isinstance(v, dict)]
+roster += [(a.get("id"), a) for a in _l if isinstance(a, dict) and a.get("id") not in _e]
 
 # v16.1.3 SELF-HEAL — sessions/agentToAgent are ROOT `tools` keys, NEVER per-agent
 # (AgentEntry.tools is additionalProperties:false and REJECTS them → config
@@ -200,22 +207,20 @@ def _heal_routing_keys(_cfg, _ceo):
             del _t[_k]
 
 CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
-ceo = None
-for ag in agents:
-    if isinstance(ag, dict) and ag.get("id") == "main":
-        ceo = ag; break
+ceo, ceo_id = None, "<unknown>"
+for rid, ag in roster:
+    if rid == "main":
+        ceo, ceo_id = ag, rid; break
 if ceo is None:
-    for ag in agents:
-        if isinstance(ag, dict) and ag.get("default") is True:
-            ceo = ag; break
+    for rid, ag in roster:
+        if ag.get("default") is True:
+            ceo, ceo_id = ag, rid; break
 if ceo is None:
-    for ag in agents:
-        if isinstance(ag, dict) and ag.get("id") in CEO_IDS:
-            ceo = ag; break
+    for rid, ag in roster:
+        if rid in CEO_IDS:
+            ceo, ceo_id = ag, rid; break
 if ceo is None:
     print("NO_CEO"); sys.exit(0)
-
-ceo_id = ceo.get("id", "<unknown>")
 
 if mode == "consented":
     # Lift the production-tool gate: drop the deny + byProvider so the CEO can

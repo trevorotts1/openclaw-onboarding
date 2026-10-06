@@ -480,7 +480,11 @@ def test_canonical_alias_map_spot_checks_match_command_center():
         "ceo": "master-orchestrator",
         "webdev": "web-development",
         "billing": "billing-finance",
-        "app-development": "engineering",
+        "app-development": "app-development",
+        "appdev": "app-development",
+        "app-dev": "app-development",
+        "mobile": "app-development",
+        "engineering": "engineering",
         "marketing": "marketing",  # already canonical -> unchanged
     }
     for raw, expected in cases.items():

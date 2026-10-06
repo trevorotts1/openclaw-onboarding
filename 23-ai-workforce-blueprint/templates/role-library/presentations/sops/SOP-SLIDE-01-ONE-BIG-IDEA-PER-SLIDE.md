@@ -1,11 +1,11 @@
 # SOP-SLIDE-01: ONE BIG IDEA PER SLIDE
 
 **Cluster:** Slide-Craft Rules
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 9, SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4), criterion 1)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — one-big-idea enforcement lives in `SOP-SLIDE-00` AF-OBI **[univ slide-craft]**; hard copy limits (Section 5.1 legacy) live in `SOP-SLIDE-04-DECK-DENSITY-AND-PACING` + `slide-copywriter` SOP
 **Owning roles at write time:** Director of Presentations (arc allocation and the hard splits), Slide Copywriter (per-slide enforcement)
 **Owning role at render time:** Slide Image Creator (renders only the copy blocks)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-OBI, below)
-**Status:** Reference SOP, RECONCILED with the live gate. The one-big-idea protection is ALREADY WIRED in qc-specialist-presentations.md as auto-fail AF-C6 ("a slide that makes more than one point auto-fails") plus AF-C8 (the 30-word per-slide total-density ceiling) and copy QC criterion c5. The draft codes below (AF-OBI-1..6) are this SOP's own doctrine taxonomy; in the live repo read AF-OBI as AF-C6 + AF-C8. Do NOT add a parallel AF-OBI namespace to the QC role; that protection is done. This document is the authored doctrine behind the live check.
+**Status:** DRAFT for integration. Strengthens, does not replace, the existing one-big-idea language in the master SOP and the slide-copywriter role.
 
 ---
 
@@ -28,7 +28,7 @@ A slide presents exactly ONE core idea, expressed in a handful of words. Specifi
    - A **gap + its reframe** is TWO slides (the gap on one, the "what if the problem is not X but Y" reframe on the next). Never one slide carrying both.
    - **Four distinct pains** are FOUR slides, one emotional image each (master rule 9). Never a bulleted list of pains.
 3. **Text-block ceiling.** A slide carries at most THREE text blocks: headline, optional sub-copy, optional ONE supporting element (a stat chip, a label, or a CTA chip). A fourth text block is a defect. The hook footer is a text block; because the hook footer is banned outright (see SOP-SLIDE-03), it never counts as an allowed block and its presence is its own separate auto-fail.
-4. **Word ceiling.** Headline 9 words maximum (target 4 to 7). Sub-copy 18 words maximum, one line. Counts are exact and mechanical (SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4)). A slide that needs more words than this to make its point has more than one idea; split it.
+4. **Word ceiling.** Headline 9 words maximum (target 4 to 7). Sub-copy 18 words maximum, one line. Counts are exact and mechanical (master Section 5.1). A slide that needs more words than this to make its point has more than one idea; split it.
 
 ---
 
@@ -36,43 +36,43 @@ A slide presents exactly ONE core idea, expressed in a handful of words. Specifi
 
 The QC Specialist runs these mechanical checks on slides_copy.md (Phase 1Q) and again on the rendered slide (Phase 5 and Phase 6). Each is a binary trigger, checked BEFORE any 1-to-10 scoring. Any trigger forces an immediate FAIL on that slide regardless of score.
 
-**Auto-fail code AF-OBI (One Big Idea). Triggers, any one of which fails the slide:**
+**Auto-fail battery AF-OBI (One Big Idea): the machine-enforced codes are the manifest subcodes AF-OBI-1 through AF-OBI-6 below (PIPELINE-MANIFEST.autofails); the bare code AF-OBI is only the dimension label for unclassified multi-idea defects and carries no trigger of its own. Triggers, any one of which fails the slide:**
 
 | Trigger | How it is detected | Failure message |
 |---|---|---|
-| OBI-1: More than 3 text blocks on the slide | Count distinct text blocks in the slide entry (HEADLINE, SUB-COPY, SUPPORTING) plus any block rendered on the image that is not one of those three. Count > 3 = fail. | "AF-OBI (OBI-1): slide N has [count] text blocks (max 3). Blocks found: [list]. Split into [count-2] slides or move the extra block to the Presenter's Guide." |
-| OBI-2: Headline over 9 words | Mechanical word count of the HEADLINE field, exact. | "AF-OBI (OBI-2): slide N headline is [N] words (max 9). It is carrying two ideas. Split." |
-| OBI-3: Two or more core ideas in one entry | The QC agent identifies the count of distinct claims/contrasts/concepts. A diagnosis-and-method, a gap-and-reframe, a value-trio-on-one-slide, or two unrelated assertions = fail. | "AF-OBI (OBI-3): slide N contains [N] core ideas: [idea A]; [idea B]. Per SOP-SLIDE-01 this is [N] separate slides. Split as: [proposed split]." |
-| OBI-4: A value trio on a single slide | Detect three parallel named values (alliterated trio) co-present in HEADLINE/SUB-COPY/SUPPORTING. | "AF-OBI (OBI-4): slide N lists a full value trio ([the three values]) on one slide. Per SOP-SLIDE-01 each value is its own slide plus a formula slide. Build 4 slides." |
-| OBI-5: A bulleted list of pains | Detect 2 or more distinct pain statements as list items on one slide. | "AF-OBI (OBI-5): slide N lists [N] pains as bullets. Per master rule 9 each pain is its own slide with its own emotional image. Build [N] slides." |
-| OBI-6: A comparison table with more than 2 rows of contrast | Count contrast rows rendered on the slide (the forensic reference deck shipped an 8-row control-vs-clarity table). More than 2 rows = the slide is teaching a whole framework, not one contrast. | "AF-OBI (OBI-6): slide N renders a [N]-row comparison table. Reduce to the single sharpest contrast (one row, two sides) or move the full table to the Presenter's Guide." |
+| OBI-1: More than 3 text blocks on the slide | Count distinct text blocks in the slide entry (HEADLINE, SUB-COPY, SUPPORTING) plus any block rendered on the image that is not one of those three. Count > 3 = fail. | "AF-OBI-1: slide N has [count] text blocks (max 3). Blocks found: [list]. Split into [count-2] slides or move the extra block to the Presenter's Guide." |
+| OBI-2: Headline over 9 words | Mechanical word count of the HEADLINE field, exact. | "AF-OBI-2: slide N headline is [N] words (max 9). It is carrying two ideas. Split." |
+| OBI-3: Two or more core ideas in one entry | The QC agent identifies the count of distinct claims/contrasts/concepts. A diagnosis-and-method, a gap-and-reframe, a value-trio-on-one-slide, or two unrelated assertions = fail. | "AF-OBI-3: slide N contains [N] core ideas: [idea A]; [idea B]. Per SOP-SLIDE-01 this is [N] separate slides. Split as: [proposed split]." |
+| OBI-4: A value trio on a single slide | Detect three parallel named values (alliterated trio) co-present in HEADLINE/SUB-COPY/SUPPORTING. | "AF-OBI-4: slide N lists a full value trio ([the three values]) on one slide. Per SOP-SLIDE-01 each value is its own slide plus a formula slide. Build 4 slides." |
+| OBI-5: A bulleted list of pains | Detect 2 or more distinct pain statements as list items on one slide. | "AF-OBI-5: slide N lists [N] pains as bullets. Per master rule 9 each pain is its own slide with its own emotional image. Build [N] slides." |
+| OBI-6: A comparison table with more than 2 rows of contrast | Count contrast rows rendered on the slide (the reference failure case shipped an 8-row control-vs-clarity table). More than 2 rows = the slide is teaching a whole framework, not one contrast. | "AF-OBI-6: slide N renders a [N]-row comparison table. Reduce to the single sharpest contrast (one row, two sides) or move the full table to the Presenter's Guide." |
 
-**Render-time addition (Phase 5/6):** the rendered image is inspected for any text block beyond the three approved copy blocks. A step list, a credential paragraph, a "Step 1 / Step 2 / Step 3" cue, or any body text not present in slides_copy.md that appears on the rendered face fails AF-OBI at the image gate (this is where the forensic-deck slide 5 stacked image cards leaked in: the copy was clean-ish but the image creator invented extra text blocks). Cross-reference: SOP-SLIDE-02 OBI overlaps with the audience-facing ban on invented captions.
+**Render-time addition (Phase 5/6):** the rendered image is inspected for any text block beyond the three approved copy blocks. A step list, a credential paragraph, a "Step 1 / Step 2 / Step 3" cue, or any body text not present in slides_copy.md that appears on the rendered face fails AF-OBI at the image gate (this is where the reference failure case slide-5 stacked image cards leaked in: the copy was clean-ish but the image creator invented extra text blocks). Cross-reference: SOP-SLIDE-02 OBI overlaps with the audience-facing ban on invented captions.
 
 ---
 
-## 4. PASS vs FAIL EXAMPLES (drawn from the forensic reference deck defects)
+## 4. PASS vs FAIL EXAMPLES (drawn from the actual reference failure case defects)
 
-**FAIL (forensic-deck slide 8, the canonical two-idea slide the reviewer named by name):**
+**FAIL (reference failure case slide 8, the canonical two-idea slide named in the density-floor overhaul):**
 > "Doing The Right Things, The Wrong Way" (the gap) AND "What if the problem is not effort, but approach?" (the reframe), on one slide, plus a hook footer, plus an "An intrigue gap, on purpose" meta line.
 Why it fails: OBI-3 (two core ideas: a gap and its reframe), OBI-1 (four-plus text blocks). This is two slides.
 
 **PASS (the split):**
 > Slide A, HEADLINE: "Doing the right things. The wrong way." (the gap, 6 words). Slide B, HEADLINE: "What if it is not effort, but approach?" (the reframe, 8 words). Each is one idea, one text block, under 9 words, no footer.
 
-**FAIL (forensic-deck slide 5):**
+**FAIL (reference failure case slide 5):**
 > Three headline ideas stacked ("Why It Happens. The Framework. Confident Guide."), three full step descriptions baked into image cards, a hook footer, and a redundant "Step 1 / Step 2 / Step 3" cue. At least five text blocks, three big ideas.
 Why it fails: OBI-3 (three core ideas), OBI-1 (five-plus text blocks).
 
 **PASS (the split):** a why-it-happens slide, a framework slide, and an outcome beat; the step descriptions move to the Presenter's Guide; no footer.
 
-**FAIL (forensic-deck slide 26):**
+**FAIL (reference failure case slide 26):**
 > All three Cs (Confident, Consistent, Clear) on one slide PLUS a separate CLARIFY/COMMUNICATE/COACH card grid PLUS a hook footer.
 Why it fails: OBI-4 (full value trio on one slide), OBI-1, OBI-3.
 
 **PASS (the split):** a Confident slide, a Consistent slide, a Clear slide, then a formula slide ("Confident + Consistent + Clear = an Effective Guide"). Four slides.
 
-**FAIL (forensic-deck slide 28):**
+**FAIL (reference failure case slide 28):**
 > An 8-row comparison table (4 CONTROL traits vs 4 CLARITY traits) plus a headline plus a body paragraph plus the hook footer printed twice.
 Why it fails: OBI-6 (8-row table), OBI-1.
 

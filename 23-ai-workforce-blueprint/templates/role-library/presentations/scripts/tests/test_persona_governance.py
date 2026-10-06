@@ -121,9 +121,13 @@ def test_timeout_wall_fires(tmp_path, monkeypatch):
     import concurrent.futures
 
     # Hard-guard the constant value — a mutation of BLEND_TIMEOUT_S must
-    # turn this test red (fail-closed rule 2).
-    assert persona.BLEND_TIMEOUT_S == 30, (
-        f"BLEND_TIMEOUT_S must be 30, got {persona.BLEND_TIMEOUT_S}")
+    # turn this test red (fail-closed rule 2). FIX 28 deliberately raised
+    # the wall 30 -> 90 (the 30 s wall blocked legitimately slow copy-phase
+    # persona resolutions; the seam's own subprocess budget is 60 s, so 90 s
+    # gives one full seam budget plus headroom) and added exactly one retry,
+    # so this guard now pins the NEW value the fix landed.
+    assert persona.BLEND_TIMEOUT_S == 90, (
+        f"BLEND_TIMEOUT_S must be 90 (FIX 28), got {persona.BLEND_TIMEOUT_S}")
 
     run_dir = _make_run_dir(tmp_path)
     mod = persona.load_blend_module()

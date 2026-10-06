@@ -370,7 +370,13 @@ check_drift() {
 if [ "${1:-}" = "--check" ]; then
   print_state
   tag_containment_advisory
-  if check_drift; then
+  COHORT_CHECK_RC=0
+  if [ -f "$SCRIPT_DIR/roll-release-cohort.py" ]; then
+    echo ""
+    echo "release-cohort.json (onb_version/cc_version vs /version + cc-compat.json pinnedTag):"
+    python3 "$SCRIPT_DIR/roll-release-cohort.py" --repo-root "$REPO_ROOT" --check || COHORT_CHECK_RC=$?
+  fi
+  if check_drift && [ "$COHORT_CHECK_RC" -eq 0 ]; then
     echo ""
     echo "All $BUMP_CHECKED_MARKERS version markers agree."
     exit 0
@@ -760,6 +766,55 @@ if m:
 else:
     print(f"WARN: no YAML frontmatter in {path}", file=sys.stderr)
 PYEOF
+fi
+
+# 13. README.md prose version tokens outside the tracked marker pair (added
+#     alongside scripts/check-readme-current-release.sh). Two more README
+#     version numbers go stale on every release because nothing rolled them:
+#     the "## Current release: vX.Y.Z" heading and the top banner's own
+#     "> **vX.Y.Z — ...**" token. (The banner's description prose still needs
+#     a human/agent rewrite each release — this only keeps the NUMBER from
+#     drifting, exactly like markers #6/#9 above.) The banner's "Paired
+#     Command Center: **vX.Y.Z**" token is rolled from cc-compat.json's
+#     commandCenter.pinnedTag — a DIFFERENT source of truth than /version —
+#     every bump, so it can never silently lag behind the pin again (it sat
+#     at v7.1.5 while pinnedTag reached v7.6.68). Checked in CI by
+#     check-readme-current-release.sh.
+if [ -f "$F_README" ]; then
+  python3 - <<PYEOF
+import re
+p = "$F_README"
+target = "$TARGET"
+content = open(p).read()
+new = re.sub(r'(^## Current release: )v[0-9]+\.[0-9]+\.[0-9]+',
+             r'\1' + target, content, count=1, flags=re.MULTILINE)
+new = re.sub(r'(^> \*\*)v[0-9]+\.[0-9]+\.[0-9]+( )',
+             r'\1' + target + r'\2', new, count=1, flags=re.MULTILINE)
+open(p, "w").write(new)
+PYEOF
+  if [ -f "$F_CC_COMPAT" ]; then
+    python3 - <<PYEOF
+import json, re
+readme_path = "$F_README"
+pinned = json.load(open("$F_CC_COMPAT")).get("commandCenter", {}).get("pinnedTag")
+if pinned:
+    content = open(readme_path).read()
+    new = re.sub(r'(Paired Command Center: \*\*)v[0-9]+\.[0-9]+\.[0-9]+(\*\*)',
+                 r'\1' + pinned + r'\2', content, count=1)
+    open(readme_path, "w").write(new)
+PYEOF
+  fi
+fi
+
+# 14. release-cohort.json (JGT102) — tracks TWO sources, like the README's
+#     "Paired Command Center" token just above: onb_version from /version
+#     (just rewritten) and cc_version from cc-compat.json's pinnedTag. It is
+#     NOT one of the BUMP_CHECKED_MARKERS/version-markers.json set (it tracks
+#     a pair, not a single /version marker) — see scripts/roll-release-cohort.py.
+#     onb_sha/cc_sha are deliberately left untouched here; they are set at
+#     release time, not on every bump.
+if [ -f "$SCRIPT_DIR/roll-release-cohort.py" ]; then
+  python3 "$SCRIPT_DIR/roll-release-cohort.py" --repo-root "$REPO_ROOT"
 fi
 
 echo ""

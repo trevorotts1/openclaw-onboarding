@@ -7,9 +7,9 @@ WHAT THIS TEST PROVES (no network, no KIE_API_KEY, AGPLv3-safe — tools.
 base_tool is stubbed so the adapter imports standalone, same harness
 pattern as test_kie_adapter_resultjson_decode.py):
 
-  1. `_submit_seedance` posts to the SAME /api/v1/jobs/createTask endpoint
-     used by gemini-omni-video (no new HTTP surface), with the exact body
-     shape documented in 07-kie-setup/kie-setup-full.md § "Seedance 1.5 Pro"
+  1. execute() submits through Skill 74 to the SAME /api/v1/jobs/createTask
+     endpoint used by gemini-omni-video (no new HTTP surface), with the exact
+     body shape documented in 07-kie-setup/kie-setup-full.md § "Seedance 1.5 Pro"
      (model, input.prompt, input.aspect_ratio [required], input.resolution,
      input.duration [string], input.fixed_lens, input.generate_audio).
   2. Frame pinning: `input_urls` is included in the submitted body ONLY when
@@ -26,17 +26,16 @@ pattern as test_kie_adapter_resultjson_decode.py):
      fix (aspect snapping used to run before the model was known).
   5. `_resolve_input_urls` caps at 2 entries, drops non-http(s)/non-string
      entries, and preserves order.
-  6. The real poll path (`_poll_seedance` -> shared `_poll_jobs_task`)
-     extracts the result URL exactly like `_poll_gemini_omni` (both hit
-     the identical /api/v1/jobs/recordInfo endpoint), and a failure is
-     attributed to the Seedance model in the error text (not mislabeled
-     "gemini-omni-video").
-  7. `execute()` end-to-end: two-frame pinning submit+poll+download
-     succeeds and echoes `input_urls` in the result; an out-of-range
-     prompt length is refused before any HTTP call; a submit-time
+  6. A failed Seedance task is attributed to the Seedance model in the error
+     text (not mislabeled "gemini-omni-video").
+  7. `execute()` end-to-end: two-frame pinning submit+wait+save succeeds and
+     echoes `input_urls` in the result; the prompt length comes from Skill 74
+     prompt-budget / the live schema (a too-long prompt is refused before
+     createTask, a too-short one fails schema validation); a submit-time
      exception surfaces as a failed ToolResult, never a crash.
-  8. No regression: `_poll_gemini_omni(task_id, api_key)` — the pre-U5
-     external call signature — still works unchanged.
+  8. gemini-omni-video: one retry on a transient image-fetch failure, a
+     fallback to veo3_fast on any other failure, createTask never resent after
+     a network error.
 
 Run:  python3 47-movie-producer/scripts/test_kie_video_seedance.py
 Exit: 0 = all pass; 1 = a failure.
@@ -47,16 +46,16 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 from typing import Any
 
-# execute() reads KIE_API_KEY from the environment before doing anything else.
-# This is a FIXTURE placeholder value only (never a real credential) so the
-# execute()-level tests below can reach the submit/poll/download path under
-# test; every HTTP call in this file is faked, so the value is never sent
-# anywhere real.
-os.environ.setdefault("KIE_API_KEY", "FIXTURE-NOT-A-REAL-KEY")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_kie_adapter_resultjson_decode as base  # noqa: E402  (shared FakeKieTransport + fresh_tool)
+
+# execute() reads KIE_API_KEY from the environment (a synthetic high-entropy fixture, never a real
+# credential; set by fresh_tool). Every HTTP call in this file goes to the FakeKieTransport.
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VIDEO_PY = REPO_ROOT / "47-movie-producer" / "kie-adapters" / "tools" / "video" / "kie_video.py"
@@ -225,223 +224,113 @@ def main() -> int:
     check("non-http(s)/non-string entries are skipped, valid ones kept in relative order",
           filtered == [FIRST_FRAME_URL, LAST_FRAME_URL], detail=f"got {filtered!r}")
 
-    print("== _submit_seedance request body shape ==")
-    captured: dict[str, Any] = {}
-
-    class _FakePostResp:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": {"taskId": "fixture-task-seedance"}}
-
-    def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002 - matches requests kw
-        captured["url"] = url
-        captured["headers"] = headers
-        captured["body"] = json
-        captured["timeout"] = timeout
-        return _FakePostResp()
-
-    fake_requests_mod = types.SimpleNamespace(post=fake_post)
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *a, **k):
-        if name == "requests":
-            return fake_requests_mod
-        return real_import(name, *a, **k)
-
-    builtins.__import__ = fake_import
-    try:
-        task_id = instance._submit_seedance(
-            "A serene beach at sunset with waves gently crashing on the shore",
-            "8", "16:9", "720p", [FIRST_FRAME_URL, LAST_FRAME_URL],
-            False, False, "FAKE_KEY",
-        )
-    finally:
-        builtins.__import__ = real_import
-
-    check("submit posts to the SHARED /api/v1/jobs/createTask endpoint (no new HTTP surface)",
-          captured["url"] == vid._GEMINI_CREATE_URL, detail=captured.get("url"))
-    check("submit returns the taskId from the response", task_id == "fixture-task-seedance")
-    check("body.model is the exact wire slug", captured["body"]["model"] == "bytedance/seedance-1.5-pro")
-    body_input = captured["body"]["input"]
-    check("body.input.aspect_ratio is REQUIRED and present", body_input.get("aspect_ratio") == "16:9")
-    check("body.input.resolution present", body_input.get("resolution") == "720p")
-    check("body.input.duration is a STRING", body_input.get("duration") == "8" and isinstance(body_input.get("duration"), str))
+    print("== execute() through Skill 74: request body shape ==")
+    ft = base.FakeKieTransport()
+    tool = base.fresh_tool(vid, "KieVideo", ft)
+    tmp = Path(tempfile.mkdtemp(prefix="kie47-seedance-"))
+    result_tool = tool.execute({
+        "prompt": "A serene beach at sunset, waves crashing gently, palm trees swaying",
+        "model": "bytedance/seedance-1.5-pro",
+        "input_urls": [FIRST_FRAME_URL, LAST_FRAME_URL],
+        "aspect_ratio": "21:9",
+        "resolution": "1080p",
+        "duration": "12",
+        "generate_audio": True,
+        "output_path": str(tmp / "clip.mp4"),
+    })
+    check("execute() reports success (%s)" % getattr(result_tool, "error", None),
+          getattr(result_tool, "success", False) is True)
+    body = ft.create_calls[0] if ft.create_calls else {}
+    body_input = body.get("input", {})
+    check("submit goes to the SHARED createTask path (the only create route used)", len(ft.create_calls) == 1 and not ft.veo_calls)
+    check("body.model is the exact wire slug", body.get("model") == "bytedance/seedance-1.5-pro")
+    check("body.input.aspect_ratio is REQUIRED and present (wide ratio not clamped)", body_input.get("aspect_ratio") == "21:9")
+    check("body.input.resolution present", body_input.get("resolution") == "1080p")
+    check("body.input.duration is a STRING", body_input.get("duration") == "12" and isinstance(body_input.get("duration"), str))
     check("body.input.fixed_lens present (default false)", body_input.get("fixed_lens") is False)
-    check("body.input.generate_audio present (default false)", body_input.get("generate_audio") is False)
+    check("body.input.generate_audio present", body_input.get("generate_audio") is True)
     check("body.input.input_urls carries [first, last] IN ORDER — frame pinning",
           body_input.get("input_urls") == [FIRST_FRAME_URL, LAST_FRAME_URL])
-    check("Authorization header carries Bearer + the key",
-          captured["headers"]["Authorization"] == "Bearer FAKE_KEY")
-
-    print("== text-to-video: input_urls key omitted entirely when no images given ==")
-    captured2: dict[str, Any] = {}
-
-    def fake_post2(url, headers=None, json=None, timeout=None):  # noqa: A002
-        captured2["body"] = json
-        return _FakePostResp()
-
-    builtins.__import__ = lambda name, *a, **k: (
-        types.SimpleNamespace(post=fake_post2) if name == "requests" else real_import(name, *a, **k)
-    )
-    try:
-        instance._submit_seedance("A boy rides a bike at sunset", "8", "16:9", "720p", [], False, False, "FAKE_KEY")
-    finally:
-        builtins.__import__ = real_import
-    check("input_urls key is ABSENT from the body for text-to-video (matches kie-setup-full.md)",
-          "input_urls" not in captured2["body"]["input"], detail=str(captured2["body"]["input"]))
-
-    print("== real poll path (_poll_seedance -> shared _poll_jobs_task) ==")
-
-    def _patch_poll(mod, payload: dict):
-        fake_requests = types.SimpleNamespace(get=lambda *a, **k: _FakeResp(payload))
-        ri = builtins.__import__
-
-        def fi(name, *a, **k):
-            if name == "requests":
-                return fake_requests
-            return ri(name, *a, **k)
-        mod.time.sleep = lambda *_a, **_k: None
-        return fi
-
-    fake_import_ok = _patch_poll(vid, _seedance_recordinfo_success())
-    builtins.__import__ = fake_import_ok
-    try:
-        result = instance._poll_seedance("fixture-task-seedance", "FAKE_KEY")
-    finally:
-        builtins.__import__ = real_import
-    check("poll extracts the result URL on success", result == RESULT_URL, detail=result)
-
-    fake_import_fail = _patch_poll(vid, _seedance_recordinfo_failed())
-    builtins.__import__ = fake_import_fail
-    try:
-        try:
-            instance._poll_seedance("fixture-task-seedance-fail", "FAKE_KEY")
-            poll_failed_correctly = False
-            err_text = ""
-        except RuntimeError as exc:
-            poll_failed_correctly = True
-            err_text = str(exc)
-    finally:
-        builtins.__import__ = real_import
-    check("poll raises RuntimeError on a failed task", poll_failed_correctly)
-    check("failure text attributes the model as Seedance, NOT 'gemini-omni-video'",
-          "bytedance/seedance-1.5-pro" in err_text and "gemini-omni-video" not in err_text,
-          detail=err_text)
-
-    print("== _poll_gemini_omni: pre-U5 2-arg call signature unaffected (no regression) ==")
-    fake_import_gemini = _patch_poll(vid, {
-        "code": 200, "msg": "success",
-        "data": {"taskId": "fixture-task-gemini", "state": "success",
-                 "resultJson": json.dumps({"resultUrls": [RESULT_URL]})},
-    })
-    builtins.__import__ = fake_import_gemini
-    try:
-        gemini_result = instance._poll_gemini_omni("fixture-task-gemini", "FAKE_KEY")
-    finally:
-        builtins.__import__ = real_import
-    check("_poll_gemini_omni(task_id, api_key) still works unchanged", gemini_result == RESULT_URL)
-
-    print("== execute() end-to-end: frame-pinned Seedance clip ==")
-
-    def fake_post3(url, headers=None, json=None, timeout=None):  # noqa: A002
-        return _FakePostResp()
-
-    downloaded: dict[str, Any] = {}
-
-    class _FakeGetResp:
-        def __init__(self, payload=None, content=b"FAKE-MP4-BYTES", status_code=200):
-            self._payload = payload or _seedance_recordinfo_success()
-            self.content = content
-            self.status_code = status_code
-
-        def json(self):
-            return self._payload
-
-        def raise_for_status(self):
-            pass
-
-    def fake_get(url, params=None, headers=None, timeout=None, allow_redirects=None):
-        if "recordInfo" in url:
-            return _FakeGetResp()
-        downloaded["url"] = url
-        return _FakeGetResp(content=b"FAKE-MP4-BYTES")
-
-    fake_requests3 = types.SimpleNamespace(post=fake_post3, get=fake_get)
-    builtins.__import__ = lambda name, *a, **k: (
-        fake_requests3 if name == "requests" else real_import(name, *a, **k)
-    )
-    vid.time.sleep = lambda *_a, **_k: None
-    tmp_out = REPO_ROOT / "62-cinematic-web-funnel-engine" / "tests" / "fixtures" / "kie" / "_tmp_seedance_output.mp4"
-    tmp_out.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        result_tool = instance.execute({
-            "prompt": "A serene beach at sunset, waves crashing gently, palm trees swaying",
-            "model": "bytedance/seedance-1.5-pro",
-            "input_urls": [FIRST_FRAME_URL, LAST_FRAME_URL],
-            "aspect_ratio": "21:9",
-            "resolution": "1080p",
-            "duration": "12",
-            "generate_audio": True,
-            "output_path": str(tmp_out),
-        })
-    finally:
-        builtins.__import__ = real_import
-        if tmp_out.exists():
-            tmp_out.unlink()
-
-    check("execute() reports success", getattr(result_tool, "success", False) is True,
-          detail=getattr(result_tool, "error", None))
     check("execute() data.model is the Seedance slug", result_tool.data.get("model") == "bytedance/seedance-1.5-pro")
     check("execute() echoes the frame-pin input_urls IN ORDER",
           result_tool.data.get("input_urls") == [FIRST_FRAME_URL, LAST_FRAME_URL])
-    check("execute() preserves the wide aspect ratio (not clamped to 16:9)",
-          result_tool.data.get("aspect_ratio") == "21:9")
+    check("execute() preserves the wide aspect ratio (not clamped to 16:9)", result_tool.data.get("aspect_ratio") == "21:9")
     check("execute() preserves the snapped duration", result_tool.data.get("duration") == "12")
-    check("execute() carries the render-proof kie_task_id", result_tool.data.get("kie_task_id") == "fixture-task-seedance")
+    check("execute() carries the render-proof kie_task_id", result_tool.data.get("kie_task_id") == "task-1")
+    check("the MP4 was saved to output_path", (tmp / "clip.mp4").read_bytes() == b"FIXTURE-RESULT-BYTES")
 
-    print("== execute() refuses an out-of-range prompt BEFORE any HTTP call ==")
-    call_count = {"n": 0}
+    print("== text-to-video: input_urls key omitted entirely when no images given ==")
+    ft = base.FakeKieTransport()
+    base.fresh_tool(vid, "KieVideo", ft).execute({
+        "prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "t2v.mp4")})
+    check("input_urls key is ABSENT from the body for text-to-video (matches kie-setup-full.md)",
+          ft.create_calls and "input_urls" not in ft.create_calls[0]["input"], detail=str(ft.create_calls))
 
-    def counting_post(*a, **k):
-        call_count["n"] += 1
-        return _FakePostResp()
+    print("== a failed Seedance task is attributed to Seedance ==")
+    ft = base.FakeKieTransport()
+    ft.record_queue = [{"code": 200, "msg": "ok", "data": {"taskId": "t", "state": "fail", "failMsg": "content policy violation"}}]
+    res_fail = base.fresh_tool(vid, "KieVideo", ft).execute({
+        "prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "f.mp4")})
+    err_text = res_fail.error or ""
+    check("failed task -> success=False", res_fail.success is False)
+    check("failure text attributes the model as Seedance, NOT 'gemini-omni-video'",
+          "bytedance/seedance-1.5-pro" in err_text and "gemini-omni-video" not in err_text and "content policy violation" in err_text,
+          detail=err_text)
 
-    builtins.__import__ = lambda name, *a, **k: (
-        types.SimpleNamespace(post=counting_post, get=lambda *a2, **k2: _FakeGetResp())
-        if name == "requests" else real_import(name, *a, **k)
-    )
-    try:
-        result_short = instance.execute({
-            "prompt": "hi",  # 2 chars, under the 3-char floor
-            "model": "bytedance/seedance-1.5-pro",
-        })
-    finally:
-        builtins.__import__ = real_import
-    check("a 2-char prompt is refused", result_short.success is False)
-    check("no HTTP call was made for the refused prompt", call_count["n"] == 0)
+    print("== prompt length comes from Skill 74 (live schema / prompt-budget), not a band in the adapter ==")
+    ft = base.FakeKieTransport()
+    ft.prompt_max = 60
+    ft.input_props = {"bytedance/seedance-1.5-pro": {}}
+    res_long = base.fresh_tool(vid, "KieVideo", ft).execute({
+        "prompt": "x" * 90, "model": "bytedance/seedance-1.5-pro", "output_path": str(tmp / "l.mp4")})
+    check("a prompt over the schema maximum is refused with the exact characters to CUT",
+          res_long.success is False and "CUT exactly 30" in (res_long.error or ""), detail=res_long.error)
+    check("no createTask was sent for the over-long prompt", ft.create_calls == [])
+    ft = base.FakeKieTransport()
+    ft.input_props = {"bytedance/seedance-1.5-pro": {}}
+    ft._schema_orig = ft._schema
 
-    print("== execute() surfaces a submit-time exception as a failed ToolResult (no crash) ==")
+    def _schema_min(model, _o=ft._schema):
+        sch = _o(model)
+        sch["paths"]["/api/v1/jobs/createTask"]["post"]["requestBody"]["content"]["application/json"]["schema"]["properties"]["input"]["properties"]["prompt"]["minLength"] = 3
+        return sch
+    ft._schema = _schema_min
+    res_short = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "hi", "model": "bytedance/seedance-1.5-pro"})
+    check("a 2-char prompt fails the live schema minLength before any createTask",
+          res_short.success is False and ft.create_calls == [] and "validation_failed" in (res_short.error or ""), detail=res_short.error)
 
-    def raising_post(*a, **k):
-        raise RuntimeError("simulated network failure")
-
-    builtins.__import__ = lambda name, *a, **k: (
-        types.SimpleNamespace(post=raising_post) if name == "requests" else real_import(name, *a, **k)
-    )
-    try:
-        result_err = instance.execute({
-            "prompt": "A valid prompt long enough to pass the floor",
-            "model": "bytedance/seedance-1.5-pro",
-        })
-    finally:
-        builtins.__import__ = real_import
-    check("submit failure surfaces as success=False", result_err.success is False)
+    print("== execute() surfaces a submit-time exception as a failed ToolResult (no crash), createTask not resent ==")
+    ft = base.FakeKieTransport()
+    err_tool = base.fresh_tool(vid, "KieVideo", ft)
+    ft.create_error = vid._kie_client()[0].KieError("network", "simulated network failure")
+    res_err = err_tool.execute({
+        "prompt": "A valid prompt long enough to pass the floor", "model": "bytedance/seedance-1.5-pro"})
+    check("submit failure surfaces as success=False", res_err.success is False)
     check("submit failure error text attributes the Seedance model",
-          "bytedance/seedance-1.5-pro" in (result_err.error or ""), detail=result_err.error)
+          "bytedance/seedance-1.5-pro" in (res_err.error or ""), detail=res_err.error)
+    check("createTask was sent exactly once (never retried after a network error)", len(ft.create_calls) == 1)
+
+    print("== gemini-omni-video: transient image-fetch -> one retry; other failure -> veo3_fast fallback ==")
+    ft = base.FakeKieTransport()
+    ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "image fetch failed"}}]
+    res_retry = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "output_path": str(tmp / "g1.mp4")})
+    check("transient image-fetch failure is retried once and then succeeds on gemini-omni-video",
+          res_retry.success and res_retry.data["model"] == "gemini-omni-video" and len(ft.create_calls) == 2 and not ft.veo_calls,
+          detail=str(getattr(res_retry, "error", "")))
+    ft = base.FakeKieTransport()
+    ft.record_queue = [{"code": 200, "data": {"taskId": "a", "state": "fail", "failMsg": "content policy violation"}}]
+    res_fb = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "a calm lake", "output_path": str(tmp / "g2.mp4")})
+    check("a non-transient gemini failure is NOT resubmitted (one createTask) and falls back to veo3_fast",
+          res_fb.success and res_fb.data["model"] == "veo3_fast" and len(ft.create_calls) == 1 and len(ft.veo_calls) == 1,
+          detail=str(getattr(res_fb, "error", "")))
+
+    print("== credit preflight: a real shortfall blocks before createTask ==")
+    ft = base.FakeKieTransport()
+    ft.catalog = [{"model": "bytedance/seedance-1.5-pro", "taskType": ["Text to Video"], "pricingDesc": "A 5-second video costs 160 credits"}]
+    ft.balance = 100
+    res_broke = base.fresh_tool(vid, "KieVideo", ft).execute({"prompt": "A boy rides a bike at sunset", "model": "bytedance/seedance-1.5-pro"})
+    check("insufficient credits -> refused, no createTask", res_broke.success is False and ft.create_calls == []
+          and "insufficient_credits" in (res_broke.error or ""), detail=res_broke.error)
 
     print(f"\n{_PASS} passed, {_FAIL} failed")
     return 1 if _FAIL else 0

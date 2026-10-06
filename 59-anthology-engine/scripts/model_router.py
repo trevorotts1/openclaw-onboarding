@@ -766,7 +766,7 @@ class ModelRouter:
         if tier in NON_TEXT_TIERS:
             raise NonTextTierError(
                 "tier %s is not a text turn; S7 covers route through cover_render.py "
-                "(Kie GPT-image-2 portrait via Skills 07/46), never model_router.py" % tier)
+                "(Kie GPT-image-2.5 portrait via Skills 07/46), never model_router.py" % tier)
         if self.model_map is None:
             raise UnresolvedMapError("router has no model map loaded")
 
@@ -1047,7 +1047,7 @@ def _synthetic_resolved_map() -> dict:
         "<CLIENT_LIGHT_FALLBACK1_MODEL>": "minimaxai/minimax-v3",
         "<CLIENT_JUDGE_PRIMARY_MODEL>": "minimax-v3",
         "<CLIENT_LONGCTX_MODEL>": "deepseek-v4-pro",
-        "<CLIENT_IMAGE_MODEL>": "gpt-image-2",
+        "<CLIENT_IMAGE_MODEL>": "gpt-image-2-5-sunburst-text-to-image",
         "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>": "OLLAMA_API_KEY",
         "<CLIENT_OPENROUTER_KEY_LABEL>": "OPENROUTER_API_KEY",
         "<CLIENT_GEMINI_KEY_LABEL>": "GOOGLE_API_KEY",

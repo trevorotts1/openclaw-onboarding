@@ -3,6 +3,15 @@
 **Department:** rescue-rangers (operator-only)
 **Runtime seat:** the existing `rescue-rangers` OpenClaw agent on the operator Mac.
 
+> **RR-017 OWNERSHIP CORRECTION (2026-09-08, BINDING):** the live current-v2
+> rescue pipeline persists ticket state in **RR-04 n8n Data Tables** (the
+> RR-04-ledger subworkflow is the sole ticket-state writer). The Python SQLite
+> ledger below is **compatibility-only** — offline drill/migration tooling. It
+> is NOT the live system of record and must never run against production
+> ticket state. The old "Rescue Rangers Relay" webhook is **retired**. The
+> authoritative private contract: `blackceo-fleet-ops:rescue/contract-manifest.json`.
+> Public-safe client contract: `contract/PUBLIC-CLIENT-CONTRACT.md`.
+
 This department did not invent its runtime — it FORMALIZES the ad-hoc rescue tooling
 that has run for months into a governed department. This file is the canonical
 inventory of the tools the department operates. Repo-side deliverables live under
@@ -15,8 +24,8 @@ and cloud (documented here, run by the operator — see "DEFERRED live steps").
 
 | Tool | Purpose | Self-test |
 |---|---|---|
-| `rescue_ledger.py` | The SOLE durable ticket-state writer. SQLite (WAL) at `~/clawd/fleet-heartbeat/rescue/tickets.db`. Replaces the volatile n8n `workflowStaticData` queue + per-client 25/day counters (kills R1). Schema + accessors: `open`/`answer`/`resolve`/`set-status`/`aging`/`count-today`/`digest`/`stamp-cc`. | `python3 rescue_ledger.py --self-test` |
-| `rescue_cc_board.py` | Fail-soft Command Center board caller. Puts every ticket on the department Kanban (`department_slug:"rescue-rangers"`) via `POST /api/tasks/ingest`, advances status, records movement receipts, and runs the aging sweep off the ledger (kills R3, R6). A board outage NEVER blocks a rescue. | `python3 rescue_cc_board.py --self-test` |
+| `rescue_ledger.py` | **COMPATIBILITY-ONLY (RR-017):** offline drill/migration tooling — NOT the live ledger. SQLite (WAL) at `~/clawd/fleet-heartbeat/rescue/tickets.db` for isolated drills. The live current-v2 ledger is the RR-04 n8n Data Tables pipeline. Schema + accessors: `open`/`answer`/`resolve`/`set-status`/`aging`/`count-today`/`digest`/`stamp-cc`. | `python3 rescue_ledger.py --self-test` |
+| `rescue_cc_board.py` | **COMPATIBILITY-ONLY (RR-017):** legacy fail-soft board caller against the Python ledger (drills only). The live board is the CC rescue dashboard reading the receiver-side store read-only (`src/lib/rescue/db.ts`), plus the RR-018/019 external-rescue execution contract. A board outage NEVER blocks a rescue. | `python3 rescue_cc_board.py --self-test` |
 | `relay_brain_validation.js` | The Relay Brain edge-validation patch: enforces the full nine-field escalation contract (was only `missing_message`; kills R2) and implements the outbound-only `status` return-leg branch (kills R4). Pure/dep-free — drops into the n8n Code node AND runs under plain `node` for its self-test. | `node relay_brain_validation.js --self-test` |
 | `migrate-rescue-staticdata.py` | One-shot IDEMPOTENT migration: n8n staticData export → SQLite ledger (the FIX 4-A migration leg). Tolerant of the export's exact shape (confirm against a real export before the live cutover). | `python3 migrate-rescue-staticdata.py --self-test` |
 | `stamp-rescue-escalation-section.sh` | Renders `scripts/rescue-escalation-section.md.tpl` with a box's real tokens and appends it to that box's AGENTS.md iff the marker is absent (idempotent; kills R5 template drift). Runnable now; install.sh wiring is DEFERRED. | `bash stamp-rescue-escalation-section.sh --self-test` |
@@ -27,14 +36,18 @@ and cloud (documented here, run by the operator — see "DEFERRED live steps").
 
 | Tool | Where | What it does |
 |---|---|---|
-| **n8n "Rescue Rangers Relay"** | `main.blackceoautomations.com` | Webhook → Auth Check → Relay Brain (routing + transport-buffer queue) → posts to Rescue Rangers HQ Telegram (Fixer topic) → return leg. The Relay Brain is patched by `relay_brain_validation.js`. |
+| **n8n "Rescue Rangers Relay"** | `main.blackceoautomations.com` | **RETIRED (RR-017):** inactive legacy path. Canonical intake is `rr-v2-intake` (RR-01). A box env still carrying the old `webhook/rescue-rangers` URL is a false-pass trap — rr-reconcile.sh check 5 reports it. Do not reactivate as a state writer. |
 | **`rescue-receiver.mjs`** | operator Mac `127.0.0.1:8799` (launchd), CF tunnel `rescue-gw.zerohumanworkforce.com/rescue` | Push transport: authenticated POST runs ONE turn of the rescue agent; tier routing; structured `remediate.sh` fixer (DRY-RUN default); posts the answer back to the relay. |
 | **`rescue-rangers-poller.sh`** | operator Mac cron `*/10` | Pull transport (fallback): drains `{action:"pending"}`, runs one agent turn per ticket, posts answers back; idempotent. |
 | **`rescue-receiver-watchdog.sh`** | operator Mac cron (every minute) | Health-checks :8799, kickstarts, bounded at MAX_RESTARTS=5 (anti-crash-loop), one deduped alarm to the Fixer topic. |
 
-Both live transports write ticket state THROUGH `rescue_ledger.py` (the durable
-system of record) and board via `rescue_cc_board.py` — that is the wiring this
-department adds on top of the existing transports.
+In the live current-v2 pipeline, ticket state is written through the **RR-04 n8n
+Data Tables ledger** (subworkflow `RR-04-ledger`, the sole production writer)
+and boarded via the Command Center rescue dashboard (read-only) plus the
+RR-018/019 external-rescue execution contract. The `rescue_ledger.py` /
+`rescue_cc_board.py` wiring below is **compatibility-only drill tooling** — use
+it for offline drills and historical migration, never against production ticket
+state.
 
 ---
 

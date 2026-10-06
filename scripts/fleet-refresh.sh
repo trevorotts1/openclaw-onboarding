@@ -21,17 +21,39 @@
 #   bash scripts/fleet-refresh.sh --max-parallel N   # concurrency cap (default 8)
 #   bash scripts/fleet-refresh.sh --force-cc         # stash CC dirty tree instead of aborting
 #   bash scripts/fleet-refresh.sh --expected-sha <s> # inform verifier of expected onboarding SHA
+#   bash scripts/fleet-refresh.sh --wave first|rest  # only the boxes-file entries in that wave
+#                                                    # (implies --boxes-file ~/.openclaw/fleet/boxes.json)
 #   bash scripts/fleet-refresh.sh --help
+#
+# ROLL ORDER (see scripts/make-fleet-boxes-file.py):
+#   1. operator box:  bash scripts/fleet-refresh.sh --local --apply
+#   2. first three client boxes (one Mac, one Hostinger, one Contabo):
+#                     bash scripts/fleet-refresh.sh --wave first --apply
+#   3. every other client box: bash scripts/fleet-refresh.sh --wave rest --apply
+#   Each run ends with a one-screen UPDATED / ROLLED_BACK / FAILED / SKIPPED table.
+#   Every box is snapshotted first, then checked after the update: health
+#   (gateway, Telegram getMe, Command Center, session reset) AND content (persona
+#   index + embeddings, SOP library + embeddings, role library, departments).
+#   A failed check is FIXED first, up to 3 attempts (restart the gateway, re-run
+#   the failed step, rebuild the Command Center); only then is the box rolled
+#   back to its snapshot. Roll-backs and failures alert the OPERATOR (Telegram
+#   via his own agent's bot, plus email on his Mac). No client is ever messaged.
 #
 # BOX MANIFEST FORMAT (--boxes-file):
 #   JSON array of objects:
 #   [
 #     {
+#       "client": "Client Name",         # whose box it is: every line and alert names
+#                                        # the box "Client Name (Platform)", never its id
 #       "name": "client-box-01",
 #       "ssh_target": "clientuser@<host>",
 #       "cf_tunnel_id": "bfbd47ae...",
 #       "cf_access_env_prefix": "CF_ACCESS_CLIENT",
-#       "platform": "mac"
+#       "platform": "mac",               # mac | hostinger | contabo
+#       "container": "<name>",           # optional: run inside it via docker exec
+#       "docker_exec_user": "node",      # optional (default node)
+#       "openclaw_root": "/path",        # optional: exported as OPENCLAW_ROOT
+#       "wave": "first"                  # optional: first | rest (default rest)
 #     },
 #     ...
 #   ]
@@ -39,7 +61,10 @@
 # SAFETY GUARANTEES:
 #   • --dry-run is the default.  --apply must be passed explicitly.
 #   • NEVER issues `openclaw gateway restart` (Mac err 125 → box DOWN).
-#     Only `sessions.reset` is issued (a gateway CALL, not a process restart).
+#     The gateway is restarted ONLY as a fix attempt after a failed health
+#     check: Mac `launchctl kickstart -k` (fallback `launchctl stop`, KeepAlive
+#     restarts it); Hostinger `docker compose up -d --force-recreate <service>`
+#     and Contabo `docker restart <container>`, both run on the HOST by this script.
 #   • Per-box failure is isolated: one box failing never aborts others.
 #   • Aggregate exit: 0=all ok; 2=any partial/failed; 3=any unknown (CI-visible nonzero).
 #   • CC deploy goes through scripts/atomic-deploy.sh ONLY (B.2).
@@ -70,6 +95,7 @@ FORCE_CC=0
 MAX_PARALLEL=8
 EXPECTED_SHA=""
 BOXES_FILE=""
+WAVE=""
 declare -a BOX_NAMES=()
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -84,8 +110,9 @@ while [[ $# -gt 0 ]]; do
     --boxes-file)   BOXES_FILE="$2"; shift 2 ;;
     --max-parallel) MAX_PARALLEL="$2"; shift 2 ;;
     --expected-sha) EXPECTED_SHA="$2"; shift 2 ;;
+    --wave)         WAVE="$2"; shift 2 ;;
     --help|-h)
-      grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//' | head -60
+      grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//' | head -80
       exit 0
       ;;
     *)
@@ -95,6 +122,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$WAVE" in
+  ""|first|rest) ;;
+  *) echo "FATAL: --wave must be first or rest (got: $WAVE)" >&2; exit 1 ;;
+esac
+if [ -n "$WAVE" ] && [ -z "$BOXES_FILE" ]; then
+  BOXES_FILE="$HOME/.openclaw/fleet/boxes.json"
+fi
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 if [ ! -f "$RUNNER" ]; then
@@ -211,6 +246,19 @@ wave5_deploy_preflight() {
 
 wave5_deploy_preflight
 
+# --local --apply updates THIS checkout in place (update-skills.sh hard-syncs it
+# to origin/main; a rollback resets it to the snapshot). Never do that to a
+# development checkout: require a clean clone on main.
+if [ $LOCAL -eq 1 ] && [ $APPLY -eq 1 ] && [ -d "$REPO_ROOT/.git" ]; then
+  _branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
+  if [ "$_branch" != "main" ] || [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "FATAL: --local --apply must run from a clean onboarding clone on main" >&2
+    echo "       ($REPO_ROOT is on '$_branch'$( [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ] && printf ' with uncommitted changes')). This run would reset it." >&2
+    echo "       Use a dedicated clone, e.g.: git clone https://github.com/trevorotts1/openclaw-onboarding.git ~/clawd/openclaw-onboarding" >&2
+    exit 1
+  fi
+fi
+
 # ── Mode banner ───────────────────────────────────────────────────────────────
 if [ $APPLY -eq 1 ]; then
   echo "[fleet-refresh] MODE: APPLY (--apply passed)"
@@ -230,9 +278,24 @@ RUNNER_FLAGS=""
 [ $FORCE_CC -eq 1 ]    && RUNNER_FLAGS="$RUNNER_FLAGS --force-cc"
 [ -n "$EXPECTED_SHA" ] && RUNNER_FLAGS="$RUNNER_FLAGS --expected-sha $EXPECTED_SHA"
 
+# One commit for the whole roll: a PR merged while the roll runs must not reach
+# the boxes that happen to start (or self-sync) after it.
+ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
+[ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
+# The Command Center is NOT rolled from main: each box deploys the release
+# cc-compat.json pins at ROLL_SHA (the runner reads it from the roll copy and
+# fails that box closed when it cannot resolve it). An inherited value from the
+# operator's shell must not override that.
+unset CC_UPDATE_TARGET
+echo "[fleet-refresh] Command Center: the release pinned in cc-compat.json at ${ROLL_SHA:0:12}"
+
 # ── Resolve box list ──────────────────────────────────────────────────────────
 TMPDIR_RESULTS="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_RESULTS"' EXIT
+# Per-box runner logs (stderr) are kept after the run for post-mortems.
+# One directory per run (the pid keeps two rolls started in the same second apart).
+RUN_LOG_DIR="$HOME/.openclaw/fleet/runs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+mkdir -p "$RUN_LOG_DIR" 2>/dev/null && chmod 700 "$HOME/.openclaw/fleet" "$RUN_LOG_DIR" 2>/dev/null || RUN_LOG_DIR="$TMPDIR_RESULTS"
 
 # If --local, run once against this machine with no SSH
 if [ $LOCAL -eq 1 ]; then
@@ -240,32 +303,92 @@ if [ $LOCAL -eq 1 ]; then
   BOX_NAMES=("local")
 fi
 
-# If --boxes-file, load it
+# If --boxes-file, load it (optionally filtered to one --wave)
 declare -a BOX_ENTRIES=()
-if [ -n "$BOXES_FILE" ]; then
+if [ -n "$BOXES_FILE" ] && [ $LOCAL -eq 0 ]; then
   if [ ! -f "$BOXES_FILE" ]; then
     echo "FATAL: --boxes-file not found: $BOXES_FILE" >&2
+    [ -n "$WAVE" ] && echo "       Generate it with: python3 $REPO_ROOT/scripts/make-fleet-boxes-file.py" >&2
     exit 1
   fi
-  # Extract box names from the JSON manifest
   while IFS= read -r name; do
-    BOX_ENTRIES+=("$name")
-  done < <(python3 -c "
+    [ -n "$name" ] && BOX_ENTRIES+=("$name")
+  done < <(python3 - "$BOXES_FILE" "$WAVE" <<'PY'
 import json, sys
-entries = json.load(open('$BOXES_FILE'))
+entries = json.load(open(sys.argv[1]))
+wave = sys.argv[2]
 for e in entries:
-    print(e.get('name',''))
-" 2>/dev/null)
+    if not e.get('name'):
+        continue
+    w = e.get('wave') or 'rest'
+    if wave and w != wave:
+        continue
+    print(e['name'])
+PY
+)
   if [ ${#BOX_ENTRIES[@]} -eq 0 ]; then
-    echo "FATAL: boxes-file has no valid entries" >&2
+    echo "FATAL: boxes-file has no valid entries${WAVE:+ in wave '$WAVE'}" >&2
     exit 1
   fi
-  echo "[fleet-refresh] Loaded ${#BOX_ENTRIES[@]} boxes from $BOXES_FILE"
+  echo "[fleet-refresh] Loaded ${#BOX_ENTRIES[@]} boxes from $BOXES_FILE${WAVE:+ (wave: $WAVE)}"
 fi
+
+# Every human-facing line names a box by its CLIENT: "Client Name (Platform)".
+# box id <TAB> client <TAB> label, from the private boxes file (none: the id).
+LABELS_FILE="$TMPDIR_RESULTS/labels.tsv"
+: > "$LABELS_FILE"
+# A box's own --local run names itself from the client.json the operator's
+# roll left beside its roll copy (scripts/fleet-roll-copy.sh).
+if [ $LOCAL -eq 1 ]; then
+  python3 - > "$LABELS_FILE" <<'PY' || true
+import json, os
+from pathlib import Path
+root = os.environ.get("OPENCLAW_ROOT") or ("/data/.openclaw" if Path("/data/.openclaw").is_dir() else str(Path.home() / ".openclaw"))
+try:
+    c = json.loads((Path(root) / "fleet-refresh" / "client.json").read_text())
+    if c.get("client") and c.get("label"):
+        print("\t".join(("local", c["client"], c["label"])))
+except (OSError, ValueError):
+    pass
+PY
+elif [ -n "$BOXES_FILE" ] && [ -f "$BOXES_FILE" ]; then
+  python3 - "$BOXES_FILE" "$SHARED_UTILS" > "$LABELS_FILE" <<'PY' || true
+import json, sys
+sys.path.insert(0, sys.argv[2])
+from fleet_notify import client_label
+for e in json.load(open(sys.argv[1])):
+    if e.get('name'):
+        client = e.get('client') or f"UNKNOWN CLIENT ({e['name']})"
+        print('\t'.join((e['name'], client, client_label({**e, 'client': client}))))
+PY
+fi
+# label_of <box> [id]: "Client Name (Platform)"; with "id", the box id once too:
+# "Client Name (Platform, box <id>)" -- for lines used to find a box's log.
+label_of() {
+  local l
+  l=$(awk -F'\t' -v b="$1" '$1 == b { print $3; exit }' "$LABELS_FILE")
+  if [ -z "$l" ]; then printf '%s' "$1"
+  elif [ "${2:-}" = id ]; then printf '%s' "${l%)}, box $1)"
+  else printf '%s' "$l"; fi
+}
+labels_of() { local b out=""; for b in "$@"; do out="${out:+$out, }$(label_of "$b")"; done; printf '%s' "$out"; }
+
+# Add the client's name to a box result: the runner on the box never knows it.
+stamp_client() {
+  local box="$1" result_file="$TMPDIR_RESULTS/$1.json" client
+  client=$(awk -F'\t' -v b="$box" '$1 == b { print $2; exit }' "$LABELS_FILE")
+  [ -n "$client" ] && [ -f "$result_file" ] || return 0
+  python3 - "$result_file" "$client" "$(label_of "$box")" <<'PY' || true
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.update(client=sys.argv[2], label=sys.argv[3])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
 
 # If specific boxes named, use those
 if [ ${#BOX_NAMES[@]} -gt 0 ]; then
-  echo "[fleet-refresh] Restricting to boxes: ${BOX_NAMES[*]}"
+  echo "[fleet-refresh] Restricting to boxes: $(labels_of "${BOX_NAMES[@]}")"
 fi
 
 # Determine final box set
@@ -282,69 +405,88 @@ else
   exit 1
 fi
 
-echo "[fleet-refresh] Running on ${#FINAL_BOXES[@]} box(es): ${FINAL_BOXES[*]}"
+echo "[fleet-refresh] Running on ${#FINAL_BOXES[@]} box(es): $(labels_of "${FINAL_BOXES[@]}")"
 echo "[fleet-refresh] max-parallel: $MAX_PARALLEL"
+echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
 echo ""
 
-# ── Fan-out: run each box in parallel (bounded by MAX_PARALLEL) ───────────────
+# The runner prints exactly one JSON object as its LAST stdout line; a login
+# shell on the box may print banners before it. Keep only that line, or wrap
+# the failure as a result object so every box always has one.
+finish_result() {
+  local box="$1" rc="$2" raw="$3" result_file="$4" prefix="$5"
+  if python3 - "$raw" "$result_file" <<'PY'
+import json, sys
+lines = [l for l in open(sys.argv[1], errors="replace").read().splitlines() if l.strip()]
+for line in reversed(lines):
+    try:
+        obj = json.loads(line)
+    except ValueError:
+        continue
+    if isinstance(obj, dict) and "box" in obj:
+        json.dump(obj, open(sys.argv[2], "w"))
+        sys.exit(0)
+sys.exit(1)
+PY
+  then
+    return 0
+  fi
+  local msg
+  msg="$( { tail -3 "$raw"; tail -3 "$RUN_LOG_DIR/${box}.log" 2>/dev/null; } | tr '\n"\\' '   ' | cut -c1-300)"
+  python3 - "$box" "$rc" "$prefix" "$msg" "$result_file" <<'PY'
+import json, sys
+box, rc, prefix, msg, out = sys.argv[1:6]
+json.dump({"box": box, "result": "failed", "outcome": "FAILED",
+           "outcome_detail": f"{prefix} exited {rc}: {msg}",
+           "errors": [f"{prefix} exited {rc}: {msg}"]}, open(out, "w"))
+PY
+}
+
 run_box_local() {
   local box="$1"
-  local result_file="$TMPDIR_RESULTS/${box}.json"
-
+  local raw="$TMPDIR_RESULTS/${box}.out"
+  local rc=0
+  # shellcheck disable=SC2086
   python3 "$RUNNER" \
     --box "$box" \
     --shared-utils "$SHARED_UTILS" \
     --repo-root "$REPO_ROOT" \
     $RUNNER_FLAGS \
-    > "$result_file" 2>&1
-  local rc=$?
-
-  # If exit code is 1 or 2 and the result file is not JSON, wrap it
-  if [ $rc -ne 0 ] && ! python3 -c "import json; json.load(open('$result_file'))" 2>/dev/null; then
-    local msg
-    msg=$(cat "$result_file" 2>/dev/null | head -5)
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"runner exited $rc: $msg\"]}" > "$result_file"
-  fi
-  return $rc
+    > "$raw" 2> "$RUN_LOG_DIR/${box}.log" || rc=$?
+  finish_result "$box" "$rc" "$raw" "$TMPDIR_RESULTS/${box}.json" "runner"
 }
+
+# Single-quote a string for a remote POSIX shell.
+sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 run_box_ssh() {
   local box="$1"
-  local box_config="$2"
+  local raw="$TMPDIR_RESULTS/${box}.out"
   local result_file="$TMPDIR_RESULTS/${box}.json"
 
-  # Extract SSH target from the boxes-file config
-  local ssh_target
-  ssh_target=$(python3 -c "
-import json
-entries = json.load(open('$BOXES_FILE'))
-for e in entries:
-    if e.get('name') == '$box':
-        print(e.get('ssh_target',''))
+  # One lookup for every field this box needs (tab-separated, empty = unset).
+  local fields ssh_target container exec_user oc_root platform cf_prefix
+  fields=$(python3 - "$BOXES_FILE" "$box" <<'PY'
+import json, sys
+for e in json.load(open(sys.argv[1])):
+    if e.get('name') == sys.argv[2]:
+        print('\t'.join(str(e.get(k) or '-') for k in
+              ('ssh_target', 'container', 'docker_exec_user', 'openclaw_root', 'platform', 'cf_access_env_prefix')))
         break
-")
-  if [ -z "$ssh_target" ]; then
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"ssh_target not found in boxes-file\"]}" > "$result_file"
+PY
+)
+  IFS=$'\t' read -r ssh_target container exec_user oc_root platform cf_prefix <<< "$fields" || true
+  [ "$container" = "-" ] && container=""
+  [ "$exec_user" = "-" ] && exec_user="node"
+  [ "$oc_root" = "-" ] && oc_root=""
+  [ "$cf_prefix" = "-" ] && cf_prefix=""
+  if [ -z "$ssh_target" ] || [ "$ssh_target" = "-" ]; then
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"FAILED\",\"outcome_detail\":\"ssh_target not found in boxes-file\",\"errors\":[\"ssh_target not found in boxes-file\"]}" > "$result_file"
     return 2
   fi
 
-  # Remote clone-path resolution happens AFTER the SSH env (CF Access) is set up,
-  # so the detection probe reuses the same connection options.  See the
-  # detect-remote-onboarding-root block below (right before the runner invocation).
-
-  # CF Access tunnel support
-  local cf_prefix
-  cf_prefix=$(python3 -c "
-import json
-entries = json.load(open('$BOXES_FILE'))
-for e in entries:
-    if e.get('name') == '$box':
-        print(e.get('cf_access_env_prefix',''))
-        break
-" 2>/dev/null)
-
   # SSH with CF Access service token if available
-  local ssh_opts="-o StrictHostKeyChecking=no -o ConnectTimeout=30"
+  local ssh_opts="-o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=30"
   local ssh_extra_env=""
   if [ -n "$cf_prefix" ]; then
     local client_id_var="${cf_prefix}_SVC_CLIENT_ID"
@@ -354,69 +496,190 @@ for e in entries:
     fi
   fi
 
-  # ── Detect the on-box onboarding clone location ─────────────────────────────
-  # The clone is NOT at a single fixed path across the fleet: legacy boxes keep it
-  # at ~/.openclaw/skills/onboarding, but the majority now live at
-  # ~/clawd/openclaw-onboarding (and a few at the install.sh CANDIDATES layouts).
-  # Probe the known candidates ON THE REMOTE BOX and use whichever actually holds
-  # shared-utils/fleet_refresh_runner.py.  An explicit REMOTE_ONBOARDING_ROOT
-  # override still wins (and is verified) so operators can force a path.
-  #
-  # The detection runs in a single SSH round-trip; the remote snippet prints the
-  # resolved clone root to stdout, or nothing if no candidate is valid.
-  local remote_root remote_su remote_runner
-  local remote_candidates
-  if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
-    # Operator-forced path: still verify it carries the runner before using it.
-    # Normalize a leading '~/' to '$HOME/' so the remote shell expands it.
-    local forced="${REMOTE_ONBOARDING_ROOT/#\~\//\$HOME/}"
-    remote_candidates="\"$forced\""
-  else
-    # Probe order: legacy default first (backward-compatible), then the layout
-    # the majority of the fleet actually uses, then the install.sh CANDIDATES.
-    remote_candidates='"$HOME/.openclaw/skills/onboarding" "$HOME/clawd/openclaw-onboarding" "$HOME/openclaw-onboarding" "$HOME/.openclaw/onboarding"'
-  fi
-  # Remote snippet: walk the candidates, print the first that carries the runner.
-  local detect_script="for d in $remote_candidates; do
-  [ -f \"\$d/shared-utils/fleet_refresh_runner.py\" ] && { printf '%s\\n' \"\$d\"; exit 0; }
-done; exit 0"
-
-  # shellcheck disable=SC2086
-  remote_root=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$detect_script" 2>/dev/null \
-    | head -1 | tr -d '\r')
-
-  if [ -z "$remote_root" ]; then
-    local probed
-    if [ -n "${REMOTE_ONBOARDING_ROOT:-}" ]; then
-      probed="REMOTE_ONBOARDING_ROOT=$REMOTE_ONBOARDING_ROOT"
+  # Where the command runs: inside the client's container (Hostinger /
+  # Contabo), or in a login shell on the box (Mac: launchd PATH is not the
+  # login PATH, and openclaw / pm2 / node live on the login PATH).
+  # In a container the login shell's /etc/profile RESETS PATH, and the npm
+  # global bin (pm2, openclaw) comes back only if ~/.profile re-adds it. A
+  # Contabo box without that block failed its Command Center update with "pm2
+  # is not" found. So the exec sets it itself: Contabo's npm-global under the
+  # OpenClaw root, Hostinger's under HOME (/data).
+  remote() {
+    local cmd="$1"
+    if [ -n "$container" ]; then
+      local envs=""
+      [ -n "$oc_root" ] && envs="-e OPENCLAW_ROOT=$(sq "$oc_root")"
+      cmd='export PATH="${OPENCLAW_ROOT:-$HOME/.openclaw}/npm-global/bin:$HOME/.npm-global/bin:$PATH"'"
+$cmd"
+      printf 'docker exec -u %s %s %s bash -lc %s' "$(sq "$exec_user")" "$envs" "$(sq "$container")" "$(sq "$cmd")"
+    elif [ "$platform" = "mac" ]; then
+      printf 'zsh -lc %s' "$(sq "$cmd")"
     else
-      probed="~/.openclaw/skills/onboarding, ~/clawd/openclaw-onboarding, ~/openclaw-onboarding, ~/.openclaw/onboarding"
+      printf 'bash -lc %s' "$(sq "$cmd")"
     fi
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"onboarding clone not found on box: no candidate dir contains shared-utils/fleet_refresh_runner.py (probed: $probed). Clone trevorotts1/openclaw-onboarding to one of those paths, or set REMOTE_ONBOARDING_ROOT to its location, then retry.\"]}" > "$result_file"
+  }
+
+  # ── The roll's own copy of the onboarding repo on the box ─────────────────
+  # scripts/fleet-roll-copy.sh keeps ONE dedicated clone per box (inside the
+  # container on Docker boxes), refreshed to origin/main every run, and the
+  # runner runs from it. Whatever old clones the box has (shallow, tag-only,
+  # detached) are never used, changed or deleted.
+  local copied verdict remote_root prev_sha
+  # shellcheck disable=SC2086
+  local client_json
+  client_json=$(awk -F'\t' -v b="$box" '$1 == b && $2 !~ /^UNKNOWN CLIENT/ { printf "{\"client\": \"%s\", \"label\": \"%s\"}", $2, $3; exit }' "$LABELS_FILE")
+  # The ssh exit status is kept (not swallowed by the pipe): 255 = ssh itself
+  # could not connect, which is an UNREACHABLE box, not a failed update.
+  local copy_raw ssh_rc=0
+  copy_raw="$(mktemp)"
+  env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+    "$(remote "FLEET_CLIENT_JSON=$(sq "$client_json") FLEET_ROLL_SHA=$(sq "$ROLL_SHA")
+$(cat "$SCRIPT_DIR/fleet-roll-copy.sh")")" \
+    >"$copy_raw" 2>>"$RUN_LOG_DIR/${box}.log" || ssh_rc=$?
+  copied=$(grep -E '^(COPY|COPYFAIL) ' "$copy_raw" | tail -1 | tr -d '\r' || true)
+  rm -f "$copy_raw"
+  if [ -z "$copied" ] && [ "$ssh_rc" -eq 255 ]; then
+    # Unreachable: skip it, change nothing, and list it (UNREACHABLE table below).
+    python3 - "$box" "$result_file" <<'PY'
+import json, sys
+box, out = sys.argv[1:3]
+why = "unreachable: ssh could not connect (exit 255); skipped, nothing changed on the box"
+json.dump({"box": box, "result": "failed", "outcome": "SKIPPED", "unreachable": True,
+           "outcome_detail": why, "errors": [why]}, open(out, "w"))
+PY
+    echo "[fleet-refresh]   $(label_of "$box") — UNREACHABLE (ssh exit 255): skipped" >&2
     return 2
   fi
-
-  # Resolve the runner + shared-utils relative to the detected clone root.
-  remote_su="$remote_root/shared-utils"
-  remote_runner="$remote_su/fleet_refresh_runner.py"
-  echo "[fleet-refresh]   $box — using onboarding clone: $remote_root" >&2
-
-  # shellcheck disable=SC2086
-  env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
-    "python3 $remote_runner \
-      --box $box \
-      --shared-utils $remote_su \
-      --repo-root $remote_root \
-      $RUNNER_FLAGS" \
-    > "$result_file" 2>&1
-  local rc=$?
-
-  if [ $rc -ne 0 ] && ! python3 -c "import json; json.load(open('$result_file'))" 2>/dev/null; then
-    local msg
-    msg=$(cat "$result_file" 2>/dev/null | head -3)
-    echo "{\"box\":\"$box\",\"result\":\"failed\",\"errors\":[\"SSH/runner exited $rc: $msg\"]}" > "$result_file"
+  if [ -z "$copied" ]; then
+    finish_result "$box" "$ssh_rc" /dev/null "$result_file" "ssh (roll copy)"
+    return 2
   fi
-  return $rc
+  if [ "${copied%% *}" = "COPYFAIL" ]; then
+    python3 - "$box" "${copied#COPYFAIL }" "$result_file" <<'PY'
+import json, sys
+box, why, out = sys.argv[1:4]
+json.dump({"box": box, "result": "failed", "outcome": "SKIPPED",
+           "outcome_detail": f"not updated: the roll's onboarding copy could not be prepared ({why})",
+           "errors": [why]}, open(out, "w"))
+PY
+    return 2
+  fi
+  read -r _ verdict prev_sha remote_root <<< "$copied"
+  echo "[fleet-refresh]   $(label_of "$box") — roll copy of onboarding: $remote_root ($verdict)" >&2
+
+  # --apply: never start under a fleet-refresh already running on the box.
+  # The copy's previous SHA is the runner's rollback target for it.
+  local prep=""
+  if [ $APPLY -eq 1 ]; then
+    prep="for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do
+  P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && {
+    echo '{\"box\":\"'$box'\",\"result\":\"skipped\",\"outcome\":\"SKIPPED\",\"outcome_detail\":\"another fleet-refresh is running on this box\"}'; exit 0; }
+done
+export FLEET_PREV_ONBOARDING_SHA=$(sq "${prev_sha#-}")
+"
+  fi
+  # A dropped SSH session must not kill the runner half way through an update
+  # or a rollback: ignore SIGHUP and write to files on the box, echoing them
+  # back at the end. (If the session does drop, the result stays at $O.)
+  # Inside a container the runner cannot restart its own gateway; it asks for
+  # it (exit 4, outcome PENDING) and this wrapper does it on the HOST.
+  local extra=""
+  [ -n "$container" ] && [ $APPLY -eq 1 ] && extra="--host-restart"
+  runner_cmd() {   # $1 = shell prefix, $2 = extra runner flags
+    printf '%s' "trap '' HUP
+${1}${CC_UPDATE_TARGET:+export CC_UPDATE_TARGET=$CC_UPDATE_TARGET
+}O=\${TMPDIR:-/tmp}/fleet-refresh-$box.json; E=\${TMPDIR:-/tmp}/fleet-refresh-$box.log
+rm -f \"\$O\"
+python3 $(sq "$remote_root/shared-utils/fleet_refresh_runner.py") --box $(sq "$box") --shared-utils $(sq "$remote_root/shared-utils") --repo-root $(sq "$remote_root") $RUNNER_FLAGS $2 > \"\$O\" 2> \"\$E\"
+rc=\$?; cat \"\$E\" >&2; cat \"\$O\"; exit \$rc"
+  }
+
+  local rc=0
+  # shellcheck disable=SC2086
+  env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$(runner_cmd "$prep" "$extra")")" \
+    > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
+  finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner"
+
+  # A dropped SSH session (exit 255) does not stop the runner: it ignores
+  # SIGHUP and writes its result on the box. Wait for it there and read that
+  # result, instead of reporting a box that updated fine as FAILED.
+  if [ "$rc" -eq 255 ]; then
+    # The runner's own log ($E on the box) never arrived either: the session
+    # dropped before the final cat. Bring it back into this run's box log.
+    local waitcmd="for i in \$(seq 1 120); do busy=; for L in \"\${OPENCLAW_ROOT:-/nonexistent}\" /data/.openclaw \"\$HOME/.openclaw\"; do P=\$(cat \"\$L/.fleet-refresh.lock/pid\" 2>/dev/null) && kill -0 \"\$P\" 2>/dev/null && busy=1; done; [ -z \"\$busy\" ] && break; sleep 30; done; echo '---- runner log fetched from the box (the SSH session dropped) ----' >&2; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.log\" >&2 2>/dev/null; cat \"\${TMPDIR:-/tmp}/fleet-refresh-$box.json\" 2>/dev/null"
+    local try back_rc=255
+    for try in 1 2 3; do
+      back_rc=0
+      # shellcheck disable=SC2086
+      env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$(remote "$waitcmd")" \
+        > "$raw.back" 2>> "$RUN_LOG_DIR/${box}.log" || back_rc=$?
+      [ "$back_rc" -ne 255 ] && break
+      sleep 30
+    done
+    if [ "$back_rc" -ne 255 ] && grep -q '"box"' "$raw.back" 2>/dev/null; then
+      cp "$raw.back" "$raw"
+      finish_result "$box" 0 "$raw" "$result_file" "ssh/runner (read back)"
+      rc=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["outcome_detail"] = (d.get("outcome_detail") or "") + " (read back from the box after the SSH session dropped)"
+json.dump(d, open(sys.argv[1], "w"))
+print(4 if d.get("outcome") == "PENDING" else 0)
+' "$result_file")
+    fi
+  fi
+
+  # Fix loop, host half: restart the container the way this platform needs,
+  # then let the runner re-check and continue (it caps the attempts at 3).
+  local round
+  for round in 1 2 3; do
+    [ "$rc" -eq 4 ] && [ -n "$container" ] || break
+    local state host_cmd host_out
+    state=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('heal',{}).get('state_path',''))" "$result_file" 2>/dev/null)
+    [ -n "$state" ] || break
+    if [ "$platform" = "contabo" ]; then
+      # Contabo keeps pm2 and the Command Center identity in the container
+      # layer: restart it, never recreate it.
+      host_cmd="docker restart $(sq "$container") >/dev/null && echo 'docker restart ok'"
+    else
+      # Hostinger: 'up -d' (re-reads env), forced so a hung gateway is replaced.
+      host_cmd="d=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.project.working_dir\" }}' $(sq "$container")) && svc=\$(docker inspect -f '{{ index .Config.Labels \"com.docker.compose.service\" }}' $(sq "$container")) && [ -n \"\$d\" ] && cd \"\$d\" && docker compose up -d --force-recreate \"\$svc\" >/dev/null 2>&1 && echo \"docker compose up -d --force-recreate \$svc ok\""
+    fi
+    echo "[fleet-refresh]   $(label_of "$box") — fix attempt needs the gateway restarted: $host_cmd" >&2
+    # shellcheck disable=SC2086
+    host_out=$(env $ssh_extra_env ssh $ssh_opts "$ssh_target" "$host_cmd; for i in \$(seq 1 24); do [ \"\$(docker inspect -f '{{.State.Running}}' $(sq "$container") 2>/dev/null)\" = true ] && break; sleep 5; done" 2>>"$RUN_LOG_DIR/${box}.log" | tail -1 | tr -d "'\"") || true
+    # If the host restart failed, resume WITHOUT --host-restart: the runner
+    # records it, carries on with its other fixes, and rolls back if it must.
+    local again="--host-restart"
+    [ -n "$host_out" ] || { again=""; host_out="FAILED - the host restart did not complete"; }
+    rc=0
+    # shellcheck disable=SC2086
+    env $ssh_extra_env ssh $ssh_opts "$ssh_target" \
+      "$(remote "$(runner_cmd "" "$again --continue-heal $(sq "$state") --host-restart-result $(sq "$host_out")")")" \
+      > "$raw" 2>> "$RUN_LOG_DIR/${box}.log" || rc=$?
+    finish_result "$box" "$rc" "$raw" "$result_file" "ssh/runner (continue-heal)"
+  done
+  if [ "$rc" -eq 4 ]; then   # never leave a box reported as pending
+    python3 - "$result_file" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d.update(result="failed", outcome="FAILED",
+         outcome_detail="a fix needed the container restarted from the host and that could not be completed; "
+                        "the box was left mid-fix - check it by hand")
+json.dump(d, open(sys.argv[1], "w"))
+PY
+  fi
+}
+
+# As each box finishes: name its client in the result and, on an operator roll,
+# tell the operator the moment a box passes (Telegram only; the end-of-run
+# alert covers roll-backs and failures, by Telegram and email).
+finish_box() {
+  stamp_client "$1"
+  if [ $APPLY -eq 1 ] && [ $LOCAL -eq 0 ] && [ -f "$TMPDIR_RESULTS/$1.json" ]; then
+    python3 "$SHARED_UTILS/fleet_notify.py" --passed "$TMPDIR_RESULTS/$1.json" 2>&1 \
+      | sed 's/^/[fleet-refresh] pass note: /' || true
+  fi
 }
 
 # Track active jobs
@@ -442,16 +705,16 @@ run_with_concurrency() {
   done
 
   if [ $LOCAL -eq 1 ] || [ "$box" = "local" ] || [ -z "$BOXES_FILE" ]; then
-    run_box_local "$box" &
+    { run_box_local "$box" || true; finish_box "$box"; } &
   else
-    run_box_ssh "$box" "$BOXES_FILE" &
+    { run_box_ssh "$box" || true; finish_box "$box"; } &
   fi
   PIDS+=($!)
   PID_BOXES+=("$box")
 }
 
 for box in "${FINAL_BOXES[@]}"; do
-  echo "[fleet-refresh] Queuing box: $box"
+  echo "[fleet-refresh] Queuing $(label_of "$box" id)"
   run_with_concurrency "$box"
 done
 
@@ -473,17 +736,18 @@ ANY_UNKNOWN=0
 
 for box in "${FINAL_BOXES[@]}"; do
   result_file="$TMPDIR_RESULTS/${box}.json"
+  label="$(label_of "$box")"
   if [ ! -f "$result_file" ]; then
-    echo "[fleet-refresh]   $box — FATAL: no result file"
-    ANY_FAILED=1
-    continue
+    echo "[fleet-refresh]   $label — FATAL: no result file"
+    echo "{\"box\":\"$box\",\"result\":\"failed\",\"outcome\":\"FAILED\",\"outcome_detail\":\"no result file\"}" > "$result_file"
+    stamp_client "$box"
   fi
 
   box_result=$(cat "$result_file")
 
   # Validate JSON
   if ! echo "$box_result" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null; then
-    echo "[fleet-refresh]   $box — FATAL: invalid JSON result"
+    echo "[fleet-refresh]   $label — FATAL: invalid JSON result"
     echo "$box_result" | head -5
     ANY_FAILED=1
     continue
@@ -535,7 +799,7 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
 " 2>/dev/null || echo "no")
       if [ "$has_exit3" = "yes" ]; then
         icon="?"; ANY_UNKNOWN=1
-        echo "[fleet-refresh]   ? $box — TRANSIENT (exit-3): retry then mark UNKNOWN if repeated"
+        echo "[fleet-refresh]   ? $label — TRANSIENT (exit-3): retry then mark UNKNOWN if repeated"
       else
         icon="△"; ANY_FAILED=1
       fi
@@ -544,27 +808,36 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
-  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
+  outcome_val=$(echo "$box_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('outcome','?'))" 2>/dev/null || echo "?")
+  echo "[fleet-refresh]   $icon  $label  [$outcome_val  result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
   [ -n "$errors" ] && echo "[fleet-refresh]        ERRORS: $errors"
 
   # Accumulate into fleet summary JSON
-  ALL_RESULTS=$(echo "$ALL_RESULTS" | python3 -c "
+  # (Parsed as JSON, not pasted into Python source: a result's true/false/null
+  # made the old paste a NameError, so the summary was always empty.)
+  ALL_RESULTS=$(python3 -c "
 import json,sys
-arr = json.load(sys.stdin)
-arr.append($box_result)
+arr = json.loads(sys.argv[1])
+arr.append(json.load(open(sys.argv[2])))
 print(json.dumps(arr))
-" 2>/dev/null || echo "$ALL_RESULTS")
+" "$ALL_RESULTS" "$result_file" 2>/dev/null || echo "$ALL_RESULTS")
 done
 
 echo "[fleet-refresh] ═══════════════════════════════════════════"
 
-# Write fleet summary
-SUMMARY_FILE="$REPO_ROOT/.fleet-refresh-summary.json"
+# Write fleet summary. THIS run's file: per-box rolls run in parallel from one
+# clone, and a shared file let one roll print another's table and send (or
+# skip) the operator alert on another roll's results. The table, the alert and
+# the box-list backup below read only this file. $REPO_ROOT/.fleet-refresh-summary.json
+# is kept as a "latest run" copy for people; nothing in the roll reads it.
+SUMMARY_FILE="$RUN_LOG_DIR/summary.json"
 echo "$ALL_RESULTS" | python3 -c "
 import json,sys
 arr = json.load(sys.stdin)
 print(json.dumps(arr, indent=2))
 " > "$SUMMARY_FILE" 2>/dev/null || true
+cp "$SUMMARY_FILE" "$REPO_ROOT/.fleet-refresh-summary.json.$$" 2>/dev/null \
+  && mv -f "$REPO_ROOT/.fleet-refresh-summary.json.$$" "$REPO_ROOT/.fleet-refresh-summary.json" 2>/dev/null || true
 echo "[fleet-refresh] Fleet summary written to: $SUMMARY_FILE"
 
 # ── Retirement trigger check (APPLY mode only — never dry-run) ────────────────
@@ -582,14 +855,26 @@ LOADED_STATE_FILE="$REPO_ROOT/.fleet-loaded-state.json"
 RETIREMENT_ISSUE_TITLE="Retire legacy shim + clawd fallbacks (auto-triggered: all boxes loaded)"
 RETIREMENT_ISSUE_LABEL="retirement-tracker"
 
-# Only run the retirement-trigger machinery in APPLY mode.
-# Dry-run and verify-only are 100% inert for this path.
-if [ $APPLY -eq 1 ]; then
-  python3 - <<PYEOF
+# Only run the retirement-trigger machinery in APPLY mode, and never for a
+# single-box --local run (every box's Sunday run is one): "all boxes loaded"
+# is a fleet-wide fact. Dry-run and verify-only are 100% inert for this path.
+if [ $APPLY -eq 1 ] && [ $LOCAL -eq 0 ]; then
+  python3 - <<PYEOF || echo "[fleet-refresh] WARNING: retirement check failed (non-fatal)" >&2
 import json, os, sys, subprocess, time
 from pathlib import Path
 
 loaded_state_file = Path("$LOADED_STATE_FILE")
+
+# The manifest accumulates across runs (it answers "is EVERY box loaded?"), so
+# it stays one file; parallel rolls take turns (read-merge-write under a lock,
+# replaced atomically) instead of overwriting each other's boxes.
+import fcntl
+_lock = open(str(loaded_state_file) + ".lock", "w")
+fcntl.flock(_lock, fcntl.LOCK_EX)
+def _write_state(st):
+    tmp = loaded_state_file.with_name(loaded_state_file.name + f".{os.getpid()}")
+    tmp.write_text(json.dumps(st, indent=2))
+    os.replace(tmp, loaded_state_file)
 all_results_json  = """$ALL_RESULTS"""
 apply             = True
 dry_run           = False
@@ -635,7 +920,7 @@ for box_result in results:
 
 # Persist updated state to the manifest (APPLY only — dry-run never reaches here).
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
     print(f"[fleet-refresh] Retirement manifest updated: {loaded_state_file}")
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not write loaded-state manifest: {e}", file=sys.stderr)
@@ -697,7 +982,9 @@ Follow the plan in \`docs/LEGACY-RETIREMENT.md\`:
 _Auto-opened by fleet-refresh.sh v11.13.0 retirement-clock._
 """
 
-# Attempt to create/update the GitHub issue via `gh`.
+# Attempt to create/update the GitHub issue via the gh CLI.
+# (No backticks in this unquoted heredoc: the shell would run them -- a bare
+# gh here injected its help text and crashed every --apply run.)
 gh_bin = subprocess.run(["which", "gh"], capture_output=True, text=True).stdout.strip()
 if not gh_bin:
     print("[fleet-refresh] WARNING: gh not on PATH — writing trigger sentinel file instead.")
@@ -769,11 +1056,70 @@ else:
 # Mark retirement_triggered=True in the manifest so we never duplicate.
 state["retirement_triggered"] = True
 try:
-    loaded_state_file.write_text(json.dumps(state, indent=2))
+    _write_state(state)
 except Exception as e:
     print(f"[fleet-refresh] WARNING: could not persist retirement_triggered flag: {e}", file=sys.stderr)
 
 PYEOF
+fi
+
+# ── One-screen verdict per box ───────────────────────────────────────────────
+python3 - "$SUMMARY_FILE" <<'PY' || true
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1]))
+except Exception:
+    rows = []
+order = {"FAILED": 0, "ROLLED_BACK": 1, "SKIPPED": 2, "UPDATED": 3}
+def outcome(r):
+    o = r.get("outcome")
+    if o in order:
+        return o
+    return {"ok": "UPDATED", "dry-run": "SKIPPED", "rolled_back": "ROLLED_BACK"}.get(r.get("result"), "FAILED")
+name = lambda r: str(r.get("label") or r.get("box"))   # "Client Name (Platform)"
+rows = sorted(rows, key=lambda r: (order[outcome(r)], name(r)))
+w = max([len(name(r)) for r in rows] + [6])
+print("")
+print("=" * 78)
+print(f" {'CLIENT':<{w}}  {'OUTCOME':<11}  DETAIL")
+print("-" * 78)
+for r in rows:
+    detail = r.get("outcome_detail") or "; ".join(r.get("errors") or [])[:140]
+    print(f" {name(r):<{w}}  {outcome(r):<11}  {detail[:140]}")
+counts = {}
+for r in rows:
+    counts[outcome(r)] = counts.get(outcome(r), 0) + 1
+print("-" * 78)
+print(" " + "   ".join(f"{k}={counts.get(k, 0)}" for k in ("UPDATED", "ROLLED_BACK", "FAILED", "SKIPPED")))
+print("=" * 78)
+PY
+# Unreachable boxes were skipped (nothing changed on them): list them by name so
+# they are never lost inside the table.
+python3 - "$SUMMARY_FILE" <<'PY' || true
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1]))
+except Exception:
+    rows = []
+un = [str(r.get("label") or r.get("box")) for r in rows if r.get("unreachable")]
+print(f" UNREACHABLE (skipped, not updated): {len(un)}" + (" - " + "; ".join(sorted(un)) if un else ""))
+PY
+echo "[fleet-refresh] per-box logs: $RUN_LOG_DIR"
+
+# Roll-back / failure alert to the OPERATOR only (Telegram through his own agent's
+# bot via the operator-alert webhook; email too on his Mac). Never a client.
+if [ $APPLY -eq 1 ]; then
+  _origin="operator roll"
+  _self="$(label_of local)"
+  [ "$_self" = "local" ] && _self="$(hostname -s 2>/dev/null || hostname)"
+  [ $LOCAL -eq 1 ] && _origin="$_self (its own update)"
+  python3 "$SHARED_UTILS/fleet_notify.py" --summary "$SUMMARY_FILE" --origin "$_origin" 2>&1 \
+    | sed 's/^/[fleet-refresh] operator alert: /' || true
+  # The operator's box list backup: last result per box, refreshed in Drive.
+  if [ $LOCAL -eq 0 ] && [ -n "$BOXES_FILE" ]; then
+    python3 "$REPO_ROOT/scripts/make-fleet-boxes-file.py" --out "$BOXES_FILE" --record-roll "$SUMMARY_FILE" 2>&1 \
+      | sed 's/^/[fleet-refresh] box list: /' || true
+  fi
 fi
 
 if [ $ANY_FAILED -eq 1 ]; then

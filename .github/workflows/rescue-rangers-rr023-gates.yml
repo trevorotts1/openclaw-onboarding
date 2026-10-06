@@ -1,0 +1,45 @@
+name: rescue-rangers-rr023-gates
+
+# RR-023 — Rescue Rangers gates: legacy importer preserves incident history.
+# Guards the ONB lane of RR-W4-DATA-RR023 (migrate-rescue-staticdata.py):
+# unsupported nonempty fails loud, no bill-today, no duplicate resolved,
+# retirement documented. Triggered whenever any guarded file changes.
+
+on:
+  push:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py"
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py"
+      - tests/unit/rescue-migration-rr023.test.py
+      - .github/workflows/rescue-rangers-rr023-gates.yml
+  pull_request:
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py"
+      - "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py"
+      - tests/unit/rescue-migration-rr023.test.py
+      - .github/workflows/rescue-rangers-rr023-gates.yml
+
+jobs:
+  rescue-rangers-rr023-gates:
+    name: RR-023 gates (importer + regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python syntax gates
+        run: |
+          python3 -m py_compile "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py"
+          python3 -m py_compile "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py"
+
+      - name: Importer self-test (drill)
+        run: |
+          RR_LEDGER_DRILL=1 python3 "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py" --self-test
+
+      - name: RR-023 ONB QC battery (37 checks)
+        run: |
+          python3 tests/unit/rescue-migration-rr023.test.py
+
+      - name: RR-017 regression (contract untouched)
+        run: |
+          python3 tests/unit/rescue-contract-rr017.test.py

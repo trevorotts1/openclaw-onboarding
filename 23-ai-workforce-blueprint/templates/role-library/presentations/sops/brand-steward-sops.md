@@ -8,6 +8,8 @@
 
 ## 9. Standard Operating Procedures (Numbered)
 
+> **LOGO MECHANISM NOTE (binding; SOP-IMG-05 Rule A, the renderer is the authority).** `build_deck.py` sends your prompt verbatim and places the logo itself. On the canonical command the real logo is a local PNG that `assemble_pptx` places top-right (about 13 percent of the slide width, 0.25 inch margin, no chip) after generation: the prompt draws no logo, names no reference image, keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15). Every logo chip, lower-right placement, `LOGO_URL`, `input_urls` or image-to-image MODE line in this document, its templates and its exemplars describes URL image-to-image mode only (a direct `build_deck.py --logo <https URL>` run), which the canonical command does not reach today.
+
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Shared STYLE BLOCK Authorship
@@ -19,7 +21,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - **(Decision 1C) `working/copy/assets_manifest.json`** when present — client-provided logo / brand-color / photo assets to CONSUME.
 
 **Steps:**
-0. **(Decision 1C) Consume client-provided brand assets FIRST.** If `working/copy/assets_manifest.json` exists with `assets_provided:true`, read it before authoring the STYLE BLOCK: for every asset whose `consumed_by` includes `brand-steward` (logo / brand_color / founder-proof photo), use the asset's `public_url` as the authoritative source — the locked `LOGO_URL` IS the provided logo's `public_url` (composited image-to-image, never redrawn); the brand palette is derived from the provided brand-color swatches; provided photos are carried to the Slide Image Creator as gpt-image-2 `input_urls`. Provided client material ALWAYS wins over an invented/default look. The gate **AF-MANIFEST-UNREFERENCED** fails the deck if a provided brand asset is recorded but not actually consumed.
+0. **(Decision 1C) Consume client-provided brand assets FIRST.** If `working/copy/assets_manifest.json` exists with `assets_provided:true`, read it before authoring the STYLE BLOCK: for every asset whose `consumed_by` includes `brand-steward` (logo / brand_color / founder-proof photo), use the asset's `public_url` as the authoritative source — the locked `LOGO_URL` IS the provided logo's `public_url` (composited image-to-image, never redrawn); the brand palette is derived from the provided brand-color swatches; provided photos are carried to the Slide Image Creator as GPT Image 2.5 Sunburst `input_urls`. Provided client material ALWAYS wins over an invented/default look. The gate **AF-MANIFEST-UNREFERENCED** fails the deck if a provided brand asset is recorded but not actually consumed.
 1. Extract brand colors from intake.json. If the client provided hex codes, use them verbatim. If the client described colors without hex codes (e.g., "gold and navy"), find the closest brand-standard hex codes and record them as `color_source: "derived_from_description"` in the STYLE BLOCK. If no color information exists, use a professional neutral default (#1A2B4C navy, #C4A44D gold, #FFFFFF white) and flag as `color_source: "default_pending_client_confirmation"`.
 2. Assign roles to the 3 hex codes. Exactly 3 hex codes are required:
    - PRIMARY: accent-1 -- used for money/value displays, dividers, and key visual highlights (gold or brand equivalent)
@@ -27,8 +29,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - ACCENT: the third client color
    - WHITE BASE: #FFFFFF (or a faint warm off-white per style references such as #FBF7F4) is ALWAYS the base layer beneath all three. It is not one of the three named hex slots. Do NOT label any client hex as "tertiary almost always white." The base layer is white and is listed separately in the STYLE BLOCK.
 3. Extract typography from intake.json. If no fonts are specified, default to: headline font = "Montserrat Bold" (or similar geometric sans-serif), body font = "Open Sans Regular". Record as `font_source: "default_pending_client_confirmation"`.
-4. Extract logo placement. Default rule: "Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border, placed in the same corner (bottom-right) on every slide, minimum 40px from any edge, full color version, never recolored or distorted." If client has provided a logo file, note the file path.
-   **(Density-floor overhaul) Lock ONE canonical logo asset.** Record a single `LOGO_URL` (a public https URL; re-host to the client GHL media library or Drive if needed). If the client supplied MULTIPLE lockups/monograms/icon/mountain/sprout/tagline variants, pick exactly ONE canonical mark and FORBID the rest in the STYLE BLOCK (`forbidden_logo_variants: [...]`). The logo is ALWAYS composited image-to-image from this locked LOGO_URL (never text-to-image), so the SAME mark renders on every slide. A drifting logo (a different mark per slide) was the reference failure case Dimension F defect (AF-I11). Source: universal-sops/presentation-design-system/05-SOP-logo-consistency.md and presentation-image-library/SOP-IMG-01 Mode B.
+4. Extract logo placement. Default rule (URL image-to-image mode only): "Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border, placed in the same corner (bottom-right) on every slide, minimum 40px from any edge, full color version, never recolored or distorted." On the canonical command (the default) the logo is placed by `assemble_pptx` instead: top-right, about 13 percent of the slide width, 0.25 inch margin, no chip, exact PNG bytes; record that rule in the STYLE BLOCK LOGO section and state that prompts draw no logo (AF-P15). If client has provided a logo file, note the file path.
+   **(Density-floor overhaul) Lock ONE canonical logo asset.** Record a single `LOGO_URL` (a public https URL; re-host to the client GHL media library or Drive if needed). If the client supplied MULTIPLE lockups/monograms/icon/mountain/sprout/tagline variants, pick exactly ONE canonical mark and FORBID the rest in the STYLE BLOCK (`forbidden_logo_variants: [...]`). The SAME mark must render on every slide. Through the canonical command (which has no `--logo` option) the logo is the LOCAL PNG named in `intake.json` `brand.logo_image_path`: the render stays text-to-image and `assemble_pptx` places that exact file top-right at about 13 percent of the slide width (SOP-IMG-05 Rule A mechanism 2). Download the locked LOGO_URL to a local PNG in the run directory for that purpose; the intake owner points `brand.logo_image_path` at it. The URL image-to-image mode (the hosted LOGO_URL as the single `input_urls` reference, with the bottom-right chip placement above as the prompt directive) exists only in a direct `build_deck.py --logo` run, which the canonical command does not forward today. A drifting logo (a different mark per slide) was the reference failure case Dimension F defect (AF-I11). Source: universal-sops/presentation-design-system/05-SOP-logo-consistency.md and presentation-image-library/SOP-IMG-01 Mode B.
    **(Density-floor overhaul) Pin the price-typography + weight-ladder system in the STYLE BLOCK** so the Typography Architect and Slide Image Creator share one source: the metallic-gold gradient on hero price numerals, the accent glow on the LIVE price, the drawn-gold double-strike on DEAD prices (applied across the WHOLE ladder, not one beat), and the Montserrat (or client) weight ladder (BLACK headlines, ExtraBold sub-heads, Bold labels, Medium/Italic captions). The Typography Architect owns the per-slide treatment; you pin the system tokens.
    **(Density-floor overhaul) Style-source trigger (SOP-IMG-02 / SOP-IMG-03):** read `STYLE_SOURCE` from intake. If `match_reference` (a reference deck / `ANALYZE_REQUEST` / `STYLE_ID`), fire Crossing A via SOP-DIU-612 (write style_request.json to the Chief Design Officer), fold the returned Foundation Prompt Block into the STYLE BLOCK, and record `style_card_id@version` in brand_registry.json BEFORE delivering the STYLE BLOCK. If `saved_style`, run the SOP-IMG-04 recall path (resolve the alias in NAMED-STYLES.md to a production card, pin the version). If `creative_develop` or no style fields, build the STYLE BLOCK from intake brand fields plus the SOP-IMG-03 creative-develop probe. Never invent a look on a deck that requested a style match.
 5. Extract representation preferences from intake.json field `REPRESENTATION_MIX`. This field is collected WITH PERCENTAGES during discovery (e.g., "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all"). The percentage breakdown drives the deck-level ratio in SOP 9.2.
@@ -73,7 +75,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    BASIC OR DEFAULT FONTS ARE FORBIDDEN: Calibri, Arial, Times, or any system/platform default is an AUTO-FAIL at QC. Every prompt must name the exact weight and a large pt size per line.
 
    LOGO:
-   [Logo placement rule: white chip at ~9% slide width, subtle 1px brand-accent border, consistent corner, full color version]
+   [Logo rule per mechanism: canonical command, "the real logo is added after generation, top-right, about 13% of slide width; draw no logo and keep that corner clear"; URL image-to-image mode only, "white chip at ~9% slide width, subtle 1px brand-accent border, consistent corner, full color version"]
 
    BRAND GRAMMAR (embed in every prompt):
    - Kicker label: small all-caps letter-spaced label in Primary above the headline, with a short Primary gold rule beneath it
@@ -119,6 +121,40 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Failure mode:** If intake.json has no brand information at all (no colors, no fonts, no logo), write the STYLE BLOCK with all default values and flag: "STYLE BLOCK uses all defaults -- please confirm brand colors, fonts, and logo before final image generation. Images generated with defaults will need re-generation if brand is different." Notify the Director. If representation is unanswered, follow the no-people default rule in Step 5 above.
 
 **SUBTLE BRAND CUE (the in-world hidden cue doctrine; pairs with PRODUCT INTELLIGENCE, SOP-ENGINE-00 Engine 9).** Beyond the formal brand grammar (the logo chip, kicker, divider, palette, price-tag motif), the deck may plant ONE hidden, in-scene reminder of the brand's core VALUE on designated slides: the brand's tagline or core phrase appearing in-world (on a mug, a wall, a notebook, a poster in the corner) -- the way a sponsor's product or message sits naturally inside a TV-show scene, noticed without being announced. Rules: it is BELIEVABLE in the world (it must still pass World Intelligence, slide-image-creator-sops.md SOP 9.3), it NEVER competes with the headline, and it is distinct from the formal logo chip (which is the explicit brand chrome). The cue carries the brand's VALUE; the logo carries the brand's MARK. This pairs with Product Intelligence (the real product in-scene): both are subtle in-world placements composited believably, never floating overlays. The cue text, like all brand assets, comes from the client (their real tagline / core value), never invented.
+
+---
+
+### SOP 9.5b -- Owner Style Pick: recording the client's A/B/C reply (P-STYLE-PICK)
+
+**When to run:** The moment the client answers the style-preview request. `P-STYLE-PICK` (manifest id `P-STYLE-PICK`, order 4.86, executor kind `human`, owned by the Brand Steward) is the ONE guaranteed human gate in every deck: after `P-STYLE-PREVIEW` renders the 9 samples, the engine sends the client "pick ONE by replying A, B or C" and then waits **45 minutes** (`PHASE_BUDGET_MINUTES["P-STYLE-PICK"]`, overridable with `PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES`). If nothing verifiable lands in that window the run **parks BLOCKED** and the deck stops. A pick sitting in the chat that nobody recorded is the same as no pick at all.
+
+**Inputs:**
+- `working/style-preview/style_samples_manifest.json` (the offered `variants`, in manifest order -- this is the authoritative list)
+- the client's own reply message, and **its message id**
+
+**Steps:**
+1. Read the offered variant ids from `working/style-preview/style_samples_manifest.json`.
+2. Record the pick with the driver. This is the ONLY sanctioned writer of the choice file -- never hand-author `style_preview_choice.json`:
+
+   ```bash
+   python3 scripts/deck-intake-driver.py \
+     --run-dir "<RUN_DIR>" \
+     --style-pick B \
+     --owner-msg-id "<the id of the CLIENT's own A/B/C reply>"
+   ```
+
+   `A`/`B`/`C`, `a`/`b`/`c`, `variant b` and `1`/`2`/`3` all resolve against the offered list. The command writes `working/copy/style_preview_choice.json` in the exact shape the engine verifies: `owner_approved: true`, a `chosen_variant` from the offered set, and the `owner_msg_id`.
+3. **`--owner-msg-id` is mandatory and it must be the client's real message id.** The engine re-verifies it through the Fix 32 approvals oracle at the gate; an id that does not resolve to a real owner-authored message is DENIED (`AF-FORGED-APPROVAL`) and the phase keeps waiting. The command prints a pre-check result so a wrong id is caught while the client is still in the conversation -- never invent one, never reuse another gate's id, never substitute your own message id for the client's.
+4. The run continues on its own the moment the file verifies. Nothing else has to be dispatched.
+
+**The hands-off alternative (`style_pick_auto`):** if the client would rather not be a blocker, the intake's style turn (`style_and_brand`) carries a `style_pick_auto` subfield. Recorded `yes` -> `intake.style_pick_auto: true` -> when the 45-minute wait expires the engine writes the choice file itself for variant 1, stamped `auto_pick: true` with **no** `owner_msg_id` (it never forges one). Absent or `no` -> the phase parks and waits, as an owner decision should. A real pick that arrives in time always wins over the timeout. The opt-in is the client's to give: never record it on their behalf, and never write `auto_pick` from the recorder above.
+
+**Outputs:**
+- `working/copy/style_preview_choice.json` (`owner_approved`, `chosen_variant`, `owner_msg_id`)
+
+**Hand to:** the run continues to `P4-RENDER` on its own once the pick verifies.
+
+**Failure mode:** If the client replies with something that is not one of the offered variants, the command refuses and names the offered list -- ask them again with the variant ids in front of them. If the run has already parked BLOCKED on the timeout, record the pick with this same command and then resume the run; the choice is proven on re-entry and the phase completes without re-spamming the client.
 
 ---
 

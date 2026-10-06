@@ -1,5 +1,5 @@
 {
-  "_fixture_note": "Mocked Kie.ai GET /api/v1/jobs/recordInfo success response for an image task (gpt-image-2-image-to-image). resultJson is a JSON-ENCODED STRING exactly as Kie returns it in production. NOT a real Kie response; no live/paid call was made to produce this file.",
+  "_fixture_note": "Mocked Kie.ai GET /api/v1/jobs/recordInfo success response for an image task (gpt-image-2-5-sunburst-image-to-image). resultJson is a JSON-ENCODED STRING exactly as Kie returns it in production. NOT a real Kie response; no live/paid call was made to produce this file.",
   "code": 200,
   "msg": "success",
   "data": {

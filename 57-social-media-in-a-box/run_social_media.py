@@ -5,9 +5,10 @@ Walks the phases for the requested MODE IN ORDER with NO phase skips. Each
 phase's preflight is checked against the run directory's artifacts; the QC
 phases shell out to the fail-closed provers (preflight_gate.py, validate_
 contract.py, prove_bands.py, scrub_gate.py) and refuse to advance on ANY
-AF-SM-* violation. P6 shells to build_manifest.py which mints the signed
-process certificate (proving ZERO Anthropic per run); the publisher (P7)
-refuses to run without that certificate.
+AF-SM-* violation. P6 shells to build_manifest.py which mints the process
+certificate (a plain SHA-256 over the run's proven inputs — tamper-EVIDENT,
+not a signature) proving ZERO Anthropic per run; the publisher (P7) refuses
+to run without that certificate.
 
 FRONT-DOOR NONCE: like the Email Engine / Presentations orchestrators, this
 refuses to run unless OC_SMIB_ENTRY_NONCE matches the run-scoped nonce minted
@@ -37,6 +38,449 @@ EXIT_NONCE = 4
 _SKILL_DIR = Path(__file__).resolve().parent
 MANIFEST = _SKILL_DIR / "SOCIAL-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
+
+# ===========================================================================
+# F08 — EXPLICIT EXECUTION MODE (replaces _live_mode's heuristic)
+# ---------------------------------------------------------------------------
+# The OLD _live_mode() inferred live-vs-offline from RUN CONTENT: a nonempty
+# `probes` object in the config OR a staged offline token OR a nonempty
+# SMIB_PREFLIGHT_OFFLINE value flipped the run to a dry-run posture. Leftover
+# test configuration on a client box therefore SILENTLY DISABLED live
+# verification, and any nonempty value (including "0", the string for FALSE)
+# counted as offline. Both are removed:
+#
+#   * execution_mode is EXPLICIT and IMMUTABLE. It is stamped ONCE at run
+#     start by the trusted entry path (social-media-entry.sh writes
+#     working/execution_mode.json AFTER its gates pass; the orchestrator
+#     refuses to run when the stamp is absent/self-contradictory). The run
+#     directory is the ONLY source — SMIB_PREFLIGHT_OFFLINE and staged probe
+#     data no longer influence mode at all.
+#   * PRODUCTION (mode "production") REJECTS any nonempty probes object with
+#     a CONFIGURATION ERROR (fail closed) — probes are offline fixture data
+#     and never belong in an installed client configuration.
+#   * The offline escape hatch is the trusted TEST entry only: the test entry
+#     stamps mode "test" (with the strict-parsed boolean it approved), and
+#     only THEN do the legacy signals (a staged owner token / an explicitly
+#     true SMIB_PREFLIGHT_OFFLINE) retain meaning as EVIDENCE of the posture.
+#     SMIB_PREFLIGHT_OFFLINE parses strictly: "0"/"false"/""/absent -> false;
+#     "1"/"true"/"yes"/"on" -> true; ANYTHING ELSE -> a configuration error
+#     rather than a silent offline flip.
+#   * DRY-RUN ARTIFACTS ARE STAMPED simulated=true (publish receipts, the
+#     execution-mode record). Simulated receipts, offline exceptions and
+#     test-run IDs can NEVER satisfy a LIVE completion or a published state:
+#     the live gates (_chk_publish) consume ONLY execution_mode=production
+#     evidence, and simulated evidence carries `simulated: true` which the
+#     completion paths treat as intrinsically unsatisfying for live claims.
+#   * Exceptional offline runs (owner-token-authorized) are recorded
+#     SEPARATELY (working/execution_offline_exception.json), never inside a
+#     simulated receipt masquerading as live.
+# ===========================================================================
+EXECUTION_PRODUCTION = "production"
+EXECUTION_TEST = "test"
+_TRUSTED_ENV_OFFLINE = "SMIB_PREFLIGHT_OFFLINE"
+
+
+def _strict_bool(raw, field, run_dir):
+    """F08 strict boolean parsing for a trusted-entry flag.
+    "0"/"false"/"" (and unset) -> False; "1"/"true"/"yes"/"on" -> True;
+    ANY other nonempty value -> raises ConfigurationError (never a silent
+    offline flip)."""
+    if raw is None:
+        return False
+    s = str(raw).strip().lower()
+    if s in ("", "0", "false", "no", "off"):
+        return False
+    if s in ("1", "true", "yes", "on"):
+        return True
+    raise ConfigurationError(
+        "AF-SM-EXEC-MODE: %s has a non-boolean value (%d chars, value never printed); "
+        "allowed: 0/false/no/off/empty or 1/true/yes/on (run_dir=%s)"
+        % (field, len(str(raw)), run_dir))
+
+
+class ConfigurationError(Exception):
+    """F08: a configuration that cannot safely run (e.g. probes present in
+    production, or a non-boolean SMIB_PREFLIGHT_OFFLINE value). Fail-closed."""
+
+
+def _read_execution_mode(run_dir):
+    """Read the trusted entry's execution-mode stamp.
+    Returns (mode:str, detail:dict). NEVER falls back to run content: a run
+    without a stamp raises ConfigurationError (the orchestrator is started
+    through social-media-entry.sh, which stamps it after its gates pass)."""
+    rec = _json(run_dir, "working/execution_mode.json")
+    if not isinstance(rec, dict) or not str(rec.get("mode", "")).strip():
+        raise ConfigurationError(
+            "AF-SM-EXEC-MODE: no trusted execution-mode stamp at working/execution_mode.json — "
+            "run THROUGH social-media-entry.sh (the trusted entry stamps the mode after its gates pass)")
+    mode = str(rec["mode"]).strip().lower()
+    if mode not in (EXECUTION_PRODUCTION, EXECUTION_TEST):
+        raise ConfigurationError(
+            "AF-SM-EXEC-MODE: execution_mode %r is not one of (%s, %s)"
+            % (mode, EXECUTION_PRODUCTION, EXECUTION_TEST))
+    # IMMUTABILITY: the entry stamps set_by=trusted-entry; a stamp that claims
+    # some other writer (or was rewritten mid-run with a contradicting
+    # boolean) is refused.
+    if str(rec.get("set_by", "trusted-entry")) != "trusted-entry":
+        raise ConfigurationError(
+            "AF-SM-EXEC-MODE: execution_mode stamp was not written by the trusted entry "
+            "(set_by=%r) — refuse to trust" % rec.get("set_by"))
+    return mode, rec
+
+
+def _write_execution_mode(run_dir, mode, offline_reason=None):
+    """Stamp the execution mode at run start. CALLED BY THE TRUSTED ENTRY
+    PATH ONLY (social-media-entry.sh). The strict-parsed legacy signals are
+    recorded as EVIDENCE of the posture, never as its CAUSE."""
+    env_true = _strict_bool(os.environ.get(_TRUSTED_ENV_OFFLINE), _TRUSTED_ENV_OFFLINE, run_dir) \
+        if os.environ.get(_TRUSTED_ENV_OFFLINE) is not None else False
+    rec = {"mode": mode, "set_by": "trusted-entry", "simulated": mode != EXECUTION_PRODUCTION,
+           "env_%s_resolved" % _TRUSTED_ENV_OFFLINE.lower(): env_true}
+    if offline_reason:
+        rec["offline_reason"] = str(offline_reason)
+    p = Path(run_dir) / "working" / "execution_mode.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    return rec
+
+
+def _run_is_simulated(run_dir):
+    """True when this run's execution mode is NOT production (a dry-run/test
+    posture). Simulated runs stamp simulated=true on their artifacts."""
+    mode, _rec = _read_execution_mode(run_dir)
+    return mode != EXECUTION_PRODUCTION
+
+
+def _assert_no_probes_in_production(run_dir):
+    """F08 CORE REJECTION: production mode REJECTS any nonempty probes object
+    in the client configuration (a configuration error, fail-closed)."""
+    mode, _rec = _read_execution_mode(run_dir)
+    if mode != EXECUTION_PRODUCTION:
+        return
+    cfg_obj = _json(run_dir, "working/copy/config.json", {}) or {}
+    probes = cfg_obj.get("probes")
+    if isinstance(probes, dict) and probes:
+        raise ConfigurationError(
+            "AF-SM-EXEC-MODE: probes present in a production configuration (%d key(s): %s) — "
+            "offline fixture data must be removed from the installed client config; run "
+            "the trusted test entry for a dry-run posture"
+            % (len(probes), ", ".join(sorted(str(k) for k in list(probes)[:8]))))
+    if probes not in (None, {}):
+        raise ConfigurationError(
+            "AF-SM-EXEC-MODE: probes present (non-object) in a production configuration — remove it")
+
+
+def _stamp_simulated(obj, run_dir):
+    """Return obj with simulated=true (F08: every dry-run artifact/receipt is
+    labeled). Production runs return obj unchanged (a production receipt never
+    carries a simulated flag)."""
+    if not isinstance(obj, dict):
+        return obj
+    if _run_is_simulated(run_dir):
+        obj["simulated"] = True
+    return obj
+
+
+def _record_offline_exception(run_dir, reason):
+    """F08: an exceptional OFFLINE run (owner-token-authorized, production
+    mode) is recorded SEPARATELY — never as a simulated live receipt."""
+    rec = {"offline_exception": True, "reason": str(reason or ""),
+           "recorded_at": _utc_now_iso()}
+    p = Path(run_dir) / "working" / "execution_offline_exception.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    return rec
+
+
+def _offline_exception_on_record(run_dir):
+    rec = _json(run_dir, "working/execution_offline_exception.json")
+    return isinstance(rec, dict) and rec.get("offline_exception") is True
+
+
+# ===========================================================================
+# F05 — PRODUCER ADAPTER LAYER (behind the phase gates, never replacing them)
+# ---------------------------------------------------------------------------
+# run_social_media.py is the DETERMINISTIC STATE MACHINE: it checks artifacts,
+# it does not author them. The MISSING HALF was the producer: a fresh run with
+# valid config + an approved theme failed on missing working/plan/plan.json
+# with nothing invoking production. Now every manifest phase can name a
+# producer ADAPTER; the orchestrator invokes the phase's adapter BEFORE its
+# gate when the gate's artifact is absent (or its inputs changed), so missing
+# files TRIGGER PRODUCTION — or a specific dependency failure — and never a
+# claim that production occurred.
+#
+# ADAPTER INTERFACE (one adapter per manifest phase):
+#     def produce(run_dir, phase, ctx) -> {"ok": bool, "error"?: str, ...}
+#   * ok=False fails the phase CLOSED with a specific message (a failed
+#     producer is never a gate pass and never a fabricated artifact).
+#   * The adapter owns HOW production happens (real adapters dispatch work
+#     through the F33 execution policy / worker pool; stub/fake adapters used
+#     in tests stamp receipts simulated=true and can NEVER satisfy a live
+#     completion — the F08 gate contract already refuses simulated evidence).
+#   * The gate (_chk_*) ALWAYS runs after the producer: the producer layer
+#     sits BEHIND the gates, not replacing them. Every deterministic validator
+#     is untouched.
+#
+# RECEIPTS (working/producers/receipts.json, one row per producer invocation):
+#     phase, adapter, assigned_agent, execution_id, input_hashes (sha256 of
+#     the adapter's declared inputs), output_hashes (sha256 of produced
+#     artifacts), receipt (per-phase completion receipt), simulated flag.
+# RESUME: on re-run a phase's outputs are reused ONLY when its declared input
+# hashes still match; an edited input (e.g. a changed theme hash) reruns the
+# producer and every downstream phase after it.
+# ===========================================================================
+PRODUCERS_RECEIPTS = "working/producers/receipts.json"
+
+
+def _sha256_text(data):
+    import hashlib
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_path(path):
+    import hashlib
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+class ProducerError(Exception):
+    """A producer adapter failed. Specific, never a fabricated success."""
+
+
+class ProducerRegistry:
+    """Adapter registry: real adapters register under their manifest phase id
+    (the registry hook the F33 execution policy dispatches work through);
+    register("stub", ...) replaces entries with a fake for tests."""
+
+    def __init__(self):
+        self._adapters = {}
+
+    def register(self, phase_id, adapter, *, assigned_agent=None, inputs=None,
+                 replaces=False):
+        if phase_id in self._adapters and not replaces:
+            raise ProducerError(
+                "producer adapter for %r already registered (pass replaces=True "
+                "to override — e.g. a stub in tests)" % phase_id)
+        self._adapters[phase_id] = {
+            "adapter": adapter, "assigned_agent": assigned_agent or "",
+            "inputs": list(inputs or []),
+        }
+        return adapter
+
+    def register_stub(self, phase_id, adapter, *, assigned_agent=None, inputs=None):
+        return self.register(phase_id, adapter, assigned_agent=assigned_agent,
+                             inputs=inputs, replaces=True)
+
+    def get(self, phase_id):
+        rec = self._adapters.get(phase_id)
+        if rec is None:
+            return None
+        return dict(rec, phase_id=phase_id)
+
+    def registered(self):
+        return sorted(self._adapters)
+
+
+#: The ONE default registry (real adapters register here; tests inject stubs
+#: with replaces=True or build their own registry and pass it to run()).
+PRODUCER_REGISTRY = ProducerRegistry()
+
+
+def _producer_receipts(run_dir):
+    rows = _json(run_dir, PRODUCERS_RECEIPTS, [])
+    return rows if isinstance(rows, list) else []
+
+
+def _write_producer_receipt(run_dir, rec):
+    rows = [r for r in _producer_receipts(run_dir)
+            if not (isinstance(r, dict) and r.get("phase") == rec.get("phase"))]
+    rows.append(rec)
+    p = Path(run_dir) / "working" / "producers" / "receipts.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    return p
+
+
+def _producer_input_hashes(run_dir, entry):
+    """sha256 over the adapter's declared input files (theme, config, plan...).
+    An input that cannot be hashed fails the producer CLOSED (unknown inputs
+    can never justify reusing stale output)."""
+    hashes = {}
+    for rel in entry["inputs"]:
+        p = Path(run_dir) / rel
+        sha = _sha256_path(p)
+        if sha is None:
+            raise ProducerError(
+                "producer input %s is missing/unreadable (fail-closed)" % rel)
+        hashes[rel] = sha
+    return hashes
+
+
+def _outputs_reusable(run_dir, entry, input_hashes):
+    """Resume contract: reuse ONLY outputs whose input hashes still match the
+    receipt AND whose produced outputs still exist with matching output hashes.
+    Any drift -> rerun (and downstream phases rerun after it)."""
+    rows = [r for r in _producer_receipts(run_dir)
+            if isinstance(r, dict) and r.get("phase") == entry["phase_id"]]
+    if not rows:
+        return False
+    rec = rows[-1]
+    if rec.get("input_hashes") != input_hashes:
+        return False
+    out = rec.get("output_hashes") or {}
+    if not out:
+        return False
+    for rel, sha in out.items():
+        if _sha256_path(Path(run_dir) / rel) != sha:
+            return False
+    return True
+
+
+def _invoke_producer(run_dir, entry, *, execution_mode_simulated):
+    """Invoke ONE phase's producer adapter and record its receipt. Returns
+    (ok, msg). The gate ALWAYS still runs after this."""
+    import datetime
+    adapter = entry["adapter"]
+    try:
+        input_hashes = _producer_input_hashes(run_dir, entry)
+    except ProducerError as exc:
+        _write_producer_receipt(run_dir, {
+            "phase": entry["phase_id"],
+            "adapter": getattr(adapter, "__name__", repr(adapter)),
+            "assigned_agent": entry["assigned_agent"],
+            "input_hashes": {}, "output_hashes": {},
+            "ok": False, "error": str(exc),
+            "recorded_at": _utc_now_iso(),
+        })
+        return False, ("producer %s FAILED: %s — production did NOT occur (specific "
+                       "dependency failure, never a fabricated completion)"
+                       % (entry["phase_id"], exc))
+    if _outputs_reusable(run_dir, entry, input_hashes):
+        rows = [r for r in _producer_receipts(run_dir)
+                if isinstance(r, dict) and r.get("phase") == entry["phase_id"]]
+        rec = rows[-1]
+        return True, ("producer %s REUSED (input hashes unchanged, outputs verified: %d "
+                      "artifact(s))" % (entry["phase_id"], len(rec.get("output_hashes") or {})))
+    ctx = {
+        "phase_id": entry["phase_id"],
+        "run_dir": run_dir,
+        "input_hashes": input_hashes,
+        "simulated": bool(execution_mode_simulated),
+    }
+    try:
+        result = adapter(run_dir, entry["phase_id"], ctx)
+    except Exception as exc:  # noqa: BLE001 — a producer crash is a producer failure
+        _write_producer_receipt(run_dir, {
+            "phase": entry["phase_id"], "adapter": getattr(adapter, "__name__", repr(adapter)),
+            "assigned_agent": entry["assigned_agent"],
+            "input_hashes": input_hashes, "output_hashes": {},
+            "ok": False, "error": "producer raised: %s" % exc,
+            "recorded_at": _utc_now_iso(),
+        })
+        return False, ("producer %s FAILED (raised %s) — production did NOT occur; "
+                       "fix and re-run" % (entry["phase_id"], type(exc).__name__))
+    result = result if isinstance(result, dict) else {"ok": bool(result)}
+    ok = result.get("ok") is True
+    outputs = result.get("outputs") or {}
+    output_hashes = {}
+    for rel in (outputs if isinstance(outputs, (list, dict)) else []):
+        rel_path = rel if isinstance(rel, str) else str(rel)
+        sha = _sha256_path(Path(run_dir) / rel_path)
+        if sha is None:
+            return False, ("producer %s declared output %s but it is missing on disk — "
+                           "never a claim that production occurred"
+                           % (entry["phase_id"], rel_path))
+        output_hashes[rel_path] = sha
+    rec = {
+        "phase": entry["phase_id"],
+        "adapter": getattr(adapter, "__name__", repr(adapter)),
+        "assigned_agent": entry["assigned_agent"],
+        "execution_id": result.get("execution_id") or ctx.get("execution_id") or "",
+        "input_hashes": input_hashes,
+        "output_hashes": output_hashes,
+        "ok": bool(ok),
+        "receipt": result.get("receipt"),
+        "simulated": bool(result.get("simulated", execution_mode_simulated)),
+        "recorded_at": _utc_now_iso(),
+    }
+    if not ok:
+        rec["error"] = str(result.get("error") or "producer reported failure (no detail)")
+        _write_producer_receipt(run_dir, rec)
+        return False, ("producer %s FAILED: %s — production did NOT occur (specific "
+                       "dependency failure, never a fabricated completion)"
+                       % (entry["phase_id"], rec["error"]))
+    _write_producer_receipt(run_dir, rec)
+    return True, ("producer %s completed (%d artifact(s), %s)"
+                  % (entry["phase_id"], len(output_hashes),
+                     "SIMULATED=true" if rec["simulated"] else "live"))
+
+
+def run_with_producers(manifest, mode, run_dir, *, registry=None):
+    """F05 run loop: per phase, invoke the phase's producer adapter (when one is
+    registered) BEFORE its gate, then run the unchanged deterministic gate.
+    A producer failure BLOCKS with a specific message (exit 2, same as a gate
+    failure) — the gate itself is untouched and still decides pass/fail."""
+    reg = registry if registry is not None else PRODUCER_REGISTRY
+    try:
+        simulated = _run_is_simulated(run_dir)
+    except ConfigurationError as exc:
+        print("FATAL: %s" % exc, file=sys.stderr)
+        return EXIT_GATE
+    phases = manifest.get("modes", {}).get(mode)
+    if not phases:
+        print("FATAL: unknown mode %r" % mode, file=sys.stderr)
+        return EXIT_USAGE
+    gates = {}
+    for pid in phases:
+        ph = _phase(manifest, pid)
+        if not ph:
+            print("FATAL: phase %s missing from manifest" % pid, file=sys.stderr)
+            return EXIT_USAGE
+        checker = (ph.get("preflight") or {}).get("checker")
+        print("=== PHASE %s — %s ===" % (pid, ph.get("name", "")))
+        entry = reg.get(pid)
+        if entry is not None:
+            ok, msg = _invoke_producer(run_dir, entry, execution_mode_simulated=simulated)
+            print("   [%s] producer: %s" % ("OK" if ok else "FAIL", msg))
+            if not ok:
+                gates[pid] = {"passed": False}
+                _write_gates(run_dir, gates)
+                _LAST_BLOCK.clear()
+                _LAST_BLOCK.update({"phase_id": pid, "note": msg})
+                print("BLOCKED at %s (producer failed; fail-closed). Fix and re-run." % pid,
+                      file=sys.stderr)
+                return EXIT_GATE
+        ok, msg = _run_checker(checker, run_dir)
+        print("   [%s] %s: %s" % ("OK" if ok else "FAIL", checker, msg))
+        gates[pid] = {"passed": bool(ok)}
+        # Persist gates BEFORE the manifest phase so build_manifest can read P0..P5.
+        if pid != "P6-MANIFEST":
+            _write_gates(run_dir, gates)
+        if not ok:
+            _write_gates(run_dir, gates)
+            _LAST_BLOCK.clear()
+            _LAST_BLOCK.update({"phase_id": pid, "note": msg})
+            print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid, file=sys.stderr)
+            return EXIT_GATE
+    _write_gates(run_dir, gates)
+    print("ALL REQUESTED PHASES PASSED for mode '%s'." % mode)
+    cert = run_dir / "delivery" / "PROCESS-CERTIFICATE.json"
+    if cert.is_file():
+        try:
+            sha = json.loads(cert.read_text())["certificate_sha"]
+            print("CERTIFICATE: %s (sha %s)" % (cert, sha[:12]))
+        except (ValueError, KeyError):
+            pass
+    return EXIT_PASS
+
+
+def _utc_now_iso():
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 PLANNER_COLUMNS = ["Week Of", "Theme", "Research", "Core Content", "Images", "Videos",
                    "Facebook", "Instagram", "LinkedIn", "YouTube", "TikTok", "Pinterest",
@@ -108,30 +552,36 @@ def _offline_token_ok(run_dir):
 
 
 def _chk_preflight(run_dir):
-    """P0 readiness gate. FIX-S36-59:
+    """P0 readiness gate. FIX-S36-59 + F08:
       * ALWAYS pass --report so the Owner Q&A source-of-truth (credits/balance/token
         + the C2 connected-accounts reconcile) is written to disk, never memorized.
-      * --live is the DEFAULT on a real client box. Offline (dry-run) is permitted
-        only when the config carries a `probes` object (the authored offline probe
-        data) OR a LOGGED owner offline token is staged OR SMIB_PREFLIGHT_OFFLINE is
-        set. A box with neither probes nor a token has NO offline evidence, so the
-        gate MUST confirm the real endpoints (fail-closed) rather than pass blind."""
+      * The run posture comes from the TRUSTED ENTRY's execution-mode stamp (F08):
+        production runs preflight --live with NO probe fixtures (probes in a
+        production config are a configuration error); test/simulated runs run the
+        offline preflight against the staged probe data. A production run whose
+        credentials cannot be probed live is NOT switchable to offline by leftover
+        test configuration — an exceptional offline posture requires the logged
+        owner token AND is recorded separately (execution_offline_exception.json)."""
     cfg = run_dir / "working" / "copy" / "config.json"
     if not cfg.is_file():
         return False, "missing working/copy/config.json"
-    cfg_obj = _json(run_dir, "working/copy/config.json", {}) or {}
-    has_probes = isinstance(cfg_obj.get("probes"), dict) and bool(cfg_obj.get("probes"))
-    token_ok = _offline_token_ok(run_dir)
-    env_offline = bool(os.environ.get("SMIB_PREFLIGHT_OFFLINE"))
-    live = not (has_probes or token_ok or env_offline)
+    try:
+        _assert_no_probes_in_production(run_dir)
+        live = not _run_is_simulated(run_dir)
+    except ConfigurationError as exc:
+        return False, str(exc)
+    if not live:
+        token_ok = _offline_token_ok(run_dir)
+        if not token_ok:
+            return False, ("AF-SM-EXEC-MODE: a simulated/test run requires a logged owner "
+                           "offline token (working/copy/preflight-offline-token.json) — "
+                           "refusing an unlogged dry-run posture")
     report = run_dir / "working" / "preflight" / "preflight_report.json"
     args = [cfg, "--report", report]
     if live:
         args.append("--live")
     rc = _run_script("preflight_gate.py", args)
-    mode = "LIVE probe (client box)" if live else (
-        "offline (probes)" if has_probes else
-        "offline (logged owner token)" if token_ok else "offline (SMIB_PREFLIGHT_OFFLINE)")
+    mode = "LIVE probe (client box)" if live else "offline (trusted test entry + logged owner token)"
     return rc == 0, ("preflight PASS [%s], report -> working/preflight/preflight_report.json" % mode
                      if rc == 0 else "preflight_gate.py FAILED (exit %d) [%s]" % (rc, mode))
 
@@ -158,11 +608,18 @@ def _chk_content_authored(run_dir):
 
 
 def _chk_contract_and_bands(run_dir):
+    """F11: bands + contracts PASS, and the contract set is COMPLETE for the
+    plan: zero contract files can no longer pass (the QC matrix is derived
+    from the actual plan and requires a contract + QC result for EVERY
+    planned item)."""
     cdir = run_dir / "working" / "content"
     bands_files = sorted((cdir / "bands").glob("*.json")) if (cdir / "bands").is_dir() else []
     contract_files = sorted((cdir / "contracts").glob("*.json")) if (cdir / "contracts").is_dir() else []
     if not bands_files:
         return False, "no bands inputs at working/content/bands/*.json"
+    if not contract_files:
+        return False, ("AF-SM-QC-MATRIX: ZERO content contracts present — the plan requires a "
+                       "contract for every planned item (an empty contract set FAILS)")
     for f in bands_files:
         rc = _run_script("prove_bands.py", [f])
         if rc != 0:
@@ -171,10 +628,17 @@ def _chk_contract_and_bands(run_dir):
         rc = _run_script("validate_contract.py", [f])
         if rc != 0:
             return False, "validate_contract FAILED on %s (exit %d)" % (f.name, rc)
-    return True, "bands + contracts PASS (%d bands, %d contracts)" % (len(bands_files), len(contract_files))
+    ok, _msg, failures = _verify_qc_matrix(run_dir)
+    if not ok:
+        return False, "; ".join(failures[:4]) + (" (+%d more)" % (len(failures) - 4) if len(failures) > 4 else "")
+    return True, "bands + contracts PASS (%d bands, %d contracts) + complete QC matrix" % (
+        len(bands_files), len(contract_files))
 
 
 def _chk_media_ledger(run_dir):
+    """F11: media completion is not trusted from a locally-supplied flag file
+    alone — the terminal-jobs summary is cross-checked against the SQLite
+    ledger (the jobs table is the record the media workers actually wrote)."""
     summ = _json(run_dir, "working/media/media_ledger.json")
     if not isinstance(summ, dict):
         return False, "missing working/media/media_ledger.json"
@@ -182,6 +646,25 @@ def _chk_media_ledger(run_dir):
         return False, "media ledger has non-terminal jobs (incomplete run)"
     if summ.get("is_carousel") and summ.get("assemble_ok") is not True:
         return False, "carousel assembly floor not met (>=2 images)"
+    # F11 independence check: reconcile the summary's numbers against the
+    # ledger DB when present; a summary that contradicts the DB fails closed.
+    db = run_dir / "working" / "media" / "ledger.db"
+    if db.is_file():
+        try:
+            sys.path.insert(0, str(SCRIPTS))
+            import ledger  # noqa: E402
+            import sqlite3  # noqa: F401  (ledger owns its connection)
+            run_id = str(summ.get("run") or run_dir.name)
+            db_summary = ledger.summarize(db, run_id)
+            if isinstance(db_summary, dict) and db_summary.get("total"):
+                if int(db_summary.get("complete") or 0) < int(db_summary.get("total") or 0) \
+                        and summ.get("all_terminal") is True:
+                    return False, ("AF-SM-QC-MATRIX: media_ledger.json claims all_terminal but the "
+                                   "ledger DB shows %d/%d complete (a locally-supplied completion "
+                                   "flag cannot contradict the ledger)" % (
+                                       db_summary.get("complete"), db_summary.get("total")))
+        except Exception as exc:  # noqa: BLE001 — an unreadable ledger fails CLOSED
+            return False, "media ledger DB unreadable (fail-closed): %s" % exc
     return True, "media ledger terminal (images_ready=%s)" % summ.get("images_ready")
 
 
@@ -203,51 +686,437 @@ def _chk_manifest(run_dir):
 
 
 def _live_mode(run_dir):
-    """True on a real client box (no offline evidence), False in a dry-run/offline
-    posture. Shared by preflight (P0) and publish (P7) so a run is live-or-offline
-    coherently. Offline evidence = config `probes` OR a logged owner offline token
-    OR SMIB_PREFLIGHT_OFFLINE."""
-    cfg_obj = _json(run_dir, "working/copy/config.json", {}) or {}
-    has_probes = isinstance(cfg_obj.get("probes"), dict) and bool(cfg_obj.get("probes"))
-    return not (has_probes or _offline_token_ok(run_dir) or os.environ.get("SMIB_PREFLIGHT_OFFLINE"))
+    """F08: True ONLY for a PRODUCTION-mode run (the trusted entry's stamp),
+    False for a simulated/test posture. Run CONTENT (config probes, staged
+    tokens, SMIB_PREFLIGHT_OFFLINE) no longer influences the mode at all —
+    leftover test configuration cannot silently disable live verification.
+    Raises ConfigurationError when the trusted stamp is absent/invalid, so a
+    caller can never silently default."""
+    return _read_execution_mode(run_dir)[0] == EXECUTION_PRODUCTION
+
+
+# ===========================================================================
+# F10 — PER-DESTINATION DELIVERY PROOF
+# ---------------------------------------------------------------------------
+# The delivery sheet registry (working/delivery/deliveries.json) stores ONE row
+# per company/cycle/content-revision/account with the delivery.json contract
+# fields (remote_post_id, scheduled_at, provider_state draft|scheduled|published|
+# failed|unknown, checked_at, failure_reason, published_url). Publishing success
+# is claimed per destination from an INDEPENDENT readback (ghl_contracts posts
+# list with status fields): draft/failed/unknown NEVER count as published, a
+# scheduled post is reconciled after its due time, only failed destinations are
+# retried, and an ambiguous timeout is reconciled by content/account key BEFORE
+# any retry (a create success + lost response adopts the existing post id —
+# never a duplicate).
+# ===========================================================================
+DELIVERY_STATES = ("draft", "scheduled", "published", "failed", "unknown")
+PUBLISHED_STATE = "published"
+
+
+def _delivery_rows(run_dir):
+    rows = _json(run_dir, "working/delivery/deliveries.json")
+    return rows if isinstance(rows, list) else []
+
+
+def _write_delivery_rows(run_dir, rows):
+    p = Path(run_dir) / "working" / "delivery" / "deliveries.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    return p
+
+
+def _delivery_row_key(company_id, cycle_id, content_revision, account_id):
+    return "%s|%s|%s|%s" % (str(company_id), str(cycle_id), str(content_revision), str(account_id))
+
+
+def _upsert_delivery_row(run_dir, company_id, cycle_id, content_revision, account_id, **fields):
+    """Insert/update the delivery row for this (company, cycle, revision,
+    account) key. Unknown provider states normalize to 'unknown' (never
+    silently 'published')."""
+    state = str(fields.get("provider_state") or "unknown").strip().lower()
+    if state not in DELIVERY_STATES:
+        state = "unknown"
+    rec = {
+        "delivery_id": fields.get("delivery_id") or ("dlv-%s" % str(abs(hash(_delivery_row_key(
+            company_id, cycle_id, content_revision, account_id))))[:16]),
+        "company_id": str(company_id), "cycle_id": str(cycle_id),
+        "content_revision": int(content_revision), "account_id": str(account_id),
+        "remote_post_id": fields.get("remote_post_id"),
+        "scheduled_at": fields.get("scheduled_at"),
+        "provider_state": state,
+        "checked_at": fields.get("checked_at") or _utc_now_iso(),
+        "failure_reason": fields.get("failure_reason"),
+        "published_url": fields.get("published_url"),
+    }
+    rows = [r for r in _delivery_rows(run_dir)
+            if not (isinstance(r, dict)
+                    and _delivery_row_key(r.get("company_id"), r.get("cycle_id"),
+                                          r.get("content_revision"), r.get("account_id"))
+                    == _delivery_row_key(company_id, cycle_id, content_revision, account_id))]
+    rows.append(rec)
+    _write_delivery_rows(run_dir, rows)
+    return rec
+
+
+def _expected_delivery_keys(run_dir):
+    """F10: the EXPECTED delivery set, derived from the plan (plan.json's
+    per-account plan rows / platform list), NOT from the poster's receipts.
+    Returns a list of (company_id, cycle_id, content_revision, account_id)."""
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    company_id = str(plan.get("companyId") or plan.get("company_id") or plan.get("locationId") or "")
+    cycle_id = str(plan.get("cycleId") or plan.get("cycle_id") or plan.get("weekOf") or "")
+    revision = plan.get("contentRevision") or plan.get("revision") or 1
+    keys, seen = [], set()
+    rows = plan.get("accounts") if isinstance(plan.get("accounts"), list) else []
+    for a in rows:
+        if not isinstance(a, dict):
+            continue
+        aid = str(a.get("account_id") or a.get("id") or "").strip()
+        if not aid:
+            continue
+        k = _delivery_row_key(company_id, cycle_id, revision, aid)
+        if k not in seen:
+            seen.add(k)
+            keys.append((company_id, cycle_id, revision, aid))
+    if not keys:
+        # No per-account plan rows: the configured platform LIST defines the
+        # destinations (one expected delivery per configured channel).
+        for p in (plan.get("platforms") or []):
+            aid = str(p).strip()
+            if not aid:
+                continue
+            k = _delivery_row_key(company_id, cycle_id, revision, aid)
+            if k not in seen:
+                seen.add(k)
+                keys.append((company_id, cycle_id, revision, aid))
+    return keys
+
+
+def _reconcile_deliveries_from_listing(run_dir, listing):
+    """F10 reconcile: read back EVERY expected delivery from the independent
+    listing [{post_id, status, scheduled_at, published_url}] and upsert each
+    row's provider state. Ambiguous timeouts (expected but absent, or a
+    scheduled post past due) stay 'unknown' — they NEVER become published and
+    they MUST be reconciled before any retry creates another post."""
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    by_content = {}
+    for p in (listing or []):
+        if isinstance(p, dict) and p.get("post_id"):
+            by_content[str(p["post_id"])] = p
+    reconciled = []
+    for (company_id, cycle_id, revision, account_id) in _expected_delivery_keys(run_dir):
+        existing = None
+        for r in _delivery_rows(run_dir):
+            if isinstance(r, dict) and _delivery_row_key(
+                    r.get("company_id"), r.get("cycle_id"), r.get("content_revision"),
+                    r.get("account_id")) == _delivery_row_key(company_id, cycle_id,
+                                                              revision, account_id):
+                existing = r
+                break
+        # Idempotent adoption: match an EXISTING row/post by content+account
+        # key before treating this destination as uncreated (a create success
+        # with a lost response must adopt the remote post, never re-create).
+        pid = str((existing or {}).get("remote_post_id") or "").strip()
+        post = by_content.get(pid) if pid else None
+        if post is None:
+            # content-key scan: a post whose recorded account/revision matches
+            plan_content = str(plan.get("contentRevision") or revision)
+            for cand in (listing or []):
+                if not isinstance(cand, dict):
+                    continue
+                meta = cand.get("meta") or {}
+                if (str(meta.get("account_id") or "") == str(account_id)
+                        and str(meta.get("content_revision") or plan_content) == str(revision)):
+                    post = cand
+                    break
+        if post is None:
+            reconciled.append(_upsert_delivery_row(
+                run_dir, company_id, cycle_id, revision, account_id,
+                provider_state="unknown",
+                failure_reason="reconcile: no post read back for this destination (ambiguous — "
+                               "reconcile before any retry creates another post)",
+                remote_post_id=(existing or {}).get("remote_post_id"),
+                scheduled_at=(existing or {}).get("scheduled_at"))
+                if existing else
+                _upsert_delivery_row(
+                    run_dir, company_id, cycle_id, revision, account_id,
+                    provider_state="unknown",
+                    failure_reason="reconcile: no post read back for this destination"))
+            continue
+        reconciled.append(_upsert_delivery_row(
+            run_dir, company_id, cycle_id, revision, account_id,
+            remote_post_id=post.get("post_id"),
+            provider_state=str(post.get("status") or "unknown").strip().lower(),
+            scheduled_at=post.get("scheduled_at") or (existing or {}).get("scheduled_at"),
+            published_url=post.get("published_url"),
+            failure_reason=None))
+    return reconciled
+
+
+def _delivery_published_set(run_dir):
+    """The account_ids whose CURRENT delivery state is published (from the
+    delivery rows only — never from the poster's own receipts)."""
+    out = set()
+    for r in _delivery_rows(run_dir):
+        if isinstance(r, dict) and str(r.get("provider_state") or "").strip().lower() \
+                == PUBLISHED_STATE:
+            out.add(str(r.get("account_id")))
+    return out
+
+
+def _retryable_deliveries(run_dir):
+    """F10: ONLY failed destinations are retryable. 'unknown' (an ambiguous
+    timeout) must be reconciled first — it is NOT a retry candidate."""
+    out = []
+    for r in _delivery_rows(run_dir):
+        if isinstance(r, dict) and str(r.get("provider_state") or "").strip().lower() == "failed":
+            out.append(r)
+    return out
+
+
+# ===========================================================================
+# F11 — COMPLETE + INDEPENDENT QC EVIDENCE MATRIX
+# ---------------------------------------------------------------------------
+# The required contract/QC matrix is DERIVED FROM THE ACTUAL PLAN
+# (working/plan/plan.json): EVERY planned artifact needs a content contract
+# (working/content/contracts/<artifact>.json) AND an independent QC receipt
+# (working/qc/qc_receipts.json rows per the artifact_qc_receipt.json W0
+# contract). Empty, missing, or unrelated sets FAIL. A receipt must carry an
+# independently-assigned reviewer (qc_reviewer_id != the artifact's producer,
+# the reviewer identity resolved by the ORCHESTRATOR from the run's QC
+# roster — never self-asserted by the receipt) and rubric results bound to
+# the EXACT artifact sha256 + revision. Any edit to an approved artifact
+# (hash mismatch) INVALIDATES that approval. Receipts are plain SHA-256
+# evidence — no "signed" claim is made or implied.
+# ===========================================================================
+QC_RECEIPTS = "working/qc/qc_receipts.json"
+
+
+def _artifact_sha256(run_dir, rel):
+    import hashlib
+    p = Path(run_dir) / rel
+    if not p.is_file():
+        return None
+    try:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _planned_artifacts(run_dir):
+    """The plan's artifact list: [{artifact_id, revision, path}]. Derived from
+    plan.json plannedItems (canonical) / artifacts; a plan without a declared
+    artifact set fails closed upstream (the matrix cannot be derived)."""
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    items = plan.get("plannedItems") or plan.get("artifacts") or []
+    out = []
+    for it in (items if isinstance(items, list) else []):
+        if not isinstance(it, dict):
+            continue
+        aid = str(it.get("artifact_id") or it.get("id") or "").strip()
+        rel = str(it.get("path") or "").strip()
+        if not aid or not rel:
+            continue
+        try:
+            rev = int(it.get("revision") or 1)
+        except (TypeError, ValueError):
+            rev = 1
+        out.append({"artifact_id": aid, "revision": rev, "path": rel})
+    return out
+
+
+def _qc_reviewer_roster(run_dir):
+    """The QC reviewer identities the ORCHESTRATOR assigned for this run
+    (working/qc/reviewer_roster.json: [{artifact_id, reviewer_id}], written by
+    the orchestrator's QC assignment step — the receipt itself can never
+    assert its own reviewer)."""
+    roster = _json(run_dir, "working/qc/reviewer_roster.json", [])
+    return roster if isinstance(roster, list) else []
+
+
+def _verify_qc_matrix(run_dir):
+    """F11 CORE. Returns (ok, message, failures:list[str])."""
+    plan = _json(run_dir, "working/plan/plan.json")
+    if not isinstance(plan, dict):
+        return False, "missing working/plan/plan.json (the QC matrix cannot be derived)", []
+    planned = _planned_artifacts(run_dir)
+    if not planned:
+        return False, ("AF-SM-QC-MATRIX: plan.json declares NO planned artifacts — an empty "
+                       "contract set FAILS (nothing to certify)"), \
+            ["AF-SM-QC-MATRIX: plan.json declares NO planned artifacts"]
+    cdir = run_dir / "working" / "content" / "contracts"
+    contract_files = {f.stem: f for f in cdir.glob("*.json")} if cdir.is_dir() else {}
+    receipts = _json(run_dir, QC_RECEIPTS, [])
+    receipts = receipts if isinstance(receipts, list) else []
+    by_artifact = {}
+    for r in receipts:
+        if isinstance(r, dict) and str(r.get("artifact_id") or "").strip():
+            by_artifact[str(r["artifact_id"]).strip()] = r
+    roster = {str(r.get("artifact_id")): str(r.get("reviewer_id") or "").strip()
+              for r in _qc_reviewer_roster(run_dir) if isinstance(r, dict)}
+    failures = []
+    for it in planned:
+        aid, rev, rel = it["artifact_id"], it["revision"], it["path"]
+        # 1. the CONTRACT for this planned item must exist and be for THIS item
+        cf = contract_files.get(aid)
+        if cf is None:
+            failures.append("AF-SM-QC-MATRIX: no content contract for planned item %r "
+                            "(expected working/content/contracts/%s.json)" % (aid, aid))
+            continue
+        cobj = _json(run_dir, "working/content/contracts/%s.json" % aid, {}) or {}
+        c_art = str(cobj.get("artifact_id") or "").strip()
+        if c_art and c_art != aid:
+            failures.append("AF-SM-QC-MATRIX: contract %s.json is for %r, not the planned item %r "
+                            "(unrelated contract sets are rejected)" % (aid, c_art, aid))
+        # 2. an UNRELATED qc json (not keyed to any planned artifact) cannot satisfy the gate
+        receipt = by_artifact.get(aid)
+        if receipt is None:
+            failures.append("AF-SM-QC-MATRIX: no QC receipt for planned item %r (%s)"
+                            % (aid, QC_RECEIPTS))
+            continue
+        if receipt.get("qc_result") != "pass":
+            failures.append("AF-SM-QC-MATRIX: QC receipt for %r is not a PASS" % aid)
+        # 3. reviewer INDEPENDENCE, verified through the ORCHESTRATOR's roster
+        #    (not a self-asserted field on the receipt)
+        producer = str(receipt.get("producer_id") or plan.get("producerId") or
+                       plan.get("producer_id") or "").strip()
+        reviewer = str(receipt.get("qc_reviewer_id") or "").strip()
+        assigned = roster.get(aid, "")
+        if not reviewer:
+            failures.append("AF-SM-QC-MATRIX: QC receipt for %r records no reviewer identity" % aid)
+        elif assigned and reviewer != assigned:
+            failures.append("AF-SM-QC-MATRIX: QC receipt for %r claims reviewer %r but the "
+                            "orchestrator assigned %r (self-asserted identity rejected)"
+                            % (aid, reviewer, assigned))
+        elif not assigned:
+            failures.append("AF-SM-QC-MATRIX: no orchestrator-assigned reviewer for %r "
+                            "(working/qc/reviewer_roster.json is the assignment of record)" % aid)
+        if producer and reviewer and reviewer == producer:
+            failures.append("AF-SM-QC-MATRIX: %r was approved by its own producer %r "
+                            "(a producer cannot approve its own work)" % (aid, producer))
+        # 4. rubric results bound to the EXACT artifact sha256 + revision
+        want_sha = str(receipt.get("sha256") or "").strip()
+        got_sha = _artifact_sha256(run_dir, rel)
+        if not want_sha:
+            failures.append("AF-SM-QC-MATRIX: QC receipt for %r records no artifact sha256" % aid)
+        elif got_sha is None:
+            failures.append("AF-SM-QC-MATRIX: approved artifact %r (%s) is MISSING on disk" % (aid, rel))
+        elif want_sha != got_sha:
+            failures.append("AF-SM-QC-MATRIX: %r was EDITED after approval (receipt sha %s..%s != "
+                            "current %s..%s) — that approval is INVALIDATED, re-run QC"
+                            % (aid, want_sha[:12], want_sha[-8:], got_sha[:12], got_sha[-8:]))
+        try:
+            got_rev = int(receipt.get("revision"))
+        except (TypeError, ValueError):
+            got_rev = None
+        if got_rev != rev:
+            failures.append("AF-SM-QC-MATRIX: QC receipt for %r is against revision %r, the plan "
+                            "requires %r" % (aid, receipt.get("revision"), rev))
+    return (not failures), ("QC matrix complete (%d planned item(s), contracts + independent "
+                            "PASS receipts on exact sha256+revision)" % len(planned)), failures
 
 
 def _live_ghl_post_listing(cfg):
-    """FIX-S36-60: GET the live GHL social post listing for the location with the
-    CLIENT's own PIT (never printed). Returns a list of GHL post-id strings present
-    in the account, or None when the listing is unconfirmable (fail-closed upstream)."""
-    import urllib.request
+    """FIX-S36-60 + F09: the live GHL social post listing for the location with
+    the CLIENT's own PIT (never printed), via the DOCUMENTED S2 contract
+    (POST /social-media-posting/{locationId}/posts/list with number-string
+    skip/limit, results wrapper, skip/offset pagination — scripts/
+    ghl_contracts.py is the one shared implementation). Returns a list of GHL
+    post-id strings present in the account, or None when the listing is
+    unconfirmable (fail-closed upstream). A CONTRACT-shape failure is NEVER
+    misreported as zero posts."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import ghl_contracts  # noqa: E402
+        pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
+        loc = str(cfg.get("locationId", ""))
+        if not pit or not loc:
+            return None
+        posts = ghl_contracts.fetch_posts(pit, loc)
+        return [p["post_id"] for p in posts if p.get("post_id")]
+    except Exception:  # noqa: BLE001 — unconfirmable stays fail-closed upstream
+        return None
+
+
+def _live_ghl_account_plan(cfg):
+    """F06/F09: the live per-account plan for this location (S1 documented
+    contract, IDs preserved). Returns (accounts, error_dict|None): accounts is
+    [] with an error dict when the discovery fails classified; error carries
+    {error_class, retry_after} so callers can distinguish authentication /
+    scope / disconnected_account / rate_limited / transient / contract."""
+    try:
+        sys.path.insert(0, str(SCRIPTS))
+        import ghl_contracts  # noqa: E402
+        pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
+        loc = str(cfg.get("locationId", ""))
+        accounts = ghl_contracts.fetch_accounts(pit, loc)
+        return accounts, None
+    except Exception as exc:  # noqa: BLE001 — classified below
+        err = getattr(exc, "error_class", "transient")
+        return [], {"error_class": err, "retry_after": getattr(exc, "retry_after", None)}
+
+
+def _per_account_publish_results(run_dir, cfg):
+    """F06: derive the per-account publish results from the P0 per-account plan
+    (working/preflight/preflight_report.json -> account_plan.accounts). Each
+    account gets its OWN result row {account_id, platform, health,
+    publish_state, note} — two Facebook accounts stay two rows (no
+    platform-level collapse). needs_reconnect/failed accounts are EXPLICIT
+    skipped/failed rows (never silent, never a run-wide block); healthy
+    accounts proceed. Writes working/publish/account_results.json. Returns the
+    list (empty when no plan was staged — back-compat with pre-F06 runs)."""
+    report = _json(run_dir, "working/preflight/preflight_report.json", {}) or {}
+    acct_plan = report.get("account_plan") or {}
+    rows = acct_plan.get("accounts") if isinstance(acct_plan, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return []
+    staged = _json(run_dir, "working/publish/posted_ids.json")
+    staged_ids = {str(x) for x in staged} if isinstance(staged, list) else set()
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("account_id"):
+            continue
+        health = str(r.get("health") or "ready")
+        if health in ("needs_reconnect", "failed", "retrying"):
+            state, note = ("failed" if health != "retrying" else "skipped"), \
+                ("needs attention: %s (%s)" % (health, r.get("exclusion_reason") or "reconnect the channel"))
+        else:
+            state = "ready"
+            note = "publish proceeds on this account" if health == "ready" \
+                else str(r.get("exclusion_reason") or "skipped")
+        out.append({"account_id": r["account_id"], "platform": r.get("platform", ""),
+                    "account_name": r.get("account_name", ""), "health": health,
+                    "publish_state": state, "note": note})
+    try:
+        p = run_dir / "working" / "publish" / "account_results.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return out
+
+
+def _live_ghl_post_listing_with_status(cfg):
+    """F10: the independent post readback WITH lifecycle status fields, via the
+    F09 documented S2 contract. Returns the normalized post list
+    [{post_id, status, scheduled_at, published_url}, ...] or None when
+    unconfirmable (fail-closed upstream)."""
+    import urllib.request  # noqa: F401 — kept for the historical import contract
     pit = str(cfg.get("pit") or os.environ.get("GHL_API_KEY", ""))
     loc = str(cfg.get("locationId", ""))
     if not pit or not loc:
         return None
-    url = "https://services.leadconnectorhq.com/social-media-posting/%s/posts" % loc
     try:
-        req = urllib.request.Request(url, headers={"Authorization": "Bearer %s" % pit,
-                                                   "Version": "2021-07-28"})
-        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec - client's own endpoint
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
+        sys.path.insert(0, str(SCRIPTS))
+        import ghl_contracts  # noqa: E402
+        return ghl_contracts.fetch_posts(pit, loc)
+    except Exception:  # noqa: BLE001 — unconfirmable stays fail-closed upstream
         return None
-    if not isinstance(data, dict):
-        return None
-    posts = data.get("posts") or data.get("results") or data.get("data")
-    if isinstance(posts, dict):
-        posts = posts.get("posts") or posts.get("results")
-    if not isinstance(posts, list):
-        return None
-    ids = []
-    for p in posts:
-        if isinstance(p, dict):
-            pid = p.get("id") or p.get("_id") or p.get("postId")
-            if pid is not None:
-                ids.append(str(pid))
-    return ids
 
 
 def _chk_publish(run_dir):
     if not (run_dir / "delivery" / "PROCESS-CERTIFICATE.json").is_file():
-        return False, "publisher blocked: no signed certificate (AF-SM-PUBLISH-UNPROVEN)"
+        return False, "publisher blocked: no process certificate (AF-SM-PUBLISH-UNPROVEN)"
     results = _json(run_dir, "working/publish/publish_results.json")
     if not isinstance(results, list) or not results:
         return False, "missing working/publish/publish_results.json"
@@ -298,40 +1167,83 @@ def _chk_publish(run_dir):
                           "occupied slot was detected. Clear with `clean`/reschedule or a logged " \
                           "owner re-post token."
 
-    # -- POST-PUBLISH LIVE VERIFY (FIX-S36-60) --------------------------------
-    # `done` is claimed ONLY from an INDEPENDENT live GHL post-listing verify, not
-    # from the poster's OWN publish_results.json (the exact evidence the SKILL calls
-    # insufficient). The poster records the GHL post ids it created in
-    # working/publish/posted_ids.json; each MUST appear in the live listing.
+    # -- F06 PER-ACCOUNT RESULTS (recorded for the owner Q&A / partial delivery) --
+    _per_account_publish_results(run_dir, cfg)
+
+    # -- F08: SIMULATED EVIDENCE CAN NEVER SATISFY A LIVE COMPLETION ----------
+    # A simulated (test/dry-run) run's receipts, offline exceptions and test
+    # IDs are labeled simulated=true and can NEVER move a LIVE task to
+    # published/completed: the live path below consumes ONLY production-mode
+    # evidence, and a production run refuses simulated receipts outright.
+    try:
+        sim = _run_is_simulated(run_dir)
+    except ConfigurationError as exc:
+        return False, str(exc)
+    for i, r in enumerate(results, 1):
+        if isinstance(r, dict) and r.get("simulated") is True and not sim:
+            return False, ("AF-SM-EXEC-MODE: publish result %d is a SIMULATED receipt — simulated "
+                           "evidence can never satisfy a live completion" % i)
+
+    # -- F10 PER-DESTINATION DELIVERY PROOF -----------------------------------
+    # One delivery row per company/cycle/content-revision/account; the
+    # provider state comes from an INDEPENDENT readback, never from the
+    # poster's own receipts. draft/failed/unknown NEVER count as published.
+    expected_keys = _expected_delivery_keys(run_dir)
+    if not expected_keys:
+        return False, ("AF-SM-PUBLISH-UNVERIFIED: no expected destinations derivable from "
+                       "plan.json (per-account plan rows or platforms) — the delivery matrix "
+                       "cannot be proven")
+
+    # -- POST-PUBLISH LIVE VERIFY (FIX-S36-60 + F10) ---------------------------
+    # `done` is claimed ONLY from an INDEPENDENT live GHL post-listing verify
+    # WITH STATUS FIELDS, reconciled into per-destination delivery rows.
     posted_ids = _json(run_dir, "working/publish/posted_ids.json")
     posted_ids = [str(x) for x in posted_ids] if isinstance(posted_ids, list) else []
     if live:
-        listing = _live_ghl_post_listing(cfg)
+        listing = _live_ghl_post_listing_with_status(cfg)
         if listing is None:
             return False, ("AF-SM-PUBLISH-UNVERIFIED: the live GHL post listing was unconfirmable "
                            "(fail-closed); cannot claim done without an independent verify")
-        if not posted_ids:
-            return False, ("AF-SM-PUBLISH-UNVERIFIED: no working/publish/posted_ids.json to verify "
-                           "against the live GHL listing (the poster must record the ids it created)")
-        present = set(listing)
-        missing = [pid for pid in posted_ids if pid not in present]
-        if missing:
-            return False, ("AF-SM-PUBLISH-UNVERIFIED: %d posted id(s) absent from the live GHL "
-                           "listing (%s)" % (len(missing), ", ".join(missing[:5])))
-        return True, ("publish results normalized (%d) + %d post id(s) verified present in the live "
-                      "GHL listing" % (len(results), len(posted_ids)))
-    # Offline/dry-run posture: verify against staged evidence when present, else a
-    # labeled dry-run pass (mirrors the P0 connected-accounts offline posture).
+        _reconcile_deliveries_from_listing(run_dir, listing)
+        published = _delivery_published_set(run_dir)
+        expected_accounts = {k[3] for k in expected_keys}
+        not_published = sorted(expected_accounts - published)
+        if not_published:
+            states = {str(r.get("account_id")): r.get("provider_state")
+                      for r in _delivery_rows(run_dir) if isinstance(r, dict)}
+            return False, ("AF-SM-PUBLISH-UNVERIFIED: %d destination(s) not PUBLISHED on the "
+                           "independent readback (%s) — draft/failed/scheduled/unknown never "
+                           "count as published" % (len(not_published),
+                                                   ", ".join("%s=%s" % (a, states.get(a, "?"))
+                                                             for a in not_published[:8])))
+        return True, ("publish results normalized (%d) + %d/%d destination(s) independently "
+                      "PUBLISHED (delivery rows reconciled)" % (len(results), len(published),
+                                                                len(expected_accounts)))
+    # Simulated/dry-run posture: the receipt set is STAMPED simulated=true and
+    # verified only against staged evidence; it can never claim published.
     evidence = _json(run_dir, "working/publish/published_listing.json")
+    staged_states = _json(run_dir, "working/publish/staged_provider_states.json", {}) or {}
+    for (company_id, cycle_id, revision, account_id) in expected_keys:
+        state = str(staged_states.get(account_id, "unknown")).strip().lower()
+        _upsert_delivery_row(run_dir, company_id, cycle_id, revision, account_id,
+                             provider_state=state if state in DELIVERY_STATES else "unknown")
+    try:
+        (run_dir / "working" / "publish" / "publish_results_simulated.json").write_text(
+            json.dumps([dict(r, simulated=True) if isinstance(r, dict) else r
+                        for r in (results if isinstance(results, list) else [])], indent=2),
+            encoding="utf-8")
+    except OSError:
+        pass
     if isinstance(evidence, list) and posted_ids:
         present = {str(x) for x in evidence}
         missing = [pid for pid in posted_ids if pid not in present]
         if missing:
             return False, ("AF-SM-PUBLISH-UNVERIFIED: %d posted id(s) absent from the staged listing "
                            "evidence (%s)" % (len(missing), ", ".join(missing[:5])))
-        return True, "publish results normalized (%d) + posted ids verified vs staged listing" % len(results)
-    return True, ("publish results normalized (%d); offline dry-run posture — live GHL post-listing "
-                  "verify runs on the client box" % len(results))
+        return True, ("publish results normalized (%d, SIMULATED=true) + staged evidence verified — "
+                      "a simulated run NEVER claims published" % len(results))
+    return True, ("publish results normalized (%d, SIMULATED=true); offline dry-run posture — live "
+                  "GHL post-listing verify runs on the client box" % len(results))
 
 
 def _chk_client_copy(run_dir):
@@ -401,7 +1313,33 @@ def _chk_deferred(run_dir):
                   "off by default so no client is blocked meanwhile. defer_stub exit %d" % rc
 
 
-def _chk_writeback(run_dir):
+# ===========================================================================
+# F13 — REAL WRITEBACK PROOF
+# ---------------------------------------------------------------------------
+# The old _chk_writeback accepted a LOCAL list of 20 (often empty) cells and
+# declared "row appended" with no Sheets involvement. A nominal success
+# response without a real updatedRange also passed. Now the write receipt
+# MUST carry the company-bound spreadsheet_id, schema_version, a stable
+# row_key, the ACTUAL Sheets updatedRange and a content hash — anything less
+# fails closed. Before completion the stable row is READ BACK by its row-key
+# marker column and representative values are compared. A Sheets failure
+# NEVER republishes already-published posts: delivery rows (F10) are
+# independent of the planner sync, and an outage exposes a separate
+# planner-sync task instead of failing the publish.
+# ===========================================================================
+WRITEBACK_ROW_KEY_COLUMN = 1        # the marker column that carries the row_key
+PLANNER_SCHEMA_VERSION = "planner-2026.09-v1"
+
+
+def _row_content_hash(row):
+    import hashlib
+    return hashlib.sha256(json.dumps(row, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _verify_writeback_receipt(run_dir):
+    """F13 receipt proof. Returns (ok, msg). A LOCAL row array (even a
+    well-formed 20-column one) is NOT a receipt: the required company-bound
+    fields must ALL be present."""
     rec = _json(run_dir, "working/plan/row_appended.json")
     if not isinstance(rec, dict):
         return False, "missing working/plan/row_appended.json"
@@ -409,7 +1347,132 @@ def _chk_writeback(run_dir):
     if not isinstance(row, list) or len(row) != 20:
         return False, "planner row is not the normalized 20-column shape (got %s)" % (
             len(row) if isinstance(row, list) else "n/a")
-    return True, "20-column row appended"
+    sheet_id = str(rec.get("spreadsheet_id") or "").strip()
+    if not sheet_id:
+        return False, ("AF-SM-WRITEBACK-PROOF: receipt carries no company-bound spreadsheet_id "
+                       "(a local 20-cell array is not proof of a Sheets write)")
+    if not str(rec.get("schema_version") or "").strip():
+        return False, "AF-SM-WRITEBACK-PROOF: receipt carries no schema_version"
+    if str(rec.get("schema_version")) != PLANNER_SCHEMA_VERSION:
+        return False, ("AF-SM-WRITEBACK-PROOF: receipt schema_version %r != the planner schema %r"
+                       % (rec.get("schema_version"), PLANNER_SCHEMA_VERSION))
+    row_key = str(rec.get("row_key") or "").strip()
+    if not row_key:
+        return False, "AF-SM-WRITEBACK-PROOF: receipt carries no stable row_key"
+    updated_range = str(rec.get("updatedRange") or rec.get("updated_range") or "").strip()
+    if not updated_range:
+        return False, ("AF-SM-WRITEBACK-PROOF: receipt carries no ACTUAL updatedRange — a nominal "
+                       "'appended' response without a real range is NOT success")
+    if "!" not in updated_range:
+        return False, ("AF-SM-WRITEBACK-PROOF: updatedRange %r is not a real Sheets A1 range "
+                       "(missing sheet!'A1' form)" % updated_range[:60])
+    content_hash = str(rec.get("content_hash") or "").strip()
+    if not content_hash:
+        return False, "AF-SM-WRITEBACK-PROOF: receipt carries no content hash"
+    if content_hash != _row_content_hash(row):
+        return False, ("AF-SM-WRITEBACK-PROOF: receipt content hash does not match the staged row "
+                       "(the receipt and the row disagree — fail-closed)")
+    # The plan's company-bound sheet (sheet identity contract) must agree.
+    plan = _json(run_dir, "working/plan/plan.json", {}) or {}
+    plan_sheet = str(plan.get("plannerSheetId") or "").strip()
+    if plan_sheet and sheet_id != plan_sheet:
+        return False, ("AF-SM-WRITEBACK-PROOF: receipt spreadsheet_id %r is not the plan's "
+                       "company-bound planner sheet %r" % (sheet_id[:8] + "...", plan_sheet[:8] + "..."))
+    return True, "write receipt complete (spreadsheet bound, schema, row_key, updatedRange, hash)"
+
+
+def _reconcile_writeback_readback(run_dir, readback):
+    """F13 idempotent reconcile: a real append whose RESPONSE was lost is
+    reconciled by reading back the stable row (by row-key marker) — one row,
+    never a second append. `readback` is {found: bool, row_key, values: [...]}.
+    Returns (ok, msg)."""
+    rec = _json(run_dir, "working/plan/row_appended.json") or {}
+    row = rec.get("row") or rec.get("columns") or []
+    row_key = str(rec.get("row_key") or "").strip()
+    if not isinstance(readback, dict) or readback.get("found") is not True:
+        return False, ("AF-SM-WRITEBACK-PROOF: the stable row %r was not found by readback — "
+                       "the write is NOT complete (reconcile before any retry creates a "
+                       "second row)" % row_key)
+    values = readback.get("values")
+    if not isinstance(values, list):
+        return False, "AF-SM-WRITEBACK-PROOF: readback carries no row values"
+    marker = values[WRITEBACK_ROW_KEY_COLUMN - 1] if len(values) >= WRITEBACK_ROW_KEY_COLUMN else None
+    if str(marker or "").strip() != row_key:
+        return False, ("AF-SM-WRITEBACK-PROOF: readback row-key marker %r != the receipt's row_key %r"
+                       % (marker, row_key))
+    # Representative-value check: the first three non-marker cells read back
+    # must equal the staged row's (the write did not land on a different row).
+    staged_repr = [str(c) for c in row[1:4]]
+    remote_repr = [str(c) for c in values[1:4]]
+    if staged_repr != remote_repr:
+        return False, ("AF-SM-WRITEBACK-PROOF: readback values differ from the staged row "
+                       "(representative cells %r != %r)" % (remote_repr, staged_repr))
+    rec["reconciled"] = True
+    rec["reconciled_at"] = _utc_now_iso()
+    try:
+        (run_dir / "working" / "plan" / "row_appended.json").write_text(
+            json.dumps(rec, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return True, "stable row %r read back with matching values (idempotent — no second append)" % row_key
+
+
+def _sheets_outage_recovery(run_dir):
+    """F13 + F10 coordination: a Sheets failure NEVER republishes
+    already-published posts. The publish/delivery state is independent; the
+    outage exposes a SEPARATE planner-sync task instead of failing the
+    publish. Returns (published_preserved, planner_sync_task: dict|None)."""
+    published = _delivery_published_set(run_dir)
+    if not published:
+        return True, None
+    rec = _json(run_dir, "working/plan/planner_sync_task.json")
+    if not isinstance(rec, dict) or not rec.get("task_id"):
+        rec = {"task_id": "planner-sync-%s" % str(abs(hash(run_dir.name)))[:12],
+               "kind": "planner-sync", "state": "open",
+               "reason": "Sheets outage: planner row not written; published posts are "
+                         "independent (delivery rows unchanged) — sync the row later",
+               "created_at": _utc_now_iso()}
+        try:
+            (run_dir / "working" / "plan").mkdir(parents=True, exist_ok=True)
+            (run_dir / "working" / "plan" / "planner_sync_task.json").write_text(
+                json.dumps(rec, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+    return True, rec
+
+
+def _chk_writeback(run_dir):
+    ok, msg = _verify_writeback_receipt(run_dir)
+    if not ok:
+        # F20 (ONB-F20-01 repair): a Sheets failure (404/outage — the write
+        # never returned a real range, or the row never landed) must NEVER
+        # republish already-published posts. The published delivery rows (F10)
+        # are independent; the outage exposes a SEPARATE planner-sync task via
+        # the outcome-recovery helper (fail-soft) so the operator can sync the
+        # row later instead of the publish failing with nothing actionable.
+        preserved, sync_task = _sheets_outage_recovery(run_dir)
+        if sync_task:
+            msg = "%s; planner sync task %s exposed (%s) — published posts preserved" % (
+                msg, sync_task.get("task_id"), sync_task.get("kind"))
+        return False, msg
+    # The stable row must be READ BACK (working/plan/row_readback.json) before
+    # writeback is complete: {found: true, row_key, values: [...]}. A receipt
+    # already marked reconciled (a previous reconcile pass adopted the row)
+    # completes idempotently — a retried run never appends a second row.
+    rec = _json(run_dir, "working/plan/row_appended.json") or {}
+    readback = _json(run_dir, "working/plan/row_readback.json")
+    if isinstance(readback, dict) and readback.get("found") is True:
+        ok2, msg2 = _reconcile_writeback_readback(run_dir, readback)
+        if not ok2:
+            return False, msg2
+    elif rec.get("reconciled") is not True:
+        # Same outage semantics at the readback boundary: the row never
+        # landed — never republish, expose the sync task.
+        _sheets_outage_recovery(run_dir)
+        return False, ("AF-SM-WRITEBACK-PROOF: the stable row was not found by readback — the "
+                       "write is NOT complete (reconcile before any retry creates a second row)")
+    return True, "writeback PROVEN: receipt complete + stable row read back (row_key %s)" % (
+        rec.get("row_key"))
 
 
 def _deliver_slug(text):
@@ -798,6 +1861,10 @@ def main(argv=None):
     ap.add_argument("--mode", choices=MODES)
     ap.add_argument("--run-dir", help="the run directory (contains working/)")
     ap.add_argument("--plan", action="store_true", help="print the mode's phase plan and exit")
+    ap.add_argument("--producers", action="store_true",
+                    help="run the F05 producer adapter layer BEHIND the phase gates: each "
+                         "phase's producer is invoked before its gate (missing artifacts "
+                         "trigger production; unchanged inputs reuse verified outputs)")
     ap.add_argument("--narrated", action="store_true",
                     help="request the narrated video lane (C8) — DEFERRED to v0.3.0 (fails closed)")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
@@ -829,7 +1896,12 @@ def main(argv=None):
     if _run_persona_adapter(run_dir):
         return EXIT_GATE
     _mc_task = _mc_board_begin(run_dir, args.mode)
-    rc = run(manifest, args.mode, run_dir)
+    # F05: with --producers the run loop invokes each phase's producer adapter
+    # behind the unchanged gates; without it, the pure deterministic walk.
+    if getattr(args, "producers", False):
+        rc = run_with_producers(manifest, args.mode, run_dir)
+    else:
+        rc = run(manifest, args.mode, run_dir)
     if rc == EXIT_PASS:
         _mc_board_done(run_dir, _mc_task)
     else:

@@ -6,12 +6,14 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 1.4
-**Last updated:** 2026-06-14
+**Version:** 1.5.3
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
 ---
+
+> **LOGO MECHANISM NOTE (binding; SOP-IMG-05 Rule A, the renderer is the authority).** `build_deck.py` sends your prompt verbatim and places the logo itself. On the canonical command the real logo is a local PNG that `assemble_pptx` places top-right (about 13 percent of the slide width, 0.25 inch margin, no chip) after generation: the prompt draws no logo, names no reference image, keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15). Every logo chip, lower-right placement, `LOGO_URL`, `input_urls` or image-to-image MODE line in this document, its templates and its exemplars describes URL image-to-image mode only (a direct `build_deck.py --logo <https URL>` run), which the canonical command does not reach today.
 
 ## 1. Role Identity
 
@@ -115,7 +117,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Shared STYLE BLOCK Authorship
 
-**When to run:** At the start of every new deck run, dispatched by the Director concurrent with Phase 1 (copy writing). Must complete before Phase 2 begins.
+**When to run:** At the start of every new deck run, dispatched by the Director concurrent with Phase 1 (copy writing) -- one of the parallel agents in the Director's fanout dispatch, with the fanout size set by the governor: `max_concurrent_agents` in `working/checkpoints/capacity_plan.json` (capacity-reliability-engineer.md Step 0.5). Must complete before Phase 2 begins.
 
 **Inputs:**
 - intake.json (brand_colors, brand_fonts, logo_description, representation_preferences, style_references)
@@ -127,13 +129,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - SECONDARY: accent-2 -- used for action/urgency/emphasis words and CTA elements
    - ACCENT: the third client color
    - WHITE BASE: #FFFFFF (or a faint warm off-white per style references such as #FBF7F4) is ALWAYS the base layer beneath all three. It is not one of the three named hex slots. Do NOT label any client hex as "tertiary almost always white." The base layer is white and is listed separately in the STYLE BLOCK.
-3. Extract typography from intake.json. If no fonts are specified, default to: headline font = "Montserrat Bold" (or similar geometric sans-serif), body font = "Open Sans Regular". Record as `font_source: "default_pending_client_confirmation"`.
-4. Extract logo placement. Default rule: "Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border, placed in the same corner (bottom-right) on every slide, minimum 40px from any edge, full color version, never recolored or distorted." If client has provided a logo file, note the file path.
-   **(density-floor overhaul) Lock ONE canonical logo asset.** Record a single `LOGO_URL` (a public https URL; re-host to the client GHL media library or Drive if needed). If the client supplied MULTIPLE lockups/monograms/icon/mountain/sprout/tagline variants, pick exactly ONE canonical mark and FORBID the rest in the STYLE BLOCK (`forbidden_logo_variants: [...]`). The logo is ALWAYS composited image-to-image from this locked LOGO_URL (never text-to-image), so the SAME mark renders on every slide. A drifting logo (a different mark per slide) was a defect in the reference failure case (AF-I11). Source: universal-sops/presentation-design-system/05-SOP-logo-consistency.md and presentation-image-library/SOP-IMG-01 Mode B.
+3. Extract typography from intake.json and build the TYPOGRAPHY LAW (SOP 9.4). ONE typeface family with hierarchy by weight, never a mix of typefaces. If no fonts are specified, default to the gold-standard system: typeface = Montserrat (one family), weight-mapped by role (Black for headlines and giant numbers, ExtraBold for sub-headlines and body beats, Bold for the gold all-caps letter-spaced labels, SemiBold for section labels and subheads, Medium italic for tertiary breathing lines, Regular for footnotes). Record as `font_source: "default_pending_client_confirmation"`. A "Montserrat Bold headline + Open Sans body" two-family split is FORBIDDEN — the TYPOGRAPHY LAW is one family only. Basic or default fonts (Calibri, Arial, Times, or a typeface chosen because it was the default) are an AUTO-FAIL at QC. (This step restates SOP 9.4; the full LAW build is step 4 below.)
+4. Extract logo placement. Default rule (URL image-to-image mode only): "Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border, placed in the same corner (bottom-right) on every slide, minimum 40px from any edge, full color version, never recolored or distorted." On the canonical command (the default) the logo is placed by `assemble_pptx` instead: top-right, about 13 percent of the slide width, 0.25 inch margin, no chip, exact PNG bytes; record that rule in the STYLE BLOCK LOGO section and state that prompts draw no logo (AF-P15). If client has provided a logo file, note the file path.
+   **(density-floor overhaul) Lock ONE canonical logo asset.** Record a single `LOGO_URL` (a public https URL; re-host to the client GHL media library or Drive if needed). If the client supplied MULTIPLE lockups/monograms/icon/mountain/sprout/tagline variants, pick exactly ONE canonical mark and FORBID the rest in the STYLE BLOCK (`forbidden_logo_variants: [...]`). The SAME mark must render on every slide. Through the canonical command (which has no `--logo` option) the logo is the LOCAL PNG named in `intake.json` `brand.logo_image_path`: the render stays text-to-image and `assemble_pptx` places that exact file top-right at about 13 percent of the slide width (SOP-IMG-05 Rule A mechanism 2). Download the locked LOGO_URL to a local PNG in the run directory for that purpose; the intake owner points `brand.logo_image_path` at it. The URL image-to-image mode (the hosted LOGO_URL as the single `input_urls` reference, with the bottom-right chip placement above as the prompt directive) exists only in a direct `build_deck.py --logo` run, which the canonical command does not forward today. A drifting logo (a different mark per slide) was a defect in the reference failure case (AF-I11). Source: universal-sops/presentation-design-system/05-SOP-logo-consistency.md and presentation-image-library/SOP-IMG-01 Mode B.
    **(density-floor overhaul) Pin the price-typography + weight-ladder system in the STYLE BLOCK** so the Typography Architect and Slide Image Creator share one source: the metallic-gold gradient on hero price numerals, the accent glow on the LIVE price, the drawn-gold double-strike on DEAD prices (applied across the WHOLE ladder, not one beat), and the Montserrat (or client) weight ladder (BLACK headlines, ExtraBold sub-heads, Bold labels, Medium/Italic captions). The Typography Architect owns the per-slide treatment; you pin the system tokens.
    **(density-floor overhaul) Style-source trigger (SOP-IMG-02 / SOP-IMG-03):** read `STYLE_SOURCE` from intake. If `match_reference` (a reference deck / `ANALYZE_REQUEST` / `STYLE_ID`), fire Crossing A via SOP-DIU-612 (write style_request.json to the Chief Design Officer), fold the returned Foundation Prompt Block into the STYLE BLOCK, and record `style_card_id@version` in brand_registry.json BEFORE delivering the STYLE BLOCK. If `saved_style`, run the SOP-IMG-04 recall path (resolve the alias in NAMED-STYLES.md to a production card, pin the version). If `creative_develop` or no style fields, build the STYLE BLOCK from intake brand fields plus the SOP-IMG-03 creative-develop probe. Never invent a look on a deck that requested a style match.
-3. Extract typography from intake.json and build the TYPOGRAPHY LAW (SOP 9.4). The proven system is ONE typeface family with hierarchy by weight, never a mix of typefaces. If no fonts are specified, default to the gold-standard system: typeface = Montserrat (one family), weight-mapped by role (Black for headlines and giant numbers, ExtraBold for sub-headlines and body beats, Bold for the gold all-caps letter-spaced labels, SemiBold for section labels and subheads, Medium italic for tertiary breathing lines, Regular for footnotes). Record as `font_source: "default_pending_client_confirmation"`. If the client supplied a brand font, map THAT family across the same weight roles (heaviest weight = headlines and numbers); never fall back to a basic or platform-default typeface. Basic or default fonts (Calibri, Arial, Times, or a typeface chosen because it was the default) are never acceptable and are an AUTO-FAIL at QC.
-4. Extract logo placement. Default rule: "Logo on a white chip at approximately 9% of slide width with a subtle 1px brand-accent border, placed in the same corner on every slide, minimum 40px from any edge, full color version." If client has provided a logo file, note the file path.
 5. Extract representation preferences from intake.json field `REPRESENTATION_MIX`. This field is collected WITH PERCENTAGES during discovery (e.g., "70% African American women, 20% African American men, 10% mixed" or "100% women, diverse" or "no people at all"). The percentage breakdown drives the deck-level ratio in SOP 9.2.
    - If `REPRESENTATION_MIX` is present and answered: use the client's stated breakdown verbatim. Record as `representation_source: "client_intake"`.
    - If `REPRESENTATION_MIX` is unanswered or blank: DO NOT invent a racial default. Set representation to NO PEOPLE (people element omitted from all slides) and flag: `representation_source: "default_no_people -- intake unanswered"`. Immediately notify the operator with a flag: "REPRESENTATION UNANSWERED: intake.json has no REPRESENTATION_MIX value. Deck will default to no people in images. Please confirm or supply the intended breakdown before Phase 2." Do not proceed to people-inclusive prompts until the operator or client has answered.
@@ -141,7 +141,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 5a. DERIVE THE COLOR RELATIONSHIPS AND GRADING PROFILE (required -- must complete before step 6):
    a. Identify the COLOR RELATIONSHIP from the brand palette: map the three client hex codes to the color wheel. Determine whether the relationship is COMPLEMENTARY (primaries on opposite sides of the wheel -- maximum contrast and pop), ANALOGOUS (adjacent hues -- warm harmony and cohesion), or TRIADIC (three equidistant hues -- vibrant balance).
    b. Identify the COMPLEMENTARY ACCENT: which color creates the strongest contrast pop against the others? This is the accent reserved for CTAs, price reveals, and the single most important number per slide. Do not spread it indiscriminately.
-   c. Run the CONTRAST CHECK on the headline color against the white base: the charcoal headline (#231F20 default) on the white base (#FBF7F4 default) must pass WCAG AA (minimum 4.5:1 for normal text, 3:1 for large text at 18pt+ regular or 14pt+ bold). Record the ratio. If the client brand requires a lighter headline on white that fails WCAG AA, flag to the Director and suggest a darker shade.
+   c. Run the CONTRAST CHECK on the headline color against the white base: the charcoal headline (#231F20 default) on the white base (#FBF7F4 default) must pass the coded floors in `presentations/scripts/build_deck.py` (AF-FONT-FLOOR constants, lines 628-637): CONTRAST_RATIO_FLOOR_NORMAL = 4.5 (WCAG 2.2 AA normal text), CONTRAST_RATIO_FLOOR_LARGE = 3.0 (large text). Record the ratio. When the client authorizes a dark theme (DARK_OK / client_dark_theme), the raised floors apply instead: DARK_THEME_CONTRAST_FLOOR = 7.0 (AAA) and DARK_THEME_BODY_PT_FLOOR = 22 pt-equivalent. If the client brand requires a lighter headline on white that fails the 4.5:1 floor, flag to the Director and suggest a darker shade.
    d. Derive the COLOR GRADING PROFILE: look at the warmth of the brand palette overall. A gold-primary, charcoal-secondary, off-white-base palette is WARM. A navy-primary, silver-secondary, cool-white-base palette is COOL. A balanced multi-hue palette with no dominant temperature lean is NEUTRAL. Record WARM, COOL, or NEUTRAL.
    e. Record these findings as the COLOR THEORY section and COLOR GRADING PROFILE in the STYLE BLOCK (step 6 template below).
 
@@ -171,12 +171,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Section labels + subheads on photo slides: [family] SemiBold
    - Tertiary / breathing lines: [family] Medium, often italic
    - Footnotes / fine print / disclaimers: [family] Regular, ~11-13pt, often italic
-   Size scale (relative to slide height): giant numbers 110-150pt (Black); hero 2-line headline 62-86pt (Black); secondary headline 42-62pt; raspberry sub-headline 24-32pt (ExtraBold); body beat 17-22pt; tertiary italic 16-19pt; gold kicker label ~13pt (Bold); footnote 11-13pt.
+   Size scale (relative to slide height): giant numbers 110-150pt (Black); hero 2-line headline 62-86pt (Black); secondary headline 42-62pt; raspberry sub-headline 24-32pt (ExtraBold); body beat 17-22pt; tertiary italic 16-19pt; gold kicker label ~13pt (Bold); footnote 11-13pt. Every body/subhead size must clear the coded floor in `presentations/scripts/build_deck.py` (AF-FONT-FLOOR, lines 628-637): FONT_BODY_PT_FLOOR = 18 pt-equivalent at 1080px tall (DARK_THEME_BODY_PT_FLOOR = 22 when DARK_OK/client_dark_theme). The Typography Architect's type_scale_steps token must declare a modular 4-5 step scale (TYPE_SCALE_STEPS_MIN/MAX = 4/5).
    Type is always legible on the white base. No reversed-out text on dark backgrounds (unless DARK_OK).
    BASIC OR DEFAULT FONTS ARE FORBIDDEN: Calibri, Arial, Times, or any system/platform default is an AUTO-FAIL at QC. Every prompt must name the exact weight and a large pt size per line.
 
    LOGO:
-   [Logo placement rule: white chip at ~9% slide width, subtle 1px brand-accent border, consistent corner, full color version]
+   [Logo rule per mechanism: canonical command, "the real logo is added after generation, top-right, about 13% of slide width; draw no logo and keep that corner clear"; URL image-to-image mode only, "white chip at ~9% slide width, subtle 1px brand-accent border, consistent corner, full color version"]
 
    BRAND GRAMMAR (embed in every prompt):
    - Kicker label: small all-caps letter-spaced label in Primary above the headline, with a short Primary gold rule beneath it
@@ -310,12 +310,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Footnotes and fine print -> Regular, ~11-13pt, often italic.
    If the client supplied a brand font, map THAT family across the same weight roles (heaviest weight = headlines and giant numbers). Never fall back to a basic or platform-default typeface.
 
-2. **SIZE SCALE -- extreme contrast, slide-height-relative.** Tiny letter-spaced labels at one end, billboard headlines and three-digit-point giant numbers at the other:
+2. **SIZE SCALE -- extreme contrast, slide-height-relative.** Tiny letter-spaced labels at one end, billboard headlines and three-digit-point giant numbers at the other. Every body/subhead size below clears the deterministic floors the render pipeline enforces from `presentations/scripts/build_deck.py` (AF-FONT-FLOOR constants, lines 628-637: FONT_BODY_PT_FLOOR = 18 pt-equivalent at 1080px tall, DARK_THEME_BODY_PT_FLOOR = 22 under DARK_OK; TYPE_SCALE_STEPS_MIN/MAX = 4/5 modular steps; CONTRAST_RATIO_FLOOR_NORMAL = 4.5, CONTRAST_RATIO_FLOOR_LARGE = 3.0, DARK_THEME_CONTRAST_FLOOR = 7.0):
    - GIANT NUMBER: 110-150pt (Black) -- dollar figures, hero stats, the price-drop current price. Giant numbers run 1.5x to 3x the size of surrounding text and are the hero of the data zone.
    - Hero headline: 62-86pt (Black) -- the dominating 2-line headline, the first thing the eye reads.
    - Secondary headline: 42-62pt (Black / ExtraBold) -- data-zone headlines, sub-punch lines.
    - Sub-headline: 24-32pt (ExtraBold) -- the raspberry/Secondary accent line under the headline.
-   - Body beat: 17-22pt (ExtraBold / Medium).
+   - Body beat: 17-22pt (ExtraBold / Medium). The lower bound 17pt sits at the AF-FONT-FLOOR gate; declare min_body_pt >= 18 in type_layout_system.md.
    - Tertiary / italic breathing line: 16-19pt (Medium italic).
    - Kicker label: ~13pt (Bold), gold all-caps, letter-spaced +0.12 to +0.15em.
    - Footnote: 11-13pt (Regular italic).
@@ -329,7 +329,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - White #FFFFFF and warm off-white #FBF7F4 -- the base layer (80%+ of the visual area).
    - Giant-number gradient: derive from BRAND_PRIMARY; a two-stop gradient (dark left -> light right) OR BRAND_SECONDARY with a subtle glow for the "winner" price.
 
-5. **ZERO BLACK BACKGROUNDS -- the load-bearing hard rule.** No black backgrounds anywhere in any frame: not in corners, not behind text, not as a vignette. White or warm off-white base on every slide (unless DARK_OK=true). This is the single most repeated constraint in the proven spec and the defining break from the failure-mode decks. Headlines are charcoal #231F20, never #000000.
+5. **ZERO BLACK BACKGROUNDS -- the load-bearing hard rule.** No black backgrounds anywhere in any frame: not in corners, not behind text, not as a vignette. White or warm off-white base on every slide (unless DARK_OK=true, mirrored to client_dark_theme). This is the single most repeated constraint in the proven spec and the defining break from the failure-mode decks. Headlines are charcoal #231F20, never #000000. Under DARK_OK the raised dark-theme floors from `presentations/scripts/build_deck.py` (lines 633-634: DARK_THEME_BODY_PT_FLOOR = 22, DARK_THEME_CONTRAST_FLOOR = 7.0 AAA) govern the type system.
 
 **Steps:**
 1. Write the TYPOGRAPHY LAW block (the five parts above) into the STYLE BLOCK, substituting the client's brand font family and hexes onto the same weight roles and color roles when the client supplied them; otherwise use the gold-standard defaults and flag the source.
@@ -363,7 +363,7 @@ Either: (a) representation_audit.json shows `representation_audit_passed: true` 
 working/brand/archetype_palette_handoff.md exists and the Slide Image Creator has been notified before Phase 2 begins.
 
 ### Gate 6 -- TYPOGRAPHY LAW Complete (SOP 9.4)
-The STYLE BLOCK carries the full TYPOGRAPHY LAW: the one-typeface weight map (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for primary accent labels, SemiBold for section labels, Medium italic for tertiary, Regular for footnotes), the slide-height-relative size scale (giant numbers 110-150pt, hero headline 62-86pt, sub 24-32pt, kicker ~13pt), the canonical hierarchy stack (accent kicker label -> accent rule -> charcoal Black 2-line headline -> Secondary ExtraBold sub -> accent rule -> body beat -> italic tertiary -> logo chip), the five-color palette (charcoal #231F20 never pure black, client BRAND_SECONDARY, client BRAND_PRIMARY, white #FFFFFF and warm off-white #FBF7F4, plus the giant-number gradient), and the ZERO black backgrounds rule. Basic or default fonts are explicitly forbidden. Any part missing = the STYLE BLOCK is incomplete and must not be delivered.
+The STYLE BLOCK carries the full TYPOGRAPHY LAW: the one-typeface weight map (Black for headlines and giant numbers, ExtraBold for subs and body beats, Bold for primary accent labels, SemiBold for section labels, Medium italic for tertiary, Regular for footnotes), the slide-height-relative size scale (giant numbers 110-150pt, hero headline 62-86pt, sub 24-32pt, kicker ~13pt) with every body/subhead size clearing the coded floors in `presentations/scripts/build_deck.py` (lines 628-637: FONT_BODY_PT_FLOOR = 18, DARK_THEME_BODY_PT_FLOOR = 22, TYPE_SCALE_STEPS_MIN/MAX = 4/5, CONTRAST_RATIO_FLOOR_NORMAL = 4.5, CONTRAST_RATIO_FLOOR_LARGE = 3.0, DARK_THEME_CONTRAST_FLOOR = 7.0), the canonical hierarchy stack (accent kicker label -> accent rule -> charcoal Black 2-line headline -> Secondary ExtraBold sub -> accent rule -> body beat -> italic tertiary -> logo chip), the five-color palette (charcoal #231F20 never pure black, client BRAND_SECONDARY, client BRAND_PRIMARY, white #FFFFFF and warm off-white #FBF7F4, plus the giant-number gradient), and the ZERO black backgrounds rule. Basic or default fonts are explicitly forbidden. Any part missing = the STYLE BLOCK is incomplete and must not be delivered.
 
 ### Gate 7 -- COLOR THEORY and COLOR GRADING PROFILE Present (SOP 9.1 step 5a)
 The STYLE BLOCK must include both the COLOR THEORY section (color_relationship, complementary_accent, contrast_check, contrast_rule) and the COLOR GRADING PROFILE section (color_grade_profile, temperature, saturation, tonal_contrast, lock) before it is delivered to the Slide Image Creator. A STYLE BLOCK delivered without these sections cannot guarantee color harmony or grade consistency across the deck and is incomplete. Phase 2 cannot begin on a STYLE BLOCK missing Gate 7.
@@ -409,11 +409,11 @@ Accent: [BRAND_ACCENT_HEX] -- [color name]; structural support elements per prom
 White base rule: ALL slides use [BASE_COLOR_HEX] as the background. Brand colors are ACCENTS only (max 20% of visual area each). Dark backgrounds are PROHIBITED unless DARK_OK=true.
 
 TYPOGRAPHY:
-Headline font: [BRAND_FONT or Montserrat], Bold weight, 60-80pt for hero slides, 40-50pt for content slides
-Body font: [BODY_FONT or Open Sans], Regular weight, 24-32pt
+Headline font: [BRAND_FONT or Montserrat], ONE family, hierarchy by weight per the TYPOGRAPHY LAW (SOP 9.4): Black weight, hero 2-line headline 62-86pt, secondary headline 42-62pt
+Body type: same [BRAND_FONT or Montserrat] family, ExtraBold sub-headline 24-32pt; body beat 17-22pt (never below the FONT_BODY_PT_FLOOR = 18 pt-equivalent floor in presentations/scripts/build_deck.py lines 628-637); no second body family (no Open Sans / Calibri / Arial split)
 
 LOGO:
-Logo on a white chip at approximately 9% of slide width with a subtle 1px [BRAND_PRIMARY_HEX] border, lower-right corner on every slide, minimum 40px from any edge, full color version.
+Canonical command: the real logo is added after generation, top-right, about 13% of slide width, 0.25 inch margin; the prompt draws no logo. URL image-to-image mode only: logo on a white chip at approximately 9% of slide width with a subtle 1px [BRAND_PRIMARY_HEX] border, lower-right corner on every slide, minimum 40px from any edge, full color version.
 
 BRAND GRAMMAR (embed in every prompt):
 - Kicker label: small all-caps letter-spaced label in [BRAND_PRIMARY_HEX] above the headline, short [BRAND_PRIMARY_HEX] rule beneath it
@@ -472,7 +472,7 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 | 5 | Building STYLE BLOCK before intake.json is complete | Gate: check that intake.json has interview_confirmed = true before building. |
 | 6 | Inventing a racial default when representation is unanswered | Default is NO PEOPLE plus operator flag. Never invent percentages the client did not supply. |
 | 7 | Omitting brand grammar devices from the STYLE BLOCK | Every STYLE BLOCK must include the proven grammar: kicker, gold rule, divider, color roles, price tag motif, section banners, logo chip spec, compliance line. |
-| 8 | Setting logo chip to 4% slide width | The proven spec is approximately 9% of slide width with a subtle 1px brand-accent border. 4% is too small. |
+| 8 | Setting logo chip to 4% slide width (URL image-to-image mode only) | The proven spec is approximately 9% of slide width with a subtle 1px brand-accent border. 4% is too small. |
 | 9 | Skipping SOP 9.3 archetype palette and exemplar handoff | SOP 9.3 fires every run, immediately after SOP 9.1. The Slide Image Creator must receive the SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar as required pre-reading before Phase 2. |
 | 10 | Labeling a client hex as "tertiary almost always white" | White is the base layer, listed separately. The three client hexes are PRIMARY/SECONDARY/ACCENT. If a client brand truly uses white as an accent, document it explicitly with a note. |
 | 11 | Defaulting the type to a basic font ("Montserrat Bold" with no size, or Calibri/Arial/Times) | Encode the full TYPOGRAPHY LAW (SOP 9.4): one family, the weight map, the slide-height-relative size scale, the hierarchy stack, and the palette. Basic or default fonts are an AUTO-FAIL at QC. |
@@ -487,7 +487,8 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 
 **Tier 1:**
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md (STYLE BLOCK format requirements); SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (archetypes); SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (exemplar prompt)
-- WCAG 2.1 contrast guidelines (minimum 4.5:1 contrast ratio for normal text on slides)
+- `presentations/scripts/build_deck.py` AF-FONT-FLOOR constants (lines 628-637) -- the coded floors the pipeline actually enforces: FONT_BODY_PT_FLOOR = 18, TYPE_SCALE_STEPS_MIN/MAX = 4/5, CONTRAST_RATIO_FLOOR_NORMAL = 4.5, CONTRAST_RATIO_FLOOR_LARGE = 3.0, DARK_THEME_BODY_PT_FLOOR = 22, DARK_THEME_CONTRAST_FLOOR = 7.0
+- WCAG 2.2 contrast guidelines as encoded in build_deck.py (4.5:1 normal text, 3.0:1 large text; 7.0:1 AAA when a dark theme is client-authorized)
 
 **Tier 2:**
 - Adobe Color (color.adobe.com) -- for deriving complementary hex codes from client color descriptions

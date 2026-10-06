@@ -25,6 +25,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 from collections import OrderedDict
 from pathlib import Path
 
@@ -39,6 +40,62 @@ from pathlib import Path
 _TASK_EMBED_CACHE_MAX = max(1, int(os.environ.get("SEMANTIC_TASK_FIT_CACHE_MAX", "256")))
 _TASK_EMBED_CACHE: "OrderedDict[tuple, object]" = OrderedDict()
 _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
+
+# EMBED-FAIL-CACHE: process-local latch. True once an embed call has failed
+# for a reason that will not resolve itself by simply retrying within this
+# process (quota/billing exhaustion, auth rejection). semantic_task_fit() is
+# called ONCE PER CANDIDATE PERSONA in the same selection loop (8-15 calls
+# for one selection) — the task-embedding cache above only ever records a
+# SUCCESS, so a quota/billing failure on candidate #1 was previously
+# re-attempted, identically, on every remaining candidate: one wasted API
+# call amplified into 8-15. This flag is checked before every subsequent
+# _embed_text() call so the FIRST such failure short-circuits the rest of
+# the loop straight to the existing keyword-overlap fallback.
+#
+# Process-local by design (no on-disk state): the selector is a short-lived
+# spawned process, so there is nothing to persist and nothing to expire —
+# the next invocation starts with a clean flag. A genuinely transient
+# failure (network blip, 500, timeout) does NOT set this, since those can
+# clear between one candidate and the next; see _is_permanent_embedding_failure().
+_EMBEDDING_UNAVAILABLE = False
+_EMBEDDING_UNAVAILABLE_REASON = ""
+
+
+def _is_permanent_embedding_failure(exc: Exception) -> bool:
+    """
+    Classify an embed-call exception as permanent-ish (latch embeddings off
+    for the rest of this process) vs genuinely transient (worth retrying on
+    the very next call).
+
+    Permanent-ish:
+      - credential/auth rejection (401/403/API key/permission/unauthenticated)
+        — delegates to embedding_engine.is_credential_error() so query-time
+        (here) and index-time credential failures are classified from ONE
+        place, per that function's own contract.
+      - quota / billing exhaustion (429, RESOURCE_EXHAUSTED, "prepayment
+        credits are depleted") — a billing wall does not clear itself
+        mid-process; every remaining candidate in this selection would hit
+        the identical doomed call.
+
+    Transient (must NOT latch):
+      - network blips, 5xx, generic timeouts. These can clear between one
+        candidate and the next, so permanently disabling embeddings for the
+        rest of the process on one blip would be its own regression.
+    """
+    try:
+        import sys as _sys, os as _os
+        _su = _os.path.dirname(__file__)
+        if _su not in _sys.path:
+            _sys.path.insert(0, _su)
+        from embedding_engine import is_credential_error
+        if is_credential_error(exc):
+            return True
+    except Exception:
+        pass
+    msg = str(exc).lower()
+    return ("429" in msg or "quota" in msg or "resource_exhausted" in msg
+            or "prepayment" in msg or "credits are depleted" in msg
+            or "insufficient_quota" in msg)
 
 
 def _task_cache_get(key):
@@ -55,6 +112,38 @@ def _task_cache_put(key, val):
     _TASK_EMBED_CACHE.move_to_end(key)
     while len(_TASK_EMBED_CACHE) > _TASK_EMBED_CACHE_MAX:
         _TASK_EMBED_CACHE.popitem(last=False)
+
+
+# CONCURRENCY. persona-selector-v2.score_personas() scores the finalists on a
+# ThreadPoolExecutor, and every one of those threads asks for the embedding of
+# the SAME task text. Unlocked, they all miss the cache at once and each fires
+# its own Gemini embed call -- N paid API calls where the G13 contract says
+# exactly ONE per selection -- and the unsynchronised OrderedDict could also
+# have _task_cache_get's move_to_end() race an eviction's popitem() into a
+# KeyError. One lock closes both: the first thread embeds, the rest block and
+# then read its result out of the cache.
+# CEILING: ONE global lock, so two DIFFERENT task texts would serialise their
+# embeds. A selection only ever has one, so the ceiling is unreachable here;
+# key it per cache_key if a caller ever embeds several texts concurrently.
+_TASK_EMBED_LOCK = threading.Lock()
+
+
+def _task_embed(task_text: str, api_key: str):
+    """The task's embedding, computed at most ONCE per process. Thread-safe.
+
+    Sole entry point to _TASK_EMBED_CACHE for both semantic_task_fit() and
+    semantic_persona_ids(), so the shared-embedding contract holds whether the
+    callers are sequential or concurrent. Returns None when the embed fails
+    (callers fall through to keyword overlap, unchanged).
+    """
+    key = ("task", task_text)
+    with _TASK_EMBED_LOCK:
+        vec = _task_cache_get(key)
+        if vec is None:
+            vec = _embed_text(task_text, api_key)
+            if vec is not None:
+                _task_cache_put(key, vec)
+        return vec
 
 # G13: number of persona blueprint chunks to AVERAGE into the persona's
 # representative vector (was LIMIT 1 — whichever chunk sqlite returned first).
@@ -86,6 +175,54 @@ def _gemini_index_path(paths: dict) -> Path:
         if candidate.exists():
             return candidate
     return paths.get("gemini_index", Path(""))
+
+# ── REP-032 / A32: stale-index gate ───────────────────────────────────────────
+# The identity gate (decision_engine/retrieval/cache_identity.py) can only see
+# what an index DECLARES. An index built from an older persona set, read after
+# the set moved on, declares the identical space and used to be scored as if
+# current (probe case 6b). The freshness check below compares the index's own
+# build stamp against the live persona set; a stale index yields the truthful
+# lexical fallback instead of a silent semantic answer. Fail-open: no stamp,
+# unreadable stamp or absent module all keep the previous behaviour.
+try:
+    import importlib.util as _ilu_r032
+
+    def _load_retrieval_guard():
+        _ret = Path(__file__).resolve().parent / "decision_engine" / "retrieval"
+        _f = _ret / "guarded_retrieval.py"
+        if not _f.is_file():
+            return None
+        _spec = _ilu_r032.spec_from_file_location("rep032_guarded_retrieval", _f)
+        _mod = _ilu_r032.module_from_spec(_spec)
+        sys.modules["rep032_guarded_retrieval"] = _mod
+        _spec.loader.exec_module(_mod)
+        return _mod
+
+    _GUARDED_RETRIEVAL = _load_retrieval_guard()
+except Exception:  # pragma: no cover — additive guard, never blocks selection
+    _GUARDED_RETRIEVAL = None
+
+def _persona_index_dir(paths: dict):
+    """Directory holding the index DB and the box's persona-set stamps."""
+    workspace = paths.get("workspace")
+    if workspace:
+        return Path(workspace) / "data" / "coaching-personas"
+    db = paths.get("gemini_index")
+    return Path(db).parent if db else None
+
+def _index_servable(paths: dict) -> "tuple[bool, str]":
+    """(servable, reason) for the persona index under ``paths``.
+
+    False only when the index build stamp disagrees with the live persona set;
+    absent module/stamp/error all return True with a note, never a refusal.
+    """
+    if _GUARDED_RETRIEVAL is None:
+        return True, "freshness guard module absent"
+    d = _persona_index_dir(paths)
+    if d is None:
+        return True, "no index dir resolvable"
+    v = _GUARDED_RETRIEVAL.check_index_freshness(d, d / "persona-categories.json")
+    return (v.servable, v.reason)
 
 
 def _get_google_api_key(paths: dict) -> str:
@@ -145,6 +282,16 @@ def _embed_text(text: str, api_key: str):
         return np.array(response.embeddings[0].values, dtype="float32")
     except Exception as e:
         print(f"[semantic_task_fit] embed failed: {e}", file=sys.stderr)
+        if _is_permanent_embedding_failure(e):
+            global _EMBEDDING_UNAVAILABLE, _EMBEDDING_UNAVAILABLE_REASON
+            _EMBEDDING_UNAVAILABLE = True
+            _EMBEDDING_UNAVAILABLE_REASON = str(e)[:200]
+            print(
+                "[semantic_task_fit] embedding marked UNAVAILABLE for the rest of "
+                "this process (quota/billing/auth exhaustion) — remaining "
+                "candidates in this selection fall back to keyword overlap.",
+                file=sys.stderr,
+            )
         return None
 
 
@@ -160,6 +307,32 @@ def _cosine(v1, v2) -> float:
     except ImportError:
         return 0.0
 
+
+def _vector_usable(vec) -> "tuple[bool, str]":
+    """A32: is a stored persona vector real? Returns ``(ok, reason)``.
+
+    The dimension guard elsewhere only compares SHAPES, so a NaN row and a
+    zero-norm row both sailed through and produced a score labelled
+    ``gemini_embedding`` with ``cos=nan`` / ``cos=0.000`` — a result that
+    claimed a path which could not have produced a real answer. Reject them
+    here and let the caller fall back truthfully. Accepts numpy arrays and
+    plain sequences (numpy scalars are not instances of ``float``).
+    """
+    import math
+    try:
+        vals = [float(v) for v in vec]
+    except (TypeError, ValueError):
+        return False, "vector is not numeric"
+    if not vals:
+        return False, "vector is empty"
+    norm_sq = 0.0
+    for i, f in enumerate(vals):
+        if not math.isfinite(f):
+            return False, f"vector[{i}] is non-finite ({f!r}; corrupt row)"
+        norm_sq += f * f
+    if norm_sq == 0.0:
+        return False, "zero-norm vector (no direction; cosine undefined)"
+    return True, "ok"
 
 def _current_gemini_model() -> str:
     """Model authority = shared-utils/embedding_engine.GEMINI_MODEL."""
@@ -297,23 +470,40 @@ def semantic_task_fit(
         }
 
     Order of attempts:
-      1. Gemini embedding similarity (best)
+      1. Gemini embedding similarity (best) — skipped when the index is STALE
+         (REP-032/A32), so a stale index never yields a semantic answer.
       2. Keyword overlap with persona id + blueprint summary
       3. Neutral 0.6
     """
-    # Step 1: try Gemini semantic embedding
-    if _try_import_genai():
+    # Step 1: try Gemini semantic embedding (skipped once _EMBEDDING_UNAVAILABLE
+    # has latched — see the EMBED-FAIL-CACHE block near the top of this module)
+    if _try_import_genai() and not _EMBEDDING_UNAVAILABLE:
         api_key = _get_google_api_key(paths)
         db_path = _gemini_index_path(paths)
-        if api_key and db_path.exists():
-            cache_key = ("task", task_text)
-            task_vec = _task_cache_get(cache_key)
-            if task_vec is None:
-                task_vec = _embed_text(task_text, api_key)
-                if task_vec is not None:
-                    _task_cache_put(cache_key, task_vec)
+        _servable, _fresh_reason = _index_servable(paths)
+        if not _servable:
+            # REP-032/A32 (case 6b): a stale index is not served as current.
+            print(
+                f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+                "using keyword overlap (run the persona-index rebuild to restore "
+                "semantic scoring).",
+                file=sys.stderr,
+            )
+        elif api_key and db_path.exists():
+            task_vec = _task_embed(task_text, api_key)
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(persona_id, db_path)
+                if persona_vec is not None:
+                    _v_ok, _v_reason = _vector_usable(persona_vec)
+                    if not _v_ok:
+                        # A32: a corrupt/zero-norm stored row must not be scored
+                        # as a semantic result. Fall through to keyword overlap.
+                        print(
+                            f"[semantic_task_fit] persona {persona_id!r} vector "
+                            f"rejected: {_v_reason}; using keyword overlap.",
+                            file=sys.stderr,
+                        )
+                        persona_vec = None
                 if persona_vec is not None:
                     cos = _cosine(task_vec, persona_vec)
                     # Cosine is [-1, 1]; map to [0, 1] via (cos + 1) / 2,
@@ -360,21 +550,26 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     unavailable, so the caller falls back to the subprocess / keyword path
     (never-to-zero).
     """
-    if not _try_import_genai():
+    if not _try_import_genai() or _EMBEDDING_UNAVAILABLE:
+        return None
+    _servable, _fresh_reason = _index_servable(paths)
+    if not _servable:
+        # REP-032/A32 (case 6b): never rank candidates from a stale index.
+        print(
+            f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+            "skipping in-process semantic retrieval.",
+            file=sys.stderr,
+        )
         return None
     api_key = _get_google_api_key(paths)
     db_path = _gemini_index_path(paths)
     if not api_key or not db_path.exists():
         return None
 
-    # Shared task embedding — SAME cache key semantic_task_fit() uses.
-    cache_key = ("task", task_text)
-    task_vec = _task_cache_get(cache_key)
+    # Shared task embedding — SAME cache entry semantic_task_fit() uses.
+    task_vec = _task_embed(task_text, api_key)
     if task_vec is None:
-        task_vec = _embed_text(task_text, api_key)
-        if task_vec is None:
-            return None
-        _task_cache_put(cache_key, task_vec)
+        return None
 
     try:
         import numpy as np
@@ -407,6 +602,8 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         pid = os.path.basename(os.path.dirname(file_path))
         if not pid or pid == "personas":
             continue
+        if not np.isfinite(vec).all():
+            continue  # A32: a corrupt row never ranks (its cosine is NaN)
         n = np.linalg.norm(vec)
         if n == 0:
             continue

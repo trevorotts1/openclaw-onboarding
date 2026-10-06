@@ -7,6 +7,12 @@
 **HARD RULE:** No distress call is ever dropped. Every inbound escalation gets a
 ledger row, a board card, and either an answer or a clear operator page.
 
+> **RR-017 CORRECTION (2026-09-08):** "ledger row" means the live **RR-04 n8n
+> Data Tables** ledger (current-v2 pipeline). The Python SQLite ledger is
+> compatibility-only drill tooling; its `count-today` command in SOP 9.1 applies
+> to DRILLS ONLY — the live cap lives in the intake pipeline's `rr_cap_counters`
+> table. Contract: `blackceo-fleet-ops:rescue/contract-manifest.json`.
+
 ---
 
 ## 9. Standard Operating Procedures
@@ -20,10 +26,10 @@ ledger row, a board card, and either an answer or a clear operator page.
    `openclawVersion`, `problem`, `alreadyTried`, `returnTo`). The `alreadyTried`
    list tells you what NOT to repeat. INCOMPLETE tickets carry `missing_fields` —
    work them with degraded context; never drop them.
-2. **Cap check before anything else:** `python3 rescue_ledger.py count-today
-   --client <client> --cap 25` (exit 3 = at/over). At cap → do NOT loop: deliver
-   outcome (b) — instruct the client's agent to have its owner ping the Operator
-   (`5252140759`) directly — and page the Operator. The client-instruction IS the
+2. **Cap check before anything else:** live `rr_cap_counters` table (drill
+   equivalent: `python3 rescue_ledger.py count-today --client <client> --cap 25`,
+   exit 3 = at/over). At cap → do NOT loop: deliver
+   outcome (b) — instruct the client's agent to have its owner escalate through the Rescue Rangers escalation section (never a personal chat) — and page the Operator. The client-instruction IS the
    outcome (b); it is delivered by the client's own agent and is a complete
    dispatch, never a silent drop. The cap is a furnace guard, not a courtesy.
 
@@ -65,11 +71,11 @@ AI self-fixes reachable-box infrastructure using our access — the box's `rescu
 SSH alias from the operator's `~/.ssh/config` plus the provider env var NAME from
 `~/.openclaw/secrets/.env` (names only, never a value; values live in the secrets
 env). Check the credential exists BEFORE escalating; a missing credential is itself
-a finding to report. (3) Page `5252140759` ONLY after tiers 1-2 ran and the ticket
+a finding to report. (3) Page the Operator ONLY after tiers 1-2 ran and the ticket
 can document why neither worked, or on a one-way-door class that pages on the class
 alone.
 
-**Page `5252140759` when any of:** no-reply/timeout on a HIGH ticket; anything
+**Page the Operator when any of:** no-reply/timeout on a HIGH ticket; anything
 touching credential-ACTION (rotate/regenerate/revoke)/DNS/deletion/model-
 sovereignty (never auto-fixed — pages on the class alone); a client at the daily
 cap still unresolved; a Diagnostician marks "cannot proceed without a one-way-door

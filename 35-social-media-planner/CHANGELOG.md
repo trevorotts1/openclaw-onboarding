@@ -1,5 +1,75 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.11] - 2026-10-06 - Review fixes: GPT Image 2.5+ only, no Nano Banana anywhere, nested banned-model scan
+
+### Fixed
+- `scripts/kie_media_plan.py`: `judge_image_model` now requires GPT Image generation 2.5 or newer (`gpt-image-1-5-*` and legacy `gpt-image-2-*` are ignored and reported). Every string key and value in `image-model.json` and `video-specs.json`, at any nesting depth, is scanned for Sora, Nano Banana, Midjourney, Ideogram and flare; each hit is reported with its path in `media.violations`. Tests added (nested Sora, nested Midjourney, `gpt-image-1-5`).
+- `scripts/pregen_prompt_gate.py`: Nano Banana is refused in every case (exit 6). The `--fallback-label` flag stays accepted but has no effect. Test case 5 now expects refusal. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules.
+- Playbook, `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `CORE_UPDATES.md`: the "labeled non-text Nano Banana fallback" wording is removed.
+
+## [3.6.10] - 2026-10-06 - Skill 74 image chain, run-publishing-cycle media plan, podcast contract v2 validator
+
+### Added
+- `scripts/kie_media_plan.py` (stdlib, no network) and a `media` block in `cycle-manifest.json` written by `run-publishing-cycle.sh`: the image model for the cycle (GPT Image 2.5 Sunburst, or a newer GPT Image generation named in `image-model.json`; rule 13 resolver command included), the Skill 74 steps for every paid job, and where Skills 67 and 74 live. `image-model.json` naming Nano Banana, Midjourney, Ideogram, legacy GPT Image 2 or a flare variant, and `video-specs.json` naming Sora, are ignored and reported in `media.violations` (and as a warning), never silently honored. Tests: `scripts/test_kie_media_plan.py`, a staging test in `test_run_publishing_cycle.py`; both run in `social-planner-suite-guard`.
+- `references/playbook.md` Section 8c: the social image job chain (policy, gate, `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, GHL CDN upload) and the Path 1 example now runs it.
+
+### Fixed
+- Playbook prompt budget: the old 9,000 to 19,000 band statement is replaced by rule 12 (95 to 100 percent of the model maximum, floor 80 percent, read with Skill 74 `prompt-budget`); the gate's own legacy length check is noted as being migrated (gate code is not changed here).
+- Playbook Section 20 and the coverage table: kie.ai retry text contradicted `kie-common-rules.md` and Skill 74 (blind 3x retry). Now: retry only 429 and polling, check the body `code`, never retry createTask after a network error, stop on 401 or 403.
+- Podcast cover: the playbook said "generate 1400 x 1400" while a 2K output is about 2048 px. Now: 2K output, deliver a 1400 x 1400 JPEG (RGB, under 500 KB); Podbean accepts 1400 to 3000 px and Skill 57's band is exactly 1400.
+- `scripts/validate_podcast_publish_payload.py` required 7 fields while playbook Section 15 (contract v2) requires `contract_version` "2", `client_last_name` and `idempotency_key` as well. The validator and its tests now enforce all 10. `CORE_UPDATES.md` described the webhook as "200 OK immediately, fire-and-forget" (contract v1); it now matches the synchronous v2 contract.
+- `INSTALL.md` lists Skills 07, 66, 67 and 74 as the KIE prerequisites; `INSTRUCTIONS.md`, `QC.md`, `README.md` and `SKILL.md` carry the Skill 74 chain and the media-violation check.
+
+### Migration Notes
+- CORE_UPDATES.md changed (podcast steps 7, 9, 11, 12 and the Podbean payload). Existing users should re-run core updates. Risk: LOW.
+
+## [3.6.9] - 2026-10-06 - Fix: proof script early-return crash
+
+### Fixed
+- `scripts/prove_content_conversation_loop.py` leg 1: the two early-return branches (compiler not importable, prompt compile not ok) referenced `qc19_receipt_fixture` and `cta_dm_first` before they were assigned and raised `UnboundLocalError`. Both are now defined before any early return, so every branch returns a defined failure result. Three tests added (both early-return branches fail first against the old script; plus the happy path).
+
+## [3.6.8] - 2026-10-05 - Fix: video model and price contradictions; defer to Skill 67 and live pricing
+
+### Owner order
+- **Owner order 2026-10-05: Skill 35 images use KIE GPT Image 2.5 Sunburst, not Nano Banana.** Default `gpt-image-2-5-sunburst-text-to-image`, and `gpt-image-2-5-sunburst-image-to-image` with a reference image (AGENTS.md N43 fleet pin; legacy gpt-image-2 only for 3:1, 1:3, 9:21, which Skill 35 never produces; `flare` never). 4:5 is requested as 3:4 and cropped to 4:5 per N43. Nano Banana is never primary: it survives only as an explicitly labeled non-text fallback (`pregen_prompt_gate.py check --fallback-label`). Ideogram V3 DESIGN is no longer the routed primary. `pregen_prompt_gate.py` now defaults `--model` to Sunburst and refuses unlabeled Nano Banana; tests assert the default (case 11). Prompt budget follows `07-kie-setup/references/kie-common-rules.md` rule 12 and the 9,000 to 19,000 house band; prices come from `kie_live_adapter.py price`.
+
+### Fixed
+- `CORE_UPDATES.md` pinned `video_generate model=google/veo-3.1-lite-preview` while saying "via kie.ai". That id is not in Skill 67's registry (`67-kie-video/models.json` names Veo 3.1 Lite `veo3_lite`, dedicated route `POST /api/v1/veo/generate`). Aligned to Skill 67: clips are dispatched through Skill 67; this skill's default request is Veo 3.1 Lite (`veo3_lite`); an explicit client or manifest pick wins; Sora is prohibited. SKILL.md Phase 2 step 4 and the playbook tech stack, sub-agent table, Step 8 and Section 16 follow.
+- `references/playbook.md` and `README.md`: ALL dollar and credit figures removed (Section 8 model table and weekly image cost, Section 16 price table "Verified April 2026", Step H and the text-to-video cost line, Weekly Cost Estimate, README estimate). Veo figures here ($0.15/$0.30/$1.25) had disagreed with Skills 27 and 28 ($0.40/$2.00). One price authority now: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback `74-kie-live-adapter/references/kie-model-registry.json`).
+- Playbook tech stack said image primary is Nano Banana 2 and video is Veo 3.1 Fast, while Sections 8 and 16 said Ideogram V3 DESIGN for text-bearing images and Veo 3.1 Lite for video. Now consistent. The playbook status table and README/TOOLS text no longer name Nano Banana 2 as the image model. (Superseded by the owner order above: every image is GPT Image 2.5 Sunburst.)
+- Podcast cover art was routed to Nano Banana 2 (playbook Section 15, CORE_UPDATES step 7) while Section 8 routes every text-bearing image, including the podcast cover, to Ideogram V3 DESIGN. Aligned to Section 8. (Superseded by the owner order above: the cover uses GPT Image 2.5 Sunburst at 2K.)
+- Section 16 said clips run "up to 8-10 seconds"; Skill 67's registry says 4, 6 or 8 seconds for Veo 3.1. Corrected.
+- Grok Imagine is no longer auto-recommended: it is in KIE's live catalog but not in Skill 67's curated registry (DISCOVERED, not approved for automatic routing); an explicit client or manifest pick still works after Skill 74 validate and price.
+- `veo3_lite` and 9:16: KIE's Veo docs state 9:16 is natively supported, so the open question is closed.
+- `QC.md` video checks: "duration exactly 60 seconds" contradicted the 55-60 second window used everywhere else; "smooth crossfade transitions" contradicted the default hard-cut storyboard. Fixed.
+- `scripts/pregen_prompt_gate.py`: the duplicate routing sets are documented as a floor under `shared-utils/model-capabilities.json` (the source of truth). New test case 10 fails if the two copies drift.
+- `README.md`: stale version lines (v1.0.0, v1.1.0) and "1,656-line" playbook count removed.
+- Playbook Section 20 and Section 16 now point to `07-kie-setup/references/kie-common-rules.md` for KIE rules (credit preflight, saving results, client's own key).
+
+### Migration Notes
+- CORE_UPDATES.md changed (video clip step, TOOLS.md kie.ai row, podcast cover step). Existing users should re-run core updates. Risk: LOW.
+
+## [3.6.5] - 2026-09-12 - CRITICAL Fix: live preflight reported 0 connected accounts on every box (engine never ran)
+
+### Fixed
+- **CRITICAL — every publishing cycle hard-failed at the live preflight with `exit 3`.** The connected-accounts probe parsed the GHL response as `d['accounts']` at the TOP level, but `GET /social-media-posting/{locationId}/accounts` returns the documented wrapper `{"success":true,"results":{"accounts":[...]}}`. The top-level key does not exist, so the count was always `0`, and the script aborted with "GHL returned 0 connected social accounts for this location — there is nothing to publish to." plus a CLIENT-FACING message telling the client to go connect a channel they had **already connected**. Found live on a box with **22 active, unexpired connected accounts** (Facebook x3, Instagram x2, LinkedIn x3, TikTok, YouTube x2, Pinterest, Threads, Bluesky, Google x2, 6 community) where the parse returned 0.
+- **A parser failure can no longer masquerade as "zero accounts."** The probe now mirrors the contract already proven in `57-social-media-in-a-box/scripts/ghl_contracts.py` (`parse_accounts_payload`): it accepts `results.accounts`, a bare `results` array, a top-level array, and the legacy unwrapped `accounts` shape. An UNRECOGNISED envelope now returns `-1` = "inconclusive, do not block" and only a genuinely empty list blocks the cycle. Previously any shape the parser did not understand collapsed to `0` and hard-failed the run.
+
+### Verified
+- Live box re-test after the patch: same command went from `DRY_RUN_EXIT=3` ("0 connected social accounts") to `DRY_RUN_EXIT=0` / `live preflight OK: connected account count = 22`, roster OK, cycle manifest written.
+- Parser unit-proved against 8 envelope shapes: real GHL wrapper (22) / genuinely empty (0, still blocks) / bare results array (2) / legacy unwrapped (3) / unknown envelope (-1) / `results` a string (-1) / malformed JSON (-1) / top-level array (5). 8/8 pass; the old parser returns 0 on the real shape.
+
+## [3.0.1] - 2026-09-08 - Fix: publishing engine rc=3 on every run + silent Command Center board skip (found live on a client box)
+
+Two defects in `run-publishing-cycle.sh` that made the entire weekly engine inert on every fleet box running Skill 35, found while diagnosing why a client's weekly theme question had gone unanswered for three weeks (the cron fired; the engine it queued never produced anything).
+
+### Fixed
+- **CRITICAL — cycle stopped at the prerequisite gate (rc=3) on every run.** The script resolved `SOUL.md` / `IDENTITY.md` / `USER.md` at the OpenClaw config root (`$OPENCLAW_DIR/SOUL.md`), but OpenClaw keeps them in the workspace dir (`$OPENCLAW_DIR/workspace/SOUL.md`) on all current boxes. The gate correctly refused to invent defaults and exited 3 before queueing anything — every weekly batch since install reported "ok=0 fail=1" and no content was ever produced. Fixed with a workspace-first path resolution that falls back to the config root for older/container layouts.
+- **HIGH — Command Center board card silently skipped (HTTP 400).** The `POST /api/tasks` body sent `"created_by_agent_id": "skill35-cycle"` (a string slug), but the CC API validates `*_agent_id` fields as UUIDs, so every card creation was rejected and the script continued without a card — the Kanban board showed no Skill-35 activity at any point. The two `PATCH` status bodies (`in_progress`, `review`) had the same slug in `updated_by_agent_id` and failed identically. Fixed: the create body now routes via `"department": "social-media"` (the board assigns the agent itself, `assigned_agent_id`), and the PATCH bodies send status only.
+
+### Verified
+- Live box test after patch: weekly-batch went from `ok=0 fail=1 (rc=3)` to `ok=1 fail=0` — cycle queued end-to-end, CC card created, auto-dispatched by `intake-advance`, QC-scored and promoted through review→done by the board's own sweeps with zero manual intervention.
+
 ## v2.9.18 - 2026-07-23 — Fix: review findings — GHL upload 400, tmpfiles.org QC gate, QC completeness, n8n workflow JSON, image production path, sheet docs, wire.sh clarity
 
 Builds on v2.9.17 (=IMAGE() rendering). Addresses the seven findings from the Skill 35 review.
@@ -497,3 +567,7 @@ Initial release.
 - Comments always posted as separate call 1-2 minutes after parent post with action link
 - Teach Yourself Protocol requirement
 - Error handling with 3 retries and Telegram > Email > Text notification chain
+
+## [3.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

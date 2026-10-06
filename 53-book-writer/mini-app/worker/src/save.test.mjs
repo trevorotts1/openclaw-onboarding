@@ -33,7 +33,7 @@ function binding(overrides = {}) {
   return {
     client_id: "client-a",
     location_id: "loc-a",
-    slug: "karen-vaughn",
+    slug: "fixture-client-b",
     phase_id: "P0-INTAKE",
     run_id: "run-1",
     intake_id: "intake-1",

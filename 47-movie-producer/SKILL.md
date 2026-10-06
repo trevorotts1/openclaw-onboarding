@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v14.3.2
+version: v15.1.2
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -11,7 +11,7 @@ Autonomous, multi-pipeline video production driven by the OpenMontage engine —
 ## What you get
 
 - **Free documentary-montage path** — `pipeline_defs/documentary-montage.yaml` builds a semantic corpus of real-world footage from Pexels, Archive.org (Prelinger et al.), NASA, Wikimedia Commons, and Unsplash, then uses CLIP-based retrieval to fill slot descriptions. Zero API keys needed. Budget cap ~$1.
-- **Kie.AI generative path** — when the client sets `KIE_API_KEY`, the tool registry auto-routes ALL image generation through `kie_image.py` (models `gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`) and ALL video generation through `kie_video.py` (primary `gemini-omni-video`, fallback `veo3`/`veo3_fast`). Native paid providers (FAL/Runway/HeyGen/OpenAI/Google) are never installed.
+- **Kie.AI generative path** — when the client sets `KIE_API_KEY`, the tool registry auto-routes ALL image generation through `kie_image.py` (models `gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`) and ALL video generation through `kie_video.py` (primary `gemini-omni-video`, fallback `veo3`/`veo3_fast`). Native paid providers (FAL/Runway/HeyGen/OpenAI/Google) are never installed.
 - **Free render engines preserved + provisioned for macOS AND Linux/VPS** — FFmpeg mux/stitch, Remotion (`remotion-composer/`), HyperFrames (`npx hyperframes`). These are never rewired to a paid provider. `provision-render-deps.sh` (run by `install.sh`, and baked into the `Dockerfile`) installs the pinned latest Remotion + arch/OS compositor + Chrome-Headless-Shell, the pinned latest HyperFrames CLI + bundled Chrome, and the Chromium system libraries + ffmpeg (Linux `apt`) — so the browser-based render paths work on a fresh Linux container, not just the operator's Mac. Node floor is **≥ 22** (HyperFrames requirement).
 - **Narration / TTS voice order** — the **primary narrator is Fish Audio 2.1 Pro (`s2.1-pro`)**; **Gemini TTS, OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks**; **Piper is an OPTIONAL, opt-in, offline-only fallback that is NOT installed by default**. Because Piper isn't installed by default, OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in to the offline Piper fallback with `SKILL47_INSTALL_PIPER=1` when running `provision-render-deps.sh` / `install.sh`.
 - **13 production pipelines** — the pinned OpenMontage tree (`install.sh` pins commit `ce11f6a`, `OPENMONTAGE_PINNED_SHA`) ships exactly 13 `pipeline_defs/*.yaml`: `documentary-montage`, `animated-explainer`, `animation`, `avatar-spokesperson`, `character-animation`, `cinematic`, `clip-factory`, `hybrid`, `localization-dub`, `podcast-repurpose`, `screen-demo`, `talking-head`, and `framework-smoke` (internal smoke-test). They drive the AI coding-assistant-as-orchestrator model. See the pipeline selection guide in `INSTRUCTIONS.md`. No code orchestrator binary required.
@@ -59,15 +59,18 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
 - `Dockerfile` — Linux/VPS container image (`node:22-bookworm-slim`) that bakes the Chromium system libs + ffmpeg and runs the provisioner, so the Remotion/HyperFrames render paths work on a VPS
 - `DEPENDENCY-MANIFEST.md` — the §A no-vendoring decision
 - `kie-adapters/` — our two Kie.AI BaseTool adapters (copied into the clone at install)
-  - `tools/graphics/kie_image.py` — Kie image generation (gpt-image-2-*)
-  - `tools/video/kie_video.py` — Kie video generation (gemini-omni-video / veo3)
+  - `tools/graphics/kie_image.py`: Kie image generation (gpt-image-2-5-*); thin wrapper over Skill 74 plus the embedded, hash-locked copy of Skill 74's client
+  - `tools/video/kie_video.py`: Kie video generation (gemini-omni-video / seedance / veo3); thin wrapper over Skill 74 (reads the embedded client from `kie_image.py` when Skill 74 is not installed)
 - `scripts/` — the deterministic **attestation spine** (OUR code; gates AROUND OpenMontage, never vendors it). See the binding "Attestation spine" section in `INSTRUCTIONS.md`.
   - `executive_producer.py` — the gate-and-attest driver (5 DMAIC phases; `AF-VID-PHASE-SKIPPED`)
   - `video_build_check.py` — receipt validators + the V-CONTROL postflight gate
   - `video_sync_check.py` — manifest ↔ code ↔ ruleset lockstep
   - `video_gate_integrity_check.py` — Guard A (declared == enforced == tested)
   - `test_video_preflight.py` — negative-test suite (every gate proven to fail-closed)
-  - `test_kie_adapter_resultjson_decode.py` — Kie `resultJson` JSON-string decode test
+  - `test_kie_adapter_resultjson_decode.py`: Kie `resultJson` JSON-string test through Skill 74 (also the shared fake-transport harness)
+  - `test_kie_adapter_key_and_i2i_field.py`, `test_kie_video_seedance.py`: adapter contracts over a fake Skill 74 transport
+  - `test_kie_adapter_safety.py`: no fallback on an unknown outcome, the key gate in a bare clone, the 80 percent prompt floor
+  - `embed_kie_client.py` / `test_kie_embedded_client_hashlock.py`: generate and lock the embedded Skill 74 client and secret helper
   - `cc_board.py` — fail-soft Command Center board caller (5 phase cards; legal `review → done`)
   - `test_cc_board.py` — offline proof of the board caller's contract
 - `test-fixtures/make-video-fixtures.sh` — GOOD/BAD run fixtures for the driver self-test

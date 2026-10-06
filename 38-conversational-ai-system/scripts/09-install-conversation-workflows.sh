@@ -78,7 +78,9 @@ if [[ -z "$RUNTIME_USER" ]]; then
   fi
 fi
 
-CURRENT_OWNER="$(stat -f '%Su' "$LOGS_DIR" 2>/dev/null || stat -c '%U' "$LOGS_DIR" 2>/dev/null || echo "")"
+# GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+# failing (multi-line junk on Linux); BSD rejects -c with no stdout.
+CURRENT_OWNER="$(stat -c '%U' "$LOGS_DIR" 2>/dev/null || stat -f '%Su' "$LOGS_DIR" 2>/dev/null || echo "")"
 if [[ -n "$RUNTIME_USER" && "$CURRENT_OWNER" != "$RUNTIME_USER" ]]; then
   if chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
     echo "[09-install-conversation-workflows] conversational-logs dir chowned to runtime user '$RUNTIME_USER' → $LOGS_DIR"
@@ -540,8 +542,8 @@ fi
 # Part 4, THE VISUAL (U-11): after doc creation, generate the workflow visual for
 # every on-disk playbook and record the Visual column. scripts/31-generate-workflow-
 # visual.sh parses the playbook via the canonical engine, emits diagram.mmd, renders
-# diagram.png via npx mermaid-cli (free), generates the budget-capped Kie hero, and
-# records the Visual column in registry.md + the manifest. Best-effort: the truth
+# diagram.png via npx mermaid-cli (free), and records the Visual column in registry.md
+# + the manifest. Hero image generation is delegated to Skill 66 (kie-image). Best-effort: the truth
 # diagram must NEVER block the install, so a failure WARNs and never changes exit.
 # =============================================================================
 GEN_VISUAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/31-generate-workflow-visual.sh"

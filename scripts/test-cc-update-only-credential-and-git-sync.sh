@@ -87,14 +87,17 @@
 #   T12 static: no destructive git verbs in the helper's source (reset --hard /
 #                              checkout -f / clean -f never appear).
 #
-# Self-contained: bash + git + a hasher. No gateway, no real credentials, no
+# Self-contained: bash + git + python3 + a hasher. No gateway, no real credentials, no
 # network (all git remotes are local file paths).
 # ============================================================================
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-INSTALLER="$REPO_ROOT/32-command-center-setup/scripts/run-full-install.sh"
+# Extracted credential helpers import the real shared literal-env parser through
+# the same Skill32 root as the installer. Pin this dependency to this checkout.
+SKILL_DIR="$REPO_ROOT/32-command-center-setup"
+INSTALLER="$SKILL_DIR/scripts/run-full-install.sh"
 GUARD="$REPO_ROOT/scripts/fleet-roll/preflight-credential-guard.sh"
 
 [ -f "$INSTALLER" ] || { echo "FATAL: installer not found at $INSTALLER"; exit 2; }
@@ -119,7 +122,8 @@ extract_func() {
 FRAG="$(mktemp)"
 for fn in log cc_env_has_nonempty cc_env_set_if_absent cc_env_get \
           cc_mirror_api_auth_to_agent_secrets cc_resolve_sovereign_model \
-          cc_resolve_judge_model cc_write_env_local cc_git_sync_to_default_branch; do
+          cc_resolve_judge_model cc_write_env_local cc_git_sync_to_default_branch \
+          cc_zero_downtime_ready cc_resolve_pinned_target; do
   body="$(extract_func "$fn" "$INSTALLER")"
   if [ -z "$body" ]; then
     echo "FATAL: could not extract function '$fn' from $INSTALLER (name/shape drift?)"
@@ -186,6 +190,21 @@ fi
 rm -rf "$BOX"
 
 # T2 — FIXED cc_write_env_local, UPDATE_ONLY=true, secrets/.env ABSENT
+hdr "T17 — .env.local carries the owner's explicit record, never a guess"
+BOX="$(make_box)"
+printf 'OPENCLAW_OWNER_CHAT_ID=1000000042\n' > "$BOX/oc-root/secrets/.env"
+run_write_env_local "$BOX" "true"
+grep -qxE "OPENCLAW_OWNER_CHAT_ID=('|\")?1000000042('|\")?" "$BOX/dashboard/.env.local" \
+  && ok "T17: OPENCLAW_OWNER_CHAT_ID copied from secrets/.env into .env.local" \
+  || bad "T17: OPENCLAW_OWNER_CHAT_ID not written ($(cat "$BOX/dashboard/.env.local" | tr '\n' ';'))"
+rm -rf "$BOX"
+BOX="$(make_box)"
+run_write_env_local "$BOX" "true"
+grep -q 'OPENCLAW_OWNER_CHAT_ID' "$BOX/dashboard/.env.local" \
+  && bad "T17: an owner id was written with no owner record on the box" \
+  || ok "T17: no owner record -> no OPENCLAW_OWNER_CHAT_ID written"
+rm -rf "$BOX"
+
 hdr "T2 — fixed: --update-only + absent agent secrets -> NO mutation"
 BOX="$(make_box)"
 printf 'MC_API_TOKEN=tok-value\nWEBHOOK_SECRET=whs-value\n' > "$BOX/dashboard/.env.local"
@@ -462,6 +481,106 @@ printf '%s\n' "$FN_SRC" | grep -Eq 'reset[[:space:]]+--hard'   && { bad "T12: fo
 printf '%s\n' "$FN_SRC" | grep -Eq 'checkout[[:space:]]+-f\b'  && { bad "T12: found 'checkout -f' in cc_git_sync_to_default_branch"; BADHIT=1; }
 printf '%s\n' "$FN_SRC" | grep -Eq 'clean[[:space:]]+-f'       && { bad "T12: found 'clean -f' in cc_git_sync_to_default_branch"; BADHIT=1; }
 [ "$BADHIT" -eq 0 ] && ok "T12: no destructive git verb present in the helper's source"
+
+# ============================================================================
+# PART ZD — zero-downtime update-only (a client's CC was dark ~35 min when the
+# installer merged into the LIVE tree and ran npm ci there before the build)
+# ============================================================================
+zd_fn() {
+  local dir="$1" logf="$2"
+  ( LOG_FILE="$logf"
+    # shellcheck disable=SC1090
+    source "$FRAG"
+    cc_zero_downtime_ready "$dir"
+  )
+}
+# origin/main's update.sh carries (or not) the zero-downtime path marker
+advance_origin_updater() {
+  local seed="$1" marker="$2"
+  printf '#!/usr/bin/env bash\n# %s\n' "$marker" > "$seed/update.sh"
+  git -C "$seed" add update.sh && git -C "$seed" commit --quiet -m "updater: $marker"
+  git -C "$seed" push --quiet origin main
+}
+
+hdr "T13 — clean fast-forward + zero-downtime updater: ready, and the live tree is not moved"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t13"; git clone --quiet "$ORIGIN" "$CO"
+advance_origin_updater "$SEED" "Zero-downtime path"
+BEFORE="$(git_id "$CO")"
+if zd_fn "$CO" "$ROOT/zd.log"; then ok "T13: zero-downtime ready on a clean fast-forward"; else bad "T13: not ready on a clean fast-forward"; fi
+[ "$(git_id "$CO")" = "$BEFORE" ] && [ -z "$(git -C "$CO" status --porcelain)" ] \
+  && ok "T13: the check only fetches — live HEAD and tree unchanged" || bad "T13: the readiness check changed the live checkout"
+rm -rf "$ROOT"
+
+hdr "T14 — not ready when origin/main's updater lacks the zero-downtime path, the tree is dirty, or a local commit exists"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t14"; git clone --quiet "$ORIGIN" "$CO"
+advance_origin_updater "$SEED" "merge path only"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with an updater that has no zero-downtime path" \
+  || ok "T14: an old updater keeps the merge path"
+advance_origin_updater "$SEED" "Zero-downtime path"
+printf 'local edit\n' >> "$CO/main.txt"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with a dirty tracked tree" || ok "T14: a dirty tracked tree keeps the merge path"
+git -C "$CO" checkout --quiet -- main.txt
+git -C "$CO" -c user.email=t@t -c user.name=t commit --quiet --allow-empty -m "box-local commit"
+zd_fn "$CO" "$ROOT/zd.log" && bad "T14: ready with a local commit" || ok "T14: a local commit keeps the merge path"
+rm -rf "$ROOT"
+
+hdr "T16 — a tag-only clone (configured refspec names one tag) still sees the latest origin/main"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t16"; git clone --quiet "$ORIGIN" "$CO"
+git -C "$CO" config remote.origin.fetch "+refs/tags/v1.0.0:refs/tags/v1.0.0"
+advance_origin_updater "$SEED" "Zero-downtime path"
+if zd_fn "$CO" "$ROOT/zd.log" && [ "$(git -C "$CO" rev-parse origin/main)" = "$(git -C "$SEED" rev-parse HEAD)" ]; then
+  ok "T16: origin/main advanced despite the tag-only refspec"
+else
+  bad "T16: origin/main stayed stale on a tag-only clone"
+fi
+rm -rf "$ROOT"
+
+hdr "T15 — static: when ready, the update-only phase neither merges nor runs npm ci in the live tree, and runs origin/main's updater"
+PHASE="$(awk '/^if \[\[ "\$UPDATE_ONLY" == "true" \]\]; then/{p=1} p{print} p && /cc_route_update_through_canonical_path \|\| \\/{exit}' "$INSTALLER")"
+printf '%s\n' "$PHASE" | grep -q 'elif cc_zero_downtime_ready "\$DASHBOARD_DIR"; then' \
+  && printf '%s\n' "$PHASE" | grep -q 'elif cc_git_sync_to_default_branch' \
+  && ok "T15: the live-tree merge runs only when zero-downtime is not ready" \
+  || bad "T15: the live-tree merge is not gated on zero-downtime readiness"
+printf '%s\n' "$PHASE" | grep -qF '[[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies' \
+  && ok "T15: live npm ci is skipped on the zero-downtime path" || bad "T15: live npm ci still runs on the zero-downtime path"
+ROUTE="$(extract_func cc_route_update_through_canonical_path "$INSTALLER")"
+printf '%s\n' "$ROUTE" | grep -qF 'show "${CC_UPDATE_TARGET:-origin/main}:update.sh"' \
+  && ok "T15: the zero-downtime path runs the pinned release's update.sh" || bad "T15: the live checkout's (old) update.sh would run"
+
+hdr "T18 — the pinned Command Center release is deployed even when origin/main is ahead; no pin = nothing deployed"
+read -r ROOT ORIGIN SEED <<EOF
+$(build_origin)
+EOF
+CO="$ROOT/checkout-t18"; git clone --quiet "$ORIGIN" "$CO"
+PIN="$(git -C "$SEED" rev-parse v1.0.0)"
+advance_origin_nonconflicting "$SEED"
+mkdir -p "$ROOT/skills/32-command-center-setup"
+printf '{"commandCenter":{"pinnedTag":"v1.0.0"}}\n' > "$ROOT/skills/cc-compat.json"
+PINNED="$( LOG_FILE="$ROOT/t18.log"; source "$FRAG"; log() { :; }
+  unset CC_UPDATE_TARGET; SKILL_DIR="$ROOT/skills/32-command-center-setup"; DASHBOARD_DIR="$CO"
+  cc_resolve_pinned_target && printf '%s' "$CC_UPDATE_TARGET" )"
+[ "$PINNED" = "$PIN" ] && ok "T18: CC_UPDATE_TARGET is the pinned tag's commit" || bad "T18: resolved '$PINNED', want $PIN"
+CC_UPDATE_TARGET="$PIN" sync_fn "$CO" "$ROOT/t18.log"
+[ "$(git_id "$CO")" = "$PIN" ] && ok "T18: the checkout lands on the pin, not the newer origin/main" \
+  || bad "T18: checkout at $(git_id "$CO"), origin/main is $(git -C "$SEED" rev-parse HEAD)"
+printf '{"commandCenter":{"pinnedTag":"v9.9.9"}}\n' > "$ROOT/skills/cc-compat.json"
+if ( LOG_FILE="$ROOT/t18.log"; source "$FRAG"; log() { :; }
+     unset CC_UPDATE_TARGET; SKILL_DIR="$ROOT/skills/32-command-center-setup"; DASHBOARD_DIR="$CO"
+     cc_resolve_pinned_target ); then
+  bad "T18: an unresolvable pin was accepted"
+else
+  ok "T18: an unresolvable pin fails (the caller deploys nothing)"
+fi
+rm -rf "$ROOT"
 
 rm -f "$FRAG"
 

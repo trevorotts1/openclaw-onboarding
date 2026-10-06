@@ -55,7 +55,7 @@
     },
     {
       "id": "P2-PROMPTS",
-      "name": "Image prompts (5,000–19,000 chars, 8-block, Signature Grade Block)",
+      "name": "Image prompts (model budget per rule 12, 8-block, Signature Grade Block)",
       "sop": "SOP-FUNNEL-03-PROMPTS-IMAGES.md",
       "owning_role": "signature-funnel-specialist",
       "produces": "working/copy/prompt_ledger.json",
@@ -64,10 +64,10 @@
     },
     {
       "id": "P3-IMAGES",
-      "name": "Image generation (DELEGATED to Skill 47) + provenance",
+      "name": "Image generation (DELEGATED: Skill 66 policy, Skill 74 transport) + provenance",
       "sop": "SOP-FUNNEL-03-PROMPTS-IMAGES.md",
       "owning_role": "signature-funnel-specialist",
-      "delegated_to": "47-movie-producer / kie_image.py",
+      "delegated_to": "66-kie-image (policy) -> 74-kie-live-adapter / kie_live_adapter.py (transport); evidence via 49-signature-funnel/scripts/kie74_receipt.py",
       "produces": "working/media/media_ledger.json (image records)",
       "gates": ["AF-FUN-IMG-PROVENANCE", "AF-FUN-IMG-EMPTY"]
     },

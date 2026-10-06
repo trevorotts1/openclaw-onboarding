@@ -111,6 +111,14 @@ For each If/Else branch in the workflow:
 
 ### WF-9 — Wait Steps
 
+Read `workflow-timing.md`. Verify each Wait against its saved configuration, not its
+label. Record: duration vs event-relative mode; source/anchor and its client binding;
+Set event start time before every dependent branch; signed offset; expected due
+time; timezone; past-due behavior; re-entry isolation. If no anchor is required,
+record why (previous-step delay). Day 4/day 7 from one registration must stay +4/+7.
+Attach the generated timing outline and readback evidence. Missing/wrong setup is
+WF-9 FAIL, even if the duration numbers look correct.
+
 For each Wait node in the workflow:
 
 | Wait Node | Expected Duration | Timeout Branch Configured? | QC Status |

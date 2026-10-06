@@ -12,6 +12,11 @@ name: embedding-integrity-guard
 #       overridden $HOME without OPENCLAW_SANDBOX=1
 #     - detect_platform gemini_index == embedding_engine.DB_PATH (one DB path)
 #
+#     - the local Ollama opt-in (tests/unit/embedding-ollama-local-mode.test.py):
+#       --verify stays gemini/3072 by default, --verify-provider ollama holds a
+#       re-embedded index to 768, and neither provisioning path overwrites a
+#       box in local mode
+#
 #   Job 2 (universal-sops): scripts/hash-universal-sops-manifest.py --check —
 #     any edit under universal-sops/ without a manifest re-stamp fails.
 #
@@ -45,6 +50,8 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/embedding-ollama-local-mode.test.py
+      - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
@@ -66,6 +73,7 @@ on:
       - shared-utils/sop-library/**
       - update-skills.sh
       - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-v3-build.test.py
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
@@ -85,6 +93,8 @@ on:
       - universal-sops/**
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
+      - tests/unit/embedding-ollama-local-mode.test.py
+      - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
       - tests/unit/orphan-process-prevention.test.sh
@@ -106,6 +116,7 @@ on:
       - shared-utils/sop-library/**
       - update-skills.sh
       - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-v3-build.test.py
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
@@ -127,6 +138,11 @@ jobs:
         run: |
           chmod +x tests/unit/embedding-hard-gate.test.sh
           bash tests/unit/embedding-hard-gate.test.sh
+
+      - name: Local Ollama opt-in mode (EMBED-3 per provider, reembed-local, provisioning guards, health)
+        run: |
+          python3 -m pip install --quiet numpy
+          python3 tests/unit/embedding-ollama-local-mode.test.py -v
 
       - name: Section-tagger / indexer agreement (existing invariant)
         run: |
@@ -244,6 +260,9 @@ jobs:
       # coverage. These two gates keep both halves closed.
       - name: SOP library — coverage gate (an under-populated `sops` table can no longer report pass)
         run: python3 tests/unit/sop-library-coverage-gate.test.py -v
+
+      - name: SOP library v3 — builder carries V2 verbatim + dept SOPs; manifest pins real sample slugs
+        run: python3 tests/unit/sop-library-v3-build.test.py -v
 
       - name: SOP library — update-path ingestion (idempotent, non-clobbering, fails loud; offline)
         run: |

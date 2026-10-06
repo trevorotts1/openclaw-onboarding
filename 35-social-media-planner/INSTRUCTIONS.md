@@ -61,8 +61,8 @@ The skill resolves variables at runtime from these sources. Confirm each is pres
 | Owner profile, audience | `~/.openclaw/USER.md` |
 | API keys (GHL, WordPress, Medium, etc.) | `~/.openclaw/secrets/.env` |
 | Platform URLs, location IDs | `~/.openclaw/secrets/.env` (e.g., `GOHIGHLEVEL_LOCATION_ID`) |
-| Image model preference | `~/.openclaw/config/image-model.json` |
-| Video specs (resolution, bitrate) | `~/.openclaw/config/video-specs.json` |
+| Image model preference | `~/.openclaw/config/image-model.json` (default and expected value: `gpt-image-2-5-sunburst-text-to-image`; a newer GPT Image generation is accepted, and the fleet default follows it per rule 13. Nano Banana, Midjourney, Ideogram or legacy GPT Image 2 named here is ignored and reported in `cycle-manifest.json` `media.violations`) |
+| Video specs (resolution, bitrate) | `~/.openclaw/config/video-specs.json` (FFmpeg specs only; the clip model is picked by the Skill 67 selector, and a Sora id here is ignored and reported) |
 | Posting cadence, time-of-day | `~/.openclaw/config/social-cadence.json` |
 
 If any source is missing, **STOP** and surface the gap via the triple-fire trigger (N22). Do not invent a default.
@@ -79,6 +79,15 @@ If any source is missing, **STOP** and surface the gap via the triple-fire trigg
 ```
 1. Researcher: memory_search + web_search on topic → raw data dump
 2. Strategist: synthesizes into strategy.md, pulling voice from SOUL.md
+3. (F40 measured outcomes) Strategist reads the client's OWN prior outcomes
+   before picking the week's angle: shared-utils/social_measured_outcomes.py
+   `latest_metrics(company_id)` + `reviews(company_id)`. Recommendations cite
+   actual posts and windows; missing analytics is UNKNOWN (never zero, never
+   invented). A prior review's proposals (format/hook/timing/creative, one
+   variable per trial) MAY seed this week's variant — registered with
+   `register_variant(..., compared_to=<baseline>)`. Tentative (low-sample)
+   conclusions never drive uncontrolled content or spending changes, and
+   NEVER another company's private creative or results.
 ```
 
 ### Phase 2 — Content Creation
@@ -104,8 +113,9 @@ baseline) and `45-design-intelligence-library/library/social-media-designs/_RULE
 not a post-hoc check. Then, before the Image Generator submits ANY prompt, it MUST clear
 `scripts/pregen_prompt_gate.py check` (playbook.md Section 8a) — ratio/pixel spec, brand
 colors, merged avoid-list, verbatim Section-18 copy, and the brand-safety clause are all
-required (exit 3 if any is missing); every text-overlay prompt MUST route to Ideogram V3
-DESIGN, never Nano Banana (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
+required (exit 3 if any is missing); every image uses KIE GPT Image 2.5 Sunburst
+(`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43), then runs the Skill 74 chain in playbook.md Section 8c (`prompt-budget`, `validate`, `preflight`, `run --mode active`, save, GHL CDN upload).
+Nano Banana is never allowed for social images, labeled or not (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
 is fixed and re-run, never generated. If the week's image asset instead comes from the
 Graphics department, the Image Generator step is REPLACED by the Section 19a input-quality
 gate: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5.
@@ -128,6 +138,19 @@ The Publisher does NOT post yet — it queues. The owner can review the schedule
 **Outputs:** Live posts, metrics dashboard updates
 
 Engagement Monitor runs continuously for 7 days post-publish; results flow into `~/.openclaw/data/engagement/<run-id>.json`.
+
+**F40 — measured outcomes (delivery receipt ≠ performance evidence):** the
+publish receipts (publish-receipts.json / delivery rows) prove creation and
+publication ONLY. The Engagement Monitor folds its 7-day readback into the
+measured-outcome store with
+shared-utils/social_measured_outcomes.py: every provider-reported metric is
+recorded per post with account id, measurement window and fetched_at
+(`record_metric`); every metric the provider did NOT report is recorded as
+UNKNOWN — never zero, never interpolated. The next cycle's Phase 1 reads the
+aggregated outcomes and the cadence review (`review_company`) before choosing
+angles; low-sample conclusions stay tentative and receive no proposals.
+Proposals may change formats, hooks, timing and creative — never the saved
+provider/model selection or publishing policy/consent (F31/F37).
 
 ---
 
@@ -204,7 +227,7 @@ The Marketing department in the dashboard has a "Publish" button on each campaig
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Image Generator errors on every prompt | Image model in `image-model.json` deprecated | Update the config to a current model (see N1 — non-Anthropic only) |
+| Image Generator errors on every prompt | Image model in `image-model.json` deprecated, or the prompt fails `prompt-budget` or `validate` | Remove the config pin to return to the Sunburst default (rule 13), or set a current GPT Image id; read the Skill 74 error `code` (non-Anthropic only, N1) |
 | Video Producer hangs at "encoding" | FFmpeg missing or wrong codec | `ffmpeg -version`; install if missing; verify codec in `video-specs.json` |
 | Final QC keeps failing for "brand voice mismatch" | `SOUL.md` voice profile drifted | Re-read SOUL.md in the Strategist agent; do not patch in the writer |
 | GHL post returns 429 | Daily quota exhausted | Stop, check quota, wait until reset clock (see cron-prompt RULE 18) |

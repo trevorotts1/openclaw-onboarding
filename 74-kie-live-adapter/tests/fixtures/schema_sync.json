@@ -1,0 +1,59 @@
+{
+ "code": 200,
+ "msg": "success",
+ "data": {
+  "model": "sync",
+  "openapi": {
+   "openapi": "3.1.0",
+   "paths": {
+    "/claude/v1/messages": {
+     "post": {
+      "requestBody": {
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Msg"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "components": {
+    "schemas": {
+     "Msg": {
+      "type": "object",
+      "required": [
+       "model",
+       "messages"
+      ],
+      "properties": {
+       "model": {
+        "type": "string"
+       },
+       "messages": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "required": [
+          "role"
+         ],
+         "properties": {
+          "role": {
+           "type": "string",
+           "enum": [
+            "user",
+            "assistant"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

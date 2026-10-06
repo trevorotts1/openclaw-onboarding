@@ -5,8 +5,8 @@ Presentations department (WORKBOOK-REDESIGN-PLAN.md §3).
 
 Every presentation gets a branded, content-rich workbook as TWO deliverables:
 
-  [1] DESIGN — generates each page via kie.ai gpt-image-2
-      (gpt-image-2-text-to-image for page 1 / the brand template; gpt-image-2-image-to-image
+  [1] DESIGN — generates each page via kie.ai gpt-image-2.5
+      (gpt-image-2-5-sunburst-text-to-image for page 1 / the brand template; gpt-image-2-5-sunburst-image-to-image
       for later pages, referencing page 1 + the client brand render for harmony). Prompts
       are 9,000-18,000 chars and carry the page's REAL content baked in (content-in-image,
       WORKBOOK-REDESIGN-PLAN.md §2): headline, subhead, bullets, question, quote, quiz,
@@ -40,7 +40,7 @@ Every presentation gets a branded, content-rich workbook as TWO deliverables:
 RULES
   * Never print a credential value. KIE_API_KEY is read like kie_generate.py (env first,
     then the client's standard secrets stores).
-  * Model sovereignty: gpt-image-2 ONLY (gpt-image-2-text-to-image / gpt-image-2-image-to-image).
+  * Model sovereignty: gpt-image-2.5 ONLY (gpt-image-2-5-sunburst-text-to-image / gpt-image-2-5-sunburst-image-to-image).
   * No browser / no UI automation for GHL — only the REST path.
   * This is NOT the deck renderer. It does NOT touch build_deck.py. It does NOT assemble
     PPTX. It produces TWO additional deliverables: the regular workbook PDF and the
@@ -542,6 +542,8 @@ no paraphrasing, no substitution, no reordering, no typo, no garble, no truncati
 ellipsis unless it is in the source string. The quoted strings are the ONLY text on this
 page beyond the {client_name} wordmark and the page number. Text must read exactly as
 quoted — this is the spelling-lock for every baked string above.
+
+PRINT LEGIBILITY (OCR-locked): every quoted string is rendered as clean, plain, machine-readable print lettering in the {font} family, at full contrast against its {base} background, sized so it still reads when the page is shrunk to 25%. Do NOT render any quoted string as decorative script, brush calligraphy, outline or inline lettering, warped/perspective type, hand-drawn stylized letterforms, or type broken up by illustration. If a word is hard to set, set it LARGER and PLAINER — never smaller or fancier. This print-legibility rule is part of the spelling-lock: a beautiful render that cannot be read back is a failed render.
 
 === LAYOUT GRID (fixed per page, per page type) ===
 HEADER BAND (top 0-16%): solid {prim} band with the page title set in white/ink, and a thin
@@ -1292,23 +1294,72 @@ def verify_dual(regular_path: Path, fillable_path: Path, expected_pages: int,
 
 ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
 
-def _verify_entry_nonce(run_dir: Path) -> bool:
-    """True iff OC_DECK_ENTRY_NONCE is set AND equals the run-scoped nonce file.
+def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
+    """FIX 25: run-scoped PER-PHASE nonce file
+    <run_dir>/working/checkpoints/.nonce-<sanitized phase id>. The sanitizer mirrors
+    phases._nonce_phase_token / build_deck._entry_nonce_phase_file byte-for-byte."""
+    import re as _re
+    safe = ""
+    try:
+        safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
+    except Exception:  # noqa: BLE001
+        safe = ""
+    if not safe:
+        return run_dir / ENTRY_NONCE_REL
+    return run_dir / ENTRY_NONCE_REL.parent / f".nonce-{safe}"
 
-    Only presentation-canonical-entry.sh mints this file, so a hand-rolled workbook
-    invocation fails closed (AF-CANONICAL-RENDER-BYPASS). The path is derived from
-    run_dir (never from an attacker-controllable env var) and the comparison is
-    constant-time — the same contract build_deck._verify_entry_nonce enforces for the
-    deck renderer and build_webinar_video._verify_entry_nonce enforces for the
-    webinar video."""
+
+def _verify_entry_nonce(run_dir: Path) -> bool:
+    """True iff OC_DECK_ENTRY_NONCE is set AND equals the content of the nonce file
+    for this admission. FIX 25 (per-phase nonce): when OC_DECK_ENTRY_NONCE_FILE is
+    set, that value selects the per-phase compare target -- script phases run
+    CONCURRENTLY in one wave, each with its own minted file. The value is either a
+    phase id (path derived as <run-dir>/working/checkpoints/.nonce-<sanitized id>)
+    or a filesystem path accepted ONLY when it resolves inside this run's
+    checkpoints dir with a `.nonce-` basename. Without OC_DECK_ENTRY_NONCE_FILE the
+    legacy run-scoped .canonical-entry-nonce handshake applies (standalone
+    canonical entry). A missing env var, a missing file, or any mismatch -> False
+    (fail-closed). Port of build_deck._verify_entry_nonce (consumer side of the
+    engine's per-phase mint).
+
+    PD-TEST-115: this function used to read ONLY the legacy run-scoped file, while
+    `phases._run_script_phase` (phases.py:2298-2323) mints and exports a PER-PHASE
+    nonce and names it in OC_DECK_ENTRY_NONCE_FILE. The env var therefore carried
+    the per-phase secret and the comparison target was the run-scoped file, so the
+    two could never match and this phase could never pass its own front door --
+    measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4,
+    where P-U-CHECKOUT-BUILD was quarantined with AF-CANONICAL-RENDER-BYPASS."""
     import hmac
     env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
     if len(env_nonce) < 16:
         return False
-    nf = run_dir / ENTRY_NONCE_REL
+    nonce_ref = (os.environ.get("OC_DECK_ENTRY_NONCE_FILE") or "").strip()
+    if nonce_ref:
+        if "/" in nonce_ref or "\\" in nonce_ref:
+            # Path-form value: confine it to THIS run's checkpoints dir with a
+            # .nonce-* basename; anything else (traversal, foreign dir) fails closed
+            ck_dir = (run_dir / ENTRY_NONCE_REL.parent).resolve()
+            cand = Path(nonce_ref)
+            if not cand.is_absolute():
+                cand = Path.cwd() / cand
+            try:
+                cand = cand.resolve()
+            except OSError:
+                return False
+            if cand.parent != ck_dir or not cand.name.startswith(".nonce-"):
+                return False
+            nf = cand
+        else:
+            nf = _entry_nonce_phase_file(run_dir, nonce_ref)
+    else:
+        nf = run_dir / ENTRY_NONCE_REL
     try:
-        file_nonce = nf.read_text(encoding="utf-8").strip()
+        if not nf.is_file():
+            return False
+        file_nonce = nf.read_text(encoding="utf-8", errors="replace").strip()
     except OSError:
+        return False
+    if len(file_nonce) < 16:
         return False
     return hmac.compare_digest(env_nonce, file_nonce)
 
@@ -1367,7 +1418,7 @@ def _record_ledger(run_dir: Path, record: dict) -> None:
 # ---------------------------------------------------------------------------
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Build the fillable PDF workbook "
-                                             "(kie.ai gpt-image-2 backgrounds + reportlab AcroForm).")
+                                             "(kie.ai gpt-image-2.5 backgrounds + reportlab AcroForm).")
     ap.add_argument("--run-dir", default=None)
     ap.add_argument("--out", default=None, help="regular (share/print) workbook PDF path")
     ap.add_argument("--out-fillable", default=None, help="fillable workbook PDF path")

@@ -245,10 +245,43 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
         # operator route
         target = _first_env(_OPERATOR_TARGET_ENV)
         if not target:
-            # a send was warranted but no operator target is configured: send to NOBODY
-            # (a client chat is never a fallback). Flag it so the canary catches it.
-            led.record_event("S7", "P2", key_path="alert.operator_target", klass="alert",
-                             detail="an alert was warranted but no operator target is configured")
+            # a send was warranted but no operator target is configured: send to
+            # NOBODY (a client chat is never a fallback). Flag it so the canary
+            # catches it - but ONCE per dedup window, not once per finding per
+            # tick. Root cause of the 2026-08-21 alert-storm bug (27,841
+            # undeduped rows on one box, 49.9% of the whole ledger): this used
+            # to call record_event() with no dedup_key and never recorded a
+            # digest, so the outer per-finding dedup check above (line ~202)
+            # could never suppress a repeat - every finding, every tick, wrote
+            # a brand-new row forever. Fixed the same way every OTHER repeat
+            # condition in this function is throttled: check-then-record
+            # against the digests table before writing.
+            #
+            # Severity: P1, not P2. This condition disables EVERY alert this
+            # box's sentinel can raise, not just the one finding that happened
+            # to trigger this check - a total loss of the alerting path is at
+            # least as severe as any single finding it would have reported.
+            # P1 also means an unacked one older than 30 minutes gets picked
+            # up by escalate() and pushed to Rescue Rangers, which is the one
+            # path still capable of reaching a human when the operator target
+            # itself is the thing that's missing.
+            #
+            # Key: ONE fixed, condition-level dedup key (not the per-finding
+            # `dedup_key` computed above), so every distinct finding that hits
+            # this branch collapses onto the SAME recurring record instead of
+            # each minting its own. Re-surfaces once per dedup_window_hours
+            # (default 6h) for as long as it stays broken - never silenced,
+            # never appended forever.
+            no_target_key = "S7|no_operator_target"
+            if led.recent_digest(no_target_key, window) is None:
+                led.record_event("S7", "P1", key_path="alert.operator_target", klass="alert",
+                                 detail="an alert was warranted but no operator target is configured "
+                                        "(EWS_OPERATOR_CHAT / OPERATOR_TELEGRAM_CHAT_ID / "
+                                        "FOUNDER_TELEGRAM_CHAT_ID) - EVERY alert this box's sentinel "
+                                        "can raise is going to nobody",
+                                 dedup_key=no_target_key)
+                led.record_digest("no_operator_target", no_target_key,
+                                  payload="recorded once per dedup window while unresolved")
             return False
 
         # storm cap: count today's operator alert digests
@@ -272,25 +305,213 @@ def route_finding(finding, state_dir=None, sender=None, dry_run=False):
 
 
 # --------------------------------------------------------------------------- #
-# escalation (D4): unacked P1 older than 30 min -> Rescue Rangers
+# escalation (D4): unacked P1 older than 30 min -> rescue admission
+#
+# RR-015 (wave 3): an escalation is now a RESCUE ADMISSION — a durable ticket
+# via the shared webhook client (scripts/lib/rescue_admission.py) — tracked by
+# an admission journal, never a bare gateway message to the group. The gateway
+# message stays as SUPPLEMENTAL operator visibility only, recorded with its own
+# digest kind; it can never mark an escalation accepted.
+#
+# ACK TRANSITION RULE: only a VALIDATED admission receipt
+# (status admitted/replay) marks the event escalated; a transport failure, a
+# refusal, an undetermined answer, missing enrollment config or a missing
+# client all leave the event OPEN and retry-eligible — the RR-005 defect
+# (failed/dry-run sends consumed the P1) stays fixed by construction. dry_run
+# performs no ledger mutation (the event ack) and no network action.
 # --------------------------------------------------------------------------- #
-def escalate(state_dir=None, sender=None, dry_run=False):
+def _stable_operation_id(box, source, signal, dedup_key, event_id):
+    """Stable operation identity WITHOUT trusting the admission client's
+    import: same event identity in, same operation out, so a lost response
+    reconciles onto the SAME row (RR-005) and the intake folds the replay."""
+    import hashlib
+    return hashlib.sha256("|".join([
+        "ews-rescue-admission-v1", str(box), str(source), str(signal),
+        str(dedup_key or ""), str(event_id or ""),
+    ]).encode("utf-8")).hexdigest()[:32]
+
+
+def _escalation_outcome(admission_status):
+    """RR-005 outcome vocabulary for one escalation item.
+
+    accepted: a validated durable admission receipt (admitted/replay).
+    dry_run: branched before every mutation and network action.
+    deferred: an owned recoverable setup fault (no_enrollment,
+      client_unavailable) -- visible, retryable after repair, not a process
+      failure.
+    attempted: the POST was tried but the receipt is uncertain (transport
+      failure, timeout, 429/5xx, undetermined answer) -- retry eligible.
+    failed: the intake was reached and terminally refused this attempt."""
+    if admission_status == "dry_run":
+        return "dry_run"
+    if admission_status in ("admitted", "replay"):
+        return "accepted"
+    if admission_status in ("no_enrollment", "client_unavailable"):
+        return "deferred"
+    if admission_status == "refused":
+        return "failed"
+    return "attempted"
+
+
+def escalate_exit_code(items):
+    """Nonzero operational failure where appropriate: 1 when any item is
+    retryably uncertain (attempted) or terminally refused (failed).
+    Accepted/deferred/dry_run outcomes are owned states, not process
+    failures."""
+    for it in items or []:
+        if it.get("outcome") in ("attempted", "failed"):
+            return 1
+    return 0
+
+
+def escalate(state_dir=None, sender=None, dry_run=False, admission=None):
     sender = sender or _gateway_sender
     th = C.load_skill_config("thresholds.json").get("alert", {}).get("escalation", {})
     minutes = th.get("p1_unacked_minutes", 30)
     escalated = []
     with Ledger(state_dir) as led:
         box = _box_name(led)
+        # RR-015: the admission payload's identity must be the ENROLLED box
+        # identity (canonical fleet slug first), not the display/hostname
+        # fallback -- validate enrolled client and runtime identity.
+        box = os.environ.get("FLEET_STANDING_BOX_SLUG", "").strip() or box
         rescue = _first_env(_RESCUE_TARGET_ENV)
         stale = led.unacked_p1_older_than(minutes)
+        if not stale:
+            return []
+        # RR-005: DRY-RUN branches BEFORE every ledger mutation and every
+        # network action -- including the unacked-P1 READ above being the
+        # only state touched. From here on a dry run performs zero writes
+        # (no ack, no digest, no admission attempt, no escalation row) and
+        # zero network (no admission POST, no group message).
+        if dry_run:
+            for ev in stale:
+                escalated.append({"event_id": ev["event_id"],
+                                  "signal": ev["signal"],
+                                  "admission_status": "dry_run",
+                                  "outcome": "dry_run",
+                                  "ticket_id": None,
+                                  "supplemental_msg": False})
+            return escalated
         for ev in stale:
             text = ("[EWS ESCALATION] box=%s: unacknowledged P1 for >%d min\nsignal=%s key=%s\n%s"
                     % (box, minutes, ev["signal"], ev.get("key_path") or "-", ev.get("detail") or ""))
-            ok = False
-            if rescue and not dry_run:
-                ok, _ = sender(_RESCUE_ACCOUNT, rescue, text)
-            led.ack_event(ev["event_id"], "escalated")
-            escalated.append({"event_id": ev["event_id"], "signal": ev["signal"], "sent": ok})
+            # --- 1. attempt a REAL admission (durable ticket, receipt-based).
+            admission_ok = False
+            admission_status = "client_unavailable"
+            admission_ticket = None
+            receipt = {}
+            client = admission if admission is not None else C.load_rescue_admission()
+            # The seam accepts BOTH shapes: the loaded module (has .admit) or
+            # a bare callable (tests/drills inject one).
+            admit_fn = getattr(client, "admit", None)
+            if admit_fn is None and callable(client):
+                admit_fn = client
+            if client is None or admit_fn is None:
+                # no shared client (or bare object without admit) on the box:
+                # MISSING CONFIG, an owned recoverable setup fault. Event stays
+                # OPEN and retryable.
+                admission_status = "client_unavailable"
+            else:
+                receipt = admit_fn(
+                    state_dir, box=box,
+                    problem_text=("unacknowledged P1 for >%d min\nsignal=%s "
+                                  "key=%s\n%s" % (minutes, ev["signal"],
+                                                  ev.get("key_path") or "-",
+                                                  ev.get("detail") or "")),
+                    source="skill-60-ews", signal=ev["signal"],
+                    key_path=ev.get("key_path") or "",
+                    dedup_key=ev.get("dedup_key") or "",
+                    event_id=ev["event_id"], tick_ts=ev.get("tick_ts") or "")
+                admission_status = receipt.get("status", "failed")
+                admission_ticket = receipt.get("ticket_id")
+                admission_ok = C.admission_is_ack_eligible(admission_status)
+            # --- 2. independent ack decision from the RECEIPT, never the send.
+            # RR-015: a MISSING ENROLLMENT is a PENDING REPAIR with an owner --
+            # recorded as such, visible, retryable, and NEVER reported as an
+            # admission. It is also NOT swallowed as a generic refusal: the
+            # repair (enroll this box) is a different owner and a different
+            # action from an intake policy refusal of this incident.
+            if admission_ok:
+                led.ack_event(ev["event_id"], "escalated")
+                if admission_ticket:
+                    led.record_digest("rescue_admission_ticket", ev["dedup_key"] or "",
+                                      payload="ticket_id=%s box=%s" % (admission_ticket, box))
+            elif C.admission_is_pending_repair(admission_status):
+                led.record_digest(
+                    "rescue_admission_pending_repair",
+                    ev["dedup_key"] or "",
+                    payload=("box=%s reason=%s owner=%s action=%s" % (
+                        box, admission_status,
+                        receipt.get("repair_owner") or "operator-seeder-D08",
+                        receipt.get("repair_action") or "enroll this box")),
+                )
+            else:
+                led.record_digest(
+                    "rescue_admission_%s" % admission_status,
+                    ev["dedup_key"] or "",
+                    payload=("box=%s attempt=%.20s" % (
+                        box, (ev["signal"] + "|" + (ev.get("key_path") or ""))[:20])),
+                )
+            # --- 2b. RR-005 reconcile + persist: the STABLE operation row is
+            # reconciled BEFORE any resend decision and persisted SEPARATELY
+            # from incident resolution. An already-accepted operation is never
+            # resent: the stored receipt (same ticket) is returned instead, so
+            # a response lost after a real admission recovers the same ticket.
+            op_id = _stable_operation_id(
+                box, "skill-60-ews", ev["signal"], ev.get("dedup_key") or "",
+                ev["event_id"])
+            prior = led.reconcile_escalation(op_id)
+            if prior and prior.get("outcome") == "accepted" and prior.get("receipt_ticket_id"):
+                admission_status = prior["receipt_status"]
+                admission_ticket = prior["receipt_ticket_id"]
+                admission_ok = True
+            else:
+                last_err = None
+                if not admission_ok:
+                    last_err = (receipt.get("detail")
+                                if isinstance(receipt, dict) else None) or admission_status
+                row = led.record_escalation_attempt(
+                    op_id, "skill-60-ews", box=box, signal=ev["signal"],
+                    event_id=ev["event_id"], dedup_key=ev.get("dedup_key") or "",
+                    receipt_status=admission_status,
+                    receipt_ticket_id=admission_ticket,
+                    receipt_digest=(receipt.get("reply_digest")
+                                    if isinstance(receipt, dict) else None),
+                    last_error=last_err)
+                # next_attempt_at/last_error/attempt live on the row above;
+                # incident resolution below still depends ONLY on the receipt.
+            outcome = _escalation_outcome(admission_status)
+            # --- 3. Telegram group visibility is SUPPLEMENTAL ONLY. A message
+            # send succeeding proves nothing about the ticket; it is recorded
+            # separately and a failure of it (a dead gateway included) must
+            # never block or consume the incident -- the admission POST goes
+            # through the direct outbound HTTP path and is the receipt that
+            # matters.
+            msg_ok = False
+            if rescue:
+                try:
+                    msg_ok, _ = sender(_RESCUE_ACCOUNT, rescue, text)
+                except Exception:  # noqa: BLE001 - visibility is best-effort
+                    msg_ok = False
+                led.record_digest(
+                    "rescue_group_visibility" if msg_ok else "rescue_group_visibility_failed",
+                    ev["dedup_key"] or "",
+                    payload="box=%s target=%s" % (box, _mask(rescue)))
+            escalated.append({
+                "event_id": ev["event_id"],
+                "signal": ev["signal"],
+                "admission_status": admission_status,
+                "outcome": outcome,
+                "ticket_id": admission_ticket,
+                # RR-015: the intake's enrollment verdict must reach the
+                # operator-facing event, not just the receipt -- an admitted
+                # ticket whose box has no usable rr_box_auth row is a PENDING
+                # REPAIR the operator owns (RR-02 fails closed NEEDS_HUMAN).
+                "box_enrolled": receipt.get("box_enrolled"),
+                "box_enrollment_reason": receipt.get("box_enrollment_reason"),
+                "supplemental_msg": msg_ok,
+            })
     return escalated
 
 
@@ -324,7 +545,7 @@ def _cli(argv=None):
     if args.cmd == "escalate":
         out = escalate(sd, dry_run=args.dry_run)
         _emit({"ok": True, "escalated": out})
-        return EX_OK
+        return EX_ERR if escalate_exit_code(out) else EX_OK
     if args.cmd == "notices":
         out = read_box_agent_notices(sd, mark_read=not args.peek)
         _emit({"ok": True, "notices": out})
@@ -347,6 +568,7 @@ def self_test():
         os.environ["EWS_OPERATOR_CHAT"] = "9999operator"
         os.environ["EWS_RESCUE_CHAT"] = "8888rescue"
         os.environ["EWS_BOX_NAME"] = "operator-box-example"
+        os.environ.pop("FLEET_STANDING_BOX_SLUG", None)
         from ews_sentinel import F
 
         # operator P1 send, with revert line, value-free
@@ -457,23 +679,122 @@ def self_test():
         assert len(sent_log) == before + 1
         print("  storm-cap case: PASS (non-P1 defers past the cap; P1 bypasses the batch)")
 
-        # no operator target -> send to NOBODY (never a client fallback)
+        # no operator target -> send to NOBODY (never a client fallback), and the
+        # CONDITION itself is recorded exactly ONCE per dedup window - not once
+        # per finding per tick. Regression guard for the 2026-08-21 alert-storm
+        # bug (27,841 undeduped rows on one live box, 49.9% of the whole
+        # ledger, still growing at the time it was found).
         os.environ.pop("EWS_OPERATOR_CHAT", None)
-        f2 = F("S4", "P1", "x", "cap", "y", dedup_key="no-target")
-        assert route_finding(f2, sender=fake_sender) is False
+        os.environ.pop("OPERATOR_TELEGRAM_CHAT_ID", None)
+        os.environ.pop("FOUNDER_TELEGRAM_CHAT_ID", None)
+        with Ledger() as led_before:
+            events_before = len(led_before.events_since("2000-01-01T00:00:00+00:00"))
+        before_no_target_sends = len(sent_log)
+        # THREE DIFFERENT findings (distinct signal + their own dedup_key),
+        # each of which would normally warrant its own operator send, hit the
+        # "no target" branch across FIVE simulated ticks - 15 calls total.
+        no_target_findings = [
+            F("S4", "P1", "x", "cap", "y", dedup_key="no-target-a"),
+            F("S1", "P2", "x", "model", "y", dedup_key="no-target-b"),
+            F("S6", "P1", "x", "config", "y", dedup_key="no-target-c"),
+        ]
+        for _tick in range(5):
+            for f in no_target_findings:
+                assert route_finding(f, sender=fake_sender) is False
+        assert len(sent_log) == before_no_target_sends  # operator sender NEVER called
+        with Ledger() as led_after:
+            new_events = led_after.events_since("2000-01-01T00:00:00+00:00")[events_before:]
+        no_target_events = [e for e in new_events if e["key_path"] == "alert.operator_target"]
+        assert len(no_target_events) == 1, no_target_events  # exactly ONE, not 15 - the core regression guard
+        ev = no_target_events[0]
+        assert ev["signal"] == "S7" and ev["dedup_key"] == "S7|no_operator_target", ev
+        assert ev["severity"] == "P1", ev  # not P2 - this kills ALL alerting on the box
+        assert ev["ack_state"] == "open"  # still visible/unacked - not silenced into invisibility
         os.environ["EWS_OPERATOR_CHAT"] = "9999operator"
-        print("  no-target case: PASS (no operator target = send to nobody, never a client)")
+        print("  no-target case: PASS (no operator target = send to nobody, never a client; the "
+              "CONDITION is recorded exactly ONCE across 5 ticks x 3 distinct findings, as P1, "
+              "still open - not silenced, not appended 15x)")
 
-        # escalation: an unacked P1 older than the window escalates to Rescue Rangers
+        # escalation (RR-015): an unacked P1 older than the window goes through
+        # a VALIDATED ADMISSION RECEIPT (the REAL shared client, transport
+        # injected -- no network), not a message send. An admitted receipt marks
+        # the event escalated; a failed/refused/unavailable admission leaves it
+        # OPEN and retry-eligible. The Telegram group send is supplemental only.
+        real_admission_client = C.load_rescue_admission()
+        assert real_admission_client is not None, "shared admission client must load"
+        _posted = []
+
+        def _ok_tx(url, body):
+            _posted.append(json.loads(body.decode("utf-8")))
+            return '{"accepted":true,"ticketId":"T-RR015-1"}'
+
+        def ok_admission(state_dir=None, box="", problem_text="", **kw):
+            return real_admission_client.admit(
+                state_dir, box=box, problem_text=problem_text,
+                source=kw.get("source", ""), signal=kw.get("signal", ""),
+                key_path=kw.get("key_path", ""), dedup_key=kw.get("dedup_key", ""),
+                event_id=kw.get("event_id"), tick_ts=kw.get("tick_ts", ""),
+                transport=_ok_tx, url="https://intake.invalid/x")
+
         with Ledger() as led:
             eid = led.record_event("S6", "P1", "config.owner", "config", "root-owned",
                                    tick_ts="2000-01-01T00:00:00+00:00")  # ancient -> stale
-        esc = escalate(sender=fake_sender)
-        assert any(e["event_id"] == eid and e["sent"] for e in esc)
+        esc = escalate(sender=fake_sender, admission=ok_admission)
+        assert any(e["event_id"] == eid and e["admission_status"] == "admitted"
+                   and e["ticket_id"] == "T-RR015-1" for e in esc), esc
+        assert len(_posted) == 1 and _posted[0]["boxName"] == "operator-box-example"
+        assert _posted[0]["machine"]["ews_event_id"] == eid, _posted[0]
         assert sent_log[-1]["account"] == "rescue-rangers" and sent_log[-1]["target"] == "8888rescue"
         with Ledger() as led:
-            assert not any(e["event_id"] == eid for e in led.open_events())  # now escalated
-        print("  escalation case: PASS (stale P1 -> Rescue Rangers; event marked escalated)")
+            assert not any(e["event_id"] == eid for e in led.open_events())  # receipt -> escalated
+            rows = [dict(r) for r in led.conn.execute(
+                "SELECT * FROM rescue_admissions WHERE status='admitted'").fetchall()]
+            assert len(rows) >= 1 and rows[0]["ticket_id"] == "T-RR015-1" \
+                and rows[0]["reply_digest"], rows
+        print("  escalation case: PASS (admission RECEIPT -> escalated; journaled; group msg supplemental)")
+
+        # admission FAILED -> event stays OPEN and retryable (RR-005/RR-015 core)
+        def _fail_tx(url, body):
+            raise real_admission_client.AdmissionTransportError("intake timeout")
+
+        def failing_admission(state_dir=None, box="", problem_text="", **kw):
+            return real_admission_client.admit(
+                state_dir, box=box, problem_text=problem_text,
+                source=kw.get("source", ""), signal=kw.get("signal", ""),
+                key_path=kw.get("key_path", ""), dedup_key=kw.get("dedup_key", ""),
+                event_id=kw.get("event_id"), tick_ts=kw.get("tick_ts", ""),
+                transport=_fail_tx, url="https://intake.invalid/x")
+
+        with Ledger() as led:
+            eid2 = led.record_event("S6", "P1", "config.owner", "config", "root-owned-b",
+                                    tick_ts="2000-01-01T00:00:00+00:00")
+        esc2 = escalate(sender=fake_sender, admission=failing_admission)
+        assert any(e["event_id"] == eid2 and e["admission_status"] == "failed" for e in esc2), esc2
+        with Ledger() as led:
+            assert len(list(led.open_events().__iter__())) >= 1
+            assert any(e["event_id"] == eid2 for e in led.open_events())  # STILL OPEN
+            with led.conn:
+                row = led.conn.execute(
+                    "SELECT ack_state FROM events WHERE event_id=?", (eid2,)).fetchone()
+            assert row["ack_state"] == "open"
+            with led.conn:
+                jrow = led.conn.execute(
+                    "SELECT status FROM rescue_admissions WHERE event_id=? "
+                    "ORDER BY admission_id DESC LIMIT 1", (eid2,)).fetchone()
+            assert jrow["status"] == "failed"
+        print("  escalation-failure case: PASS (failed admission -> event stays OPEN, retry-eligible)")
+
+        # dry_run branches before mutation: no ack, no admission attempt, no journal
+        with Ledger() as led:
+            eid3 = led.record_event("S6", "P1", "config.owner", "config", "root-owned-c",
+                                    tick_ts="2000-01-01T00:00:00+00:00")
+            before_count = led.count_admissions()
+        esc3 = escalate(dry_run=True, admission=ok_admission)  # noqa: F841 - inspected below
+        assert any(e["event_id"] == eid3 and e["admission_status"] == "dry_run" for e in esc3), esc3
+        with Ledger() as led:
+            assert any(e["event_id"] == eid3 for e in led.open_events())  # NOT escalated
+            assert led.count_admissions() == before_count  # no journal row
+        print("  escalation-dryrun case: PASS (dry run changes no state)")
 
         for k in ("EWS_STATE_DIR", "EWS_OPERATOR_CHAT", "EWS_RESCUE_CHAT", "EWS_BOX_NAME"):
             os.environ.pop(k, None)

@@ -19,7 +19,7 @@ on:
     branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
-      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/scripts/deck-intake-turngate.py
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
       - tests/unit/presentation-type-contract.test.sh
       - .github/workflows/presentation-type-contract-guard.yml
@@ -27,7 +27,7 @@ on:
     branches: [main]
     paths:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
-      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/scripts/deck-intake-turngate.py
       - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
       - tests/unit/presentation-type-contract.test.sh
       - .github/workflows/presentation-type-contract-guard.yml

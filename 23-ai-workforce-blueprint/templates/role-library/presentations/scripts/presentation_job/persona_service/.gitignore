@@ -1,0 +1,5 @@
+# Match-score observability log must never be committed inside the packaged
+# resource set (content-addressed pristine). Service redirects it to scoped
+# storage via OPENCLAW_PERSONA_MATCH_SCORE_LOG at resolve() time.
+match-score-log.jsonl
+resources/personas/match-score-log.jsonl

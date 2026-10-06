@@ -17,6 +17,7 @@
     "openrouterKey": {"type": "string", "description": "The client's OpenRouter key (sk-or-v1-...). Referenced from env; never printed."},
     "openrouterModel": {"type": "string", "minLength": 1, "description": "The client's CHOSEN primary text model id (NEVER an anthropic/claude-* id). Sovereign — never substituted."},
     "openrouterFallbacks": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}, "description": "Exactly 2 fallback model ids passed via OpenRouter route:\"fallback\". None may be an anthropic/claude-* id."},
+    "modelPolicy": {"type": "object", "additionalProperties": true, "description": "F31 provider-first model policy (client's saved choice is authoritative; never silently upgraded). Shapes: provider (ollama|openrouter|deepseek-direct|other-with-adapter), selectionMode (pinned|recommend_confirm), revision (int, immutable per record — bump on an accepted change, never regress), roleModels (per-role {modelId, fallbacks[]} for planner/researcher/writer/promptCompiler/visualQc — visualQc REQUIRES vision capability), imageModels[], videoModels[]. A removed model activates only an approved fallback in saved order; otherwise an explicit selection request. providerId is separate from modelId; a direct-provider selection is never implicitly routed through OpenRouter/Ollama. Resolved via shared-utils/social_model_policy.py."},
     "kieKey": {"type": "string", "description": "The client's Kie.ai key (media generation). Referenced from env; never printed."},
     "geminiKey": {"type": "string", "description": "The client's Google Gemini key (vision QC / grid judge). Referenced from env; never printed."},
     "plannerSheetId": {"type": "string", "description": "The client's content-calendar Google Sheet id (their own Google credentials). Optional until first plan run."},
@@ -66,7 +67,7 @@
     "dedupLookbackDays": {"type": "integer", "default": 90, "description": "QC11: content-fingerprint lookback window for AF-SM-DOUBLE-POST (default 90 days; in-week slot check regardless)."},
 
     "$defer_note": "v0.2.0 DEFER triggers (merge plan C8/C10/C11). Setting one requests a capability deferred to a NAMED later version: the orchestrator fails CLOSED with a clear 'deferred to vX.Y.Z' message (AF-SM-DEFERRED) BEFORE any phase runs — never a silent no-op. Defaults (off) reproduce today's behavior exactly.",
-    "narratedVideo": {"type": "boolean", "default": false, "description": "C8: request the narrated Reels lane (55-60s multi-clip + Fish-Audio voiceover + FFmpeg concat) — DEFERRED to v0.3.0; fails closed via defer_stub. The Sora 25.0s lane (`--mode video`) works today."},
+    "narratedVideo": {"type": "boolean", "default": false, "description": "C8: request the narrated Reels lane (55-60s multi-clip + Fish-Audio voiceover + FFmpeg concat) — DEFERRED to v0.3.0; fails closed via defer_stub. The 25.0s single-clip lane (`--mode video`, render model picked by the Skill 67 selector) works today."},
     "memoryFeed": {"type": "boolean", "default": false, "description": "C11: request the Skill-31 memory-core 'Dreaming' performance-insight feed — DEFERRED to v0.5.0; fails closed via defer_stub. The theme-of-week log half is already folded (P1 themeOfWeek in this spine)."}
   },
   "additionalProperties": true

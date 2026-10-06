@@ -30,7 +30,7 @@ Add:
 - KIE.ai Market API image generation. Key: KIE_API_KEY (env var NAME per repo convention).
 - Create: POST https://api.kie.ai/api/v1/jobs/createTask (async — 200 = task CREATED, not finished).
 - Query: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state: waiting/queuing/generating/success/fail).
-- Default pick: GPT Image 2 (gpt-image-2-text-to-image) when compatible; explicit user model wins.
+- Default pick: GPT Image 2.5 (gpt-image-2-5-sunburst-text-to-image) when compatible; explicit user model wins. GPT Image 2 (legacy, gpt-image-2-text-to-image) is RETAINED for aspect ratios 3:1, 1:3, 9:21 only (operator ruling 2026-09-09).
 - Validators run before dispatch: scripts/validate_prompt.py, scripts/validate_payload.py, scripts/select_image_model.py, scripts/normalize_alias.py.
 - Prompt band legal per model: Wan/Ideogram/Imagen 4 caps 5,000 chars VERIFIED; Qwen is token-based (never fake char cap); others NOT_PUBLISHED (house band 5K-19K is TARGET only).
 - Full registry + per-family tables: [MASTER_FILES_FOLDER]/66-kie-image/models.json, [MASTER_FILES_FOLDER]/66-kie-image/references/
@@ -48,7 +48,7 @@ Add:
 - POST https://api.kie.ai/api/v1/jobs/createTask (asynchronous; response 200 = task created with taskId)
 - GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state enum: waiting/queuing/generating/success/fail; resultJson.resultUrls on success)
 - Callbacks: callBackUrl field; HMAC-SHA256 scheme base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey)); headers X-Webhook-Timestamp / X-Webhook-Signature; ack {"code":200,"msg":"success"}
-- Rate: 20 new generation requests/10s; 100+ concurrent. Result URLs expire ~24h; media deleted after 14 days.
+- Rate: 20 new generation requests/10s; 100+ concurrent. Retention: KIE documents 14 days for generated media but result URLs typically expire after 24 hours; download/persist immediately.
 - Registry: [MASTER_FILES_FOLDER]/66-kie-image/models.json + references/ (per-family limits, ratios, resolutions, reference caps)
 - Validators: scripts/validate_prompt.py, scripts/validate_payload.py (run before dispatch; never after)
 ```
@@ -62,7 +62,7 @@ Add:
 ```
 ## KIE Image (66) - Installed [DATE]
 - KIE.ai Market API; async createTask -> recordInfo polling or Skill 46 callback (never treat 200 as done)
-- Key: KIE_API_KEY; model default GPT Image 2 when compatible, explicit pick wins
+- Key: KIE_API_KEY; model default GPT Image 2.5 when compatible, explicit pick wins (legacy GPT Image 2 retained for 3:1/1:3/9:21 only, operator ruling 2026-09-09)
 - Registry + tables: [MASTER_FILES_FOLDER]/66-kie-image/models.json, [MASTER_FILES_FOLDER]/66-kie-image/references/
 ```
 

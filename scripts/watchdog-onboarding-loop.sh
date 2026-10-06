@@ -52,10 +52,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo
 REPO_ROOT=""
 [[ -n "$SCRIPT_DIR" ]] && REPO_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "")"
 
-# Locate gate library (canonical: lib-onboarding-state.sh at repo root)
+# Locate gate library (canonical: lib-onboarding-state.sh).
+#
+# This watchdog calls oc_* ONLY (oc_overall_goal_check, oc_wave_goal_check,
+# oc_next_incomplete_wave, ...) and no obs_* name, so unlike resume-onboarding.sh
+# it must keep looking for the CANONICAL library first. What was wrong here was
+# the reach, not the order: one canonical candidate, "$REPO_ROOT/lib-...", which
+# only exists in a repo-shaped checkout. On a box where update-skills.sh has
+# delivered scripts/ to ~/.openclaw/scripts, that candidate misses and the
+# search fell through to the shim -- which, before this change, could not find
+# the canonical lib either and so supplied no oc_* at all. Same candidate list
+# as the shim now uses, including the copy update-skills.sh delivers BESIDE
+# this script.
 GATE_LIB=""
 for _cand in \
   "${REPO_ROOT:+$REPO_ROOT/lib-onboarding-state.sh}" \
+  "${SCRIPT_DIR:+$SCRIPT_DIR/lib-onboarding-state.sh}" \
+  "$HOME/.openclaw/onboarding/lib-onboarding-state.sh" \
+  "$HOME/.openclaw/skills/lib-onboarding-state.sh" \
+  "/data/.openclaw/onboarding/lib-onboarding-state.sh" \
   "$SCRIPT_DIR/onboarding-state.sh" \
   "$OC_ROOT/scripts/onboarding-state.sh" \
   "$OC_ROOT/onboarding/scripts/onboarding-state.sh" \

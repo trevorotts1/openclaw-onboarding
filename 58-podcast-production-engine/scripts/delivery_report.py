@@ -126,7 +126,7 @@ CHECKLIST_PART_A: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "IMAGE",
         [
-            ("cover_generated", "Cover art generated via Kie.ai GPT-image-2 at 2K square from the visual description plus episode theme, within polling bounds."),
+            ("cover_generated", "Cover art generated via Kie.ai GPT-Image-2.5 at 2K square from the visual description plus episode theme, within polling bounds."),
             ("cover_finalized", "Squared and compressed in-house with ffmpeg: JPEG, RGB, within 1500 to 3000, under 512 kilobytes, spec-valid filename. Never below 1500 square."),
         ],
     ),

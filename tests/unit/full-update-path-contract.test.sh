@@ -77,13 +77,17 @@ grep -q 'canonical Command Center update failed' "$RUNNER" \
   && ok "fleet runner preserves main convergence instead of checking out a stale compatibility tag" \
   || bad "fleet runner can still detach/downgrade Command Center after the root update"
 grep -q 'could not converge Command Center checkout onto the latest origin default branch' "$RUN_FULL" \
-  && grep -q 'did not end GREEN on the fresh build' "$RUN_FULL" \
-  && ok "Command Center branch or deploy rollback fails the update loudly" \
+  && grep -q 'the running Command Center is not healthy after the update' "$RUN_FULL" \
+  && ok "Command Center branch failure or an unhealthy running CC fails the update loudly" \
   || bad "Command Center convergence/deploy failures are still advisory"
 
-grep -q 'main/update-skills.sh' "$CRON_SETUP" \
+# Since v25.1.96 the Sunday script runs the operator roll's exact path
+# (scripts/weekly-full-update.sh -> fleet-refresh.sh --local --apply, which
+# runs the root updater), never the legacy scripts/update-skills.sh.
+grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/weekly-full-update.sh' "$CRON_SETUP" \
   && ! grep -q 'UPDATE_SCRIPT_URL=.*main/scripts/update-skills.sh' "$CRON_SETUP" \
-  && ok "Sunday restart script downloads the root updater" \
+  && grep -q 'fleet-refresh.sh" --local --apply' "$(dirname "$CRON_SETUP")/weekly-full-update.sh" \
+  && ok "Sunday restart script runs the full update (weekly-full-update.sh -> fleet-refresh --local --apply)" \
   || bad "Sunday restart script points at the legacy updater"
 grep -q '_UPDATE_RC=\$?' "$CRON_SETUP" \
   && grep -q 'exit "\$_UPDATE_RC"' "$CRON_SETUP" \
@@ -94,12 +98,41 @@ grep -q 'LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"' "$UPDATE_
   && ok "installed legacy Sunday scripts self-heal to the root updater" \
   || bad "weekly cron self-heal missing"
 
+# The roll converges the Mac gateway health watchdog. Its installer and the two
+# scripts it lays down are repo artifacts inside the temp clone, so like the
+# Layer E rescue-tunnel converge it has to sit BEFORE the Cleanup that removes
+# that clone. A box that records a completed roll while carrying no
+# com.openclaw.service-remediate is the exact state that let a stalled upgrade
+# leave a client Mac dark for about two hours. Deliberately fail-soft, so it
+# never withholds the version stamp.
+before "gateway-watchdog converge runs before the temp-clone Cleanup" '# ---- BEGIN gateway-watchdog converge ----' '^  # Cleanup$' "$UPDATE_SH"
+before "gateway-watchdog converge sits alongside the Layer E converge" '# ---- BEGIN gateway-watchdog converge ----' 'install-rescue-tunnel-watchdog.sh' "$UPDATE_SH"
+grep -q 'install-service-remediate.sh' "$UPDATE_SH" \
+  && grep -q '\[GATEWAY-WATCHDOG\] state=' "$UPDATE_SH" \
+  && ok "the roll converges the Mac service self-heal and reports a greppable state" \
+  || bad "the roll never converges install-service-remediate.sh"
+
+# A Command Center checkout with no refs/remotes/origin/HEAD made the default-
+# branch lookup fail under pipefail and set -e killed the updater: exit 1, no
+# output, after the stamp. Run the updater's own line against such a checkout.
+CC_DEFAULT_LINE="$(grep -m1 '^ *_CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref' "$UPDATE_SH")"
+NO_ORIGIN_HEAD="$(mktemp -d "${TMPDIR:-/tmp}/no-origin-head.XXXXXX")"
+git init -q "$NO_ORIGIN_HEAD"
+if [ -n "$CC_DEFAULT_LINE" ] \
+   && [ "$(_CC_DIR="$NO_ORIGIN_HEAD" bash -c "set -euo pipefail; $CC_DEFAULT_LINE; echo \"\${_CC_DEFAULT:-main}\"" 2>/dev/null)" = "main" ]; then
+  ok "CC default-branch lookup survives a checkout without origin/HEAD"
+else
+  bad "CC default-branch lookup aborts the updater when origin/HEAD is missing"
+fi
+rm -rf "$NO_ORIGIN_HEAD"
+
 for suite in \
   tests/unit/sop-library-update-path-ingest.test.sh \
   tests/unit/update-command-center-runtime-config.test.sh \
   tests/unit/power-resilience-gate.test.sh \
   tests/unit/provisioning-completeness-gate.test.py \
   tests/unit/fleet-refresh-cc-main-convergence.test.py \
+  tests/unit/roll-converges-gateway-watchdog.test.sh \
   tests/unit/update-skills-full-scripts-tree.test.sh; do
   [ -f "$TARGET_ROOT/$suite" ] && ok "stage has a regression suite: $suite" || bad "missing stage suite: $suite"
 done

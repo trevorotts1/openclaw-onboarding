@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sheet-template.schema.json",
+  "title": "Social Media Planner sheet template contract",
+  "description": "F22/F25 — versioned contract for the fleet Social Media Planner template. Defines unique headings, EMPTY starter rows (no brand, campaign or publication content), identity provisioning (client/company title, timezone, schema_version), status color+label pairs (TEXT_EQ conditional formatting, validated dropdowns), the compact This Week view, and frozen/protected formatting. Demonstrations live ONLY in a separate example tab that is never copied into a live client planner. Google template 1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c is LIVE infrastructure — application is deployment-phase (WF00); this file is the contract scripts/migrate-template.py migrates sheets to.",
+  "schema_version": "1.2.0",
+  "identity_fields": {
+    "client_title": "Provisioned from verified identity (company registry) — written to the Weekly Overview title cell and the sheet name on copy; never a template placeholder like 'Your Brand'.",
+    "timezone": "IANA timezone from verified identity (planner-create payload); written to spreadsheet.properties.timeZone at provisioning.",
+    "schema_version": "This template schema_version, stamped into spreadsheet appProperties at provisioning so migrations and the row-append webhook can version-match."
+  },
+  "starter_rows_rule": "Starter rows MUST be EMPTY of any brand name, campaign, publication claim (published/scheduled statuses) or progress. A starter row may carry ONLY help text explicitly marked as help. Legacy template content (old campaign rows with Complete/Scheduled/Published statuses) is template starter content and migration blanks it; legitimate client rows/notes are preserved.",
+  "tabs": {
+    "Weekly Overview": {
+      "purpose": "Summary derived from the Posts table; legacy 20-column client-facing layout retained.",
+      "frozen_headings_row": 1,
+      "frozen_columns": 0,
+      "headings": ["Week Of", "Theme of the Week", "Research", "Core Content", "Images", "Videos", "Facebook", "Instagram", "LinkedIn", "YouTube", "TikTok", "Pinterest", "Carousels", "Blog", "Podcast", "Email", "QC", "Scheduled", "Overall", "Notes"],
+      "headings_unique": true,
+      "status_columns": ["QC", "Overall"],
+      "wrap_text": true
+    },
+    "This Week": {
+      "purpose": "F25 — compact client-facing view (~8 columns): next action, counts, links. Created by the formatting provisioner; client-facing, no operational columns.",
+      "frozen_headings_row": 1,
+      "headings": ["Week", "Client", "Next Action", "Drafting", "QC", "Scheduled", "Published", "Needs Attention"],
+      "width": 8,
+      "links": ["intake", "approvals", "gallery"],
+      "wrap_text": true
+    },
+    "Posts": {
+      "purpose": "F23 — normalized per-revision/per-account source of truth. One row per content revision and destination account; upsert on row_key.",
+      "frozen_headings_row": 1,
+      "frozen_columns": 2,
+      "headings": ["row_key", "company_id", "cycle_id", "content_revision", "account_id", "platform", "account_name", "format", "scheduled_local", "scheduled_utc", "state", "qc_state", "preview_url", "remote_url"],
+      "status_columns": ["state", "qc_state"],
+      "wrap_text": true
+    },
+    "Images": {
+      "purpose": "F24 — per-asset manifest + gallery. Preview column P carries trusted =IMAGE(\"https://…\",1) formulas ONLY; all other cells RAW.",
+      "frozen_headings_row": 1,
+      "headings": ["asset_key", "content_id", "asset_id", "company_id", "cycle_id", "content_revision", "kind", "preview_url", "original_url", "ratio", "width", "height", "alt_text", "qc_state"],
+      "image_formula_columns": ["P"],
+      "preview_column_px": 220,
+      "row_height_px_4_5": 275,
+      "row_height_px_9_16": 390
+    },
+    "Videos": {
+      "purpose": "F38 — per-video evidence: poster image (trusted =IMAGE of the poster CDN URL), duration, ratio, version, QC state, Watch video HYPERLINK (client-bound CC player route) and, after publishing, the actual published URL.",
+      "frozen_headings_row": 1,
+      "headings": ["video_key", "content_id", "asset_id", "company_id", "cycle_id", "content_revision", "version", "poster_url", "published_url", "watch_url", "duration_seconds", "ratio", "captions", "qc_state"],
+      "image_formula_columns": ["R"],
+      "poster_column_px": 240,
+      "row_height_px_16_9": 135,
+      "row_height_px_9_16": 390
+    },
+    "Example (never copy)": {
+      "purpose": "F22 — demonstrations ONLY. Clearly named; provisioning and migration NEVER copy this tab into a live client planner. All demo brand/campaign content lives here.",
+      "frozen_headings_row": 1,
+      "example_tab": true,
+      "copied_to_clients": false
+    }
+  },
+  "status_colors": {
+    "description": "F25 — every status value gets BOTH a TEXT_EQ conditional format rule (never NUMBER_EQ: statuses are text) and a written label, so color is never the only signal. Dropdowns are enforced with setDataValidation on the same value list.",
+    "statuses": [
+      { "label": "Complete", "color": "#b7e1cd", "color_label": "green — done" },
+      { "label": "Failed", "color": "#f4c7c3", "color_label": "red — needs repair" },
+      { "label": "QC Review", "color": "#fce8b2", "color_label": "amber — in review" },
+      { "label": "Scheduled", "color": "#d3e3fd", "color_label": "blue — queued for posting" },
+      { "label": "Published", "color": "#c9daf8", "color_label": "blue — live on platform" },
+      { "label": "Needs Attention", "color": "#f6aea9", "color_label": "red — blocking issue" }
+    ]
+  },
+  "formatting_contract": {
+    "conditional_format_rules": "TEXT_EQ only for text statuses; NUMBER_EQ is banned for status columns.",
+    "dropdown_validation": "setDataValidation ONE_OF_LIST over the status list on every status column, with the dropdown shown.",
+    "frozen_headers": "Sheet-level frozen row (1) per tab with headings; Posts additionally freezes its first two columns.",
+    "wrapped_copy": "repeatCell wrapStrategy=WRAP on copy/caption columns so long captions stay readable.",
+    "protected_formulas": "Protected ranges over formula-bearing cells (Images P column, Posts derived summary cells) so client edits cannot destroy them.",
+    "tab_navigation": "Sheet order: This Week, Weekly Overview, Posts, Images, Videos, then operational tabs; the example tab sorts last and is never copied.",
+    "upsert_preserves": "Re-running the provisioner/upsert NEVER resets client-changed row sizes or notes; it only repairs structural formatting (rules, validation, freeze, protection)."
+  },
+  "required": ["schema_version", "tabs", "status_colors", "formatting_contract"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "tabs": { "type": "object" },
+    "status_colors": { "type": "object" },
+    "formatting_contract": { "type": "object" }
+  }
+}

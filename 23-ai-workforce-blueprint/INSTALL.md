@@ -193,7 +193,7 @@ Run these checks before building anything:
 ```bash
 python3 --version
 ```
-If Python 3.8+ is available, note it. If not, note it - the build can still proceed manually without the scaffold script.
+Python 3.9 or newer is required. Stop before build mutations if unavailable. The builder propagates its selected interpreter through WORKFORCE_PYTHON and sys.executable; do not substitute an older system Python midway through a build.
 
 ### 2b. OpenClaw Running Check
 Confirm you are running inside an OpenClaw agent environment. If you are reading this file, you are. Proceed.
@@ -1140,10 +1140,9 @@ then re-invokes `prebuild-standard-workforce.sh` (idempotent: the consent gate
 recognizes the prior consent and re-runs the materializer; `prebuildStartedAt` is
 written at that point).
 
-The rollback switch is separate from the timing config: setting
-`STANDARD_FIRST_ONBOARDING` env to anything other than `1`/`true`/`yes`/`on`
-causes the entire standard-first lane to refuse to run (exit 9), falling back to
-the legacy interview-first path — independent of which timing value was chosen.
+Fresh installation now selects standard-first with `at-onboarding` automatically and records the real operator invocation in the pending state before materialization. Existing recorded lane and timing choices remain authoritative. These direct engine flags remain available for explicit operator configuration; the fresh installer no longer depends on someone remembering to set a manual environment variable. A disabled/conflicting lane must be handled explicitly and must not be reported as a verified standard foundation.
+
+See [launch and recovery](../docs/interview-launch-recovery.md) for the complete sequence: pending identity → standard foundation/Command Center → authenticated Telegram interview link → saved Q/A → approved department/persona changes → verified closeout.
 
 ### Phase 10c — Completion Checklist
 

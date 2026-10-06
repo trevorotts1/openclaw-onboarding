@@ -24,7 +24,7 @@
 #   6. Verify:
 #        curl https://intake.<PLACEHOLDER_FLEET_DOMAIN>/healthz
 
-name               = "presentation-intake"
+name               = "presentation-intake-miniapp-DEPRECATED"
 main               = "src/index.js"
 compatibility_date = "2024-09-23"
 account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"

@@ -160,7 +160,7 @@ This role contributes to the company revenue cascade by: **driving audience enga
 | **Social Media Scheduling Platform (Later / Buffer / Hootsuite / Sprout Social)** | Previewing graphics in-context on each platform before final export; checking how graphics render in-feed | Web login via TOOLS.md | Use preview functionality to catch rendering issues (cropping, text truncation, color shifts) before delivery. |
 | **Adobe After Effects / Premiere Pro** | Motion graphics for animated social posts, Reel/Story animations, video thumbnail extraction | Enterprise license via TOOLS.md | For animated social content only; primary video editing is handled by the video team. |
 | **Platform Analytics Dashboards (Meta Business Suite, LinkedIn Analytics, etc.)** | Reviewing graphic performance data to inform design decisions | Web login via TOOLS.md | Weekly performance review; ad-hoc checks to inform design strategy. |
-| **Social Media in a Box (Skill 57)** | When social visuals ship through media core (P4) — supply `artDirection`/`stylePick`/`brandColors`/`brandFonts` (I9); the Gemini grid/QC loop repairs within the client's direction, never taste-gates. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). |
+| **Social Media in a Box (Skill 57)** | When social visuals ship through media core (P4) — supply `artDirection`/`stylePick`/`brandColors`/`brandFonts` (I9); the Gemini grid/QC loop repairs within the client's direction, never taste-gates. | `bash 57-social-media-in-a-box/social-media-entry.sh --run-dir DIR --mode <mode>` — the ONE front door (same DEPS/BYPASS-SCAN/HASH-PIN gates + run-scoped nonce) | Fail-closed provers + signed certificate; client providers only (never Anthropic); GHL-direct posting; never hand-roll a poster (BYPASS-SCAN blocks it). Media-core images are GPT Image 2.5 Sunburst and video clips go through the Skill 67 selector; both run the Skill 74 KIE chain (`57-social-media-in-a-box/modules/3-media-core/README.md`). |
 
 ---
 
@@ -303,8 +303,7 @@ If this graphic is produced via AI image generation, you do NOT self-author or s
 Every AI-generated graphic that leaves for an EXTERNAL surface (published social post, ad, email, funnel)
 runs 100% through SOP-GIP-02 (mandatory vision pass + AF-G auto-fail battery + average >= 8.5 gate; writes
 `<job>/qc/image_qc_report.json`). Prompts for these graphics use band `text_bearing_long` when copy is
-baked in via GPT-Image 2 T2I/I2I, `text_bearing_medium` for the Ideogram V3 DESIGN route mandatory on
-every quote-card/text-led post, `medium` for non-text-bearing Seedream quick posts (SOP-GIP-01). The 10% random-sample review below
+baked in via GPT Image 2.5 Sunburst T2I/I2I (the social default for every post, quote cards included; there is no Ideogram route for social images), `medium` for non-text-bearing Seedream quick posts (SOP-GIP-01). Prompt length follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (95 to 100 percent of the model maximum from Skill 74 `prompt-budget`, never below 80 percent); every paid job runs the Skill 74 chain (`validate`, `preflight`, `run --mode active`). The 10% random-sample review below
 survives ONLY for INTERNAL drafts and non-generated template assets, reviewed by a senior team member for:
 - [ ] Does this graphic feel like it belongs to {{COMPANY_NAME}}'s social media presence?
 - [ ] Is the design quality consistent with or exceeding the team's established bar?

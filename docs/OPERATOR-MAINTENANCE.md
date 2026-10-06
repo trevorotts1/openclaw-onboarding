@@ -57,8 +57,25 @@ STATUS: operator-telegram=STRUCTURE_ONLY_NEEDS_TOKEN
 
 To finish provisioning an existing box:
 
-1. Create an operator bot in BotFather (one operator bot can be reused across
-   the fleet, or one per box — operator's choice).
+1. Create an operator bot in BotFather. **One bot per box. Never reuse a token
+   across boxes — this is not a preference, it is a protocol limit.**
+
+   Telegram allows exactly ONE active long-poll consumer per bot token. When two
+   boxes hold the same token they do not share the stream, they *race* for it:
+   each `getUpdates` call invalidates the other's, so messages are delivered to
+   whichever box polled last and are **lost** to the other. Every box also ends
+   up answering as the same bot identity, so replies land in the wrong box's
+   conversation.
+
+   This has happened twice on the live fleet and both times presented as a
+   storm of duplicated and dropped operator messages rather than as an obvious
+   configuration error:
+   - 2026-09-11/12 — a shared operator token across client boxes had every box
+     fighting the operator box for the same update stream.
+   - 2026-09-17/18 — the same failure inside a containerised VPS box.
+
+   `configure-operator-telegram.sh` now REFUSES a token whose bot id matches the
+   operator box's own bot, so this cannot be re-introduced by hand.
 2. Set the token on the box:
    ```bash
    echo 'OPERATOR_TELEGRAM_BOT_TOKEN=<token>' >> ~/.openclaw/secrets/.env
@@ -105,6 +122,49 @@ chat. To enable, set `env.vars.OPERATOR_ESCALATION_CHAT_ID` to the operator chat
 **Rule:** owner-facing onboarding/closeout messages use the **default** account
 (unchanged). Operator maintenance, Rescue-Rangers escalations, and resume-cron
 self-pings use the **operator** account / session key. Never the reverse.
+
+---
+
+## Lean bootstrap: the compact-core cadence
+
+Bootstrap files (`AGENTS.md`, `TOOLS.md`, `MEMORY.md`, `USER.md`, `SOUL.md`,
+`IDENTITY.md`) are re-billed to the model on **every turn**, and every fleet roll
+stamps more into them. Two standing jobs keep them lean, both registered fleet-wide
+by `scripts/ensure-pipeline-crons.sh`, both **COMMAND-kind crons** (zero LLM tokens,
+no delivery to any chat, no model invoked):
+
+| Cron | Schedule | What it does |
+|---|---|---|
+| `bootstrap-validate-daily` | 05:00 daily | Measures only. Budgets, marker balance, pointer targets, ledger hashes. Exits non-zero on any failure. Writes nothing. |
+| `bootstrap-compact-weekly` | Sun 04:30 America/New_York | Moves owner-authored cold content out verbatim behind a four-line pointer. Gated by a switch that defaults to **report**. |
+
+The timezone on the weekly job is load-bearing: it has to land after
+`weekly-onboarding-update` (`0 3 * * 0 America/New_York`), the skill update that
+rewrites these very files.
+
+**The switch.** The weekly job writes nothing until an operator turns it on, so a
+box's first scheduled week produces a reviewable plan rather than a surprise edit:
+
+```bash
+# Read the plan first (this is also what the cron does by default):
+bash "$OC_ROOT/scripts/bootstrap-compact-weekly.sh"
+
+# Then turn on applying, per box:
+echo apply > "$OC_ROOT/bootstrap-compact.conf"
+```
+
+Resolution order is `$OPENCLAW_BOOTSTRAP_COMPACT_MODE`, then that file, then
+`agents.defaults.bootstrapCompactMode`, then `report`. Template and rationale:
+`config/bootstrap-compact.conf.example`.
+
+**Hot sections and script-owned blocks are never moved by that job.** Script-owned
+bulk is made lean at the source instead, by `scripts/bootstrap-pointerize.py` during
+the roll (switch: `config/bootstrap-pointer.conf.example`). An over-target file that
+has run out of movable content gets a proposal in `pending-updates.md`, which is a
+question for the owner, not a plan.
+
+Full procedure, per-platform paths, the pointer standard, the collision rule, the
+ledger and rollback: **[docs/COMPACT-CORE-SOP.md](COMPACT-CORE-SOP.md)**.
 
 ---
 
@@ -196,6 +256,82 @@ for any ESCALATE lines that indicate the root connector went down:
 grep ESCALATE /tmp/clawd-tunnel-watchdog.log
 # If present: operator must run harden-mac-tunnel.sh on that box
 ```
+
+### Wave D -- rescue-tunnel reboot-stale watchdog (Layer E, one-time sudo per box)
+
+Waves A through C keep the connector CONNECTED. Wave D catches a different failure
+that every check in Waves A through C reports as healthy.
+
+**The failure.** The rescue cloudflared connector on a client Mac is a SYSTEM-domain
+daemon named `com.blackceo.rescue-<slug>`, installed by an operator runbook, not by
+the repo. After a reboot it can come back holding a stale cached edge address and
+dial the LAN router (an RFC1918 address on port 7844) for the rest of its life. It
+never registers a tunnel connection. The process is ALIVE, so launchd `KeepAlive`
+keeps it, the Wave A watchdog's `pgrep -f 'cloudflared.*tunnel'` check reports OK,
+and the box is dark to the operator until a human notices by hand. The same reboot
+sometimes comes back with Remote Login off in the launchd system domain, which
+removes the last way in.
+
+**A healthy-looking but stale connector needs `launchctl kickstart -k`. Never a
+wait.** It holds the bad edge address until the process is restarted. There is no
+backoff, no retry ladder and no self-recovery inside cloudflared that fixes it, so
+"give it another ten minutes" is always the wrong call on this signature.
+
+Install (one-time, needs root; `install.sh` and `update-skills.sh` both attempt
+`sudo -n` and print this exact line when there is no passwordless sudo):
+
+```bash
+sudo bash platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh
+```
+
+It lays down `/Library/BlackCEO/rescue-tunnel-watchdog.sh` (0755 root:wheel) and the
+`com.blackceo.rescue-tunnel-watchdog` LaunchDaemon (StartInterval 120, RunAtLoad),
+then runs the sshd leg once immediately. Re-running it is safe.
+
+Per-box verify (needs sudo for the system-domain print):
+
+```bash
+sudo launchctl print system/com.blackceo.rescue-tunnel-watchdog | grep 'state ='
+# Expected: state = running
+
+tail -20 /Library/Logs/com.blackceo.rescue-tunnel-watchdog.log
+# Healthy: "OK: no stale-connector signature"
+# Stale:   "STALE: ... Kicking."  then  "KICKED: ... rc=0"
+# Neither: "undetermined: ..." means the counts could not be established and
+#          NOTHING was done. That is a correct answer, not a failure.
+```
+
+Diagnose a suspected stale connector by hand, without the watchdog:
+
+```bash
+# The label on this box
+ls /Library/LaunchDaemons/com.blackceo.rescue-*.plist
+
+# The signature: many RFC1918:7844 dial targets, ZERO registrations
+grep -cE '(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)[0-9.]+:7844' \
+  /Library/Logs/com.blackceo.rescue-<slug>.err.log
+grep -c 'Registered tunnel connection' \
+  /Library/Logs/com.blackceo.rescue-<slug>.out.log
+
+# The remedy, if the first count is high and the second is 0
+sudo launchctl kickstart -k system/com.blackceo.rescue-<slug>
+```
+
+If the box is unreachable over SSH entirely, the sshd leg is the thing to check
+once you are back in. `launchctl print-disabled system` is the AUTHORITATIVE view.
+`Disabled` = `true` inside `/System/Library/LaunchDaemons/ssh.plist` is Apple's
+shipped default marker, it is true on boxes where Remote Login is ON, and reading
+it produces a false positive every time:
+
+```bash
+sudo launchctl print-disabled system | grep com.openssh.sshd
+# "com.openssh.sshd" => disabled   ->  Remote Login is OFF
+sudo launchctl enable system/com.openssh.sshd
+sudo launchctl kickstart -k system/com.openssh.sshd
+nc -z 127.0.0.1 22 && echo "listener up"
+```
+
+Record the Wave D timestamp in the same ledger used for Waves A and B.
 
 ### Fleet client priority (Wi-Fi clients first)
 

@@ -88,15 +88,19 @@ APPLY=0 CHECK=0 FORCE_WINDOW=0
 CONFIG="${SMIB_CLIENT_CONFIG:-$STATE_DIR/client-config.json}"
 AGENT_ID="${SKILL57_CRON_AGENT:-main}"
 MARKER_DIR="$STATE_DIR"
+# F17 --verify: forwarding-adapter posture check against the durable cycle
+# service's engine-ownership record (exactly one active owner per company).
+VERIFY_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
         --check) CHECK=1; shift ;;
+        --verify) VERIFY_ONLY=1; shift ;;
         --config) CONFIG="${2:-}"; shift 2 ;;
         --agent) AGENT_ID="${2:-}"; shift 2 ;;
         --force-window) FORCE_WINDOW=1; shift ;;
         --marker-dir) MARKER_DIR="${2:-}"; shift 2 ;;
-        -h|--help) sed -n '2,69p' "$0"; exit 3 ;;
+        -h|--help) sed -n '2,72p' "$0"; exit 3 ;;
         *) echo "FATAL [$PROG]: unknown arg $1" >&2; exit 3 ;;
     esac
 done
@@ -150,6 +154,40 @@ in_fire_window() {
 }
 
 # ── --check: cross-store invariant ───────────────────────────────────────────
+if [ "$VERIFY_ONLY" -eq 1 ]; then
+    # F17: verify the durable cycle service owns the schedule (engine-
+    # ownership record), with exactly one active owner per company.
+    OWN_JSON="${SOCIAL_CYCLE_STATE_DIR:-$OPENCLAW_DIR/data/social-cycle}/engine-ownership.json"
+    if [ ! -f "$OWN_JSON" ]; then
+        echo "NOTICE [$PROG]: engine-ownership.json not found at $OWN_JSON — the durable cycle service has not claimed ownership yet (deployment-phase; INSTALL.md documents the handover). The lightweight trigger remains the fallback owner." >&2
+        exit 5
+    fi
+    if python3 - "$OWN_JSON" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        rows = json.load(fh).get("rows", [])
+except (OSError, ValueError):
+    print("VERIFY-FAIL: unreadable engine-ownership record"); sys.exit(5)
+by_company = {}
+for r in rows:
+    e = by_company.setdefault(r.get("company_id"), {"active": 0, "superseded": 0})
+    if r.get("state") == "active": e["active"] += 1
+    elif r.get("state") == "superseded": e["superseded"] += 1
+ok = bool(by_company) and all(v["active"] == 1 for v in by_company.values())
+print("VERIFY-JSON: companies=%d active_owners=%d superseded=%d ok=%s" % (
+    len(by_company), sum(1 for v in by_company.values() if v["active"] == 1),
+    sum(v["superseded"] for v in by_company.values()), ok))
+sys.exit(0 if ok else 5)
+PY
+    then
+        echo "OK [$PROG]: durable engine-ownership verified — forwarding adapter posture confirmed." >&2
+        exit 0
+    fi
+    echo "NOTICE [$PROG]: engine-ownership record does not show exactly one active owner per company." >&2
+    exit 5
+fi
+
 if [ "$CHECK" -eq 1 ]; then
     have "$OPENCLAW_BIN" || { echo "FATAL [$PROG]: openclaw CLI not on PATH — cannot check the gateway cron store." >&2; exit 6; }
     GW="$(gateway_list)"
@@ -168,19 +206,26 @@ fi
 # ── The cron MESSAGE the gateway job delivers to the agent on fire ───────────
 # Mirrors Skill 35's proven message shape (idempotency marker first, owner
 # theme question, then the run, then the marker write) but drives 57's ONE
-# sanctioned entry. sessionTarget=main + --light-context, cheap-model guidance:
-# same furnace-safe pattern as Skill 35 and Skill 38.
-CRON_MESSAGE="Skill 57 weekly theme trigger (Saturday 8 AM). \
-Before doing anything, check the idempotency marker: ${MARKER_JSON}. \
-If it exists and its 'weekISO' field matches the current ISO week \
-(date +%G-W%V), skip gracefully — this week's social run already happened \
-(this also prevents a double-run in the week a box migrates from Skill 35). \
-Otherwise: \
-(1) Ask the owner: 'What is the content theme for this week's social media content? \
-If you do not reply by noon I will use the evergreen theme.' \
-Wait up to 1 hour for a reply. If no reply by 12:00 PM ask once more. \
-If no reply by 6:00 PM, use the evergreen theme. \
-(2) After the theme is confirmed or defaulted, run the weekly engine through the ONE \
+# sanctioned entry. F07/F17 (social/wf10-weekly-expiry): the invitation
+# cadence is NO LONGER a prompt. The DURABLE cycle service
+# (shared-utils/social_cycle_service.py + the CC node-cron engine) owns the
+# state machine — one cycle per company+local week, persisted invitation/
+# reminder/cutoff state, bounded reminders, next week created independently.
+# This trigger is a FORWARDING ADAPTER: a short step that advances the cycle
+# service and runs the engine — never a multi-hour agent wait, never a
+# noon/6PM fallback instruction (those live in the durable service).
+# sessionTarget=main + --light-context, cheap-model guidance: same
+# furnace-safe pattern as Skill 35 and Skill 38.
+CRON_MESSAGE="Skill 57 weekly cycle trigger (Saturday 8 AM) — forwarding adapter for the durable cycle service. \
+Run ONLY these short steps and exit: \
+(1) Advance the durable cycle service for this box's company (its engine-ownership record lives in \
+\${HOME}/.openclaw/data/social-cycle/engine-ownership.json; when the Command Center is live its node-cron \
+scheduler already owns the cadence — VERIFY ownership instead of running a second cadence). \
+The cycle service ensures this client-local week's cycle, sends the invitation through the theme-intake \
+outbox, fires bounded reminders, applies the cutoff disposition, and rolls next week. \
+NEVER wait for a reply inside this session. NEVER hardcode a noon/6PM fallback — the durable service \
+owns reminder and cutoff timing. \
+(2) After the cycle service reports a theme (or the cutoff disposition), run the weekly engine through the ONE \
 sanctioned entry: create a fresh run directory and run \
 bash ${ENTRY} --run-dir <run-dir> --mode week \
 (client config: ${CONFIG}). \
@@ -188,7 +233,7 @@ bash ${ENTRY} --run-dir <run-dir> --mode week \
 {\"weekISO\": \"<current ISO week from date +%G-W%V>\", \"theme\": \"<chosen theme>\", \"firedAt\": \"<UTC now>\"} \
 so re-fires this week are skipped. \
 Model guidance: use the cheapest available CLIENT model (flash tier or a free \
-OpenRouter fallback) for the weekly question — never a metered pro model, and \
+OpenRouter fallback) for this short trigger — never a metered pro model, and \
 client providers ONLY."
 
 # ── Dry-run (default): print the plan, change NOTHING ────────────────────────
@@ -196,7 +241,7 @@ echo "=== [$PROG] weekly-theme cron plan (gateway store) ==="
 echo "  cron name : $CRON_NAME"
 echo "  schedule  : $SCHEDULE  (Saturday 08:00)"
 echo "  store     : OpenClaw gateway cron store (openclaw cron add; sessionTarget=$SESSION_TARGET, agent=$AGENT_ID, light-context)"
-echo "  fires     : agent message -> marker check -> owner theme question -> bash $ENTRY --mode week"
+echo "  fires     : agent message -> cycle-service advance (short) -> bash $ENTRY --mode week"
 echo "  retires   : gateway '$LEGACY_GATEWAY_NAME' + crontab lines matching /$LEGACY_CRONTAB_RE/"
 echo "  carries   : $LEGACY_MARKER_JSON -> $MARKER_JSON (same-week de-dup)"
 echo "  config    : $CONFIG (fail-closed gate on --apply)"

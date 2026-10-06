@@ -59,7 +59,7 @@ The Generation Operator is responsible for assembling a complete, contradiction-
 
 6. **Select per-model delivery format (NEGATIVE-PROMPTING-SOP §3):**
    - **Ideogram V3 only:** deliver the merged avoid-list as a comma-separated phrase list in the `negative_prompt` field (5,000-char capacity). Do not also embed negatives in the main prompt — that wastes character budget.
-   - **All other endpoints (GPT-Image-2, Nano Banana 2, Seedream 4.5, Wan 2.7):** convert the top-10 (or top-5 for Seedream) selected items to explicit imperative sentences ("Do not..."). Place as the final paragraph of the assembled prompt. Record the conversion mapping in the compiled artifact.
+   - **All other endpoints (GPT-Image-2.5, Nano Banana 2, Seedream 4.5, Wan 2.7):** convert the top-10 (or top-5 for Seedream) selected items to explicit imperative sentences ("Do not..."). Place as the final paragraph of the assembled prompt. Record the conversion mapping in the compiled artifact.
    - Record the delivery format chosen in the compiled artifact.
 
 7. **Write the compiled artifact.** For every job (single or multi-asset), write `_local/jobs/{job-id}/compiled-negatives.json` with:

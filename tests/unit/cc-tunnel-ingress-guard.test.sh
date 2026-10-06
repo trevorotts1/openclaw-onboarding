@@ -125,7 +125,7 @@ fi
 # ── 7. ONE source of truth: the CC port literal matches across lib + writers ──
 # run-full-install.sh DASHBOARD_PORT and create-tunnel.sh CC_INGRESS_PORT and the
 # Skill-38 guard's CC_PORT_EXPECTED must all equal the lib's CC_INGRESS_PORT.
-rfi_port="$(grep -E '^DASHBOARD_PORT=' "$RFI" | head -1 | sed -E 's/.*=([0-9]+).*/\1/')"
+rfi_port="$(grep -E 'DASHBOARD_PORT="\$\{CC_PORT:-[0-9]+\}"' "$RFI" | head -1 | sed -E 's/.*:-([0-9]+)\}.*/\1/')"
 ct_port="$(grep -E 'CC_INGRESS_PORT="\$\{CC_INGRESS_PORT:-[0-9]+\}"' "$CREATE_TUNNEL" | head -1 | sed -E 's/.*:-([0-9]+)\}.*/\1/')"
 s38_port="$(grep -E 'CC_PORT_EXPECTED="[0-9]+"' "$S38" | head -1 | sed -E 's/.*"([0-9]+)".*/\1/')"
 eq "$rfi_port"  "$CC_INGRESS_PORT" "CC port literal in run-full-install == authoritative $CC_INGRESS_PORT"

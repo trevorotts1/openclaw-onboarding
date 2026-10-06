@@ -55,9 +55,10 @@
 #   bash browser_manager.sh session-name
 #   bash browser_manager.sh auth-age [-- <session>]    # F5-b: seconds since last seed (-1=unknown)
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
+#   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v22.0.88"
+BROWSER_MANAGER_VERSION="v25.3.21"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -444,11 +445,30 @@ bm_breaker_check() {
     if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
       local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh."
       local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
-      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-        -H 'Content-Type: application/json' \
-        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-        -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
-        --max-time 15 >/dev/null 2>&1 || true
+      # F47/F50: identify the box by its canonical fleet slug, NEVER the hostname --
+      # RR-01 answers 400 "unresolvable box" to a post with no boxName, and a hostname
+      # matches no client. No slug = nothing the intake can accept, so say so loudly
+      # instead of posting a request that is rejected and hidden.
+      # Declare first, assign after: bash 3.2 (macOS) brace-expands the JSON in
+      # `local x="$(curl ... -d "{...,...}")"` into several separate curl calls.
+      local _esc_box _esc_client _esc_code
+      _esc_box="${FLEET_STANDING_BOX_SLUG:-}"
+      if [[ -z "$_esc_box" ]]; then
+        echo "WARN: FLEET_STANDING_BOX_SLUG is not set - Rescue Rangers escalation NOT sent (the intake rejects a post with no boxName)" >&2
+      else
+        _esc_client="${FLEET_STANDING_CLIENT_LABEL:-$_esc_box}"
+        _esc_box="${_esc_box//\\/\\\\}"; _esc_box="${_esc_box//\"/\\\"}"
+        _esc_client="${_esc_client//\\/\\\\}"; _esc_client="${_esc_client//\"/\\\"}"
+        _esc_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+          -H 'Content-Type: application/json' \
+          ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
+          -d "{\"action\":\"escalate\",\"boxName\":\"${_esc_box}\",\"clientName\":\"${_esc_client}\",\"agent\":\"browser_manager\",\"message\":\"${_bm_esc}\"}" \
+          --max-time 15 2>/dev/null || true)"
+        case "$_esc_code" in
+          2??) : ;;
+          *) echo "WARN: rescue-rangers escalation not accepted (HTTP ${_esc_code:-none}); this alarm did NOT reach Rescue Rangers" >&2 ;;
+        esac
+      fi
     fi
     echo "REFUSE: circuit-breaker TRIPPED ($cnt opens / ${AB_BREAKER_WINDOW}s). Build PARKED (qc-failed) — durable box-level PARK written; the resume cron will STOP. Escalated to Rescue Rangers. STOP." >&2
     exit 75
@@ -552,6 +572,34 @@ bm_stale_env_preflight() {
   local warn
   warn="$("$py" "$self_dir/browser_manager.py" --stale-env-preflight 2>/dev/null)" || return 0
   [ -n "$warn" ] && echo "$warn" >&2
+  return 0
+}
+
+# P0-6 / plan 2.4-2: capability-probe advisory preflight. Mirror of
+# bm_stale_env_preflight: runs the probe once, WARNs on stderr when
+# selectedLane is null or blockers exist (the WARN lines come from the
+# python side — one implementation, the shell only forwards), and NEVER
+# fails bm_ensure — a probe finding must not become an unplanned
+# build-blocking gate. The probe is lock-free and read-only: it never
+# takes the singleton lock, never opens or closes a browser, and never
+# triggers the login-bounce reseed path. The JSON receipt lands in
+# working/skill6-capability.json (written by the python side); stdout is
+# discarded here because the receipt, not the printout, is the artifact.
+bm_capability_preflight() {
+  # Test-isolation defer: BM_DURABLE_ROOT_OVERRIDE set (even empty) marks a
+  # harness context (production callers never set it). The probe shells out to
+  # `openclaw`, which bootstraps ~/.openclaw state under the caller's HOME —
+  # under a harness fake HOME that violates test isolation (the singleton
+  # suite asserts the fake HOME gains no .openclaw). Ensure is advisory and
+  # re-probes on the next REAL build, so deferring is free.
+  [ "${BM_DURABLE_ROOT_OVERRIDE+x}" = x ] && return 0
+  local py
+  py="$(command -v python3 || true)"
+  [ -z "$py" ] && return 0   # no python3 on PATH — silent, advisory only
+  local self_dir
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  [ -f "$self_dir/browser_manager.py" ] || return 0
+  "$py" "$self_dir/browser_manager.py" --capability-probe >/dev/null 2>&2 || return 0
   return 0
 }
 
@@ -741,6 +789,7 @@ _bm_guard_session_or_heal() {
 bm_ensure() {
   bm_require_current_guard || return $?   # B1: refuse old-guard / headed launch
   bm_stale_env_preflight                  # B-U15 item 3: advisory, never fails ensure
+  bm_capability_preflight                 # P0-6: capability-probe advisory, never fails ensure
   local session
   session="$(bm_session_name)"
   bm_assert_session "$session"
@@ -831,6 +880,21 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       else
         echo "FRESH"; exit 1
       fi
+      ;;
+    probe)
+      # P0-6 / plan 2.4-1: capability probe. LOCK-FREE (auth-age model):
+      # never takes the box singleton lock (a probe subprocess that took the
+      # lock while bm_ensure holds it would self-deadlock AB_LOCK_WAIT=900s).
+      # ADVISORY: the python side ALWAYS exits 0 (JSON on stdout, WARNs on
+      # stderr); we exit 0 even if python3/browser_manager.py is absent.
+      _bm_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+      if [ -f "$_bm_self_dir/browser_manager.py" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$_bm_self_dir/browser_manager.py" --capability-probe
+      else
+        echo "WARN capability-probe: python3/browser_manager.py unavailable — probe skipped (advisory, exit 0)" >&2
+        echo '{"probedAt": "", "selectedLane": null, "blockers": ["probe-error"], "warnings": ["python3 or browser_manager.py unavailable"], "lanes": {}, "error": "skipped"}'
+      fi
+      exit 0   # advisory ALWAYS 0 — distinguishable by stderr text, not code
       ;;
     ensure)
       bm_ensure || exit $?    # B1 gate refusal (75/76) must NOT print "ENSURED"
@@ -954,7 +1018,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "TORN-DOWN: session=$(bm_session_name)"
       ;;
     *)
-      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale} [-- args...]" >&2
+      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|probe} [-- args...]" >&2
       exit 64
       ;;
   esac

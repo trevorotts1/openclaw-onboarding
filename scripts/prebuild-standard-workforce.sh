@@ -74,7 +74,7 @@ if [ ! -f "$ENGINE" ]; then
 fi
 
 # Pick a python3: explicit override, then PATH python3, then PATH python.
-PY="${PYTHON_BIN:-}"
+PY="${WORKFORCE_PYTHON:-${PYTHON_BIN:-}}"
 if [ -z "$PY" ]; then
   if command -v python3 >/dev/null 2>&1; then
     PY="python3"
@@ -85,6 +85,9 @@ if [ -z "$PY" ]; then
     exit 1
   fi
 fi
+
+"$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)' || { echo "Python 3.9+ required" >&2; exit 1; }
+export WORKFORCE_PYTHON="$PY"
 
 # The engine is the single writer; this wrapper only validates entry and
 # forwards. All consent/floor/materialization/state logic lives there so the

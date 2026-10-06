@@ -20,9 +20,14 @@ has no origin. Fix: force TCP (`--protocol http2`) so NAT-aging no longer applie
 | C | 20s edge ping (keeps NAT warm even on QUIC; safety net before/after sudo harden) | no sudo | `install-keepalive-agent.sh` |
 | D-nosudo | */5 watchdog (detects dead connector, logs ESCALATE for root daemon) | no sudo | `install-watchdog-agent.sh` |
 | D-sudo | `pmset -c sleep 0` (AC no-sleep; box stays up on mains power) | sudo | `harden-mac-tunnel.sh` |
+| E | Rescue-tunnel reboot-stale watchdog: kicks a connector that is ALIVE but has NEVER registered, and re-enables a disabled sshd | sudo (once) | `install-rescue-tunnel-watchdog.sh` |
 
 Layers C and D-nosudo alone stop most drops with no password. Layer A is the root fix.
 Both together = fully bulletproof.
+
+Layer E is a DIFFERENT failure, not a stronger version of the ones above. Layers A
+through D keep a connector CONNECTED. Layer E catches a connector that is running
+and looks fine to every other check while being permanently useless.
 
 > **Service self-heal:** keeping the connector *connected* is this kit's job; keeping
 > its LaunchAgent (and the OpenClaw gateway) *bootstrapped and running* after a
@@ -91,6 +96,69 @@ Record each box in the fleet ledger:
 
 ---
 
+## Layer E, rescue-tunnel reboot-stale watchdog (sudo, once)
+
+**What it catches.** The rescue cloudflared connector on a client Mac is a
+SYSTEM-domain daemon named `com.blackceo.rescue-<slug>`, installed by an operator
+runbook rather than by this repo. After a reboot it can come back holding a stale
+cached edge address and spend the rest of its life dialing the LAN router (an
+RFC1918 address on port 7844) instead of a Cloudflare edge. It never registers a
+tunnel connection, and because the process is ALIVE, launchd `KeepAlive` keeps it
+running forever.
+
+**Why nothing else saw it.** `install-watchdog-agent.sh` (Layer D-nosudo) checks
+only `pgrep -f 'cloudflared.*tunnel'`, and the stale connector IS running, so it
+reports OK. It also only knows the label `com.cloudflare.cloudflared`.
+`platform/mac/service-selfheal/remediate.sh` covers `gui/` LaunchAgents only.
+`harden-mac-tunnel.sh` targets the cloudflared plist alone. Alive is not
+registered, and nothing here measured the difference.
+
+**What it does.** Every 120 seconds, as root:
+
+1. Resolves the label from `RESCUE_LABEL`, else the first
+   `/Library/LaunchDaemons/com.blackceo.rescue-*.plist`. No rescue daemon means a
+   `no-rescue-daemon` line and exit 0.
+2. Reads the last 200 lines of `/Library/Logs/<label>.err.log` and `.out.log` and
+   counts private-range `:7844` dial targets against `Registered tunnel
+   connection` lines.
+3. Five or more LAN dials AND zero registrations is the stale signature, so it
+   runs `launchctl kickstart -k system/<label>` and stamps
+   `/var/db/blackceo/rescue-watchdog.last-kick`. It refuses to kick again within
+   600 seconds.
+4. Separately, if `launchctl print-disabled system` says `com.openssh.sshd` is
+   disabled, it enables and kickstarts it, then proves a listener answered with
+   `nc -z 127.0.0.1 22`.
+
+Counts that do not parse as integers are reported `undetermined` and nothing
+happens. A failed measurement is never read as a zero.
+
+> **sshd trap:** `Disabled` = `true` inside
+> `/System/Library/LaunchDaemons/ssh.plist` is Apple's shipped default marker. It
+> is true on boxes where Remote Login is ON. It is not the authoritative state and
+> reading it produces a false positive every time. `launchctl print-disabled
+> system` is the authoritative view, and it is the only thing the watchdog reads.
+
+Install (needs root once; `install.sh` and `update-skills.sh` both try `sudo -n`
+and print this exact line when there is no passwordless sudo):
+
+```bash
+sudo bash platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh
+```
+
+Verify:
+
+```bash
+sudo launchctl print system/com.blackceo.rescue-tunnel-watchdog | grep 'state ='
+tail -20 /Library/Logs/com.blackceo.rescue-tunnel-watchdog.log
+# Healthy box: "OK: no stale-connector signature"
+# Stale box:   "STALE: ... Kicking." then "KICKED: ... rc=0"
+```
+
+A connector that looks healthy but is stale needs `launchctl kickstart -k`. It
+never recovers on its own, so waiting for it is never the remedy.
+
+---
+
 ## Verify a fully hardened box
 
 ```bash
@@ -126,6 +194,7 @@ grep 'no recent network activity' \
 - `KNOWN-ISSUES.md` -- entry 4: Mac-tunnel Wi-Fi QUIC drop (CF 1033/530)
 - `38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md` -- Layer 2 protocol section
 - `docs/OPERATOR-MAINTENANCE.md` -- existing-fleet remediation playbook
+- `docs/OPERATOR-MAINTENANCE.md` -- Wave D: the Layer E rescue-tunnel watchdog rollout
 - `mac-mini-onboarding/connect-openclaw-to-cloudflare-tunnel.md` -- Step 7b
 - Source diagnosis: Mac client live trace (287 drops, 22h)
 - CF docs: developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/cloudflared-parameters/run-parameters (`--protocol`)

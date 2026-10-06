@@ -57,12 +57,12 @@ If a `.skill` file exists in this folder, it is the skill package archive. The a
 ## Step 4: Read the Full Protocol
 
 Read teach-yourself-protocol-full.md completely. This contains:
-- The three-layer knowledge architecture (core summaries, deep files, folder structures)
-- The decision tree (understand, assess size, check conflicts, create files, write summaries)
+- The three-layer knowledge architecture (core-file pointers, deep files, folder structures)
+- The decision tree (understand, assess size, check conflicts, create files, write pointers)
 - Trigger recognition (explicit and implicit)
 - Conflict resolution procedures
 - Priority tagging system
-- The Five Question Test for lightweight summaries
+- The pointer test (what, where, when) for core-file entries
 - Staleness detection rules
 - 19 common mistakes to avoid
 
@@ -75,13 +75,13 @@ Follow CORE_UPDATES.md exactly. It tells you which files to update and provides 
 Ask the agent these questions. It must answer all correctly:
 
 1. "What is the Teach Yourself Protocol?"
-   Expected: Structured learning protocol with three layers - core summaries, deep files, folder structures
+   Expected: Structured learning protocol with three layers - core-file pointers, deep files, folder structures
 
 2. "Where do full documents go?"
    Expected: Master files folder (not core workspace files)
 
 3. "What goes in AGENTS.md or TOOLS.md?"
-   Expected: Lightweight summaries (10-25 lines) with file path references
+   Expected: One-to-two-sentence pointers (what, where, when), plus always-on rules kept inline and shortened
 
 4. "What triggers TYP?"
    Expected: Explicit ("teach yourself this") and implicit (large documents, corrections, preferences)

@@ -239,6 +239,18 @@ assert "regression test for ZHC- folder approval + folder-key plan hardening pre
   "grep -q 'TestZHCFolderStandingApprovalAndFolderKeyPlan' \"$SKILL44_DIR/tools/engine/tests/test_e2e_unit11.py\""
 assert "CORE_UPDATES.md sentinel present" \
   "grep -q 'skill:44-convert-and-flow-operator:core-update-applied' \"$SKILL44_DIR/CORE_UPDATES.md\""
+assert "contacts upsert command present (merge-safe,Amendment-1/2/3)" \
+  "grep -q 'contacts.command(.upsert.)' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "contacts update --tag refused destructive" \
+  "grep -q 'REFUSED.*contacts update --tag.*REPLACES ALL TAGS' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "upsert omits createNewIfDuplicateAllowed unless explicit flag" \
+  "grep -q 'createNewIfDuplicateAllowed' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "upsert verifies by read-back (WRITE SUCCEEDED . VERIFICATION INCOMPLETE)" \
+  "grep -q 'WRITE SUCCEEDED — VERIFICATION INCOMPLETE' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "upsert tags go via dedicated tag endpoint, never the upsert body" \
+  "grep -q '/tags.*data={.tags.: list(tags)}' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py\""
+assert "upsert regression suite present (18 behaviors)" \
+  "[ -f \"$SKILL44_DIR/tests/test_contacts_upsert.py\" ]"
 assert "CHANGELOG.md exists" \
   "[ -f \"$SKILL44_DIR/CHANGELOG.md\" ]"
 assert "QC.md exists" \

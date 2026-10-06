@@ -123,6 +123,9 @@ SANDBOX="$(mktemp -d)"
 SBROOT="$SANDBOX/repo"
 mkdir -p "$SBROOT"
 cp -R "$SKILL_DIR" "$SBROOT/23-ai-workforce-blueprint"
+# Mirror the installed builder dependency before testing artifact mutations.
+mkdir -p "$SBROOT/shared-utils"
+cp "$REPO_ROOT/shared-utils/ceo_execution_policy.py" "$SBROOT/shared-utils/"
 [ -d "$REPO_ROOT/42-personal-assistant-library" ] && \
   cp -R "$REPO_ROOT/42-personal-assistant-library" "$SBROOT/42-personal-assistant-library"
 # Repo-root files the artifact gate reads (BOOTSTRAP / SKILLS-COUNT / VERSION).

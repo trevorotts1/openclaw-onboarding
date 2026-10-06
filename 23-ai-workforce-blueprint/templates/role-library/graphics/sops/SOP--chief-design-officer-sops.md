@@ -111,7 +111,7 @@
 
 | Condition in the brief | Routing verdict | Rationale |
 |---|---|---|
-| Brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | Unambiguous audience-deck keywords; text-in-image is THE rule |
+| Deck brief names "webinar," "funnel," "virtual event," or "audience presentation" in any form | Presentations dept - CLIENT-WEBINAR-DECK-SOP | Unambiguous audience-deck keywords; text-in-image is THE rule |
 | Brief shows a REPRESENTATION_MIX or specific audience composition | Presentations dept | Audience-composition capture = audience deck |
 | Brief specifies one of the five CLIENT-WEBINAR-DECK-SOP archetypes | Presentations dept | Archetype match is deterministic |
 | Brief is a brand/strategy/campaign deck with a specific DIU style card ID in INDEX.md | DIU pipeline - PPT-ANALYSIS-SOP + Rotation Engine | Named style card = DIU scope |

@@ -11,7 +11,7 @@ call to the platform's own webhooks action API.
 
 ## Live-verified schema finding (schema drift is real; this layer matches the box)
 
-Verified against the INSTALLED gateway on the operator box, OpenClaw 2026.6.11
+Verified against the INSTALLED gateway on the operator box, OpenClaw 2026.9.4
 (`dist/extensions/webhooks/index.js`, `dist/.../secret-input`). The installed
 contract DIFFERS from the design document's illustrative sketch, so this layer
 follows the installed contract:
@@ -84,17 +84,28 @@ guessed.
 
 ## Wiring contract (how the deterministic handler runs given the real plugin)
 
-Because the installed plugin drives TaskFlows and has no pre-processing hook, the
-deterministic handler runs as the FIRST step of the flow, invoked as a single Bash
-tool call (a deterministic decision, never a model reasoning step, never Model
-Context Protocol):
+Two endpoints, two different callers. The upstream survey sender posts to the
+GATEWAY HOOKS INGRESS; the podcast agent uses the plugin route from inside its
+own turn. Pointing the sender at the plugin route is the ISSUE-02 defect: that
+route accepts ONLY the `{"action":"create_flow", ...}` envelope and answers a
+flat survey body with HTTP 400
+`action: Invalid discriminator value. Expected 'create_flow'`.
 
 1. The upstream sender (Convert and Flow workflow action, Make.com, or n8n) is
    configured at onboarding to POST to
-   `/plugins/webhooks/podcast-intake-<client-slug>` with
-   `Authorization: Bearer <secret>` and body
-   `{"action":"create_flow","goal":"Podcast intake","status":"queued",
-   "notifyPolicy":"silent","stateJson":{"engine":"podcast","raw_submission":{...survey...}}}`.
+   `https://<client-hooks-host>/hooks/podcast-intake-<client-slug>` with
+   `Authorization: Bearer <the box hooks token>` and a FLAT survey body (no
+   `action` wrapper). `register-podcast-hook.sh` registers the gateway hook
+   mapping for that path: `action: agent`, `agentId` the podcast department
+   agent, `sessionKey podcast:intake:<client-slug>`, `sessionMode: persistent`,
+   `wakeMode: now`, `deliver: false`, `allowUnsafeExternalContent: false`. The
+   mapping's `messageTemplate` carries the whole body as `{{.}}` and instructs
+   the turn deterministically: write the body to a file under
+   `<engine state dir>/intake-inbox/`, run
+   `intake_handler.py handle --payload <file> --mode trigger-flow --json`, and
+   then loop `podcast_step_driver.py next --job-id <id>` per SOP-PODCAST-01
+   Section 8. The gateway answers the POST when the run is ADMITTED, not when
+   the episode is done.
 2. The route's `controllerId` points at the podcast engine controller runbook
    (SKILL.md, a sibling slice); the runbook continues through Step 14 storing
    media in GHL and Step 15 publishing from those GHL URLs. Its first step
@@ -106,10 +117,14 @@ Context Protocol):
    closes (or parks) the plugin-created flow via the 409 guard, so no redelivery
    ever runs the pipeline twice.
 
-`--mode trigger-flow` is the degraded/direct path (a sender that cannot wrap the
-survey in an `action`): the handler itself calls `create_flow` + `run_task` with a
-pointer-based task instruction (never the payload inlined). `--mode no-flow` is the
-pure fast-ACK used by fixtures and the T1-T9 onboarding verification harness.
+`--mode trigger-flow` is the path the gateway hook mapping uses, and it is the
+PRIMARY path for every real client: the upstream sender posts a flat survey body,
+so there is no `action` envelope and no plugin-created flow, and the handler
+creates the durable managed flow itself with a pointer-based task instruction
+(never the payload inlined). `--mode in-flow` is for a sender that CAN wrap the
+survey in a `create_flow` envelope and posts to the plugin route directly.
+`--mode no-flow` is the pure fast-ACK used by fixtures and the T1-T9 onboarding
+verification harness.
 
 ## Fast-ACK response vocabulary
 

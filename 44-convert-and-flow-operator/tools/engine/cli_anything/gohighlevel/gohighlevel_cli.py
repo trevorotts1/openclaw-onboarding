@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re  # SEND_INTEGRITY_CODE_GATES_V1
 import sys
 
 import click
@@ -236,6 +237,117 @@ def contacts_create(ctx, email, phone, first_name, last_name, name, company_name
         _handle_error(e)
 
 
+@contacts.command("upsert")
+@click.option("--email", default=None, help="Match key: contact email")
+@click.option("--phone", default=None, help="Match key: contact phone (E.164)")
+@click.option("--first-name", default=None, help="First name")
+@click.option("--last-name", default=None, help="Last name")
+@click.option("--name", default=None, help="Full name")
+@click.option("--company", "company_name", default=None, help="Company name")
+@click.option("--tag", "tags", multiple=True, help="Tags to MERGE in (repeatable, additive)")
+@click.option("--source", default=None, help="Contact source")
+@click.option("--create-new-if-duplicate-allowed", "create_new", is_flag=True, default=False,
+              help="EXPLICIT-ONLY: send createNewIfDuplicateAllowed=true. Use ONLY when the "
+                   "owner explicitly asked for a NEW record even if a duplicate match exists. "
+                   "Generic add/save MUST omit this (it defaults to false/omitted).")
+@click.pass_context
+def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name, tags,
+                    source, create_new):
+    """Create-or-update a contact WITHOUT destroying existing data.
+
+    SEND_INTEGRITY_CODE_GATES_V1 — the merge-safe replacement for
+    `contacts update --tag`. HighLevel's Upsert endpoint resolves whether to
+    create or update according to the Location-level Allow Duplicate Contact
+    configuration and its configured matching priority.
+    Tags are NEVER sent in the upsert body (an upsert `tags` array can replace the
+    set); they are applied afterwards via POST /contacts/{id}/tags, which is
+    strictly additive. No existing tag can be dropped by this command.
+    """
+    try:
+        if not email and not phone:
+            click.echo("REFUSED: upsert needs a match key — pass --email and/or --phone.",
+                       err=True)
+            sys.exit(2)
+        body = {"locationId": _loc(ctx)}
+        if email:
+            body["email"] = email
+        if phone:
+            body["phone"] = phone
+        if first_name:
+            body["firstName"] = first_name
+        if last_name:
+            body["lastName"] = last_name
+        if name:
+            body["name"] = name
+        if company_name:
+            body["companyName"] = company_name
+        if source:
+            body["source"] = source
+        # createNewIfDuplicateAllowed is FALSE-or-OMITTED for generic add/save;
+        # TRUE only travels when the owner explicitly requested a new record.
+        if create_new:
+            body["createNewIfDuplicateAllowed"] = True
+        # NOTE: `tags` deliberately NOT placed in the upsert body — see docstring.
+        data = api.post("/contacts/upsert", data=body)
+        contact_id = None
+        if isinstance(data, dict):
+            rec = data.get("contact") or data
+            if isinstance(rec, dict):
+                contact_id = rec.get("id") or rec.get("contactId") or rec.get("_id")
+        if tags:
+            if not contact_id:
+                click.echo("WARNING: upsert succeeded but returned no contact id — tags were "
+                           "NOT applied. Apply them explicitly with `caf contacts add-tag`.",
+                           err=True)
+            else:
+                api.post("/contacts/%s/tags" % contact_id, data={"tags": list(tags)})
+        # VERIFY AFTER WRITE: read the record back and confirm the intended
+        # fields landed. A failed read NEVER re-POSTs — that could create a
+        # duplicate. The read is retried read-only (one retry); an unrecoverable
+        # read is reported accurately, not hidden.
+        intended = {k: v for k, v in body.items() if k != "locationId"}
+        verified = False
+        if contact_id:
+            read_back, read_err = None, None
+            for _attempt in range(2):
+                try:
+                    read_back = api.get("/contacts/%s" % contact_id)
+                    read_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001 — transient read, retry once
+                    read_err = exc
+            if read_back is None:
+                click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: POST /contacts/upsert "
+                           "succeeded but GET /contacts/%s failed (%s). The write is NOT "
+                           "confirmed. DO NOT re-run upsert blindly — read the record "
+                           "first (`caf contacts get %s`)."
+                           % (contact_id, read_err, contact_id), err=True)
+            else:
+                if isinstance(read_back, dict):
+                    seen = read_back.get("contact") if isinstance(
+                        read_back.get("contact"), dict) else read_back
+                else:
+                    seen = {}
+                missing = [k for k, v in intended.items() if seen.get(k) != v]
+                if missing:
+                    click.echo("WRITE SUCCEEDED — VERIFICATION MISMATCH: these intended "
+                               "fields were not observed on read-back: %s. Confirm the "
+                               "record before reporting done." % ", ".join(missing),
+                               err=True)
+                else:
+                    verified = True
+        else:
+            click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: upsert returned no "
+                       "contact id, so the record could not be read back. Confirm the "
+                       "record before reporting done.", err=True)
+        label = "Contact Upserted (tags merged additively, none replaced)"
+        if verified:
+            label += " + VERIFIED (fields read back from GHL)"
+        _output(ctx, data, label)
+    except Exception as e:
+        _handle_error(e)
+
+
 @contacts.command("update")
 @click.argument("contact_id")
 @click.option("--email", default=None)
@@ -243,11 +355,30 @@ def contacts_create(ctx, email, phone, first_name, last_name, name, company_name
 @click.option("--first-name", default=None)
 @click.option("--last-name", default=None)
 @click.option("--company", "company_name", default=None)
-@click.option("--tag", "tags", multiple=True, help="Replace all tags")
+@click.option("--tag", "tags", multiple=True,
+              help="REFUSED — destructive. Use add-tag / remove-tag / upsert.")
 @click.pass_context
 def contacts_update(ctx, contact_id, email, phone, first_name, last_name, company_name, tags):
-    """Update a contact by ID."""
+    """Update a contact by ID (NON-TAG fields only — --tag is refused)."""
     try:
+        # SEND_INTEGRITY_CODE_GATES_V1 (2026-09-03, operator standing order).
+        # --tag sent a `tags` array to PUT /contacts/{id}; GoHighLevel REPLACES the
+        # entire tag set, destroying every tag not listed. Implicated in a ~3,000
+        # contact tag loss. Fail closed and point at the merge-safe paths.
+        if tags:
+            click.echo(
+                "REFUSED: `contacts update --tag` REPLACES ALL TAGS on the contact.\n"
+                "PUT /contacts/{id} overwrites the tag set — every tag you did not\n"
+                "list is destroyed. This has already cost a client 3,000 contacts'\n"
+                "tags. Use a merge-safe path instead:\n"
+                "  caf contacts add-tag <id> \"<tag>\"          # additive, safe\n"
+                "  caf contacts remove-tag <id> \"<tag>\"       # targeted removal\n"
+                "  caf contacts upsert --email <e> --tag <t>   # merges, never replaces\n"
+                "Non-tag fields (--email/--phone/--first-name/--last-name/--company)\n"
+                "still work on this command.",
+                err=True,
+            )
+            sys.exit(2)
         body = {}
         if email:
             body["email"] = email
@@ -1015,14 +1146,44 @@ def workflows_build(ctx, plan_file, folder):
 @click.option("--step-id", required=True, help="Step/action ID within the workflow")
 @click.option("--subject", default=None, help="New email subject")
 @click.option("--body-file", "body_file", default=None, type=click.Path(exists=True),
-              help="HTML file with new email body")
+              help="HTML file with new email body (must render >= 200 chars of text)")
+@click.option("--allow-short", is_flag=True, default=False,
+              help="Permit a body under 200 rendered chars (owner must have approved it)")
 @click.pass_context
-def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file):
+def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file, allow_short):
     """Patch a single email step in a workflow (internal API, write-gated).
 
     Requires --experimental. A pre-write snapshot is captured automatically.
+    SEND_INTEGRITY_CODE_GATES_V1: an empty/placeholder body is REFUSED before any
+    write, and the body is READ BACK from GHL after the write to prove it survived.
     """
     _require_experimental(ctx)
+    # ---- SEND_INTEGRITY_CODE_GATES_V1 pre-write body validation -------------
+    # This command previously accepted an EMPTY --body-file, wrote "" to BOTH
+    # attributes.body and attributes.html, printed {"ok": true}, and never read the
+    # workflow back. That is how ~3,000 emails went out with a subject and no body.
+    new_body = None
+    if body_file:
+        with open(body_file, encoding="utf-8", errors="replace") as _bf:
+            new_body = _bf.read()
+        _txt = re.sub(r"<[^>]+>", " ", new_body).replace("&nbsp;", " ")
+        _txt = " ".join(_txt.split())
+        if not _txt:
+            click.echo("REFUSED: --body-file '%s' renders to an EMPTY email body. "
+                       "Refusing to blank this email. Fix the file and re-run."
+                       % body_file, err=True)
+            sys.exit(2)
+        if len(_txt) < 200 and not allow_short:
+            click.echo("REFUSED: --body-file '%s' renders to only %d characters of text "
+                       "(minimum 200). This is almost always truncated or placeholder copy. "
+                       "Pass --allow-short ONLY if the owner approved a short body."
+                       % (body_file, len(_txt)), err=True)
+            sys.exit(2)
+        for _tok in ("TODO", "TBD", "LOREM IPSUM", "PLACEHOLDER", "XXXX"):
+            if _tok in _txt.upper():
+                click.echo("REFUSED: body contains placeholder text '%s'. That is not "
+                           "finished copy — do not ship it." % _tok, err=True)
+                sys.exit(2)
     try:
         from cli_anything.gohighlevel.utils.snapshot_manager import capture
         from cli_anything.gohighlevel.utils.write_lock import WriteLock
@@ -1048,9 +1209,9 @@ def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file):
                 if subject is not None:
                     attrs["subject"] = subject
                 if body_file:
-                    with open(body_file) as bf:
-                        attrs["body"] = bf.read()
-                        attrs["html"] = attrs["body"]
+                    # SEND_INTEGRITY_CODE_GATES_V1 — validated above, never re-read raw
+                    attrs["body"] = new_body
+                    attrs["html"] = new_body
                 patched = True
                 break
         if not patched:
@@ -1062,7 +1223,32 @@ def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file):
         if not put_result.ok:
             click.echo(f"Error: {put_result.error}", err=True)
             sys.exit(1)
-        _output(ctx, {"ok": True, "workflow_id": workflow_id, "step_id": step_id}, "Email Step Patched")
+        # ---- SEND_INTEGRITY_CODE_GATES_V1 MANDATORY POST-WRITE READ-BACK -----
+        # A PUT that returns ok is NOT proof the body survived. Re-read the
+        # workflow and assert the email body is actually non-empty in GHL.
+        verify = client.get_workflow(workflow_id)
+        observed_len, observed_snippet, observed_subject = -1, "", ""
+        if verify.ok and isinstance(verify.data, dict):
+            for _t in verify.data.get("workflowData", {}).get("templates", []):
+                if _t.get("id") == step_id or _t.get("name") == step_id:
+                    _a = _t.get("attributes", {}) or {}
+                    observed_subject = _a.get("subject") or ""
+                    _raw = _a.get("body") or _a.get("html") or ""
+                    _v = re.sub(r"<[^>]+>", " ", _raw).replace("&nbsp;", " ")
+                    _v = " ".join(_v.split())
+                    observed_len, observed_snippet = len(_v), _v[:200]
+                    break
+        if observed_len <= 0:
+            click.echo("VERIFY FAILED: after the write, the email body for step '%s' read "
+                       "back EMPTY (or the step could not be re-read). DO NOT report this "
+                       "as done. Restore the pre-write snapshot:\n"
+                       "    caf workflows restore %s" % (step_id, workflow_id), err=True)
+            sys.exit(3)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id, "step_id": step_id,
+                      "verified_subject": observed_subject,
+                      "verified_body_chars": observed_len,
+                      "verified_body_snippet": observed_snippet},
+                "Email Step Patched + VERIFIED (body read back from GHL)")
     except Exception as e:
         _handle_error(e)
 

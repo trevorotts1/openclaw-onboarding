@@ -50,7 +50,7 @@ QUALITY CONTROL
 - [ ] Attempt count recorded; three-strike cap honored if reached (stop, founder notified with failing checks and best draft).
 
 IMAGE
-- [ ] Cover art generated via Kie.ai GPT-image-2 at 1K square from the visual description plus episode theme, within polling bounds.
+- [ ] Cover art generated via Kie.ai GPT-Image-2.5 at 1K square from the visual description plus episode theme, within polling bounds.
 - [ ] Squared and compressed in-house with ffmpeg: JPEG, RGB, within 1400 to 3000, under 512 kilobytes, spec-valid filename. Never below 1400 square.
 
 AUDIO

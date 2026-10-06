@@ -1,6 +1,23 @@
 # Changelog - Skill 37: ZHC Closeout
 
-## [1.3.6] - 2026-07-05 - v12.14.14: doc-vs-code drift correction — version literal, model slugs, stale "Known Issues: None" (Wave-2 FIX-XC-13b, W2-doc-37)
+## v13.2.0 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+- `generate-infographics.sh` (workflow), `generate-visual-intelligence.sh` and `generate-celebration-video.sh` now call Skill 74's CLI for every KIE request (new `scripts/lib-kie74.sh`: submit, wait, upload `--file`, upload `--url`, run). Skill 74 is found as a sibling skill folder; if it is missing the generators stop with a clear message and never fall back to a second client.
+- Policy is unchanged and stays here: sunburst first with `nano-banana-2` as the fallback (and the early switch when the primary is rejected as unsupported), `gemini-omni-video` first with `veo3_fast` on the third attempt, the 8.5 gate, state fields, the public-reference rule and the transient "image fetch failed" re-host and re-submit.
+- Removed (duplicate KIE client): the per-script `submit_job` / `poll_job` curl code in both image generators; `submit_gemini_omni`, `poll_gemini_omni`, `submit_veo`, `poll_veo` and the result `curl` download in the video generator; `_curl_retry_post`, `_mime_for` and the own base64 and URL upload calls. Result files are saved by Skill 74 and moved into place.
+- Test hooks: `KIE_API_BASE` and `KIE_UPLOAD_BASE` still point a test at a local mock (mapped to Skill 74's localhost-only `KIE_LIVE_*` hooks). `test-celebration-video-public-refs.sh` was moved to the Skill 74 transport; new `test-image-generators-kie74.sh` covers sunburst-first, the early switch, the missing-Skill-74 failure and the no-second-client guard.
+- Note: the `veo3` and `veo3_fast` models run on the path their schema declares through Skill 74; if a box's KIE schema cannot be read for them the fallback attempt fails closed with Skill 74's message.
+
+## v13.1.6 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- **Image order fixed (contradiction):** `scripts/generate-infographics.sh` tried `nano-banana-2` first while `generate-visual-intelligence.sh` tried `gpt-image-2-5-sunburst-text-to-image` first. AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`, so both now use sunburst first and `nano-banana-2` only as the fallback; the per-account 422 `model name not supported` early switch is kept.
+- Docs aligned (SKILL.md, INSTRUCTIONS.md, INSTALL.md, CORE_UPDATES.md, `KNOWN-ISSUES.md`): model order, `ZHC_VIDEO_DURATION` default 8 (INSTRUCTIONS said 4), install text that named `gpt-image-2.5`/`veo3_fast` defaults the scripts do not use. All hard-coded prices removed; they point to `74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
+
+## [13.1.2] - 2026-09-06 — leave pre-identity onboarding state untouched
+
+- Stop closeout before failure metadata or verification writes when no client identity exists. Existing scoped builds keep the normal closeout gates; fresh onboarding no longer inherits a misleading pending-build stub.
+
+## [13.0.0] - 2026-07-05 - v12.14.14: doc-vs-code drift correction — version literal, model slugs, stale "Known Issues: None" (Wave-2 FIX-XC-13b, W2-doc-37)
 
 - **FIX-XC-13b — SKILL.md taught a stale `1.0.0` version literal.** `SKILL.md`'s Files table hardcoded `skill-version.txt` as "Currently `1.0.0`" while the skill was actually shipping v12.14.13. Replaced the frozen literal with a source-of-truth pointer ("read `skill-version.txt` at runtime; never hardcode the version elsewhere"), so the doc can no longer drift from the version file (the FIX-XC-13 pattern). `INSTALL.md`'s Known-Issues heading also referenced "v1.0.0" — removed.
 - **FIX-XC-13b — wrong image model slug vs the scripts.** `SKILL.md` (Cost Envelope table + "Workforce-Structure Infographic" section) taught the Infographic-#2 primary model as `gemini-3-1-flash-image`. That slug returns HTTP 422 on KIE and is NOT what the code uses: `scripts/generate-infographics.sh:257` pins `PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"` (the same script's header comment records the v10.X.4 correction away from `gemini-3-1-flash-image`). Corrected both SKILL.md references to `nano-banana-2` (noting the marketing name `gemini-3-1-flash-image` is the non-working slug), matching the script.
@@ -242,3 +259,7 @@ This skill is the state-machine-driven closeout layer. Same architectural patter
 
 ### Cost envelope
 ~$0.60 / client in KIE credits (worst case).
+
+## [v13.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

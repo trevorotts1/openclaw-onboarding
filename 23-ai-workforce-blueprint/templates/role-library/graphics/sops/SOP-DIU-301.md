@@ -86,7 +86,7 @@ Do not proceed until SOP-DIU-303 returns a compiled artifact with `contradiction
 ### Step 6 — Select model, tier, and endpoint (SOP-DIU-302)
 
 Run SOP-DIU-302 (Model Routing & API Execution) steps 1–6:
-- Read the PRIMARY column of MODEL-SPECS §2 routing table for the requested category and tier.
+- Read the First-choice column of the MODEL-SPECS §2 routing table for the requested category and tier.
 - Verify aspect ratio compatibility per MODEL-SPECS §1.
 - Apply the LONG-to-MEDIUM fallback rule (MODEL-SPECS §3) with CDO notification if triggered.
 - Select the exact JSON template from MODEL-SPECS §5 for the resolved endpoint.
@@ -101,7 +101,7 @@ If preflight fails on any check, halt submission immediately. Return the itemize
 
 ### Step 8 — Submit and exit (SOP-DIU-302 steps 7–10)
 
-Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId` from the response immediately. Write the receipt file to `_local/receipts/{receipt-id}.json` with `state: submitted` before exiting. Exit. The cron poller handles completion detection via `getTaskInfo` — do not hold the session open polling for results.
+Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId` from the response immediately. Write the receipt file to `_local/receipts/{receipt-id}.json` with `state: submitted` before exiting. Exit. The Render Dispatcher's poller handles completion detection via `recordInfo` — do not hold the session open polling for results.
 
 ---
 
@@ -134,7 +134,7 @@ Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId`
 
 ## Handoff Conditions
 
-- **Normal completion:** Receipt written with `taskId`; Operator exits. Cron poller takes over via `getTaskInfo`. When the poller detects `state: success`, SOP-DIU-601 postflight runs and flips the receipt to `complete`; CDO and requestor are notified.
+- **Normal completion:** Receipt written with `taskId`; Operator exits. The Render Dispatcher's poller takes over via `recordInfo`. When the poller detects `state: success`, SOP-DIU-601 postflight runs and flips the receipt to `complete`; CDO and requestor are notified.
 - **Off-style result (after postflight visual inspection):** Hand to Fidelity Tester (SOP-DIU-501a / SOP-DIU-501b) with the receipt, card ID + version, and filled prompt. Do not re-submit without Fidelity Tester diagnosis.
 - **Hard-rule violation detected (postflight inspection):** Hand immediately to SOP-DIU-604 (Hard-Rule Quarantine & Incident Response). Do not deliver the asset. Do not re-use it as a reference.
 - **Fallback or degradation event during submission:** Hand to SOP-DIU-603 (Fallback Ladder & Graceful Degradation) for ladder execution and CDO notification.

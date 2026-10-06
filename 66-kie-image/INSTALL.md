@@ -103,7 +103,7 @@ proves the endpoint answers and the credential authenticates:
 
 If the operator has ALREADY authorized a generation smoke test, one small
 verification image may be created on the operator account (never a client
-account): see EXAMPLES.md example 1 (GPT Image 2 t2i, 1K, 1:1) — but treat a
+account): see EXAMPLES.md example 1 (GPT Image 2.5 t2i, 1K, 1:1) — but treat a
 real generation as an authorized, deliberate act; do not "smoke test" on
 credits without explicit permission for this box.
 
@@ -140,9 +140,9 @@ SETUP CHECKLIST
 [ ] Test 2 passed — recordInfo probe answered without 401 (connectivity proven,
     no credits burned)
 [ ] normalize_alias.py --self-test PASS
-[ ] select_image_model.py --self-test PASS (15/15)
-[ ] validate_prompt.py --self-test PASS
-[ ] validate_payload.py --self-test PASS (40/40)
+[ ] select_image_model.py --self-test PASS (24/24)
+[ ] validate_prompt.py --self-test PASS (21/21)
+[ ] validate_payload.py --self-test PASS (49/49)
 [ ] wire.sh run — one block per core target, one sentinel, second run no-change
 [ ] CORE_UPDATES.md applied via wire.sh to the labeled core files
 

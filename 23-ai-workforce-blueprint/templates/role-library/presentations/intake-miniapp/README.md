@@ -1,7 +1,6 @@
 # Presentation Intake mini-app
 
-> **⚠️ DEPRECATED — 2026-08-19, D2/D3 reconciliation (see
-> `CONTROL/MASTER-WORK-ORDER-20260818.md` Wave D).** The "primary intake
+> **⚠️ DEPRECATED — 2026-08-19, D2/D3 reconciliation (Wave D).** The "primary intake
 > surface" claim below predates evidence gathered on 2026-08-19: the app that
 > is actually deployed, bridged, and referenced by this repo's own wiring is
 > **`../intake/interview-app/`**, not this directory. Specifically —
@@ -45,10 +44,14 @@ check was relocated from the retired `deck-build-guard.sh`, U025).
 | `worker/wrangler.toml` | Worker + D1 + route config — **domain placeholders, see DEPLOY.md** |
 | `pages/index.html` | The one-question-per-screen UI (single static file, theme-aware) |
 | `payload/build_questions_payload.py` | Generates `questions_payload` FROM the canonical intake JSONs |
-| `bridge/intake_bridge.py` | Box-side: `mint` a session, `sync` answers into the driver |
+| `bridge/intake_bridge.py` | Box-side: `mint` a session, `sync` answers into the driver | **DEPRECATED** — session commands now live on the live interview-app bridge (`intake/interview-app/bridge/intake_bridge.py`): `new` / `resume` / `list` |
 | `test/` | Offline gates: `node --test` (worker) + `unittest` (payload, bridge) |
 
 ## Flow
+
+> **DEPRECATED.** This flow used the deprecated miniapp bridge's `mint`. New work uses the LIVE interview-app bridge
+> (`intake/interview-app/bridge/intake_bridge.py`): `new` opens a fresh session per deck request (fresh
+> `presentation_id`), `resume` re-mints an expired link, `list` lists sessions.
 
 ```
 Buddy/Director opens a run

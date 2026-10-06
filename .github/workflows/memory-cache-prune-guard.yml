@@ -1,0 +1,62 @@
+name: Memory cache prune guard
+
+# Skill 31 memory maintenance. Fails the build if the nightly embedding-cache
+# prune stops deleting dead rows (stale provider key, or orphaned: the chunk it
+# was cached for is gone), starts judging agents by a box-wide key instead of
+# their own index stamp, stops compacting migration-left free pages, or if the
+# installer stops scheduling both jobs as silent command crons, stops honoring a
+# tombstone, or ever schedules a re-embed.
+#
+# tests/unit/memory-cache-prune.test.sh drives the real scripts against
+# throwaway SQLite DBs and a fake openclaw CLI. Falsified: 5 single-line
+# mutants of the scripts each fail it. No network, no gateway, no box.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/install.sh"
+      - "31-upgraded-memory-system/scripts/memory-cache-prune.sh"
+      - "31-upgraded-memory-system/scripts/memory-index-check.sh"
+      - "shared-utils/cron-lib.sh"
+      - "tests/unit/memory-cache-prune.test.sh"
+      - ".github/workflows/memory-cache-prune-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/install.sh"
+      - "31-upgraded-memory-system/scripts/memory-cache-prune.sh"
+      - "31-upgraded-memory-system/scripts/memory-index-check.sh"
+      - "shared-utils/cron-lib.sh"
+      - "tests/unit/memory-cache-prune.test.sh"
+      - ".github/workflows/memory-cache-prune-guard.yml"
+
+jobs:
+  memory-cache-prune-guard:
+    name: memory maintenance prunes dead cache rows and never re-embeds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in 31-upgraded-memory-system/install.sh \
+                   31-upgraded-memory-system/scripts/memory-cache-prune.sh \
+                   31-upgraded-memory-system/scripts/memory-index-check.sh \
+                   tests/unit/memory-cache-prune.test.sh; do
+            bash -n "$f"
+          done
+          echo "bash -n: PASS"
+
+      - name: Run the memory maintenance suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/memory-cache-prune.test.sh
+          echo "memory-cache-prune-guard: PASS"

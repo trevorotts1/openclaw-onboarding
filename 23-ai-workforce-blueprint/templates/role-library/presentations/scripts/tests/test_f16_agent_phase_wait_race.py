@@ -127,6 +127,17 @@ def _write_slide(rd: Path, n: int, mtime: float) -> None:
     p.write_text("x" * 9500)  # clears the (unrelated) length-only degraded floor if ever consulted
     import os
     os.utime(p, (mtime, mtime))
+    # F20 FIXTURE REPAIR: P4-PROMPT declares TWO produces_artifact entries --
+    # 'working/prompts/slide-*.txt' AND 'working/prompts/infographic-prompt.txt'
+    # (the second arrived with the infographic pipeline, after this test was
+    # written). Engine._artifacts_present() requires EVERY declared pattern, so
+    # a slide-only fixture reported "not present", the wait loop never reached
+    # the verifier tiebreaker these tests exist to pin, and the failures named
+    # a fixture gap rather than the behaviour under test. Seeded at the same
+    # mtime so each scenario's stale/growing semantics are unchanged.
+    ip = rd / "working" / "prompts" / "infographic-prompt.txt"
+    ip.write_text("y" * 9500)
+    os.utime(ip, (mtime, mtime))
 
 
 # ---------------------------------------------------------------------------

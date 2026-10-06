@@ -82,7 +82,7 @@ By the end of Skill 37 execution, the client has received **all of the following
 |---|---------|--------|
 | 1 | "🎉 Your zero-human company is built!" + summary stats | Composed from state file |
 | 2 | Workforce Structure infographic (Telegram sendPhoto) | HTML + Playwright Chromium screenshot (local, deterministic text) |
-| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI Gemini 3.1 Flash Image (Nano Banana 2) |
+| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`; fallback `nano-banana-2`) |
 | 4 | 4–8 sec celebration video (Telegram sendVideo, bytes uploaded) | KIE.AI Gemini Omni Video (fallback: Veo 3.1) |
 | 5 | "Your full Notion closeout doc → [link]" | Notion API |
 | 6 | "Your BlackCEO Command Center → [URL]" | Skill 32 output |
@@ -155,12 +155,18 @@ Same reason Skill 23's build-resume layer is a separate component:
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
 | Infographic #1 | Local HTML + Playwright Chromium (no model call) | $0 | 0 retries needed (deterministic) |
-| Infographic #2 | `nano-banana-2` (Nano Banana 2 / Gemini 3.1 Flash Image; fallback `gpt-image-2-text-to-image`) | ~$0.04 / ~$0.04 | 3 retries |
-| Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | ~$0.40 | 3 retries (with model fallback) |
+| Infographic #2 | `gpt-image-2-5-sunburst-text-to-image` (fallback `nano-banana-2`) | price: see price authority below | 3 retries |
+| Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | price: see price authority below | 3 retries (with model fallback) |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |
 
-Total worst-case cost per client: **~$0.45 in KIE credits** (Infographic #1 is now free; only Infographic #2 + celebration video hit KIE).
+Infographic #1 is free; only Infographic #2 + the celebration video hit KIE.
+
+**Price authority (one source):** this skill states no KIE prices. Read the live price with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`, falling back to the snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Credit preflight rule: required balance = estimated cost x 1.30 (`07-kie-setup/references/kie-common-rules.md`).
+
+## One KIE Path: Skill 74
+
+Every KIE call this skill makes (image job, video job, reference upload and re-host, result download) is the CLI of Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py ... --mode active --json`), called through `scripts/lib-kie74.sh`. Skill 74 is found as a sibling skill folder (like Skill 66 and 67). This skill keeps its own policy (model order, prompts, retry and fallback loop, 8.5 gate, state fields); it has no `createTask`, polling, upload or download code of its own. If Skill 74 is not installed the generators stop with a clear message; they never fall back to a second client.
 
 ## Video Model Selection
 
@@ -182,9 +188,9 @@ The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its t
 
 **Infographic #1** is rendered locally via HTML + CSS + a headless Chromium screenshot (Playwright). It is NOT a diffusion-model call.
 
-Why: diffusion models (GPT Image 2, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
+Why: diffusion models (GPT Image 2.5, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
 
-The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it now uses Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used), which has dramatically better text rendering than the prior `gpt-image-2`.
+The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it uses GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`) first, as pinned fleet-wide by AGENTS.md N43, with Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used) as the fallback. Skill 66 (`66-kie-image`) is the authoritative model registry; canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ## Files in This Folder
 
@@ -198,7 +204,8 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | `CHANGELOG.md` | Version history |
 | `skill-version.txt` | Machine-readable version pin — the single source of truth for this skill's version (read it at runtime; never hardcode the version elsewhere) |
 | `scripts/run-closeout.sh` | Top-level orchestrator |
-| `scripts/generate-infographics.sh` | KIE.AI calls for both infographics |
+| `scripts/lib-kie74.sh` | The one KIE path: thin wrappers over Skill 74's CLI (image job, upload, re-host, run) used by the three generators |
+| `scripts/generate-infographics.sh` | Infographic #1 local render; Infographic #2 KIE.AI call (sunburst first, `nano-banana-2` fallback) |
 | `scripts/generate-celebration-video.sh` | KIE.AI celebration video (primary `gemini-omni-video`; fallback `veo3_fast`/`veo3`) |
 | `scripts/create-notion-closeout.sh` | Notion API page-tree creation |
 | `scripts/send-telegram-celebration.sh` | 7-message Telegram delivery |
@@ -216,11 +223,12 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | Skill 23 build completed (`buildCompletedAt` set) | MANDATORY | Without it, no data to close out |
 | Skill 32 (Command Center Setup) installed | MANDATORY | Step 1 of pipeline calls Skill 32 |
 | Skill 07 (KIE.AI setup) installed + `KIE_API_KEY` env var | MANDATORY | Steps 2-4 use KIE.AI |
+| Skill 74 (`74-kie-live-adapter`) installed | MANDATORY | The only KIE transport (steps 3-4); no fallback client |
 | `NOTION_API_TOKEN` env var on the container | MANDATORY | Step 5 uses Notion API |
 | `NOTION_API_VERSION` env var (defaults to `2022-06-28` if unset) | RECOMMENDED | Notion API version pin |
 | `openclaw message send` working | MANDATORY | Step 6 uses Telegram delivery |
 | `jq` on PATH | MANDATORY | All scripts parse state file with jq |
-| `curl` on PATH | MANDATORY | KIE.AI + Notion HTTP calls |
+| `curl` on PATH | MANDATORY | Notion HTTP calls |
 
 ## Security Note
 

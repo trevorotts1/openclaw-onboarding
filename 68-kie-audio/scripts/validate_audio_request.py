@@ -2,7 +2,7 @@
 """validate_audio_request.py -- deterministic pre-dispatch validator for KIE audio.
 
 Skill 68 (kie-audio). Validates a payload JSON file against the FIRST-PARTY
-limits frozen in models.json / references (verified 2026-08-26). Pure offline.
+limits frozen in models.json / references (verified 2026-08-26). Offline, except that Skill 74 (optional) is asked to validate a named model missing from models.json and, for stt, to report from a free catalog GET.
 No API side effects. Exit codes:
 
   0 -- valid (or warning-level advisory; see report)
@@ -29,9 +29,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
 
 # ---------------------------------------------------------------------------
 # Verified facts (source: first-party KIE docs pages fetched 2026-08-26)
@@ -137,9 +141,37 @@ def _warn_unknown_fields(obj, known, label):
 # TTS sub-domain
 # ---------------------------------------------------------------------------
 
+def _validate_tts_via_adapter(p, model):
+    """A TTS model not in models.json (a live model KIE added later): Skill 74 validates the payload against the
+    live schema (registry snapshot fallback). Only an explicitly named model is checked; it is never selected or
+    made a default. Returns True when Skill 74 answered (errors/warnings recorded), False to fall through."""
+    inp = p.get("input")
+    if not isinstance(inp, dict):
+        return False
+    got = adapter_bridge.validate(model, inp)
+    if not got:
+        return False
+    if got.get("state") == "validated":
+        cap = got.get("capability") or ""
+        # Text to Speech only. Anything that is speech to text (the closed STT gate) or unknown is refused.
+        if re.search(r"speech[ -]to[ -]text", cap, re.I) or not re.search(r"text[ -]to[ -]speech", cap, re.I):
+            _err(f"tts: model {model!r} is not a Text to Speech model per Skill 74 "
+                 f"(capability {cap or 'unknown'}); refusing")
+        else:
+            _warn(f"tts: model {model!r} is not in models.json; validated by Skill 74 against its schema "
+                  "(explicit pick only, never auto-default)")
+        return True
+    if got.get("error"):
+        _err("tts: Skill 74 schema validation: %s" % got["error"].get("msg"))
+        return True
+    return False
+
+
 def validate_tts(p):
     model = p.get("model")
     if model not in GEMINI_TTS_MODELS + ELEVENLABS_MODELS:
+        if isinstance(model, str) and model and _validate_tts_via_adapter(p, model):
+            return
         _err(f"tts: unknown or unsupported model {model!r}; expect one of "
              f"{', '.join(GEMINI_TTS_MODELS + ELEVENLABS_MODELS)}")
         return
@@ -594,6 +626,15 @@ def validate_stt(p):
         _err(f"stt: dispatch attempt rejected -- {STT_NEGATIVE_TRAIL}")
         return
     print("[stt] " + STT_NEGATIVE_TRAIL)
+    cands = adapter_bridge.stt_candidates()  # free catalog GET; report only
+    if cands is None:
+        print("[stt] live catalog check: Skill 74 unavailable; status unchanged")
+    elif cands:
+        print("[stt] live catalog check (free GET): possible speech-to-text model(s): "
+              + ", ".join(str(c.get("model")) for c in cands)
+              + ". REPORT ONLY: dispatch_enabled stays false until the re-proof in references/stt.md passes.")
+    else:
+        print("[stt] live catalog check (free GET): no speech-to-text model in the live catalog")
 
 
 # ---------------------------------------------------------------------------
@@ -634,18 +675,31 @@ def main():
     return 0
 
 
-def _expect_exit(path, domain, want):
+def _expect_exit(path, domain, want, env=None, expect_out=None):
     import subprocess
     r = subprocess.run([sys.executable, __file__, "--domain", domain, "--payload", str(path)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     rc = r.returncode
     if rc != want:
         raise SystemExit(f"SELF-TEST FAIL: {path.name} ({domain}) rc={rc} want={want}\n{r.stdout}\n{r.stderr}")
+    if expect_out and expect_out not in r.stdout:
+        raise SystemExit(f"SELF-TEST FAIL: {path.name} ({domain}) output lacks {expect_out!r}\n{r.stdout}")
+
+
+def _fake_adapter_env(td, answers):
+    """Env whose KIE_LIVE_ADAPTER_PATH is a stand-in Skill 74 answering by subcommand (validate, discover)."""
+    script = td / "kie_live_adapter.py"
+    (td / "answers.json").write_text(json.dumps(answers), encoding="utf-8")
+    script.write_text("import json, os, sys\n"
+                      "a = json.load(open(os.path.join(os.path.dirname(__file__), 'answers.json')))\n"
+                      "sys.stdout.write(json.dumps(a.get(sys.argv[1], {})))\n", encoding="utf-8")
+    return dict(os.environ, KIE_LIVE_ADAPTER_PATH=str(script))
 
 
 def self_test():
     import tempfile
     ok = 0
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""  # hermetic: no sibling adapter, no network (children inherit)
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
 
@@ -760,7 +814,31 @@ def self_test():
                "taskId": "t1", "callBackUrl": "https://x/cb"}
         _expect_exit(write("addvoc-ok.json", av3), "music", 0)
 
-        ok = 21
+        # Skill 74 wiring (fake adapter): a live TTS model not in models.json, explicit pick only
+        tts_new = {"model": "newvendor/text-to-speech-9", "callBackUrl": "https://x/cb", "input": {"text": "hi"}}
+        env_tts = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Text to Speech", "error": None}})
+        _expect_exit(write("new-tts.json", tts_new), "tts", 0, env=env_tts, expect_out="validated by Skill 74")
+        env_vid = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Text to Video", "error": None}})
+        _expect_exit(write("new-notts.json", tts_new), "tts", 2, env=env_vid, expect_out="not a Text to Speech model")
+        env_bad = _fake_adapter_env(td, {"validate": {"state": "fail", "error": {"code": "validation_failed", "msg": "input.text: longer than maxLength 10"}}})
+        _expect_exit(write("new-tts-bad.json", tts_new), "tts", 2, env=env_bad, expect_out="Skill 74")
+        _expect_exit(write("new-tts-offline.json", tts_new), "tts", 2)  # adapter unreachable -> old rejection
+        env_stt_cap = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Speech to Text", "error": None}})
+        _expect_exit(write("new-stt-as-tts.json", tts_new), "tts", 2, env=env_stt_cap, expect_out="not a Text to Speech model")
+        env_mixed = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": "Text to Speech, Speech to Text", "error": None}})
+        _expect_exit(write("new-mixed-cap.json", tts_new), "tts", 2, env=env_mixed, expect_out="not a Text to Speech model")
+        env_nocap = _fake_adapter_env(td, {"validate": {"state": "validated", "capability": None, "error": None}})
+        _expect_exit(write("new-nocap.json", tts_new), "tts", 2, env=env_nocap)
+        # STT gate stays closed even when the live catalog lists a candidate; the candidate is only reported
+        env_stt = _fake_adapter_env(td, {"discover": {"state": "validated", "data": {"models": [
+            {"model": "elevenlabs/speech-to-text-v1", "taskType": ["Speech to Text"]},
+            {"model": "elevenlabs/text-to-speech-turbo-2-5", "taskType": ["Text to Speech"]}]}}})
+        _expect_exit(write("stt-inspect2.json", {}), "stt", 0, env=env_stt, expect_out="elevenlabs/speech-to-text-v1")
+        _expect_exit(write("stt-attempt2.json", {"model": "elevenlabs/speech-to-text-v1", "dispatch": True}), "stt", 2, env=env_stt)
+        env_none = _fake_adapter_env(td, {"discover": {"state": "validated", "data": {"models": []}}})
+        _expect_exit(write("stt-inspect3.json", {}), "stt", 0, env=env_none, expect_out="no speech-to-text model")
+
+        ok = 31
     print(f"SELF-TEST PASS: {ok} checks green")
     return 0
 

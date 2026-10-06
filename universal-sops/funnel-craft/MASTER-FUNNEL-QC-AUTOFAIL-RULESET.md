@@ -42,7 +42,7 @@ table in lockstep with the manifest.
 
 | Code | Fires when |
 |---|---|
-| AF-FUN-PROMPT-FLOOR / -CEILING | A prompt under 5,000 or over 19,000 stripped chars. |
+| AF-FUN-PROMPT-FLOOR / -CEILING | A prompt under the floor or over the ceiling of the stripped-length gate (the length budget is `kie-common-rules.md` rule 12: 80 percent floor, 100 percent ceiling of the model maximum; see SOP-FUNNEL-03). |
 | AF-FUN-PROMPT-DENSITY | Distinct-word density floor failed (padding attack). |
 | AF-FUN-PROMPT-GRADE | The Signature Grade Block is absent/altered. |
 | AF-FUN-PROMPT-NEGATIVE | The negative block is missing from the final paragraph. |
@@ -74,7 +74,7 @@ table in lockstep with the manifest.
 | Code | Fires when |
 |---|---|
 | AF-FUN-FRONT-DOOR | The orchestrator was called without the run-scoped 0600 nonce. |
-| AF-FUN-CANONICAL-BYPASS | A hand-rolled GHL/Kie/mail driver was detected in the run dir. |
+| AF-FUN-CANONICAL-BYPASS | A hand-rolled GHL/Kie/mail driver, a raw createTask or a KIE client script was detected in the run dir (Skill 74 result files directly inside `receipts/kie74/` are allow-listed). |
 | AF-FUN-HASH-PIN | The deployed provers do not match the pinned hash (`scripts/SF-PROVER-PIN.sha256`). |
 
 ---

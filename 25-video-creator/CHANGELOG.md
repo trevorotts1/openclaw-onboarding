@@ -1,6 +1,124 @@
 # Changelog — video-creator (Skill 25)
 
-## [6.6.1] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
+## [7.1.0] - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+### Changed
+- All KIE traffic (file upload, createTask, recordInfo polling, result download) now goes through Skill 74's CLI (`kie_live_adapter.py upload|run --mode active --json`), found as a sibling skill folder the same way Skill 67 is. The key travels in the child process environment, never on the command line.
+- Skill 25 keeps its own policy: model from Skill 67 (or `--model`), the per-model input table and validation, the 900 second deadline, and the output path with the ffprobe check on the finished file.
+- If Skill 74 is not installed the command fails with a clear message. There is no fallback to a second KIE client.
+
+### Removed (duplicate KIE client)
+- `_kie_call` (own HTTP request, body-code check), the own multipart upload to `kieai.redpandaai.co`, the own createTask and recordInfo polling loop, `KIE_API_BASE`, `KIE_UPLOAD_URL`, and the legacy `https://api.kie.ai/v1` endpoint rewrite. `AIProvider('kieai').endpoint` is now `None`.
+
+### Added
+- Runway and Veo now work: `runway` (`image_url`), `veo-3-1`, `veo3`, `veo3_fast`, `veo3_lite` (`image_urls`) are mapped with per-model input specs; the former "dedicated API, not supported" refusal is gone because Skill 74 submits to the path each model's schema declares. Skill 74 v1.1.1 saves a direct result link from such endpoints.
+- Tests: Skill 74 is stubbed at the `kie74` function (23 flow tests rewritten) plus tests that run the real `kie74` against a stub CLI (argv, key in env only, missing-adapter error) and a guard that `ai_providers.py` contains no KIE host or endpoint.
+
+## [7.0.4] - 2026-10-06 — fix: enforce per-model KIE input types; explicit image field type
+
+### Fixed
+- **Per-model input types** (`KIE_INPUT_SPECS` in `ai_providers.py`, from each mapped model's KIE docs page input
+  schema): `duration`, `resolution`, `aspect_ratio`, `seed`, `mode`, `quality` are coerced to the documented type and
+  enum before sending. Examples: Kling v2.5 turbo and Gemini Omni `duration` is a string (`"5"`), MiniMax H3 `duration`
+  is an integer 4 to 15, `resolution` uses each model's own spelling (`1080P`, `2K`, `4k`), and Pixverse takes
+  `quality` (Skill 25's resolution option is renamed). Invalid values fail BEFORE any HTTP call (including before the
+  image upload) with a message naming the allowed values. Documented-required inputs the client cannot know (for
+  example `mode`/`sound`/`multi_shots` on kling-3.0/video, `quality` on Pixverse) fail the same way and are supplied
+  with `input_extra` / new CLI `--input-extra '{"key": value}'` (also on `text_to_video.py`). Models not in the table
+  pass through unchanged.
+- **`--image-field` no longer guesses the type from a trailing "s".** New `--image-field-type string|array`
+  (`image_field_type=` in code); required with `--image-field` unless it names the model's own mapped key.
+- QC nits: Gemini Omni `seed` is limited to 0 to 2147483647; HappyHorse 1.1 `duration` must be integer-valued
+  (5.5 rejected); a model that uses a different key never receives Skill 25's name for it (Pixverse gets `quality`,
+  never `resolution`; both given with different values is an error); `--resolution` on `text_to_video.py` and
+  `image_to_video.py` accepts any value (for example 480p, 540p, 2K) and the model's own table decides, while
+  runway/pika/mock and local mode now reject unsupported values instead of silently ignoring them;
+  `image_to_video.py` no longer int()-casts the duration before per-model validation.
+- Re-verified against fresh docs fetches: kling-3.0-omni/image-to-video (note: its docs allow 16:9, 9:16, 1:1 only with
+  `customize_multi_shots`, otherwise `auto`), happyhorse/image-to-video, wan/3-0-video-prime. No mismatches in the table.
+- CI: the Skill 25 workflow job and step names no longer hard-code a test count (the 93-test anti-vacuity floor stays).
+
+## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model
+
+### Fixed
+- Image-to-video sent `input.image_urls`, which is not an input of the default model `wan/3-0-video` (its schema at
+  docs.kie.ai/market/wan/3-0-video takes `first_frame_url` as a single string, plus `last_frame_url` and
+  `reference_image_urls[]`). The image field is now chosen per model from what Skill 67 and the KIE docs establish:
+  `first_frame_url` (string): wan/3-0-video, wan/3-0-video-prime, wan/2-7-image-to-video, bytedance/seedance-2-5,
+  bytedance/seedance-2-mini, minimax-h3/image-to-video. `image_url` (string): kling/v2-5-turbo-image-to-video-pro.
+  `image_urls` (list): kling-3.0-omni/image-to-video, kling-3.0/video, pixverse-v6/image-to-video,
+  happyhorse-1-1/image-to-video, happyhorse/image-to-video, gemini-omni-video. Each is read from the model's KIE docs
+  page (source table in `ai_providers.py`). runway and veo3* use dedicated APIs and fail with a clear error; any other
+  model fails before any HTTP call with an error naming the model. `image_field` (CLI `--image-field`) overrides.
+- Tests updated and extended (established models, unknown model, override wins).
+
+## [7.0.2] - 2026-10-05 — fix: replace dead KIE video endpoint with live createTask flow
+
+### Fixed (root cause — the default `kieai` video path could never work)
+- **Evidence (live probe 2026-10-05, with known-good and fake-path controls):** `POST https://api.kie.ai/v1/video/generate`
+  (what `scripts/ai_providers.py` posted to) returns **HTTP 404 under both the `/v1` and `/api/v1` prefixes**; the control
+  (a known-live KIE route) answered normally and a fabricated path also 404'd, so the endpoint is dead, not the probe.
+  The old payload also carried **no model id**, and `_image_to_video_kieai` raised `NotImplementedError`.
+  `text_to_video.py` defaults to `--provider kieai`, so Skill 25's default video path failed on every box.
+- **Text-to-video and image-to-video now use KIE's live unified job API:** `POST /api/v1/jobs/createTask`
+  `{model, input:{...}}` -> `data.taskId`, then `GET /api/v1/jobs/recordInfo?taskId=` (states
+  waiting/queuing/generating/success/fail) with 3 s start and backoff to 15 s and a 900 s deadline. The body `code` is
+  checked on every call (HTTP 200 with code 402/429 is an error, not success). Results are read from
+  `data.response.resultUrls` or the parsed `data.resultJson`, then downloaded and ffprobe-validated immediately
+  (existing `_download_video`).
+- **Local images are uploaded** to `https://kieai.redpandaai.co/api/file-stream-upload` (multipart, `uploadPath`
+  `video-creator/inputs`) and `data.downloadUrl` is sent in `input.image_urls`.
+- **Model is never invented here:** it comes from Skill 67's selector (`67-kie-video/scripts/select_video_model.py`), located
+  as a sibling of the skills dir (`<skills>/67-kie-video`, then `~/.openclaw/skills`, `/data/.openclaw/skills`). If Skill 67 is
+  not installed the call fails with an actionable error before any HTTP. New `--model` on `text_to_video.py` and
+  `image_to_video.py` (KIE only): an explicit model id always wins and is sent unchanged. `--resolution` is mapped to the
+  spelling in Skill 67's `models.json` for that model.
+- **Key resolution** goes through the shared canon (`shared-utils/key_resolver.py`, service `kie`) with the previous
+  `KIE_API_KEY` / `KIEAI_API_KEY` environment read as fallback. Auth failures (401/403) stop after one attempt, never loop.
+- Legacy `https://api.kie.ai/v1` endpoints in old `config.json` files are replaced by `https://api.kie.ai/api/v1`.
+- Runway, Pika, mock, local, and all non-KIE behavior are unchanged.
+
+### Notes
+- Skill 74 (`74-kie-live-adapter`, landing separately) is the intended shared KIE transport. Skill 25 does not import it;
+  this fix is self-contained so the default path works today. Migrate to Skill 74 when it ships.
+- Not rebuilt: `video-creator.skill` (zip). It has been stale since 2026-03 (no CHANGELOG, tests, or `wire.sh`, and an older
+  `ai_providers.py`); installs copy from the numbered source via `wire.sh`, and no gate compares the zip to the sources.
+  Rebuilding would be an unrelated repackaging of the whole skill.
+- `style` is not a KIE input and is no longer sent; `seed`, `negative_prompt`, `aspect_ratio` are sent only when supplied.
+  The image field for image-to-video defaults to `image_urls` (Skill 67 registry convention); override with `image_field`.
+
+### Added
+- `tests/test_kie_live_flow.py` (30 tests, fake HTTP transport): createTask payload, poll states/backoff/timeout, body-code
+  errors, auth stop, upload, explicit-model passthrough, missing Skill 67, key resolution.
+
+## [7.0.1] - 2026-09-28 — fix: venv out of the skill root + no duplicate SKILL.md registration
+
+### Fixed (root cause — OpenClaw's skill scanner walked the runtime copy's venv on every rescan)
+- **`wire.sh`'s venv now lives OUTSIDE every skill root.** It previously built its ~215 MB venv at
+  `<VC_DIR>/venv`, inside `~/.openclaw/skills/` (VPS: `/data/.openclaw/skills/`). OpenClaw's skill
+  discovery walks every skill root up to depth 6 on every rescan, skipping only dot-prefixed names
+  and `node_modules` — never `venv` — so that tree got walked on every scan. The venv now defaults to
+  `$(dirname "$SKILLS_PARENT")/venvs/video-creator` (Mac `~/.openclaw/venvs/video-creator`, VPS
+  `/data/.openclaw/venvs/video-creator`), still overridable by `VENV_DIR`.
+- **Idempotent migration, not a rebuild.** A legacy `<VC_DIR>/venv` is `mv`'d to the new location
+  (fast, no reinstall); if both exist, the new one wins when its python can `import moviepy.editor`,
+  otherwise the legacy one replaces it. A venv relocated by `mv` (by this fix, or already moved by
+  hand before it existed) keeps a stale `bin/activate`/`bin/pip` pointing at the old path — wire.sh
+  now repairs `bin/activate` in place with `python -m venv --without-pip` and always invokes pip as
+  `"$VENV_DIR/bin/python" -m pip`, never bare `pip` or `source activate`.
+- **No more duplicate `video-creator` skill registration.** The runtime copy carried its own
+  `SKILL.md`, identical to this skill's, so OpenClaw registered `video-creator` twice and logged a
+  precedence collision on every scan. The copy step now excludes `SKILL.md`, `venv`, and `.venv`; any
+  stale `<VC_DIR>/SKILL.md` from an older install is removed on every pass.
+- **Docs and the drift-check registry updated to match:** `INSTALL.md`, `QC.md`, `INSTRUCTIONS.md`,
+  `SKILL.md`, `CORE_UPDATES.md`, and `scripts/tool-drift-check.sh`'s `video-creator` probe path.
+
+### Added
+- `tests/test_wire_contracts.py` — hermetic (no network, no pip) coverage of the migration: legacy
+  venv only, both present with a healthy new one, both present with a broken new one, and proof the
+  runtime copy gets neither a `SKILL.md` nor a copied venv.
+
+## [7.0.0] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
 
 ### Added
 - **Agnes Video 2.0 documented as an OPTIONAL alternative generator** in `SKILL.md`. KIE.ai (VEO)
@@ -102,3 +220,7 @@
 - Global version markers (`/version`, `install.sh`/`update-skills.sh` ONBOARDING_VERSION, root
   CHANGELOG header) are intentionally NOT touched here — the operator rolls them with
   `scripts/bump-version.sh` at merge.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

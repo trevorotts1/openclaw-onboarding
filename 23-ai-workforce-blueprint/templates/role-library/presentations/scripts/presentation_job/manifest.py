@@ -71,6 +71,16 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     # existing qc_generator_guard.py sweep, write one JSON file); no agent authoring,
     # no render, no network call.
     "P-QC-AGGREGATE": 10,
+    # W05-B2 / MASTER Part 8 Fix 29 fix-set rows (manifest v56):
+    # P-BUNDLE-GATE (Fix 1 spec: budget 10) is a purely mechanical read-and-gate
+    # over the finished bundle; P8.3-INFOGRAPHIC (Fix 2 spec: budget 30) renders
+    # one 9:16 PNG through the canonical Kie path with polling; P-STYLE-SPEC is
+    # a single JSON spec authoring pass; P-STYLE-PICK is the owner gateway wait
+    # (heartbeat 45 = the owner-response polling cadence the runner reports on).
+    "P-BUNDLE-GATE": 10,
+    "P8.3-INFOGRAPHIC": 30,
+    "P-STYLE-SPEC": 20,
+    "P-STYLE-PICK": 45,
     # Presentation Upsell (P-U-*) budgets — DESIGN-OPUS.md §10.1. These optional
     # phases are defers_unless-gated on the intake answers; deck-only runs never
     # reach them. DESIGN-* 60, HTML-* 30, GHL-* 60, FORM-* 30, VSL-RESEARCH 15,
@@ -90,6 +100,11 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-U-DESIGN-SALES": 60,
     "P-U-DESIGN-CHECKOUT": 60,
     "P-U-DESIGN-VSL": 60,
+    # FIX-28: RENDER phases are mechanical Kie image renders (poll + download + ledger);
+    # budget 30 matches P8.3-INFOGRAPHIC (same Kie render class), not DESIGN 60.
+    "P-U-DESIGN-RENDER-SALES": 30,
+    "P-U-DESIGN-RENDER-CHECKOUT": 30,
+    "P-U-DESIGN-RENDER-VSL": 30,
     "P-U-HTML-SALES": 30,
     "P-U-HTML-CHECKOUT": 30,
     "P-U-HTML-VSL": 30,
@@ -162,6 +177,20 @@ def is_sane_heartbeat_minutes(value: Any, phase_budget_minutes: Optional[int] = 
 # ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
 # ---------------------------------------------------------------------------
+
+class ManifestInvalid(ValueError):
+    """Raised by Manifest.load when a manifest file is structurally unusable.
+
+    MASTER Part 8 Fix 4 / QC FIX 8: the engine's load path must VALIDATE the
+    manifest's producer graph, not merely parse it. A scratch manifest whose
+    phase consumes an artifact (`consumes` list, or an executor that names a
+    working/... input) that NO phase produces must make `Manifest.load` raise
+    this exception NAMING the dangling artifact — exit codes cannot be caught
+    by callers that import this module, and a silently-loaded broken manifest
+    is the exact defect class this department's loaders exist to refuse.
+    """
+
+
 @dataclass
 class Phase:
     id: str
@@ -170,7 +199,15 @@ class Phase:
     produces_artifact: List[str]
     executor_kind: str                  # "script" | "agent" | "none"
     executor_cmd: Optional[str]
+    # PRES-011 (TODO step 1): explicit executor capabilities. External-effect
+    # phases (ghl_page_install / ghl_workflow_install / ghl_media_rest) must
+    # never be routed to a text-only writer (text_artifact / multi_artifact);
+    # executor_adapter names the owning installer family (skill06 / skill44).
+    # NOTE: both default AFTER verifier (dataclass rule: no non-default field
+    # may follow a defaulted one).
     verifier: Optional[str]
+    executor_capability: Optional[str] = None
+    executor_adapter: Optional[str] = None
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
@@ -190,6 +227,11 @@ class Phase:
     # Parsing this flag is what lets the engine finally honor its own manifest's
     # routing intent. See Engine._deck_creation_mode / Engine.run in phases.py.
     converter_path: bool = False
+    # PD-TEST-168 part B: a phase whose ONLY job is an optional deck extra (the
+    # infographic). Routed around -- not dispatched, not verified -- when the
+    # deck POSITIVELY does not require it. Same shape as converter_path above;
+    # see Engine._infographic_route_around_applies for the fail-open contract.
+    infographic_path: bool = False
     # P8.25-WORKBOOK fix: the manifest declares the " + " pair with the directory
     # on the FIRST pattern only ("working/deliverables/{deck_slug}-WORKBOOK.pdf +
     # {deck_slug}-WORKBOOK-FILLABLE.pdf"). A token-bearing bare filename inherits
@@ -208,6 +250,21 @@ class Phase:
     # coercing to 1 (capacity.py's own defect class, capacity.py:601-612).
     workers: int = 1
     defers_unless: Optional[str] = None   # DESIGN-OPUS.md §4 — optional-phase gate
+    # MASTER Part 8 Fix 8: the manifest now declares `consumes` on all 55 phases
+    # (the artifact list each phase reads; raw/… and working/copy/slides.json are
+    # root/engine-owned inputs). The scheduler's artifact DAG (execution_plan
+    # edge u→v iff produces(u) ∩ consumes(v) ≠ ∅) reads this field; empty list
+    # for phases that declare none (legacy manifests).
+    consumes: List[str] = field(default_factory=list)
+    # FIX 112 (2026-09-03): the manifest's optional `fanout` declaration
+    # ({"by": "slide"|"section"|"file", "max_units": N}) that turns the phase
+    # into N independent units dispatched through fanout.run_units (the FIX 15b
+    # generic glue in dispatcher.py: _phase_fanout_spec / _dispatch_phase_fanout_units).
+    # Carried RAW on the Phase object — parsing into fanout.FanoutSpec stays at
+    # the dispatcher seam (fanout.parse_fanout_field) so a malformed field raises
+    # FanoutSpecError as a phase error there, not a manifest-load refusal here.
+    # Absent/None => the serial single-target path, byte-for-byte unchanged.
+    fanout: Optional[Dict[str, Any]] = None
 
     @property
     def budget_minutes(self) -> int:
@@ -303,6 +360,173 @@ class Manifest:
         self.deliverables = self.raw.get("deliverables_required", [])
         self.client_package = self.raw.get("client_package_files", [])
 
+    @classmethod
+    def load(cls, path: Path) -> "Manifest":
+        """Load + validate a manifest, raising ManifestInvalid on any defect.
+
+        MASTER Part 8 Fix 4 (QC FIX 8): `Manifest(path)` keeps its historical
+        hard-exit behavior for parse/runtime errors (callers and ~20 test
+        files depend on `SystemExit` with EXIT_MANIFEST_MISMATCH), so the
+        validation lives here: `Manifest.load` runs the same construction,
+        then validates the producer graph and raises `ManifestInvalid`
+        instead of exiting. QC's FIX 8 control is the contract: edit a
+        scratch manifest so a phase consumes `working/nothing.json` that no
+        phase produces -> `Manifest.load` raises `ManifestInvalid` naming it.
+        """
+        try:
+            m = cls(path)
+        except (KeyError, AttributeError, TypeError) as exc:
+            # A phases[] entry missing "id" (or a top level that is not an
+            # object) dies in __init__/_parse_phases with a bare KeyError /
+            # AttributeError before validation can speak; load()'s contract
+            # is ManifestInvalid naming the defect.
+            raise ManifestInvalid(
+                f"{path}: manifest is structurally invalid: {type(exc).__name__}: {exc} "
+                f"(MASTER Part 8 Fix 4)"
+            ) from exc
+        m._validate()
+        return m
+
+    def _validate(self) -> None:
+        """Structural + producer-graph validation (MASTER Part 8 Fix 4).
+
+        Checks, each reported with the offending value named:
+          V1. top level is a JSON object with a phases list
+          V2. every phase has a string id
+          V3. phase ids are unique
+          V4. every phase declares at least one artifact pattern
+          V5. every artifact a phase CONSUMES is produced by some phase.
+              A phase's consumed inputs come from (a) an explicit
+              `consumes` list when the manifest declares one, and
+              (b) the executor cmd's working/ ecosystem/ pages/ delivery/
+              prompts/ design/ qc/ build path references (the engine's real
+              input surface — phases read files, the manifest's declared
+              `produces_artifact` of OTHER phases is what must cover them).
+              Exempt from V5 (MASTER Part 8 Fix 8: "any consumed artifact
+              with no producer that is not an intake file"): raw external
+              inputs (`raw/...` — the client's source brief, produced by
+              nothing in this pipeline), and the engine-owned run-setup
+              build inputs (`working/copy/slides.json`, written by the
+              engine's P4 copy tooling at run setup, not by a declared
+              phase; `working/copy/intake.json` is already covered — three
+              phases declare producing it).
+        """
+        if not isinstance(self.raw, dict):
+            raise ManifestInvalid(f"{self.path}: manifest top level must be a JSON object")
+        phases_raw = self.raw.get("phases")
+        if not isinstance(phases_raw, list) or not phases_raw:
+            raise ManifestInvalid(f"{self.path}: manifest declares no phases[] list")
+
+        ids: List[str] = []
+        for p in phases_raw:
+            if not isinstance(p, dict):
+                raise ManifestInvalid(f"{self.path}: a phases[] entry is not an object")
+            pid = p.get("id")
+            if not isinstance(pid, str) or not pid:
+                raise ManifestInvalid(f"{self.path}: phase without a string id: {p!r}"[:300])
+            ids.append(pid)
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        if dupes:
+            raise ManifestInvalid(f"{self.path}: duplicate phase ids: {', '.join(dupes)}")
+
+        # Producer universe: everything any phase declares it makes.
+        producers: Dict[str, List[str]] = {}
+        for p, phase_obj in zip(phases_raw, self.phases):
+            for pattern in phase_obj.produces_artifact:
+                producers.setdefault(_pattern_norm(pattern), []).append(phase_obj.id)
+
+        # PRES-011 (V6): executor-capability contracts. Unknown capabilities
+        # refuse the manifest; external-effect phases on text-only writers
+        # refuse at load (the same refusal ghl_external_installer.
+        # preflight_check_phase reports -- enforced here so a bad manifest
+        # can never reach a paid dispatch).
+        _PRES011_KNOWN_CAPABILITIES = (
+            "text_artifact", "multi_artifact", "ghl_media_rest",
+            "ghl_page_install", "ghl_workflow_install",
+        )
+        _PRES011_EXTERNAL = (
+            "ghl_media_rest", "ghl_page_install", "ghl_workflow_install",
+        )
+        _PRES011_EXTERNAL_PHASES = (
+            "P-U-GHL-SALES", "P-U-GHL-VSL", "P-U-FORM-GATE",
+        )
+
+        problems: List[str] = []
+        for p, phase_obj in zip(phases_raw, self.phases):
+            pid = phase_obj.id
+            if not phase_obj.produces_artifact:
+                problems.append(f"phase {pid}: declares no produces_artifact")
+            cap = phase_obj.executor_capability
+            kind = phase_obj.executor_kind
+            if cap is not None and cap not in _PRES011_KNOWN_CAPABILITIES:
+                problems.append(
+                    f"phase {pid}: unknown executor.capability {cap!r} "
+                    f"(known: {', '.join(_PRES011_KNOWN_CAPABILITIES)})")
+            if (pid in _PRES011_EXTERNAL_PHASES
+                    or (cap in _PRES011_EXTERNAL)):
+                if kind in ("agent", "none") or (
+                        cap in ("text_artifact", "multi_artifact")):
+                    problems.append(
+                        f"phase {pid}: external-effect phase "
+                        f"(capability={cap}) routed to text-only writer "
+                        f"(executor.kind={kind}) -- AF-EXTERNAL-TEXT-ROUTING")
+
+            # (a) explicit consumes list — the manifest may declare inputs directly.
+            consumed: List[str] = []
+            declared = p.get("consumes")
+            if isinstance(declared, str):
+                consumed = _split_artifact_patterns([declared])
+            elif isinstance(declared, list):
+                consumed = _split_artifact_patterns(_as_list(declared))
+
+            # (b) executor cmd path references — what the phase's executor
+            # will actually read at run time. Only local pipeline paths count
+            # (working/ ecosystem/ pages/ delivery/ prompts/ design/ qc/
+            # build/); flags, urls, flags' values, and scripts/ tool paths
+            # are not pipeline artifacts.
+            # Every executor path in the manifest is written "{run_dir}/<path>";
+            # _looks_like_pipeline_input tests the RAW token against
+            # _PIPELINE_INPUT_DIRS, so before this strip clause (b) matched
+            # 0 of 20 real tokens and contributed nothing.
+            # Output-flagged tokens are what the phase WRITES, not what it
+            # reads: folding them into `consumed` would demand a producer for
+            # the phase's own output and raise ManifestInvalid.
+            cmd = phase_obj.executor_cmd or ""
+            toks = [t.strip().strip("'\"") for t in re.split(r"[\s;|&]+", cmd)]
+            _OUT_FLAGS = {"--out", "--pdf-out", "--workdir"}
+            for i, tok in enumerate(toks):
+                if i > 0 and toks[i - 1] in _OUT_FLAGS:
+                    continue
+                tok = tok.replace("{run_dir}/", "")
+                if _looks_like_pipeline_input(tok) and tok not in consumed:
+                    consumed.append(tok)
+
+            for artifact in consumed:
+                # Fix 8 intake/root exemption: raw external inputs and the
+                # engine-owned run-setup build inputs have no declaring
+                # producer by design and are not dangling.
+                if _is_root_input(artifact):
+                    continue
+                key = _pattern_norm(artifact)
+                # Exact, glob-normalized, or bare-filename-with-dir-context match.
+                if key in producers:
+                    continue
+                if _glob_covers(producers, artifact, phase_obj):
+                    continue
+                made_by = producers.get(_bare_norm(artifact))
+                if made_by:
+                    continue
+                problems.append(
+                    f"phase {pid} consumes {artifact!r} but no phase produces it "
+                    f"(dangling input; producers of {pid}'s directory: "
+                    f"{sorted({m2 for pat, ms in producers.items() for m2 in ms}) or 'none'})"
+                )
+        if problems:
+            raise ManifestInvalid(
+                f"{self.path}: manifest validation failed (MASTER Part 8 Fix 4):\n  "
+                + "\n  ".join(problems)
+            )
+
     def _parse_phases(self) -> List[Phase]:
         out: List[Phase] = []
         for p in self.raw.get("phases", []):
@@ -328,13 +552,29 @@ class Manifest:
                 # resolves to "agent" — which is exactly why A3 must ship in warn-mode first.
                 executor_kind=(ex.get("kind") or "agent"),
                 executor_cmd=ex.get("cmd"),
+                # PRES-011: explicit capability + owning adapter, validated
+                # below (unknown capabilities refuse the manifest; external
+                # phases on text writers refuse at preflight).
+                executor_capability=ex.get("capability"),
+                executor_adapter=ex.get("adapter"),
                 verifier=p.get("verifier"),
                 client_report=p.get("client_report") or {},
                 heartbeat_minutes=p.get("heartbeat_minutes"),
                 long_running=bool(p.get("long_running")),
                 converter_path=bool(p.get("converter_path")),
+                infographic_path=bool(p.get("infographic_path")),
                 workers=workers,
                 defers_unless=p.get("defers_unless"),
+                # MASTER Part 8 Fix 8: carry the manifest's declared consumed
+                # inputs on the Phase object so the artifact-DAG builder
+                # (execution_plan edge u→v iff produces(u) ∩ consumes(v) ≠ ∅)
+                # reads the manifest's own declaration, never a heuristic.
+                consumes=_split_artifact_patterns(_as_list(p.get("consumes"))),
+                # FIX 112: carry the raw {"by","max_units"} fanout declaration so
+                # dispatcher._phase_fanout_spec can hand it to fanout.parse_fanout_field.
+                # None for phases without the field (the serial path is untouched).
+                fanout=(p.get("fanout")
+                        if isinstance(p.get("fanout"), dict) else None),
             ))
         out.sort(key=lambda x: x.order)
         return out
@@ -384,6 +624,117 @@ class Manifest:
             if p.id == phase_id:
                 return p
         return None
+
+
+# ---------------------------------------------------------------------------
+# MASTER Part 8 Fix 4 -- producer-graph validation helpers (used by
+# Manifest.load / Manifest._validate above).
+# ---------------------------------------------------------------------------
+
+# Directory prefixes a real pipeline artifact always lives under. Executor
+# command tokens outside these (flags, urls, scripts/, python3, --run-dir
+# values) are tool wiring, not pipeline inputs, and are never validated.
+_PIPELINE_INPUT_DIRS = (
+    "working/", "ecosystem/", "pages/", "delivery/", "prompts/",
+    "design/", "qc/", "build/", "renders/",
+)
+
+_GLOB_CHARS = ("*", "?", "[")
+
+def _looks_like_pipeline_input(token: str) -> bool:
+    """True iff an executor-cmd token names a pipeline artifact the phase will
+    read. Must be a relative path under one of the artifact directories, must
+    carry a file extension, and must not be the run's own output pattern."""
+    if not token or token.startswith("-"):
+        return False
+    if "://" in token:
+        return False
+    if not token.startswith(_PIPELINE_INPUT_DIRS):
+        return False
+    name = token.rsplit("/", 1)[-1]
+    if "." not in name or name.startswith("."):
+        return False
+    return True
+
+
+# MASTER Part 8 Fix 8 — consumed artifacts with NO in-pipeline producer that
+# are legitimate by design (the "not an intake file" clause of the QC proof).
+#   raw/…                    — the client's own source material (Zoom/doc/old deck);
+#                              it enters the pipeline from outside, produced by nobody.
+#   working/copy/slides.json — the engine's positional build input: written at run
+#                              setup by the P4 copy tooling + engine prep, consumed by
+#                              P-STYLE-PREVIEW and P4-RENDER's build_deck invocation.
+#                              It is a build artifact of the run harness, not of any
+#                              single declared phase, so it is exempt the same way
+#                              intake files are. working/copy/intake.json itself is
+#                              NOT exempt — P-CONVERTER, P0A-INTAKE and P-SP-CLAIM
+#                              all declare producing it, so a manifest that drops
+#                              all three still fails V5 loudly.
+# Inputs with NO declaring producer BY DESIGN (MASTER Part 8 Fix 4 / QC FIX 8
+# "not an intake file" exemption). raw/ is the client's own source brief — the
+# run STARTS with it; working/copy/slides.json is written by the engine's copy
+# tooling at run setup, not by a declared phase. Everything else a phase
+# consumes must trace to a declaring producer or Manifest.load refuses.
+_ROOT_INPUTS = frozenset({
+    "raw/source-brief.*", "raw/source-brief.md", "raw/source-brief.txt",
+    "working/copy/slides.json",
+})
+
+
+def _is_root_input(artifact: str) -> bool:
+    """True iff `artifact` is an allowed no-producer root: an external raw/
+    input (the run begins with it) or the engine-owned run-setup file. A bare
+    directory read (`working/deliverables`, no extension) is a glob over that
+    directory's produced files, not a dangling artifact, so it also passes."""
+    if "." not in artifact.rsplit("/", 1)[-1]:
+        return True  # directory read — covered by the files inside it
+    if artifact.startswith("raw/"):
+        return True  # external seed input
+    return _pattern_norm(artifact) in {_pattern_norm(r) for r in _ROOT_INPUTS}
+
+
+def _pattern_norm(pattern: str) -> str:
+    """Normalize one artifact pattern for producer-set comparison: {deck_slug}
+    and {run_dir} tokens collapse to their wildcard equivalents, and the
+    string is stripped + lowercased so case-only differences cannot split a
+    producer from its consumer."""
+    s = pattern.strip().lower()
+    s = s.replace("{deck_slug}", "*").replace("{run_dir}", "*")
+    return s
+
+
+def _bare_norm(artifact: str) -> str:
+    """Bare-filename normalization: the last path segment only, with the same
+    token collapse as _pattern_norm. Covers a manifest that declares the
+    directory on the producer but a bare filename on the consumer."""
+    return _pattern_norm(artifact).rsplit("/", 1)[-1]
+
+
+def _glob_covers(producers: Dict[str, List[str]], artifact: str,
+                 phase: "Phase") -> bool:
+    """True iff some declared producer pattern MATCHES `artifact` under glob
+    semantics (fnmatch), with {deck_slug}/{run_dir} tokens already collapsed
+    to wildcards. A consumer naming a concrete file (`working/copy/intake.json`)
+    is covered by a producer declaring the glob (`working/research/brief-*.md`
+    does NOT cover it; `working/copy/*.json` would)."""
+    import fnmatch
+    key = _pattern_norm(artifact)
+    if any(ch in key for ch in _GLOB_CHARS):
+        # The consumer itself is a glob: a producer pattern covers it only if
+        # every concrete file the consumer glob could name is also covered --
+        # approximated conservatively by requiring the producer pattern to
+        # match the consumer glob via fnmatch on the pattern string (a
+        # coarser-but-sound accept: producer globs like `brief-*.md` match
+        # consumer glob `brief-*.md`; disjoint globs are rejected).
+        for pat in producers:
+            if fnmatch.fnmatch(key, pat) or fnmatch.fnmatch(pat, key):
+                return True
+        return False
+    for pat, _makers in producers.items():
+        if any(ch in pat for ch in _GLOB_CHARS):
+            if fnmatch.fnmatch(key, pat):
+                return True
+    return False
 
 
 def _parse_workers_field(p: Dict[str, Any]) -> int:
@@ -523,7 +874,7 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # (authentic skip approvals) in PIPELINE-MANIFEST.autofails so sync_check lockstep
 # passes (the repo-side half of the 27-drift-item repair). Floor moves WITH the manifest.
 # 38 -> 39: Feature L2-D (Gauntlet Loop 2, Feature B) adds P8.25-WORKBOOK — the fillable
-# PDF workbook phase (kie.ai gpt-image-2 backgrounds + reportlab AcroForm assembly,
+# PDF workbook phase (kie.ai gpt-image-2.5 backgrounds + reportlab AcroForm assembly,
 # scripts/workbook_builder.py) — raising manifest_version to 39 in the same commit.
 # 39 -> 40: Feature L2-G (Gauntlet Loop 2, Feature C) adds P9.6-WEBINAR-VIDEO — the
 # webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,
@@ -560,15 +911,50 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # the P-CONVERTER / P-SP-* pattern); P-U-VSL-BUILD ordered 8.93, strictly after
 # P9.6-WEBINAR-VIDEO (8.92), on which it depends. Phase count 36 -> 40. MIN follows to 51
 # in the same commit per U019 step 8.
-MIN_MANIFEST_VERSION = 54  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# (56 = W05-B2 / MASTER Part 8 Fix 29 fix-set: added P-STYLE-SPEC (order 4.84,
+#  agent, brand-steward, produces working/copy/style_preview_spec.json),
+#  P-STYLE-PICK (order 4.86, kind human, produces style_preview_choice.json,
+#  consumes the samples manifest — the owner gateway pick with a verified
+#  owner_msg_id), P8.3-INFOGRAPHIC (order 8.3, script, build_infographic.py,
+#  produces working/deliverables/infographic.png) and P-BUNDLE-GATE (order 9.95,
+#  script, bundle_gate.py, consumes all ten deliverables); P4-PROMPT now also
+#  produces working/prompts/infographic-prompt.txt (the FIX 2 fanout extra unit);
+#  P-STYLE-PREVIEW consumes the spec; P4-RENDER consumes the pick. Phase count
+#  55 -> 59. Floor follows the manifest in the same commit per U019 step 8.)
+# 56 -> 68: THE FLOOR WAS LEFT BEHIND, and this bump closes the whole gap at once.
+# The floor last moved at 56 (W05-B2 / Fix 29). PIPELINE-MANIFEST.json moved 57..67
+# without it — each of those bumps skipped U019 step 8 — so the repo shipped a floor
+# ELEVEN versions behind its own manifest. That is the exact split-brain step 8 exists
+# to prevent, and it is why test_client_package.py::
+# test_min_manifest_version_matches_repo_manifest_file and
+# ::test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below
+# were BOTH red on pristine main: they assert EQUALITY (==), not >=.
+# 67 -> 68 is this commit's own manifest edit: P-STYLE-PICK.consumes gains
+# "working/copy/intake.json" — the record the phase already reads via
+# phases.Engine._style_pick_intake_auto -> defers.load_intake, making the declared DAG
+# match what the phase actually does (precedent: P-STYLE-SPEC already declares it).
+# The floor is set to 68 = the new manifest_version, per U019 step 8.
+# 68 -> 69 (PRES-011): P-U-FORM-GATE / P-U-GHL-SALES / P-U-GHL-VSL leave the
+# text-only agent writer for the ghl_external_installer.py script executors
+# with explicit executor.capability (ghl_workflow_install / ghl_page_install)
+# + gate_codes AF-U-FORM-GATE / AF-U-GHL-SALES / AF-U-GHL-VSL.
+MIN_MANIFEST_VERSION = 69  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
-MIN_MANIFEST_PHASES = 40
     # (44 = PRESENTATION UPSELL 2026-08-07: 16 optional P-U-* phases gated by
     #  defers_unless on intake.want_sales_checkout / intake.want_vsl_page. Deck-only
     #  runs (both no) execute the identical manifest as today — zero extra phases.)
-MIN_MANIFEST_PHASES = 26
+    # (55 = consumes[] provenance fields on P-CONVERTER / P0A-INTAKE + unicode
+    #  normalization of em-dash escapes; floor follows the manifest in the same
+    #  commit per U019 step 8)
+# FIX 83: the phase floor is derived-checked against the canonical manifest —
+# PIPELINE-MANIFEST.json v56 ships 59 phases (v55 shipped 55; W05-B2 added the
+# Fix-29 fix-set rows), and the previous file carried a split-brain duplicate
+# (MIN_MANIFEST_PHASES = 40 shadowed by = 26 below it), so the floor matched
+# neither the merged phase-count reality nor itself. One floor, matching
+# len(manifest.phases), in one place; _assert_manifest_current reads it.
+MIN_MANIFEST_PHASES = 59
 
 def _assert_manifest_current(path: Path) -> None:
     """Refuse to run on a stale manifest. Exit 7, never a warning."""

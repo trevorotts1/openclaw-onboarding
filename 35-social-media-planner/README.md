@@ -12,7 +12,7 @@ Every week, this skill automatically:
 - Researches the theme and builds 7 days of content
 - Generates platform-specific posts for Facebook, Instagram, LinkedIn, YouTube, TikTok, and Pinterest
 - Creates images at correct ratios (4:5, 2:3, 9:16, 16:9, 1:1) with brand-colored text overlays
-- Produces videos using kie.ai (Veo 3.1 Lite)
+- Produces videos using kie.ai through Skill 67 (default request: Veo 3.1 Lite)
 - Writes a blog post and email newsletter (always); podcast episode with Fish Audio S2 emotion tags (only if Fish Audio is configured — otherwise podcast production is skipped gracefully)
 - Creates Thursday carousel posts optimized per platform (including LinkedIn PDF upload)
 - Writes unique, emotionally compelling comments with the client's action link for every post
@@ -29,7 +29,7 @@ Every week, this skill automatically:
 - Skill 22 (Book-to-Persona) for persona-governed content
 - Skill 31 (Upgraded Memory System) for memory-core integration
 - GoHighLevel (Convert and Flow) account with Private Integration Token and Social Planner API access
-- kie.ai API access (Nano Banana 2 for images, Veo 3.1 Lite for videos)
+- kie.ai API access with the client's own `KIE_API_KEY` (images: KIE GPT Image 2.5 Sunburst, following the newest GPT Image generation; video models through Skill 67; every paid job runs the Skill 74 live-adapter chain: policy, prompt budget, validate, preflight, run)
 - Google Sheets (**created automatically via n8n webhook - no client action needed**)
 - Telegram for notifications (email and SMS as fallback)
 - FFmpeg and ImageMagick installed locally
@@ -61,11 +61,7 @@ https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67
 
 ## Weekly Cost Estimate
 
-- ~22 images at 1K resolution (Nano Banana 2): ~$0.88
-- 1 podcast cover at 2K resolution: ~$0.06
-- 2 videos at 60 seconds each (Veo 3.1 Lite): ~$3.00
-- Fish Audio S2 podcast (OPTIONAL): compute only (self-hosted) or API cost — $0 if Fish Audio is not configured
-- **Total: ~$3.94/week** (or ~$3.94/week minus podcast cost if Fish Audio not configured)
+This README holds no dollar figures, so there is one price authority: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74, live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Weekly cost = about 22 images, 1 podcast cover, and 2 videos of 8 clips each, each priced live. Fish Audio podcast cost is compute only (or its own API cost); nothing is charged for it if Fish Audio is not configured.
 
 ## File Structure
 
@@ -77,14 +73,14 @@ https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67
   CORE_UPDATES.md       What to add to AGENTS.md, TOOLS.md, MEMORY.md
   QC.md                 Standalone 40+ item quality control checklist
   CHANGELOG.md          Version history
-  skill-version.txt     Current version (v1.0.0)
+  skill-version.txt     Current version (see the file)
   references/
-    playbook.md         Full 1,656-line production playbook with all specs
+    playbook.md         Full production playbook with all specs
 ```
 
 ## Version
 
-v1.1.0 (April 13, 2026)
+See `skill-version.txt` and `CHANGELOG.md` for the current version.
 
 ## License
 

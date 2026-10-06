@@ -292,19 +292,34 @@ def _read_json_candidates(run_dir, rel_paths):
 
 def _arc_slots(run_dir):
     """[slot dicts] from arc_allocation.json (schema-proven: extra keys are
-    allowed on slots; the golden-quest run carries phase/arc_section/hook flags)."""
+    allowed on slots; the golden-quest run carries phase/arc_section/hook flags).
+
+    PD-TEST-067: the SHAPE is read by presentation_job.arc_slides, the ONE
+    module that knows it (the three candidate paths below are unchanged). This
+    function previously looked only for slots/allocation/slides while every
+    AF-DEN check below reads ``slot.get("slide")``; on run
+    pres-operator-1d269693 the live P3-ARC artifact spelled its array
+    ``slide_allocations`` with per-slide ``slide_number``, so _arc_slots
+    returned [] and EVERY density auto-fail silently DEFERRED ("no
+    arc_allocation.json slots readable") on a deck that did declare an 8-slide
+    allocation. The shared reader normalises the ordinal onto both ``ordinal``
+    and ``slide``, so these checks read real ordinals again.
+    """
     data = _read_json_candidates(run_dir, [
         "working/copy/arc_allocation.json",
         "arc_allocation.json",
         "working/arc_allocation.json",
     ])
-    if isinstance(data, list):
-        return [s for s in data if isinstance(s, dict)]
-    if isinstance(data, dict):
-        slots = data.get("slots") or data.get("allocation") or data.get("slides")
-        if isinstance(slots, list):
-            return [s for s in slots if isinstance(s, dict)]
-    return []
+    try:
+        from presentation_job import arc_slides as _shared
+    except ImportError:  # pragma: no cover - standalone import of this module
+        # No second private key list here: arc_slides is the ONE place that
+        # knows the shape. Unreadable => [] => every check below DEFERS, which
+        # is this module's existing conservative contract for an arc it cannot
+        # read ("no arc_allocation.json slots readable"), never a silent pass.
+        return []
+    slots = _shared.slots_from_obj(data)
+    return slots if slots else []
 
 
 def _slot_sections(slot):

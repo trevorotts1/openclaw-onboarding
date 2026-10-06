@@ -152,6 +152,43 @@ SKILL_DIR = SCRIPT_DIR.parent
 REPO_ROOT = SKILL_DIR.parent
 SHARED_UTILS = REPO_ROOT / "shared-utils"
 
+# The ONE departments.json envelope normalizer. The chosen artifact legitimately
+# ships as a bare LIST *or* as an object wrapping that list under "departments"
+# (retire-confirmed-decline.sh's {removedWithProvenance, departments}; a build
+# envelope adding company / total_departments / total_roles). Gating on
+# isinstance(data, list) read the object shape as "no chosen departments" and
+# silently SKIPPED the join — a gate that cannot see the artifact is not a gate.
+sys.path.insert(0, str(SHARED_UTILS))
+try:
+    from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
+        # object of department objects folds to a list; the ENTRY's own
+        # id/slug/folder wins over the map key, and a slug taken FROM the key
+        # loses a trailing "-dept". Anything with a non-object value is a
+        # metadata envelope whose keys are never departments.
+        if isinstance(data, dict):
+            wrapped = data.get("departments", data)
+            if isinstance(wrapped, list):
+                return wrapped
+            if (isinstance(wrapped, dict) and wrapped
+                    and all(isinstance(v, dict) for v in wrapped.values())):
+                out = []
+                for k, v in wrapped.items():
+                    e = dict(v)
+                    r = next((x.strip() for x in (e.get("id"), e.get("slug"),
+                              e.get("folder")) if isinstance(x, str) and x.strip()), None)
+                    if r is None:
+                        r = k.strip()
+                        if r.endswith("-dept") and len(r) > 5:
+                            r = r[:-5]
+                    e.setdefault("id", r); e.setdefault("slug", r)
+                    out.append(e)
+                return out
+            return []
+        return data if isinstance(data, list) else []
+
 RC_OK = 0
 RC_CANNOT_RUN = 1
 RC_DRIFT = 2
@@ -259,6 +296,7 @@ def read_chosen_for_company(company_dir, build_state=None):
         data = json.loads(artifact.read_text())
     except (OSError, json.JSONDecodeError):
         data = None
+    data = _departments_or_empty(data, path=str(artifact)) if data is not None else None
     if isinstance(data, list):
         out, seen = [], set()
         for entry in data:
@@ -537,9 +575,30 @@ def make_keyer(df, canonical_dept_slug):
     return key
 
 
-def join(chosen, provisioned, displayed, key):
+def stray_template_keys(df, key):
+    """Join keys of role-library template departments that are NOT canonical floor
+    departments (client-experience-booking, founding-member-concierge, ...).
+
+    A tree for one of these that nobody chose and that has no board column is a
+    stray template copy (seen on client boxes since provisioning), not a phantom:
+    it is reported as a WARN, never drift, and never deleted. An un-chosen FLOOR
+    department tree is excluded here — that is a declined dept that was never
+    removed, and it stays PROVISIONED_NOT_CHOSEN drift. No role library on disk =>
+    empty set => the strict join, exactly as before."""
+    lib = SKILL_DIR / "templates" / "role-library"
+    if not lib.is_dir():
+        return set()
+    nm = df.load_naming_map()
+    return {key(d.name) for d in lib.iterdir()
+            if d.is_dir() and not d.name.startswith((".", "_"))
+            and df.canonical_slug_for(d.name, nm) is None}
+
+
+def join(chosen, provisioned, displayed, key, stray_ok=frozenset()):
     """Return the verdict dict. Every set is keyed; every diff is reported with the
-    RAW spellings that produced it so an operator can act on it."""
+    RAW spellings that produced it so an operator can act on it. `stray_ok`
+    (stray_template_keys()) names trees that WARN instead of drifting when they are
+    neither chosen nor displayed."""
     def index(items):
         out = {}
         for raw in items:
@@ -563,7 +622,8 @@ def join(chosen, provisioned, displayed, key):
         (chosen_keys | prov_keys | disp_keys) & {ORCHESTRATOR_CANONICAL}
     )
     chosen_tree = chosen_keys - {ORCHESTRATOR_CANONICAL}
-    prov_tree = prov_keys - {ORCHESTRATOR_CANONICAL}
+    stray = (prov_keys - chosen_keys - disp_keys) & set(stray_ok)
+    prov_tree = prov_keys - {ORCHESTRATOR_CANONICAL} - stray
 
     def fmt(keys, *idxs):
         out = []
@@ -597,6 +657,7 @@ def join(chosen, provisioned, displayed, key):
             "displayed": len(disp_keys),
         },
         "orchestrator_exempt": orchestrator_exempt,
+        "stray_template_departments": fmt(stray, prov_idx),
         "diffs": diffs,
         "drift_classes": sorted(k for k, v in diffs.items() if v),
     }
@@ -654,6 +715,10 @@ def render(v, company_dir, departments_dir, db_path, chosen_source, archive_col,
               f"{', '.join(v['orchestrator_exempt'])}")
     if archived:
         print(f"archived (NOT displayed): {', '.join(sorted(a[0] for a in archived))}")
+    if v.get("stray_template_departments"):
+        print("WARN stray template department tree(s) — not chosen, no board column, "
+              "not drift, never deleted: "
+              + ", ".join(e["department"] for e in v["stray_template_departments"]))
 
     if v["rc"] == RC_OK:
         print("JOIN OK — every chosen department is provisioned AND on the client's board; "
@@ -805,7 +870,8 @@ def main(argv=None):
     # ── LAYER 2 ──
     provisioned = read_provisioned(departments_dir, df)
 
-    verdict = join(chosen, provisioned, [r[0] for r in displayed_rows], key)
+    verdict = join(chosen, provisioned, [r[0] for r in displayed_rows], key,
+                   stray_template_keys(df, key))
     verdict["company_dir"] = str(company_dir)
     verdict["departments_dir"] = str(departments_dir)
     verdict["db"] = str(db_path)

@@ -1,0 +1,20 @@
+{
+  "workflow_id": "test-002",
+  "page_version": "standard",
+  "current_stage": "desktop-wireframe",
+  "stages": {
+    "intake": {"status": "ready", "attempts": 0},
+    "copy": {"status": "qc_failed", "attempts": 1},
+    "font-action-plan": {"status": "ready", "attempts": 0},
+    "desktop-wireframe": {"status": "working", "attempts": 0},
+    "mobile-tablet": {"status": "blocked", "attempts": 0},
+    "visual-mockup": {"status": "blocked", "attempts": 0},
+    "image-inventory-prompts": {"status": "blocked", "attempts": 0},
+    "image-generation-qc": {"status": "blocked", "attempts": 0},
+    "image-map-upload": {"status": "blocked", "attempts": 0},
+    "final-mockups": {"status": "blocked", "attempts": 0},
+    "responsive-html": {"status": "blocked", "attempts": 0},
+    "ghl-install-test": {"status": "blocked", "attempts": 0},
+    "publish-verify": {"status": "blocked", "attempts": 0}
+  }
+}

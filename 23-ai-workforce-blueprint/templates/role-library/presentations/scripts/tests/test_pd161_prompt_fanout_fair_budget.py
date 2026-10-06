@@ -1,0 +1,486 @@
+"""PD-TEST-161 / PD-TEST-162 -- the PROMPT fan-out must be funded like the copy one.
+
+THE DEFECTS, measured on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4.
+
+PD-TEST-124 gave fan-out phases a declared, bounded, PER-UNIT paid budget with
+first-attempt fairness -- but only the COPY fan-out ever used it: `paid_unit_scope`
+is referenced in exactly ONE production place (`dispatcher._dispatch_phase_fanout_units`).
+The PARALLEL PROMPT fan-out calls `dispatcher.dispatch_complete` directly, so its
+reservations fell through to the LEGACY phase-level clause (`paid >=
+DISPATCH_RETRY_CAP`, i.e. 3). An 8-slide prompt wave therefore had 8 units racing
+for 3 attempts. Measured: slides 02-06 failed at attempt 1 with ZERO verification
+codes at the SAME SECOND (13:07:55) -- they never reached a provider, they lost the
+reservation race -- while 01/07/08 got real attempts. The ledger ended
+`paid_attempts: 3`, `status: exhausted`, `failed_count: 8`, `missing_ordinals: [1..8]`.
+
+PD-TEST-162 is why that was INVISIBLE. `parallel_prompt_worker._classify` ended in a
+deliberate catch-all ("everything unknown is non-retryable so garbage never consumes
+the provider budget"), and `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from
+`DeepSeekCallError(RuntimeError)` -- not ValueError/KeyError/TypeError, and carrying
+no 401/403/429/5xx/timeout marker -- so a LOCAL SCHEDULING event was reported as a
+PROVIDER fault, non-retryable:
+
+    _classify(PaidBudgetExhausted(...))  ->  ('provider_error', False)
+
+WHAT THESE TESTS PIN
+  * all 8 slides of a prompt wave get a FIRST attempt under a declared budget,
+    driven through the REAL `_reserve_paid_attempt` seam;
+  * the legacy behaviour is preserved when nothing is declared (so no serial or
+    undeclared path changes);
+  * budget exhaustion/deferral classify as SCHEDULING and RETRYABLE, while genuine
+    provider faults and auth failures keep their existing classes;
+  * the declaration is a no-op for the budget already granted (monotonic), so a
+    re-dispatch over fewer slides cannot shrink it.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import List
+
+SCRIPTS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SCRIPTS))
+
+import pytest  # noqa: E402
+
+from presentation_job import dispatcher as dj  # noqa: E402
+from presentation_job import parallel_prompt_worker as ppw  # noqa: E402
+
+PHASE = "P4-PROMPT"
+WORKER = "dispatcher-test-161"
+SLIDES: List[str] = ["slide-%02d" % i for i in range(1, 9)]  # 8 slides, like the live wave
+
+
+def _run_dir(tmp_path: Path, *, declare: bool) -> Path:
+    run_dir = tmp_path / "run"
+    (run_dir / "working" / "work-orders").mkdir(parents=True, exist_ok=True)
+    (run_dir / "state.json").write_text(json.dumps({
+        "phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    if declare:
+        dj._declare_phase_paid_budget(run_dir, PHASE,
+                                      unit_keys=list(SLIDES), worker_id=WORKER)
+    return run_dir
+
+
+def _reserve(run_dir: Path, unit: str, *, new_token: bool = False) -> str:
+    """One slide's pre-transport reservation, exactly as the worker makes it:
+    one scope entry per ATTEMPT, through the real _reserve_paid_attempt.
+
+    `new_token=False` lets the context manager mint its own token; True is the
+    same thing, made explicit for readability at call sites that are asserting
+    "a SECOND, DIFFERENT logical attempt"."""
+    try:
+        with dj.paid_unit_scope(unit):
+            dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+        return "ok"
+    except dj.PaidBudgetExhausted:
+        return "budget_exhausted"
+    except dj.PaidAttemptDeferred:
+        return "budget_deferred"
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-161 -- fairness
+# ---------------------------------------------------------------------------
+
+def test_every_slide_gets_a_first_attempt_under_a_declared_budget(tmp_path):
+    """The live defect: 5 of 8 slides never reached a provider."""
+    run_dir = _run_dir(tmp_path, declare=True)
+    outcomes = {slide: _reserve(run_dir, slide) for slide in SLIDES}
+
+    starved = sorted(s for s, o in outcomes.items() if o != "ok")
+    assert not starved, (
+        f"slides starved of their FIRST paid attempt: {starved} (outcomes "
+        f"{outcomes}). The prompt wave must fund one first attempt per slide, "
+        "exactly as the copy fan-out has since PD-TEST-124.")
+
+    led = dj._read_ledger(run_dir, PHASE)
+    assert led.get("paid_attempts") == len(SLIDES), led.get("paid_attempts")
+    assert led.get("phase_paid_budget", {}).get("total_cap") >= len(SLIDES), (
+        "the declared bound must be able to fund every slide")
+
+
+def test_the_legacy_cap_still_governs_when_nothing_is_declared(tmp_path):
+    """The negative control, and the no-regression guarantee for every other
+    path: undeclared, the phase-level cap of DISPATCH_RETRY_CAP still binds."""
+    run_dir = _run_dir(tmp_path, declare=False)
+    outcomes = [ _reserve(run_dir, slide) for slide in SLIDES ]
+    ok = [o for o in outcomes if o == "ok"]
+
+    assert len(ok) == dj.DISPATCH_RETRY_CAP, (
+        f"undeclared reservations should stop at the legacy cap "
+        f"{dj.DISPATCH_RETRY_CAP}; got {len(ok)} ({outcomes})")
+    assert set(outcomes) - {"ok"} == {"budget_exhausted"}, (
+        "past the legacy cap the refusal must be PaidBudgetExhausted")
+
+
+def test_a_REFUSED_reservation_costs_nothing_so_retrying_cannot_burn_calls(tmp_path):
+    """The safety property behind marking budget errors RETRYABLE.
+
+    `_execute_slide` retries up to RETRY_CAP times, so making a budget error
+    retryable is only safe if a REFUSED reservation is free. It is: the refusal
+    happens in `_reserve_paid_attempt`, BEFORE any transport call, so the phase
+    counter does not move. Measured here by exhausting the legacy cap and then
+    retrying a starved unit three times."""
+    run_dir = _run_dir(tmp_path, declare=False)
+    for slide in SLIDES:
+        _reserve(run_dir, slide)                      # spend the legacy cap
+    spent = dj._read_ledger(run_dir, PHASE)["paid_attempts"]
+    assert spent == dj.DISPATCH_RETRY_CAP, spent
+
+    retries = [_reserve(run_dir, "slide-04") for _ in range(3)]
+    assert retries == ["budget_exhausted"] * 3, retries
+    assert dj._read_ledger(run_dir, PHASE)["paid_attempts"] == spent, (
+        "a refused reservation must not consume a paid attempt -- otherwise "
+        "RETRY_CAP retries of a budget error would burn the very budget they "
+        "are waiting for")
+
+
+def test_a_budget_cannot_be_shrunk_by_a_later_narrower_declaration(tmp_path):
+    """Monotonic within a generation: a re-dispatch over fewer slides must not
+    strand slides the pool is still paying for."""
+    run_dir = _run_dir(tmp_path, declare=True)
+    before = dj._read_ledger(run_dir, PHASE)["phase_paid_budget"]["total_cap"]
+    dj._declare_phase_paid_budget(run_dir, PHASE,
+                                  unit_keys=["slide-01"], worker_id=WORKER)
+    after = dj._read_ledger(run_dir, PHASE)["phase_paid_budget"]["total_cap"]
+    assert after >= before, f"declared bound shrank {before} -> {after}"
+
+
+# ---------------------------------------------------------------------------
+# PD-TEST-162 -- a scheduling event is not a provider fault
+# ---------------------------------------------------------------------------
+
+def test_budget_exhaustion_classifies_as_scheduling_and_is_retryable():
+    cls, retryable = ppw._classify(
+        dj.PaidBudgetExhausted("paid retry budget exhausted: 3 provider attempts"))
+    assert cls == "budget_exhausted", cls
+    assert retryable is True, (
+        "budget exhaustion must be RETRYABLE -- the unit should be deferred "
+        "until budget exists, not abandoned as if the provider had failed")
+
+
+def test_budget_deferral_classifies_as_scheduling_and_is_retryable():
+    cls, retryable = ppw._classify(
+        dj.PaidAttemptDeferred("unit slide-03 retry budget exhausted"))
+    assert cls == "budget_deferred", cls
+    assert retryable is True
+
+
+def test_an_UNSETTLED_reservation_blocks_a_DIFFERENT_attempt(tmp_path):
+    """PD-TEST-165, the bug: without settlement a unit can never retry.
+
+    The prompt path had NO `_settle_unit_paid_attempts` call at all, so a
+    slide's attempt-1 reservation stayed IN FLIGHT and any DISTINCT later
+    attempt for that slide was refused -- the review measured attempts 2-3 all
+    resolving as `budget_deferred`, masking what had actually failed."""
+    run_dir = _run_dir(tmp_path, declare=True)
+
+    # attempt 1, with an explicit token so the SAME logical attempt is repeatable
+    with dj.paid_unit_scope("slide-01", token="t1"):
+        dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+    paid = dj._read_ledger(run_dir, PHASE)["paid_attempts"]
+
+    # the SAME logical attempt again is a free no-op, not a second charge
+    with dj.paid_unit_scope("slide-01", token="t1"):
+        dj._reserve_paid_attempt(run_dir, PHASE, WORKER)
+    assert dj._read_ledger(run_dir, PHASE)["paid_attempts"] == paid, (
+        "a duplicate carrying the SAME token must be a no-op")
+
+    # a DIFFERENT attempt, while the first is still UNSETTLED, is refused
+    assert _reserve(run_dir, "slide-01") == "budget_deferred", (
+        "with no settlement an in-flight reservation blocks every distinct "
+        "later attempt for that unit -- which is exactly why PD-TEST-161 alone "
+        "bought a first attempt and no working retry")
+
+
+def test_SETTLING_a_batch_frees_its_units_to_retry(tmp_path):
+    """PD-TEST-165, the fix: settle, then the retry is allowed.
+
+    This is the property the prompt path was missing, and the reason
+    PD-TEST-161 alone bought a first attempt but no working retry."""
+    run_dir = _run_dir(tmp_path, declare=True)
+
+    # The wave: every slide reserves its first attempt...
+    for slide in SLIDES:
+        assert _reserve(run_dir, slide) == "ok"
+    in_flight = dj._read_ledger(run_dir, PHASE)
+    assert in_flight.get("paid_attempts") == len(SLIDES), in_flight.get("paid_attempts")
+
+    # ...then the wave SETTLES each slide's outcome, exactly as
+    # _dispatch_prompt_phase_parallel now does.
+    dj._settle_unit_paid_attempts(
+        run_dir, PHASE,
+        [(s, "failed", ["AF-P-VERBATIM"]) for s in SLIDES],
+        worker_id=WORKER)
+
+    # Now a RETRY for a failed slide is admitted rather than deferred.
+    retry = _reserve(run_dir, "slide-01")
+    assert retry == "ok", (
+        "after settling, a failed unit's retry must be admitted -- otherwise "
+        f"every retry is dead (got {retry!r})")
+
+
+def test_the_dispatcher_SETTLES_the_wave(tmp_path):
+    """Structural pin on the call site: the settlement must actually be wired."""
+    import inspect
+    src = inspect.getsource(dj._dispatch_prompt_phase_parallel)
+    assert "_settle_unit_paid_attempts(" in src, (
+        "the prompt wave must settle its paid reservations, or no slide can "
+        "ever retry (PD-TEST-165)")
+    assert src.index("run_worker(") < src.index("_settle_unit_paid_attempts("), (
+        "the settlement must follow the wave it settles")
+    assert "fanout_paid_settle_failed" in src, (
+        "a settlement failure must be recorded, never silent")
+
+
+def test_declaring_ALREADY_GOOD_slides_blocks_every_sibling_retry(tmp_path):
+    """PD-TEST-166, the harm, and why the declaration is narrowed.
+
+    `_declare_phase_paid_budget`'s own contract says banked/reused units must be
+    EXCLUDED -- "they cost nothing, so funding them would only shrink the pool
+    available to the units that do". The first version of this fix declared
+    EVERY slide in the wave. A slide whose prompt is already on disk never
+    reserves, so its count stays 0 while it is still listed as owed a first
+    attempt -- and first-attempt fairness then refuses every sibling's retry.
+
+    This drives the two declarations side by side through the real seam."""
+    slides = SLIDES[:4]
+    needs_work = slides[:2]        # only these two actually need paid work
+    for label in ("wide", "narrow"):
+        (tmp_path / label / "working" / "work-orders").mkdir(parents=True)
+        (tmp_path / label / "state.json").write_text(json.dumps(
+            {"phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    wide, narrow = tmp_path / "wide", tmp_path / "narrow"
+
+    # (a) THE OLD SHAPE: declare the whole wave.
+    dj._declare_phase_paid_budget(wide, PHASE, unit_keys=slides, worker_id=WORKER)
+    for s in needs_work:
+        assert _reserve(wide, s) == "ok"
+    dj._settle_unit_paid_attempts(wide, PHASE,
+                                  [(s, "failed", ["x"]) for s in needs_work],
+                                  worker_id=WORKER)
+    blocked = _reserve(wide, needs_work[0])
+    assert blocked == "budget_deferred", (
+        "with already-good slides still declared, the retry is refused because "
+        f"they count as owed a first attempt -- PD-TEST-166 (got {blocked!r})")
+
+    # (b) THE FIX: declare only the slides that need paid work.
+    dj._declare_phase_paid_budget(narrow, PHASE, unit_keys=needs_work,
+                                  worker_id=WORKER)
+    for s in needs_work:
+        assert _reserve(narrow, s) == "ok"
+    dj._settle_unit_paid_attempts(narrow, PHASE,
+                                  [(s, "failed", ["x"]) for s in needs_work],
+                                  worker_id=WORKER)
+    admitted = _reserve(narrow, needs_work[0])
+    assert admitted == "ok", (
+        f"with only the needing slides declared, the retry is ADMITTED (got {admitted!r})")
+
+    cap = dj._read_ledger(narrow, PHASE)["phase_paid_budget"]["total_cap"]
+    assert cap >= len(needs_work), cap
+
+
+def test_the_declaration_excludes_slides_already_good_on_disk():
+    """Structural pin on the narrowing: the declared set must be computed from a
+    NEEDS-WORK test, not from the whole wave."""
+    import inspect
+    src = inspect.getsource(dj._dispatch_prompt_phase_parallel)
+    assert "_pending_keys" in src and "_verify_single_prompt(" in src, (
+        "the declaration must exclude slides whose prompt is already on disk and "
+        "verifying (PD-TEST-166)")
+    assert "_unit_keys = _pending_keys" in src, (
+        "the narrowed set must be what is declared")
+    assert "units_already_good" in src, (
+        "the wave/pending split must be recorded, or the narrowing is invisible")
+
+
+def test_both_halves_compute_the_SAME_unit_key(tmp_path):
+    """The review's mutation (d), pinned: declaration keys MUST equal scope keys.
+
+    Keying the declaration on `ordinal` instead of `slide_id` passed every test
+    in the previous revision while producing 0 transport calls, 0 paid attempts
+    and 8 `budget_deferred` in production. This test drives BOTH key spaces
+    through the real seam so that mismatch is a failure, not a silent dead end.
+    """
+    slides = [{"slide_id": "slide-%02d" % i, "ordinal": i} for i in range(1, 4)]
+
+    # The two halves must agree on the key for the same slide...
+    for s in slides:
+        assert ppw.prompt_slide_unit_key(s) == s["slide_id"]
+
+    # ...and the MISMATCH must actually break something, or pinning it proves
+    # nothing. Declare with ORDINAL keys (the mutation), scope with slide_id.
+    run_dir = tmp_path / "run"
+    (run_dir / "working" / "work-orders").mkdir(parents=True)
+    (run_dir / "state.json").write_text(json.dumps(
+        {"phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    dj._declare_phase_paid_budget(run_dir, PHASE,
+                                  unit_keys=[str(s["ordinal"]) for s in slides],
+                                  worker_id=WORKER)
+    outcomes = [_reserve(run_dir, s["slide_id"]) for s in slides]
+    assert set(outcomes) == {"budget_deferred"}, (
+        "declaring under one key space and reserving under another must be "
+        f"VISIBLY broken, not silently starved; got {outcomes}")
+
+    # And the shipped code cannot drift into that state: both halves call the
+    # one helper.
+    import inspect
+    assert "_ppw.prompt_slide_unit_key(" in inspect.getsource(
+        dj._dispatch_prompt_phase_parallel), (
+        "the declaration must use the shared key helper")
+    worker_src = inspect.getsource(ppw._execute_slide)
+    assert "prompt_slide_unit_key(slide)" in worker_src, (
+        "the worker must derive its scope key from the shared helper")
+    assert "paid_unit_scope(slide_id)" in worker_src, (
+        "the scope must be bound to that key")
+
+
+def test_the_claim_ownership_HARD_STOP_stays_non_retryable():
+    """Review F8: one `PaidBudgetExhausted` is a hard stop, not a budget event.
+
+    `"paid attempt refused: claim ownership changed"` (dispatcher.py:9629) means
+    another worker took the phase; retrying it achieves nothing. The TYPE cannot
+    tell it apart from a genuine budget refusal, so it is matched explicitly --
+    and it must ALSO be in `_NONRETRYABLE_CODES`, because `_finalize_failure`
+    re-derives `retryable` from that tuple and would otherwise undo this."""
+    cls, retryable = ppw._classify(
+        dj.PaidBudgetExhausted("paid attempt refused: claim ownership changed"))
+    assert cls == "claim_lost", cls
+    assert retryable is False, "a lost claim must NOT be retried"
+    assert cls in ppw._NONRETRYABLE_CODES, (
+        "_finalize_failure derives retryable from the code tuples; a class "
+        "missing from both is silently treated as non-retryable by accident "
+        "rather than by decision")
+
+
+def test_the_budget_classes_are_declared_retryable_in_the_code_tuples():
+    """Review F8, the other half: `_classify` returning retryable is not enough
+    if `_RETRYABLE_CODES` does not list the class."""
+    for cls in ("budget_exhausted", "budget_deferred"):
+        assert cls in ppw._RETRYABLE_CODES, (
+            f"{cls} is retryable by design (a refusal is free) but missing from "
+            "_RETRYABLE_CODES")
+
+
+def test_genuine_provider_and_auth_faults_keep_their_classes():
+    """The catch-all must still catch. This fix narrows ONE type, it does not
+    loosen the classifier."""
+    class Boom(RuntimeError):
+        pass
+
+    assert ppw._classify(Boom("something odd")) == ("provider_error", False)
+    assert ppw._classify(RuntimeError("HTTP 401 (permanent): Unauthorized"))[0] == "auth_error"
+    assert ppw._classify(RuntimeError("HTTP 429 too many requests"))[0] == "rate_limited"
+    assert ppw._classify(RuntimeError("HTTP 503 server error"))[0] == "server_error"
+    assert ppw._classify(TimeoutError("timed out"))[0] == "timeout"
+    assert ppw._classify(ValueError("bad shape"))[0] == "verify_failed"
+
+
+def test_execute_slide_really_runs_and_reaches_the_provider(tmp_path):
+    """EXECUTE the worker -- do not grep it.
+
+    Review F1: the first version of this fix wrote `with dispatcher.paid_unit_scope(...)`
+    in `_execute_slide`, but `dispatcher` is not a module global in
+    `parallel_prompt_worker` (every other use is a function-local import, because
+    `dispatcher` imports this module at its own line 119). EVERY slide therefore
+    raised `NameError: name 'dispatcher' is not defined` before any provider call.
+
+    The other tests in this file could not see it: they drive
+    `_reserve_paid_attempt` directly, and the worker assertions were source-text
+    greps. A grep proves a line EXISTS; only execution proves it RUNS. This test
+    calls the real `_execute_slide` end to end with a stubbed transport and
+    asserts the provider was actually reached.
+    """
+    import json as _json
+    run_dir = tmp_path / "run"
+    (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "work-orders").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (run_dir / "state.json").write_text(_json.dumps({
+        "phases": [{"id": PHASE, "status": "running"}]}), encoding="utf-8")
+    dj._declare_phase_paid_budget(run_dir, PHASE,
+                                  unit_keys=["slide-01"], worker_id=WORKER)
+
+    calls = []
+    scopes_seen = []
+
+    # PD-TEST-183 extended the provider seam with an OPTIONAL `prior_reasons`
+    # keyword (the failing checks from the previous attempt); a real stub must
+    # tolerate it.
+    def fake_provider(slide, routing, attempt, rd, role, n_slides,
+                      prior_reasons=None):
+        # Record that the REAL worker got this far, and WHICH unit the paid scope
+        # is bound to. `dispatch_complete` -- the layer that actually reserves --
+        # is stubbed out here, so the scope binding is what this asserts; the
+        # reservation itself is covered by the seam tests above.
+        calls.append((slide.get("slide_id"), attempt))
+        scopes_seen.append(dj._current_paid_unit_key())
+        return "PROMPT BODY " * 20
+
+    task = {
+        "slide": {"slide_id": "slide-01", "ordinal": 1,
+                  "copy": ["HEADLINE: Go"], "archetype": "A1"},
+        "routing": {"model": "stub"},
+        "run_dir": str(run_dir),
+        "prompt_constraints": {},
+        "n_slides": 1,
+        "owning_role": "slide-copywriter",
+        "attempts_log": str(run_dir / "working" / "checkpoints"
+                            / "prompt-worker-results.json"),
+    }
+    monkey = pytest.MonkeyPatch()
+    try:
+        monkey.setattr(ppw, "_resolve_provider", lambda: fake_provider)
+        # The verifier is not what this test is about; keep it out of the way.
+        monkey.setattr(ppw, "_verify_prompt", lambda *a, **k: (True, []))
+        result = ppw._execute_slide(task)
+    finally:
+        monkey.undo()
+
+    assert calls, (
+        "the provider was NEVER reached -- `_execute_slide` raised before its "
+        "first attempt. This is the F1 failure mode (a NameError on the paid "
+        f"scope binding). Result was: {result!r}")
+    assert calls[0] == ("slide-01", 1), calls
+    assert "NameError" not in str(result.get("error_message") or ""), result
+    # The unit scope must be BOUND, not merely mentioned: the provider call has
+    # to run inside `paid_unit_scope("slide-01")`, or the reservation downstream
+    # falls back to the legacy per-phase cap and this slide starves.
+    assert scopes_seen and all(k == "slide-01" for k in scopes_seen), (
+        f"the paid scope was not bound to this slide during the attempt: "
+        f"{scopes_seen}")
+
+
+def test_the_worker_enters_a_unit_scope_per_attempt():
+
+
+    """Structural pin: the per-attempt scope is what makes the accounting work,
+    and deleting it would otherwise be silent."""
+    import inspect
+    src = inspect.getsource(ppw._execute_slide)
+    assert "paid_unit_scope(slide_id)" in src, (
+        "the prompt worker must bind each ATTEMPT to its slide's unit key, or "
+        "its reservations fall back to the legacy per-phase cap (PD-TEST-161)")
+
+
+def test_the_dispatcher_declares_the_budget_before_the_wave():
+    """The scope alone is not enough: `_effective_phase_paid_cap` returns the
+    LEGACY cap unless something declared a bound, so the declaration is the half
+    that actually funds the wave. Pin both halves."""
+    import inspect
+    src = inspect.getsource(dj._dispatch_prompt_phase_parallel)
+    assert "_declare_phase_paid_budget(" in src, (
+        "the prompt wave must DECLARE its bounded total before any paid call, or "
+        "every slide's first attempt competes for the legacy 3-attempt cap")
+    assert "slide_id" in src and "unit_keys=_unit_keys" in src, (
+        "the declaration must key on the slides' own unit ids: build the keys "
+        "from each slide's `slide_id` and pass them as `unit_keys`")
+    # The declaration must precede the wave, not follow it.
+    assert src.index("_declare_phase_paid_budget(") < src.index("run_worker("), (
+        "the budget must be declared BEFORE the wave runs -- a bound declared "
+        "afterwards funds nothing")
+    # ...and it must stay fail-soft, recording which path was taken.
+    assert "paid_budget_declaration_failed" in src, (
+        "a declaration failure must be recorded, never silent")

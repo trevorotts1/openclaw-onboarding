@@ -76,7 +76,7 @@ For every card that has a declared character-count annotation line (format per S
    - Actual count 2,801–3,000 characters: WARN — `CHAR-WARN: card {card-id} Seedream tier is {count} chars (approaching 3,000-char silent-fail ceiling)`.
    - Actual count > 3,000 characters: FAIL — `CHAR-FAIL: card {card-id} Seedream tier is {count} chars — EXCEEDS 3,000-char ceiling. This prompt will fail silently on Seedream with no API error.`
 
-The 3,000-char ceiling is the Seedream silent-fail boundary documented in MODEL-SPECS §1. This check must never be omitted even if the card has no declared annotation line.
+The 3,000-char ceiling is the Seedream 4.5 (and 5.0 Lite) silent-fail boundary documented in MODEL-SPECS §1; Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS §1 states a per-model value for the card's endpoint. This check must never be omitted even if the card has no declared annotation line.
 
 ### 5. 6xx SOP version pins
 
@@ -120,7 +120,7 @@ List all receipt files in `_local/receipts/` with `state` equal to `submitted` o
 1. Read the `last_polled` timestamp.
 2. If `last_polled` is more than 24 hours before the current sweep timestamp: FAIL — `STUCK-JOB FAIL: receipt {receipt-id} is in state {state} with last_polled {last_polled} ({hours} hours ago). CDO attention required.`
 
-The Healer reports the stuck job but does NOT call the Kie.ai API directly. Ground truth comes from the receipt file on disk. A CDO-directed re-poll is the correct next step; the Healer escalates, the Generation Operator executes.
+The Healer reports the stuck job but does NOT call the Kie.ai API directly. Ground truth comes from the receipt file on disk. A CDO-directed re-poll is the correct next step; the Healer escalates, the Render Dispatcher executes (it owns polling and orphan recovery).
 
 ### 9. MODEL-SPECS staleness
 
@@ -132,9 +132,9 @@ MODEL-SPECS is the load-bearing document for all generation routing. A document 
 
 ### 10. Kie.ai key and endpoint reachability
 
-1. Search every env store for `KIE_API_KEY` in the following order: `secrets/.env`, `openclaw.json`, `~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, and the running gateway process env. Applying the client-box-env-stores policy: check all stores before reporting missing.
-   - Key absent from all stores: FAIL — `KIE-KEY FAIL: KIE_API_KEY not found in any env store (searched: {list-of-stores-checked})`.
-2. Perform a lightweight reachability probe against the Kie.ai primary endpoint (a HEAD request or a model-list GET that requires no credits and produces no billable activity).
+1. Search every env store for the canonical `KIE_API_KEY` and every alias listed in `shared-utils/secret_names.json`, in the following order: `secrets/.env`, `openclaw.json`, `~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, and the running gateway process env. Applying the client-box-env-stores policy: check all stores before reporting missing.
+   - Key absent from all stores: FAIL — `KIE-KEY FAIL: no Kie.ai key (canonical name or any alias) found in any env store (searched: {list-of-stores-checked})`.
+2. Perform a lightweight reachability probe against the Kie.ai primary endpoint (a `GET /api/v1/chat/credit` request (read the JSON body `code`, not only the HTTP status), which consumes no credits and produces no billable activity).
    - Non-2xx response: FAIL — `KIE-ENDPOINT FAIL: primary Kie.ai endpoint returned HTTP {status}. Verify account status and endpoint URL in MODEL-SPECS §1`.
 
 ### 11. Registrar activation counter
@@ -157,7 +157,7 @@ This is an informational flag, not a FAIL. Generation and testing continue. The 
 | `_system/MODEL-SPECS.md` | Yes | DIU library system; read-only |
 | `_system/DEPARTMENT-BUILD-BRIEF.md` | Yes | DIU library system; read-only |
 | All SOP files under `sops/` | Yes | DIU SOP library; read-only |
-| `_local/receipts/` (all receipt files) | Yes | Generation Operator outputs; read-only |
+| `_local/receipts/` (all receipt files) | Yes | Generation Operator and Render Dispatcher outputs; read-only |
 | `_local/quarantine/` (all quarantine files) | Yes | SOP-DIU-604 outputs; read-only |
 | `_system/library/embedding-manifest.json` (or equivalent) | Yes | SOP-DIU-606 output; read-only |
 | All env stores on the client box | Yes | Standard client-box env stores per fleet policy |
@@ -171,7 +171,7 @@ This is an informational flag, not a FAIL. Generation and testing continue. The 
 |---|---|---|
 | Sweep findings report (on WARN or FAIL only) | Sent via `openclaw message send` to CDO | Emitted only if findings changed since last sweep |
 | Embedding rebuild notification (on coverage mismatch) | Sent via `openclaw message send` to Style Analyst | Emitted only on Check 7 WARN |
-| Stuck-job alert (on Check 8 FAIL) | Sent via `openclaw message send` to CDO and Generation Operator | Emitted only on new stuck receipts |
+| Stuck-job alert (on Check 8 FAIL) | Sent via `openclaw message send` to CDO and Render Dispatcher | Emitted only on new stuck receipts |
 | Last-sweep state file (updated every run) | `_local/healer/last-sweep.json` | Written at end of every sweep (pass or fail) with timestamp and findings fingerprint |
 | No output (on clean sweep with no changes) | — | Deliberately silent |
 
@@ -181,9 +181,9 @@ This is an informational flag, not a FAIL. Generation and testing continue. The 
 
 - **Clean sweep (all checks pass, nothing changed):** No message sent. `last-sweep.json` updated with timestamp and `status: clean`. Exit. This is the expected steady-state result.
 - **One or more WARN findings:** Send report to CDO listing each WARN with severity, check name, exact file or path implicated, and recommended action. CDO decides whether immediate action is required.
-- **One or more FAIL findings:** Send report to CDO. FAIL conditions represent active integrity violations. CDO directs the appropriate role (Style Analyst for INDEX/schema/embedding; Generation Operator for stuck receipts or key issues; Photo Shoot Director for quarantine gaps; Healer for SOP pin staleness).
+- **One or more FAIL findings:** Send report to CDO. FAIL conditions represent active integrity violations. CDO directs the appropriate role (Style Analyst for INDEX/schema/embedding; Render Dispatcher for stuck receipts; Generation Operator for key issues; Photo Shoot Director for quarantine gaps; Healer for SOP pin staleness).
 - **Check 7 coverage mismatch:** Additionally notify Style Analyst directly with the rebuild trigger message.
-- **Check 8 stuck job:** Additionally notify Generation Operator directly with the receipt ID and stuck duration.
+- **Check 8 stuck job:** Additionally notify the Render Dispatcher directly with the receipt ID and stuck duration.
 - **Check 11 Registrar threshold reached:** Notify CDO with the counter value and the promotion procedure reference.
 
 ---
@@ -194,7 +194,7 @@ This is an informational flag, not a FAIL. Generation and testing continue. The 
 |---|---|
 | Healer cannot read any required input file (permissions error, disk error, file missing) | Emit a single FAIL report: "SOP-DIU-615 sweep aborted — cannot read {path}. No sweep completed. CDO action required." Never claim a clean sweep if the sweep could not complete. |
 | Any FAIL finding involving a quarantined hard-rule-violation asset | Send report immediately; do not wait for next scheduled sweep. Notify CDO and Photo Shoot Director. |
-| KIE_API_KEY absent from all env stores | Hard FAIL with full list of stores checked. Notify CDO immediately. Generation pipeline is unrunnable. |
+| Kie.ai key (canonical name and every alias) absent from all env stores | Hard FAIL with full list of stores checked. Notify CDO immediately. Generation pipeline is unrunnable. |
 | SOP version pin staleness found on any 6xx SOP | FAIL report to CDO. Generation using that SOP should be paused until the pin is re-verified and updated by the owning role. |
 | Seedream prompt tier over 3,000 characters on a production card | FAIL report to CDO and Style Analyst. Active Seedream generations using this card will silently fail with no API error. Card must be corrected before any further Seedream generation against it. |
 | MODEL-SPECS.md header date over 90 days old | FAIL report to CDO. Flag as requiring model-currency census (SOP 9.6). |
@@ -208,7 +208,7 @@ This is an informational flag, not a FAIL. Generation and testing continue. The 
 - Write to or modify INDEX.md, card files, SOP files, or any library file
 - Delete quarantine assets or close quarantine incidents
 - Send "all clear" heartbeat messages (notify-on-change-only is a hard rule)
-- Re-poll stuck receipts directly (escalate to CDO; Generation Operator executes the re-poll)
+- Re-poll stuck receipts directly (escalate to CDO; the Render Dispatcher executes the re-poll)
 - Report findings as resolved without verifying the fix from disk
 
 ---

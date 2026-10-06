@@ -53,20 +53,43 @@ trap 'rm -rf "$TMP"' EXIT
 SANDBOX_HOME="$TMP/home"
 MASTER="$TMP/master-files"
 COMPANY="$MASTER/zero-human-company/scratch-canary-co"
-STATE="$TMP/state.json"
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then COMPANY="$SANDBOX_HOME/.openclaw/workspace/zero-human-company/scratch-canary-co"; fi
+STATE="$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json"
 DB="$TMP/mission-control.db"
 CONSENT="$TMP/consent.json"
 mkdir -p "$SANDBOX_HOME/.openclaw/workspace" "$MASTER/zero-human-company" "$SANDBOX_HOME/.openclaw" \
          "$SANDBOX_HOME/Downloads/openclaw-master-files" "$COMPANY"
 printf '{"decision":"prebuild","source":"operator-prebuild","decidedAt":"2026-08-04T12:00:00Z","decidedBy":"test-operator","sessionId":"sess-test"}\n' > "$CONSENT"
-printf '{"agents":{"list":[]}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+if [ "${ONB_TEST_REGISTRY:-list}" = "entries" ]; then
+  printf '{"agents":{"entries":{}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+else
+  printf '{"agents":{"list":[]}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+fi
 echo '{}' > "$STATE"
 
 # The scratch build-state is pinned for EVERY build-workforce invocation via
 # $WORKFORCE_BUILD_STATE_FILE (its _build_state_path override) so no code path
 # can fall back to a live state file.
 RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SANDBOX_HOME/.openclaw"
-         "WORKFORCE_BUILD_STATE_FILE=$STATE")
+         "WORKFORCE_BUILD_STATE_FILE=$STATE" "DASHBOARD_DB_PATH=$DB")
+# Both fixtures have explicit ownership before prebuild. The legacy variant
+# retains its historical slug-as-ID; the launch variant proves a distinct UUID.
+CLIENT_ID="scratch-canary-co"
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
+  CLIENT_UUID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  CLIENT_ID="$CLIENT_UUID"
+fi
+python3 - "$STATE" "$COMPANY" "$CLIENT_ID" <<'PYIDENTITY'
+import json,sys
+from pathlib import Path
+state,root,identity=sys.argv[1:]
+Path(state).write_text(json.dumps({'companyId':identity,'companySlug':'scratch-canary-co','companyRoot':root}))
+Path(root,'company-config.json').write_text(json.dumps({'company_id':identity,'companySlug':'scratch-canary-co','name':'Scratch Canary Co'}))
+PYIDENTITY
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
+  RUN_ENV+=("MC_COMPANY_ID=$CLIENT_UUID" "ZERO_HUMAN_COMPANY_DIR=$COMPANY")
+fi
+
 
 # ══ PHASE A: the prebuild (PHASE 2 driver) builds the fixture state ══
 "${RUN_ENV[@]}" bash "$PREBUILD" \
@@ -78,6 +101,16 @@ RUN_ENV=(env "HOME=$SANDBOX_HOME" "MASTER_FILES_DIR=$MASTER" "OPENCLAW_ROOT=$SAN
 RC=$?
 if [ "$RC" -eq 0 ]; then good "prebuild fixture ready (rc=0)"; else
   bad "prebuild fixture FAILED rc=$RC (see $TMP/prebuild.err)"; tail -5 "$TMP/prebuild.err" >&2; echo "ABORT"; exit 1; fi
+
+# Model the supported CC archive migration in the isolated seeded database.
+# The apply step must receive this same explicit database, never ambient discovery.
+python3 - "$DB" <<'PYDB'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    cols={r[1] for r in db.execute('PRAGMA table_info(workspaces)')}
+    for name in ('archived_at','archived_reason','updated_at'):
+        if name not in cols: db.execute('ALTER TABLE workspaces ADD COLUMN '+name+' TEXT')
+PYDB
 
 # ══ PHASE B: mock interview answers (genuine transcript for the gate) ══
 # verify_interview_complete() looks at $HOME/.openclaw/workspace/company-
@@ -207,6 +240,8 @@ RC=$?
 if [ "$RC" -eq 0 ]; then good "apply-diff build rc=0"; else
   bad "apply-diff build rc=$RC"; tail -12 "$TMP/apply.err" >&2; fi
 
+grep "RETIRE" "$TMP/apply.err" >&2 || true
+
 # A1: declined dept ARCHIVED (not deleted) — the sentinel survives in .retired/
 if [ ! -d "$COMPANY/departments/audio" ] \
    && find "$COMPANY/.retired" -name "SENTINEL.md" -exec grep -q "SENTINEL-ARCHIVE-ME" {} \; 2>/dev/null; then
@@ -231,20 +266,27 @@ else
 fi
 
 # A3: agents.list rows present for confirmed-kept departments.
-# master-orchestrator is EXCLUDED from the expected set exactly as in the
-# legacy lane: load_canonical_floor() never returns it (it is the floor-only
-# 30th id, provisioned once outside the interview; generate_departments_json
-# surfaces it as the CEO column, never as its own registered agent).
+# The non-declinable CEO foundation is registered separately from interview
+# selections. Both CEO and General must have real runtime directories.
 python3 - "$SANDBOX_HOME/.openclaw/openclaw.json" "$COMPANY/departments" "$STATE" <<'PY'
 import json, os, sys
 cfg_path, depts_dir, state_path = sys.argv[1:4]
 cfg = json.load(open(cfg_path))
-ids = {a.get("id") for a in (cfg.get("agents") or {}).get("list", []) if isinstance(a, dict)}
+agents = cfg.get("agents", {})
+entries = agents.get("entries")
+rows = [dict(value, id=key) for key, value in entries.items()] if isinstance(entries, dict) else agents.get("list", [])
+assert not (isinstance(entries, dict) and "list" in agents), "modern registry gained unsupported agents.list"
+ids = {a.get("id") for a in rows if isinstance(a, dict)}
 on_disk = {d for d in os.listdir(depts_dir) if os.path.isdir(os.path.join(depts_dir, d))}
 expected = {f"dept-{d}" for d in on_disk
             if d not in ("ceo", "dept-ceo", "master-orchestrator")}
 missing = sorted(expected - ids)
 extra_retired = [i for i in ids if i == "dept-audio"]
+runtime_rows = {a.get("id"): a for a in rows}
+for rid in ("dept-master-orchestrator", "dept-general-task"):
+    entry = runtime_rows.get(rid, {})
+    if not (os.path.isdir(entry.get("workspace", "")) and os.path.isdir(entry.get("agentDir", ""))):
+        missing.append(rid + ":runtime-directory")
 ok = not missing and not extra_retired
 print(f"PASS: A3 agents.list rows present for all {len(expected)} confirmed-kept depts (missing={missing}, declined-row-present={bool(extra_retired)})" if ok
       else f"FAIL: A3 agents.list missing={missing} declined-row-present={extra_retired}")
@@ -335,15 +377,25 @@ else
   bad "A8: expected rc=88 + buildType refusal, got rc=$RC"
 fi
 
-# Hermeticity proof: the LIVE operator state file was never written by this
-# test (it lives outside the sandbox HOME; the test pins every write via
-# $WORKFORCE_BUILD_STATE_FILE). Assert the live-state mtime sentinel: the
-# test creates a marker file in the sandbox and asserts no state file exists
-# at the sandbox default path that was NOT pinned.
-if [ -f "$SANDBOX_HOME/.openclaw/workspace/.workforce-build-state.json" ]; then
-  bad "A9: an UNPINNED sandbox-default build-state appeared (a code path bypassed the override)"
-else
-  good "A9: hermeticity held — no unpinned build-state write"
+# The normal state path is inside the sandbox HOME so the real config retirement
+# path is exercised. Every invocation still explicitly pins that exact fixture.
+case "$STATE" in
+  "$SANDBOX_HOME"/*) good "A9: explicit state remains inside isolated HOME" ;;
+  *) bad "A9: state escaped isolated HOME" ;;
+esac
+
+if [ "${ONB_TEST_LAUNCH_IDENTITY:-0}" = "1" ]; then
+  if python3 - "$STATE" "$COMPANY" "$CLIENT_UUID" "$MASTER" <<'PYIDENTITY'
+import json,sys
+from pathlib import Path
+state,root,identity,master=sys.argv[1:]
+s=json.loads(Path(state).read_text())
+assert s['companyId']==identity and Path(s['companyRoot']).resolve()==Path(root).resolve()
+assert Path(root,'departments','listings','SOUL.md').is_file()
+assert not Path(master,'zero-human-company','scratch-canary-co').exists()
+PYIDENTITY
+  then good "A10: UUID identity retained and custom launch root materialized without duplicate company tree"
+  else bad "A10: launch identity/root mismatch or duplicate company tree"; fi
 fi
 
 echo "=============================================="

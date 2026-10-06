@@ -437,6 +437,15 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 #                      in its own shape by qc-completeness.sh.
 #   conversational-logs/  per-contact conversation memory (Skill 38).
 #   artifacts/ templates/ assets/ logs/  dept-level output/input containers.
+#   intake/            refresh-dept-intake.py mkdirs it in every dept whose library
+#                      entry ships one (today: presentations) and mirrors the intake
+#                      question bank into it; deck-intake-driver.py reads it.
+#   runs/              presentation_job/launcher.py resolve_runs_root(): per-deck run
+#                      dirs, <dept>/scripts/../runs.
+#   fish-audio/        presentations' Fish Audio tag library, read at
+#                      <dept>/fish-audio by scripts/speech_fish_tag.py.
+#   intake-miniapp/ release-matrix/  presentations library siblings of scripts/.
+#   contract/          rescue-rangers library contract dir.
 #
 # WHY THIS IS A FIX AND NOT A LOOSENING: before this, the walker below treated
 # EVERY subdirectory as a role and failed any without a >=3KB how-to.md. Because
@@ -455,6 +464,7 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 NON_ROLE_DIR_NAMES=(
   "memory" "devils-advocate" "scripts" "sops" "_sops" "roles"
   "conversational-logs" "artifacts" "templates" "assets" "logs"
+  "intake" "runs" "fish-audio" "intake-miniapp" "release-matrix" "contract"
 )
 
 # is_non_role_dir <path> — 0 (true) when the directory is NOT a role folder.
@@ -665,13 +675,14 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   REG_GAPS=()
 
   if [[ -f "$OPENCLAW_CFG" ]]; then
-    AGENT_IDS_IN_CFG=$(jq -r '.agents.list[]?.id // empty' "$OPENCLAW_CFG" 2>/dev/null || true)
+    # Both roster shapes: agents.entries keys (OpenClaw 2026.9.x) + agents.list[].id
+    AGENT_IDS_IN_CFG=$(jq -r '((.agents.entries // {}) | keys[]), (.agents.list[]?.id // empty)' "$OPENCLAW_CFG" 2>/dev/null || true)
     # The dept agent id is typically "dept-<slug>"
     EXPECTED_AGENT_ID="dept-${DEPT_SLUG}"
     if echo "$AGENT_IDS_IN_CFG" | grep -qx "$EXPECTED_AGENT_ID"; then
       # Also verify workspace path resolves
       REG_WORKSPACE=$(jq -r --arg aid "$EXPECTED_AGENT_ID" \
-        '.agents.list[] | select(.id==$aid) | .workspace // empty' \
+        '(.agents.entries[$aid].workspace? // ([.agents.list[]? | select(.id==$aid) | .workspace][0])) // empty' \
         "$OPENCLAW_CFG" 2>/dev/null || true)
       if [[ -n "$REG_WORKSPACE" && "$REG_WORKSPACE" != "null" ]]; then
         if [[ -d "$REG_WORKSPACE" ]]; then
@@ -689,7 +700,7 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
         FAIL_REGISTERED+=("$DEPT_SLUG:no-workspace-path")
       fi
     else
-      echo "  [REGISTERED]   FAIL: agent '$EXPECTED_AGENT_ID' not found in openclaw.json agents.list" >&2
+      echo "  [REGISTERED]   FAIL: agent '$EXPECTED_AGENT_ID' not found in openclaw.json agents.entries / agents.list" >&2
       REG_PASS=0
       REG_GAPS+=("agent-not-in-config")
       FAIL_REGISTERED+=("$DEPT_SLUG:agent-not-in-config")
@@ -847,12 +858,89 @@ if cfg_path and Path(cfg_path).exists():
     except Exception:
         pass
 
+def _load_dotenv(path: str) -> dict:
+    """Parse a KEY=VALUE .env file into a dict; missing/unreadable file -> {}."""
+    vals = {}
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if k:
+                vals[k] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return vals
+
+
+# FIX 21: the client secret stores resolve_value falls back to. The old first
+# attempt turned `env.vars.X` into `ENV_VARS_X`, a name that never exists — the
+# env fallback was dead. Now: os.environ["X"] (the last path segment), then
+# ~/.openclaw/secrets/.env and ~/.openclaw/.env, matching the stores the engine
+# itself reads (check_agent_env.DEFAULT_STORES).
+_FIX21_STORES = (
+    os.path.expanduser("~/.openclaw/secrets/.env"),
+    os.path.expanduser("~/.openclaw/.env"),
+)
+_FIX21_DOTENV = {}
+for _store in _FIX21_STORES:
+    _FIX21_DOTENV.update(_load_dotenv(_store))
+
+
+def _is_placeholder_inline(value) -> bool:
+    """FIX 21: True when the value is a placeholder/empty/trivially
+    low-information. Uses shared-utils/secret_helper.is_placeholder when the
+    helper is reachable from the manifest path; otherwise the same minimal
+    inline gate kie_generate.py carries (FIX 67)."""
+    try:
+        import importlib.util as _ilu
+        repo_root = None
+        for anc in (Path(manifest_path).resolve(),
+                    *Path(manifest_path).resolve().parents):
+            if (anc / "shared-utils" / "secret_helper.py").is_file():
+                repo_root = anc
+                break
+        if repo_root is not None:
+            _p = repo_root / "shared-utils" / "secret_helper.py"
+            _spec = _ilu.spec_from_file_location("secret_helper_s51", str(_p))
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return bool(_mod.is_placeholder(value))
+    except Exception:  # noqa: BLE001 -- broken helper degrades to the inline gate
+        pass
+    if not value:
+        return True
+    low = str(value).strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def resolve_value(key_path: str) -> str:
-    """Resolve a dot-path against cfg, or as an env var, or return ''."""
-    # Try env var first
-    env_val = os.environ.get(key_path.replace(".", "_").upper(), "")
-    if env_val:
-        return env_val
+    """Resolve a dot-path against cfg, or as an env var / secret store, or ''.
+
+    Placeholder values are treated as unresolved at every layer."""
+    leaf = (key_path or "").split(".")[-1].strip()
+    if leaf:
+        for name in (leaf, leaf.upper()):
+            env_val = os.environ.get(name, "")
+            if env_val and not _is_placeholder_inline(env_val):
+                return env_val
+        for name in (leaf, leaf.upper()):
+            store_val = _FIX21_DOTENV.get(name, "")
+            if store_val and not _is_placeholder_inline(store_val):
+                return store_val
     # Try dot-path in cfg
     parts = key_path.split(".")
     node = cfg
@@ -862,7 +950,7 @@ def resolve_value(key_path: str) -> str:
         else:
             node = None
             break
-    if isinstance(node, str) and node.strip():
+    if isinstance(node, str) and node.strip() and not _is_placeholder_inline(node):
         return node
     if isinstance(node, (int, float, bool)):
         return str(node)
@@ -912,6 +1000,29 @@ def dept_in_departments_json(path: str, slug: str) -> bool:
                     return True
     return False
 
+def _alias_source_keys(alias_source, cfg_key):
+    """A hook may name its alias canon by REFERENCE (alias_source, e.g.
+    shared-utils/secret_names.json) instead of restating cfg_key_aliases. Expand
+    the cfg_key's leaf name into env.vars.<ALIAS> keys from that one canon file
+    (FIX 67 secret-name canon). Canon file missing/unreadable -> [] (the canonical
+    key is still checked, so a required hook stays fail-closed)."""
+    if not alias_source:
+        return []
+    leaf = (cfg_key or "").split(".")[-1].strip()
+    roots = [*Path(manifest_path).resolve().parents,
+             Path(os.path.expanduser("~/.openclaw/skills")),
+             Path("/data/.openclaw/skills")]
+    for anc in roots:
+        f = anc / alias_source
+        try:
+            if f.is_file():
+                names = json.loads(f.read_text()).get("canonical_names", {}).get(leaf, [])
+                return ["env.vars." + n for n in names if n and n != leaf]
+        except Exception:  # noqa: BLE001 -- unreadable canon degrades to canonical key only
+            return []
+    return []
+
+
 hooks = manifest.get("connection_points", [])
 gaps = []
 all_pass = True
@@ -920,7 +1031,8 @@ for hook in hooks:
     name = hook.get("name", "unnamed")
     required = hook.get("required", False)
     cfg_key = hook.get("cfg_key", "")
-    aliases = hook.get("cfg_key_aliases", []) or []
+    aliases = list(hook.get("cfg_key_aliases", []) or [])
+    aliases += [k for k in _alias_source_keys(hook.get("alias_source"), cfg_key) if k not in aliases]
     assert_contains_dept = hook.get("assert_contains_dept", False)
     description = hook.get("description", "")
 
@@ -979,7 +1091,7 @@ PYEOF
   #      scripts dir (the ONE sanctioned build entry point; U025 retired
   #      deck-build-guard.sh and relocated its intake-ledger check into the door).
   #   2. run_signature_deck.py + build_deck.py each contain the front-door
-  #      marker guard (grep for OC_DECK_CANONICAL_ENTRY).
+  #      front-door guard (grep for _verify_entry_nonce()).
   # Fail the dept check if any assertion is missing (fail-closed, not advisory).
   # --------------------------------------------------------------------------
   if [[ "$DEPT_SLUG" == "presentations" ]]; then
@@ -1020,23 +1132,23 @@ PYEOF
       fi
     fi
 
-    # (e2) run_signature_deck.py and build_deck.py contain OC_DECK_CANONICAL_ENTRY
+    # (e2) run_signature_deck.py and build_deck.py wire the _verify_entry_nonce front-door guard
     if [[ -n "$_PRES_SCRIPTS" ]]; then
       for _runner_file in "run_signature_deck.py" "build_deck.py"; do
         _runner_path="$_PRES_SCRIPTS/$_runner_file"
         if [[ ! -f "$_runner_path" ]]; then
           echo "  [PRESENTATIONS]  WARN: $_runner_file not found at $_runner_path (skipping marker check)" >&2
-        elif grep -q "OC_DECK_CANONICAL_ENTRY" "$_runner_path" 2>/dev/null; then
-          echo "  [PRESENTATIONS]  OK:   $_runner_file contains OC_DECK_CANONICAL_ENTRY front-door marker guard"
+        elif grep -q "_verify_entry_nonce(" "$_runner_path" 2>/dev/null; then
+          echo "  [PRESENTATIONS]  OK:   $_runner_file wires the _verify_entry_nonce front-door entry guard"
         else
-          echo "  [PRESENTATIONS]  FAIL: $_runner_file does NOT contain OC_DECK_CANONICAL_ENTRY — direct python3 invocations will not be blocked by the front-door marker guard." >&2
+          echo "  [PRESENTATIONS]  FAIL: $_runner_file does NOT contain _verify_entry_nonce — direct python3 invocations will not be blocked by the front-door entry guard." >&2
           PRES_FAIL=1
-          FAIL_CONNECTION+=("$DEPT_SLUG:${_runner_file}-missing-marker-guard")
-          DEPT_WIRING_FAIL_REASONS+=("presentations:${_runner_file}-missing-OC_DECK_CANONICAL_ENTRY")
+          FAIL_CONNECTION+=("$DEPT_SLUG:${_runner_file}-missing-entry-guard")
+          DEPT_WIRING_FAIL_REASONS+=("presentations:${_runner_file}-missing-_verify_entry_nonce")
         fi
       done
     else
-      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found (checked $PRES_SCRIPTS_DEPLOYED and $PRES_SCRIPTS_TEMPLATE) — skipping OC_DECK_CANONICAL_ENTRY marker checks" >&2
+      echo "  [PRESENTATIONS]  WARN: presentations scripts dir not found (checked $PRES_SCRIPTS_DEPLOYED and $PRES_SCRIPTS_TEMPLATE) — skipping _verify_entry_nonce front-door guard checks" >&2
     fi
 
     # (e3) PROCESS-INTEGRITY lockstep suite scripts present

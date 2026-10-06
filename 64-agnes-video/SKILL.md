@@ -131,7 +131,7 @@ it live from the Agnes console.
 
 ## Image-Prompt Band for Input Frames
 
-When a video input frame image is itself generated (GPT-image-2 or Agnes Image
+When a video input frame image is itself generated (GPT-Image-2.5 or Agnes Image
 2.1 Flash) it must obey the same 5,000–19,000 stripped-character band enforced
 by Skill 63 (`63-agnes-image/prove_agnes_image_prompt_floor.py`). The band
 applies to the IMAGE-generation prompt, not the video prompt. When input images

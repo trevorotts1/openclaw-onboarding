@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: 1.1.9
+version: v2.1.5
 ---
 
 # Signature Presentation (Skill 51)
@@ -96,7 +96,7 @@ hit the ≥100 floor (Directive 11), later phases shift by the same amount, stil
   (Client-exact count is the fleet-wide absolute law; the ≥100 floor is the DEFAULT, not a cap.)
 - **≤2 case studies** per deck (Directive 12); floor of 1 from the department's proof battery → band 1–2.
 - **Suggested image on every slide** (Directive 4) — the authoring seed the Prompt Author expands
-  to the full rich prompt; it never replaces the 9,000-char prompt floor. Each frame template
+  to the full rich image prompt, sized to the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; 16,000 to 18,000 characters for the current pin while the renderer's own 9,000 to 18,000 gate stands, which is the range the frame templates quote); it never replaces that budget. Each frame template
   carries a **"Visual identity & suggested-image seed craft"** section (v1.0.4): the six seed
   anchors (archetype + subject/emotion + setting + light + STYLE-BLOCK palette + copy zone) plus
   the frame's controlling visual motif and series discipline — author seeds to that contract.
@@ -142,7 +142,7 @@ nothing skippable, fail-closed gates at close()). An engine that is installed bu
 job is a **blocking failure (exit 9, `ENGINE DISPATCH FAILED`) — never a silent downgrade**;
 `run_signature_deck.py` runs ONLY as a loudly announced fallback when the engine component is
 genuinely absent from the box, and that fallback is recorded in
-`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai gpt-image-2 only; every
+`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai through the department's image pin in `presentation_job/model_catalog.json`, today GPT Image 2.5 Sunburst, bumped only by an operator catalog change; every
 word baked into the image; zero native on-slide text) is done by the engine's render phases
 through `build_deck.py`. Writing and running your own per-deck driver — `python3 working/*.py`
 — is the **ungoverned path and is FORBIDDEN** (`AF-CANONICAL-RENDER-BYPASS` /
@@ -150,14 +150,14 @@ through `build_deck.py`. Writing and running your own per-deck driver — `pytho
 Command Center Kanban card belong to the engine; this skill only adds the sacred-method gates
 on top.
 
-**What the engine gives us for free (no new code):** the 9,000–18,000-char rich-prompt floor,
+**What the engine gives us for free (no new code):** the rich-prompt gate (9,000 to 18,000 characters in the renderer today; the authoring target is the rule 12 prompt budget),
 phase-skip impossibility (the `presentation_job.py` mechanical manifest walk), the delivery-blocking process certificate
 (`prove-deck.py`), and the full existing auto-fail battery (hook, one-big-idea, density, typography,
 logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-method rules and install
 as manifest phases + thin `_chk_sp_*` preflight wrappers that DEFER unless
 `deck_type == "signature_presentation"`.
 
-## Integration surface (wired by `wire-signature-presentation.sh`)
+## Integration surface
 
 - `PIPELINE-MANIFEST.json` — three SP phases + `AF-SP-*` autofail rows + a manifest_version bump.
 - `build_deck.py` — three ≤6-line thin `_chk_sp_*` wrappers appended to `PREFLIGHT_REQUIRED`,
@@ -183,6 +183,47 @@ the phase bands, and the per-quadrant "Tone:" craft notes baked into MASTERDOC.m
 only WHO governs the actual written voice changes. Flag-guarded: `SKILL51_BLEND_GOVERNS=0` reverts
 to intake-tone-only governance (director-of-presentations-sops.md's pre-existing rule — nothing to
 re-implement, it was never removed).
+
+## Host hooks (PRES-051): bounded lifecycle feedback, never a gate
+
+The skill ships a **supported plugin hook package** — `.claude-plugin/plugin.json` plus
+`hooks/hooks.json` and bounded handlers in `scripts/hooks/` (`sp-hook.sh` dispatcher,
+`sp_session_start.py`, `sp_pre_tool_use.py`, `sp_post_tool_use.py`, `sp_stop.py`,
+`sp_hook_common.py`, `sp_doctor.py`). Contract, one line each:
+
+- **Registration** — hooks.json uses install-relative `"${CLAUDE_PLUGIN_ROOT}"` paths and
+  supported events only (SessionStart / PreToolUse / PostToolUse / Stop). `sp_doctor.py
+  --install/--uninstall` records owned registrations plus a settings backup, never touches a
+  user's global settings or hooksPath, preserves unrelated hooks, and removes only owned
+  entries (deduplicated, idempotent).
+- **SessionStart** — bounded local-only readiness: reads stdin JSON, validates the schema,
+  resolves the selected session's explicit runtime context
+  (`PRESENTATION_COMPANY_ID` + `PRESENTATION_ID` + `PRESENTATION_RUN_DIR`, or a
+  `.presentation-session.json` with schema `sp-session-context-v1` in the cwd). Missing context
+  yields a setup instruction, never default operator identity. Never installs dependencies,
+  starts paid work, restarts a gateway, or merges code because Claude started. Reattachment
+  validates lease + pinned manifest revision before claiming any worker.
+- **PreToolUse** — for the relevant supported entry tools only (Bash containing
+  `presentation_job.py --close/--resume/--run` or `presentation-canonical-entry.sh`), delegates
+  to the engine validator and surfaces state. Unknown/malformed relevant requests are never
+  certified; unrelated tools and sessions pass without being trapped. The hook itself never
+  blocks — blocking stays in engine transactions.
+- **PostToolUse** — records observed tool_use_id/status digests locally; a successful shell
+  exit is never a fabricated uploaded/complete receipt.
+- **Stop** — bounded corrective feedback with `stop_hook_active` guard plus a persisted reentry
+  budget (3) and a state-hash reentry guard; persisting resumable blocked state and next action.
+  Never an endless loop, never ignores cancellation, never retries a missing credential. If the
+  supervisor is not configured to outlive the host, the hook says suspended — no background work
+  is claimed.
+- **Enforcement** — prerequisite, lease, persona, artifact/QC and completion gates stay in
+  engine transactions (`presentation_job.py` `Gates` / `close()`). Hooks delegate read-only
+  (`--status --json`, `--resume --diagnose-only` are the only engine invocations allowed) and
+  surface state; direct CLI or disabled hooks cannot waive a gate. Async hook output never
+  approves a transition.
+- **Doctor** — `python3 scripts/hooks/sp_doctor.py --skill-dir <skill> --handshake` classifies
+  files-present, registered, event-observed and engine-gate-tested separately on each actual
+  host; `--check-registration --settings <path>` proves owned registrations; tests live in
+  `scripts/tests/test_pres051_hooks.py` (27 hermetic checks).
 
 ## Install / Wire / Verify
 
@@ -213,6 +254,7 @@ and wires via the department lockstep. The three legs:
 ## Prerequisites
 
 - Skill 07 (Kie.ai setup) — the render provider for the canonical pipeline.
+- Skill 74 (KIE live adapter) — read-only price, prompt-budget and latest-family tooling, run from the Skill 74 folder and never copied into a run directory (the render guard blocks it).
 - Skill 23 (AI Workforce Blueprint) — materializes the Presentations department on the box.
 - The Presentations department (role library) present and SOP-locked.
 

@@ -802,7 +802,7 @@ def self_test() -> int:
 
         entry1 = state.begin_task(
             provider="kie",
-            model="gpt-image-2-text-to-image",
+            model="gpt-image-2-5-sunburst-text-to-image",
             operation="generate_image",
             params={"prompt": "hero shot", "aspect_ratio": "16:9"},
             estimated_cost_usd=0.03,
@@ -810,7 +810,7 @@ def self_test() -> int:
         try:
             state.begin_task(
                 provider="kie",
-                model="gpt-image-2-text-to-image",
+                model="gpt-image-2-5-sunburst-text-to-image",
                 operation="generate_image",
                 params={"prompt": "hero shot", "aspect_ratio": "16:9"},
                 estimated_cost_usd=0.03,

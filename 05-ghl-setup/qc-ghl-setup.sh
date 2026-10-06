@@ -3,19 +3,13 @@
 set -u
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
-LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
-if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() {
-    if [ -d "/data/.openclaw" ]; then
-      # VPS / Docker layout: persistent volume under /data
-      export SECRETS_ENV="/data/.openclaw/secrets/.env" CONFIG_JSON="/data/.openclaw/openclaw.json" WORKSPACE="/data/clawd" SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
-    else
-      # Mac / host layout
-      export SECRETS_ENV="$HOME/.openclaw/secrets/.env" CONFIG_JSON="$HOME/.openclaw/openclaw.json" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
-    fi
-  }
+LIB="$SKILL_DIR/../lib-shared.sh"
+[[ -f "$LIB" ]] || LIB="$SKILL_DIR/../../lib-shared.sh"
+if [[ ! -f "$LIB" ]]; then
+  echo "Shared onboarding library missing; finish delivering the client bundle." >&2; exit 1
 fi
-resolve_platform_paths
+source "$LIB" || exit 1
+resolve_platform_paths || exit 1
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
 assert(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else red "  ✗ FAIL — $1"; FAIL=$((FAIL+1)); fi; }
 warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else yellow "  ⚠ WARN — $1"; WARN=$((WARN+1)); fi; }

@@ -90,8 +90,12 @@ chmod +x "$FAKE_BIN/openclaw"
 cat > "$FAKE_BIN/curl" <<'SH'
 #!/usr/bin/env bash
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) curl $*" >> "${CURL_LOG}"
-# Return a fake Notion page id for any notion API call
-if printf '%s\n' "$@" | grep -q "notion.com"; then
+# Return the explicitly selected client parent and scoped search response.
+if printf '%s\n' "$@" | grep -q 'notion.com/v1/pages/test-workspace-id'; then
+  printf '{"id":"test-workspace-id","object":"page","archived":false}\n'
+elif printf '%s\n' "$@" | grep -q 'notion.com/v1/search'; then
+  printf '{"object":"list","results":[],"has_more":false}\n'
+elif printf '%s\n' "$@" | grep -q "notion.com"; then
   printf '{"id":"fake-notion-page-id-1234","url":"https://www.notion.so/fakenotionpageid1234","object":"page"}\n'
 else
   printf '{}\n'
@@ -250,6 +254,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"BlockedCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"fail\"},
@@ -292,6 +297,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"IncompleteCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"fail\"},
@@ -324,21 +330,23 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"PassCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"pass\"},
     \"closeoutStatus\": \"pending\"
   }"
 
-  # run-closeout.sh will fail during preflight (no KIE_API_KEY, no Notion token)
-  # but must NOT set blocked-interview-incomplete — that gate was cleared.
-  run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
+  # Require evidence that the runner reached the NEXT gate. A pending state
+  # alone can also mean an earlier identity guard refused this fixture.
+  KIE_API_KEY="" NOTION_API_TOKEN="" run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
 
   cs=$(read_state_field '.closeoutStatus')
-  if [[ "$cs" != "blocked-interview-incomplete" ]]; then
-    pass "T5: closeoutStatus='$cs' (gate passed — not blocked-interview-incomplete)"
+  reason=$(read_state_field '.closeoutFailureReason')
+  if [[ "$cs" == "failed" && "$reason" == "preflight: KIE_API_KEY env var not set" ]]; then
+    pass "T5: QC gate passed and the expected missing-key preflight recorded its failure"
   else
-    fail "T5: closeoutStatus='$cs' (QC gate incorrectly blocked a pass-status interview)"
+    fail "T5: closeoutStatus='$cs', reason='$reason' (expected the downstream missing-key preflight)"
   fi
 else
   skip_test "T5: run-closeout.sh not found at $RUN_CLOSEOUT"
@@ -372,6 +380,7 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"PlaywrightCo\",
+    \"companySlug\": \"fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": [],
     \"interviewQc\": {\"status\": \"pass\"},
@@ -383,6 +392,27 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
     \"qualityRatings\": {\"org_chart\": {\"score\": 9.0, \"qc\": \"pass\"}},
     \"qualityQc\": {\"org_chart\": \"pass\"}
   }"
+
+  # Seed unrelated completed artifact stages; this fixture exercises only the
+  # org-chart assertion, never image/video generation or provider polling.
+  python3 - "$FIXTURE_STATE" <<'PYARTIFACTS'
+import json,sys
+p=sys.argv[1];s=json.load(open(p))
+s['visualIntelligenceUrls']=['https://fixture.invalid/1','https://fixture.invalid/2','https://fixture.invalid/3']
+for key,field in [('flow_diagram','infographic2Url'),('celebration_video','celebrationVideoUrl'),('closeout_docs','notionRootPageUrl')]:
+    s[field]='https://fixture.invalid/'+key
+    s.setdefault('qualityRatings',{})[key]={'score':9,'qc':'pass'}
+json.dump(s,open(p,'w'))
+PYARTIFACTS
+
+  # This test isolates the downstream Playwright hold. Explicit fixture
+  # verifiers satisfy the prerequisite stages; missing real verifiers still
+  # fail closed in production and in the dedicated reliability suite.
+  prerequisites="$FAKE_OC_ROOT/skills/23-ai-workforce-blueprint/scripts"
+  mkdir -p "$prerequisites"
+  for verifier in verify-zhc-standard.sh verify-wiring.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$prerequisites/$verifier"
+  done
 
   # Override via ZHC_ORGCHART_QC_SCRIPT so run-closeout.sh uses our stub
   ZHC_ORGCHART_QC_SCRIPT="$STUB_QC_DIR/qc-assert-org-chart-connector-tree.sh" \
@@ -429,6 +459,7 @@ if [[ -f "$CREATE_NOTION" ]]; then
     \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
     \"ownerChat\": 12345,
     \"companyName\": \"NotionCo\",
+    \"companyId\": \"notion-fixture-company\",
     \"agentName\": \"TestAgent\",
     \"departments\": []
   }"

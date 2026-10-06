@@ -120,6 +120,13 @@ things you will do: generate images, generate videos, check on jobs, check
 your credits, and upload files. If you have not set up KIE.ai yet, go to
 INSTALL.md first.
 
+Canonical rules: `references/kie-common-rules.md` in this skill folder is the single
+source of truth for authority order, endpoints, rate limits, polling, prompt caps,
+credit preflight, prices, retention, keys and model ids. Where this guide disagrees
+with it, the common rules win. For image, video and TTS dispatch, the modality skills
+(66, 67, 68) run Skill 74 `validate` and `preflight` before `submit --mode active`;
+see 74-kie-live-adapter/INSTRUCTIONS.md.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HOW KIE.AI WORKS (THE BIG PICTURE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -148,7 +155,7 @@ CORRECT endpoints:
 | Generate an image       | POST   | https://api.kie.ai/api/v1/jobs/createTask        |
 | Check image/video job   | GET    | https://api.kie.ai/api/v1/jobs/recordInfo?taskId=XXX |
 | Generate a VEO video    | POST   | https://api.kie.ai/api/v1/veo/generate           |
-| Check VEO video status  | GET    | https://api.kie.ai/api/v1/veo/task?taskId=XXX    |
+| Check VEO video status  | GET    | https://api.kie.ai/api/v1/veo/record-info?taskId=XXX |
 | Check credit balance    | GET    | https://api.kie.ai/api/v1/chat/credit            |
 | Upload a file (base64)  | POST   | https://kieai.redpandaai.co/api/file-base64-upload |
 | Upload a file (URL)     | POST   | https://kieai.redpandaai.co/api/file-url-upload  |
@@ -186,17 +193,18 @@ KIE.ai supports several video models. The two main categories are:
 
 VEO Videos (Google's VEO 3.1):
 - Use the VEO-specific endpoint: POST https://api.kie.ai/api/v1/veo/generate
-- Check status at: GET https://api.kie.ai/api/v1/veo/task?taskId=XXX
+- Check status at: GET https://api.kie.ai/api/v1/veo/record-info?taskId=XXX
 - Models: veo3 (Quality) and veo3_fast (Fast)
-- Cost: about $0.40 per clip
+- Cost: about $0.40 per clip (historical figure; check live pricing via GET /api/v1/models pricingDesc or `kie_live_adapter.py price`)
 
 Market Videos (Kling, Sora, Wan, etc.):
 - Use the general endpoint: POST https://api.kie.ai/api/v1/jobs/createTask
 - Check status at: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=XXX
 - Models include:
   - kling-3.0/video (Kling 3.0) - text-to-video, image-to-video, multi-shot
-  - sora2 (Sora 2) - $0.15 per clip
-  - sora2-pro (Sora 2 Pro) - $0.75 per clip
+  - sora2 (Sora 2) - historical $0.15 per clip
+  - sora2-pro (Sora 2 Pro) - historical $0.75 per clip
+  (confirm live pricing with `kie_live_adapter.py price` or GET /api/v1/models pricingDesc)
   - wan-2.1 (Wan video generation)
 
 Key settings for VEO videos:
@@ -225,7 +233,9 @@ For images and market videos:
   GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=YOUR_TASK_ID
 
 For VEO videos:
-  GET https://api.kie.ai/api/v1/veo/task?taskId=YOUR_TASK_ID
+  GET https://api.kie.ai/api/v1/veo/record-info?taskId=YOUR_TASK_ID
+  (VEO status uses numeric flags instead of the state words below:
+  0 generating, 1 success, 2 or 3 failed.)
 
 The response will include a "state" field. Here is what each state means:
 
@@ -250,8 +260,7 @@ Recommended: Wait 2 to 5 seconds between checks.
 When the job succeeds, look for "resultJson" in the response. It contains
 the URLs where you can download your generated content.
 
-IMPORTANT: Generated file URLs typically expire after 24 hours. Download
-your results as soon as they are ready.
+IMPORTANT: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CHECKING YOUR CREDIT BALANCE
@@ -264,7 +273,8 @@ To see how many credits you have left:
 The response will look like this:
   {"code":200,"msg":"success","data":100}
 
-The number after "data" is your remaining credit balance.
+The number after "data" is your remaining credit balance. Check that the
+body "code" is 200, not just the HTTP status: errors can arrive with HTTP 200.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 UPLOADING FILES

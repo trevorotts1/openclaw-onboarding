@@ -64,6 +64,7 @@ H_C2="$SANDBOX/home-c2"; bin_c2="$SANDBOX/bin-c2"; J_C2="$SANDBOX/jobs-c2.json";
 mkdir -p "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts" "$H_C2/.openclaw/workspace"
 cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
   "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/"
 chmod +x "$H_C2/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 _mkbin "$bin_c2"; printf '[]' > "$J_C2"; : > "$C_C2"
 
@@ -100,7 +101,7 @@ mkdir -p "$H_C2b/.openclaw/workspace"; _mkbin "$bin_c2b"
 printf '[{"name":"workforce-build-resume","id":"fake-001","kind":"command"}]' > "$J_C2b"
 : > "$C_C2b"
 cat > "$H_C2b/.openclaw/workspace/.workforce-build-state.json" <<'EOF'
-{"interviewComplete": true, "interviewQc": {"status":"pass"}, "buildCompletedAt": "2026-01-01T00:00:00Z", "closeoutStatus": "done", "departments": []}
+{"companySlug": "fixture-company", "interviewComplete": true, "interviewQc": {"status":"pass"}, "buildCompletedAt": "2026-01-01T00:00:00Z", "closeoutStatus": "done", "departments": []}
 EOF
 HOME="$H_C2b" PATH="$bin_c2b:$PATH" FAKE_OC_JOBS_FILE="$J_C2b" FAKE_OC_CALLS_FILE="$C_C2b" \
   bash "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" > "$SANDBOX/c2c.log" 2>&1
@@ -149,6 +150,7 @@ else
   mkdir -p "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts" "$Hm/.openclaw/workspace"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
     "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+  cp "$REPO_ROOT/23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$Hm/.openclaw/skills/23-ai-workforce-blueprint/scripts/"
   cp "$REPO_ROOT/23-ai-workforce-blueprint/resume-prompt.txt" \
     "$Hm/.openclaw/skills/23-ai-workforce-blueprint/resume-prompt.txt" 2>/dev/null || true
   _mkbin "$binm"; printf '[]' > "$Jm"; : > "$Cm"
@@ -176,7 +178,7 @@ H_C3="$SANDBOX/home-c3"; bin_c3="$SANDBOX/bin-c3"; J_C3="$SANDBOX/jobs-c3.json";
 mkdir -p "$H_C3/.openclaw/workspace"; _mkbin "$bin_c3"
 printf '[]' > "$J_C3"; : > "$C_C3"
 cat > "$H_C3/.openclaw/workspace/.workforce-build-state.json" <<'EOF'
-{"interviewComplete": true, "interviewQc": {"status":"pass"}, "ownerChat": "999999999", "agentName": "TestAgent", "departments": [{"id":"sales","status":"pending"}], "roleLibraryStatus":"pending", "sopLibraryStatus":"pending"}
+{"companySlug": "fixture-company", "interviewComplete": true, "interviewQc": {"status":"pass"}, "ownerChat": "999999999", "agentName": "TestAgent", "departments": [{"id":"sales","status":"pending"}], "roleLibraryStatus":"pending", "sopLibraryStatus":"pending"}
 EOF
 # NOTE: OPERATOR_ESCALATION_CHAT_ID is required for a dispatch to happen at all.
 # Internal resume traffic is operator-only (it is never routed to .ownerChat, and

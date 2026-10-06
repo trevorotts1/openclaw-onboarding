@@ -44,6 +44,8 @@ const DEFAULT_KIE_RESULT_HOSTS = [
   'tempfileb.aiquickdraw.com',
   'static.aiquickdraw.com',
   'tempfile.aiquickdraw.com',
+  // Veo 4K callback result host, documented in 07-kie-setup/kie-setup-full.md (file.aiquickdraw.com/v/...).
+  'file.aiquickdraw.com',
 ];
 const KIE_RESULT_HOSTS = (process.env.KIE_RESULT_HOSTS
   ? process.env.KIE_RESULT_HOSTS.split(',').map(h => h.trim()).filter(Boolean)
@@ -141,8 +143,12 @@ class KieKvPoller {
         }
         // Fix 35 / ONB-46-001: the ONE shared outcome rule -- a "success" with zero
         // downloadable URLs is NOT done. Both resolution paths call _resolveOutcome.
+        // A Worker that predates the Market-shape fix returns resultUrls: [] for a real
+        // success, so re-derive from the raw callback data before applying the rule.
+        const kvUrls = (Array.isArray(kvResult.resultUrls) && kvResult.resultUrls.length > 0)
+          ? kvResult.resultUrls : this._extractTaskUrls(kvResult.rawData);
         const { status, resultUrls: safeUrls, extra } =
-          this._resolveOutcome(kvResult.resultUrls, kvResult.code, taskId, 'callback-kv');
+          this._resolveOutcome(kvUrls, kvResult.code, taskId, 'callback-kv');
         const marker = { taskId, submitId, status, resultUrls: safeUrls, code: kvResult.code,
                          receivedAt: kvResult.receivedAt, source: 'callback-kv', ...extra };
         this._writeDoneMarker(taskId, marker);
@@ -231,12 +237,9 @@ class KieKvPoller {
         const state = data.state;
 
         if (state === 'success') {
-          // Parse resultJson (may be stringified JSON or an object)
-          let resultJson = data.resultJson;
-          if (typeof resultJson === 'string') {
-            try { resultJson = JSON.parse(resultJson); } catch (_) {}
-          }
-          const resultUrls = this._extractResultJsonUrls(resultJson);
+          // Real Market shape: data.resultJson is a JSON STRING {"resultUrls":[...]} and
+          // data.response is the parsed copy; Suno puts tracks at response.data[].audio_url.
+          const resultUrls = this._extractTaskUrls(data);
           // ONB-46-001: this branch used to hard-code status:'done' regardless of how many
           // URLs survived -- a run that produced NOTHING was permanently recorded complete
           // while the KV path ~90 lines above already refused exactly that. Both paths now
@@ -324,17 +327,42 @@ class KieKvPoller {
     return { status: 'done', resultUrls: safeUrls, extra: {} };
   }
 
-  /** Extract URLs from a Kie recordInfo resultJson structure */
+  /** Extract URLs from a Kie recordInfo resultJson structure (object or JSON string) */
   _extractResultJsonUrls(resultJson) {
-    if (!resultJson) return [];
-    // Standard images array: resultJson.images[].url
-    if (Array.isArray(resultJson.images)) {
-      return resultJson.images.map(i => i.url).filter(Boolean);
+    if (typeof resultJson === 'string') {
+      try { resultJson = JSON.parse(resultJson); } catch (_) { return []; }
     }
-    // Flux: resultJson.resultImageUrl or similar
+    if (!resultJson || typeof resultJson !== 'object') return [];
+    // Standard images array: resultJson.images[].url
+    // When every item is null/empty it yields nothing, so fall through to resultUrls below.
     const urls = [];
+    if (Array.isArray(resultJson.images)) {
+      const imgUrls = resultJson.images.map(i => i && i.url).filter(Boolean);
+      if (imgUrls.length > 0) return imgUrls;
+    }
+    // Market success shape: resultJson.resultUrls
+    if (Array.isArray(resultJson.resultUrls)) urls.push(...resultJson.resultUrls.filter(Boolean));
+    // Flux: resultJson.resultImageUrl or similar
     if (resultJson.resultImageUrl) urls.push(resultJson.resultImageUrl);
     if (resultJson.result_urls) urls.push(...[].concat(resultJson.result_urls));
+    // Suno audio tasks: response.data[].audio_url
+    if (Array.isArray(resultJson.data)) {
+      for (const t of resultJson.data) if (t && t.audio_url) urls.push(t.audio_url);
+    }
+    return urls;
+  }
+
+  /**
+   * All result URLs from a recordInfo `data` object (or a callback's rawData): the parsed
+   * `response` copy, the `resultJson` string, legacy `info`, and `data` itself (Suno callbacks).
+   * De-duplicated; the allowlist is applied later by _resolveOutcome.
+   */
+  _extractTaskUrls(data) {
+    if (!data || typeof data !== 'object') return [];
+    const urls = [];
+    for (const src of [data.response, data.resultJson, data.info, data]) {
+      for (const u of this._extractResultJsonUrls(src)) if (!urls.includes(u)) urls.push(u);
+    }
     return urls;
   }
 

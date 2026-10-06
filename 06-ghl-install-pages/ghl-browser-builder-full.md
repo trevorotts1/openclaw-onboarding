@@ -26,19 +26,32 @@ agent-browser-first convention (GOAL §2.2 / §4.2.2).
 > every browser line via `ghl_builder.py browser-cmd ...` (it prepends
 > `--headed false`) or by hand with the prefix above.
 
-> **STATUS — PENDING-LIVE-RUN.** Gate #1 (login form) and gate #27 (auth-storage
-> keys) are LIVE-CAPTURED and real. Gate #27's full record shape — the
+> **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
+> **PAID / captured side:** gate #1 (login form) and gate #27 (auth-storage keys)
+> are LIVE-CAPTURED and real. Gate #27's full record shape — the
 > `firebase:authUser:<apiKey>:[DEFAULT]` key and the Firebase Web SDK `User` value
 > (with the REQUIRED `emailVerified`/`isAnonymous` booleans that fix the old
 > `auth/internal-error`) — is confirmed against the Firebase JS SDK source and the
 > live token exchange (securetoken HTTP 200, id_token validates via the `token-id`
 > header). The refresh token alone seeds a logged-in SPA session — **no UI login,
-> no two-factor.** Gates #2–#26 and #28 are **runtime snapshot-gates**
+> no two-factor.** The U22/B-U8 persona + paid evidence tiers carry dated live
+> receipts (`evidence/u22-live-tier-proof-2026-07-19/`), and build methods A/B/C
+> (raw-code funnel/page, vercel-embed, website page) hold a `captured` end-to-end
+> PASS on the operator fixture (`tools/gates.json` `_runtime_gate_baseline`,
+> marker ZHC-FACTORY-FUNNEL-0621).
+> **OWED side:** gates #2–#26, #28, and the two multi-iframe protocol gates
+> #29 (`correct_frame_before_edit`) + #30 (`refreshed_snapshot_after_panel_open`)
+> are **runtime snapshot-gates**
 > (`gates.json` status=`runtime`) — they were BLOCKED behind two-factor
 > authentication in the 2026-06-21 capture pass and have **NOT** been verified
-> live. No invented CSS is shipped as fact for them. The end-to-end funnel/website
-> live test (GOAL D9–D13) is **NOT** claimed — it is blocked on a fresh Firebase
-> refresh token (seed path), NOT on a UI/two-factor run, which is now disabled.
+> live. No invented CSS is shipped as fact for them. The **REST_autosave wired
+> path** (`ghl_builder.emit_rest_save_plan` → `tools/ghl_rest_canvas.py`) is
+> `outcome_status: runtime` — its per-gate results are `PENDING-LIVE-RUN` because
+> the underlying recipe is proven live in the headless-canvas doc, but the WIRED
+> end-to-end receipt is **still owed**. The end-to-end funnel/website live test
+> (GOAL D9–D13) is likewise **NOT** claimed. The sole blocker for every owed run
+> is a fresh Firebase refresh token (seed path) — NOT a UI/two-factor run, which
+> is disabled.
 
 ---
 
@@ -339,15 +352,15 @@ appear on a client box.
 ## 3. RUNTIME GATE CONTRACT (D8) — snapshot-driven selection
 
 The builder NEVER hardcodes invented CSS for an in-app control. The gate
-registry `tools/gates.json` holds 28 gates:
+registry `tools/gates.json` holds 30 gates:
 - **2 CAPTURED** (status=`captured`): gate #1 login form + gate #27 auth storage.
   Real, snapshot-verified.
-- **26 RUNTIME** (status=`runtime`): the agent MUST, at the moment it needs the
+- **28 RUNTIME** (status=`runtime`): the agent MUST, at the moment it needs the
   control, run `agent-browser snapshot -i --json`, match the live nodes against
   the gate's `find` hint (accessibility role/name/text — NOT confirmed CSS), and
   act on the returned `@ref`. The `find` hints are SEARCH SEEDS, not facts.
 
-`python3 tools/ghl_builder.py gates --runtime` lists the 26 capture-at-runtime
+`python3 tools/ghl_builder.py gates --runtime` lists the 28 capture-at-runtime
 gates; `--captured` lists the 2 real ones. This is the D8 contract made
 machine-checkable: no runtime gate may be turned into a hardcoded selector
 without a fresh live capture that flips its status to `captured`.
@@ -356,6 +369,67 @@ without a fresh live capture that flips its status to `captured`.
 `https://app.convertandflow.com/` — NOT `/login` (the `/login` path renders a
 permanently-blank "Initializing…" shell in automated Chromium; the form never
 mounts).
+
+---
+
+## 4. MULTI-IFRAME PROTOCOL — one entrypoint: `tools/iframe_router.py`
+
+GHL builder surfaces are iframe-heavy (editor canvas, form/survey builder-v2,
+SEO/settings panel, media picker, cross-origin widgets) and the two historical
+iframe stacks had no single adaptive picker: the **AB ladder**
+(`tools/ghl_iframe_dragdrop.py` — text-drag → in-frame JS → detect-JS) and the
+**Playwright CDP stack** (`tools/ghl_iframe_drag.py` — `connect_over_cdp` +
+`frame_locator` coordinate drag / `frame_click` / `smoke_first`) were chosen by
+whichever doc the reader opened last. `tools/iframe_router.py` is the unified
+**detect → map → select → act** entrypoint the builders call. (The module ships
+in the parallel iframe-router unit — the contract below is what it implements;
+do not code against anything else.)
+
+Protocol:
+
+1. **DETECT via presets, never invented selectors.** Resolve the builder iframe
+   with `iframe_selector_for(kind)` from `tools/ghl_iframe_drag.py`
+   (`IFRAME_SELECTORS`: `form` → `iframe[src*="form-builder-v2"]`, `survey` →
+   `iframe[src*="survey-builder-v2"]`, `page_code` → `iframe[src*="page-builder"]`).
+   An unknown `kind` raises (fail-closed) — never guess a selector.
+2. **MAP.** Snapshot the top frame, classify every iframe
+   `same-origin | cross-origin | unknown`, and write `working/iframe-map.json`
+   (`{selector, name, src, originClass, purposeHint}`) before acting.
+3. **`activeFrameId` DISCIPLINE.** Exactly ONE active frame in run state; every
+   act declares its frame. After any navigation, save, or settings/SEO panel
+   open: **invalidate all refs and rebuild the iframe-map** (stale refs across
+   frames are a banned regression). `maxParallelTabs = 1` for the builder.
+4. **FAIL-CLOSED on ambiguity.** Multiple iframes matching one preset require an
+   explicit purpose/index; an ambiguous match is a REFUSAL, not a guess (same
+   rule as A14.2 "multiple matching steps: refuse to guess").
+5. **ROUTE per capability, not preference.** The probe (§4.1) picks the AB
+   ladder vs the Playwright CDP stack. Cross-origin drag/drop on a host without
+   Playwright is fail-closed: `IframeDragError("playwright-unavailable")`, exit
+   2 — STOP and report, never a fake pass.
+
+### 4.1 Adaptive lanes — what each stack can actually do
+
+**Do NOT claim AB-only = full iframe capability.** Verified live
+(`references/iframe-drag-capability.md`): after `frame @ref`, AB 0.27.0 `eval`
+still runs in the TOP frame and `find`/`drag`/`get` still bind to the top frame
+— AB has NO working frame-scoping primitive for locating or dragging a
+non-interactive element inside a cross-origin child frame.
+
+| Lane | Stack | Full GHL incl. cross-origin drag? | Status |
+|------|-------|-----------------------------------|--------|
+| 1 | agent-browser via `browser_manager` (pin 0.27.0) | **Partial** without Playwright | PRIMARY |
+| 1b | agent-browser **+** Playwright CDP hybrid | **Yes** — required for iframe drag/drop | Full class |
+| 2 | OpenClaw managed `openclaw browser` + `--frame` | (proposed — better native frame refs) | NOT wired as Skill 6 PRIMARY yet; experimental upgrade |
+| 3 | Playwright-only | Degraded | Escape hatch; never Step 1 |
+| 4 | REST / fallback-ladder | Content ops without UI drag | `GHL_FALLBACK_LADDER=1` (default OFF) |
+| 5 | CUA / computer-use | — | NOT in Skill 6 yet; optional future last resort only |
+
+**The `iframeDrag.available` gate:** the capability probe exposes
+`iframeDrag: {available, requires: "playwright+cdp"}`. `available=false`
+(AB-only host) ⇒ cross-origin tile **DRAG is a STOP** — the build halts with a
+clear blocked-message (never a silent degrade, never a fake success).
+`available=true` (hybrid) ⇒ **full** capability. Builds that need no drag still
+run on an AB-only host.
 
 ---
 

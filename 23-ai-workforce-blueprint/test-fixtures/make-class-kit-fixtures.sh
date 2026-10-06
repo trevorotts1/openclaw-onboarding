@@ -102,7 +102,7 @@ printf '{"micros": "task-id log placeholder"}' > "$GOOD/micro-infographics/worki
 cat > "$GOOD/BRAND-COLOR-SPEC.md" <<'EOF'
 # BRAND COLOR SPEC
 Light backgrounds mandatory. Palette: #FBFBF9, #14233F, #1F9D9A, #C8963E, #3A4A63.
-Reusable Kie.ai gpt-image-2 style directive + aspect/resolution quick-reference.
+Reusable Kie.ai gpt-image-2.5 style directive + aspect/resolution quick-reference.
 EOF
 printf '# %s-Slide Render Prompts\nAll verbatim slide prompts.\n' "20" > "$GOOD/${ROLE_N}-SLIDE-RENDER-PROMPTS.md"
 

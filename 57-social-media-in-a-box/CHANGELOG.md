@@ -1,5 +1,52 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.9 - 2026-10-06 - Review fixes: prompt 05 routing, prompts 09 and 10 ratio wording
+
+- Prompt 05: the "Ideogram V3 DESIGN / Agnes" text-bearing route is removed. Every social image routes to GPT Image 2.5 Sunburst; the only fallback is legacy gpt-image-2 under the N43 ratio rules.
+- Prompts 09 and 10: carousel slides are requested at 3:4 (N43 substitution) and delivered cropped to 4:5 at 1080x1350, matching the Skill 35 playbook; the prompts now tell the model to keep key content inside the central 4:5 safe area instead of stating 1080x1440 as the deliverable size.
+- `PROMPT-HASHES.json` re-recorded for prompts 05, 09 and 10 and verified. `ENGINE-PIN.sha256` unchanged (no engine file touched).
+
+## v1.7.8 - 2026-10-06 - Skill 74 media contract, no Sora labels, golden provenance model ids
+
+- Duration-lane naming: every "Sora" label is now "25.0s duration lane" with the render model picked by the Skill 67 selector (`modes.md`, `SOCIAL-MANIFEST.json` P4 name, `config/client-config.schema.json`, `config/bands.json` note, publisher sub-modes `tiktok` and `youtube`, `scripts/prove_bands.py` comment, `scripts/defer_stub.py` baseline text). Prompt 08: the role line "using OpenAI Sora" and the Sora wording in its header are replaced by model-neutral text (file name kept for the hash pin, like prompts 12 and 14). No code in this skill sent a Sora model id; the golden provenance fixture that recorded `sora` and `nano-banana-pro` now records `wan/3-0-video` (the Skill 67 selector's answer for a 25 second clip) and `gpt-image-2-5-sunburst-text-to-image`.
+- New "KIE dispatch contract" in `modules/3-media-core/README.md`: policy, Sunburst default (rule 13 auto-latest), `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, GHL upload. Prompt 05 gains the rule 12 length instruction (95 to 100 percent of the model maxLength, never below 80 percent; seeds from prompts 09, 10 and 15 are expanded, not padded); prompt 06 keeps a rewritten prompt inside the 80 to 100 percent window; prompts 12 and 14 headers state the budget and the podcast cover resize (2K output delivered as exactly 1400x1400 JPEG). `config/bands.json` records that the `image_prompt_*` bands limit the authored seed only.
+- Credit wording in `SKILL.md`, `MASTERDOC.md`, `SOCIAL-MANIFEST.json` and the preflight README now states the real rule (balance >= planned estimate x 1.30, 200 credits as the absolute floor) instead of "credits >= 200". The doubled "(Skill 67)" in `MASTERDOC.md` and the media-core README is fixed.
+- `PROMPT-HASHES.json` re-recorded for prompts 05, 06, 08, 12 and 14; `ENGINE-PIN.sha256` re-recorded (comment and text changes in `prove_bands.py` and `defer_stub.py`). Prompt and engine hashes verified.
+- Known, not changed here: `verify.sh` golden steps (2, 2b, 2c, discovery-drift) already failed before this change (the goldens predate the F08 execution-mode stamp and the F11 QC matrix); the other 8 prover self-tests, broken-variant rejections, scrub, prompt pin and engine pin pass. The committed golden certificates predate the prompt re-pins of v1.7.4 to v1.7.7 as well.
+
+## v1.7.7 - 2026-10-06 - SKILL.md model wording, prompts 12 and 14 payloads
+
+- `SKILL.md` frontmatter description: Midjourney and Nano-Banana carousel wording replaced with GPT Image 2.5 Sunburst; the video render is routed to the Skill 67 (kie-video) model selector, and "Kie.ai Sora" is no longer named in `SKILL.md`, `MASTERDOC.md` or `modules/3-media-core/README.md`. Remaining Sora labels on the 25.0s lane (modes.md, prove_bands.py, publisher submodes, config) are a separate follow-up, not changed here.
+- Prompts 12 and 14: removed the undeclared `"output_format": "png"` line from the payloads (the sunburst schema declares prompt, aspect_ratio, resolution, background and input_urls only). Nothing else in either prompt changed. `PROMPT-HASHES.json` re-recorded for 12 and 14; `ENGINE-PIN.sha256` unchanged and still matches.
+
+## v1.7.6 - 2026-10-05 - prompts 09 and 10 aspect ratio statements match N43
+
+- Prompts 09 and 10: only the aspect-ratio statements changed, 4:5 (1080x1350) to 3:4 (1080x1440), matching prompt 12 and the N43 4:5 to 3:4 substitution (09: universal canvas lines, 14 style templates, the worked example and the required-components line; 10: canvas size line). No other content touched. `PROMPT-HASHES.json` re-recorded; prompt hashes and engine hash match.
+
+## v1.7.5 - 2026-10-05 - close open items on the image consumers PR
+
+- Prompts 09 and 10 were read end to end: no image-model primary wording (no Nano Banana, no Midjourney) exists there, so they are unchanged. Re-pin confirmed: prompt hashes and engine hash match.
+
+## v1.7.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- `scripts/preflight_gate.py`: credit rule is now max(estimate x 1.30, 200), with 200 kept and documented as this skill's absolute floor; `_live_kie_credits` checks the BODY `code`; shortfall reported. New `scripts/test_kie_credit_rule.py`. `ENGINE-PIN.sha256` re-recorded.
+- Social images are GPT Image 2.5 sunburst everywhere (owner order): prompt 12 moved from `nano-banana-pro` to `gpt-image-2-5-sunburst-text-to-image` at 3:4 (N43 substitute for 4:5); SKILL.md, MASTERDOC.md, module 3 README and SOCIAL-MANIFEST labels no longer name Midjourney or Nano Banana; prompt 05 routing lists GPT Image 2.5 first, prompt 11 note updated. `PROMPT-HASHES.json` re-recorded. New `_live_kie_credits` body-code test in `test_kie_credit_rule.py`.
+- Prompts: 14 `google/nano-banana` (legacy per Skill 66) -> `gpt-image-2-5-sunburst-text-to-image` 1:1 2K png, the same id and payload Skill 58 `generate_cover.sh` sends; 12 `nano-banana-pro` and 13 `seedream/4.5-edit` kept and documented (12 matches Skill 66; 13 matches the live KIE docs enum); 06/07 stale Midjourney wording removed. `PROMPT-HASHES.json` re-recorded for every prompt (01, 05 and 16 were already drifted from the pin before this change).
+
+## v1.5.1 - 2026-09-09 - release fold: changelog entry for the v1.5.0 producer adapter bump (F05)
+
+Batch ONB-20260909T011638 (PR #1069, merged at 81fa6caee). Version bump
+v1.4.0 -> v1.5.0 shipped in commit b94672d7f (G3 lockstep with
+35-social-media-planner v3.4.0). This entry documents the change that bump
+already carried.
+
+### Changed
+- **Producer adapter layer (F05)** — `run_social_media.py` gained a
+  producer-adapter seam behind the phase gates. Producers are selected by
+  adapter, each phase writes hash-bound receipts, and interrupted runs resume
+  from the last verified receipt instead of restarting. Engine pin unchanged
+  (aa348057842c...); semantic minor for contract-affecting change.
+
 ## 0.2.11 — 2026-07-12 — P3-05 step 11: SOP-SOCIAL-03 image-prompt FORM/AESTHETIC split (durable successor fix)
 
 ### Changed
@@ -122,3 +169,7 @@ certificates (the P-DELIVER gate changed those modes' gate sets).
 ### Added
 - **`test_cc_contract.py` (byte-identical):** stdlib contract test proving `complete_run` posts
   `review` and never `done`, the legal-path walk, route-template parity, and disabled-board no-op.
+
+## [1.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

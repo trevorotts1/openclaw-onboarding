@@ -20,7 +20,7 @@
     "LIGHT": "aw-12 extraction, classification, routing-adjacent chores (Minimax V3 chain)",
     "JUDGE": "Gate B semantic checks and the Tier 2 rubric; ALWAYS a different resolution than the drafting tier (temperature 0)",
     "LONGCTX": "optional S9 whole-manuscript compile (about 1M context) ONLY when the client configured a key; else S9 chunks on HEAVY-WRITER",
-    "IMAGE": "S7 cover: the client's own Kie.ai GPT-image-2 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint (never the 16:9 recipe), through Skills 07 and 46"
+    "IMAGE": "S7 cover: the client's own Kie.ai GPT-image-2.5 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint (never the 16:9 recipe), through Skills 07 and 46"
   },
   "stages": [
     {
@@ -289,7 +289,7 @@
       "n": 13,
       "script": "cover_render.py",
       "authored_by": "W1.14",
-      "purpose": "Kie.ai GPT-image-2 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive",
+      "purpose": "Kie.ai GPT-image-2.5 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive",
       "exit_codes": "0 PNG landed; 3 callback lost after re-poll (held)"
     },
     {

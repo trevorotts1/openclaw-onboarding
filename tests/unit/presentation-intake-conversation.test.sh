@@ -169,6 +169,25 @@ else
   bad "deck-intake-driver.py missing at $DRIVER"
 fi
 
+# ---- (H2) Fix 7 (D1): the CANONICAL department driver has its own --selftest ----
+# The department driver (templates/role-library/presentations/scripts/
+# deck-intake-driver.py) is canonical per D1. Its --selftest exercises the
+# --sig-* turn-gate offline: --sig-next/--sig-answer work, legacy
+# --signature --next/--answer are rejected non-zero naming the --sig-* flag,
+# and bare --signature returns the use_turn_gate pointer.
+echo "--- SIGNATURE mode (canonical dept driver): --selftest green ---"
+DEPT_DRIVER="$ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/deck-intake-driver.py"
+if [ -f "$DEPT_DRIVER" ]; then
+  if OUT="$("$PY" "$DEPT_DRIVER" --selftest 2>&1)"; then
+    ok "canonical dept deck-intake-driver.py --selftest PASS (--sig-* turn-gate)"
+  else
+    bad "canonical dept deck-intake-driver.py --selftest FAILED"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+else
+  bad "canonical dept deck-intake-driver.py missing at $DEPT_DRIVER"
+fi
+
 # ---- (J) E5 REGRESSION GUARD: the SIGNATURE turn-gate is REQUIRED, not optional ----
 # Before this fix, a bare `--signature` call (no --next/--answer/--record) fell
 # through to the SAME full 8-Questions-plus-frame payload as the dry-run plan --
@@ -190,8 +209,8 @@ if [ -f "$DRIVER" ]; then
 
   PLAN_OUT="$("$PY" "$DRIVER" --signature --plan 2>&1)"
   if printf '%s' "$PLAN_OUT" | grep -q '"questions"' \
-     && printf '%s' "$PLAN_OUT" | grep -q '"frame_selection_question"'; then
-    ok "--signature --plan still emits the full read-only dry-run payload (explicit escape hatch preserved)"
+     && printf '%s' "$PLAN_OUT" | grep -q '"frame_question"'; then
+    ok "--signature --plan still emits the full read-only dry-run payload (explicit escape hatch preserved; Fix 31: canonical dept driver shape)"
   else
     bad "--signature --plan no longer emits the full intake plan"
     printf '%s\n' "$PLAN_OUT" | sed 's/^/         /' >&2
@@ -223,7 +242,7 @@ turns = [
     {"role": "assistant", "text": frame_prompt, "qid": "frame_selection"},
     {"role": "owner", "text": "rulebook", "qid": "frame_selection"},
 ]
-# Build the signed driver envelope via the checker's own canonical producer
+# Build the signed driver envelope via the canonical producer of the checker itself
 # (51-signature-presentation/scripts/intake_trace_check.py, resolved from $SPEC).
 cand = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])),
                                      "..", "scripts", "intake_trace_check.py"))

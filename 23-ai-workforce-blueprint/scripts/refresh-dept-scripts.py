@@ -30,12 +30,26 @@ scripts/ tree onto the box's materialized department directory, honoring
 the SAME ownership policy scaffold_department already enforces
 (create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
 
-  .py / .sh / .js / .tpl / .sha256 /  FLEET-OWNED  — always mirrored (overwritten
-  .pdf                                        whenever the sha256 diverges)
-  .json                        BOX-OWNED    — additive / missing-only,
+  _CANONICAL_SCRIPT_SUFFIXES   FLEET-OWNED  — always mirrored (overwritten
+                                               whenever the sha256 diverges)
+  engine-data .json            FLEET-OWNED  — F18: mirrored exactly like .py
+  _BOX_OWNED_JSON_BASENAMES    BOX-OWNED    — additive / missing-only,
                                                NEVER overwritten if it exists
   anything else                             — not this mirror's concern,
                                                not copied
+
+  The single authority is crw.script_asset_policy(rel_path), which answers
+  MIRROR / BOX-OWNED / SKIP for one file. This mirror, scaffold_department's
+  copy loop and verify_scripts_materialization() all call it — no writer
+  re-derives ownership from a suffix test of its own.
+
+  The suffix values themselves live in ONE place (create_role_workspaces.py)
+  and are deliberately NOT restated here: an inline copy of the tuple is
+  exactly how this policy drifted before. Every suffix the role library
+  actually ships must fall in one of those two tuples or in the explicit
+  _NON_DELIVERED_SCRIPT_SUFFIXES list, and
+  scripts/test_dept_scripts_suffix_coverage.py fails the build if one does
+  not — the mechanical end of the .js/.tpl/.md/.template/.yaml drop class.
 
 GAP-DELIVERY-JS: .js was added to the fleet-owned set above because
 rescue-rangers/scripts/relay_brain_validation.js is a versioned tool (like
@@ -78,9 +92,11 @@ For every role-library department directory with a scripts/ subdir:
      (create_role_workspaces._iter_scripts_tree_files — the SAME walk
      scaffold_department's verifier uses, so this mirror and the
      verification below can never disagree about what the tree contains).
-     For each file: .json is copied only if the destination does not yet
-     exist (never clobbers a client-local override); every other canonical
-     suffix (.py/.sh/.js/.tpl/.sha256/.pdf) is copied only when its sha256 differs
+     For each file: crw.script_asset_policy() decides. A BOX-OWNED file
+     (the crw._BOX_OWNED_JSON_BASENAMES allowlist) is copied only if the
+     destination does not yet exist (never clobbers a client-local
+     override); every MIRROR file — crw._CANONICAL_SCRIPT_SUFFIXES plus
+     (F18) every engine-data .json — is copied only when its sha256 differs
      from the current destination (idempotent no-op on an already-current
      box; a genuinely stale/corrupted file gets overwritten with the
      canonical library bytes). A per-file write failure here (an unwritable/
@@ -187,14 +203,25 @@ HOME = os.path.expanduser("~")
 
 # Same ownership policy scaffold_department already enforces
 # (create_role_workspaces.py _CANONICAL_SCRIPT_SUFFIXES / _ADDITIVE_SCRIPT_SUFFIXES):
-# .py/.sh/.js/.tpl/.sha256/.pdf are FLEET-OWNED and ALWAYS mirrored (overwritten when
+# _CANONICAL_SCRIPT_SUFFIXES are FLEET-OWNED and ALWAYS mirrored (overwritten when
 # divergent); .json is BOX-OWNED and additive/missing-only. BOTH tuples are
 # sourced from create_role_workspaces (never re-declared as a second literal
 # here) so the two writers can never drift apart — the exact bug class that
 # let relay_brain_validation.js (.js) fall through every delivery path: it
 # appeared in neither list, in either file, until this fix.
-_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # (".py", ".sh", ".js", ".tpl", ".sha256", ".pdf")
-_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # (".json",)
+# NOTE: these comments intentionally do NOT restate the tuple contents. An
+# inline copy of the literal is exactly how the delivery policy drifted before
+# (.md/.template were added to the constant while this comment still advertised
+# the older six-suffix tuple). Read create_role_workspaces.py for the values
+# and the per-suffix rationale.
+# F18: these two names are the raw SUFFIX buckets only. They are no longer the
+# ownership decision — crw.script_asset_policy(rel_path) is, because ownership
+# now depends on the basename as well as the suffix (an engine-data .json
+# mirrors like .py; only crw._BOX_OWNED_JSON_BASENAMES is box-owned). Kept as
+# re-exports so anything that read them for reporting still resolves, and so
+# they can never be re-declared as a second literal here.
+_MIRROR_SUFFIXES = crw._CANONICAL_SCRIPT_SUFFIXES  # fleet-owned suffixes
+_ADDITIVE_SUFFIXES = crw._ADDITIVE_SCRIPT_SUFFIXES  # suffixes ELIGIBLE to be box-owned
 
 
 def resolve_workspace(explicit):
@@ -266,11 +293,13 @@ def _try_copy(src_file, dest_file, rel_path, copy_failed):
 
 
 def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
-    """Copy .py/.sh/.js/.tpl/.sha256/.pdf files from lib_scripts_root into
-    scripts_target whenever the destination is missing or its sha256
+    """Copy every MIRROR file (crw.script_asset_policy) from lib_scripts_root
+    into scripts_target whenever the destination is missing or its sha256
     diverges from the source (idempotent no-op on an already-current box);
-    .json files are copied ONLY when absent at the destination (additive —
-    a client-local override that already exists is NEVER touched). Returns
+    BOX-OWNED files — the crw._BOX_OWNED_JSON_BASENAMES allowlist — are copied
+    ONLY when absent at the destination (additive — a client-local override
+    that already exists is NEVER touched). F18: a .json whose basename is not
+    on that allowlist is fleet-owned engine data and mirrors like .py. Returns
     {"copied": [rel_path, ...], "skipped_owned": [rel_path, ...],
      "copy_failed": [{"path", "issue": "copy-failed", "reason"}, ...]}.
 
@@ -283,10 +312,15 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
     skipped_owned = []
     copy_failed = []
     for rel_path, src_file in crw._iter_scripts_tree_files(lib_scripts_root):
-        suffix = src_file.suffix
         dest_file = scripts_target / rel_path
+        # F18: ownership is decided by crw.script_asset_policy(), the SAME
+        # authority scaffold_department's copy loop and
+        # verify_scripts_materialization() use -- never re-derived here from a
+        # suffix test, because a copier/verifier disagreement is precisely what
+        # made every previous delivery gap invisible.
+        policy = crw.script_asset_policy(rel_path)
 
-        if suffix in _ADDITIVE_SUFFIXES:
+        if policy == crw.POLICY_BOX_OWNED:
             if dest_file.exists():
                 skipped_owned.append(str(rel_path))
                 continue
@@ -296,7 +330,7 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
             copied.append(str(rel_path))
             continue
 
-        if suffix not in _MIRROR_SUFFIXES:
+        if policy != crw.POLICY_MIRROR:
             continue  # not a canonical script asset -- not this mirror's concern
 
         if dest_file.is_file():
@@ -310,6 +344,26 @@ def mirror_dept_scripts(lib_scripts_root, scripts_target, apply_):
                 continue
         copied.append(str(rel_path))
     return {"copied": copied, "skipped_owned": skipped_owned, "copy_failed": copy_failed}
+
+
+def _mirror_skill48_ghl_media(scripts_target, dept_slug, apply_):
+    if dept_slug.lower() != "presentations":
+        return False, None
+    _ghl_src = SKILL_DIR.parent / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+    _ghl_dst = Path(scripts_target) / "_skill48_ghl_media.py"
+    if not _ghl_src.is_file():
+        return False, None
+    if not apply_:
+        return False, None
+    try:
+        shutil.copy2(_ghl_src, _ghl_dst)
+        _src48 = hashlib.sha256(_ghl_src.read_bytes()).hexdigest()
+        _dst48 = hashlib.sha256(_ghl_dst.read_bytes()).hexdigest()
+        if _src48 != _dst48:
+            raise RuntimeError("_skill48_ghl_media.py diverged from source")
+        return True, None
+    except OSError as e:
+        return False, "%s: %s" % (type(e).__name__, e)
 
 
 def _write_receipt(workspace, ok, depts, failed_inscope, apply_):
@@ -334,7 +388,7 @@ def main(argv=None):
         description="Unconditionally mirror role-library department scripts/ trees onto "
                     "a materialized workspace, on every roll, independent of any "
                     "MISSING-only gap map (fixes causes 2 and 3 of the delivery defect). "
-                    ".py/.sh/.js/.tpl/.sha256/.pdf are fleet-owned and always overwritten when they "
+                    "Fleet-owned suffixes are always overwritten when they "
                     "diverge; .json is box-owned and additive/missing-only.")
     parser.add_argument("--workspace", default=None,
                         help="Client workspace root (default: resolved platform-appropriately).")
@@ -375,6 +429,16 @@ def main(argv=None):
 
         result = mirror_dept_scripts(lib_scripts_root, scripts_target, args.apply)
         total_copied += len(result["copied"])
+        # Fix 55: refresh the co-located _skill48_ghl_media.py for presentations
+        # on every roll (Skill-48 GHL fixes must reach existing boxes).
+        _ghl_copied, _ghl_err = _mirror_skill48_ghl_media(
+            scripts_target, dept_slug, args.apply)
+        if _ghl_copied:
+            total_copied += 1
+        if _ghl_err:
+            result["copy_failed"].append(
+                {"path": "_skill48_ghl_media.py", "issue": "copy-failed",
+                 "reason": _ghl_err})
 
         # Re-derive the verdict from the filesystem AFTER the write -- never
         # from mirror_dept_scripts()'s own "copied" counter (see "NOT A

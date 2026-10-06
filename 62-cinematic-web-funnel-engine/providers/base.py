@@ -128,7 +128,7 @@ class AssetUploadRequest:
 
 @dataclass(frozen=True)
 class ImageGenerationRequest:
-    model_id: str  # registry id, e.g. "kie-gpt-image-2-text-to-image"
+    model_id: str  # registry id, e.g. "kie-gpt-image-2-5-sunburst-text-to-image"
     prompt: str
     aspect_ratio: str = "16:9"
     resolution: str = "2K"
@@ -491,6 +491,10 @@ class ModelRegistry:
                 amount = by_res[resolution]
             elif resolution is None and len(by_res) == 1:
                 amount = next(iter(by_res.values()))
+            elif resolution is None and price.get("default_resolution") in by_res:
+                # Model declares which tier an unspecified resolution bills as
+                # (veo-3-1: KIE's own default is 720p).
+                amount = by_res[price["default_resolution"]]
         price["resolved_amount"] = amount
         if strict and (amount is None or not price.get("verified", False)):
             raise UnpricedModelError(

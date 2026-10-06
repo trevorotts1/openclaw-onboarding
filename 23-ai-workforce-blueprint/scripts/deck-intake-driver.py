@@ -113,6 +113,159 @@ def save_ledger(run_dir: pathlib.Path, ledger: dict, ledger_rel: pathlib.Path = 
 
 
 # ---------------------------------------------------------------------------
+# SINGLE-IMPLEMENTATION DELEGATION (P0-1)
+# ---------------------------------------------------------------------------
+# THE DEFECT THIS CLOSES. Two intake implementations existed against the SAME
+# question bank (templates/role-library/presentations/intake/
+# deck-intake-questions.json): the role-library driver, which records the
+# client's RUN-MODE declaration (FIX 11: ultra|standard|economy) onto the
+# RUN_MODE ledger key via _record_run_mode(), and THIS file, which never did.
+# The bank's order-9 `resource_plan` turn carries the run_mode subfield, so a
+# client answering "mode: ultra" HERE had their answer accepted and marked
+# validated while RUN_MODE was silently dropped. presentation-intake-poll.sh
+# reads exactly that ledger key (read_run_mode()) to set the run-mode door --
+# launcher --mode on the resume path, PRESENTATION_MODE on the new-intake
+# path -- so the run then executed STANDARD while every report said success.
+# Ultra was declared, paid for, and never delivered, with nothing failing.
+#
+# THE RULE THIS ESTABLISHES: a command that WRITES the standard intake ledger
+# has exactly ONE implementation -- the role-library driver. --next, --answer
+# and --complete are therefore delegated to it verbatim rather than reimplemented
+# here. A read-only command (--budget) and SIGNATURE mode stay local: signature
+# mode runs against 51-signature-presentation/intake/sp-8-questions.json, a
+# different bank with no run-mode axis at all, so it cannot lose a run mode.
+#
+# WHY DELEGATE RATHER THAN COPY: a generated copy drifts the moment either side
+# is edited, which is precisely how this defect was born. Delegation cannot
+# drift -- there is only one body of code.
+#
+# FAIL-CLOSED, AND NOT A NEW FAILURE MODE: if the canonical driver is missing we
+# refuse (exit 3) instead of silently falling back to the local implementation,
+# because a silent fallback is the Ultra-blind bug returning. This adds no new
+# way to fail: find_questions_file() above already resolves the question bank
+# from the SAME templates/role-library tree and already raises when it is
+# absent, so standard mode has never been able to run without that tree.
+CANONICAL_DRIVER_REL = (
+    pathlib.Path("templates") / "role-library" / "presentations" / "scripts"
+    / "deck-intake-driver.py"
+)
+
+
+def find_canonical_driver() -> pathlib.Path:
+    """Locate the ONE sanctioned standard-intake implementation.
+
+    Resolved exactly like find_questions_file()'s first candidate -- from this
+    file's own location, never from the process cwd and never from the
+    environment -- so the driver and the question bank it is fed can never be
+    resolved out of two different trees.
+    """
+    cand = pathlib.Path(__file__).resolve().parent.parent / CANONICAL_DRIVER_REL
+    if cand.is_file():
+        return cand
+    raise FileNotFoundError(
+        f"canonical intake driver not found at {cand}. Standard-mode intake is "
+        "delegated to the role-library driver so the client's RUN-MODE "
+        "declaration reaches the ledger; refusing rather than running an "
+        "implementation that would silently drop it."
+    )
+
+
+def delegate_standard_mode(run_dir: pathlib.Path, tail: list,
+                           init_ledger: bool = False) -> int:
+    """Run the canonical driver for one standard-mode command and return its rc.
+
+    stdout/stderr are inherited, so the caller sees the canonical driver's own
+    JSON verbatim -- no reformatting, no summarising, no swallowed diagnostics.
+
+    init_ledger mirrors this file's historical --next behaviour: the local
+    cmd_next() materialised working/interview/intake_ledger.json on the first
+    call, and tests/unit/presentation-deck-intake-driver-workspace.test.sh
+    leg (A) pins that ("the named workspace DID receive the ledger"), using it
+    to prove the alien-cwd filesystem diff is non-vacuous. The canonical --next
+    is a pure read, so the ledger is seeded here in the shape load_ledger()
+    already returns for a fresh run -- the canonical driver reads that shape
+    unchanged (read_intake_ledger() takes any dict) and adds its own keys.
+    """
+    import subprocess
+    if init_ledger and not (run_dir / LEDGER_REL).exists():
+        save_ledger(run_dir, load_ledger(run_dir))
+    try:
+        driver = find_canonical_driver()
+    except FileNotFoundError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
+        return 3
+    proc = subprocess.run(
+        [sys.executable, str(driver), "--run-dir", str(run_dir)] + list(tail)
+    )
+    return proc.returncode
+
+
+def delegate_signature_mode(tail: list,
+                            run_dir: "pathlib.Path | None" = None,
+                            next_command_rewrite=None) -> int:
+    """Fix 31 (M18 + D1): run the canonical driver for one signature command.
+
+    The skill-level signature interview is RETIRED. The department driver
+    (templates/role-library/presentations/scripts/deck-intake-driver.py) is
+    the ONE signature-intake implementation. Legacy --signature --next /
+    --answer calls translate to --signature --sig-next / --sig-answer so old
+    callers keep working; --plan/--record translate to --sig-plan/--sig-record;
+    --selftest and bare --signature delegate verbatim.
+
+    next_command_rewrite: optional callable applied to the "next_command"
+    field of the delegated JSON pointer. The department driver names
+    --sig-next in its pointer, which the skill-level driver does not accept
+    (its --signature --next form translates to --sig-next per Fix 31), so a
+    verbatim pointer would name an unfollowable command. Callers that need a
+    followable pointer pass a rewrite (e.g. --sig-next -> --next).
+
+    stdout/stderr are inherited, so the caller sees the canonical driver's own
+    JSON verbatim -- no reformatting, no summarising, no swallowed diagnostics.
+    (When next_command_rewrite is given, stdout is captured so the pointer can
+    be rewritten; stderr still streams.)
+
+    run_dir may be None for commands that need no workspace (bare --signature
+    pointer, --selftest, --sig-plan): a temp dir satisfies the canonical
+    driver's --run-dir requirement without touching the caller's cwd.
+    """
+    import subprocess
+    import tempfile
+    cleanup = None
+    if run_dir is None:
+        cleanup = tempfile.TemporaryDirectory()
+        run_dir = pathlib.Path(cleanup.name)
+    try:
+        driver = find_canonical_driver()
+    except FileNotFoundError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
+        return 3
+    cmd = [sys.executable, str(driver), "--run-dir", str(run_dir)] + list(tail)
+    if next_command_rewrite is None:
+        proc = subprocess.run(cmd)
+        rc = proc.returncode
+    else:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        out = proc.stdout or ''
+        payload = None
+        try:
+            payload = json.loads(out)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get('next_command'), str):
+            payload['next_command'] = next_command_rewrite(payload['next_command'])
+            print(json.dumps(payload))
+        else:
+            # Not the expected pointer shape; pass through untouched.
+            sys.stdout.write(out)
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+        rc = proc.returncode
+    if cleanup is not None:
+        cleanup.cleanup()
+    return rc
+
+
+# ---------------------------------------------------------------------------
 # Answer file I/O
 # ---------------------------------------------------------------------------
 def answer_path(run_dir: pathlib.Path, qid: str, answers_rel: pathlib.Path = ANSWERS_REL) -> pathlib.Path:
@@ -1927,9 +2080,16 @@ def _sp_finalize(run_dir: pathlib.Path, spec: dict, ledger: dict) -> dict:
     rc, prover_out = _run_sp_prover(out_path)
     passed = rc == 0
     if passed:
-        ledger["status"] = "complete"
-        ledger["completed_at"] = _now()
-        ledger["complete"] = True
+        # FIX 37: never mark the signature intake complete while provenance
+        # warnings are still open (record unstamped) -- hold at
+        # pending_confirmation until those warnings are cleared.
+        if provenance is None:
+            ledger["status"] = "pending_confirmation"
+            ledger["complete"] = False
+        else:
+            ledger["status"] = "complete"
+            ledger["completed_at"] = _now()
+            ledger["complete"] = True
     save_ledger(run_dir, ledger, SP_LEDGER_REL)
     return {
         "status": "signature_intake_verified" if passed else "signature_intake_rejected",
@@ -2397,44 +2557,57 @@ def main() -> None:
         cmd_selftest()
         return  # cmd_selftest exits internally
 
-    # Signature mode is self-contained: emit-block needs no run dir; --record and
-    # the SP self-test resolve everything themselves. Route it BEFORE the generic
-    # per-turn --run-dir requirement below.
+    # Fix 31 (M18 + D1): SIGNATURE MODE IS RETIRED -- delegated to the
+    # canonical department driver
+    # (templates/role-library/presentations/scripts/deck-intake-driver.py).
+    # The skill-level signature interview no longer exists as a separate
+    # implementation. Every --signature command hands off:
+    #   --signature --next            -> --signature --sig-next
+    #   --signature --answer ID TEXT  -> --signature --sig-answer ID TEXT
+    #   --signature --plan            -> --signature --sig-plan
+    #   --signature --record FILE     -> --signature --sig-record FILE
+    #   --signature --selftest        -> --selftest
+    #   --signature (bare)            -> --signature
+    # The local cmd_sp_next / cmd_sp_answer / cmd_signature /
+    # cmd_signature_pointer / signature_selftest functions below are RETIRED
+    # dead code, kept only so the module still imports for the standard-mode
+    # surface (derive_legacy_fields, etc.). Do not call them.
     if args.signature:
         if args.selftest:
-            sys.exit(0 if signature_selftest() else 1)
+            sys.exit(delegate_signature_mode(["--selftest"], None))
         if args.next or args.answer:
-            # --signature --next / --signature --answer: the REAL turn-gate.
-            # Runs the SAME blocked/validated ledger machinery as the standard
-            # flow, over sp-8-questions.json (choice question first, q1..q8,
-            # then the frame question) — no batch payload on this path.
             if not args.run_dir:
                 parser.error("--run-dir DIR is required for --signature --next/--answer")
             sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
             if not sp_run_dir.exists():
-                print(json.dumps({"status": "error", "message": f"--run-dir not found: {sp_run_dir}"}))
+                print(json.dumps({"status": "error",
+                                  "message": f"--run-dir not found: {sp_run_dir}"}))
                 sys.exit(1)
-            try:
-                sp_spec = json.loads(find_sp_spec(args.sp_spec).read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
-                print(json.dumps({"status": "error", "message": f"cannot load SP spec: {exc}"}))
-                sys.exit(3)
-            sp_ledger = load_ledger(sp_run_dir, SP_LEDGER_REL)
             if args.next:
-                cmd_sp_next(sp_run_dir, sp_spec, sp_ledger)
+                tail = ["--signature", "--sig-next"]
             else:
-                cmd_sp_answer(sp_run_dir, sp_spec, sp_ledger, args.answer[0], args.answer[1])
-            return  # both exit internally
-        if args.plan or args.record:
-            # --signature --plan (read-only dry-run) or --signature --record FILE
-            # (assemble a pre-gathered answers file). Both are explicit, named
-            # escape hatches from the turn-gate — never the bare-call default.
-            cmd_signature(args)
-            return  # cmd_signature exits internally
-        # E5 fix: bare --signature (no --next/--answer/--record/--plan) MUST NOT
-        # leak the full question payload — point at the required turn-gate instead.
-        cmd_signature_pointer(args)
-        return  # cmd_signature_pointer exits internally
+                tail = ["--signature", "--sig-answer", args.answer[0], args.answer[1]]
+            sys.exit(delegate_signature_mode(tail, sp_run_dir))
+        if args.plan:
+            rd = (pathlib.Path(args.run_dir).expanduser().resolve()
+                  if args.run_dir else None)
+            sys.exit(delegate_signature_mode(["--signature", "--sig-plan"], rd))
+        if args.record:
+            if not args.run_dir:
+                parser.error("--run-dir DIR is required for --signature --record")
+            sp_run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+            sys.exit(delegate_signature_mode(
+                ["--signature", "--sig-record", args.record], sp_run_dir))
+        # Bare --signature: delegate for the canonical use_turn_gate pointer.
+        # The dept driver names --sig-next, which this driver rejects
+        # (unrecognized arguments). Rewrite to the --signature --next form
+        # this driver accepts and translates per Fix 31, so the emitted
+        # pointer is followable.
+        rd = (pathlib.Path(args.run_dir).expanduser().resolve()
+              if args.run_dir else None)
+        sys.exit(delegate_signature_mode(
+            ["--signature"], rd,
+            next_command_rewrite=lambda cmd: cmd.replace('--sig-next', '--next')))
 
     # All other commands require --run-dir
     if not args.run_dir:
@@ -2444,6 +2617,20 @@ def main() -> None:
     if not run_dir.exists():
         print(json.dumps({"status": "error", "message": f"--run-dir not found: {run_dir}"}))
         sys.exit(1)
+
+    # P0-1: every ledger-WRITING standard-mode command runs the canonical
+    # role-library implementation, which records the client's RUN-MODE
+    # declaration. See delegate_standard_mode() above for why. --budget is a
+    # read-only budget report and stays local: it writes no ledger, so it
+    # cannot drop a run mode.
+    if args.next or args.answer or args.complete:
+        if args.next:
+            _tail = ["--next"]
+        elif args.answer:
+            _tail = ["--answer", args.answer[0], args.answer[1]]
+        else:
+            _tail = ["--complete"]
+        sys.exit(delegate_standard_mode(run_dir, _tail, init_ledger=bool(args.next)))
 
     qfile = find_questions_file(run_dir)
     with open(qfile) as f:

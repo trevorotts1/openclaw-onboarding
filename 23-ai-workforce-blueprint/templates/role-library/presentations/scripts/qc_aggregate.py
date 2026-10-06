@@ -85,6 +85,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,6 +94,188 @@ HERE = Path(__file__).resolve().parent
 
 QC_PASS_THRESHOLD = 8.5
 FINAL_REPORT_REL = "working/qc/final_qc_report.json"
+
+# ---------------------------------------------------------------------------
+# FIX 33 — QC independence provable; a real vision route (MASTER Part 8).
+#
+# MASTER Part 8 Fix 33: "image-QC report declared independent and was written
+# by the driver; no verifier calls a vision model; 'vision QC' means the report
+# says a model name. HOW: the dispatcher stamps graded_by_provider,
+# graded_by_model, request_id into every QC artifact it authors; qc_aggregate
+# and verifier_registry.qc_report_verifier fail a report whose model equals the
+# authoring stamp for the same range or lacks a request id; P-IMAGE-QC units
+# call a vision-capable route with the PNG attached and store observed_text
+# per slide."
+#
+# This file's share of the fix: when aggregating the IMAGE domain, the report
+# must carry the vision-UNIT provenance a real route leaves behind --
+#   * graded_by_model present AND different from the report's authoring stamp
+#     (the qc_independence/builder identity -- a self-graded vision pass is
+#     not a vision pass);
+#   * a request_id (the vision route's request id -- a report without one
+#     names no route and cannot prove a unit ran);
+#   * per-slide rows in LIST form, one per rendered PNG, each carrying a
+#     non-empty observed_text (a pixel-blind row attests nothing).
+# Any violation is a BLOCKING finding on the Image QC domain, AF-IMAGE-QC-UNIT.
+# Rollback: PRESENTATION_FIX33_VISION_CONTRACT=0 restores the pre-FIX-33
+# aggregate exactly. Default is ON.
+# ---------------------------------------------------------------------------
+FIX33_ROLLBACK_FLAG = "PRESENTATION_FIX33_VISION_CONTRACT"
+
+# Top-level keys accepted as the report's vision-unit provenance stamp
+# (kept in lockstep with phase_verifiers._FIX33_*_KEYS -- same contract, same
+# accepted shapes, two enforcement points).
+FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
+FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                    "ocr_engine", "vision_engine", "reviewer_vision_model")
+FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+
+# Per-slide observation fields (mirrors build_deck._image_qc_report_defects
+# VIS_FIELDS / phase_verifiers._FIX33_OBSERVED_FIELDS so all three rubrics
+# agree on what counts as an observation).
+FIX33_OBSERVED_FIELDS = ("observed_text", "vision", "ocr", "ocr_text",
+                         "baked_text", "read_text", "description",
+                         "pixels_read", "visual_subject")
+
+FIX33_UNIT_AF_CODE = "AF-IMAGE-QC-UNIT"
+
+
+def _fix33_wiring_enabled() -> bool:
+    """FIX 33 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-fix aggregate exactly (documented rollback path)."""
+    return os.environ.get(FIX33_ROLLBACK_FLAG) != "0"
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    """First non-empty string value among keys, else ''."""
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_row_ordinal(row: dict, index: int):
+    """1-based slide ordinal for a per-slide row: row['slide'] / row['ordinal']
+    / row['slide_ordinal'] / row['index'] when an int, else the row's list
+    position (0-based index -> 1-based)."""
+    for k in ("slide", "ordinal", "slide_ordinal", "index", "slide_number", "n"):
+        v = row.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("Ss-").isdigit():
+            try:
+                return int(v.strip().lstrip("Ss-"))
+            except ValueError:
+                continue
+    return index + 1
+
+
+def _fix33_authoring_stamp(report: dict) -> str:
+    """Who WROTE the report (builder/driver identity): the first non-empty
+    authoring-identity string in the qc_independence block or at top level --
+    the SAME precedence phase_verifiers._fix33_check_report uses."""
+    blk = report.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    for src in (blk, report):
+        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        if any(isinstance(src.get(k), str) and src.get(k).strip()
+               for k in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by")):
+            break
+    return ""
+
+
+def _fix33_vision_unit_reasons(run_dir: Path, report: dict) -> List[str]:
+    """FIX 33 vision-unit contract over an already-parsed image_qc_report.json.
+    Returns the BLOCKING reason list ('' list == contract attested). Same
+    contract as phase_verifiers._fix33_check_report's production branch:
+      * graded_by_model present AND different from the authoring stamp;
+      * a request_id present (the vision route's request id);
+      * per-slide rows in LIST form (a dict can silently drop rows), one per
+        rendered PNG, each with a non-empty observed_text."""
+    reasons: List[str] = []
+    tag = FIX33_UNIT_AF_CODE
+
+    # --- graded_by_model must exist and DIFFER from the authoring stamp ---
+    authoring_stamp = _fix33_authoring_stamp(report)
+    graded_model = _fix33_first_str(report, FIX33_MODEL_KEYS)
+    if not graded_model:
+        reasons.append(
+            f"{tag}: image_qc_report.json declares no graded_by_model — "
+            "FIX 33 requires the dispatcher's vision-unit stamp "
+            "(graded_by_provider/graded_by_model/request_id) in every QC artifact; "
+            "a report that only SAYS a model name carries no route provenance.")
+    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+        reasons.append(
+            f"{tag}: graded_by_model {graded_model!r} equals the report's "
+            f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
+            "FIX 33: the vision route that graded the deck must be a DIFFERENT "
+            "model from the authoring stamp (cross-graded, never self-graded).")
+
+    # --- request_id: the vision route's request id must appear ---
+    request_id = _fix33_first_str(report, FIX33_REQUEST_KEYS)
+    if not request_id:
+        reasons.append(
+            f"{tag}: image_qc_report.json carries no request_id — FIX 33 "
+            "requires the vision route's request id in the report so every grade "
+            "is traceable to the unit call that produced it. A report with no "
+            "request id names no route and cannot prove a vision unit ran.")
+
+    # --- per-slide coverage: LIST, covering every rendered PNG, observed_text ---
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report:
+            per_slide = report.get(k)
+            break
+    if isinstance(per_slide, dict):
+        reasons.append(
+            f"{tag}: per-slide coverage is a DICT — FIX 33 requires the "
+            "per-slide LIST form so no slide's vision row can be silently dropped.")
+        per_slide = None
+    rows: List[Tuple[int, dict]] = []
+    if isinstance(per_slide, list) and per_slide:
+        rows = [(_fix33_row_ordinal(r, i), r) for i, r in enumerate(per_slide)
+                if isinstance(r, dict)]
+        if len(rows) != len(per_slide):
+            reasons.append(
+                f"{tag}: per-slide coverage contains non-object rows — "
+                "every FIX 33 vision row must be an object with its own "
+                "observed_text.")
+    try:
+        pngs = sorted(run_dir.glob("renders/slide-*.png"))
+        n_pngs = len(pngs)
+    except OSError:
+        n_pngs = 0
+    if not rows:
+        reasons.append(
+            f"{tag}: image_qc_report.json has no per-slide rows — FIX 33 "
+            "requires one vision-unit row per rendered slide, each carrying a "
+            "non-empty observed_text from the route's read of the PNG.")
+    else:
+        if n_pngs and len(rows) < n_pngs:
+            reasons.append(
+                f"{tag}: image_qc_report.json carries {len(rows)} per-slide "
+                f"vision rows for {n_pngs} rendered PNG(s) — every rendered slide "
+                "must be covered by its own vision-unit row (FIX 33).")
+        # observed_text per row (a row may override the top-level stamp, but the
+        # OBSERVATION is per-slide and never inheritable).
+        blind: List[str] = []
+        for ordinal, row in rows:
+            observed = _fix33_first_str(row, FIX33_OBSERVED_FIELDS)
+            if not observed:
+                blind.append(f"slide {ordinal:02d}" if isinstance(ordinal, int)
+                             else f"row {ordinal!r}")
+        if blind:
+            reasons.append(
+                f"{tag}: per-slide rows without a non-empty observed_text "
+                "(the route's per-slide read of the PNG): " + ", ".join(blind[:12])
+                + " — a pixel-blind row cannot attest a vision unit (FIX 33).")
+    return reasons
 
 # Known-good literal paths -- the FALLBACK used only when no manifest can be
 # resolved at all (e.g. an isolated unit-test fixture with no PIPELINE-MANIFEST.json
@@ -143,7 +326,14 @@ def _independence_reason(obj: dict) -> str:
     """Delegates to build_deck._qc_independence_reason -- the existing
     independent-reviewer-provenance check every legacy per-domain gate already
     uses. If build_deck.py cannot be imported at all, this FAILS CLOSED (a
-    blocking reason saying so) rather than inventing a substitute check."""
+    blocking reason saying so) rather than inventing a substitute check.
+
+    PRES-042: when execution stamps are enabled, the aggregate ALSO binds each
+    domain to the trusted dispatcher's execution stamps (author != reviewer
+    execution identity, the reviewed artifact's CURRENT sha, rubric version) —
+    see _execution_stamp_reasons below. The model-reported graded_by text stays
+    display-only; both checks run so a rollback of either surface still keeps
+    the other's teeth."""
     if _bd is None or not hasattr(_bd, "_qc_independence_reason"):
         return ("AF-QC-INDEPENDENCE: cannot verify independent-reviewer provenance "
                 "-- build_deck.py (the module that owns this check) is not "
@@ -153,6 +343,93 @@ def _independence_reason(obj: dict) -> str:
         return _bd._qc_independence_reason(obj) or ""
     except Exception as exc:  # noqa: BLE001
         return f"AF-QC-INDEPENDENCE: independence check raised {exc!r} -- treating as unproven."
+
+
+def _resolve_consumes(phase_id: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Manifest consumes patterns for one phase, via the same resolution the
+    domain paths use (explicit --manifest is NOT visible here; walk-up +
+    deployed layout, mirroring _resolve_domain_paths candidates 2-3).
+    Returns (patterns, manifest_path) or (None, None) when no manifest
+    resolves — the caller then enforces the report-level surface only."""
+    candidates: List[Path] = []
+    try:
+        from manifest_source import find_repo_root
+        root = find_repo_root(HERE)
+        if root is not None:
+            candidates.append(root / "universal-sops" / "presentation-slide-craft"
+                               / "PIPELINE-MANIFEST.json")
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(HERE.parent / "sops" / "PIPELINE-MANIFEST.json")
+    for cand in candidates:
+        if not cand.is_file():
+            continue
+        try:
+            obj = json.loads(cand.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for p in obj.get("phases", []):
+            if p.get("id") == phase_id:
+                consumes = p.get("consumes") or []
+                return (list(consumes), str(cand))
+        return ([], str(cand))  # manifest resolves but names no such phase
+    return (None, None)
+
+
+def _execution_stamp_reasons(run_dir: Path, phase_id: str, report_rel: str) -> List[str]:
+    """PRES-042 — trusted-execution independence over the report's own
+    AUTHOR/REVIEWER stamps. Fail-closed: when stamps are enabled and the
+    report artifact carries no active author+reviewer stamp pair covering its
+    CURRENT bytes, the domain is BLOCKED (a report that cannot prove WHO
+    executed it proves nothing). Rollback: PRESENTATION_EXECUTION_STAMPS=0
+    disables this surface entirely (pre-PRES-042 contract).
+
+    QC-SONNET-R5 (PRES-042 repair): the report-level pair is dispatch
+    integrity, not independence. When the manifest resolves, EACH consumed
+    upstream artifact must ALSO carry (a) an ACTIVE author stamp at its
+    CURRENT sha (some producer revision minted it — orphaned pre-repair rows
+    never count) and (b) a reviewer stamp FROM THIS QC PHASE covering that
+    same current sha (this review actually graded these bytes). A mutated
+    upstream input with no fresh review blocks the domain even when the
+    report bytes themselves are untouched — that is QC-PRES-042 row 2's
+    production meaning. Manifest unresolvable → report-level only (no new
+    failure mode for manifest-less runs)."""
+    try:
+        from presentation_job import execution_stamp as _es
+    except Exception:  # noqa: BLE001 — a missing module is unproven, not a crash
+        return ["AF-EXEC-STAMP: presentation_job.execution_stamp is not importable "
+                "-- execution identity cannot be verified (fail-closed)."]
+    if not _es.stamps_enabled():
+        return []
+    out: List[str] = []
+    report = run_dir / report_rel
+    reason = _es.qc_independence_reason(run_dir, phase_id, None, report)
+    if reason:
+        return [reason]
+    consumes, _manifest_path = _resolve_consumes(phase_id)
+    if consumes is None:
+        return []
+    import glob as _glob
+    seen: List[str] = []
+    for pat in consumes:
+        try:
+            hits = _glob.glob(str(run_dir / pat))
+        except Exception:  # noqa: BLE001 — a bad pattern is unproven, not a crash
+            hits = []
+        for hit in hits:
+            hp = Path(hit)
+            if not hp.is_file():
+                continue
+            try:
+                rel = str(hp.relative_to(run_dir))
+            except ValueError:
+                continue
+            if rel in seen:
+                continue
+            seen.append(rel)
+            for ureason in _es.consumed_coverage_reasons(run_dir, phase_id, hp):
+                out.append(ureason)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +564,29 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
             entry["reasons"].append(reason)
             blocking_reasons.append(reason)
 
+        # PRES-042 — trusted-execution independence (author != reviewer by
+        # dispatcher stamps, reviewed sha currency, rubric version), in
+        # ADDITION to the report-text provenance above.
+        try:
+            for stamp_reason in _execution_stamp_reasons(run_dir, phase_id, rel):
+                entry["reasons"].append(f"{label} ({phase_id}): {stamp_reason}")
+                blocking_reasons.append(f"{label} ({phase_id}): {stamp_reason}")
+        except Exception as exc:  # noqa: BLE001 — unproven beats a crash
+            reason = (f"{label} ({phase_id}): AF-EXEC-STAMP: execution-stamp check "
+                      f"raised {exc!r} -- treating provenance as unproven.")
+            entry["reasons"].append(reason)
+            blocking_reasons.append(reason)
+
+        # FIX 33 — vision-UNIT contract on the IMAGE domain: a report whose
+        # graded_by_model equals the authoring stamp, that lacks a request_id,
+        # or whose per-slide rows are pixel-blind is a BLOCKING finding
+        # (AF-IMAGE-QC-UNIT) exactly as specified. Rollback flag restores the
+        # pre-FIX-33 aggregate.
+        if key == "image" and _fix33_wiring_enabled():
+            for unit_reason in _fix33_vision_unit_reasons(run_dir, obj):
+                entry["reasons"].append(unit_reason)
+                blocking_reasons.append(unit_reason)
+
         domains[key] = entry
 
     # Priority-shift ship gate: a 14-item pass/fail checklist, not a 0-10 rubric.
@@ -324,6 +624,24 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
             reason = f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): report is not a JSON object"
             ps_entry["reasons"].append(reason)
             blocking_reasons.append(reason)
+        # QC-SONNET-R6 (PRES-042 repair): the ship gate is a QC domain too —
+        # its report carries the same trusted-execution surface (report-level
+        # stamps + consumed-upstream coverage) as the five averaged domains.
+        # (Legacy text provenance for this checklist is its pass/items shape
+        # above; the stamp surface is additive, same as everywhere else.)
+        if ps_p.is_file():
+            try:
+                for stamp_reason in _execution_stamp_reasons(run_dir, PRIORITY_SHIFT_PHASE_ID, ps_rel):
+                    ps_entry["reasons"].append(
+                        f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): {stamp_reason}")
+                    blocking_reasons.append(
+                        f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): {stamp_reason}")
+            except Exception as exc:  # noqa: BLE001 — unproven beats a crash
+                reason = (f"Priority-Shift Ship Gate ({PRIORITY_SHIFT_PHASE_ID}): "
+                          f"AF-EXEC-STAMP: execution-stamp check raised {exc!r} "
+                          f"-- treating provenance as unproven.")
+                ps_entry["reasons"].append(reason)
+                blocking_reasons.append(reason)
     domains["priority_shift"] = ps_entry
 
     # Whole-run-dir provenance guard -- the EXISTING mechanism (AF-QC-GENERATOR-UNGOVERNED /
@@ -364,6 +682,12 @@ def aggregate(run_dir: Path, explicit_manifest: Optional[str] = None) -> Dict[st
         "missing_domains": missing_domains,
         "generator_guard": generator_guard,
         "blocking_reasons": blocking_reasons,
+    }
+    # FIX 33 — surface the vision-unit contract state so downstream readers
+    # (gates.py, qc_check.py cross-check) see it without re-deriving it.
+    report["fix33_vision_unit"] = {
+        "applies": _fix33_wiring_enabled(),
+        "af_code": FIX33_UNIT_AF_CODE,
     }
     if overall_pass:
         report["per_dimension"] = {

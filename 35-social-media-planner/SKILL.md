@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v2.9.19
+version: "3.6.11"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -86,10 +86,10 @@ WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), em
 ### Phase 2: Content Creation
 1. Writer + Editor: Draft → refine article.
 1a. **Agnes vs. Kie.ai choice (MANDATORY when both are installed):** If the client has BOTH Agnes (Skill 63 `agnes-image-2.1-flash` / Skill 64 `agnes-video-v2.0`) AND Kie.ai installed, the skill MUST offer the owner a choice before any image/video generation begins. Ask: "I see you have Agnes. Because you have Agnes, would you like to use Agnes to create your videos and images, or would you prefer to stick with Kie.ai?" Route all generation calls for this cycle based on the owner's answer. If only one provider is installed, skip this step. Full choice logic: `references/playbook.md` Section 8 "Step 0 — Agnes vs. Kie.ai choice".
-2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via Ideogram V3 DESIGN for any text/headline image and Nano Banana 2/Pro for non-text imagery only; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Full decision table + working curl examples: `references/playbook.md` Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
+2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via KIE GPT Image 2.5 Sunburst for every image (`gpt-image-2-5-sunburst-text-to-image`, or `gpt-image-2-5-sunburst-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43). Nano Banana is never used for social images; the only fallback is legacy gpt-image-2 under the N43 ratio rules; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Every paid KIE image runs the Skill 74 chain (policy, `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, then GHL CDN upload): `references/playbook.md` Section 8c. Full decision table + working examples: Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
 3. Video Script Writer: Script video/podcast.
 4. Video Producer: 
-   - Generate clips via `video_generate`.
+   - Generate clips through Skill 67 (`67-kie-video`), which owns video model selection and dispatch. Default request: Veo 3.1 Lite (`veo3_lite`); an explicit client or manifest pick wins; OpenAI Sora is prohibited and a Sora id in `video-specs.json` is ignored and reported. Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74). KIE rules: `07-kie-setup/references/kie-common-rules.md`.
    - FFmpeg crossfade: `ffmpeg -i clip1.mp4 -i clip2.mp4 -filter_complex "[0:v][0:a][1:v][1:a]xfade=transition=fade:offset=[from config: clip_duration]s[v][a]" -map "[v]" -map "[a]" output.mp4`.
    - Optimize: `ffmpeg -i input.mp4 -vf scale=[from config: video_width]:[from config: video_height] -c:a aac output.mp4`.
 5. Audio Generator: TTS voiceover.
@@ -167,6 +167,10 @@ The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-ag
 | Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |
 
 Resolve concrete model IDs via `shared-utils/select_model.py` (Ollama-Cloud-first). NEVER recommend, hardcode, or default any client agent to an Anthropic/Claude model (Opus/Sonnet/Haiku/`claude-*`) — every client runs their own providers (Ollama Cloud / OpenRouter).
+
+### Provider-first model policy (F31 — binding)
+
+Selection is **provider-first, then model**: ask which provider the client wants (Ollama Cloud, OpenRouter, or a direct provider such as DeepSeek), fetch that provider's accessible models, and let the client choose or accept a recommendation. The client's saved choice is authoritative — never silently choose a newer model solely because its version number is higher. Provider-verified FULL slugs (including suffix variants such as `openrouter/z-ai/glm-5.3-flash`) are recognized from the inventory in `shared-utils/model-capabilities.json` (`verified_slugs`); a new model slug is added to the inventory, never to selector code. Roles are selected separately: planner / researcher / writer / prompt_compiler are text roles; **visual QC requires actual image input (vision capability) and is never served by a text-only model**; image and video models are chosen separately. A removed model activates only an approved fallback in the client's saved order; with no approved fallback, show an explicit selection request — no silent substitution, no indefinite wait. Resolution: `shared-utils/social_model_policy.py::select_provider_then_model` with direct-provider adapters in `shared-utils/provider_adapters.py` (DeepSeek direct included; a direct selection is never implicitly routed through OpenRouter or Ollama).
 
 ## Owner Q&A Playbook — "What does the planner do?" / "How do I use it?"
 
@@ -307,3 +311,23 @@ This is the ONLY valid sequence for any image delivered by this skill. Every ima
 - Pull via `read` tools before agent prompts.
 
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's CTAs feed Skill 38's inbound pipeline and route posting through Skill 44.
+
+
+### Required publication evidence handoff
+
+Before completing a production task, follow
+`references/publication-verification.md`: register the full company/queue/account
+post inventory as a hashed task deliverable. A separate verification task reads
+back those exact provider IDs; it must never repost. Keep scheduled, partially
+published and verification-required states distinct. Missing proof stays actively
+owned repair work while unrelated healthy accounts continue.
+
+
+### n8n compatibility deployment
+
+Use the five-workflow compiler in `config/n8n/compat/README.md`; never activate a
+credential-free source export directly. The shared URLs must preserve legacy
+`{sheetId,row}` document writes and route modern requests to the strict company
+flow. Public document capability is not company ownership or publication proof.
+Do not migrate an existing planner by running a new-copy initializer. A passing
+local doctor report alone does not prove live n8n Google writes or GHL posting.

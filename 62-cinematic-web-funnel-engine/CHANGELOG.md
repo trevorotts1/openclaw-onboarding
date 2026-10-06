@@ -1,5 +1,101 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.4 - 2026-10-06
+
+Final QC minor gaps on the prompt builder.
+
+- The 95 to 100 percent target now holds for ANY direction shape. Very short direction (four words per field) landed at 91.6 to 92.7 percent at the 20000 maximum; three more scene-applied still topics (negative space, lighting ratio, accent discipline) and three clip topics (easing and frame rhythm, foreground elements for parallax, ending hold) top it up. Measured for four-word fields: stills 0.951 to 1.0 and clips 0.951 to 1.0 of the maximum across 20000, 12000, 8000, 5000, 2500 and 1000.
+- Planner defaults respect the world: the `time_of_day` defaults no longer say sunrise, sunset, daylight, morning or afternoon (they describe a relative moment of the project's day), and the "architecture or landscape" wording is now "structure and surroundings". Test: planner direction and the expanded prompts for an indoor world contain none of sunrise, sunset, architecture, landscape, daylight, dawn, dusk, midday, morning, afternoon, sky or horizon, for all 13 section types and a custom section.
+- The band test is parametrized over the maxima 20000, 12000, 8000, 5000, 2500 and 1000, for stills, clips and connectors, and for five input shapes (no scene, no direction, concise operator direction, four-word direction, full planner direction), each across the 13 section types. Cross-scene sentence overlap stays under 50 percent (stills 0.35, clips 0.40 worst pair).
+## v2.1.3 - 2026-10-06
+
+Delta QC round 3 on the prompt builder.
+
+- Stills reach the 95 to 100 percent target, not just the 80 percent floor. Eight new genuine still topics (depth planes and parallax readiness, micro-detail under the grade, tonal range and exposure latitude, silhouette, figure and ground separation, camera height and perspective, supporting story detail, synthetic artefacts) and three clip topics (shutter and motion rendering, hand-off between depth planes, motion artefacts, ready for web encoding) are applied to each scene's own fields. Measured at the 20000 maximum: stills 19009 or more and clips 19003 or more for the full planner direction, for a scene with no direction, for concise 60 to 90 character operator direction, and for a project-level still with no scene. Tests assert at least 95 percent and at most 100 percent for all three shapes, 13 section types, stills and clips.
+- `generate_images.py`: the concept board and the final anchor now pass the first scene of the scene plan into `image_sections` (new `_anchor_scene`), so the project-level stills are built around the hero scene's own direction instead of generic text.
+- World-neutral wording: sky, horizon, vegetation, weather, foliage and clouds are gone from the shared topics and the planner direction (main horizontal lines, natural materials and any visible daylight, small conditions such as sheen, condensation, dust or haze). A reverse test (an indoor bakery world) now guards against outdoor wording, next to the existing outdoor-world test against indoor props.
+- Medium wording: "stock imagery" is now "stock photography" for stills and "stock footage" for clips (`{stock}`), and the clip test also rejects "imagery".
+- Setting phrase: the long setting text appears at most twice per paragraph (the subject at most three times); other mentions use "that place" or "the place". Test: counts per paragraph for all 13 section types. Cross-scene sentence overlap stays under 50 percent and no sentence repeats inside a prompt.
+## v2.1.2 - 2026-10-06
+
+Delta QC round 2: the long prompts now carry scene-specific direction, not repeated house text.
+
+- Planner: every scene gets `production_direction` (subject, setting, time of day, light, materials, motion, camera blocking, mood, continuity), a new optional property in `structure/scene-plan.schema.json`. `plan_visual_journey.py` derives it per page section from a world-neutral library (13 section types plus a fallback for custom sections); an operator or agent may replace it with direction written for the exact scene.
+- `providers/prompt_depth.py` rewritten: each craft topic (subject, setting, composition, lens, light, color, materials, atmosphere, continuity, layout, mood, scale, wear, time and weather, background, finish, exclusions; for stills pose, hierarchy, crop, boundary, detail, reference; for clips camera path, parallax, temporal consistency, subject motion, endpoints, scrub, lens and light during the move, pacing; for connectors the bridge, the hand-off and the entering scene) is a short house rule plus sentences that apply it to THIS scene's own fields (and its crop rules, camera, duration, conversion purpose). Two different scenes now share under 50 percent of their sentences (measured 38 to 41 percent worst pair, by characters lower still), and no sentence repeats inside a prompt.
+- `{medium}` replaces still-image wording, so a clip prompt never says "image" (and a still never says "clip"); examples are world-neutral (no drawers, lamps, chairs or rooms in an outdoor world).
+- Tests: `test_prompt_depth.py` rewritten (band for all 13 section types at 20000, 12000, 5000, 2500; pairwise sentence share under half; no repeated sentence; no medium leakage; no domestic examples; the 79 / 80 / 95 / 100 / 101 percent boundaries through a real `KieProvider` call and Skill 74's budget math, replacing a vacuous arithmetic test; the real pipeline templates refused bare and accepted expanded).
+## v2.1.1 - 2026-10-06
+
+QC follow-up: owner rule 12 (prompts 95 to 100 percent of the model maximum, never under 80 percent) is now a HARD REJECT here, not a report.
+
+- `providers/kie.py`: a prompt under 80 percent of the model maximum raises `ProviderTaskError` with the exact characters to add (Skill 74 prompt-budget), as one over the maximum already did with the characters to cut. New `KieProvider.prompt_budget(model_id)` returns Skill 74's numbers (None for an unknown limit, a verbatim field or no Skill 74).
+- Template audit: the P6 to P9 templates were one sentence long (about 300 to 600 characters against a 20000 maximum, so a floor of 16000 would have rejected every real run). New `providers/prompt_depth.py` carries real production direction (composition, lens, light, color, materials, atmosphere, continuity, people and brand safety, finish, layout safety for the web page, what must not appear, plus still-specific and motion-specific sections for camera path, parallax, temporal consistency, start/end frame fidelity and scroll scrubbing), filled in from the project's style contract and the scene. `generate_images.py` and `generate_videos.py` (concept, anchor, scene and boundary stills; draft, final and connector clips) pass their templates and sections through `fit_prompt`, which adds whole sections (then sentences) until the prompt is in the 95 to 100 percent band of the live maximum, reserving room for the negative-prompt clause. If the library cannot reach the floor, the short prompt goes to the provider, which refuses it. Models with no known limit (Veo 3.1) and verbatim fields are untouched.
+- Tests: `test_providers_kie.py` (79 percent refused with the characters to add, 80 and 95 pass, 101 refused with the characters to cut); new `test_prompt_depth.py` (the band at 20000, 12000, 5000 and 2500, the negative-prompt reserve, no-limit and verbatim exemptions, the real pipeline templates refused bare and accepted expanded, direction specific to the project and not repeated filler). The offline fixture schema now carries the real 20000 prompt maximum so every unit, e2e and self-test run exercises the floor.
+
+## v2.1.0 - 2026-10-06
+
+Consolidation: Skill 62 no longer has its own Kie HTTP client. `providers/kie.py` calls Skill 74
+(`74-kie-live-adapter`, the one fleet KIE transport) in `active` mode per call and keeps only this
+skill's policy.
+
+- Removed from `providers/kie.py`: the createTask/recordInfo/upload URLs and polling loop, the
+  `resultJson` decoder, the live `/price` GET, and the hand-rolled upload and download. Skill 74 now
+  does validate (live schema), prompt-budget, upload, createTask, wait, save and price. Prompt length
+  comes from `prompt-budget` (no band is hard-coded): over the model maximum is refused before any
+  paid call; under the 80 percent floor is reported (the floor is enforced by the policy owner Skill 66).
+- Kept in `providers/kie.py`: model registry and tier policy, the Veo 3.1 wire shape, the
+  quality-tier refusal (`kie-veo3-quality` stays `planned`), per-mode/per-resolution price-table
+  parsing (the row is chosen here; the live text comes from Skill 74 `price`, catalog source only),
+  the 46-kie-callback-relay HMAC wiring and the injectable `KieTransport` test seam.
+- Fallback: when Skill 74 is not installed, `providers/_kie_legacy.py` (the old plumbing, quarantined)
+  runs and the provider logs `path=legacy`; every other run logs `path=skill74 mode=active`.
+- `generate_image` now sends the documented sunburst image-to-image field `input_urls` (was Nano Banana
+  `image_input`) and no longer sends the undeclared `output_format`.
+- Tests: `test_providers_kie.py` runs the real Skill 74 client against a routed fake transport
+  (catalog, schema, credit, createTask, recordInfo, upload); new tests cover the path log, schema
+  refusal, prompt-budget refusal and report, upload, and the legacy fallback. The offline fixture
+  transports in `generate_images.py` and `generate_videos.py` answer Skill 74's catalog/schema reads
+  via `providers/_fixture_support.py` (test support only).
+- Not ported: the speculative `data.info.resultUrls`, `videoUrl` and `images[].url` poll fallbacks;
+  the documented recordInfo route returns `resultJson.resultUrls`, which Skill 74 reads.
+
+## v2.0.3 — 2026-10-05
+
+Fix: Veo on `POST /api/v1/jobs/createTask` aligned with the live KIE catalog and schema.
+Evidence (free GETs, 2026-10-05): `GET /api/v1/models?q=veo` lists `veo-3-1`, `veo/extend`,
+`veo/get-1080p-video`, `veo/get-4k-video` and NO `veo3` / `veo3_fast`; `GET
+/api/v1/models/veo-3-1/schema` is code 200, path `/api/v1/jobs/createTask`, input `prompt`
+(required), `image_urls`, `generation_type`, `aspect_ratio` (16:9|9:16|Auto), `resolution`
+(720p|1080p|4k), `duration` (integer 4|6|8), `watermark`, `enable_translation`,
+`enable_fallback` (deprecated); `/models/veo3/schema` and `/models/veo3_fast/schema` answer
+code 404 "model name ... not supported".
+
+- `providers/kie.py` sends model `veo-3-1` with the schema-exact body (`image_urls`, integer
+  `duration`, lowercase `resolution`, `generation_type`, no `generate_audio`).
+- Tier selector: neither the live schema nor the docs page names a field that picks
+  Lite/Fast/Quality. So `kie-veo3-fast` is the one explicit tier this skill sends, and
+  `kie-veo3-quality` is `status: "planned"` and refuses to submit (it would be byte-identical
+  to Fast). Which tier KIE actually bills for a `veo-3-1` request remains unproven without a
+  paid call.
+- Price authority is the live catalog: `KieProvider.estimate_cost` reads `GET
+  /api/v1/models/veo-3-1/price` (`pricingDesc`) first, and only falls back to the registry
+  constants, which are now dated and labeled and equal the live numbers read 2026-10-05 (Fast
+  720p/1080p/4k $0.30/$0.325/$0.90, Quality $1.25/$1.275/$1.85; Lite $0.15/$0.175/$0.75 not
+  wired). They replace the stale 2026-07-14 figures ($0.40/$2.00). Same figures:
+  `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model veo-3-1`. Note
+  `scripts/estimate_cost.py` and the budget gate stay offline and use the registry fallback
+  constants.
+- Result route: documented unified `GET /api/v1/jobs/recordInfo` (`resultJson` is a JSON
+  string `{"resultUrls": [...]}`, states waiting|queuing|generating|success|fail); callback
+  shape `data.info.resultUrls` (list or JSON string) is parsed by `result_urls_from_callback`.
+  Not exercised on a live veo-3-1 task (no paid call).
+- Docs: SKILL.md and INSTRUCTIONS.md state `providers/kie.py` is a standalone client pending
+  consolidation onto Skill 74. Skills 47 and 37 untouched (legacy `/api/v1/veo/generate` live).
+- Entry shell `cinematic-web-funnel-entry.sh` aborted every run (`expected major 1.x` against
+  `v2.0.2`). Now expects major 2, accepts only `^v2\.[0-9]+\.[0-9]+$` (rejects `v2.0.1-junk`),
+  keeps the frontmatter lockstep check, adds `--check-version` and
+  `scripts/test_entry_version.py`. Not hash-pinned.
+
 ## 1.0.2 — 2026-07-18
 
 Fix (carry-forward of PR #602, `ce6aab7a`): `prove_conversion.py` JSON extraction is now
@@ -226,3 +322,7 @@ found (spec §2.2 lists the qualifying gap conditions; none apply). Build unit U
 (independent QC) and any separately-justified Command Center enhancement (U25 per
 the checklist's item 25, deferred unless a future unit proves a real gap) are not
 part of this entry.
+
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

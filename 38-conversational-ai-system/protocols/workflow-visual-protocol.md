@@ -101,13 +101,23 @@ The hero prompt is plain language (NOT the Mermaid), describing the journey stag
 Brand colors come from the Typed Knowledge Bases when known; otherwise the neutral default palette
 above is used.
 
-### MODEL RESOLUTION RULE (do NOT hardcode a model string)
+### MODEL RESOLUTION RULE (this skill names no image model)
 
-Skill 07 documents GPT Image 1.5 today and the operator refers to GPT-Image 2. At build time, QUERY
-the Kie.ai model catalog per Skill 07's INSTRUCTIONS, SELECT the newest available GPT-Image family
-model, and RECORD the exact model id used in the run manifest and in `registry.md`. If the GPT-Image
-family is unavailable, FALL BACK to the cheapest quality tier in Skill 07's image list (the Flux
-family) and NOTE the substitution to the operator. Never bake a model string into the script.
+Skill 66 (kie-image) owns image model selection for every Kie image job, including the hero
+visual. Hand the hero prompt and the 16:9 ratio to Skill 66; it applies the fleet image pin
+(AGENTS.md N43: the `gpt-image-2-5-sunburst-*` family, with the legacy `gpt-image-2-*` route
+only for 3:1, 1:3, and 9:21) and validates the payload before dispatch. Do NOT pick a model,
+set a default, or fall back to another family in this skill, and never bake a model string into
+the script. RECORD the exact model id that Skill 66 returned in the run manifest, `visual.json`,
+and `registry.md`. If Skill 66 cannot dispatch, ship the Mermaid truth diagram alone and flag
+the hero PENDING.
+
+ONE KIE PATH: every Kie call for the hero (submit, wait, upload, download, balance) is the CLI of
+Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py`, `--mode active --json`, found as a
+sibling skill folder). This skill never carries its own createTask, polling, upload or download
+code. Skill 66 remains the decision authority for the model. Until a hero job actually runs,
+`scripts/31-generate-workflow-visual.sh` is a stub that records no model id (`model_id` is null
+in `visual.json`).
 
 ### ASYNC AND CALLBACKS
 
@@ -184,8 +194,9 @@ populated, its per-playbook section MUST embed the visual.
 ## 9. Enforcement
 
 - `scripts/31-generate-workflow-visual.sh` - parses via the engine, emits `diagram.mmd`, renders the
-  PNG via `npx mermaid-cli`, calls Kie for the hero, uploads per the hosting order, writes
-  `registry.md`, the manifest, and `kie-image-events.jsonl`. Idempotent via the structure hash;
+  PNG via `npx mermaid-cli`, writes `visual.json` and the `registry.md` Visual column. The Kie
+  hero dispatch is delegated to Skill 66 (model) and Skill 74 (transport) and is a stub in this script today (no Kie call, no model
+  recorded); upload, manifest, and `kie-image-events.jsonl` logging happen when a real hero job runs. Idempotent via the structure hash;
   `--force` overrides.
 - `scripts/09-install-conversation-workflows.sh` - invokes the generator after doc creation and
   records the Visual column.
@@ -193,7 +204,8 @@ populated, its per-playbook section MUST embed the visual.
   with no recorded `diagram.png`, FAILS a stale structure hash, WARNS (not FAILS) on a missing
   `hero.png` (a budget or Kie outage must never block handoff), and FAILS if this protocol file or
   the seeded `kie-image-events.jsonl` sink is missing.
-- `PREREQS.json` - Skill 07 (kie-setup) required, Skill 46 (kie-callback-relay) recommended.
+- `PREREQS.json` - Skill 07 (kie-setup) required for the Kie account and key; Skill 66 (kie-image, the
+  image policy owner) and Skill 46 (kie-callback-relay) recommended.
 - `scripts/00-verify-prerequisites.sh` STEP G - preflights `KIE_API_KEY` and reports whether the
   hero visual path is ACTIVE or Mermaid-only.
 - MEMORY Rule 39.

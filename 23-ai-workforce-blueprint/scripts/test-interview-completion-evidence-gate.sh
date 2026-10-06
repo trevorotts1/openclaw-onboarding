@@ -330,6 +330,10 @@ run_complete() {
   ISO_SCRIPTS="$(mktemp -d -t evidence-gate-r5-scripts.XXXXXX)"
   cp "$UPD" "$ISO_SCRIPTS/"
   cp "$SCRIPT_DIR/lib-interview-rate-limit.sh" "$ISO_SCRIPTS/"
+  # Keep required shared runtime present so this fixture isolates missing QC.
+  for helper in lib-workforce-state.sh workforce_state.py interview_eligibility.py; do
+    cp "$SCRIPT_DIR/$helper" "$ISO_SCRIPTS/"
+  done
   OUT=$( ( HOME="$SANDBOX" bash "$ISO_SCRIPTS/update-interview-state.sh" --complete ) 2>&1 )
   RC=$?
   COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")

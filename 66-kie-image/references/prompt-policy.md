@@ -1,5 +1,10 @@
 # KIE Image — Prompt Policy & House Bands
 
+> SUPERSEDED IN PART (owner order 2026-10-05): the house band below (5,000 / 9,000 / 19,000) and the
+> per-rule "target" figures are replaced by the prompt budget: 95-100% of the model's character max,
+> never below 80%, limit from Skill 74 `prompt-budget` (live schema first). Rules A-E still describe how
+> each model's cap status is classified; the expansion structure in section 9 still applies.
+
 Verification date: 2026-08-26. Authority: Spec 5 (BlackCEO Media Prompt Policy),
 Spec 7.4 (per-family prompt caps), and first-party KIE research
 (`01-kie-common.md`, `02-kie-image-a.md`, `03-kie-image-b.md`).
@@ -76,7 +81,8 @@ output" is a context window on the legacy page, not a request-field maximum.
 
 | Family | Cap status | Legal band |
 |---|---|---|
-| GPT Image 2 | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
+| GPT Image 2 (legacy, 3:1/1:3/9:21 only) | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
+| GPT Image 2.5 (default, ruling 2026-09-09) | DOCS 20K (2026-09-09, NOT owner-confirmed) | house 5,000–19,000 legal; 19,000+ warns; hard-fails only past 20,000 |
 | Qwen 3.0 / Pro | LIVE_PROBE_REQUIRED (4.5K tokens; docs 5000 chars) | token-estimate validation; docs char max 5,000 |
 | Seedream 5.0 Pro/Lite/4.5 | NOT_PUBLISHED | house band as TARGET only; no invented ceiling |
 | Nano Banana 2 / 2 Lite / Pro / legacy | NOT_PUBLISHED | house band as TARGET only |

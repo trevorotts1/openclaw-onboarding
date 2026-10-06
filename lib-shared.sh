@@ -16,35 +16,33 @@
 # ----------------------------------------------------------
 # Platform detection
 # ----------------------------------------------------------
+_SHARED_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+shared_load_platform() {
+  command -v oc_set_platform_paths >/dev/null 2>&1 && return 0
+  local candidate
+  for candidate in "$_SHARED_LIB_DIR/platform/common.sh" "$_SHARED_LIB_DIR/../platform/common.sh"; do
+    if [[ -f "$candidate" ]]; then source "$candidate"; return $?; fi
+  done
+  echo "Shared platform resolver missing; finish delivering this onboarding bundle." >&2
+  return 1
+}
+
 detect_platform() {
-  if [ -d "/data/.openclaw" ]; then
-    echo "vps"
-  else
-    echo "mac"
-  fi
+  shared_load_platform || return 1
+  oc_detect_platform
 }
 
 resolve_platform_paths() {
-  if [ -d "/data/.openclaw" ]; then
-    export OPENCLAW_PLATFORM="vps"
-    export OPENCLAW_HOME="/data"
-    export SECRETS_ENV="/data/.openclaw/secrets/.env"
-    export CONFIG_JSON="/data/.openclaw/openclaw.json"
-    export WORKSPACE="/data/.openclaw/workspace"
-    export CANONICAL_MASTER="/data/Downloads/openclaw-master-files"
-    export SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
-    export BACKUP_DIR_DEFAULT="$HOME/openclaw-backups"
-  else
-    export OPENCLAW_PLATFORM="mac"
-    export OPENCLAW_HOME="$HOME"
-    export SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-    export CONFIG_JSON="$HOME/.openclaw/openclaw.json"
-    export WORKSPACE="$HOME/.openclaw/workspace"
-    export WORKSPACE_LEGACY="$HOME/clawd"  # dead legacy path — read-only migration only
-    export CANONICAL_MASTER="$HOME/Downloads/openclaw-master-files"
-    export SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
-    export BACKUP_DIR_DEFAULT="$HOME/Downloads/openclaw-backups"
-  fi
+  shared_load_platform || return 1
+  oc_set_platform_paths || return 1
+  export OPENCLAW_HOME="${OC_ROOT%/*}"
+  export SECRETS_ENV="$OC_SECRETS_ENV"
+  export CONFIG_JSON="$OC_JSON"
+  export WORKSPACE="$OPENCLAW_WORKSPACE_PATH"
+  export WORKSPACE_LEGACY="$HOME/clawd"
+  export CANONICAL_MASTER="$OC_DOWNLOADS/openclaw-master-files"
+  export SKILLS_DIR_DEFAULT="$OC_SKILLS_DIR"
+  export BACKUP_DIR_DEFAULT="$OC_BACKUPS"
 }
 
 # ----------------------------------------------------------
@@ -101,7 +99,7 @@ find_master_files() {
 
 # Get-or-create. Creates at canonical path if not found.
 get_or_create_master_files() {
-  resolve_platform_paths
+  resolve_platform_paths || return 1
   local FOUND
   FOUND=$(find_master_files)
   if [ -n "$FOUND" ]; then
@@ -148,57 +146,51 @@ canonical_ghl_location_id_name() {
   echo "GOHIGHLEVEL_LOCATION_ID"
 }
 
-# Reads GHL PIT from canonical → JSON → deprecated names. Empty if not found.
+# Canonical Location PIT name first across the selected client's stores, then
+# all ten supported aliases in TERMINOLOGY.md order. Agency PITs are excluded.
 read_ghl_pit() {
-  resolve_platform_paths
-  local v=""
-  for f in "$SECRETS_ENV" "$HOME/.openclaw/secrets/.env" "/data/.openclaw/secrets/.env"; do
-    [ -f "$f" ] || continue
-    v=$(grep -E "^GOHIGHLEVEL_API_KEY=" "$f" 2>/dev/null | head -1 | cut -d'=' -f2-)
-    [ -n "$v" ] && echo "$v" && return 0
-  done
-  for j in "$CONFIG_JSON" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
-    [ -f "$j" ] || continue
-    v=$(python3 -c "
-import json
+  resolve_platform_paths || return 1
+  local v="" name
+  for name in GOHIGHLEVEL_API_KEY GHL_API_KEY GHL_PIT GHL_TOKEN GHL_PRIVATE_INTEGRATION_TOKEN PRIVATE_INTEGRATION_TOKEN GHL_PRIVATE_TOKEN PIT_TOKEN GHL_PIT_TOKEN GOHIGHLEVEL_LOCATION_PIT GHL_LOCATION_PIT; do
+    if [ -f "$SECRETS_ENV" ]; then
+      v=$(grep -E "^${name}=" "$SECRETS_ENV" 2>/dev/null | head -1 | cut -d'=' -f2-)
+      [ -n "$v" ] && printf '%s\n' "$v" && return 0
+    fi
+    if [ -f "$CONFIG_JSON" ]; then
+      v=$(python3 - "$CONFIG_JSON" "$name" <<'PYGHL' 2>/dev/null
+import json, sys
 try:
-  cfg=json.load(open('$j'))
-  print(cfg.get('env',{}).get('vars',{}).get('GOHIGHLEVEL_API_KEY',''))
-except: pass
-" 2>/dev/null)
-    [ -n "$v" ] && echo "$v" && return 0
-  done
-  # Fall to deprecated names (migration path)
-  for f in "$SECRETS_ENV" "$HOME/.openclaw/secrets/.env" "/data/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
-    [ -f "$f" ] || continue
-    for name in GHL_API_KEY GHL_PRIVATE_TOKEN GHL_PIT; do
-      v=$(grep -E "^${name}=" "$f" 2>/dev/null | head -1 | cut -d'=' -f2-)
-      [ -n "$v" ] && echo "$v" && return 0
-    done
+    value=json.load(open(sys.argv[1])).get('env',{}).get('vars',{}).get(sys.argv[2])
+    if isinstance(value,str) and value: print(value)
+except (OSError, ValueError, AttributeError): pass
+PYGHL
+)
+      [ -n "$v" ] && printf '%s\n' "$v" && return 0
+    fi
   done
   echo ""
 }
 
 read_ghl_location_id() {
-  resolve_platform_paths
+  resolve_platform_paths || return 1
   local v=""
-  for f in "$SECRETS_ENV" "$HOME/.openclaw/secrets/.env" "/data/.openclaw/secrets/.env"; do
+  for f in "$SECRETS_ENV"; do
     [ -f "$f" ] || continue
     v=$(grep -E "^GOHIGHLEVEL_LOCATION_ID=" "$f" 2>/dev/null | head -1 | cut -d'=' -f2-)
     [ -n "$v" ] && echo "$v" && return 0
   done
-  for j in "$CONFIG_JSON" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
+  for j in "$CONFIG_JSON"; do
     [ -f "$j" ] || continue
     v=$(python3 -c "
-import json
+import json,sys
 try:
-  cfg=json.load(open('$j'))
+  cfg=json.load(open(sys.argv[1]))
   print(cfg.get('env',{}).get('vars',{}).get('GOHIGHLEVEL_LOCATION_ID',''))
 except: pass
-" 2>/dev/null)
+" "$j" 2>/dev/null)
     [ -n "$v" ] && echo "$v" && return 0
   done
-  for f in "$SECRETS_ENV" "$HOME/.openclaw/secrets/.env" "/data/.openclaw/secrets/.env" "$HOME/clawd/secrets/.env"; do
+  for f in "$SECRETS_ENV"; do
     [ -f "$f" ] || continue
     v=$(grep -E "^GHL_LOCATION_ID=" "$f" 2>/dev/null | head -1 | cut -d'=' -f2-)
     [ -n "$v" ] && echo "$v" && return 0

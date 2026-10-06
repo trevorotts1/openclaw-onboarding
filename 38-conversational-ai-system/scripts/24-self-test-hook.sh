@@ -55,6 +55,13 @@
 #   TEST_CONTACT_ID   (optional) reuse an existing throwaway test contact id
 #   CREATE_TEMP_CONTACT=1 (optional) create+delete a temp GHL contact for a real send
 
+# Safe env reader: parses KEY=VALUE, never sources a client-owned file.
+_ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/env-load.sh"
+[ -f "$_ENVLOAD" ] || _ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../shared-utils/env-load.sh"
+# shellcheck source=/dev/null
+[ -f "$_ENVLOAD" ] && . "$_ENVLOAD"
+_env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [ -f "$1" ] && { set -a; . "$1"; set +a; }; fi; }
+
 set -uo pipefail
 
 OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
@@ -299,7 +306,7 @@ fi
 if [ "${CREATE_TEMP_CONTACT:-0}" = "1" ] && [ -n "$SECRETS_ENV" ]; then
   sect "(c-real) Real GHL send via a TEMPORARY test contact (create -> send -> delete)"
   # shellcheck disable=SC1090
-  set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a
+  _env_read "$SECRETS_ENV" 2>/dev/null || true
   PIT="${GHL_PRIVATE_INTEGRATION_TOKEN:-${GOHIGHLEVEL_API_KEY:-}}"; LOC="${GHL_LOCATION_ID:-${GOHIGHLEVEL_LOCATION_ID:-}}"
   if [ -n "$PIT" ] && [ -n "$LOC" ]; then
     CREATE="$(curl -s --max-time 30 -X POST "https://services.leadconnectorhq.com/contacts/" \

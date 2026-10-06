@@ -35,7 +35,11 @@ make_fake_box() {
   local root="$1"
   mkdir -p "$root/workspace" "$root/skills/37-zhc-closeout/scripts" "$root/bin"
   cp "$VERIFY_TG_SRC" "$root/skills/37-zhc-closeout/scripts/verify-telegram-delivery.sh"
-  cp "$SCRIPT_DIR/run-closeout.sh" "$root/skills/37-zhc-closeout/scripts/run-closeout.sh" 2>/dev/null || true
+  cp "$SCRIPT_DIR/"{verify_delivery_receipts.py,gateway_sqlite_receipts.py,cleanup-closeout.py} "$root/skills/37-zhc-closeout/scripts/"
+  mkdir -p "$root/skills/23-ai-workforce-blueprint/scripts"
+  cp "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$root/skills/23-ai-workforce-blueprint/scripts/"
+  # Isolate cron completion evaluation; never run generation or delivery here.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/skills/37-zhc-closeout/scripts/run-closeout.sh"
   # openclaw stub: cron list/rm/message all succeed quietly so the cron's
   # self_remove / escalation paths are no-ops in the test.
   cat > "$root/bin/openclaw" <<'STUB'
@@ -57,6 +61,8 @@ STUB
 run_cron() {
   local home_dir="$1"
   ( PATH="$home_dir/.openclaw/bin:$PATH" HOME="$home_dir" \
+    ZHC_TG_REGISTRY="$home_dir/.openclaw/registry.json" \
+    ZHC_TG_STATE_DB="$home_dir/.openclaw/absent-fixture.sqlite" \
     ZHC_CLOSEOUT_MAX_CRON_RUNS=999 \
     bash "$CRON" >/dev/null 2>&1 ) || true
 }
@@ -162,9 +168,8 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# A4: POSITIVE control. All 7 legs present AND telegram genuinely confirmed
-#     (real messageIds for required slots 1,6,7; registry absent -> derived mode
-#     confirms from captured ids). Cron SHOULD stamp done.
+# A4: All build/CC requirements and captured IDs exist, but no independent
+#     gateway receipt proves delivery. The cron MUST keep completion pending.
 # ---------------------------------------------------------------------
 tmpC=$(mktemp -d)
 boxC="$tmpC/.openclaw"
@@ -192,13 +197,42 @@ cat > "$stateC" <<JSON
   }
 }
 JSON
+# Supply current verified build evidence using the shipped evaluator and real
+# fixture artifacts. These represent prerequisite stages; no provider is used.
+PYTHONPATH="$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts" python3 - "$stateC" "$boxC" <<'PYSTATE'
+import json,sys
+from pathlib import Path
+from workforce_state import read,commit
+from workforce_completion import finalize,CC_PHASES,REQUIRED_CHECKS
+path,root=sys.argv[1],Path(sys.argv[2]); artifacts=root/'company/departments';artifacts.mkdir(parents=True)
+(artifacts/'fixture.md').write_text('# Fixture workforce\nVerified test artifact.\n')
+state=read(path)
+state.update(companyId='fixture-company-id',companySlug='fixture-company',buildId='fixture-build',interviewComplete=True,interviewQc={'status':'pass'},departments=[{'slug':'fixture','status':'done'}],roleLibraryStatus='done',sopLibraryStatus='done',commsAutomationStatus='not-applicable',commandCenterStatus='done',commandCenterUrl='https://fixture.invalid')
+state.update({key:True for key in CC_PHASES});commit(path,state)
+assert finalize(path,{key:0 for key in REQUIRED_CHECKS},artifacts)
+PYSTATE
 run_cron "$tmpC"
 gotC=$(jq -r '.closeoutStatus' "$stateC")
 info "A4 closeoutStatus after cron = $gotC"
-if [[ "$gotC" == "done" ]]; then
-  pass "A4: positive control -- verified-complete closeout DOES reach done"
+if [[ "$gotC" == "partial" ]] && jq -e '.telegramDeliveryVerification.status == "pending"' "$stateC" >/dev/null; then
+  pass "A4: captured IDs without an authoritative receipt remain partial"
 else
-  fail "A4: regression -- a genuinely-complete+verified closeout failed to reach done (status=$gotC)"
+  fail "A4: unverifiable delivery did not remain explicitly pending (status=$gotC)"
+fi
+
+# A5: Positive control on the SAME current build. Populate an authoritative
+# gateway JSON registry with the exact chat/message IDs and execute the cron.
+python3 - "$boxC/registry.json" <<'PYREGISTRY'
+import json,sys,time
+json.dump({'9999999999':{key:int(time.time()*1000) for key in ('msg001','msg006','msg007')}},open(sys.argv[1],'w'))
+PYREGISTRY
+run_cron "$tmpC"
+gotC=$(jq -r '.closeoutStatus' "$stateC")
+if [[ "$gotC" == "done" ]] && jq -e '.closeoutVerification.status == "verified" and (.telegramDeliveryReceipts | length) == 3' "$stateC" >/dev/null; then
+  pass "A5: current build + all CC phases + authoritative receipts reach verified done"
+else
+  fail "A5: verified positive control failed to reach done (status=$gotC)"
+  tail -12 "$boxC/workspace/.zhc-closeout.log" >&2
 fi
 
 # =====================================================================

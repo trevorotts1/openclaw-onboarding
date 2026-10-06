@@ -26,6 +26,12 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from departments_payload import (  # noqa: E402  (same-dir shared helper)
+    MalformedDepartmentsError,
+    normalize_departments,
+)
 from urllib.parse import quote
 
 from detect_platform import get_openclaw_paths
@@ -343,6 +349,17 @@ def reconcile(
     if company_dir is not None:
         source_payload = _load_json(company_dir / "departments.json", missing=None, empty=None)
         if source_payload is not None:
+            # The ZHC artifact legitimately ships as a bare LIST *or* as an object
+            # wrapping that list under "departments" (retire-confirmed-decline.sh's
+            # {removedWithProvenance, departments}; a build envelope adding company
+            # / total_departments / total_roles). Unwrap through the ONE shared
+            # normalizer; a dict carrying no department list still fails below.
+            try:
+                source_payload = normalize_departments(
+                    source_payload, path=str(company_dir / "departments.json"))
+            except MalformedDepartmentsError as exc:
+                raise ReconcileError(
+                    f"canonical ZHC departments artifact is malformed: {exc}") from exc
             if not _valid_departments(source_payload):
                 raise ReconcileError("canonical ZHC departments artifact is empty or invalid")
             source_departments = source_payload

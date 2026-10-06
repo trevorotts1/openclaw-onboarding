@@ -21,6 +21,12 @@ restart, a SIGTERM lands mid-deferral, the gateway is left dark or wedged).
 | `gateway-health-watchdog.sh` | HTTP `{"ok":true}` health probe + `launchctl kickstart` of a *hung* gateway (after N consecutive fails + cooldown) |
 | **`remediate.sh`** | re-bootstraps *booted-out* gateway/cloudflared agents; kickstarts *dead* KeepAlive jobs; **delegates** the gateway health leg to the watchdog when present |
 
+> **Note on the delegation.** Once `gateway-watchdog.sh` is on disk,
+> `remediate.sh` hands it the **whole** gateway leg and never calls its own
+> `heal_label` bootstrap for the gateway. So the watchdog, not `remediate.sh`,
+> is what has to handle a gateway that is **dead AND booted out**. It does:
+> see "What `gateway-health-watchdog.sh` does" below.
+
 ## What `remediate.sh` does (idempotent, read-mostly)
 
 For the gateway (delegated to `gateway-watchdog.sh` when present) and for every
@@ -46,14 +52,48 @@ It never edits a plist and never touches client credentials. Log:
 - Box-aware heal: **Mac** → `launchctl kickstart -k` the live gateway label;
   **VPS host** → `docker restart` the openclaw container; **inside a container**
   → log ESCALATE and rely on the container restart policy (no docker socket).
+- **Mac, dead AND booted out** → `launchctl bootstrap gui/<uid>
+  ~/Library/LaunchAgents/<label>.plist` **first**, then the kickstart. A
+  `kickstart -k` against a label that is not bootstrapped does nothing at all,
+  and a detached OpenClaw upgrade that stalls leaves exactly that state.
+- **Mac label resolution excludes the siblings.** A box commonly carries other
+  labels containing both `openclaw` and `gateway` (an operator box runs
+  `ai.openclaw.gateway-watchdog` next to `ai.openclaw.gateway`), and
+  `launchctl list` is not ordered, so the match skips `watchdog`, `remediate`,
+  `tunnel`, `monitor` and `selfheal` names.
+- **Clears the OpenClaw 2026.9.x session-store migration gate.** 2026.9.x
+  refuses to *start* the gateway while a legacy JSON session store is on disk
+  (`Legacy session store requires migration: <path>.` from
+  `src/config/sessions/startup-migration.ts`), so restarting it only re-hits the
+  same refusal. When that string is in the gateway log the watchdog runs
+  `openclaw doctor --session-sqlite import --session-sqlite-all-agents --yes
+  --non-interactive` once per cooldown, then heals normally. The import is
+  non-destructive: the legacy JSON files stay on disk.
 - `--report-only` / `GATEWAY_WATCHDOG_DRYRUN=1` logs the would-be action and
   takes none. Never runs bare `gws`; never edits config/creds/plists. Log:
   `~/Library/Logs/openclaw/gateway-watchdog.log`.
 
 ## Install (no sudo)
 
-`install.sh` runs this automatically on Mac (end-of-install, Mac-gated). To
-(re)install by hand:
+**Every fleet roll converges this.** `update-skills.sh` runs the installer on
+its Mac leg on every roll, so a box that was onboarded before this shipped, or
+whose LaunchAgent was booted out and never re-bootstrapped, is repaired the next
+time it rolls. The roll prints one greppable line:
+
+```
+[GATEWAY-WATCHDOG] state=installed        # the installer ran
+[GATEWAY-WATCHDOG] state=already-current  # scripts match the bundle, agent loaded, nothing touched
+[GATEWAY-WATCHDOG] state=skipped-not-mac  # VPS, container, or running as root
+[GATEWAY-WATCHDOG] state=warn             # could not converge; the roll continues regardless
+```
+
+The converge is deliberately **fail-soft**: it never fails a roll and never
+withholds the version stamp. `warn` names a staged copy under
+`$OC_CONFIG/scripts/service-selfheal/` that outlives the temp clone, so the
+remedy in the log is always a path that still exists.
+
+`install.sh` also runs it at first-time onboarding (end-of-install, Mac-gated).
+To (re)install by hand:
 
 ```bash
 bash platform/mac/service-selfheal/install-service-remediate.sh
@@ -72,7 +112,11 @@ runs on the existing service-remediate schedule via delegation.
 launchctl print gui/$(id -u)/com.openclaw.service-remediate | grep state
 tail -10 ~/Library/Logs/openclaw/service-remediate.log
 tail -10 ~/Library/Logs/openclaw/gateway-watchdog.log
+grep '\[GATEWAY-WATCHDOG\]' /tmp/openclaw-update-*.log | tail -1
 ```
+
+Regression suite: `tests/unit/roll-converges-gateway-watchdog.test.sh`, wired by
+`.github/workflows/roll-converges-gateway-watchdog-guard.yml`.
 
 ## VPS host
 

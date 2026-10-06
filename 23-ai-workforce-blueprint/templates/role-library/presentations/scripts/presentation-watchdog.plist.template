@@ -1,22 +1,78 @@
 <!--
-  presentation-watchdog.plist.template -- ready-to-apply, NOT installed.
-  Named Stop: installation is a live production change (Super Spec 9.9.2 and 5.3).
+  presentation-watchdog.plist.template -- rendered by install_watchdog_schedule()
+  in lib-presentation-schedules.sh (F12a), which install.sh (Step 6.6c) and
+  update-skills.sh (every roll) both call. It replaces every <...> placeholder
+  below, adds the environment launchd does not supply, and writes the rendered
+  copy to ~/Library/LaunchAgents/com.blackceo.presentation-watchdog.plist on Mac
+  (Linux/VPS gets a */10 SILENT main-session openclaw cron running the same
+  script instead -- there is no launchd in the container).
 
-  PLACEHOLDERS to replace before installing:
+  THIS FILE USED TO SAY "ready-to-apply, NOT installed -- Named Stop". That was
+  true and it was the whole problem: nothing installed it, so on every client box
+  presentation-watchdog.sh's four passes -- stall watchdog, board reconcile,
+  SUPERVISOR (engine-liveness restart) and run-discovery -- were dead code, and
+  every stalled deck run needed a human to notice it. Measured at v25.0.11 with
+  python3 str.count over the full file text: 'presentation-watchdog' appeared 0
+  times in install.sh and 0 times in update-skills.sh, against a same-instrument
+  'presentation-intake-poll' control of 25 in install.sh.
+
+  PLACEHOLDERS install_watchdog_schedule() replaces:
     1. <WATCHDOG_SCRIPT_PATH>  -- absolute path to presentation-watchdog.sh
-    2. <SCAN_ROOT>             -- the root directory to scan for run dirs
-    3. <LOG_PATH>              -- where stdout/stderr should go
+    2. <SCAN_ROOT>             -- the run root to scan (the department's runs/)
+    3. <LOG_PATH>              -- where stdout/stderr go. This SAME path is
+                                  passed as argv[2], because the script tees its
+                                  own diagnostics into the file it is handed and
+                                  the launchd log and the script log must be one
+                                  file.
 
-  Install (Named Stop -- do not run unattended):
-    cp presentation-watchdog.plist.template ~/Library/LaunchAgents/com.presentations.watchdog.plist
-    Replace every placeholder above in the installed copy.
-    launchctl load ~/Library/LaunchAgents/com.presentations.watchdog.plist
+  ENVIRONMENT THE RENDERER ADDS (not placeholders -- launchd hands a job
+  essentially NO environment, and these are resolved per box, never guessed):
+    PATH                       -- launchd supplies none, so python3, gtimeout and
+                                  the openclaw CLI the notify transport execs are
+                                  all invisible without this.
+    PRESENTATION_NOTIFY_CMD    -- the co-located transport, and ONLY if the file
+                                  exists. presentation-watchdog.sh is FAIL-CLOSED
+                                  on an unusable transport (exit 4,
+                                  AF-NOTIFY-UNCONFIGURED) and refuses the whole
+                                  pass, so this renders EMPTY rather than point at
+                                  a missing file -- empty is safe because the
+                                  script loads the box env store itself
+                                  (presentation_job/env_store.py) before that gate.
+    OPENCLAW_ROOT / OPENCLAW_WORKSPACE_PATH / OPENCLAW_WORKSPACE_ROOT
+                               -- so the env store resolves this client's stores
+                                  and not another installation's.
+    OWNER_CHAT_ID              -- the NUMERIC owner chat id, resolved from
+                                  $OWNER_CHAT_ID, $OPENCLAW_OWNER_CHAT_ID or the
+                                  owner target install.sh already resolved.
+                                  report.py's resolve_subsystem_chat() swaps a
+                                  subsystem NAME (watchdog/supervisor/capacity)
+                                  for it; without it a stall alert has nowhere to
+                                  land. Renders EMPTY when nothing answers -- an
+                                  id is never invented.
+    PRESENTATION_SUPERVISE_APPLY
+                               -- ABSENT by default: the supervisor pass runs
+                                  REPORT-ONLY. Arming it (F12c) is gated on F2
+                                  (auto-repin on manifest change) being deployed,
+                                  because until then the supervisor's restart is a
+                                  --resume that dies on the manifest pin and burns
+                                  its 3-restart budget in ~30 minutes. The
+                                  renderer sets it only when the operator exports
+                                  it, and PRESERVES a value already present in an
+                                  installed plist so a roll can neither arm what
+                                  an operator did not nor disarm what they did.
+
+  The Label stays com.presentations.watchdog even though the installed FILE is
+  com.blackceo.presentation-watchdog.plist: that is what this fleet already
+  carries (verified on the operator Mac 2026-09-06 -- that filename on disk, this
+  Label inside, and `launchctl list` showing it loaded with status 0). launchd
+  keys on the LABEL, so rendering onto the existing filename heals that box
+  instead of colliding with it.
 
   Uninstall (Named Stop -- do not run unattended):
-    launchctl unload ~/Library/LaunchAgents/com.presentations.watchdog.plist
-    rm ~/Library/LaunchAgents/com.presentations.watchdog.plist
+    launchctl unload ~/Library/LaunchAgents/com.blackceo.presentation-watchdog.plist
+    rm ~/Library/LaunchAgents/com.blackceo.presentation-watchdog.plist
 
-  Verify it is running:
+  Verify it is loaded:
     launchctl list | grep com.presentations.watchdog
 -->
 <?xml version="1.0" encoding="UTF-8"?>

@@ -6,11 +6,11 @@
 ## Formats & aspect ratios
 | Placement | Ratio | Pixels (Skill 35 exact spec) | Model ratio param |
 |---|---|---|---|
-| IG/FB feed post (primary/carousel) | 4:5 | 1080 x 1350 | `4:5` |
+| IG/FB feed post (primary/carousel) | 4:5 | 1080 x 1350 | `3:4` on GPT Image 2.5 (N43 substitution for 4:5, then crop to 4:5 at 1080 x 1350) |
 | IG/FB feed post (square) | 1:1 | 1080 x 1080 | `1:1` |
 | IG/TikTok Story-Reel, Stories, Full Screen | 9:16 | 1080 x 1920 | `9:16` |
 | X/Twitter post | 16:9 | 1600 x 900 | `16:9` |
-| LinkedIn post | 1:1 or 4:5 | 1200 x 627 (or 1080x1350 shared carousel set) | `1:1` / `4:5` |
+| LinkedIn post | 1:1 or 4:5 | 1200 x 627 (or 1080x1350 shared carousel set) | `1:1` / `3:4` on GPT Image 2.5 (N43 substitution for 4:5) |
 | Pinterest pin / Vertical | 2:3 | 1000 x 1500 | `2:3` |
 | Blog featured image | 16:9 | 1200 x 630 | `16:9` |
 | Podcast cover | 1:1 | 1400 x 1400 (2K min) | `1:1` |
@@ -26,7 +26,8 @@
 - Brand default: bold, vibrant, high saturation (client brand standard — see workspace brand config).
 
 ## Model routing
-- Default: Nano Banana 2 (people/lifestyle) or GPT-Image 2 (graphic/quote posts) — **non-text imagery only.**
-- **Quote-card / text-led posts -> Ideogram V3 DESIGN.** This is not optional: it is the routing rule that fixes a confirmed cross-skill defect (P3-05). Skill 35 bakes a text/headline overlay into EVERY image it produces (playbook.md Section 18) — meaning every Skill 35 deliverable is a "text-led post" under this rule and MUST route to Ideogram V3 DESIGN, never Nano Banana 2/Pro (which are not text-rendering specialists). Skill 35's own pre-generation gate (`pregen_prompt_gate.py`) enforces this mechanically (`AF-SM-MODEL-ROUTING`, exit 6) so a misroute is refused before the paid generation call, not caught after a spelling-error retry loop.
-- **Band<->routing reconciliation (GK-20, 2026-07-15):** a Graphics-authored quote-card/text-led prompt targeting this route uses GIP band `text_bearing_medium` (`_system/prompt-bands.json`) — the ONLY text-bearing band that names an Ideogram endpoint, sized (1,600–4,500 chars) to Ideogram V3's own verified 5,000-char API cap (MODEL-SPECS.md). `nano-banana-2`/`nano-banana-pro` never appear in a `text_bearing: true` band; `text_bearing_long` (5,000–19,000, GPT-Image 2 only) is architecturally too large for Ideogram and is not a legal fallback for this route.
-- Volume series (5+ variants) → draft on Wan 2.7 (n=4, seed-locked), finalize winners on the default model.
+- **GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`) for ALL social images**, text-led quote cards and people/lifestyle imagery included (owner order 2026-10, AGENTS.md N43; Skill 66 registry ids). Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21. The N43 ratio substitutions apply on the default model: 5:4 -> 4:3, 4:5 -> 3:4, 2:1 -> 16:9, 1:2 -> 9:16.
+- **Nano Banana is never used for social images**, labeled or not (Skill 35's pre-generation gate refuses it). The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules (3:1, 1:3, 9:21 only).
+- **There is no Ideogram V3 route for social images.** Skill 35 routes every image to GPT Image 2.5 Sunburst, so the earlier claim that every Skill 35 deliverable must route to Ideogram V3 DESIGN was wrong and is removed.
+- **Prompt length:** follows rule 12 of `07-kie-setup/references/kie-common-rules.md`: 95 to 100 percent of the model's maxLength from `kie_live_adapter.py prompt-budget`, floor 80 percent. The code bands in `_system/prompt-bands.json` and Skill 35's gate are being migrated to rule 12 by the prompt-budget change. (The legacy `text_bearing_medium` band in `prompt-bands.json` names an Ideogram endpoint and is NOT a social route.)
+- Volume series (5+ variants) -> draft on Wan 2.7 (n=4, seed-locked), finalize winners on the default model.

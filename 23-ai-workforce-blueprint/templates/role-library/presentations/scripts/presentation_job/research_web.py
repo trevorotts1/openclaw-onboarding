@@ -93,23 +93,95 @@ def web_fetch_enabled() -> bool:
 # ---------------------------------------------------------------------------
 # Secret resolution -- same posture as dispatcher._load_deepseek_key: the value
 # exists only for the request header; presence is all callers may surface.
+# FIX 67 + FIX 68: the NAME is resolved through the one secret-name canon
+# (shared-utils/secret_helper: canonical_for() maps any family alias -- e.g.
+# BRAVE_API_KEY -> BRAVE_SEARCH_API_KEY -- so a key written under ANY alias
+# resolves here), and the VALUE is rejected when it is a placeholder
+# (looks_like_real_key's is_placeholder discipline), while the FILE SEARCH
+# ORDER is platform-aware via presentation_job.oc_paths.secrets_env_candidates
+# (/data/.openclaw/secrets/.env first on the docker VPS, ~/.openclaw first on
+# a Mac). The canon helper is path-imported from the repo checkout, the
+# installed skills dir, or /data/.openclaw/skills -- the same seam
+# blend_voice_governance._load_pfj uses -- and a box without it keeps the
+# exact pre-canon behavior (direct name only), never a hard break.
 # ---------------------------------------------------------------------------
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it."""
+    import importlib.util
+    try:
+        from presentation_job.oc_paths import skills as _oc_skills
+        skills_default = Path(_oc_skills())
+    except ImportError:
+        return None  # No alias helper is safer than another client's module.
+    # Walk up from this file: the repo checkout carries shared-utils/ at its
+    # root; a deployed department copy carries it in the installed skills dir.
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils")):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                return mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                return None
+    return None
+
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value (PASTE_REAL_TOKEN, CHANGE_ME, <TODO>, ...)
+    is rejected by every reader. Uses the canon's is_placeholder when the
+    helper is reachable; otherwise the same minimal inline gate (the canon's
+    documented placeholder substrings) so a partial deploy still refuses."""
+    if not value:
+        return True
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
 def _read_secret_named(name: str) -> Optional[str]:
     value = (os.environ.get(name) or "").strip()
-    if value:
+    if value and not _is_placeholder_value(value):
         return value
-    env_path = Path.home() / ".openclaw" / "secrets" / ".env"
-    fallback = Path.home() / ".openclaw" / "secrets" / "secrets.env"
-    for path in (env_path, fallback):
+    # Invalid/missing client path authority must never select a different store.
+    from presentation_job.oc_paths import secrets_env_candidates
+    candidates = secrets_env_candidates()
+    # FIX 67 canon: this name plus every alias in its family are accepted.
+    helper = _secret_helper()
+    try:
+        names = list(helper.alias_list(helper.canonical_for(name))) if helper else [name]
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        names = [name]
+    for path in candidates:
         try:
             if not path.is_file():
                 continue
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
-                if line.startswith(f"{name}="):
-                    candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    if candidate:
-                        return candidate
+                for accepted in names:
+                    if line.startswith(f"{accepted}="):
+                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if candidate and not _is_placeholder_value(candidate):
+                            return candidate
         except OSError:
             continue
     return None
@@ -117,10 +189,15 @@ def _read_secret_named(name: str) -> Optional[str]:
 
 def brave_key_present(env: Optional[dict] = None) -> bool:
     """Key PRESENCE only. `env` overrides the process environment (the same
-    proof-stubbing posture capacity.probe_one_provider uses for its env view)."""
+    proof-stubbing posture capacity.probe_one_provider uses for its env view).
+    FIX 67: a placeholder value is REJECTED by this reader wherever a REAL
+    source (the process env or the secrets files) provides it; an explicitly
+    injected fake-env view is the proof seam and is taken at face value."""
     view = os.environ if env is None else env
     if str(view.get("BRAVE_SEARCH_API_KEY") or "").strip():
-        return True
+        if env is not None:
+            return True  # fake env: proof stubs are never operator placeholders
+        return not _is_placeholder_value(str(view.get("BRAVE_SEARCH_API_KEY")))
     if env is not None:
         return False  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY") is not None
@@ -129,10 +206,10 @@ def brave_key_present(env: Optional[dict] = None) -> bool:
 def _brave_key(env: Optional[dict] = None) -> Optional[str]:
     view = os.environ if env is None else env
     value = str(view.get("BRAVE_SEARCH_API_KEY") or "").strip()
-    if value:
+    if value and (env is not None or not _is_placeholder_value(value)):
         return value
     if env is not None:
-        return None
+        return None  # a fake environment never reads the real secrets files
     return _read_secret_named("BRAVE_SEARCH_API_KEY")
 
 
@@ -438,10 +515,64 @@ class BoundedFetcher:
         self.fetched: Dict[str, Dict[str, Any]] = {} # canonical -> row (network hit)
         self.rows: List[Dict[str, Any]] = []         # ledger rows, in order
         self.refusals: List[str] = []
+        # PRES-029: restart recovery -- reload the durable ledger + snapshot
+        # store instead of starting empty. A fresh BoundedFetcher on an
+        # existing run dir reuses grounded evidence (no refetch, no lost
+        # provenance); only genuinely new URLs cost network.
+        self._recover_durable_state()
 
     # -- ledger -------------------------------------------------------------
     def ledger_path(self) -> Path:
         return self.run_dir / "working" / "research" / LEDGER_NAME
+
+    def _recover_durable_state(self) -> None:
+        """PRES-029 restart recovery: reload durable rows into memory.
+
+        Reads the on-disk FIX 19 ledger (if any) into self.rows WITHOUT
+        clearing it, rebuilds the fetch cache from network-fetch rows so
+        repeats reuse grounded evidence with zero new network, and
+        reconciles the immutable snapshot store (legacy ledger rows gain
+        snapshots; existing snapshots are untouched). Never raises: a
+        corrupt/unreadable ledger degrades to empty memory, never a crash.
+        """
+        try:
+            ledger = self.ledger_path()
+            if ledger.is_file():
+                obj = json.loads(
+                    ledger.read_text(encoding="utf-8", errors="replace"))
+                rows = (obj or {}).get("rows") or []
+                for row in rows:
+                    if isinstance(row, dict):
+                        self.rows.append(dict(row))
+                        canon = str(row.get("canonical_url") or "")
+                        # Only COMPLETE rows (real hash + real extract) seed
+                        # the cache. A legacy/foreign ledger row with a bare
+                        # hash but no extract (e.g. the audit's
+                        # 'old-source-hash' placeholder) must NOT become a
+                        # cached "fetch": the validator still needs the real
+                        # bytes, and a hash-only row can neither support nor
+                        # contradict any claim.
+                        if row.get("network_fetch") and canon \
+                                and row.get("content_sha256") \
+                                and (row.get("extracted")
+                                     or row.get("extracted_chars")):
+                            cached = dict(row)
+                            cached.setdefault("ok",
+                                              int(row.get("status") or 0)
+                                              == 200)
+                            if not cached.get("extracted"):
+                                cached["extracted"] = str(
+                                    row.get("extracted_chars") or "")
+                            self.cache[canon] = cached
+                            self.cache[str(row.get("url") or canon)] = cached
+                            self.fetched[canon] = cached
+        except (OSError, ValueError):
+            pass
+        try:
+            from presentation_job import retrieval_store as _rs
+            _rs.recover_snapshots(self.run_dir)
+        except Exception:  # noqa: BLE001 -- recovery is best-effort
+            pass
 
     def _ledger_view(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """The on-disk ledger view of a row: the spec's fields (query, canonical
@@ -454,14 +585,43 @@ class BoundedFetcher:
         return view
 
     def _record(self, row: Dict[str, Any]) -> None:
+        # PRES-029: atomic durable writes. A denied/failed ledger write is a
+        # loud persistence failure (ResearchWebError), never a silent
+        # best-effort skip -- the phase must fail rather than claim success
+        # without durable grounded evidence.
+        from presentation_job.checkpoint import atomic_write_text
+        from presentation_job import retrieval_store as _rs
         self.rows.append(self._ledger_view(row))
         try:
             self.ledger_path().parent.mkdir(parents=True, exist_ok=True)
-            self.ledger_path().write_text(
-                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False),
-                encoding="utf-8")
-        except OSError:
-            pass  # ledger write is best-effort; the in-memory rows still bind
+            atomic_write_text(
+                self.ledger_path(),
+                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False))
+        except OSError as exc:
+            self.rows.pop()
+            raise ResearchWebError(
+                f"AF-RESEARCH-PERSIST: could not persist the retrieval "
+                f"ledger ({type(exc).__name__}: {exc}). Required research "
+                f"evidence was NOT saved -- the phase must fail, never "
+                f"report success without durable grounded evidence.") from exc
+        # Immutable snapshot alongside the ledger row (network fetches only;
+        # refusals carry no evidence body). The snapshot's content hash must
+        # be the fetch row's RAW-BODY hash (not a re-hash of the excerpt) so
+        # the validator's changed-source comparison is same-level. The raw
+        # body is not retained in memory here post-extraction, so the row's
+        # own content_sha256 is passed through verbatim (see the
+        # _snapshot_content_passthrough note in retrieval_store).
+        if row.get("network_fetch") and row.get("content_sha256"):
+            canon = str(row.get("canonical_url") or "")
+            _rs.save_snapshot(
+                self.run_dir, query=row.get("query"),
+                url=str(row.get("url") or canon), canonical_url=canon,
+                status=int(row.get("status") or 0),
+                body_or_excerpt=str(row.get("extracted") or ""),
+                is_body=False,
+                fetch_ordinal=row.get("fetch_ordinal"),
+                _content_sha_passthrough=str(
+                    row.get("content_sha256") or ""))
 
     def _record_ledger_row(self, row: Dict[str, Any]) -> None:
         # alias kept distinct from cache-side row mutation; both end at _record
@@ -559,23 +719,13 @@ class BoundedFetcher:
             self._record(row)
             return row
         extracted = extract_text(body)
-        # F31 (SMOKE-1, 2026-09-01): content_sha256 is the CONTENT-CHANGE signal the
-        # FIX 19/20 mismatch verdict compares against — it must measure the article
-        # text, not the per-request chrome around it. Live pages embed volatile
-        # per-request noise (visitor/read counters, rotating ad/telemetry script
-        # blobs, cache-busters) in BOTH the raw body and the extracted text; a raw
-        # sha over that noise can never match its own retrieval record on the next
-        # fetch, so dynamic-content hosts fail "content-mismatch" on every run and
-        # the gate is permanently unpassable for them (proven twice in-process on
-        # articos.com / numberanalytics.com — one-byte live-counter flips). Normalize
-        # per-request noise BEFORE hashing: hash the extracted text with every digit
-        # run collapsed to a single placeholder. Real evidence (stats, dates, dollar
-        # figures) stays inside longer alphanumeric tokens and is untouched; only
-        # standalone counter spans are neutralized. Anchors are still evaluated on
-        # the UN-normalized text, so anchor verification loses no precision.
-        canonical_content = re.sub(r"\d+", "#", extracted)
+        # PRES-029: content_sha256 hashes the RAW body (byte-identity of the
+        # fetched evidence), never the extraction. Hashing the extraction
+        # would alias distinct bodies with identical extracts AND collide
+        # with retrieval_store snapshots (which hash the excerpt) -- the
+        # validator's changed-source comparison needs both levels distinct.
         content_hash = hashlib.sha256(
-            canonical_content.encode("utf-8", errors="replace")).hexdigest()
+            body.encode("utf-8", errors="replace")).hexdigest()
         row = {
             "url": url,
             "canonical_url": final_canon or canon,
@@ -676,13 +826,19 @@ class BoundedFetcher:
             self.rows[existing] = view
         else:
             self.rows.append(view)
+        # PRES-029: anchor notes refresh the row's EXISTING ledger view in
+        # place (never duplicate rows per citation) via the same atomic,
+        # fail-closed write as _record. Anchor metadata is not new evidence,
+        # so no new snapshot -- but losing the note must still fail loudly.
+        from presentation_job.checkpoint import atomic_write_text as _awt
         try:
             self.ledger_path().parent.mkdir(parents=True, exist_ok=True)
-            self.ledger_path().write_text(
-                json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False),
-                encoding="utf-8")
-        except OSError:
-            pass
+            _awt(self.ledger_path(),
+                 json.dumps({"rows": self.rows}, indent=2, ensure_ascii=False))
+        except OSError as exc:
+            raise ResearchWebError(
+                f"AF-RESEARCH-PERSIST: could not persist anchor support "
+                f"note for {canon} ({type(exc).__name__}: {exc}).") from exc
         return verdict
 
 

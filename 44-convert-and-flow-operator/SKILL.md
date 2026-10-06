@@ -29,6 +29,15 @@ DEPENDENCY PRE-CHECK → OUTLINE → CHECKLIST (instantiate references/workflow-
 IMPROVEMENTS → PRESENT + GATING QUESTIONS (publish: DRAFT vs LIVE? / re-entry: once vs
 allow-multiple?). Rushing to a default build is NOT the best outcome and is a VIOLATION.
 
+**Step 0.6 — TIMING INTELLIGENCE:** When a brief contains scheduled actions, read
+[references/workflow-timing.md](references/workflow-timing.md). Infer what each clock
+is measured from. Event/registration-based waits automatically need a correctly
+configured **Set event start time** before dependent Waits; previous-step delays do
+not. Record the timing contract, verify its source in this location, generate the
+outline, and QC actual saved settings. Never turn day 4 + day 7 after registration
+into sequential waits totaling day 11. Use the managed browser for event timing
+until an API payload is verified; never drop timing metadata to bypass validation.
+
 **Step 0.7 — PRE-BUILD EXISTENCE CHECK (before any `caf workflows build`):** BINDING GATE —
 run `caf workflows list` and confirm the target folder/workflow names are not already present
 before building. The engine now checks workflows too (an existing workflow name is refused into
@@ -109,7 +118,7 @@ commands automatically; operators never need to memorize command syntax.
 
 ### What Tier 0 covers (standard ops — PIT only)
 
-- **contacts** — search, get, create, update, tag, untag, bulk operations
+- **contacts** — search, get, create (explicit NEW record only), upsert (DEFAULT for generic add/save — match keys + supplied fields only, verified by read-back), update (non-tag fields; `--tag` refused destructive), tag/untag (additive), bulk operations
 - **opportunities** — list, get, update, move pipeline stage
 - **calendars** — list calendars, get appointments, create/update bookings
 - **conversations** — list, get, send message, read threads

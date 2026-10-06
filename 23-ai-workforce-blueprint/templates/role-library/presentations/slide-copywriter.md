@@ -151,7 +151,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Write the Slides (Words First, One Big Idea)
 
-**When to run:** Phase 1 -- after arc_allocation.json is received and STYLE BLOCK is confirmed.
+**When to run:** Phase 1 -- after arc_allocation.json is received and STYLE BLOCK is confirmed. Phase 1 runs as a fanout dispatch: the Slide Copywriter and the Offer Price Strategist are parallel agents fanned out by the Director at order 4 (see 00-START-HERE.md P4-COPY, "concurrent: offer-price-strategist"), and the fanout size is governed by the governor -- `max_concurrent_agents` / `writer_agents_recommended` in `working/checkpoints/capacity_plan.json` (capacity-reliability-engineer.md Step 0.5).
 
 **Inputs:**
 - working/copy/intake.json
@@ -171,6 +171,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    PURPOSE: [the one big idea, one sentence]
    ARCHETYPE: [A1-A5 from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)]
    LADDER: [none | ANCHOR | BUILDUP | DROP1 | DROP2 | DROP3 | FINAL]
+   MOVE TAG: [the ONE build-move beat this slide carries: PRIORITY_STACK | PRESENT_COST | HIGHER_PRIORITY | VALUE_ANCHOR | URGENCY_SCARCITY | ABILITY_UNBLOCK | RERANK_DEMAND | TRIGGER -- engine metadata, NEVER rendered on the slide; AF-NO-SHIFT requires >=5 of the eight across the deck, monotonic]
    HEADLINE: [max 9 words, active voice, no em dash]
    EMPHASIS: [which word(s) get accent color]
    SUBHEAD: [max 18 words, one line, optional -- only if the headline needs support]

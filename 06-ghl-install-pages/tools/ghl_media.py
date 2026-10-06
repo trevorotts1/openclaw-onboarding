@@ -39,10 +39,16 @@ AUTH-MODEL SPLIT (LOAD-BEARING — this module sits ENTIRELY on the bare-Python 
     edited blob + the ``<img>`` snippet; ``ghl_rest_canvas.page_autosave`` (driven
     by ``ghl_builder.emit_rest_save_plan``) executes it in-browser.
 
-KEYS — OPERATOR'S OWN, NEVER A CLIENT'S
----------------------------------------
+KEYS - THE KIE KEY IS THE BOX OWNER'S OWN (a client's, on a client box)
+-----------------------------------------------------------------------
 ``KIE_API_KEY`` is read by the reused ``kie_generate.py`` from the environment or
-the standard env stores. The GHL LOCATION Private Integration Token (PIT) is read
+the standard env stores of the box it runs on. On a client box that key is the
+CLIENT'S OWN KIE key; operator keys are never used for client work (the same rule
+``kie_generate.py`` and ``TOOLS.md`` state, and the shared rules in
+``07-kie-setup/references/kie-common-rules.md``). This module does not choose or
+inject a KIE key: it resolves nothing for KIE and simply runs the generator, which
+uses whatever KIE key the box's own env stores hold. The GHL LOCATION Private
+Integration Token (PIT) is read
 by ``resolve_location_pit`` from EVERY known LOCATION-class env-var alias
 (``PODCAST_ENGINE_GHL_PIT`` preferred → ``GOHIGHLEVEL_API_KEY`` → ``GHL_API_KEY`` →
 ``GOHIGHLEVEL_LOCATION_PIT`` → ``GHL_LOCATION_PIT``) AND — when the live env is
@@ -53,8 +59,9 @@ back to an AGENCY-class PIT (``*_AGENCY_PIT``/``*_AGENCY_API_KEY``) — agency t
 401 for media. The location id is resolved the same way by ``resolve_location_id``
 (``PODCAST_ENGINE_GHL_LOCATION_ID`` → ``GOHIGHLEVEL_LOCATION_ID`` →
 ``GHL_LOCATION_ID`` → the ``*_ALLOWED_LOCATION_IDS`` single-id fallbacks → the
-same stores). In THIS phase the keys are the operator's
-own fixture keys; a client key must never appear here.
+same stores). The older wording "the keys are the operator's own fixture keys" is retired
+for KIE and is not a KIE rule (it is kept out of this note so it cannot be
+read as one).
 
 NO-FABRICATION / FAIL-LOUD
 --------------------------
@@ -107,7 +114,7 @@ ENGLISH_LATIN_PIN = (
 # The NO-TEXT pin — appended VERBATIM to every prompt whose spec is NOT
 # ``text_bearing``. FIX-IMG-09 (ii): the English/Latin pin was previously
 # appended to EVERY prompt, including photographic no-text scenes, which
-# ironically INVITES gpt-image-2 to render (correctly-spelled) text where none
+# ironically INVITES gpt-image-2.5 to render (correctly-spelled) text where none
 # was wanted. A no-text section must instead be told, unambiguously, to render
 # no lettering at all; only text-bearing sections carry the spelling pin.
 TEXT_ABSENT_PIN = (
@@ -485,7 +492,7 @@ def build_prompts_json(
     ``ENGLISH_LATIN_PIN`` spelling pin when the spec is ``text_bearing``, else the
     ``TEXT_ABSENT_PIN`` (a photographic section is told to render NO text at all
     rather than being invited to spell nonexistent copy).
-    ``t2i`` (``gpt-image-2-text-to-image``) is the default because the fictional
+    ``t2i`` (``gpt-image-2-5-sunburst-text-to-image``) is the default because the fictional
     brand has no logo to seed image-to-image; an ``i2i`` entry MUST carry
     ``input_urls`` (the generator enforces this too).
 

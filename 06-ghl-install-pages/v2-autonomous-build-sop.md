@@ -1,5 +1,21 @@
 # V2 Autonomous Funnels-Department Build SOP (Skill 06, T4)
 
+> **READING ORDER:** transcript recipe → this SOP (`v2-autonomous-build-sop.md`)
+> → `ghl-browser-builder-full.md` → `tools/gates.json`.
+> `ghl-install-pages-full.md` is HISTORICAL ONLY — never follow it.
+
+**Lite vs full.** This SOP is the FULL mode: the Funnels/Web-Dev department
+agent builds autonomously off the Command Center board (INTAKE card → STEP-0
+engine selector → `tools/v2_dispatcher.py`) with no operator at the keyboard.
+The LITE mode is the operator-driven Day-0 manual install — `DAY-0-CARD.md`,
+then the `INSTRUCTIONS.md` 10-phase click-path, verified with
+`OPERATOR-LIVE-CHECKLIST.md`. Reach for LITE when a human is driving the
+install on the operator box; reach for FULL when a dept agent is building
+off a board card. Both modes share the same fail-closed substrate: the
+`tools/gates.json` selector gates, token-only auth (never a login-form
+path), and the capability-probe receipt (`working/skill6-capability.json`)
+that selects the browser lane.
+
 **Purpose.** Make the autonomous-agent (V2) build path actually **BUILD in
 GoHighLevel** — using the proven token-only REST autosave + the real image
 pipeline + the Skill-44 ecosystem — instead of emitting local-only HTML and
@@ -801,8 +817,9 @@ ids, re-GET 200) — NOT `status:"PLANNED"` stubs:
    with the live `page_id` + the marker proving it rendered.
 4. **CRM contact + form→CRM PROOF (the dimension's hard requirement):**
    - baseline `contacts search` → `before_count`;
-   - submit the opt-in (or `contacts create` with a unique
-     `…@<brand>-test.invalid` email + tags `workshop-registrant`, `soap-lead`);
+   - submit the opt-in (or `contacts create` — an explicitly requested NEW
+     test record — with a unique `…@<brand>-test.invalid` email + tags
+     `workshop-registrant`, `soap-lead`);
    - **prove the roundtrip**: `contacts search` by that email → assert the new id
      exists AND carries both tags → re-GET `contacts/{id}`;
    - write `ecosystem/contact-test.json` with `created_contact_id`,
@@ -997,3 +1014,13 @@ A V2 build is DONE when, on the operator fixture only (a later live phase):
 Going live (a real public domain) remains a CLIENT Connect-Domain step and is
 NOT automated; preview URLs + draft saves are the bar.
 ```
+
+### Timing context at the P4 → P5 seam
+
+When the funnel promises timed follow-up, carry the user's original timing brief and
+verified registration/event source in `task.timing` using Skill 44's
+`references/workflow-timing.md` contract. `v2_dispatcher` preserves it and the location
+binding in `routing/skill44-handoff.json`. Skill 44 reviews timing even if no contract
+was supplied. Build timestamp is never the contact's registration timestamp. Event
+relative schedules require the native event-start/Wait sequence and saved-config QC;
+a single-action helper result is not proof of a complete automation.

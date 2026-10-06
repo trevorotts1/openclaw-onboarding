@@ -19,9 +19,10 @@
 #       resolver returns a non-empty company_root that does NOT live inside
 #       openclaw-master-files.
 #
-#   T2. TEMPLATE_PATH_NEVER_WINS: _is_template_path() correctly classifies
-#       openclaw-master-files paths as template and real workforce paths as
-#       non-template.
+#   T2. TEMPLATE_PATH_NEVER_WINS: _is_template_path() classifies shipped
+#       openclaw-master-files content as template, and real workforce paths --
+#       including openclaw-master-files/zero-human-company/<co>, where the build
+#       writes -- as non-template.
 #
 #   T3. GATE_BUG_SENTINEL: when get_openclaw_paths() returns no company_dir
 #       but a real root dir exists on disk, _qc_company_info.py emits
@@ -146,8 +147,13 @@ exec("\n".join(fn_lines), ns)
 fn = ns["_is_template_path"]
 
 tests = [
-    (Path.home() / "Downloads" / "openclaw-master-files" / "zero-human-company" / "co", True),
-    (Path("/data/openclaw-master-files") / "zero-human-company" / "co", True),
+    # openclaw-master-files/zero-human-company/<co> is where build-workforce.py
+    # WRITES every company (PRD 1.9) -- the real workforce, never a template.
+    (Path.home() / "Downloads" / "openclaw-master-files" / "zero-human-company" / "co", False),
+    (Path("/data/openclaw-master-files") / "zero-human-company" / "co", False),
+    # Everything else under openclaw-master-files is shipped template content.
+    (Path.home() / "Downloads" / "openclaw-master-files" / "23-ai-workforce-blueprint" / "templates", True),
+    (Path("/data/openclaw-master-files") / "coaching-personas", True),
     (Path.home() / "clawd" / "zero-human-company" / "co", False),
     (Path.home() / ".openclaw" / "workspace" / "zero-human-company" / "co", False),
     (Path("/data/.openclaw/workspace/zero-human-company") / "co", False),

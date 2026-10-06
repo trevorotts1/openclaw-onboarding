@@ -6,13 +6,13 @@
 #   CASE A: every required messageId IS present in the sent-registry -> PASS (rc 0)
 #   CASE B: a required messageId is MISSING and recent             -> FAIL (rc 3)
 #   CASE C: a required slot has NO captured messageId (send-failed)-> FAIL (rc 4)
-#   CASE D: a required messageId is MISSING but AGED OUT past TTL  -> PASS (rc 0)
+#   CASE D: an aged-out ID without verified historical proof      -> FAIL (rc 3)
 #   CASE E: phantom guard -- messagesDelivered with only send-failed
 #           records (no real messageId) is NOT counted delivered    -> count 0
 #   CASE F: registry FILE ABSENT (OpenClaw 2026.6.x migrated it away) +
-#           all required ids gateway-confirmed in state             -> PASS (rc 0)
-#   CASE G: registry ABSENT + a required slot genuinely undelivered -> FAIL (rc 4)
-#   CASE H: registry ABSENT + a required slot has no record at all  -> FAIL (rc 4)
+#           unverified state IDs cannot substitute for evidence    -> ENV (rc 7)
+#   CASE G: registry ABSENT + undelivered slot                     -> ENV (rc 7)
+#   CASE H: registry ABSENT + a required slot has no record        -> ENV (rc 7)
 #   CASE I: registry ABSENT + ZHC_TG_REGISTRY_REQUIRED=1 (legacy)   -> ENV  (rc 7)
 #
 # No live OpenClaw install needed: drives the verifier via ZHC_STATE_FILE /
@@ -51,7 +51,7 @@ now_ms=$(( now_s * 1000 ))
 # write_state <json-of-messagesDelivered-array>
 write_state() {
   cat > "$TMP/state.json" <<EOF
-{ "ownerChat": "$CHAT", "messagesDelivered": $1 }
+{ "buildId": "fixture-build", "ownerChat": "$CHAT", "messagesDelivered": $1 }
 EOF
 }
 
@@ -109,15 +109,15 @@ write_state "[
 write_registry "{ \"3001\": $now_ms, \"3006\": $now_ms }"
 run_case "CASE C: required slot has no captured messageId -> FAIL(4)" 4
 
-# CASE D: required id 6 missing but AGED OUT past TTL -> PASS (rc 0)
+# CASE D: age alone cannot prove a missing receipt.
 write_state "[
   {\"n\":1,\"messageId\":\"4001\",\"chatId\":\"$CHAT\",\"ts\":\"$old_iso\"},
   {\"n\":6,\"messageId\":\"4006\",\"chatId\":\"$CHAT\",\"ts\":\"$old_iso\"},
   {\"n\":7,\"messageId\":\"4007\",\"chatId\":\"$CHAT\",\"ts\":\"$old_iso\"}
 ]"
-# 4006 deliberately absent; it was sent 2 days ago > 1-day TTL -> aged-out, not a fail.
+# 4006 deliberately absent, with no previously verified receipt ledger.
 write_registry "{ \"4001\": $now_ms, \"4007\": $now_ms }"
-run_case "CASE D: required messageId missing but aged-out past TTL -> PASS" 0
+run_case "CASE D: an aged-out ID without previously verified proof still fails" 3
 
 # CASE E: phantom-guard logic -- a delivered-array of ONLY send-failed records
 # must not count as a real delivery. We assert the same jq the run-closeout guard
@@ -135,11 +135,8 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenClaw 2026.6.x DERIVED MODE: the gateway no longer writes the JSON sent-
-# registry (it migrated into SQLite), so the registry FILE is absent. The gate
-# must then confirm delivery from the gateway-confirmed messageIds already in
-# state -- WITHOUT the env-var/manual workaround that was needed for a recent
-# closeout, and while STILL failing on genuinely-undelivered slots.
+# A missing legacy registry requires an explicitly configured SQLite source or
+# a previously verified exact receipt ledger. State IDs alone remain pending.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # run_case_noreg <name> <expect_rc> -- like run_case but points ZHC_TG_REGISTRY
@@ -162,30 +159,28 @@ run_case_noreg() {
   fi
 }
 
-# CASE F: registry FILE absent + all required slots have gateway-confirmed
-# messageIds in state -> PASS (rc 0) WITHOUT any skip/workaround env var.
+# CASE F: unverified state IDs do not prove delivery when the source is absent.
 write_state "[
   {\"n\":1,\"messageId\":\"6001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
   {\"n\":6,\"messageId\":\"6006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
   {\"n\":7,\"messageId\":\"6007\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
 ]"
-run_case_noreg "CASE F: registry absent (2026.6.x) + all ids confirmed in state -> PASS" 0
+run_case_noreg "CASE F: registry absent + unverified state IDs -> capability pending" 7
 
-# CASE G: registry FILE absent + a required slot has NO messageId (genuine
-# send failure) -> still FAIL (rc 4). Fail-loud preserved in derived mode.
+# CASE G: source absence keeps failed delivery pending.
 write_state "[
   {\"n\":1,\"messageId\":\"7001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
   {\"n\":6,\"messageId\":\"7006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
   {\"n\":7,\"status\":\"send-failed\",\"reason\":\"no-messageId\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
 ]"
-run_case_noreg "CASE G: registry absent + required slot never delivered -> FAIL(4)" 4
+run_case_noreg "CASE G: registry absent + undelivered slot -> capability pending" 7
 
-# CASE H: registry FILE absent + a required slot has no record AT ALL -> FAIL(4).
+# CASE H: source absence keeps missing required records pending.
 write_state "[
   {\"n\":1,\"messageId\":\"8001\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"},
   {\"n\":6,\"messageId\":\"8006\",\"chatId\":\"$CHAT\",\"ts\":\"$recent_iso\"}
 ]"
-run_case_noreg "CASE H: registry absent + required slot 7 has no record -> FAIL(4)" 4
+run_case_noreg "CASE H: registry absent + missing slot -> capability pending" 7
 
 # CASE I: legacy hard-require -- registry absent but ZHC_TG_REGISTRY_REQUIRED=1
 # forces the old env-error (rc 7) so operators can opt back into strict behavior.

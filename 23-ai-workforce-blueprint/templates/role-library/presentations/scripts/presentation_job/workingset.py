@@ -63,7 +63,7 @@ from typing import Any, Dict, List, Optional
 CHARACTERS_PER_TOKEN = 4
 
 # Context-window cap in tokens. The fleet presentations model is
-# deepseek-v4-flash:0731-cloud; its documented context window is 131072 tokens
+# deepseek-flash (DeepSeek Direct V4.1 Flash); live openclaw.json contextWindow 1048576, maxTokens 393216 (2026-09-11). Phase-fit bar stays 131072 (FIX-20 compaction bar, unchanged)
 # (128K). A phase whose measured working set is below this cap can complete
 # within one context window without compaction. This is the FIX-20 "fits one
 # context window" bar.
@@ -196,21 +196,44 @@ def _expand_globs(run_dir: Path, globs: List[str]) -> List[Path]:
     return uniq
 
 
-def _read_bytes(path: Path) -> bytes:
+def _stat_meta(path: Path) -> Optional[Dict[str, int]]:
+    """Cost-free metadata for one file: size + mtime from stat, no byte read.
+
+    FIX 26: the hot-loop measurement path (Engine._checkpoint during a render
+    wave) reads ZERO bytes of the working set; a size + mtime_ns pair is all
+    the fit verdict, the checkpoint record, and change detection need."""
     try:
-        return path.read_bytes()
+        st = path.stat()
     except OSError:
-        return b""
+        return None
+    return {
+        "bytes": int(st.st_size),
+        "mtime_ns": int(getattr(st, "st_mtime_ns", st.st_mtime * 1_000_000_000)),
+    }
 
 
 def measure_workingset(run_dir: Path, phase_id: str,
-                       manifest=None) -> Dict[str, Any]:
+                       manifest=None, hash_on_completion: bool = False) -> Dict[str, Any]:
     """Measure one phase's working set.
+
+    FIX 26 (MASTER Part 8): every checkpoint used to read every PNG's bytes.
+    P4-RENDER's checkpoint ran inside the phase loop where the working set is
+    tens of rendered PNGs — the byte reads plus lenient decode put
+    ``Engine._checkpoint`` far over the 100 ms bar on a 40-slide dir. The
+    measurement is now stat-based (size + mtime_ns, zero bytes read) — a size
+    AND mtime pair is sufficient for the fit verdict, the checkpoint record,
+    and change detection, and it is what a hot loop needs. The token estimate
+    uses the still-conservative bytes/CHARACTERS_PER_TOKEN (a binary PNG's
+    bytes were already replacement chars in the old decode, and over-counting
+    is the safe direction); ``chars`` is filled only on the one path that
+    actually reads content (``hash_on_completion=True``), i.e. phase
+    completion, where the real byte read is provably required for the sha.
 
     Returns a dict:
         {
           "phase_id": str,
-          "files": [{"path": rel, "bytes": int, "chars": int}],
+          "files": [{"path": rel, "bytes": int, "chars": int|None,
+                     "mtime_ns": int}],
           "total_bytes": int,
           "total_chars": int,
           "estimated_tokens": int,
@@ -247,20 +270,62 @@ def measure_workingset(run_dir: Path, phase_id: str,
     total_bytes = 0
     total_chars = 0
     for path in _expand_globs(run_dir, globs):
-        data = _read_bytes(path)
-        n_bytes = len(data)
-        # Decode as text leniently; binary artifacts (png/pptx/mp3) decode as
-        # replacement chars, which inflate the char count slightly — a safe
-        # over-count for the fit check.
-        text = data.decode("utf-8", errors="replace")
-        n_chars = len(text)
+        meta = _stat_meta(path)
+        if meta is None:
+            continue
+        n_bytes = int(meta["bytes"])
         total_bytes += n_bytes
-        total_chars += n_chars
-        files.append({
+        entry = {
             "path": str(path.relative_to(run_dir)),
             "bytes": n_bytes,
-            "chars": n_chars,
-        })
+            "chars": None,
+            "mtime_ns": int(meta["mtime_ns"]),
+        }
+        if hash_on_completion:
+            # Phase completion only: read + leniently decode once. The sha256
+            # (records["sha256"]) computed by the caller is over the raw bytes
+            # anyway; this decode exists for the legacy `chars` field and the
+            # conservative token count. A byte read here is required because
+            # the completion path is attestation, not a hot loop.
+            # F20: this read used to call `_read_bytes(path)` -- a helper that
+            # exists nowhere in this module (or any import of it). FIX 26 split
+            # the hot loop to stat-only and left the completion branch calling
+            # a name it never wrote, so EVERY phase-completion checkpoint
+            # raised NameError. Engine._checkpoint swallows it in a bare
+            # `except Exception: pass`, so the failure was silent and the FIX-20
+            # compaction guarantee was dead: a finished phase reloaded as
+            # "running". `_expand_globs` yields pathlib.Path, so read it here.
+            try:
+                data = path.read_bytes()
+            except OSError:
+                # Vanished/unreadable between the stat above and this read.
+                # Fall back to the stat-only estimate for this one file rather
+                # than losing the whole completion checkpoint -- the silent
+                # loss described above is exactly what this repair removes.
+                data = None
+            if data is None:
+                total_chars += n_bytes
+            else:
+                if len(data) != n_bytes:
+                    # stat hinted a different size than a re-read sees (file
+                    # was being written mid-measurement); trust the bytes
+                    # actually read.
+                    total_bytes += len(data) - n_bytes
+                    entry["bytes"] = n_bytes = len(data)
+                text = data.decode("utf-8", errors="replace")
+                entry["chars"] = len(text)
+                total_chars += len(text)
+        else:
+            # Stat-only token estimate: bytes -> tokens under the conservative
+            # 4:1 rule. For binary artifacts the old decode produced ~1 char
+            # per replacement byte, so bytes/4 is EQUALLY conservative (in
+            # fact slightly less than the old replacement-char count), and it
+            # never reads the file.
+            total_chars += n_bytes
+        # F20: `entry` was built every iteration and appended NONE of them, so
+        # the record's documented "files" list (see this function's docstring)
+        # shipped permanently empty -- a second casualty of the FIX 26 rewrite.
+        files.append(entry)
 
     estimated = estimate_tokens("x" * total_chars) if total_chars else 0
     fits = estimated <= CONTEXT_WINDOW_CAP
@@ -302,7 +367,7 @@ def _checkpoint_path(run_dir: Path, phase_id: str) -> Path:
 
 
 def checkpoint_phase(run_dir: Path, phase_id: str, state: Dict[str, Any],
-                     store=None) -> Dict[str, Any]:
+                     store=None, hash_on_completion: bool = False) -> Dict[str, Any]:
     """Write a phase disk checkpoint: the measured working-set size plus a
     snapshot of the phase record from state.json, atomically.
 
@@ -321,8 +386,12 @@ def checkpoint_phase(run_dir: Path, phase_id: str, state: Dict[str, Any],
             phase_record = ps
             break
 
-    # Measure the working set as of the checkpoint.
-    measurement = measure_workingset(run_dir, phase_id)
+    # Measure the working set as of the checkpoint. FIX 26: the real byte
+    # read is OPT-IN (hash_on_completion) — the engine passes it only on a
+    # phase-completion checkpoint (attestation), keeping every hot-loop
+    # checkpoint stat-only.
+    measurement = measure_workingset(run_dir, phase_id,
+                                     hash_on_completion=hash_on_completion)
 
     state_sha = sha256_text(json.dumps(state, sort_keys=True, default=str))
     checkpoint = {

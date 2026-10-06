@@ -1,4 +1,4 @@
-## [1.6.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
+## [2.0.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
 
 ### Why
 Two defects compounded. (1) The markers embedded the RUNTIME skill version and the
@@ -285,3 +285,6 @@ Skill 44 ships an internal-API build path. Without these edits, skill 41's INSTR
 - qc-catalog-usecases.sh gate plus its negative test, enforcing the use cases and the If/Else and
   trigger-filter depth.
 
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

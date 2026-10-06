@@ -132,6 +132,7 @@ else
 fi
 export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
 
+
 # ─── 1c. Enumerate BUNDLED plugin IDs for plugins.allow (dynamic, box-specific) ──
 # SECURITY: the repo never set plugins.allow, so every box inherits the gateway's
 # permissive default — ANY discovered plugin (bundled OR third-party/unvetted)
@@ -325,8 +326,148 @@ def deep_merge(dst, src):
             dst[k] = v
     return dst
 
-# Apply the canonical block.
-deep_merge(cfg, CANONICAL)
+# >>> BEGIN LEGACY-EXEC-MODE TRANSLATION (extracted live by
+#     tests/unit/fleet-standards-legacy-exec-mode.test.sh -- do not rename these
+#     two anchor comments without updating that test) <<<
+#
+# DEFECT (2026-09-17). This script deep-merges {security, ask} into tools.exec.
+# On a box whose config still carries the LEGACY tools.exec.mode key the merged
+# block holds mode AND security AND ask at once, and the OpenClaw validator
+# rejects that combination outright:
+#
+#   tools.exec.mode: mode cannot be combined with security or ask in the same
+#   exec object.
+#
+# The script then printed "ERROR: openclaw config validate failed" and rolled
+# back the WHOLE fleet-standards write -- toolSearch directory mode, the
+# WhatsApp ban, the subagent ungate, plugins.allow, every standard in this file
+# -- on every box carrying the legacy key, on every roll. Reproduced on two
+# client Macs on 2026-09-15 and again on 2026-09-17.
+#
+# SCHEMA EVIDENCE (OpenClaw 2026.9.4, read from $(npm root -g)/openclaw/dist):
+#
+#   zod-schema.agent-runtime-*.mjs
+#     const ToolExecBaseShape = {
+#       host: enum["auto","sandbox","gateway","node"],
+#       mode: enum["deny","allowlist","ask","auto","full"],
+#       security: enum["deny","allowlist","full"],
+#       ask: enum["off","on-miss","always"], ... }
+#     const ToolExecSchema =
+#       object(ToolExecBaseShape).strict().superRefine(addExecPolicyModeConflictIssue)
+#
+#     function addExecPolicyModeConflictIssue(value, ctx) {
+#       if (value.mode === void 0 ||
+#           (value.security === void 0 && value.ask === void 0)) return;
+#       ...ctx.addIssue({ path: ["mode"], message: "mode cannot be combined
+#          with security or ask in the same exec object. ..." })
+#     }
+#
+#   That `if` IS the exact conflict rule: an error is raised if and only if
+#   `mode` is present AND at least one of `security` / `ask` is present.
+#   Neither alone is an error.
+#
+#   exec-approvals-core-*.mjs
+#     function resolveExecPolicyForMode(mode) {
+#       case "deny":      return { security: "deny",      ask: "off",     autoReview: false }
+#       case "allowlist": return { security: "allowlist", ask: "off",     autoReview: false }
+#       case "ask":       return { security: "allowlist", ask: "on-miss", autoReview: false }
+#       case "auto":      return { security: "allowlist", ask: "on-miss", autoReview: true  }
+#       case "full":      return { security: "full",      ask: "off",     autoReview: false }
+#     }
+#
+#   EXEC_MODE_TO_POLICY below is that table verbatim. It is the gateway's own
+#   resolver, not an inference. `autoReview` is deliberately NOT carried across:
+#   it is not a member of ToolExecBaseShape, and the schema is .strict(), so
+#   writing it is rejected ("Unrecognized key: autoReview"). It is a derived
+#   runtime value, never persisted config, so "auto" and "ask" translate to the
+#   same persistable pair and nothing storable is lost.
+#
+# VERIFIED AGAINST THE REAL VALIDATOR (OPENCLAW_CONFIG_PATH=<temp>
+# openclaw config validate, OpenClaw 2026.9.4):
+#   {"tools":{"exec":{"mode":"full","security":"full","ask":"off"}}}  -> rc=1, the
+#       conflict message above  (the fleet defect, exactly)
+#   {"tools":{"exec":{"security":"full","ask":"off"}}}                -> rc=0 VALID
+#       (what this translation leaves behind)
+#   {"tools":{"exec":{"mode":"full"}}}                                -> rc=0 VALID
+#       (the legacy box BEFORE the merge -- which is why the box was healthy
+#        until this script ran)
+#   every {security, ask} pair in EXEC_MODE_TO_POLICY                 -> rc=0 VALID
+#
+# DIRECTION OF TRAVEL. The validator's own repair hint prefers the opposite
+# move ("Replace security/ask with mode=..."), and `openclaw doctor --fix`
+# migrates legacy policies toward `mode`. We deliberately do NOT flip the fleet
+# standard to `mode` here: {security, ask} are still fully valid keys on
+# 2026.9.4 (proved above), the whole fleet standard, its post-merge assertions
+# and verify-routing.sh all key off {security, ask}, and older gateways on the
+# fleet are not proven to accept `mode`. Changing the written shape fleet-wide
+# is a separate, larger decision. This fix removes the CONFLICT, nothing more.
+EXEC_MODE_TO_POLICY = {
+    "deny":      {"security": "deny",      "ask": "off"},
+    "allowlist": {"security": "allowlist", "ask": "off"},
+    "ask":       {"security": "allowlist", "ask": "on-miss"},
+    "auto":      {"security": "allowlist", "ask": "on-miss"},
+    "full":      {"security": "full",      "ask": "off"},
+}
+
+
+def translate_legacy_exec_mode(cfg):
+    """Drop a legacy tools.exec.mode, translating it into {security, ask}.
+
+    Returns (status, detail):
+      ("absent", None)            no tools.exec block, or no mode key -- no-op.
+      ("translated", mode)        mode recognised; replaced by its {security,
+                                  ask} pair and the mode key deleted. The
+                                  canonical merge then enforces the fleet
+                                  standard on top, as it always did.
+      ("untranslatable", raw)     mode present but NOT one of the five schema
+                                  values. We do not guess and we do not delete
+                                  a key we cannot interpret. The caller SKIPS
+                                  the tools.exec sub-block only, and every other
+                                  standard is still applied.
+    """
+    tools = cfg.get("tools")
+    if not isinstance(tools, dict):
+        return ("absent", None)
+    execblk = tools.get("exec")
+    if not isinstance(execblk, dict):
+        return ("absent", None)
+    if "mode" not in execblk:
+        return ("absent", None)
+    raw = execblk.get("mode")
+    key = raw.strip().lower() if isinstance(raw, str) else None
+    policy = EXEC_MODE_TO_POLICY.get(key)
+    if policy is None:
+        return ("untranslatable", raw)
+    del execblk["mode"]
+    for pk, pv in policy.items():
+        execblk[pk] = pv
+    return ("translated", key)
+
+
+_EXEC_STATUS, _EXEC_DETAIL = translate_legacy_exec_mode(cfg)
+if _EXEC_STATUS == "translated":
+    _p = EXEC_MODE_TO_POLICY[_EXEC_DETAIL]
+    print("[apply-fleet-standards] legacy tools.exec.mode=\"%s\" translated to "
+          "security=\"%s\" ask=\"%s\" and the mode key removed "
+          "(the OpenClaw validator rejects mode combined with security/ask)"
+          % (_EXEC_DETAIL, _p["security"], _p["ask"]))
+elif _EXEC_STATUS == "untranslatable":
+    print("[apply-fleet-standards] WARNING: tools.exec.mode=%r is not one of %s "
+          "-- cannot translate it, so the tools.exec sub-block is SKIPPED on this "
+          "box. Every other fleet standard IS still applied. This config was "
+          "already invalid before this script ran (the schema enum rejects that "
+          "value on its own); fix tools.exec.mode by hand, then re-run."
+          % (_EXEC_DETAIL, sorted(EXEC_MODE_TO_POLICY)))
+# >>> END LEGACY-EXEC-MODE TRANSLATION <<<
+
+# Apply the canonical block. When the legacy mode key could not be translated we
+# merge a copy with the tools.exec sub-block removed, so ONE unreadable key can
+# never cost the box every other standard in this file. CANONICAL itself is left
+# intact -- the before/after audit print at the end still keys off it.
+CANONICAL_TO_MERGE = json.loads(json.dumps(CANONICAL))
+if _EXEC_STATUS == "untranslatable":
+    CANONICAL_TO_MERGE["tools"].pop("exec", None)
+deep_merge(cfg, CANONICAL_TO_MERGE)
 
 # POST-MERGE ASSERTION. A scalar `tools.toolSearch` (e.g. bare `true`) selects a
 # prompt surface with NO hydration path: every tool call returns "Tool not found",
@@ -514,8 +655,16 @@ else:
 # Fix per-agent subagents overrides: any agent with an explicit allowAgents
 # that is NOT ["*"] should be set to ["*"]. This is the critical piece that
 # was missing in earlier partial fixes.
-if "agents" in cfg and "list" in cfg["agents"]:
-    for agent in cfg["agents"]["list"]:
+# Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY -- never
+# written into the body) and the legacy agents.list[]. Edits land on the LIVE
+# entry dicts, so whichever shape the box has is the one written.
+_a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+_e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+_l = _a.get("list") if isinstance(_a.get("list"), list) else []
+_roster = [(k, v) for k, v in _e.items() if isinstance(v, dict)]
+_roster += [(a.get("id"), a) for a in _l if isinstance(a, dict) and a.get("id") not in _e]
+if _roster:
+    for _aid, agent in _roster:
         if "subagents" in agent and "allowAgents" in agent["subagents"]:
             if agent["subagents"]["allowAgents"] != ["*"]:
                 agent_name = agent.get("name", "unknown")
@@ -616,7 +765,7 @@ def _ceo_consent_active():
 
 if _ceo_consent_active():
     print("[apply-fleet-standards] owner-consent carve-out ACTIVE — skipping CEO tool-gate re-assert (would revoke the owner's grant)")
-elif "agents" in cfg and "list" in cfg["agents"]:
+elif _roster:
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: re-assert the gate on the box's
     # default agent (default:true, else id=="main") ONLY IF it is a ROUTER —
     # matching apply-routing-fix.sh L5 and verify-routing.sh G7 so the gate target
@@ -628,23 +777,22 @@ elif "agents" in cfg and "list" in cfg["agents"]:
         "master-orchestrator", "dept-master-orchestrator",
         "dept-executive-office",
     }
-    def _is_router(a):
+    def _is_router(a, aid):
         if not isinstance(a, dict):
             return False
         if a.get("is_master") is True:
             return True
         if isinstance(a.get("role"), str) and a.get("role").strip().lower() == "router":
             return True
-        return a.get("id") in ROUTER_IDS
+        return aid in ROUTER_IDS
 
-    _agents = cfg["agents"]["list"]
-    _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("default") is True), None)
+    _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if a.get("default") is True), (None, None))
     if _ceo_agent is None:
-        _ceo_agent = next((a for a in _agents if isinstance(a, dict) and a.get("id") == "main"), None)
-    if _ceo_agent is not None and not _is_router(_ceo_agent):
+        _ceo_id, _ceo_agent = next(((i, a) for i, a in _roster if i == "main"), (None, None))
+    if _ceo_agent is not None and not _is_router(_ceo_agent, _ceo_id):
         # PA-FREEZE GUARD: default agent is a personal assistant / owner agent —
         # the CEO production lock would freeze it. Do NOT re-assert here.
-        print(f"[apply-fleet-standards] default agent (id={_ceo_agent.get('id','<unknown>')}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
+        print(f"[apply-fleet-standards] default agent (id={_ceo_id or '<unknown>'}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate re-assert (v13.2.2 PA-freeze guard)")
         _ceo_agent = None
     if _ceo_agent is not None:
         agent = _ceo_agent
@@ -700,7 +848,7 @@ elif "agents" in cfg and "list" in cfg["agents"]:
             _root_tools["agentToAgent"] = _a2a
         _a2a.setdefault("enabled", True)
         _a2a.setdefault("allow", ["*"])
-        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={agent.get('id','<unknown>')}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
+        print(f"[apply-fleet-standards] re-asserted CEO tool-gate on default agent (id={_ceo_id or '<unknown>'}; production tools denied) + routing tools (sessions/agentToAgent) on ROOT tools")
 
 # v16.1.3 SELF-HEAL — sessions/agentToAgent belong on ROOT `tools`, NEVER on a
 # per-agent tools block (AgentEntry.tools is additionalProperties:false and
@@ -719,9 +867,14 @@ def _heal_peragent_routing_keys(_cfg):
         _rt = {}
         _cfg["tools"] = _rt
     _healed = []
-    for _ag in (_cfg.get("agents", {}) or {}).get("list", []) or []:
-        if not isinstance(_ag, dict):
-            continue
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the KEY)
+    # and the legacy agents.list[] ids not already in entries.
+    _ha = _cfg.get("agents") if isinstance(_cfg.get("agents"), dict) else {}
+    _he = _ha.get("entries") if isinstance(_ha.get("entries"), dict) else {}
+    _hl = _ha.get("list") if isinstance(_ha.get("list"), list) else []
+    _hroster = [(k, v) for k, v in _he.items() if isinstance(v, dict)]
+    _hroster += [(a.get("id", "<unknown>"), a) for a in _hl if isinstance(a, dict) and a.get("id") not in _he]
+    for _aid, _ag in _hroster:
         _at = _ag.get("tools")
         if not isinstance(_at, dict):
             continue
@@ -730,12 +883,13 @@ def _heal_peragent_routing_keys(_cfg):
                 if _k not in _rt and isinstance(_at[_k], (dict, list)):
                     _rt[_k] = _at[_k]  # migrate the configured value up to root
                 del _at[_k]
-                _healed.append(f"{_ag.get('id', '<unknown>')}.{_k}")
+                _healed.append(f"{_aid}.{_k}")
     return _healed
 
 _healed_keys = _heal_peragent_routing_keys(cfg)
 if _healed_keys:
     print("[apply-fleet-standards] v16.1.3 self-heal: removed schema-invalid per-agent routing keys + ensured on ROOT tools: " + ", ".join(_healed_keys))
+
 
 after_json = json.dumps(cfg, sort_keys=True, indent=2)
 
@@ -839,10 +993,82 @@ echo "[apply-fleet-standards] prompt-caching (ollama path): RESERVED slot — aw
 echo ""
 echo "[apply-fleet-standards] running: openclaw config validate"
 if ! openclaw config validate; then
-  echo "ERROR: openclaw config validate failed — see output above" >&2
-  echo "[apply-fleet-standards] rolling back to: $OC_BACKUP"
-  cp "$OC_BACKUP" "$OC_CONFIG"
-  exit 1
+  # NARROW REPAIR BEFORE ANY ROLLBACK (2026-09-17).
+  #
+  # This gate used to do exactly one thing on failure: restore the backup and
+  # exit 1, discarding EVERY standard this script had just applied. On boxes
+  # carrying a legacy tools.exec.mode key that fired on every single roll, and
+  # one unreadable exec key cost the box toolSearch directory mode, the WhatsApp
+  # ban, the subagent ungate, plugins.allow and the rest. A whole-file rollback
+  # is the right LAST resort and the wrong FIRST one.
+  #
+  # tools.exec is the only sub-block this script writes that has a documented
+  # schema conflict rule (mode vs security/ask). So: revert ONLY tools.exec to
+  # its pre-merge value, re-validate, and if that clears, keep every other
+  # standard. Only if the config is STILL invalid do we do what we always did.
+  echo "[apply-fleet-standards] validate FAILED after the merge; trying the NARROW repair (revert tools.exec only) before any rollback" >&2
+
+  _EXEC_REVERTED=0
+  if python3 - "$OC_CONFIG" "$OC_BACKUP" <<'EXECREVERTEOF'
+import json
+import sys
+from pathlib import Path
+
+cur_p = Path(sys.argv[1])
+bak_p = Path(sys.argv[2])
+try:
+    cur = json.loads(cur_p.read_text())
+    bak = json.loads(bak_p.read_text())
+except Exception as exc:
+    print("[apply-fleet-standards] narrow repair: cannot parse config or backup "
+          "(%s) -- falling through to the full rollback" % exc, file=sys.stderr)
+    sys.exit(1)
+
+cur_tools = cur.get("tools")
+if not isinstance(cur_tools, dict):
+    print("[apply-fleet-standards] narrow repair: no tools block to revert -- "
+          "tools.exec is not the culprit", file=sys.stderr)
+    sys.exit(1)
+
+bak_tools = bak.get("tools")
+bak_exec = bak_tools.get("exec") if isinstance(bak_tools, dict) else None
+
+if bak_exec is None:
+    cur_tools.pop("exec", None)
+    detail = "removed (the backup had no tools.exec)"
+else:
+    cur_tools["exec"] = bak_exec
+    detail = "restored from the backup verbatim"
+
+cur_p.write_text(json.dumps(cur, indent=2) + "\n")
+print("[apply-fleet-standards] narrow repair: tools.exec %s; every other fleet "
+      "standard is still in the file" % detail)
+sys.exit(0)
+EXECREVERTEOF
+  then
+    _EXEC_REVERTED=1
+  fi
+
+  if [ "$_EXEC_REVERTED" = "1" ] && openclaw config validate; then
+    echo "[apply-fleet-standards] WARNING: the merged tools.exec block did NOT validate on this box, so tools.exec was left at its pre-merge value." >&2
+    echo "[apply-fleet-standards] WARNING: the fleet exec ungate (security=full, ask=off) is NOT applied here. Inspect tools.exec by hand, then re-run." >&2
+    echo "[apply-fleet-standards] every other standard in this script IS applied and validated. NOT rolling back." >&2
+  else
+    echo "ERROR: openclaw config validate failed -- see output above" >&2
+    echo "[apply-fleet-standards] rolling back to: $OC_BACKUP"
+    cp "$OC_BACKUP" "$OC_CONFIG"
+    # DIAGNOSTIC, not a second repair attempt. The config is now byte-for-byte
+    # the pre-roll backup. Validating it here answers the only question the
+    # operator has left: did THIS script break the box, or was the box already
+    # invalid before the roll touched it? Reporting "rolled back" without that
+    # answer sends someone hunting a fleet-script bug that may not exist.
+    if openclaw config validate >/dev/null 2>&1; then
+      echo "[apply-fleet-standards] the PRE-ROLL config validates clean, so the failure came from this roll's merge." >&2
+    else
+      echo "[apply-fleet-standards] the PRE-ROLL config ALSO fails validate, so this box was already invalid before the roll. Fix the config by hand; re-running this script cannot clear it." >&2
+    fi
+    exit 1
+  fi
 fi
 
 echo ""
@@ -1179,119 +1405,20 @@ fi
 # v11.3.2: closes the "trivial task / quick API call / spawn-a-sub-agent" loopholes
 # that let the CEO self-execute even when the PRIME DIRECTIVE partially loaded.
 # Injected after ROLE_DISCIPLINE (or at top when ROLE_DISCIPLINE already present).
-# Idempotent: guarded by <!-- CEO_ROUTING_NO_LOOPHOLES_V2 --> marker.
+# Idempotent: stamped by shared-utils/ceo_execution_policy.py --kind CEO_ROUTING_NO_LOOPHOLES (V4_3 marker;
+# the helper upgrades older V-marked regions in place, prepends when absent).
 # P1-04 (V1→V2): V2 adds the trust-engine rule — when the CEO routes a CLIENT
 # message it MUST pass the originating chat id so the report-back loop can keep
 # the client informed. Bumping the marker (with the strip-V1 migration below) is
 # what makes the new instruction re-inject on the ~30 already-onboarded boxes: a
 # stale V1 marker would no-op the block forever and the boxes would never see it.
-CEO_ROUTING_MARKER="<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
-CEO_ROUTING_MARKER_V1="<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->"
-if grep -qF "$CEO_ROUTING_MARKER_V1" "$AGENTS_FILE_EARLY" 2>/dev/null; then
-  # Legacy V1 block present: strip it so V2 re-injects. The V1 block has no END
-  # marker — it terminates at the first '---' line after its open marker — so we
-  # remove exactly that region (plus the blank lines hugging it).
-  python3 - "$AGENTS_FILE_EARLY" <<'CEOSTRIP_PY'
-import re, sys
-p = sys.argv[1]
-c = open(p, encoding="utf-8", errors="replace").read()
-c = re.sub(r"\n*<!-- CEO_ROUTING_NO_LOOPHOLES_V1 -->.*?\n---[ \t]*\n", "\n", c, count=1, flags=re.DOTALL)
-open(p, "w", encoding="utf-8").write(c)
-CEOSTRIP_PY
-  echo "[apply-fleet-standards] migrated legacy CEO_ROUTING_NO_LOOPHOLES_V1 → V2 in $AGENTS_FILE_EARLY"
-fi
-if grep -qF "$CEO_ROUTING_MARKER" "$AGENTS_FILE_EARLY"; then
-  echo "[apply-fleet-standards] CEO ROUTING NO LOOPHOLES already present in $AGENTS_FILE_EARLY — no-op"
-else
-  echo "[apply-fleet-standards] injecting CEO ROUTING NO LOOPHOLES into $AGENTS_FILE_EARLY"
-  # Insert after the ROLE_DISCIPLINE block (after the first --- separator that
-  # follows the ROLE_DISCIPLINE marker). Use awk to inject after first --- post-marker.
-  TMPF=$(mktemp); _APPLY_TMPFILES+=("$TMPF")
-  awk -v marker="$ROLE_DISC_MARKER" '
-    BEGIN { injected=0; in_rd=0 }
-    {
-      print
-      if (!injected && index($0, marker)) { in_rd=1 }
-      if (in_rd && !injected && /^---[[:space:]]*$/) {
-        print ""
-        print "<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->"
-        print "## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)"
-        print ""
-        print "The CEO / master-orchestrator'\''s ONLY permitted routing action is:"
-        print ""
-        print "  **POST \`/api/tasks/ingest\` with \`department_slug: \"<slug>\"\`**"
-        print ""
-        print "This places the task on the department'\''s Kanban board. The DEPARTMENT assigns the specialist"
-        print "and the persona. The doing belongs to the department — never to the CEO."
-        print ""
-        print "### Closed loopholes (these are ALL violations, no exceptions):"
-        print ""
-        print "| Loophole | Status |"
-        print "|----------|--------|"
-        print "| \"This task is trivial / simple / quick — I'\''ll just do it myself\" | ❌ VIOLATION |"
-        print "| \"I know how to make this API call, I'\''ll handle it directly\" | ❌ VIOLATION |"
-        print "| \"I'\''ll spawn a sub-agent and have it execute the work for me\" | ❌ VIOLATION — spawning a sub-agent to do production work IS the same as self-executing |"
-        print "| \"I'\''m telling the sub-agent to call KIE.ai / Fal.ai for me\" | ❌ VIOLATION — same as above |"
-        print "| \"I don'\''t know which department, so I'\''ll do it myself\" | ❌ VIOLATION — route to \`department_slug: \"general-task\"\` |"
-        print "| \"The owner seemed to want a quick answer\" | ❌ VIOLATION — route and let the department respond |"
-        print ""
-        print "### What the CEO MAY do (exhaustive list):"
-        print "- Have conversations with the owner"
-        print "- POST to \`/api/tasks/ingest\` to route tasks"
-        print "- Send Telegram messages"
-        print "- Read workspace files"
-        print "- Restart the gateway (orchestrator-only authority, N7)"
-        print "- Manage agent/department config"
-        print ""
-        print "### Sub-agent bypass clause"
-        print "Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as"
-        print "self-executing. If a sub-agent is spawned, it MUST read its own role files and operate via"
-        print "the task board — it is NOT a production tool for the orchestrator."
-        print ""
-        print "### Owner-permission exception"
-        print "Before the CEO would EVER do a task itself, it must FIRST seek AND RECEIVE explicit permission"
-        print "and consent from the owner. Seeking permission alone is not enough — explicit consent must be"
-        print "received. Without that explicit consent, the CEO routes — always."
-        print ""
-        print "### Trust engine — pass the client'\''s chat id when you route a CLIENT message (P1-04)"
-        print "When the task came from a CLIENT message (e.g. a Telegram request), you MUST pass the ORIGINATING"
-        print "chat id so the Command Center'\''s report-back loop keeps the client informed (assigned → in-progress"
-        print "+ ETA → done + where-to-find-it). A routed task must NEVER go silent — this is the #1 client"
-        print "complaint fix. Set the chat id on the signed router invocation:"
-        print ""
-        print "    MC_ROUTE_REQUESTER_CHAT_ID=\"<originating client chat id>\" MC_ROUTE_REQUESTER_CHANNEL=\"telegram\" \\"
-        print "      bash \"$OC_ROOT/scripts/mc-route.sh\" <department_slug> \"<title>\" \"<owner message, verbatim>\""
-        print ""
-        print "Leave the chat id UNSET for operator/internal routes (they are never reported on). NEVER invent or"
-        print "reuse another client'\''s chat id — pass ONLY the real originating chat id of the message you are routing."
-        print ""
-        print "<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->"
-        print "---"
-        print ""
-        injected=1
-      }
-    }
-  ' "$AGENTS_FILE_EARLY" > "$TMPF"
-  # If ROLE_DISCIPLINE marker wasn't found (older box), just prepend at top
-  if ! grep -qF "$CEO_ROUTING_MARKER" "$TMPF"; then
-    ORIG2=$(cat "$AGENTS_FILE_EARLY")
-    {
-      printf '<!-- CEO_ROUTING_NO_LOOPHOLES_V2 -->\n'
-      printf '## ⛔ CEO ROUTING — NO LOOPHOLES (v11.3.2 — closes all self-execution escape hatches; V2 adds the P1-04 trust-engine chat-id rule)\n\n'
-      printf 'The CEO'\''s ONLY permitted routing action: POST /api/tasks/ingest with department_slug.\n'
-      printf 'No trivial-task, quick-API-call, or spawn-sub-agent exceptions. See AGENTS.md for full rule.\n\n'
-      printf 'TRUST ENGINE (P1-04): when the task came from a CLIENT message, ALWAYS pass the originating chat id\n'
-      printf 'so the report-back loop keeps the client informed — set MC_ROUTE_REQUESTER_CHAT_ID (and\n'
-      printf 'MC_ROUTE_REQUESTER_CHANNEL, default telegram) on the signed router: bash "$OC_ROOT/scripts/mc-route.sh".\n'
-      printf 'Leave it unset for operator/internal routes; never invent or reuse another client'\''s chat id.\n\n'
-      printf '<!-- END CEO_ROUTING_NO_LOOPHOLES_V2 -->\n'
-      printf '---\n\n'
-      printf '%s' "$ORIG2"
-    } > "$TMPF"
-  fi
-  mv "$TMPF" "$AGENTS_FILE_EARLY"
-  echo "[apply-fleet-standards] CEO ROUTING NO LOOPHOLES injected into $AGENTS_FILE_EARLY"
-fi
+# Canonical V3 policy ships in shared-utils on installs and updates.
+CEO_POLICY_HELPER=""
+for _ceo_policy_candidate in "${ONBOARDING_DIR:-}/shared-utils/ceo_execution_policy.py" "${_FS_SCRIPT_DIR:-}/../shared-utils/ceo_execution_policy.py" "$OC_ROOT/skills/shared-utils/ceo_execution_policy.py"; do
+  if [ -f "$_ceo_policy_candidate" ]; then CEO_POLICY_HELPER="$_ceo_policy_candidate"; break; fi
+done
+if [ -z "$CEO_POLICY_HELPER" ]; then echo "Missing ceo_execution_policy.py" >&2; exit 1; fi
+python3 "$CEO_POLICY_HELPER" "$AGENTS_FILE_EARLY" --kind CEO_ROUTING_NO_LOOPHOLES --oc-config "$OC_ROOT"
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE_EARLY" 2>/dev/null || true
@@ -1363,13 +1490,84 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 # `mc-route__route_task` routing tool the CEO/orchestrator uses to route ANY
 # task to ANY department without self-executing.
 #
-#   USAGE:  mc-route.sh <department_slug> <title> [description...]
+#   USAGE:  mc-route.sh task "<short title>" "<owner's exact words>"
+#           mc-route.sh existing status "<task title or id>"
+#           mc-route.sh existing update "<task title or id>" "<note>"
+#           mc-route.sh existing cancel "<task title or id>"
+#           (legacy) mc-route.sh auto "<owner message verbatim>"
+#           (legacy) mc-route.sh <department_slug> <title> [description...]
 #
+#   FIRST WORD IS CHECKED (JEV-601): it must be task, existing, auto, help, or a
+#     department that EXISTS on this board (its slug, id or name, with or without
+#     "dept-"; checked against GET /api/workspaces and sent as the board's real
+#     slug). Anything else ("status", "stop", "check", "list", a department this
+#     box does not have) prints `mc-route: REFUSED — ...` plus the usage and exits
+#     2 WITHOUT creating anything. Before this, any first word was taken as a
+#     department, so `mc-route.sh status <task>` made a General Task card.
+#
+#   EXISTING MODE (work already on the board; NEVER creates a card):
+#     finds ONE task in this company by exact id, exact title, or a WHOLE-WORD
+#     match at 1.0 on the title -- never a raw substring and never a partial
+#     score (GET /api/tasks, then GET /api/tasks/<id> for an archived id).
+#       status  read-only (GETs only). Prints
+#               STATUS id=<id> status=<s> department=<d> updated=<t> cancelled=<yes|no> title="<title>"
+#       update  POST /api/tasks/<id>/messages {content:<note>, sender:owner}  -> UPDATED id=...
+#               plus one live-delivery line read from the response (delivered_live).
+#       cancel  POST /api/tasks/<id>/archive (Command Center's cancel: off the board,
+#               never dispatched again, row kept) + an owner note -> CANCELLED id=...
+#               plus one kill line (killed/killed_at) and one in-flight-run line
+#               (execution{found,notice_delivered,notice_error}). Missing fields on
+#               older CC print '[response fields missing]'; nothing invented.
+#     Same-title cards are ONE job carded twice, not ambiguity: the newest is
+#     acted on, and cancel archives every one of them.
+#     FAIL-CLOSED (JEV-802): if the task list or the department list cannot be
+#     read, or comes back empty, or the matcher itself fails, this exits 1 with
+#     FAILED + ESCALATE_TO_OPERATOR -- never NOT_FOUND. NOT_FOUND is only ever
+#     said of a list that loaded successfully and genuinely holds no match.
+#     No match -> `mc-route: NOT_FOUND ...` (update: new work, run `task`; status or
+#     cancel: tell the owner, NO card), several differently-titled matches ->
+#     `mc-route: AMBIGUOUS ...` with the candidates; both exit 3 and change nothing.
+#     MC_ROUTE_API_BASE overrides the Command Center base URL (default: the ingest
+#     URL without /api/tasks/ingest).
+#
+#   SLUG MODE (legacy) arguments:
 #     <department_slug>   target workspace/department (e.g. presentations,
 #                         general-task, social-media, video). REQUIRED.
 #     <title>             short task title (truncated to 120 chars). REQUIRED.
 #     [description...]    the rest of the args are joined with single spaces
 #                         into the task description (owner message, verbatim).
+#
+#   AUTO MODE (JEV live routing): `mc-route.sh auto "<owner message verbatim>"`
+#     joins every arg after 'auto' with single spaces into MESSAGE (verbatim; an
+#     empty MESSAGE goes through the same usage escalation as a missing slug/title)
+#     and posts it alone ({message}, no title/description/department_slug) to the
+#     CC ingest raw door, which classifies it and either answers it or creates and
+#     routes exactly one card. Reuses the identical signing/secret/retry path below.
+#     stdout contract for the caller (the CEO agent):
+#       JEV_ANSWER_DIRECTLY intent=<intent>          — a question; answer it, create nothing.
+#       ROUTED workspace=<ws> department=<d> resolved_by=<r>   — one card now exists.
+#     HTTP 403 {error:control_probe_never_creates} also prints
+#     `JEV_ANSWER_DIRECTLY intent=unresolved` (exit 0); every other non-2xx escalates,
+#     exactly like slug mode.
+#
+#   TASK MODE (the CEO already decided "this is work"):
+#     `mc-route.sh task "<short title>" "<owner's exact words>"` posts ONE card
+#     {title, description=<owner's exact words>} with NO department_slug, so the
+#     Command Center picks the department (its picker, then General Task). A typed
+#     payload is never re-classified by CC, so a task call is never overruled into
+#     "answer". One call = one card: two jobs in one message = two calls with two
+#     titles. Leans to a card: a missing title uses the words, missing words use the
+#     title; only both empty fails. Idempotent per call: the operation key is derived
+#     from (company, source, requester, title, words) and reused for 60 s after the
+#     last identical call (state under MC_ROUTE_STATE_DIR), so a retry with the same
+#     words dedupes at CC instead of making a second card; MC_ROUTE_EVENT_ID /
+#     MC_ROUTE_OPERATION_ID, when set, replace the window with that stable event.
+#     stdout on success: the same `ROUTED workspace=<ws> department=<d> resolved_by=<r>`
+#     line as auto mode (exit 0). Any failure (transport, non-2xx, a 2xx with no
+#     task_id) prints `mc-route: FAILED — ...` + ESCALATE_TO_OPERATOR and exits 1.
+#     A card with no workspace, or one CC could only park on ->ceo/->unrouted, prints
+#     ROUTED plus an ESCALATE_TO_OPERATOR warning (exit 0: the card exists; retrying
+#     would not help).
 #
 # WHY (identical to route-presentation.sh): the Command Center ships FAIL-CLOSED.
 # Middleware 503s external ingest when WEBHOOK_SECRET is unset, and 401s when
@@ -1383,9 +1581,11 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 # Secrets are resolved at RUNTIME from the box's stores; NO secret value is ever
 # written into this file.
 #
-# EXIT 0 on a 2xx ingest; non-zero on failure — on non-zero the CEO must tell the
-# owner it is escalating to the operator (never self-intake, never ask intake
-# questions, never retry forever).
+# EXIT 0 on a 2xx ingest; 1 (with ESCALATE_TO_OPERATOR) on failure — then the CEO
+# must tell the owner it is escalating to the operator (never self-intake, never
+# ask intake questions, never retry forever). EXIT 2 = REFUSED usage error and
+# EXIT 3 = existing task not found / ambiguous: nothing was created or changed;
+# fix the call or ask the owner, do not escalate.
 #
 # OPTIONAL ENV OVERRIDES (all have safe defaults; the security-critical secret
 # resolution + signing are IDENTICAL to route-presentation.sh):
@@ -1398,37 +1598,163 @@ cat > "$MC_ROUTE_HELPER_PATH" <<'MC_ROUTE_SH'
 #                                Set by the orchestrator when the task came from a client message.
 #   MC_ROUTE_REQUESTER_CHANNEL   the client channel (default telegram); only used when
 #                                MC_ROUTE_REQUESTER_CHAT_ID is set.
+# MC_ROUTE_EVENT_ID: stable originating event (reuse on retry).
+# MC_ROUTE_OPERATION_ID: explicit operation fallback; otherwise allocated once per invocation.
+# MC_ROUTE_COMPANY_ID scopes the operation at the receiver.
+# MC_ROUTE_RR_ESCALATE=1: RR plan F71. When routing FAILS, also file ONE Rescue Rangers
+#   admission from this box (background, bounded, fail-soft) so the "escalating to the operator"
+#   the CEO tells the owner is true. Off unless set. The admission names the box by
+#   FLEET_STANDING_BOX_SLUG (nothing is sent without it), carries a fixed reason class (NEVER the
+#   owner's words), and uses <reason-class>:<UTC hour> as the event id so an outage folds into one
+#   ticket per class per hour instead of one per message.
 set -uo pipefail
 
 INGEST_URL="${MC_ROUTE_INGEST_URL:-http://127.0.0.1:4000/api/tasks/ingest}"
 MAX_RETRIES="${MC_ROUTE_MAX_RETRIES:-2}"
 SOURCE="${MC_ROUTE_SOURCE:-telegram}"
 PRIORITY="${MC_ROUTE_PRIORITY:-medium}"
+CONNECT_TIMEOUT="${MC_ROUTE_CONNECT_TIMEOUT:-5}"
+REQUEST_TIMEOUT="${MC_ROUTE_REQUEST_TIMEOUT:-30}"
+TOTAL_TIMEOUT="${MC_ROUTE_TOTAL_TIMEOUT:-95}"
+PYTHON="${WORKFORCE_PYTHON:-python3}"
 # P1-04 trust engine: the originating client channel + chat id, so the Command
 # Center report-back loop can acknowledge/progress/done back to the client. Empty
 # (the default) => omitted from the payload (an operator/internal route).
 REQUESTER_CHAT_ID="${MC_ROUTE_REQUESTER_CHAT_ID:-}"
 REQUESTER_CHANNEL="${MC_ROUTE_REQUESTER_CHANNEL:-telegram}"
 
-DEPARTMENT_SLUG="${1:-}"
-TITLE="${2:-}"
-# The rest of the args (3..N) form the description, joined with single spaces.
-if [ "$#" -gt 2 ]; then
-  shift 2
+ROUTE_MODE="slug"
+DEPARTMENT_SLUG=""
+TITLE=""
+DESCRIPTION=""
+MESSAGE=""
+# JEV-804: the command word is case-insensitive -- TASK, Task, Existing, Status
+# all work. Only the command word is folded; a department slug and a task title
+# are passed through exactly as the owner wrote them.
+_CMD="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+if [ "$_CMD" = "task" ]; then
+  ROUTE_MODE="task"
+  shift
+  TITLE="${1:-}"
+  [ "$#" -gt 0 ] && shift
+  # rest args form owner's exact words, joined single spaces.
   DESCRIPTION="$*"
+  # Lean to card: fill whichever half missing from other.
+  [ -n "$TITLE" ] || TITLE="$DESCRIPTION"
+  [ -n "$DESCRIPTION" ] || DESCRIPTION="$TITLE"
+elif [ "$_CMD" = "auto" ]; then
+  ROUTE_MODE="auto"
+  shift
+  # rest args (1..N) form owner message, joined single spaces.
+  MESSAGE="$*"
+elif [ "$_CMD" = "existing" ]; then
+  ROUTE_MODE="existing"
+  EXISTING_ACTION="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"
+  EXISTING_REF="${3:-}"
+  shift; [ "$#" -gt 0 ] && shift; [ "$#" -gt 0 ] && shift
+  EXISTING_NOTE="$*"
 else
-  DESCRIPTION=""
+  DEPARTMENT_SLUG="${1:-}"
+  TITLE="${2:-}"
+  # The rest of the args (3..N) form the description, joined with single spaces.
+  if [ "$#" -gt 2 ]; then
+    shift 2
+    DESCRIPTION="$*"
+  fi
 fi
 
+# RR plan F71: file a Rescue Rangers admission for a routing failure. Never blocks, never fails
+# the caller: every guard returns 0 and the admission runs in the background.
+_rr_escalate_admission() {
+  [ "${MC_ROUTE_RR_ESCALATE:-0}" = "1" ] || return 0
+  _rr_slug="${FLEET_STANDING_BOX_SLUG:-}"
+  [ -n "$_rr_slug" ] || return 0      # no canonical slug -> no identity -> send nothing (never the hostname)
+  _rr_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  _rr_lib="${OC_ROOT:-$_rr_self/..}/scripts/lib/rescue_admission.py"
+  [ -f "$_rr_lib" ] || return 0
+  # Reason CLASS from a fixed set. $1 can carry the owner's own words (a task title), so the
+  # message text never leaves this function; only the class word does.
+  case "$1" in
+    "empty "*)                     _rr_class="empty-task";           _rr_plain="the task was empty" ;;
+    *"department list"*)           _rr_class="departments-unreadable"; _rr_plain="the department list could not be read" ;;
+    *"task list"*|*"/api/tasks HTTP"*|*"task record"*) _rr_class="tasks-unreadable"; _rr_plain="the task list could not be read" ;;
+    "transport failed"*)           _rr_class="transport-failed";     _rr_plain="the Command Center could not be reached" ;;
+    *"ingest POST returned"*|*"ingest returned"*) _rr_class="ingest-rejected"; _rr_plain="the Command Center did not accept the task" ;;
+    *"could not build request body"*) _rr_class="request-build-failed"; _rr_plain="the task request could not be built" ;;
+    *"could not add note"*|*"could not cancel"*) _rr_class="task-update-failed"; _rr_plain="a task update was not accepted" ;;
+    *)                             _rr_class="other";                _rr_plain="routing failed for another reason" ;;
+  esac
+  _rr_hour="$(date -u +%Y%m%d%H)"
+  # one launch per class per hour per box; the intake folds the rest by event id as well
+  _rr_dir="${MC_ROUTE_STATE_DIR:-${TMPDIR:-/tmp}/mc-route-task-$(id -u)}"
+  mkdir -p "$_rr_dir" 2>/dev/null || return 0
+  _rr_mark="$_rr_dir/rr-escalated-$_rr_class-$_rr_hour"
+  [ -e "$_rr_mark" ] && return 0
+  : > "$_rr_mark" 2>/dev/null || return 0
+  # ponytail: no wall-clock kill unless timeout/gtimeout exists; the client's own socket timeout
+  # (EWS_RESCUE_ADMISSION_TIMEOUT=20) bounds the one request. Add a watchdog if a platform lacks both.
+  _rr_to=""
+  command -v timeout >/dev/null 2>&1 && _rr_to="timeout 45"
+  [ -z "$_rr_to" ] && command -v gtimeout >/dev/null 2>&1 && _rr_to="gtimeout 45"
+  ( EWS_RESCUE_ADMISSION_TIMEOUT=20 $_rr_to "$PYTHON" "$_rr_lib" --source mc-route --box "$_rr_slug" \
+      --event-id "$_rr_class:$_rr_hour" \
+      --problem "Command Center task routing failed on this box: $_rr_plain" \
+      </dev/null >/dev/null 2>&1 & ) >/dev/null 2>&1
+  return 0
+}
+
 _escalate() {
+  _rr_escalate_admission "$1" || true
   echo "mc-route: FAILED — $1" >&2
   echo "ESCALATE_TO_OPERATOR: task routing failed. The CEO must tell the owner it is escalating this to the operator. Do NOT self-intake, do NOT ask intake questions, do NOT retry." >&2
   exit 1
 }
 
-[ -n "$DEPARTMENT_SLUG" ] || _escalate "empty department_slug argument (usage: mc-route.sh <department_slug> <title> [description...])"
-[ -n "$TITLE" ]          || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+_usage() {
+  cat <<'USAGE'
+usage:
+  mc-route.sh task "<short title>" "<owner's exact words>"      new card, one per job
+  mc-route.sh existing status "<task title or id>"              read-only status of existing work; never creates a card
+  mc-route.sh existing update "<task title or id>" "<note>"     adds the owner's note or change to that card
+  mc-route.sh existing cancel "<task title or id>"              cancels that card
+  (legacy) mc-route.sh auto "<message>"  |  mc-route.sh <department> "<title>" [words...]
+USAGE
+}
+_refuse() {  # the caller used the tool wrong: say so, create nothing, exit 2
+  echo "mc-route: REFUSED — $1 Nothing was created or changed." >&2
+  _usage >&2
+  exit 2
+}
 
+if [ "$ROUTE_MODE" = "task" ]; then
+  [ -n "$TITLE" ] || _escalate 'empty task (usage: mc-route.sh task "<short title>" "<owner'"'"'s exact words>")'
+elif [ "$ROUTE_MODE" = "auto" ]; then
+  [ -n "$MESSAGE" ] || _escalate 'empty message argument (usage: mc-route.sh auto "<owner message verbatim>")'
+elif [ "$ROUTE_MODE" = "existing" ]; then
+  case "$EXISTING_ACTION" in
+    status|update|cancel) ;;
+    *) _refuse "'existing' must be followed by status, update or cancel (got '$EXISTING_ACTION')." ;;
+  esac
+  [ -n "$EXISTING_REF" ] || _refuse "'existing $EXISTING_ACTION' needs the task title or id."
+  [ "$EXISTING_ACTION" != "update" ] || [ -n "$EXISTING_NOTE" ] || _refuse "'existing update' needs the owner's note."
+else
+  case "$(printf '%s' "$DEPARTMENT_SLUG" | tr '[:upper:]' '[:lower:]')" in -h|--help|help) _usage; exit 0 ;; esac
+  [ -n "$DEPARTMENT_SLUG" ] || _refuse "no command given."
+  # Words models used for existing work (JEV-592 acceptance run): refuse them
+  # before any network call and point at `existing`.
+  case "$(printf '%s' "$DEPARTMENT_SLUG" | tr '[:upper:]' '[:lower:]')" in
+    -*|status|stop|check|list|show|get|find|cancel|update|resume|pause|continue|kill|delete|close|done|tasks|queue|exec|execution|progress|info)
+      _refuse "'$DEPARTMENT_SLUG' is not a command or a department. For work already on the board use: mc-route.sh existing status|update|cancel \"<task title or id>\"." ;;
+  esac
+  # The title is checked after the board check below, so an unknown first word
+  # is always a REFUSED usage error, never an escalation.
+fi
+
+for _numeric in "$MAX_RETRIES" "$CONNECT_TIMEOUT" "$REQUEST_TIMEOUT" "$TOTAL_TIMEOUT"; do
+  case "$_numeric" in ''|*[!0-9]*) _escalate 'timeout/retry settings must be integer seconds' ;; esac
+done
+[ "$MAX_RETRIES" -le 5 ] || _escalate 'at most five retries are allowed'
+[ "$REQUEST_TIMEOUT" -gt 0 ] && [ "$CONNECT_TIMEOUT" -gt 0 ] && [ "$TOTAL_TIMEOUT" -gt 0 ] || _escalate 'timeouts must be positive'
 # ── Runtime secret resolution (reads only; never hardcoded) ──────────────────
 # Store order mirrors the Command Center's own env precedence so the signature
 # matches what the CC server validates against; the WEBHOOK_SECRET alias order
@@ -1447,7 +1773,7 @@ _resolve() {
   # $@ = candidate key names (aliases). First non-empty across the dotenv stores
   # (in order) then the live process env. Prints ONLY the value. Uses python3 for
   # robust dotenv parsing (export / quotes / comments).
-  RP_KEYS="$*" python3 - "${_ENV_STORES[@]}" <<'PYRESOLVE'
+  RP_KEYS="$*" "$PYTHON" - "${_ENV_STORES[@]}" <<'PYRESOLVE'
 import os, sys
 keys = os.environ.get("RP_KEYS", "").split()
 stores = sys.argv[1:]
@@ -1490,19 +1816,432 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 
 # ── Build the EXACT raw body once (compact JSON, like cc_board.py) ───────────
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route.XXXXXX")" || _escalate "mktemp failed"
-trap 'rm -f "$BODY_FILE"' EXIT
-if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
-     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
-     python3 - >"$BODY_FILE" <<'PYBODY'
-import json, os, sys
+HEADER_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-headers.XXXXXX")" || _escalate "mktemp failed"
+WS_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-ws.XXXXXX")" || _escalate "mktemp failed"
+TASKS_FILE="$(mktemp "${TMPDIR:-/tmp}/mc-route-tasks.XXXXXX")" || _escalate "mktemp failed"
+trap 'rm -f "$BODY_FILE" "$HEADER_FILE" "$WS_FILE" "$TASKS_FILE"' EXIT
+
+# ── Command Center reads/writes other than ingest (JEV-601) ──────────────────
+API_BASE="${MC_ROUTE_API_BASE:-${INGEST_URL%/api/tasks/ingest}}"
+API_CODE=""
+API_OUT=""
+_api() {  # $1=METHOD $2=path [$3=JSON body file]. One try. Sets API_CODE (000 = transport) + API_OUT.
+  local h=(-H 'Accept: application/json') raw rc=0
+  [ -n "$MC_API_TOKEN" ] && h+=(-H "Authorization: Bearer $MC_API_TOKEN")
+  [ -n "${3:-}" ] && h+=(-H 'Content-Type: application/json' --data-binary @"$3")
+  raw="$(curl -sS --connect-timeout "$CONNECT_TIMEOUT" --max-time "$REQUEST_TIMEOUT" \
+    -X "$1" "$API_BASE$2" "${h[@]}" -w $'\n%{http_code}' 2>/dev/null)" || rc=$?
+  API_CODE="${raw##*$'\n'}"
+  API_OUT="${raw%$'\n'*}"
+  [ "$rc" -eq 0 ] || API_CODE="000"
+}
+_load_departments() {  # this company's board departments -> $WS_FILE, or escalate
+  _api GET /api/workspaces
+  case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the department list (GET /api/workspaces HTTP $API_CODE); nothing was created or changed" ;; esac
+  printf '%s' "$API_OUT" >"$WS_FILE"
+  # JEV-802 (class F, fail-closed): an unreadable or EMPTY department list is not
+  # a board without departments. Escalate here, so no later lookup can read it as
+  # "no matching department" and report a miss it never proved.
+  "$PYTHON" - "$WS_FILE" <<'PYWS' || _escalate "the department list from Command Center was unreadable or empty; nothing was created or changed"
+import json, sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8", errors="replace") as fh:
+        d = json.load(fh)
+except Exception:
+    sys.exit(9)
+if isinstance(d, dict):
+    d = d.get("workspaces") if isinstance(d.get("workspaces"), list) else ([d] if d.get("id") else [])
+if not isinstance(d, list) or not [x for x in d if isinstance(x, dict)]:
+    sys.exit(9)
+PYWS
+}
+
+if [ "$ROUTE_MODE" = "existing" ]; then
+  _load_departments
+  # JEV-803: includeArchived=true — a cancelled or done card IS the honest answer
+  # to a status or cancel question. Without it the archived row vanishes from the
+  # list and the caller wrongly reports NOT_FOUND for work that really exists.
+  _TASKS_MAX=500
+  _api GET "/api/tasks?limit=$_TASKS_MAX&includeArchived=true"
+  case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not read the task list (GET /api/tasks HTTP $API_CODE); nothing was changed" ;; esac
+  printf '%s' "$API_OUT" >"$TASKS_FILE"
+  # JEV-803: at the limit, "nothing matching is on the board" is a claim about a
+  # page, not about the board. Say so rather than imply the whole board was read.
+  _TASKS_ROWS="$("$PYTHON" -c 'import json,sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8", errors="replace") as fh:
+        d = json.load(fh)
+except Exception:
+    sys.exit(4)
+if isinstance(d, dict):
+    d = d.get("tasks") if isinstance(d.get("tasks"), list) else ([d] if d.get("id") else [])
+rows = [x for x in d if isinstance(x, dict)] if isinstance(d, list) else []
+print(len(rows))' "$TASKS_FILE")" \
+    || _escalate "the task list from Command Center was unreadable; nothing was created or changed"
+  if [ "${_TASKS_ROWS:-0}" -ge "$_TASKS_MAX" ]; then
+    echo "mc-route: NOTE — the board returned $_TASKS_ROWS cards, the $_TASKS_MAX-card page limit, so only the most recent page was covered. If the owner's card is not here it may be on an older page: say the list may be incomplete rather than that the work does not exist." >&2
+  fi
+  _find_task() {  # prints FOUND + 6 fields, AMBIGUOUS + candidates, or NONE
+    "$PYTHON" - "$EXISTING_REF" "$WS_FILE" "$TASKS_FILE" <<'PYFIND'
+import json, re, sys
+ref, ws_path, tasks_path = sys.argv[1], sys.argv[2], sys.argv[3]
+def load(path):
+    # JEV-802 (class F, fail-closed): an unreadable file, a payload with no rows,
+    # or a row with no id is a broken read -- exit 4 so the caller escalates.
+    # It must never come back as an empty list, because empty reads as "NONE"
+    # and NONE reads as "the owner's work does not exist".
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            d = json.load(fh)
+    except Exception:
+        sys.exit(4)
+    if isinstance(d, dict):
+        d = d.get("tasks") if isinstance(d.get("tasks"), list) else ([d] if d.get("id") else [])
+    if not isinstance(d, list) or not [x for x in d if isinstance(x, dict)]:
+        sys.exit(4)
+    return [x for x in d if isinstance(x, dict)]
+ws_rows = load(ws_path)
+ws = {str(w.get("id")): str(w.get("slug") or w.get("id")) for w in ws_rows if w.get("id")}
+# This company only: tasks on one of its departments (or not yet on any).
+tasks = []
+for t in load(tasks_path):
+    if not t.get("id"):
+        sys.exit(4)
+    if t.get("workspace_id") and str(t["workspace_id"]) not in ws:
+        continue
+    tasks.append(t)
+STOP = {"the", "and", "for", "that", "this", "task", "card", "job", "with", "from", "our", "your", "about", "please", "one"}
+def words(s):
+    return {w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if len(w) > 2 and w not in STOP}
+def title(t):
+    return " ".join(str(t.get("title") or "").split())
+key = ref.strip().lower()
+pick = [t for t in tasks if str(t["id"]).lower() == key] or [t for t in tasks if title(t).lower() == key]
+if not pick:
+    # JEV-802: exact id, exact title, or a WHOLE-WORD match at 1.0 -- nothing else.
+    # No raw substring ("art" must not hit "cart") and no partial score ("invoice
+    # draft" must not half-hit "invoice" alone). A task matches only when every
+    # word of the reference appears in its title as a whole word.
+    want = words(key)
+    if want:
+        pick = [t for t in tasks if want <= words(title(t))]
+if pick:
+    # Same-title cards are ONE job carded twice (a double card), not ambiguity:
+    # newest first so the live card is the one acted on. Cancel archives them all.
+    pick.sort(key=lambda t: str(t.get("updated_at") or ""), reverse=True)
+if len(pick) == 1:
+    t = pick[0]
+    print("FOUND")
+    for v in (t["id"], t.get("status"), ws.get(str(t.get("workspace_id")), t.get("workspace_id") or "none"),
+              t.get("updated_at"), "yes" if t.get("archived_at") else "no", title(t).replace('"', "'")):
+        print("" if v is None else " ".join(str(v).split()))
+elif pick and len({title(t).lower() for t in pick}) == 1:
+    t = pick[0]
+    print("FOUND")
+    for v in (t["id"], t.get("status"), ws.get(str(t.get("workspace_id")), t.get("workspace_id") or "none"),
+              t.get("updated_at"), "yes" if t.get("archived_at") else "no", title(t).replace('"', "'")):
+        print("" if v is None else " ".join(str(v).split()))
+    # Everything below the 7 fields: the same-title duplicates, tab-separated
+    # id / already-cancelled / title. Cancel archives every one of them.
+    for d in pick[1:]:
+        print("\t".join([str(d["id"]), "yes" if d.get("archived_at") else "no",
+                         title(d).replace("\t", " ").replace('"', "'")]))
+elif pick:
+    print("AMBIGUOUS")
+    for t in pick[:5]:
+        print('  id=%s status=%s title="%s"' % (t["id"], t.get("status"), title(t)))
+else:
+    print("NONE")
+PYFIND
+  }
+  _FIND_RC=0
+  FOUND="$(_find_task)" || _FIND_RC=$?
+  # JEV-802 (class F, fail-closed): the matcher could not read the board it was
+  # given. That is not "no matching card" -- never let it reach the NOT_FOUND text.
+  [ "$_FIND_RC" -eq 0 ] || _escalate "the task list from Command Center could not be read or matched, so no card could be identified; nothing was created or changed"
+  if [ "$(printf '%s\n' "$FOUND" | sed -n '1p')" = "NONE" ]; then
+    case "$EXISTING_REF" in
+      *[[:space:]]*|'') ;;
+      *)  # an id the open list does not hold (e.g. already cancelled): read it directly
+        _api GET "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$EXISTING_REF")"
+        case "$API_CODE" in
+          2[0-9][0-9]) printf '%s' "$API_OUT" >"$TASKS_FILE"
+            _FIND_RC=0
+            FOUND="$(_find_task)" || _FIND_RC=$?
+            [ "$_FIND_RC" -eq 0 ] || _escalate "the task record read for \"$EXISTING_REF\" was unreadable, so it could not be matched; nothing was created or changed" ;;
+          404) ;;  # the board answered: no such id (the honest NONE)
+          *) _escalate "could not read task \"$EXISTING_REF\" (GET /api/tasks HTTP $API_CODE); nothing was created or changed" ;;
+        esac
+        ;;
+    esac
+  fi
+  case "$(printf '%s\n' "$FOUND" | sed -n '1p')" in
+    FOUND) ;;
+    AMBIGUOUS)
+      echo "mc-route: AMBIGUOUS — several tasks match \"$EXISTING_REF\". Nothing was created or changed. Ask the owner which one, or re-run with its id:"
+      printf '%s\n' "$FOUND" | sed '1d'
+      exit 3 ;;
+    *)
+      # JEV-801 (class F): only `update` points on to `task`. A status question or a
+      # cancel about something not on the board is never new work.
+      case "$EXISTING_ACTION" in
+        update) echo "mc-route: NOT_FOUND: no matching existing card. This is new work: run mc-route.sh task \"<short title>\" \"<owner's exact words>\" (nothing was created or changed for \"$EXISTING_REF\")" ;;
+        status) echo "mc-route: NOT_FOUND: nothing matching is on the board. Tell the owner; do NOT create a card. (nothing was created or changed for \"$EXISTING_REF\")" ;;
+        *)      echo "mc-route: NOT_FOUND: nothing matching is on the board to cancel. Tell the owner; do NOT create a card. (nothing was created or changed for \"$EXISTING_REF\")" ;;
+      esac
+      exit 3 ;;
+  esac
+  _T_ID="$(printf '%s\n' "$FOUND" | sed -n '2p')"
+  _T_STATUS="$(printf '%s\n' "$FOUND" | sed -n '3p')"
+  _T_DEPT="$(printf '%s\n' "$FOUND" | sed -n '4p')"
+  _T_UPDATED="$(printf '%s\n' "$FOUND" | sed -n '5p')"
+  _T_CANCELLED="$(printf '%s\n' "$FOUND" | sed -n '6p')"
+  _T_TITLE="$(printf '%s\n' "$FOUND" | sed -n '7p')"
+  _T_PATH="/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_T_ID")"
+  _note() {  # $1 = note text -> POST it to the card as an owner message
+    NOTE="$1" "$PYTHON" -c 'import json, os, sys; sys.stdout.write(json.dumps({"content": os.environ["NOTE"], "sender": "owner"}))' >"$BODY_FILE"
+    _api POST "$_T_PATH/messages" "$BODY_FILE"
+  }
+  _cancel_truth() {  # $1 = archive POST response JSON -> kill + in-flight-run lines (one known fact each, never JSON)
+    CANCEL_RESP="$1" "$PYTHON" - <<'PYCANCEL'
+import json, os
+try:
+    d = json.loads(os.environ.get("CANCEL_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+missing = False
+killed, killed_at = d.get("killed"), d.get("killed_at")
+if killed_at or killed is True:
+    print("kill set (%s) — running agent fenced from further dispatch" % (killed_at or "no timestamp reported"))
+elif "killed" in d or "killed_at" in d:
+    print("kill NOT set by Command Center — running agent fenced from further dispatch either way")
+else:
+    print("kill field: response did not report it (older CC) — running agent fenced from further dispatch either way")
+    missing = True
+ex = d.get("execution")
+if isinstance(ex, dict):
+    if ex.get("found"):
+        if ex.get("notice_delivered"):
+            print("in-flight run notified to stop")
+        else:
+            print("in-flight run NOT notified: %s (kill fence set; gateway no abort RPC so live run can only be asked to stop)" % (ex.get("notice_error") or "no reason reported"))
+    else:
+        print("no in-flight run was active")
+else:
+    print("in-flight run: response did not report it (older CC)")
+    missing = True
+if missing:
+    print("[response fields missing — older CC?]")
+PYCANCEL
+  }
+  _update_truth() {  # $1 = messages POST response JSON -> live-delivery line (one known fact, never JSON)
+    UPDATE_RESP="$1" "$PYTHON" - <<'PYUPDATE'
+import json, os
+try:
+    d = json.loads(os.environ.get("UPDATE_RESP", "") or "")
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+if "delivered_live" in d:
+    if d.get("delivered_live") is True:
+        tgt = d.get("delivery_target")
+        print("note delivered live to running agent" + (" (%s)" % tgt if tgt else ""))
+    elif d.get("delivery_error"):
+        print("note recorded — NOT delivered live: %s" % d.get("delivery_error"))
+    else:
+        print("note recorded — no running agent session; seen on next turn/dispatch")
+else:
+    print("delivery: response did not report live-delivery (older CC) — note recorded on the card")
+    print("[response fields missing — older CC?]")
+PYUPDATE
+  }
+  case "$EXISTING_ACTION" in
+    status)
+      echo "STATUS id=$_T_ID status=$_T_STATUS department=$_T_DEPT updated=$_T_UPDATED cancelled=$_T_CANCELLED title=\"$_T_TITLE\""
+      ;;
+    update)
+      _note "$EXISTING_NOTE"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not add the note to task $_T_ID (HTTP $API_CODE)" ;; esac
+      _UPDATE_RESP="$API_OUT"
+      echo "UPDATED id=$_T_ID title=\"$_T_TITLE\""
+      _update_truth "$_UPDATE_RESP"
+      ;;
+    cancel)
+      if [ "$_T_CANCELLED" = "yes" ]; then
+        echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\" (it was already cancelled)"
+        exit 0
+      fi
+      _api POST "$_T_PATH/archive"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) _escalate "could not cancel task $_T_ID (HTTP $API_CODE)" ;; esac
+      _CANCEL_RESP="$API_OUT"
+      _note "Cancelled by the owner.${EXISTING_NOTE:+ $EXISTING_NOTE}"
+      case "$API_CODE" in 2[0-9][0-9]) ;; *) echo "mc-route: WARNING — task $_T_ID is cancelled but the cancel note was not saved (HTTP $API_CODE)." >&2 ;; esac
+      echo "CANCELLED id=$_T_ID title=\"$_T_TITLE\""
+      _cancel_truth "$_CANCEL_RESP"
+      # JEV-802: same-title duplicates are the same job carded twice. Cancelling
+      # the job cancels all of them, or the survivors keep the work alive on the
+      # board after the owner was told it was cancelled.
+      printf '%s\n' "$FOUND" | sed -n '8,$p' | while IFS="$(printf '\t')" read -r _DID _DCANCELLED _DTITLE; do
+        [ -n "$_DID" ] || continue
+        if [ "$_DCANCELLED" = "yes" ]; then
+          echo "CANCELLED id=$_DID title=\"$_DTITLE\" (it was already cancelled)"
+          continue
+        fi
+        _api POST "/api/tasks/$("$PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$_DID")/archive"
+        case "$API_CODE" in
+          2[0-9][0-9]) echo "CANCELLED id=$_DID title=\"$_DTITLE\" (duplicate of the same job)"; _cancel_truth "$API_OUT" ;;
+          *) echo "mc-route: WARNING — duplicate card $_DID of the same job was NOT cancelled (HTTP $API_CODE); the owner should be told." >&2 ;;
+        esac
+      done
+      ;;
+  esac
+  exit 0
+fi
+
+if [ "$ROUTE_MODE" = "slug" ]; then
+  # The first word must be a department that exists on this board; send its real slug.
+  _load_departments
+  _DEPT_RC=0
+  _DEPT="$("$PYTHON" - "$DEPARTMENT_SLUG" "$WS_FILE" <<'PYDEPT'
+import json, re, sys
+def norm(s):
+    s = re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-")
+    return s[5:] if s.startswith("dept-") else s
+try:
+    rows = json.load(open(sys.argv[2]))
+except Exception:
+    sys.exit(3)
+if not isinstance(rows, list):
+    sys.exit(3)
+rows = [r for r in rows if isinstance(r, dict) and (r.get("slug") or r.get("id"))]
+arg = sys.argv[1].strip().lower()
+exact = [r for r in rows if arg in (str(r.get("slug") or "").lower(), str(r.get("id") or "").lower())]
+want = norm(arg)
+loose = [r for r in rows if want and want in (norm(r.get("slug")), norm(r.get("id")), norm(r.get("name")))]
+hit = exact[:1] or (loose if len(loose) == 1 else [])
+if hit:
+    print(hit[0].get("slug") or hit[0].get("id"))
+    sys.exit(0)
+print(" ".join(sorted({str(r.get("slug") or r.get("id")) for r in rows})))
+sys.exit(1)
+PYDEPT
+)" || _DEPT_RC=$?
+  case "$_DEPT_RC" in
+    0) DEPARTMENT_SLUG="$_DEPT" ;;
+    1) _refuse "'$DEPARTMENT_SLUG' is not a command or a department on this board (departments: ${_DEPT:-none}). To make a card and let Command Center pick the department use: mc-route.sh task \"<short title>\" \"<owner's exact words>\"." ;;
+    *) _escalate "the department list from Command Center was unreadable; nothing was created" ;;
+  esac
+  [ -n "$TITLE" ] || _escalate "empty title argument (usage: mc-route.sh <department_slug> <title> [description...])"
+fi
+
+if [ "$ROUTE_MODE" = "auto" ]; then
+  _BODY_BUILD_OK=0
+  MESSAGE="$MESSAGE" SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+    REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+    "$PYTHON" - >"$BODY_FILE" <<'PYBODY_AUTO' && _BODY_BUILD_OK=1
+import json, os, sys, uuid
+operation = os.environ.get('MC_ROUTE_EVENT_ID') or os.environ.get('MC_ROUTE_OPERATION_ID') or str(uuid.uuid4())
 payload = {
+    'idempotency_key': operation,
+    'external_session_id': os.environ.get('MC_ROUTE_EXTERNAL_SESSION_ID', ''),
+    "message": os.environ.get("MESSAGE", ""),
+    "source": os.environ.get("SOURCE", "telegram"),
+    "priority": os.environ.get("PRIORITY", "medium"),
+}
+company = os.environ.get('MC_ROUTE_COMPANY_ID', '').strip()
+if company:
+    payload['company_id'] = company
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
+sys.stdout.write(json.dumps(payload, separators=(",", ":")))
+PYBODY_AUTO
+  [ "$_BODY_BUILD_OK" -eq 1 ] || _escalate "could not build request body"
+elif [ "$ROUTE_MODE" = "task" ]; then
+  if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+       REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+       MC_ROUTE_STATE_DIR="${MC_ROUTE_STATE_DIR:-${TMPDIR:-/tmp}/mc-route-task-$(id -u)}" \
+       "$PYTHON" - >"$BODY_FILE" <<'PYBODY_TASK'
+import hashlib, json, os, sys, time, uuid
+env = os.environ.get
+title = env("TITLE", "")[:120]
+words = env("DESCRIPTION", "")
+company = env("MC_ROUTE_COMPANY_ID", "").strip()
+rcid = env("REQUESTER_CHAT_ID", "").strip()
+channel = (env("REQUESTER_CHANNEL", "telegram").strip() or "telegram") if rcid else ""
+job = hashlib.sha256(json.dumps([company, env("SOURCE", "telegram"), channel, rcid, title, words]).encode()).hexdigest()[:32]
+event = env("MC_ROUTE_EVENT_ID") or env("MC_ROUTE_OPERATION_ID")
+if event:
+    # Stable originating event: same event + same job = same operation; two jobs
+    # from one event stay two operations (two cards).
+    key = "mc-route-task:" + hashlib.sha256((event + "\0" + job).encode()).hexdigest()[:40]
+else:
+    # 60 s retry window, sliding from the last identical call.
+    # ponytail: no lock; two identical calls in the same instant can mint two keys.
+    state_dir = env("MC_ROUTE_STATE_DIR")
+    os.makedirs(state_dir, mode=0o700, exist_ok=True)
+    path = os.path.join(state_dir, job)
+    now = time.time()
+    key = ""
+    try:
+        if now - os.path.getmtime(path) < 60:
+            key = open(path).read().strip()
+    except OSError:
+        pass
+    if not key:
+        key = "mc-route-task:%s:%s" % (job, uuid.uuid4().hex[:12])
+    with open(path, "w") as fh:
+        fh.write(key)
+    for name in os.listdir(state_dir):  # prune stale window files (> 1 h)
+        try:
+            if now - os.path.getmtime(os.path.join(state_dir, name)) > 3600:
+                os.remove(os.path.join(state_dir, name))
+        except OSError:
+            pass
+payload = {
+    "idempotency_key": key,
+    "external_session_id": env("MC_ROUTE_EXTERNAL_SESSION_ID", ""),
+    "title": title,
+    "description": words,
+    "source": env("SOURCE", "telegram"),
+    "priority": env("PRIORITY", "medium"),
+}
+if company:
+    payload["company_id"] = company
+if rcid:
+    payload["requester_chat_id"] = rcid
+    payload["requester_channel"] = channel
+sys.stdout.write(json.dumps(payload, separators=(",", ":")))
+PYBODY_TASK
+  then
+    _escalate "could not build request body"
+  fi
+else
+  if ! DEPARTMENT_SLUG="$DEPARTMENT_SLUG" TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
+       SOURCE="$SOURCE" PRIORITY="$PRIORITY" \
+       REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+       "$PYTHON" - >"$BODY_FILE" <<'PYBODY'
+import json, os, sys, uuid
+operation = os.environ.get('MC_ROUTE_EVENT_ID') or os.environ.get('MC_ROUTE_OPERATION_ID') or str(uuid.uuid4())
+payload = {
+    'idempotency_key': operation,
+    'external_session_id': os.environ.get('MC_ROUTE_EXTERNAL_SESSION_ID', ''),
     "title": os.environ.get("TITLE", "")[:120],
     "description": os.environ.get("DESCRIPTION", ""),
     "department_slug": os.environ.get("DEPARTMENT_SLUG", ""),
     "source": os.environ.get("SOURCE", "telegram"),
     "priority": os.environ.get("PRIORITY", "medium"),
 }
+company = os.environ.get('MC_ROUTE_COMPANY_ID', '').strip()
+if company:
+    payload['company_id'] = company
 # P1-04 trust engine: pass the originating client chat id through so the Command
 # Center captures it and reports acknowledge/progress/done back to the client.
 # Only added when present — an operator/internal route omits it entirely.
@@ -1512,8 +2251,9 @@ if _rcid:
     payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
-then
-  _escalate "could not build request body"
+  then
+    _escalate "could not build request body"
+  fi
 fi
 
 # ── Sign the RAW body: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (openssl) ─────
@@ -1526,7 +2266,7 @@ if [ -n "$WEBHOOK_SECRET" ]; then
   fi
   if [ -z "$SIG" ]; then
     # openssl unavailable / parse miss — python3 hmac fallback over the SAME bytes.
-    SIG="$(WEBHOOK_SECRET="$WEBHOOK_SECRET" python3 - "$BODY_FILE" <<'PYSIG'
+    SIG="$(WEBHOOK_SECRET="$WEBHOOK_SECRET" "$PYTHON" - "$BODY_FILE" <<'PYSIG'
 import hashlib, hmac, os, sys
 sys.stdout.write(hmac.new(os.environ.get("WEBHOOK_SECRET", "").encode("utf-8"),
                           open(sys.argv[1], "rb").read(), hashlib.sha256).hexdigest())
@@ -1544,27 +2284,215 @@ _H=(-H 'Content-Type: application/json' -H 'Accept: application/json')
 attempt=0
 http_code=""
 resp_body=""
+started=$SECONDS
 while :; do
-  RAW="$(curl -sS -X POST "$INGEST_URL" "${_H[@]}" --data-binary @"$BODY_FILE" -w $'\n%{http_code}' 2>/dev/null || true)"
+  remaining=$((TOTAL_TIMEOUT - (SECONDS - started)))
+  [ "$remaining" -gt 0 ] || break
+  deadline=$REQUEST_TIMEOUT
+  [ "$deadline" -le "$remaining" ] || deadline=$remaining
+  curl_rc=0
+  RAW="$(curl -sS --connect-timeout "$CONNECT_TIMEOUT" --max-time "$deadline" \
+    -D "$HEADER_FILE" -X POST "$INGEST_URL" "${_H[@]}" --data-binary @"$BODY_FILE" -w $'\n%{http_code}' 2>/dev/null)" || curl_rc=$?
   http_code="${RAW##*$'\n'}"
   resp_body="${RAW%$'\n'*}"
-  case "$http_code" in
-    2[0-9][0-9]) break ;;
+  [ "$curl_rc" -eq 0 ] && case "$http_code" in 2[0-9][0-9]) break ;; esac
+  case "$curl_rc:$http_code" in
+    0:408|0:429|0:500|0:502|0:503|0:504|5:*|6:*|7:*|18:*|28:*|52:*|55:*|56:*) ;;
+    *) break ;;
   esac
-  [ "$attempt" -ge "$MAX_RETRIES" ] && break
+  [ "$attempt" -lt "$MAX_RETRIES" ] || break
   attempt=$((attempt + 1))
-  sleep 1
+  delay="$("$PYTHON" - "$HEADER_FILE" "$attempt" <<'PYRETRY'
+import email.utils, sys, time
+headers=open(sys.argv[1]).read().splitlines()
+delay=min(2**(int(sys.argv[2])-1),8)
+for line in headers:
+    if line.lower().startswith('retry-after:'):
+        value=line.split(':',1)[1].strip()
+        try: delay=max(0,int(value))
+        except ValueError:
+            try: delay=max(0,int(email.utils.parsedate_to_datetime(value).timestamp()-time.time()))
+            except Exception: pass
+print(delay)
+PYRETRY
+)"
+  remaining=$((TOTAL_TIMEOUT - (SECONDS - started)))
+  [ "$delay" -lt "$remaining" ] || break
+  sleep "$delay"
 done
 
-echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (department=$DEPARTMENT_SLUG)"
+if [ "$ROUTE_MODE" != "slug" ]; then
+  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (mode=$ROUTE_MODE)"
+else
+  echo "mc-route: HTTP ${http_code:-<none>} from $INGEST_URL (department=$DEPARTMENT_SLUG)"
+fi
 [ -n "$resp_body" ] && printf '%s\n' "$resp_body"
+
+[ "$curl_rc" -eq 0 ] || _escalate "transport failed (curl=$curl_rc) after bounded retry budget"
+
+# ── B18 / SPEC S5: hand the GENUINE task event to the outbox adapter ─────────
+# After this helper's own Command Center write is recorded (2xx), the SAME
+# OBSERVED fields (task id, workspace, department, status) go to ONB
+# shared-utils/hq_activity.py (B17, frozen contract) on a 2-second clock — one
+# source key per task, never a second writer inside CC. Nothing here can change
+# routing, IDs, approval behavior or exit codes: every telemetry failure is
+# swallowed and the card outcome above stands unchanged (SPEC S5: "never blocks
+# the underlying business work or silently claims completeness"). The adapter's
+# own capture-health file is the honest record of any degradation it handles;
+# this helper's stdout/stderr contract is untouched.
+# Producer identity comes from TRUSTED config — MC_INSTALLATION_ID +
+# MC_ROUTE_COMPANY_ID — never from a model-supplied or response-supplied value,
+# and a missing identity sends nothing rather than inventing one (SPEC S7:
+# "request body cannot elevate it"). This is deliberately the ONLY event wired
+# here: native exchange capture is B19's `sessions_send`/`sessions_spawn`
+# extension — this shell script never observes a department exchange, and
+# fabricating one from a card creation would be a false event.
+# Recorded coverage: task created (resolved source key `task:<taskId>`), plus
+# the owner-note/status/cancel events this same task already produces through
+# its own CC writers — not duplicated here because a second writer per source
+# action is forbidden by the same SPEC line.
+_hq_record_task_event() {  # $1 observed task id, $2 workspace, $3 department, $4 status
+  [ -n "${1:-}" ] || return 0
+  local _adapter _root
+  _adapter="${OC_ROOT:-}/shared-utils/hq_activity.py"
+  [ -f "$_adapter" ] || _adapter="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/shared-utils/hq_activity.py"
+  [ -f "$_adapter" ] || return 0
+  _root="${HQ_TENANT_WORKSPACE_ROOT:-${OC_ROOT:-$HOME}}"
+  HQ_ADAPTER="$_adapter" HQ_ROOT="$_root" HQ_TASK_ID="$1" \
+  HQ_TASK_WS="${2:-}" HQ_TASK_DEPT="${3:-}" HQ_TASK_STATUS="${4:-}" \
+    "$PYTHON" - <<'PYHQ' 2>/dev/null || true
+import importlib.util, json, os, sys, time, uuid
+
+
+def _s(value):
+    return None if not isinstance(value, str) or value == "" else value[:512]
+
+
+try:
+    spec = importlib.util.spec_from_file_location("hq_activity", os.environ["HQ_ADAPTER"])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    installation = _s(os.environ.get("MC_INSTALLATION_ID"))
+    company = _s(os.environ.get("MC_ROUTE_COMPANY_ID"))
+    task_id = _s(os.environ.get("HQ_TASK_ID"))
+    if installation is None or company is None or task_id is None:
+        sys.exit(0)  # no trusted identity -> send nothing, never invent one
+    outbox = module.HqOutbox(os.environ["HQ_ROOT"])
+    if outbox.capture_health().get("captureHealth") != "ok":
+        sys.exit(0)  # already-degraded capture stays the honest record, not a flood
+    source_key = ("task:" + task_id)[:512]
+    if not module._SOURCE_KEY_RE.match(source_key):
+        sys.exit(0)  # a task id this adapter cannot key -> dropped, not mangled
+    # SPEC S5: "Mint eventId and issuedAt once with the first durable source
+    # envelope and reuse exact semantic bytes across all retries/backfill. Do not
+    # assign fresh eventId/issuedAt while replaying same source key." A retried
+    # card route therefore reuses the pending envelope's OBSERVED identity (and
+    # reuses the whole event when the observed status has not moved, so the
+    # adapter sees a clean duplicate instead of a same-key conflict). Only a
+    # genuinely different observed status is a new, diagnostic event.
+    event_id, issued_at, pending = str(uuid.uuid4()), \
+        module._iso(time.time()), outbox._find_by_source_key(source_key)
+    if pending is not None:
+        try:
+            previous = module._read_json(pending)["event"]
+            event_id, issued_at = previous["eventId"], previous["issuedAt"]
+            payload = {"status": _s(os.environ.get("HQ_TASK_STATUS")), "previousStatus": None}
+            if previous["payload"] == payload:
+                outbox.enqueue(previous)  # proven retry: complete duplicate, no new bytes
+                sys.exit(0)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    outbox.enqueue({
+        "eventId": event_id,
+        "sourceKey": source_key,
+        "installationId": installation,
+        "companyId": company,
+        "issuedAt": issued_at,
+        "occurredAt": None,
+        "kind": "task",
+        "phase": "created",
+        "taskId": task_id,
+        "actorRuntimeId": "mc-route",
+        "recipientRuntimeId": _s(os.environ.get("HQ_TASK_DEPT")),
+        "fromWorkspaceId": None,
+        "toWorkspaceId": _s(os.environ.get("HQ_TASK_WS")),
+        "exchangeId": None,
+        "payload": {"status": _s(os.environ.get("HQ_TASK_STATUS")),
+                    "previousStatus": None},
+    })
+except BaseException:
+    sys.exit(0)  # telemetry never changes the caller's exit-code contract
+PYHQ
+}
 
 case "$http_code" in
   2[0-9][0-9])
+    if [ "$ROUTE_MODE" = "task" ]; then
+      _TASK_FIELDS="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+rb = str(d.get("resolved_by") or "")
+dept = d.get("resolved_department")
+if not dept and rb.startswith("auto-route:"):
+    dept = rb[len("auto-route:"):]
+    if dept == "general-task-fallback":
+        dept = "general-task"
+for v in (d.get("task_id"), d.get("workspace_id"), dept or d.get("workspace_id"), rb, d.get("status")):
+    print("" if v is None else str(v))' 2>/dev/null || true)"
+      _TASK_ID="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '1p')"
+      _TASK_WORKSPACE="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '2p')"
+      _TASK_DEPARTMENT="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '3p')"
+      _TASK_RESOLVED_BY="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '4p')"
+      _TASK_STATUS="$(printf '%s\n' "$_TASK_FIELDS" | sed -n '5p')"
+      [ -n "$_TASK_ID" ] || _escalate "ingest returned HTTP $http_code but no task_id — the card was NOT confirmed"
+      _hq_record_task_event "$_TASK_ID" "$_TASK_WORKSPACE" "$_TASK_DEPARTMENT" "$_TASK_STATUS"
+      echo "ROUTED workspace=$_TASK_WORKSPACE department=$_TASK_DEPARTMENT resolved_by=$_TASK_RESOLVED_BY"
+      case "$_TASK_WORKSPACE:$_TASK_RESOLVED_BY" in
+        :*|*'->ceo'|*'->unrouted')
+          echo "mc-route: WARNING — card $_TASK_ID was created but has no department lane (workspace='$_TASK_WORKSPACE', resolved_by='$_TASK_RESOLVED_BY')." >&2
+          echo "ESCALATE_TO_OPERATOR: the card exists but could not be routed to a department. The CEO must tell the owner it is escalating to the operator. Do NOT call mc-route again for this job." >&2
+          ;;
+      esac
+      exit 0
+    fi
+    if [ "$ROUTE_MODE" = "auto" ]; then
+      # Raw-door response: {created:false,intent:...} means JEV answered without a
+      # card; anything else with a 2xx is a created/auto-routed card. Never print
+      # ESCALATE here — a 2xx ingest always succeeded at the transport layer.
+      _AUTO_FIELDS="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    d = {}
+created = d.get("created")
+print("false" if created is False else "true")
+for key in ("intent", "workspace_id", "resolved_department", "resolved_by"):
+    v = d.get(key)
+    print("" if v is None else str(v))' 2>/dev/null || true)"
+      _AUTO_CREATED="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '1p')"
+      _AUTO_INTENT="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '2p')"
+      _AUTO_WORKSPACE="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '3p')"
+      _AUTO_DEPARTMENT="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '4p')"
+      _AUTO_RESOLVED_BY="$(printf '%s\n' "$_AUTO_FIELDS" | sed -n '5p')"
+      if [ "$_AUTO_CREATED" = "false" ]; then
+        echo "JEV_ANSWER_DIRECTLY intent=${_AUTO_INTENT:-unresolved}"
+      else
+        echo "ROUTED workspace=$_AUTO_WORKSPACE department=$_AUTO_DEPARTMENT resolved_by=$_AUTO_RESOLVED_BY"
+      fi
+      exit 0
+    fi
     # Workspace-mismatch guard: warn if the card did NOT land on the requested
     # department workspace (mirrors route-presentation.sh's presentations check,
     # generalized to the department_slug argument).
-    WS="$(printf '%s' "$resp_body" | python3 -c '
+    WS="$(printf '%s' "$resp_body" | "$PYTHON" -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -1572,10 +2500,60 @@ try:
 except Exception:
     sys.stdout.write("")' 2>/dev/null || true)"
     if [ -n "$WS" ] && [ "$WS" != "$DEPARTMENT_SLUG" ]; then
-      echo "mc-route: WARNING — task landed on workspace '$WS', NOT '$DEPARTMENT_SLUG'." >&2
-      echo "ESCALATE_TO_OPERATOR: the '$DEPARTMENT_SLUG' department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
+      RESOLVED_BY="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("resolved_by", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+      # Landing on the General Task catch-all is not a blocker: never warn/escalate
+      # when the mismatch IS the documented catch-all fallback.
+      _GENERAL_TASK_LANDING=0
+      case "$RESOLVED_BY" in
+        unrecognized-slug-\>general|general-task-fallback|auto-route:general-task-fallback)
+          _GENERAL_TASK_LANDING=1
+          ;;
+      esac
+      case "$WS" in
+        general-task|dept-general-task) _GENERAL_TASK_LANDING=1 ;;
+      esac
+      if [ "$_GENERAL_TASK_LANDING" -eq 1 ]; then
+        echo "mc-route: INFO — landed on General Task (catch-all); not a blocker."
+      else
+        echo "mc-route: WARNING — task landed on workspace '$WS', NOT '$DEPARTMENT_SLUG'." >&2
+        echo "ESCALATE_TO_OPERATOR: the '$DEPARTMENT_SLUG' department may be absent on this box. The CEO must tell the owner it is escalating to the operator instead of proceeding or self-intaking." >&2
+      fi
     fi
+    # B18: the same observed card is handed to the outbox adapter in slug mode too
+    # — a legacy department route is a genuine task creation like any other. The
+    # task id is read from the SAME response that was already printed above; a
+    # response without a task id records nothing (never a fabricated id).
+    _SLUG_TASK_ID="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("task_id", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+    _hq_record_task_event "$_SLUG_TASK_ID" "$WS" "$DEPARTMENT_SLUG" ""
     exit 0
+    ;;
+  403)
+    if [ "$ROUTE_MODE" = "auto" ]; then
+      _AUTO_ERROR="$(printf '%s' "$resp_body" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sys.stdout.write(str(d.get("error", "")) if isinstance(d, dict) else "")
+except Exception:
+    sys.stdout.write("")' 2>/dev/null || true)"
+      if [ "$_AUTO_ERROR" = "control_probe_never_creates" ]; then
+        echo "JEV_ANSWER_DIRECTLY intent=unresolved"
+        exit 0
+      fi
+    fi
+    _escalate "ingest POST returned HTTP ${http_code:-<none>} after ${attempt} retr(y|ies)"
     ;;
   *)
     _escalate "ingest POST returned HTTP ${http_code:-<none>} after ${attempt} retr(y|ies)"
@@ -1712,7 +2690,13 @@ def _is_router(a):
     return a.get("id") in ROUTER_IDS
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    agents = cfg.get("agents", {}).get("list", []) or []
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x, id is the key)
+    # and the legacy agents.list[].
+    _a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    _e = _a.get("entries") if isinstance(_a.get("entries"), dict) else {}
+    _l = _a.get("list") if isinstance(_a.get("list"), list) else []
+    agents = [dict(v, id=k) for k, v in _e.items() if isinstance(v, dict)]
+    agents += [a for a in _l if isinstance(a, dict) and a.get("id") not in _e]
     da = next((a for a in agents if isinstance(a, dict) and a.get("default") is True), None)
     if da is None:
         da = next((a for a in agents if isinstance(a, dict) and a.get("id") == "main"), None)
@@ -1780,7 +2764,10 @@ MAX_RETRIES=2
 # Center report-back loop can acknowledge/progress/done back to the client. Empty
 # (the default) => omitted from the payload, exactly as mc-route.sh behaves.
 REQUESTER_CHAT_ID="${ROUTE_PRES_REQUESTER_CHAT_ID:-${MC_ROUTE_REQUESTER_CHAT_ID:-}}"
-REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-telegram}}"
+REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-}}"
+# An absent authenticated requester is an operator-delegated route, not Telegram.
+# Callers may explicitly override the source only through the sanctioned route vars.
+ROUTE_SOURCE="${ROUTE_PRES_SOURCE:-${MC_ROUTE_SOURCE:-}}"
 
 TITLE="${1:-}"
 DESCRIPTION="${2:-}"
@@ -1856,20 +2843,25 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/route-pres.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
 if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
-     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" ROUTE_SOURCE="$ROUTE_SOURCE" \
      python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
-payload = {
-    "title": os.environ.get("TITLE", "")[:120],
-    "description": os.environ.get("DESCRIPTION", ""),
-    "department_slug": "presentations",
-    "source": "telegram",
-    "priority": "medium",
-}
 # P1-04 trust engine: pass the originating client chat id through so the Command
 # Center captures it and reports acknowledge/progress/done back to the client.
 # Only added when present — an operator/internal route omits it entirely.
 _rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+_source = os.environ.get("ROUTE_SOURCE", "").strip()
+# Never label an internal/operator route as Telegram when no authenticated chat
+# identity was supplied. A real chat route retains the historical telegram default.
+if not _source:
+    _source = "telegram" if _rcid else "operator-delegated"
+payload = {
+    "title": os.environ.get("TITLE", "")[:120],
+    "description": os.environ.get("DESCRIPTION", ""),
+    "department_slug": "presentations",
+    "source": _source,
+    "priority": "medium",
+}
 if _rcid:
     payload["requester_chat_id"] = _rcid
     payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
@@ -1973,36 +2965,41 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
 
 WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
-  ‼ Your VERY FIRST tool call is the STEP 1 route helper below — literally the first thing you do.
+  ‼ Your VERY FIRST tool call is the STEP 1 mc-route.sh helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
   exists", do NOT deliberate, do NOT message another session. Route first. Then confirm the audience. Then ack. Then stop.
-  Any tool call before the route helper is a reflex violation.
+  Any tool call before the mc-route.sh helper is a reflex violation.
 
-  STEP 1 — Route the task NOW, before any other output, by running the SIGNED route helper.
+  STEP 1 — Route the task NOW, before any other output, by running the mc-route.sh helper in task mode.
+  Do NOT run route-presentation.sh. Do NOT pass a department slug. New intake goes ONLY through
+  mc-route.sh task; the Command Center creates the card and picks the department.
   Do NOT hand-craft a bare curl. The Command Center ships FAIL-CLOSED: an unauthenticated curl
   to the ingest endpoint is rejected (503/401). The helper resolves this box's ingest
   credentials at RUNTIME and signs BOTH required auth layers (Bearer + HMAC webhook signature)
   for you. Run it EXACTLY like this, in an exec / bash tool call:
 
-      ROUTE_PRES_REQUESTER_CHAT_ID="<the chat id this owner message arrived on>" \
-        bash @@ROUTE_HELPER_PATH@@ "<owner request, <=120 chars>" "<owner message, verbatim>"
+      MC_ROUTE_REQUESTER_CHAT_ID="<the chat id this owner message arrived on>" \
+        MC_ROUTE_REQUESTER_CHANNEL="<the channel this owner message arrived on, e.g. telegram>" \
+        bash @@MC_ROUTE_PATH@@ task "<owner request, <=120 chars>" "<owner message, verbatim>"
 
   The chat id is MANDATORY when you have it. Without it the client gets NO acknowledgement,
   NO progress message and NO completion message — the deck is built in silence. If you
   genuinely cannot determine the chat id, still route (the helper works without it) and say
   so in your escalation note.
+  Leave the chat id UNSET for operator/internal routes (those are never reported on). NEVER invent or
+  reuse another client's chat id — pass ONLY the real originating chat id of the message you are routing.
 
   ⚠ PORT / ENDPOINT (handled inside the helper): the Command Center on THIS box listens on
   PORT 4000 at IPv4 127.0.0.1 — NOT 3000, NOT 8080, NOT any remembered default. The helper
   already targets http://127.0.0.1:4000/api/tasks/ingest. Do NOT substitute a port and do NOT
   fire your own bare curl.
 
-      SUCCESS = the helper prints an ingest response with {"ok":true,"task_id":"…",
-      "workspace_id":"presentations"} and exits 0.
+      SUCCESS = the helper prints ROUTED workspace=<ws> department=<d> resolved_by=<r> and exits 0.
+      The Command Center picks the department — do NOT expect or require a specific workspace.
 
   STEP 2 — After creating ANY content/presentation task via the Command Center API, IMMEDIATELY GET
   http://127.0.0.1:4000/api/tasks/{taskId}/audience. Do NOT send a bare loopback curl: this route is
-  not bypassed by middleware. Use the SAME signed helper's runtime token-resolution mechanics from
+  not bypassed by middleware. Use the SAME mc-route.sh helper's runtime token-resolution mechanics from
   STEP 1 (never write, copy, or invent a secret) to resolve MC_API_TOKEN, then send
   Authorization: Bearer <MC_API_TOKEN> on BOTH this GET and the POST below. If the response says
   hold=true (audience not confirmed), relay the question to the owner IN THE CURRENT CHAT in plain
@@ -2066,10 +3063,9 @@ to the operator to fix routing, e.g.:
       "I hit a snag routing this to your Presentations department — I'm escalating it to the operator to get it sorted. I won't start the deck myself."
 Then STOP.
 
-WORKSPACE-MISMATCH — if the helper succeeds but WARNS that the task landed on a workspace other
-than `presentations` (e.g. the CEO board), treat it like the escalation case: tell the owner you
-are escalating to the operator (the Presentations department may not be set up on this box). Do
-NOT silently proceed and do NOT self-intake.
+WORKSPACE-MISMATCH — does not apply: the Command Center picks the department for every
+mc-route.sh task call. Whatever workspace the ROUTED line reports is authoritative. Do NOT
+escalate because the card landed somewhere other than `presentations`, and do NOT self-intake.
 
 HARD BANS while this reflex is active — EACH is a routing VIOLATION, no exceptions:
   ✗ Asking the owner ANY intake question (topic, title, audience, goal, existing content, length…)
@@ -2079,11 +3075,11 @@ HARD BANS while this reflex is active — EACH is a routing VIOLATION, no except
   ✗ Calling build_deck.py or presentation-canonical-entry.sh
   ✗ Hand-crafting your own unauthenticated curl to the ingest endpoint (it is rejected — use the helper)
   ✗ Spawning a sub-agent to do any of the above (spawning to execute = the same violation)
-  ✗ Reading ANY file, running sessions_list, or verifying the department BEFORE the route helper fires
+  ✗ Reading ANY file, running sessions_list, or verifying the department BEFORE the mc-route.sh helper fires
   ✗ Asking the OWNER anything, deliberating, or stalling because you "weren't sure" — you route first
 
 PRE-EMIT SELF-CHECK — before you send text, ask: "Am I about to ask a question or describe the deck?"
-  → If YES, you have ALREADY broken the reflex. Discard that draft. Do STEP 1 (the route helper) FIRST.
+  → If YES, you have ALREADY broken the reflex. Discard that draft. Do STEP 1 (the mc-route.sh helper) FIRST.
 
 WHY (do not re-litigate): the Brainstorming Buddy (ROLE-17) — NOT the CEO — runs intake, one
 question at a time, and captures the six mandatory fields REPRESENTATION_MIX, AUDIENCE_COMPOSITION,
@@ -2093,7 +3089,7 @@ is three words: route, ack, stop.
 <!-- END PRESENTATION_ROUTING_REFLEX_V2 -->
 PRES_REFLEX_V2
   PRES_REFLEX_RENDERED="$(mktemp)"; _APPLY_TMPFILES+=("$PRES_REFLEX_RENDERED")
-  RP_HELPER="$PRES_REFLEX_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@ROUTE_HELPER_PATH@@", os.environ["RP_HELPER"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
+  RP_MC="$MC_ROUTE_HELPER_PATH" python3 -c 'import os,sys; sys.stdout.write(open(sys.argv[1]).read().replace("@@MC_ROUTE_PATH@@", os.environ["RP_MC"]))' "$PRES_REFLEX_TMPL" > "$PRES_REFLEX_RENDERED"
   PRES_REFLEX_VERDICT="$(python3 - "$AGENTS_FILE_EARLY" "$PRES_REFLEX_RENDERED" <<'PRESCMP_PY'
 import os, re, sys
 
@@ -2182,19 +3178,23 @@ else
 
 Your departments and their specialists **natively operate skills** — a client benefits from a skill even when
 they have never heard of it and never name it. When an owner message matches an intent cluster below, your
-FIRST action is to route the task to the OWNING department with the SIGNED helper, then send ONE short
+FIRST action is to route the task with the mc-route.sh helper in task mode, letting the Command Center
+pick the department — do NOT pass a department slug — then send ONE short
 acknowledgement. Do NOT self-intake, do NOT ask "which skill do you want?", and do NOT start the work
 yourself — the owning department's specialist reaches for the skill (dept-scoped) after routing.
 
-    bash @@MC_ROUTE_PATH@@ <department_slug> "<owner request, <=120 chars>" "<owner message, verbatim>"
+    MC_ROUTE_REQUESTER_CHAT_ID="<originating client chat id>" MC_ROUTE_REQUESTER_CHANNEL="telegram" \
+      bash @@MC_ROUTE_PATH@@ task "<owner request, <=120 chars>" "<owner message, verbatim>"
 
 **Trust engine (P1-04) — ALWAYS pass the originating chat id when the request came from a client.**
-When the message you are routing came from a CLIENT (e.g. this Telegram chat), prefix the SIGNED helper
+When the message you are routing came from a CLIENT (e.g. this Telegram chat), prefix the mc-route.sh helper
 with the ORIGINATING chat id so the Command Center's report-back loop keeps the client informed
-(assigned → in-progress + ETA → done + where-to-find-it) — a routed task must NEVER go silent:
+(assigned → in-progress + ETA → done + where-to-find-it) — a routed task must NEVER go silent. The intent
+table below helps you recognise the kind of work; it never authorises passing a slug — intake goes ONLY
+through mc-route.sh task:
 
     MC_ROUTE_REQUESTER_CHAT_ID="<originating client chat id>" MC_ROUTE_REQUESTER_CHANNEL="telegram" \
-      bash @@MC_ROUTE_PATH@@ <department_slug> "<owner request, <=120 chars>" "<owner message, verbatim>"
+      bash @@MC_ROUTE_PATH@@ task "<owner request, <=120 chars>" "<owner message, verbatim>"
 
 Leave the chat id UNSET for operator/internal routes (those are never reported on). NEVER invent or
 reuse another client's chat id — pass ONLY the real originating chat id of the message you are routing.
@@ -2204,21 +3204,26 @@ reuse another client's chat id — pass ONLY the real originating chat id of the
 | "make me Facebook/Instagram ads", "ad creatives", "10 ad variations" | `paid-advertisement` |
 | "make/produce a video", "plan/storyboard my video", "add captions/subtitles", "cut/trim/edit this clip", "a cinematic reel" | `video` |
 | "run my social", "post my content this week", "a week of content end-to-end" | `social-media` |
-| "build my funnel", "a landing page / opt-in", "build me a form or page in GHL" | `web-development` |
+| "build my funnel", "an opt-in and upsell chain", "a 3/5/7-step Signature Funnel", "build me a form or page in GHL" | `web-development` |
+| "build me a landing page", "build an opt-in page", "build a squeeze page", "build a webinar/event registration page", "build a 5-day challenge page", "build a booking page", "build a lead-generation page", "use the BlackCEO standard/long-form landing page" | `web-development` |
 | "write my email/nurture sequence", "build my brand/avatar", "write my book/anthology", "make this sound human / less AI-sounding" | `marketing` |
 | "match this brand style", "on-brand images", "a style card" | `graphics` |
-| "write my product bio", "a sales page / upsell copy", "a master brain for my product" | `sales` |
+| "write my product bio", "a master brain for my product" | `marketing` |
+| "a sales page / upsell copy", "a high-ticket page", "write my sales page", "a direct-response/VSL page" | `marketing` |
 | "build a workflow", "automate this", "an order-bump" | `crm` |
 | "summarize this YouTube", "what does this video say", "pull the transcript" | `research` |
 | "set up a booking bot", "a conversational qualifier / lead responder" | `communications` |
+| "look up a property", "qualify a real estate lead", "schedule a showing" | `sales` |
 | "answer my customers automatically", "a live-chat / support bot" | `customer-support` |
 | "a signature talk / keynote deck / 100-slide presentation" — handled by REFLEX 0 above (do not double-route) | `presentations` |
 | "map/graph my workforce", "graph my company" | `openclaw-maintenance` |
 | "produce a podcast episode", "turn this intake into a published episode", "run the podcast production engine", "generate this week's episode" | `podcast` |
+| "close out a funnel build in GHL", "QA the funnel before it ships", "test the checkout / order-bump / upsell path" | `funnels` |
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.
 - Dept-scoped: the dispatched specialist is handed ONLY its department's skills (the Command Center ContextPack `matched_skills`). Rule-Zero paid-call approval (USD announce + budget cap) still applies.
+- Single-page vs multi-step: a focused BlackCEO single page (landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation) is Skill 71 `blackceo-signature-page`; a multi-step 3/5/7 Signature Funnel with checkout/upsell/downsell/OTO is Skill 49 `signature-funnel`; a direct-response/VSL/high-ticket/order-bump stack is Skill 56 `sales-page-assets`; a cinematic/scroll/animated page is Skill 62 `cinematic-web-funnel-engine`. A 'webinar page' / 'event registration page' / '5-day challenge page' / 'squeeze page' is a PAGE (Skill 71), never a deck and never REFLEX 0.
 - If the owner explicitly names a skill or types its slash command, that still works — this reflex is for plain-language intent the owner did NOT name.
 - Binding (source of truth): `~/.openclaw/skills/23-ai-workforce-blueprint/skill-department-map.json`. Doctrine: `~/.openclaw/skills/universal-sops/native-skill-invocation.md`.
 <!-- END SKILL_INTENT_ROUTING_REFLEX_V1 -->
@@ -2561,11 +3566,38 @@ fi
 # W6: full-context handoff standard — when routing a task or handing off to a
 # sub-agent the FULL context (not a pointer) must land in the handoff payload.
 # Idempotent: guarded by <!-- FULL_CONTEXT_HANDOFF_V1 -->.
+#
+# JEV D28 (spec 1.1 s5.4, "generators/installers that stamp managed sections"):
+# the canonical BODY for this block lives in shared-utils/agents-doctrine-blocks.sh
+# (emit_full_context_handoff_block / stamp_full_context_handoff). This script
+# previously carried its OWN inline copy of the body under the SAME marker, so a
+# box stamped by one writer and inspected against the other disagreed about the
+# same <!-- FULL_CONTEXT_HANDOFF_V1 --> block — the exact drift class s5.4 names.
+# Now: stamp by SOURCING the canonical stamper when it ships (it ships with
+# shared-utils on every install/update), and fall back to the legacy inline body
+# ONLY when the stamper is genuinely absent (an older bundle, first-ever install
+# order) so a box is never left unstamped.
 FULL_CONTEXT_HANDOFF_MARKER="<!-- FULL_CONTEXT_HANDOFF_V1 -->"
 
 if grep -qF "$FULL_CONTEXT_HANDOFF_MARKER" "$AGENTS_FILE"; then
   echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 already present in $AGENTS_FILE — no-op"
 else
+  _ADB_LIB=""
+  for _adb_candidate in "${ONBOARDING_DIR:-}/shared-utils/agents-doctrine-blocks.sh" \
+                       "${_FS_SCRIPT_DIR:-}/../shared-utils/agents-doctrine-blocks.sh" \
+                       "$OC_ROOT/skills/shared-utils/agents-doctrine-blocks.sh"; do
+    if [ -f "$_adb_candidate" ]; then _ADB_LIB="$_adb_candidate"; break; fi
+  done
+  if [ -n "$_ADB_LIB" ]; then
+    # shellcheck source=/dev/null
+    . "$_ADB_LIB"
+    if stamp_full_context_handoff "$AGENTS_FILE"; then
+      echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 stamped from canonical $_ADB_LIB"
+    else
+      echo "[apply-fleet-standards] canonical stamper FAILED for $AGENTS_FILE — leaving unchanged" >&2
+    fi
+  else
+    echo "[apply-fleet-standards] agents-doctrine-blocks.sh not found — using legacy inline body" >&2
   cat >> "$AGENTS_FILE" <<'FCHEOF'
 
 <!-- FULL_CONTEXT_HANDOFF_V1 -->
@@ -2581,7 +3613,9 @@ When handing a task to any department, sub-agent, or specialist, you MUST pass t
 4. **Session handoff.** When handing off between sessions, write the current task state, open threads, and next actions to `$WORKSPACE_DIR/MEMORY.md` before the session closes. The receiving agent reads MEMORY.md at session start.
 
 FCHEOF
-  echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 injected into $AGENTS_FILE"
+    echo "[apply-fleet-standards] FULL_CONTEXT_HANDOFF_V1 injected into $AGENTS_FILE (legacy inline body)"
+  fi
+  unset _ADB_LIB _adb_candidate
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
@@ -2738,80 +3772,8 @@ fi
 # the main orchestrator. This step injects the directive into workspace/SOUL.md and
 # scrubs the contradictory "personal assistant / handle it yourself" intro.
 # Idempotent: guarded by <!-- CEO_ORCHESTRATOR_RULE_V2 --> marker.
-CEO_ORCH_V2_MARKER="<!-- CEO_ORCHESTRATOR_RULE_V2 -->"
 WS_SOUL_FILE="$WORKSPACE_DIR/SOUL.md"
-touch "$WS_SOUL_FILE"
-
-if grep -qF "$CEO_ORCH_V2_MARKER" "$WS_SOUL_FILE" 2>/dev/null; then
-  echo "[apply-fleet-standards] PRIME DIRECTIVE already present in $WS_SOUL_FILE — no-op"
-else
-  echo "[apply-fleet-standards] injecting PRIME DIRECTIVE into $WS_SOUL_FILE"
-  # Read existing, strip V1 marker if present, strip personal-assistant intro
-  SOUL_EXISTING=$(cat "$WS_SOUL_FILE" 2>/dev/null || true)
-  # Strip V1 block if present
-  if echo "$SOUL_EXISTING" | grep -qF "<!-- CEO_ORCHESTRATOR_RULE_V1 -->"; then
-    SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
-import sys, re
-content = sys.stdin.read()
-content = re.sub(r'<!-- CEO_ORCHESTRATOR_RULE_V1 -->.*?---\s*\n', '', content, count=1, flags=re.DOTALL)
-print(content, end='')
-")
-  fi
-  # Strip "personal assistant / handle it yourself" intro (# SOUL.md ... first ---)
-  SOUL_EXISTING=$(echo "$SOUL_EXISTING" | python3 -c "
-import sys, re
-content = sys.stdin.read()
-content = re.sub(r'^# SOUL\.md.*?^---\s*\n', '', content, count=1, flags=re.DOTALL | re.MULTILINE)
-print(content.lstrip(), end='')
-")
-  # Write PRIME DIRECTIVE + remaining content
-  {
-    cat <<'PDEOF'
-<!-- CEO_ORCHESTRATOR_RULE_V2 -->
-## ⛔ PRIME DIRECTIVE — I AM A TASK ROUTER. I ROUTE. THIS IS NOT OPTIONAL.
-
-1. I am the master orchestrator (CEO). My one job is to ROUTE tasks. When any task or request
-   reaches me, I ROUTE it to the correct DEPARTMENT — every time. I have NO permission to decide
-   not to route, to refuse a task, or to choose what I will or will not do.
-2. I do NOT do the work myself, and I do NOT pick the specialist or spawn/keep control of a
-   sub-agent to do it. I route to the DEPARTMENT. The DEPARTMENT decides which specialist
-   sub-agent and which persona are needed; the task gets a persona assigned; the task is placed
-   on the Kanban board. The doing belongs to the department and its specialist — never to me.
-3. Before I would EVER do a task myself, I must FIRST seek and RECEIVE explicit permission and
-   consent from the owner (the human in control). Without that explicit consent, I route — always.
-   (Routing is my default and is always allowed; I never need permission to route.)
-4. If I cannot determine the right department, I route to the General Tasks department. I never
-   self-execute because I'm unsure, and I never hold a task to "stay in control" of it.
-5. What I MAY do: have conversations, manage agents, manage departments, and route tasks.
-   What I may NEVER do: refuse to route, decide who executes, execute the work myself, or
-   commandeer a sub-agent to keep control.
-
-### Routing = Creating a DEPARTMENT TASK (not spawning a sub-agent directly)
-
-The correct routing action is POST to `/api/tasks/ingest` with `department_slug: "<slug>"`.
-This places the task on the department's Kanban — the DEPARTMENT assigns the specialist.
-
-Spawning a sub-agent and instructing it to execute production work IS THE SAME VIOLATION as
-executing the work yourself. If a sub-agent is spawned, it MUST read its own role files and
-operate via the task board — it is not a production tool for the orchestrator.
-
-### Binding Rules
-
-- **R1** Never generate images, videos, audio, or written deliverables
-- **R2** Never write to files, databases, or external APIs as a production action
-- **R3** Never use any skill that produces a deliverable (`skills: []` enforced in config)
-- **R4** Every actionable request → `POST /api/tasks/ingest` with `department_slug`
-- **R5** If CC unreachable → escalate via Telegram, do NOT execute directly
-- **R6** If route is unclear → use `department_slug: "general-task"`, never self-execute
-- **R7** Permitted actions only: Telegram messaging, task-ingest POST, read workspace files, gateway restart
-
----
-
-PDEOF
-    printf '%s' "$SOUL_EXISTING"
-  } > "$WS_SOUL_FILE"
-  echo "[apply-fleet-standards] PRIME DIRECTIVE written to $WS_SOUL_FILE"
-fi
+python3 "$CEO_POLICY_HELPER" "$WS_SOUL_FILE" --oc-config "$OC_ROOT"
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$WS_SOUL_FILE" 2>/dev/null || true
@@ -3012,7 +3974,7 @@ fi
 # strictly required for THIS change to propagate -- it is done anyway so the
 # faster "replace" path (rather than the heading-regex "upgrade" fallback)
 # stays the steady-state path on every future roll, not a permanent detour.
-RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
 RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
 
 if [ ! -f "$AGENTS_FILE" ]; then
@@ -3054,8 +4016,14 @@ path = sys.argv[1]
 slug = os.environ["RESCUE_BOX_SLUG"]
 tpl_path = os.environ["RESCUE_TPL"]
 
-START = "<!-- RESCUE_ESCALATION_BOXNAME_V2 -->"
-END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->"
+# RR-002 compatibility versioning: V2 -> V3 adds the canonical correlation
+# fields (incident_id / operation_id / attempt_id / result_digest / runtime_id)
+# to the resolution protocol. A box still carrying V2 is NOT matched by this
+# START/END pair, so it takes the `upgrade` branch below -- whose stale-marker
+# regex consumes the V2 opening tag (any V\d+) and re-renders the section, so
+# the migration is one roll and leaves no orphaned older marker behind.
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V3 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->"
 # R7: a box still carrying the V1 marker pair falls through to the "upgrade"
 # (bare heading) branch below on its first V2 roll -- it is not matched by
 # the V2 START/END pair above, so `si == -1`, and the code takes the
@@ -3079,6 +4047,23 @@ ei = txt.find(END)
 if si != -1 and ei != -1 and ei > si:
     cur_start, cur_end = si, ei + len(END)
     mode = "replace"
+    # IDEMPOTENCY DEFECT (found by tests/unit/rescue-escalation-v2-marker-bump
+    # .test.sh SCENARIO 3, reproducible on origin/main before the RR-002 bump):
+    # the template renders content BEYOND the END marker (the
+    # "## What Rescue Rangers IS + your own wiring" section). The replace
+    # branch above only covered START..END, so every re-stamp spliced the whole
+    # template back in while leaving the tail of the PREVIOUS render in place --
+    # duplicating that section on every roll. The re-stamp runs unconditionally
+    # on every fleet roll, so this accumulated silently per box. Consume the
+    # tail we ourselves rendered last time, if it is sitting right there.
+    # (No apostrophe in prose anywhere in this heredoc: it sits inside $(...),
+    # and macOS /bin/bash 3.2 then pairs a lone apostrophe and fails to parse
+    # the whole script from here on.)
+    _tpl_ei = tpl.find(END)
+    if _tpl_ei != -1:
+        _tail = tpl[_tpl_ei + len(END):]
+        if _tail and txt[cur_end:cur_end + len(_tail)] == _tail:
+            cur_end += len(_tail)
 else:
     # R7: also consume a STALE marker-comment line of ANY version number
     # immediately above the heading (e.g. a lingering V1 opening tag left
@@ -3167,7 +4152,7 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
-# ─── 5k. Seed the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─────
+# ─── 5k. Reconcile the Rescue Rangers agent map (rr_agent_map) — OPERATOR ONLY ─
 # WHY. RR-02-coach reads rr_agent_map (box_slug -> local_agent_id) before
 # diagnosing an escalation. A receiver-covered box with no row is routed to
 # agent_id_unmapped and pages a human instead of running the diagnosis chain
@@ -3175,26 +4160,120 @@ fi
 # the table at enrollment). The map lives in n8n; only the operator box carries
 # the n8n key, so this step is operator-only and self-skips everywhere else.
 #
-# WHAT. Run scripts/seed-rr-agent-map.sh (shipped beside this script): idempotent
-# upsert of local_agent_id=main per fleet slug, backup-before-write, read-back
-# verify. RR-02-coach additionally auto-seeds (source=auto_seed_rr02) when a box
-# somehow still arrives unmapped, so a missing row can never page a human again.
+# WHAT. Run scripts/reconcile-rr-agent-map.sh (shipped beside this script),
+# which SUPERSEDES the old insert-only seed-rr-agent-map.sh. RR-031: the old
+# step read ONE page and only filled ABSENT slugs, so an existing WRONG mapping
+# survived forever; it resolved the default agent on the operator HOST, so a
+# Docker-installed box could never resolve its own container; it used shared
+# fixed /tmp paths; and its calls were unbounded. The reconciler fetches every
+# page with checked status and schema and aborts writes on an incomplete
+# source, repairs existing wrong mappings through the supported filter-addressed
+# PATCH, resolves each box's runtime INSIDE its exact container via the
+# fleet-prover box descriptor, enforces a unique tenant+box mapping, records
+# unreachable/default-less boxes as pending with an owner instead of inventing
+# `main`, and finishes with ACTUAL changed/verified/pending counts.
 #
-# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open: key absent, roster
-# absent, or script error => log and skip; this step can never fail a roll.
+# CONTRACT. Operator-only (N8N_API_KEY present). Fail-open for a ROLL — a
+# mapping problem must never abort a fleet roll — but NEVER SILENT: the exit
+# code is surfaced in the log line, a pending entry can never be reported as
+# `ok`, and the per-run log is private (0700) instead of a shared /tmp name
+# that two concurrent rolls would clobber. `ok` is printed only for exit 0,
+# which the reconciler returns only when changed/verified are complete with
+# zero pending entries.
 if [ -n "${N8N_API_KEY:-}" ]; then
-  _RR_SEED_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/seed-rr-agent-map.sh"
-  if [ ! -f "$_RR_SEED_SH" ]; then
-    echo "[apply-fleet-standards] RR_AGENT_MAP_SEED skipped — seed-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
+  _RR_RECON_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/reconcile-rr-agent-map.sh"
+  if [ ! -f "$_RR_RECON_SH" ]; then
+    echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — reconcile-rr-agent-map.sh not found beside this script (fail-open, next roll retries)"
   else
-    if "$_RR_SEED_SH" >/tmp/rr-seed-apply.log 2>&1; then
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED ok ($(grep -o 'VERIFY.*' /tmp/rr-seed-apply.log | head -1))"
+    _RR_LOG_DIR="$( (umask 077; mktemp -d "${TMPDIR:-/tmp}/rr-reconcile-apply.XXXXXX") 2>/dev/null || echo "")"
+    if [ -z "$_RR_LOG_DIR" ]; then
+      echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE skipped — cannot create a private log dir (fail-open)"
     else
-      echo "[apply-fleet-standards] RR_AGENT_MAP_SEED error — see /tmp/rr-seed-apply.log (fail-open)"
+      chmod 700 "$_RR_LOG_DIR" 2>/dev/null || true
+      _RR_LOG="$_RR_LOG_DIR/reconcile.log"
+      _RR_RC=0
+      "$_RR_RECON_SH" --apply --verify >"$_RR_LOG" 2>&1 || _RR_RC=$?
+      case "$_RR_RC" in
+        0)
+          _RR_COUNTS="$(grep -o 'changed=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'verified=[0-9]*' "$_RR_LOG" | tail -1)"
+          _RR_COUNTS="$_RR_COUNTS $(grep -o 'pending=[0-9]*' "$_RR_LOG" | tail -1)"
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE ok ($(echo "$_RR_COUNTS" | tr -s ' '))"
+          ;;
+        3)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE deferred — another reconcile run holds the scoped lock; this roll made no mapping writes (next roll retries)"
+          ;;
+        *)
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE INCOMPLETE (rc=$_RR_RC) — mappings were NOT fully reconciled; pending entries and counts:"
+          grep -E 'pending |changed=|INCOMPLETE|ABORTING' "$_RR_LOG" 2>/dev/null | tail -12 | sed 's/^/    /'
+          echo "[apply-fleet-standards] RR_AGENT_MAP_RECONCILE log: $_RR_LOG"
+          ;;
+      esac
     fi
+    unset _RR_RECON_SH _RR_RC _RR_COUNTS
   fi
-  unset _RR_SEED_SH
 fi
+
+# ─── LEAN BOOTSTRAP: pointerize managed blocks (runs LAST, after every stamp) ─
+#
+# WHY HERE. Every stamper above is append-and-guard: it writes its block once,
+# then `grep -qF "<!-- NAME_V1 -->"` makes every later roll a no-op. That is
+# correct for correctness and wrong for SIZE — the full rule text lands in
+# AGENTS.md, which is re-billed to the model on EVERY turn, and once it is there
+# no stamper ever revisits it. Moving a block out by hand does not hold either:
+# the guard stops matching and the next roll re-appends the whole thing.
+#
+# So the sweep runs at the END of the roll, after every block exists, and
+# rewrites the ones that are still full text as compact POINTERS whose full text
+# it first writes to this box's master-files reference. Measured on one live box
+# (2026-09-18): AGENTS.md 92,068 -> 64,159 characters, 25 blocks pointerized,
+# zero content lost, second run byte-identical.
+#
+# WHAT IT WILL NOT TOUCH
+#   - a block already written as a pointer (no double-work, no drift)
+#   - a block under OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS (default 800) — already lean
+#   - any sentinel that owns a matching `<!-- END NAME -->`: those blocks
+#     (PRESENTATION_ROUTING_REFLEX_*, SKILL_INTENT_ROUTING_REFLEX_*,
+#     CEO_ROUTING_NO_LOOPHOLES_*) are rewritten WHOLESALE by the strip/upgrade
+#     branches above, which regex on that pair. Pointerizing one would be undone
+#     on the next roll at best, and orphan the pair at worst.
+#   - anything at all when the box sets mode=full (see lib-bootstrap-pointer.sh)
+#
+# NON-FATAL BY DESIGN. A failure here leaves a correct, merely larger AGENTS.md.
+# That must never fail a roll, so every exit path below returns success.
+_BP_LIB="$(dirname "${BASH_SOURCE[0]}")/lib-bootstrap-pointer.sh"
+if [ -f "$_BP_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_BP_LIB"
+  _BP_MODE="$(bp_mode)"
+  if [ "$_BP_MODE" = "full" ]; then
+    echo "[apply-fleet-standards] bootstrap pointer mode=full — leaving managed blocks verbatim"
+  else
+    _BP_REF="$(bp_reference_for AGENTS.md)"
+    for _bp_target in "$AGENTS_FILE" "$AGENTS_FILE_EARLY"; do
+      [ -n "$_bp_target" ] && [ -f "$_bp_target" ] || continue
+      _BP_OUT="$(python3 "$(dirname "${BASH_SOURCE[0]}")/bootstrap-pointerize.py" sweep \
+                   --bootstrap "$_bp_target" --ref-file "$_BP_REF" 2>&1)" || true
+      _BP_STATUS="$(printf '%s' "$_BP_OUT" | sed -n 's/.*"status": "\([a-z-]*\)".*/\1/p' | head -1)"
+      case "$_BP_STATUS" in
+        written)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") $(printf '%s' "$_BP_OUT" | sed -n 's/.*"before_chars": \([0-9]*\).*/\1/p' | head -1) -> $(printf '%s' "$_BP_OUT" | sed -n 's/.*"after_chars": \([0-9]*\).*/\1/p' | head -1) chars; full text in $_BP_REF"
+          ;;
+        unchanged)
+          echo "[apply-fleet-standards] lean-bootstrap: $(basename "$_bp_target") already compact — no-op"
+          ;;
+        *)
+          echo "[apply-fleet-standards] lean-bootstrap: SKIPPED for $(basename "$_bp_target") (status=${_BP_STATUS:-unknown}) — file left unchanged, roll continues"
+          ;;
+      esac
+      # The same workspace can be reached by both variables; sweep it once.
+      [ "$AGENTS_FILE" = "$AGENTS_FILE_EARLY" ] && break
+    done
+    unset _BP_REF _BP_OUT _BP_STATUS _bp_target
+  fi
+  unset _BP_MODE
+fi
+unset _BP_LIB
 
 echo ""
 echo "[apply-fleet-standards] DONE"

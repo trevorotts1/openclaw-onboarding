@@ -147,7 +147,7 @@ assigned. Always honor the workspace SOUL.md mission and USER.md values.
 
 Route Skill-61 fix-class proposals to the openclaw-maintenance department (the
 Skill-61 owner) and repo issues to the operator; escalate to the Dispatcher (who
-pages the Operator `5252140759`) any pattern that indicates a fleet-wide risk —
+pages the Operator) any pattern that indicates a fleet-wide risk —
 always after the three-tier order has run on the underlying tickets (outcome (b) to
 the client's agent, then the rescue AI's self-fix via our access), with what was
 tried and why. Never gate the live rescue — QC is retrospective and must never block

@@ -1,5 +1,15 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
+## v2.0.5 - 2026-10-06 - follow Skill 47's adapters onto the Skill 74 transport
+
+- `scripts/test_kie_adapter_resultjson_decode.py` still imported `_decode_result_json` and the old poll methods (`_poll_gemini_omni`, `_poll_veo`, `_poll_task`), which Skill 47 v15.1.0 removed when its adapters moved onto Skill 74. It is now the same test as Skill 47's updated copy: it proves the result file comes out of a recordInfo response whose `resultJson` is a JSON string (image, gemini-omni-video, the veo3_fast legacy route) and that malformed or empty `resultJson` fails cleanly, over a fake Skill 74 transport (no network, no key).
+- `qc-facebook-ad-generator.sh` now runs that test, so a future change to the Skill 47 adapters cannot silently break Skill 48 again.
+- No other Skill 48 code or test uses a removed Skill 47 symbol (checked by parsing every Python file in the skill for imports, attributes, names and definitions of the removed names).
+## v2.0.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- Credit preflight: `_fetch_kie_balance` checks the BODY `code`; a short balance now reports the shortfall in credits; a paid run with no real `KIE_API_KEY` (unset or placeholder) now FAILS like Skill 47: `phase0_preflight` exits 4 and `kie_balance_preflight` returns the fatal AF-FBAD-KIE-BALANCE string so `--recover` parks it. Recovery fixtures use a stub key plus a stubbed `_fetch_kie_balance`; CI GOOD/BAD runs go through `test-fixtures/run-foreman-stubbed.py`. Credits per USD is 200 (verified kie.ai/pricing "1 credit ~= $0.005"), placeholder keys are rejected via the shared secret canon. New probe in `test_ad_preflight.py`.
+- `GPT_IMAGE_MODEL_PREFIX` documented as the family gate; the dispatched id is Skill 66 `gpt-image-2-5-sunburst-*` (AGENTS.md N43). Docs and test labels aligned.
+
 ## 1.2.5 — 2026-07-05
 - scripts/ad_build_check.py (FIX-XC-03i): the independent-QC gate no longer lets a scorecard's SELF-DECLARED `average` override the value COMPUTED from its own category scores — the pass test always uses the computed average, and a declared-vs-computed disagreement > 0.05 is itself an autofail (a fabricated top-line, e.g. all categories 7.0 with a declared 9.9, is now caught instead of sailing through). The overlay count/wordcount gates now MEASURE the real `s1-overlays.md` deliverable (new `measure_overlays()`) and fail on any receipt-vs-measured mismatch, so a receipt that lies within-range can no longer pass. Unmeasurable judgment fields (on_mission, audience_wording_preserved, styleblock_ok) intentionally remain boolean.
 - scripts/ad_build_check.py (FIX-S36-45 iii): `_chk_qc_independence` hardened — maker and grader must be REGISTERED role slugs (AD-PIPELINE-MANIFEST `roles[].id`, loaded via the new `registered_role_slugs()`), and the scorecard's `grader_session_id` is cross-checked against the run ledger's independently-recorded `qc_sessions[]` (same gate / session id / grader). A free-text reviewer or a grade the ledger never saw now fails closed.
@@ -18,3 +28,7 @@
 - tools/ghl_media.py: rewrote the stale module docstring to describe this skill's GoHighLevel media-hosting role and the CLIENT's own LOCATION credentials (removed the misleading Skill-06 funnel narrative and the "operator's own keys" claim that contradicted the client-keys contract); made the location-id docstring canonical-first (`GOHIGHLEVEL_LOCATION_ID`/`GHL_LOCATION_ID`).
 - tools/ghl_media.py: removed dead Skill-06 funnel code unused by this skill (`build_prompts_json`, `generate_images`, `kie_generate_path`, `image_tag`, `build_image_manifest` and their dead constants/imports); the media host (`upload_media`, `create_media_folder`, `resolve_location_pit`, `resolve_location_id`, `verify_png`) is unchanged.
 - INSTALL.md / DEPENDENCY-MANIFEST.md: canonicalized the documented location-id env var to `GOHIGHLEVEL_LOCATION_ID` (preferred) with the `GHL_LOCATION_ID` alias, matching the code's canonical-first resolution.
+
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

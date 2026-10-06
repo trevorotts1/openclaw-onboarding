@@ -21,8 +21,12 @@
 #   - Scans the canonical master-files ZHC departments/ tree, workspaces/command-center/,
 #     and legacy workspace/departments/ for dept folders — canonical wins on slug collision
 #     (see the "ONE TRUE RULE" comment above DEPT_SCAN_ROOTS for the full priority order)
-#   - For each dept, adds (or updates) an entry in openclaw.json's agents.list[]
-#     following the schema in 32-command-center-setup/INSTALL.md Phase 4
+#   - For each dept, adds (or updates) an entry in openclaw.json's CANONICAL
+#     agents.entries{} roster (keyed by agent id), falling back to the legacy
+#     agents.list[] array ONLY on a genuinely pre-migration config that already
+#     carries it. It NEVER creates agents.list on a config that lacks it: the
+#     modern schema is strict and that one key invalidates the whole config
+#     ("agents: Unrecognized key: \"list\"").
 #   - Atomic write (tmp file + rename); timestamped backup before mutation
 #   - Idempotent — re-running adds zero duplicates; updates existing entries
 #     in-place if workspace path or pretty name changes
@@ -97,7 +101,15 @@ fi
 # pre-interview is exactly the "rogue/default board" failure. REPORT and exit 0
 # (not an error) so callers/crons see "interview not completed yet", not a crash.
 # --dry-run is exempt (it mutates nothing and is used for inspection).
-_MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+# Same resolution as run-full-install.sh: the workspace that ACTUALLY holds the
+# file wins over the one openclaw.json configures (resolve-oc-root.sh is
+# already sourced above).
+if declare -F resolve_build_state_workspace >/dev/null 2>&1 \
+   && _MATERIALIZE_WS="$(resolve_build_state_workspace)"; then
+  _MATERIALIZE_STATE_FILE="$_MATERIALIZE_WS/.workforce-build-state.json"
+else
+  _MATERIALIZE_STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
+fi
 if [[ $DRY_RUN -eq 0 ]]; then
   if [[ ! -f "$_MATERIALIZE_STATE_FILE" ]] || \
      [[ "$(python3 -c "import json,sys; sys.stdout.write('true' if json.load(open('$_MATERIALIZE_STATE_FILE')).get('interviewComplete') is True else 'false')" 2>/dev/null || echo false)" != "true" ]]; then
@@ -187,6 +199,26 @@ fi
 # the canonical copy.
 DEPT_SCAN_ROOTS=()
 
+# Root 0: the build state's own companyRoot -- the build knows where it wrote
+# (build-workforce.py resolve_company_paths records it). Covers layouts the
+# fixed roots below do not, e.g. <workspace>/zero-human-company on a Contabo
+# /home/node box. Skipped when it names a different company than the slug.
+if [[ -f "$_MATERIALIZE_STATE_FILE" ]]; then
+  _state_company_root="$(python3 -c '
+import json, os, sys
+try:
+    r = json.load(open(sys.argv[1])).get("companyRoot") or ""
+except (OSError, ValueError, AttributeError):
+    r = ""
+sys.stdout.write(r if isinstance(r, str) and os.path.isabs(r) else "")
+' "$_MATERIALIZE_STATE_FILE" 2>/dev/null || true)"
+  if [[ -n "$_state_company_root" && -d "$_state_company_root/departments" ]] && \
+     [[ -z "$_MATERIALIZE_COMPANY_SLUG" || "$(basename "$_state_company_root")" == "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+    DEPT_SCAN_ROOTS+=("$_state_company_root/departments")
+    echo "[materialize-dept-agents] including build-state companyRoot dept path: $_state_company_root/departments"
+  fi
+fi
+
 # Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
 # authoritative source and must win any slug collision under setdefault().
 # Scoped to THIS BOX'S OWN company (_MATERIALIZE_COMPANY_SLUG, resolved
@@ -195,7 +227,8 @@ DEPT_SCAN_ROOTS=()
 # the box's own slug could not be resolved (already warned above).
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
-    "/data/openclaw-master-files/zero-human-company"; do
+    "/data/openclaw-master-files/zero-human-company" \
+    "$OC_ROOT/workspace/zero-human-company"; do
   [[ -d "$_mf_root" ]] || continue
   if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
     _dept_d="$_mf_root/$_MATERIALIZE_COMPANY_SLUG/departments"
@@ -227,10 +260,19 @@ export OC_CONFIG_FILE="$CONFIG_FILE"
 export OC_ROOT_PATH="$OC_ROOT"
 export OC_DRY_RUN="$DRY_RUN"
 export OC_DEPT_ROOTS="${DEPT_SCAN_ROOTS[*]}"
+# The Command Center DB, resolved ONCE by the shared resolver
+# (shared-utils/resolve_db.py: env/.env.local first, 0-byte decoys skipped,
+# layout candidates only with a `workspaces` table). Empty when unresolvable;
+# both Python blocks below then fall back to their own candidate lists.
+_RESOLVE_DB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/resolve_db.py"
+OC_CC_DB=""
+[[ -f "$_RESOLVE_DB" ]] && OC_CC_DB="$(python3 "$_RESOLVE_DB" --path 2>/dev/null || true)"
+export OC_CC_DB
 
 python3 <<'PYEOF'
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -239,6 +281,27 @@ CONFIG_FILE = os.environ["OC_CONFIG_FILE"]
 OC_ROOT = os.environ["OC_ROOT_PATH"]
 DRY_RUN = os.environ.get("OC_DRY_RUN", "0") == "1"
 DEPT_ROOTS = os.environ["OC_DEPT_ROOTS"].split()
+SCRIPTS_DIR = os.environ.get("OC_SCRIPTS_DIR", "")
+
+# STRIP A DEPT AFFIX, nothing else.
+#
+# A department FOLDER can be named "<name>-dept" (the same key-vs-folder shape
+# that produced "-dept" slugs in phase 6c). This block keys the registry on
+# f"dept-{slug}", so that folder became "dept-app-development-dept" -- 22 such
+# rows on a client box, none of which the parity guard could match to its
+# workspace.
+#
+# Deliberately NOT canonical_dept_slug(): every OTHER normalisation (case,
+# spaces, "&", collision detection) is already done downstream where the
+# entries key is built, and doing it here instead drops folders that step
+# knows how to rescue. Affix only.
+def _strip_dept_affix(raw):
+    t = (raw or "").strip()
+    if t.lower().startswith("dept-"):
+        t = t[5:]
+    if t.lower().endswith("-dept"):
+        t = t[:-5]
+    return t.strip("-") or (raw or "")
 
 # Pretty-name map: dept slug → friendly C-suite-style role title.
 # For any slug not listed, we titlecase the slug ('-' → ' ').
@@ -292,6 +355,42 @@ def is_valid_dept_dir(p: Path) -> bool:
 # first — canonical master-files ZHC build output, then the command-center
 # workspace root, then the legacy workspace/departments root last — is the
 # one that sticks. Do not reorder DEPT_ROOTS without keeping this rule true.
+def _live_workspace_slugs():
+    """Canonical slugs of workspaces that are on the board, or None if unknown.
+
+    None means "could not determine" -- the caller then writes every discovered
+    department, i.e. exactly the pre-v25.1.69 behaviour. Never fail closed here:
+    a missing DB must not silently empty a client's runtime roster.
+    """
+    import sqlite3
+    for cand in (os.environ.get("OC_CC_DB"),
+                 os.environ.get("DASHBOARD_DB_PATH"), os.environ.get("DATABASE_PATH"),
+                 "/data/projects/command-center/mission-control.db",
+                 "~/projects/command-center/mission-control.db"):
+        cand = os.path.expanduser(cand.strip()) if cand else ""
+        if not cand or not os.path.isfile(cand) or os.path.getsize(cand) == 0:
+            continue
+        try:
+            con = sqlite3.connect(cand)
+            cols = [r[1] for r in con.execute("PRAGMA table_info(workspaces)")]
+            if not cols:
+                con.close()
+                continue
+            where = " WHERE archived_at IS NULL" if "archived_at" in cols else ""
+            rows = con.execute("SELECT slug, id FROM workspaces" + where).fetchall()
+            con.close()
+        except sqlite3.Error:
+            continue
+        out = set()
+        for slug, wid in rows:
+            for v in (slug, wid):
+                c = _strip_dept_affix(v).lower() if isinstance(v, str) else ""
+                if c:
+                    out.add(c)
+        return out or None
+    return None
+
+
 discovered = {}  # slug → absolute workspace path
 for root in DEPT_ROOTS:
     rp = Path(root)
@@ -300,11 +399,13 @@ for root in DEPT_ROOTS:
     for child in sorted(rp.iterdir()):
         if not is_valid_dept_dir(child):
             continue
-        discovered.setdefault(child.name, str(child.resolve()))
+        # Canonical slug, never the raw folder name: a "<name>-dept" folder
+        # must not become the agent id "dept-<name>-dept".
+        discovered.setdefault(_strip_dept_affix(child.name), str(child.resolve()))
 
 if not discovered:
     print(f"[materialize-dept-agents] WARN: no department folders found under {DEPT_ROOTS} — nothing to materialize")
-    print("added 0 agents, updated 0 agents, total in agents.list: <unchanged>")
+    print("added 0 agents, updated 0 agents, total in roster: <unchanged>")
     sys.exit(0)
 
 # ─── Load openclaw.json ─────────────────────────────────────────────────────
@@ -315,25 +416,214 @@ except json.JSONDecodeError as e:
     print(f"[materialize-dept-agents] FATAL: openclaw.json is malformed JSON: {e}", file=sys.stderr)
     sys.exit(1)
 
-if "agents" not in cfg or not isinstance(cfg["agents"], dict):
-    cfg["agents"] = {"list": []}
-if "list" not in cfg["agents"] or not isinstance(cfg["agents"]["list"], list):
-    cfg["agents"]["list"] = []
+# ─── Resolve the roster shape: agents.entries (canonical) vs agents.list ────
+# THE BUG THIS FIXES (2026-09-04): this block used to create
+# cfg["agents"]["list"] UNCONDITIONALLY. A schema-valid modern OpenClaw config
+# CANNOT CONTAIN agents.list -- AgentsSchema is .strict() with exactly
+# {ownership, defaults, entries} -- so that single key invalidates the whole
+# config:
+#     x openclaw.json:2 - agents: Unrecognized key: "list"
+# On a migrated box (agents.entries) every routine `update-skills.sh` run
+# therefore INVALIDATED the client's config: the gateway could no longer reload,
+# and the remedy the validator prints (`openclaw doctor --fix`) has been
+# observed on this fleet to restore an older last-known-good and silently DROP
+# departments. Reproduced end-to-end on 2026-09-04: a modern fixture validated
+# rc=0 before this script and rc=1 (`Unrecognized key: "list"`) after it.
+#
+# The rules below were each verified against openclaw 2026.9.1's own zod schema
+# (dist/zod-schema-*.js) AND with `openclaw config validate` on fixtures:
+#   * entries WINS when both shapes are present -- the same precedence the
+#     gateway applies at boot ("Removed agents.list because canonical
+#     agents.entries is already set").
+#   * legacy agents.list is written ONLY when the config ALREADY carries it and
+#     has NO entries. We NEVER create agents.list on a config that lacks it.
+#   * in entries mode the agent id is the KEY. An "id" key INSIDE an entry is
+#     rejected -- AgentEntryConfigSchema is AgentEntrySchema.omit({id}).strict():
+#       x agents.entries.main: Unrecognized key: "id"
+#   * in entries mode the memory-search block lives at entry.memory.search.
+#     A top-level "memorySearch" key is rejected the same way:
+#       x agents.entries.main: Unrecognized key: "memorySearch"
+#   * entries KEYS must match ^[a-z0-9_][a-z0-9_-]{0,63}$ (case-INSENSITIVE),
+#     and any two keys that normalize to the same agent id are a hard schema
+#     error ("resolve to the same agent id ...; rename one key"). This is not
+#     theoretical: the fleet's Presentations department folder is capitalized
+#     ("departments/Presentations") while its migrated entries key is lowercase
+#     ("dept-presentations"), so a naive f"dept-{slug}" key would collide.
+ENTRIES_KEY_RE = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,63}$", re.IGNORECASE)
+_RUNTIME_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.IGNORECASE)
+_INVALID_ID_CHARS_RE = re.compile(r"[^a-z0-9_-]+")
 
-agent_list = cfg["agents"]["list"]
-by_id = {a.get("id"): a for a in agent_list if isinstance(a, dict) and a.get("id")}
+
+def normalize_agent_id(value: str) -> str:
+    """Mirror of OpenClaw's normalizeAgentIdStrict()
+    (packages/normalization-core/src/agent-id.ts): trim, lowercase, replace runs
+    of invalid characters with '-', strip leading/trailing '-', cap at 64 chars.
+    Returns "" when the id is unrepresentable. Writing THIS as the entries key
+    means the key we write is exactly the id the gateway resolves at runtime.
+    """
+    trimmed = (value or "").strip()
+    lowered = trimmed.lower()
+    if _RUNTIME_ID_RE.match(trimmed):
+        return lowered
+    return _INVALID_ID_CHARS_RE.sub("-", lowered).lstrip("-").rstrip("-")[:64]
+
+
+agents_cfg = cfg.get("agents")
+if not isinstance(agents_cfg, dict):
+    agents_cfg = {}
+    cfg["agents"] = agents_cfg
+
+_cfg_entries = agents_cfg.get("entries")
+_cfg_list = agents_cfg.get("list")
+
+if isinstance(_cfg_entries, dict) and _cfg_entries:
+    ROSTER_MODE = "entries"
+elif isinstance(_cfg_list, list):
+    ROSTER_MODE = "list"
+else:
+    # Neither shape present (or entries is an empty dict, which is itself
+    # schema-invalid: "agents.entries must contain at least one configured
+    # agent"). Modern is the default -- we never invent agents.list.
+    ROSTER_MODE = "entries"
+
+if ROSTER_MODE == "entries":
+    if not isinstance(agents_cfg.get("entries"), dict):
+        agents_cfg["entries"] = {}
+    roster = agents_cfg["entries"]  # LIVE dict inside cfg -- never a copy
+    ROSTER_LABEL = "agents.entries"
+    if isinstance(_cfg_list, list):
+        print(
+            "[materialize-dept-agents] WARN: this config carries BOTH agents.entries "
+            f"({len(roster)} entries) and a legacy agents.list ({len(_cfg_list)} items). "
+            "Registering into agents.entries (the canonical roster the gateway keeps). "
+            "The stale agents.list is left EXACTLY as found -- this script never deletes "
+            "a key it did not create -- but that key makes the config fail "
+            '`openclaw config validate` (agents: Unrecognized key: "list"). '
+            "Clear it with the atomic migration: update-skills.sh --agents-list-migrate",
+            file=sys.stderr,
+        )
+else:
+    roster = agents_cfg["list"]  # LIVE list inside cfg -- never a copy
+    ROSTER_LABEL = "agents.list"
+    print(
+        "[materialize-dept-agents] legacy pre-migration config detected "
+        "(agents.list present, no agents.entries) -- registering into agents.list[] "
+        "and NOT creating agents.entries."
+    )
+
+# by_id maps ROSTER KEY -> the LIVE entry dict inside cfg (mutating one of these
+# mutates cfg, which is what gets written back). key_by_norm lets a
+# differently-cased existing key be UPDATED instead of colliding with a new one.
+if ROSTER_MODE == "entries":
+    by_id = {k: v for k, v in roster.items() if isinstance(v, dict)}
+    key_by_norm = {}
+    for _k in by_id:
+        key_by_norm.setdefault(normalize_agent_id(_k), _k)
+else:
+    by_id = {a.get("id"): a for a in roster if isinstance(a, dict) and a.get("id")}
+    key_by_norm = {}
+
+claimed_norms = {}  # entries mode: normalized id -> dept slug that claimed it
+
+
+def default_memory_search():
+    """A fresh (never shared) default memory-search block."""
+    return {
+        "extraPaths": [],
+        "multimodal": {"enabled": False, "modalities": []},
+        "fallback": "openai",
+    }
+
+
+def memory_search_of(entry):
+    """The entry's LIVE memory-search dict, or None. Never returns a copy --
+    a copy here would make every migration below mutate a throwaway and still
+    print success."""
+    if ROSTER_MODE == "entries":
+        mem = entry.get("memory")
+        if isinstance(mem, dict) and isinstance(mem.get("search"), dict):
+            return mem["search"]
+        return None
+    ms = entry.get("memorySearch")
+    return ms if isinstance(ms, dict) else None
+
+
+def install_memory_search(entry, block):
+    """Attach a memory-search block where THIS roster shape expects it:
+    entry.memory.search for agents.entries, entry.memorySearch for agents.list."""
+    if ROSTER_MODE == "entries":
+        mem = entry.get("memory")
+        if not isinstance(mem, dict):
+            mem = {}
+            entry["memory"] = mem
+        mem["search"] = block
+    else:
+        entry["memorySearch"] = block
 
 added = 0
 updated = 0
 
-for slug, workspace_path in discovered.items():
+manifest_rows = []  # (roster_key, pretty name, workspace path, dept slug)
+
+# A department with no LIVE workspace row gets no runtime entry. Measured on a
+# client box: entries were written for departments whose workspace was archived
+# or absent, and two of them were attributed to the `default` workspace. Absent
+# or unreadable DB => write everything, exactly as before: the folder scan is
+# the primary source and this is an extra guard, never a new dependency.
+_live = _live_workspace_slugs()
+for slug, workspace_path in sorted(discovered.items()):
+    if _live is not None and slug not in _live:
+        print(f"[materialize-dept-agents] SKIP {slug}: no ACTIVE workspace row on the board -- no runtime entry written (archived, or never seeded)")
+        continue
     agent_id = f"dept-{slug}"
     name = pretty_name(slug)
+
+    # ── Roster key ──────────────────────────────────────────────────────────
+    # list mode: the id lives INSIDE the record, unchanged from before.
+    # entries mode: the KEY is the id, and it must satisfy the schema pattern.
+    #   * reuse an existing key that normalizes to the same agent id (e.g. an
+    #     already-migrated lowercase "dept-presentations" for the capitalized
+    #     "Presentations" folder) so we UPDATE it instead of adding a second key
+    #     that the schema rejects as a duplicate agent id;
+    #   * a slug that cannot be represented at all is FATAL, never a silent drop.
+    if ROSTER_MODE == "entries":
+        norm_id = normalize_agent_id(agent_id)
+        if not norm_id or not ENTRIES_KEY_RE.match(norm_id):
+            print(
+                f"[materialize-dept-agents] FATAL: department folder '{slug}' yields agent id "
+                f"'{agent_id}', which cannot be represented as an agents.entries key "
+                f"(schema pattern ^[a-z0-9_][a-z0-9_-]{{0,63}}$). Rename the department folder "
+                f"to a slug made of letters, digits, '_' and '-'. REFUSING to continue -- a "
+                f"department is never silently dropped from the roster.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        prior_slug = claimed_norms.get(norm_id)
+        if prior_slug is not None and prior_slug != slug:
+            print(
+                f"[materialize-dept-agents] FATAL: department folders '{prior_slug}' and "
+                f"'{slug}' both normalize to the agent id '{norm_id}'. OpenClaw rejects two "
+                f"agents.entries keys that resolve to the same agent id. Rename one of the "
+                f"department folders. REFUSING to continue -- a department is never silently "
+                f"dropped from the roster.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        claimed_norms[norm_id] = slug
+        roster_key = key_by_norm.get(norm_id, norm_id)
+    else:
+        roster_key = agent_id
     # FIX (v12.9.12): derive agentDir from OC_ROOT/agents/<agent-id> so the
     # routing agent can resolve this dept agent at runtime. Without agentDir
     # the gateway cannot locate the agent's state directory and the routing
     # handoff silently fails.
-    agent_dir = os.path.join(OC_ROOT, "agents", agent_id)
+    # It is keyed on roster_key, NOT on the raw f"dept-{slug}": in entries mode
+    # those differ for a capitalized dept folder, and an agentDir naming a
+    # different id than the roster key is incoherent on a case-sensitive
+    # filesystem (the scaffolder, the manifest and agentDir must all follow the
+    # one id the gateway actually resolves). In legacy list mode roster_key IS
+    # agent_id, so this is a no-op there.
+    agent_dir = os.path.join(OC_ROOT, "agents", roster_key)
 
     # BUG FIX (v12.9.4): multimodal.enabled MUST be false when the configured
     # embedding provider is text-only (openai-compatible / text-embedding-3-small).
@@ -341,32 +631,74 @@ for slug, workspace_path in discovered.items():
     # provider adapter that supports multimodal embeddings" on EVERY message, and
     # fallback:"none" silently dropped all memory access.  Safe defaults: multimodal
     # disabled, fallback "openai" (matches the text embedding provider).
-    desired_entry = {
-        "id": agent_id,
-        "name": name,
-        "workspace": workspace_path,
-        "agentDir": agent_dir,
-        "memorySearch": {
-            "extraPaths": [],
-            "multimodal": {"enabled": False, "modalities": []},
-            "fallback": "openai",
-        },
-        # NOTE: "wiki" is NOT a valid agents.list[] key in the strict OpenClaw
-        # config schema (agents.list entries are z.core.$strict).  It was here
-        # previously and caused "Unrecognized key: wiki" on every dept agent,
-        # breaking openclaw gateway status / openclaw agents list.  Removed.
-        # Per-agent doc/wiki-search capability is expressed via memorySearch.
-    }
+    # NOTE: "wiki" is NOT a valid agent-entry key in the strict OpenClaw config
+    # schema (both agents.list entries and agents.entries values are strict). It
+    # was here previously and caused "Unrecognized key: wiki" on every dept
+    # agent, breaking openclaw gateway status / openclaw agents list. Removed.
+    # Per-agent doc/wiki-search capability is expressed via the memory-search
+    # block instead.
+    #
+    # In entries mode the id is DELIBERATELY absent from the record: the key IS
+    # the id, and an "id" key inside an entry fails validation with
+    # `agents.entries.<id>: Unrecognized key: "id"`. The memory-search block
+    # likewise moves to entry.memory.search, because a top-level "memorySearch"
+    # key fails the same way.
+    if ROSTER_MODE == "entries":
+        desired_entry = {
+            "name": name,
+            "workspace": workspace_path,
+            "agentDir": agent_dir,
+            "memory": {"search": default_memory_search()},
+        }
+    else:
+        desired_entry = {
+            "id": agent_id,
+            "name": name,
+            "workspace": workspace_path,
+            "agentDir": agent_dir,
+            "memorySearch": default_memory_search(),
+        }
 
-    existing = by_id.get(agent_id)
+    existing = by_id.get(roster_key)
     if existing is None:
-        agent_list.append(desired_entry)
-        by_id[agent_id] = desired_entry
+        # Already registered under ANOTHER key that serves this same workspace?
+        # That entry IS this department's registration: never add a duplicate
+        # beside it, and never touch it (its model/name stay the owner's).
+        _ws_real = os.path.realpath(workspace_path)
+        _other = next((k for k, v in by_id.items() if isinstance(v, dict) and v.get("workspace")
+                       and os.path.realpath(os.path.expanduser(v["workspace"])) == _ws_real), None)
+        if _other is not None:
+            print(f"  = kept    {_other:40s} (already serves {workspace_path}; no duplicate {roster_key})")
+            continue
+
+    else:
+        # An agent already running from a workspace that still exists stays there.
+        # A rebuild that wrote a second, sparse company tree (scanned first as the
+        # most authoritative root) re-pointed every department agent to it and the
+        # workforce lost its SOPs. Only an entry whose workspace is gone moves.
+        _cur_ws = existing.get("workspace")
+        if _cur_ws and _cur_ws != workspace_path and os.path.isdir(os.path.expanduser(_cur_ws)):
+            print(f"  = kept    {roster_key:40s} (runs from {_cur_ws}; not re-pointed to {workspace_path})")
+            workspace_path = _cur_ws
+
+    manifest_rows.append((roster_key, name, workspace_path, slug))
+
+    if existing is None:
+        if ROSTER_MODE == "entries":
+            roster[roster_key] = desired_entry
+            key_by_norm.setdefault(norm_id, roster_key)
+        else:
+            roster.append(desired_entry)
+        by_id[roster_key] = desired_entry
         # Ensure agentDir exists on disk so the gateway can resolve it at startup.
         os.makedirs(agent_dir, exist_ok=True)
         added += 1
-        print(f"  + added   {agent_id:40s} → {workspace_path}")
+        print(f"  + added   {roster_key:40s} → {workspace_path}")
     else:
+        # Older builders registered the canonical agentDir without creating it.
+        # Repair only our canonical runtime location; preserve custom owner paths.
+        if existing.get("agentDir") == agent_dir:
+            os.makedirs(agent_dir, exist_ok=True)
         # Preserve any operator-curated fields on the existing entry that we
         # don't override (e.g. custom memorySearch.extraPaths, telegram bot
         # binding). Only update fields where we're authoritative.
@@ -377,35 +709,68 @@ for slug, workspace_path in discovered.items():
         if existing.get("workspace") != workspace_path:
             existing["workspace"] = workspace_path
             changed = True
-        # Ensure memorySearch block exists (don't overwrite curated extras).
+        # IDEMPOTENT MIGRATION (2026-09-04): in entries mode a top-level
+        # "memorySearch" key is a HARD schema error
+        # (`agents.entries.<id>: Unrecognized key: "memorySearch"`). Earlier
+        # versions of THIS script wrote exactly that key, so move it to its
+        # canonical home at entry.memory.search rather than leaving the entry
+        # invalid. Existing memory.search fields win; nothing is discarded.
+        if ROSTER_MODE == "entries" and isinstance(existing.get("memorySearch"), dict):
+            legacy_ms = existing.pop("memorySearch")
+            mem = existing.get("memory")
+            if not isinstance(mem, dict):
+                mem = {}
+                existing["memory"] = mem
+            if isinstance(mem.get("search"), dict):
+                for _lk, _lv in legacy_ms.items():
+                    mem["search"].setdefault(_lk, _lv)
+            else:
+                mem["search"] = legacy_ms
+            changed = True
+        # Ensure the memory-search block exists (don't overwrite curated extras).
         # NOTE: "wiki" backfill deliberately removed -- "wiki" is not a valid
-        # agents.list[] key in the strict OpenClaw schema and causes
+        # agent-entry key in the strict OpenClaw schema and causes
         # "Unrecognized key: wiki" / Invalid input on every dept agent.
         # Also strip any stale "wiki" key left by earlier runs so existing
         # boxes become schema-valid after the next materialize run.
-        existing.setdefault("memorySearch", desired_entry["memorySearch"])
+        #
+        # memory_search_of() hands back the LIVE dict inside `existing` (which is
+        # itself the LIVE record inside cfg), so every migration below mutates
+        # the object that actually gets written. Returning copies here is the
+        # classic silent no-op: the migrations "succeed", the file is rewritten
+        # unchanged, and the run still reports success.
+        existing_ms = memory_search_of(existing)
+        if existing_ms is None:
+            existing_ms = default_memory_search()
+            install_memory_search(existing, existing_ms)
+            changed = True
         # IDEMPOTENT MIGRATION (v12.9.4): force multimodal.enabled=false on any
         # existing agent where it was previously set to true -- that was the broken
         # default that caused fleet-wide memory failures.  Re-running materialize
         # corrects all existing boxes without a separate migration step.
-        existing_mm = existing.get("memorySearch", {}).get("multimodal", {})
-        if existing_mm.get("enabled") is True:
-            existing["memorySearch"]["multimodal"] = {"enabled": False, "modalities": []}
+        existing_mm = existing_ms.get("multimodal")
+        if isinstance(existing_mm, dict) and existing_mm.get("enabled") is True:
+            existing_ms["multimodal"] = {"enabled": False, "modalities": []}
             changed = True
-        elif "multimodal" not in existing.get("memorySearch", {}):
-            existing["memorySearch"]["multimodal"] = desired_entry["memorySearch"]["multimodal"]
+        elif "multimodal" not in existing_ms:
+            existing_ms["multimodal"] = {"enabled": False, "modalities": []}
             changed = True
         # IDEMPOTENT MIGRATION (v12.9.4): force fallback to "openai" if currently
         # "none" or absent -- "none" silently drops all memory access on search errors.
-        existing_fb = existing.get("memorySearch", {}).get("fallback")
-        if existing_fb in (None, "none"):
-            existing["memorySearch"]["fallback"] = "openai"
+        if existing_ms.get("fallback") in (None, "none"):
+            existing_ms["fallback"] = "openai"
             changed = True
-        if "extraPaths" not in existing.get("memorySearch", {}):
-            existing["memorySearch"]["extraPaths"] = []
+        if "extraPaths" not in existing_ms:
+            existing_ms["extraPaths"] = []
             changed = True
         if "wiki" in existing:
             del existing["wiki"]
+            changed = True
+        # entries mode: the key IS the id, so an "id" key inside the record is a
+        # hard schema error (`agents.entries.<id>: Unrecognized key: "id"`).
+        # Strip one left by an older version of this script.
+        if ROSTER_MODE == "entries" and "id" in existing:
+            del existing["id"]
             changed = True
         # IDEMPOTENT MIGRATION (v12.9.12): back-fill agentDir on entries written
         # before this version so existing boxes self-heal on the next materialize run.
@@ -415,15 +780,32 @@ for slug, workspace_path in discovered.items():
             changed = True
         if changed:
             updated += 1
-            print(f"  ~ updated {agent_id:40s} → {workspace_path}")
+            print(f"  ~ updated {roster_key:40s} → {workspace_path}")
         else:
-            print(f"  = no-op   {agent_id:40s} (already in sync)")
+            print(f"  = no-op   {roster_key:40s} (already in sync)")
 
-total = len(agent_list)
+# agents.ownership: the schema rejects a multi-agent roster that has neither
+# ownership="explicit" nor exactly one legacy default=true marker ("multi-agent
+# rosters require agents.ownership=\"explicit\" or one legacy default=true
+# marker"). Registering department agents is precisely what turns a single-agent
+# config into a multi-agent one, so set the key when -- and ONLY when -- our own
+# write would otherwise leave the config invalid. An ownership value that is
+# already present is never overwritten.
+if ROSTER_MODE == "entries" and len(roster) > 1 and "ownership" not in agents_cfg:
+    _marked = [k for k, v in roster.items() if isinstance(v, dict) and v.get("default") is True]
+    if not _marked:
+        agents_cfg["ownership"] = "explicit"
+        print(
+            '[materialize-dept-agents] set agents.ownership="explicit" -- the schema requires '
+            "it for a multi-agent roster and this run made the roster multi-agent. No existing "
+            "ownership value was overwritten."
+        )
+
+total = len(roster)
 
 if DRY_RUN:
     print(f"[materialize-dept-agents] DRY RUN — no write performed")
-    print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+    print(f"added {added} agents, updated {updated} agents, total in {ROSTER_LABEL}: {total}")
     sys.exit(0)
 
 # ─── Atomic write (tmp + rename) ────────────────────────────────────────────
@@ -443,18 +825,21 @@ except Exception as e:
     print(f"[materialize-dept-agents] FATAL: atomic write failed: {e}", file=sys.stderr)
     sys.exit(1)
 
-print(f"added {added} agents, updated {updated} agents, total in agents.list: {total}")
+print(f"added {added} agents, updated {updated} agents, total in {ROSTER_LABEL}: {total}")
 
 # ─── Emit a machine-readable manifest of discovered agents so the bash
 #     wrapper can call scaffold-agent-files.sh for each one. ────────────────
 manifest_path = os.path.join(os.path.dirname(CONFIG_FILE), ".materialize-dept-agents.manifest")
 try:
     with open(manifest_path, "w") as f:
-        for slug, workspace_path in discovered.items():
-            agent_id = f"dept-{slug}"
-            name = pretty_name(slug)
+        # manifest_rows carries the roster key ACTUALLY registered above -- not a
+        # recomputed f"dept-{slug}". In entries mode those differ whenever the
+        # dept folder is capitalized (departments/Presentations -> the migrated
+        # key dept-presentations), and the scaffolder + agentDir must follow the
+        # key that is really in the config, not a second, phantom id.
+        for roster_key, name, workspace_path, slug in manifest_rows:
             # Tab-separated: agent_id<TAB>name<TAB>workspace_path<TAB>dept_slug
-            f.write(f"{agent_id}\t{name}\t{workspace_path}\t{slug}\n")
+            f.write(f"{roster_key}\t{name}\t{workspace_path}\t{slug}\n")
     print(f"[materialize-dept-agents] wrote scaffolder manifest → {manifest_path}")
 except OSError as e:
     print(f"[materialize-dept-agents] WARN: could not write scaffolder manifest: {e}", file=sys.stderr)
@@ -466,10 +851,10 @@ if [[ $RC -ne 0 ]]; then
   exit $RC
 fi
 
-# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + symlinks ───
+# ─── Phase 2: scaffold per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT + shared copies ─
 # Trevor's agent-file architecture (v10.14.29):
-#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (one copy at
-#     $OC_ROOT/workspace/, each dept-head agent symlinks to them)
+#   - SHARED across all agents: USER.md, AGENTS.md, TOOLS.md (canonical at
+#     $OC_ROOT/workspace/, each dept-head agent holds a REAL-FILE copy -- N29)
 #   - PER-AGENT (each agent has its own): IDENTITY.md, SOUL.md, MEMORY.md,
 #     HEARTBEAT.md (in the agent's workspace folder)
 #   - Sub-agents (role folders inside a dept) are EXCLUDED — they have their
@@ -567,7 +952,8 @@ if not db_path:
         "/app/mission-control.db",
         "/data/projects/command-center/mission-control.db",
     ]:
-        if os.path.isfile(c):
+        # Never a 0-byte decoy (a stray `touch` shadowing the live board).
+        if os.path.isfile(c) and os.path.getsize(c) > 0:
             db_path = c
             break
 
@@ -576,6 +962,13 @@ if not db_path:
     sys.exit(0)
 
 # Read manifest written by Phase 1
+def _ws_has_archived_at(conn):
+    try:
+        return any(r[1] == "archived_at" for r in conn.execute("PRAGMA table_info(workspaces)"))
+    except Exception:
+        return False
+
+
 manifest_path = os.path.join(OC_ROOT, ".materialize-dept-agents.manifest")
 if not os.path.isfile(manifest_path):
     # Manifest was already consumed by Phase 2 scaffolder -- try workspaces table
@@ -583,6 +976,7 @@ if not os.path.isfile(manifest_path):
         db = sqlite3.connect(db_path)
         cur = db.execute(
             "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
+            + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
         rows = cur.fetchall()
         db.close()
@@ -604,6 +998,15 @@ total_healer = 0
 total_qc = 0
 total_research = 0
 total_da = 0
+skipped_archived = 0
+
+# archived_at is absent on older schemas; probe once rather than per workspace.
+try:
+    _HAS_ARCHIVED_AT = any(
+        r[1] == "archived_at" for r in db.execute("PRAGMA table_info(workspaces)")
+    )
+except Exception:
+    _HAS_ARCHIVED_AT = False
 
 for ws_id_or_none, dept_name, dept_slug in entries:
     if not dept_name:
@@ -620,6 +1023,26 @@ for ws_id_or_none, dept_name, dept_slug in entries:
         ws_id = row[0]
     else:
         ws_id = ws_id_or_none
+
+    # An ARCHIVED workspace gets nothing. Measured on a client box during a
+    # roll: 48 head/qc/research/devils-advocate rows were re-seeded into 12
+    # workspaces whose archived_at was set, because neither the workspaces
+    # query above nor the manifest path filtered on it. Archiving is the
+    # client's decision; re-populating an archived department silently undoes
+    # it. This guard sits AFTER ws_id resolution on purpose, so it covers both
+    # entry paths (workspaces table and manifest) with one check, and it never
+    # writes archived_at -- nothing here un-archives anything.
+    if _HAS_ARCHIVED_AT:
+        try:
+            arow = db.execute(
+                "SELECT archived_at FROM workspaces WHERE id=? LIMIT 1", (ws_id,)
+            ).fetchone()
+        except Exception:
+            arow = None
+        if arow and arow[0]:
+            skipped_archived += 1
+            print(f"  [materialize] SKIP {dept_slug}: workspace is archived (archived_at={arow[0]}) -- no agents, no head link")
+            continue
 
     try:
         counts = ensure_trio_quad_rows(db, ws_id, dept_name, dept_slug, "")
@@ -640,6 +1063,7 @@ print(
     f" +{total_research} research,"
     f" +{total_da} da"
     f" (idempotent)"
+    + (f"; {skipped_archived} archived workspace(s) skipped" if skipped_archived else "")
 )
 PHASE3EOF
 fi

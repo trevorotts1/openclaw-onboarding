@@ -488,10 +488,13 @@ File/Path  |  Purpose
 ~/Downloads/openclaw-master-files/  |  Master files folder (if it exists)
 
 Category 6: Installed Skills
-OpenClaw skills are extensions that add capabilities. Back up any installed skill configurations or custom skill files. The exact location depends on the OpenClaw version, but check:
+OpenClaw skills are extensions that add capabilities. Never copy the onboarding repo's skills or any openclaw-onboarding clone into a backup: they are files from one commit of a public GitHub repo and are re-installed from it. Record the installed version (~/.openclaw/skills/.onboarding-version and .onboarding-content-manifest.json) and copy only the box's own custom skills (folders the manifest does not list).
 File/Path  |  Purpose
-~/.openclaw/skills/  |  Installed skills directory (if it exists)
+~/.openclaw/skills/.onboarding-version  |  Which onboarding version is installed (record it)
+~/.openclaw/skills/.onboarding-content-manifest.json  |  Which commit and which skills the repo owns (record it)
+~/.openclaw/skills/<custom skill>/  |  The box's own skills, not listed in the manifest (copy these)
 Skills config within openclaw.json  |  Skill definitions within the main config
+This applies to any backup job you set up yourself, including a nightly one: leave out ~/.openclaw/skills (except the two record files and custom skills) and every openclaw-onboarding clone, wherever it sits (workspace, projects, ~/clawd).
 
 Category 7: Cron Jobs and Schedules
 Item  |  Purpose
@@ -753,8 +756,12 @@ Step 7: Copy Scripts and Tools
 copy_if_present "bin"                  "$HOME/clawd/bin"                 "$NEW_BACKUP/scripts/"
 copy_if_present "scripts"              "$HOME/clawd/scripts"             "$NEW_BACKUP/scripts/"
 copy_if_present "tools"                "$HOME/clawd/tools"               "$NEW_BACKUP/scripts/"
-Step 8: Copy Skills
-copy_if_present "installed skills"     "$HOME/.openclaw/skills"          "$NEW_BACKUP/skills/"
+Step 8: Record Skills (copy only the box's own)
+# Repo skills are re-installed from GitHub: record the installed version, copy custom skills only.
+# (Full logic in scripts/full-backup.sh; with no content manifest the whole folder is still copied.)
+cp ~/.openclaw/skills/.onboarding-version ~/.openclaw/skills/.onboarding-content-manifest.json "$NEW_BACKUP/skills/"
+# for each folder in ~/.openclaw/skills that the manifest does not list (and is not
+# shared-utils, universal-sops or an onboarding clone): copy_if_present "custom skill <name>" ...
 Step 9: Export Cron Jobs
 # A failed export is RECORDED, not silently replaced with a reassuring note.
 if openclaw cron list > "$NEW_BACKUP/cron-jobs-export.txt" 2>&1; then
@@ -885,7 +892,7 @@ Step 3: Copy all items per the inclusion list, CAPTURING each exit status
   +-- Secrets and credentials      (if present)
   +-- Memory files and daily logs  (if present)
   +-- Scripts and tools            (if present)
-  +-- Installed skills             (if present)
+  +-- Skills: version record + custom skills only (repo skills re-install from GitHub)
   +-- Cron job export              (failure recorded, not papered over)
   +-- Project files (excluding bloat items)
   +-- Data files
@@ -932,7 +939,7 @@ Full Backup Checklist
 [ ] Secrets and credentials copied (~/clawd/secrets/)
 [ ] Memory files copied (daily logs and master files)
 [ ] Scripts and tools copied (~/clawd/bin/, ~/clawd/scripts/)
-[ ] Installed skills copied
+[ ] Skills: version recorded, custom skills copied (no repo skills, no onboarding clone)
 [ ] Cron jobs exported to text file (a failed export is recorded)
 [ ] Project files copied (excluding node_modules, .git, caches, media)
 [ ] Data files copied
@@ -996,6 +1003,8 @@ cp -r $BACKUP/scripts/tools/* ~/clawd/tools/ 2>/dev/null
 chmod +x ~/clawd/bin/* 2>/dev/null
 chmod +x ~/clawd/scripts/* 2>/dev/null
 Step 7: Restore skills
+# Re-install the onboarding skills from GitHub (the installer / update-skills.sh), at the
+# version recorded in $BACKUP/skills/.onboarding-version, then put the custom skills back:
 mkdir -p ~/.openclaw/skills/
 cp -r $BACKUP/skills/* ~/.openclaw/skills/ 2>/dev/null
 Step 8: Restore projects and data
@@ -1280,7 +1289,7 @@ Full Instance Backup Checklist (Every 2 Weeks)
 [ ] Copied memory files and daily logs
 [ ] Copied master files folder (if it exists in ~/Downloads/)
 [ ] Copied scripts and tools
-[ ] Copied installed skills
+[ ] Recorded the skills version and copied custom skills only
 [ ] Exported cron jobs to text file
 [ ] Copied project files (with exclusions: no node_modules, .git, caches, media)
 [ ] Copied data files
@@ -1315,7 +1324,7 @@ BEFORE ANY EDIT to ~/.openclaw/openclaw.json:
 9. Confirm to user
 
 FULL INSTANCE BACKUP (every 2 weeks):
-- Runs automatically, backs up workspace .md files, configs, secrets, memory, scripts, skills, cron jobs, projects
+- Runs automatically, backs up workspace .md files, configs, secrets, memory, scripts, custom skills + the installed skills version, cron jobs, projects (never the onboarding repo's skills or an onboarding clone)
 - Stored in full-backup/ subfolder inside the backup folder
 - Only keeps last 2 versions (deletes oldest when creating 3rd)
 - Excludes: videos, large images, node_modules, .git, caches, temp files

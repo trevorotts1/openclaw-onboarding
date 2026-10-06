@@ -25,8 +25,9 @@ provers and drives the canonical no-skip orchestrator to a signed
   `taskId` and a GHL-media-host URL; the Thank-You page carries only utility buttons
   (Join The Community / Share With A Friend / Add To Calendar) — no offer name, no
   price, no sale CTA.
-- **Delegation seams (attested, never forked here):** image generation → Skill 47
-  (`kie_image.py`); GHL media folder/upload + funnel/page build → Skill 6. The
+- **Delegation seams (attested, never forked here):** image generation → Skill 66
+  (model policy) then Skill 74 (`kie_live_adapter.py`; the committed specimen certificate predates the rename and
+  still labels the phase `kie_image.py`, a regenerated one labels it `kie_live_adapter.py`); GHL media folder/upload + funnel/page build → Skill 6. The
   orchestrator attests those phases in order; provenance is enforced at P9.
 
 ## Files

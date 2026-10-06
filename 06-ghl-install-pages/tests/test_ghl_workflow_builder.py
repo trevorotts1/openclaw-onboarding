@@ -213,3 +213,13 @@ def test_selftest_cli_passes():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_timing_sequence_cannot_be_reported_as_single_action_success():
+    gateway = MockGateway()
+    builder = wb.WorkflowBuilder(gateway, _gates(), location_id="FIXTURE_LOCATION")
+    spec = wb.WorkflowSpec(name="Day 4 and 7", trigger_type="Form Submitted", action_type="Wait",
+                           timing={"requirements": [{"id": "day4", "kind": "event"}]})
+    with pytest.raises(wb.WorkflowBuildError, match="entire event-start/Wait sequence"):
+        builder.build(spec)
+    assert gateway.calls == []

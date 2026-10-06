@@ -36,10 +36,11 @@
 # USAGE
 #   bash check-ghl-token-liveness.sh
 #
-# EXIT CODES
-#   0  token VALID (or already-passed today — idempotent)
-#   1  token INVALID or expired (client notified once per day)
-#   2  no token configured — nothing to check (exit 0 on the PASS branch below)
+#   0  token VALID (or already-passed today — idempotent), or no token configured (.no-token stamp)
+#   1  token INVALID — CONFIRMED credential failure (client notified once per day)
+#   2  CONFIG PROBLEM — operator triage, client NEVER notified: placeholder credential, CRLF
+#      secrets file, process-env value masking the secrets file, transient/ambiguous exchange
+#      result, or DRIFT between the gateway env snapshot and secrets/.env (.drift stamp)
 #
 # bash-not-zsh: always invoke via `bash`, never `zsh` (strict-glob in zsh may
 # silently abort on array expansions). Mirror of all other pipeline scripts.
@@ -107,76 +108,152 @@ if [[ -f "$NOTIFIED_STAMP" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2 — Resolve the refresh token from the standard env-store order.
-# Search path mirrors seed-ghl-auth.py + MEMORY client-box-env-stores:
-#   secrets/.env  → openclaw.json env.vars → workspace/.env
+# Step 2 — Resolve the refresh token with ENGINE PARITY.
+#
+# The Skill 44 engine is always entered through the `caf` wrapper
+# (tools/engine/caf), which does `set -a; source ~/.openclaw/secrets/.env`.
+# For the ENGINE, therefore, the canonical secrets file OVERRIDES whatever the
+# gateway's process env carried (per key; last line in the file wins; `export`
+# prefixes honoured). This check MUST test the same credential the engine will
+# use, so it emulates that merge: file value when the file DEFINES the key,
+# inherited process-env value otherwise, then the first non-empty candidate.
+#
+# WHY (landmine 2026-06-23 → 2026-08-27, 65 client notifications on one box):
+# the old loader let the process env win. The gateway's env is a STATIC
+# snapshot taken at process start (OpenClaw applies openclaw.json env.vars and
+# ~/.openclaw/.env only for vars that are still missing), so a 63-character
+# placeholder under GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN in env.vars beat the
+# real 503-character token in secrets/.env for 47 days while the engine — which
+# sources the file — was working. The CLIENT was told daily to re-grab a token
+# that was already fine. Every condition below that is not a confirmed dead
+# credential is an OPERATOR condition and never reaches the client.
+#
+# openclaw.json env.vars and workspace/.env are no longer read directly: the
+# engine never reads them either — they reach it only through the process env,
+# which is snapshotted here as ENVVAL_*.
 # ---------------------------------------------------------------------------
-_load_env_file() {
-  local f="$1"
+
+# Inherited process env, captured BEFORE any file is read.
+for VAR in "${REFRESH_ENV_VARS[@]}"; do
+  eval "ENVVAL_${VAR}=\"\${${VAR}:-}\""
+  eval "FILEVAL_${VAR}=''"
+  eval "FILEDEF_${VAR}=0"
+done
+
+# Canonical secrets file — the one caf sources (first that exists).
+CANON_FILE=""
+for f in "${OC_ROOT}/secrets/.env" "${HOME}/.openclaw/secrets/.env" "/data/.openclaw/secrets/.env"; do
+  [[ -f "$f" ]] && { CANON_FILE="$f"; break; }
+done
+
+# Parse `KEY=VALUE` / `export KEY=VALUE` into FILEVAL_<KEY> (+ FILEDEF_<KEY>=1).
+# Last line wins (bash `source` semantics). Surrounding quotes and trailing
+# whitespace are stripped (bash would not keep trailing blanks of an unquoted
+# assignment). A CR is stripped but REMEMBERED: `source` keeps it, so the
+# engine would present a corrupt token — that is a config problem, not expiry.
+FILE_HAD_CR=0
+_load_canon_file() {
+  local f="$1" line k v
   [[ -f "$f" ]] || return 0
-  # Source only KEY=VALUE lines; skip comments, blanks, and compound statements.
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "${line// }" ]] && continue
-    if [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
-      local k="${BASH_REMATCH[1]}" v="${BASH_REMATCH[2]}"
-      # Strip surrounding quotes (single or double) if present.
+    if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+      k="${BASH_REMATCH[2]}"; v="${BASH_REMATCH[3]}"
+      [[ "$v" == *$'\r'* ]] && FILE_HAD_CR=1
+      v="${v//$'\r'/}"
+      v="${v%"${v##*[![:space:]]}"}"
       v="${v#\'}" ; v="${v%\'}"
       v="${v#\"}" ; v="${v%\"}"
-      # Only set if not already in environment (process env wins over file).
-      [[ -z "${!k:-}" ]] && export "$k"="$v"
+      eval "FILEVAL_${k}=\$v"
+      eval "FILEDEF_${k}=1"
     fi
   done < "$f"
 }
+_load_canon_file "$CANON_FILE" 2>/dev/null || true
 
-# Load env files in priority order (lowest wins — process env already wins).
-for ENV_FILE in \
-  "${OC_ROOT}/secrets/.env" \
-  "${HOME}/.openclaw/secrets/.env" \
-  "/data/.openclaw/secrets/.env" \
-  "${OC_ROOT}/workspace/.env" \
-  "${HOME}/.openclaw/workspace/.env" \
-  "/data/.openclaw/workspace/.env"; do
-  _load_env_file "$ENV_FILE" 2>/dev/null || true
-done
+_fp() { printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -c1-8; }
 
-# Also pull env.vars from openclaw.json if python3 is available.
-if command -v python3 >/dev/null 2>&1 && [[ -f "${OC_ROOT}/openclaw.json" ]]; then
-  while IFS='=' read -r k v; do
-    [[ -n "$k" && -n "$v" ]] && [[ -z "${!k:-}" ]] && export "$k"="$v"
-  done < <(python3 - "${OC_ROOT}/openclaw.json" 2>/dev/null <<'PYEOF'
-import json, sys
-try:
-    cfg = json.load(open(sys.argv[1]))
-    env_vars = (cfg.get("env", {}) or {}).get("vars", {}) or {}
-    for k, v in env_vars.items():
-        if isinstance(v, str) and v:
-            print(f"{k}={v}")
-except Exception:
-    pass
-PYEOF
-  )
-fi
+# A documentation placeholder is not a credential. Real Firebase refresh tokens
+# are several hundred characters; the 2026 landmine's impostor was 63.
+_is_placeholder() {
+  local v="$1"
+  [[ -z "$v" ]] && return 0
+  (( ${#v} < 100 )) && return 0
+  case "$v" in
+    changeme*|CHANGEME*|xxx*|XXX*|your-*|YOUR-*|your_*|YOUR_*|*_HERE|*-here|*_here|"<"*">"|'${'*'}') return 0 ;;
+  esac
+  return 1
+}
 
-# Resolve the first non-empty refresh token.
-REFRESH_TOKEN=""
-REFRESH_VAR=""
+# Emulated `set -a; source` merge, then the engine's first-non-empty pick.
+REFRESH_TOKEN=""; REFRESH_VAR=""; REFRESH_SOURCE=""
+FILE_HAS_CANDIDATE=0
 for VAR in "${REFRESH_ENV_VARS[@]}"; do
-  VAL="${!VAR:-}"
-  if [[ -n "$VAL" ]]; then
-    REFRESH_TOKEN="$VAL"
-    REFRESH_VAR="$VAR"
-    break
+  fdef="$(eval "printf '%s' \"\${FILEDEF_${VAR}}\"")"
+  fval="$(eval "printf '%s' \"\${FILEVAL_${VAR}}\"")"
+  eval_="$(eval "printf '%s' \"\${ENVVAL_${VAR}}\"")"
+  [[ -n "$fval" ]] && FILE_HAS_CANDIDATE=1
+  if [[ "$fdef" == "1" ]]; then merged="$fval"; origin="secrets-file"; else merged="$eval_"; origin="process-env"; fi
+  if [[ -z "$REFRESH_TOKEN" && -n "$merged" ]]; then
+    REFRESH_TOKEN="$merged"; REFRESH_VAR="$VAR"; REFRESH_SOURCE="$origin"
   fi
 done
 
+# DRIFT: a candidate whose inherited process-env value differs from the file, or
+# exists only in the process env. Fingerprints only — values are never printed.
+DRIFT=""
+for VAR in "${REFRESH_ENV_VARS[@]}"; do
+  ev="$(eval "printf '%s' \"\${ENVVAL_${VAR}}\"")"
+  fv="$(eval "printf '%s' \"\${FILEVAL_${VAR}}\"")"
+  fd="$(eval "printf '%s' \"\${FILEDEF_${VAR}}\"")"
+  [[ -n "$ev" ]] || continue
+  if [[ "$fd" != "1" ]]; then
+    DRIFT="${DRIFT}${DRIFT:+; }${VAR}: process-env len=${#ev} fp=$(_fp "$ev") vs secrets-file ABSENT"
+  elif [[ "$ev" != "$fv" ]]; then
+    DRIFT="${DRIFT}${DRIFT:+; }${VAR}: process-env len=${#ev} fp=$(_fp "$ev") vs secrets-file len=${#fv} fp=$(_fp "$fv")"
+  fi
+done
+[[ -n "$DRIFT" ]] && _log "DRIFT (operator condition — the gateway's start-time env snapshot disagrees with ${CANON_FILE:-secrets/.env}): ${DRIFT}"
+
+_config_problem() { # <reason lines...> — operator triage, client NEVER notified, exit 2
+  local l; for l in "$@"; do _log "CONFIG PROBLEM: $l"; done
+  _log "  This is NOT a confirmed expired token and the client has NOT been notified."
+  touch "${STATE_DIR}/ghl-token-liveness-${TODAY}.config-problem"
+  exit 2
+}
+
 if [[ -z "$REFRESH_TOKEN" ]]; then
-  _log "SKIP no GHL Firebase refresh token found (checked ${REFRESH_ENV_VARS[*]}). Skills 44/46 workflow writes will use Tier 4 backstop."
-  # Not a failure — the token may simply not be configured on this box yet.
+  if [[ -n "$DRIFT" ]]; then
+    _config_problem "the engine has NO usable refresh token (secrets file defines the key(s) empty, or blanks them) while the gateway's process env carries one: ${DRIFT}" \
+                    "Operator: an empty VAR= line in ${CANON_FILE} blanks the engine's value (caf sources the file). Put the real token there."
+  fi
+  _log "SKIP no GHL Firebase refresh token found (checked ${REFRESH_ENV_VARS[*]} in ${CANON_FILE:-<no secrets file>} and the process env). Skills 44/46 workflow writes will use Tier 4 backstop."
+  touch "${STATE_DIR}/ghl-token-liveness-${TODAY}.no-token"
   exit 0
 fi
 
-_log "Checking token liveness (source: ${REFRESH_VAR}, length: ${#REFRESH_TOKEN}) ..."
+if [[ "$FILE_HAD_CR" -eq 1 ]]; then
+  _config_problem "${CANON_FILE} has CRLF line endings — caf's \`source\` keeps the CR and hands the engine a corrupt token. Operator: convert the file to LF."
+fi
+
+if _is_placeholder "$REFRESH_TOKEN"; then
+  _config_problem "the credential the engine would use (${REFRESH_VAR} from ${REFRESH_SOURCE}, length ${#REFRESH_TOKEN}) is a PLACEHOLDER, not a token." \
+                  "Operator: put the real token in ${CANON_FILE:-${OC_ROOT}/secrets/.env} under ${REFRESH_VAR}; if the placeholder is in the process env, fix service-env / ~/.openclaw/.env / env.vars and restart the gateway."
+fi
+
+if [[ "$REFRESH_SOURCE" == "process-env" && "$FILE_HAS_CANDIDATE" -eq 1 ]]; then
+  _config_problem "the engine would use ${REFRESH_VAR} from the gateway's process env, which MASKS a real credential held under another name in ${CANON_FILE}." \
+                  "Operator: remove the stale ${REFRESH_VAR} from service-env / ~/.openclaw/.env / env.vars (or add it to secrets/.env) and restart the gateway."
+fi
+
+_log "Checking token liveness (var: ${REFRESH_VAR}, source: ${REFRESH_SOURCE}, length: ${#REFRESH_TOKEN}, fp: $(_fp "$REFRESH_TOKEN")) ..."
+
+# Test hook — resolution only: no network call, no notification, no stamp.
+if [[ "${GHL_LIVENESS_RESOLVE_ONLY:-0}" == "1" ]]; then
+  echo "RESOLVED var=${REFRESH_VAR} source=${REFRESH_SOURCE} len=${#REFRESH_TOKEN} fp=$(_fp "$REFRESH_TOKEN") drift=$([[ -n "$DRIFT" ]] && echo yes || echo no)"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3 — POST to securetoken.googleapis.com (same logic as seed-ghl-auth.py).
@@ -238,18 +315,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 4 — Classify result.
+# Step 4 — Classify result. ONLY a confirmed credential failure may reach the
+# client (the header always promised this; the code never enforced it — a DNS
+# blip, a 429 or a 5xx from Google used to send the "re-grab your token" text).
 # ---------------------------------------------------------------------------
 if [[ "$EXCHANGE_RESULT" == "VALID" ]]; then
-  _log "PASS token is VALID — exchange returned 200 + id_token."
-  # Write the once-per-day stamp so subsequent runs short-circuit.
+  _log "PASS token is VALID — exchange returned 200 + id_token (var: ${REFRESH_VAR}, source: ${REFRESH_SOURCE})."
   touch "$PASS_STAMP"
+  if [[ -n "$DRIFT" ]]; then
+    _log "DRIFT PERSISTS: the engine (caf sources secrets/.env) is healthy, but the gateway's process env carries a different value for a candidate: ${DRIFT}"
+    _log "  Operator action: re-run 44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh, sync service-env / ~/.openclaw/.env to secrets/.env, restart the gateway. Client NOT notified."
+    touch "${STATE_DIR}/ghl-token-liveness-${TODAY}.drift"
+    exit 2
+  fi
   exit 0
 fi
 
-# Token is INVALID. Log the error code.
-ERROR_CODE="${EXCHANGE_RESULT#INVALID:}"
-_log "FAIL token is INVALID (${ERROR_CODE}). Resolving client notification target..."
+ERROR_CODE="${EXCHANGE_RESULT#*:}"
+case "$EXCHANGE_RESULT" in
+  INVALID:TOKEN_EXPIRED*|INVALID:USER_DISABLED*|INVALID:USER_NOT_FOUND*|INVALID:INVALID_REFRESH_TOKEN*)
+    _log "FAIL token is INVALID (${ERROR_CODE}) — confirmed credential failure (var: ${REFRESH_VAR}, source: ${REFRESH_SOURCE}). Resolving client notification target..."
+    ;;
+  *)
+    _config_problem "the exchange did not return a classifiable credential failure (${EXCHANGE_RESULT%%:*}: ${ERROR_CODE}) — transient/ambiguous; operator triage."
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Step 5 — Resolve the CLIENT's Telegram chat ID.
@@ -353,6 +443,11 @@ That is it. Once you send it, I will update your settings and confirm it is work
 If you have any trouble finding the Token Grabber extension, reply and I will walk you through each step."
 
 _log "Sending token-expired notification to client chat ${CLIENT_CHAT_ID}..."
+
+if [[ "${GHL_LIVENESS_NO_SEND:-0}" == "1" ]]; then
+  _log "NO_SEND hook: would notify client chat ${CLIENT_CHAT_ID} — not sending (test mode)."
+  exit 1
+fi
 
 if openclaw message send --channel telegram --target "$CLIENT_CHAT_ID" --message "$NOTIFICATION_MSG" >/dev/null 2>&1; then
   _log "DONE notification sent to client chat ${CLIENT_CHAT_ID}."

@@ -17,7 +17,9 @@ OpenRouter version of the same models, then OAuth GPT):
 
   --purpose-tier mid     (Mid-tier reasoning — fast but capable)
     1. ollama/minimax-m*:cloud        (Ollama Cloud Minimax 2.7+)
-    2. openrouter/xiaomi/mimo-v*-pro  (OpenRouter Mimo 2.5+ pro, thinking=high)
+    2. ollama/glm-*:cloud             (Ollama Cloud GLM)
+    3. openrouter/xiaomi/mimo-v*-pro  (OpenRouter Mimo 2.5+ pro, thinking=high)
+    4. openrouter/z-ai/glm-*          (OpenRouter GLM)
 
   --purpose-tier fast    (Fast / cheap — bulk operations)
     1. ollama/deepseek-v*-flash:cloud (Ollama Cloud DeepSeek V4-flash)
@@ -33,6 +35,19 @@ the selector automatically picks the higher version without any code change.
 If no chain entry matches anything in the client's config, the selector
 returns Tier 5 (owner-input-required) with a plain-English prompt the install
 agent can show the owner.
+
+OLLAMA CLOUD ID SHAPES (ISSUE-08). Every `ollama/...` slot above matches the
+three shapes the fleet actually runs, not just the bare `:cloud` tag:
+
+  ollama/deepseek-v4-pro:cloud          plain cloud tag
+  ollama/deepseek-v4-pro:0813-cloud     DATE-tagged cloud build
+  ollama/qwen3-vl:235b-cloud            size-tagged cloud build
+  ollama-cloud/kimi-k2.6:cloud          ollama-cloud/ provider prefix
+
+The `_OLLAMA` and `_CLOUD_TAG` anchors below carry that contract, which is the
+same one tier_of_model already applied. A family suffix still does NOT match its
+base family: `ollama/kimi-k2.7-code:cloud` is a code model, not the Kimi chat
+slot, and stays unmatched by the Kimi pattern.
 
 Example:
     >>> from select_model import select_model_for_skill
@@ -300,32 +315,74 @@ def tier_of_model(model_id: str) -> int:
     return 0
 
 
+# Ollama Cloud id SHAPE anchors (ISSUE-08). Real fleet ids carry a DATE-tagged or
+# size-tagged cloud tag (`:0813-cloud`, `:235b-cloud`) and may use the
+# `ollama-cloud/` provider prefix, both of which tier_of_model already accepts.
+# The chain patterns anchored `^ollama/...(?::cloud)?$` and so matched NONE of
+# them, which silently emptied every Ollama slot in every chain. These two
+# anchors bring the chain regexes to the SAME contract as tier_of_model.
+#   _OLLAMA    : ollama/ or ollama-cloud/ provider prefix
+#   _CLOUD_TAG : no tag, `:cloud`, or a compound `:<variant>-cloud` tag
+_OLLAMA = r"^ollama(?:-cloud)?/"
+_CLOUD_TAG = r"(?::(?:[a-z0-9.]+-)?cloud)?$"   # :cloud | :0813-cloud | :235b-cloud
+
 # Pattern definitions — each slot in the chain gets a version-capturing regex.
 KIMI_OLLAMA      = {"label": "Ollama Cloud Kimi (thinking=high) — smartest, 262K ctx",
-                    "pattern": re.compile(r"^ollama/kimi-k(\d+(?:\.\d+)*)(?::cloud)?$")}
+                    "family": "kimi",
+                    "providers": ("ollama/", "ollama-cloud/"),
+                    "pattern": re.compile(_OLLAMA + r"kimi-k(\d+(?:\.\d+)*)" + _CLOUD_TAG)}
 KIMI_OPENROUTER  = {"label": "OpenRouter Kimi (thinking=high) — 262K ctx",
+                    "family": "kimi",
                     "pattern": re.compile(r"^openrouter/moonshot(?:ai)?/kimi-k(\d+(?:\.\d+)*)$")}
 DEEPSEEK_PRO_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-pro (thinking=high) — 1M ctx",
-                           "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-pro(?::cloud)?$")}
+                           "family": "deepseek-pro",
+                           "providers": ("ollama/", "ollama-cloud/"),
+                           "pattern": re.compile(_OLLAMA + r"deepseek-v(\d+(?:\.\d+)*)-pro" + _CLOUD_TAG)}
 DEEPSEEK_PRO_OPENROUTER = {"label": "OpenRouter DeepSeek V*-pro (thinking=high) — 1M ctx",
+                           "family": "deepseek-pro",
                            "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-pro$")}
 OAUTH_GPT        = {"label": "OAuth GPT (latest, subscription)",
                     "pattern": re.compile(r"^(?:openai-)?codex/gpt-(\d+(?:\.\d+)*)(?:-[a-z]+)?$")}
 MIMO_OPENROUTER  = {"label": "OpenRouter Mimo Pro (thinking=high)",
+                    "family": "mimo-pro",
                     "pattern": re.compile(r"^openrouter/xiaomi/mimo-v(\d+(?:\.\d+)*)-pro$")}
+# F31: GLM slugs carry provider variant suffixes (-flash, -pro, -air, -lite,
+# -preview, -thinking) and an optional :cloud tag (openrouter/z-ai/glm-5.3-flash).
+# The old pattern accepted ONLY the bare version slug and REJECTED every suffixed
+# real-world slug. The regex stays the fallback classifier; provider-verified
+# full slugs from model-capabilities.json are accepted first (see
+# load_verified_slugs / _best_match_in_position below).
 GLM_OPENROUTER   = {"label": "OpenRouter GLM (thinking=high)",
-                    "pattern": re.compile(r"^openrouter/(?:z-ai|zhipu(?:ai)?)/glm-?(\d+(?:\.\d+)*)$")}
+                    "family": "glm",
+                    "pattern": re.compile(r"^openrouter/(?:z-ai|zhipu(?:ai)?)/glm-?(\d+(?:\.\d+)*)(?:-(?:flash|pro|air|lite|preview|thinking))?(?::cloud)?$")}
 MINIMAX_OLLAMA   = {"label": "Ollama Cloud Minimax",
-                    "pattern": re.compile(r"^ollama/minimax-m(\d+(?:\.\d+)*)(?::cloud)?$")}
+                    "family": "minimax",
+                    "providers": ("ollama/", "ollama-cloud/"),
+                    "pattern": re.compile(_OLLAMA + r"minimax-m(\d+(?:\.\d+)*)" + _CLOUD_TAG)}
+# ISSUE-08: GLM also ships on Ollama Cloud (ollama/glm-5.3:cloud). The chain had
+# an OpenRouter GLM slot only, so a client whose GLM lives on Ollama Cloud had no
+# GLM slot at all. Same suffix set as GLM_OPENROUTER; `providers` keeps this
+# Tier-1 slot from claiming an OpenRouter GLM slug out of the verified inventory.
+GLM_OLLAMA       = {"label": "Ollama Cloud GLM (thinking=high)",
+                    "family": "glm",
+                    "providers": ("ollama/", "ollama-cloud/"),
+                    "pattern": re.compile(_OLLAMA + r"glm-?(\d+(?:\.\d+)*)"
+                                          r"(?:-(?:flash|pro|air|lite|preview|thinking))?"
+                                          + _CLOUD_TAG)}
 DEEPSEEK_FLASH_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-flash",
-                             "pattern": re.compile(r"^ollama/deepseek-v(\d+(?:\.\d+)*)-flash(?::cloud)?$")}
+                             "family": "deepseek-flash",
+                             "providers": ("ollama/", "ollama-cloud/"),
+                             "pattern": re.compile(_OLLAMA + r"deepseek-v(\d+(?:\.\d+)*)-flash" + _CLOUD_TAG)}
 DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
+                             "family": "deepseek-flash",
                              "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")}
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
+                             "family": "gemini-flash-lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
 # v10.10.0 P0-002: Gemini 3.1 Pro pattern. Final fallback for the
 # orchestrator and installer-subagent chains per PRD §5.1 and §5.2.
 GEMINI_PRO                = {"label": "OpenRouter Gemini Pro",
+                             "family": "gemini-pro",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-pro(?:-preview)?$")}
 
 # Purpose-tier chains. v10.2.0 priority (per owner directive):
@@ -362,8 +419,8 @@ CHAINS = {
         ],
     },
     "mid": {
-        "normal": [MINIMAX_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
-        "large":  [MINIMAX_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
+        "normal": [MINIMAX_OLLAMA, GLM_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
+        "large":  [MINIMAX_OLLAMA, GLM_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
         "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
     },
     "fast": {
@@ -495,18 +552,80 @@ def _list_available_models(cfg: dict) -> list:
     _take(defaults.get("model"))
     _take(defaults.get("subagents", {}).get("model"))
 
-    for entry in agents.get("list", []):
+    # Both roster shapes: agents.entries (OpenClaw 2026.9.x) and agents.list[].
+    _entries = agents.get("entries")
+    _roster = list(_entries.values()) if isinstance(_entries, dict) else []
+    _roster += agents.get("list", []) if isinstance(agents.get("list"), list) else []
+    for entry in _roster:
         if isinstance(entry, dict):
             _take(entry.get("model"))
-            _take(entry.get("subagents", {}).get("model"))
+            _take((entry.get("subagents") or {}).get("model"))
 
     return [m for m in found if not _is_forbidden(m)]
 
 
+_VERIFIED_SLUGS_CACHE = None
+
+
+def load_verified_slugs() -> dict:
+    """Load the provider-verified full-slug inventory (F31).
+
+    Returns the `verified_slugs` object from model-capabilities.json:
+      { "<provider>/<vendor/model-slug>": {"family": "...", "capabilities": [...]} }
+    The inventory is DATA — adding a new model slug (e.g. glm-5.3-flash) needs
+    only a JSON edit, never a selector-code change. The version-capturing regex
+    per chain entry stays as the fallback classifier for slugs NOT in the
+    verified inventory.
+    """
+    global _VERIFIED_SLUGS_CACHE
+    if _VERIFIED_SLUGS_CACHE is None:
+        cap_map = load_capability_map()
+        _VERIFIED_SLUGS_CACHE = cap_map.get("verified_slugs", {})
+    return _VERIFIED_SLUGS_CACHE
+
+
+def slug_is_verified(model_id: str) -> bool:
+    """True iff the full model id appears in the provider-verified slug inventory."""
+    if not model_id:
+        return False
+    return model_id.strip().lower() in load_verified_slugs()
+
+
+def _family_of(model_id: str) -> str:
+    """Family for a verified slug from the inventory (or '' when unverified)."""
+    entry = load_verified_slugs().get(model_id.strip().lower(), {})
+    return entry.get("family", "")
+
+
 def _best_match_in_position(models: list, chain_entry: dict) -> Optional[str]:
-    """Highest-version model matching the chain entry's pattern."""
+    """Highest-version model matching the chain entry — provider-verified slugs FIRST.
+
+    F31 contract: "recognize provider-verified full slugs instead of selecting by
+    version number alone." Pass 1 accepts any FULL slug that (a) is in the
+    verified inventory with this entry's family and (b) carries one of the
+    entry's `providers` prefixes when the entry declares them. Pass 2 is the
+    legacy version-capturing regex for slugs not yet in the inventory.
+
+    ISSUE-08: `providers` is the optional prefix guard. Two chain slots can share
+    one family across different providers (the Ollama Cloud GLM slot and the
+    OpenRouter GLM slot are both family `glm`), and a family-only pass 1 would let
+    the Tier-1 slot claim the Tier-2 slug and mislabel it. An entry with no
+    `providers` key behaves exactly as before.
+    """
+    family = chain_entry.get("family", "")
+    providers = chain_entry.get("providers") or ()
     candidates = []
+    verified_slugs = load_verified_slugs()
     for m in models:
+        low = m.strip().lower()
+        # Pass 1: provider-verified full slug of the entry's family (and, when the
+        # entry declares them, one of its provider prefixes).
+        if (family and low in verified_slugs
+                and verified_slugs[low].get("family") == family
+                and (not providers or low.startswith(tuple(providers)))):
+            candidates.append((_parse_version(_strip_provider(m) or m), m))
+            continue
+        # Pass 2 — legacy version-capturing regex (fallback classifier).
         match = chain_entry["pattern"].match(m)
         if match:
             version = _parse_version(match.group(1))

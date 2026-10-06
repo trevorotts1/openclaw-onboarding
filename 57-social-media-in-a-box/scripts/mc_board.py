@@ -390,8 +390,204 @@ def _write_board_ingest_receipt(
 
 
 # ---------------------------------------------------------------------------
-# CREATE — POST /api/tasks/ingest (idempotent on idempotency_key server-side).
+# BOARD OUTBOX (F12, social-planner-september-eighth / WF05) — a durable outbox
+# for pending board writes during a Command Center outage.
+#
+# Before this: a board outage dropped the ingest POST (and any status write)
+# entirely — the run continued unregistered and the completed artifacts had no
+# card, or a half-registered run stalled at an early status with no recovery
+# beyond `reconcile`'s read-only report. Now every FAILED write is persisted
+# to <run_dir>/working/checkpoints/board-outbox.jsonl (one JSON line per op,
+# deduped on a stable op_id) and REPLAYED ONCE on recovery — opportunistically
+# on the next board touch for the same run, or explicitly via
+# `replay_outbox()` / `mc_board.py replay --run-dir DIR`.
+#
+# Replay is idempotent end to end, so recovery produces ONE consistent card
+# with truthful status:
+#   - ingest ops re-POST /api/tasks/ingest — the server dedupes on the same
+#     stable idempotency_key, so a replay can never create a second card;
+#   - status ops GET the card first and only re-issue a move the card has not
+#     already reached (walking the same legal path), so a replay never
+#     double-moves or moves backwards.
+# Fail-soft throughout: an outbox write/read failure NEVER raises and NEVER
+# changes a return value — the pre-F12 contracts hold exactly when the disk
+# itself is unavailable.
 # ---------------------------------------------------------------------------
+
+_OUTBOX_FILENAME = "board-outbox.jsonl"
+
+
+def _outbox_path(run_dir) -> Path:
+    return Path(run_dir) / "working" / "checkpoints" / _OUTBOX_FILENAME
+
+
+def _outbox_op_id(method: str, path: str, payload: Optional[dict]) -> str:
+    """Stable identity for one pending board op — identical retries collapse."""
+    canonical = json.dumps(payload, separators=(",", ":"), sort_keys=True) if payload is not None else ""
+    return hashlib.sha256(f"{method} {path} {canonical}".encode("utf-8")).hexdigest()[:24]
+
+
+def _outbox_read(run_dir) -> List[dict]:
+    """Every pending op (oldest first), skipping corrupt lines. Never raises."""
+    p = _outbox_path(run_dir)
+    ops: List[dict] = []
+    try:
+        if not p.exists():
+            return ops
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(rec, dict) and rec.get("op_id") and rec.get("path") and rec.get("method"):
+                ops.append(rec)
+    except OSError:
+        pass
+    return ops
+
+
+def _outbox_append(run_dir, *, method: str, path: str, payload: Optional[dict], reason: str) -> bool:
+    """Persist ONE failed board op for later replay. Deduped on op_id, so a
+    repeated failure of the same write never grows the file. Never raises."""
+    try:
+        existing_ids = {op.get("op_id") for op in _outbox_read(run_dir)}
+        op_id = _outbox_op_id(method, path, payload)
+        if op_id in existing_ids:
+            return True  # already pending — one line per logical op
+        record = {
+            "op_id": op_id,
+            "method": method,
+            "path": path,
+            "payload": payload,
+            "queued_at": _ts(),
+            "attempts": 0,
+            "last_error": (reason or "")[:200],
+        }
+        p = _outbox_path(run_dir)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
+        return True
+    except OSError as exc:
+        _log(f"outbox append failed ({exc}).")
+        return False
+
+
+def _outbox_rewrite(run_dir, ops: List[dict]) -> bool:
+    """Atomically rewrite the outbox with the surviving (unreplayed) ops."""
+    try:
+        p = _outbox_path(run_dir)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for op in ops:
+                f.write(json.dumps(op, separators=(",", ":")) + "\n")
+        os.replace(tmp, p)
+        return True
+    except OSError:
+        return False
+
+
+def replay_outbox(run_dir, *, env: Optional[dict] = None) -> dict:
+    """Replay ONE pass of the run's board outbox (F12).
+
+    Returns ``{"applicable", "replayed", "removed", "remaining", "failed"}``.
+    Each pending op is attempted at most once per call:
+      - ingest ops: re-POST (server-side idempotency_key dedupe ⇒ one card);
+        success backfills the receipt's mc_task_id when absent;
+      - status ops: GET the card; a card already AT the target (or past it)
+        drops the op without a write — never double-moves, never moves
+        backwards; otherwise the move is re-issued.
+    Successful ops are removed from the outbox; failed ops survive (with an
+    incremented attempt count) for a later pass. NEVER raises — a disabled
+    board or any OSError degrades to a report, never a run failure."""
+    if run_dir is None:
+        return {"applicable": False, "replayed": 0, "removed": 0, "remaining": 0, "failed": 0}
+    cfg = board_config(env)
+    ops = _outbox_read(run_dir)
+    if cfg is None:
+        return {"applicable": False, "replayed": 0, "removed": 0,
+                "remaining": len(ops), "failed": 0}
+    if not ops:
+        return {"applicable": True, "replayed": 0, "removed": 0, "remaining": 0, "failed": 0}
+
+    surviving: List[dict] = []
+    replayed = removed = 0
+    for op in ops:
+        method = str(op.get("method") or "POST").upper()
+        path = str(op.get("path") or "")
+        payload = op.get("payload") if isinstance(op.get("payload"), (dict, type(None))) else None
+        op["attempts"] = int(op.get("attempts") or 0) + 1
+        op["last_attempt_at"] = _ts()
+        try:
+            if method == "POST" and path.endswith("/api/tasks/ingest"):
+                # Ingest replay: re-POST — the server dedupes on the stable
+                # idempotency_key, so recovery collapses to ONE card.
+                status, body = _request(method, f"{cfg['base_url']}{path}", payload, cfg)
+                ok = status in (200, 201, 204)
+                if ok:
+                    # Backfill the receipt with the real task id.
+                    tid = str(((body or {}) if isinstance(body, dict) else {}).get("task_id") or "")
+                    if tid:
+                        if not _read_receipt(run_dir).get("mc_task_id"):
+                            _merge_receipt(run_dir, {"mc_task_id": tid})
+                        _merge_receipt(run_dir, {"mc_outbox_replay_task_id": tid,
+                                                 "mc_outbox_replay_at": _ts()})
+            else:
+                # Status-write replay is TRUTHFUL first: GET the card BEFORE
+                # issuing any write. A card already AT the target — or one that
+                # moved FORWARD past it during the outage — drops the op with
+                # no write: never double-moves, never regresses.
+                tid = path.rstrip("/").rsplit("/", 1)[-1]
+                target = (payload or {}).get("status") if isinstance(payload, dict) else None
+                current = _current_status(tid, cfg) if target else None
+                if current is None:
+                    # Card unreadable (still down / missing) — keep the op.
+                    op["last_error"] = "status GET unavailable during replay"
+                    surviving.append(op)
+                    continue
+                if current == str(target or "").strip().lower():
+                    ok = True  # already there — nothing to move (no double move)
+                elif current in ("review", "done") and str(target or "").strip().lower() == "in_progress":
+                    ok = True  # card moved FORWARD during the outage — never regress it
+                elif current in _LEGAL and target in _LEGAL.get(current, ()):  # direct legal hop
+                    status, body = _request(method, f"{cfg['base_url']}{path}", payload, cfg)
+                    ok = status in (200, 201, 204)
+                else:
+                    # Illegal direct hop (e.g. backlog->review): walk the legal
+                    # path the same way card_advance does, then replay the tail.
+                    walk = _legal_path(current, str(target or "").strip().lower())
+                    if walk is None:
+                        op["last_error"] = f"no legal path {current}->{target}"
+                        surviving.append(op)
+                        continue
+                    ok = True
+                    for step in walk:
+                        step_payload = dict(payload or {})
+                        step_payload["status"] = step
+                        status, body = _request(method, f"{cfg['base_url']}{path}", step_payload, cfg)
+                        if status not in (200, 201, 204):
+                            ok = False
+                            op["last_error"] = f"HTTP {status} during legal-path replay"
+                            break
+            if ok:
+                replayed += 1
+                removed += 1
+            else:
+                op["last_error"] = op.get("last_error") or f"HTTP {status}"
+                surviving.append(op)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            op["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            surviving.append(op)
+
+    _outbox_rewrite(run_dir, surviving)
+    return {"applicable": True, "replayed": replayed, "removed": removed,
+            "remaining": len(surviving), "failed": len(ops) - removed}
+
+
 def card_open(
     run_dir,
     *,
@@ -486,7 +682,9 @@ def card_open(
     try:
         status, body = _request("POST", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"ingest POST failed ({type(exc).__name__}: {exc}); run continues ungrouped.")
+        _log(f"ingest POST failed ({type(exc).__name__}: {exc}); queued in the board outbox for replay.")
+        _outbox_append(run_dir, method="POST", path="/api/tasks/ingest", payload=payload,
+                       reason=f"{type(exc).__name__}: {exc}")
         _write_board_ingest_receipt(
             evidence_root, mc_url_set=True, ok=False, task_id=None,
             department_slug=department_slug, source=source or "productized-skill",
@@ -504,9 +702,20 @@ def card_open(
             department_slug=department_slug, source=source or "productized-skill",
             reason="deduped" if deduped else "created",
         )
+        # F12: recovery first — replay anything an outage parked before this
+        # success (idempotent; never blocks this card from returning).
+        try:
+            replay_outbox(run_dir, env=env)
+        except Exception as exc:  # noqa: BLE001 — outbox replay must never surface here
+            _log(f"outbox replay skip ({type(exc).__name__}: {exc}).")
         return task_id
 
     _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
+    # F12: a 5xx is an outage class — park the op for replay; a 4xx is a
+    # permanent caller fault (replaying it can never succeed) so it is NOT queued.
+    if status >= 500 or status == 0:
+        _outbox_append(run_dir, method="POST", path="/api/tasks/ingest", payload=payload,
+                       reason=f"HTTP {status}")
     _write_board_ingest_receipt(
         evidence_root, mc_url_set=True, ok=False, task_id=None,
         department_slug=department_slug, source=source or "productized-skill",
@@ -542,9 +751,12 @@ def _current_status(tid: str, cfg: dict) -> Optional[str]:
 # ADVANCE — move the card to (phase_id, status), walking the legal path.
 # ---------------------------------------------------------------------------
 def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
-               note: str = "", deliverable_url: str = "") -> bool:
+               note: str = "", deliverable_url: str = "",
+               run_dir=None, env: Optional[dict] = None) -> bool:
     """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
-    Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS."""
+    Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS.
+    F12: on an outage-class failure (transport error / 5xx) the op is parked in
+    the run's board outbox for one idempotent replay on recovery."""
     payload: dict = {"phase_id": phase_id, "status": status}
     if note:
         payload["note"] = note
@@ -554,12 +766,18 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
     try:
         st, body = _request(cfg["status_method"], url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
+        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}); queued in the board outbox.")
+        if run_dir is not None:
+            _outbox_append(run_dir, method=cfg["status_method"], path=cfg["status_tmpl"].format(id=tid),
+                           payload=payload, reason=f"{type(exc).__name__}: {exc}")
         return False
     if 200 <= st < 300:
         _log(f"advance {phase_id}->{status} OK (task_id={tid}).")
         return True
     _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
+    if st >= 500 and run_dir is not None:
+        _outbox_append(run_dir, method=cfg["status_method"], path=cfg["status_tmpl"].format(id=tid),
+                       payload=payload, reason=f"HTTP {st}")
     return False
 
 
@@ -606,7 +824,8 @@ def card_advance(
     if current is None:
         # Card status unknown (board unreachable / card missing): attempt a single
         # direct move and let the server reject an illegal jump (fail-soft).
-        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url)
+        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url,
+                          run_dir=run_dir, env=env)
     if current == target:
         _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
         return True
@@ -621,9 +840,17 @@ def card_advance(
             tid, phase_id, step, cfg,
             note=note if last else f"auto-step toward {target}",
             deliverable_url=deliverable_url if last else "",
+            run_dir=run_dir, env=env,
         )
         if not ok:
             break
+    # F12: after ANY advance, opportunistically replay parked ops so a recovery
+    # collapses the outbox to one consistent card with truthful status.
+    if ok:
+        try:
+            replay_outbox(run_dir, env=env)
+        except Exception as exc:  # noqa: BLE001 — outbox replay must never surface here
+            _log(f"outbox replay skip ({type(exc).__name__}: {exc}).")
     return ok
 
 
@@ -858,6 +1085,42 @@ def reconcile(base_dir: Optional[str] = None, *, env: Optional[dict] = None) -> 
     return report
 
 
+def _replay_cli(argv: Optional[list] = None) -> int:
+    """``mc_board.py replay --run-dir DIR [--json]`` (F12) — explicit outbox
+    replay for one run (or every run under the evidence root when --run-dir is
+    omitted). ALWAYS exits 0 — fail-soft, non-gating; the printed report carries
+    the verdict."""
+    import argparse
+
+    p = argparse.ArgumentParser(
+        prog="mc_board.py replay",
+        description="F12 — replay parked board writes (board outbox) once; "
+                    "idempotent, one consistent card, truthful status.",
+    )
+    p.add_argument("--run-dir", default="",
+                   help="One run directory to replay (default: sweep every run "
+                        "under the resolved evidence root).")
+    p.add_argument("--base-dir", default="",
+                   help="Run-evidence root (used when --run-dir is omitted).")
+    p.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    args = p.parse_args(argv)
+
+    results: dict = {}
+    if args.run_dir:
+        results[os.path.basename(args.run_dir.rstrip("/")) or args.run_dir] = replay_outbox(args.run_dir)
+    else:
+        base = args.base_dir or resolve_state_dir()
+        for run_dir in list_evidence_runs(base):
+            report = replay_outbox(run_dir)
+            if report.get("replayed") or report.get("remaining"):
+                results[os.path.basename(run_dir)] = report
+    if args.json:
+        print(json.dumps(results, indent=2))
+    else:
+        print(json.dumps(results, indent=2))
+    return 0  # non-gating — always exit 0
+
+
 def _reconcile_cli(argv: Optional[list] = None) -> int:
     """``mc_board.py reconcile [--base-dir DIR] [--json]`` (U100, cloned from
     cc_board.py's B-U13/U27 CLI form). ALWAYS exits 0 — this is a non-gating,
@@ -900,5 +1163,9 @@ if __name__ == "__main__":
     # subcommand (cloned from cc_board.py's B-U13/U27 CLI form). This module
     # previously had no CLI entrypoint at all (library-only, imported by each
     # producer's orchestrator) — reconcile is purely additive.
+    # F12 — ``mc_board.py replay [--run-dir DIR] [--base-dir DIR] [--json]``:
+    # explicit outbox replay pass, same fail-soft/non-gating contract.
     if len(sys.argv) > 1 and sys.argv[1] == "reconcile":
         sys.exit(_reconcile_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "replay":
+        sys.exit(_replay_cli(sys.argv[2:]))

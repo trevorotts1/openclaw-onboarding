@@ -41,6 +41,7 @@ on:
     paths:
       - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
       - "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh"
+      - "tests/unit/test_board_join_stray_template_depts.py"
       - "23-ai-workforce-blueprint/scripts/build-workforce.py"
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "32-command-center-setup/scripts/seed-workspaces.py"
@@ -54,6 +55,7 @@ on:
     paths:
       - "23-ai-workforce-blueprint/scripts/prove-board-join.py"
       - "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh"
+      - "tests/unit/test_board_join_stray_template_depts.py"
       - "23-ai-workforce-blueprint/scripts/build-workforce.py"
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "32-command-center-setup/scripts/seed-workspaces.py"
@@ -81,3 +83,6 @@ jobs:
       - name: Run the C-series board-join prover
         shell: bash
         run: bash 23-ai-workforce-blueprint/scripts/test-board-join-chain.sh
+
+      - name: Stray role-library template trees WARN, chosen gaps still drift
+        run: python3 tests/unit/test_board_join_stray_template_depts.py

@@ -54,6 +54,13 @@ EXIT_WATCHDOG_NO_RUNS = 13   # scanned 0 state.json files -- UNDETERMINED, not a
 # the bounded retry budget is spent, and a human has to look.
 EXIT_SUPERVISOR_NO_RUNS = 14  # scanned 0 state.json files -- UNDETERMINED, not a pass
 EXIT_SUPERVISOR_ALARM = 15    # >=1 run exhausted its restart budget -- NOT a pass
+# PRES-019: the supervisor found a HELD-but-stalled run -- lock alive, but the
+# run is past its own progress deadline (phase budget x grace) -- and alarmed
+# instead of restarting behind the live holder. A NOT-a-pass verdict of its
+# own, so "budget exhausted" (15) and "held but stalled" (16) never collapse
+# into one indistinguishable nonzero: the two alarms need different human
+# responses (inspect a wedged worker vs. read the supervisor ledger).
+EXIT_SUPERVISOR_STALLED = 16  # >=1 held-but-stalled run alarmed -- NOT a pass
 
 STATE_FILENAME = "state.json"
 LOCK_FILENAME = ".job.lock"

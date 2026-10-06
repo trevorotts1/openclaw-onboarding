@@ -102,11 +102,27 @@ if [[ "$alert" -eq 1 ]]; then
   if [[ "${OC_DISK_ESCALATE:-0}" == "1" ]] && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]]; then
     _esc_msg="[disk-alert] $(hostname): OpenClaw disk >= ${THRESHOLD}% used. Check the memory index / orphan temp files before the gateway is starved. See $DISK_LOG."
     _esc_msg="${_esc_msg//\\/\\\\}"; _esc_msg="${_esc_msg//\"/\\\"}"
-    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-      -H 'Content-Type: application/json' \
-      ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-      -d "{\"action\":\"escalate\",\"client\":\"$(hostname 2>/dev/null||echo box)\",\"agent\":\"disk-usage-alert\",\"message\":\"${_esc_msg}\"}" \
-      --max-time 15 >/dev/null 2>&1 || log "WARN" "rescue-rangers webhook escalation failed (non-fatal)"
+    # F47/F50: identify the box by its canonical fleet slug, NEVER the hostname --
+    # RR-01 answers 400 "unresolvable box" to a post with no boxName, and a hostname
+    # matches no client. No slug = nothing the intake can accept, so say so loudly
+    # instead of posting a request that is rejected and hidden.
+    _esc_box="${FLEET_STANDING_BOX_SLUG:-}"
+    if [[ -z "$_esc_box" ]]; then
+      log "WARN" "FLEET_STANDING_BOX_SLUG is not set - Rescue Rangers escalation NOT sent (the intake rejects a post with no boxName)"
+    else
+      _esc_client="${FLEET_STANDING_CLIENT_LABEL:-$_esc_box}"
+      _esc_box="${_esc_box//\\/\\\\}"; _esc_box="${_esc_box//\"/\\\"}"
+      _esc_client="${_esc_client//\\/\\\\}"; _esc_client="${_esc_client//\"/\\\"}"
+      _esc_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+        -H 'Content-Type: application/json' \
+        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
+        -d "{\"action\":\"escalate\",\"boxName\":\"${_esc_box}\",\"clientName\":\"${_esc_client}\",\"agent\":\"disk-usage-alert\",\"message\":\"${_esc_msg}\"}" \
+        --max-time 15 2>/dev/null || true)"
+      case "$_esc_code" in
+        2??) : ;;
+        *) log "WARN" "rescue-rangers escalation not accepted (HTTP ${_esc_code:-none}); this alarm did NOT reach Rescue Rangers" ;;
+      esac
+    fi
   fi
   exit 6
 fi

@@ -1,0 +1,28 @@
+name: Onboarding reliability contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  reliability-contracts:
+    name: State, post-interview recovery and authoritative delivery (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Atomic state, runner ownership, routing and completion contracts
+        run: python3 23-ai-workforce-blueprint/scripts/test_reliability_contracts.py
+      - name: Company retirement and recovery cleanup contracts
+        run: python3 23-ai-workforce-blueprint/scripts/test_postinterview_recovery.py
+      - name: Retained authoritative JSON delivery receipts
+        run: python3 37-zhc-closeout/scripts/test_delivery_receipts.py
+      - name: Read-only authoritative SQLite delivery receipts
+        run: python3 37-zhc-closeout/scripts/test_sqlite_delivery_receipts.py

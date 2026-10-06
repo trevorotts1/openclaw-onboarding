@@ -52,6 +52,56 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SCRIPTS = SKILL_DIR / "scripts"
 GATE_ENGINE = SCRIPTS / "gate_engine.py"                      # sibling W1.15 file
+
+# JEV A36 (spec 10.3): audience-rescore entry late gate through the EXISTING
+# D23 module (shared-utils/decision_engine/commit/dispatch.py) — imported by
+# path, never restated. Guards the rescore/re-nudge send against a stale
+# revision so a late sweep never clobbers a newer decision.
+_COMMIT_DIR = SKILL_DIR.parent / "shared-utils" / "decision_engine" / "commit"
+sys.path.insert(0, str(_COMMIT_DIR))
+try:
+    import dispatch as _cas_dispatch  # noqa: E402 -- JEV A36 late gate
+except Exception:  # noqa: BLE001 -- bare box: send path refuses, never invents
+    _cas_dispatch = None
+
+
+def gate_rescore_result(task_key, result_revision, state_dir=None, scope=None):
+    """Audience-rescore entry late gate (A36) through existing D23.
+
+    Returns (ok, detail): ok True when the rescore result is current; False
+    with the typed D23 failure when a stale sweep entry must not proceed.
+    kind is fixed to "audience_rescore" (D23 closed late-kind set).
+    """
+    if _cas_dispatch is None:
+        return False, {"error": "cas_unavailable"}
+    con = None
+    try:
+        if state_dir is not None:
+            cand = Path(state_dir) / "decision_revisions.db"
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            con = sqlite3.connect(str(cand), timeout=30)
+            con.row_factory = sqlite3.Row
+        if con is None:
+            _commit = _cas_dispatch._load_commit()
+            store = _commit.fresh_state(
+                input_hash=_cas_dispatch.scope_hash(scope or {}))
+        else:
+            _commit, store = _cas_dispatch.load_cas_store(
+                con, task_key,
+                _cas_dispatch.scope_hash(scope or {}) if scope is not None else None)
+        ok = _cas_dispatch.guard_late_result(store, "audience_rescore",
+                                             result_revision)
+        return True, {"revision": store["decision_revision"], "ok": ok}
+    except Exception as exc:  # noqa: BLE001 -- typed D23 failure surfaces here
+        return False, {"error": type(exc).__name__, "detail": str(exc),
+                       "kind": "audience_rescore",
+                       "result_revision": result_revision}
+    finally:
+        try:
+            if con is not None:
+                con.close()
+        except sqlite3.Error:
+            pass
 TEMPLATES_DIR = SKILL_DIR / "config" / "nudge-templates"
 DEFAULT_CONFIG = SKILL_DIR / "config" / "engine-config.json"
 TEMPLATE_CONFIG = SKILL_DIR / "config" / "engine-config.template.json"
@@ -474,6 +524,11 @@ def cmd_send(args):
 
     cfg = _load_config(args.config)
     state_dir = resolve_state_dir(args)
+    # JEV A36 (spec 10.3): the audience-rescore revision this send is built
+    # against, read BEFORE the ledger resolve / render below so the gate
+    # further down covers the whole send preparation.
+    _cas_rev = (_cas_dispatch.head_revision(state_dir, args.subject_key)
+                if _cas_dispatch is not None else 0)
     target, label = _target_and_label(template, args.gate, args.subject_key,
                                        args.deliverable_label)
 
@@ -499,6 +554,20 @@ def cmd_send(args):
         return _emit({"ok": False, "action": "send", "template": template,
                       "subject_key": args.subject_key, "target": target,
                       "reason": "recipient_not_resolvable"}, args.json), EX_REFUSE
+
+    # JEV A36 (spec 10.3): late-rescore gate immediately before rendering and
+    # delivering. A send whose rescore basis went obsolete (head moved while
+    # this send was prepared) is refused rather than delivered on a superseded
+    # decision. Dry-run still refuses: an obsolete basis is worth reporting.
+    _gok, _gdetail = gate_rescore_result(args.subject_key, _cas_rev,
+                                         state_dir=state_dir)
+    if not _gok:
+        return _emit({"ok": False, "action": "send", "template": template,
+                      "subject_key": args.subject_key,
+                      "reason": "stale_rescore_refused",
+                      "result_revision": _cas_rev,
+                      "detail": _gdetail.get("detail") or _gdetail.get("error")},
+                     args.json), EX_REFUSE
 
     gate_link = None
     if template in ("gate-open", "stuck-renudge"):
@@ -591,10 +660,16 @@ def cmd_renudge_sweep(args):
             continue
         stuck = (now - entered).total_seconds()
         if stuck >= threshold:
+            # JEV A36 (spec 10.3): this candidate's rescore basis, read here (at
+            # eligibility time) and gated again at send time below, so a head
+            # that moves anywhere across the sweep window is caught.
+            cas_rev = (_cas_dispatch.head_revision(state_dir, r["participant_key"])
+                       if _cas_dispatch is not None else 0)
             eligible.append({"participant_key": r["participant_key"], "gate": gate_id,
                              "target": target, "label": default_label,
                              "episode": ts_map.get(cursor),
-                             "stuck_days": round(stuck / 86400, 1)})
+                             "stuck_days": round(stuck / 86400, 1),
+                             "cas_rev": cas_rev})
     con.close()
 
     if args.dry_run:
@@ -603,7 +678,7 @@ def cmd_renudge_sweep(args):
                       "candidates": eligible}, args.json), EX_OK
 
     store = NudgeSentStore(state_dir)
-    sent = skipped = errors = 0
+    sent = skipped = stale = errors = 0
     try:
         for e in eligible:
             dkey = NudgeSentStore.key("stuck-renudge", e["participant_key"],
@@ -611,6 +686,15 @@ def cmd_renudge_sweep(args):
             if not store.claim(dkey, "stuck-renudge", e["participant_key"],
                                e["gate"], e["episode"]):
                 skipped += 1                                  # already auto-renudged
+                continue
+            # JEV A36 (spec 10.3): refuse a send whose rescore basis went
+            # obsolete during the sweep; the claim is released so the next tick
+            # re-sends on the new basis. Dry-run is unaffected (returns above).
+            _gok, _ = gate_rescore_result(e["participant_key"], e["cas_rev"],
+                                          state_dir=state_dir)
+            if not _gok:
+                store.release(dkey)
+                stale += 1
                 continue
             rc = _send_one(args, cfg, state_dir, "stuck-renudge",
                            e["participant_key"], e["gate"], e["target"], e["label"])
@@ -624,7 +708,8 @@ def cmd_renudge_sweep(args):
         store.close()
     return _emit({"ok": True, "action": "renudge-sweep", "days": days,
                   "swept": swept, "eligible": len(eligible), "sent": sent,
-                  "skipped_deduped": skipped, "errors": errors}, args.json), EX_OK
+                  "skipped_deduped": skipped, "stale_refused": stale,
+                  "errors": errors}, args.json), EX_OK
 
 
 def _send_one(args, cfg, state_dir, template, subject_key, gate, target, label):

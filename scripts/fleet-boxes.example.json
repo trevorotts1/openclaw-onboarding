@@ -1,0 +1,28 @@
+[
+  {
+    "client": "Example Client One",
+    "name": "example-mac-box",
+    "ssh_target": "example-mac-ssh-alias",
+    "platform": "mac",
+    "wave": "first"
+  },
+  {
+    "client": "Example Client Two",
+    "name": "example-hostinger-box",
+    "ssh_target": "root@203.0.113.10",
+    "platform": "hostinger",
+    "container": "example-openclaw-1",
+    "docker_exec_user": "node",
+    "wave": "first"
+  },
+  {
+    "client": "Example Client Three",
+    "name": "example-contabo-box",
+    "ssh_target": "example-contabo-ssh-alias",
+    "platform": "contabo",
+    "container": "oc-example",
+    "docker_exec_user": "node",
+    "openclaw_root": "/home/node/.openclaw",
+    "wave": "rest"
+  }
+]

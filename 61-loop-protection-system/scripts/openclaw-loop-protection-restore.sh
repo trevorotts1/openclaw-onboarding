@@ -8,6 +8,11 @@
 #   runaway tool loop actually abort. It can also regenerate the service-env file. This script
 #   detects every piece of the protection stack, and with --apply puts back the ones it is safe
 #   to put back.
+#   OpenClaw 2026.7.2+ ends a run on the second critical tool loop natively, so the dist patch is
+#   SKIPPED there (version unparseable = SKIPPED + UNDETERMINED, a modern build is never patched).
+#   Section 6 checks only tools.loopDetection.enabled plus any explicit false at
+#   agents.entries.<id>.tools.loopDetection.enabled. Every config write is preceded by
+#   `openclaw config get <path>`: "Unknown config path" = REFUSE, the key is never written.
 #
 # USAGE
 #   openclaw-loop-protection-restore.sh              # read-only check (default)
@@ -16,7 +21,8 @@
 #
 # EXIT CODES
 #   0  all checks passed, nothing to do
-#   3  drift found and NOT repaired (check-only run, or an item that needs a human)
+#   3  drift found and NOT repaired (check-only run, or an item that needs a human), or an item
+#      is UNDETERMINED / a write was REFUSED (never reported as all clear)
 #   4  hard failure (upstream code changed, a must-be-true safety setting is false, etc.)
 #   2  usage error / missing prerequisite
 #
@@ -37,7 +43,7 @@
 
 set -uo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # ---------------------------------------------------------------------------- flags
 MODE="check"
@@ -108,7 +114,7 @@ resolve_dist_dir() {
 DIST_DIR="$(resolve_dist_dir)"
 
 # ---------------------------------------------------------------------------- output
-PASS_N=0; DRIFT_N=0; FAIL_N=0; FIXED_N=0
+PASS_N=0; DRIFT_N=0; FAIL_N=0; FIXED_N=0; UNDET_N=0; REFUSE_N=0
 RESTART_NEEDED=0
 declare -a MANUAL_ACTIONS=()
 
@@ -116,6 +122,8 @@ ok()     { PASS_N=$((PASS_N+1));  printf '  [ OK ]   %s\n' "$1"; }
 drift()  { DRIFT_N=$((DRIFT_N+1)); printf '  [DRIFT]  %s\n' "$1"; }
 fail()   { FAIL_N=$((FAIL_N+1));  printf '  [ FAIL]  %s\n' "$1"; }
 fixed()  { FIXED_N=$((FIXED_N+1)); printf '  [FIXED]  %s\n' "$1"; }
+undet()  { UNDET_N=$((UNDET_N+1)); printf '  [UNDET ] %s\n' "$1"; }
+refuse() { REFUSE_N=$((REFUSE_N+1)); printf '  [REFUSE] %s\n' "$1"; }
 info()   { printf '           %s\n' "$1"; }
 section(){ printf '\n%s\n' "$1"; }
 manual() { MANUAL_ACTIONS+=("$1"); }
@@ -161,21 +169,89 @@ cfg_get() { "${OC_BIN}" config get "$1" 2>/dev/null; }
 # Returns 0 if the path exists at all.
 cfg_has() { "${OC_BIN}" config get "$1" >/dev/null 2>&1; }
 
+# Classifies one `config get`. Sets PROBE_STATE (VALUE|UNSET|UNKNOWN|UNREADABLE) and PROBE_VAL
+# (stdout only). UNKNOWN = this build answers "Unknown config path" (the key does not exist here).
+# UNREADABLE = the config store itself could not be read (maintenance, corrupt) - never "unset".
+# stderr is read only for classification and is never printed. Callers must never echo PROBE_VAL
+# for a path that can hold a secret.
+cfg_probe() {
+  local rc err
+  PROBE_VAL="$("${OC_BIN}" config get "$1" 2>"${ERR_TMP}")"; rc=$?
+  err="$(/bin/cat "${ERR_TMP}" 2>/dev/null)"
+  case "${PROBE_VAL}${err}" in
+    *[Uu]nknown\ config\ path*) PROBE_STATE="UNKNOWN" ;;
+    *"could not be read"*|*"offline maintenance"*) PROBE_STATE="UNREADABLE" ;;
+    *) if [ "${rc}" -eq 0 ]; then PROBE_STATE="VALUE"; else PROBE_STATE="UNSET"; fi ;;
+  esac
+}
+
+# Guarded write. ALWAYS runs `config get <path>` first. Returns 0 = written, 1 = write failed,
+# 2 = REFUSED (unknown path or unreadable store; nothing was written).
 cfg_set_json() {
   local path="$1" value="$2"
+  cfg_probe "${path}"
+  case "${PROBE_STATE}" in
+    UNKNOWN)    refuse "not writing ${path}: this OpenClaw build answers \"Unknown config path\" for it"; return 2 ;;
+    UNREADABLE) refuse "not writing ${path}: the config store could not be read (state UNDETERMINED)"; return 2 ;;
+  esac
   "${OC_BIN}" config set "${path}" "${value}" --strict-json >/dev/null 2>&1
 }
 
+# cfg_apply <path> <json> <fixed-message> <fail-message>: guarded write + the matching report line.
+# A refusal is already reported by cfg_set_json and is not a second FAIL.
+cfg_apply() {
+  cfg_set_json "$1" "$2"
+  case $? in
+    0) fixed "$3" ;;
+    2) : ;;
+    *) fail "$4" ;;
+  esac
+}
+
+# stderr scratch for cfg_probe (classification only, never printed). mktemp, never a PID path.
+ERR_TMP="$(/usr/bin/mktemp -t ocloop-err.XXXXXX)" || { printf 'mktemp failed\n' >&2; exit 2; }
+PATCHER_MJS=""
+cleanup() { rm -f "${ERR_TMP}" "${PATCHER_MJS:-}"; }
+trap cleanup EXIT
+
+# First dotted triplet in a version string ("OpenClaw 2026.9.8 (fc23bc8)" -> 2026.9.8; a
+# pre-release suffix such as -beta.1 is ignored). Empty output = cannot be determined.
+ver_triplet() { printf '%s' "$1" | /usr/bin/grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | /usr/bin/head -1; }
+
+# ver_ge A B: 0 when triplet A >= triplet B.
+ver_ge() {
+  local a1 a2 a3 b1 b2 b3
+  IFS=. read -r a1 a2 a3 <<EOF
+$1
+EOF
+  IFS=. read -r b1 b2 b3 <<EOF
+$2
+EOF
+  [ "${a1}" -gt "${b1}" ] && return 0; [ "${a1}" -lt "${b1}" ] && return 1
+  [ "${a2}" -gt "${b2}" ] && return 0; [ "${a2}" -lt "${b2}" ] && return 1
+  [ "${a3}" -ge "${b3}" ]
+}
+
+# OpenClaw 2026.7.2+ ends a run on the second critical tool loop natively (docs/tools/loop-detection.md).
+NATIVE_GUARD_SINCE="2026.7.2"
+
 # ============================================================================
-# 1. DIST PATCH  (runaway tool-loop abort)
+# 1. DIST PATCH  (runaway tool-loop abort) - older builds only
 # ============================================================================
 section "1. Runaway tool-loop abort patch (OpenClaw dist)"
+
+OC_TRIPLET="$(ver_triplet "${OC_VERSION}")"
+if [ -z "${OC_TRIPLET}" ]; then
+  PATCH_GATE="undetermined"
+elif ver_ge "${OC_TRIPLET}" "${NATIVE_GUARD_SINCE}"; then
+  PATCH_GATE="native"
+else
+  PATCH_GATE="patch"
+fi
 
 PATCHER="$(/usr/bin/mktemp -t ocloop-patcher.XXXXXX)" || { printf 'mktemp failed\n' >&2; exit 2; }
 PATCHER_MJS="${PATCHER}.mjs"
 mv "${PATCHER}" "${PATCHER_MJS}"
-cleanup() { rm -f "${PATCHER_MJS}"; }
-trap cleanup EXIT
 
 # The patch table is the single source of truth. Anchors are exact byte strings from
 # OpenClaw's built dist. If an anchor is neither found nor already-applied, upstream changed
@@ -479,15 +555,29 @@ emit({ verdict: "APPLIED", changed: todo.map((r) => r.id), files: written });
 process.exit(0);
 NODEEOF
 
-PATCH_JSON="$("${NODE_BIN}" "${PATCHER_MJS}" "${DIST_DIR}" check all 2>&1)"
-PATCH_RC=$?
+PATCH_JSON=""; PATCH_RC=0
+case "${PATCH_GATE}" in
+  patch) PATCH_JSON="$("${NODE_BIN}" "${PATCHER_MJS}" "${DIST_DIR}" check all 2>&1)"; PATCH_RC=$? ;;
+esac
 
 patch_field() { printf '%s' "${PATCH_JSON}" | "${NODE_BIN}" -e '
 let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s.trim().split("\n").pop());process.stdout.write(String(o[process.argv[1]]??""));}catch(e){process.stdout.write("");}});' "$1"; }
 
 PATCH_VERDICT="$(patch_field verdict)"
+case "${PATCH_GATE}" in
+  native)       PATCH_VERDICT="SKIPPED_NATIVE" ;;
+  undetermined) PATCH_VERDICT="SKIPPED_UNDETERMINED" ;;
+esac
 
 case "${PATCH_VERDICT}" in
+  SKIPPED_NATIVE)
+    ok "runaway-abort dist patch SKIPPED: OpenClaw ${OC_TRIPLET} is >= ${NATIVE_GUARD_SINCE} and ends a run on the second critical tool loop natively"
+    info "Nothing is patched on this build. Whether the native guard is switched on is checked in section 6."
+    ;;
+  SKIPPED_UNDETERMINED)
+    undet "runaway-abort dist patch SKIPPED: the OpenClaw version could not be determined from \"${OC_VERSION:-<empty>}\" - UNDETERMINED"
+    info "Fail-safe: a build that may be modern is never patched. Fix 'openclaw --version' and re-run."
+    ;;
   APPLIED)
     ok "runaway-abort patch present and complete (hunks: $(patch_field applied))"
     ;;
@@ -591,12 +681,12 @@ if [ "${MF_ENABLED}" = "true" ]; then
 elif [ -z "${MF_ENABLED}" ]; then
   drift "${MF}.enabled is unset (OpenClaw default applies)"
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json "${MF}.enabled" true; then fixed "${MF}.enabled = true"; else fail "could not set ${MF}.enabled"; fi
+    cfg_apply "${MF}.enabled" true "${MF}.enabled = true" "could not set ${MF}.enabled"
   fi
 else
   fail "${MF}.enabled = ${MF_ENABLED} - JOURNALING IS OFF. This must never be false."
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json "${MF}.enabled" true; then fixed "${MF}.enabled restored to true"; else fail "could not restore ${MF}.enabled"; fi
+    cfg_apply "${MF}.enabled" true "${MF}.enabled restored to true" "could not restore ${MF}.enabled"
   fi
 fi
 
@@ -606,7 +696,7 @@ if [ "${MF_BYTES}" = "0" ]; then
 else
   drift "${MF}.forceFlushTranscriptBytes = ${MF_BYTES:-<unset>} (want 0)"
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json "${MF}.forceFlushTranscriptBytes" 0; then fixed "${MF}.forceFlushTranscriptBytes = 0"; else fail "could not set ${MF}.forceFlushTranscriptBytes"; fi
+    cfg_apply "${MF}.forceFlushTranscriptBytes" 0 "${MF}.forceFlushTranscriptBytes = 0" "could not set ${MF}.forceFlushTranscriptBytes"
   fi
 fi
 
@@ -638,52 +728,78 @@ fi
 unset MF_PROMPT
 
 # ============================================================================
-# 6. Loop-detection thresholds + no per-agent override
+# 6. Native loop guard switched on (global) + no explicit per-agent "off"
 # ============================================================================
-section "6. Loop-detection thresholds"
+section "6. Native tool-loop guard (tools.loopDetection)"
 
-check_num() {
-  local path="$1" want="$2" got
-  got="$(cfg_get "${path}")"
-  if [ "${got}" = "${want}" ]; then
-    ok "${path} = ${want}"
-  else
-    drift "${path} = ${got:-<unset>} (want ${want})"
+# October OpenClaw has no warningThreshold / criticalThreshold / globalCircuitBreakerThreshold /
+# unknownToolThreshold / postCompactionGuard.windowSize keys ("Unknown config path"), so they are
+# neither checked nor written. The only global key checked is tools.loopDetection.enabled.
+LD_PATH="tools.loopDetection.enabled"
+cfg_probe "${LD_PATH}"
+case "${PROBE_STATE}" in
+  VALUE)
+    if [ "${PROBE_VAL}" = "true" ]; then
+      ok "${LD_PATH} = true"
+    else
+      drift "${LD_PATH} = ${PROBE_VAL:-<empty>} (want true)"
+      if [ "${MODE}" = "apply" ]; then
+        cfg_apply "${LD_PATH}" true "${LD_PATH} = true" "could not set ${LD_PATH}"
+      fi
+    fi ;;
+  UNSET)
+    drift "${LD_PATH} is unset (the native guard is OFF by default)"
     if [ "${MODE}" = "apply" ]; then
-      if cfg_set_json "${path}" "${want}"; then fixed "${path} = ${want}"; else fail "could not set ${path}"; fi
-    fi
-  fi
-}
+      cfg_apply "${LD_PATH}" true "${LD_PATH} = true" "could not set ${LD_PATH}"
+    fi ;;
+  UNKNOWN)
+    undet "${LD_PATH}: this OpenClaw build answers \"Unknown config path\" - guard state UNDETERMINED"
+    if [ "${MODE}" = "apply" ]; then
+      # cfg_set_json probes first, sees the same answer and REFUSES; nothing is written.
+      cfg_apply "${LD_PATH}" true "${LD_PATH} = true" "could not set ${LD_PATH}"
+    fi ;;
+  *)
+    undet "${LD_PATH}: the config store could not be read - guard state UNDETERMINED" ;;
+esac
 
-check_num tools.loopDetection.enabled true
-check_num tools.loopDetection.warningThreshold 2
-check_num tools.loopDetection.criticalThreshold 3
-check_num tools.loopDetection.globalCircuitBreakerThreshold 6
-check_num tools.loopDetection.unknownToolThreshold 3
-check_num tools.loopDetection.postCompactionGuard.windowSize 2
-
-# A per-agent override silently beats the global block: agent config is merged OVER global.
-OVERRIDE_FOUND=0
-if cfg_has agents.main.tools.loopDetection; then
-  fail "agents.main.tools.loopDetection EXISTS - it silently overrides the global thresholds"
-  OVERRIDE_FOUND=1
-fi
-if "${OC_BIN}" config get agents.list 2>/dev/null | "${NODE_BIN}" -e '
+# Per-agent override: October shape is agents.entries.<id>.tools.loopDetection. An EXPLICIT false
+# there silently switches the guard off for that agent. Only explicit false is flagged; a missing
+# key inherits the global value. Read-only: an agent's override is the operator's call, never
+# auto-changed. agents.entries is parsed in node and ONLY sanitised agent ids are printed - no
+# other byte of it (it can sit next to provider keys) is ever echoed.
+AGENT_IDS="main"
+cfg_probe agents.entries
+ENTRIES_STATE="${PROBE_STATE}"
+if [ "${PROBE_STATE}" = "VALUE" ]; then
+  EXTRA_IDS="$(printf '%s' "${PROBE_VAL}" | "${NODE_BIN}" -e '
 let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
-  let a;try{a=JSON.parse(s);}catch(e){process.exit(0);}
-  if(!Array.isArray(a))process.exit(0);
-  const hit=a.some((e)=>e&&e.id==="main"&&e.tools&&e.tools.loopDetection);
-  process.exit(hit?1:0);});' ; then
-  ok "no per-agent loopDetection override on the main agent"
+  let o;try{o=JSON.parse(s);}catch(e){return;}
+  if(!o||typeof o!=="object"||Array.isArray(o))return;
+  const all=Object.keys(o);
+  const ids=all.filter((k)=>/^[A-Za-z0-9_-]+$/.test(k));
+  process.stdout.write(ids.join("\n"));
+  if(ids.length<all.length)process.stdout.write("\n?"+(all.length-ids.length));});' 2>/dev/null)"
+  for id in ${EXTRA_IDS}; do
+    case "${id}" in
+      \?*) undet "${id#?} agent id(s) in agents.entries have unprobeable names (not [A-Za-z0-9_-]) - their loopDetection.enabled was NOT checked" ;;
+      *) case " ${AGENT_IDS} " in *" ${id} "*) : ;; *) AGENT_IDS="${AGENT_IDS} ${id}" ;; esac ;;
+    esac
+  done
 else
-  if [ "$?" = "1" ]; then
-    fail "agents.list[id=main].tools.loopDetection EXISTS - it silently overrides the global thresholds"
-    OVERRIDE_FOUND=1
-  fi
+  undet "agents.entries could not be listed (${ENTRIES_STATE}) - only the main agent was probed for an explicit loopDetection off"
 fi
-if [ "${OVERRIDE_FOUND}" = "1" ]; then
-  info "Remove it so the global thresholds govern:"
-  manual "openclaw config unset agents.main.tools.loopDetection   (and/or the agents.list entry)"
+
+OFF_AGENTS=""
+for id in ${AGENT_IDS}; do
+  cfg_probe "agents.entries.${id}.tools.loopDetection.enabled"
+  if [ "${PROBE_STATE}" = "VALUE" ] && [ "${PROBE_VAL}" = "false" ]; then
+    fail "agents.entries.${id}.tools.loopDetection.enabled = false - the native guard is OFF for this agent"
+    manual "Agent ${id} has loopDetection explicitly disabled. Operator decision: openclaw config set agents.entries.${id}.tools.loopDetection.enabled true --strict-json (or unset the override). This script never changes it."
+    OFF_AGENTS="${OFF_AGENTS} ${id}"
+  fi
+done
+if [ -z "${OFF_AGENTS}" ]; then
+  ok "no explicit per-agent loopDetection.enabled=false among: ${AGENT_IDS}"
 fi
 
 # ============================================================================
@@ -750,7 +866,7 @@ if "${OC_BIN}" config get plugins.load.paths 2>/dev/null | /usr/bin/grep -q "/.o
 else
   drift "plugins.load.paths does NOT include \$HOME/.openclaw/extensions"
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json plugins.load.paths "[\"${EXT_DIR}\"]"; then fixed "plugins.load.paths set"; else fail "could not set plugins.load.paths"; fi
+    cfg_apply plugins.load.paths "[\"${EXT_DIR}\"]" "plugins.load.paths set" "could not set plugins.load.paths"
   fi
 fi
 
@@ -787,7 +903,7 @@ if [ "${PLUG_ENABLED}" = "true" ]; then
 else
   drift "plugins.entries.${PLUG}.enabled = ${PLUG_ENABLED:-<unset>} (want true)"
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json "plugins.entries.${PLUG}.enabled" true; then fixed "plugin enabled"; else fail "could not enable plugin"; fi
+    cfg_apply "plugins.entries.${PLUG}.enabled" true "plugin enabled" "could not enable plugin"
   fi
 fi
 
@@ -797,7 +913,7 @@ if [ "${PLUG_INJECT}" = "true" ]; then
 else
   drift "plugins.entries.${PLUG}.hooks.allowPromptInjection = ${PLUG_INJECT:-<unset>} (want true)"
   if [ "${MODE}" = "apply" ]; then
-    if cfg_set_json "plugins.entries.${PLUG}.hooks.allowPromptInjection" true; then fixed "allowPromptInjection = true"; else fail "could not set allowPromptInjection"; fi
+    cfg_apply "plugins.entries.${PLUG}.hooks.allowPromptInjection" true "allowPromptInjection = true" "could not set allowPromptInjection"
   fi
 fi
 
@@ -874,7 +990,7 @@ esac
 # summary
 # ============================================================================
 printf '\n================================================================\n'
-printf ' RESULT:  %s passed   %s drifted   %s failed   %s fixed\n' "${PASS_N}" "${DRIFT_N}" "${FAIL_N}" "${FIXED_N}"
+printf ' RESULT:  %s passed   %s drifted   %s failed   %s fixed   %s undetermined   %s refused\n' "${PASS_N}" "${DRIFT_N}" "${FAIL_N}" "${FIXED_N}" "${UNDET_N}" "${REFUSE_N}"
 printf '================================================================\n'
 
 if [ "${#MANUAL_ACTIONS[@]}" -gt 0 ]; then
@@ -894,12 +1010,17 @@ if [ "${FAIL_N}" -gt 0 ]; then
   exit 4
 fi
 if [ "${DRIFT_N}" -gt 0 ]; then
-  if [ "${MODE}" = "apply" ] && [ "${DRIFT_N}" -le "${FIXED_N}" ]; then
+  if [ "${MODE}" = "apply" ] && [ "${DRIFT_N}" -le "${FIXED_N}" ] && [ "${UNDET_N}" -eq 0 ] && [ "${REFUSE_N}" -eq 0 ]; then
     printf '\nVERDICT: all drift repaired.\n'
     exit 0
   fi
   printf '\nVERDICT: DRIFT FOUND'
   [ "${MODE}" = "check" ] && printf ' - re-run with --apply to repair what is repairable.\n' || printf ' - some items still need attention.\n'
+  exit 3
+fi
+if [ "${UNDET_N}" -gt 0 ] || [ "${REFUSE_N}" -gt 0 ]; then
+  # Never a false all-clear: something could not be verified or a write was refused.
+  printf '\nVERDICT: UNDETERMINED - %s item(s) could not be verified, %s write(s) refused. NOT an all-clear.\n' "${UNDET_N}" "${REFUSE_N}"
   exit 3
 fi
 printf '\nVERDICT: ALL CLEAR - loop protection is fully in place.\n'

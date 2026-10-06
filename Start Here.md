@@ -39,9 +39,20 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 63 active skills"
+- "Install the 66 active skills"
 
-**Your task:** Install all 63 active skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 66 active skills using the 5-Wave Parallel Orchestration below.
+
+### First onboarding: collect the owner and company names before setup
+
+Before a **brand-new** onboarding, ask these two questions in the current client conversation and wait for their answers:
+
+1. **What is the name of the client or owner of this ZHC?**
+2. **What is the name of the company?**
+
+Do not infer the company from the owner name, Telegram display name, hostname or agency profile. Pass the actual answers as separate arguments to `python3 <config-root>/scripts/onboarding-identity.py --root <config-root> --workspace <workspace-root> --owner-name "<answer 1>" --company-name "<answer 2>"`. Before scripts are downloaded, collect the answers and pass `OPENCLAW_OWNER_NAME` and `OPENCLAW_COMPANY_NAME` in the **installer process** environment. With curl piping, use `curl ... | env OPENCLAW_OWNER_NAME="<answer 1>" OPENCLAW_COMPANY_NAME="<answer 2>" bash`; setting them only on curl does not pass them to bash. Use proper argument quoting; never evaluate a client answer as shell code.
+
+The helper saves `<config-root>/onboarding-identity.json` before resources are created. Reuse it on retries. An established workforce keeps its existing company UUID, slug and answers; updates do not restart intake or rename it. Missing inputs return `needs-input` (exit 8); ask the missing question and resume. The terminal installer asks through `/dev/tty` when available. An agent must ask in the conversation, not leave a background terminal waiting for the client. Names are intake metadata, not fabricated interview answers.
 
 ### STEP 0: VERIFY TRIGGER AND CHECK CAPABILITY
 
@@ -81,7 +92,7 @@ If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use 
 If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 63 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 66 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -99,7 +110,8 @@ These 7 files are your AI's memory and identity. Keep them LEAN.
 7. TOOLS.md - Tool capabilities and how-to guides
 
 **THE RULE:**
-- Core.md files: 10-25 lines maximum
+- Core.md files: always-on rules stay inline, shortened; everything situational is a one-to-two-sentence pointer (WHAT, WHERE, WHEN)
+- Core-file size (each file under 40,000 characters) and the weekly audit belong to skill 70, the Lean Core File System
 - Full documentation: Goes to ~/Downloads/openclaw-master-files/
 - Never dump thousands of lines into core files
 - Always use pointers: "See full guide at: [path]"
@@ -119,7 +131,7 @@ The QC agent verifies each skill installation by checking:
 - Did it NOT take shortcuts?
 
 ### 2. Core.md Files Protection
-Core.md files must stay LEAN (10-25 lines max):
+Core.md files must stay LEAN: always-on rules inline and shortened, everything situational as a one-to-two-sentence pointer (WHAT, WHERE, WHEN), each file under 40,000 characters (skill 70, the Lean Core File System, owns core-file size):
 - USER.md - About the human
 - IDENTITY.md - Who the AI is
 - SOUL.md - Core principles
@@ -214,7 +226,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 63 active skills: final complete index
+- After all 66 active skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -370,7 +382,7 @@ Skills 33 (Department Heads) and 34 (Intelligent Staffing) are ARCHIVED. Their l
 Some skills are not stand-alone deliverables but REUSABLE engines the departments call into. Any department discovers them via each role's Section-8 "Tools You Use" table, the department's `how-to-use-this-department.md` "Reusable libraries" section, `TOOLS.md`, and the shared SOP cluster in `universal-sops/`:
 
 - **Email Engine + superlibrary (Skill 50)** — `50-email-engine/`. Marketing, CRM, Sales, Web-Development, Social-Media, and the Personal Assistant author + QC marketing email (single emails or the landing-page-10 / high-ticket-12 / buyer-type-12 sequences) from the Email Superlibrary (13 frameworks, 4 buyer-types, 4 objectives, 12 persona styles). Select via `50-email-engine/tools/email_matcher_cli.py --match`; every email is gated by the fail-closed `50-email-engine/tools/prove-email.py` floor prover before a DRAFT-ONLY Skill-44 deploy. Shared procedure: `universal-sops/email-craft/`.
-- **Signature Funnel engine (Skill 49)** — `49-signature-funnel/`. Web-Development and Marketing build the SACRED Trevor Otts 12-section Hero funnel (a configurable 3/5/7-step GHL funnel: Main → Checkout → Upsell-1 → Downsell-1 → Upsell-2 → Downsell-2 → Thank-You with accept/decline branching). A "signature funnel" / "signature landing page" request is routed here by the shared STEP-0 funnel-engine selector (`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`; Skill 56 is the 2nd registered entry, the Direct-Response sibling). The engine AUTHORS the 12-section copy + the 5,000–19,000-char `gpt-image-2` prompts under fail-closed provers, delegates image generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and issues a signed certificate only on a full pass. Shared procedure: `universal-sops/funnel-craft/`.
+- **Signature Funnel engine (Skill 49)** — `49-signature-funnel/`. Web-Development and Marketing build the SACRED Trevor Otts 12-section Hero funnel (a configurable 3/5/7-step GHL funnel: Main → Checkout → Upsell-1 → Downsell-1 → Upsell-2 → Downsell-2 → Thank-You with accept/decline branching). A "signature funnel" request -- the multi-step 3/5/7 chain with checkout / upsell / downsell / OTO / branching -- is routed here by the shared STEP-0 funnel-engine selector (`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`; Skill 56 is the 2nd registered entry, the Direct-Response sibling); a single standalone BlackCEO landing page (Standard or Long-Form) routes to Skill 71 `blackceo-signature-page`, not this engine. The engine AUTHORS the 12-section copy + the 5,000–19,000-char `gpt-image-2.5` prompts under fail-closed provers, delegates image generation to Skill 47 and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), and issues a signed certificate only on a full pass. Shared procedure: `universal-sops/funnel-craft/`.
 - **Sales Page Assets engine (Skill 56)** — `56-sales-page-assets/`. The Direct-Response sibling of Skill 49: Web-Development and Marketing build the Trevor Otts DR asset stack — the 8-section main sales page (A/B + countdown timer), the 9-section upsell (A/B), a downsell recovery page, the Sovereign Architect 6,500–7,100-word high-ticket long-form page, 40–80-word order-bump copy with a checkbox close, and a slice-covered image plan — from one "Ultimate AI Sales Page Writer" survey. A "sales page assets" / "direct-response sales page" / VSL / upsell-downsell A/B request is routed here as the SECOND registered engine by the shared STEP-0 funnel-engine selector (`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`). The engine AUTHORS the copy + image plan under eight fail-closed provers, delegates image generation to Skill 47 (or the client's own image provider) and ALL GHL media + build to Skill 6 (the ONE GHL delivery rail), routes the order-bump to Skill 44, and issues a signed certificate only on a full pass. It OWNS the `<client>__<funnel>__<stage>__<type>__vNN` labeling grammar (reciprocal with Skill 49). Owned SOP cluster: `universal-sops/sales-page-craft/` (extends the shared `universal-sops/funnel-craft/`).
 - **Product Bio Engine (Skill 55)** — `55-product-bio/`. Marketing (the Conversion Copywriter, routed by the Chief Marketing Officer) builds the master-brain **Product Bio**: a 6,000–7,000-word, 10-section sales knowledge base (10 intros, 15–20 power adjectives, ICP, product description, positioning, 8–10 objections, 10–12 FAQs, 8–10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML — the master brain that powers AI chatbots and human sales teams. Built through the ONE canonical entry `55-product-bio/product-bio-entry.sh` from a 4-field intake (`product_name` / `product_description` / `first_name` / `last_name`); the two verbatim system prompts are sha256-pinned, and every SACRED count is MEASURED on the stripped text by fail-closed, model-free provers (`55-product-bio/scripts/prove_pb_*.py`) — the model's self-reported counts are ignored — with a signed certificate issued only on a full P0→P6 pass. Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Google Drive / Slack / Gmail / Airtable). Cross-linked with, but NEVER merged into, **Skill 52** (Avatar Alchemist carries a different "Product Bio" prompt): routing disambiguates — a standalone master-brain bio → Skill 55; a brand-intelligence package (its embedded bio ships with it) → Skill 52. Shared procedure: `universal-sops/product-bio-craft/`.
 - **Avatar Alchemist Engine (Skill 52)** — `52-avatar-alchemist/`. Marketing (the Brand Positioning Specialist, routed by the Chief Marketing Officer) turns ONE completed brand-intake interview into the full **brand-intelligence package** — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST: `version=brand` runs the 40-stage pipeline; `version=book` routes to the separate Avatar Alchemist Book skill (53) or parks fail-closed `book-skill-not-available`. Built through the ONE sanctioned front door `52-avatar-alchemist/entry.sh` (deps → bypass-scan → hash-pin → nonce) then the foreman `52-avatar-alchemist/scripts/aa_director.py`; every SACRED count/floor is MEASURED by fail-closed, model-free provers (`52-avatar-alchemist/scripts/aa_*.py`) — self-reported counts ignored — with a signed provenance certificate issued only on a full 40/40 pass (no certificate = not done). Delivery is a labeled LOCAL bundle in `~/Downloads/` (no n8n / Airtable / Google Drive / Slack / Gmail). Cross-linked with, but NEVER merged into, **Skill 55** (routing: a standalone master-brain bio → Skill 55; a full brand-intelligence package → Skill 52). Shared procedure: `universal-sops/avatar-craft/`.
@@ -471,14 +483,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 63 active skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 66 active skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 63 active skills are installed or attempted.
+DO NOT REMOVE this block until all 66 active skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 63 active skills are installed (or attempted), the agent MUST:
+When all 66 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the sane default (6h, main-only):
 ```json
@@ -526,17 +538,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 63 active skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 66 active skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 63 active skills are installed:
-1. Count and verify: all 53 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
+When all 66 active skills are installed:
+1. Count and verify: all 65 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 63 active skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 66 active skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -570,7 +582,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 63 active skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 66 active skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -754,7 +766,7 @@ All skill content goes inside the master files folder:
 | HEARTBEAT.md | Current priorities, active tasks | `~/clawd/HEARTBEAT.md` |
 
 ### TYP Storage Rules
-- **Core files:** 10-25 line summaries ONLY, with pointers to deep files
+- **Core files:** always-on rules (shortened) plus one-to-two-sentence pointers (WHAT, WHERE, WHEN) to deep files ONLY; skill 70, the Lean Core File System, owns core-file size
 - **Deep files:** Complete, unabridged content in `~/Downloads/openclaw-master-files/`
 
 ### TYP Conflict Resolution
@@ -772,7 +784,7 @@ All skill content goes inside the master files folder:
 
 ### Verification
 After every skill install, verify:
-- [ ] Core files have lightweight summaries only (10-25 lines)
+- [ ] Core files hold only always-on rules and one-to-two-sentence pointers (WHAT, WHERE, WHEN)
 - [ ] Deep files have complete content
 - [ ] Core files reference deep files with correct paths
 - [ ] No bloat added to AGENTS.md, MEMORY.md, TOOLS.md, USER.md, IDENTITY.md, SOUL.md, or HEARTBEAT.md
@@ -792,7 +804,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
-| **Final** | After ALL 63 active skills complete | Complete system index |
+| **Final** | After ALL 66 active skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -1609,6 +1621,7 @@ If any step in a skill's installation fails:
 > **The canonical, machine-checked wave rosters live in `lib-onboarding-state.sh`** (`OC_WAVE1_SKILLS` … `OC_WAVE6_SKILLS`) — that is what the per-wave goal check and the onboarding watchdog actually read, and `scripts/qc-assert-wave-list-integrity.py` enforces that every name in it resolves to a real, non-archived skill folder. The numbered prose waves on this page are an install guide with their own historical numbering; where the two differ, the library wins.
 
 **Sequential Dependencies (Never Parallelize These):**
+- Skill 03 (Agent Browser, Wave 1) must complete before Skill 06 (GHL Install Pages) starts — 06 is NOT parallel-safe with 03
 - Skill 05 (GHL Setup) must complete before Skill 06 (GHL Install Pages)
 - Skill 22 (Book to Persona) must complete before Skill 23 (AI Workforce Blueprint)
 
@@ -1920,11 +1933,15 @@ Install these 4 items yourself, one at a time:
 Spawn these sub-agents SIMULTANEOUSLY using `sessions_spawn`:
 
 **Agent A (Skills 04-07):**
+
+> **HARD ORDERING (Agent A only):** Skill 03 (Agent Browser, Wave 1) MUST complete before Skill 06 (GHL Install Pages) starts, and Skill 05 (GHL Setup) MUST complete before Skill 06 starts. Within Agent A, install in order 04 → 05 → 07, and install 06 only after 03 (Wave 1) and 05 are both done. This overrides the parallel spawn for the 06 row — everything else in Agent A stays parallel.
+
 ```
 sessions_spawn with task:
 "Install skills 04, 05, 06, 07 from ~/.openclaw/onboarding/. 
 For each skill: Read ALL .md files first, then execute installation steps exactly.
 Skills: 04-superpowers, 05-ghl-setup, 06-ghl-install-pages, 07-kie-setup.
+HARD ORDERING: install 04, then 05, then 07; install 06 ONLY after Skill 03 (Wave 1 agent-browser) AND Skill 05 have both completed.
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-a"
@@ -2070,7 +2087,7 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 63 active skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 66 active skills installed."
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
@@ -2088,7 +2105,7 @@ label: "wave4-agent-f"
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install 63 active skills one at a time:
+If `sessions_spawn` doesn't work, install 66 active skills one at a time:
 
 ```
 For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 35:
@@ -2120,7 +2137,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 63 active skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 66 active skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -2197,6 +2214,9 @@ openclaw agent spawn \
 ```
 
 #### Spawn Wave 2 - Agent A (Skills 04-07)
+
+> **HARD ORDERING:** Skill 03 (Wave 1) and Skill 05 must both be complete before the `06-ghl-install-pages` spawn below runs. Do not background-spawn 06 in the same `&` batch unless 03 is already done — wait for 05, then spawn 06.
+
 ```bash
 for skill in "04-superpowers" "05-ghl-setup" "06-ghl-install-pages" "07-kie-setup"; do
   num=${skill%%-*}
@@ -2478,13 +2498,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 63 active skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 66 active skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 63 active skills are installed, run this as the final step.
+After all 66 active skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2509,7 +2529,8 @@ crontab -l | grep update-skills
 **IMPORTANT:** The update script will NEVER overwrite anything inside `my AI company departments/`. That folder contains client-built content and is always protected.
 
 To force a manual check: `bash ~/Downloads/openclaw-master-files/OpenClaw\ Onboarding/update-skills.sh`
-(repo root — NOT `scripts/update-skills.sh`, which is a retired, loud-failing shim.)
+(repo root — the retired `scripts/update-skills.sh` shim was deleted outright, OCT4
+issue #10; a stale reference to it fails loudly.)
 To check update logs: `cat ~/.openclaw/skills/.update-log`
 
 ---
@@ -2528,7 +2549,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 63 active skills are installed, run the final Gemini Engine indexing:
+After all 66 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2551,12 +2572,12 @@ python3 ~/.openclaw/scripts/gemini-indexer.py --status
 - If running in an active chat session: post the summary in that chat.
 - If running as a background or sub-agent task: send the summary via the configured
   messaging channel (detected in prerequisites).
-- Format the 52-skill status report as a table: Skill | Name | Status | Notes
+- Format the 65-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 63 active skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 66 active skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
-1. Everything that was install 52 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
+1. Everything that was install 65 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)
 2. Everything that was added to each workspace file (AGENTS.md, TOOLS.md, MEMORY.md, etc.)
 3. Which workspace files were updated and which were not touched
 4. Where the full documentation for each skill is saved (the master files folder path)

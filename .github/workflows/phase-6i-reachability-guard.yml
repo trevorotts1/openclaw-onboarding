@@ -1,0 +1,34 @@
+name: phase-6i-reachability-guard
+
+# The Command Center refresh must reach Phase 6i on every box:
+#   - _cc_mtime prints an integer under GNU stat (Linux/VPS) -- it used to kill
+#     run-full-install.sh with "File: unbound variable" after phase 6;
+#   - the company slug is read from `slug` too, and symlinked how-to.md count.
+# Offline / static + hermetic; ubuntu-latest gives the real GNU stat.
+
+on:
+  push:
+    paths:
+      - 32-command-center-setup/scripts/run-full-install.sh
+      - update-skills.sh
+      - tests/unit/cc-mtime-portable.test.sh
+      - tests/unit/phase-6i-slug-readers.test.sh
+      - .github/workflows/phase-6i-reachability-guard.yml
+  pull_request:
+    paths:
+      - 32-command-center-setup/scripts/run-full-install.sh
+      - update-skills.sh
+      - tests/unit/cc-mtime-portable.test.sh
+      - tests/unit/phase-6i-slug-readers.test.sh
+      - .github/workflows/phase-6i-reachability-guard.yml
+  workflow_dispatch:
+
+jobs:
+  reachability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: _cc_mtime is an integer under GNU stat and survives set -u
+        run: bash tests/unit/cc-mtime-portable.test.sh
+      - name: slug readers accept `slug`; role-library pin follows symlinks
+        run: bash tests/unit/phase-6i-slug-readers.test.sh

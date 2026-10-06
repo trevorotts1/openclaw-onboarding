@@ -1,15 +1,19 @@
 ---
 name: cinematic-forge
-description: End-to-end AI video production from concept to finished upload — structured intake, VEO 3.1 Fast video generation via KIE.ai, ElevenLabs and Suno audio production, image generation, FFmpeg assembly, and media library upload.
+description: End-to-end AI video production from concept to finished upload — structured intake, VEO 3.1 Fast video generation via KIE.ai, voice and music (via Skill 68) audio production, image generation, FFmpeg assembly, and media library upload.
 ---
 
 # Cinematic Forge
+
+> Skill 74 ships in the same release; until it is installed, quote prices from the KIE catalog pricingDesc.
+>
+> **Single price authority:** this skill states no dollar or credit price of its own. Every price comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (for the model id Skill 66, 67 or 68 chose), or from the KIE catalog `pricingDesc` until Skill 74 is installed.
 
 > **Skill Name:** cinematic-forge
 > **Version:** 1.0
 > **Author:** (redacted for client-generic distribution)
 > **Priority:** HIGH
-> **Description:** An AI-powered video production skill that takes a user from concept to finished, uploaded video through a structured intake process, AI video generation (VEO 3.1 Fast via KIE.ai), AI audio production (ElevenLabs + Suno via KIE.ai), image generation (Nano Banana Pro via KIE.ai), FFmpeg assembly, and media library upload.
+> **Description:** An AI-powered video production skill that takes a user from concept to finished, uploaded video through a structured intake process, AI video generation (VEO 3.1 Fast via KIE.ai), AI audio production (voice and music via Skill 68), image generation (image via Skill 66), FFmpeg assembly, and media library upload.
 
 ## Prerequisites
 
@@ -24,9 +28,8 @@ If the agent does not know the Teach Yourself Protocol:
 - FFmpeg installed (`ffmpeg -version` to verify)
 - KIE.ai API key (stored in environment or secrets file)
 - GHL/Convert and Flow Private Integration Token (PIT) for media library upload (the canonical env vars are `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID`). An imgBB API key is an optional fallback for reference **images** only — imgBB cannot host the final MP4.
-- ElevenLabs access via KIE.ai (for voice generation)
-- Suno access via KIE.ai (for music generation)
-- Nano Banana Pro access via KIE.ai (for image generation)
+- Skill 68 (`68-kie-audio`) installed (owns all voice, sound-effect and music generation via KIE.ai)
+- Skill 66 (`66-kie-image`) installed (owns image model choice and generation via KIE.ai)
 - VEO 3.1 Fast access via KIE.ai (for video generation)
 
 **Optional but recommended (for Q12 reference video analysis):**
@@ -111,7 +114,7 @@ When a user triggers this skill, the agent says:
 
 **What you're looking for:** Duration in seconds. This determines how many 8-second segments you'll need. Formula: ceil(duration / 8) segments. The last segment gets trimmed in FFmpeg to hit the exact target length.
 
-**Math note:** VEO 3.1 Fast produces 8-second segments. If someone wants 90 seconds: 11 full segments (88 seconds) + 1 segment trimmed to 2 seconds = 90 seconds exactly. Cost = number of segments x $0.40 (Fast mode).
+**Math note:** VEO 3.1 Fast produces 8-second segments. If someone wants 90 seconds: 11 full segments (88 seconds) + 1 segment trimmed to 2 seconds = 90 seconds exactly. Cost = number of segments x [price per segment from the price command for the video model id].
 
 ### Question 5: Characters
 
@@ -204,7 +207,7 @@ Wait for answer.
 
 **Media library handling:**
 - If user has GHL/Convert and Flow: Upload via their Private Integration Token (PIT). GHL does NOT use API keys - it uses PITs.
-- If user does NOT have GHL/Convert and Flow: imgBB (free) is fine for **reference images** — it gives permanent image hosting links. It is a REFERENCE-IMAGE host and only that: it hosts still images and animated GIFs, and will not host the final MP4. For the finished video the client needs a VIDEO-CAPABLE store they control (their own object storage or CDN, their site's media library, or a video host they own); ask for that separately at intake so delivery is not blocked at the end.
+- If user does NOT have GHL/Convert and Flow: imgBB is fine for **reference images** — it gives permanent image hosting links. It is a REFERENCE-IMAGE host and only that: it hosts still images and animated GIFs, and will not host the final MP4. For the finished video the client needs a VIDEO-CAPABLE store they control (their own object storage or CDN, their site's media library, or a video host they own); ask for that separately at intake so delivery is not blocked at the end.
 - Always prefer GHL/Convert and Flow if available - it keeps everything in one ecosystem.
 
 ### Question 10: Intended Use Case
@@ -408,20 +411,23 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
 2. **Check KIE.ai credit balance** (credentials were loaded from `$SECRETS_ENV` in step 0):
    ```bash
-   curl -s "https://api.kie.ai/api/v1/user/credits" \
+   curl -s "https://api.kie.ai/api/v1/chat/credit" \
      -H "Authorization: Bearer $KIE_API_KEY"
+   # -> {"code":200,"msg":"success","data":<credit balance as a number>}
    ```
+   Check the body `code` before reading `data`: HTTP 200 alone does not mean the call succeeded, and only `code` 200 means `data` is a real balance. Any other `code`, or no `data` number, means the balance is UNKNOWN — treat it as "cannot verify", not as sufficient. (`/api/v1/user/credits` is a dead path that returns 404; do not use it.)
+
    If the balance is insufficient for the estimated cost, tell the user BEFORE starting. Do not begin generation and fail at segment 6 because credits ran out.
 
 3. **Calculate and present the budget estimate:**
 
    > "Based on what you've described, here's the approximate cost and timeline:
    >
-   > **Video:** [X] segments x $0.40 = $[Y] (VEO 3.1 Fast)
-   > **Reference Images:** ~[X] images x $0.10 = $[Y] (Nano Banana Pro)
-   > **Voice/Dialogue:** ~[X] clips x $0.15 = $[Y] (ElevenLabs)
-   > **Sound Effects:** ~[X] clips x $0.10 = $[Y] (ElevenLabs SFX)
-   > **Music:** ~[X] tracks x $0.35 = $[Y] (Suno)
+   > **Video:** [X] segments x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 67>`] = $[Y] (VEO 3.1 Fast)
+   > **Reference Images:** ~[X] images x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 66>`] = $[Y] (image via Skill 66)
+   > **Voice/Dialogue:** ~[X] clips x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
+   > **Sound Effects:** ~[X] clips x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
+   > **Music:** ~[X] tracks x [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id chosen by Skill 68>`] = $[Y] (via Skill 68)
    > **Estimated Total: ~$[TOTAL]**
    >
    > **Estimated Production Time:** [X] minutes for video generation, [X] minutes for audio, [X] minutes for assembly. Total approximately [X] minutes from start to finished video.
@@ -503,7 +509,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    - Characters present
    - Audio type (dialogue, narration, SFX, music)
    - Camera/motion notes
-3. **Generate anchor reference images** using Nano Banana Pro via KIE.ai
+3. **Generate anchor reference images** (image via Skill 66)
    - Minimum 2-3 per main character (front face, full body, profile)
    - 1-2 per unique setting/location
    - Upload all to media library, save permanent URLs
@@ -513,7 +519,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    - NEVER overlap narrator and character dialogue in the same segment
 5. **Voice selection:**
    - Ask the user: "Do you want me to select voices that match your characters, or would you like me to give you a few options to choose from?"
-   - If the user wants options: Present 2-3 ElevenLabs voice samples per character with descriptions (e.g., "Warm, confident African-American woman, mid-30s" or "Deep, authoritative male narrator")
+   - If the user wants options: Present 2-3 voice samples (voice via Skill 68) per character with descriptions (e.g., "Warm, confident African-American woman, mid-30s" or "Deep, authoritative male narrator")
    - If the user wants the agent to choose: Select voices that best match the character descriptions from intake and confirm the choices
    - Lock the voice IDs once selected - the same voice ID is used for every clip of that character throughout the entire video
 6. **Get user approval** on storyboard, reference images, scripts, and voice selections before proceeding
@@ -521,10 +527,10 @@ After all 14 questions are answered, the agent proceeds through these phases:
 ### Phase 2: Video Generation
 
 **Model:** VEO 3.1 Fast via KIE.ai (`veo3_fast`)
-**Cost:** $0.40 per 8-second segment
+**Cost:** segments x [price per 8-second segment from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`]
 **Aspect ratio:** 9:16 vertical (primary). 16:9 horizontal created ONLY after 9:16 is approved.
 
-1. **Segment 1:** VEO 3.1 Fast Image-to-Video using Nano Banana Pro start image
+1. **Segment 1:** VEO 3.1 Fast Image-to-Video using a start image generated via Skill 66
    - `generationType: "FIRST_AND_LAST_FRAMES_2_VIDEO"` with one imageUrl (start image only)
    - Establishes characters and initial scene
 2. **Segments 2+:** VEO 3.1 Fast Extend from previous segment's taskId
@@ -540,7 +546,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    - Poll every 20-30 seconds
 5. **Download completed segments** to the project folder (`segments/segment_N.mp4`)
 6. **Send progress updates to the user** after each segment completes:
-   > "Segment 4 of 12 complete. Estimated 8 minutes remaining. Cost so far: $1.60"
+   > "Segment 4 of 12 complete. Estimated 8 minutes remaining. Cost so far: $[segments done x price per segment]"
    
    Don't leave the user waiting in silence. Every completed segment gets an update.
 7. **Update project-state.json** after each segment (taskId, file path, status)
@@ -556,29 +562,50 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
 
 **Why:** VEO generates a different voice every segment. By segment 6, the narrator sounds like a completely different person. Generating audio separately with locked voice IDs ensures consistency.
 
-**Audio Layers:**
+**Skill 68 (`68-kie-audio`) OWNS every KIE audio call in this phase**: text-to-speech, sound effects and music. It is authoritative for model ids, API routes, payload shape, limits and audio QC. Cinematic Forge decides WHAT audio each segment needs (this section); Skill 68 decides HOW it is requested. Do NOT hand-write a KIE audio request here and do NOT name a KIE audio model id from this file.
 
-1. **Character Dialogue** (ElevenLabs Text-to-Speech via KIE.ai)
-   - One locked voice ID per character - same voice every segment
+**The handoff the agent performs for EVERY audio clip below:**
+
+```bash
+AUDIO_SKILL="$(dirname "$SKILL_DIR")/68-kie-audio"     # sibling skill folder; resolved from Phase 0's $SKILL_DIR
+if [ ! -d "$AUDIO_SKILL" ]; then
+  echo "Skill 68 (kie-audio) is not installed - stop audio production and tell the operator" >&2
+  return 1 2>/dev/null || exit 1     # stop here: return when sourced or inside a function, exit otherwise
+fi
+```
+
+1. Read `$AUDIO_SKILL/SKILL.md`, then `references/tts.md` (speech) or `references/music.md` (sound effects and music), and `INSTRUCTIONS.md`. Pick the model and build the request body exactly as those files specify.
+2. Write the request body to a JSON file and validate it BEFORE any credits are spent:
+   ```bash
+   python3 "$AUDIO_SKILL/scripts/validate_audio_request.py" --domain tts   --payload req.json   # dialogue and narrator
+   python3 "$AUDIO_SKILL/scripts/validate_audio_request.py" --domain music --payload req.json   # sound effects and music
+   ```
+   Exit 0 = legal to dispatch. Exit 2 = do NOT dispatch; fix the payload as the validator says (never bypass it).
+3. Dispatch and wait exactly as Skill 68's `INSTRUCTIONS.md` describes (async: a 200 on create means accepted, not finished; callback or polling per 68).
+4. Run Skill 68's audio QC (`$AUDIO_SKILL/references/qc.md`) on the downloaded file, then save it into the matching `audio/` folder and record the task id, model id (as 68 reported it) and file path in `project-state.json`.
+5. If Skill 68 cannot produce a requested layer, say so to the user and drop or replace that layer with their approval. Never invent a route or model to fill the gap.
+
+**Audio Layers (what Cinematic Forge needs; Skill 68 does the call):**
+
+1. **Character Dialogue** (text-to-speech, domain `tts` in Skill 68)
+   - One locked voice per character, chosen from the voices Skill 68's registry lists - same voice every segment
    - Only in segments where characters speak on screen (lips moving)
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `eleven_multilingual_v2`
 
-2. **Narrator Voiceover** (ElevenLabs Text-to-Speech via KIE.ai)
-   - One locked voice ID for the narrator - never changes
+2. **Narrator Voiceover** (text-to-speech, domain `tts` in Skill 68)
+   - One locked voice for the narrator - never changes
    - Only in segments where NO characters are speaking on screen
    - NEVER overlaps with character dialogue in the same segment
 
-3. **Sound Effects** (ElevenLabs Sound Effects via KIE.ai)
+3. **Sound Effects** (Skill 68's sound-effect route, domain `music` in its validator)
    - Ambient sounds (office noise, beach waves, crowd murmur)
    - Action sounds (footsteps, door opening, pen writing)
    - Transition sounds (swooshes, impacts)
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `eleven_sound_effects`
+   - The sound-effects payload MUST carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` routes it to its sounds checks (prompt length and model per Skill 68's sounds checks) instead of validating it as a song generation.
 
-4. **Background Music** (Suno via KIE.ai)
+4. **Background Music** (music via Skill 68, domain `music`)
    - Generated based on user's music preferences from Question 8b
    - Plays underneath dialogue/narration at 20-30% volume
    - NOT in every segment - only where appropriate
-   - `POST https://api.kie.ai/api/v1/jobs/create` with model `suno_v4`
 
 ### Phase 4: Assembly (FFmpeg)
 
@@ -884,9 +911,9 @@ cc_return_to_orchestrator() {     # cc_return_to_orchestrator <task_id> <reason>
 
 1. **Narrator and character dialogue NEVER overlap** in the same segment. Period.
 2. **Character consistency is non-negotiable.** Every segment must match the anchor reference images. If a character's face, hair, or skin tone shifts - regenerate.
-3. **VEO 3.1 Fast only.** Do not use VEO 3.1 Quality ($2.00) unless the user explicitly requests it.
+3. **VEO 3.1 Fast only.** Do not use VEO 3.1 Quality (several times the Fast price) unless the user explicitly requests it.
 4. **9:16 vertical is primary.** Never create 16:9 first.
-5. **All VEO audio is discarded.** Replace entirely with ElevenLabs + Suno layers.
+5. **All VEO audio is discarded.** Replace entirely with voice and music (via Skill 68) layers.
 6. **Only provide START image to VEO for Segment 1.** End images constrain generation and produce stiff video.
 7. **Design the final segment as a static card** (logo, CTA, "Thank You") so FFmpeg trimming doesn't cut mid-action.
 8. **No Topaz upscale until the user approves the draft.** Don't waste processing on unapproved content.
@@ -915,19 +942,21 @@ If the agent starts a new session and finds an existing project-state.json in a 
 
 | Item | Cost | Notes |
 |------|------|-------|
-| VEO 3.1 Fast (per segment) | $0.40 | 8 seconds per segment |
-| VEO 3.1 Fast Extend (per segment) | $0.40 | Same price as generation |
-| Nano Banana Pro (per image) | ~$0.10 | Reference images, start images |
-| ElevenLabs TTS (per clip) | ~$0.10-0.30 | Varies by length |
-| ElevenLabs SFX (per clip) | ~$0.10 | Sound effects |
-| Suno music (per track) | ~$0.20-0.50 | Background music |
+| VEO 3.1 Fast (per segment) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | 8 seconds per segment; use the model id Skill 67 chose |
+| VEO 3.1 Fast Extend (per segment) | [same price command, extend mode] | Quote what the command returns for extend |
+| Image (per image, via Skill 66) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | Reference images, start images; id chosen by Skill 66 |
+| Voice / text-to-speech (per clip, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | Varies by length; id chosen by Skill 68 |
+| Sound effects (per clip, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | id chosen by Skill 68 |
+| Music (per track, via Skill 68) | [price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`] | id chosen by Skill 68 |
 
-**Example: 90-second video**
-- 12 segments x $0.40 = $4.80 (video)
-- ~12 reference images x $0.10 = $1.20 (images)
-- ~12 audio clips x $0.15 = $1.80 (voice/SFX)
-- ~1-2 music tracks x $0.35 = $0.70 (music)
-- **Total: ~$8.50** (before Topaz upscale)
+Until Skill 74 is installed, read each price from the KIE catalog `pricingDesc` for the chosen model.
+
+**Example: 90-second video (structure only; fill in live prices)**
+- 12 segments x [price per segment] (video)
+- ~12 reference images x [price per image] (images)
+- ~12 audio clips x [price per clip] (voice and sound effects)
+- ~1-2 music tracks x [price per track] (music)
+- **Total: sum of the lines above** (before Topaz upscale)
 
 ---
 
@@ -944,11 +973,12 @@ If the agent starts a new session and finds an existing project-state.json in a 
 | Generate video (VEO) | POST | `/veo/generate` |
 | Check video status | GET | `/veo/record-info?taskId=XXX` |
 | Extend video (VEO) | POST | `/veo/extend` |
-| Generate image (Nano Banana Pro) | POST | `/jobs/create` |
-| Check job status | GET | `/jobs/query?taskId=XXX` |
-| Generate voice (ElevenLabs) | POST | `/jobs/create` |
-| Generate music (Suno) | POST | `/jobs/create` |
-| Generate sound effects | POST | `/jobs/create` |
+| Check balance | GET | `/chat/credit` (body `{code,msg,data:<number>}`; check `code`) |
+| Generate image (via Skill 66) | POST | `/jobs/createTask` with `{model, input:{...}}` -> `data.taskId`. Skill 66 (`66-kie-image`) is authoritative for the model id and payload. |
+| Check job status (image) | GET | `/jobs/recordInfo?taskId=XXX` |
+| Voice, sound effects, music | - | Not called from this skill. Delegated to Skill 68 (`68-kie-audio`); see Phase 3. |
+
+The old `/jobs/create` and `/jobs/query` paths and the `/user/credits` path return 404 and must not be used.
 
 **Full KIE.ai API Reference:** Check for `kie-ai-api-reference.md` in the master files folder. If it doesn't exist, the agent should flag this to the user and request the API documentation.
 

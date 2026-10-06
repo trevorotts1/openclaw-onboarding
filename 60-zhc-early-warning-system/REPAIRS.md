@@ -20,9 +20,21 @@ first one that explains it.
    troubleshoot` inspects the box's cron inventory for the `ews-tick` entry. If it is
    missing, re-register it: `bash 60-zhc-early-warning-system/ews-entry.sh install`
    (safe to re-run; it will not touch an existing baseline).
-2. **Cron present but not firing?** Run a manual tick to see the real error instead of
-   guessing: `bash 60-zhc-early-warning-system/ews-entry.sh tick`. Read the output —
-   most manual-tick failures point straight at step 3 or step 4.
+1b. **Present but DISABLED, with `lastRunStatus: error` and `exitCode: 10`?** That is
+   the pre-v1.2.1 registration. The cron used to run `ews-entry.sh tick`, which passes
+   the sentinel's exit 10 (findings present) straight to the scheduler; the scheduler
+   reads any non-zero exit as a failed run and auto-disables a job after 10 consecutive
+   ones, so a box carrying a standing finding switched its own sentinel off every time.
+   From v1.2.1 the registered command is `ews-entry.sh cron-tick`, which maps 10 to 0
+   and leaves every real failure exit intact. Re-running `ews-entry.sh install` both
+   converges the command and switches a job the scheduler had disabled back on. Confirm
+   with `openclaw cron list --all --json` that the job carrying `declarationKey`
+   `skill60-ews-tick-<box>` is enabled and ends in `cron-tick`.
+2. **Cron present, enabled, but not firing?** Run a manual tick to see the real error
+   instead of guessing: `bash 60-zhc-early-warning-system/ews-entry.sh tick`. Use `tick`
+   here, not `cron-tick`: by hand you want the honest exit code, and exit 10 means the
+   tick ran fine and found something. Read the output. Most manual-tick failures point
+   straight at step 3 or step 4.
 3. **Ledger unreadable (SQLite-WAL corruption or a stale lock)?** The ledger is the
    single-writer state store (`~/.openclaw/ews/ews.db`, VPS `/data/.openclaw/ews/ews.db`).
    `troubleshoot` opens it read-only and reports the failure class. If the WAL file is
@@ -117,10 +129,18 @@ bash 60-zhc-early-warning-system/ews-entry.sh revert --to <last-green-snapshot-u
 Find the last-green timestamp from `bash 60-zhc-early-warning-system/ews-entry.sh
 audit` (it lists recent snapshots) or from the most recent alert that still looked
 healthy. `revert` restores as the box user, never root, and reads the file back to
-confirm the write took before it reports success. Then escalate on the Rescue
-Rangers channel with the output of `bash 60-zhc-early-warning-system/ews-entry.sh
-audit` attached — the audit output is read-only and safe to paste; it never carries a
-secret value or another client's data.
+confirm the write took before it reports success. Then run `bash
+60-zhc-early-warning-system/ews-entry.sh escalate` with the output of `bash
+60-zhc-early-warning-system/ews-entry.sh audit` attached — admission posts the
+incident through the shared client (`scripts/lib/rescue_admission.py`) to the
+rescue intake, so the escalation is a durable ticket with a receipt, not a chat
+message. The audit output is read-only and safe to paste; it never carries a
+secret value or another client's data. A failed or refused admission does NOT
+consume the P1: it stays open and the next escalate pass retries it. If the
+intake answers 403 because this box has no accepted enrollment, that is logged
+as a pending repair owned by operator seeder D08 ("enroll this box in rr_box_auth
+with an accepted admission credential") — the escalation is NOT admitted, and
+not counted as refused either.
 
 ## Signal -> most-likely repair
 

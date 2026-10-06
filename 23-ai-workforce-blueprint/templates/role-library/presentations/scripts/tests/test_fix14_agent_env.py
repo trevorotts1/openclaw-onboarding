@@ -6,11 +6,13 @@ Proves the FIX-14 defense against Error 8 / D-8 (MC_API_TOKEN was NOT in the
 gateway env -> every Command Center write silently 401'd for ~15 days):
 
   1. check_agent_env.probe() verdict matrix (hermetic, synthetic environ):
-       PASS                     both labels resolve AND are in managed keys
-       AF-AGENT-ENV-MISSING     a required label absent (exit 2)
-       AF-AGENT-ENV-UNMANAGED   a label present but NOT in managed keys (exit 2)
-     plus live-process-first precedence, stores_checked exhaustiveness, and the
-     never-a-value guarantee (no token string in the report payload).
+       PASS                     both slots resolve AND winners are in managed keys
+       AF-AGENT-ENV-MISSING     a slot's whole chain absent (exit 2)
+       AF-AGENT-ENV-UNMANAGED   a slot winner present but NOT in managed keys (exit 2)
+       AF-AGENT-ENV-SHADOWED    both token variables set with different values (exit 2)
+     plus chain precedence (CC_* wins, winner reported), live-process-first
+     precedence, stores_checked exhaustiveness, and the never-a-value guarantee
+     (no token string in the report payload).
 
   2. check_agent_env.py CLI:
        --self-test -> exit 0
@@ -227,12 +229,71 @@ def test_phase0_preflight():
         cae.probe = orig_probe
 
 
+
+
+# ---------------------------------------------------------------------------
+# 5) Fix 30 — chain precedence (CC_* wins, winner reported) + env-shadow
+# ---------------------------------------------------------------------------
+def test_fix30_precedence_and_shadow():
+    # CC_API_TOKEN wins the token chain; different values -> SHADOWED (exit 2).
+    env = _env(
+        CC_API_TOKEN="CC-UNIT-TEST-" + "f1e2d3c4" * 3,
+        OPENCLAW_SERVICE_MANAGED_ENV_KEYS=(
+            "KIE_API_KEY,CC_API_TOKEN,MC_API_TOKEN,MISSION_CONTROL_URL,GHL_API_KEY"),
+    )
+    rep = cae.probe(environ=env, store_paths=[], extra_stores=[])
+    assert rep["verdict"] == "AF-AGENT-ENV-SHADOWED" and rep["exit_code"] == 2, rep
+    assert rep["winners"]["token"] == "CC_API_TOKEN", rep
+    assert rep["winners"]["url"] == "MISSION_CONTROL_URL", rep
+    assert set(rep["shadowed"]) == {"CC_API_TOKEN", "MC_API_TOKEN"}, rep
+    blob = json.dumps(rep)
+    assert "CC-UNIT-TEST-" not in blob and REAL_TOKEN not in blob, "value leaked"
+
+    # Same value in both names is harmless duplication, NOT shadowing -> PASS,
+    # and the winner is still reported as CC_API_TOKEN.
+    env = _env(
+        CC_API_TOKEN=REAL_TOKEN,
+        OPENCLAW_SERVICE_MANAGED_ENV_KEYS=(
+            "KIE_API_KEY,CC_API_TOKEN,MC_API_TOKEN,MISSION_CONTROL_URL,GHL_API_KEY"),
+    )
+    rep = cae.probe(environ=env, store_paths=[], extra_stores=[])
+    assert rep["verdict"] == "PASS" and rep["exit_code"] == 0, rep
+    assert rep["winners"]["token"] == "CC_API_TOKEN", rep
+    assert rep["shadowed"] == [], rep
+
+    # URL chain: COMMAND_CENTER_URL wins when present.
+    env = _env(
+        COMMAND_CENTER_URL="https://cc-new.example.test",
+        OPENCLAW_SERVICE_MANAGED_ENV_KEYS=(
+            "KIE_API_KEY,MC_API_TOKEN,MISSION_CONTROL_URL,COMMAND_CENTER_URL"),
+    )
+    rep = cae.probe(environ=env, store_paths=[], extra_stores=[])
+    assert rep["verdict"] == "PASS" and rep["exit_code"] == 0, rep
+    assert rep["winners"]["url"] == "COMMAND_CENTER_URL", rep
+    assert rep["winners"]["token"] == "MC_API_TOKEN", rep
+
+    # Legacy-only box: old winners reported, still PASS (back-compat).
+    rep = cae.probe(environ=_env(), store_paths=[], extra_stores=[])
+    assert rep["verdict"] == "PASS" and rep["exit_code"] == 0, rep
+    assert rep["winners"] == {"token": "MC_API_TOKEN",
+                              "url": "MISSION_CONTROL_URL"}, rep
+
+    # A dead token slot names the whole failed chain in missing.
+    env = _env()
+    del env["MC_API_TOKEN"]
+    rep = cae.probe(environ=env, store_paths=[], extra_stores=[])
+    assert rep["verdict"] == "AF-AGENT-ENV-MISSING" and rep["exit_code"] == 2, rep
+    assert "CC_API_TOKEN" in rep["missing"] and "MC_API_TOKEN" in rep["missing"], rep
+    assert rep["winners"]["token"] is None, rep
+
+
 # ---------------------------------------------------------------------------
 # Direct-run wrapper (pytest uses the test_* functions above).
 # ---------------------------------------------------------------------------
 def _run_all():
     failures = []
-    for fn in (test_probe, test_cli, test_regenerate, test_phase0_preflight):
+    for fn in (test_probe, test_cli, test_regenerate, test_phase0_preflight,
+               test_fix30_precedence_and_shadow):
         try:
             fn()
             print(f"  [PASS] {fn.__name__}")

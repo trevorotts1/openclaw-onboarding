@@ -57,19 +57,19 @@ These controls are organized around DMAIC (Define, Measure, Analyze, Improve, Co
 **DMAIC phase:** Measure
 **When to run:** After the pipeline-type SOP has enumerated the planned Kie API calls and before SOP RZ-3.
 **Frequency:** Per production job that involves at least one paid call.
-**Inputs:** The list of planned Kie image/video calls (count + model per call), the per-call price from `07-kie-setup/EXAMPLES.md` or the client's `_local/PRICING.md`, the budget envelope from SOP RZ-1.
+**Inputs:** The list of planned Kie image/video calls (count + model per call), the per-call price from the live `pricingDesc` (the only price authority; Skill 74), the budget envelope from SOP RZ-1.
 
 **Steps:**
 
-1. For each planned Kie image call (`gpt-image-2-image-to-image` / `gpt-image-2-text-to-image`), multiply count by the current per-task price.
-2. For each planned Kie video call (`gemini-omni-video` / `veo3` / `veo3_fast`), multiply count by the current per-task price.
+1. For each planned Kie image call (`gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`), multiply count by the live per-task price.
+2. For each planned Kie video call (`gemini-omni-video` / `veo3` / `veo3_fast`), multiply count by the live per-task price.
 3. Sum to a single `estimated_cost_usd`. Free `documentary-montage.yaml` paths estimate `$0.00` and skip the rest of this multi-SOP's paid gates.
-4. Compute `remaining_usd = budget.total_usd - cumulative_spend_to_date - estimated_cost_usd`. If `remaining_usd < 0`, the job over-spends the cap: HARD STOP, escalate to the approval authority per SOP RZ-1 step 4.
+4. Compute `remaining_usd = budget.total_usd - cumulative_spend_to_date - estimated_cost_usd`. If `remaining_usd < 0`, the job over-spends the cap: HARD STOP, escalate to the approval authority per SOP RZ-1 step 4. Also run the credit preflight: the live Kie credit balance (`GET /api/v1/chat/credit`) must cover `estimated_cost_usd` x 1.30 (see `07-kie-setup/references/kie-common-rules.md`), else HARD STOP.
 5. Write `estimated_cost_usd`, `remaining_usd`, and the per-call breakdown to the job manifest.
 
 **Outputs:** `estimated_cost_usd`, `remaining_usd`, per-call price breakdown in the job manifest.
 **Hand to:** SOP RZ-3 (announce/approve) for paid jobs; the pipeline-type SOP's render step directly for free jobs.
-**Failure mode:** Estimating from memory instead of the current price source. Kie prices change; always read `07-kie-setup/EXAMPLES.md` or the client `_local/PRICING.md` at estimation time.
+**Failure mode:** Estimating from memory or a static file instead of the live price source. Kie prices change; always read the live `pricingDesc` (Skill 74) at estimation time, never `07-kie-setup/EXAMPLES.md` or a stale `_local/PRICING.md` row.
 
 ---
 

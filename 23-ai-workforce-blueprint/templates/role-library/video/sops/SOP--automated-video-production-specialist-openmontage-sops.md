@@ -119,9 +119,9 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 3. **Budget measurement:** Compute the estimated cost for the selected pipeline:
    - `documentary-montage.yaml` free path: estimated cost = $0.00. No further budget gate needed.
-   - Kie image generation (`gpt-image-2-image-to-image` or `gpt-image-2-text-to-image`): check `07-kie-setup/EXAMPLES.md` or the client's `_local/PRICING.md` for current per-task cost. Multiply by the number of image tasks in the pipeline.
+   - Kie image generation (`gpt-image-2-5-sunburst-image-to-image` or `gpt-image-2-5-sunburst-text-to-image`): read the live per-task price from the live `pricingDesc` (the only price authority; Skill 74), never from `07-kie-setup/EXAMPLES.md` or a stale `_local/PRICING.md` row. Multiply by the number of image tasks in the pipeline.
    - Kie video generation (`gemini-omni-video` / `veo3` / `veo3_fast`): multiply per-task cost by number of video clips.
-   - Sum to a total `estimated_cost_usd`.
+   - Sum to a total `estimated_cost_usd`. Credit preflight: the live Kie credit balance (`GET /api/v1/chat/credit`) must cover `estimated_cost_usd` x 1.30 (see `07-kie-setup/references/kie-common-rules.md`).
 
 4. **Budget gate:** Compare `estimated_cost_usd` against the client `config.yaml` `budget.total_usd` ceiling. If `estimated_cost_usd > budget.total_usd`: **HARD STOP**. Do not proceed. Notify the Head of Video Production with: the pipeline selected, the estimated cost, the configured budget cap, and a recommendation to either (a) switch to the free `documentary-montage.yaml` pipeline or (b) increase the budget cap with explicit client approval.
 
@@ -161,7 +161,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    Pipeline:            [pipeline_defs yaml selected]
 
    Paid calls in scope:
-     Image generation:  [count] x gpt-image-2-image-to-image  (or gpt-image-2-text-to-image)
+     Image generation:  [count] x gpt-image-2-5-sunburst-image-to-image  (or gpt-image-2-5-sunburst-text-to-image)
                         Provider: Kie.AI | Endpoint: POST https://api.kie.ai/api/v1/jobs/createTask
                         Est. cost per call: $[per_call_usd]
      Video generation:  [count] x gemini-omni-video (default) or veo3_fast (fallback)
@@ -229,33 +229,32 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 4. **Kie image generation calls (when in scope):**
 
    Model selection:
-   - Use `gpt-image-2-image-to-image` when source reference images are provided in the brief (`image_input` field populated)
-   - Use `gpt-image-2-text-to-image` when generating from text prompt only (no source images)
+   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated). The API field is `input_urls` (AGENTS.md N43). Skill 47 `kie_image.py` before its `input_urls` fix sent `image_input`; if the installed helper still does, it is below that fix and must be updated, not worked around here. This SOP describes the required payload.
+   - Use `gpt-image-2-5-sunburst-text-to-image` when generating from text prompt only (no source images)
 
-   API call shape (must match `07-kie-setup/EXAMPLES.md` and `46-kie-callback-relay/kie-slide-submitter.js`):
+   API call shape (must match Skill 66's `references/api-patterns.md` and AGENTS.md N43; the `46-kie-callback-relay/kie-slide-submitter.js` submitter is a worked example, not the authority):
    ```
    POST https://api.kie.ai/api/v1/jobs/createTask
    Authorization: Bearer ${KIE_API_KEY}
    Content-Type: application/json
 
    {
-     "model": "gpt-image-2-image-to-image",
+     "model": "gpt-image-2-5-sunburst-image-to-image",
      "input": {
        "prompt":        "[text prompt]",
-       "image_input":   ["[reference_image_url]"],
+       "input_urls":    ["[reference_image_url]"],
        "aspect_ratio":  "16:9",
-       "resolution":    "2K",
-       "output_format": "png"
+       "resolution":    "2K"
      }
    }
    ```
-   Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=[taskId]` with `Authorization: Bearer ${KIE_API_KEY}` until `data.status == "success"`. Download `.data.resultJson.resultUrls[0]` to local output path. Record `kie_task_id` and `kie_result_url` in the job manifest as the render-proof receipt.
+   Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=[taskId]` with `Authorization: Bearer ${KIE_API_KEY}` until `data.state` is `success` (or `fail`, with `data.failCode` and `data.failMsg`). `data.resultJson` is a JSON string: parse it, then download `resultUrls[0]` to local output path. Record `kie_task_id` and `kie_result_url` in the job manifest as the render-proof receipt.
 
 5. **Kie video generation calls (when in scope):**
 
    Model routing:
    - **Default:** `gemini-omni-video` — use when reference images are available or for image-to-video generation
-   - **Fallback:** `veo3` or `veo3_fast` — use when no reference image is available (text-to-video)
+   - **Fallback:** `veo3` or `veo3_fast` (legacy ids on `/api/v1/veo/generate`; Veo 3.1 is also live on `/api/v1/jobs/createTask` as model `veo-3-1`, and Skill 47's `kie_video.py` uses the legacy route) — use when no reference image is available (text-to-video)
 
    API call shape for `gemini-omni-video` (must match `37-zhc-closeout/scripts/generate-celebration-video.sh`):
    ```
@@ -290,7 +289,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
      "generate_audio": true
    }
    ```
-   Poll `GET https://api.kie.ai/api/v1/veo/record-info?taskId=[taskId]`. Note: `veo/generate` + `veo/record-info` is a DIFFERENT endpoint path than the `gemini-omni-video` `createTask` + `recordInfo` path (verified in `generate-celebration-video.sh` lines 541-559).
+   Poll `GET https://api.kie.ai/api/v1/veo/record-info?taskId=[taskId]`. Note: `veo/generate` + `veo/record-info` is a DIFFERENT endpoint path than the `gemini-omni-video` `createTask` + `recordInfo` path (verified in `generate-celebration-video.sh` lines 541-559). Both Veo routes are live (verified 2026-10-06): the legacy family `POST /api/v1/veo/generate` with `GET /api/v1/veo/record-info`, and the current KIE docs route `POST /api/v1/jobs/createTask` with model `veo-3-1` polled through `recordInfo`. Skill 47's code (`kie_video.py`) uses the legacy family with `veo3_fast`; do not describe the legacy family as the only Veo route.
 
 6. **Render via FFmpeg (the documentary-montage path and all final stitches):** All video compilation and stitching uses FFmpeg — the exclusive render path for the documentary-montage pipeline and final assembly. Do NOT invoke Remotion or HyperFrames for the documentary-montage render path (those are for the Remotion demo path and HyperFrames composition path respectively). Each render target uses the client's configured output spec (codec, resolution, frame rate).
 

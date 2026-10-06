@@ -26,8 +26,8 @@ instead of re-embedded on every dispatch. See
 | 1 | Coaching personas (Skill 22 blueprints) | Gemini vectors, section-level | `workspace/data/coaching-personas/gemini-index.sqlite` | real-vector hard gate + `--verify` + count triad |
 | 2 | Persona matching at runtime | cosine over corpus 1 + category/keyword ladder | same DB + `persona-categories.json` | provider/model row filter + dim guard + keyword fallback |
 | 3 | Role library (426 roles) | deterministic `_index.json` lookup — **no embeddings by design** | `23-ai-workforce-blueprint/templates/role-library/_index.json` | `content_sha` (CONTENT-HASH) via `hash-content-manifest.py`, CI `library-lockstep` |
-| 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (131) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
-| 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057) | real-vector hard gate (`embed_sop_library.py --verify`) + sha256 asset gate + dual-surface row-count reconciliation |
+| 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (145) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
+| 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057); shipped asset also carries `role_library_embeddings` (by slug) | real-vector hard gate (`embed_sop_library.py --verify`, both tables) + sha256 asset gate + dual-surface row-count reconciliation |
 | 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
 ## Non-negotiable invariants (EMBED-1..9)
@@ -59,7 +59,9 @@ instead of re-embedded on every dispatch. See
    `provider='fake' model='deterministic-hash-768' dim=768`.
    Machine check: `python3 shared-utils/embedding_engine.py --verify [--db X]`
    → rc 0 pass / rc 4 fail (every row must be gemini/3072 with blob length
-   dim*4).
+   dim*4). The ONE other contract is the explicit local Ollama opt-in (see
+   "Local Ollama mode" below): `--verify --verify-provider ollama` holds such an
+   index to `ollama/nomic-embed-text` @ 768. It is never selected automatically.
 4. **Converge-aware chunk indexer (EMBED-4).** The canonical index is
    section-level. `cmd_index` (chunk indexer) skips any file whose md5 already
    exists as a section row — no accidental full re-embed, no mixed units.
@@ -182,11 +184,23 @@ fail `check_manifest` (CI `library-lockstep`, repo gate
 `qc-assert-repo-consistency.py` rc 6). Do not add an embedding index here
 without updating this page and the gates.
 
+The role *lookup* above stays deterministic. Separately, the Command Center
+imports each role's how-to.md as a `sops` row (`importRoleLibrary()`, slug
+`role-library:<dept>/<role>`, no per-box embed). Those rows get their vectors
+from the central Corpus 5 asset: `role_library_vectors.py` renders every role
+through the same `fill_tokens()` a box uses (neutral values), parses it exactly
+as the CC does, and ships one vector per role-folder slug a box build is known
+to use (`role_library_embeddings`); `provision_sop_embeddings.py` maps them onto
+the box's rows by exact slug.
+
 ## Corpus 4 — SOP libraries (no embeddings BY DESIGN)
 
 Two DIFFERENT things — never conflate the counts:
-- **Dept SOPs (131)**: `templates/role-library/<dept>/sops/*.md`, covered by
-  `_index.json sops[]` + CONTENT-HASH (same pipeline as roles).
+- **Dept SOPs (145)**: `templates/role-library/<dept>/sops/*.md`, covered by
+  `_index.json sops[]` + CONTENT-HASH (same pipeline as roles). Since
+  `sop-library-v3.0.0` each one also ships as a row of the Command Center SOP
+  library (built by `shared-utils/sop-library/build_sop_library.py`), so its
+  vector comes from the central Corpus 5 asset -- never a per-box embed.
 - **universal-sops craft clusters**: routed by content
   (`how_to_use_department.py`, routing docs), integrity-covered by
   `universal-sops/_content-manifest.json` — regenerate with
@@ -263,6 +277,79 @@ This corpus is deliberately NOT persisted to `mission-control.db` — it is a
 per-process cache, cheap to rebuild on restart, and never shipped as a
 GitHub Release asset (department configs are per-client, not a shared
 library).
+
+## Local Ollama mode (explicit per-box opt-in, corpora 1–2 and 5)
+
+For a box whose Gemini key cannot pay (e.g. HTTP 402), both searches can run on
+the box's own local Ollama (`nomic-embed-text` @ 768, free, no key). Nothing
+selects it automatically. A box stays on Gemini until an operator switches it:
+
+- **CC SOP index (corpus 5)**: in the Command Center's `.env.local` set
+  `SOP_EMBEDDING_PROVIDER=ollama` (optionally `SOP_EMBEDDING_OLLAMA_URL`,
+  `SOP_EMBEDDING_MODEL`, `SOP_EMBEDDING_DIMS`), restart the CC, then run
+  `tsx scripts/backfill-sop-embeddings.ts --batch-size=10`. The backfill stamps the
+  `sop_embeddings_local_provider` marker table before it writes a row.
+  `provision_sop_embeddings.py` SKIPs any DB carrying that marker, so the Sunday
+  update never re-imports the Gemini asset over local vectors.
+- **Persona index (corpora 1–2)**: `python3 shared-utils/embedding_engine.py
+  --reembed-local [--batch-size N --pause S]` re-embeds every existing row in
+  place (ids and section metadata kept), stamped `provider='ollama'`. It is
+  resumable and ends with the ollama `--verify`. `search()` then embeds queries
+  with the same local model (`OLLAMA_EMBED_URL`, default
+  `http://127.0.0.1:11434`). If Ollama is down, it falls back to keyword.
+  `provision-persona-index.sh` keeps an index that has `provider='ollama'` rows
+  and never installs the Gemini asset over it.
+- **Health**: `embedding_health.py` checks a local-mode store against its own
+  model and dims, with a smoke embed to the loopback Ollama. A non-loopback URL
+  fails, because Ollama Cloud never embeds (B.6).
+- **Known limits**: personas added by a newer prebuilt asset do not reach a
+  local-mode box until an operator moves the index aside, re-provisions, and
+  re-runs `--reembed-local`. The selector's in-process Layer-5
+  (`semantic_task_fit.py`) stays Gemini-only and uses keyword overlap on such
+  a box. Stage C still ranks through `search()`. The CC's department routing and
+  skill matching stay on keyword in local mode.
+- **Leaving local mode**: drop the CC marker table, set
+  `SOP_EMBEDDING_PROVIDER=google`, and re-provision. For personas, move
+  `gemini-index.sqlite` aside and re-provision.
+
+## Runtime decision-engine retrieval (JEV 1.1, Python, this repo)
+
+The decision engine consumes embeddings; it never owns them. Two additive
+modules under `shared-utils/decision_engine/retrieval/` carry the spec-9
+rules. Both are stdlib-only, perform **zero embedding calls and zero
+network/provider access**, and take every provider/model/dimension fact from
+the caller — so they add no second embedding path.
+
+- `cache_identity.py` (spec 9.3/9.5/9.6) — the JEV cache-identity table (spec 9.5)
+  as code. Every 9.5 purpose has its own key builder
+  (`shared_doc_key`, `department_key`, `query_key`,
+  `alignment_evidence_key`, `same_task_decision_key`, `provider_health_key`);
+  keys are namespace-versioned (`jev1`/`v1`) and content-hashed, never
+  positional. `spaces_compatible`/`require_compatible` refuse cross-space
+  reuse (model, dimensions, task type, preprocessing version), and
+  `validate_vector` rejects fake/corrupt/wrong-dimension/zero-norm rows —
+  spec 9.3's "same dimension alone does not make two vector spaces
+  compatible". `QueryEmbeddingCache` is the 9.6 single-flight: N concurrent
+  identical queries cost exactly 1 embed call, and its caches are
+  per-instance (never process-global).
+- `asset_join.py` (spec 7.4/9.4) — joins the centrally shipped role-library
+  vectors (corpus 5's `role_library_embeddings`) to local role rows on EXACT
+  `(slug, content_version)`. A version bump is a miss, never a fuzzy match.
+  `plan_delta_embeds` is the delta-only planner: a rerun over unchanged shared
+  roles plans zero embeds, which is the regression lock for the reviewed
+  role-library-import fix (corpus 5's "clients install compatible assets, not
+  re-embed the whole shared corpus"). Tenant rows shadowing a shared slug
+  raise `DuplicateAssetError`; deferred/missing vectors stay in the candidate
+  pool rather than being silently dropped.
+
+**Not a seventh corpus.** These modules reference corpora 1-6 by key; they do
+not create a new index, store, or asset, and they do not flatten the six into
+one. `retrieval_query` / `retrieval_document` are the only cross-reusable task
+pair; every other task-type pairing is refused.
+
+Provider/model constants stay pinned in `embedding_engine.py` and the Command
+Center's own constants — the retrieval modules take them as call arguments and
+duplicate no model strings.
 
 ## Provider reliability (build pipeline)
 

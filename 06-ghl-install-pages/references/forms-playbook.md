@@ -1,6 +1,8 @@
 # Forms Playbook — how the FORM capability slots into Skill 6
 
-**Status:** DESIGN + REVIEWABLE DRAFT (PENDING-LIVE-RUN). Additive to Skill 6
+**Status:** DESIGN + REVIEWABLE DRAFT (PENDING-LIVE-RUN; dry-run-only exercised —
+the live form path is a spec skeleton and the form E2E is OWED, not claimed).
+Additive to Skill 6
 (`06-ghl-install-pages`, the ONE GHL delivery rail). Does NOT modify the live
 skill or the repo. This is the single operator-facing entry doc for the forms
 capability; the authoritative design lives in `form-builder-spec.md` and the

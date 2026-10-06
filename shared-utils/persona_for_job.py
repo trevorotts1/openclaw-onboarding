@@ -65,6 +65,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +103,36 @@ def _default_selector_timeout(fallback: int = 600) -> int:
 
 
 DEFAULT_SELECTOR_TIMEOUT = _default_selector_timeout()
+
+# (PRES-054, 2026-09-09) One absolute deadline propagated from the caller.
+# The presentation engine's persona resolver (persona_deadline.Deadline)
+# exports PERSONA_FOR_JOB_DEADLINE — a WALL-CLOCK epoch seconds instant that
+# bounds the WHOLE resolution (every retry attempt included). When present it
+# CLAMPS this module's effective spawn ceiling to the remaining time, so the
+# old mismatch (90 s outer wall vs 600 s subprocess ceiling — timed-out
+# expensive work still alive while a retry starts) cannot recur: the
+# subprocess can never outlive the caller's deadline. The engine also kills
+# and reaps the owned process group on timeout (see
+# presentation_job/persona_deadline.py) — the clamp makes the child exit on
+# its own in the common case; the group reap is the guarantee when it will
+# not.
+def _deadline_clamped_timeout() -> int:
+    raw = os.environ.get("PERSONA_FOR_JOB_DEADLINE", "").strip()
+    if not raw:
+        return DEFAULT_SELECTOR_TIMEOUT
+    try:
+        wall_deadline = float(raw)
+    except ValueError:
+        return DEFAULT_SELECTOR_TIMEOUT
+    if wall_deadline <= 0:
+        return DEFAULT_SELECTOR_TIMEOUT
+    remaining = wall_deadline - time.time()
+    if remaining <= 0:
+        # deadline already gone: a 1 s token ceiling so the spawn fails fast
+        return 1
+    # whole seconds, floored, with a small margin so the child exits BEFORE
+    # the caller's wall fires
+    return max(1, int(remaining - 0.5))
 
 # persona_source values that mean "the client named this persona explicitly" —
 # FINAL, never overridden, selector never consulted.
@@ -344,6 +375,132 @@ def _compose_query(job_text: str, sop_slug: "str | None", sop_hints) -> str:
     return ". ".join(p.strip() for p in parts if p and p.strip())[:1800]
 
 
+def _spawn_selector(cmd: list, timeout: int) -> "subprocess.Popen | None":
+    """Spawn the selector in its OWN process group, registered under the
+    active persona resolution id when one is set (PRES-054).
+
+    Own process group: the caller (persona_deadline.terminate_owned_tree) can
+    SIGTERM/SIGKILL the whole tree on timeout — including grandchildren the
+    selector itself spawns — and reap it before admitting a replacement.
+    Returns the Popen, or None on spawn failure (never raises)."""
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            start_new_session=True)
+    except OSError:
+        return None
+    rid = os.environ.get("PERSONA_RESOLUTION_ID", "").strip()
+    if rid:
+        _register_child(rid, proc)
+    else:
+        _track_orphan(proc)
+    return proc
+
+
+def _communicate_selector(proc: "subprocess.Popen",
+                          timeout: int) -> "str | None":
+    """Wait for the registered selector with the timeout, reaping on expiry.
+
+    subprocess.run's TimeoutExpired kills ONLY the direct child in the same
+    group here (start_new_session puts the child in its own group, so run()'s
+    internal kill cannot reach grandchildren either) and returns no stdout.
+    This helper: on timeout, SIGTERM the whole group, then SIGKILL survivors,
+    reap, and return None (fail-closed — a partial stdout is not a selection).
+    A child that finishes in time is unregistered and its stdout returned."""
+    try:
+        out, err = proc.communicate(timeout=max(1, int(timeout)))
+        _unregister_child(proc)
+        return (out or "").strip()
+    except subprocess.TimeoutExpired:
+        _kill_and_reap_group(proc)
+        return None
+    except (OSError, ValueError):
+        _kill_and_reap_group(proc)
+        return None
+
+
+def _register_child(resolution_id: str, proc: "subprocess.Popen") -> None:
+    """Best-effort registration of a live child under a resolution id.
+
+    The engine's registry lives in presentation_job.persona_deadline, which
+    is not importable from this seam on every box — so a same-named file
+    lock-free sidecar is used: one JSON file per resolution under
+    PERSONA_PROC_DIR (default <tmp>/persona-preso-<uid>/). terminate_owned_tree
+    sweeps this directory for group ids still alive and kills them. Failure
+    to record never blocks the spawn (best effort; the engine's in-process
+    registry is the primary ownership proof)."""
+    try:
+        base = os.environ.get("PERSONA_PROC_DIR", "").strip()
+        if not base:
+            base = os.path.join(
+                "/tmp", "persona-preso-%d" % (os.getuid() if hasattr(os, "getuid") else 0))
+        os.makedirs(base, exist_ok=True)
+        marker = os.path.join(base, "%s.json" % re.sub(r"[^A-Za-z0-9_.:-]", "_", resolution_id))
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump({"pgid": proc.pid, "pid": proc.pid,
+                       "recorded_at": time.time()}, fh)
+        proc._persona_marker_path = marker  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
+def _unregister_child(proc: "subprocess.Popen") -> None:
+    """Remove the sidecar marker of a cleanly-finished child."""
+    try:
+        marker = getattr(proc, "_persona_marker_path", None)
+        if marker and os.path.exists(marker):
+            os.unlink(marker)
+    except Exception:
+        pass
+
+
+def _orphan_dir() -> str:
+    base = os.environ.get("PERSONA_PROC_DIR", "").strip()
+    if not base:
+        base = os.path.join(
+            "/tmp", "persona-preso-%d" % (os.getuid() if hasattr(os, "getuid") else 0))
+    return base
+
+
+def _track_orphan(proc: "subprocess.Popen") -> None:
+    """Register a child spawned with NO active resolution id (e.g. the
+    self-test, or a bare persona_for_job call) under the reserved
+    ``__orphan__`` key so terminate_owned_tree can still find and reap it —
+    an unregistered group is invisible to the reaper (the exact defect this
+    unit closes)."""
+    try:
+        _register_child("__orphan__", proc)
+    except Exception:
+        pass
+
+
+def _kill_and_reap_group(proc: "subprocess.Popen") -> None:
+    """SIGTERM the child's whole group, SIGKILL survivors, reap the child."""
+    import signal as _signal
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, PermissionError, OSError):
+        pgid = None
+    if pgid is not None:
+        try:
+            os.killpg(pgid, _signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        if pgid is not None:
+            try:
+                os.killpg(pgid, _signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+    _unregister_child(proc)
+
+
 def _run_selector(query: str, department: str, record: bool, timeout: int, *,
                   blend: bool = False, topic_hint: "str | None" = None) -> "dict | None":
     """Spawn the canonical selector and parse its JSON. A ``PERSONA_FOR_JOB_FIXTURE``
@@ -356,9 +513,17 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
     (``persona-selector-v2.py``'s W7 branch, ``persona_blend.build_bundle``)
     instead of the single-persona selection. Audience confirmation and any
     other goal/context signalling travel as ENV (``OPENCLAW_AUDIENCE`` etc.) —
-    ``subprocess.run`` inherits the parent process environment unmodified, so
+    ``subprocess`` inherits the parent process environment unmodified, so
     that passthrough needs no code here; this function only adds the argv
-    flags the blend branch itself requires."""
+    flags the blend branch itself requires.
+
+    (PRES-054) ``timeout`` is the effective spawn ceiling: the caller's
+    ``timeout=`` kwarg CLAMPED by the propagated absolute deadline
+    (``PERSONA_FOR_JOB_DEADLINE``) via :func:`_deadline_clamped_timeout` at
+    the ``persona_for_job`` entry. The child runs in its OWN process group,
+    registered under the active resolution id, so a caller timeout reaps the
+    whole tree — a timed-out Future no longer leaves expensive selector work
+    alive under a retry."""
     fixture = os.environ.get("PERSONA_FOR_JOB_FIXTURE", "").strip()
     if fixture:
         try:
@@ -378,11 +543,12 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
             cmd += ["--topic", topic_hint]
     if not record:
         cmd.append("--no-record")
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    proc = _spawn_selector(cmd, timeout)
+    if proc is None:
         return None
-    out = (proc.stdout or "").strip()
+    out = _communicate_selector(proc, timeout)
+    if out is None:
+        return None
     if not out:
         return None
     # selector prints diagnostics to stderr and the JSON object to stdout; be
@@ -402,6 +568,111 @@ def _run_selector(query: str, department: str, record: bool, timeout: int, *,
 # --------------------------------------------------------------------------- #
 # public API
 # --------------------------------------------------------------------------- #
+def _cas_basis(sop_hints, cas_task_key, cas_state_dir) -> "dict | None":
+    """Resolve the A36 selector CAS basis, most specific first.
+
+    Explicit kwargs > the legacy ``sop_hints={"cas_guard": {...}}`` hint >
+    the box env (PERSONA_FOR_JOB_CAS_TASK_KEY / PERSONA_FOR_JOB_CAS_STATE_DIR).
+    Returns None when no basis is supplied anywhere: the box has no selector
+    decision chain, so pre-A36 behavior is unchanged byte-for-byte.
+
+    The repair this closes (ONB-212 QC): pre-fix the gate was reachable ONLY
+    through a dict ``cas_guard`` hint that no production caller ever passed,
+    so the selector leg of A36 never actually ran.
+    """
+    guard = (sop_hints or {}).get("cas_guard") if isinstance(sop_hints, dict) else None
+    if isinstance(guard, dict) and guard.get("task_key"):
+        return guard
+    task_key = (cas_task_key
+                or os.environ.get("PERSONA_FOR_JOB_CAS_TASK_KEY", "")).strip()
+    state_dir = (cas_state_dir
+                 or os.environ.get("PERSONA_FOR_JOB_CAS_STATE_DIR", "")).strip()
+    if task_key and state_dir:
+        return {"task_key": task_key, "state_dir": state_dir}
+    return None
+
+
+def _cas_head_revision(basis) -> "int | None":
+    """Head revision of the selector's decision chain, read BEFORE the spawn.
+
+    This is the CAS basis the gate below compares against: read here, then the
+    selector runs, then the gate refuses if the head moved in between (the
+    sibling call sites' pattern — backfill / intake door / nudge sweep /
+    comms trigger all read-then-gate the same way).
+
+    None when CAS is off, or when the D23 module is unreachable (bare box:
+    there is no chain to clobber, so the flow proceeds exactly as pre-A36).
+    Never raises: an unreadable chain reads as 0, and the gate stays the
+    fail-closed point.
+    """
+    if basis is None:
+        return None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent
+                               / "decision_engine" / "commit"))
+        import dispatch as _dispatch  # noqa: PLC0415 (runtime, path-set above)
+    except Exception:  # noqa: BLE001 -- bare box: no chain, no gate
+        return None
+    return _dispatch.head_revision(basis.get("state_dir"), basis.get("task_key"))
+
+
+def _cas_selector_gate(cas_guard: dict, raw: dict):
+    """A36 selector late gate: fail closed on an obsolete selection revision.
+
+    ``cas_guard`` carries {"task_key", "revision", "scope"} (+ optional
+    "state_dir" for the persisted chain). Hydrates a D23 store from the real
+    SQLite chain via dispatch.load_cas_store and runs the existing
+    check_late_result. Returns None when the result is current (caller
+    proceeds); returns a never-naked fail-closed selection dict with
+    source="late-result:stale" when the selection is obsolete or the gate
+    module is unreachable. Unknown late kinds surface as caller defects
+    (source="late-result:defect"), never silent passes.
+    """
+    import sqlite3 as _sqlite3  # noqa: PLC0415 (stdlib, deferred for import cost)
+
+    task_key = (cas_guard or {}).get("task_key", "")
+    revision = (cas_guard or {}).get("revision", 0)
+    scope = (cas_guard or {}).get("scope") or {}
+    state_dir = (cas_guard or {}).get("state_dir")
+    try:
+        from pathlib import Path as _Path  # noqa: PLC0415 (stdlib, deferred)
+        _cdir = _Path(__file__).resolve().parent / "decision_engine" / "commit"
+        sys.path.insert(0, str(_cdir))
+        import dispatch as _dispatch  # noqa: PLC0415 (runtime, path-set above)
+        con = None
+        try:
+            if state_dir is not None:
+                _db = _Path(state_dir) / "decision_revisions.db"
+                _db.parent.mkdir(parents=True, exist_ok=True)
+                con = _sqlite3.connect(str(_db), timeout=30)
+                con.row_factory = _sqlite3.Row
+            if con is None:
+                _commit = _dispatch._load_commit()
+                store = _commit.fresh_state(
+                    input_hash=_dispatch.scope_hash(scope))
+            else:
+                _commit, store = _dispatch.load_cas_store(
+                    con, task_key, _dispatch.scope_hash(scope))
+            _dispatch.guard_late_result(store, "selector", int(revision))
+        finally:
+            try:
+                if con is not None:
+                    con.close()
+            except _sqlite3.Error:
+                pass
+    except ValueError as exc:
+        return {"persona_id": None, "no_persona_required": False,
+                "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
+                "source": "late-result:defect", "error": str(exc),
+                "warnings": ["selector late gate defect: %s" % exc]}
+    except Exception as exc:  # noqa: BLE001 -- stale head or gate unreachable
+        return {"persona_id": None, "no_persona_required": False,
+                "governance_persona_id": GOVERNANCE_PERSONA_FALLBACK,
+                "source": "late-result:stale", "error": str(exc),
+                "warnings": ["stale selector result refused: %s" % exc]}
+    return None
+
+
 def _fallback_persona(universe: list) -> "tuple[str, str]":
     """Resolve the guaranteed default persona and the reason tag. Never null."""
     uni = set(universe or [])
@@ -449,6 +720,8 @@ def persona_for_job(job_text: str, department: str, *,
                     record: bool = True, timeout: int = DEFAULT_SELECTOR_TIMEOUT,
                     section4_chars: int = 1400,
                     blend: bool = False,
+                    cas_task_key: "str | None" = None,
+                    cas_state_dir: "str | None" = None,
                     topic_hint: "str | None" = None) -> dict:
     """Resolve the best persona for a content-engine job. See module docstring.
 
@@ -464,9 +737,15 @@ def persona_for_job(job_text: str, department: str, *,
     text). Single-persona mode (``blend=False``, the default) is completely
     untouched — same code path, same return shape, as before this parameter
     existed.
+
+    (PRES-054) the effective selector ceiling is ``min(timeout, time left on
+    the propagated absolute deadline PERSONA_FOR_JOB_DEADLINE)`` — the
+    subprocess can never outlive the caller's budget.
     """
     department = (department or "general").strip() or "general"
     warnings: list = []
+    timeout = _deadline_clamped_timeout() if timeout == DEFAULT_SELECTOR_TIMEOUT \
+        else min(int(timeout), _deadline_clamped_timeout())
 
     # 1) CLIENT SOVEREIGNTY — an express choice is FINAL; selector never runs,
     #    blend or not (a client-named voice is never blended or judged).
@@ -516,7 +795,32 @@ def persona_for_job(job_text: str, department: str, *,
 
     # 3) Ask the canonical selector (single-persona mode — unchanged).
     query = _compose_query(job_text, sop_slug, sop_hints)
+    # JEV A36 (spec 10.3): the selection revision this result is computed
+    # against, read BEFORE the spawn — the same read-then-gate pattern the
+    # sibling call sites use (backfill / intake door / nudge sweep / comms
+    # trigger). None == CAS off on this box: pre-A36 behavior, byte-identical.
+    _basis = _cas_basis(sop_hints, cas_task_key, cas_state_dir)
+    # An explicit caller-supplied revision IS the basis (the legacy guard
+    # hint's contract, and its tests): do not second-guess it with a fresh
+    # read. Otherwise read the head now, before the spawn, so a head that
+    # moves during the selector run is refused by the gate below.
+    _rev_before = (_basis.get("revision") if _basis and "revision" in _basis
+                   else _cas_head_revision(_basis))
     raw = _run_selector(query, department, record, timeout)
+
+    # JEV A36 (spec 10.3): selector late gate through the EXISTING D23 module
+    # (shared-utils/decision_engine/commit/dispatch.py) — imported by path,
+    # never restated. A stale selection (obsolete revision) fails closed with
+    # a typed refusal instead of silently clobbering a newer head. ONB-212
+    # repair: the basis now comes from the kwargs / env (real callers) as well
+    # as the legacy sop_hints hint, so the gate actually RUNS in production —
+    # pre-repair it needed a dict hint no caller ever supplied. A box with no
+    # basis and no chain still behaves byte-identically to pre-A36.
+    if _rev_before is not None and raw is not None and not raw.get("error"):
+        _gate = _cas_selector_gate(
+            dict(_basis, revision=_rev_before), raw)
+        if _gate is not None:
+            return _gate
 
     if raw is not None and not raw.get("error"):
         # 3a) mechanical / operational — truthful null persona + governance frame (Q1)
@@ -569,7 +873,9 @@ def persona_for_jobs(jobs: list) -> list:
             record=spec.get("record", True),
             timeout=spec.get("timeout", DEFAULT_SELECTOR_TIMEOUT),
             section4_chars=spec.get("section4_chars", 1400),
-            blend=spec.get("blend", False), topic_hint=spec.get("topic_hint")))
+            blend=spec.get("blend", False), topic_hint=spec.get("topic_hint"),
+            cas_task_key=spec.get("cas_task_key"),
+            cas_state_dir=spec.get("cas_state_dir")))
     return out
 
 
@@ -599,6 +905,15 @@ def main(argv: list) -> int:
                          "single-persona callers are completely unaffected).")
     ap.add_argument("--topic-hint", dest="topic_hint", default=None,
                     help="(--blend) optional explicit topic hint for the job.")
+    ap.add_argument("--cas-task-key", dest="cas_task_key", default=None,
+                    help="(A36) decision-chain task key whose head is the "
+                         "selection basis; with --cas-state-dir, a stale "
+                         "selection is refused instead of returned. Also "
+                         "honored via PERSONA_FOR_JOB_CAS_TASK_KEY.")
+    ap.add_argument("--cas-state-dir", dest="cas_state_dir", default=None,
+                    help="(A36) directory holding decision_revisions.db for "
+                         "--cas-task-key. Also honored via "
+                         "PERSONA_FOR_JOB_CAS_STATE_DIR.")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run the fail-closed consumer contract self-test")
     a = ap.parse_args(argv)
@@ -612,7 +927,9 @@ def main(argv: list) -> int:
     sel = persona_for_job(a.job, a.department, sop_slug=a.sop_slug, sop_hints=hints,
                           client_persona_id=a.client_persona_id,
                           persona_source=a.persona_source, record=a.record,
-                          timeout=a.timeout, blend=a.blend, topic_hint=a.topic_hint)
+                          timeout=a.timeout, blend=a.blend, topic_hint=a.topic_hint,
+                          cas_task_key=a.cas_task_key,
+                          cas_state_dir=a.cas_state_dir)
     print(json.dumps(sel, indent=2))
     # exit 0 always; the selection is guaranteed usable. Callers inspect JSON.
     return 0

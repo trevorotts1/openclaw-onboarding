@@ -48,8 +48,8 @@ python3 -c "compile(open('$ESCPY').read(), '$ESCPY', 'exec')" || { echo "FATAL: 
 
 # Template must carry the V2 marker pair and the LOOP: line before any
 # fixture is meaningful.
-if ! grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$TPL"; then
-  echo "FATAL: $TPL does not carry the V2 marker -- nothing below is testing what it claims to"
+if ! grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$TPL"; then
+  echo "FATAL: $TPL does not carry the V3 marker -- nothing below is testing what it claims to"
   exit 2
 fi
 if ! grep -q "LOOP:" "$TPL"; then
@@ -93,7 +93,7 @@ EOF
 result="$(run_escpy "$a1")"
 echo "  ESCPY verdict: $result"
 if [[ "$result" == upgrade:* ]] \
-   && grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$a1" \
+   && grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$a1" \
    && grep -q "LOOP:" "$a1" \
    && ! grep -q "RESCUE_ESCALATION_BOXNAME_V1" "$a1" \
    && grep -q "test-box-slug" "$a1" \
@@ -123,29 +123,29 @@ Untouched.
 EOF
 result="$(run_escpy "$a2")"
 echo "  ESCPY verdict: $result"
-if [[ "$result" == upgrade:* ]] && grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$a2" && grep -q "LOOP:" "$a2"; then
+if [[ "$result" == upgrade:* ]] && grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$a2" && grep -q "LOOP:" "$a2"; then
   ok "unmarked box: upgraded to V2 (verdict=$result), LOOP: line present"
 else
   bad "unmarked box: expected clean upgrade to V2 (verdict=$result)"
 fi
 
 # ---------------------------------------------------------------------------
-# SCENARIO 3: box already on V2 -- second run must be a byte-identical no-op.
+# SCENARIO 3: box already on V3 -- second run must be a byte-identical no-op.
 # ---------------------------------------------------------------------------
 echo ""
 echo "=== SCENARIO 3: already-V2 box is idempotent (CONTROL) ==="
 a3="$WORK/AGENTS-v2.md"
 cp "$a1" "$a3" 2>/dev/null || true
-# a1 is now V2-stamped from Scenario 1 -- reuse it as the "already V2" fixture
+# a1 is now V3-stamped from Scenario 1 -- reuse it as the "already V3" fixture
 cp "$a1" "$a3"
 before_sha="$(shasum -a 256 "$a3" | awk '{print $1}')"
 result2="$(run_escpy "$a3")"
 after_sha="$(shasum -a 256 "$a3" | awk '{print $1}')"
 echo "  ESCPY verdict: $result2"
 if [ "$result2" = "noop" ] && [ "$before_sha" = "$after_sha" ]; then
-  ok "already-V2 box: second run is a byte-identical no-op (verdict=noop)"
+  ok "already-V3 box: second run is a byte-identical no-op (verdict=noop)"
 else
-  bad "already-V2 box: expected verdict=noop and unchanged bytes (verdict=$result2, sha before=$before_sha after=$after_sha)"
+  bad "already-V3 box: expected verdict=noop and unchanged bytes (verdict=$result2, sha before=$before_sha after=$after_sha)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -167,6 +167,46 @@ if [ "$result4" = "absent" ] && [ "$before_sha4" = "$after_sha4" ]; then
   ok "no-section box: verdict=absent, file untouched (no section created)"
 else
   bad "no-section box: expected verdict=absent and untouched (verdict=$result4)"
+fi
+
+# ---------------------------------------------------------------------------
+# SCENARIO 5 (RR-002 compatibility versioning): a box carrying the V2 marker
+# -- which is what the live fleet carries today -- must migrate to V3 in ONE
+# roll, gaining the correlation fields, with NO orphaned V2 opening tag.
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== SCENARIO 5: V2-stamped box migrates to V3 in one roll (ASSERTION) ==="
+a5="$WORK/AGENTS-v2-migrate.md"
+cat > "$a5" <<'EOF'
+# Agent Instructions
+
+<!-- RESCUE_ESCALATION_BOXNAME_V2 -->
+## Escalate to Rescue Rangers (when you are stuck)
+
+V2 body: LOOP: routing present here.
+
+  "boxName":    "test-box-slug"
+  "clientName": "Fixture Co"
+  "agentName":  "fixture-agent"
+  "boxType":    "Mac Mini"
+  "returnTo":   "12345"
+<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->
+
+## Some Other Section
+Untouched.
+EOF
+result5="$(run_escpy "$a5")"
+echo "  ESCPY verdict: $result5"
+if grep -q "RESCUE_ESCALATION_BOXNAME_V3" "$a5" \
+   && ! grep -q "RESCUE_ESCALATION_BOXNAME_V2" "$a5" \
+   && grep -q '"incident_id"' "$a5" \
+   && grep -q '"operation_id"' "$a5" \
+   && grep -q "test-box-slug" "$a5" \
+   && grep -q "## Some Other Section" "$a5"; then
+  ok "V2-stamped box: migrated to V3 (verdict=$result5), correlation fields present, NO orphaned V2 tag, following section untouched"
+else
+  bad "V2-stamped box: expected one-roll V2->V3 migration with correlation fields and no orphaned V2 tag (verdict=$result5)"
+  echo "  --- resulting file head ---"; sed -n '1,12p' "$a5" | sed 's/^/    /'
 fi
 
 echo ""

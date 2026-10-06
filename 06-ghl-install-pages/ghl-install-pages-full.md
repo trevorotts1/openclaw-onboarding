@@ -1,3 +1,9 @@
+> **HISTORICAL — DO NOT FOLLOW FOR NEW INSTALLS.** This is the Playwright-era
+> full reference (v2.0), superseded by `ghl-browser-builder-full.md` (v3.0) +
+> `v2-autonomous-build-sop.md`. Kept for archive reference only; the current
+> procedure lives in the successor docs. Its Playwright-first flow is NOT the
+> current install procedure.
+
 > LEGACY (v2.0) reference — SUPERSEDED by ghl-browser-builder-full.md (v3.0,
 > agent-browser PRIMARY). Retained only for historical click-path detail.
 > **D6 HEADLESS-ONLY OVERRIDE (binding):** every browser launch in this skill is

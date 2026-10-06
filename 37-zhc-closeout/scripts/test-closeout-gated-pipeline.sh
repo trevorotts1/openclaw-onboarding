@@ -420,54 +420,60 @@ else
 fi
 
 # ============================================================
-# T11: v12.3.10 — run-closeout.sh self-removes interview-nudge cron at done-transition
+# T11: verified cleanup uses recorded identities and keeps recovery until last.
 # ============================================================
-# Acceptance test A: when interviewComplete=true reaches closeoutStatus=done,
-# run-closeout.sh must call `openclaw cron rm <interviewNudgeUuid>` alongside
-# the existing closeout-resume cron rm. Verified by static grep (the test
-# for the dynamic path is in test-interview-experience.sh T13).
-printf '\n--- T11: v12.3.10 interview-nudge cron self-remove at done-transition ---\n'
-
-if [[ ! -f "$run_script" ]]; then
-  fail "T11: run-closeout.sh not found at $run_script"
+printf '\n--- T11: shared cleanup ordering, retry and mutation proof ---\n'
+if grep -q 'cleanup-closeout.py' "$run_script" && grep -q 'cleanup-closeout.py' "$SCRIPT_DIR/resume-closeout-cron.sh"; then
+  pass "T11a: normal and resumed closeout both invoke shared cleanup"
 else
-  # 11a: run-closeout.sh references interviewNudgeUuid (the UUID key)
-  if grep -q 'interviewNudgeUuid' "$run_script"; then
-    pass "T11a: run-closeout.sh references interviewNudgeUuid (nudge cron self-remove wired)"
-  else
-    fail "T11a: run-closeout.sh does NOT reference interviewNudgeUuid — nudge cron self-remove missing"
-  fi
-
-  # 11b: run-closeout.sh issues `openclaw cron rm` for the nudge cron
-  # Check that there is a cron rm call near the interviewNudgeUuid reference
-  nudge_rm_context=$(grep -A5 'interviewNudgeUuid' "$run_script" | grep 'cron rm' || true)
-  if [[ -n "$nudge_rm_context" ]]; then
-    pass "T11b: run-closeout.sh calls 'cron rm' after resolving interviewNudgeUuid"
-  else
-    # Also accept the pattern where rm is called with the variable directly
-    nudge_rm_context2=$(grep 'nudge_cron_uuid\|nudge.*cron.*rm\|cron rm.*nudge' "$run_script" || true)
-    if [[ -n "$nudge_rm_context2" ]]; then
-      pass "T11b: run-closeout.sh has nudge cron rm call (variable form)"
-    else
-      fail "T11b: run-closeout.sh does not call 'cron rm' for the interview-nudge cron"
-    fi
-  fi
-
-  # 11c: the nudge-cron rm block is at the done-transition (alongside closeout-resume rm)
-  # Check that both closeoutResumeUuid and interviewNudgeUuid appear in the same done-transition block
-  done_block=$(awk '/PRD-2.8: SELF-REMOVE/,/closeoutStatus.*=.*done/' "$run_script" 2>/dev/null || true)
-  if echo "$done_block" | grep -q 'interviewNudgeUuid'; then
-    pass "T11c: interview-nudge cron rm is in the done-transition block alongside closeout-resume rm"
-  else
-    fail "T11c: interview-nudge cron rm is NOT in the done-transition block — may not fire at closeout"
-  fi
-
-  # 11d: a fallback name-scan is present for pre-UUID boxes (pre-UUID fleet rescue)
-  if grep -q 'interview-nudge' "$run_script" && grep -q 'scan_uuid\|grep.*interview-nudge\|awk.*interview-nudge' "$run_script"; then
-    pass "T11d: run-closeout.sh has a fallback name-scan for boxes without a recorded interviewNudgeUuid"
-  else
-    fail "T11d: run-closeout.sh missing fallback name-scan for pre-UUID boxes"
-  fi
+  fail "T11a: a closeout path bypasses shared cleanup"
+fi
+if python3 - "$SCRIPT_DIR/cleanup-closeout.py" <<'PYCLEANUP'
+import importlib.util,json,os,subprocess,sys,tempfile
+from pathlib import Path
+script=Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('cleanup_fixture',script)
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as td:
+    root=Path(td);state=root/'state.json';calls=[]
+    initial={'interviewNudgeUuid':'fixture-nudge','closeoutResumeUuid':'fixture-resume'}
+    module.update(state,lambda s:s.update(initial))
+    assert not module.cleanup_records(state,lambda identity:calls.append(identity) or False)
+    assert calls==['fixture-nudge'], 'Failed nudge must retain recovery scheduler'
+    assert module.read(state)['closeoutResumeUuid']=='fixture-resume'
+    calls.clear()
+    assert module.cleanup_records(state,lambda identity:calls.append(identity) or True)
+    assert calls==['fixture-nudge','fixture-resume'], 'Nudge removal must precede recovery'
+    assert not module.read(state)['closeoutCleanupPending']
+    calls.clear();assert module.cleanup_records(state,lambda identity:calls.append(identity) or True)
+    assert calls==[], 'Completed cleanup must be idempotent'
+    # A missing nudge identity cannot authorize a broad name scan or recovery removal.
+    module.update(state,lambda s:s.update(interviewNudgeCleanupPending=True,closeoutResumeUuid='fixture-resume'))
+    assert not module.cleanup_records(state,lambda identity:calls.append(identity) or True)
+    assert calls==[] and module.read(state)['closeoutResumeUuid']=='fixture-resume'
+    # Mutation proof: reintroduce recovery removal after a failed nudge.
+    source=script.read_text();anchor="if key=='closeoutResumeUuid' and failures:break"
+    assert anchor in source
+    ns={'__file__':str(script),'__name__':'mutant_cleanup'}
+    exec(compile(source.replace(anchor,'if False:break',1),str(script),'exec'),ns)
+    mutant=root/'mutant.json';module.update(mutant,lambda s:s.update(initial));calls.clear()
+    def fail_nudge(identity):
+        calls.append(identity);return identity=='fixture-resume'
+    assert not ns['cleanup_records'](mutant,fail_nudge)
+    assert calls==['fixture-nudge','fixture-resume']
+    assert 'closeoutResumeUuid' not in module.read(mutant), 'Mutant must reproduce unsafe recovery loss'
+    # Public entrypoint may not remove anything before current closeout verification.
+    binary=root/'bin';binary.mkdir();log=root/'calls'
+    stub=binary/'openclaw';stub.write_text('#!/bin/sh\necho invoked >> "'+str(log)+'"\nexit 0\n');stub.chmod(0o755)
+    env=dict(os.environ,PATH=str(binary)+os.pathsep+os.environ['PATH'])
+    result=subprocess.run([sys.executable,str(script),str(state)],env=env,capture_output=True,timeout=5)
+    assert result.returncode!=0 and not log.exists(), 'Unverified completion must block cleanup'
+PYCLEANUP
+then
+  pass "T11b: failed cleanup retains recovery; successful retry removes nudge first; repeat is idempotent"
+  pass "T11c: mutation proves removing recovery after nudge failure is detected"
+  pass "T11d: missing identity never scans other crons; unverified closeout cannot remove any cron"
+else
+  fail "T11: shared cleanup functional or mutation proof failed"
 fi
 
 # ============================================================
@@ -589,7 +595,7 @@ else
 fi
 
 # ============================================================
-# T15 (v12.6.0): Visual intelligence set -- min 3 prompts, GPT-Image-2, generator exists
+# T15 (v12.6.0): Visual intelligence set -- min 3 prompts, GPT-Image-2.5, generator exists
 # ============================================================
 printf '\n--- T15 (v12.6.0): visual intelligence set generator ---\n'
 vi_script="$SCRIPT_DIR/generate-visual-intelligence.sh"
@@ -612,11 +618,11 @@ else
     fail "T15b: generate-visual-intelligence.sh references only $prompt_count prompt templates (need >= 3)"
   fi
 
-  # Check GPT-Image-2 is the primary model
+  # Check GPT-Image-2.5 is the primary model
   if grep -qE 'gpt-image-2|GPT_IMAGE_2|PRIMARY_MODEL.*gpt' "$vi_script"; then
-    pass "T15c: generate-visual-intelligence.sh uses gpt-image-2 as primary model"
+    pass "T15c: generate-visual-intelligence.sh uses gpt-image-2.5 as primary model"
   else
-    fail "T15c: generate-visual-intelligence.sh does not use gpt-image-2 as primary"
+    fail "T15c: generate-visual-intelligence.sh does not use gpt-image-2.5 as primary"
   fi
 
   # Check cap enforcement (max 30)
@@ -806,7 +812,9 @@ else
 exit 0
 SHIM
     chmod +x "$h/bin/openclaw"
-    printf '{}' > "$h/.openclaw/workspace/.workforce-build-state.json"
+    # This fixture tests credential loading for an existing client. An empty
+    # object now correctly stops at the earlier no-identity closeout guard.
+    printf '{"companySlug":"fixture-company"}' > "$h/.openclaw/workspace/.workforce-build-state.json"
     if [[ -n "$envcontent" ]]; then
       printf '%s\n' "$envcontent" > "$h/.openclaw/secrets/.env"
       chmod 600 "$h/.openclaw/secrets/.env"
@@ -896,7 +904,10 @@ SHIM
         T19M_SANDBOX="" ;;
     esac
     if [[ -n "$T19M_SANDBOX" ]]; then
-      MUT19="$T19M_SANDBOX/run-closeout.sh"
+      MUT19="$T19M_SANDBOX/skills/37-zhc-closeout/scripts/run-closeout.sh"
+      mkdir -p "$(dirname "$MUT19")" "$T19M_SANDBOX/skills/23-ai-workforce-blueprint/scripts"
+      cp "$SCRIPT_DIR/lib-closeout-state.sh" "$(dirname "$MUT19")/"
+      cp "$SCRIPT_DIR/../../23-ai-workforce-blueprint/scripts/"{lib-workforce-state.sh,workforce_state.py,workforce_completion.py,interview_eligibility.py} "$T19M_SANDBOX/skills/23-ai-workforce-blueprint/scripts/"
       python3 - "$run_script" "$MUT19" <<'PYEOF'
 import sys
 src_path, dst_path = sys.argv[1], sys.argv[2]
@@ -918,7 +929,7 @@ PYEOF
 exit 0
 SHIM
         chmod +x "$BOX19M/bin/openclaw"
-        printf '{}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
+        printf '{"companySlug":"fixture-company"}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
         printf 'KIE_API_KEY=fixture-test-kie-only-value\nNOTION_API_TOKEN=fixture-test-notion-only-value\n' \
           > "$BOX19M/.openclaw/secrets/.env"
         chmod 600 "$BOX19M/.openclaw/secrets/.env"

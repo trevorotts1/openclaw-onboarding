@@ -155,7 +155,7 @@ but continuous integration does not use it.
 
 Scope is deliberately narrow — ledgers, docs, changelog — because that is
 where fabricated verdicts become *permanent records* (failure 2), and because
-a linter that fires on 62 skill directories of prose would be muted within a
+a linter that fires on 69 skill directories of prose would be muted within a
 week.
 
 ### 6.3 Why this specific check

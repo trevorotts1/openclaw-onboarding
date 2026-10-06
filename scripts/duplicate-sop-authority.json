@@ -1,0 +1,76 @@
+{
+  "_README": "Authority registry for SOP filenames that exist in BOTH 23-ai-workforce-blueprint/templates/role-library/<dept>/sops/ AND universal-sops/<pack>/. Enforced by scripts/check-duplicate-sop-drift.py. Waivers pin the sha256 of BOTH copies: editing either side invalidates the waiver and fails the gate. Regenerate deliberately with --record; never edit shas by hand.",
+  "canonical_source": {
+    "PIPELINE-MANIFEST.json": {
+      "canonical": "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json",
+      "evidence": [
+        "update-skills.sh L5340 _manifest_src=$SKILLS_DIR/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json, copied INTO the department's sops/ by _u001_presentations_manifest_placement",
+        "install.sh L7528 the identical assignment in the installer's own U001 placement",
+        "update-skills.sh L5367 writes MANIFEST-SOURCE.txt recording source_path= that universal-sops path",
+        "presentations/scripts/sync_check.py L130: 'install.sh u001 placement (which materializes FROM the cluster copy)'"
+      ]
+    },
+    "MASTER-QC-AUTOFAIL-RULESET.md": {
+      "canonical": "universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md",
+      "evidence": [
+        "update-skills.sh L5341 / install.sh L7529 _ruleset_src, copied into the department's sops/ alongside the manifest by the same U001 step"
+      ]
+    },
+    "SOP-*.md (every other duplicated SOP filename)": {
+      "canonical": "23-ai-workforce-blueprint/templates/role-library/<dept>/sops/",
+      "evidence": [
+        "U001 copies ONLY PIPELINE-MANIFEST.json and MASTER-QC-AUTOFAIL-RULESET.md out of universal-sops. No code path copies a SOP-SLIDE-*/SOP-IMG-* .md from universal-sops into a materialized department.",
+        "The role-library tree is the only source that reaches a department's sops/*.md (scaffold_department / refresh-dept-scripts.py / refresh-stale-roles.py).",
+        "All 29 distinct sop_refs entries in PIPELINE-MANIFEST.json resolve to filenames that exist ONLY in the role-library, never in universal-sops.",
+        "Content corroborates: all four universal-sops SOP-IMG copies are stamped '**Status:** DRAFT for overhaul' while the role-library copies are the overhauled '**Status:** Reference SOP' (SOP-IMG-01 is 276 lines in role-library vs 214 in universal-sops, including a mandatory section 1A present in only one copy)."
+      ]
+    }
+  },
+  "_waiver_policy": "The 8 divergences below predate this gate. SOP content is doctrine and belongs to the operator, so this gate records the divergence at its exact current bytes rather than rewriting either copy. Any edit to either side invalidates the pinned pair and FAILS the gate until a human reviews it. A newly duplicated filename that disagrees has no waiver and fails immediately.",
+  "waivers": [
+    {
+      "file": "SOP-IMG-01-KIE-CALL-MECHANICS.md",
+      "dept": "presentations",
+      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
+      "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
+      "role_library_sha256": "438963454bb449f2c6005ff8957cdb0275c88ecac148aef191dbaa62f542bfee",
+      "universal_sops_sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
+      "canonical_side": "role-library",
+      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-05"
+    },
+    {
+      "file": "SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
+      "dept": "presentations",
+      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
+      "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
+      "role_library_sha256": "5deb4b89a6022a85db57676fdc1b6598ce97c2e822377c6edb0ea61bb5b7e36a",
+      "universal_sops_sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
+      "canonical_side": "role-library",
+      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-05"
+    },
+    {
+      "file": "SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md",
+      "dept": "presentations",
+      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md",
+      "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md",
+      "role_library_sha256": "cb583e7e2f9a2d35488e441b2cd7b7fea6be4fed7aa507fb19ef5b9d17243268",
+      "universal_sops_sha256": "42256e79764d4014a29ef5409fed0de5d07b9b3a6e5cc8adad46a34882d398ba",
+      "canonical_side": "role-library",
+      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-05"
+    },
+    {
+      "file": "SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
+      "dept": "presentations",
+      "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
+      "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
+      "role_library_sha256": "3fc4a78084f62369394830e8db8f200f9091bb07a687370ef8f19b4867080dc1",
+      "universal_sops_sha256": "5a88394709fa4070fc1036a87bead6bedc2f4113983b440f59134dd14375c0d1",
+      "canonical_side": "role-library",
+      "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
+      "recorded_at": "2026-09-05"
+    }
+  ]
+}

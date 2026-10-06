@@ -101,16 +101,6 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; map: 00-START-HERE.
 
 **Failure mode:** If the Buddy role is missing or errors on dispatch, escalate to the Director with the user's idea attached; never drop a newcomer mid-handoff.
 
-**Dispatch contract:**
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role first-time-onboarding-presentations \
-  --specialist-type brainstorming-buddy-presentations \
-  --problem-statement "First-time user oriented; begin the brainstorm. Initial idea: <verbatim or none>" \
-  --persona {{ASSIGNED_PERSONA}} \
-  --persona-version {{ASSIGNED_PERSONA_VERSION}}
-```
-
 ---
 
 ### SOP 9.4 -- On-Demand Refresher

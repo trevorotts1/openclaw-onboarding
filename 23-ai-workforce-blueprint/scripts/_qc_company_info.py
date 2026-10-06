@@ -65,13 +65,22 @@ except Exception as e:
     sys.exit(0)
 
 # v12.9.4: guard — return True if a path lives inside the master-files /
-# Downloads template tree.  A path inside that tree is NEVER a real built
-# workforce: it is the shipped template that qc-completeness should NEVER scan.
+# Downloads TEMPLATE tree (shipped skill copies, templates, references), which
+# qc-completeness must never scan.
+#
+# EXCEPT <...>/openclaw-master-files/zero-human-company/: that is where
+# build-workforce.py writes every company (PRD 1.9, resolve_company_paths), so a
+# path there is the REAL workforce. Rejecting it made the gate audit a stale
+# tree on Mac, completionVerification never passed, and buildCompletedAt was
+# never written.
 def _is_template_path(p: Path) -> bool:
-    """Return True if p resolves into the master-files / Downloads template tree."""
+    """Return True if p resolves into the master-files template tree."""
     try:
         parts = Path(p).resolve().parts
-        return "openclaw-master-files" in parts
+        if "openclaw-master-files" not in parts:
+            return False
+        i = parts.index("openclaw-master-files")
+        return parts[i + 1:i + 2] != ("zero-human-company",)
     except Exception:
         return False
 
@@ -103,8 +112,10 @@ zhc_root = None
 departments_dir = None
 departments_json = None
 
-# Priority 0: the LIVE tree the repairer maintains. When it exists it wins
-# outright — see _live_departments_dir() above.
+# Priority 0: the build state's own companyRoot/departments (the tree the build
+# wrote and the department agents run), else the LIVE workspace tree the
+# repairer maintains. When it exists it wins outright — see
+# _qc_paths.live_departments_dir() / departments_root_for().
 _live = _live_departments_dir()
 if _live.is_dir() and not _is_template_path(_live):
     _live_resolved = _live.resolve()

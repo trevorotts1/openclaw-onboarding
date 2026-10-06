@@ -69,6 +69,9 @@ make_sandbox() {  # make_sandbox -> echoes the sandbox skill dir
   local sbroot="$tmp/repo"
   mkdir -p "$sbroot"
   cp -R "$SKILL_DIR" "$sbroot/23-ai-workforce-blueprint"
+  # Match the installed Skill 23 dependency layout for the canonical V3 policy.
+  mkdir -p "$sbroot/shared-utils"
+  cp "$REPO_ROOT/shared-utils/ceo_execution_policy.py" "$sbroot/shared-utils/"
   # Provide the PA sibling library (copy if present, else the gate falls back to
   # Skill-23 lib for PA universal roles only — so we copy to keep PA resolvable).
   if [ -d "$REPO_ROOT/42-personal-assistant-library" ]; then

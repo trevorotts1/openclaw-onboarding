@@ -85,15 +85,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    ```json
    {
      "image_platform": "kie.ai",
-     "image_model_t2i": "gpt-image-2-text-to-image",
-     "image_model_i2i": "gpt-image-2-image-to-image",
+     "image_model_t2i": "gpt-image-2-5-sunburst-text-to-image",
+     "image_model_i2i": "gpt-image-2-5-sunburst-image-to-image",
      "resolution": "2K",
      "aspect_ratio": "16:9",
      "authorized_by": "<operator>",
      "date": "<run date>"
    }
    ```
-   Save this to `working/checkpoints/model_manifest.json`. The operator's confirmation of the echo IS their authorization of this manifest. Any model change the operator wants must be declared here at echo time; agents never improvise a model change mid-run.
+   Save this to `working/checkpoints/model_manifest.json`. The ids are copied from the `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (a department pin that outranks Skill 74; never typed from memory). A newer GPT Image generation reported by `kie_live_adapter.py latest-family --family gpt-image` is NOT adopted silently (rule 13 of `07-kie-setup/references/kie-common-rules.md`): tell the operator, and only an operator-approved catalog bump changes the ids. The operator's confirmation of the echo IS their authorization of this manifest. Any model change the operator wants must be declared here at echo time; agents never improvise a model change mid-run.
 3. Write the PRD (1 page max). Required fields: deck_slug, client_slug, target_audience, offer_name, final_price, anchor_price (must be >= 3x final_price), transformation_promise, primary_objection, hook (one sentence -- stands on 3-4 DEDICATED pure-typography A4 slides, ~4-5 appearances max, never 2 consecutive, never a footer on every slide; over-stamping is the #1 defect, STRIP excess rather than pad), `source_slide_count` (integer; in Mode B = the count of existing source slides the client provided; in Mode A = 0), slide_count_target, style_references, qc_threshold (always 8.5), model_manifest (reference to the confirmed manifest file), and assumptions_list (any items flagged assumed: true from intake).
 4. Run the Improvement Pass: read the PRD back against intake.json. Identify any gap. Fix it. Repeat once.
 3z. **(Decision 1C) Fold the scratch-deck seed into the PRD when present.** If `working/copy/scratch_seed.json` exists (the Media-Librarian scratch-deck parser ran on an uploaded rough/old deck), read it and fold its extracted titles/structure/claims into the Mission PRD as a STARTING POINT, then set `seeded_from_scratch_deck: true` (and a `scratch_seed_ref`) in mission_prd.json. The client's interview answers remain authoritative — the seed never overrides them. The gate **AF-SCRATCH-PARSE-SKIPPED** verifies a parsed scratch deck actually reached the PRD.
@@ -257,9 +257,43 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/approval_record.json
 - working/copy/presenter_notes.json
 
-**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-21), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY (the last mile — see SOP 9.6B): dispatch the Delivery Concierge (ROLE-13).**
+**Hand to:** Typography Architect (ROLE-18, Phase 1.5) and Brand Steward (LOGO_URL lock); THEN Slide Image Creator (Phase 2 prompt authoring, after the treatment table exists). Post-Phase-6: Presenter's Guide Specialist (ROLE-19), Presenter's Speech Writer (ROLE-20) + Fish Audio / Expression Specialist (ROLE-29), and Presenter Coach (ROLE-14) for the speaker-facing deliverables and audio demo. **FINALLY (the last mile — see SOP 9.6B): dispatch the Delivery Concierge (ROLE-13).**
 
 **Failure mode:** If the operator requests changes to the copy, send the copy back to the Slide Copywriter with the exact change instructions. Re-run Phase 1Q QC after changes. Present the revised copy to the owner again. Do not skip the re-QC step even for minor changes.
+
+---
+
+### SOP 9.5b -- Owner Style Pick: recording the client's A/B/C reply (P-STYLE-PICK)
+
+**When to run:** The moment the client answers the style-preview request. `P-STYLE-PICK` (manifest id `P-STYLE-PICK`, order 4.86, executor kind `human`, owned by the Brand Steward) is the ONE guaranteed human gate in every deck: after `P-STYLE-PREVIEW` renders the 9 samples, the engine sends the client "pick ONE by replying A, B or C" and then waits **45 minutes** (`PHASE_BUDGET_MINUTES["P-STYLE-PICK"]`, overridable with `PRESENTATION_STYLE_PICK_TIMEOUT_MINUTES`). If nothing verifiable lands in that window the run **parks BLOCKED** and the deck stops. A pick sitting in the chat that nobody recorded is the same as no pick at all.
+
+**Inputs:**
+- `working/style-preview/style_samples_manifest.json` (the offered `variants`, in manifest order -- this is the authoritative list)
+- the client's own reply message, and **its message id**
+
+**Steps:**
+1. Read the offered variant ids from `working/style-preview/style_samples_manifest.json`.
+2. Record the pick with the driver. This is the ONLY sanctioned writer of the choice file -- never hand-author `style_preview_choice.json`:
+
+   ```bash
+   python3 scripts/deck-intake-driver.py \
+     --run-dir "<RUN_DIR>" \
+     --style-pick B \
+     --owner-msg-id "<the id of the CLIENT's own A/B/C reply>"
+   ```
+
+   `A`/`B`/`C`, `a`/`b`/`c`, `variant b` and `1`/`2`/`3` all resolve against the offered list. The command writes `working/copy/style_preview_choice.json` in the exact shape the engine verifies: `owner_approved: true`, a `chosen_variant` from the offered set, and the `owner_msg_id`.
+3. **`--owner-msg-id` is mandatory and it must be the client's real message id.** The engine re-verifies it through the Fix 32 approvals oracle at the gate; an id that does not resolve to a real owner-authored message is DENIED (`AF-FORGED-APPROVAL`) and the phase keeps waiting. The command prints a pre-check result so a wrong id is caught while the client is still in the conversation -- never invent one, never reuse another gate's id, never substitute your own message id for the client's.
+4. The run continues on its own the moment the file verifies. Nothing else has to be dispatched.
+
+**The hands-off alternative (`style_pick_auto`):** if the client would rather not be a blocker, the intake's style turn (`style_and_brand`) carries a `style_pick_auto` subfield. Recorded `yes` -> `intake.style_pick_auto: true` -> when the 45-minute wait expires the engine writes the choice file itself for variant 1, stamped `auto_pick: true` with **no** `owner_msg_id` (it never forges one). Absent or `no` -> the phase parks and waits, as an owner decision should. A real pick that arrives in time always wins over the timeout. The opt-in is the client's to give: never record it on their behalf, and never write `auto_pick` from the recorder above.
+
+**Outputs:**
+- `working/copy/style_preview_choice.json` (`owner_approved`, `chosen_variant`, `owner_msg_id`)
+
+**Hand to:** the run continues to `P4-RENDER` on its own once the pick verifies.
+
+**Failure mode:** If the client replies with something that is not one of the offered variants, the command refuses and names the offered list -- ask them again with the variant ids in front of them. If the run has already parked BLOCKED on the timeout, record the pick with this same command and then resume the run; the choice is proven on re-entry and the phase completes without re-spamming the client.
 
 ---
 
@@ -297,7 +331,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. Read capacity_plan.json. Identify: max_concurrent_agents, qc_agents_allowed, writer_agents_allowed.
 2. For Phase 2 (prompt authoring): dispatch prompt writers in batches of min(writer_agents_allowed, 10). Each writer handles a slice of slides. Slices must not overlap. Record the assignment map in working/checkpoints/phase2_dispatch.json.
 3. For Phase 3 (prompt QC): dispatch min(qc_agents_allowed, 10) QC agents. Each scores the same prompt independently. Average their scores. Scores < 8.5 trigger revision; revised prompts are re-scored before proceeding.
-4. For Phase 4 (image generation): submission runs in waves of 20 slides with 10-second sleeps between waves (= the documented 20-requests-per-10-seconds cap per master SOP; source: https://docs.kie.ai/ Section 8, verified 2026-06-14). Dispatch the Slide Submitter as a single detached agent. NEVER split submission across multiple agents (creates rate-cap violations).
+4. For Phase 4 (image generation): the renderer paces itself, so you add no waves or sleeps. `build_deck.py` submits every slide once, 0.6 seconds apart, under the provider governor (`providers.yaml` `kie` row), within the KIE limit of 20 createTask per 10 seconds per account (source: `07-kie-setup/references/kie-common-rules.md` rule 3, checked against https://docs.kie.ai/ on 2026-10-05). Dispatch the Slide Submitter as a single detached agent that runs the one canonical command. NEVER split submission across multiple agents (creates rate-cap violations).
 5. For Phase 5 (image QC): dispatch up to 5 QC agents in parallel. Each scores a non-overlapping batch of images.
 6. Log every dispatch event in working/checkpoints/dispatch_log.json with: agent_type, assigned_slides, dispatched_at, status.
 

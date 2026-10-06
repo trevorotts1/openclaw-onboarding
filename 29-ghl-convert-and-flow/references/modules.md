@@ -24,8 +24,8 @@ Create, read, update, delete contacts. Add/remove tags. Manage tasks and notes. 
 
 **Top endpoints:**
 - `POST /contacts/search` - Search contacts with filters. **Required in v3** — `GET /contacts/` was removed in the v3 generation.
-- `POST /contacts/` - Create contact
-- `POST /contacts/upsert` - Create-or-update in one call
+- `POST /contacts/` - Create contact (explicit NEW record only)
+- `POST /contacts/upsert` - Create-or-update in one call (DEFAULT for generic add/save; resolves per Location-level Allow Duplicate Contact configuration)
 - `GET /contacts/{contactId}` - Get contact by ID
 - `PUT /contacts/{contactId}` - Update contact
 - `POST /contacts/{contactId}/tags` - Add tags

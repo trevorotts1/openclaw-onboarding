@@ -15,14 +15,30 @@
 #   4. Log file setup (durable — survives reboot via ~/Downloads)
 # ============================================================
 
-# ── 1. Platform guard ─────────────────────────────────────────────────────────
-if [ -d "/data/.openclaw" ] && [ ! -d "$HOME/.openclaw" ]; then
-    echo "ERROR: This is the Mac mini installer; /data/.openclaw exists which means you're on a VPS." >&2
-    echo "Re-run without --platform mac, or use the VPS bootstrap directly." >&2
-    exit 1
+# ── 1. Actual OS and client path selection ─────────────────────────────────
+_OC_PLATFORM_COMMON="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
+# shellcheck source=platform/common.sh
+if ! command -v oc_set_platform_paths >/dev/null 2>&1; then
+    source "$_OC_PLATFORM_COMMON" || return 1
 fi
+if [[ "$(oc_detect_platform)" != mac ]]; then
+    echo "The Mac bootstrap requires Darwin; use the VPS bootstrap on Linux." >&2
+    return 1
+fi
+oc_set_platform_paths || return 1
 
 # ── 2. Homebrew / macOS prereqs ──────────────────────────────────────────────
+# launchd/SSH service environments often omit Homebrew even when it is installed.
+# Discover the real installation before declaring the prerequisite absent.
+if ! command -v brew >/dev/null 2>&1; then
+    for _brew_bin in /opt/homebrew/bin /usr/local/bin; do
+        if [[ -x "$_brew_bin/brew" ]]; then
+            PATH="$_brew_bin:$PATH"
+            export PATH
+            break
+        fi
+    done
+fi
 if ! command -v brew >/dev/null 2>&1; then
     echo "[install] Homebrew not found on PATH." >&2
     echo "          Install Homebrew first: https://brew.sh" >&2
@@ -38,21 +54,8 @@ for _required in curl python3; do
     }
 done
 
-# ── 3. Mac canonical path variables ──────────────────────────────────────────
-OC_PLATFORM="mac"
-OC_CONFIG="$HOME/.openclaw"
-OC_JSON="$HOME/.openclaw/openclaw.json"
-OC_CREDENTIALS="$HOME/.openclaw/credentials"
-OC_AGENTS="$HOME/.openclaw/agents"
-OC_SKILLS_DIR="$HOME/.openclaw/skills"
-OC_LOGS="$HOME/.openclaw/logs"
-OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
-OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-OC_DOWNLOADS="$HOME/Downloads"
-OC_BACKUPS="$HOME/Downloads/openclaw-backups"
-OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
-OC_LEGACY_CLAWD="$HOME/clawd"        # dead legacy path — never write here
-OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"  # canonical default (v10.13.9+)
+# ── 3. Client paths are already resolved by oc_set_platform_paths above ───────
+# OPENCLAW_ROOT and workspace pins must survive platform setup unchanged.
 
 # ── 4. Log file setup ────────────────────────────────────────────────────────
 # /tmp is wiped on reboot; persist install logs to ~/Downloads/openclaw-backups

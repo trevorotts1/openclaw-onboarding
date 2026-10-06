@@ -114,14 +114,26 @@ account, so a request that is valid on one account returns 422 on another.
 This is a KIE provisioning behavior, not a slug typo.
 
 **Workaround (already wired into the repo):**
-`37-zhc-closeout/scripts/generate-infographics.sh` keeps `nano-banana-2` as
-the PRIMARY model and falls back to `gpt-image-2-text-to-image` (the proven
-safety net) when the primary is rejected. As of v10.X.8 the retry loop also
-detects a `model name not supported` / 422 submit error and switches to the
-fallback EARLY instead of burning both primary attempts. Override the primary
-explicitly with `ZHC_IMAGE_MODEL` if a given account has a different preferred
-slug. Do NOT remove `nano-banana-2` as the primary; it works on most accounts
-and renders text better than the fallback.
+`37-zhc-closeout/scripts/generate-infographics.sh` and
+`generate-visual-intelligence.sh` both use `gpt-image-2-5-sunburst-text-to-image`
+as the PRIMARY (AGENTS.md N43 pins the fleet to `gpt-image-2-5-sunburst-*`) and
+`nano-banana-2` as the FALLBACK. The retry loop detects a `model name not
+supported` / 422 submit error on the primary and switches to the fallback EARLY
+instead of burning both primary attempts. Override the primary explicitly with
+`ZHC_IMAGE_MODEL` if a given account has a different preferred slug.
+
+**Per-account availability remedy:** Skill 74 (`74-kie-live-adapter`) live
+model discovery is the path that answers "which KIE models does THIS account
+actually have?" at run time, so a 422 like this is reported from the account's
+own live model list instead of being found by a failed submit. Discovery
+reports; it never silently registers or swaps a model (see AGENTS.md N43 for the
+pinned image models). Until a box runs Skill 74, the fallback chain above stays
+the safety net.
+
+**KIE consumers:** Skill 37 is a KIE consumer (it generates the closeout
+infographics and the celebration video), alongside the other KIE skills listed
+in `CREDENTIALS.md` under "KIE.ai API Key". Shared KIE rules:
+`07-kie-setup/references/kie-common-rules.md`.
 
 **Upstream ask:** none (KIE account provisioning, not an OpenClaw defect).
 The fallback chain is the durable fix.
@@ -239,6 +251,57 @@ hard-fails if `plugins.entries.whatsapp.enabled = true` after the merge step. Se
 
 ---
 
+## 6. qwen-mm-plugins skill-id collision (three plugins register as one)
+
+**Status: PATCHED by `scripts/fix-qwen-skill-collision.sh` — re-run required after
+every `openclaw update repair` (see below). Confirmed on a pilot Mac box, 2026-09-05.**
+
+**Symptom:** Only one of the three `qwen-mm-plugins-*` skills is ever usable, with
+no error visible to the end client. A doctor/startup warning shows the real cause:
+
+```
+[skills] plugin skill name collision: "skill" resolves to both
+/…/extensions/qwen-mm-plugins-core/skill and
+/…/extensions/qwen-mm-plugins-video-edit/skill;
+only the first will be published
+```
+
+**Root cause:** OpenClaw derives a plugin skill's id from the **directory
+basename**, not the `name:` field inside `SKILL.md`. The three
+`qwen-mm-plugins-{core,video-edit,video-memory}` plugins each ship their skill in
+a directory literally named `skill/`, so all three resolve to the same skill id
+(`skill`), collide, and OpenClaw silently keeps only the first one it loads and
+drops the other two.
+
+**Fix:** for each plugin, rename its `skill/` directory to `<plugin-id>-skill/`
+and repoint the `skills` field in every manifest that references it
+(`.codex-plugin/plugin.json` — a string, `.claude-plugin/plugin.json` — an array,
+`.qoder-plugin/plugin.json` — a string). `scripts/fix-qwen-skill-collision.sh`
+does this for all three plugins, idempotently, with a backup of every manifest it
+edits:
+
+```bash
+bash scripts/fix-qwen-skill-collision.sh
+# then re-grant capability consent per plugin if the script could not do it for you:
+openclaw plugins enable <plugin-id> --accept-capabilities
+# then restart the gateway
+openclaw gateway restart
+```
+
+Skips cleanly (exit 0) on a box that does not have the plugins installed. Exits
+non-zero and leaves any unrecognized manifest untouched if the layout does not
+match what is expected — it never guesses.
+
+**Why this cannot be fixed at the source, and why you must re-run it:** these
+plugins clone from Alibaba's upstream `github.com/QwenLM/Qwen-MM-Plugins` via a
+local marketplace, so we cannot patch the directory name in the upstream repo.
+Worse, `openclaw update repair` **re-clones** these plugins from upstream, which
+wipes the rename and reintroduces the collision. Re-run
+`scripts/fix-qwen-skill-collision.sh` after any install, update, or repair that
+touches the qwen-mm-plugins extensions.
+
+---
+
 ## Filing upstream
 
 Issues 1-4 are core-runtime or infrastructure, not onboarding. File against the
@@ -246,4 +309,7 @@ openclaw project with the symptom log lines above. Until fixed, the workarounds 
 keep the fleet responsive. The recommended fallback-embeddings and agent-timeout values
 should be carried in the default onboarding config so fresh installs are protected by
 default. Issue #5 (WhatsApp) has been permanently resolved at the fleet-standards layer
-and does not require an upstream fix.
+and does not require an upstream fix. Issue #6 (qwen-mm-plugins collision) is a defect
+in how OpenClaw core derives a skill id from a directory basename; the affected content
+itself lives in a third-party upstream repo we do not control, so the fixup script is the
+durable remediation until OpenClaw derives skill ids from the manifest instead of the path.

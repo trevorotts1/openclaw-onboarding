@@ -59,8 +59,42 @@ if [ -z "$_GATE_LIB" ]; then
 fi
 # shellcheck source=/dev/null
 . "$_GATE_LIB"
+
+declare -a CRON_NAMES=( "re-open-house-followup-scan" "re-post-close-anniversary" )
+
+# _re_cron_rows — one line per EXISTING RE cron: "<id>\t<enabled 1|0>\t<has <MASTER_FILES_DIR> placeholder 1|0>\t<name>".
+# Reads `cron list --json` (real CLI: payload.message; test fixture: message).
+_re_cron_rows() {
+  command -v openclaw >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 0
+  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "${CRON_NAMES[@]}" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
+raw = os.environ.get("OC_CRON_RAW", "")
+try:
+    data = json.loads(raw[raw.index("{"):] if "{" in raw else raw)
+except Exception:
+    sys.exit(0)
+for j in (data if isinstance(data, list) else data.get("jobs", [])):
+    if j.get("name") in sys.argv[1:] and j.get("id"):
+        msg = (j.get("payload") or {}).get("message") or j.get("message") or ""
+        print("%s\t%d\t%d\t%s" % (j["id"], 0 if j.get("enabled") is False else 1, 1 if "<MASTER_FILES_DIR>" in msg else 0, j["name"]))
+PYEOF
+}
+
 if ! oc_is_real_estate_industry; then
   echo "$P SKIP — box industry is not real estate ($OC_INDUSTRY_GATE_REASON). Registering NOTHING (fail closed)."
+  # RETIRE: RE crons registered before the gate existed (2026-07-11) still fire daily on
+  # non-RE boxes and hunt for closings that do not exist. DISABLE them — never delete —
+  # so an operator can re-enable with `openclaw cron edit <id> --enable`.
+  while IFS="$(printf '\t')" read -r _id _en _ph _name; do
+    [ -n "$_id" ] && [ "$_en" = "1" ] || continue
+    if openclaw cron edit "$_id" --disable >/dev/null 2>&1; then
+      echo "$P RETIRED (disabled, not deleted) '$_name' ($_id) — box is not real estate"
+    else
+      echo "$P WARN: could not disable '$_name' ($_id) — run: openclaw cron edit $_id --disable"
+    fi
+  done <<EOF
+$(_re_cron_rows)
+EOF
   exit 0
 fi
 echo "$P industry gate PASS ($OC_INDUSTRY_GATE_REASON) — proceeding to register RE crons"
@@ -84,7 +118,18 @@ fi
 # shellcheck source=/dev/null
 . "$_CRON_LIB"
 
-declare -a CRON_NAMES=( "re-open-house-followup-scan" "re-post-close-anniversary" )
+# ---- MASTER_FILES_DIR: substitute the REAL path at registration --------------
+# The job message used to carry the literal "<MASTER_FILES_DIR>" placeholder, which
+# nothing ever substituted — every daily run then searched the whole box (and the
+# CRM) for it. Resolve it from the same persisted source of truth as lib-re-events.sh;
+# unresolved -> register nothing (a job that cannot find its log only burns tokens).
+MFD=""
+# shellcheck source=/dev/null
+[ -f "$SCRIPT_DIR/lib-re-events.sh" ] && . "$SCRIPT_DIR/lib-re-events.sh" && MFD="$(re_events_master_dir 2>/dev/null || true)"
+if [ -z "$MFD" ]; then
+  echo "$P BLOCKED: MASTER_FILES_DIR unresolved — run 01-locate-master-files-folder.sh first. Registering NOTHING."
+  exit 0
+fi
 # Minute jitter (Fix C, belt-and-suspenders): a deterministic 0-14 min offset
 # derived from hostname+name keeps the two distinct hours (18/09) but spreads
 # the exact minute across the fleet so many boxes don't all fire at :00.
@@ -92,8 +137,8 @@ _JIT1="$(oc_cron_minute_jitter "${CRON_NAMES[0]}" 15)"
 _JIT2="$(oc_cron_minute_jitter "${CRON_NAMES[1]}" 15)"
 declare -a CRON_SCHED=( "${_JIT1} 18 * * *"           "${_JIT2} 9 * * *" )
 declare -a CRON_MSG=(
-  "Skill 39 daily open-house follow-up sweep. Run protocols/open-house-automation-protocol.md: for every open-house registration captured in the last 7 days that has no logged follow-up yet, send the next timed follow-up step and append one open_house event to <MASTER_FILES_DIR>/real-estate-events.jsonl. Operator-only maintenance - no client-facing chatter beyond the scheduled follow-ups themselves; report back only on error."
-  "Skill 39 daily post-close anniversary + sphere-reactivation scan. Identify closings that hit a monthly or annual milestone today, queue the care-first anniversary/sphere touch per protocols/open-house-automation-protocol.md, and append the corresponding events to <MASTER_FILES_DIR>/real-estate-events.jsonl. Operator-only maintenance; report back only on error."
+  "Skill 39 daily open-house follow-up sweep. Run protocols/open-house-automation-protocol.md: for every open-house registration captured in the last 7 days that has no logged follow-up yet, send the next timed follow-up step and append one open_house event to ${MFD}/real-estate-events.jsonl. Operator-only maintenance - no client-facing chatter beyond the scheduled follow-ups themselves; report back only on error."
+  "Skill 39 daily post-close anniversary + sphere-reactivation scan. Identify closings that hit a monthly or annual milestone today, queue the care-first anniversary/sphere touch per protocols/open-house-automation-protocol.md, and append the corresponding events to ${MFD}/real-estate-events.jsonl. Operator-only maintenance; report back only on error."
 )
 
 # Manual-fallback command string for a given index (real --cron + --message).
@@ -161,7 +206,20 @@ for i in "${!CRON_NAMES[@]}"; do
   # JSON exact-name match (truncation-safe) — see cron-lib.sh header for why a
   # text-table grep here re-introduces the 6x-duplicate bug on long names.
   if oc_cron_present "$name"; then
-    echo "$P cron '$name' already registered — skipping"
+    # REPAIR: a copy registered before the path substitution still carries the literal
+    # placeholder — rewrite its message in place (same id, schedule and state).
+    _fixed=0
+    while IFS="$(printf '\t')" read -r _id _en _ph _name; do
+      [ "$_name" = "$name" ] && [ "$_ph" = "1" ] || continue
+      if openclaw cron edit "$_id" --message "${CRON_MSG[$i]}" >/dev/null 2>&1; then
+        echo "$P repaired '$name' ($_id): <MASTER_FILES_DIR> placeholder -> $MFD"; _fixed=1
+      else
+        echo "$P WARN: could not repair '$name' ($_id) message — placeholder remains"
+      fi
+    done <<EOF
+$(_re_cron_rows)
+EOF
+    [ "$_fixed" = 1 ] || echo "$P cron '$name' already registered — skipping"
     continue
   fi
   if _add_cron "$name" "${CRON_SCHED[$i]}" "${CRON_MSG[$i]}"; then

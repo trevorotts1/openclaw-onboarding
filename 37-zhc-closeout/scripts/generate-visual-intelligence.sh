@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # generate-visual-intelligence.sh -- Produce the full visual intelligence image set
 # for the ZHC closeout. PRD-FINAL-PACKAGE step 3: min 3, up to 30 images, each
-# from its own written GPT-Image-2 prompt via Kie.ai createTask.
+# from its own written GPT-Image-2.5 prompt via Kie.ai (through Skill 74, the one KIE path).
 #
 # The mandatory set (always generated):
-#   1. Org flow chart          -- templates/infographic-1-prompt.md  (GPT-Image-2)
+#   1. Org flow chart          -- templates/infographic-1-prompt.md  (GPT-Image-2.5)
 #   2. What Is a ZHC           -- templates/img-what-is-zhc-prompt.md
 #   3. How Your ZHC Works      -- templates/img-how-your-zhc-works-prompt.md
 #
@@ -13,7 +13,7 @@
 #   5. SOP system              -- templates/img-sop-system-prompt.md
 #   6. Lean Six Sigma          -- templates/img-six-sigma-prompt.md
 #
-# Model: gpt-image-2-text-to-image (PRIMARY per PRD fork decision).
+# Model: gpt-image-2-5-sunburst-text-to-image (PRIMARY per PRD fork decision).
 # Fallback: nano-banana-2.
 # Override primary via ZHC_IMAGE_MODEL env var.
 #
@@ -122,58 +122,12 @@ fill_prompt() {
   echo "$text"
 }
 
-# ---- KIE API helpers ----
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-text-to-image}"
+# ---- KIE: one path, Skill 74 (lib-kie74.sh does validate, createTask and poll) ----
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 FALLBACK_MODEL="nano-banana-2"
-
-submit_job() {
-  local model="$1"
-  local prompt_text="$2"
-  local prompt_json
-  prompt_json=$(jq -Rs . <<< "$prompt_text")
-  local body
-  body=$(jq -n \
-    --arg model "$model" \
-    --argjson prompt "$prompt_json" \
-    '{model: $model, input: {prompt: $prompt, aspect_ratio: "16:9", resolution: "2K", output_format: "png"}}')
-  curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-    -H "Content-Type: application/json" \
-    -d "$body"
-}
-
-poll_job() {
-  local task_id="$1"
-  local elapsed=0
-  local wait_sec
-  while (( elapsed < 600 )); do
-    local resp
-    resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
-    local state
-    state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
-    case "$state" in
-      success)
-        echo "$resp" | jq -r '.data.resultJson' | jq -r '.resultUrls[0] // .resultUrl // .imageUrl // .url // empty' 2>/dev/null
-        return 0
-        ;;
-      fail)
-        local msg
-        msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown failure"')
-        log "ERROR" "KIE job $task_id failed: $msg"
-        return 1
-        ;;
-    esac
-    if (( elapsed < 30 )); then wait_sec=3
-    elif (( elapsed < 120 )); then wait_sec=8
-    else wait_sec=20
-    fi
-    sleep "$wait_sec"
-    elapsed=$((elapsed + wait_sec))
-  done
-  log "ERROR" "KIE job $task_id timed out after ${elapsed}s"
-  return 1
-}
+# shellcheck source=lib-kie74.sh disable=SC1090,SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-kie74.sh"
+kie74_locate || exit 1
 
 # generate_image <prompt_file> <label>
 # Returns the URL on stdout; exits non-zero on failure.
@@ -199,32 +153,21 @@ generate_image() {
       log "INFO" "[$label] attempt $attempt/3: falling back to $cur_model"
     fi
     log "INFO" "[$label] attempt $attempt/3: submitting with model=$cur_model"
-    local submit_resp
-    submit_resp=$(submit_job "$cur_model" "$prompt" || true)
-    local task_id
-    task_id=$(echo "$submit_resp" | jq -r '.data.taskId // empty' 2>/dev/null)
-    if [[ -z "$task_id" ]]; then
-      local submit_err
-      submit_err=$(echo "$submit_resp" | head -c 300)
-      log "WARN" "[$label] attempt $attempt: submit failed: $submit_err"
-      # If primary rejected as not-supported, switch to fallback immediately
-      if [[ "$cur_model" == "$PRIMARY_MODEL" && "$cur_model" != "$FALLBACK_MODEL" ]] \
-         && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
-        log "WARN" "[$label] primary model not supported on this account; switching to fallback"
-        cur_model="$FALLBACK_MODEL"
-      fi
-      sleep $((2 ** attempt))
-      continue
-    fi
-    log "INFO" "[$label] submitted taskId=$task_id; polling..."
-    if result_url=$(poll_job "$task_id"); then
+    if kie74_image_url "$cur_model" "$prompt" 600; then
+      result_url="$KIE74_URL"
       if [[ -n "$result_url" && "$result_url" != "null" ]]; then
         log "INFO" "[$label] success url=$result_url"
         echo "$result_url"
         return 0
       fi
     fi
-    log "WARN" "[$label] attempt $attempt: no usable URL"
+    log "WARN" "[$label] attempt $attempt: no usable URL: ${KIE74_ERR:-unknown}"
+    # If primary rejected as not-supported (422, or Skill 74's schema / validation refusal), switch to fallback immediately
+    if [[ "$cur_model" == "$PRIMARY_MODEL" && "$cur_model" != "$FALLBACK_MODEL" ]] \
+       && echo "${KIE74_ERR:-}" | grep -qiE 'model name not supported|not supported|422|schema|validation_failed'; then
+      log "WARN" "[$label] primary model not supported on this account; switching to fallback"
+      cur_model="$FALLBACK_MODEL"
+    fi
     result_url=""
     sleep $((2 ** attempt))
   done

@@ -72,12 +72,29 @@
     .msg { min-height: 20px; font-size: 14px; margin-top: 12px; }
     .msg.err { color: var(--err); }
     .msg.ok { color: var(--ok); }
+    /* PRES-005 status chip: Saved / Queued / Worker accepted / Action needed */
+    .status-chip {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin: 0 0 14px; padding: 10px 14px; border-radius: 12px;
+      border: 1.5px solid var(--line); font-size: 13.5px; font-weight: 600;
+    }
+    .status-chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: 0 0 auto; }
+    .status-chip[data-state="saved"] .dot { background: var(--ok); }
+    .status-chip[data-state="queued"] .dot { background: var(--accent); }
+    .status-chip[data-state="worker_accepted"] .dot { background: var(--ok); }
+    .status-chip[data-state="action_needed"] .dot { background: var(--err); }
+    .status-chip[data-state="action_needed"] { border-color: var(--err); }
+    .status-chip .job-ref { color: var(--muted); font-weight: 500; word-break: break-all; }
     .center { text-align: center; }
     .big { font-size: clamp(24px, 5vw, 34px); font-weight: 720; margin: 10px 0; }
     .code {
       font-variant-numeric: tabular-nums; letter-spacing: .3em; font-size: 22px;
       background: var(--line); padding: 8px 14px; border-radius: 10px; display: inline-block;
     }
+    .review-list { list-style: none; margin: 0 0 6px; padding: 0; text-align: left; }
+    .review-list li { border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 13.5px; }
+    .review-list .rq { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+    .review-list .ra { margin-top: 2px; }
     footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px; }
     .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent);
       border-radius: 50%; animation: sp 0.8s linear infinite; margin: 30px auto; }
@@ -100,6 +117,10 @@
 
     // ---- config + token --------------------------------------------------
     // Token is the last path segment of /s/<token>. API is same-origin /api.
+    // PRES-005: the ONLY identity this page parses is the server-issued
+    // capability token. Session/company/presentation identity (run_id,
+    // question_set, questions) is retrieved FROM the server with that token —
+    // nothing is minted client-side, and no admin token ever appears here.
     var API = (window.__INTAKE_API_BASE__ || "") + "/api";
     var token = (function () {
       var m = location.pathname.match(/\/s\/([0-9a-f]{32})/i);
@@ -116,9 +137,14 @@
       questions: [],
       progress: null,
       answered: [],
+      answeredValues: {},   /* qid -> stored value (server truth, for review + restore) */
+      runId: "",
       requiresConfirm: false,
       confirmCode: "",
       selected: null,
+      jobState: "draft",    /* draft | saved | queued | worker_accepted | action_needed */
+      jobRef: "",
+      outboxPoll: null,
     };
 
     // ---- tiny helpers ----------------------------------------------------
@@ -145,12 +171,54 @@
       bar.style.width = pct + "%";
       if (progressContainer) progressContainer.setAttribute("aria-valuenow", String(pct));
     }
+    var FETCH_TIMEOUT_MS = 20000;
     function api(path, opts) {
       opts = opts || {};
       opts.headers = Object.assign({ "content-type": "application/json" }, opts.headers || {});
+      var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, FETCH_TIMEOUT_MS) : null;
+      if (ctrl) opts.signal = ctrl.signal;
       return fetch(API + path, opts).then(function (r) {
+        if (timer) clearTimeout(timer);
         return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+      }).catch(function (err) {
+        if (timer) clearTimeout(timer);
+        err = err || new Error("network error");
+        if (err.name === "AbortError") err.message = "The server took too long to respond.";
+        throw err;
       });
+    }
+
+    // ---- status chip (PRES-005 states) -----------------------------------
+    var JOB_LABELS = {
+      draft: "Not submitted yet",
+      saved: "Saved",
+      queued: "Queued",
+      worker_accepted: "Worker accepted",
+      action_needed: "Action needed",
+    };
+    function setJobState(s, jobRef, detail) {
+      state.jobState = s;
+      if (jobRef) state.jobRef = jobRef;
+      renderChip(detail);
+    }
+    function renderChip(detail) {
+      var chip = document.getElementById("status-chip");
+      if (!chip) {
+        chip = el("div", { class: "status-chip", id: "status-chip", "data-state": state.jobState, role: "status", "aria-live": "polite" });
+        chip.appendChild(el("span", { class: "dot", "aria-hidden": "true" }));
+        var label = el("span", { class: "status-label", text: "" });
+        chip.appendChild(label);
+        chip.appendChild(el("span", { class: "job-ref", text: "" }));
+        app.insertBefore(chip, app.firstChild);
+      }
+      chip.setAttribute("data-state", state.jobState);
+      chip.querySelector(".status-label") && (chip.querySelector(".status-label").textContent = "");
+      var lbl = chip.querySelector(".status-label");
+      if (!lbl) { lbl = el("span", { class: "status-label" }); chip.insertBefore(lbl, chip.querySelector(".job-ref")); }
+      lbl.textContent = detail || JOB_LABELS[state.jobState] || "";
+      chip.querySelector(".job-ref").textContent = state.jobRef ? ("Job " + state.jobRef) : "";
+      if (state.jobState === "draft" && !detail) chip.classList.add("hidden"); else chip.classList.remove("hidden");
     }
 
     // ---- global keyboard shortcuts ---------------------------------------
@@ -170,17 +238,29 @@
         if (!res.ok) {
           if (res.status === 410) return fatal("This intake link has expired. Ask for a fresh link.");
           if (res.status === 404) return fatal("We couldn't find this intake. Please check your link.");
-          if (res.status === 409) return done(true);
+          if (res.status === 409) return showCompleted(true);
           return fatal(res.body && res.body.error ? res.body.error : "Something went wrong loading your intake.");
         }
         state.questions = res.body.questions || [];
         state.progress = res.body.progress;
         state.answered = res.body.answered || [];
+        state.runId = res.body.run_id || "";
         state.requiresConfirm = !!res.body.requires_confirm_code;
         setBar(state.progress);
         if (state.requiresConfirm && !state.confirmCode) return askConfirm();
-        if (res.body.status === "complete" || (state.progress && state.progress.complete)) return maybeComplete();
-        render();
+        if (res.body.status === "complete" || (state.progress && state.progress.complete)) {
+          // Session already complete server-side: restore the outbox view so a
+          // reload after submission lands on the real state, never a fake form.
+          return showCompleted(false);
+        }
+        // PRES-005 resume: fetch the saved answers so the restored view shows
+        // them (review + saved count) before the current question.
+        api("/sessions/" + token + "/answers").then(function (r) {
+          if (r.ok) {
+            (r.body.answers || []).forEach(function (a) { state.answeredValues[a.question_id] = a.value; });
+          }
+          render();
+        }).catch(function () { render(); });
       }).catch(function () { fatal("Network problem. Please check your connection and reload."); });
     }
 
@@ -189,6 +269,12 @@
       if (!cid) return null;
       for (var i = 0; i < state.questions.length; i++) {
         if (state.questions[i].id === cid) return state.questions[i];
+      }
+      return null;
+    }
+    function questionById(qid) {
+      for (var i = 0; i < state.questions.length; i++) {
+        if (state.questions[i].id === qid) return state.questions[i];
       }
       return null;
     }
@@ -220,9 +306,16 @@
     // ---- render one question --------------------------------------------
     function render() {
       var q = currentQuestion();
-      if (!q) return maybeComplete();
+      if (!q) return showCompleted(false);
       state.selected = null;
       clear();
+      renderChip();
+      if (state.answered.length) {
+        app.appendChild(el("div", {
+          class: "step", "aria-live": "polite",
+          text: "Resumed — " + state.answered.length + " answer" + (state.answered.length === 1 ? "" : "s") + " saved on the server."
+        }));
+      }
 
       var stepText = "Question " + ((state.progress.current_index || 0) + 1) + " of " + state.progress.total;
       var cardId = "card-" + (q.id || Math.random().toString(36).slice(2,8));
@@ -313,7 +406,7 @@
       }, 50);
     }
 
-    // ---- submit one answer ----------------------------------------------
+    // ---- submit one answer (autosave: server stores it immediately) ------
     function submit(q, value, msg, next) {
       next.disabled = true;
       msg.className = "msg"; msg.textContent = "Saving…";
@@ -326,39 +419,100 @@
             msg.textContent = (res.body && res.body.error) || "That answer wasn't accepted. Please try again.";
             next.disabled = false;
             // If the server says we're out of order, resync from the server.
-            if (res.status === 409) return installKeyboardShortcuts();
-    boot();
+            if (res.status === 409) boot();
             return;
           }
+          // Autosaved: the server now holds this answer durably.
           state.progress = res.body.progress;
           if (state.answered.indexOf(q.id) === -1) state.answered.push(q.id);
+          state.answeredValues[q.id] = res.body.value != null ? res.body.value : value;
           setBar(state.progress);
-          if (state.progress.complete) return maybeComplete();
+          setJobState("saved", "", "Saved — " + state.answered.length + " of " + state.progress.total + " answers stored.");
+          msg.className = "msg ok"; msg.textContent = "Saved.";
+          if (state.progress.complete) return showCompleted(false);
           render();
         })
-        .catch(function () { msg.className = "msg err"; msg.textContent = "Network problem — retry."; next.disabled = false; });
+        .catch(function (err) {
+          msg.className = "msg err";
+          msg.textContent = (err && err.message ? err.message + " " : "") + "Your answer is kept here — retry.";
+          next.disabled = false;
+        });
     }
 
-    // ---- completion ------------------------------------------------------
-    function maybeComplete() {
+    // ---- completion: transactional completion outbox ---------------------
+    // "Send" marks the session complete AND enqueues the validated intake for
+    // the box bridge in one server-side transactional step. The UI shows only
+    // what actually happened: Queued (durable outbox written), Worker accepted
+    // (the box bridge picked it up), or Action needed (nothing was queued).
+    function showCompleted(already) {
+      stopOutboxPoll();
+      api("/sessions/" + token + "/outbox").then(function (r) {
+        if (r.ok && r.body && r.body.status && r.body.status !== "none") {
+          if (r.body.status === "worker_accepted") return renderAccepted(r.body);
+          if (r.body.status === "queued") return renderQueued(r.body, false);
+          if (r.body.status === "action_needed") return renderActionNeeded(r.body, null);
+        }
+        renderReview(already);
+      }).catch(function () { renderReview(already); });
+    }
+
+    function stopOutboxPoll() {
+      if (state.outboxPoll) { clearTimeout(state.outboxPoll); state.outboxPoll = null; }
+    }
+
+    function renderReview(already) {
       clear();
-      var card = el("div", { class: "card center" });
-      card.appendChild(el("h1", { class: "prompt", text: "That's everything — ready to send?" }));
-      card.appendChild(el("p", { class: "help", text: "Review is optional. When you send, your presentation team picks it up and may follow up with a question or two." }));
-      var go = el("button", { class: "primary", text: "Send my answers", "aria-keyshortcuts": "Alt+N" });
+      renderChip();
+      var card = el("div", { class: "card" });
+      card.appendChild(el("h1", { class: "prompt", text: already ? "You're all set" : "That's everything — ready to send?" }));
+      if (!already) {
+        card.appendChild(el("p", { class: "help", text: "Review is optional. When you send, your presentation team picks it up and may follow up with a question or two." }));
+      }
+
+      var ul = el("ul", { class: "review-list" });
+      var shown = 0;
+      state.questions.forEach(function (q) {
+        if (state.answered.indexOf(q.id) === -1) return;
+        var v = state.answeredValues[q.id];
+        if (v === undefined || v === "") return;
+        shown++;
+        ul.appendChild(el("li", {}, [
+          el("div", { class: "rq", text: q.label || stripTags(q.prompt) || q.id }),
+          el("div", { class: "ra", text: String(v) }),
+        ]));
+      });
+      if (shown) card.appendChild(ul);
+
       var msg = el("div", { class: "msg", id: "complete-msg", role: "alert", "aria-live": "polite" });
+      var go = el("button", { class: "primary", text: "Send my answers", "aria-keyshortcuts": "Alt+N" });
       go.onclick = function () {
-        go.disabled = true; msg.textContent = "Sending…";
-        api("/sessions/" + token + "/complete", { method: "POST", body: "{}" }).then(function (res) {
+        go.disabled = true; msg.className = "msg"; msg.textContent = "Sending…";
+        setJobState("saved", "", "Saved — handing to the build desk…");
+        var body = {};
+        if (state.confirmCode) body.confirm_code = state.confirmCode;
+        api("/sessions/" + token + "/complete", { method: "POST", body: JSON.stringify(body) }).then(function (res) {
           if (!res.ok) {
+            if (res.status === 409 && res.body && res.body.missing) {
+              return renderActionNeeded({ missing: res.body.missing, job_ref: res.body.outbox && res.body.outbox.job_ref }, null);
+            }
             msg.className = "msg err";
-            msg.textContent = (res.body && res.body.error) || "Couldn't send — please try again.";
-            if (res.status === 409 && res.body && res.body.missing) return installKeyboardShortcuts();
-    boot();
+            msg.textContent = (res.body && res.body.error) || "Couldn't send — your answers stay saved. Please try again.";
+            setJobState("action_needed", res.body && res.body.outbox && res.body.outbox.job_ref, "Action needed — nothing was queued yet. Your answers stay saved.");
             go.disabled = false; return;
           }
-          done(false);
-        }).catch(function () { msg.className = "msg err"; msg.textContent = "Network problem — retry."; go.disabled = false; });
+          var ob = res.body.outbox || {};
+          if (ob.status === "action_needed") return renderActionNeeded(ob, null);
+          if (ob.status === "queued") return renderQueued(ob, true);
+          // No outbox payload (older worker): the session is complete; say
+          // exactly that — never claim the build started.
+          setJobState("queued", ob.job_ref || "", "Complete — the box bridge picks your intake up automatically.");
+          renderDoneCard("Complete", "Your session is complete and your answers are stored. The box bridge picks the intake up automatically. Reopen this link to check status.", ob.job_ref || "");
+        }).catch(function () {
+          msg.className = "msg err";
+          msg.textContent = "Network problem — your answers stay saved. Please try again.";
+          setJobState("action_needed", "", "Action needed — nothing was queued yet. Your answers stay saved.");
+          go.disabled = false;
+        });
       };
       card.appendChild(el("div", { class: "row", style: "justify-content:center" }, [go]));
       card.appendChild(msg);
@@ -366,14 +520,146 @@
       setTimeout(function () { go.focus(); }, 50);
     }
 
-    function done(already) {
+    function renderQueued(ob, pollForAccepted) {
+      setJobState("queued", ob.job_ref, "Queued — your intake is stored and waiting for the build desk. Job " + (ob.job_ref || "") + ".");
+      clear();
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Queued" }));
+      card.appendChild(el("p", { class: "help", text: "Your answers are stored and your intake is queued for the presentation department. This link is your receipt — reopen it any time to check status." }));
+      if (ob.job_ref) card.appendChild(el("p", { class: "code", text: ob.job_ref }));
+      card.appendChild(el("p", { class: "help", id: "outbox-note", text: "Waiting for the build desk to accept…" }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+      if (pollForAccepted) pollOutbox();
+    }
+
+    function renderAccepted(ob) {
+      setJobState("worker_accepted", ob.job_ref, "Worker accepted — the build desk has your intake. Job " + (ob.job_ref || "") + ".");
+      clear();
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: "Worker accepted" }));
+      card.appendChild(el("p", { class: "help", text: "The presentation department's worker accepted your intake. Your deck build is queued — you can close this tab." }));
+      if (ob.job_ref) card.appendChild(el("p", { class: "code", text: ob.job_ref }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+    }
+
+    function renderDoneCard(title, text, jobRef) {
       clear();
       bar.style.width = "100%";
       if (progressContainer) progressContainer.setAttribute("aria-valuenow", "100");
-      app.appendChild(el("div", { class: "card center" }, [
-        el("div", { class: "big", role: "heading", "aria-level": "1", text: already ? "You're all set" : "Thank you!" }),
-        el("p", { class: "help", text: "Your answers are in. Your presentation team has everything they need to start — you can close this tab." }),
-      ]));
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", role: "heading", "aria-level": "1", text: title }));
+      card.appendChild(el("p", { class: "help", text: text }));
+      if (jobRef) card.appendChild(el("p", { class: "code", text: jobRef }));
+      var backupRow = el("div", { class: "row", style: "justify-content:center" });
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      app.appendChild(card);
+    }
+
+    // ---- Action needed: the only honest failure state ---------------------
+    // Nothing was queued. Answers remain saved server-side; retry is offered.
+    // A download here is a BACKUP and is labeled NOT SUBMITTED — it never
+    // flips the screen to success.
+    function renderActionNeeded(ob, errText) {
+      stopOutboxPoll();
+      setJobState("action_needed", ob && ob.job_ref, "Action needed — your intake was NOT submitted. Nothing is queued.");
+      clear();
+      var card = el("div", { class: "card" });
+      card.appendChild(el("h1", { class: "prompt", text: "Action needed" }));
+      card.appendChild(el("p", { class: "help", text: errText || "We could not hand your intake to the build desk. Your answers are saved on the server — nothing was submitted yet." }));
+      if (ob && ob.missing && ob.missing.length) {
+        card.appendChild(el("p", { class: "help", text: "Still missing: " + ob.missing.join(", ") }));
+      }
+      var msg = el("div", { class: "msg", role: "alert", "aria-live": "polite" });
+      var retry = el("button", { class: "primary", text: "Retry sending" });
+      retry.onclick = function () {
+        retry.disabled = true; msg.className = "msg"; msg.textContent = "Sending…";
+        var body = {};
+        if (state.confirmCode) body.confirm_code = state.confirmCode;
+        api("/sessions/" + token + "/complete", { method: "POST", body: JSON.stringify(body) }).then(function (res) {
+          if (!res.ok) {
+            msg.className = "msg err";
+            msg.textContent = (res.body && res.body.error) || "Still failing — your answers stay saved. Try again shortly.";
+            setJobState("action_needed", res.body && res.body.outbox && res.body.outbox.job_ref);
+            retry.disabled = false; return;
+          }
+          var ob2 = res.body.outbox || {};
+          if (ob2.status === "action_needed") return renderActionNeeded(ob2, null);
+          if (ob2.status === "queued") return renderQueued(ob2, true);
+          setJobState("queued", ob2.job_ref || "");
+          renderDoneCard("Complete", "Your session is complete and your answers are stored. The box bridge picks the intake up automatically. Reopen this link to check status.", ob2.job_ref || "");
+        }).catch(function () {
+          msg.className = "msg err";
+          msg.textContent = "Network problem — your answers stay saved. Try again.";
+          retry.disabled = false;
+        });
+      };
+      var backupRow = el("div", { class: "row" });
+      backupRow.appendChild(retry);
+      backupRow.appendChild(backupButton());
+      card.appendChild(backupRow);
+      card.appendChild(msg);
+      app.appendChild(card);
+    }
+
+    // ---- backup download: explicitly NOT a submission ---------------------
+    function backupButton() {
+      var b = el("button", { class: "ghost", text: "Download backup copy (not submitted by this)" });
+      b.onclick = function () { downloadBackup(); };
+      return b;
+    }
+    function downloadBackup() {
+      var backup = {
+        notice: "BACKUP COPY — NOT SUBMITTED. This file is a courtesy copy of your saved answers only. Submission happens through the intake page; this download does not submit or start anything.",
+        generated_at: new Date().toISOString(),
+        intake_session_id: token,
+        run_id: state.runId,
+        job_state: state.jobState,
+        job_ref: state.jobRef,
+        answers: state.answeredValues,
+      };
+      var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      try {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "intake-backup-" + token + ".json";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      } catch (e) { /* non-fatal */ }
+    }
+
+    // poll GET /outbox until the worker (box bridge) accepts, capped so the
+    // page never loops forever; reload re-checks.
+    function pollOutbox() {
+      stopOutboxPoll();
+      var tries = 0;
+      function tick() {
+        api("/sessions/" + token + "/outbox").then(function (r) {
+          if (r.ok && r.body && r.body.status === "worker_accepted") {
+            return renderAccepted(r.body);
+          }
+          tries++;
+          if (tries < 20) state.outboxPoll = setTimeout(tick, 3000);
+          else {
+            var note = document.getElementById("outbox-note");
+            if (note) note.textContent = "Still queued — the build desk picks this up automatically. Reopen this link later to check status.";
+          }
+        }).catch(function () { tries++; if (tries < 20) state.outboxPoll = setTimeout(tick, 3000); });
+      }
+      state.outboxPoll = setTimeout(tick, 3000);
+    }
+
+    function stripTags(html) {
+      var d = document.createElement("div");
+      d.innerHTML = html || "";
+      return (d.textContent || "").trim();
     }
 
     function fatal(text) {

@@ -198,7 +198,7 @@ def _anchor(repo_path):
     return repo_path[idx + 1:]
 
 
-def compute_ledger(repo, hcm):
+def compute_ledger(repo, hcm, prior_paths=None, prior_artifacts=None):
     head = (_git(repo, "rev-parse", "HEAD") or "").strip()
 
     present, ever = set(), set()
@@ -214,14 +214,30 @@ def compute_ledger(repo, hcm):
         # whose deletion landed in a MERGE commit, which `git log` omits by
         # default (that is how the 8th retired SOP,
         # presentations/sops/deck-discovery-strategist-sops.md, is found).
-        log = _git(repo, "log", "--no-renames", "--pretty=format:",
+        # --full-history is REQUIRED: without it, history simplification on a
+        # PR merge ref (refs/pull/N/merge, which CI checks out) can prune the
+        # side branch that deleted a path when the merge result carries the
+        # same content, hiding the deletion commit from `git log -- <path>`
+        # and desyncing the ledger (measured on PR 1015, 2026-09-04).
+        log = _git(repo, "log", "--full-history", "--no-renames", "--pretty=format:",
                    "--name-only", "--diff-filter=ACDMRT", "--", tree) or ""
         for line in log.split("\n"):
             line = line.strip()
             if line.startswith(tree + "/") and line.endswith(".md"):
                 ever.add(line)
 
+    # A squash merge (e.g. PR 1015 landed as ONE commit on main) throws away the
+    # pre-squash deletion commits, so the walk above can no longer see that a
+    # path was EVER canonical — and regenerating would silently DROP a valid
+    # retired entry, leaving old copies on boxes unremovable forever. Self-heal:
+    # seed `ever` with the paths the CURRENT ledger already records (they were
+    # proven ever-canonical when their entry was written). A path that is live
+    # again in the tree is excluded by the (ever - present) subtraction below.
+    if prior_paths:
+        ever.update(prior_paths)
+
     artifacts = []
+    prior_by_path = {a.get("repo_path"): a for a in (prior_artifacts or [])}
     for rel in sorted(ever - present):
         lib_path = _anchor(rel)
         if not lib_path:
@@ -231,13 +247,26 @@ def compute_ledger(repo, hcm):
         dept = tail[0] if tail else ""
         kind = "sop" if (len(tail) == 3 and tail[1] == "sops") else "role"
         commit, when = _deletion_record(repo, rel)
+        shas = _shas_for_path(repo, rel, hcm)
+        prior = prior_by_path.get(rel)
+        if (not commit or not shas) and prior:
+            # Squash-merge carry-forward: the pre-squash deletion commit is
+            # unreachable from this history, so the walk cannot re-derive the
+            # deletion metadata. The prior ledger entry PROVED it (its entry
+            # passed --check when written), so keep its metadata verbatim —
+            # boxes match orphans against content_shas; nulling them would
+            # make a once-canonical file permanently unquarantinable.
+            commit = commit or prior.get("retired_in")
+            when = when or prior.get("retired_at")
+            if not shas:
+                shas = list(prior.get("content_shas") or [])
         artifacts.append({
             "lib_path": lib_path,
             "repo_path": rel,
             "dept": dept,
             "file": lib_path.rsplit("/", 1)[-1],
             "kind": kind,
-            "content_shas": _shas_for_path(repo, rel, hcm),
+            "content_shas": shas,
             "retired_in": commit,
             "retired_at": when,
         })
@@ -263,7 +292,7 @@ def _shas_for_path(repo, rel, hcm):
     """Every content_sha this path ever carried, oldest commit first."""
     shas, seen = [], set()
     commits = [c.strip() for c in
-               (_git(repo, "log", "--no-renames", "--pretty=%H", "--", rel) or "").split("\n")
+               (_git(repo, "log", "--full-history", "--no-renames", "--pretty=%H", "--", rel) or "").split("\n")
                if c.strip()]
     for commit in reversed(commits):
         blob = _git(repo, "cat-file", "-p", f"{commit}:{rel}", allow_fail=True)
@@ -277,7 +306,7 @@ def _shas_for_path(repo, rel, hcm):
 
 
 def _deletion_record(repo, rel):
-    out = _git(repo, "log", "--no-renames", "--diff-filter=D", "-1",
+    out = _git(repo, "log", "--full-history", "--no-renames", "--diff-filter=D", "-1",
                "--pretty=%H%x09%cI", "--", rel, allow_fail=True)
     if not out or "\t" not in out:
         return (None, None)
@@ -311,9 +340,26 @@ def main():
             return 2
 
     hcm = _load_hasher()
-    ledger = compute_ledger(repo, hcm)
     out_path = Path(args.out) if args.out else \
         (repo / TRACKED_TREES[0] / "_retired.json")
+
+    # Squash-merge self-heal (see compute_ledger): seed the ever-canonical set
+    # with the paths the on-disk ledger already records, so regenerating after
+    # a squash merge cannot silently drop valid retired entries.
+    prior_paths = set()
+    prior_artifacts = []
+    if out_path.is_file():
+        try:
+            prior_artifacts = json.loads(
+                out_path.read_text(encoding="utf-8")).get("artifacts", [])
+            for art in prior_artifacts:
+                rp = art.get("repo_path")
+                if rp:
+                    prior_paths.add(rp)
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+    ledger = compute_ledger(repo, hcm, prior_paths=prior_paths,
+                            prior_artifacts=prior_artifacts)
 
     if args.json:
         print(json.dumps(ledger, indent=2))

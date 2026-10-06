@@ -24,6 +24,61 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 from ews_ledger import detect_platform, openclaw_root  # noqa: E402
 
+
+def load_rescue_admission():
+    """Load the SHARED versioned rescue admission client (RR-015).
+
+    One import path for every EWS consumer. Resolves in this order:
+      1. <openclaw_root>/scripts/lib/rescue_admission.py  (installed box tree,
+         delivered by update-skills.sh's canonical scripts/ tree)
+      2. <repo root>/scripts/lib/rescue_admission.py  (repo-tree/repo-side runs;
+         the canonical source location, same ship target as 1)
+      3. <skill scripts>/lib/rescue_admission.py   (future co-located layout)
+
+    Returns the loaded module, or None when the client is absent (then callers
+    must treat admission as client_unavailable and keep the event retryable --
+    NEVER fall back to a message-only 'escalated' claim)."""
+    import importlib.util
+    repo_root = _HERE.parent.parent     # <skill>/scripts -> <repo root>
+    candidates = [
+        openclaw_root() / "scripts" / "lib" / "rescue_admission.py",
+        repo_root / "scripts" / "lib" / "rescue_admission.py",
+        _HERE / "lib" / "rescue_admission.py",
+    ]
+    for cand in candidates:
+        try:
+            if cand.is_file():
+                spec = importlib.util.spec_from_file_location(
+                    "rescue_admission", str(cand))
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    return mod
+        except Exception:  # noqa: BLE001 - a broken client must not hide the tick
+            return None
+    return None
+
+# Admission receipt vocabulary shared by BOTH EWS escalation paths (RR-015), so
+# ews_alert.escalate and ews_fleet._fire_dead_man can never disagree about which
+# receipt statuses are ack-eligible and which are a pending enrollment repair.
+#
+#   ACK_ELIGIBLE          a validated receipt proving a durable ticket exists
+#   PENDING_REPAIR_STATUS one that is an OWNED SETUP REPAIR with an owner and a
+#                         next action -- recorded as such, never as admission,
+#                         never as a policy refusal of the incident
+#
+# `no_enrollment` counts as a pending repair whether the client reports it
+# directly or the intake refuses the attempt for an unaccepted credential: an
+# auth refusal is evidence about THIS BOX's enrollment, not about the incident.
+ACK_ELIGIBLE_ADMISSION = ("admitted", "replay")
+PENDING_REPAIR_STATUSES = ("no_enrollment",)
+
+def admission_is_ack_eligible(status) -> bool:
+    return str(status or "") in ACK_ELIGIBLE_ADMISSION
+
+def admission_is_pending_repair(status) -> bool:
+    return str(status or "") in PENDING_REPAIR_STATUSES
+
 MISSING = object()  # sentinel distinct from JSON null
 
 

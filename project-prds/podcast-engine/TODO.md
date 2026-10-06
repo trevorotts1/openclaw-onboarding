@@ -25,7 +25,7 @@
 - [ ] W1.9 Blueprint and sizing module. PENDING
 - [ ] W1.10 Tagging module (S2.1 Pro palette, S1 conversion). PENDING
 - [ ] W1.11 Fish render module (adapt Skill 35 script; s2.1-pro; reference_id; LUFS; ffprobe). PENDING
-- [ ] W1.12 Image module (Kie.ai GPT-image-2; ffmpeg finalize; poll bounds). PENDING
+- [ ] W1.12 Image module (Kie.ai GPT-Image-2.5; ffmpeg finalize; poll bounds). PENDING
 - [ ] W1.13 Documents module (detect-then-create; Package rich; Script clean). PENDING
 - [ ] W1.14 Book teaser module (3 pages; 14-point floor; fabrication boundary; PDF). PENDING
 - [ ] W1.15 Podbean publish module (playbook section 15 base; idempotent permalink). PENDING

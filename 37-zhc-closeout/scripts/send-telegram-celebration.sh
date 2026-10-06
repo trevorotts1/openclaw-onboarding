@@ -35,6 +35,14 @@ fi
 # FIX-XC-10a: honor ZHC_STATE_FILE so a test run never reads/writes the LIVE
 # client state (this script FIRES 6 REAL Telegram celebration messages off it).
 STATE_FILE="${ZHC_STATE_FILE:-$OC_ROOT/workspace/.workforce-build-state.json}"
+
+# OWNER-SENDS HOLD (the sink): whatever path reached this script, a held box
+# sends nothing. Exit 1 from the helper = clear; anything else = HELD.
+_osh_out="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../shared-utils/owner_sends_hold.py" check "$STATE_FILE" 2>&1)"; _osh_rc=$?
+if [ "$_osh_rc" -ne 1 ]; then
+  echo "[send-telegram-celebration] OWNER SENDS HELD: ${_osh_out:-owner_sends_hold.py unavailable (rc $_osh_rc)} -- nothing sent." >&2
+  exit 3
+fi
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 STEP_LABEL="telegram"
 

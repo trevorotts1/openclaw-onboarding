@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Security-floor tests; no real Node install, database or service calls, except
+the cross-repo pin test which reads the public Command Center repo over git
+(no auth) and fails closed without network; skips are forbidden."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'shared-utils'))
+import cc_runtime_preflight as guard
+from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version
+
+# The Command Center floor + pin from cc-compat.json.
+#
+# These are pinned DELIBERATELY and are asserted against the real
+# cc-compat.json below: the whole point of this suite is to fail when the
+# security floor moves without a corresponding, reviewed decision, so the
+# literals must NOT be derived from the file under test (that would make the
+# check tautological and it could never catch an unintended floor change).
+#
+# When the floor legitimately moves, update these three values and nothing else
+# — every boundary assertion in this module reads from them. v25.1.0 moved the
+# floor and the pin together to v7.4.0 for the Skill 69 (archify) board
+# endpoints: minVersion had to move WITH pinnedTag because /api/archify-runs is
+# a brand-new endpoint, so an older CC answers 404 (see cc-compat.json notes).
+CC_FLOOR = 'v7.4.0'
+CC_PIN = 'v7.6.99'
+CC_FLOOR_BARE = CC_FLOOR.lstrip('v')
+
+# Every released CC version BELOW the current floor. The boundary is tested
+# exhaustively: each of these must be refused, and CC_FLOOR_BARE must be
+# accepted. Keep this list append-only as the floor advances.
+CC_BELOW_FLOOR_BARE = [
+    '6.1.0', '7.0.0', '7.1.0', '7.1.1', '7.1.2', '7.1.3', '7.1.4', '7.1.5',
+    '7.2.0', '7.3.0', '7.3.1', '7.3.2', '7.3.3', '7.3.4',
+]
+
+
+class Compatibility(unittest.TestCase):
+    def test_node_boundaries(self):
+        for value in ['v20.19.0','20.20.1','v22.13.0','22.99.0','24.0.0','25.1.0']:
+            with self.subTest(value=value): guard.assert_node_version(value)
+        for value in ['18.20.0','20.18.9','21.9.0','22.12.9','23.99.0','v24.0.0-rc.1','garbage','','024.0.0']:
+            with self.subTest(value=value), self.assertRaises(ValueError): guard.assert_node_version(value)
+
+    def test_security_floor_and_resolver(self):
+        compat=load_cc_compat(ROOT)
+        self.assertEqual(compat['commandCenter']['minVersion'],CC_FLOOR)
+        # v25.1.0 moved floor AND pin together to v7.4.0: the Skill 69 archify
+        # board endpoints are BRAND NEW, so an older CC answers 404 and the
+        # permissive-floor posture used for correctness fixes (v19.0.0 ->
+        # v22.0.75) does not apply here.
+        self.assertEqual(resolve_cc_tag(compat),CC_PIN)
+        self.assertEqual(guard.SECURITY_MIN_VERSION, guard.stable_version(compat['commandCenter']['minVersion']))
+        for version in CC_BELOW_FLOOR_BARE:
+            with self.assertRaises(ValueError): assert_min_version(version,compat)
+            with self.assertRaises(ValueError): guard.assert_cc_package({'version':version})
+        guard.assert_cc_package({'version':CC_FLOOR_BARE})
+        compat['commandCenter']['pinnedTag']=None
+        self.assertEqual(resolve_cc_tag(compat,['v7.0.0',CC_FLOOR]),CC_FLOOR)
+        with self.assertRaises(ValueError): resolve_cc_tag(compat,['v7.0.0'])
+
+    def test_cc_pin_is_real_annotated_tag_and_main_gte_pin(self):
+        compat=load_cc_compat(ROOT)
+        self.assertEqual(compat['commandCenter']['repo'],'trevorotts1/blackceo-command-center')
+        self.assertEqual(compat['commandCenter']['pinnedTag'],CC_PIN)
+        self.assertEqual(compat['commandCenter']['minVersion'],CC_FLOOR)
+        url='https://github.com/trevorotts1/blackceo-command-center.git'
+        try:
+            probed=subprocess.run(['git','ls-remote',url,f'refs/tags/{CC_PIN}',f'refs/tags/{CC_PIN}^{{}}'],capture_output=True,text=True,timeout=60)
+        except (OSError,subprocess.SubprocessError) as exc:
+            self.fail(f'cannot reach CC repo {url}: {exc}')
+        if probed.returncode!=0:
+            self.fail(f'CC repo unreachable: {probed.stderr.strip()}')
+        refs={line.split()[1] for line in probed.stdout.splitlines() if line.split()}
+        self.assertIn(f'refs/tags/{CC_PIN}',refs,f'pinnedTag {CC_PIN} is not a tag on the CC repo')
+        self.assertIn(f'refs/tags/{CC_PIN}^{{}}',refs,f'pinnedTag {CC_PIN} is not an ANNOTATED tag on the CC repo (no peeled ref)')
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                def run_git(*args):
+                    return subprocess.run(['git',*args],cwd=td,capture_output=True,text=True,timeout=120)
+                if run_git('init','-q').returncode!=0:
+                    self.fail('cannot init scratch git repo')
+                if run_git('fetch','-q','--depth','1',url,'tag',CC_PIN).returncode!=0:
+                    self.fail(f'cannot fetch CC tag {CC_PIN}')
+                tag_type=run_git('cat-file','-t',CC_PIN)
+                self.assertEqual(tag_type.returncode,0,f'cannot inspect CC tag object {CC_PIN}: {tag_type.stderr.strip()}')
+                self.assertEqual(tag_type.stdout.strip(),'tag',f'pinnedTag {CC_PIN} is not an annotated tag object')
+                if run_git('fetch','-q','--depth','1',url,'main:refs/remotes/origin/main').returncode!=0:
+                    self.fail('cannot fetch CC main')
+                shown=subprocess.run(['git','show','origin/main:package.json'],cwd=td,capture_output=True,text=True,timeout=60)
+                if shown.returncode!=0:
+                    self.fail(f'cannot read CC main package.json: {shown.stderr.strip()}')
+                main_version=json.loads(shown.stdout).get('version','')
+                assert_min_version(main_version,compat)
+                self.assertGreaterEqual(guard.stable_version(main_version),guard.stable_version(CC_PIN),
+                    f'CC main {main_version} is older than pinnedTag {CC_PIN}')
+        except OSError as exc:
+            self.fail(f'no scratch space for CC probe: {exc}')
+
+    def test_cli_node_and_checkout_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            directory=Path(td); node=directory/'node'; package=directory/'package.json'
+            package.write_text(json.dumps({'version':CC_FLOOR_BARE}))
+            env={**os.environ,'PATH':str(directory)}
+            # Every below-floor CC version must fail closed (expected 1) even on a
+            # good Node; the floor itself must pass (expected 0). Derived from
+            # CC_BELOW_FLOOR_BARE so advancing the floor cannot silently shrink
+            # this boundary sweep.
+            cases=[('v22.12.0',CC_FLOOR_BARE,1)]
+            cases+=[('v22.13.0',v,1) for v in CC_BELOW_FLOOR_BARE]
+            cases.append(('v22.13.0',CC_FLOOR_BARE,0))
+            for node_version,cc_version,expected in cases:
+                node.write_text('#!/bin/sh\nprintf "%s\\n" "'+node_version+'"\n');node.chmod(0o755)
+                package.write_text(json.dumps({'version':cc_version}))
+                result=subprocess.run([sys.executable,str(ROOT/'shared-utils/cc_runtime_preflight.py'),'--checkout',td],env=env,capture_output=True,text=True)
+                self.assertEqual(result.returncode,expected,result.stderr)
+            node.unlink()
+            self.assertNotEqual(subprocess.run([sys.executable,str(ROOT/'shared-utils/cc_runtime_preflight.py')],env=env,capture_output=True).returncode,0)
+
+    def test_install_gate_fails_in_both_modes_before_side_effect(self):
+        source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
+        fn=source[source.index('cc_security_preflight() {'):source.index('# ---- preflight ----')]
+        self.assertLess(source.index('cc_security_preflight\n'),source.index('for cmd in jq curl git npm python3;'))
+        self.assertEqual(source.count('cc_security_preflight --checkout "$DASHBOARD_DIR"'),3)
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);(root/'skill').mkdir();(root/'shared-utils').mkdir()
+            (root/'shared-utils/cc_runtime_preflight.py').write_text('raise SystemExit(1)\n')
+            for mode in ['true','false']:
+                script='fail_install() { exit 17; }\n'+fn+'\ncc_security_preflight\nprintf bad > "$LOG_FILE.bad"\n'
+                result=subprocess.run(['/bin/bash','-c',script],env={**os.environ,'UPDATE_ONLY':mode,'SKILL_DIR':str(root/'skill'),'LOG_FILE':str(root/'log')})
+                self.assertEqual(result.returncode,17)
+                self.assertFalse((root/'log.bad').exists())
+
+    def test_locked_installs_in_both_modes_use_ci_and_stop_on_failure(self):
+        source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
+        function=source[source.index('cc_install_locked_dependencies() {'):source.index('# ---- preflight ----')]
+        # Exercise the actual shell helper used by both phase-6 branches with a
+        # recording npm stub. No package downloads, scripts or real DB calls.
+        self.assertEqual(source.count('  cc_install_locked_dependencies\n'),1)  # fresh install
+        # update-only: the merge path installs in the live tree; the zero-downtime path
+        # leaves that to the candidate atomic-deploy.sh builds beside the live release
+        self.assertIn('[[ "$CC_ZERO_DOWNTIME" == "1" ]] || cc_install_locked_dependencies\n',source)
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);checkout=root/'checkout';checkout.mkdir();bin_dir=root/'bin';bin_dir.mkdir()
+            npm=bin_dir/'npm'
+            npm.write_text('#!/bin/sh\nprintf "%s|%s\\n" "$PWD" "$*" >> "$CALL_LOG"\nexit "$NPM_STATUS"\n')
+            npm.chmod(0o755)
+            lock=checkout/'package-lock.json';calls=root/'calls';sentinel=root/'migration'
+            for mode in ['true','false']:
+                for has_lock,status in [(False,'0'),(True,'9'),(True,'0')]:
+                    if has_lock: lock.write_text('{"lockfileVersion":3}\n')
+                    elif lock.exists(): lock.unlink()
+                    for file in [calls,sentinel]:
+                        if file.exists():file.unlink()
+                    script='fail_install() { exit 17; }\nlog() { :; }\n'+function+'\ncc_install_locked_dependencies\nprintf reached > "$MIGRATION_SENTINEL"\n'
+                    result=subprocess.run(['/bin/bash','-c',script],env={**os.environ,
+                        'PATH':str(bin_dir)+':'+os.environ['PATH'],'UPDATE_ONLY':mode,
+                        'DASHBOARD_DIR':str(checkout),'LOG_FILE':str(root/'log'),
+                        'CALL_LOG':str(calls),'NPM_STATUS':status,'MIGRATION_SENTINEL':str(sentinel)})
+                    expected_success=has_lock and status=='0'
+                    self.assertEqual(result.returncode,0 if expected_success else 17)
+                    self.assertEqual(sentinel.exists(),expected_success)
+                    if has_lock:
+                        self.assertEqual(calls.read_text(),str(checkout)+'|ci --engine-strict --no-audit --no-fund\n')
+                        self.assertEqual(lock.read_text(),'{"lockfileVersion":3}\n')
+                    else:self.assertFalse(calls.exists())
+
+    def test_fleet_blocks_before_fetch_on_old_node_and_before_deploy_on_old_checkout(self):
+        spec=importlib.util.spec_from_file_location('fleet_test',ROOT/'shared-utils/fleet_refresh_runner.py');runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        with tempfile.TemporaryDirectory() as td:
+            directory=Path(td);(directory/'package.json').write_text('{"version":"7.0.0"}')
+            result=runner.BoxResult('fixture',dry_run=False)
+            with patch.object(guard,'check_node',side_effect=ValueError('unsupported Node')), patch.object(runner.subprocess,'run') as run:
+                runner.step_pull_cc({'cc_dir':directory},CC_FLOOR,result,False)
+                run.assert_not_called()
+                self.assertNotEqual(result.steps.get('pull-cc'),'ok')
+            result=runner.BoxResult('fixture',dry_run=False)
+            # (the pm2 preflight is covered in fleet-refresh-roll-safety; here the box is pm2-managed)
+            with patch.dict(os.environ,{'CC_UPDATE_TARGET':'0'*40}),patch.object(guard,'check_node'),patch.object(runner,'cc_pm2_problem',return_value=None),patch.object(runner.subprocess,'run',side_effect=[
+                subprocess.CompletedProcess([],0,''),
+                subprocess.CompletedProcess([],0,'{"version":"7.0.0"}')
+            ]) as run:
+                runner.step_pull_cc({'cc_dir':directory},CC_FLOOR,result,False)
+                self.assertEqual(run.call_count,2)  # fetch/read only; old updater never invoked
+                self.assertNotEqual(result.steps.get('pull-cc'),'ok')
+            for method,step in [(runner.step_build_cc,'build-cc'),(runner.step_restart_cc,'restart-cc')]:
+                result=runner.BoxResult('fixture',dry_run=False)
+                with patch.object(runner,'wave5_deploy_preflight'),patch.object(guard,'check_node'),patch.object(runner.subprocess,'run') as run:
+                    method({'cc_dir':directory},result,False)
+                    run.assert_not_called()
+                    self.assertNotEqual(result.steps.get(step),'ok')
+
+if __name__=='__main__':unittest.main(verbosity=2)

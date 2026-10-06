@@ -1,0 +1,7 @@
+# PRES-043 Hostinger Docker profile — exact pip pins (upgrade policy: pins.yaml)
+reportlab==4.4.10
+python-pptx==1.0.2
+pypdf==6.7.5
+pytesseract==0.3.13
+Pillow==11.3.0
+pytest==8.3.4

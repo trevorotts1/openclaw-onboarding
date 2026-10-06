@@ -1,0 +1,27 @@
+# bootstrap-pointer.conf — box-level override for lean bootstrap stamping.
+#
+# Install to $OC_CONFIG/bootstrap-pointer.conf (Mac: ~/.openclaw/, VPS:
+# /data/.openclaw/). One word, nothing else:
+#
+#   pointer   DEFAULT. Managed blocks are stamped into AGENTS.md / TOOLS.md /
+#             MEMORY.md as a compact pointer (heading + one-line summary +
+#             the trigger phrases and hard gates that must bind inline + ONE
+#             absolute path), and the VERBATIM full text is written to
+#             <master-files>/bootstrap-references/<FILE>.
+#
+#   full      Managed blocks keep their full text inline, the way the roll
+#             behaved before. Nothing else about the roll changes.
+#
+# Resolution order (first match wins):
+#   1. $OPENCLAW_BOOTSTRAP_POINTER_MODE
+#   2. this file
+#   3. agents.defaults.bootstrapPointerMode in openclaw.json
+#   4. pointer
+#
+# An unrecognised value is treated as "pointer" and warns — honouring a typo as
+# "full" would silently re-bloat the box, which is the failure this is here to
+# prevent.
+#
+# Related: OPENCLAW_BOOTSTRAP_POINTER_MIN_CHARS (default 800) leaves blocks
+# smaller than that inline, since pointerizing them saves nothing.
+pointer

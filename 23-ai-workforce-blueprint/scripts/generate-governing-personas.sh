@@ -158,30 +158,38 @@ echo "[governing-personas] Skill 22 installed: $SKILL22_INSTALLED"
 
 # ─── Domain-tag → persona hint map (fallback when Skill 22 not installed) ─────
 
-declare -A DOMAIN_HINT
-DOMAIN_HINT[marketing]="Gary Halbert (The Gary Halbert Letter) | Gary Vaynerchuk (Crushing It) | Jay Abraham (Getting Everything You Can)"
-DOMAIN_HINT[sales]="Alex Hormozi (100M Offers) | Oren Klaff (Pitch Anything) | Jeb Blount (Fanatical Prospecting)"
-DOMAIN_HINT[billing-finance]="Profit First (Mike Michalowicz) | Warren Buffett (The Warren Buffett Way)"
-DOMAIN_HINT[customer-support]="Tony Hsieh (Delivering Happiness) | Chip Bell (Wired and Dangerous)"
-DOMAIN_HINT[web-development]="Martin Fowler (Refactoring) | Steve Krug (Don't Make Me Think)"
-DOMAIN_HINT[app-development]="Frederick Brooks (Mythical Man-Month) | Eric Ries (The Lean Startup)"
-DOMAIN_HINT[graphics]="Robin Williams (The Non-Designer's Design Book) | Paul Rand (A Designer's Art)"
-DOMAIN_HINT[video]="Michael Wiese (Film Directing Shot by Shot) | Syd Field (Screenplay)"
-DOMAIN_HINT[audio]="Mike Senior (Mixing Secrets for the Small Studio)"
-DOMAIN_HINT[research]="Clayton Christensen (The Innovator's Dilemma) | Robert Cialdini (Influence)"
-DOMAIN_HINT[communications]="Chip Heath (Made to Stick) | Carmine Gallo (Talk Like TED)"
-DOMAIN_HINT[crm]="Aaron Ross (Predictable Revenue) | Jay Baer (Hug Your Haters)"
-DOMAIN_HINT[openclaw-maintenance]="Gene Kim (The Phoenix Project) | Gene Kim (The DevOps Handbook)"
-DOMAIN_HINT[legal]="Bryan Garner (Legal Writing in Plain English)"
-DOMAIN_HINT[social-media]="Gary Vaynerchuk (Crushing It) | Jonah Berger (Contagious)"
-DOMAIN_HINT[paid-advertisement]="Perry Marshall (Ultimate Guide to Google AdWords) | Ryan Deiss (Digital Marketing)"
-DOMAIN_HINT[master-orchestrator]="Patrick Lencioni (The Five Dysfunctions of a Team) | Jim Collins (Good to Great)"
-DOMAIN_HINT[presentations]="Nancy Duarte (Resonate) | Carmine Gallo (The Presentation Secrets of Steve Jobs)"
-DOMAIN_HINT[personal-assistant]="David Allen (Getting Things Done) | Cal Newport (Deep Work)"
-DOMAIN_HINT[podcast]="John Lee Dumas (The Common Path to Uncommon Success)"
-DOMAIN_HINT[community-management]="Jono Bacon (People Powered)"
-DOMAIN_HINT[course-creator]="Brendon Burchard (The Motivation Manifesto)"
-DOMAIN_HINT[client-coaches]="Tony Robbins (Awaken the Giant Within)"
+# Bash 3.2 ships on macOS. A case lookup keeps the same hints without a
+# Homebrew dependency or service-PATH assumptions. Ordering makes partial matches
+# deterministic (associative-array iteration order was never guaranteed).
+DOMAIN_KEYS="marketing sales billing-finance customer-support web-development app-development graphics video audio research communications crm openclaw-maintenance legal social-media paid-advertisement master-orchestrator presentations personal-assistant podcast community-management course-creator client-coaches"
+domain_hint() {
+  case "$1" in
+    marketing) printf '%s\n' "Gary Halbert (The Gary Halbert Letter) | Gary Vaynerchuk (Crushing It) | Jay Abraham (Getting Everything You Can)" ;;
+    sales) printf '%s\n' "Alex Hormozi (100M Offers) | Oren Klaff (Pitch Anything) | Jeb Blount (Fanatical Prospecting)" ;;
+    billing-finance) printf '%s\n' "Profit First (Mike Michalowicz) | Warren Buffett (The Warren Buffett Way)" ;;
+    customer-support) printf '%s\n' "Tony Hsieh (Delivering Happiness) | Chip Bell (Wired and Dangerous)" ;;
+    web-development) printf '%s\n' "Martin Fowler (Refactoring) | Steve Krug (Don't Make Me Think)" ;;
+    app-development) printf '%s\n' "Frederick Brooks (Mythical Man-Month) | Eric Ries (The Lean Startup)" ;;
+    graphics) printf '%s\n' "Robin Williams (The Non-Designer's Design Book) | Paul Rand (A Designer's Art)" ;;
+    video) printf '%s\n' "Michael Wiese (Film Directing Shot by Shot) | Syd Field (Screenplay)" ;;
+    audio) printf '%s\n' "Mike Senior (Mixing Secrets for the Small Studio)" ;;
+    research) printf '%s\n' "Clayton Christensen (The Innovator's Dilemma) | Robert Cialdini (Influence)" ;;
+    communications) printf '%s\n' "Chip Heath (Made to Stick) | Carmine Gallo (Talk Like TED)" ;;
+    crm) printf '%s\n' "Aaron Ross (Predictable Revenue) | Jay Baer (Hug Your Haters)" ;;
+    openclaw-maintenance) printf '%s\n' "Gene Kim (The Phoenix Project) | Gene Kim (The DevOps Handbook)" ;;
+    legal) printf '%s\n' "Bryan Garner (Legal Writing in Plain English)" ;;
+    social-media) printf '%s\n' "Gary Vaynerchuk (Crushing It) | Jonah Berger (Contagious)" ;;
+    paid-advertisement) printf '%s\n' "Perry Marshall (Ultimate Guide to Google AdWords) | Ryan Deiss (Digital Marketing)" ;;
+    master-orchestrator) printf '%s\n' "Patrick Lencioni (The Five Dysfunctions of a Team) | Jim Collins (Good to Great)" ;;
+    presentations) printf '%s\n' "Nancy Duarte (Resonate) | Carmine Gallo (The Presentation Secrets of Steve Jobs)" ;;
+    personal-assistant) printf '%s\n' "David Allen (Getting Things Done) | Cal Newport (Deep Work)" ;;
+    podcast) printf '%s\n' "John Lee Dumas (The Common Path to Uncommon Success)" ;;
+    community-management) printf '%s\n' "Jono Bacon (People Powered)" ;;
+    course-creator) printf '%s\n' "Brendon Burchard (The Motivation Manifesto)" ;;
+    client-coaches) printf '%s\n' "Tony Robbins (Awaken the Giant Within)" ;;
+    *) return 0 ;;
+  esac
+}
 
 # ─── Generate governing-personas.md per department ────────────────────────────
 
@@ -235,13 +243,13 @@ for DEPT_DIR in "$DEPARTMENTS_DIR"/*/; do
   fi
 
   # Determine persona hint for this dept
-  DEPT_KEY="${DEPT_NAME,,}"  # lowercase
-  HINT="${DOMAIN_HINT[$DEPT_KEY]:-}"
+  DEPT_KEY="$(printf '%s' "$DEPT_NAME" | tr '[:upper:]' '[:lower:]')"
+  HINT="$(domain_hint "$DEPT_KEY")"
   if [[ -z "$HINT" ]]; then
     # Try partial match for variant slugs
-    for KEY in "${!DOMAIN_HINT[@]}"; do
+    for KEY in $DOMAIN_KEYS; do
       if [[ "$DEPT_KEY" == *"$KEY"* ]] || [[ "$KEY" == *"$DEPT_KEY"* ]]; then
-        HINT="${DOMAIN_HINT[$KEY]}"
+        HINT="$(domain_hint "$KEY")"
         break
       fi
     done

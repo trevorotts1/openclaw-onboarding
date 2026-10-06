@@ -175,7 +175,7 @@ Common tool name lookup:
 
 | Domain | Tier | Tools |
 |---|---|---|
-| Contacts (basic) | 1 | `contacts_get-contact`, `contacts_create-contact`, `contacts_search-contacts`, `contacts_upsert-contact` |
+| Contacts (basic) | 1 | `contacts_get-contact`, `contacts_create-contact`, `contacts_search-contacts`, `contacts_upsert-contact` — generic add/save routes to upsert, explicit new-record only to create |
 | Contacts (advanced) | 2 | `search_contacts`, `bulk_update_contact_tags`, `get_duplicate_contact` |
 | Products | 2 | `ghl_list_products`, `ghl_create_product`, `ghl_create_price`, `ghl_update_product` |
 | Invoices | 2 | `list_invoices`, `create_invoice`, `send_invoice`, `void_invoice` |

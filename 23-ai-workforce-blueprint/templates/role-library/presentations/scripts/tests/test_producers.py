@@ -264,10 +264,14 @@ def test_every_manifest_deliverable_has_producer():
     # This is asserted as an EXACT set on purpose: adding a producing phase makes this
     # test fail until the fixed key is removed from this list, so the list cannot rot
     # into a silent permanent exemption.
-    known_missing_producers = {
-        # infographic_png: no producer by design (audit question Q4, not U012's job)
-        "infographic_png",
-    }
+    # F20: emptied, exactly as the paragraph above instructs. FIX 112 landed
+    # P8.3-INFOGRAPHIC (order 8.3, produces working/deliverables/infographic.png,
+    # script executor build_infographic.py), so `infographic_png` HAS a producer
+    # and the self-invalidating `fixed` assertion below fired -- which is this
+    # guard working as designed, not a broken test. Every deliverables_required
+    # entry in the shipped manifest now has a declared producer; a future
+    # exemption must be added here WITH the reason it is exempt.
+    known_missing_producers = set()
 
     new_orphans = sorted(orphans - known_missing_producers)
     assert not new_orphans, (

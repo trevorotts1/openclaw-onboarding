@@ -23,11 +23,15 @@
 # D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP,
 # D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT,
 # D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*),
-# plus section 4's two LIVE checks: D-CRON-ONE (exactly one enabled loop-tick job,
+# plus section 4's three LIVE checks: D-CRON-ONE (exactly one enabled loop-tick job,
 # proven through `openclaw cron list --all`) and D-TICK-FRESH (the watchdog
 # COMPLETED a tick within 45 minutes, read from ledger meta last_tick_ts - NOT
 # from MAX(findings.tick_ts), which measures whether the box HAS a loop and so
 # calls a healthy box dead).
+# D-FEED-HEALTH (Fix 1) is the third LIVE check: `loop_watchdog.py feed-health` reads
+# `openclaw sessions --active 60 --json` as the known-good control against the agent_run
+# audit feed - recent activity with zero audit rows = a BLIND collector (exit 4), an
+# unreadable feed = UNDETERMINED (exit 5). D-OCTOBER-FEEDS (offline) holds the drills.
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
@@ -81,6 +85,15 @@ else
 fi
 rm -f /tmp/loop-verify-selftest.$$ 2>/dev/null || true
 
+# Fix 10 / SKS-007: three-tier D2 paid-model classification (offline fixture test).
+if python3 "$SELF_DIR/tests/test_paid_tiers.py" >/tmp/loop-verify-paidtier.$$ 2>&1; then
+    ok "paid-tier fixtures (metered P1 / subscription WARN / local silent / 9router forms)"
+else
+    bad "paid-tier fixture test failed (see below)"
+    tail -25 /tmp/loop-verify-paidtier.$$ >&2
+fi
+rm -f /tmp/loop-verify-paidtier.$$ 2>/dev/null || true
+
 # ---- 2. four merge-gate scanners CLEAN over the tree ------------------------
 step "2/4 four merge-gate scanners CLEAN over the skill tree"
 python3 "$SCRIPTS/guard-no-anthropic-runtime.py" >/dev/null 2>&1 && ok "guard-no-anthropic (0)" || bad "guard-no-anthropic"
@@ -89,7 +102,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/4 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
+step "3/4 fixture drills (D-RESTART, D-SIG, D-RESEND, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-ESC-DRIFT, D-ESC-DEDUP, D-ESC-BACKOFF, D-ESC-NEWKEY, D-ESC-TICK, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-LF10-PREPARE, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -104,6 +117,12 @@ import loop_watchdog as W
 from datetime import datetime, timedelta, timezone
 from loop_ledger import Ledger
 os.environ["LOOP_ALLOW_ROOT"] = "1"  # allow config-touching kill cards in a CI/root sandbox
+# HERMETIC pm2 (SKS-002): LF-6 now REALLY runs `pm2 stop <unit>`. The drills use the
+# fixture unit name `cc-app`, so a drill must NEVER reach a real pm2 on the box.
+import tempfile as _tf
+_pm2_stub = os.path.join(_tf.mkdtemp(prefix="loop-verify-pm2-"), "pm2")
+open(_pm2_stub, "w").write("#!/bin/sh\nexit 0\n"); os.chmod(_pm2_stub, 0o755)
+os.environ["LOOP_PM2_BIN"] = _pm2_stub
 
 th = C.load_skill_config("thresholds.json")
 brs = BR.load_breakers()
@@ -497,13 +516,13 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=90)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "s1",
              "sessionKey": "agent:main:main", "runId": "r0",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}}]
     for i in range(12):
         common = {"ts": (t0 + timedelta(minutes=2 * i)).isoformat(),
                   "sessionId": "s1", "sessionKey": "agent:main:main",
                   "runId": "r%d" % (i + 1), "seq": i,
-                  "modelId": "minimax-m3:cloud", "provider": "ollama"}
+                  "modelId": "z-ai/glm-5.3", "provider": "openrouter"}
         rows.append(dict(common, type="model.completed",
                          data={"usage": {"input": 250000, "output": 50000,
                                          "total": 300000}}))
@@ -514,11 +533,11 @@ with tempfile.TemporaryDirectory() as td:
     with open(os.path.join(sess, "s1.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
     led = Ledger()
-    ev = W.collect_evidence(led)
+    ev = W._legacy_file_evidence(led)  # legacy file reader: proves the D2/D3 arithmetic
     fnd = W.run_detectors(ev, th, C.load_signatures())
     d2_p1 = [x for x in fnd if x["detector"] == "D2" and x["severity"] == "P1"]
     d3_p1 = [x for x in fnd if x["detector"] == "D3" and x["severity"] == "P1"]
-    ev2 = W.collect_evidence(led)
+    ev2 = W._legacy_file_evidence(led)
     led.close()
     for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
         os.environ.pop(k, None)
@@ -543,7 +562,7 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=60)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sD",
              "sessionKey": "agent:main:main", "runId": "rDELTA",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}}]
     for i in range(8):  # cumulative 100k, 200k, ... 800k under ONE runId
         cum = 100000 * (i + 1)
@@ -551,7 +570,7 @@ with tempfile.TemporaryDirectory() as td:
                      "ts": (t0 + timedelta(minutes=i + 1)).isoformat(),
                      "sessionId": "sD", "sessionKey": "agent:main:main",
                      "runId": "rDELTA", "seq": i,
-                     "modelId": "minimax-m3:cloud", "provider": "ollama",
+                     "modelId": "z-ai/glm-5.3", "provider": "openrouter",
                      "data": {"usage": {"input": cum}}})  # buckets only, no `total`
     with open(os.path.join(sess, "sD.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -575,11 +594,11 @@ with tempfile.TemporaryDirectory() as td:
     t0 = (now - timedelta(minutes=30)).replace(microsecond=0)
     rows = [{"type": "session.started", "ts": t0.isoformat(), "sessionId": "sF",
              "sessionKey": "agent:main:main", "runId": "rF0",
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"trigger": "cron"}},
             {"type": "model.completed", "ts": t0.isoformat(), "sessionId": "sF",
              "sessionKey": "agent:main:main", "runId": "rF1", "seq": 0,
-             "modelId": "minimax-m3:cloud", "provider": "ollama",
+             "modelId": "z-ai/glm-5.3", "provider": "openrouter",
              "data": {"usage": {"total_tokens": 500000}}}]  # alias only, no `total`
     with open(os.path.join(sess, "sF.trajectory.jsonl"), "w") as fh:
         fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -642,6 +661,26 @@ with tempfile.TemporaryDirectory() as td:
     _past = __import__("time").time() - 3600
     for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
         os.utime(os.path.join(sess, _n), (_past, _past))
+    # D-POISON-LF10-PREPARE (SKS-008 / Fix 13): on the SHIPPED config LF-10 is Tier 2 (a
+    # prepared sessions.reset proposal). An ARMED tick must PREPARE it and move NO file.
+    _led = Ledger()
+    _prep = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                    "sessions": W.collect_sessions()}, _led, armed=True,
+                   escalate_transport=lambda u, b: True, box="box-example")
+    _led.close()
+    check("D-POISON-LF10-PREPARE armed tick on the shipped config only PREPARES LF-10 "
+          "(applied==0, planned>=1); the poisoned transcript is not moved",
+          _prep["applied"] == 0 and _prep.get("planned", 0) >= 1
+          and os.path.isfile(os.path.join(sess, "loop-blocked-session.jsonl")))
+    # The drills below keep covering the RETAINED legacy file-move executor and the D5
+    # re-roll / containment guards (disable, never delete), pinned to a TEST-LOCAL
+    # Tier-1 view of LF-10. Restored at the end of this block.
+    _orig_fcf = KC.fix_class_for
+
+    def _lf10_tier1_for_legacy_drills(loop_class):
+        _fc = _orig_fcf(loop_class)
+        return dict(_fc, tier=1) if _fc and _fc.get("id") == "LF-10" else _fc
+    KC.fix_class_for = _lf10_tier1_for_legacy_drills
     _led = Ledger()
     _sum = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
                    "sessions": W.collect_sessions()}, _led, armed=True,
@@ -823,6 +862,7 @@ with tempfile.TemporaryDirectory() as td:
           and "good-session.jsonl" not in _after
           and len([n for n in _after if n.startswith("good-session")
                    and KC.ARCHIVE_MARKER in n]) == 1)
+    KC.fix_class_for = _orig_fcf   # end of the legacy Tier-1 pin
     for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
         os.environ.pop(k, None)
 
@@ -834,6 +874,45 @@ print("  all fixture drills PASS")
 sys.exit(0)
 PY
 [ $? -eq 0 ] || bad "fixture drills"
+
+# D-OCTOBER-FEEDS (SKS-001: Fixes 1, 2, 4-sliver, 6, 11). Fixture-driven, stub binaries,
+# LOOP_NO_PROBES=1: sessions/audit shape drills, zero-rows-while-active BLIND control,
+# audit cursor persistence, the three orphan-gateway cases, scheduler-managed + hasMore
+# cron fixtures, pm2-list/launchctl/docker environment-free parsers, and the secret-leak
+# drill proving no tracer from a poisoned stub environment reaches ledger or stdout.
+if python3 "$SELF_DIR/tests/test_october_feeds.py" >/tmp/loop-verify-oct.$$ 2>&1; then
+    ok "D-OCTOBER-FEEDS ($(grep -c 'PASS:' /tmp/loop-verify-oct.$$) cases: feeds, blind control, orphan x3, cron hasMore, D1 sources, secret-leak)"
+else
+    bad "D-OCTOBER-FEEDS (see below)"
+    grep 'FAIL' /tmp/loop-verify-oct.$$ >&2 | head -20
+fi
+rm -f /tmp/loop-verify-oct.$$ 2>/dev/null || true
+# SKS-010 integrator: the remaining October-fix tests, so no fix is covered by a test
+# that verify.sh never runs. All hermetic: stub binaries, scratch dirs, LOOP_NO_PROBES=1.
+_vt() {  # _vt <label> <cmd...> : run, PASS/FAIL, show the failing lines
+    _lbl="$1"; shift
+    if "$@" >/tmp/loop-verify-sks010.$$ 2>&1; then
+        ok "$_lbl"
+    else
+        bad "$_lbl (see below)"
+        grep -E 'FAIL|Error|error' /tmp/loop-verify-sks010.$$ >&2 | head -20
+    fi
+    rm -f /tmp/loop-verify-sks010.$$ 2>/dev/null || true
+}
+_vt "D-FIX-CLASSES-PLAN (Fix 12/13: LF-8 exact commands, LF-9/10 re-point, LF-11 retired)" \
+    python3 "$SELF_DIR/tests/test_fix_classes_plan.py"
+_vt "D-NATIVE-GUARD (Fix 5: read-only check of OpenClaw's own tool-loop guard)" \
+    bash "$SELF_DIR/tests/native-loop-guard-test.sh"
+_RW="$(mktemp -d "${TMPDIR:-/tmp}/loop-verify-restore.XXXXXX")"
+_vt "D-RESTORE (Fix 8: restore script sections 1 and 6 against stub openclaw)" \
+    bash "$SELF_DIR/tests/restore-s1-s6-test.sh" "$SELF_DIR/scripts/openclaw-loop-protection-restore.sh" "$_RW"
+rm -rf "$_RW" 2>/dev/null || true
+if command -v node >/dev/null 2>&1; then
+    _vt "D-LOOP-BRAKE (Fix 9: third identical resend and third fail-closed call blocked, fan-out never)" \
+        bash -c 'cd "$1/loop-brake" && node --test tests/brake.test.mjs' _ "$SELF_DIR"
+else
+    echo "  UNDETERMINED: D-LOOP-BRAKE not run - node is not on PATH (this is NOT a pass)"
+fi
 fi   # RUN_OFFLINE
 
 # ---- 4. THE STANDING GATE: this box, right now (v0.6.5) ---------------------
@@ -859,7 +938,7 @@ fi   # RUN_OFFLINE
 # because this is a source checkout - none of those are evidence that the box is
 # fine, and none are evidence that it is broken.
 if [ "$RUN_LIVE" -eq 1 ]; then
-    step "4/4 STANDING GATE (this box): D-CRON-ONE, D-TICK-FRESH"
+    step "4/4 STANDING GATE (this box): D-CRON-ONE, D-FEED-HEALTH, D-TICK-FRESH"
     _cron_out="$(python3 "$SCRIPTS/loop_cron.py" status --json 2>&1)"; _cron_rc=$?
     case "$_cron_rc" in
         0) ok "D-CRON-ONE exactly ONE loop-tick job: enabled, ours, on */15 * * * *"
@@ -869,6 +948,22 @@ if [ "$RUN_LIVE" -eq 1 ]; then
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
         *) bad "D-CRON-ONE this box does NOT carry exactly ONE enabled loop-tick job on */15 (exactly one - never >= 1, which is how 2-12 duplicates per box passed for healthy)"
            printf '%s\n' "$_cron_out" | sed 's/^/      /' >&2 ;;
+    esac
+
+    # D-FEED-HEALTH (Fix 1): the watchdog's own instruments. `openclaw sessions --active 60
+    # --json` is the known-good CONTROL; if it shows recent activity while the audit feed
+    # returned zero rows, a collector is BLIND - and a blind detector reads as "healthy",
+    # the exact failure that went unnoticed for 40 days. READ-ONLY: opens no ledger,
+    # advances no cursor, writes nothing. An unreadable feed is UNDETERMINED, never a pass.
+    _feed_out="$(python3 "$SCRIPTS/loop_watchdog.py" feed-health 2>&1)"; _feed_rc=$?
+    case "$_feed_rc" in
+        0) ok "D-FEED-HEALTH collectors are NOT blind (sessions control vs audit feed)"
+           echo "      $(printf '%s' "$_feed_out" | tail -1)" ;;
+        3) UNDET=$((UNDET+1))
+           echo "  UNDETERMINED: D-FEED-HEALTH could not READ the sessions/audit feed (CLI down, in maintenance or absent)." >&2
+           printf '%s\n' "$_feed_out" | sed 's/^/      /' >&2 ;;
+        *) bad "D-FEED-HEALTH a collector returned ZERO rows while sessions are active - the watchdog is BLIND (an empty instrument is a broken check, not a healthy box)"
+           printf '%s\n' "$_feed_out" | sed 's/^/      /' >&2 ;;
     esac
 
     _live_out="$(python3 "$SCRIPTS/loop_ledger.py" liveness --max-age-minutes 45 2>&1)"; _live_rc=$?

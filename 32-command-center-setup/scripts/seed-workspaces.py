@@ -28,11 +28,82 @@ from pathlib import Path
 # PRD 1.5: import the canonical dept slug normaliser.
 _SHARED_UTILS = Path(__file__).resolve().parent.parent.parent / "shared-utils"
 sys.path.insert(0, str(_SHARED_UTILS))
+# A copy run from outside the skills tree (e.g. an operator's /tmp copy) still
+# resolves the box's INSTALLED shared-utils, so canonical_slug's alias map
+# (ceo -> master-orchestrator ...) is never silently replaced by the inline slugger.
+for _su in (Path.home() / ".openclaw" / "skills" / "shared-utils",
+            Path("/data/.openclaw/skills/shared-utils")):
+    if _su.is_dir() and str(_su) not in sys.path:
+        sys.path.append(str(_su))
 try:
     from resolve_db import find_dashboard_db as _shared_find_dashboard_db  # type: ignore
     _HAS_SHARED_RESOLVER = True
 except ImportError:
     _HAS_SHARED_RESOLVER = False
+
+try:
+    from departments_payload import (  # type: ignore
+        MalformedDepartmentsError,
+        normalize_departments as _unwrap_departments,
+    )
+except ImportError:
+    # Inline fallback for a box whose shared-utils predates this module.
+    # KEEP IN SYNC with shared-utils/departments_payload.py.
+    class MalformedDepartmentsError(ValueError):  # type: ignore[no-redef]
+        pass
+
+    def _fold_slug_keyed(mapping):  # type: ignore[misc]
+        # A slug-keyed object of department objects folds to a list; anything
+        # else (empty, or any non-object value) is a metadata envelope whose
+        # keys are NEVER departments. The ENTRY's own identity wins over the
+        # map key: id -> slug -> folder -> key, and a slug taken FROM the key
+        # loses a trailing "-dept". A real client artifact is keyed
+        # "<name>-dept" while each entry names its actual folder, and folding
+        # on the key gave this reader a different slug from every other one.
+        if not isinstance(mapping, dict) or not mapping:
+            return None
+        if not all(isinstance(v, dict) for v in mapping.values()):
+            return None
+        out = []
+        for k, v in mapping.items():
+            entry = dict(v)
+            resolved = next(
+                (x.strip() for x in (entry.get("id"), entry.get("slug"),
+                                     entry.get("folder"))
+                 if isinstance(x, str) and x.strip()), None)
+            if resolved is None:
+                resolved = k.strip()
+                if resolved.endswith("-dept") and len(resolved) > 5:
+                    resolved = resolved[:-5]
+            entry.setdefault("id", resolved)
+            entry.setdefault("slug", resolved)
+            out.append(entry)
+        return out
+
+    def _unwrap_departments(data, path=None):  # type: ignore[misc]
+        if data is None:
+            return None
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            if not data:
+                return []
+            if "departments" in data:
+                wrapped = data["departments"]
+                if isinstance(wrapped, list):
+                    return wrapped
+                folded = _fold_slug_keyed(wrapped)
+                if folded is not None:
+                    return folded
+            else:
+                folded = _fold_slug_keyed(data)
+                if folded is not None:
+                    return folded
+        raise MalformedDepartmentsError(
+            f"departments.json: expected a list, or an object with a 'departments' "
+            f"list; got {type(data).__name__}"
+            + (f" (path: {path})" if path else "")
+        )
 
 try:
     from canonical_slug import canonical_dept_slug as _canonical_dept_slug  # type: ignore
@@ -123,35 +194,39 @@ def _scan_zhc_for_company_slugs():
     return results
 
 
-def _normalize_departments(data):
+def _normalize_departments(data, path=None):
     """Coerce a loaded departments.json payload into a list of dicts.
 
-    departments.json in the wild comes in three shapes, all of which must seed:
+    departments.json in the wild comes in four shapes, all of which must seed:
       1. canonical  : [{"id": "marketing", "name": "Marketing", "emoji": "📢"}, ...]
       2. bare-string : ["marketing", "sales", ...]            (legacy / hand-written)
       3. dict-of-dicts: {"marketing": {"name": "Marketing"}, ...}  (some CC exports)
+      4. wrapped     : {"departments": [...], ...}            (retire-confirmed-decline.sh
+                       writes {removedWithProvenance, departments}; a build envelope
+                       adds company / total_departments / total_roles alongside)
+      5. wrapped map : {"departments": {"<slug>": {...}}, ...}  (a real client Mac —
+                       the envelope's "departments" key holds an OBJECT keyed by
+                       slug, not a list; folded to a list by the shared normalizer)
 
     Previously seed() assumed shape (1) and called dept.get('id') on every entry,
     so a string entry from shape (2)/(3) raised
     `'str' object has no attribute 'get'` at the seed loop — the exact crash that
     made `sync-extensions.sh --converge` Step 4 fail. This normaliser makes the
-    seeder accept all three shapes. The bare slug is canonicalised and a human
+    seeder accept all four shapes. The bare slug is canonicalised and a human
     'name' is derived (title-cased, hyphens→spaces) when not supplied.
+
+    Shape 4 used to be mangled, not crashed: the old dict branch folded EVERY key
+    in as a department id, so an envelope seeded workspaces literally named
+    "Company", "Total Departments", "Total Roles" and "Departments" onto a live
+    client board. The envelope layer now goes through the single shared
+    normalizer (shared-utils/departments_payload.py), which unwraps the
+    "departments" list and REFUSES — MalformedDepartmentsError, naming the path
+    and the top-level type — any dict that carries no department list. A dict's
+    metadata keys are never departments.
     """
+    data = _unwrap_departments(data, path=path)
     if data is None:
         return None
-
-    # Shape 3: dict keyed by slug. Fold the key in as id, merge the value dict.
-    if isinstance(data, dict):
-        items = []
-        for k, v in data.items():
-            if isinstance(v, dict):
-                entry = dict(v)
-                entry.setdefault("id", k)
-                items.append(entry)
-            else:
-                items.append({"id": k})
-        data = items
 
     if not isinstance(data, list):
         return None
@@ -192,6 +267,10 @@ def find_departments_config():
     If $COMPANY_SLUG is set, prefer that company's folder. Otherwise pick the
     most-recently-modified ZHC folder (matches "the one the client just built").
     """
+    explicit_root = os.environ.get('ZERO_HUMAN_COMPANY_DIR')
+    if explicit_root:
+        source = Path(explicit_root)/'departments.json'
+        return _normalize_departments(json.loads(source.read_text()), path=str(source)), str(source)
     target_slug = os.environ.get("COMPANY_SLUG", "").strip()
 
     # Build prioritized candidate list
@@ -231,14 +310,21 @@ def find_departments_config():
                 with open(p) as f:
                     data = json.load(f)
                 if data:  # Not empty
-                    # Coerce string / dict-of-dicts payloads into list-of-dicts so the
-                    # seed loop's dept.get('id') never hits a bare str (the --converge
-                    # Step-4 crash). Done at the single load boundary so every caller
-                    # downstream sees a uniform shape.
-                    data = _normalize_departments(data)
+                    # Coerce string / dict-of-dicts / wrapped payloads into
+                    # list-of-dicts so the seed loop's dept.get('id') never hits a
+                    # bare str (the --converge Step-4 crash) and an envelope's
+                    # metadata keys never become departments. Done at the single
+                    # load boundary so every caller downstream sees a uniform shape.
+                    data = _normalize_departments(data, path=str(p))
                     if data:
                         print(f"  [departments.json] Found {len(data)} departments at: {p}", file=sys.stderr)
                         return data, str(p)
+            except MalformedDepartmentsError as e:
+                # FAIL LOUD, never seed garbage. Folding this file's metadata keys
+                # in as departments is what put bogus "Company"/"Total Departments"
+                # /"Total Roles"/"Departments" workspaces on a live client board.
+                print(f"  [departments.json] MALFORMED, refusing to seed: {e}", file=sys.stderr)
+                raise
             except (json.JSONDecodeError, OSError) as e:
                 print(f"  [departments.json] Skipping {p}: {e}", file=sys.stderr)
                 continue
@@ -338,6 +424,18 @@ def find_company_info(parent_folder_name=None):
         "brand_text":    "#f8fafc",   # neutral default (slate-50)
     }
 
+    # Explicit company context wins over ambient filesystem discovery.
+    explicit_root = os.environ.get('ZERO_HUMAN_COMPANY_DIR')
+    if explicit_root:
+        cfg = json.loads((Path(explicit_root)/'company-config.json').read_text())
+        info.update(name=cfg.get('name') or cfg.get('companyName') or '',
+                    slug=cfg.get('slug') or cfg.get('companySlug') or '',
+                    companyId=cfg.get('companyId') or cfg.get('company_id'))
+        if not info['name'] or not info['slug']: raise ValueError('explicit company config missing identity')
+        if os.environ.get('MC_COMPANY_ID') and info.get('companyId') and os.environ['MC_COMPANY_ID'] != info['companyId']:
+            raise ValueError('explicit company identity conflict')
+        return info
+
     # 1. Env vars
     info["name"] = os.environ.get("COMPANY_NAME", "").strip()
     brand_env = os.environ.get("COMPANY_BRAND_COLORS", "").strip()
@@ -417,10 +515,195 @@ def find_company_info(parent_folder_name=None):
     if not info["name"]:
         info["name"] = "My Company"
 
+    # An explicit $COMPANY_SLUG (run-full-install passes the build-state
+    # companySlug) is the company's identity; the name only fills the display
+    # name. Deriving the slug from $COMPANY_NAME seeded "acme-ecosystem" for
+    # COMPANY_SLUG=acme, COMPANY_NAME="Acme Ecosystem" -- a second company.
+    explicit_slug = os.environ.get("COMPANY_SLUG", "").strip()
+    if explicit_slug:
+        info["slug"] = explicit_slug
+
     if not info["slug"]:
         info["slug"] = re.sub(r'[^a-z0-9]+', '-', info["name"].lower()).strip('-') or "my-company"
 
     return info
+
+def _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+    """Claim only a recorded migration placeholder, never a live/shared queue.
+
+    Called inside seed's transaction. Row IDs and agent/skill references stay
+    unchanged. The original rows are backed up in the CC migration-owned ledger.
+    """
+    if not cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='engine_workspace_bootstrap'").fetchone():
+        return False
+    record = cur.execute("SELECT original_workspace_json, adopted_company_id FROM engine_workspace_bootstrap WHERE workspace_id=?", (dept_id,)).fetchone()
+    if not record or record[1]:
+        return False
+    names = [r[1] for r in cur.execute('PRAGMA table_info(workspaces)')]
+    raw = cur.execute('SELECT * FROM workspaces WHERE id=?', (dept_id,)).fetchone()
+    if not raw:
+        return False
+    row = dict(zip(names, raw))
+    original = json.loads(record[0])
+    # Auto-created head_agent_id is allowed; identity, display and lifecycle
+    # changes indicate a customized queue and must not be adopted.
+    for key in ('id', 'slug', 'name', 'description', 'icon', 'sort_order', 'company_id', 'archived_at', 'archived_reason', 'user_md'):
+        if row.get(key) != original.get(key):
+            return False
+    if row.get('company_id') != 'default' or company_id in ('default', '', None) or row.get('user_md') or row.get('archived_reason'):
+        return False
+    agent_cols = [r[1] for r in cur.execute('PRAGMA table_info(agents)')]
+    agents = [dict(zip(agent_cols, r)) for r in cur.execute('SELECT * FROM agents WHERE workspace_id=?', (dept_id,))] if agent_cols else []
+    roles = {f'qc-agent-{dept_id}': 'qc', f'research-agent-{dept_id}': 'research',
+             f'da-agent-{dept_id}': 'devils-advocate', f'head-agent-{dept_id}': 'leadership'}
+    if dept_id == 'podcast':
+        roles.update({'podcast-editor': 'specialist', 'podcast-producer': 'specialist', 'show-notes-writer': 'specialist'})
+    labels = {'qc': ('QC Specialist', 'QC Specialist'),
+              'research': ('Research Specialist', 'Research Specialist'),
+              'devils-advocate': ("Devil's Advocate", "Devil's Advocate"),
+              'leadership': ('Department Head', 'Department Head')}
+    specialist_names = {'podcast-editor': 'Podcast Editor', 'podcast-producer': 'Podcast Producer', 'show-notes-writer': 'Show Notes Writer'}
+    for agent in agents:
+        role_type = roles.get(agent['id'])
+        if role_type in labels:
+            suffix, expected_role = labels[role_type]
+            expected_name = f"{row['name']} {suffix}"
+        else:
+            expected_name = expected_role = specialist_names.get(agent['id'])
+        if agent.get('name') != expected_name or agent.get('role') != expected_role:
+            return False
+        if (roles.get(agent['id']) != agent.get('role_type') or agent.get('status') != 'standby'
+                or agent.get('openclaw_agent_id') or agent.get('openclaw_session_id') or agent.get('is_master')
+                or any(agent.get(k) for k in ('soul_md', 'user_md', 'agents_md', 'tools_md', 'memory_md', 'persona'))):
+            return False
+    agent_ids = [a['id'] for a in agents]
+    if row.get('head_agent_id') and row['head_agent_id'] not in agent_ids:
+        return False
+    # Inspect all real tables, including legacy non-FK references. Any work or
+    # runtime history means this is an existing system queue, not a placeholder.
+    # Known seeded agents and their static skill bindings alone are harmless.
+    tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    for table in tables:
+        if table in ('workspaces', 'agents', 'engine_workspace_bootstrap', 'agent_skills'):
+            continue
+        quoted = '"' + table.replace('"', '""') + '"'
+        cols = [r[1] for r in cur.execute(f'PRAGMA table_info({quoted})')]
+        refs = {r[3]: r[2] for r in cur.execute(f'PRAGMA foreign_key_list({quoted})')}
+        for col in cols:
+            qcol = '"' + col.replace('"', '""') + '"'
+            if (col == 'workspace_id' or col.endswith('_workspace_id') or refs.get(col) == 'workspaces') and cur.execute(f'SELECT 1 FROM {quoted} WHERE {qcol}=? LIMIT 1', (dept_id,)).fetchone():
+                return False
+            if (col == 'agent_id' or col.endswith('_agent_id') or refs.get(col) == 'agents') and agent_ids:
+                params = ','.join('?' for _ in agent_ids)
+                if cur.execute(f'SELECT 1 FROM {quoted} WHERE {qcol} IN ({params}) LIMIT 1', agent_ids).fetchone():
+                    return False
+    bindings = []
+    if 'agent_skills' in tables and agent_ids:
+        params = ','.join('?' for _ in agent_ids)
+        binding_cols = [r[1] for r in cur.execute('PRAGMA table_info(agent_skills)')]
+        bindings = [dict(zip(binding_cols, r)) for r in cur.execute(f'SELECT * FROM agent_skills WHERE agent_id IN ({params})', agent_ids)]
+        if any(b['skill_id'] != 'skill-58' or b['agent_id'] not in ('podcast-editor', 'podcast-producer', 'show-notes-writer') for b in bindings):
+            return False
+    backup = json.dumps({'workspace': row, 'agents': agents, 'agent_skills': bindings}, sort_keys=True)
+    cur.execute("UPDATE engine_workspace_bootstrap SET adopted_company_id=?, adoption_backup_json=?, adopted_at=datetime('now') WHERE workspace_id=? AND adopted_company_id IS NULL", (company_id, backup, dept_id))
+    cur.execute("UPDATE workspaces SET company_id=? WHERE id=? AND company_id='default'", (company_id, dept_id))
+    print(f'  PREPARED BOOTSTRAP: {dept_id} (commits only when the entire seed succeeds; agent IDs preserved)')
+    return True
+
+# ── Department identity: name fallback ───────────────────────────────────────
+# A client's board can carry a department under a DIFFERENT slug and a
+# different display name from the source artifact. Measured: the board had
+# `billing-finance` named "Billing" while the source said `billing`, and
+# `legal` named "Legal Compliance" while the source said `legal-compliance`.
+#
+# Those two pairs are ALREADY handled: shared-utils/canonical_slug.py's alias
+# map collapses billing -> billing-finance and legal-compliance -> legal, and
+# every id here goes through it. No second alias table is added — one map, in
+# the module both sides already import.
+#
+# What was missing is the case a slug alias cannot cover: a board row whose
+# slug matches nothing in the source but whose NAME is the same department.
+# Slug first, then a case-insensitive name match scoped to this company; a hit
+# UPDATES that row instead of inserting a second column for one department.
+
+# The catch-all workspace every routed task falls back to. Its owner decides
+# which company id the Command Center's company-scoped ingest must use.
+_CATCH_ALL_SLUGS = ("general-task", "dept-general-task", "general")
+
+
+def _log_company_split(cur, wanted_company_id):
+    """Print ONE line naming every company id that owns live workspaces.
+
+    Advisory only — never raises, never mutates. The seeder's company guard is
+    unchanged; this exists so an operator reading a roll receipt can see a
+    split (and a catch-all owned by a DIFFERENT company) instead of a bare
+    refusal with no context.
+    """
+    try:
+        has_arch = any(r[1] == "archived_at" for r in cur.execute("PRAGMA table_info(workspaces)"))
+        where = " WHERE archived_at IS NULL" if has_arch else ""
+        rows = cur.execute(
+            "SELECT company_id, COUNT(*) FROM workspaces" + where + " GROUP BY 1 ORDER BY 2 DESC"
+        ).fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    split = ", ".join(f"{cid or 'NULL'}={n}" for cid, n in rows)
+    owner = None
+    try:
+        marks = ",".join("?" * len(_CATCH_ALL_SLUGS))
+        hit = cur.execute(
+            f"SELECT company_id FROM workspaces WHERE slug IN ({marks}) OR id IN ({marks}) LIMIT 1",
+            _CATCH_ALL_SLUGS + _CATCH_ALL_SLUGS,
+        ).fetchone()
+        if hit:
+            owner = hit[0]
+    except Exception:
+        owner = None
+    if owner is None:
+        owner = rows[0][0]          # no catch-all: the majority owner
+    if owner != wanted_company_id:
+        print(f"  [company-split] MISMATCH: seeding as '{wanted_company_id}' but the "
+              f"catch-all/majority workspaces belong to '{owner}' (split: {split}). "
+              f"The Command Center's ingest is company-scoped, so a routed task can "
+              f"land unrouted until these agree.")
+    else:
+        print(f"  [company-split] company_id='{wanted_company_id}' owns the catch-all (split: {split})")
+    return owner
+
+
+def _find_existing_workspace(cur, dept_id, dept_name, company_id):
+    """Resolve a department to an EXISTING workspace row, or None.
+
+    Order: exact id/slug (already canonicalised, so canonical_slug.py's alias
+    map has had its say) -> case-insensitive name. Scoped to this company so a
+    name match can never reach across a tenant boundary.
+    Returns (row id, how) or (None, None).
+    """
+    # An ARCHIVED row is never a match. Updating one would resurrect a
+    # department the client archived, through the back door of a name match.
+    try:
+        live = " AND archived_at IS NULL" if any(
+            r[1] == "archived_at" for r in cur.execute("PRAGMA table_info(workspaces)")
+        ) else ""
+    except Exception:
+        live = ""
+    row = cur.execute(
+        "SELECT id FROM workspaces WHERE (id=? OR slug=?) AND company_id=?" + live + " LIMIT 1",
+        (dept_id, dept_id, company_id),
+    ).fetchone()
+    if row:
+        return row[0], "slug"
+    if dept_name:
+        row = cur.execute(
+            "SELECT id FROM workspaces WHERE lower(name)=lower(?) AND company_id=?" + live + " LIMIT 1",
+            (dept_name, company_id),
+        ).fetchone()
+        if row:
+            return row[0], "name"
+    return None, None
+
 
 def seed(db_path, departments, company_info):
     """
@@ -429,7 +712,18 @@ def seed(db_path, departments, company_info):
     so the dashboard can render them.
     """
     conn = sqlite3.connect(db_path)
+    try:
+        _seed_transaction(conn, departments, company_info)
+    finally:
+        # Closing rolls back every pending write if any ownership/schema guard
+        # raised, including failures before the department loop.
+        conn.close()
+
+
+def _seed_transaction(conn, departments, company_info):
     cur = conn.cursor()
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.execute("BEGIN IMMEDIATE")
 
     # Ensure tables exist
     cur.execute("""
@@ -455,6 +749,13 @@ def seed(db_path, departments, company_info):
     # Create company entry — write brand colors + industry into config blob
     company_slug = company_info["slug"]
     company_name = company_info["name"]
+    requested_id = company_info.get('companyId') or os.environ.get('MC_COMPANY_ID')
+    existing_company = cur.execute('SELECT id FROM companies WHERE slug=?',(company_slug,)).fetchone()
+    if requested_id and existing_company and existing_company[0] != requested_id:
+        raise ValueError('company slug belongs to a different canonical company ID')
+    company_id = requested_id or (existing_company[0] if existing_company else company_slug)
+    collision = cur.execute('SELECT slug FROM companies WHERE id=?',(company_id,)).fetchone()
+    if collision and collision[0] != company_slug: raise ValueError('canonical company ID belongs to a different slug')
     company_config = json.dumps({
         "brand": {
             "primary": company_info["brand_primary"],
@@ -471,13 +772,23 @@ def seed(db_path, departments, company_info):
           name=excluded.name,
           industry=excluded.industry,
           config=excluded.config
-    """, (company_slug, company_name, company_slug, company_info["industry"], company_config))
+    """, (company_id, company_name, company_slug, company_info["industry"], company_config))
     print(f"  Company: {company_name} (slug={company_slug}, industry={company_info['industry'] or 'n/a'})")
     print(f"  Brand: primary={company_info['brand_primary']} accent={company_info['brand_accent']}")
 
-    existing = {row[0] for row in cur.execute("SELECT id FROM workspaces WHERE company_id=?", (company_slug,)).fetchall()}
+    existing = {row[0] for row in cur.execute("SELECT id FROM workspaces WHERE company_id=?", (company_id,)).fetchall()}
     inserted = 0
     skipped = 0
+    renamed = 0
+
+    # ── Which company owns this board? ───────────────────────────────────────
+    # Measured on a client box: the DB held three company rows ('default',
+    # 'wakeuphappysis', 'wake-up-happy-sis') and the company guard below fired
+    # with no way for the operator to see why. The guard is correct and is NOT
+    # changed; this only makes the split legible in one line, including which
+    # company owns the catch-all, because the Command Center's ingest is
+    # company-scoped and an unroutable catch-all sends every task unrouted.
+    _log_company_split(cur, company_id)
 
     # v9.6.1: STRICT match to client's chosen departments.
     # The number seeded MUST equal len(departments). Do NOT fall back to 17
@@ -498,8 +809,47 @@ def seed(db_path, departments, company_info):
         dept_id = _canonical_dept_slug(raw_id)
         if not dept_id:
             continue
+        owner = cur.execute('SELECT company_id FROM workspaces WHERE id=? OR slug=?',(dept_id,dept_id)).fetchall()
+        if any(row[0] != company_id for row in owner):
+            # UUID must be supplied by the canonical launch context. A company
+            # name or slug guessed by discovery is not adoption authorization.
+            if not requested_id or not _adopt_unused_engine_bootstrap(cur, dept_id, company_id):
+                if all(row[0] == 'default' for row in owner):
+                    # A Command Center system/engine queue (podcast, anthology)
+                    # seeded under the CC's own 'default' company that is not an
+                    # adoptable placeholder. Leave it exactly as it is and seed the
+                    # REST: one such queue used to roll back the whole seed, so the
+                    # client's custom departments never got a board. Reassigning it
+                    # is the explicit repair-board-company.py --apply, never this.
+                    print(f"  SKIPPED (CC system queue under 'default', not adoptable): {dept_id} "
+                          f"-- see repair-board-company.py")
+                    skipped += 1
+                    continue
+                conn.rollback()
+                conn.close()
+                raise ValueError(f'department {dept_id} belongs to a different company or an active/custom system queue; refusing shared-client mutation. Resume the supported installer; do not rewrite company IDs.')
+            existing.add(dept_id)
         if dept_id in existing:
             skipped += 1
+            continue
+        # Before inserting, look for the SAME department already on the board
+        # under a different slug. A client's board carried `billing-finance`
+        # named "Billing" while the source said `billing`, and `legal` named
+        # "Legal Compliance" while the source said `legal-compliance`; matching
+        # on slug alone inserted a second workspace for each and one department
+        # became two columns. A hit UPDATES that row rather than inserting.
+        match_id, how = _find_existing_workspace(cur, dept_id, dept.get('name'), company_id)
+        if match_id and match_id != dept_id:
+            cur.execute(
+                "UPDATE workspaces SET name=?, description=?, icon=? WHERE id=?",
+                (dept['name'], f"{dept['name']} department workspace",
+                 dept.get('emoji', '📁'), match_id),
+            )
+            print(f"  MATCHED ({how}): {dept_id} -> existing workspace {match_id} "
+                  f"({dept['name']}) — updated in place, not inserted")
+            existing.add(match_id)
+            existing.add(dept_id)
+            renamed += 1
             continue
         # Idempotency: INSERT OR IGNORE prevents a UNIQUE(slug) crash when the
         # dept list contains duplicate canonical slugs, or when workspaces were
@@ -515,7 +865,7 @@ def seed(db_path, departments, company_info):
             dept_id,
             f"{dept['name']} department workspace",
             dept.get('emoji', '📁'),
-            company_slug
+            company_id
         ))
         if cur.rowcount:
             print(f"  INSERTED: {dept_id} ({dept['name']}) {dept.get('emoji', '📁')}")
@@ -529,7 +879,7 @@ def seed(db_path, departments, company_info):
 
     conn.commit()
     conn.close()
-    print(f"\nSeeding complete. Inserted: {inserted} | Skipped (already existed): {skipped} | Client expected: {len(departments)}")
+    print(f"\nSeeding complete. Inserted: {inserted} | Matched existing (updated, not duplicated): {renamed} | Skipped (already existed): {skipped} | Client expected: {len(departments)}")
 
 if __name__ == "__main__":
     db = find_db()

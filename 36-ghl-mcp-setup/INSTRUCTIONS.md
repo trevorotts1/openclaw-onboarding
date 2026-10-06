@@ -43,6 +43,20 @@ Use first when the task is in one of these domains:
 | Domain | Example tools |
 |---|---|
 | Contacts | `contacts_get-contact`, `contacts_create-contact`, `contacts_search-contacts`, `contacts_upsert-contact`, `contacts_add-tags`, `contacts_remove-tags` |
+
+**CONTACT WRITE ROUTING (binding).** Generic "add/save this person" is NOT a
+create. Route contact writes: Tier 0 `caf contacts upsert` FIRST (match keys
+email and/or phone, supplied fields only, tags via `caf contacts add-tag`;
+`--create-new-if-duplicate-allowed` only on explicit new-record request);
+explicit "create a NEW contact" → `caf contacts create`; known contactId →
+`caf contacts update <id>` with non-tag fields only (`--tag` is refused
+destructive — PUT replaces the whole set). Same rule binds Tier 1 MCP
+(`contacts_upsert-contact` for generic add/save, `contacts_create-contact` for
+explicit new) and Tier 3 raw API (POST /contacts/upsert default, POST
+/contacts/ explicit-new only). HighLevel's Upsert endpoint resolves
+create-vs-update per the Location-level Allow Duplicate Contact configuration
+and its matching priority. Verify every write: capture the contact ID, read the
+record back, confirm intended fields.
 | Conversations | `conversations_send-a-new-message`, `conversations_get-messages`, `conversations_search-conversation` |
 | Opportunities | `opportunities_get-opportunity`, `opportunities_update-opportunity`, `opportunities_search-opportunity`, `opportunities_get-pipelines` |
 | Calendars | `calendars_get-calendar-events`, `calendars_get-appointment-notes` |

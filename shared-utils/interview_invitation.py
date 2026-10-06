@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+"""Verified public invitation and acknowledged gateway delivery; no direct Bot API.
+OpenClaw contract: https://docs.openclaw.ai/message (--message and --json).
+"""
+from __future__ import annotations
+import argparse
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+import re
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from urllib.parse import urlsplit, parse_qs
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from interview_completion import prompt_status
+
+PROTOCOL = 'interview-launch.v1'
+# An interview link is valid until the interview is complete; it does not expire
+# on a clock. A Command Center that implements that contract says so in the
+# receipt, and then there is no deadline to enforce or to quote to the client.
+# Older issuers still in the field really do expire their links, so a receipt
+# without the marker is still held to the bounded TTL it was minted under: at
+# most 24 hours, plus a small bounded clock skew, never an arbitrary TTL.
+INVITATION_VALID_UNTIL_COMPLETE = 'interview-complete'
+# A link is not spent by being used either: it re-opens until the interview is
+# complete, so a client on a second device, with cleared cookies, or returning
+# after their browser session lapsed gets back into the same interview. A
+# Command Center that implements that says so with this marker. Older issuers
+# really do burn the link on first redemption and say so with `oneUse`; both
+# are accepted, because both are honest about the issuer that sent them.
+INVITATION_REDEEMABLE_UNTIL_COMPLETE = 'until-interview-complete'
+MAX_INVITATION_TTL_SECONDS = 24 * 60 * 60
+INVITATION_CLOCK_SKEW_SECONDS = 10
+class Pending(ValueError):
+    pass
+
+def public_origin(value):
+    if not isinstance(value, str): raise Pending('public origin missing')
+    p = urlsplit(value)
+    if p.scheme != 'https' or not p.hostname or p.username or p.password or p.query or p.fragment or p.path not in ('','/'):
+        raise Pending('public HTTPS origin required')
+    host = p.hostname.lower()
+    if host == 'localhost' or host.endswith(('.localhost','.local')) or '.' not in host or p.port == 18789:
+        raise Pending('public origin cannot be loopback or gateway')
+    # An IP literal is never an interview origin, global or not. A public
+    # address still cannot present a certificate for the tenant hostname the
+    # registry selects configuration by, so accepting one would let an origin
+    # no tenant is registered under carry a client's private sign-in link.
+    # Testing only is_global was the whole check before, which let 8.8.8.8 pass.
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise Pending('public origin must be a hostname, not an IP address')
+    return 'https://' + p.netloc.lower().rstrip('/'), host
+
+def expected_identity(state, env):
+    expected = {}
+    for key, variable in [('tenantId','MC_TENANT_ID'),('companyId','MC_COMPANY_ID'),('installationId','MC_INSTALLATION_ID')]:
+        stored, ambient = state.get(key), env.get(variable)
+        if stored and ambient and stored != ambient: raise Pending(key+' conflict')
+        value = stored or ambient
+        if not isinstance(value,str) or not value.strip(): raise Pending(key+' missing')
+        expected[key] = value
+    return expected
+
+def validate_receipt(receipt, expected, host):
+    if not isinstance(receipt,dict): raise Pending('readiness receipt must be an object')
+    for key,value in dict(expected, host=host, protocol=PROTOCOL, stage='interview').items():
+        if receipt.get(key) != value: raise Pending(key+' readiness mismatch')
+    if receipt.get('ready') is not True or receipt.get('missing') != []: raise Pending('interview prerequisites pending')
+    if type(receipt.get('interviewComplete')) is not bool: raise Pending('explicit interview completion required')
+    capabilities = receipt.get('capabilities')
+    if not isinstance(capabilities,dict) or any(capabilities.get(key) is not True for key in ['state','localInterviewPrerequisites','enrollment']):
+        raise Pending('interview capability or enrollment pending')
+    return receipt
+
+def load_service_environment(state, env):
+    """Read only the bootstrap-pinned service file; never scan or source secrets."""
+    result=dict(env)
+    launch=state.get('launchBootstrap') if isinstance(state,dict) else None
+    filename=launch.get('serviceEnvPath') if isinstance(launch,dict) else None
+    if filename is None:return result
+    if not isinstance(filename,str) or not Path(filename).is_absolute(): raise Pending('service environment path invalid')
+    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
+    stored={}
+    try:
+        file=Path(filename)
+        if not file.is_file() or file.stat().st_size>1024*1024: raise Pending('service environment unavailable')
+        for line in file.read_text().splitlines():
+            if not line.strip() or line.lstrip().startswith('#') or '=' not in line:continue
+            key,value=line.split('=',1);key=key.strip()
+            if key not in allowed:continue
+            from service_env import decode_value
+            value=decode_value(value)
+            if not isinstance(value,str) or not value:raise Pending('invalid scoped service environment value')
+            if key in stored and stored[key]!=value:raise Pending('duplicate service environment conflict')
+            stored[key]=value
+    except (OSError, ValueError):raise Pending('pinned service environment unreadable or invalid') from None
+    for key,variable in [('companyId','MC_COMPANY_ID'),('tenantId','MC_TENANT_ID'),('installationId','MC_INSTALLATION_ID')]:
+        if not state.get(key) or stored.get(variable)!=state[key]:raise Pending('service environment identity mismatch')
+    if not stored.get('MC_API_TOKEN'):raise Pending('service API token missing')
+    for key,value in stored.items():
+        if result.get(key) and result[key]!=value:raise Pending('service/invitation environment conflict: '+key)
+        result[key]=value
+    return result
+
+def curl_auth_config(env):
+    """Use only the selected client's explicit/pinned credentials, via stdin."""
+    token=env.get('MC_API_TOKEN')
+    if not isinstance(token,str) or not token or any(ord(c)<32 for c in token):
+        raise Pending('authenticated readiness token missing or invalid')
+    headers=[('Authorization','Bearer '+token)]
+    names=('CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET')
+    if any(name in env for name in names):
+        if any(not isinstance(env.get(name),str) or not env[name].strip() or any(ord(c)<32 for c in env[name]) for name in names):
+            raise Pending('Cloudflare Access requires a complete valid client ID/secret pair')
+        headers.extend([('CF-Access-Client-Id',env[names[0]]),('CF-Access-Client-Secret',env[names[1]])])
+    return ''.join('header = "'+name+': '+value.replace('\\','\\\\').replace('"','\\"')+'"\n' for name,value in headers)
+
+
+def reject_public_redirect(status):
+    if status in ('301','302','303','307','308'):
+        raise Pending('public authentication required (redirect); configure this client Cloudflare Access service credentials or use the verified local operator recovery route')
+
+
+def resolve_public_origin(state, env, fetch=None):
+    if not isinstance(state,dict): raise Pending('canonical workforce state must be an object')
+    env=load_service_environment(state,env)
+    completion = prompt_status(state, env)
+    if completion != 'INCOMPLETE':
+        raise Pending('prior interview completion recorded' if completion in ('COMPLETE', 'DECLARED') else 'completion scope/store unknown; invitation suppressed')
+    expected = expected_identity(state,env)
+    record = state.get('commandCenterPublicOrigin')
+    candidate = None
+    if record is not None:
+        if not isinstance(record,dict) or record.get('verified') is not True: raise Pending('canonical public origin unverified')
+        if record.get('protocol') != PROTOCOL: raise Pending('canonical origin protocol mismatch')
+        if any(record.get(k) != v for k,v in expected.items()): raise Pending('canonical origin identity mismatch')
+        candidate = record.get('origin')
+    candidates = [v for v in [candidate, env.get('MC_TENANT_PUBLIC_URL'), state.get('commandCenterUrl'), env.get('OPENCLAW_DASHBOARD_URL')] if v]
+    if not candidates: raise Pending('public interview origin pending')
+    origins = [public_origin(v)[0] for v in candidates]
+    if len(set(origins)) != 1: raise Pending('public origin configuration conflict')
+    origin,host = public_origin(origins[0])
+    if env.get('INTERVIEW_GATE_URL') and public_origin(env['INTERVIEW_GATE_URL'])[0] != origin:
+        raise Pending('separate readiness origin refused')
+    config=curl_auth_config(env)
+    token=env['MC_API_TOKEN']
+    if fetch:
+        receipt = fetch(origin+'/api/auth/interview-ready',token)
+    else:
+        # All authentication headers go through stdin, never argv or diagnostics.
+        try:
+            result = subprocess.run(['curl','--disable','--max-filesize','65536','--config','-','--silent','--show-error','--max-time','15','--max-redirs','0','--proto','=https','--write-out','\n%{http_code}',origin+'/api/auth/interview-ready'],input=config,text=True,capture_output=True,timeout=20)
+        except (OSError,subprocess.TimeoutExpired): raise Pending('authenticated readiness transport unavailable') from None
+        if result.returncode: raise Pending('authenticated readiness transport failed')
+        body, _, status = result.stdout.rstrip('\r\n').rpartition('\n')
+        reject_public_redirect(status)
+        if status != '200' or len(body)>65536: raise Pending('authenticated readiness HTTP failure')
+        try: receipt=json.loads(body)
+        except ValueError: raise Pending('malformed readiness receipt') from None
+    validate_receipt(receipt,expected,host)
+    if receipt['interviewComplete']: raise Pending('interview already complete')
+    if state.get('buildType') == 'standard-first' and (not isinstance(receipt.get('foundation'),dict) or receipt['foundation'].get('ready') is not True):
+        raise Pending('standard foundation verification pending')
+    return dict(expected,origin=origin,host=host,protocol=PROTOCOL,receipt=receipt)
+
+def redemption_declared(receipt):
+    """Whether the issuer stated a redemption contract this sender understands.
+
+    A current issuer says the link re-opens until the interview is complete. An
+    older one says it is single use. Either is a contract; a receipt that
+    declares neither is from something this sender does not recognise, and it
+    is refused rather than delivered on a guess.
+    """
+    return receipt.get('redeemable') == INVITATION_REDEEMABLE_UNTIL_COMPLETE or receipt.get('oneUse') is True
+
+
+def invitation_expiry(receipt):
+    """The deadline to enforce and to quote, or None when there is not one.
+
+    A receipt marked valid until interview completion carries no deadline: the
+    link stays usable until the interview is finished, so there is nothing here
+    to bound and nothing truthful to promise the client about a date. Every
+    other receipt came from an issuer that really does expire the link, and its
+    stated expiry is still bounded exactly as before, so a short legacy TTL and
+    a full 24-hour one are both accepted and anything unbounded is refused.
+    """
+    if receipt.get('validUntil') == INVITATION_VALID_UNTIL_COMPLETE:
+        return None
+    expiry = receipt.get('expiresAt')
+    if type(expiry) is not int or not time.time() < expiry <= time.time() + MAX_INVITATION_TTL_SECONDS + INVITATION_CLOCK_SKEW_SECONDS:
+        raise Pending('invitation expiry invalid')
+    return expiry
+
+
+def invitation_validity_sentence(expiry, reopenable=False):
+    """What the client is told about how long the private link lasts.
+
+    Only ever states what the issuing Command Center actually does.
+    Promising a client they can reopen a link that their issuer burns on
+    first use would strand them at the moment they trusted the sentence.
+    """
+    if expiry is None:
+        if reopenable:
+            return ('This private sign-in link stays valid until your interview is complete, '
+                    'and you can open it again whenever you like, on any device.')
+        return 'This private sign-in link stays valid until your interview is complete.'
+    from datetime import datetime, timezone
+    return 'This private sign-in link expires on '+datetime.fromtimestamp(expiry,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')+'.'
+
+
+def issue_invitation(resolved, env, target, metadata=None):
+    config=curl_auth_config(env)
+    body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
+    try:
+        result=subprocess.run(['curl','--disable','--max-filesize','65536','--config','-','--silent','--show-error','--max-time','15','--max-redirs','0','--proto','=https','--header','Content-Type: application/json','--data',body,'--write-out','\n%{http_code}',resolved['origin']+'/api/auth/interview-invitation'],input=config,text=True,capture_output=True,timeout=20)
+        data,_,status=result.stdout.rstrip('\r\n').rpartition('\n')
+        reject_public_redirect(status)
+        if result.returncode or status!='200' or len(data)>65536: raise Pending('authenticated invitation issuance failed')
+        receipt=json.loads(data)
+        if not isinstance(receipt,dict): raise Pending('invalid invitation receipt')
+        for key in ['tenantId','companyId','installationId','host']:
+            if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
+        if receipt.get('protocol')!='interview-invitation.v1' or not redemption_declared(receipt): raise Pending('invitation protocol mismatch')
+        expiry=invitation_expiry(receipt)
+        url=receipt.get('url')
+        if not isinstance(url,str) or not url: raise Pending('invitation URL missing')
+        parsed=urlsplit(url)
+        # An origin allow-list, not a full parse: binding must hold before any
+        # ticket is read. v7.6.64 issuers mint `/interview?enroll=<ticket>`;
+        # older fleet issuers mint `/interview#enroll=<ticket>`. Accept both
+        # query and fragment, but exactly one ticket, in exactly one place, and
+        # nothing else beside it: extra query keys or a bare path with no ticket
+        # are all refused rather than delivered on a guess.
+        if parsed.scheme+'://'+parsed.netloc!=resolved['origin'] or parsed.path!='/interview':
+            raise Pending('invitation URL binding invalid')
+        ticket=None
+        if parsed.query:
+            params=parse_qs(parsed.query,keep_blank_values=True)
+            if parsed.fragment or set(params)!= {'enroll'} or len(params['enroll'])!=1: raise Pending('invitation URL binding invalid')
+            ticket=params['enroll'][0]
+        elif parsed.fragment:
+            params=parse_qs(parsed.fragment,keep_blank_values=True)
+            if set(params)!= {'enroll'} or len(params['enroll'])!=1: raise Pending('invitation URL binding invalid')
+            ticket=params['enroll'][0]
+
+        if ticket is None: raise Pending('invitation URL binding invalid')
+        import re
+        if not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',ticket): raise Pending('invalid enrollment token format')
+        if metadata is not None:
+            metadata['invitationExpiresAt']=expiry
+            metadata['invitationReopenable']=receipt.get('redeemable')==INVITATION_REDEEMABLE_UNTIL_COMPLETE
+        return url
+    except Pending: raise
+    except (OSError,ValueError,subprocess.TimeoutExpired): raise Pending('invitation issuance unverified') from None
+
+def atomic_json(path, value):
+    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix='.'+path.name,dir=path.parent)
+    try:
+        with os.fdopen(fd,'w') as stream:
+            json.dump(value,stream,ensure_ascii=False); stream.write('\n'); stream.flush(); os.fsync(stream.fileno())
+        os.replace(tmp,path)
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+
+def acknowledgement(payload, target):
+    if not isinstance(payload,dict) or payload.get('ok') is False or payload.get('dryRun') is True: return None
+    # Current CLI wraps provider delivery in payload; older JSON uses result.
+    data=payload.get('payload',payload.get('result',payload))
+    if not isinstance(data,dict) or data.get('ok') is False or data.get('dryRun') is True: return None
+    if any(item.get('status') in ('suppressed','failed','partial','pending') for item in [payload,data]): return None
+    message_id=data.get('messageId',data.get('message_id'))
+    recipient=data.get('chatId',data.get('chat_id',data.get('to',data.get('target'))))
+    channel=data.get('channel',payload.get('channel','telegram'))
+    if isinstance(message_id,bool) or not isinstance(message_id,(str,int)) or not str(message_id).strip(): return None
+    if str(recipient) != target or channel != 'telegram': return None
+    return {'messageId':str(message_id),'channel':'telegram','recipientHash':hashlib.sha256(target.encode()).hexdigest()}
+
+def native_openclaw_candidates(env):
+    """Only this runtime user's npm bins and conventional native install bins."""
+    home = env.get('HOME', '')
+    candidates = []
+    selected_root=env.get('OPENCLAW_ROOT') or env.get('OC_ROOT') or env.get('OC_CONFIG')
+    if selected_root and Path(selected_root).is_absolute():
+        candidates.append(Path(selected_root) / 'npm-global/bin/openclaw')
+    if home and Path(home).is_absolute():
+        candidates.extend(Path(home) / suffix / 'openclaw' for suffix in ('.openclaw/npm-global/bin', '.npm-global/bin', '.npm/bin', '.local/bin'))
+    candidates.extend(Path(directory) / 'openclaw' for directory in ('/opt/homebrew/bin', '/usr/local/bin'))
+    return candidates
+
+
+def required_openclaw_version(env):
+    """Configuration schema provenance is a minimum, not permission to downgrade."""
+    roots=[Path(env[name]) for name in ('OPENCLAW_ROOT','OC_ROOT','OC_CONFIG') if env.get(name)]
+    if any(not root.is_absolute() for root in roots) or (roots and any(root.resolve()!=roots[0].resolve() for root in roots[1:])):
+        raise Pending('OpenClaw client root pins conflict or are not absolute')
+    root=roots[0] if roots else Path(env.get('HOME',str(Path.home())))/'.openclaw'
+    config=root/'openclaw.json'
+    if not config.exists(): return None
+    try:
+        value=json.loads(config.read_text()).get('meta',{}).get('lastTouchedVersion')
+    except (OSError,ValueError,AttributeError):
+        raise Pending('selected OpenClaw configuration metadata is unreadable') from None
+    if value is None: return None
+    if not isinstance(value,str): raise Pending('selected OpenClaw version metadata is invalid')
+    parsed=version_tuple(value)
+    if parsed is None: raise Pending('selected OpenClaw version metadata is invalid')
+    return parsed
+
+
+def version_tuple(value):
+    match=re.fullmatch(r'(?:OpenClaw\s+)?v?(\d{4})\.(\d{1,2})\.(\d+)(?:-(\d+))?(?:\s+\([a-fA-F0-9]+\))?',value.strip())
+    return tuple(int(part or 0) for part in match.groups()) if match else None
+
+
+def resolve_openclaw_cli(env):
+    """Resolve once before minting; keep the selected client gateway environment.
+
+    Explicit pins fail closed. Discovery never scans other users or sources a
+    login profile. Retain the executable's bin directory for its Node shebang
+    when the caller is a minimal-PATH SSH/cron process.
+    """
+    expected=required_openclaw_version(env)
+    explicit = env.get('OPENCLAW_BIN')
+    if explicit is not None:
+        if not explicit or not Path(explicit).is_absolute():
+            raise Pending('OPENCLAW_BIN must pin an absolute executable; no fallback attempted')
+        candidates = [Path(explicit)]
+    else:
+        found = shutil.which('openclaw', path=env.get('PATH', ''))
+        native=native_openclaw_candidates(env)
+        scoped=[candidate for candidate in native if str(candidate) not in ('/opt/homebrew/bin/openclaw','/usr/local/bin/openclaw')]
+        candidates = (scoped if expected else []) + ([Path(found)] if found else []) + native
+    checked=set()
+    for candidate in candidates:
+        try:
+            if not candidate.is_file() or not os.access(candidate, os.X_OK):
+                continue
+            executable = str(candidate.resolve(strict=True))
+            if executable in checked: continue
+            checked.add(executable)
+            child_env = dict(env)
+            bin_dir = str(candidate.absolute().parent)
+            child_env['PATH'] = bin_dir + os.pathsep + env.get('PATH', '')
+            if expected is not None:
+                try:
+                    reported=subprocess.run([executable,'--version'],capture_output=True,text=True,timeout=5,env=child_env)
+                except (OSError,subprocess.TimeoutExpired):
+                    continue
+                version=version_tuple(reported.stdout) if reported.returncode==0 else None
+                if version is None or version<expected: continue
+            return executable, child_env
+        except (OSError, ValueError):
+            continue
+    if explicit is not None:
+        raise Pending('OPENCLAW_BIN is unavailable, unverified or older than the client configuration; no fallback attempted')
+    if expected is not None:
+        raise Pending('No verified OpenClaw CLI supports this client configuration; pin the current client executable with OPENCLAW_BIN')
+    return None
+
+def send_gateway(message, target, ledger, context, force=False, timeout=30, prepare_message=None):
+    ledger=Path(ledger); ledger.parent.mkdir(parents=True,exist_ok=True)
+    receipt_file=ledger.with_suffix(ledger.suffix+'.receipt.json')
+    with open(str(ledger)+'.lock','a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        previous={}
+        if receipt_file.exists():
+            try: previous=json.loads(receipt_file.read_text())
+            except (ValueError,OSError): raise Pending('delivery receipt unreadable; reconcile before retry') from None
+        if previous and (any(previous.get(key) != context.get(key) for key in ('origin','companyId','tenantId','installationId'))
+                         or previous.get('recipientHash') != hashlib.sha256(target.encode()).hexdigest()):
+            raise Pending('delivery receipt identity mismatch; reconcile before retry')
+        if previous.get('status') in ('sending','uncertain'):
+            raise Pending('delivery uncertain; reconcile acknowledged gateway delivery before retry (FORCE cannot bypass)')
+        if previous.get('status')=='accepted' and os.environ.get('INTERVIEW_INVITATION_AUTOMATIC')=='1':
+            return 7, {'status':'guarded','reason':'automatic invitation already accepted; manual renewal required if expired'}
+        expiry=previous.get('invitationExpiresAt')
+        renewal=previous.get('status')=='accepted' and type(expiry) is int and time.time()>=expiry
+        if previous.get('status')=='accepted' and not force and not renewal and time.time()-previous.get('epoch',0)<1800:
+            return 7, {'status':'guarded','reason':'invitation recently accepted; use --renew if a fresh sign-in link is needed'}
+        if ledger.exists() and not force and not renewal:
+            try:
+                last=ledger.read_text().splitlines()[-1].split('|')[0]
+                if time.time()-int(last)<1800:return 7,{'status':'guarded','reason':'invitation recently accepted'}
+            except (ValueError,IndexError): raise Pending('legacy delivery ledger malformed; reconcile before retry') from None
+        cli = resolve_openclaw_cli(dict(os.environ))
+        if not cli:return 5,{'status':'failed','reason':'OpenClaw CLI missing; no direct HTTP fallback'}
+        executable, child_env = cli
+        if prepare_message: message=prepare_message(message)
+        base=dict(context,epoch=int(time.time()),recipientHash=hashlib.sha256(target.encode()).hexdigest(),messageSha256=hashlib.sha256(message.encode()).hexdigest())
+        # Persist uncertainty BEFORE invoking a command that might send. Failed receipt
+        # or ledger writes after remote acceptance cannot turn a retry into a duplicate.
+        atomic_json(receipt_file,dict(base,status='sending'))
+        try:
+            result=subprocess.run([executable,'message','send','--channel','telegram','--target',target,'--message',message,'--json'],capture_output=True,text=True,timeout=timeout,env=child_env)
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            outcome=dict(base,status='uncertain',reason='gateway '+type(exc).__name__+'; reconcile before retry')
+            atomic_json(receipt_file,outcome); return 9,outcome
+        try: payload=json.loads(result.stdout)
+        except ValueError: payload=None
+        ack=acknowledgement(payload,target) if result.returncode==0 else None
+        if not ack:
+            # An exact CLI usage rejection is known pre-send; other errors may follow acceptance.
+            rejected=result.returncode==2 and any(x in result.stderr.lower() for x in ['unknown option','unknown argument','required option'])
+            outcome=dict(base,status='rejected' if rejected else 'uncertain',reason='gateway command rejected' if rejected else 'gateway acceptance unverified; reconcile before retry',exitCode=result.returncode)
+            atomic_json(receipt_file,outcome); return (6 if rejected else 9),outcome
+        outcome=dict(base,status='accepted',**ack)
+        atomic_json(receipt_file,outcome)
+        try:
+            with ledger.open('a') as stream:
+                stream.write(f"{base['epoch']}|{context['mode']}|{context['lane']}|{context['origin']}\n");stream.flush();os.fsync(stream.fileno())
+        except OSError:
+            return 10,dict(outcome,reason='gateway accepted; legacy ledger write failed; acceptance receipt retained')
+        return 0,outcome
+
+def main():
+    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['resolve','send']);parser.add_argument('--state',required=True);parser.add_argument('--message-file');parser.add_argument('--target');parser.add_argument('--ledger');parser.add_argument('--resolution-file');parser.add_argument('--mode',default='start');parser.add_argument('--lane',default='legacy')
+    args=parser.parse_args()
+    try:
+        state=json.loads(Path(args.state).read_text())
+        env=load_service_environment(state,os.environ)
+        resolved=resolve_public_origin(state,env)
+        if args.action=='resolve':
+            if args.resolution_file: atomic_json(args.resolution_file,{key:resolved[key] for key in ['origin','companyId','tenantId','installationId']})
+            print(resolved['origin']);return 0
+        if not args.resolution_file: raise Pending('verified message origin snapshot missing')
+        pinned=json.loads(Path(args.resolution_file).read_text())
+        if pinned != {key:resolved[key] for key in ['origin','companyId','tenantId','installationId']}:
+            raise Pending('client identity or origin changed while preparing invitation')
+        message=Path(args.message_file).read_text()
+        delivery_context=dict(origin=resolved['origin'],companyId=resolved['companyId'],tenantId=resolved['tenantId'],installationId=resolved['installationId'],mode=args.mode,lane=args.lane)
+        def enroll(text):
+            latest = json.loads(Path(args.state).read_text())
+            if prompt_status(latest, env) != 'INCOMPLETE':
+                raise Pending('completion changed or unavailable; invitation suppressed')
+            private_entry=resolved['origin']+'/interview'
+            if private_entry not in text:
+                raise Pending('private invitation link missing from message')
+            url=issue_invitation(resolved,env,args.target,delivery_context)
+            # Replace only the primary sign-in link: the later authenticated
+            # resume bookmark must remain stable and must never carry a ticket.
+            validity=invitation_validity_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
+            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',validity)
+        code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)
+        print(json.dumps(receipt));return code
+    except (Pending,ValueError,OSError) as exc:
+        # Never expose raw CLI, curl, response, credential, recipient or token text.
+        reason=str(exc) if isinstance(exc,Pending) else type(exc).__name__
+        print('[send-interview-link] PENDING: '+reason,file=sys.stderr);return 8
+if __name__=='__main__':sys.exit(main())

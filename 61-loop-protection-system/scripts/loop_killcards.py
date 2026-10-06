@@ -306,16 +306,33 @@ def lf10_archive_and_roll_session(session_path, dry_run=True, min_idle_minutes=1
             "revert": "mv %s %s" % (archive, p)}
 
 
-def lf6_park_process(unit, ledger, dry_run=True):
-    """LF-6: park a crash-looping process unit on a process-breaker trip. STOP + park
-    (visible-red; never silently respawns). Reversible via unpark. Returns
-    {applied, reason}."""
+def lf6_park_process(unit, ledger, dry_run=True, stop_fn=None):
+    """LF-6: respond to a crash-looping process unit on a process-breaker trip.
+
+    WHAT EACH CASE REALLY DOES (SKS-002 / Fix 4 - this card used to report `applied` after
+    writing only a ledger flag):
+      DRY RUN             executes NOTHING (no pm2, no ledger write).
+      the OpenClaw gateway  ALERT-ONLY. Never stopped: October's built-in crash-loop breaker
+                          already suppresses channel auto-start after 3 unclean boots in 5
+                          minutes. Ledger flag + `parked-flag`, finding stays open.
+      other pm2 unit      ARMED run: `pm2 stop <unit>` for real, state `stopped`; the revert
+                          (`unpark`) runs `pm2 start <unit>`.
+      no real stop worked state `parked-flag`: a ledger flag only, NOTHING stopped.
+    Only a really-stopped unit returns applied=True. Never auto-respawns a parked unit.
+    Returns {applied, state, stopped, reason}."""
     if dry_run:
-        return {"applied": False, "reason": "DRY_RUN: would STOP + park unit '%s'" % unit,
-                "dry_run": True}
-    BR.trip(unit, "process", ledger, park=True)
-    return {"applied": True, "reason": "parked unit '%s' (visible-red; no auto-respawn)" % unit,
-            "dry_run": False, "revert": "loop-companion.sh unpark %s" % unit}
+        if BR.is_gateway_unit(unit):
+            return {"applied": False, "dry_run": True, "state": None, "stopped": False,
+                    "reason": "DRY_RUN: '%s' is the OpenClaw gateway - ALERT-ONLY, would never "
+                              "stop it (nothing executed)" % unit}
+        return {"applied": False, "dry_run": True, "state": None, "stopped": False,
+                "reason": "DRY_RUN: would run `pm2 stop %s` (nothing executed)" % unit}
+    r = BR.stop_and_park(unit, ledger, stop_fn=stop_fn)
+    out = {"applied": bool(r["stopped"]), "dry_run": False, "state": r["state"],
+           "stopped": bool(r["stopped"]), "reason": r["reason"]}
+    if r["stopped"]:
+        out["revert"] = "loop-companion.sh unpark %s" % unit  # runs `pm2 start %s`
+    return out
 
 
 def _agent_id_from_session_key(session_key):
@@ -326,8 +343,8 @@ def _agent_id_from_session_key(session_key):
     match (never a crash, never a guess beyond this one documented
     convention) - the gateway RPC's `agentId` param is best-effort exactly
     like the RPC call itself; a wrong agentId degrades to the RPC returning
-    an error/no-op, never a crash, and the park below still applies either
-    way."""
+    an error/no-op, never a crash; the caller then records `parked-flag`
+    (a ledger flag only) rather than claiming an abort."""
     parts = str(session_key).split(":")
     if len(parts) >= 2 and parts[0] == "agent":
         return parts[1]
@@ -356,16 +373,18 @@ def _sessions_abort_via_gateway_rpc(session_key, timeout=10):
     probe in this skill honors) short-circuits to a no-op BEFORE any
     subprocess runs, so a caller that forgets to inject `abort_fn` still
     never touches a real gateway. On ANY OTHER miss (no binary, non-zero
-    exit, bad JSON) returns {ok: False} - never a crash. The caller still
-    parks the source unit regardless of this result: the park is what
-    actually breaks the loop, and the RPC call is a best-effort courtesy."""
+    exit, bad JSON) returns {ok: False} - never a crash, and the caller then
+    records `parked-flag` (NOT fixed): nothing was aborted."""
     if os.environ.get("LOOP_NO_PROBES", "") == "1":
         return {"ok": False}
     binpath = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw")
     if not binpath:
         return {"ok": False}
+    # clearQueued is REQUIRED: abort alone leaves queued follow-ups, and a queued resend
+    # restarts the work (OpenClaw docs/tools/subagents/operations.md). Boolean, not "true".
     params = json.dumps({"key": str(session_key),
-                         "agentId": _agent_id_from_session_key(session_key)})
+                         "agentId": _agent_id_from_session_key(session_key),
+                         "clearQueued": True})
     try:
         proc = subprocess.run(
             [binpath, "gateway", "call", "sessions.abort", "--params", params],
@@ -401,35 +420,39 @@ def _rpc_signals_success_or_noop(result):
 
 def lf12_abort_cross_run_resend(source_session_key, ledger, dry_run=True, abort_fn=None):
     """LF-12: abort the resending SOURCE session's in-flight run via the native
-    sessions.abort RPC (openclaw gateway call sessions.abort), breaking a
-    confirmed cross-run resend loop (LP-A10) at its driver - the orchestrator
-    that keeps firing a brand-new top-level run every time sessions_send's
-    local 30s fallback timeout is misread as delivery failure. Calling
-    sessions.abort with NO active run is a documented safe no-op
-    ({ok:true, abortedRunId:null, status:"no-active-run"} - verified live),
-    so this never errors on a source that has already moved on by the time
-    the breaker trips; the PARK below is what actually stops the recurrence,
-    regardless of the RPC outcome. NEVER pkill node, NEVER restart the
-    gateway - this touches ONLY the one session named.
+    `sessions.abort` RPC (`openclaw gateway call sessions.abort`) with `clearQueued: true`,
+    breaking a confirmed cross-run resend loop (LP-A10) at its driver.
+
+    WHAT EACH PART REALLY DOES (SKS-002 / Fix 4 - an earlier version credited the ledger
+    park with ending the loop; the park is a visible-red status flag only):
+      * `sessions.abort` cancels the session's active run (and its descendants).
+      * `clearQueued: true` ALSO discards the session's queued follow-ups. It is REQUIRED:
+        without it a queued resend restarts the work right after the abort
+        (OpenClaw docs/tools/subagents/operations.md).
+      * With NO active run the RPC is a documented safe no-op
+        ({ok:true, abortedRunId:null, status:"no-active-run"}); nothing is aborted then.
+      * The ledger PARK is a visible-red status flag. It stops nothing and pauses no session.
+    The recorded state is `stopped` only when the RPC returned ok:true (it ran, even as the
+    no-active-run no-op, and the follow-up queue was cleared). An unreachable/failed RPC is
+    state `parked-flag`: a ledger flag only, the finding stays open, NOTHING was aborted.
+    NEVER pkill node, NEVER restart the gateway - this touches ONLY the one session named.
 
     A 600s action cooldown (config/thresholds.json d7_cross_run_resend
-    .action_cooldown_seconds) bounds how often this may re-fire on the SAME
-    source: a second call inside the window is REFUSED (never re-applied),
-    recorded via the ledger's existing digest/dedup primitive (the same one
-    tick()'s alert dedup uses) rather than a new mechanism. `abort_fn` is
-    injectable (defaults to the gateway-RPC probe below) so tests never touch
-    a real gateway. Returns {applied, reason}."""
+    .action_cooldown_seconds) bounds how often this may re-fire on the SAME source: a
+    second call inside the window is REFUSED, recorded via the ledger's digest/dedup
+    primitive. `abort_fn` is injectable (default: the gateway-RPC probe) so tests never
+    touch a real gateway. Returns {applied, state, reason}."""
     cooldown_key = "resend-cooldown|%s" % source_session_key
     cooldown_seconds = C.load_skill_config("thresholds.json")["d7_cross_run_resend"]["action_cooldown_seconds"]
     if dry_run:
         return {"applied": False,
-                "reason": "DRY_RUN: would call sessions.abort on '%s' + park "
-                          "(no-op-safe if nothing active)" % source_session_key,
+                "reason": "DRY_RUN: would call sessions.abort (clearQueued=true) on '%s' - "
+                          "no-op if nothing active; nothing executed" % source_session_key,
                 "dry_run": True}
     if ledger.recent_digest(cooldown_key, cooldown_seconds / 3600.0):
         return {"applied": False,
                 "reason": "action cooldown active on '%s' (< %ds since the last "
-                          "abort+park; never re-fire the breaker faster than the "
+                          "abort; never re-fire the breaker faster than the "
                           "proven-safe cadence)" % (source_session_key, cooldown_seconds),
                 "dry_run": False}
     fn = abort_fn or _sessions_abort_via_gateway_rpc
@@ -440,15 +463,23 @@ def lf12_abort_cross_run_resend(source_session_key, ledger, dry_run=True, abort_
     BR.trip(source_session_key, "resend", ledger, park=True)
     ledger.record_digest("resend-cooldown", cooldown_key, payload="applied")
     if isinstance(result, dict) and str(result.get("status") or "") == "no-active-run":
-        rpc_detail = "no-active-run (documented safe no-op - nothing to abort)"
+        rpc_detail = ("no-active-run (documented safe no-op - nothing was running to "
+                      "abort; queued follow-ups cleared)")
     elif _rpc_signals_success_or_noop(result):
-        rpc_detail = "aborted runId=%s" % (result.get("abortedRunId") if isinstance(result, dict) else None)
+        rpc_detail = ("aborted runId=%s; queued follow-ups cleared"
+                      % (result.get("abortedRunId") if isinstance(result, dict) else None))
     else:
-        rpc_detail = "unreachable/unexpected response (safe either way - the park below is what actually breaks the loop)"
-    return {"applied": True,
-            "reason": "sessions.abort RPC on '%s' -> %s; source parked "
-                      "(visible-red; no auto-respawn)" % (source_session_key, rpc_detail),
-            "dry_run": False,
+        rpc_detail = None
+    if rpc_detail is None:
+        return {"applied": False, "dry_run": False, "state": BR.STATE_PARKED_FLAG,
+                "reason": "sessions.abort RPC on '%s' unreachable/unexpected: NOTHING was "
+                          "aborted and queued follow-ups were NOT cleared. Recorded "
+                          "state=parked-flag - a ledger flag only (it stops nothing); the "
+                          "finding stays open" % source_session_key}
+    return {"applied": True, "dry_run": False, "state": BR.STATE_STOPPED,
+            "reason": "sessions.abort (clearQueued=true) on '%s' -> %s. The ledger park on "
+                      "the source is a status flag only; it does not stop anything"
+                      % (source_session_key, rpc_detail),
             "revert": "loop-companion.sh unpark %s" % source_session_key}
 
 
@@ -489,21 +520,45 @@ def apply(plan_dict, ledger, armed, executors, verify_failed_last=False):
     r = ex(dry_run=False)
     if r.get("applied"):
         return {"status": "applied", "detail": r.get("reason"), "escalate": False,
-                "revert": r.get("revert")}
-    return {"status": "refused", "detail": r.get("reason"), "escalate": False}
+                "revert": r.get("revert"), "state": r.get("state")}
+    # not applied (incl. `parked-flag`: a ledger flag only, nothing stopped) => the finding is
+    # NOT marked fixed by the caller and stays open.
+    return {"status": "refused", "detail": r.get("reason"), "escalate": False,
+            "state": r.get("state")}
 
 
 # --------------------------------------------------------------------------- #
 # Operator-commanded execution of a prepared kill card by finding id (spec 9.1).
-# An explicit `fix`/`approve` IS the operator's word for THIS finding, so the one
-# config-FREE, deterministic act - the process-unit park (LF-6) - executes for real
-# against the ledger. Every config-touching class (LF-1/2/4/5/7) and every Tier-2
-# config-shape change is PREPARED here (exact command + one-line revert) and applied
-# ON-BOX via the maintenance path, NEVER auto-applied off-box: an honest hand-off,
-# not a stub that claims success.
+# An explicit `fix`/`approve` IS the operator's word for THIS finding, so the two
+# config-FREE acts execute for real: LF-6 (`pm2 stop` of a looping pm2 unit; the gateway
+# is alert-only) and LF-12 (`sessions.abort` with clearQueued=true). A finding is `fixed`
+# ONLY when something was really stopped/aborted - a ledger flag alone is `parked-flag`.
+# Every config-touching class (LF-1/2/4/5/7) and every Tier-2 config-shape change is
+# PREPARED here (exact command + one-line revert) and applied ON-BOX via the maintenance
+# path, NEVER auto-applied off-box: an honest hand-off, not a stub that claims success.
 # --------------------------------------------------------------------------- #
+def _record_response_outcome(ledger, finding_id, fc, unit, kc, r):
+    """Ledger + response for an LF-6 / LF-12 result `r`. Three honest outcomes:
+      applied (really stopped/aborted) -> fix recorded `applied`, finding `fixed`
+      state `parked-flag` (flag only)  -> fix recorded `parked-flag`, finding left OPEN
+      refused (cooldown etc.)          -> fix recorded `refused`, finding `escalated`"""
+    applied = bool(r.get("applied"))
+    flag_only = (not applied) and r.get("state") == BR.STATE_PARKED_FLAG
+    outcome = "applied" if applied else (BR.STATE_PARKED_FLAG if flag_only else "refused")
+    ledger.record_fix(finding_id, fc, unit=unit, what=kc.get("what"), verify_outcome=outcome,
+                      revert_cmd=kc.get("revert_cmd"), dry_run=False)
+    if applied:
+        ledger.set_finding_state(finding_id, "fixed")
+    elif not flag_only:
+        ledger.set_finding_state(finding_id, "escalated")
+    # flag_only: the finding is deliberately NOT touched - it stays open (never `fixed`).
+    return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
+            "applied": applied, "state": r.get("state"), "detail": r.get("reason"),
+            "revert_cmd": kc.get("revert_cmd")}
+
+
 def run_fix(ledger, finding_id, box="box", approve=False):
-    """Execute (LF-6) or prepare (everything else) the kill card for a finding.
+    """Execute (LF-6, LF-12) or prepare (everything else) the kill card for a finding.
     Returns (result_dict, exit_code) with the ledger exit contract (0/2/3)."""
     f = ledger.get_finding(finding_id)
     if not f:
@@ -516,36 +571,23 @@ def run_fix(ledger, finding_id, box="box", approve=False):
         return {"ok": False, "action": "reject",
                 "reason": "approve is for a Tier-2 proposal; finding %s is tier %s"
                           % (finding_id, tier), "prepared": kc}, 2
-    # config-FREE, deterministic act: park the crash-looping process unit (LF-6).
+    # config-FREE act: respond to the crash-looping process unit (LF-6). A pm2 unit is
+    # really stopped; the gateway is alert-only; no real stop => `parked-flag`. The finding
+    # is `fixed` ONLY when something was really stopped - NEVER for a ledger flag.
     if fc == "LF-6":
         unit = f.get("unit")
         if not unit:
             return {"ok": False, "reason": "finding %s carries no unit to park" % finding_id}, 2
         r = lf6_park_process(unit, ledger, dry_run=False)
-        applied = bool(r.get("applied"))
-        ledger.record_fix(finding_id, fc, unit=unit, what=kc.get("what"),
-                          verify_outcome="applied" if applied else "refused",
-                          revert_cmd=kc.get("revert_cmd"), dry_run=False)
-        ledger.set_finding_state(finding_id, "fixed" if applied else "escalated")
-        return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
-                "applied": applied, "detail": r.get("reason"),
-                "revert_cmd": kc.get("revert_cmd")}, 0
-    # config-FREE, deterministic act: abort the resending session + park it
-    # (LF-12, LP-A10's sessions.abort + park sibling of LF-6's process park).
+        return _record_response_outcome(ledger, finding_id, fc, unit, kc, r), 0
+    # config-FREE act: abort the resending session with clearQueued=true (LF-12, LP-A10).
     if fc == "LF-12":
         unit = f.get("unit")
         if not unit:
             return {"ok": False,
                     "reason": "finding %s carries no unit (source session) to abort" % finding_id}, 2
         r = lf12_abort_cross_run_resend(unit, ledger, dry_run=False)
-        applied = bool(r.get("applied"))
-        ledger.record_fix(finding_id, fc, unit=unit, what=kc.get("what"),
-                          verify_outcome="applied" if applied else "refused",
-                          revert_cmd=kc.get("revert_cmd"), dry_run=False)
-        ledger.set_finding_state(finding_id, "fixed" if applied else "escalated")
-        return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
-                "applied": applied, "detail": r.get("reason"),
-                "revert_cmd": kc.get("revert_cmd")}, 0
+        return _record_response_outcome(ledger, finding_id, fc, unit, kc, r), 0
     # no Tier-1 kill card at all -> propose-and-hold (Rescue Rangers).
     if fc is None:
         return {"ok": False, "action": "hold", "fix_class": None, "tier": tier,
@@ -562,6 +604,23 @@ def run_fix(ledger, finding_id, box="box", approve=False):
 
 
 def self_test():
+    # Hermetic: pm2/openclaw are reachable ONLY through injected stubs, whatever the caller's env.
+    keys = ("LOOP_NO_PROBES", "LOOP_PM2_BIN", "OPENCLAW_BIN")
+    saved = {k: os.environ.get(k) for k in keys}
+    os.environ["LOOP_NO_PROBES"] = "1"
+    os.environ.pop("LOOP_PM2_BIN", None)
+    os.environ.pop("OPENCLAW_BIN", None)
+    try:
+        return _self_test_body()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _self_test_body():
     import tempfile
     print("[loop_killcards] self-test: plan, LF-1 lock, LF-4 cron, DRY_RUN byte-identical, healer breaker")
     from loop_ledger import Ledger
@@ -572,10 +631,10 @@ def self_test():
     p3 = plan({"loop_class": "LP-D1", "finding_id": 9})   # empty-prompt cron = propose-and-hold
     assert p3["fix_class"] is None and p3["tier"] == 3
     p4 = plan({"loop_class": "LP-A8", "finding_id": 11})  # D5 transcript poison
-    assert p4["fix_class"] == "LF-10" and p4["tier"] == 1
+    assert p4["fix_class"] == "LF-10" and p4["tier"] == 2   # Tier 2 since SKS-008: sessions.reset proposal
     p5 = plan({"loop_class": "LP-A10", "finding_id": 12})  # cross-run resend = LF-12 tier1
     assert p5["fix_class"] == "LF-12" and p5["tier"] == 1 and "unpark --finding 12" in p5["revert_cmd"]
-    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-A8->LF-10 tier1; LP-D1->hold tier3; "
+    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-A8->LF-10 tier2; LP-D1->hold tier3; "
           "LP-A10->LF-12 tier1)")
 
     with tempfile.TemporaryDirectory() as td:
@@ -725,9 +784,8 @@ def self_test():
         assert r12c["applied"] and "run-xyz" in r12c["reason"]
         led12b.close()
 
-        # An unreachable/failing RPC still applies (the park is what actually
-        # breaks the loop; the RPC is a best-effort courtesy) but is labeled
-        # distinctly, never claimed as a successful abort.
+        # An unreachable/failing RPC aborted NOTHING: it is recorded `parked-flag` (a
+        # ledger flag only), never applied and never claimed as a successful abort.
         led12c = Ledger(Path(td) / "loop-protection-lf12c")
 
         def _fake_abort_unreachable(key):
@@ -735,8 +793,53 @@ def self_test():
 
         r12d = lf12_abort_cross_run_resend("agent:third-orch:main", led12c, dry_run=False,
                                            abort_fn=_fake_abort_unreachable)
-        assert r12d["applied"] and "unreachable" in r12d["reason"]
+        # SKS-002 / Fix 4: an unreachable RPC aborted NOTHING - it is `parked-flag`, never applied
+        assert not r12d["applied"] and r12d["state"] == BR.STATE_PARKED_FLAG, r12d
+        assert "unreachable" in r12d["reason"] and "NOTHING was aborted" in r12d["reason"]
+        assert "actually" not in r12d["reason"] and "breaks the loop" not in r12d["reason"]
+        assert r12["state"] == BR.STATE_STOPPED and r12c["state"] == BR.STATE_STOPPED
+        assert "status flag only" in r12["reason"]
         led12c.close()
+
+        # THE REAL RPC TRANSPORT (stub `openclaw`): sessions.abort MUST carry clearQueued=true as
+        # a JSON BOOLEAN, key + agentId intact, via `gateway call` - never the old CLI form.
+        tdr = Path(td) / "rpc"
+        tdr.mkdir()
+        rpc_log, rpc_stub = str(tdr / "oc.log"), str(tdr / "openclaw")
+        BR._selftest_stub_bin(rpc_stub, rpc_log,
+                              stdout='{"ok":true,"abortedRunId":"run-9","status":"aborted"}')
+        os.environ["OPENCLAW_BIN"] = rpc_stub
+        os.environ.pop("LOOP_NO_PROBES", None)   # the real transport must be exercised
+        try:
+            led_rpc = Ledger(tdr / "loop-protection")
+            r_rpc = lf12_abort_cross_run_resend(
+                "agent:dept-master-orchestrator:telegram:default:direct:8606145708",
+                led_rpc, dry_run=False)
+            led_rpc.close()
+        finally:
+            os.environ["LOOP_NO_PROBES"] = "1"
+            os.environ.pop("OPENCLAW_BIN", None)
+        calls = BR._selftest_calls(rpc_log)
+        assert len(calls) == 1, calls
+        argv = calls[0].split(" ", 4)
+        assert argv[:3] == ["gateway", "call", "sessions.abort"] and argv[3] == "--params", calls
+        sent = json.loads(calls[0].split("--params ", 1)[1])
+        assert sent["clearQueued"] is True, sent       # boolean true, REQUIRED
+        assert sent["key"].endswith(":8606145708") and sent["agentId"] == "dept-master-orchestrator"
+        assert set(sent) == {"key", "agentId", "clearQueued"}, sent
+        assert r_rpc["applied"] and r_rpc["state"] == BR.STATE_STOPPED and "run-9" in r_rpc["reason"]
+        # DRY RUN executes nothing: the stub is never called again
+        led_dry = Ledger(tdr / "loop-protection-dry")
+        lf12_abort_cross_run_resend("agent:x:main", led_dry, dry_run=True)
+        led_dry.close()
+        assert len(BR._selftest_calls(rpc_log)) == 1
+        # LOOP_NO_PROBES=1 with no injected abort_fn never reaches a gateway at all
+        os.environ["OPENCLAW_BIN"] = rpc_stub
+        try:
+            assert _sessions_abort_via_gateway_rpc("agent:x:main") == {"ok": False}
+        finally:
+            os.environ.pop("OPENCLAW_BIN", None)
+        assert len(BR._selftest_calls(rpc_log)) == 1
 
         assert _agent_id_from_session_key(
             "agent:dept-master-orchestrator:telegram:default:direct:8606145708") \
@@ -746,11 +849,10 @@ def self_test():
         assert _rpc_signals_success_or_noop({"status": "no-active-run"})  # ok absent entirely
         assert not _rpc_signals_success_or_noop({"ok": False})
         assert not _rpc_signals_success_or_noop("not-a-dict")
-        print("  LF-12 case: PASS (DRY_RUN plans; the verified no-active-run no-op reads "
-              "as a SUCCESSFUL fix, never a failure; a real abort surfaces its runId; "
-              "an unreachable RPC still parks but is labeled distinctly; cooldown "
-              "refuses a second call; agentId extraction + response-shape predicate "
-              "both correct)")
+        print("  LF-12 case: PASS (DRY_RUN executes nothing; the real transport sends "
+              "sessions.abort with clearQueued=true (boolean) + key + agentId; no-active-run "
+              "no-op reads as done; a real abort surfaces its runId; an UNREACHABLE RPC is "
+              "parked-flag, never applied; cooldown refuses a second call)")
 
         led = Ledger(Path(td) / "loop-protection")
         # DRY_RUN apply mutates nothing and reports planned
@@ -772,28 +874,95 @@ def self_test():
         led.close()
         print("  apply case: PASS (DRY_RUN plans; healer breaker escalates >3/24h & verify-fail)")
 
-        # run_fix: `fix <id>` on an LP-B1 finding PARKS the unit for real (config-free
-        # LF-6) and records a one-line revert; a config-touching class is PREPARED, not
-        # applied; a Tier-3 class holds. This is the operator `fix`/`approve` path.
-        led = Ledger(Path(td) / "loop-protection-fix")
-        fid = led.record_finding("LP-B1", "P1", unit="cc-app", detail="storm", tier=1)
-        res, rc = run_fix(led, fid)
-        assert rc == 0 and res["ok"] and res["fix_class"] == "LF-6"
-        assert any(r["unit"] == "cc-app" for r in led.parked_units())
-        assert any(r["unit"] == "cc-app" and r["breaker"] == "process"
-                   for r in led.tripped_breakers())
-        assert "unpark --finding %d" % fid in res["revert_cmd"]
-        assert led.get_finding(fid)["state"] == "fixed"
-        cid = led.record_finding("LP-A4", "P1", unit="resume", detail="cron", tier=1)
-        cres, crc = run_fix(led, cid)   # LF-4 is config-touching -> prepared, not applied
-        assert crc == 0 and cres["action"] == "prepared" and cres["fix_class"] == "LF-4"
-        hid = led.record_finding("LP-D1", "P2", unit="x", detail="hold", tier=3)
-        hres, _ = run_fix(led, hid)     # no Tier-1 kill card -> hold
-        assert hres["action"] == "hold" and hres["fix_class"] is None
-        miss, mrc = run_fix(led, 999999)  # unknown finding -> not found (rc 3)
-        assert mrc == 3 and miss["ok"] is False
-        led.close()
-        print("  run_fix case: PASS (LF-6 parks for real+revertible; config prepared; hold; not-found=3)")
+        # run_fix (SKS-002 / Fix 4): `fix <id>` on an LP-B1 finding. A finding is `fixed` ONLY
+        # when something was REALLY stopped. Stub pm2 records every call.
+        pm_log, pm_stub = str(Path(td) / "pm2.log"), str(Path(td) / "pm2")
+        BR._selftest_stub_bin(pm_stub, pm_log)
+        os.environ["LOOP_PM2_BIN"] = pm_stub
+        try:
+            led = Ledger(Path(td) / "loop-protection-fix")
+            # (1) pm2 unit, stop works: exactly one `pm2 stop`, state stopped, finding fixed
+            fid = led.record_finding("LP-B1", "P1", unit="cc-app", detail="storm", tier=1)
+            res, rc = run_fix(led, fid)
+            assert rc == 0 and res["ok"] and res["fix_class"] == "LF-6" and res["state"] == "stopped", res
+            assert BR._selftest_calls(pm_log) == ["stop cc-app"], BR._selftest_calls(pm_log)
+            assert any(r["unit"] == "cc-app" for r in led.parked_units())
+            assert any(r["unit"] == "cc-app" and r["breaker"] == "process"
+                       for r in led.tripped_breakers())
+            assert "unpark --finding %d" % fid in res["revert_cmd"]
+            assert led.get_finding(fid)["state"] == "fixed"
+            assert led.list_fixes(1)[0]["verify_outcome"] == "applied"
+            # the operator revert: `pm2 start` runs, ledger cleared
+            ur = BR.unpark_unit("cc-app", led)
+            assert ur["ok"] and ur["restarted"]
+            assert BR._selftest_calls(pm_log) == ["stop cc-app", "start cc-app"]
+            assert not any(r["unit"] == "cc-app" for r in led.parked_units())
+            # (2) pm2 stop FAILS: state parked-flag, finding stays OPEN, NEVER `fixed`
+            Path(pm_log + ".rc").write_text("1", encoding="utf-8")
+            fid2 = led.record_finding("LP-B1", "P1", unit="ghost-app", detail="storm", tier=1)
+            res2, rc2 = run_fix(led, fid2)
+            assert rc2 == 0 and res2["ok"] is False and res2["state"] == "parked-flag", res2
+            assert led.get_finding(fid2)["state"] == "open", led.get_finding(fid2)["state"]
+            assert led.get_finding(fid2)["state"] != "fixed"
+            assert led.list_fixes(1)[0]["verify_outcome"] == "parked-flag"
+            assert "NOTHING was stopped" in res2["detail"]
+            Path(pm_log + ".rc").unlink()
+            # (3) the GATEWAY is alert-only: pm2 never runs, finding stays open
+            n_before = len(BR._selftest_calls(pm_log))
+            fid3 = led.record_finding("LP-B1", "P1", unit="gateway", detail="storm", tier=1)
+            res3, rc3 = run_fix(led, fid3)
+            assert rc3 == 0 and res3["ok"] is False and res3["state"] == "parked-flag", res3
+            assert "ALERT-ONLY" in res3["detail"]
+            assert led.get_finding(fid3)["state"] == "open"
+            assert len(BR._selftest_calls(pm_log)) == n_before, "pm2 must never run for the gateway"
+            # (4) the LF-6 executor honors DRY RUN: nothing executes, ledger untouched
+            n_before = len(BR._selftest_calls(pm_log))
+            d6 = lf6_park_process("dry-app", led, dry_run=True)
+            assert d6["applied"] is False and d6["dry_run"] is True
+            assert len(BR._selftest_calls(pm_log)) == n_before
+            assert not any(r["unit"] == "dry-app" for r in led.parked_units())
+            dg = lf6_park_process("gateway", led, dry_run=True)
+            assert dg["applied"] is False and "ALERT-ONLY" in dg["reason"]
+            # (5) through apply(): ARMED stops once and reports applied; a flag-only result is
+            #     `refused` with state parked-flag so the watchdog never marks it fixed
+            ap = apply({"loop_class": "LP-B1", "fix_class": "LF-6", "tier": 1, "unit": "armed-app"},
+                       led, armed=True,
+                       executors={"LF-6": lambda dry_run: lf6_park_process("armed-app", led, dry_run=dry_run)})
+            assert ap["status"] == "applied" and ap["state"] == "stopped", ap
+            assert BR._selftest_calls(pm_log)[-1] == "stop armed-app"
+            ap_gw = apply({"loop_class": "LP-B1", "fix_class": "LF-6", "tier": 1, "unit": "gateway"},
+                          led, armed=True,
+                          executors={"LF-6": lambda dry_run: lf6_park_process("gateway", led, dry_run=dry_run)})
+            assert ap_gw["status"] == "refused" and ap_gw["state"] == "parked-flag", ap_gw
+            ap_dry = apply({"loop_class": "LP-B1", "fix_class": "LF-6", "tier": 1, "unit": "dry2"},
+                           led, armed=False,
+                           executors={"LF-6": lambda dry_run: lf6_park_process("dry2", led, dry_run=dry_run)})
+            assert ap_dry["status"] == "planned" and "stop dry2" not in "\n".join(BR._selftest_calls(pm_log))
+            # (6) LF-12 via run_fix: unreachable RPC => parked-flag, finding open; real => fixed
+            fid12 = led.record_finding("LP-A10", "P1", unit="agent:o:main", detail="resend", tier=1)
+            real_rpc = globals()["_sessions_abort_via_gateway_rpc"]
+            globals()["_sessions_abort_via_gateway_rpc"] = lambda key, timeout=10: {"ok": False}
+            try:
+                res12, _ = run_fix(led, fid12)
+            finally:
+                globals()["_sessions_abort_via_gateway_rpc"] = real_rpc
+            assert res12["ok"] is False and res12["state"] == "parked-flag", res12
+            assert led.get_finding(fid12)["state"] == "open"
+            cid = led.record_finding("LP-A4", "P1", unit="resume", detail="cron", tier=1)
+            cres, crc = run_fix(led, cid)   # LF-4 is config-touching -> prepared, not applied
+            assert crc == 0 and cres["action"] == "prepared" and cres["fix_class"] == "LF-4"
+            hid = led.record_finding("LP-D1", "P2", unit="x", detail="hold", tier=3)
+            hres, _ = run_fix(led, hid)     # no Tier-1 kill card -> hold
+            assert hres["action"] == "hold" and hres["fix_class"] is None
+            miss, mrc = run_fix(led, 999999)  # unknown finding -> not found (rc 3)
+            assert mrc == 3 and miss["ok"] is False
+            led.close()
+        finally:
+            os.environ.pop("LOOP_PM2_BIN", None)
+        print("  run_fix case: PASS (pm2 unit: stop once + finding fixed + revert starts it; failed "
+              "stop => parked-flag + finding OPEN, never fixed; gateway alert-only, pm2 never "
+              "run; DRY executes nothing; LF-12 unreachable => parked-flag; config prepared; hold; "
+              "not-found=3)")
 
     print("[loop_killcards] self-test: PASS")
     return 0

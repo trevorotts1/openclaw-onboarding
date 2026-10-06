@@ -95,7 +95,7 @@ if not db:
         for c in (Path.home()/"projects/command-center/mission-control.db",
                   Path("/data/projects/command-center/mission-control.db"),
                   Path("/app/mission-control.db")):
-            if c.is_file():
+            if c.is_file() and c.stat().st_size > 0:  # never a 0-byte decoy
                 db = str(c); break
 if not db or not os.path.isfile(db):
     print("no_db|0|0|"); raise SystemExit(0)

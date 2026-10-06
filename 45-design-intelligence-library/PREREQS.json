@@ -11,7 +11,7 @@
         "skill": "07-kie-setup"
       },
       "severity": "required",
-      "satisfy": "Run the Skill 07 installer: bash $OC_ROOT/skills/07-kie-setup/install.sh. Skill 07 provides credentials for image generation via Kie.ai endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), required for all DIU image generation, photo shoot and deck-imagery work."
+      "satisfy": "Run the Skill 07 installer: bash $OC_ROOT/skills/07-kie-setup/install.sh. Skill 07 provides credentials for image generation via Kie.ai endpoints (GPT-Image 2.5, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), required for all DIU image generation, photo shoot and deck-imagery work."
     },
     {
       "id": "kie-api-key",

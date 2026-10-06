@@ -14,13 +14,22 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
-if [ -z "$_DETECT_PLATFORM" ]; then
-    [ -d "/data/.openclaw" ] && _DETECT_PLATFORM="vps" || _DETECT_PLATFORM="mac"
+ONBOARDING_VERSION="v25.3.21"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
+_PLATFORM_COMMON_TEMP=""
+if [ ! -f "$_PLATFORM_COMMON" ]; then
+    _PLATFORM_COMMON_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/common.sh" -o "$_PLATFORM_COMMON_TEMP" || { rm -f "$_PLATFORM_COMMON_TEMP"; exit 1; }
+    _PLATFORM_COMMON="$_PLATFORM_COMMON_TEMP"
+fi
+source "$_PLATFORM_COMMON" || exit 1
+[ -z "$_PLATFORM_COMMON_TEMP" ] || rm -f "$_PLATFORM_COMMON_TEMP"
+_DETECT_PLATFORM="$(oc_detect_platform)" || exit 1
+if [ -n "${OPENCLAW_PLATFORM:-}" ] && [ "$OPENCLAW_PLATFORM" != "$_DETECT_PLATFORM" ]; then
+    echo "OPENCLAW_PLATFORM conflicts with the actual operating system." >&2; exit 1
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
-
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 
 # ----------------------------------------------------------
 # PRE-BOOTSTRAP SELF-SYNC GUARD
@@ -52,7 +61,9 @@ self_sync_guard() {
   esac
 
   [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] && dirty=1
-  git -C "$repo_root" fetch --quiet origin main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
+  # Explicit refspec: a clone whose configured refspec names only a tag leaves
+  # origin/main stale on `fetch origin main` -- and this would then "sync" to it.
+  git -C "$repo_root" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
   local_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
   remote_sha="$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)"
   [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ] && behind=1
@@ -64,7 +75,7 @@ self_sync_guard() {
 
   if [ "${OPENCLAW_UPDATE_AUTO_SYNC:-0}" = "1" ]; then
     echo "  [self-sync] checkout is $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'BEHIND ' )— OPENCLAW_UPDATE_AUTO_SYNC=1: hard-syncing to origin/main"
-    git -C "$repo_root" fetch origin main
+    git -C "$repo_root" fetch origin +refs/heads/main:refs/remotes/origin/main
     git -C "$repo_root" reset --hard origin/main
     echo "  [self-sync] re-syncing complete — re-exec'ing the intended version before platform bootstrap"
     OPENCLAW_UPDATE_SELF_SYNCED=1 exec bash "$src" "${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}"
@@ -111,23 +122,36 @@ export PLATFORM
 export OPENCLAW_BOOTSTRAP_MODE=update
 
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
-if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
-    # shellcheck source=/dev/null
-    source "$_PLATFORM_BOOTSTRAP"
-else
-    # Inline minimal fallback when running via curl (no local clone yet).
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        OC_PLATFORM="vps"; OC_CONFIG="/data/.openclaw"; OC_JSON="/data/.openclaw/openclaw.json"
-        OC_SKILLS_DIR="/data/.openclaw/skills"; OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
-    else
-        OC_PLATFORM="mac"; OC_CONFIG="$HOME/.openclaw"; OC_JSON="$HOME/.openclaw/openclaw.json"
-        OC_SKILLS_DIR="$HOME/.openclaw/skills"; OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
-    fi
+_PLATFORM_BOOTSTRAP_TEMP=""
+if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
 fi
+source "$_PLATFORM_BOOTSTRAP" || exit 1
+[ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v22.0.88"
+# ----------------------------------------------------------
+# NO BYTECODE, ANYWHERE THIS UPDATER REACHES.
+#
+# WHY (measured 2026-09-17, controlled reproduction on a Hostinger VPS): a
+# __pycache__ directory created by a python that ran as ROOT inside the
+# container cannot be removed by the node user this updater runs as, and the
+# skill install loop's removal step then fails. Exporting this here covers the
+# updater's own embedded python programs AND every per-skill installer it
+# invokes, because they inherit this environment. The updater must never be
+# the thing that lays that trap for its own next run.
+#
+# THIS IS NOT THE WHOLE FIX, and must not be read as one. Python run as root
+# ELSEWHERE on the box -- Command Center scripts, cron jobs, an operator's own
+# docker exec -- still creates root-owned bytecode this variable cannot reach.
+# The write pre-flight's skill-tree removability scan is the backstop for
+# those. This only stops the updater from adding to the problem.
+# ----------------------------------------------------------
+export PYTHONDONTWRITEBYTECODE=1
+
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -161,6 +185,45 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 #    FLEET_STANDING_GATE_SHADOW=1   report the verdict, never block
 #
 #  NEVER prints the header secret.
+# ============================================================
+
+# ============================================================
+#  WHAT "DIRTY" MEANS FOR A COMMAND CENTER CHECKOUT WE REFUSE TO TOUCH
+#
+#  A checkout is dirty when TRACKED files are modified or staged. Untracked
+#  files are NOT dirt. `git status --porcelain` lists both, and three separate
+#  Command Center gates below each spelled the test as "porcelain is non-empty"
+#  -- so a box carrying ten stray `??` files (old DB safety copies, a leftover
+#  script, a scratch markdown) reported state=dirty and NEVER received a
+#  Command Center refresh through this updater. Measured on a client Mac: zero
+#  modified tracked files, ten untracked, refresh skipped every run, while the
+#  Command Center's own update.sh pulled that same tree five times the same day.
+#
+#  Untracked files cannot block what these gates protect against: a
+#  fast-forward does not touch them, `reset --hard` does not touch them, and a
+#  pull refuses only when it would overwrite one by name. The refusal for
+#  genuinely modified TRACKED files stands unchanged -- uncommitted client work
+#  is load-bearing.
+#
+#  THE CANONICAL SPELLING, used verbatim at all three gates:
+#
+#      git -C "$DIR" status --porcelain 2>/dev/null | grep -v '^??' || true
+#
+#  It is written INLINE at each gate rather than factored into a function on
+#  purpose. All three gates live inside marker-delimited blocks that
+#  scripts/test-updater-traps-1-and-3.sh and
+#  tests/unit/content-recheck-convergence-probes.test.sh extract VERBATIM and
+#  source STANDALONE; a call to a top-level helper is an undefined command
+#  there, which silently evaluates to "clean" and lets the gate through. That
+#  was measured, not guessed: routing them through a helper failed 13
+#  assertions in one suite and 5 in the other.
+#
+#  tests/unit/cc-currency-untracked-is-not-dirty.test.sh is what keeps the
+#  three copies honest -- it asserts each gate carries this exact rule and that
+#  no gate assigns unfiltered porcelain.
+#
+#  `|| true` is load-bearing: grep exits 1 when nothing matches, and under
+#  `set -o pipefail` that would sink the whole command substitution.
 # ============================================================
 
 fleet_standing_resolve_slug() {
@@ -788,6 +851,546 @@ oc_file_size_bytes() {
 }
 
 # ----------------------------------------------------------
+# WRITE PRE-FLIGHT: prove every path this updater must write is writable BY
+# THIS USER, before any content step runs.
+# ----------------------------------------------------------
+# THE DEFECT THIS KILLS (measured 2026-09-17, nine Hostinger VPS boxes). Inside
+# each openclaw container, /data/.openclaw/workspace/AGENTS.md was root:root
+# 0644 while /data/.openclaw and /data/.openclaw/workspace are node:node 0700
+# and the updater runs as uid 1000 (node). AGENTS.md was therefore READABLE and
+# NOT WRITABLE, so every read-side gate passed, the content gate PASSED, and
+# then the CORE_UPDATES merge, hundreds of lines into an embedded python
+# program, opened AGENTS.md for append and died with
+#   PermissionError: [Errno 13] Permission denied: .../workspace/AGENTS.md
+# The run exited 1 halfway through, the version stamp was WITHHELD, and the
+# operator got a python traceback buried in the middle of a very long log with
+# a green content gate printed above it. Nine boxes sat STALE.
+#
+# The analogous root-owned $OC_ROOT/scripts directory was already handled by
+# deliver_canonical_scripts_tree. This closes the same class for the workspace
+# content files, which is where it actually bit.
+#
+# HOW IT PROVES A NEGATIVE. A permission claim made from `-w` alone is a claim,
+# not a fact: it is wrong under ACLs, read-only mounts and container user
+# mapping. Every verdict here comes from a REAL WRITE ATTEMPT that changes no
+# content: an existing file is opened for APPEND and given zero bytes, a
+# directory gets a probe file created and immediately removed.
+#
+# WHAT IT DOES per path: probe, then try to self-heal (chmod u+w when we
+# already own it, chown to the runtime owner when we are root), then, if it
+# still cannot write, print ONE actionable PERMISSION BLOCK line naming the
+# owner, the user and the exact remedy, and exit 1 BEFORE any content is
+# touched, so the failure is the FIRST thing in the log rather than a traceback
+# in the middle of it.
+#
+# SCOPE NOTE, DELIBERATE: $OC_ROOT/scripts, $OC_ROOT/config and
+# $OC_ROOT/onboarding are REPORTED but NOT hard-blocked.
+# deliver_canonical_scripts_tree already DEGRADES on those (return 2) so an
+# ownership quirk cannot withhold the version stamp. Hard-failing them here
+# would silently reverse that decision. The workspace content files have no
+# such degrade path: an unwritable AGENTS.md aborts the run either way, so
+# blocking early is strictly better than crashing late.
+# ----------------------------------------------------------
+
+# >>> WRITE-PREFLIGHT-BEGIN  (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
+# owner as "user:group" for a path, both stat flavours (VPS form first, then
+# the Mac form), validated so the BSD stat filesystem report can never be
+# mistaken for an answer. Prints "unknown" rather than failing. Never aborts.
+_ocwp_owner() {
+  local _p="${1:-}" _o=""
+  { [ -n "$_p" ] && [ -e "$_p" ]; } || { printf '%s' "unknown"; return 0; }
+  _o="$(stat -L -c '%U:%G' "$_p" 2>/dev/null | head -1 || true)"
+  case "$_o" in '' | *' '* | *"$(printf '\t')"*) _o="" ;; *:*) : ;; *) _o="" ;; esac
+  if [ -z "$_o" ]; then
+    _o="$(stat -L -f '%Su:%Sg' "$_p" 2>/dev/null | head -1 || true)"
+    case "$_o" in '' | *' '* | *"$(printf '\t')"*) _o="" ;; *:*) : ;; *) _o="" ;; esac
+  fi
+  [ -n "$_o" ] || _o="unknown"
+  printf '%s' "$_o"
+  return 0
+}
+
+# numeric owner uid for a path, or empty when it cannot be read. Never aborts.
+_ocwp_owner_uid() {
+  local _p="${1:-}" _u=""
+  { [ -n "$_p" ] && [ -e "$_p" ]; } || { printf '%s' ""; return 0; }
+  _u="$(stat -L -c '%u' "$_p" 2>/dev/null | head -1 || true)"
+  case "$_u" in '' | *[!0-9]*) _u="" ;; esac
+  if [ -z "$_u" ]; then
+    _u="$(stat -L -f '%u' "$_p" 2>/dev/null | head -1 || true)"
+    case "$_u" in '' | *[!0-9]*) _u="" ;; esac
+  fi
+  printf '%s' "$_u"
+  return 0
+}
+
+# REAL write probe. Returns 0 when this user can actually write the path.
+# Non-destructive by construction: `: >> file` opens for append and writes
+# nothing (it does NOT truncate, which `>` would), and the directory probe
+# removes its own file. A path that does not exist yet defers to its parent,
+# because that is what the updater will have to create it in.
+_ocwp_can_write() {
+  local _p="${1:-}" _probe="" _parent=""
+  [ -n "$_p" ] || return 0
+  if [ -d "$_p" ]; then
+    _probe="$_p/.oc-write-preflight.$$"
+    if ( : > "$_probe" ) 2>/dev/null; then
+      rm -f "$_probe" 2>/dev/null || true
+      return 0
+    fi
+    return 1
+  fi
+  if [ -e "$_p" ]; then
+    if ( : >> "$_p" ) 2>/dev/null; then
+      return 0
+    fi
+    return 1
+  fi
+  _parent="$(dirname "$_p")"
+  # Parent absent too: a later `mkdir -p` owns that case, and judging it here
+  # would be a guess. UNDETERMINED is reported as "not blocked".
+  [ -d "$_parent" ] || return 0
+  _ocwp_can_write "$_parent"
+}
+
+# Check one path. $2 is "hard" (blocks the run) or "soft" (reported only).
+# Returns 1 ONLY for a hard path that is still unwritable after self-heal.
+_ocwp_check_one() {
+  local _p="${1:-}" _mode="${2:-hard}"
+  local _owner _owner_uid _fixed=0 _label="PERMISSION BLOCK"
+  # Every shared value is read through a default. This whole function exists to
+  # stop the run aborting on a permission problem; it must not become the thing
+  # that aborts it, and under `set -u` a single unset name would do exactly
+  # that. Its caller always sets these, so the defaults are belt, not braces.
+  local _me="${_OCWP_ME:-$(id -un 2>/dev/null || printf '%s' unknown)}"
+  local _me_uid="${_OCWP_ME_UID:-none}"
+  local _run_owner="${_OCWP_RUN_OWNER:-node:node}"
+  local _container="${_OCWP_CONTAINER:-<container>}"
+  [ -n "$_p" ] || return 0
+  if _ocwp_can_write "$_p"; then
+    return 0
+  fi
+  _owner="$(_ocwp_owner "$_p")"
+  _owner_uid="$(_ocwp_owner_uid "$_p")"
+
+  # SELF-HEAL, in the only two shapes that can honestly work.
+  if [ -n "$_owner_uid" ] && [ "$_owner_uid" = "$_me_uid" ]; then
+    # We own it; only the write bit is missing.
+    chmod u+w "$_p" 2>/dev/null || true
+    if _ocwp_can_write "$_p"; then _fixed=1; fi
+  elif [ "$_me_uid" = "0" ]; then
+    # Running as root on a bare box: take ownership back to the runtime user.
+    chown "$_run_owner" "$_p" 2>/dev/null || true
+    chmod u+w "$_p" 2>/dev/null || true
+    if _ocwp_can_write "$_p"; then _fixed=1; fi
+  fi
+  if [ "$_fixed" = "1" ]; then
+    echo "  FIXED: $_p ownership (was $_owner, now writable by $_me)"
+    return 0
+  fi
+
+  [ "$_mode" = "soft" ] && _label="PERMISSION DEFERRED"
+  echo "  $_label: $_p is owned by $_owner but the updater runs as $_me; on a Docker box run: docker exec $_container chown $_run_owner $_p" >&2
+  if [ "$_mode" = "soft" ]; then
+    echo "    (advisory only: this path has a degrade path and does NOT block the run or the version stamp)" >&2
+    return 0
+  fi
+  echo "    (already inside the container: chown $_run_owner $_p)" >&2
+  return 1
+}
+
+# ----------------------------------------------------------
+# GUARDED TREE REMOVAL. Added 2026-09-17 after a controlled reproduction on a
+# Hostinger VPS.
+#
+# THE DEFECT. The skill install loop removed the old copy of each skill with a
+# bare `rm -rf "$SKILLS_DIR/$SKILL_NAME"`. This script runs under
+# `set -euo pipefail`. When ONE path in that tree cannot be unlinked, rm
+# deletes everything else it can, THEN returns 1, and `set -e` exits the whole
+# updater on the spot with no message of any kind. On the measured box python
+# had run as root inside the container and left root:root __pycache__
+# directories under skills/23-ai-workforce-blueprint/scripts/ and
+# skills/shared-utils/. The run died mid-loop, skill 23 was left holding 3 of
+# its 1934 files, no version stamp was written, and the log carried no error
+# text at all. A gutted skill is strictly worse than an untouched one.
+#
+# MECHANISM, stated precisely, because the obvious reading is wrong: on POSIX
+# the permission to unlink a file comes from write+execute on its PARENT
+# DIRECTORY. The file's own owner and mode are irrelevant. A root-owned .pyc
+# is therefore not itself the blocker; the root-owned __pycache__ DIRECTORY
+# holding it is. So the scan below probes DIRECTORIES, using the same REAL
+# write attempt the write pre-flight uses (create a probe file, remove it),
+# never `-w` and never ownership alone. Ownership is read only because it is
+# what the operator's chown remedy has to name.
+#
+# THE RULE: scan the tree BEFORE removing anything. A tree that cannot be
+# fully removed is refused whole and untouched, with one actionable line. It
+# is never half-deleted first.
+# ----------------------------------------------------------
+
+# How many blocked paths one report names before it summarises the rest.
+_OCWP_REPORT_CAP=10
+
+# Scan a tree for directories whose contents this user cannot unlink.
+# Sets _OCWP_BLOCKED_LIST (newline separated, capped at _OCWP_REPORT_CAP) and
+# _OCWP_BLOCKED_COUNT (the true total, uncapped).
+# Returns 0 when the whole tree is removable, 1 when it is not.
+# Never aborts: this function exists to PREVENT an abort, so it must not
+# become one. Paths containing a newline are not representable here and are
+# out of scope; no skill tree in this repo has ever contained one.
+#
+# PYTHON BYTECODE CACHES ARE SELF-HEALED, NOT BLOCKS (2026-09-29, a Hostinger
+# box whose pm2 ran as root: its Command Center ran python skills as root and
+# every update after that refused on root-owned __pycache__). An unremovable
+# __pycache__ directory is counted in _OCWP_BYTECODE_LIST / _OCWP_BYTECODE_COUNT
+# instead. The removal then deletes everything around it and leaves the cache
+# in place: python checks each .pyc against its source's mtime and size and
+# never imports a .pyc whose source is gone, so a stale cache is inert. The
+# node user cannot chown or delete a root-owned directory, so leaving it is
+# the only self-heal that does not need root.
+_ocwp_scan_removable() {
+  local _dir="${1:-}" _d="" _uid=""
+  _OCWP_BLOCKED_LIST=""
+  _OCWP_BLOCKED_COUNT=0
+  _OCWP_BYTECODE_LIST=""
+  _OCWP_BYTECODE_COUNT=0
+  { [ -n "$_dir" ] && [ -d "$_dir" ]; } || return 0
+  # uid 0 bypasses every DAC check and can unlink regardless of owner, so an
+  # ownership mismatch is NOT a block for root. Reporting one would refuse a
+  # run that would in fact have succeeded, and a false negative is still a lie.
+  _uid="$(id -u 2>/dev/null || printf '%s' "")"
+  if [ "$_uid" = "0" ]; then
+    return 0
+  fi
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    if ! _ocwp_can_write "$_d"; then
+      case "$_d" in
+        */__pycache__ | */__pycache__/*)
+          _OCWP_BYTECODE_COUNT=$((_OCWP_BYTECODE_COUNT + 1))
+          _OCWP_BYTECODE_LIST="${_OCWP_BYTECODE_LIST}${_d}
+"
+          continue ;;
+      esac
+      _OCWP_BLOCKED_COUNT=$((_OCWP_BLOCKED_COUNT + 1))
+      if [ "$_OCWP_BLOCKED_COUNT" -le "$_OCWP_REPORT_CAP" ]; then
+        _OCWP_BLOCKED_LIST="${_OCWP_BLOCKED_LIST}${_d}
+"
+      fi
+    fi
+  done <<EOF
+$(find "$_dir" -type d 2>/dev/null || true)
+EOF
+  [ "$_OCWP_BLOCKED_COUNT" -eq 0 ]
+}
+
+# ONE actionable line, in exactly the shape _ocwp_check_one prints, for a TREE
+# rather than a single file. The remedy is recursive because what is blocked is
+# a directory whose contents cannot be unlinked, and chowning the named
+# directory alone would leave its siblings blocked on the next run.
+# $1 = the blocked path to name. $2 = the tree root the remedy must repair.
+_ocwp_print_tree_block() {
+  local _p="${1:-}" _root="${2:-}" _owner="" _me="" _run_owner="" _container=""
+  [ -n "$_root" ] || _root="$_p"
+  _owner="$(_ocwp_owner "$_p")"
+  _me="${_OCWP_ME:-$(id -un 2>/dev/null || printf '%s' unknown)}"
+  _run_owner="${_OCWP_RUN_OWNER:-node:node}"
+  _container="${_OCWP_CONTAINER:-<container>}"
+  echo "  PERMISSION BLOCK: $_p is owned by $_owner but the updater runs as $_me; on a Docker box run: docker exec $_container chown -R $_run_owner $_root" >&2
+  echo "    (already inside the container: chown -R $_run_owner $_root)" >&2
+  return 0
+}
+
+# Name the blocked paths beyond the first, which the PERMISSION BLOCK line
+# already named. Plain indented lines, deliberately NOT more PERMISSION BLOCK
+# lines: the operator gets exactly ONE line to act on per refusal, which is the
+# whole point of the format PR 1187 established.
+_ocwp_print_blocked_rest() {
+  local _first="${1:-}" _d=""
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    if [ "$_d" != "$_first" ]; then
+      echo "    also not removable: $_d" >&2
+    fi
+  done <<EOF
+$_OCWP_BLOCKED_LIST
+EOF
+  if [ "${_OCWP_BLOCKED_COUNT:-0}" -gt "$_OCWP_REPORT_CAP" ]; then
+    echo "    ... and $((_OCWP_BLOCKED_COUNT - _OCWP_REPORT_CAP)) more (report capped at $_OCWP_REPORT_CAP)" >&2
+  fi
+  return 0
+}
+
+# Remove a tree this updater is about to replace, or REFUSE THE RUN.
+# $1 = directory. $2 = human label used in the message.
+# This never returns non-zero: it either removed the tree or exited 1 loudly.
+oc_remove_tree_guarded() {
+  local _dir="${1:-}" _what="${2:-tree}" _first=""
+  [ -n "$_dir" ] || return 0
+  [ -e "$_dir" ] || return 0
+
+  # PRE-SCAN. Nothing is deleted until the whole tree is proven removable, so
+  # a blocked tree is refused INTACT rather than gutted and then reported.
+  if ! _ocwp_scan_removable "$_dir"; then
+    _first="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+    [ -n "$_first" ] || _first="$_dir"
+    echo "" >&2
+    _ocwp_print_tree_block "$_first" "$_dir"
+    _ocwp_print_blocked_rest "$_first"
+    {
+      echo "  UPDATE REFUSED BEFORE ANYTHING WAS DELETED."
+      echo "  The $_what at $_dir is INTACT: every file it had is still there."
+      echo "  Removing it would have deleted everything removable and then"
+      echo "  failed, leaving a gutted $_what with no version stamp and, before"
+      echo "  this guard existed, no error text at all. Fix the ownership named"
+      echo "  above and re-run."
+      echo ""
+    } >&2
+    exit 1
+  fi
+
+  if rm -rf "$_dir" 2>/dev/null; then
+    return 0
+  fi
+
+  # What rm could not delete is only python bytecode caches this user cannot
+  # remove, plus the directories that hold them. Self-healed: the copy that
+  # follows merges into that skeleton (see _ocwp_scan_removable).
+  if [ "${_OCWP_BYTECODE_COUNT:-0}" -gt 0 ] && _ocwp_scan_removable "$_dir" \
+     && [ -z "$(find "$_dir" ! -type d ! -path '*/__pycache__/*' 2>/dev/null | head -1)" ]; then
+    echo "  SELF-HEALED: left $_OCWP_BYTECODE_COUNT python bytecode cache dir(s) in $_dir that $(id -un 2>/dev/null || echo this user) cannot remove (owned by $(_ocwp_owner "$(printf '%s' "$_OCWP_BYTECODE_LIST" | head -1)")); python ignores a stale cache"
+    return 0
+  fi
+
+  # The scan passed and the removal still failed, so the tree changed
+  # underneath this run. The measured cause is python running as ROOT
+  # elsewhere on the box writing new bytecode mid-roll. This tree IS now
+  # partly deleted and that cannot be undone, so say so plainly and stop.
+  # Continuing into the copy is exactly what the bare `rm -rf` did silently.
+  _ocwp_scan_removable "$_dir" || true
+  _first="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+  [ -n "$_first" ] || _first="$_dir"
+  echo "" >&2
+  _ocwp_print_tree_block "$_first" "$_dir"
+  _ocwp_print_blocked_rest "$_first"
+  {
+    echo "  UPDATE REFUSED AFTER A PARTIAL REMOVAL of the $_what at $_dir."
+    echo "  The pre-scan passed and the removal still failed, which means a"
+    echo "  path appeared underneath this run. This $_what is INCOMPLETE on"
+    echo "  disk right now. Fix the ownership named above and re-run: the"
+    echo "  re-run reinstalls it whole."
+    echo ""
+  } >&2
+  exit 1
+}
+
+# ----------------------------------------------------------
+# SKILL BOX STATE. Added 2026-09-23.
+#
+# THE DEFECT. The skill install loop replaces every numbered skill WHOLESALE:
+# oc_remove_tree_guarded, then cp -r from the release. Skill 59 keeps its
+# per-box resolved tier map, INCLUDING the owner's owner_pins, at
+# 59-anthology-engine/model-map.json, inside that wiped folder. Every update
+# deleted the pins, the wiring pass then re-resolved with no pins, HEAVY-WRITER
+# and JUDGE fell to the same model, and the re-resolve FAILED CLOSED
+# (AF-AE-JUDGE-INDEPENDENCE). preflight.sh carries owner_pins forward across
+# rolls, but only out of a map that still exists when it runs.
+#
+# THE RULE. An explicit allow-list of box-local files, relative to the skill
+# folder, is copied out before the wipe and put back after the copy. The
+# wiring pass then re-runs the skill's own re-resolve (preflight.sh), which
+# honors the pins and refreshes every non-pinned tier. A path the new release
+# SHIPS is never overwritten: a shipped default always beats stale box state.
+# ----------------------------------------------------------
+# >>> SKILL-BOX-STATE-BEGIN  (extracted verbatim by tests/unit/updater-preserves-skill-box-state.test.sh)
+# One relative path per line. Consumers read it line by line, so a path may
+# contain spaces.
+oc_skill_box_state_paths() {
+  case "${1:-}" in
+    59-anthology-engine) echo "model-map.json" ;;
+  esac
+  return 0
+}
+
+# Copy skill $1's allow-listed state out of live dir $2. Sets
+# _OC_BOXSTATE_STASH to the stash dir, or empty when there was nothing to keep,
+# and remembers $1/$2 so oc_skill_box_state_on_exit can finish the job if the
+# run dies before oc_skill_box_state_restore is reached.
+oc_skill_box_state_save() {
+  local _name="${1:-}" _live="${2:-}" _rel
+  _OC_BOXSTATE_STASH=""
+  _OC_BOXSTATE_NAME="$_name"
+  _OC_BOXSTATE_LIVE="$_live"
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
+    [ -f "$_live/$_rel" ] || continue
+    if [ -z "$_OC_BOXSTATE_STASH" ]; then
+      _OC_BOXSTATE_STASH="$(mktemp -d "${TMPDIR:-/tmp}/oc-skill-box-state.XXXXXX" 2>/dev/null || true)"
+      if [ -z "$_OC_BOXSTATE_STASH" ]; then
+        echo "    ! box state NOT saved (mktemp failed): $_name/$_rel -- it will be lost by this update" >&2
+        return 0
+      fi
+    fi
+    mkdir -p "$_OC_BOXSTATE_STASH/$(dirname "$_rel")" 2>/dev/null || true
+    cp -p "$_live/$_rel" "$_OC_BOXSTATE_STASH/$_rel" \
+      || echo "    ! box state NOT saved (copy failed): $_name/$_rel -- it will be lost by this update" >&2
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
+  return 0
+}
+
+# Put the stash back into skill dir $2 wherever the file is missing, then drop
+# the stash. An existing file is never overwritten: after a normal copy it is
+# one the release ships; after a refused removal it is the untouched original.
+# The stash is kept ONLY when a copy back failed, because it is then the last
+# copy of the owner's state, and the log names where it is.
+oc_skill_box_state_restore() {
+  local _name="${1:-}" _live="${2:-}" _rel _keep=0
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  while IFS= read -r _rel; do
+    [ -n "$_rel" ] || continue
+    [ -f "$_OC_BOXSTATE_STASH/$_rel" ] || continue
+    if [ -e "$_live/$_rel" ]; then
+      echo "    box state NOT restored over an existing file: $_name/$_rel"
+      continue
+    fi
+    mkdir -p "$_live/$(dirname "$_rel")" 2>/dev/null || true
+    if cp -p "$_OC_BOXSTATE_STASH/$_rel" "$_live/$_rel" 2>/dev/null; then
+      echo "    box state preserved across update: $_name/$_rel"
+    else
+      echo "    ! box state NOT restored (copy failed): $_name/$_rel -- saved copy kept at $_OC_BOXSTATE_STASH/$_rel" >&2
+      _keep=1
+    fi
+  done <<EOF
+$(oc_skill_box_state_paths "$_name")
+EOF
+  if [ "$_keep" != 1 ]; then
+    rm -rf "$_OC_BOXSTATE_STASH" 2>/dev/null \
+      || echo "    ! box state stash cleanup failed, left at $_OC_BOXSTATE_STASH" >&2
+  fi
+  _OC_BOXSTATE_STASH=""
+  return 0
+}
+
+# EXIT-trap hook, called guarded by oc_update_exit_trap. If the run dies
+# between save and restore -- oc_remove_tree_guarded refusing with exit 1, or
+# cp -r failing under set -e --
+# put back whatever the partial removal took and drop the stash, so neither
+# the owner's pins nor a temp dir is left behind. A no-op on a normal run.
+oc_skill_box_state_on_exit() {
+  [ -n "${_OC_BOXSTATE_STASH:-}" ] || return 0
+  oc_skill_box_state_restore "${_OC_BOXSTATE_NAME:-}" "${_OC_BOXSTATE_LIVE:-}" >&2 || true
+  return 0
+}
+# <<< SKILL-BOX-STATE-END
+
+oc_assert_write_preflight() {
+  _OCWP_ME="$(id -un 2>/dev/null || printf '%s' "${USER:-unknown}")"
+  _OCWP_ME_UID="$(id -u 2>/dev/null || printf '%s' "none")"
+
+  local _root="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && _root="/data/.openclaw"
+
+  # The user the runtime actually runs as, READ FROM the OpenClaw root rather
+  # than hardcoded, so this says "node:node" in a container and the login user
+  # on a Mac without knowing which it is.
+  _OCWP_RUN_OWNER="$(_ocwp_owner "$_root")"
+  [ "$_OCWP_RUN_OWNER" = "unknown" ] && _OCWP_RUN_OWNER="node:node"
+
+  # Container name for the remedy line. The compose name is not knowable from
+  # inside, so name the shape instead of guessing a slug.
+  _OCWP_CONTAINER="${OPENCLAW_CONTAINER_NAME:-<container>}"
+  if [ "$_OCWP_CONTAINER" = "<container>" ] && { [ -f /.dockerenv ] || [ -d /data/.openclaw ]; }; then
+    _OCWP_CONTAINER="<slug>-openclaw-1"
+  fi
+
+  echo ""
+  echo "  [write-preflight] proving every path this run must write is writable by $_OCWP_ME (uid $_OCWP_ME_UID)"
+
+  local _hard=() _soft=() _p _f _blocked=0
+
+  # The workspace content files. THIS is the class that bit: no degrade path,
+  # and the writer is hundreds of lines inside an embedded python program.
+  if oc_resolve_workspace_announced "write pre-flight"; then
+    _hard+=("$OC_WS_RESOLVED")
+    for _f in AGENTS.md TOOLS.md MEMORY.md SOUL.md IDENTITY.md USER.md; do
+      _hard+=("$OC_WS_RESOLVED/$_f")
+    done
+  else
+    echo "  [write-preflight] workspace UNRESOLVED (reason above). Skipping the workspace file probes; every writer below refuses on its own rather than guessing a path." >&2
+  fi
+  _hard+=("$_root" "$_root/AGENTS.md")
+  [ -n "${SKILLS_DIR:-}" ] && _hard+=("$SKILLS_DIR")
+  _soft+=("$_root/scripts" "$_root/config" "$_root/onboarding")
+
+  for _p in ${_hard[@]+"${_hard[@]}"}; do
+    _ocwp_check_one "$_p" hard || _blocked=$((_blocked + 1))
+  done
+  for _p in ${_soft[@]+"${_soft[@]}"}; do
+    _ocwp_check_one "$_p" soft || true
+  done
+
+  # THE SKILL TREES. The updater REMOVES each installed skill directory before
+  # copying the new version, and removal is a DIFFERENT permission from
+  # writing: $SKILLS_DIR can probe perfectly writable while a file inside a
+  # root-owned subdirectory of one skill cannot be unlinked at all. That exact
+  # case killed a roll on 2026-09-17 and left a skill holding 3 of its 1934
+  # files. Prove removability HERE, up front, so a box that cannot be updated
+  # says so before the first skill is touched. shared-utils/ and
+  # universal-sops/ are included because the same removal path covers them.
+  local _tree="" _tblocked=0 _tfirst="" _tbytecode=0
+  if [ -n "${SKILLS_DIR:-}" ] && [ -d "$SKILLS_DIR" ]; then
+    while IFS= read -r _tree; do
+      [ -n "$_tree" ] || continue
+      if _ocwp_scan_removable "$_tree"; then
+        _tbytecode=$((_tbytecode + _OCWP_BYTECODE_COUNT))
+      else
+        _tblocked=$((_tblocked + 1))
+        if [ "$_tblocked" -le "$_OCWP_REPORT_CAP" ]; then
+          _tfirst="$(printf '%s' "$_OCWP_BLOCKED_LIST" | head -1)"
+          [ -n "$_tfirst" ] || _tfirst="$_tree"
+          _ocwp_print_tree_block "$_tfirst" "$_tree"
+        fi
+      fi
+    done <<EOF
+$(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true)
+EOF
+    if [ "$_tblocked" -gt "$_OCWP_REPORT_CAP" ]; then
+      echo "    ... and $((_tblocked - _OCWP_REPORT_CAP)) more blocked skill tree(s) (report capped at $_OCWP_REPORT_CAP)" >&2
+    fi
+    if [ "$_tbytecode" -gt 0 ]; then
+      echo "  [write-preflight] SELF-HEAL: $_tbytecode python bytecode cache dir(s) under $SKILLS_DIR are not removable by $_OCWP_ME (python ran as another user). Not a block: the update leaves them in place and python ignores a stale cache."
+    fi
+    if [ "$_tblocked" -gt 0 ]; then
+      _blocked=$((_blocked + _tblocked))
+    else
+      echo "  [write-preflight] OK: every installed skill tree can be removed and replaced."
+    fi
+  fi
+
+  if [ "$_blocked" -gt 0 ]; then
+    {
+      echo ""
+      echo "  =============================================================="
+      echo "  UPDATE REFUSED BEFORE ANY CONTENT WAS TOUCHED."
+      echo "  $_blocked path(s) this updater MUST write are not writable by $_OCWP_ME."
+      echo "  Nothing was installed, nothing was modified, and NO version stamp"
+      echo "  was written. Fix the ownership named above and re-run. The run"
+      echo "  then completes instead of crashing halfway through the"
+      echo "  CORE_UPDATES merge with a permission traceback."
+      echo "  =============================================================="
+      echo ""
+    } >&2
+    exit 1
+  fi
+  echo "  [write-preflight] OK: every required path is writable."
+  echo ""
+  return 0
+}
+# <<< WRITE-PREFLIGHT-END
+
+# ----------------------------------------------------------
 # _strip_update_pending_sections <AGENTS_FILE>
 #
 # Removes EVERY "## … UPDATE PENDING …" / "## … ONBOARDING PENDING …" section
@@ -808,9 +1411,41 @@ _strip_update_pending_sections() {
   # NOTE the command form: no `2>/dev/null`, no `|| true`. The real error has to
   # reach the operator, and a refusal has to be detectable by the caller.
   AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' || rc=$?
-import os, re, sys, time
+import errno, os, re, sys, time
 
 p = os.environ["AGENTS_FILE"]
+
+
+def permission_block(path):
+    """The SAME one-line contract the shell write pre-flight prints, so an
+    operator greps for one string and finds every permission refusal in the
+    log regardless of which step hit it."""
+    def pair(q):
+        try:
+            st = os.stat(q)
+        except Exception:
+            return "unknown"
+        try:
+            import pwd, grp
+            return pwd.getpwuid(st.st_uid).pw_name + ":" + grp.getgrgid(st.st_gid).gr_name
+        except Exception:
+            return str(st.st_uid) + ":" + str(st.st_gid)
+    try:
+        import pwd
+        me = pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:
+        me = str(os.geteuid())
+    run_owner = pair(os.path.dirname(path) or ".")
+    if run_owner == "unknown":
+        run_owner = "node:node"
+    sys.stderr.write("PERMISSION BLOCK: " + path + " is owned by " + pair(path)
+                     + " but the updater runs as " + me
+                     + "; on a Docker box run: docker exec <container> chown "
+                     + run_owner + " " + path + "\n")
+
+
+def is_permission_error(exc):
+    return getattr(exc, "errno", None) in (errno.EACCES, errno.EPERM, errno.EROFS)
 
 
 def die(msg):
@@ -890,6 +1525,8 @@ if original != "":
         with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
             fh.write(original)
     except Exception as exc:
+        if is_permission_error(exc):
+            permission_block(backup)
         die("could not WRITE the backup " + backup + ": " + repr(exc) + "\n"
             "Refusing to rewrite the file with no backup in hand. Nothing was written.")
     try:
@@ -936,6 +1573,10 @@ try:
     with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
         fh.write(new)
 except Exception as exc:
+    # A permission refusal gets the SAME one-line remedy the write pre-flight
+    # prints, ahead of the refusal banner, so the operator reads the fix first.
+    if is_permission_error(exc):
+        permission_block(p)
     die("the write itself FAILED: " + repr(exc)
         + (("\nThe verified backup is at " + backup) if backup else ""))
 
@@ -1223,52 +1864,10 @@ COREMDEOF
 # Discover skills directory -- active dir first
 # ----------------------------------------------------------
 discover_skills_dir() {
-  # Detect platform: VPS has /data, Mac does not
-  if [ -d /data ]; then
-    # VPS (Hostinger Docker) -- active path is /data/.openclaw/skills
-    local ACTIVE_DIR="/data/.openclaw/skills"
-  else
-    # Mac -- active path is ~/.openclaw/skills
-    local ACTIVE_DIR="$HOME/.openclaw/skills"
-  fi
-
-  # Use the active dir whenever it exists and is non-empty
-  if [ -d "$ACTIVE_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$ACTIVE_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$ACTIVE_DIR"
-      return
-    fi
-  fi
-
-  # Active dir exists but is empty (first-install into it) -- still prefer it
-  if [ -d "$ACTIVE_DIR" ]; then
-    echo "$ACTIVE_DIR"
-    return
-  fi
-
-  # Fallback: check Downloads copy (legacy / pre-active-dir installs)
-  local LEGACY_DIR="$HOME/Downloads/openclaw-master-files"
-  if [ -d "$LEGACY_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$LEGACY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$LEGACY_DIR"
-      return
-    fi
-  fi
-
-  # Fuzzy search for folders with "openclaw" and "master" in name (case-insensitive)
-  local FUZZY_DIR=$(find "$HOME" -maxdepth 2 -type d -iname "*openclaw*" 2>/dev/null | grep -i "master" | head -1 || true)
-  if [ -n "$FUZZY_DIR" ] && [ -d "$FUZZY_DIR" ]; then
-    local SKILL_COUNT=$(ls -d "$FUZZY_DIR"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$SKILL_COUNT" -gt "0" ]; then
-      echo "$FUZZY_DIR"
-      return
-    fi
-  fi
-
-  # Last resort: create and target the active dir (fresh install)
-  echo "$ACTIVE_DIR"
+  # The selected client root is authoritative on Mac, native Linux and Docker.
+  # Downloads/legacy copies are source archives, never an alternate live client.
+  local active="${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}"
+  printf '%s\n' "$active"
 }
 
 # ----------------------------------------------------------
@@ -1397,7 +1996,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v22.0.88 - safe_json_edit
+# v25.3.21 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1513,6 +2112,162 @@ safe_json_edit() {
 # intact. File mode/ownership are preserved across the rewrite. Every action
 # is logged with the [link-shared] prefix.
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# v25.1.74 — reclaim_unify_backups (end-of-roll global .bak-unify reclaim)
+#
+# WHY THIS EXISTS ON TOP OF _lsc_prune_baks. The per-target pruner added in
+# v25.1.72/73 only ever reaches a path the unify scan ENUMERATED. That scan
+# builds its list from $OC_ROOT/workspaces, <workspace>/agents and
+# <workspace>/departments, keeping only dirs that still carry a live
+# AGENTS.md / IDENTITY.md / SOUL.md. Three populations are therefore never
+# reclaimed — all three measured on client boxes 2026-09-22:
+#
+#   1. ORPHANS — a role folder whose live core files were deleted or moved
+#      still holds its .bak-unify backlog but fails the scan filter, so
+#      nothing ever reaches it. Hidden archive dot-dirs (for example a
+#      .billing-LEGACY-DUPLICATE-ARCHIVED folder) are the same shape.
+#   2. OUT OF TREE — <workspace>/zero-human-company/<co>/departments/... and
+#      ~/clawd/zero-human-company/<co>/departments/... sit under neither
+#      agents/ nor departments/, so the scan never descends into them.
+#   3. AN EARLY EXIT — a roll whose unify step refuses (workspace unresolved),
+#      is skipped, or filters a workspace out bounds nothing at all.
+#
+# Fleet total when this was written: 71,805 *.bak-unify-* files / ~8.4 GB
+# across 6 client boxes, oldest 2026-06-07, still growing.
+#
+# WHAT IT DOES. ONE pass at the end of every roll over the resolved OpenClaw
+# root(s), the resolved workspace and ~/clawd: group every backup by its
+# target prefix and keep only the newest $UNIFY_BAK_KEEP (default 3 — the same
+# single knob _lsc_prune_baks and the python writer already honour). Reports
+# the count reclaimed. ALWAYS returns 0: a reclaim must never be the thing
+# that fails a roll. The per-target prune is unchanged and still runs first.
+#
+# SAFETY. A file is deletable ONLY when its basename matches
+#     <target>.bak-unify-<8 digits>-<6 digits>[-<n>]
+# exactly — the -<n> tail being the python writer's same-second de-dupe
+# suffix. A live AGENTS.md / TOOLS.md / USER.md cannot match that pattern, and
+# neither can a hand-made .bak-manual or an AGENTS.md.bak-unify-notatimestamp
+# decoy. Symlinks and non-regular files are never unlinked.
+#
+# UNIFY_BAK_KEEP=0 keeps none. That is the meaning it ALREADY carries in both
+# shipped pruners and in docs/SHARED-CORE-FILES.md, so this pass does not give
+# the one knob a second meaning. It is safe because the pattern above makes a
+# live core file unmatchable: 0 can empty the backup set, never the tree.
+#
+# python3 is already a hard dependency of the unify step (_lsc_sha256 and the
+# content-preservation pass both use it); if it is absent the reclaim reports
+# a skip and the per-target prune still applies. bash 3.2 / BSD-safe: no
+# associative arrays, no mapfile, no `find -printf`, no `head -n -N`.
+# ----------------------------------------------------------
+reclaim_unify_backups() {
+  local _keep="${UNIFY_BAK_KEEP:-3}"
+  case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  [unify-reclaim] SKIP: no python3 on PATH (the per-target prune still applied)"
+    return 0
+  fi
+
+  # Every root this box could hold a .bak-unify population under. Missing ones
+  # are dropped here; the pass below de-dupes what is left by realpath, so a
+  # symlinked workspace is never walked twice.
+  local _oc_root=""
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    _oc_root="$(resolve_oc_root 2>/dev/null || echo '')"
+  fi
+  if [ -z "$_oc_root" ]; then
+    _oc_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _oc_root="/data/.openclaw"
+  fi
+
+  # $HOME/.openclaw covers the Docker /home/node layout (HOME is /home/node
+  # there) and _oc_root covers the VPS /data layout, so neither is listed as a
+  # literal -- every root below is derived from THIS box's own resolution.
+  # ~/clawd and ~/.clawdbot are both LIVE workspace roots on real boxes (see
+  # the TRAP 1 pre-clear note: one box's ~/.openclaw/workspace is a symlink
+  # INTO ~/.clawdbot/workspace), and both hold measured .bak-unify populations.
+  local _roots="" _r
+  for _r in \
+      "$_oc_root" \
+      "$HOME/.openclaw" \
+      "$HOME/clawd" \
+      "$HOME/.clawdbot" \
+      "${OC_WS_RESOLVED:-}" \
+      "${WORKSPACE_DIR:-}"; do
+    [ -n "$_r" ] || continue
+    [ -d "$_r" ] || continue
+    _roots="${_roots}${_r}
+"
+  done
+
+  if [ -z "$_roots" ]; then
+    echo "  [unify-reclaim] no existing root to scan -- nothing to do"
+    return 0
+  fi
+
+  local _n=""
+  _n="$(UNIFY_RECLAIM_KEEP="$_keep" UNIFY_RECLAIM_ROOTS="$_roots" python3 - 2>/dev/null <<'PYEOF' || echo ''
+import os, re
+
+keep  = int(os.environ.get("UNIFY_RECLAIM_KEEP", "3"))
+roots = [r for r in os.environ.get("UNIFY_RECLAIM_ROOTS", "").split("\n") if r]
+
+# The ONLY deletable shape. A live core file cannot match it.
+PAT  = re.compile(r"^(?P<target>.+)\.bak-unify-\d{8}-\d{6}(?:-\d+)?$")
+SKIP = (".git", "node_modules", ".venv", "venv", "__pycache__")
+
+# Roots nest (the workspace usually lives INSIDE the OpenClaw root), so the
+# same subtree is walked more than once. Collecting each group as a SET keyed
+# on the real directory makes a second visit a no-op instead of doubling the
+# list and over-deleting.
+groups = {}
+for root in roots:
+    try:
+        real = os.path.realpath(root)
+    except OSError:
+        continue
+    if not os.path.isdir(real):
+        continue
+    for dirpath, dirnames, filenames in os.walk(real, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in SKIP]
+        try:
+            realdir = os.path.realpath(dirpath)
+        except OSError:
+            realdir = dirpath
+        for fn in filenames:
+            m = PAT.match(fn)
+            if m:
+                groups.setdefault((realdir, m.group("target")), set()).add(fn)
+
+deleted = 0
+for (parent, _target), nameset in groups.items():
+    if keep and len(nameset) <= keep:
+        continue
+    names = sorted(nameset)         # %Y%m%d-%H%M%S sorts chronologically
+    doomed = names if keep == 0 else names[:-keep]
+    for n in doomed:
+        p = os.path.join(parent, n)
+        if not PAT.match(os.path.basename(p)):      # belt and braces
+            continue
+        if os.path.islink(p) or not os.path.isfile(p):
+            continue
+        try:
+            os.unlink(p)
+            deleted += 1
+        except OSError:
+            pass
+print(deleted)
+PYEOF
+)"
+  case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+  if [ "$_n" -gt 0 ]; then
+    echo "  [unify-reclaim] RECLAIMED $_n orphaned/out-of-tree .bak-unify backup(s) (keep=$_keep)"
+  else
+    echo "  [unify-reclaim] nothing to reclaim (keep=$_keep)"
+  fi
+  return 0
+}
+
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
@@ -1597,8 +2352,12 @@ except Exception:
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    # GNU first: GNU reads `-f FMT` as filesystem status and prints it before
+    # failing (multi-line junk on Linux); BSD rejects -c with no stdout.
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 
@@ -1627,6 +2386,34 @@ except Exception:
     else
       echo "FAIL"
     fi
+  }
+
+  # _lsc_prune_baks PATH -> echoes the number of old backups it deleted.
+  # Keeps only the $UNIFY_BAK_KEEP newest <PATH>.bak-unify-<ts> siblings
+  # (default 3; 0 keeps none), deleting oldest-first. The unify backup used to
+  # be UNBOUNDED: a canonical file that differs between rolls leaves one
+  # FULL-SIZE backup per agent per roll, forever. Measured live on a client Mac
+  # Mini 2026-09-21: 25,604 AGENTS.md.bak-unify-* files / 4.3 GB across the
+  # department tree, written daily since 2026-06-23, disk at 95%. Only this
+  # target's OWN timestamped unify backups are ever touched -- nothing else is
+  # deleted, and the newest $UNIFY_BAK_KEEP are always kept, so the
+  # "never deleted" promise becomes "the last N are never deleted".
+  # Timestamps are %Y%m%d-%H%M%S, so a lexicographic sort is chronological.
+  # bash 3.2 / BSD-safe: no `head -n -N`, no associative arrays.
+  _lsc_prune_baks() {
+    local _p="$1" _keep="${UNIFY_BAK_KEEP:-3}" _list="" _n=0 _cut=0 _old="" _pruned=0
+    case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+    _list="$(ls -1d "$_p".bak-unify-* 2>/dev/null | sort || true)"
+    if [ -z "$_list" ]; then echo 0; return 0; fi
+    _n="$(printf '%s\n' "$_list" | wc -l | tr -d ' ')"
+    _cut=$(( _n - _keep ))
+    if [ "$_cut" -le 0 ]; then echo 0; return 0; fi
+    while IFS= read -r _old; do
+      [ -n "$_old" ] || continue
+      if rm -f "$_old" 2>/dev/null; then _pruned=$(( _pruned + 1 )); fi
+    done < <(printf '%s\n' "$_list" | sed -n "1,${_cut}p")
+    echo "$_pruned"
+    return 0
   }
 
   # Precompute each canonical file's hash ONCE (not per-workspace; this repo
@@ -1699,7 +2486,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
 
   # Dedup workspace list, then process each.
   local W
@@ -1743,6 +2530,23 @@ PYEOF
         continue
       fi
 
+      # BACKLOG PRUNE. Bound this target's existing .bak-unify set on EVERY
+      # run, before deciding what to do with the file itself. Pruning only
+      # after writing a NEW backup would never reach the case that actually
+      # holds the fleet's 4.3 GB: a role folder whose AGENTS.md was since
+      # deleted (U053 disposition) still carries thousands of backups and
+      # takes the "absent -> leave absent" path below, so a roll would walk
+      # straight past them forever. Here it covers every branch -- symlink,
+      # identical, divergent and absent. A backup written further down prunes
+      # again, so the set still lands on exactly $UNIFY_BAK_KEEP.
+      local _NBACKLOG
+      _NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"
+      case "$_NBACKLOG" in ''|*[!0-9]*) _NBACKLOG=0 ;; esac
+      if [ "$_NBACKLOG" -gt 0 ]; then
+        echo "  [link-shared] PRUNE $_NBACKLOG stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+        PRUNED=$((PRUNED + _NBACKLOG))
+      fi
+
       if [ -L "$LINKPATH" ]; then
         # MIGRATION: a symlink is a relic of the pre-amendment behavior, and
         # the runtime boundary guard rejects it at read time regardless of
@@ -1775,9 +2579,21 @@ PYEOF
         # this agent's OWN IDENTITY.md (additive only), then overwrite with
         # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
-        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
-          && { echo "  [link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
-          || { echo "  [link-shared] WARN: backup failed for $LINKPATH -- leaving file untouched"; continue; }
+        if cp -p "$LINKPATH" "$BAK" 2>/dev/null; then
+          echo "  [link-shared] BACKUP $LINKPATH -> $BAK"
+          BACKED_UP=$((BACKED_UP + 1))
+          # Bound the backup set for THIS target (see _lsc_prune_baks).
+          local _NPRUNED
+          _NPRUNED="$(_lsc_prune_baks "$LINKPATH")"
+          case "$_NPRUNED" in ''|*[!0-9]*) _NPRUNED=0 ;; esac
+          if [ "$_NPRUNED" -gt 0 ]; then
+            echo "  [link-shared] PRUNE $_NPRUNED stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+            PRUNED=$((PRUNED + _NPRUNED))
+          fi
+        else
+          echo "  [link-shared] WARN: backup failed for $LINKPATH -- leaving file untouched"
+          continue
+        fi
 
         # Best-effort PRESERVE: append any content NOT already in CANON/<f> to
         # this agent's OWN IDENTITY.md under a guarded marker (only ADD; create
@@ -1852,7 +2668,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
+  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -3077,6 +3893,11 @@ registry_parity_gate() {
 # ----------------------------------------------------------
 CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"
+# Since the fleet-refresh roll-safety release the weekly cron runs the SAME
+# full path as the operator's roll (onboarding + 999 + Command Center + health
+# gate + rollback) via scripts/weekly-full-update.sh, which itself runs this
+# updater. Both older URLs are repointed there.
+WEEKLY_FULL_UPDATE_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
 
 heal_one_weekly_cron_updater() {
   local cron_script="$1"
@@ -3084,12 +3905,17 @@ heal_one_weekly_cron_updater() {
   # Never CREATE the cron script here -- only repair one already on disk.
   [ -f "$cron_script" ] || return 0
 
-  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null; then
-    echo "  [cron-heal] OK -- already points at the root updater: $cron_script"
+  if grep -q "$WEEKLY_FULL_UPDATE_URL" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- already runs the full weekly update: $cron_script"
+    return 0
+  fi
+  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null \
+     && ! grep -q "$CANONICAL_UPDATER_URL" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- custom updater URL, left alone: $cron_script"
     return 0
   fi
 
-  echo "  [cron-heal] LEGACY updater URL detected in $cron_script"
+  echo "  [cron-heal] onboarding-only updater URL detected in $cron_script"
 
   local backup="${cron_script}.bak.$(date +%Y%m%d-%H%M%S)"
   # Disk pre-check before the copy: a cron script is tiny, but a box with no
@@ -3118,13 +3944,14 @@ heal_one_weekly_cron_updater() {
   # backup-suffix argument, so write to a temp file and copy it back instead of
   # using sed -i at all. `cat > "$cron_script"` (not mv) preserves the original
   # inode, owner and 0700 mode -- an mv would install the temp file's 0600.
-  if sed "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" "$cron_script" > "$tmp" 2>/dev/null \
+  if sed -e "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" \
+         -e "s|${CANONICAL_UPDATER_URL}|${WEEKLY_FULL_UPDATE_URL}|g" "$cron_script" > "$tmp" 2>/dev/null \
      && [ -s "$tmp" ] \
-     && grep -q "$CANONICAL_UPDATER_URL" "$tmp" \
+     && grep -q "$WEEKLY_FULL_UPDATE_URL" "$tmp" \
      && ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$tmp"; then
     cat "$tmp" > "$cron_script"
     rm -f "$tmp"
-    echo "  [cron-heal] REPOINTED legacy -> root updater"
+    echo "  [cron-heal] REPOINTED -> full weekly update (scripts/weekly-full-update.sh)"
     echo "               script: $cron_script"
     echo "               backup: $backup"
   else
@@ -3194,10 +4021,13 @@ deliver_canonical_scripts_tree() {
       return 2
     fi
   fi
-  if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+  # -f: a single file owned by another user (e.g. a root-owned mc-route.sh left
+  # by a root docker exec) cannot be opened for writing, but the writable dest
+  # dir lets cp unlink and recreate it. Without -f that one file was a FATAL.
+  if ! cp -Rpf "$src_root/." "$dest_root/" 2>/dev/null; then
     # Best-effort self-heal (only succeeds if we own the tree), then retry.
     chmod -R u+rwx "$dest_root" 2>/dev/null || true
-    if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+    if ! cp -Rpf "$src_root/." "$dest_root/" 2>/dev/null; then
       if [ ! -w "$dest_root" ]; then
         _scripts_perms_degrade
         return 2
@@ -3349,6 +4179,17 @@ release_update_lock() {
   fi
 }
 
+# main()'s EXIT trap. The box-state hook runs GUARDED, so nothing inside it
+# can abort the trap under set -e and skip the lock release; the lock is then
+# ALWAYS released; and the script exits with the status it was already
+# exiting with, never the hook's.
+oc_update_exit_trap() {
+  local _rc=$?
+  oc_skill_box_state_on_exit || true
+  release_update_lock || true
+  exit "$_rc"
+}
+
 # Detect a legacy Unix crontab entry `0 3 * * 0` (system-local timezone)
 # that collides with the OpenClaw cron weekly-onboarding-update
 # (0 3 * * 0 America/New_York). Returns 0 when at least one such entry
@@ -3404,7 +4245,7 @@ main() {
   # Sunday crontab entry that would double-fire with the OpenClaw cron.
   # ----------------------------------------------------------
   acquire_update_lock
-  trap release_update_lock EXIT
+  trap oc_update_exit_trap EXIT
   retire_legacy_sunday_crontab
 
   # ----------------------------------------------------------
@@ -3428,6 +4269,9 @@ main() {
   # (number prefix matches skill folder name prefix)
   # ----------------------------------------------------------
   ONLY_SKILLS=""
+  # OCT4 issue #10: default FULL path (shared tail runs); --onboarding-only
+  # narrows to onboarding alone (see the flag's help entry below).
+  ONBOARDING_ONLY="${ONBOARDING_ONLY:-0}"
   # TRAP 1: the 2026.7.1 relic pre-clear is OPT-IN ONLY (see preclear_2026_7_1
   # above for why: this updater performs no OpenClaw binary upgrade).
   PRECLEAR_MODE=""
@@ -3462,6 +4306,17 @@ main() {
       --agents-list-migrate)
         AGENTS_LIST_STANDALONE="migrate"
         ;;
+      # OCT4 issue #10: run ONLY the onboarding part of this updater and skip
+      # the shared tail (repair runner + health gate). The narrow case: a roll
+      # driver that runs the repairs as its own explicit stage, or an operator
+      # debugging one layer. The DEFAULT (no flag) is the FULL path — every
+      # route (this updater run on its own, force-update.sh, the Sunday update,
+      # the operator roll) runs onboarding -> 999-setup (if installed) ->
+      # Command Center at its pinned tag -> repair runner -> health gate, so a
+      # one-front-door update can never quietly skip a stage again.
+      --onboarding-only)
+        ONBOARDING_ONLY=1
+        ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
         echo "                        [--agents-list-check | --agents-list-migrate]"
@@ -3487,6 +4342,12 @@ main() {
         echo "                         Measured on 12 boxes: config SHA-256 identical before and after."
         echo "                         (The detector also runs automatically on every normal update run,"
         echo "                         where it reports and does not block.)"
+        echo ""
+        echo "  --onboarding-only      Run ONLY the onboarding stage: skip the shared tail this"
+        echo "                         updater runs by default after onboarding converges (999-setup"
+        echo "                         refresh if installed, the repair runner, the library-standard"
+        echo "                         health gate). The rare narrow case for a roll driver that runs"
+        echo "                         those stages itself. The DEFAULT runs the FULL path."
         echo ""
         echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
         echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
@@ -3517,6 +4378,113 @@ main() {
     agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
     exit "$_al_rc"
   fi
+
+  # ============================================================
+  # OCT4 issue #10 — ONE FRONT DOOR: the shared tail. Every route runs
+  # onboarding (this script) -> 999-setup (if installed) -> Command Center at
+  # its pinned tag -> repair runner -> health gate. The Command Center refresh
+  # below (run-full-install.sh --update-only / bootstrap, per cc-compat.json)
+  # already runs inside this updater; the stage this file ADDS is the shared
+  # repair-runner + health-gate tail from shared-utils/lib-frontdoor.sh, which
+  # runs AFTER everything above has converged (content current, stamp written,
+  # latches settled). --onboarding-only skips exactly that tail.
+  # Failure semantics: the tail is reported on the updater's own exit codes —
+  #   health-gate FAIL       -> exit 2 (content current, infrastructure needs
+  #                             attention: the box was updated; the operator
+  #                             sees the gate verdict in the roll summary and
+  #                             the route's snapshot/rollback is the Sunday +
+  #                             operator rolls' own machinery)
+  #   tail could not RUN at  -> exit 1 (the front door itself is broken; never
+  #                             report a half-gated run as success)
+  #   incomplete-gaps /      -> exit 0 (reported loudly in the log; the callee
+  #   ran-with-notes            scripts simply are not on this box yet — the
+  #                             release that ships them lands through THIS
+  #                             same updater)
+  # ============================================================
+  # SKILLS_DIR must exist before the front-door block expands it: under
+  # `set -u` an unassigned SKILLS_DIR aborted every run right after
+  # "[lock] acquired" (v25.3.17). Re-resolved below once the front door has
+  # exported OPENCLAW_ROOT, exactly as before.
+  SKILLS_DIR=$(discover_skills_dir)
+  if [ "${ONBOARDING_ONLY:-0}" = "1" ]; then
+    echo "  [--onboarding-only] skipping the shared tail (repair runner + health gate)"
+    fd_rc=0
+  else
+    _FRONTDOOR_LIB=""
+    for _fd_cand in "$_SCRIPT_DIR/shared-utils/lib-frontdoor.sh" \
+                    "$SKILLS_DIR/shared-utils/lib-frontdoor.sh"; do
+      if [ -f "$_fd_cand" ]; then _FRONTDOOR_LIB="$_fd_cand"; break; fi
+    done
+    _FRONTDOOR_STAGE_PY=""
+    for _fd_cand in "$_SCRIPT_DIR/shared-utils/oct4_frontdoor.py" \
+                    "$SKILLS_DIR/shared-utils/oct4_frontdoor.py"; do
+      if [ -f "$_fd_cand" ]; then _FRONTDOOR_STAGE_PY="$_fd_cand"; break; fi
+    done
+    if [ -z "$_FRONTDOOR_LIB" ] || [ -z "$_FRONTDOOR_STAGE_PY" ]; then
+      echo "FATAL: the one-front-door shared stage is missing from this checkout" >&2
+      echo "       (looked for shared-utils/lib-frontdoor.sh + shared-utils/oct4_frontdoor.py" >&2
+      echo "       beside this script and in $SKILLS_DIR/shared-utils)." >&2
+      echo "       Refusing to report an ungated update as success. Re-run from a complete" >&2
+      echo "       release bundle (curl -fsSL <main>/update-skills.sh | bash)." >&2
+      fd_rc=1
+    else
+      # OpenClaw root for the callee scripts' platform resolution: the SAME
+      # shared /data-else-HOME resolver the other repo scripts reuse (sourced
+      # from the freshly-installed tree when available), with the identical
+      # inline fallback so behavior is unchanged either way.
+      for _fd_cand in "$_SCRIPT_DIR/shared-utils/resolve-oc-root.sh" \
+                      "$SKILLS_DIR/shared-utils/resolve-oc-root.sh"; do
+        if [ -f "$_fd_cand" ]; then source "$_fd_cand"; break; fi
+      done
+      declare -F resolve_oc_root >/dev/null 2>&1 && OC_ROOT="$(resolve_oc_root)" || true
+      OC_ROOT="${OC_ROOT:-$HOME/.openclaw}"; [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+      export OPENCLAW_ROOT="$OC_ROOT"
+      source "$_FRONTDOOR_LIB"
+      # 999-setup first where it is already installed: the same guard-fenced
+      # refresh the roll's runner performs (pull --ff-only in a checkout whose
+      # origin is trevorotts1/999-setup, local changes never overwritten), then
+      # its skill links. Never installs 999 on a box that does not have it.
+      _FD_999_NOTE=""
+      if declare -F frontdoor_update_999 >/dev/null 2>&1; then
+        frontdoor_update_999 || _FD_999_NOTE=" (999 refresh reported a failure — see above)"
+      fi
+      if frontdoor_run_stage "$_FRONTDOOR_STAGE_PY"; then
+        case "$FRONTDOOR_STATUS" in
+          ok)          echo "  ✓ [FRONT DOOR] repairs + health gate: clean" ;;
+          ran-with-notes) echo "  ⚠ [FRONT DOOR] repairs + health gate: ran with notes (see above)" ;;
+          incomplete-gaps) echo "  ℹ [FRONT DOOR] stage scripts not installed on this box yet (known gap, reported — not a failure)" ;;
+        esac
+        echo "${FRONTDOOR_JSON:-{\"frontdoor\":{\"status\":\"$FRONTDOOR_STATUS\"}}}" \
+          > "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+        fd_rc=0
+      else
+        case "$FRONTDOOR_STATUS" in
+          gate-failed)
+            echo "" >&2
+            echo "  ============================================================" >&2
+            echo "  FRONT DOOR: THE HEALTH GATE FAILED on this box." >&2
+            echo "  Onboarding skills content IS current (the stamp stands); the" >&2
+            echo "  box does NOT meet the library standard yet. Per-item verdicts" >&2
+            echo "  are printed above. Nothing here was auto-rolled back: the" >&2
+            echo "  Sunday and operator routes hold the snapshot/rollback machinery" >&2
+            echo "  for this route; a manual route repairs by hand." >&2
+            echo "  Exiting 2 = content current, infrastructure needs attention." >&2
+            echo "  ============================================================" >&2
+            echo "" >&2
+            ;;
+          gate-undetermined)
+            echo "  ✗ [FRONT DOOR] the health gate could not decide this box (undetermined) — never read as a pass" >&2
+            ;;
+          failed)
+            echo "  ✗ [FRONT DOOR] the shared stage itself failed to run — refusing to report success" >&2
+            ;;
+        esac
+        rm -f "${OC_ROOT:-$HOME/.openclaw}/fleet-refresh/.frontdoor-last.json" 2>/dev/null || true
+        fd_rc=2
+      fi
+    fi
+  fi
+  if [ "$fd_rc" -ne 0 ]; then exit "$fd_rc"; fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -3601,6 +4569,14 @@ main() {
     exit 78
   fi
 
+  # WRITE PRE-FLIGHT. Placement is load-bearing: AFTER the two read-only gates
+  # above (so their baseline still sees the box exactly as it was found) and
+  # BEFORE every content step, every early exit and the version gate. A path
+  # this run must write but cannot is a failure that belongs at the TOP of the
+  # log, not as a python traceback in the middle of the CORE_UPDATES merge with
+  # a passing content gate printed above it. See oc_assert_write_preflight.
+  oc_assert_write_preflight
+
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
   # surface a note so the user knows the Sunday cron may have missed.
@@ -3656,9 +4632,10 @@ main() {
         echo
       else
         # CONTENT-AWARE EXIT (fleet fix). A matching stamp is NOT evidence that
-        # the installed content matches canonical. ONE string governs 62 skill
-        # trees plus shared-utils/ and universal-sops/ — and neither of those two
-        # carries a version file at all. Exiting here meant an arbitrarily
+        # the installed content matches canonical. ONE string governs every
+        # numbered skill tree (69 today, archived included) plus shared-utils/
+        # and universal-sops/ — and neither of those two carries a version file
+        # at all. Exiting here meant an arbitrarily
         # drifted box was never compared, never repaired, and still reported
         # success: the fleet-wide false-success path. We now continue far enough
         # to PULL the source and diff it against the box (see CONTENT RECHECK
@@ -3751,8 +4728,7 @@ main() {
   # content manifest below. Deliver and verify it BEFORE the same-version
   # content-clean early exit; otherwise a box with current skills but a legacy
   # 22-file scripts allowlist would incorrectly no-op forever.
-  _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
-  [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
+  _OC_SCRIPTS_DEST="$OC_CONFIG/scripts"
   # rc 0 = delivered+verified; rc 1 = real fatal (missing source / genuine
   # delivery failure on a writable dest); rc 2 = OWNERSHIP quirk (dest not
   # writable). Only rc 1 withholds the stamp. rc 2 DEGRADES: a root-owned
@@ -3769,6 +4745,59 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
+  # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
+  # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
+  # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
+  # `exit 0` — so it runs on EVERY roll, including content-current re-rolls that
+  # never reach the steps near the end of this file. Hot reload, backup only on
+  # write, ADVISORY-only on any failure: it can never fail this update. Its
+  # "burn-guard:" line is lifted into the fleet summary by fleet_refresh_runner.py.
+  _BURN_GUARD="$_OC_SCRIPTS_DEST/ensure-burn-guard.sh"
+  [ -f "$_BURN_GUARD" ] || _BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+  if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" || true
+  else
+    echo "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
+  fi
+
+  # DELIVER THE CANONICAL LIBRARY BESIDE THE SCRIPTS TREE.
+  #
+  # deliver_canonical_scripts_tree above copies repo scripts/ to
+  # $OC_CONFIG/scripts. lib-onboarding-state.sh lives at the REPO ROOT, not in
+  # scripts/, so nothing on this path ever delivered it. Box-side, the shim
+  # scripts/onboarding-state.sh and watchdog-onboarding-loop.sh looked for it at
+  # "$SELF_DIR/.." -- i.e. $OC_CONFIG/lib-onboarding-state.sh -- which no step
+  # has ever written. Result: the shim warned on every source and defined no
+  # oc_* at all, and the watchdog found no wave-goal functions.
+  #
+  # ~/.openclaw/onboarding does hold a full repo copy, but install.sh writes it
+  # ONCE at install and no later roll refreshes it, so it cannot be the delivery
+  # path for a fix that has to reach boxes already in the field.
+  #
+  # Copying it NEXT TO the delivered scripts makes the "./lib-onboarding-state.sh"
+  # candidate resolve on every box after the next roll. NON-FATAL by design: a
+  # missing or unwritable copy degrades the onboarding gate, it must not abort a
+  # roll that has already delivered skills.
+  if [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
+    if cp -p "$ONBOARDING_DIR/lib-onboarding-state.sh" "$_OC_SCRIPTS_DEST/lib-onboarding-state.sh" 2>/dev/null; then
+      echo "  ✓ lib-onboarding-state.sh delivered to $_OC_SCRIPTS_DEST"
+    else
+      echo "  ⚠ could not deliver lib-onboarding-state.sh to $_OC_SCRIPTS_DEST -- the onboarding gate will fall back to its other candidates (~/.openclaw/onboarding, ~/.openclaw/skills)." >&2
+    fi
+  else
+    echo "  ⚠ lib-onboarding-state.sh absent from the pulled bundle ($ONBOARDING_DIR) -- onboarding gate oc_* functions will be unavailable box-side unless an older copy is still present." >&2
+  fi
+
+# Platform helpers are runtime dependencies of the delivered Skill32 resume command.
+if [ -d "$ONBOARDING_DIR/platform" ]; then
+    mkdir -p "$SKILLS_DIR/../platform"
+    cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+fi
+if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
+    echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
+    exit 8
+fi
 
   # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
   # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
@@ -4142,15 +5171,23 @@ u009_presentations_sync_check() {
     esac
 
     if _head="$(git -C "$_d" rev-parse --short HEAD 2>/dev/null)"; then :; else _head=""; fi
-    if _dirty="$(git -C "$_d" status --porcelain 2>/dev/null)"; then :; else _dirty=""; fi
+    # TRACKED changes only — the canonical spelling, inline because this block
+    # must stay self-contained (see the header comment near the top of this
+    # file). Untracked files are reported and never make a checkout dirty.
+    _dirty="$(git -C "$_d" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+    _untracked="$(git -C "$_d" status --porcelain 2>/dev/null | grep -c '^??' || true)"
+    _untracked="$(printf '%s' "${_untracked:-0}" | tr -d '[:space:]')"
 
     if [ -n "$_dirty" ]; then
       echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
-      echo "    Command Center has UNCOMMITTED changes, so it cannot fast-forward and will NOT be refreshed."
+      echo "    Command Center has UNCOMMITTED changes to TRACKED files, so it cannot fast-forward and will NOT be refreshed."
       echo "    Nothing is stashed, reset, or discarded here — uncommitted work on a client box is load-bearing."
       printf '%s\n' "$_dirty" | head -n 10 | sed 's/^/      /'
       _cc_write_marker "$_marker" "dirty" "$_d" "$_head" ""
       return 0
+    fi
+    if [ "${_untracked:-0}" != "0" ]; then
+      echo "  — [CC CURRENCY] info: $_untracked untracked file(s) in $_d — not dirt, refresh proceeds."
     fi
 
     # Bug C: `git fetch ... || true` swallowed a fetch failure (offline box,
@@ -4300,7 +5337,8 @@ except Exception:
         local _slp_emb_table=0 _slp_emb_rows=0
         _slp_emb_table="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
         if [ "${_slp_emb_table:-0}" = "1" ]; then
-          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+          # COVERAGE, not raw rows -- an all-orphan embeddings table must not read as "current".
+          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);" 2>/dev/null || echo 0)"
         fi
         if [ "${_slp_emb_rows:-0}" -lt "${_slp_emb_count:-0}" ] 2>/dev/null; then
           echo "  ✗ [SOP LIBRARY] state=embeddings-under-populated rows=$_slp_emb_rows manifest_count=$_slp_emb_count db=$_slp_db"
@@ -4786,9 +5824,14 @@ print(state + " " + str(len(headers)))
           [ -d "$_fast_p/.git" ] || continue
           _fast_remote="$(git -C "$_fast_p" remote get-url origin 2>/dev/null || true)"
           case "$_fast_remote" in *command-center*) : ;; *) continue ;; esac
-          _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null || true)"
+          # TRACKED changes only — the canonical spelling, inline because this
+          # block is extracted verbatim and sourced standalone by
+          # tests/unit/content-recheck-convergence-probes.test.sh.
+          # `reset --hard` does not touch untracked files, so stray `??`
+          # entries are no reason to refuse the repair.
+          _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '^??' || true)"
           if [ -n "$_fast_dirty" ]; then
-            echo "    [fast-path] CC checkout $_fast_p has uncommitted changes (load-bearing) — NOT reset; full pass will surface the same state."
+            echo "    [fast-path] CC checkout $_fast_p has uncommitted changes to TRACKED files (load-bearing) — NOT reset; full pass will surface the same state."
             continue
           fi
           if git -C "$_fast_p" fetch --quiet origin 2>/dev/null \
@@ -4799,11 +5842,27 @@ print(state + " " + str(len(headers)))
           fi
           break
         done
+        # --- the Command Center DB both SOP repairs below read ---------------
+        # The shared resolver (shared-utils/resolve_db.py) is the DB the running
+        # CC uses: env/.env.local first, 0-byte decoys skipped, layout candidates
+        # only with a `workspaces` table. The old "first existing file" pick
+        # took a 0-byte decoy over the live board. Fallback (resolver absent):
+        # the legacy pair, non-empty files only.
+        _fast_cc_db=""
+        _fast_resolve_db="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/resolve_db.py"
+        [ -f "$_fast_resolve_db" ] || _fast_resolve_db="${EXTRACTED_DIR:-}/shared-utils/resolve_db.py"
+        if [ -f "$_fast_resolve_db" ]; then
+          _fast_cc_db="$(python3 "$_fast_resolve_db" --path 2>/dev/null || true)"
+        fi
+        if [ -z "$_fast_cc_db" ]; then
+          for _fast_c in "/data/projects/command-center/mission-control.db" "$HOME/projects/command-center/mission-control.db"; do
+            if [ -s "$_fast_c" ]; then _fast_cc_db="$_fast_c"; break; fi
+          done
+        fi
         # --- SOP library under-populated (U6c) ------------------------------
         if [ -n "${_U6C_SOPLIB_FAIL:-}" ]; then : # probe reported missing ingester / no reader — full pass handles it
         else
-          _fast_sop_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                        || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+          _fast_sop_db="$_fast_cc_db"
           if [ -n "$_fast_sop_db" ] && [ -f "$_fast_sop_db" ]; then
             _fast_sop_canon="${_U6C_CANON:-2555}"
             _fast_sop_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_sop_db" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
@@ -4821,12 +5880,12 @@ print(state + " " + str(len(headers)))
           fi
         fi
         # --- SOP-embeddings under-populated (U6c2) --------------------------
-        _fast_emb_db="$( [ -f "/data/projects/command-center/mission-control.db" ] && echo "/data/projects/command-center/mission-control.db" \
-                       || ( [ -f "$HOME/projects/command-center/mission-control.db" ] && echo "$HOME/projects/command-center/mission-control.db" || echo "" ) )"
+        _fast_emb_db="$_fast_cc_db"
         if [ -n "$_fast_emb_db" ] && [ -f "$_fast_emb_db" ]; then
           _fast_emb_canon="${_U6C_EMB_CANON:-0}"
           if [ "${_fast_emb_canon:-0}" -gt 0 ] 2>/dev/null; then
-            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+            # COVERAGE, not raw rows (see U6c2).
+            _fast_emb_rows="$([ -n "$(command -v sqlite3 2>/dev/null)" ] && sqlite3 "$_fast_emb_db" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);" 2>/dev/null || echo 0)"
             _fast_emb_rows="${_fast_emb_rows:-0}"
             if [ "${_fast_emb_rows:-0}" -lt "${_fast_emb_canon}" ] 2>/dev/null; then
               _fast_emb_ingest="${SKILLS_DIR:-$HOME/.openclaw/skills}/shared-utils/sop-embed-once/embed-sops.sh"
@@ -4947,33 +6006,50 @@ print(state + " " + str(len(headers)))
     echo "  ⚠ obs_resolve_workspace() is therefore UNDEFINED for this run -- workspace lookups will use the announced openclaw.json fallback, and will REFUSE to write if that fails."
   fi
 
-  # Backup existing skills.
-  #
-  # RETENTION (OPENCLAW-BACKUP-RETENTION-V1): this used to write one
-  # skills-backup-<ts> directory per run and never remove one, so every box
-  # grew an unbounded pile of full skills-tree copies. Now: pre-check disk
-  # BEFORE copying a byte (a half-written backup is worse than no backup, and
-  # a failed backup aborts the box), then prune to the newest N only AFTER
-  # this run's copy has already landed.
+  # A way back from this update, WITHOUT copying the skills folder.
+  # NO-SKILLS-BACKUP-COPY-V1: this used to write a full skills-backup-<ts> copy of
+  # $SKILLS_DIR (hundreds of MB) on every run. The repo-owned folders are files from one
+  # commit of the onboarding repo, recorded in the content manifest, so the previous state
+  # is that commit plus a small patch of this box's own changes. scripts/skills-rollback.sh
+  # records exactly that (restore: `skills-rollback.sh restore <dir>`). Only a box with no
+  # recorded commit at all (exit 3: fresh or pre-manifest install) or a failed record falls
+  # back to the old one-time copy, so an update is never left with no way back.
   _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
   if [ -d "$SKILLS_DIR" ] && [ "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
-    BACKUP_DIR="$_SKILLS_BACKUP_ROOT/skills-backup-$(date +%Y%m%d-%H%M%S)"
-    _SKILLS_BACKUP_KB="$(oc_backup_size_kb "$SKILLS_DIR")"
-    if ! oc_backup_precheck_disk "$BACKUP_DIR" "$_SKILLS_BACKUP_KB" "skills backup of $SKILLS_DIR"; then
-      echo "  ✗ Refusing to update skills without a backup. Free disk and re-run."
-      exit 1
-    fi
-    echo "  Creating backup: $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR"
-    cp -r "$SKILLS_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
-    # Prune ONLY after the new backup exists — never delete the only good one
-    # to make room for one that then fails.
-    if [ -d "$BACKUP_DIR" ]; then
-      oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-backup-" "$BACKUP_DIR"
+    ROLLBACK_DIR="$_SKILLS_BACKUP_ROOT/skills-rollback-$(date +%Y%m%d-%H%M%S)"
+    _RB_GITDIR=""; [ -d "$EXTRACTED_DIR/.git" ] && _RB_GITDIR="$EXTRACTED_DIR/.git"
+    _rb_rc=0
+    bash "$EXTRACTED_DIR/scripts/skills-rollback.sh" snapshot "$SKILLS_DIR" "$ROLLBACK_DIR" "$_RB_GITDIR" || _rb_rc=$?
+    if [ "$_rb_rc" -eq 0 ]; then
+      oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-rollback-" "$ROLLBACK_DIR"
     else
-      echo "  [backup-prune] SKIPPED: this run's backup dir was not created — nothing pruned"
+      if [ "$_rb_rc" -eq 3 ]; then
+        echo "  No previous commit is recorded on this box yet -- one-time full skills backup."
+      else
+        echo "  ⚠ Could not record the no-copy rollback (rc=$_rb_rc) -- falling back to a full skills backup."
+      fi
+      rm -rf "$ROLLBACK_DIR" 2>/dev/null || true
+      # RETENTION (OPENCLAW-BACKUP-RETENTION-V1): pre-check disk BEFORE copying a byte (a
+      # half-written backup is worse than none), prune to the newest N only AFTER this
+      # run's copy has landed.
+      BACKUP_DIR="$_SKILLS_BACKUP_ROOT/skills-backup-$(date +%Y%m%d-%H%M%S)"
+      _SKILLS_BACKUP_KB="$(oc_backup_size_kb "$SKILLS_DIR")"
+      if ! oc_backup_precheck_disk "$BACKUP_DIR" "$_SKILLS_BACKUP_KB" "skills backup of $SKILLS_DIR"; then
+        echo "  ✗ Refusing to update skills without a way back. Free disk and re-run."
+        exit 1
+      fi
+      echo "  Creating backup: $BACKUP_DIR"
+      mkdir -p "$BACKUP_DIR"
+      cp -r "$SKILLS_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
+      # Prune ONLY after the new backup exists — never delete the only good one.
+      if [ -d "$BACKUP_DIR" ]; then
+        oc_backup_prune "$_SKILLS_BACKUP_ROOT" "skills-backup-" "$BACKUP_DIR"
+      else
+        echo "  [backup-prune] SKIPPED: this run's backup dir was not created — nothing pruned"
+      fi
     fi
   fi
+  # END NO-SKILLS-BACKUP-COPY-V1
 
   # Ensure skills directory exists
   mkdir -p "$SKILLS_DIR"
@@ -5050,8 +6126,16 @@ print(state + " " + str(len(headers)))
       echo "  ============================================"
     fi
 
-    # Remove old version if exists
-    rm -rf "$SKILLS_DIR/$SKILL_NAME"
+    # Remove old version if exists.
+    # GUARDED (2026-09-17). A bare `rm -rf` here deleted everything it could,
+    # returned 1 on the one path it could not, and `set -e` then killed the
+    # updater silently with the skill already gutted. oc_remove_tree_guarded
+    # proves the tree is removable BEFORE it removes anything, so a blocked
+    # skill stays whole and the operator gets one actionable line.
+    # Box-local state on the allow-list (owner pins) is saved first and put
+    # back after the copy; see oc_skill_box_state_paths.
+    oc_skill_box_state_save "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
+    oc_remove_tree_guarded "$SKILLS_DIR/$SKILL_NAME" "skill"
 
     # Copy new version.
     # IMPORTANT: strip the trailing slash from SKILL_DIR before passing to cp.
@@ -5062,10 +6146,29 @@ print(state + " " + str(len(headers)))
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"
   done
+
+  # ----------------------------------------------------------
+  # SKILL-NUMBER COLLISION CLEANUP (2026-10-05). /def (diagnose-explain-fix) was
+  # hand-installed at slot 70, which belongs to 70-lean-core-file-system, and
+  # now ships as 73-diagnose-explain-fix. The copy loop above only adds and
+  # replaces, so a box that carries the old hand-installed folder keeps two
+  # skills labelled 70. Remove ONLY that exact folder, ONLY once 73 is on disk,
+  # and ONLY if it really is the /def skill (frontmatter name check). Never
+  # touches 70-lean-core-file-system. Guarded removal, so a blocked tree is
+  # refused whole instead of half-deleted.
+  # ----------------------------------------------------------
+  _STRAY_DEF="$SKILLS_DIR/70-diagnose-explain-fix"
+  if [ -d "$_STRAY_DEF" ] && [ -f "$SKILLS_DIR/73-diagnose-explain-fix/SKILL.md" ] \
+     && grep -q '^name: diagnose-explain-fix' "$_STRAY_DEF/SKILL.md" 2>/dev/null; then
+    oc_remove_tree_guarded "$_STRAY_DEF" "skill" || true
+    echo "    Retired stray duplicate: 70-diagnose-explain-fix (now 73-diagnose-explain-fix)"
+  fi
+  unset _STRAY_DEF
 
   # ----------------------------------------------------------
   # v14.24.0: Refresh shared-utils/ on every update so PR-delivered helpers
@@ -5095,6 +6198,44 @@ print(state + " " + str(len(headers)))
     _ocs_tree_compare "$EXTRACTED_DIR/shared-utils" "$SKILLS_DIR/shared-utils"
     _SU_MISSING="$_OC_TREE_MISSING"
     [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! shared-utils content differences:${_OC_TREE_DIFFERS}" || true
+    # JEV-027 D27 (ss 12.1/17.1, A43/A54): mixed-version guard for the
+    # canonical decision core. _ocs_tree_compare above asserts full-tree
+    # source ⊆ dest; this names the decision-core subset explicitly so a
+    # partial copy that drops exactly the new core (old box + new bundle,
+    # or truncated cp) withholds the stamp with an actionable line instead
+    # of shipping a box whose routing code and decision core disagree.
+    # Additive check only — it never deletes or rewrites box files.
+    _D27_CORE_MISSING=""
+    for _D27_REL in \
+        "decision_engine/contracts/schema.py" \
+        "decision_engine/policies/question_pack.json" \
+        "decision_engine/policies/task_pack.json" \
+        "decision_engine/policies/mixed_pack.json" \
+        "decision_engine/policies/control_pack.json" \
+        "decision_engine/ladder/ladder.py" \
+        "decision_engine/evaluators/five_layer.py" \
+        "decision_engine/personas/collapse_policy.py" \
+        "decision_engine/personas/evidence_profiles.py" \
+        "decision_engine/personas/voice_match.py" \
+        "decision_engine/parts/__init__.py" \
+        "decision_engine/modes/__init__.py" \
+        "decision_engine/modes/modes.py" \
+        "decision_engine/modes/cohort.py" \
+        "decision_engine/providers/typesafe_direct.py" \
+        "decision_engine/providers/openrouter_decisions.py" \
+        "decision_engine/providers/credential_resolver.py" \
+        "adaptive_weights.py" \
+        "semantic_task_fit.py" \
+        "embedding_engine.py" \
+        "ceo_execution_policy.py" \
+        "secret_helper.py" \
+        "decision-engine.py"; do
+      [ -f "$SKILLS_DIR/shared-utils/$_D27_REL" ] || _D27_CORE_MISSING="${_D27_CORE_MISSING} ${_D27_REL}"
+    done
+    if [ -n "$_D27_CORE_MISSING" ]; then
+      _SU_MISSING="${_SU_MISSING}${_D27_CORE_MISSING}"
+    fi
+    unset _D27_CORE_MISSING _D27_REL
     if [ -n "$_SU_MISSING" ]; then
       _SHAREDUTILS_STATUS="fail"
       echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
@@ -5132,12 +6273,44 @@ print(state + " " + str(len(headers)))
     fi
   fi
 
+  # >>> DECISION-MODE-PRESERVE-BEGIN  (A62 clause 4)
+  # A62: "Explicit modes survive install/update." The store is
+  # $OC_CONFIG/decision-engine-mode.conf (one word: auto|shadow|legacy|off).
+  # NOTHING on this path writes it — the wholesale config/ delivery above
+  # carries only the repo's own files, and this step never touches the store.
+  # That absence IS the preservation guarantee: there is no release-default
+  # write for an explicit value to lose to. What was missing is the RECEIPT.
+  # This runs AFTER the shared-utils refresh closes, so the receipt describes
+  # the tree that actually landed on the box, and it asks the SAME authority
+  # the decision core uses (decision_engine.modes) instead of re-implementing
+  # the merge. An explicit off/legacy/shadow is named, and a CORRUPT value is
+  # never rewritten and never silently absorbed by the release default.
+  # NON-FATAL (rc 1 is a WARN): a mode-store typo must not withhold the version
+  # stamp for a whole box. An unprovable receipt (rc 2) is also never a pass.
+  if [ -f "$EXTRACTED_DIR/scripts/decision-engine-mode.py" ]; then
+    _DEM_RC=0
+    python3 "$EXTRACTED_DIR/scripts/decision-engine-mode.py" \
+        --shared-utils "$SKILLS_DIR/shared-utils" \
+        --oc-config "$OC_CONFIG" --assert-preserved || _DEM_RC=$?
+    case "$_DEM_RC" in
+      0) : ;;
+      1) echo "  ✗ decision-engine mode store is CORRUPT — see the ACTION above. No file was written; the box keeps running the stored value until it is fixed." >&2 ;;
+      *) echo "  ⚠ decision-engine mode receipt could not be produced (rc=$_DEM_RC) — the canonical modes module was not loadable from $SKILLS_DIR/shared-utils. An UNPROVEN receipt is not a pass." >&2 ;;
+    esac
+    unset _DEM_RC
+  fi
+  # <<< DECISION-MODE-PRESERVE-END
+
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
   # Neither install nor update copied this before; Skills 47/48 wiring FAILed
   # with a FATAL looking for funnel/presentation/video/ad SOPs.
   _UNIVERSALSOPS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/universal-sops" ]; then
-    rm -rf "$SKILLS_DIR/universal-sops"
+    # GUARDED: same class as the per-skill removal above, and this tree has no
+    # degrade path either. A partial removal leaves the box with FEWER SOPs
+    # than it started with, which is how the "✓ universal-sops refreshed" line
+    # below came to be printed over a truncated tree.
+    oc_remove_tree_guarded "$SKILLS_DIR/universal-sops" "SOP tree"
     if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
       _UNIVERSALSOPS_STATUS="fail"
     fi
@@ -5394,7 +6567,7 @@ PYEOF
   # by the POST-stamp qc-completeness run + the onboarding-resume cron; it NEVER
   # withholds the skills-version stamp):
   _D2_MIGRATE_STATUS="ok"       # workforce floor-fill / workforce QC (migrate-existing-workforce.sh: empty depts for an interview-incomplete client, or a dept below the 95% floor)
-  _D5_ACTIVATION_PASS=1         # dept-agent activation (materialize-dept-agents.sh: agents.list[] below this box's computed department floor)
+  _D5_ACTIVATION_PASS=1         # dept-agent activation (materialize-dept-agents.sh: agent roster -- agents.entries, else legacy agents.list -- below this box's computed department floor)
   _D5_NOTLIVE_DETAIL=""
   _D5_AGENT_COUNT=0
   _D5_DEPT_STATE="skipped"
@@ -5628,8 +6801,8 @@ except Exception:
   #     if bash "$_CC_RUN_INSTALL" --update-only ... ; then ✓ else ⚠ fi
   # -- a phase-6i fail_install is swallowed into an advisory "⚠ reported errors"
   # line that neither latches a gate, nor withholds the stamp, nor fails the
-  # run. Phase 6i additionally SKIPS itself entirely (exit 0) when no CLIENT_SLUG
-  # resolves, and is a documented NO-OP whenever this box's CC checkout is not at
+  # run. Phase 6i additionally SKIPPED itself entirely (exit 0) when no CLIENT_SLUG
+  # resolved (until 2026-09-23; it now falls back to 'default' like U6c), and is a documented NO-OP whenever this box's CC checkout is not at
   # the installer's hardcoded DASHBOARD_DIR. Three independent silent paths to
   # "green with an empty library". This step is the fail-CLOSED backstop.
   #
@@ -5771,7 +6944,7 @@ except Exception:
       _U6C_SLUG=""
       _U6C_STATE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
       if [ -f "$_U6C_STATE" ]; then
-        _U6C_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_U6C_STATE" 2>/dev/null || echo "")
+        _U6C_SLUG=$(jq -r '.companySlug // .clientSlug // .slug // ""' "$_U6C_STATE" 2>/dev/null || echo "")
       fi
       [ -n "$_U6C_SLUG" ] || _U6C_SLUG="default"
       echo "  → Ingesting SOP V2 library (box is under-populated: $_U6C_BEFORE < $_U6C_CANON)..."
@@ -5821,6 +6994,54 @@ except Exception:
     fi
   fi
   # <<< U6C-SOP-LIBRARY-END
+
+  # ----------------------------------------------------------
+  # Step U6c1b: universal-sops CRAFT-CLUSTER SOP ingest (ISSUE-12).
+  #
+  # WHY THIS IS SEPARATE FROM U6c ABOVE, and why it must run unconditionally.
+  # An engine whose operating SOPs live in universal-sops/<cluster>/ as markdown
+  # is in NEITHER source U6c knows about: not the shared sops.jsonl release
+  # asset, and not 23-ai-workforce-blueprint/templates/role-library/<dept>/sops/.
+  # The podcast engine is exactly that case (seven SOP-PODCAST-0*.md files,
+  # department 'podcast', and role-library/podcast/ ships roles but no sops/
+  # directory at all), so its entire runbook was invisible to the Command Center
+  # SOP library and to semantic SOP search on every box in the fleet.
+  #
+  # U6c cannot carry this: a box at or above canonical population takes its
+  # "touch NOTHING" branch and never invokes the ingester, and that is precisely
+  # the box that has been missing these rows the longest. This step reads its own
+  # signal and calls the ingester's --craft-clusters mode directly.
+  #
+  # Cost and safety: a local sqlite upsert keyed by slug. No download, no
+  # network, ZERO embedding API calls (so zero cost on the client's own key),
+  # no delete, and re-running is free. Additive: a non-zero exit is reported and
+  # never latches a U6c failure, because the shared library is unaffected by it.
+  #
+  # The DEPARTMENT itself needs no new wiring here: 'podcast' is
+  # universal_primary=true in department-naming-map.json's content-creator pack,
+  # so it is already on the 30-department universal floor that
+  # migrate-existing-workforce.sh's floor-fill and materialize-dept-agents.sh
+  # materialize on every box. The SOPs were the missing half, not the department.
+  # ----------------------------------------------------------
+  _U6C_CRAFT_PY="$SKILLS_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  [ -f "$_U6C_CRAFT_PY" ] || _U6C_CRAFT_PY="$EXTRACTED_DIR/32-command-center-setup/scripts/ingest-sop-library.py"
+  echo ""
+  echo "  Step U6c1b: universal-sops craft-cluster SOP ingest..."
+  if [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    echo "  - craft-cluster SOPs: no mission-control.db on this box (Command Center not installed); SKIP (informational)."
+  elif [ ! -f "$_U6C_CRAFT_PY" ]; then
+    echo "  - craft-cluster SOPs: ingest-sop-library.py not found on this box; SKIP (Skill 32 install is partial)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "  - craft-cluster SOPs: python3 unavailable; SKIP."
+  else
+    if python3 "$_U6C_CRAFT_PY" --craft-clusters --db "$_U6C_DB" >>"$LOG_FILE" 2>&1; then
+      _U6C_CRAFT_N="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops WHERE department='podcast';")"
+      echo "  ✓ craft-cluster SOPs ingested (podcast department rows now: ${_U6C_CRAFT_N:-0}); see $LOG_FILE"
+    else
+      echo "  ⚠ craft-cluster SOP ingest returned non-zero (additive; the shared library is unaffected); see $LOG_FILE"
+    fi
+  fi
+  unset _U6C_CRAFT_PY _U6C_CRAFT_N
 
   # ----------------------------------------------------------
   # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
@@ -5902,7 +7123,13 @@ except Exception:
     _U6C2_EMB_TABLE="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';")"
     _U6C2_EMB_ROWS=0
     if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
-      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sop_embeddings;")"
+      # COVERAGE, not raw rows. A box whose sops.id is a content hash can hold a
+      # FULL 2555-row sop_embeddings table in which every row is an ORPHAN keyed
+      # to the asset's slug-derived ids -- nothing joins. Counting rows, that box
+      # reads 2555 >= 2555 and this gate SKIPs it on every roll, forever. Counting
+      # coverage it correctly reads 0 and gets provisioned. Fleet sweep 2026-09-12
+      # found 6 boxes permanently stuck this way.
+      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops s WHERE EXISTS (SELECT 1 FROM sop_embeddings e WHERE e.sop_id = s.id);")"
     fi
     echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
     if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
@@ -6225,7 +7452,58 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
         "$SOUL_FILE" "$IDENTITY_FILE" "$USER_FILE" \
         "$SENTINEL" "$SKILL_FOLDER" \
         "${CORE_UPDATES_STRICT:-0}" "$CU_MASTER_FILES_DIR" <<'PYEOF'
-import sys, re, os
+import sys, re, os, errno  # >>> CORE-UPDATES-PY-BEGIN (extracted verbatim by tests/unit/updater-write-preflight-permission-block.test.sh)
+
+
+def _oc_owner_pair(path):
+    """"user:group" for a path, falling back to numeric ids, then to unknown."""
+    try:
+        st = os.stat(path)
+    except Exception:
+        return 'unknown'
+    try:
+        import pwd, grp
+        return pwd.getpwuid(st.st_uid).pw_name + ':' + grp.getgrgid(st.st_gid).gr_name
+    except Exception:
+        return str(st.st_uid) + ':' + str(st.st_gid)
+
+
+def _oc_me():
+    try:
+        import pwd
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:
+        return str(os.geteuid())
+
+
+def _oc_write_failed(path, exc):
+    """ONE actionable line instead of a traceback, then a clean exit 1.
+
+    THE DEFECT THIS REPLACES. On nine VPS boxes the append below hit a
+    root-owned workspace/AGENTS.md and raised
+      PermissionError: [Errno 13] Permission denied: .../workspace/AGENTS.md
+    as a bare traceback in the middle of a multi-thousand-line log, hundreds of
+    lines into this program, with a PASSING content gate printed above it. The
+    run exited 1 and the version stamp was withheld. The fix that matters is
+    the shell WRITE PRE-FLIGHT in update-skills.sh, which now refuses at the top
+    of the log. This is the belt to that braces: if a path somehow becomes
+    unwritable after the pre-flight passed, the operator still gets a sentence
+    naming the owner, the user and the remedy, not a stack trace.
+    """
+    if getattr(exc, 'errno', None) in (errno.EACCES, errno.EPERM, errno.EROFS):
+        run_owner = _oc_owner_pair(os.path.dirname(path) or '.')
+        if run_owner == 'unknown':
+            run_owner = 'node:node'
+        print('PERMISSION BLOCK: ' + path + ' is owned by ' + _oc_owner_pair(path)
+              + ' but the updater runs as ' + _oc_me()
+              + '; on a Docker box run: docker exec <container> chown '
+              + run_owner + ' ' + path, file=sys.stderr)
+    else:
+        print('[CORE_UPDATES] FATAL: could not write ' + path + ': ' + repr(exc),
+              file=sys.stderr)
+    print('[CORE_UPDATES] nothing further was written and NO version stamp follows. '
+          'Fix the cause above and re-run.', file=sys.stderr)
+    raise SystemExit(1)
 
 (cu_path, agents_f, tools_f, memory_f, soul_f,
  identity_f, user_f, sentinel, skill_folder, strict_mode,
@@ -6563,11 +7841,15 @@ for (m, target, directive) in real_sections:
                 file=sys.stderr,
             )
 
-    # Append wrapped block
-    with open(target_file, 'a', encoding='utf-8') as fh:
-        fh.write(f'\n\n{begin_marker}\n')
-        fh.write(block)
-        fh.write(f'\n{end_marker}\n')
+    # Append wrapped block. GUARDED: an unwritable target is a one-line
+    # PERMISSION BLOCK, never a traceback. See _oc_write_failed above.
+    try:
+        with open(target_file, 'a', encoding='utf-8') as fh:
+            fh.write(f'\n\n{begin_marker}\n')
+            fh.write(block)
+            fh.write(f'\n{end_marker}\n')
+    except OSError as exc:
+        _oc_write_failed(target_file, exc)
 
     merged_count += 1
 
@@ -6587,9 +7869,15 @@ try:
 except Exception:
     existing = ''
 if sentinel not in existing:
-    with open(agents_f, 'a', encoding='utf-8') as fh:
-        fh.write('\n' + sentinel + '\n')
+    # GUARDED for the same reason as the append above: this stamp lands on
+    # AGENTS.md, which is exactly the file that was found root-owned.
+    try:
+        with open(agents_f, 'a', encoding='utf-8') as fh:
+            fh.write('\n' + sentinel + '\n')
+    except OSError as exc:
+        _oc_write_failed(agents_f, exc)
 
+# <<< CORE-UPDATES-PY-END
 PYEOF
     # v14.3.15 dual-write: stamp sentinel to the 2026.x agent dir AGENTS.md too.
     # On VPS boxes that have a legacy $HOME/clawd/ (or /data/clawd/), the Python
@@ -6907,6 +8195,37 @@ PYEOF
         echo "    ✓ AGENTS.md pointer stanzas verified/refreshed (05-update-agents-md.sh)"
       else
         echo "    ⚠ 05-update-agents-md.sh reported an error for $SKILL_NAME (see $LOG_FILE) -- continuing"
+      fi
+    fi
+
+    # RR-028: ENROLLMENT/CRON RECONCILIATION IS NOT VERSION-GATED.
+    #
+    # `wire.sh` (Skill 65) is the ONLY thing that registers the Rescue Rangers
+    # receiver poll, and it used to run only through the `.wired-<version>`
+    # sentinel gate below. That made enrollment reconciliation a function of
+    # the SOFTWARE version: a box already wired at the current version never
+    # re-ran it, so a cron an operator removed (or one that a failed gateway
+    # call never created) stayed missing until the next version bump -- and a
+    # box whose files were current reported a "successful roll" over a receiver
+    # that was not scheduled at all. SPEC RR-028 requires reconciliation to be
+    # INDEPENDENT of the software version, so the reconciler runs on every pass
+    # for this one skill.
+    #
+    # Safe every pass by construction: wire.sh re-reads the enrollment store
+    # with the shared parser (no sourcing, no export), and when the box is not
+    # enrolled it exits before touching the gateway. When it is enrolled it
+    # reconciles the DURABLE cron state -- duplicates collapsed, command,
+    # schedule, enabled and delivery flags compared and READ BACK -- which is
+    # idempotent by design. Its exit code is the INSTALLER's claim (files
+    # installed); the readiness state is printed and is a separate claim that
+    # still requires a safe test claim receipt (65-rescue-receiver/
+    # rr-readiness.sh --probe), so a green roll can never be read as "receiver
+    # ready" again.
+    if [ "$SKILL_NAME" = "65-rescue-receiver" ] && [ -x "$SKILL_DIR/wire.sh" ]; then
+      if bash "$SKILL_DIR/wire.sh" --idempotent --reconcile-only >>"$LOG_FILE" 2>&1; then
+        echo "    ✓ enrollment/cron reconciliation ran (RR-028, version-independent -- see readiness line in log)"
+      else
+        echo "    ⚠ enrollment/cron reconciliation reported a wiring failure for $SKILL_NAME (see $LOG_FILE) -- next pass retries it"
       fi
     fi
 
@@ -7282,6 +8601,73 @@ else:
   fi
 
   # ----------------------------------------------------------
+  # F12b: RE-ASSERT THE PRESENTATIONS SCHEDULES, EVERY ROLL.
+  # ----------------------------------------------------------
+  # The two mirrors above refresh the department's scripts/ and intake/ trees.
+  # NOTHING in this file has ever made sure those scripts are actually RUN.
+  # Measured on this repo at v25.0.11 with python3 str.count over the full file
+  # text (not grep): this file contained 'presentation-intake-poll' 0 times and
+  # 'presentation-watchdog' 0 times, against a same-instrument control of 25 and
+  # 0 respectively in install.sh -- so a fleet roll could repair NEITHER
+  # scheduler, and install.sh had never scheduled the watchdog on any box in the
+  # first place. The consequence is the measured one: a stalled deck run is
+  # detected by nobody and restarted by nobody, and every park needs a human.
+  #
+  # WHY HERE, AND WHY PINNED. install_presentation_schedules() would otherwise
+  # resolve its scripts directory from ${_SCRIPT_DIR}, which on this path can be
+  # a TEMP CLONE that is deleted later in this same run -- scheduling launchd or
+  # a cron against a path that is about to vanish is worse than not scheduling.
+  # The MATERIALIZED department is the poller's and watchdog's real runtime home,
+  # it is persistent, and refresh-dept-scripts.py has just re-mirrored it three
+  # blocks above. So it is pinned explicitly; the lib VALIDATES the pin (it
+  # refuses any directory that does not actually hold presentation-intake-poll.sh)
+  # rather than trusting it.
+  #
+  # Both installers are idempotent: the cron branch skips a job that is already
+  # present or tombstoned, and the launchd branch re-renders and reloads the SAME
+  # label. Advisory only -- a scheduler that cannot be installed is announced,
+  # never fatal to a roll that has already delivered content.
+  # Both roots are read with `${...:-}`: this file runs under `set -u` (line 50)
+  # and an unset ONBOARDING_DIR would abort the whole roll over a lookup that is
+  # allowed to come up empty. An EMPTY root is then skipped BEFORE it is
+  # concatenated -- FIX 61's own lesson: an empty prefix is never a usable path,
+  # it silently becomes the root-anchored literal "/lib-presentation-schedules.sh"
+  # and turns an unresolved DIRECTORY into a missing-FILE report.
+  _PRES_SCHED_LIB=""
+  for _ps_root in "${ONBOARDING_DIR:-}" "${_SCRIPT_DIR:-}"; do
+    [ -n "$_ps_root" ] || continue
+    if [ -f "$_ps_root/lib-presentation-schedules.sh" ]; then
+      _PRES_SCHED_LIB="$_ps_root/lib-presentation-schedules.sh"; break
+    fi
+  done
+  if [ -n "$_PRES_SCHED_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_PRES_SCHED_LIB"
+  fi
+  if ! command -v install_presentation_schedules >/dev/null 2>&1; then
+    echo "  ⚠ lib-presentation-schedules.sh not found (looked in \$ONBOARDING_DIR and \${_SCRIPT_DIR}) -- the Presentations intake poll and the watchdog/supervisor were NOT scheduled or repaired by this roll."
+  else
+    _PRES_DEPT_SCRIPTS=""
+    if [ -n "${OC_WORKSPACE:-}" ] && [ -f "$OC_WORKSPACE/departments/Presentations/scripts/presentation-intake-poll.sh" ]; then
+      _PRES_DEPT_SCRIPTS="$OC_WORKSPACE/departments/Presentations/scripts"
+    fi
+    if [ -z "$_PRES_DEPT_SCRIPTS" ]; then
+      echo "  (Presentations department not materialized at \${OC_WORKSPACE}/departments/Presentations/scripts -- schedule re-assert SKIPPED; nothing to schedule)"
+    else
+      echo ""
+      echo "  Re-asserting Presentations schedules (intake poll + watchdog/supervisor)..."
+      # Same pipefail-correct `if PIPE; then` capture as the two mirrors above:
+      # `cmd | tee` would otherwise report tee's exit status, not the
+      # installer's, and a failed schedule would read as a clean roll.
+      if PRESENTATIONS_SCRIPTS_SRC="$_PRES_DEPT_SCRIPTS" install_presentation_schedules 2>&1 | tee -a "$LOG_FILE"; then
+        :
+      else
+        echo "  ⚠ Presentations schedule re-assert reported a failure -- see the lines above for WHICH scheduler failed and why (this roll's content delivery is unaffected)."
+      fi
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
   # checks role docs against the departments/ tree. If that directory is absent
   # while .workforce-build-state.json says interviewComplete=true, the drain has
@@ -7377,6 +8763,12 @@ else:
     _SHAREDCORE_STATUS="fail"  # D4[G]: renamed from the old _D5_ACTIVATION_STATUS name collision
   fi
 
+  # END-OF-ROLL GLOBAL RECLAIM. The per-target prune above only reaches paths
+  # the unify scan enumerated; this bounds the orphaned + out-of-tree
+  # populations it cannot see, and runs even when the step above refused.
+  # See reclaim_unify_backups() for the three shapes and the safety pattern.
+  reclaim_unify_backups || true
+
   # ----------------------------------------------------------
   # D5 -- PRE-STAMP dept-agent activation gate (feeds the unified completeness
   # gate below). Runs materialize-dept-agents.sh here so a genuine
@@ -7411,9 +8803,21 @@ else:
       _D5_DEPT_STATE="interview-not-complete"
       echo "  ✓ [D5] pre-interview self-skip (INTERVIEW_NOT_COMPLETE) — benign, not a failure"
     else
+      # ROSTER-SHAPE FIX (2026-09-04): this counted ONLY the legacy
+      # `agents.list` array. On a box migrated to the canonical
+      # `agents.entries` roster that count is 0, so D5 false-FAILED
+      # ("agents.list[] has only 0 entries ... below the computed department
+      # floor") on a box whose departments were in fact fully registered.
+      # Count the roster materialize-dept-agents.sh actually writes to:
+      # agents.entries when present and non-empty, legacy agents.list
+      # otherwise -- the same entries-first precedence as _oc_agents() in
+      # scripts/verify-routing.sh (PR #1021).
       _D5_AGENT_COUNT=0
+      _D5_ROSTER_LABEL="none"
       if [ -f "$OC_JSON" ]; then
-        _D5_AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+        _D5_ROSTER_INFO=$(python3 -c "import json,sys;d=json.load(open('$OC_JSON'));a=(d.get('agents') or {});e=a.get('entries');r=[v for v in e.values() if isinstance(v,dict)] if isinstance(e,dict) and e else [x for x in (a.get('list') or []) if isinstance(x,dict)];lab='agents.entries' if (isinstance(e,dict) and e) else ('agents.list' if isinstance(a.get('list'),list) else 'none');sys.stdout.write('%d %s' % (len(r), lab))" 2>/dev/null || echo "0 none")
+        _D5_AGENT_COUNT="${_D5_ROSTER_INFO%% *}"
+        _D5_ROSTER_LABEL="${_D5_ROSTER_INFO#* }"
       fi
       # D5[F2]: gate on THIS box's real expected department count instead of a
       # fixed "-lt 2" magic number. A genuine interview-complete box carries the
@@ -7444,11 +8848,11 @@ if isinstance(n, int) and n > 0:
         if [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt "$_D5_EXPECTED_COUNT" ]; then
           _D5_ACTIVATION_PASS=0
           _D5_DEPT_STATE="fail"
-          _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below this box's computed department floor of ${_D5_EXPECTED_COUNT} (interview complete)"
-          echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize, below the computed department floor of ${_D5_EXPECTED_COUNT}"
+          _D5_NOTLIVE_DETAIL="${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize, below this box's computed department floor of ${_D5_EXPECTED_COUNT} (interview complete)"
+          echo "  ✗ [D5] WIRING-ASSERT FAIL: ${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize, below the computed department floor of ${_D5_EXPECTED_COUNT}"
         else
           _D5_DEPT_STATE="registered"
-          echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[], floor=${_D5_EXPECTED_COUNT})"
+          echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in ${_D5_ROSTER_LABEL}, floor=${_D5_EXPECTED_COUNT})"
         fi
       elif [ -z "$_D5_AGENT_COUNT" ] || [ "$_D5_AGENT_COUNT" -lt 2 ]; then
         # department-floor.py unavailable / no verdict for this box -- fall
@@ -7456,11 +8860,11 @@ if isinstance(n, int) and n > 0:
         # we have no computable floor for.
         _D5_ACTIVATION_PASS=0
         _D5_DEPT_STATE="fail"
-        _D5_NOTLIVE_DETAIL="agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize (interview complete; department-floor.py unavailable -- fell back to the wiring-only check)"
-        echo "  ✗ [D5] WIRING-ASSERT FAIL: agents.list[] has only ${_D5_AGENT_COUNT:-0} entries after materialize"
+        _D5_NOTLIVE_DETAIL="${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize (interview complete; department-floor.py unavailable -- fell back to the wiring-only check)"
+        echo "  ✗ [D5] WIRING-ASSERT FAIL: ${_D5_ROSTER_LABEL} holds only ${_D5_AGENT_COUNT:-0} agents after materialize"
       else
         _D5_DEPT_STATE="registered"
-        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in agents.list[]; department-floor.py unavailable -- wiring-only check)"
+        echo "  ✓ [D5] dept agents registered (${_D5_AGENT_COUNT} agents in ${_D5_ROSTER_LABEL}; department-floor.py unavailable -- wiring-only check)"
       fi
     fi
   else
@@ -7876,6 +9280,157 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     fi
   fi
 
+  # cc-compat.json: the Command Center release this onboarding pins. Skill 32's
+  # update-only refresh (below, after $EXTRACTED_DIR is gone) deploys exactly
+  # that release, reading $SKILLS_DIR/cc-compat.json; a copy left from an older
+  # release would pin an old Command Center.
+  if [ -f "$EXTRACTED_DIR/cc-compat.json" ] && cp -f "$EXTRACTED_DIR/cc-compat.json" "$SKILLS_DIR/cc-compat.json" 2>/dev/null; then
+    echo "  ✓ cc-compat.json refreshed in $SKILLS_DIR"
+  else
+    echo "  ✗ cc-compat.json not refreshed in $SKILLS_DIR — the Command Center refresh will refuse an unresolvable pin" >&2
+  fi
+
+  # ---- BEGIN gateway-watchdog converge ----
+  # (tests/unit/roll-converges-gateway-watchdog.test.sh extracts this block
+  #  verbatim between these two anchors and drives it. Keep the anchors.)
+  #
+  # CONVERGE: Mac SERVICE self-heal + gateway-health watchdog (no sudo).
+  #
+  # THE DEFECT THIS CLOSES. platform/mac/service-selfheal/install-service-remediate.sh
+  # lays down remediate.sh, gateway-health-watchdog.sh and the
+  # com.openclaw.service-remediate LaunchAgent that drives them every 5 minutes.
+  # Before this block, only install.sh (first-time onboarding) and
+  # 38-conversational-ai-system/scripts/14-install-cloudflared-service.sh ever
+  # ran it. The fleet roll, which is the only thing that touches every box on
+  # every release, never did. So a box onboarded before that installer shipped,
+  # or one whose LaunchAgent was booted out and never re-bootstrapped, rolls
+  # forever with no safety net over a dark gateway.
+  #
+  # That matters because a detached OpenClaw upgrade STOPS the gateway
+  # LaunchAgent for the whole update and only restarts it if the update
+  # finishes. Measured on Mac fleet boxes: 10 to 20 minutes routinely, one box
+  # spent 8 minutes inside a single git clone, and a third stalled outright and
+  # sat dark for about two hours with nothing restarting it.
+  #
+  # CONVERGENCE, NOT INSTALLATION. When remediate.sh and gateway-watchdog.sh on
+  # disk already match this bundle byte for byte, the plist exists, and the
+  # LaunchAgent is loaded, nothing is touched and the roll prints
+  # already-current. Otherwise the installer runs (it is itself fully
+  # idempotent) and the roll prints installed.
+  #
+  # SCOPE. Mac login user only. Skipped inside a container, on a VPS, and when
+  # running as root: com.openclaw.service-remediate is a per-user GUI-domain
+  # LaunchAgent, and gui/0 is not the client's session. The VPS equivalent is
+  # platform/vps/service-selfheal/install-host-watchdog-cron.sh, which an
+  # operator runs on the Docker host.
+  #
+  # FAIL-SOFT BY CONSTRUCTION. Every failure path prints state=warn and returns.
+  # It never fails the roll and never withholds the version stamp. No
+  # declaration key is involved: the rescue-tunnel converge this mirrors
+  # registers none either, because both artifacts are launchd jobs keyed by
+  # their own Label, not `openclaw cron` jobs keyed by a declaration key.
+  _GWWD_STATE="skipped-not-mac"
+  _GWWD_WHY=""
+  if [ "${OPENCLAW_PLATFORM:-}" != "mac" ]; then
+    _GWWD_WHY="platform=${OPENCLAW_PLATFORM:-unknown}"
+  elif [ -d "/data/.openclaw" ]; then
+    _GWWD_WHY="container: /data/.openclaw is present, so this is not a login-user Mac"
+  elif [ "$(id -u)" = "0" ]; then
+    _GWWD_WHY="running as root; the self-heal is a per-user GUI LaunchAgent and gui/0 is not the client session"
+  else
+    _SELFHEAL_DIR="$EXTRACTED_DIR/platform/mac/service-selfheal"
+    _SELFHEAL_INSTALLER="$_SELFHEAL_DIR/install-service-remediate.sh"
+    if [ ! -f "$_SELFHEAL_INSTALLER" ]; then
+      _GWWD_STATE="warn"
+      _GWWD_WHY="installer not in this bundle ($_SELFHEAL_INSTALLER); older onboarding bundle"
+    else
+      # $EXTRACTED_DIR is removed at Cleanup a few hundred lines below, so stage
+      # a persistent copy. Without it the remedy line in the warn case would
+      # name a path that no longer exists by the time anyone reads the log.
+      _GWWD_STAGED_DIR="$OC_CONFIG/scripts/service-selfheal"
+      mkdir -p "$_GWWD_STAGED_DIR" 2>/dev/null || true
+      for _gwwd_f in install-service-remediate.sh remediate.sh gateway-health-watchdog.sh com.openclaw.service-remediate.plist.template; do
+        if [ -f "$_SELFHEAL_DIR/$_gwwd_f" ]; then
+          cp -f "$_SELFHEAL_DIR/$_gwwd_f" "$_GWWD_STAGED_DIR/$_gwwd_f" 2>/dev/null || true
+        fi
+      done
+      chmod +x "$_GWWD_STAGED_DIR"/*.sh 2>/dev/null || true
+
+      _GWWD_SVC_DIR="$HOME/.openclaw/service-env"
+      _GWWD_PLIST="$HOME/Library/LaunchAgents/com.openclaw.service-remediate.plist"
+      if cmp -s "$_SELFHEAL_DIR/remediate.sh" "$_GWWD_SVC_DIR/remediate.sh" \
+         && cmp -s "$_SELFHEAL_DIR/gateway-health-watchdog.sh" "$_GWWD_SVC_DIR/gateway-watchdog.sh" \
+         && [ -f "$_GWWD_PLIST" ] \
+         && launchctl print "gui/$(id -u)/com.openclaw.service-remediate" >/dev/null 2>&1; then
+        _GWWD_STATE="already-current"
+        _GWWD_WHY="remediate.sh and gateway-watchdog.sh match this bundle and com.openclaw.service-remediate is loaded"
+      elif bash "$_SELFHEAL_INSTALLER" >>"$LOG_FILE" 2>&1; then
+        _GWWD_STATE="installed"
+        _GWWD_WHY="com.openclaw.service-remediate every 300s; gateway-watchdog.sh in $_GWWD_SVC_DIR"
+      else
+        _GWWD_STATE="warn"
+        _GWWD_WHY="install-service-remediate.sh returned non-zero (see $LOG_FILE); re-run by hand: bash $_GWWD_STAGED_DIR/install-service-remediate.sh"
+      fi
+    fi
+  fi
+  if [ -n "$_GWWD_WHY" ]; then
+    echo "  [GATEWAY-WATCHDOG] state=$_GWWD_STATE ($_GWWD_WHY)"
+  else
+    echo "  [GATEWAY-WATCHDOG] state=$_GWWD_STATE"
+  fi
+  # ---- END gateway-watchdog converge ----
+
+  # ----------------------------------------------------------
+  # LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root).
+  #
+  # Mirrors the install.sh block of the same name. It lives HERE, before the
+  # "# Cleanup" rm -rf of the temp clone, because the installer and the
+  # watchdog it lays down are repo artifacts under platform/mac/ and are gone
+  # the moment that clone is removed.
+  #
+  # The gap: the rescue connector com.blackceo.rescue-<slug> is a SYSTEM-domain
+  # daemon installed by an operator runbook. After a reboot it can hold a stale
+  # cached edge address and dial an RFC1918 address on port 7844 forever while
+  # launchd KeepAlive keeps the useless process alive. Alive is not registered,
+  # and no watchdog in this repo saw that state before Layer E. The same reboot
+  # sometimes leaves sshd disabled in the launchd system domain.
+  #
+  # Needs root, so this uses `sudo -n`. Without a passwordless sudo ticket the
+  # roll is NOT blocked: it prints the exact one-line command instead.
+  # Idempotent and fail-soft. An update must never be the thing that stops.
+  # ----------------------------------------------------------
+  if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
+    HERE_RESCUE_WD_DIR="$EXTRACTED_DIR/platform/mac/tunnel-hardening"
+    _RESCUE_WD_INSTALLER="$HERE_RESCUE_WD_DIR/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+      if sudo -n true 2>/dev/null; then
+        if sudo -n bash "$_RESCUE_WD_INSTALLER" >>"$LOG_FILE" 2>&1; then
+          echo "  ✓ rescue-tunnel reboot-stale watchdog installed (com.blackceo.rescue-tunnel-watchdog, every 120s)"
+        else
+          echo "  ⚠ rescue-tunnel watchdog install returned non-zero (see $LOG_FILE); advisory, does not fail the roll"
+        fi
+      else
+        # The installer lives in the temp clone, which is removed at Cleanup, so
+        # stage a persistent copy the client can actually run afterwards.
+        _RESCUE_WD_STAGED="$OC_CONFIG/scripts/install-rescue-tunnel-watchdog.sh"
+        mkdir -p "$OC_CONFIG/scripts" 2>/dev/null || true
+        if cp -f "$HERE_RESCUE_WD_DIR/rescue-tunnel-watchdog.sh" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null \
+           && cp -f "$HERE_RESCUE_WD_DIR/com.blackceo.rescue-tunnel-watchdog.plist.template" "$OC_CONFIG/scripts/com.blackceo.rescue-tunnel-watchdog.plist.template" 2>/dev/null \
+           && cp -f "$_RESCUE_WD_INSTALLER" "$_RESCUE_WD_STAGED" 2>/dev/null; then
+          chmod +x "$_RESCUE_WD_STAGED" "$OC_CONFIG/scripts/rescue-tunnel-watchdog.sh" 2>/dev/null || true
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo on this box (the roll continues normally)."
+          echo "    Run this ONE command here, entering your own password:"
+          echo "      sudo bash $_RESCUE_WD_STAGED"
+        else
+          echo "  ℹ rescue-tunnel watchdog NOT installed: no passwordless sudo, and the installer could not be staged for a later manual run."
+          echo "    Re-run install.sh on this box, which offers the same step."
+        fi
+      fi
+    else
+      echo "  ℹ rescue-tunnel watchdog installer not in this bundle; skipping (older onboarding bundle, harmless)"
+    fi
+  fi
+
   # ----------------------------------------------------------
   # UN-WIRE the removed CEO intent-gate (2026-08-05, Trevor).
   #
@@ -8065,6 +9620,34 @@ PY
   # for un-registered skills. The "complete" Telegram below is CONDITIONAL on
   # this gate. ONBOARDING_GATE_OK / _SUMMARY drive the honest report.
   # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # LEAN BOOTSTRAP — pointerize managed blocks before the gate runs.
+  #
+  # wire_core_updates() above appends each skill's CORE_UPDATES text in full
+  # between <!-- BEGIN skill:NN:target --> markers, and its sentinel guard makes
+  # every later roll a no-op — so once a block is in AGENTS.md at full length it
+  # stays there, and AGENTS.md is re-billed to the model on EVERY turn. Sweeping
+  # here (rather than only in apply-fleet-standards.sh) means a block wired by
+  # THIS roll is compact by the END of this roll, not one roll later.
+  #
+  # Non-fatal by design: a failure leaves a correct, merely larger AGENTS.md,
+  # which must never fail an update.
+  if [ -f "$_SCRIPT_DIR/scripts/bootstrap-pointerize.py" ] && [ -n "${OC_WS_RESOLVED:-}" ]; then
+    # shellcheck source=/dev/null
+    [ -f "$_SCRIPT_DIR/scripts/lib-bootstrap-pointer.sh" ] && . "$_SCRIPT_DIR/scripts/lib-bootstrap-pointer.sh"
+    if command -v bp_mode >/dev/null 2>&1 && [ "$(bp_mode)" != "full" ]; then
+      for _bp_f in AGENTS.md TOOLS.md MEMORY.md; do
+        [ -f "$OC_WS_RESOLVED/$_bp_f" ] || continue
+        python3 "$_SCRIPT_DIR/scripts/bootstrap-pointerize.py" sweep \
+          --bootstrap "$OC_WS_RESOLVED/$_bp_f" \
+          --ref-file "$(bp_reference_for "$_bp_f")" >/dev/null 2>&1 \
+          && echo "  ✓ lean-bootstrap: $_bp_f pointerized (full text in $(bp_reference_for "$_bp_f"))" \
+          || true
+      done
+      unset _bp_f
+    fi
+  fi
+
   ONBOARDING_GATE_OK="unknown"
   ONBOARDING_GATE_SUMMARY=""
   if command -v obs_verify_skill >/dev/null 2>&1; then
@@ -8540,7 +10123,43 @@ PYEOF
   _HARDENING="$_PERSIST_SCRIPTS/install-hardening.sh"
   [ -f "$_HARDENING" ] || _HARDENING="$ONBOARDING_DIR/scripts/install-hardening.sh"
   if [ -f "$_HARDENING" ]; then
-    bash "$_HARDENING" 2>&1 | tail -5 || true
+    # STREAMED, BRACKETED HARDENING LOG (defect fix, 2026-09-17).
+    # The old call was `bash "$_HARDENING" 2>&1 | tail -5 || true`. `tail` cannot
+    # emit a single byte until the producer exits, so when the hardening step
+    # wedged (an unbounded `brew install` blocked in a pseudo-terminal read) the
+    # roll log simply STOPPED -- not one hardening line, no marker, nothing to
+    # distinguish a hang from a slow step. Operators read a days-old stuck roll
+    # as "finished quietly".
+    #
+    # Fix, three parts:
+    #   1. A `[hardening] started` marker goes to the console AND the roll log
+    #      BEFORE the work, so the log always shows the step was entered.
+    #   2. Output streams through `tee` into a dedicated per-run hardening log
+    #      and on into the roll log. `tee` writes each chunk as it arrives, so a
+    #      hang now leaves a visible, growing, `tail -f`-able partial log instead
+    #      of silence.
+    #   3. A `[hardening] finished rc=<n>` marker closes the bracket. A started
+    #      marker with no finished marker IS the hang signature.
+    # The last 5 lines are still summarised to the console afterwards, which is
+    # all the old `tail -5` ever delivered.
+    _HARDENING_LOG="${LOG_FILE%.log}-hardening.log"
+    _HARDENING_RCFILE="${TMPDIR:-/tmp}/openclaw-hardening-rc.$$"
+    rm -f "$_HARDENING_RCFILE"
+    printf '  [hardening] started %s -> %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_HARDENING_LOG" | tee -a "$LOG_FILE"
+    {
+      _HARDENING_RC_INNER=0
+      bash "$_HARDENING" 2>&1 || _HARDENING_RC_INNER=$?
+      echo "$_HARDENING_RC_INNER" > "$_HARDENING_RCFILE"
+    } | tee -a "$_HARDENING_LOG" >> "$LOG_FILE" || true
+    # An unreadable rc file means UNDETERMINED, not success -- say so, never
+    # print a rc=0 we did not observe.
+    _HARDENING_RC="$(cat "$_HARDENING_RCFILE" 2>/dev/null || true)"
+    [ -n "$_HARDENING_RC" ] || _HARDENING_RC="unknown"
+    rm -f "$_HARDENING_RCFILE"
+    printf '  [hardening] finished rc=%s\n' "$_HARDENING_RC" | tee -a "$LOG_FILE"
+    if [ -f "$_HARDENING_LOG" ]; then
+      tail -n 5 "$_HARDENING_LOG" 2>/dev/null | sed 's/^/    /' || true
+    fi
     echo "  ✓ Install hardening complete"
   else
     echo "  ℹ install-hardening.sh not in bundle — skipping (older bundle, harmless)"
@@ -8607,6 +10226,7 @@ PYEOF
   else
     echo "  ℹ openclaw CLI not on PATH — skipping loopDetection enablement (update continues)."
   fi
+
 
   # ----------------------------------------------------------
   # FLEET MEMORY STANDARDIZATION (v21.2.0) — kills the dark-memory default
@@ -8946,6 +10566,118 @@ PY
   fi
 
   # ----------------------------------------------------------
+  # Agent Exchange Telemetry plugin (Headquarters capture, 2026-10-04).
+  # The passive observer of the native sessions_send/sessions_spawn exchange path
+  # and the run-scoped lifecycle terminal stream. It replaces no tool, edits no
+  # parameters, invokes no agent, changes no model and synthesizes no dialogue.
+  #
+  # WHY IT IS INSTALLED EXPLICITLY HERE. This extension is path-loaded from
+  # ~/.openclaw/extensions (origin:"config", never "bundled"), so nothing
+  # discovers it by sibling scan: an unregistered copy on disk is a copy that
+  # never loads, and Headquarters capture silently reports zero exchanges. The
+  # install must therefore deploy the directory AND register the id, exactly as
+  # the CEO Routing Doctrine block above does.
+  #
+  # THE SAME THREE DEFECTS THE DOCTRINE BLOCK DOCUMENTS APPLY HERE, for the same
+  # reasons (read that block's comments before editing this one):
+  #   • `cp -R "$_TE_SRC/." "$_TE_DST/"` — the "/." form, or run 2 nests a second
+  #     copy and every later roll adds another.
+  #   • `plugins.entries.<id>` gets `enabled` ONLY. `hooks` on an entries id is
+  #     additionalProperties:false and `allowPromptInjection` there made
+  #     `openclaw config validate` FAIL — a failed validate is fatal at gateway
+  #     startup (gateway never starts, cron freezes forever, silently).
+  #   • `plugins.load.paths` is appended ONLY if absent and `plugins.allow` is
+  #     EXTENDED only when it already exists and lacks the id. Never create an
+  #     allowlist where none existed: that disables every other plugin on the box.
+  #
+  # ADDITIVE, unlike the doctrine block in one place: the entry is merged with
+  # setdefault and only `enabled` is forced. An operator (or a later target
+  # capability check) may have written the extension's own `config` block
+  # (companyId / installationId / workspaceDir — the trusted identity the plugin
+  # may NOT read from hook context). Overwriting that object would silently blank
+  # the box's capture identity, so it is preserved. No credentials or provider
+  # settings are touched: only plugins.entries / load.paths / allow, key NAMES
+  # only, no key VALUE is ever printed.
+  #
+  # KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO install.sh.
+  # ----------------------------------------------------------
+  echo "  Installing Agent Exchange Telemetry plugin (Headquarters capture)..."
+  _TE_SRC="$ONBOARDING_DIR/extensions/agent-exchange-telemetry"
+  _TE_DST="$HOME/.openclaw/extensions/agent-exchange-telemetry"
+  if [ -d "$_TE_SRC" ]; then
+    mkdir -p "$_TE_DST"
+    # Errors are NOT swallowed (no 2>/dev/null || true): a real copy failure
+    # must be visible instead of shipping a box whose Headquarters feed is
+    # permanently empty with a green install log.
+    if ! cp -R "$_TE_SRC/." "$_TE_DST/"; then
+      echo "  ⚠ FAILED to copy agent-exchange-telemetry into $_TE_DST — plugin NOT installed"
+    else
+      python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    # ADDITIVE merge, deliberately NOT the doctrine block's whole-object
+    # assignment: this entry has a configSchema, so an existing `config` object
+    # (companyId / installationId / workspaceDir — the plugin's ONLY trusted
+    # source for those, per capture-bindings F-1/F-2) must survive the install.
+    # Only `enabled` is forced true; every other key is left exactly as written.
+    _entry = cfg.setdefault("plugins", {}).setdefault("entries", {}).setdefault("agent-exchange-telemetry", {})
+    _entry["enabled"] = True
+    # TARGET CAPABILITY CHECK (the binding's third clause). The plugin may NOT
+    # read the caller's installation identity from hook context or from tool
+    # params (capture-bindings F-1: no installationId exists on that surface),
+    # so the trusted pair has to come from the box's OWN configuration. Derive
+    # it from what this box already recorded — openclaw.json env.vars first,
+    # then the installer's own environment — and write ONLY what is actually
+    # present: an absent value stays absent (the plugin then records honest
+    # uncorrelated capture health rather than a guessed company). Never
+    # overwrite an operator-set config block.
+    _config = _entry.setdefault("config", {})
+    _vars = cfg.get("env", {}).get("vars", {}) if isinstance(cfg.get("env"), dict) else {}
+    for _key, _env in (("companyId", "MC_COMPANY_ID"), ("installationId", "MC_INSTALLATION_ID")):
+        if _config.get(_key):
+            continue                                   # operator value wins
+        _val = _vars.get(_env) or os.environ.get(_env) or ""
+        if isinstance(_val, str) and _val.strip():
+            _config[_key] = _val.strip()
+    if not _config:
+        _entry.pop("config", None)                     # never leave an empty block behind
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never a "/Users/%s" literal — the /Users prefix
+    # is macOS-only and would point every Linux box (VPS + Contabo) at a
+    # directory that does not exist, so the extension would never load.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED ids and runs EARLIER in a roll than
+    # this installer, so without this the telemetry plugin is silently dropped
+    # from the allowlist on a later roll. Only EXTEND an existing allowlist.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "agent-exchange-telemetry" not in _allow:
+        _allow.append("agent-exchange-telemetry")
+    # ATOMIC WRITE + timestamped backup: a signal or full disk mid-write would
+    # TRUNCATE openclaw.json and the gateway would not start.
+    _bak = "%s.bak.xet-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.xet"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("agent-exchange-telemetry enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+      echo "  ✓ Agent Exchange Telemetry plugin installed + enabled (passive Headquarters capture)"
+    fi
+  else
+    echo "  ⚠ agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
+  fi
+
+  # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in
   # openclaw.json. Runs after apply-routing-fix.sh so the routing config
   # (tools.sessions.visibility / agentToAgent) is set before agents are registered.
@@ -8962,15 +10694,22 @@ PY
       # miss, or a silent empty run is surfaced loudly — NOT swallowed with a
       # soft "update continues" message.  Skips gracefully when openclaw.json is
       # absent (Skill 32 not yet built on this box).
+      # ROSTER-SHAPE FIX (2026-09-04): counted ONLY legacy `agents.list`, so on
+      # a migrated box (agents.entries) it always read 0 and warned "Dept agents
+      # NOT live" on a box that was fully registered. Entries-first with a list
+      # fallback, same precedence as the D5 counter above.
       _AGENT_COUNT=0
+      _AGENT_ROSTER_LABEL="none"
       if [ -f "$OC_JSON" ]; then
-        _AGENT_COUNT=$(python3 -c "import json,sys; d=json.load(open('$OC_JSON')); sys.stdout.write(str(len(d.get('agents',{}).get('list',[]))))" 2>/dev/null || echo "0")
+        _AGENT_ROSTER_INFO=$(python3 -c "import json,sys;d=json.load(open('$OC_JSON'));a=(d.get('agents') or {});e=a.get('entries');r=[v for v in e.values() if isinstance(v,dict)] if isinstance(e,dict) and e else [x for x in (a.get('list') or []) if isinstance(x,dict)];lab='agents.entries' if (isinstance(e,dict) and e) else ('agents.list' if isinstance(a.get('list'),list) else 'none');sys.stdout.write('%d %s' % (len(r), lab))" 2>/dev/null || echo "0 none")
+        _AGENT_COUNT="${_AGENT_ROSTER_INFO%% *}"
+        _AGENT_ROSTER_LABEL="${_AGENT_ROSTER_INFO#* }"
       fi
       if [ -z "$_AGENT_COUNT" ] || [ "$_AGENT_COUNT" -lt 2 ]; then
-        echo "  ⚠ WIRING-ASSERT FAIL: agents.list[] has only ${_AGENT_COUNT:-0} entries after materialize"
+        echo "  ⚠ WIRING-ASSERT FAIL: ${_AGENT_ROSTER_LABEL} holds only ${_AGENT_COUNT:-0} agents after materialize"
         echo "  ⚠ Dept agents NOT live — re-run update after build-workforce.py completes or check Skill 32 path"
       else
-        echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in agents.list[])"
+        echo "  ✓ Dept agents registered (${_AGENT_COUNT} agents in ${_AGENT_ROSTER_LABEL})"
       fi
 
       # DEPARTMENT-RUNTIME-PARITY GUARD (belt-and-suspenders on update runs): the
@@ -9061,7 +10800,7 @@ PY
   # instead of on an unrelated build-state field.
   # ----------------------------------------------------------
   # >>> TRAP3-CC-GUARD-HELPERS-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
-  _CC_DIR_CANONICAL="$HOME/projects/command-center"
+  _CC_DIR_CANONICAL="${CC_APP_DIR:-$HOME/projects/command-center}"
   _CC_PORT="${CC_PORT:-4000}"
   _CC_PM2_NAMES="blackceo-command-center mission-control command-center"
 
@@ -9083,6 +10822,12 @@ PY
   # Canonical path first so an already-correct box resolves unchanged; then the
   # documented fleet alternates. Echoes nothing and returns 1 when none exists.
   cc_resolve_existing_dir() {
+    # An explicit client app pin must never fall through to another checkout.
+    if [ -n "${CC_APP_DIR:-}" ]; then
+      cc_is_valid_checkout "$CC_APP_DIR" || return 1
+      printf '%s\n' "$CC_APP_DIR"
+      return 0
+    fi
     for _ccr_cand in \
       "$_CC_DIR_CANONICAL" \
       "/data/projects/command-center" \
@@ -9167,9 +10912,9 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # P1-3: build-workforce.py now writes the slug as `companySlug` (canonical) and
     # `clientSlug` (transition alias). Read companySlug first, fall back to clientSlug,
     # so both build-state generations resolve. jq fallback chain (was: clientSlug-only).
-    _CC_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
-    _CC_COMPANY=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('companyName',''))" 2>/dev/null || echo "")
-    _CC_EMAIL=$(python3 -c "import json; d=json.load(open('$_STATE_FILE')); print(d.get('contactEmail',''))" 2>/dev/null || echo "")
+    _CC_SLUG=$(jq -r '.companySlug // .clientSlug // .slug // ""' "$_STATE_FILE" 2>/dev/null || echo "")
+    _CC_COMPANY=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("companyName",""))' "$_STATE_FILE" 2>/dev/null || echo "")
+    _CC_EMAIL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("contactEmail",""))' "$_STATE_FILE" 2>/dev/null || echo "")
   fi
   # ----------------------------------------------------------
   # D5-PRE (stale-checkout guard): both D5 branches below run the ON-BOX Skill-32
@@ -9191,7 +10936,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     _CC_DST_VER=$(tr -d '[:space:]' < "$SKILLS_DIR/32-command-center-setup/skill-version.txt" 2>/dev/null || echo "")
     if [ -n "$_CC_SRC_VER" ] && [ "$_CC_SRC_VER" != "$_CC_DST_VER" ]; then
       echo "  [D5-PRE] Refreshing on-box Skill 32 (${_CC_DST_VER:-none} -> ${_CC_SRC_VER}) before running the CC installer (stale-checkout guard)..."
-      rm -rf "$SKILLS_DIR/32-command-center-setup"
+      # GUARDED: same class again, and the likeliest of the three to be hit.
+      # Command Center scripts are the measured source of root-run python on
+      # these boxes, so Skill 32 is where root-owned __pycache__ appears first.
+      oc_remove_tree_guarded "$SKILLS_DIR/32-command-center-setup" "skill"
       cp -r "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
@@ -9247,9 +10995,17 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # the genuine installer-failure / not-on-origin-main cases below (U005
     # exit-2 advisory, unchanged) -- those remain fatal-to-this-section by
     # design; a dirty tree is a different, recoverable, expected condition.
-    _CC_DIRTY_STATUS="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null || true)"
+    # TRACKED changes only — the canonical spelling, inline because this block
+    # is extracted verbatim and sourced standalone by
+    # scripts/test-updater-traps-1-and-3.sh. A tree whose only difference is
+    # untracked files pulls fine, so it is refreshed, not skipped.
+    _CC_DIRTY_STATUS="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+    _CC_UNTRACKED_N="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null | grep -c '^??' || true)"
+    _CC_UNTRACKED_N="$(printf '%s' "${_CC_UNTRACKED_N:-0}" | tr -d '[:space:]')"
+    [ "${_CC_UNTRACKED_N:-0}" = "0" ] || \
+      echo "  Command Center checkout has $_CC_UNTRACKED_N untracked file(s) — not dirt, refresh proceeds."
     if [ -n "$_CC_DIRTY_STATUS" ]; then
-      echo "  ⚠ Command Center checkout at $_CC_DIR has UNCOMMITTED local changes — refresh SKIPPED." >&2
+      echo "  ⚠ Command Center checkout at $_CC_DIR has UNCOMMITTED local changes to TRACKED files — refresh SKIPPED." >&2
       echo "    A git pull against a dirty tree is unsafe, so nothing was pulled, reset, or discarded." >&2
       printf '%s\n' "$_CC_DIRTY_STATUS" | head -n 10 | sed 's/^/      /' >&2
       echo "    REMEDIATION: on this box, run:" >&2
@@ -9259,6 +11015,21 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       echo "    then re-run the updater to pick up the Command Center refresh." >&2
       echo "    Skills content is current; the rest of this update continues normally." >&2
     else
+      # CONTRACT CHECK (WARN-only on an update roll). The CC ships
+      # scripts/openclaw-contract-check.mjs, which proves the config/runtime
+      # contract this updater is about to refresh against. A code-only roll
+      # must never be blocked by it -- report and continue; run-full-install.sh
+      # is where a FULL install makes it fatal.
+      _CC_CONTRACT="$_CC_DIR/scripts/openclaw-contract-check.mjs"
+      if [ -f "$_CC_CONTRACT" ] && command -v node >/dev/null 2>&1; then
+        if node "$_CC_CONTRACT" >>"$LOG_FILE" 2>&1; then
+          echo "  ✓ CC contract check passed"
+        else
+          echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE). Refresh continues." >&2
+        fi
+      elif [ -f "$_CC_CONTRACT" ]; then
+        echo "  — CC contract check present but node is not on PATH — skipped (not a failure)."
+      fi
       echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
       # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
       # layouts silently refreshed $HOME/projects/command-center instead (or did
@@ -9267,7 +11038,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
           "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
         _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+        # `|| true`: a checkout with no refs/remotes/origin/HEAD (never cloned
+        # with it) fails this pipeline under pipefail, and set -e then aborted
+        # the whole updater here -- exit 1, no message, AFTER the stamp.
+        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
         [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
         if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
            || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
@@ -9276,7 +11050,38 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
           exit 2
         fi
         echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
+        # Refresh outcome and parity outcome are separate facts. The installer
+        # no longer fails an --update-only roll on a parity finding, so surface
+        # it here as its own line instead of letting a green refresh imply a
+        # reconciled roster.
+        _CC_PARITY_N="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    v=d.get('commandCenterDeptRuntimeParity')
+    print('' if v is True or v is None else ('script-missing' if v=='script-missing' else 'warn'))
+except Exception:
+    print('')
+" "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" 2>/dev/null || echo "")"
+        if [ "${_CC_PARITY_N:-}" = "warn" ]; then
+          echo "    CC refreshed to $(cat "$_CC_DIR/package.json" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version","?"))' 2>/dev/null || echo "?"); parity guard WARN: department(s) on the board have no matching runtime entry — run materialize-dept-agents.sh to reconcile (the app itself is current)."
+        fi
+        # Schema 133 is available only AFTER the verified CC upgrade. This scoped
+        # synchronizer never seeds identities or binds another company's runtime.
+        _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"
+        if [ -f "$_CC_BINDING_SYNC" ] && [ -n "${_CC_SLUG:-}" ]; then
+          python3 "$_CC_BINDING_SYNC" --db "$_CC_DIR/mission-control.db" \
+            --config "$OC_ROOT/openclaw.json" --company-slug "$_CC_SLUG" \
+            --build-state "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" >>"$LOG_FILE" 2>&1 \
+            || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
+        fi
       else
+        _CC_INSTALL_RC=$?
+        if [ "$_CC_INSTALL_RC" -eq 8 ]; then
+          echo "PENDING: skills content is current; interview launch prerequisites remain unresolved (this is not proof of a failed app deployment)." >&2
+          echo "         Read the client-scoped interviewLaunch receipt and $OC_WORKSPACE_DEFAULT/.command-center-install.log; resume through this updater." >&2
+          exit 8
+        fi
         echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
         echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
@@ -9303,51 +11108,22 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # (see build-state-schema.json) — so a box with no CC and no completed
     # interview deferred here FOREVER on "interview not completed," blocked on
     # the very artifact only the interview produces. Per OQ-1 the LOCKED
-    # `/interview` shell must ship before the interview completes, so waiting
-    # on the interview's own output to unblock the shell is the bug. Fix: when
-    # no slug exists yet, derive one from the box's own owner-identity — set at
-    # initial pairing, long before Skill 23's interview — using the same
-    # openclaw.json field order as install.sh's resolve_owner_name(). Operator
-    # ruling (2026-07-28): default PERMANENTLY to the client's name-derived
-    # slug — e.g. a client named "Jane Doe" gets slug "jane" (first name only,
-    # lowercased), derived this same way; this pattern already runs in
-    # production without issue. No rename/migration path is built here; the
-    # name-derived slug is the final answer for this box.
+    # No owner-name-as-business fallback. A first onboarding must have the
+    # two explicit answers; updater recovery reuses the saved intake silently.
     if [ -z "$_CC_SLUG" ]; then
-      _CC_OWNER_NAME=""
-      if [ -n "${OC_JSON:-}" ] && [ -f "${OC_JSON:-}" ]; then
-        _CC_OWNER_NAME=$(OC_JSON_PATH="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null
-import json, os
-candidates = []
-env_name = os.environ.get("OPENCLAW_OWNER_NAME", "").strip()
-if env_name:
-    candidates.append(env_name)
-try:
-    d = json.load(open(os.environ["OC_JSON_PATH"]))
-    for path in (("meta", "ownerName"), ("owner", "name"), ("wizard", "ownerName"),
-                 ("meta", "owner", "name"), ("owner", "firstName")):
-        cur = d
-        for k in path:
-            cur = cur.get(k, {}) if isinstance(cur, dict) else {}
-        if isinstance(cur, str) and cur.strip():
-            candidates.append(cur.strip())
-            break
-except Exception:
-    pass
-for n in candidates:
-    print(n.split()[0])
-    break
-PYEOF
-)
+      _CC_IDENTITY_HELPER="$SKILLS_DIR/../scripts/onboarding-identity.py"
+      _CC_IDENTITY_RESULT=""
+      if [ -f "$_CC_IDENTITY_HELPER" ]; then
+        _CC_IDENTITY_RESULT=$(python3 "$_CC_IDENTITY_HELPER" --root "$SKILLS_DIR/.." --workspace "$(dirname "$_STATE_FILE")") || _CC_IDENTITY_RESULT=""
       fi
-      if [ -n "$_CC_OWNER_NAME" ]; then
-        _CC_SLUG=$(printf '%s' "$_CC_OWNER_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-      fi
-      if [ -n "$_CC_SLUG" ]; then
-        [ -n "$_CC_COMPANY" ] || _CC_COMPANY="$_CC_OWNER_NAME"
+      if [ -n "$_CC_IDENTITY_RESULT" ]; then
+        _CC_SLUG=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
+        _CC_COMPANY=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
+        OPENCLAW_OWNER_NAME=$(printf '%s' "$_CC_IDENTITY_RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+        export OPENCLAW_OWNER_NAME
         [ -n "$_CC_EMAIL" ] || _CC_EMAIL="pending+${_CC_SLUG}@zerohumanworkforce.com"
-        echo ""
-        echo "  ℹ Command Center slug not yet written (interview not complete) — derived permanent placeholder slug '$_CC_SLUG' from the box owner identity so the LOCKED /interview shell can ship now (OQ-1)."
+      else
+        echo "  Client identity pending: ask the ZHC owner/client name and company name before new onboarding; no company name was guessed."
       fi
     fi
 
@@ -9394,8 +11170,21 @@ PYEOF
       echo ""
       echo "  Command Center not present on this box (no checkout, no pm2 app, port $_CC_PORT free) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
       if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
-        echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+        echo "  ✓ Command Center shell installation completed; interviewLaunch receipt separately records verified public prerequisites (provider liveness remains unverified)"
+        _CC_BINDING_SYNC="$SKILLS_DIR/shared-utils/sync_ceo_runtime_bindings.py"
+        if [ -f "$_CC_BINDING_SYNC" ]; then
+          python3 "$_CC_BINDING_SYNC" --db "$_CC_DIR_CANONICAL/mission-control.db" \
+            --config "$OC_ROOT/openclaw.json" --company-slug "$_CC_SLUG" \
+            --build-state "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" >>"$LOG_FILE" 2>&1 \
+            || echo "  Runtime binding remains unproven; see update log (no identity fabricated)."
+        fi
       else
+        _CC_INSTALL_RC=$?
+        if [ "$_CC_INSTALL_RC" -eq 8 ]; then
+          echo "PENDING: skills content is current; interview launch prerequisites remain unresolved (this is not proof of a failed app deployment)." >&2
+          echo "         Read the client-scoped interviewLaunch receipt and $OC_WORKSPACE_DEFAULT/.command-center-install.log; resume through this updater." >&2
+          exit 8
+        fi
         echo "FATAL: Command Center bootstrap failed; skills content is current but CC web-app was not bootstrapped." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run." >&2
         echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC bootstrap FAILED." >&2
@@ -9403,10 +11192,10 @@ PYEOF
       fi
     elif [ -n "$_CC_SLUG" ]; then
       echo ""
-      echo "  ℹ Command Center not provisioned and build-state is missing company/email — bootstrap deferred (needs slug+company+email)."
+      echo "  ℹ Command Center not provisioned and build-state is missing company/email — launch PENDING: installation identity needs slug+company+email; skills installed does not mean interview ready."
     else
       echo ""
-      echo "  ℹ Command Center not provisioned and build-state has no client slug — bootstrap deferred (interview not completed)."
+      echo "  ℹ Command Center not provisioned and build-state has no client slug — launch PENDING: installation owner identity unresolved; interview answers are not required to initialize it."
     fi
   fi
   # <<< TRAP3-CC-BOOTSTRAP-BRANCH-END
@@ -9470,11 +11259,264 @@ PYEOF
   # any dep is still missing. It never blocks the update; the following
   # qc-completeness gate re-checks the same four deps.
   # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # FIX 70 (follow-up): the canon-driven presentation-deps helpers.
+  #
+  # converge_presentation_deps (below) calls pres_deps_check_and_install and
+  # pres_deps_verify_rows. Both CALL SITES shipped in v25.0.1; neither FUNCTION
+  # BODY did. bash aborts at the first call with rc=127 ("command not found"),
+  # which skipped the last ~4% of the updater -- the final verification gate,
+  # pres_deps_verify_rows itself, and the operator notification -- AFTER the
+  # version stamp had already been written. Every box therefore reported the new
+  # version while never running its verification gate: a hollow update that looks
+  # like a clean exit, the exact failure mode the retired scripts/update-skills.sh
+# shim (deleted outright, OCT4 issue #10) was retired for
+  # to prevent.
+  #
+  # These helpers supply the missing bodies. They read the SAME canon file, in the
+  # SAME resolution order, as qc-completeness.sh, so the two consumers cannot
+  # disagree. A missing or unparsable canon is always reported -- never a silent
+  # clean pass.
+  # ----------------------------------------------------------
+  _pres_deps_canon_path() {
+    local _c
+    for _c in \
+      "${SKILLS_DIR:-${OC_SKILLS_DIR:-}}/23-ai-workforce-blueprint/presentations/scripts/presentation-deps.json" \
+      "${SKILLS_DIR:-${OC_SKILLS_DIR:-}}/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation-deps.json" \
+      "${OC_WORKSPACE:-${OC_WORKSPACE_DEFAULT:-${OC_CONFIG:-$HOME/.openclaw}/workspace}}/departments/Presentations/scripts/presentation-deps.json"; do
+      [ -n "$_c" ] && [ -r "$_c" ] && { printf '%s\n' "$_c"; return 0; }
+    done
+    return 1
+  }
+
+  # Emits one row per canon dep:  name|kind|spec|pip_packages_csv|required|features_csv
+  _pres_deps_rows() {
+    python3 - "$1" <<'PYEOF'
+import json, sys
+try:
+    canon = json.load(open(sys.argv[1]))
+except Exception as exc:
+    print("__CANON_UNPARSABLE__|__canon__|%s: %s|||" % (sys.argv[1], exc))
+    sys.exit(0)
+for dep in canon.get("deps", []) or []:
+    name = dep.get("name", "")
+    kind = dep.get("kind", "")
+    req = "1" if dep.get("required", True) else "0"
+    feats = ",".join(dep.get("features") or [])
+    if kind == "binary":
+        print("%s|binary|%s||%s|%s" % (name, dep.get("binary_name", "") or name, req, feats))
+    elif kind == "python_import":
+        print("%s|python_import|%s|%s|%s|%s" % (
+            name,
+            dep.get("import_spec", ""),
+            ",".join(dep.get("pip_packages") or []),
+            req, feats,
+        ))
+    else:
+        print("%s|%s|||%s|%s" % (name, kind, req, feats))
+PYEOF
+  }
+
+  # Append a token to the caller's _pres_missing exactly once. _pres_missing is a
+  # local of converge_presentation_deps, this function's caller -- bash dynamic
+  # scoping makes it visible and assignable here, which is how the pre-existing
+  # hardcoded checks and this canon pass share one verdict string.
+  _pres_missing_add() {
+    case " ${_pres_missing:-} " in
+      *" $1 "*) return 0 ;;
+    esac
+    _pres_missing="${_pres_missing:-} $1"
+  }
+
+  # Append a token to the caller's _pres_video_missing exactly once. Same dynamic
+  # scoping contract as _pres_missing_add: these are the OPTIONAL video-only canon
+  # deps (ffmpeg/ffprobe) that are missing. They must never hide a required gap,
+  # and they must not block a deck-only run -- only the video branch.
+  _pres_video_missing_add() {
+    case " ${_pres_video_missing:-} " in
+      *" $1 "*) return 0 ;;
+    esac
+    _pres_video_missing="${_pres_video_missing:-} $1"
+  }
+
+  # Install every canon python_import row that is not yet importable in the
+  # department venv. Additive to the hardcoded core block above: a dep added to
+  # the canon AFTER this roll converges here without editing that block.
+  #
+  # The canon's per-platform pip_flags are deliberately NOT applied. They exist
+  # for the pre-venv system-interpreter path (e.g. --break-system-packages on
+  # Debian/Ubuntu) and are meaningless inside the venv, where pip is venv-local
+  # by construction.
+  pres_deps_check_and_install() {
+    local _canon _n _k _s _pkgs
+    command -v python3 >/dev/null 2>&1 || return 0
+    [ -x "$_PRES_VENV_PY" ] || return 0
+    if ! _canon="$(_pres_deps_canon_path)"; then
+      echo "    ⚠ presentation-deps canon not found (checked the skill checkout, its role-library copy, and the materialized department) — canon converge skipped; the hardcoded core deps above still applied"
+      return 0
+    fi
+    while IFS='|' read -r _n _k _s _pkgs _req _feats; do
+      [ -z "$_n" ] && continue
+      [ "$_k" = "python_import" ] || continue
+      [ -z "$_s" ] && continue
+      "$_PRES_VENV_PY" -c "import ${_s}" >/dev/null 2>&1 && continue
+      if [ -z "$_pkgs" ]; then
+        echo "    ⚠ canon row '$_n' is missing and declares no pip_packages — cannot converge automatically"
+        continue
+      fi
+      echo "    Converging canon dep '$_n' into the department venv..."
+      if "$_PRES_VENV_PY" -m pip install --quiet --disable-pip-version-check $(printf '%s' "$_pkgs" | tr ',' ' ') >/dev/null 2>&1 \
+         && "$_PRES_VENV_PY" -c "import ${_s}" >/dev/null 2>&1; then
+        echo "    ✓ canon dep '$_n' installed in the venv"
+      else
+        echo "    ⚠ canon dep '$_n' failed to install. Re-run: $_PRES_VENV_PY -m pip install $(printf '%s' "$_pkgs" | tr ',' ' ')"
+      fi
+    done < <(_pres_deps_rows "$_canon")
+  }
+
+  # PRES-033: persist the presentation readiness receipt. Called at the end of
+  # converge_presentation_deps (dynamic scoping reads _pres_missing /
+  # _pres_video_missing / _PRES_OC_ROOT / _PRES_VENV_PY). Fields: selected root,
+  # exact interpreter, dependency versions, missing required + optional video
+  # capabilities, remediation owner (the Capacity & Reliability Engineer —
+  # capacity-reliability-engineer.md §11 verifies all deps at Phase-0.5), and a
+  # timestamp. Written to <root>/logs/presentation-readiness.json so CC / the
+  # readiness probe can surface DEGRADED readiness instead of trusting
+  # content-copy success. Never fatal: a receipt write failure logs and returns 0.
+  _pres_receipt_write() {
+    local _now _rec _out
+    _now="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+    _rec_dir="$_PRES_OC_ROOT/logs"
+    mkdir -p "$_rec_dir" 2>/dev/null || true
+    REC_DIR="$_rec_dir" REC_NOW="$_now" REC_ROOT="$_PRES_OC_ROOT" \
+    REC_PY="${_PRES_VENV_PY:-}" REC_MISSING="${_pres_missing:-}" \
+    REC_VIDEO="${_pres_video_missing:-}" REC_CANON="${_pres_deps_canon:-}" \
+    python3 - <<'PY' 2>/dev/null || return 0
+import json, os, subprocess, sys
+from pathlib import Path
+
+def try_run(cmd):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr).strip() else None
+    except Exception:
+        return None
+
+root = os.environ.get("REC_ROOT", "")
+py = os.environ.get("REC_PY", "")
+interp = py if py and os.path.exists(py) else (try_run(["command", "-v", "python3"]) or "python3")
+versions = {}
+# Python package versions from the pipeline interpreter (if it exists).
+if interp and os.path.exists(interp):
+    vscript = (
+        "import importlib.metadata as md;"
+        "import json,sys;"
+        "out={};"
+        "for p in ('reportlab','python-pptx','pypdf','pytesseract','Pillow'):"
+        "  try: out[p]=md.version(p)"
+        "  except Exception: out[p]=None;"
+        "print(json.dumps(out))"
+    )
+    try:
+        r = subprocess.run([interp, "-c", vscript], capture_output=True, text=True, timeout=30)
+        versions = json.loads(r.stdout or "{}") if r.stdout.strip() else {}
+    except Exception:
+        versions = {}
+pyver = None
+if interp and os.path.exists(interp):
+    try:
+        r = subprocess.run([interp, "--version"], capture_output=True, text=True, timeout=10)
+        pyver = (r.stdout or r.stderr).strip().splitlines()[0] if (r.stdout or r.stderr).strip() else None
+    except Exception:
+        pyver = None
+bin_versions = {}
+for tool in ("soffice", "pdftoppm", "ffmpeg", "ffprobe", "tesseract"):
+    bin_versions[tool] = try_run([tool, "--version"]) or try_run([tool, "-version"]) or None
+rec = {
+    "schema": "presentation-readiness/1",
+    "status": "READY" if not os.environ.get("REC_MISSING") else "DEGRADED",
+    "ready": not bool(os.environ.get("REC_MISSING")),
+    "ts": os.environ.get("REC_NOW", ""),
+    "root": root,
+    "interpreter": interp,
+    "python_version": pyver,
+    "versions": versions,
+    "binary_versions": bin_versions,
+    "canon": os.environ.get("REC_CANON", ""),
+    "missing_required": [s.strip() for s in os.environ.get("REC_MISSING", "").split() if s.strip()],
+    "missing_optional_video": [s.strip() for s in os.environ.get("REC_VIDEO", "").split() if s.strip()],
+    "remediation_owner": "capacity-reliability-engineer",
+    "note": "readiness receipt written by update-skills.sh converge_presentation_deps (PRES-033). DEGRADED = a required presentation dep is missing; GATE 1 refuses builds until resolved. Optional video deps missing disables only the P9.6-WEBINAR-VIDEO branch.",
+}
+out = Path(os.environ["REC_DIR"]) / "presentation-readiness.json"
+tmp = out.with_suffix(".tmp")
+with open(tmp, "w") as fh:
+    json.dump(rec, fh, indent=2)
+os.replace(tmp, out)
+print(f"  [pres-readiness] {out} status={rec['status']}")
+PY
+    echo "  [pres-readiness] receipt written (root=$_PRES_OC_ROOT, missing='${_pres_missing:-}', optional_video='${_pres_video_missing:-}')"
+    return 0
+  }
+
+  # Verify EVERY canon row (binary + python_import) on top of the hardcoded core
+  # checks above, so this verdict matches qc-completeness.sh's exit-6 deps gate.
+  # PRES-033: each canon row carries required=1|0. A required row missing lands in
+  # _pres_missing (blocks readiness, nonzero). An OPTIONAL row (video-only
+  # ffmpeg/ffprobe) missing lands in _pres_video_missing ONLY -- it can never be
+  # hidden inside _pres_missing, and it can never fake a required failure either.
+  # A canon row that omits the classification defaults to required (fail closed).
+  pres_deps_verify_rows() {
+    local _n _k _s _pkgs _req _feats _py
+    local _canon=""
+    if ! _canon="$(_pres_deps_canon_path)"; then
+      _pres_missing_add "__CANON_MISSING__(presentation-deps.json)"
+      return 0
+    fi
+    _pres_deps_canon="$_canon"
+    command -v python3 >/dev/null 2>&1 || return 0
+    _py="$_PRES_VENV_PY"
+    [ -x "$_py" ] || _py="python3"
+    while IFS='|' read -r _n _k _s _pkgs _req _feats; do
+      [ -z "$_n" ] && continue
+      case "$_k" in
+        __canon__)     _pres_missing_add "__CANON_UNPARSABLE__" ;;
+        binary)
+          if command -v "$_s" >/dev/null 2>&1; then :; else
+            if [ "$_req" = "0" ]; then _pres_video_missing_add "$_s"; else _pres_missing_add "$_s"; fi
+          fi ;;
+        python_import)
+          [ -z "$_s" ] && continue
+          if "$_py" -c "import ${_s}" >/dev/null 2>&1; then :; else
+            if [ "$_req" = "0" ]; then _pres_video_missing_add "python(${_s})"; else _pres_missing_add "python(${_s})"; fi
+          fi ;;
+        *)             _pres_missing_add "${_n}(unknown-kind:${_k})" ;;
+      esac
+    done < <(_pres_deps_rows "$_canon")
+  }
   converge_presentation_deps() {
     echo ""
-    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx)..."
+    echo "  Converging presentation-pipeline runtime deps (soffice, pdftoppm, reportlab, python-pptx, pypdf, pytesseract, ffmpeg, ffprobe, tesseract — per presentation-deps.json)..."
+    local _PRES_VENV="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations"
+    local _PRES_VENV_PY="$_PRES_VENV/bin/python"
+    # PRES-033: resolve the OpenClaw root via the canonical shared resolver
+    # (shared-utils/resolve-oc-root.sh — /data/.openclaw on VPS else
+    # $HOME/.openclaw on Mac). The VPS reassert script path is derived from
+    # THAT root, never hardcoded, so a container with a custom/mounted root is
+    # not re-asserted against a /data path that belongs to a different box.
+    _PRES_OC_ROOT=""
+    # NOTE the [ -n ] guard: an assignment of an EMPTY string still exits 0, so
+    # a resolver that ran but found no root must NOT count as a resolution.
+    if declare -F resolve_oc_root >/dev/null 2>&1 \
+       && _PRES_OC_ROOT="$(resolve_oc_root 2>/dev/null || true)" \
+       && [ -n "$_PRES_OC_ROOT" ]; then
+      :
+    else
+      _PRES_OC_ROOT="${OC_CONFIG:-$HOME/.openclaw}"
+      [ -d "/data/.openclaw" ] && _PRES_OC_ROOT="/data/.openclaw"
+    fi
     if [ "${OPENCLAW_PLATFORM:-}" = "vps" ]; then
-      local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+      local _reassert="$_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
       if [ -x "$_reassert" ]; then
         echo "    VPS: running the idempotent reassert script ($_reassert)..."
         bash "$_reassert" >/dev/null 2>&1 || echo "    ⚠ reassert script reported an issue (non-fatal)"
@@ -9483,8 +11525,9 @@ PYEOF
       fi
     else
       # Mac: brew formula for poppler, NONINTERACTIVE cask for LibreOffice (loud
-      # warn on failure — a cask can need an admin password), pip --user for the
-      # two Python modules. NONINTERACTIVE + no `read` so a silent roll never hangs.
+      # warn on failure — a cask can need an admin password), Python modules into
+      # the department venv (FIX 71). NONINTERACTIVE + no `read` so a silent roll
+      # never hangs.
       if command -v pdftoppm >/dev/null 2>&1; then
         echo "    pdftoppm (poppler) already present"
       elif command -v brew >/dev/null 2>&1; then
@@ -9503,31 +11546,194 @@ PYEOF
       else
         echo "    ⚠ Homebrew not found — cannot install LibreOffice (soffice)"
       fi
-      if command -v python3 >/dev/null 2>&1; then
-        if python3 -c "import reportlab, pptx" >/dev/null 2>&1; then
-          echo "    reportlab + python-pptx already importable"
-        else
-          echo "    Installing reportlab + python-pptx (pip --user --break-system-packages)..."
-          python3 -m pip install --user --break-system-packages reportlab python-pptx >/dev/null 2>&1 \
-            && echo "    reportlab + python-pptx installed" \
-            || echo "    ⚠ pip install reportlab/python-pptx failed — deck assembly + presenter PDF will fail"
-        fi
+      # FIX 70 (W20b-B3): ffmpeg/ffprobe (webinar video render) and tesseract (OCR
+      # readback via pytesseract) are canon deps the older converge never installed.
+      if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+        echo "    ffmpeg + ffprobe already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing ffmpeg (provides ffmpeg + ffprobe) via Homebrew..."
+        brew install ffmpeg >/dev/null 2>&1 \
+          && echo "    ffmpeg installed (ffmpeg + ffprobe)" \
+          || echo "    ⚠ brew install ffmpeg failed — webinar video render will fail. Run: brew install ffmpeg"
+      else
+        echo "    ⚠ Homebrew not found — cannot install ffmpeg/ffprobe"
+      fi
+      if command -v tesseract >/dev/null 2>&1; then
+        echo "    tesseract already present"
+      elif command -v brew >/dev/null 2>&1; then
+        echo "    Installing tesseract (OCR readback binary) via Homebrew..."
+        brew install tesseract >/dev/null 2>&1 \
+          && echo "    tesseract installed" \
+          || echo "    ⚠ brew install tesseract failed — image QC OCR readback will fail. Run: brew install tesseract"
+      else
+        echo "    ⚠ Homebrew not found — cannot install tesseract"
       fi
     fi
-    # Hard end-of-converge WARNING when any of the four deps is STILL missing.
+    # FIX 71: department venv — created on BOTH platforms (the VPS reassert script
+    # predates the venv and pip-installs into the system interpreter; converging
+    # the venv here closes that gap until install.sh Step 6.5 ships the venv too).
+    if command -v python3 >/dev/null 2>&1; then
+      if [ ! -x "$_PRES_VENV_PY" ]; then
+        echo "    Creating department venv at $_PRES_VENV ..."
+        if python3 -m venv "$_PRES_VENV" >/dev/null 2>&1 && [ -x "$_PRES_VENV_PY" ]; then
+          echo "    ✓ venv created ($_PRES_VENV)"
+        else
+          rm -rf "$_PRES_VENV" 2>/dev/null
+          echo "    ⚠⚠ python3 -m venv FAILED — the venv half was not created. Debian/Ubuntu images need: apt-get install -y python3-venv python3-pip. The four Python presentation deps (reportlab, python-pptx, pypdf, pytesseract) are NOT installed; deck assembly + presenter PDF + workbook read-back + OCR readback will fail at GATE 1."
+        fi
+      fi
+      if [ -x "$_PRES_VENV_PY" ]; then
+        if "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+          echo "    reportlab + python-pptx + pypdf + pytesseract already importable in the department venv"
+        else
+          echo "    Installing reportlab + python-pptx + pypdf + pytesseract INTO the department venv (venv-local pip only)..."
+          if "$_PRES_VENV_PY" -m pip install --quiet --disable-pip-version-check reportlab python-pptx pypdf pytesseract >/dev/null 2>&1 \
+             && "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+            echo "    ✓ reportlab + python-pptx + pypdf + pytesseract installed in the venv"
+          else
+            echo "    ⚠ venv pip install failed — deck assembly + presenter PDF + workbook read-back + OCR readback will fail. Re-run: $_PRES_VENV_PY -m pip install reportlab python-pptx pypdf pytesseract"
+          fi
+        fi
+        # FIX 70: converge every remaining canon python_import row (a canon dep
+        # added after this roll is installed here without editing the hardcoded
+        # block above).
+        pres_deps_check_and_install
+        # PRES-035 — PRESERVE a per-client executable override. The roll must
+        # never clobber an operator's explicit PRESENTATION_PIPELINE_INTERPRETER
+        # pin (a custom venv/path for THIS box) with the default
+        # $_PRES_VENV_PY. Sources, in order: this process env (explicit export
+        # before the roll), then the box secrets env. A value is honored only
+        # when it is absolute, executable and actually runs; anything else is
+        # reported and the default wins. The venv is still converged either
+        # way — an override that points at a different interpreter does not
+        # excuse an empty default venv.
+        _PRES_EXISTING_INTERP="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+        if [ -z "$_PRES_EXISTING_INTERP" ]; then
+          _PRES_PERSIST_ENV="${OC_SECRETS_ENV:-}"
+          [ -z "$_PRES_PERSIST_ENV" ] && [ "${OC_PLATFORM:-}" = "vps" ] && _PRES_PERSIST_ENV="/data/.openclaw/secrets/.env"
+          [ -z "$_PRES_PERSIST_ENV" ] && _PRES_PERSIST_ENV="$HOME/.openclaw/secrets/.env"
+          if [ -f "$_PRES_PERSIST_ENV" ]; then
+            _PRES_EXISTING_INTERP="$(sed -n 's/^export PRESENTATION_PIPELINE_INTERPRETER=//p' "$_PRES_PERSIST_ENV" 2>/dev/null | head -n 1 | tr -d '"' )"
+          fi
+        fi
+        _PRES_INTERP_KEEP=""
+        if [ -n "$_PRES_EXISTING_INTERP" ]; then
+          case "$_PRES_EXISTING_INTERP" in /*)
+            if [ -x "$_PRES_EXISTING_INTERP" ] && "$_PRES_EXISTING_INTERP" -c 'import sys' >/dev/null 2>&1; then
+              if [ "$_PRES_EXISTING_INTERP" != "$_PRES_VENV_PY" ]; then
+                _PRES_INTERP_KEEP="$_PRES_EXISTING_INTERP"
+              fi
+            else
+              echo "    ⚠ existing PRESENTATION_PIPELINE_INTERPRETER=$_PRES_EXISTING_INTERP is not a usable executable — replacing with the default $_PRES_VENV_PY"
+            fi ;;
+          *) echo "    ⚠ existing PRESENTATION_PIPELINE_INTERPRETER=$_PRES_EXISTING_INTERP is not absolute — replacing with the default $_PRES_VENV_PY" ;;
+          esac
+        fi
+        if [ -n "$_PRES_INTERP_KEEP" ]; then
+          export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_INTERP_KEEP"
+          echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_INTERP_KEEP (per-client override PRESERVED; default venv is $_PRES_VENV_PY)"
+        else
+          export PRESENTATION_PIPELINE_INTERPRETER="$_PRES_VENV_PY"
+          echo "    PRESENTATION_PIPELINE_INTERPRETER=$_PRES_VENV_PY (exported for this update; qc-completeness consumes it)"
+        fi
+        unset _PRES_EXISTING_INTERP _PRES_INTERP_KEEP _PRES_PERSIST_ENV
+      fi
+    fi
+    # Hard end-of-converge verdict when any canon dep is STILL missing (FIX 70:
+    # the verify pass now checks every presentation-deps.json row on top of the
+    # pre-existing hardcoded core checks, so this verdict matches the
+    # qc-completeness.sh exit-6 gate).
+    # PRES-033: (a) optional video deps (ffmpeg/ffprobe) are classified separately
+    # so a missing optional dep NEVER hides a required gap and never claims a
+    # required failure; (b) a nonempty required missing list makes this function
+    # RETURN NONZERO (readiness = false) instead of printing a warning and
+    # returning 0 -- the exact defect this unit fixes; (c) the readiness receipt
+    # (root, interpreter, versions, missing, remediation owner, timestamp) is
+    # persisted so CC can surface degraded readiness, never claim ready from
+    # content-copy success alone.
     local _pres_missing=""
+    local _pres_video_missing=""
+    local _pres_versions=""
+    local _pres_python_ver=""
     command -v soffice  >/dev/null 2>&1 || _pres_missing="${_pres_missing} soffice"
     command -v pdftoppm >/dev/null 2>&1 || _pres_missing="${_pres_missing} pdftoppm"
-    if command -v python3 >/dev/null 2>&1; then
-      python3 -c "import reportlab, pptx" >/dev/null 2>&1 || _pres_missing="${_pres_missing} python(reportlab+python-pptx)"
+    if [ -x "$_PRES_VENV_PY" ]; then
+      "$_PRES_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1 || _pres_missing="${_pres_missing} venv(reportlab+python-pptx+pypdf+pytesseract at $_PRES_VENV)"
+    elif command -v python3 >/dev/null 2>&1; then
+      _pres_missing="${_pres_missing} venv(missing at $_PRES_VENV)"
     fi
+    command -v ffmpeg  >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffmpeg"
+    command -v ffprobe >/dev/null 2>&1 || _pres_missing="${_pres_missing} ffprobe"
+    command -v tesseract >/dev/null 2>&1 || _pres_missing="${_pres_missing} tesseract"
+    pres_deps_verify_rows
+    # PRES-033: the canonical classification RE-CLASSIFIES the hardcoded checks
+    # above: ffmpeg/ffprobe are optional video deps per presentation-deps.json,
+    # so a bare missing ffmpeg/ffprobe moves from the required set to the
+    # optional video set. A required dep that ALSO gates video (none today) stays
+    # required. Never double-count: remove the token from _pres_missing if it was
+    # classified optional, then append to the optional set.
+    for _opt in ffmpeg ffprobe; do
+      if command -v "$_opt" >/dev/null 2>&1; then :; else
+        _pres_missing="$(printf '%s' "$_pres_missing" | sed "s/ ${_opt}//")"
+        _pres_video_missing_add "$_opt"
+      fi
+    done
     if [ -n "$_pres_missing" ]; then
-      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Mac: brew install poppler; brew install --cask libreoffice; python3 -m pip install --user --break-system-packages reportlab python-pptx. VPS: bash /data/.openclaw/scripts/reassert-presentation-deps.sh"
+      echo "  ⚠⚠ PRESENTATION_DEPS_MISSING after converge:${_pres_missing}. The Skill 23 presentation pipeline will refuse every deck build at GATE 1 until these resolve. Department venv (FIX 71): python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python -m pip install reportlab python-pptx pypdf pytesseract. Mac system deps: brew install poppler; brew install --cask libreoffice; brew install ffmpeg; brew install tesseract. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
+      echo "  [pres-readiness] aggregated updater result PRESERVED: unrelated department updates already performed are NOT rolled back; the final exit code latches this readiness verdict."
     else
-      echo "  ✓ presentation deps converged: soffice + pdftoppm + reportlab + python-pptx all present"
+      echo "  ✓ presentation deps converged: soffice + pdftoppm + venv(reportlab + python-pptx + pypdf + pytesseract) + ffmpeg/ffprobe + tesseract all present (canon-checked)"
     fi
+    if [ -n "$_pres_video_missing" ]; then
+      echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch):${_pres_video_missing}. Deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve. Mac: brew install ffmpeg. VPS: bash $_PRES_OC_ROOT/scripts/reassert-presentation-deps.sh"
+    fi
+    # PRES-033 readiness receipt: persists the exact root/interpreter/versions/
+    # missing/remediation-owner/timestamp so a later CC readiness probe can
+    # surface DEGRADED readiness instead of trusting content-copy success.
+    _pres_receipt_write
+    # PRES-033 (the defect): return DOCUMENTED NONZERO readiness when required
+    # deps are missing. 2 = "content current, presentation readiness degraded"
+    # (same family as the updater's GHL-MCP/CC-runtime infra exits, which also
+    # write the stamp and return 2). The caller preserves the aggregated result:
+    # unrelated department updates already completed are NOT rolled back, and a
+    # later aggregated latch decides the final exit code (see below).
+    if [ -n "$_pres_missing" ]; then
+      return 2
+    fi
+    return 0
   }
-  converge_presentation_deps
+  # PRES-033: the converge verdict is CAPTURED, not aborted on. A missing required
+  # dep returns 2 from converge_presentation_deps; the run continues through the
+  # remaining post-stamp steps (qc-completeness gate, Telegram note, resume-cron,
+  # registry-parity) so unrelated department updates already performed are
+  # preserved -- then the aggregated latch below folds the presentation readiness
+  # into the FINAL exit code, exactly like the GHL-MCP/CC-runtime infra latches.
+  _PRES_DEPS_CONVERGE_RC=0
+  converge_presentation_deps || _PRES_DEPS_CONVERGE_RC=$?
+  if [ "$_PRES_DEPS_CONVERGE_RC" -ne 0 ]; then
+    echo "  ⚠ Presentation readiness DEGRADED (converge_presentation_deps exit $_PRES_DEPS_CONVERGE_RC) -- see the PRESENTATION_DEPS_MISSING block above. Unrelated department updates already completed are NOT rolled back; the final exit code carries this latch."
+  fi
+  # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
+  # are a path, never a secret) so the door + engine resolve the venv python on the
+  # next run without depending on this process env. Append-only + idempotent.
+  if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ]; then
+    _PRES_SECRETS_ENV="${OC_SECRETS_ENV:-}"
+    [ -z "$_PRES_SECRETS_ENV" ] && [ "${OC_PLATFORM:-}" = "vps" ] && _PRES_SECRETS_ENV="/data/.openclaw/secrets/.env"
+    [ -z "$_PRES_SECRETS_ENV" ] && _PRES_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+    if [ -n "$_PRES_SECRETS_ENV" ]; then
+      mkdir -p "$(dirname "$_PRES_SECRETS_ENV")" 2>/dev/null
+      touch "$_PRES_SECRETS_ENV" 2>/dev/null || true
+      if grep -q '^export PRESENTATION_PIPELINE_INTERPRETER=' "$_PRES_SECRETS_ENV" 2>/dev/null; then
+        sed -i.bak-presvenv "s|^export PRESENTATION_PIPELINE_INTERPRETER=.*|export PRESENTATION_PIPELINE_INTERPRETER=\"${PRESENTATION_PIPELINE_INTERPRETER}\"|" "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER updated in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not update PRESENTATION_PIPELINE_INTERPRETER in $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      else
+        printf 'export PRESENTATION_PIPELINE_INTERPRETER="%s"\n' "$PRESENTATION_PIPELINE_INTERPRETER" >> "$_PRES_SECRETS_ENV" 2>/dev/null \
+          && echo "  ✓ PRESENTATION_PIPELINE_INTERPRETER recorded in $_PRES_SECRETS_ENV" \
+          || echo "  ⚠ could not write PRESENTATION_PIPELINE_INTERPRETER to $_PRES_SECRETS_ENV (non-fatal; set it by hand)"
+      fi
+    fi
+  fi
 
   # ----------------------------------------------------------
   # R14: REAP THE GHL MCP STATUS LINE.
@@ -9840,6 +12046,12 @@ BACKUP_BLOCK
   fi
 
   if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ] || [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
+    return 2
+  fi
+  # PRES-033: presentation readiness latch. Same exit-2 family: content is
+  # current, the presentation department's readiness is degraded, and fleet
+  # drivers must not report this roll as fully successful.
+  if [ "${_PRES_DEPS_CONVERGE_RC:-0}" -ne 0 ]; then
     return 2
   fi
   return 0

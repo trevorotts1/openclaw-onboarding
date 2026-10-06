@@ -55,8 +55,57 @@ EX_OK = 0
 EX_ERR = 1
 EX_USAGE = 2
 EX_FALSE = 3
+EX_RETIRED = 78  # RR-006: this writer is retired; every production-style run exits 78.
 
 SCHEMA_VERSION = "1"
+
+# ---------------------------------------------------------------------------
+# RR-006 RETIREMENT (2026-09-09, RR-W2-CORE)
+# ---------------------------------------------------------------------------
+# The legacy Python SQLite ledger is RETIRED as a ticket-state writer. It was
+# the "compatibility-only" path already demoted by RR-017; RR-006 obligates
+# retiring it with an explicit compatibility error so it can NEVER be installed
+# or run as a second/competing ticket authority next to the live pipeline.
+#
+#   ACTIVE AUTHORITY: the RR-04 n8n Data Tables pipeline (current-v2), with the
+#   private Fleet Ops transactional ledger service (blackceo-fleet-ops,
+#   rescue/service/ledger-service.mjs) as its Wave-2 transactional boundary.
+#   This module is NOT that authority and must not become one.
+#
+#   OFFLINE DRILL ONLY: set RR_LEDGER_DRILL=1 to run the retired writer against
+#   an ISOLATED --state-dir fixture (drill/migration tooling). A drill always
+#   requires an explicit --state-dir; without one it refuses even in drill mode.
+#   Historical reader surfaces (VALID_STATUS, NINE_FIELDS, constants) remain
+#   importable with no side effects for tools that only read them.
+#
+def _refuse_retired(state_dir=None):
+    """Fail closed with the RR-006 compatibility error. Never opens a ledger."""
+    sys.stderr.write(
+        "RR-006 COMPATIBILITY ERROR [rescue_ledger]: this legacy Python ticket-state "
+        "writer is RETIRED (compatibility-only drill/migration tooling).\n"
+        "  The live system of record is the RR-04 n8n Data Tables pipeline "
+        "(current-v2); the private Fleet Ops transactional ledger service is its "
+        "transactional boundary. This module must never run as a second/competing "
+        "ticket authority.\n"
+        "  Offline drill only: re-run with RR_LEDGER_DRILL=1 AND an explicit "
+        "--state-dir pointing at an isolated fixture directory.\n"
+        "  Exit code 78 = EX_RETIRED (stable contract).\n"
+    )
+    return EX_RETIRED
+
+
+def _retired_guard(state_dir=None):
+    """Raise/exit when the retired writer is opened outside an explicit drill."""
+    if os.environ.get("RR_LEDGER_DRILL") == "1" and state_dir:
+        return None  # explicit isolated drill
+    return _refuse_retired(state_dir)
+
+
+DRILL_ENV_VAR = "RR_LEDGER_DRILL"
+ACTIVE_AUTHORITY_NOTE = (
+    "RR-04 n8n Data Tables (current-v2 pipeline); private Fleet Ops transactional "
+    "ledger service (blackceo-fleet-ops rescue/service/ledger-service.mjs)"
+)
 
 # Ticket lifecycle states. The CC board caller (rescue_cc_board.py) maps these to
 # the department Kanban columns: open/in_progress -> backlog/in_progress,
@@ -156,12 +205,18 @@ def warn_root_state() -> None:
 # The ledger
 # --------------------------------------------------------------------------- #
 class Ledger:
-    """The single SQLite-WAL writer. Construct with a state dir (or default);
-    every mutation is a single committed transaction. Idempotent by design:
-    open_ticket is INSERT-OR-IGNORE on ticket_id, record_answer only fills an
-    empty answer, so a re-run of either transport never double-writes."""
+    """RETIRED (RR-006): constructing this ledger REFUSES with the RR-006
+    compatibility error unless RR_LEDGER_DRILL=1 AND an explicit isolated
+    --state-dir is supplied (offline drill only). Kept importable so
+    historical readers can still read the module constants with no side
+    effects. See _retired_guard() and the module header."""
 
     def __init__(self, state_dir=None):
+        guard = _retired_guard(state_dir)
+        if guard is not None:
+            # CLI path converts the exit code; library path raises so no caller
+            # can open a competing ledger by accident.
+            raise SystemExit(_refuse_retired(state_dir))
         self.state_dir = Path(state_dir) if state_dir else default_state_dir()
         self.state_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -169,10 +224,23 @@ class Ledger:
         except OSError:
             pass
         self.db_path = db_path(self.state_dir)
-        self.conn = sqlite3.connect(str(self.db_path), timeout=30)
+        self.conn = sqlite3.connect(str(self.db_path), timeout=30,
+                                    isolation_level=None)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        # RR-030 concurrency: busy_timeout must be set BEFORE journal_mode
+        # (PRAGMA journal_mode takes the write lock; 12 parallel first-open
+        # processes raced it with the default 0ms timeout -> "database is
+        # locked"). Retry the WAL switch briefly under contention.
         self.conn.execute("PRAGMA busy_timeout=30000")
+        for _attempt in range(20):
+            try:
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or _attempt == 19:
+                    raise
+                import time as _t
+                _t.sleep(0.05 * (_attempt + 1))
         self._bootstrap()
 
     def close(self):
@@ -365,10 +433,42 @@ class Ledger:
         incomplete / blocked)."""
         return self.tickets_by_status("open", "in_progress", "incomplete", "blocked")
 
+    # RR-022 recovery counterpart (FLEET RR-022 service contract): structured
+    # aging sweep with per-row quarantine. Default statuses include
+    # "incomplete" (open_tickets parity: incomplete work is operator-visible
+    # and must age). Naive wall-clock ts_open is interpreted as UTC (never
+    # local, never a TypeError); malformed/missing timestamps are quarantined
+    # per-row with an owned reason while valid overdue rows stay visible.
+    # Returns {"ok","scanned","due","invalid","error"}; error is a monitor
+    # failure, never zero overdue. The legacy bare-list aging() below is
+    # retained only for the drill self-test callers; live coverage claims must
+    # use aging_sweep_structured().
+    def aging_sweep_structured(self, older_than_minutes, statuses=("open", "in_progress", "answered", "blocked", "incomplete")):
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+        due = []
+        invalid = []
+        rows = self.tickets_by_status(*statuses)
+        for r in rows:
+            raw = r.get("ts_open")
+            ts = _parse_iso(raw)
+            if ts is None:
+                invalid.append({"ticket_id": r.get("ticket_id"), "owner": "operator",
+                                "reason": "malformed_timestamp", "got": str(raw)[:120]})
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts <= cutoff:
+                due.append(r)
+        return {"ok": True, "scanned": len(rows), "due": due, "invalid": invalid, "error": None}
+
     def aging(self, older_than_minutes, statuses=("open", "in_progress", "answered", "blocked")):
         """Tickets in `statuses` whose ts_open is older than the cutoff. This is
         the durable feed for the aging/SLA sweep (kills R6) — nothing else in the
-        old design swept the PENDING queue for tickets aging unanswered."""
+        old design swept the PENDING queue for tickets aging unanswered.
+        LEGACY (RR-022): bare-list return, defaults omit "incomplete", naive
+        timestamps raise TypeError at the caller, malformed rows skip silently.
+        Retained for drill self-test callers only; live coverage claims must
+        use aging_sweep_structured()."""
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
         out = []
         rows = self.tickets_by_status(*statuses)
@@ -478,6 +578,11 @@ def _cli(argv=None):
     sub.add_parser("open-tickets")
     sp = sub.add_parser("aging")
     sp.add_argument("--older-than-minutes", type=int, required=True)
+    # RR-022: structured counterpart (per-row quarantine, incomplete included,
+    # naive = UTC, monitor-failure error instead of bare []). Live coverage
+    # claims must use aging-structured; "aging" stays for drill callers.
+    sp = sub.add_parser("aging-structured")
+    sp.add_argument("--older-than-minutes", type=int, required=True)
 
     sp = sub.add_parser("count-today", help="exit 0 if under cap, exit 3 if AT/over cap")
     sp.add_argument("--client", required=True); sp.add_argument("--cap", type=int, default=25)
@@ -487,12 +592,22 @@ def _cli(argv=None):
     args = ap.parse_args(argv)
 
     if getattr(args, "self_test", False):
+        # the self-test is pure (tempdir fixtures only) and proves the retired
+        # writer's durability contract for drill/migration verification
         return self_test()
     if not args.cmd:
         ap.error("a subcommand is required (or use --self-test)")
 
-    warn_root_state()
+    # RR-006 RETIREMENT GATE: every production-style run refuses BEFORE any
+    # ledger is opened. Only RR_LEDGER_DRILL=1 with an explicit --state-dir
+    # (isolated offline drill) proceeds. The self-test above runs first because
+    # it is pure and touches no ledger.
     state_dir = Path(args.state_dir) if args.state_dir else None
+    guard = _retired_guard(state_dir)
+    if guard is not None:
+        return guard
+
+    warn_root_state()
     try:
         led = Ledger(state_dir)
     except sqlite3.Error as exc:
@@ -551,6 +666,8 @@ def _cli(argv=None):
             _emit({"tickets": led.open_tickets()})
         elif c == "aging":
             _emit({"aging": led.aging(getattr(args, "older_than_minutes"))})
+        elif c == "aging-structured":
+            _emit(led.aging_sweep_structured(getattr(args, "older_than_minutes")))
         elif c == "count-today":
             n = led.count_exchanges_today(args.client)
             over = n >= args.cap
@@ -579,6 +696,19 @@ def self_test():
     import tempfile
     print("[rescue_ledger] self-test: schema, open/answer/resolve, idempotency, "
           "cap, aging, cc-link, digest, durability")
+    # RR-006: the self-test runs as an EXPLICIT ISOLATED DRILL (tempdir
+    # fixtures only, never production state), so it sets the drill opt-out
+    # for its own scope instead of requiring the caller's environment.
+    import os as _os
+    _os.environ[DRILL_ENV_VAR] = "1"
+    try:
+        _self_test_body()
+    finally:
+        _os.environ.pop(DRILL_ENV_VAR, None)
+
+
+def _self_test_body():
+    import tempfile
     with tempfile.TemporaryDirectory() as td:
         sd = Path(td) / "rescue"
         led = Ledger(sd)
@@ -660,6 +790,23 @@ def self_test():
         aged = {t["ticket_id"] for t in led.aging(120)}
         assert "tkt-3" in aged and "tkt-4" not in aged
         print("  aging case: PASS (SLA sweep surfaces tickets past the cutoff)")
+        # RR-022: structured counterpart — incomplete included, one bad row
+        # quarantined while valid overdue stay visible, naive read as UTC.
+        led.open_ticket("tkt-5", client="beta", problem="partial",
+                        incomplete=True, ts_open=old_ts)
+        led.open_ticket("tkt-6", client="beta", problem="bad-ts",
+                        ts_open="not-a-date")
+        led.open_ticket("tkt-7", client="beta", problem="naive-ts",
+                        ts_open="2020-01-01 00:00:00")
+        st = led.aging_sweep_structured(120)
+        assert st["ok"] is True and st["error"] is None
+        got = {t["ticket_id"] for t in st["due"]}
+        assert "tkt-3" in got and "tkt-5" in got and "tkt-7" in got, got
+        assert "tkt-4" not in got
+        bad = {b["ticket_id"]: b for b in st["invalid"]}
+        assert "tkt-6" in bad and bad["tkt-6"]["owner"] == "operator"
+        assert bad["tkt-6"]["reason"] == "malformed_timestamp"
+        print("  aging-structured case: PASS (incomplete+naive due, bad row quarantined)")
 
         # digest
         dg = led.digest()

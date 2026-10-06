@@ -75,6 +75,17 @@ except ImportError:
 # still carrying the pre-doctrine 10_240 / 20_480 values during that pass).
 _MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): THE one scaled-floor helper. The
+# P8.1/P8.2/P9-DELIVERY verifiers scale guide_pdf/deck_pdf floors by THIS
+# deck's slide count through guide_floor(n)/pdf_floor(n) here — no site
+# re-derives the arithmetic, and no 51,200 / 34-slide literal is enforced at
+# this site. Fail-soft: when the helper module is absent the verifiers fall
+# back to the raw spec floors below (pre-F103 behaviour).
+try:
+    from presentation_job import deliverable_floors as _floors
+except ImportError:  # pragma: no cover — fail-soft: legacy box without the module
+    _floors = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Defensive engine-checker imports (all optional)
 # ---------------------------------------------------------------------------
@@ -116,6 +127,203 @@ try:
 except ImportError:
     _vb = None  # type: ignore[assignment]
 
+# PRES-025: the elected checkout form stage's real producer. Same delegated-
+# to-source discipline as _scb/_vb above: the verifier resolves the gate,
+# the form receipt and the CTA audit from the producer's own functions, so
+# the check can never drift from what the executor actually built.
+try:
+    import checkout_form_builder as _cfb
+except ImportError:
+    _cfb = None  # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
+# FIX 109 — intake provenance pre-phase refusal.
+#
+# runfacts.check_intake_provenance() is the refuse/allow oracle: when the run's
+# current working/copy/intake.json sha256 has no row in
+# working/checkpoints/intake.provenance.jsonl (an out-of-band shell edit), the
+# file was written by something other than the intake phase or the owner's
+# approval path, and EVERY downstream phase must refuse — naming the sha —
+# instead of authoring content from unprovenanced intake. verify() is the one
+# funnel every phase's substance check passes through, so the check runs here,
+# BEFORE dispatching to the per-phase verifier. Phases that produce intake.json
+# themselves (P-CONVERTER / P0A-INTAKE / P-SP-CLAIM) are exempt: they are the
+# sanctioned writers whose own completion appends the provenance row.
+# ---------------------------------------------------------------------------
+try:
+    from presentation_job import runfacts as _rf109
+except ImportError:  # pragma: no cover — only when presentation_job is absent entirely
+    _rf109 = None  # type: ignore[assignment]
+
+_INTAKE_PRODUCER_PHASES = ("P-CONVERTER", "P0A-INTAKE", "P-SP-CLAIM")
+
+
+def _intake_provenance_refusal(phase_id: str, run_dir: Path) -> Optional[str]:
+    """Return the AF-INTAKE-PROVENANCE refusal line when this phase may not run
+    against the current intake sha, else None. Regime-aware: a run with no
+    provenance log at all (pre-FIX-109) is never refused by this check."""
+    if _rf109 is None:
+        return None
+    if phase_id in _INTAKE_PRODUCER_PHASES:
+        return None
+    try:
+        ok, why, _invalidated = _rf109.check_intake_provenance(run_dir)
+    except Exception as exc:  # noqa: BLE001 — fail closed, never crash the funnel
+        # FIX 107: no getattr on a verifier module — plain dict probe; the
+        # fallback is a literal constant, not a silent symbol degrade.
+        af_code = _rf109.__dict__.get("AF_INTAKE_PROVENANCE") or "AF-INTAKE-PROVENANCE"
+        return (f"{af_code}: "
+                f"provenance check itself failed ({exc!r}) — refusing to verify a "
+                "phase against an unprovenanced intake")
+    if ok:
+        return None
+    return why
+
+# ---------------------------------------------------------------------------
+# FIX 107 — the verifier symbol contract, bound at IMPORT time.
+#
+# The old shape probed engine symbols at CALL time with getattr(..., None) and
+# degraded to a weaker check whenever a name was missing. That is how the render
+# gate stayed permanently fail-closed: it getattr'd `check_image_qc` /
+# `check_rendered_images` off canonical_render_guard, names that never existed
+# (the real entry is run_fix2_checks), so the gate never once ran the real pixel
+# cross-check. A symbol contract probed with a None fallback cannot tell
+# "module absent" from "symbol renamed" — and only the first of those is a
+# legitimate degrade.
+#
+# The contract below is the one place that names every engine symbol this
+# module's verifiers bind to. assert_bound() walks it at IMPORT time (bottom of
+# this file) and raises ImportError naming module.symbol for any missing entry,
+# so a rename fails the import — loudly, at the preflight boundary — instead of
+# silently degrading every phase that used the renamed checker. The engine's
+# FIX 17 fail-closed path (VerifierImportError) then carries the name out of the
+# run. No getattr on any verifier module remains in this file: _bd_fn is a plain
+# bound-dict lookup that can only return None for a module that is genuinely
+# ABSENT (never for a missing symbol — assert_bound proved every symbol exists
+# before this module finished importing).
+#
+# assert_bound() is also exported for the preflight gate to call explicitly
+# (build_deck.run_preflight wires it in as its first gate), so a drift detected
+# after a hot patch is named at preflight even when the module was already
+# imported by an earlier stage of the process.
+# ---------------------------------------------------------------------------
+#: module -> tuple of symbols the verifiers REQUIRE (callable or constant).
+_VERIFIER_SYMBOL_CONTRACT: "Dict[str, Tuple[str, ...]]" = {
+    "build_deck": (
+        # preflights (PREFLIGHT_REQUIRED wiring)
+        "_chk_research_brief",
+        "_chk_research_cited",
+        "_chk_claims_without_citation",
+        "check_prompt_qc_deterministic",
+        "check_deck_harmony",
+        "_chk_notes_pane",
+        "_load_slide_copy_map",
+        "FORBIDDEN_DEMOGRAPHIC_DEFAULTS",
+        "FORBIDDEN_QC_GRADER_IDENTITIES",
+        # independent QC-report gates (P1Q-COPY-QC / P-PROMPT-QC)
+        "_chk_copy_qc",
+        "_chk_prompt_qc",
+        # Signature-Presentation verifiers
+        "_chk_sp_intake",
+        "_chk_sp_structure",
+        "_chk_sp_no_pitch",
+        "_chk_sp_claim",
+        "_chk_sp_intake_trace",
+    ),
+    "canonical_render_guard": (
+        # the REAL render image-QC entry (F39/U023): the render gate routes
+        # through run_fix2_checks, which fail-closes on its own contract.
+        "run_fix2_checks",
+    ),
+    "intelligence_engines_check": ("check_copy",),
+    "pitch_engines_check": ("check_copy",),
+    "sales_checkout_builder": (
+        "load_intake",
+        "resolve_sales_checkout_gate",
+        "verify_push_receipt",
+    ),
+    "vsl_builder": (
+        "load_intake",
+        "resolve_vsl_gate",
+        "resolve_deck_slug",
+        "verify_video_dependency",
+        "VslBuildError",
+    ),
+    "checkout_form_builder": (
+        "load_form_receipt",
+        "resolve_offer",
+        "resolve_intent",
+        "resolve_scope",
+        "validate_url",
+        "audit_cta_hrefs",
+        "FORM_RECEIPT_SCHEMA",
+        "BLOCK_MISSING_OFFER",
+        "BLOCK_MISSING_MERCHANT",
+        "BLOCK_WRONG_LOCATION",
+        "BLOCK_UNSUPPORTED_PAYMENT",
+        "INTENT_LEAD",
+        "INTENT_PAYMENT_SANDBOX",
+    ),
+}
+
+_MODULE_TABLE = {
+    "build_deck": lambda: _bd,
+    "canonical_render_guard": lambda: _crg,
+    "intelligence_engines_check": lambda: _iec,
+    "pitch_engines_check": lambda: _pec,
+    "sales_checkout_builder": lambda: _scb,
+    "vsl_builder": lambda: _vb,
+    "checkout_form_builder": lambda: _cfb,
+}
+
+
+def assert_bound() -> List[str]:
+    """FIX 107: prove every symbol in _VERIFIER_SYMBOL_CONTRACT exists.
+
+    Returns the sorted list of "module.symbol" names proven present (the bound
+    contract), so a caller can log what it verified. Raises ImportError naming
+    EVERY missing "module.symbol" — never None-fallbacks, never degrades.
+
+    A module that is genuinely ABSENT (ImportError on its own import) is NOT a
+    contract violation: absent-module is the documented degraded mode
+    (CI/test contexts). A module that is present but lost a symbol IS a
+    violation — that is a rename/drift, and it must fail the preflight naming
+    the symbol.
+    """
+    missing: List[str] = []
+    for mod_name, symbols in _VERIFIER_SYMBOL_CONTRACT.items():
+        mod = _MODULE_TABLE[mod_name]()
+        if mod is None:
+            # Module absent entirely — documented degrade, not a symbol drift.
+            continue
+        for sym in symbols:
+            # Plain dict probe — deliberately NOT getattr(..., None): the
+            # fallback-None shape is exactly what let the render gate sit
+            # fail-closed for its whole life. A missing key here is a real
+            # drift and gets named.
+            if sym not in mod.__dict__:
+                missing.append(f"{mod_name}.{sym}")
+                continue
+            val = mod.__dict__[sym]
+            if sym == "VslBuildError":
+                if not (isinstance(val, type) and issubclass(val, BaseException)):
+                    missing.append(f"{mod_name}.{sym}")
+            elif not callable(val) and not isinstance(val, (str, list, tuple, set, frozenset, dict)):
+                missing.append(f"{mod_name}.{sym}")
+    if missing:
+        raise ImportError(
+            "FIX 107 verifier symbol contract violated — these engine symbols are "
+            "bound by phase_verifiers.py but missing on their module: "
+            + ", ".join(sorted(missing))
+            + ". A verifier module was renamed/removed without updating "
+              "_VERIFIER_SYMBOL_CONTRACT; the preflight gate fails closed naming it."
+        )
+    return sorted(
+        f"{m}.{s}" for m, syms in _VERIFIER_SYMBOL_CONTRACT.items()
+        if _MODULE_TABLE[m]() is not None for s in syms
+    )
+
+
 # ---------------------------------------------------------------------------
 # Internal filesystem helpers
 # ---------------------------------------------------------------------------
@@ -152,10 +360,24 @@ def _read_text(path: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def _bd_fn(name: str):
-    """Return a build_deck attribute by name, or None if unavailable."""
+    """FIX 107: return a build_deck symbol by name, or None ONLY when the
+    build_deck module itself is absent (the documented degraded mode).
+
+    This is a plain bound-dict lookup — deliberately NOT getattr(..., None).
+    The old None-fallback shape made "symbol renamed" indistinguishable from
+    "module absent", which is how the render gate sat fail-closed for its whole
+    life. With assert_bound() having proven every contract symbol at import
+    time, a missing key here would mean a post-import patch dropped a symbol;
+    it raises (names the symbol) instead of silently degrading."""
     if _bd is None:
         return None
-    return getattr(_bd, name, None)
+    try:
+        return _bd.__dict__[name]
+    except KeyError as exc:
+        raise ImportError(
+            f"build_deck.{name} is bound by phase_verifiers.py's verifier "
+            f"contract but missing on build_deck (FIX 107 assert_bound: a "
+            f"post-import patch renamed/removed it)") from exc
 
 
 def _degraded_allowed(run_dir) -> bool:
@@ -386,14 +608,18 @@ def _verify_copy(run_dir: Path) -> Tuple[bool, List[str]]:
         else:
             reasons.append("AF-COPY-ENGINE-MISSING: intelligence_engines_check.check_copy unavailable — the writing-engine copy QC did not run; failing closed (test/CI marker absent)")
 
-    if _pec is not None and hasattr(_pec, "check_copy") and _pitch_included(run_dir):
-        try:
-            _pec.check_copy(working, problems)
-        except Exception as exc:  # noqa: BLE001
-            if _degraded_allowed(run_dir):
-                reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
-            else:
-                reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
+    if _pec is not None and hasattr(_pec, "check_copy"):
+        applicable, refusal = _pec.pitch_applicability(run_dir)
+        if refusal:
+            reasons.append(refusal)
+        elif applicable:
+            try:
+                _pec.check_copy(working, problems)
+            except Exception as exc:  # noqa: BLE001
+                if _degraded_allowed(run_dir):
+                    reasons.append(f"NOTE: pitch_engines_check.check_copy raised {exc!r} — skipped")
+                else:
+                    reasons.append(f"AF-COPY-ENGINE-CRASH: pitch_engines_check.check_copy raised {exc!r} — the pricing-engine copy QC did not run; failing closed (test/CI marker absent)")
     else:
         if _pec is None:
             reasons.append("NOTE: pitch_engines_check unavailable — skipped")
@@ -518,38 +744,85 @@ def _verify_qc_report(report_rel: str, bd_fn_name: str, af_code: str) -> Callabl
     return _v
 
 
+def _verify_finding_text(finding) -> str:
+    """Normalise one canonical_render_guard.run_fix2_checks finding to a readable
+    AF-... reason string.
+
+    run_fix2_checks returns (af_code, message) TUPLES (one per wired symbol);
+    defensively also accept dict findings ({"code","message"}) or bare strings.
+    The underlying messages already carry their own "AF-...:" prefix, so never
+    double-prefix (the pre-unification code f-string-dumped the whole tuple,
+    producing 'AF-IMAGE-QC-VISION: (\\'AF-IMAGE-QC-VISION\\', ...\\')' garbage)."""
+    if isinstance(finding, (tuple, list)) and len(finding) >= 2:
+        code, msg = str(finding[0]), str(finding[1])
+    elif isinstance(finding, dict):
+        code = str(finding.get("code") or finding.get("af_code") or "AF-IMAGE-QC-VISION")
+        msg = str(finding.get("message") or finding.get("msg") or finding)
+    else:
+        code, msg = "AF-IMAGE-QC-VISION", str(finding)
+    if msg.strip().startswith(code):
+        return msg.strip()
+    return f"{code}: {msg}"
+
 def _verify_render(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P4-RENDER / P-IMAGE-QC: build_deck.check_image_qc_vision (AF-IMAGE-QC-VISION).
-    SMOKE-1 F28 (2026-09-01): this verifier previously looked for
-    canonical_render_guard.check_image_qc / check_rendered_images — neither name has
-    ever existed, so the gate resolved to _crg!=None but fn=None on EVERY call and
-    fell through to the bare PNG-existence fallback, refusing to attest real renders
-    (AF-IMAGE-QC-MISSING). The real gate is build_deck.check_image_qc_vision (the
-    same module canonical_render_guard._FIX2_SYMBOLS already points at). Resolve it
-    via _bd_fn; fall back to the guard only if build_deck is unavailable."""
-    fn = None
-    if _bd is not None:
-        fn = _bd_fn("check_image_qc_vision")
-    if fn is None and _crg is not None:
-        fn = getattr(_crg, "check_image_qc", None) or getattr(_crg, "check_rendered_images", None)
-    if fn is not None:
+    """P4-RENDER / P-IMAGE-QC: canonical_render_guard image-QC (AF-IMAGE-QC-VISION).
+
+    UNIFIED (W12b-B3 — one path; resolves F28 vs F39). F28: this gate looked up
+    check_image_qc / check_rendered_images on canonical_render_guard — symbols
+    that never existed — so the render gate was permanently fail-closed. F39
+    repointed it at canonical_render_guard.run_fix2_checks. The unified path
+    keeps the F39 repoint and applies the F03 degraded contract UNIFORMLY to
+    every outcome of the measurement:
+
+      1. Guard MODULE present -> the pixel/vision cross-check runs via
+         run_fix2_checks (FIX 107: DIRECT symbol access — no getattr on any
+         verifier module; the import-time assert_bound() contract already
+         proved the symbol, and a post-import loss raises here, naming it).
+           clean findings    -> PASS (a full-evidence pass: the gate measured).
+           findings          -> production: FAIL naming each finding;
+                                test/CI degraded: NOTE-pass listing them.
+           checker raised    -> production: FAIL AF-IMAGE-QC-CRASH (fail closed —
+                                a crashed measurer equals no measurement, and no
+                                measurement cannot equal pass);
+                                test/CI degraded: NOTE-pass.
+      2. Guard MODULE absent -> filesystem fallback:
+           no renders/slide-*.png -> FAIL;
+           production             -> FAIL AF-IMAGE-QC-MISSING (fail closed);
+           test/CI degraded       -> NOTE-pass.
+
+    A degraded (NOTE) pass is permitted ONLY via _degraded_allowed (explicit
+    test/CI marker) — never by default, never in production."""
+    degraded = _degraded_allowed(run_dir)
+    if _crg is not None:
         try:
-            result = fn(run_dir)
-            if not _checker_pass(result):
-                return False, [f"AF-IMAGE-QC-VISION: {result}"]
-            return True, []
+            findings = _crg.run_fix2_checks(run_dir) or []
         except Exception as exc:  # noqa: BLE001
-            if not _degraded_allowed(run_dir):
+            # F03: the vision measurer crashed — falling through to a bare
+            # PNG-existence check in production would attest renders that no
+            # gate ever actually measured. Fail closed unless test/CI.
+            if not degraded:
                 return False, [
-                    f"AF-IMAGE-QC-CRASH: image-QC gate raised "
+                    f"AF-IMAGE-QC-CRASH: canonical_render_guard image-QC raised "
                     f"{exc!r} — the render image-QC did not run; failing closed "
                     "(test/CI marker absent)"]
+            return True, [
+                "NOTE: canonical_render_guard image-QC crashed — "
+                f"{exc!r} — filesystem-only check (pass) under an explicit "
+                "test/CI degraded context"]
+        if not _checker_pass(findings):
+            reasons = [_verify_finding_text(f) for f in findings]
+            if not degraded:
+                return False, reasons
+            return True, [
+                "NOTE: canonical_render_guard image-QC reported findings that are "
+                "NOT attested by this degraded (test/CI) pass: " + " | ".join(reasons)]
+        return True, []
 
     # Filesystem fallback: at least one render PNG must exist.
     hits = list(run_dir.glob("renders/slide-*.png"))
     if not hits:
         return False, ["AF-IMAGE-QC-VISION: no render PNGs found at renders/slide-*.png"]
-    if not _degraded_allowed(run_dir):
+    if not degraded:
         return False, [
             "AF-IMAGE-QC-MISSING: canonical_render_guard image-QC unavailable — the "
             "render image-QC never ran. A PNG-existence check alone cannot attest "
@@ -950,7 +1223,17 @@ def _fix16_get_verifier(phase_id: str) -> Callable:
     if phase_id == "P-IMAGE-QC":
         if not _fix16_wiring_enabled():
             return _verify_render
-        return _fix16_aggregate(_verify_render, _verify_image_grounding)
+        # FIX 33 (W12b-B3 unification): the aggregate grows a THIRD leg — the
+        # vision-unit contract (graded_by_model != authoring stamp, request_id
+        # present, per-slide non-empty observed_text). The three legs compose
+        # with _merge via the ONE dead-branch-free pair helper: base render
+        # gate AND grounding steward AND unit contract.
+        unit = _fix33_get_verifier()
+        if unit is None:
+            return _fix16_aggregate(_verify_render, _verify_image_grounding)
+        return _fix16_aggregate(
+            _verify_render,
+            lambda rd: _fix33_pair(_verify_image_grounding, unit, rd))
     if phase_id == "P-PROMPT-QC":
         if not _fix16_wiring_enabled():
             return _verify_qc_report(
@@ -959,6 +1242,239 @@ def _fix16_get_verifier(phase_id: str) -> Callable:
             "working/qc/prompt_qc_report.json", "_chk_prompt_qc", "AF-PROMPT-QC")
         return _fix16_aggregate(prompt_gate, _verify_representation_casting)
     raise KeyError(phase_id)
+
+
+def _fix33_pair(sub_a: Callable, sub_b: Callable, run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX 33: merge TWO sub-verifiers (grounding steward + vision-unit
+    contract) into one (ok, reasons) leg so _fix16_aggregate keeps its
+    (base, sub) shape. ok = sub_a AND sub_b; reasons concatenated, sub_a's
+    park reasons first (the ones the operator reads)."""
+    ok_a, r_a = sub_a(run_dir)
+    ok_b, r_b = sub_b(run_dir)
+    return _merge([(ok_a, r_a), (ok_b, r_b)])
+
+
+# ---------------------------------------------------------------------------
+# FIX 33 — image-QC vision UNIT contract (observed_text + request id + cross-graded model)
+# ---------------------------------------------------------------------------
+# MASTER Part 8 Fix 33: "image-QC report declared independent and was written
+# by the driver; no verifier calls a vision model; 'vision QC' means the report
+# says a model name. HOW: the dispatcher stamps graded_by_provider,
+# graded_by_model, request_id into every QC artifact it authors; qc_aggregate
+# and verifier_registry.qc_report_verifier fail a report whose model equals the
+# authoring stamp for the same range or lacks a request id; P-IMAGE-QC units
+# call a vision-capable route with the PNG attached and store observed_text
+# per slide."
+#
+# This file's share of the fix (the W12b builder task) is the PHASE-VERIFIER
+# side: a vision-UNIT contract sub-verifier for P-IMAGE-QC that enforces, per
+# slide, that the image_qc_report.json carries the three FIX 33 provenance
+# fields a real vision unit leaves behind:
+#   * graded_by_model  — the model that actually graded the slide (must NOT
+#     equal the report's authoring stamp qc_independence/builder identity — a
+#     self-graded vision pass is not a vision pass);
+#   * request_id       — the vision route's request id (a report without one
+#     names no route and cannot prove a unit ran);
+#   * observed_text    — the per-slide non-empty vision observation (the OCR /
+#     multimodal readout; a row without one is pixel-blind).
+# Layout inside the report:
+#   * top-level graded_by_provider / graded_by_model / request_id are accepted
+#     (the dispatcher's stamp), with per-slide rows carrying their own
+#     observed_text (+ optionally their own graded_by_model/request_id, which
+#     override the top-level stamp for that slide);
+#   * per-slide rows are the LIST form the existing _image_qc_report_defects
+#     rubric already demands (key slides/per_slide/slide_results; row key
+#     "slide" or "ordinal" / 1-based, or index position when the row carries
+#     no number).
+# Wiring: appended to the P-IMAGE-QC aggregate via _fix16_get_verifier (base
+# render gate AND grounding steward AND this contract). Rollback:
+# PRESENTATION_FIX33_VISION_CONTRACT=0 restores the pre-FIX-33 aggregate
+# exactly. Default is ON.
+# ---------------------------------------------------------------------------
+
+FIX33_ROLLBACK_FLAG = "PRESENTATION_FIX33_VISION_CONTRACT"
+
+# Top-level keys accepted as the report's vision-unit provenance stamp.
+_FIX33_PROVIDER_KEYS = ("graded_by_provider", "vision_provider", "provider")
+_FIX33_MODEL_KEYS = ("graded_by_model", "vision_model", "multimodal_model",
+                     "ocr_engine", "vision_engine", "reviewer_vision_model")
+_FIX33_REQUEST_KEYS = ("request_id", "route_request_id", "vision_request_id")
+
+# Per-slide observation fields (mirrors build_deck._image_qc_report_defects
+# VIS_FIELDS so the two rubrics agree on what counts as an observation).
+_FIX33_OBSERVED_FIELDS = ("observed_text", "vision", "ocr", "ocr_text",
+                          "baked_text", "read_text", "description",
+                          "pixels_read", "visual_subject")
+
+
+def _fix33_wiring_enabled() -> bool:
+    """FIX 33 roll-forward/rollback switch. Default ON; ==0 restores the
+    pre-fix P-IMAGE-QC aggregate exactly (documented rollback path)."""
+    return os.environ.get(FIX33_ROLLBACK_FLAG) != "0"
+
+
+def _fix33_first_str(src: dict, keys) -> str:
+    """First non-empty string value among keys, else ''."""
+    for k in keys:
+        v = src.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _fix33_row_ordinal(row: dict, index: int) -> Optional[int]:
+    """1-based slide ordinal for a per-slide row: row['slide'] / row['ordinal']
+    / row['slide_ordinal'] / row['index'] when an int, else the row's list
+    position (0-based index -> 1-based)."""
+    for k in ("slide", "ordinal", "slide_ordinal", "index", "slide_number", "n"):
+        v = row.get(k)
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().lstrip("Ss-").isdigit():
+            try:
+                return int(v.strip().lstrip("Ss-"))
+            except ValueError:
+                continue
+    return index + 1
+
+
+def _fix33_check_report(run_dir: Path, degraded: bool) -> Tuple[bool, List[str]]:
+    """FIX 33 vision-unit contract over working/qc/image_qc_report.json.
+
+    Returns (ok, reasons). Contract (production):
+      * the report exists and parses;
+      * a per-slide LIST is present covering every rendered PNG (the same LIST
+        shape build_deck._image_qc_report_defects already demands — a dict
+        keyed by slide can silently drop rows);
+      * top-level graded_by_model present AND different from the authoring
+        stamp (qc_independence/builder identity) — the model that graded the
+        deck cannot be the model that wrote it;
+      * a request_id is present (the vision route's request id);
+      * EVERY per-slide row carries a non-empty observed_text (pixel-blind
+        rows are refused), and the row count covers every rendered PNG.
+    A test/CI degraded context NOTE-passes with the findings listed."""
+    reasons: List[str] = []
+    report_path = run_dir / "working" / "qc" / "image_qc_report.json"
+    report = _read_json(report_path) if report_path.is_file() else None
+    if not isinstance(report, dict):
+        if not degraded:
+            return False, [
+                "AF-IMAGE-QC-UNIT: image_qc_report.json missing or unparseable — "
+                "the FIX 33 vision-unit contract (graded_by_model + request_id + "
+                "per-slide observed_text) cannot be attested without the report "
+                "the P-IMAGE-QC vision units write."]
+        return True, ["NOTE: image_qc_report.json missing — FIX 33 vision-unit "
+                      "contract not checkable (test/CI degraded NOTE pass)"]
+
+    # --- the authoring stamp: who WROTE the report (builder/driver identity) ---
+    blk = report.get("qc_independence")
+    blk = blk if isinstance(blk, dict) else {}
+    authoring_stamp = ""
+    for src in (blk, report):
+        for key in ("graded_by", "builder", "built_by", "reviewer", "reviewed_by"):
+            v = src.get(key)
+            if isinstance(v, str) and v.strip():
+                authoring_stamp = v.strip()
+                break
+        if authoring_stamp:
+            break
+
+    # --- graded_by_model must exist and DIFFER from the authoring stamp ---
+    graded_model = _fix33_first_str(report, _FIX33_MODEL_KEYS)
+    if not graded_model:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json declares no graded_by_model — "
+            "FIX 33 requires the dispatcher's vision-unit stamp "
+            "(graded_by_provider/graded_by_model/request_id) in every QC artifact; "
+            "a report that only SAYS a model name carries no route provenance.")
+    elif authoring_stamp and graded_model.strip().lower() == authoring_stamp.strip().lower():
+        reasons.append(
+            f"AF-IMAGE-QC-UNIT: graded_by_model {graded_model!r} equals the report's "
+            f"authoring stamp {authoring_stamp!r} — the author graded its own work. "
+            "FIX 33: the vision route that graded the deck must be a DIFFERENT "
+            "model from the authoring stamp (cross-graded, never self-graded).")
+
+    # --- request_id: the vision route's request id must appear ---
+    request_id = _fix33_first_str(report, _FIX33_REQUEST_KEYS)
+    if not request_id:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json carries no request_id — FIX 33 "
+            "requires the vision route's request id in the report so every grade "
+            "is traceable to the unit call that produced it. A report with no "
+            "request id names no route and cannot prove a vision unit ran.")
+
+    # --- per-slide coverage: LIST, covering every rendered PNG, observed_text ---
+    per_slide = None
+    for k in ("slides", "per_slide", "slide_results"):
+        if k in report:
+            per_slide = report.get(k)
+            break
+    if isinstance(per_slide, dict):
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: per-slide coverage is a DICT — FIX 33 requires the "
+            "per-slide LIST form so no slide's vision row can be silently dropped.")
+        per_slide = None
+    rows: List[Tuple[int, dict]] = []
+    if isinstance(per_slide, list) and per_slide:
+        rows = [( _fix33_row_ordinal(r, i), r) for i, r in enumerate(per_slide)
+                if isinstance(r, dict)]
+        if len(rows) != len(per_slide):
+            reasons.append(
+                "AF-IMAGE-QC-UNIT: per-slide coverage contains non-object rows — "
+                "every FIX 33 vision row must be an object with its own "
+                "observed_text.")
+    pngs = sorted(run_dir.glob("renders/slide-*.png"))
+    n_pngs = len(pngs)
+    if not rows:
+        reasons.append(
+            "AF-IMAGE-QC-UNIT: image_qc_report.json has no per-slide rows — FIX 33 "
+            "requires one vision-unit row per rendered slide, each carrying a "
+            "non-empty observed_text from the route's read of the PNG.")
+    else:
+        if n_pngs and len(rows) < n_pngs:
+            reasons.append(
+                f"AF-IMAGE-QC-UNIT: image_qc_report.json carries {len(rows)} per-slide "
+                f"vision rows for {n_pngs} rendered PNG(s) — every rendered slide "
+                "must be covered by its own vision-unit row (FIX 33).")
+        # observed_text per row (a row may override the top-level stamp, but the
+        # OBSERVATION is per-slide and never inheritable).
+        blind: List[str] = []
+        for ordinal, row in rows:
+            observed = _fix33_first_str(row, _FIX33_OBSERVED_FIELDS)
+            if not observed:
+                blind.append(f"slide {ordinal:02d}" if isinstance(ordinal, int)
+                             else f"row {ordinal!r}")
+        if blind:
+            reasons.append(
+                "AF-IMAGE-QC-UNIT: per-slide rows without a non-empty observed_text "
+                "(the route's per-slide read of the PNG): " + ", ".join(blind[:12])
+                + " — a pixel-blind row cannot attest a vision unit (FIX 33).")
+
+    if reasons:
+        if degraded:
+            return True, ["NOTE: FIX 33 vision-unit contract findings NOT attested "
+                          "by this degraded (test/CI) pass: " + " | ".join(reasons)]
+        return False, reasons
+    return True, []
+
+
+def _verify_qc_vision_unit_contract(run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX 33 sub-verifier for P-IMAGE-QC: the vision-UNIT contract over
+    image_qc_report.json — graded_by_model != authoring stamp, request_id
+    present, per-slide non-empty observed_text covering every rendered PNG.
+    Pure filesystem reads; no engine required; test/CI degraded NOTE-pass only
+    (F03: no measurement cannot equal pass in production)."""
+    return _fix33_check_report(run_dir, _degraded_allowed(run_dir))
+
+
+def _fix33_get_verifier() -> Optional[Callable]:
+    """Resolve the FIX 33 sub-verifier for the P-IMAGE-QC aggregate (None when
+    the rollback flag disables it)."""
+    if not _fix33_wiring_enabled():
+        return None
+    return _verify_qc_vision_unit_contract
 
 
 def _fix16_apply(pv_registry: dict) -> dict:
@@ -1445,17 +1961,23 @@ def _deliverable_content_check(key: str, path: Path, reasons: list) -> None:
             break
 
     if chk == "fish_tags":
-        # Must contain actual Fish Audio [fish] tags — a plain text file renamed
-        # as FISH-TAGGED.md would have no bracket tags at all.
+        # Must contain real Fish Audio expression tags — a plain text file renamed
+        # as FISH-TAGGED.md would have no bracket tags at all. Fish Audio S2/S2-Pro
+        # syntax (FISH-AUDIO-TAGS-MASTER.md §"current default") is a bracket-wrapped
+        # natural-language cue, e.g. [warm and welcoming] / [pause] / [long pause] —
+        # NOT a literal "[fish...]" prefix. The tagger (speech_fish_tag.py) emits
+        # exactly this S2 form, so the check validates the S2 catalog syntax. The
+        # anti-drift intent is unchanged: >= 3 bracket tags demanded, a renamed
+        # plain text file still fails (it has zero bracket tags).
         import re
-        fish_pattern = re.compile(r'\[fish\b[^\]]*\]', re.IGNORECASE)
+        fish_pattern = re.compile(r'\[[a-z][^\]\[]{3,60}\]', re.IGNORECASE)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
             matches = fish_pattern.findall(text)
             if len(matches) < 3:
                 reasons.append(
                     f"AF-BUNDLE-INCOMPLETE: {key} — {path.name} has only "
-                    f"{len(matches)} [fish] tags (min 3 expected).  A renamed "
+                    f"{len(matches)} Fish S2 bracket tags (min 3 expected).  A renamed "
                     f"plain text file is not a fish-tagged speech."
                 )
         except Exception as exc:  # noqa: BLE001
@@ -1554,10 +2076,29 @@ def _verify_delivery(run_dir: Path) -> Tuple[bool, List[str]]:
         if size == 0:
             reasons.append(f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is zero bytes")
             continue
-        if size < min_bytes:
+        # F43c (SMOKE-1, 2026-09-01): guide_pdf/deck_pdf floors were tuned for the
+        # 34-slide reference deck. FIX 103 (MASTER Part 8, SMOKE-1 addenda): the
+        # inline reference-ratio scaler is gone — the P9-DELIVERY gate delegates
+        # to THE one helper (presentation_job.deliverable_floors): guide_pdf via
+        # guide_floor(n)=max(1600n, 12000), deck_pdf via pdf_floor(n)=max(1506n,
+        # 8192), with slide_count(run_dir) reading slides.json and never a
+        # constant. pdf_floor(34) reproduces the legacy reference floor exactly;
+        # when the count is undeterminable the spec floor is used unchanged.
+        _min_b = min_bytes
+        if key in ("guide_pdf", "deck_pdf"):
+            try:
+                _n = _floors.slide_count(run_dir) if _floors is not None else 0
+                if _n:
+                    if key == "guide_pdf":
+                        _min_b = _floors.guide_floor(_n)
+                    else:
+                        _min_b = _floors.pdf_floor(_n)
+            except Exception:  # noqa: BLE001 — fall back to the fixed floor
+                pass
+        if size < _min_b:
             reasons.append(
                 f"AF-BUNDLE-INCOMPLETE: {key} — {candidate.name} is {size} bytes "
-                f"(minimum {min_bytes} bytes)"
+                f"(minimum {_min_b} bytes)"
             )
             continue
 
@@ -1599,6 +2140,74 @@ def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         return _check_json_nonempty(run_dir, pattern, required_keys)
     return _v
+
+
+def _verify_arc_allocation(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P3-ARC's arc_allocation.json — valid JSON **that a consumer can read**.
+
+    PD-TEST-067. This phase used to be ``_verify_json_artifact(
+    "working/copy/arc_allocation.json")`` with NO required_keys, i.e. "parses
+    and is not zero bytes". On run pres-operator-1d269693 that blessed an
+    artifact whose 8 slides sat under ``slide_allocations``/``slide_number``
+    — a spelling no reader in this tree could see — so P3-ARC reported
+    ``done`` while ``fanout._slides_for_units`` derived ZERO units for every
+    downstream phase that reads the deck's slide list. P-U-DESIGN-VSL,
+    P-U-DESIGN-SALES, P-U-DESIGN-CHECKOUT and P-STYLE-SPEC each emitted 43
+    identical zero-unit refusals, hit DISPATCH_REPEAT_CEILING and were
+    quarantined, stopping the run.
+
+    A validity-only gate cannot catch that: the file was perfectly valid JSON,
+    and every OTHER gate P3-ARC carries (_chk_arc presence/non-emptiness,
+    _chk_peak_end / _chk_pitch / _chk_pitch_leak token scans) passed too. The
+    artifact's ONE contractual obligation is that its consumers can read the
+    slide allocation, so that is what this gate now requires — via the same
+    shared reader the consumers use (presentation_job.arc_slides), so the
+    producer and its readers cannot drift apart again.
+
+    Still FAIL-HARD, and strictly stronger than before, never weaker:
+      * absent / zero-byte / unparseable  -> FAIL (unchanged, via
+        _check_json_nonempty);
+      * no recognised slide array at all  -> FAIL (NEW: the live defect);
+      * a recognised but EMPTY slide array -> FAIL (NEW: declares no slides);
+      * recognised, non-empty             -> PASS.
+    """
+    ok, reasons = _check_json_nonempty(run_dir, "working/copy/arc_allocation.json")
+    if not ok:
+        return ok, reasons
+    try:
+        from presentation_job import arc_slides as _shared
+    except ImportError:  # pragma: no cover - presentation_job absent entirely
+        # Matches this module's documented defensive-import convention, but
+        # NEVER silently: the degradation is recorded as a NOTE reason (the
+        # "NOTE" prefix is excluded from the hard-failure list), so a record
+        # graded under a validity-only gate is visibly distinguishable from one
+        # graded against the real consumer contract.
+        return True, reasons + [
+            "NOTE: presentation_job.arc_slides is unavailable, so the arc "
+            "slide-allocation SHAPE was NOT validated (validity-only, "
+            "pre-PD-TEST-067 behavior)"]
+    path = _resolve_glob(run_dir, "working/copy/arc_allocation.json")
+    slots = _shared.slots_from_obj(_read_json(path) if path is not None else None)
+    if slots is None:
+        return False, [
+            "working/copy/arc_allocation.json: no slide allocation array this "
+            "pipeline can read — P3-ARC's own consumers (fanout unit "
+            "enumeration, dispatcher._prompt_slide_count, "
+            "build_deck._count_output_slides, craft_judgement) read the slides "
+            "from one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_LIST_KEYS)}, each slot "
+            "carrying a whole-number ordinal under one of "
+            f"{', '.join(repr(k) for k in _shared.SLIDE_ORDINAL_KEYS)}. A "
+            "structurally valid artifact no consumer can read reports ZERO "
+            "units downstream and quarantines every phase that needs the deck's "
+            "slide list (PD-TEST-067)."]
+    if not slots:
+        return False, [
+            "working/copy/arc_allocation.json: the slide allocation array is "
+            "present but EMPTY — the arc declares zero slides, so every "
+            "downstream fan-out over the deck's slide list would enumerate "
+            "zero units."]
+    return True, reasons
 
 
 # fix/run-slides: P-CONVERTER (Phase -1, "Content-to-Presentation Conversion")
@@ -1644,27 +2253,25 @@ def _verify_converter(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_text_artifact(pattern: str, min_bytes: int = 50,
-                          scale_by_slides: bool = False):
+                          scale_by_slides: bool = False,
+                          floor_formula: str = "pdf"):
     """Factory returning a verifier that checks a text artifact. When
-    scale_by_slides is True, min_bytes is scaled by the deck's slide count
-    (MIN_BYTES was tuned for a ~34-slide reference deck; a fully-populated
-    smaller deck legitimately renders smaller — E2E finding)."""
+    scale_by_slides is True, min_bytes is scaled by the deck's slide count from
+    THE one floor helper (presentation_job/deliverable_floors — FIX 103):
+    floor_formula="guide" uses guide_floor(n)=max(1600n, 12000) and the default
+    "pdf" uses pdf_floor(n)=max(1506n, 8192). The slide count comes from
+    deliverable_floors.slide_count(run_dir), which reads slides.json /
+    arc_allocation.json and never a constant. The former inline scaler (a
+    reference-deck ratio re-derivation) is gone. When scaling cannot run (floors
+    module unavailable) the raw min_bytes applies, as before."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
         if not scale_by_slides:
             return _check_text_nonempty(run_dir, pattern, min_bytes)
         try:
-            _n = 0
-            for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
-                import json as _json
-                _data = _json.load(open(_cand))
-                if isinstance(_data, list):
-                    _n = len(_data)
-                elif isinstance(_data, dict) and _data.get("slides"):
-                    _n = len(_data["slides"])
-                if _n:
-                    break
+            _n = _floors.slide_count(run_dir) if _floors is not None else 0
             _n = _n or 1
-            _scaled = max(int(min_bytes * _n // 34), 8192)
+            _scaled = (_floors.guide_floor(_n) if floor_formula == "guide"
+                       else _floors.pdf_floor(_n)) if _floors is not None else min_bytes
         except Exception:  # noqa: BLE001 — fall back to the fixed floor
             _scaled = min_bytes
         return _check_text_nonempty(run_dir, pattern, _scaled)
@@ -1696,10 +2303,24 @@ def _verify_sp_structure(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_sp_no_pitch(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P-SP-P3-HYGIENE: Phase-3 (teaching) no-pitch hygiene (via _chk_sp_no_pitch)."""
+    """P-SP-P3-HYGIENE: Phase-3 (teaching) no-pitch hygiene (via _chk_sp_no_pitch).
+
+    The build_deck-unavailable fallback checks THIS phase's OWN artifact --
+    working/qc/sp_p3_hygiene_report.json -- not P-SP-STRUCTURE's ledger. It used
+    to read working/copy/sp_structure.json with required key ("slides",), which
+    is the STRUCTURE phase's artifact and shape: the fallback passed whenever the
+    Architect's ledger existed, whether or not the hygiene review had ever run,
+    and it was the same path collision that let this phase both consume and
+    declare sp_structure.json (two producers -> no edge -> wave 1 -> a reviewer's
+    notes written over the structure ledger, live 2026-09-04). The required key is
+    the `qc_independence` provenance block that the owning role's SOP 9.3/9.4
+    refuses a verdict without -- a structure ledger does not carry it, so the
+    check cannot pass on the wrong file.
+    """
     fn = _bd_fn("_chk_sp_no_pitch")
     if fn is None:
-        return _check_json_nonempty(run_dir, "working/copy/sp_structure.json", ("slides",))
+        return _check_json_nonempty(run_dir, "working/qc/sp_p3_hygiene_report.json",
+                                    ("qc_independence",))
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -1853,9 +2474,43 @@ def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -1949,9 +2604,43 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(reasons) == 0), reasons
 
 
+def _sp_claim_matches_intake(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Prove P-SP-CLAIM recorded the selected type, rather than selecting one.
+
+    The claim phase is a router.  It may document a signature request, but it
+    cannot promote a from-scratch deck into one.  The sealed intake remains the
+    authority and an incomplete/malformed claim fails closed.
+    """
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json").read_text())
+        claim = json.loads((run_dir / "working" / "copy" / "sp_claims.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, [f"AF-SP-CLAIM-INTAKE-MISMATCH: unreadable intake or claim: {exc}"]
+    if not isinstance(intake, dict) or not isinstance(claim, dict):
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: intake and claim must be JSON objects"]
+    selected = str(intake.get("deck_type") or "").strip()
+    recorded = str(claim.get("deck_type") or "").strip()
+    if not selected or recorded != selected:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: claim deck_type must exactly match "
+                       "the selected intake deck_type"]
+    claimed = claim.get("claimed")
+    if selected == "signature_presentation":
+        if claimed is not True:
+            return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: selected signature deck requires "
+                           "claimed:true"]
+    elif claimed is not False:
+        return False, ["AF-SP-CLAIM-INTAKE-MISMATCH: non-signature deck requires "
+                       "claimed:false; P-SP-CLAIM cannot promote the intake"]
+    return True, []
+
+
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    ok, notes = _sp_claim_matches_intake(run_dir)
+    if not ok:
+        return ok, notes
     fn = _bd_fn("_chk_sp_claim")
-    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    if fn is None:
+        return True, []
     result = fn(run_dir)
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
@@ -2377,26 +3066,41 @@ def _verify_upsell_checkout_build(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
-    """P-U-FORM-CHECKOUT (order 8.77): per PIPELINE-MANIFEST.json's own
-    routing_note this phase has no dedicated payment/lead-capture-form
-    implementation yet -- it re-invokes sales_checkout_builder.py --skip-design
-    as an interim placeholder that re-verifies the SAME build_receipt.json
-    P-U-SALES-BUILD produces, so its own gate/AF-code/step-count entry is
-    honest rather than silently absent.
+    """P-U-FORM-CHECKOUT (order 8.77, PRES-025 real producer): the elected
+    checkout form stage -- offer-derived form schema, Skill 44 form/workflow
+    contract, Skill 06 widget task, persisted IDs, verified CTA route.
 
-    produces_artifact (manifest): working/sales-checkout/build_receipt.json.
+    produces_artifact (manifest): working/sales-checkout/checkout_form.json.
     Same WANT_SALES_CHECKOUT gate as the other two upsell phases. When
-    elected, delegates straight to sales_checkout_builder.verify_push_receipt()
-    (the SAME function the executor's own main() calls) -- absent or
-    fabricated (no real preview_urls / no funnel_id) is a hard FAIL: the
-    executor's exit code treats "not yet pushed" as non-fatal (it re-runs
-    until the delegated agent-browser session lands the receipt), but this
-    verifier is the PRIMARY substance gate for the phase's own
-    produces_artifact and must not rubber-stamp an artifact that was never
-    written."""
+    elected:
+
+      * blocked  -> soft checkpoint, NOT a FAIL: a phase-scoped blocker
+        (MISSING_OFFER / MISSING_MERCHANT / MISSING_CREDS / MISSING_SKILL /
+        WRONG_LOCATION / UNSUPPORTED_PAYMENT) is returned as (True,
+        [NOTE ...]) naming the
+        code + action, so deck production and notifications continue while
+        checkout alone waits. Deck-stage gates must never read this as deck
+        failure.
+      * plan_emitted -> FAIL until the delegated Skill 44/06 execution lands
+        real form/workflow IDs + a mode proof (the executor's exit code
+        treats "not yet executed" as non-fatal; this verifier is the PRIMARY
+        substance gate for the phase's own produces_artifact and must not
+        rubber-stamp an artifact nothing proved).
+      * the checkout page's own CTAs must pass the protocol audit (never
+        #/empty/javascript:) and the page must carry the real order form;
+      * the receipt must be fresh (input hashes match current intake +
+        checkout.html) -- a stale receipt after an offer edit is a hard FAIL;
+      * lead_capture completes only on a test-location proof (one scoped
+        contact + one workflow enrollment); payment_sandbox completes only on
+        a sandbox mapping proof (product/amount/currency + success/cancel
+        routes, zero real charge)."""
     if _scb is None:
         return False, ["AF-U-FORM-CHECKOUT: sales_checkout_builder module "
                        "unavailable -- cannot resolve the WANT_SALES_CHECKOUT gate; "
+                       "fail-closed, not a pass"]
+    if _cfb is None:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form_builder module "
+                       "unavailable -- the phase's real producer is missing; "
                        "fail-closed, not a pass"]
 
     intake = _scb.load_intake(run_dir)
@@ -2410,18 +3114,189 @@ def _verify_upsell_form_checkout(run_dir: Path) -> Tuple[bool, List[str]]:
     if decision != "build":
         return False, [f"AF-U-FORM-CHECKOUT: unrecognized gate decision {decision!r}"]
 
+    # 0) The page this phase wires must itself be real (P-U-CHECKOUT-BUILD's
+    #    contract, re-asserted here so a form can never "complete" on a stub).
+    checkout_html_path = Path(run_dir) / "working" / "sales-checkout" / "html" / "checkout.html"
+    if not checkout_html_path.is_file():
+        return False, ["AF-U-FORM-CHECKOUT: working/sales-checkout/html/checkout.html "
+                       "not found -- the checkout page must exist before its form is wired"]
     try:
-        status, detail, _data = _scb.verify_push_receipt(run_dir)
+        page_text = checkout_html_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-CHECKOUT: checkout.html unreadable: {exc!r}"]
+    cta_fails = _cfb.audit_cta_hrefs(page_text, page_role="checkout")
+    if cta_fails:
+        return False, [f"AF-U-FORM-CHECKOUT: {f}" for f in cta_fails]
+
+    # 1) The phase's own receipt.
+    try:
+        receipt = _cfb.load_form_receipt(Path(run_dir))
     except Exception as exc:  # noqa: BLE001
-        return False, [f"AF-U-FORM-CHECKOUT: verify_push_receipt raised {exc!r}"]
-    if status is True:
+        return False, [f"AF-U-FORM-CHECKOUT: load_form_receipt raised {exc!r}"]
+    if not receipt:
+        return False, ["AF-U-FORM-CHECKOUT: working/sales-checkout/checkout_form.json "
+                       "absent -- the form stage has not run (plan not yet emitted)"]
+    if receipt.get("phase") != "P-U-FORM-CHECKOUT":
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json names phase "
+                       f"{receipt.get('phase')!r} -- a foreign receipt is not this run's form proof"]
+    if not isinstance(receipt.get("schema_version"), str) or not receipt["schema_version"]:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json carries no schema_version"]
+
+    # 2) Phase-scoped blockers: explicit, actionable, deck-neutral.
+    if receipt.get("status") == "blocked":
+        blocker = receipt.get("blocker") or {}
+        code = str(blocker.get("code") or "BLOCKED")
+        if code not in (_cfb.BLOCK_MISSING_OFFER, _cfb.BLOCK_MISSING_MERCHANT,
+                        _cfb.BLOCK_MISSING_CREDS, _cfb.BLOCK_MISSING_SKILL,
+                        _cfb.BLOCK_WRONG_LOCATION, _cfb.BLOCK_UNSUPPORTED_PAYMENT):
+            return False, [f"AF-U-FORM-CHECKOUT: unknown blocker code {code!r} -- "
+                           f"refusing to treat it as a soft block"]
+        return True, [f"NOTE: P-U-FORM-CHECKOUT blocked [{code}] -- "
+                      f"{blocker.get('detail', '')} ACTION: {blocker.get('action', '')} "
+                      f"(checkout only; deck production and notifications continue)"]
+
+    # 3) Freshness: the receipt must describe THIS intake + THIS page.
+    try:
+        import hashlib as _hl
+        intake_bytes = (Path(run_dir) / "working" / "copy" / "intake.json").read_bytes()
+        intake_sha = _hl.sha256(intake_bytes).hexdigest()
+    except OSError:
+        intake_sha = ""
+    try:
+        import hashlib as _hl2
+        page_sha = _hl2.sha256(checkout_html_path.read_bytes()).hexdigest()
+    except OSError:
+        page_sha = ""
+    recorded = receipt.get("input_hashes") or {}
+    if recorded.get("intake") and intake_sha and recorded["intake"] != intake_sha:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json is STALE -- intake.json "
+                       "changed since the form plan was emitted (offer edit?). Re-run the "
+                       "form stage before completing it."]
+    if recorded.get("checkout_html") and page_sha and recorded["checkout_html"] != page_sha:
+        return False, ["AF-U-FORM-CHECKOUT: checkout_form.json is STALE -- checkout.html "
+                       "changed since the form plan was emitted. Re-run the form stage."]
+
+    # 4) Scope binding: wrong-location receipts never complete.
+    scope = receipt.get("scope") if isinstance(receipt.get("scope"), dict) else None
+    form_loc = (receipt.get("location_id") or
+                (scope.get("location_id") if scope else ""))
+    try:
+        scope_now, scope_blocker = _cfb.resolve_scope(
+            Path(run_dir), intake if isinstance(intake, dict) else {})
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-CHECKOUT: scope re-resolution raised {exc!r}"]
+    if scope_blocker is not None:
+        code = str(scope_blocker.get("code") or "BLOCKED")
+        return True, [f"NOTE: P-U-FORM-CHECKOUT blocked [{code}] -- "
+                      f"{scope_blocker.get('detail', '')} ACTION: "
+                      f"{scope_blocker.get('action', '')} (checkout only)"]
+    if scope_now and form_loc and scope_now.get("location_id") not in ("unbound-test",) \
+            and form_loc not in ("unbound-test",) \
+            and form_loc != scope_now.get("location_id"):
+        return False, [f"AF-U-FORM-CHECKOUT: receipt location {form_loc!r} != bound "
+                       f"location {scope_now.get('location_id')!r} -- wrong-location "
+                       f"form proof is refused"]
+
+    # 5) Mode contracts.
+    intent = receipt.get("intent")
+    form = receipt.get("form") if isinstance(receipt.get("form"), dict) else {}
+    workflow = receipt.get("workflow") if isinstance(receipt.get("workflow"), dict) else {}
+    form_id = form.get("form_id")
+    workflow_id = workflow.get("workflow_id")
+    proof = receipt.get("proof") if isinstance(receipt.get("proof"), dict) else {}
+    status = receipt.get("status")
+
+    if status == "complete" and proof and proof.get("kind") == "approved_url_reuse":
+        reuse = receipt.get("reuse") if isinstance(receipt.get("reuse"), dict) else {}
+        form_d = form if isinstance(form, dict) else {}
+        brief_now = intake.get("deck_brief") if isinstance(intake, dict) and isinstance(
+            intake.get("deck_brief"), dict) else {}
+        deck_now = ((scope_now or {}).get("deck_slug")
+                    or (intake.get("deck_slug") if isinstance(intake, dict) else "")
+                    or run_dir.name)
+        company_now = ((intake.get("company") if isinstance(intake, dict) else "")
+                       or brief_now.get("COMPANY") or "")
+        ok, why = _cfb.check_approved_url_binding(
+            str(proof.get("approved_url") or form_d.get("action") or
+                reuse.get("approved_url") or ""),
+            deck_slug=str(deck_now), company=str(company_now))
+        if not ok:
+            return False, [f"AF-U-FORM-CHECKOUT: approved-URL reuse proof "
+                           f"no longer binds: {why}"]
         return True, []
-    # status is False (present-but-fabricated) OR None (build_receipt.json
-    # absent) -- either way the phase's own produces_artifact is not a real,
-    # verified receipt yet. FAIL-HARD (mirrors this module's own
-    # file-not-found doctrine): the vacuous-pass this unit must not
-    # reintroduce is exactly "the phase said done and nothing was checked".
-    return False, [f"AF-U-FORM-CHECKOUT: {detail}"]
+
+    if intent == _cfb.INTENT_LEAD:
+        if status != "complete" or not form_id or not workflow_id or not proof:
+            return False, ["AF-U-FORM-CHECKOUT: lead-capture form not complete -- "
+                           "need status=complete with form_id + workflow_id + proof "
+                           "(plan emitted, awaiting delegated Skill 44/06 execution)"]
+        return _verify_lead_proof(proof, form_id, workflow_id, form_loc)
+    if intent == _cfb.INTENT_PAYMENT_SANDBOX:
+        if status != "complete" or not form_id or not proof:
+            return False, ["AF-U-FORM-CHECKOUT: sandbox payment not complete -- "
+                           "need status=complete with form_id + proof "
+                           "(plan emitted, awaiting delegated sandbox run)"]
+        return _verify_sandbox_proof(proof, form, receipt)
+    return False, [f"AF-U-FORM-CHECKOUT: unknown intent {intent!r} -- refusing to guess"]
+
+
+def _verify_lead_proof(proof: dict, form_id: Any, workflow_id: Any,
+                       location_id: Any) -> Tuple[bool, List[str]]:
+    """Lead-capture completion contract: one scoped contact + one workflow
+    enrollment in the TEST location (submission proof recorded at execution)."""
+    if proof.get("kind") != "lead_submit":
+        return False, ["AF-U-FORM-CHECKOUT: lead proof kind "
+                       f"{proof.get('kind')!r} != 'lead_submit'"]
+    if proof.get("location_id") not in (location_id, "test-location", "unbound-test") \
+            and location_id not in ("unbound-test",):
+        return False, [f"AF-U-FORM-CHECKOUT: lead proof location "
+                       f"{proof.get('location_id')!r} is not the bound location "
+                       f"{location_id!r}"]
+    if proof.get("form_id") != form_id:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof form_id does not match "
+                       "the receipt's form_id"]
+    if proof.get("workflow_id") != workflow_id:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof workflow_id does not match "
+                       "the receipt's workflow_id"]
+    if int(proof.get("contacts") or 0) != 1:
+        return False, [f"AF-U-FORM-CHECKOUT: lead proof contacts="
+                       f"{proof.get('contacts')!r} -- exactly one scoped contact required"]
+    if int(proof.get("enrollments") or 0) < 1:
+        return False, ["AF-U-FORM-CHECKOUT: lead proof shows zero workflow "
+                       "enrollments -- one scoped enrollment required"]
+    if not proof.get("validation_exercised") or not proof.get("duplicate_exercised"):
+        return False, ["AF-U-FORM-CHECKOUT: lead proof must record validation + "
+                       "duplicate-submission exercise"]
+    if proof.get("real_charge"):
+        return False, ["AF-U-FORM-CHECKOUT: lead-capture proof records a charge -- "
+                       "lead mode must never charge"]
+    return True, []
+
+
+def _verify_sandbox_proof(proof: dict, form: dict, receipt: dict) -> Tuple[bool, List[str]]:
+    """Sandbox payment completion contract: product/amount/currency mapping +
+    success/cancel routes verified, zero real charge."""
+    if proof.get("kind") != "sandbox_session":
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof kind "
+                       f"{proof.get('kind')!r} != 'sandbox_session'"]
+    if proof.get("mode") != "sandbox":
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof mode "
+                       f"{proof.get('mode')!r} != 'sandbox' -- live charges never complete here"]
+    if proof.get("real_charge"):
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof records a real charge -- refused"]
+    offer = receipt.get("offer") if isinstance(receipt.get("offer"), dict) else {}
+    for key in ("amount_minor", "currency"):
+        if proof.get(key) != offer.get(key):
+            return False, [f"AF-U-FORM-CHECKOUT: sandbox proof {key}="
+                           f"{proof.get(key)!r} != offer {key}={offer.get(key)!r} -- "
+                           f"product mapping mismatch"]
+    if not proof.get("product_id") or not proof.get("session_id"):
+        return False, ["AF-U-FORM-CHECKOUT: sandbox proof needs product_id + session_id"]
+    for key in ("success_url", "cancel_url"):
+        ok, why = _cfb.validate_url(proof.get(key), allow_relative=True)
+        if not ok:
+            return False, [f"AF-U-FORM-CHECKOUT: sandbox proof {key} invalid: {why}"]
+    return True, []
 
 
 def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -2486,6 +3361,310 @@ def _verify_upsell_vsl_build(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+# ---------------------------------------------------------------------------
+# PRES-011 -- external-install receipts (P-U-GHL-SALES / P-U-GHL-VSL /
+# P-U-FORM-GATE). These three phases have EXTERNAL effects (Skill 06
+# page-install, Skill 44 form/workflow) and are executed by
+# ghl_external_installer.py -- never by model text. The gate mechanic is
+# delegated to the page builders' own resolvers (the same source the
+# executors use, so verifier and executor can never drift); completion
+# requires the installer's own validate_receipt() (adapter remote IDs +
+# matching-location remote readback + run/input binding + ops-ledger
+# provenance). A perfect-looking model receipt with no adapter execution
+# behind it fails here by construction.
+# ---------------------------------------------------------------------------
+try:
+    import ghl_external_installer as _gx
+except ImportError:
+    _gx = None  # type: ignore[assignment]
+
+
+def _verify_pres011_gate(phase_id: str, run_dir: Path) -> Optional[Tuple[bool, List[str]]]:
+    """Resolve the elect/decline gate for a PRES-011 phase. Returns None when
+    the phase is ELECTED (the caller must then check the receipt), else the
+    (ok, reasons) defer/waived/fail_closed verdict."""
+    if _gx is None:
+        return False, [f"{phase_id}: ghl_external_installer module unavailable "
+                       "-- cannot resolve the gate or the receipt; fail-closed, "
+                       "not a pass"]
+    intake: dict = {}
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json")
+                            .read_text(encoding="utf-8"))
+        if not isinstance(intake, dict):
+            intake = {}
+    except (OSError, json.JSONDecodeError):
+        intake = {}
+    try:
+        gate = _gx.resolve_gate(run_dir, phase_id, intake)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"{phase_id}: gate resolution raised {exc!r}"]
+    decision = gate.get("decision")
+    if decision in ("defer", "waived"):
+        return True, [f"NOTE: {phase_id} {decision} -- {gate.get('detail', '')}"]
+    if decision == "fail_closed":
+        return False, [f"{phase_id}: gate fail_closed -- {gate.get('detail', '')}"]
+    if decision != "build":
+        return False, [f"{phase_id}: unrecognized gate decision {decision!r}"]
+    return None
+
+
+def _verify_ghl_sales_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-GHL-SALES (order 6.2): elected sales+checkout funnel install.
+
+    produces_artifact (manifest): working/sales-checkout/ghl_build_receipt.json."""
+    gated = _verify_pres011_gate("P-U-GHL-SALES", run_dir)
+    if gated is not None:
+        return gated
+    strict_ok, strict_reasons = _make_pu_verifier("P-U-GHL-SALES", ['working/sales-checkout/ghl_build_receipt.json'])(run_dir)
+    if not strict_ok:
+        return strict_ok, strict_reasons
+    if _gx is None:
+        return False, ["AF-U-GHL-SALES: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-SALES")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-GHL-SALES: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-GHL-SALES: {detail}"]
+
+
+def _verify_ghl_vsl_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-GHL-VSL (order 6.4): elected VSL funnel install.
+
+    produces_artifact (manifest): working/vsl/ghl_build_receipt.json."""
+    gated = _verify_pres011_gate("P-U-GHL-VSL", run_dir)
+    if gated is not None:
+        return gated
+    strict_ok, strict_reasons = _make_pu_verifier("P-U-GHL-VSL", ['working/vsl/ghl_build_receipt.json'])(run_dir)
+    if not strict_ok:
+        return strict_ok, strict_reasons
+    if _gx is None:
+        return False, ["AF-U-GHL-VSL: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-VSL")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-GHL-VSL: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-GHL-VSL: {detail}"]
+
+
+def _verify_form_gate_install(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-FORM-GATE (order 5.6): elected VSL gate form + workflow.
+
+    produces_artifact (manifest): ecosystem/gate-form.json +
+    workflows/gate-workflow.json -- BOTH required, each with adapter IDs
+    and readback."""
+    gated = _verify_pres011_gate("P-U-FORM-GATE", run_dir)
+    if gated is not None:
+        return gated
+    strict_ok, strict_reasons = _make_pu_verifier("P-U-FORM-GATE", ['ecosystem/gate-form.json', 'workflows/gate-workflow.json'])(run_dir)
+    if not strict_ok:
+        return strict_ok, strict_reasons
+    if _gx is None:
+        return False, ["AF-U-FORM-GATE: ghl_external_installer unavailable"]
+    try:
+        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-FORM-GATE")
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"AF-U-FORM-GATE: receipt validation raised {exc!r}"]
+    if ok:
+        return True, []
+    return False, [f"AF-U-FORM-GATE: {detail}"]
+
+
+# ---------------------------------------------------------------------------
+# FIX 112 — the two remaining missing producers.
+#
+# P-STYLE-SPEC (order 4.84): the copy stage's fanout unit authors
+#   working/copy/style_preview_spec.json — the artifact P-STYLE-PREVIEW
+#   requires and, before this fix, nothing on disk authored. The verifier
+#   re-measures the exact contract build_deck.run_style_preview_samples
+#   FATAL-exits on: exactly 3 variants (ids A/B/C, each a non-empty
+#   style_directive) and exactly 3 representative slide ordinals.
+# P8.3-INFOGRAPHIC (order 8.3): the infographic-checklist QC unit — the
+#   bundle table's long-named, never-implemented role (now a real role file,
+#   presentations/infographic-checklist.md, plus a manifest roles[] row) —
+#   grades Fix 2's rendered PNG against its prompt and WRITES A VERDICT FILE
+#   (working/qc/infographic_checklist_verdict.json). The verifier re-derives
+#   the verdict, never trusting a hand-typed pass.
+# ---------------------------------------------------------------------------
+_STYLE_SPEC_VARIANT_IDS = ("A", "B", "C")
+
+
+def _verify_style_spec(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-SPEC: the style-preview spec must carry exactly 3 variants
+    (A/B/C with non-empty style_directive strings) and exactly 3
+    representative slide ordinals — the exact shape
+    build_deck.run_style_preview_samples refuses to run without."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_spec.json")
+    if p is None:
+        p = _resolve_glob(run_dir, "working/style-preview/style_preview_spec.json")
+    if p is None:
+        return False, ["working/copy/style_preview_spec.json: file not found — "
+                       "phase artifact missing"]
+    spec = _read_json(p)
+    if not isinstance(spec, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    variants = spec.get("variants")
+    if not isinstance(variants, list) or len(variants) != 3:
+        return False, [f"{p.name}: variants must list exactly 3 entries "
+                       f"(got {len(variants) if isinstance(variants, list) else type(variants).__name__})"]
+    ids: List[str] = []
+    for i, v in enumerate(variants):
+        if not isinstance(v, dict):
+            return False, [f"{p.name}: variants[{i}] must be an object"]
+        vid = str(v.get("id") or "").strip().upper()
+        directive = str(v.get("style_directive") or "").strip()
+        if vid not in _STYLE_SPEC_VARIANT_IDS:
+            return False, [f"{p.name}: variants[{i}].id {v.get('id')!r} is not one of A/B/C"]
+        if not directive:
+            return False, [f"{p.name}: variants[{i}].style_directive is empty"]
+        ids.append(vid)
+    if len(set(ids)) != 3:
+        return False, [f"{p.name}: variant ids must be distinct A/B/C (got {ids})"]
+    reps = spec.get("representative_slides")
+    if not isinstance(reps, list) or len(reps) != 3:
+        return False, [f"{p.name}: representative_slides must list exactly 3 slide ordinals"]
+    for i, r in enumerate(reps):
+        if isinstance(r, bool) or not isinstance(r, int) or r < 1:
+            return False, [f"{p.name}: representative_slides[{i}] must be a positive "
+                           f"slide ordinal (got {r!r})"]
+    return True, []
+
+
+_INFOGRAPHIC_CHECKLIST_VERDICT_REL = "working/qc/infographic_checklist_verdict.json"
+
+
+def _verify_infographic_checklist(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8.3-INFOGRAPHIC: the infographic-checklist QC unit's verdict. Passes
+    only when (a) the rendered PNG exists at/above the deliverable floor,
+    (b) build_infographic's own status is clean, and (c) the QC unit's verdict
+    file exists, parses, and its own verdict is pass with the render inputs
+    named. The verifier re-derives (a)/(b) itself — a hand-typed pass on a
+    dirty render never passes, and a missing verdict file is a FAIL (the QC
+    unit ran, or it did not — absence is not a pass)."""
+    import json as _json
+    reasons: List[str] = []
+
+    png = _resolve_glob(run_dir, "working/deliverables/infographic.png")
+    if png is None:
+        reasons.append("working/deliverables/infographic.png: file not found — "
+                       "the render under QC is missing")
+    else:
+        floor = 102_400  # manifest-declared byte floor (P8.3-INFOGRAPHIC name)
+        if png.stat().st_size < floor:
+            reasons.append(f"infographic.png: {png.stat().st_size} bytes < the "
+                           f"{floor}-byte deliverable floor")
+    status = _read_json(_resolve_glob(run_dir, "working/checkpoints/infographic_status.json")
+                        or Path("/nonexistent"))
+    if not isinstance(status, dict):
+        reasons.append("working/checkpoints/infographic_status.json: missing or "
+                       "not a JSON object (build_infographic's render record)")
+    else:
+        if status.get("status") != "ready":
+            reasons.append(f"infographic_status.json: status is "
+                           f"{status.get('status')!r}, not 'ready'")
+        if status.get("qc_passed") is not True:
+            reasons.append("infographic_status.json: qc_passed is not true")
+
+    verdict_path = run_dir / _INFOGRAPHIC_CHECKLIST_VERDICT_REL
+    verdict = _read_json(verdict_path)
+    if not isinstance(verdict, dict):
+        reasons.append(f"{_INFOGRAPHIC_CHECKLIST_VERDICT_REL}: missing or not a JSON "
+                       "object — the infographic-checklist QC unit has not written "
+                       "its verdict")
+        return False, reasons
+    if verdict.get("verdict") != "pass":
+        vreasons = verdict.get("reasons") or []
+        detail = "; ".join(str(r) for r in vreasons) if isinstance(vreasons, list) else repr(vreasons)
+        reasons.append(f"infographic-checklist verdict is {verdict.get('verdict')!r}: {detail}")
+    checked = verdict.get("checked")
+    if not isinstance(checked, list) or not checked:
+        reasons.append("verdict.checked must be a non-empty list of the prompt's "
+                       "checklist items as checked")
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+def _verify_style_pick(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-STYLE-PICK (order 4.86, kind human): the owner's gateway pick. The
+    choice file must exist, carry owner_approved:true, and name ONE variant
+    under the canonical key the whole style chain already uses
+    (chosen_variant — build_deck's _chk_style_preview, the samples manifest's
+    owner_pick_note and the engine's _style_choice_authentic all speak this
+    key). The engine's executor (presentation_job.phases._run_human_phase) is
+    the AUTHENTICITY authority: it resolves owner_msg_id through the Fix 32
+    approvals oracle before this verifier ever runs, so this re-measures the
+    FILE's shape — owner_approved:true + a variant id, where the id may come
+    from a real pick (owner_msg_id present) or from the recorded
+    intake.style_pick_auto timeout auto-pick (auto_pick:true present). A file
+    that is neither is a forgery shape and FAILS here too."""
+    p = _resolve_glob(run_dir, "working/copy/style_preview_choice.json")
+    if p is None:
+        return False, ["working/copy/style_preview_choice.json: file not found — "
+                       "the owner has not picked a variant yet (human gateway)"]
+    choice = _read_json(p)
+    if not isinstance(choice, dict):
+        return False, [f"{p.name}: not a valid JSON object"]
+    if choice.get("owner_approved") is not True:
+        return False, [f"{p.name}: owner_approved is not true — a file without an "
+                       "owner decision is never a verified pick"]
+    picked = str(choice.get("chosen_variant") or "").strip()
+    if not picked:
+        return False, [f"{p.name}: no chosen_variant recorded — the canonical key is "
+                       "chosen_variant (picked_variant/variant/choice are not read)"]
+    has_msg_id = bool(str(choice.get("owner_msg_id") or "").strip())
+    auto_pick = choice.get("auto_pick") is True
+    if not (has_msg_id or auto_pick):
+        return False, [f"{p.name}: pick is unverified — it needs either a resolvable "
+                       "owner_msg_id (a real owner pick) or auto_pick:true under the "
+                       "recorded intake.style_pick_auto opt-in (the timeout auto-pick)"]
+    return True, []
+
+
+def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-BUNDLE-GATE (order 9.95, script bundle_gate.py): the terminal
+    bundle-completeness gate's own verdict record. The script exits 5 naming
+    any missing/under-threshold deliverable; the verifier re-measures the
+    bundle it attests (every consumed deliverable pattern must resolve) and
+    requires the gate's own checkpoint record to exist and pass."""
+    import json as _json
+    consumed = [
+        "working/deliverables/{deck_slug}-FINAL.pptx",
+        "working/deliverables/{deck_slug}-FINAL.pdf",
+        "working/deliverables/PRESENTER-GUIDE.pdf",
+        "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/deliverables/PRESENTERS-SPEECH.pdf",
+        "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+        "working/delivery/PRESENTER-AUDIO.mp3",
+        "working/deliverables/infographic.png",
+        "working/deliverables/presenter-teleprompter.html",
+        "working/delivery/{deck_slug}-WEBINAR.mp4",
+    ]
+    missing: List[str] = []
+    for pat in consumed:
+        if "{deck_slug}" in pat:
+            # The slug resolves per run; match the glob the engine itself uses.
+            pat = pat.replace("{deck_slug}", "*")
+        if _resolve_glob(run_dir, pat) is None:
+            missing.append(pat)
+    if missing:
+        return False, [f"bundle deliverable(s) absent: {', '.join(missing)}"]
+    gate = _read_json(_resolve_glob(run_dir, "working/checkpoints/bundle_gate.json")
+                      or Path("/nonexistent"))
+    if not isinstance(gate, dict):
+        return False, ["working/checkpoints/bundle_gate.json: missing or not a JSON "
+                       "object — the bundle gate has not recorded its verdict"]
+    if gate.get("ok") is False or gate.get("pass") is False or \
+            (isinstance(gate.get("verdict"), str) and gate["verdict"].lower() != "pass"):
+        return False, [f"bundle_gate.json records failure: "
+                       f"{gate.get('missing') or gate.get('reasons') or gate.get('reason') or 'unspecified'}"]
+    return True, []
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_converter,
@@ -2496,7 +3675,10 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase 0.2   Priority-Shift Spec
     "P0B-PRIORITY":       _verify_json_artifact("working/copy/priority_shift_spec.json"),
     # Phase 3     Converting Arc Allocation
-    "P3-ARC":             _verify_json_artifact("working/copy/arc_allocation.json"),
+    # PD-TEST-067: a validity-only gate here let an artifact no consumer could
+    # read report `done` and quarantine four downstream phases. The gate now
+    # requires the slide allocation its own consumers read.
+    "P3-ARC":             _verify_arc_allocation,
     # Phase 3.5   Research-to-Slide Mapping
     "P-3.5-RESEARCH-MAP": _verify_json_artifact("working/research/research_map.json"),
     # Phase 4     Slide Copy
@@ -2586,8 +3768,17 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # spec (already imported above for the P9-DELIVER whitelist).
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html",
                                                   _MIN_BYTES["teleprompter_html"]),
-    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
+    # FIX 103: both PDF floors scale by THIS deck's slide count from THE one
+    # helper (deliverable_floors) — deck_pdf via pdf_floor(n)=max(1506n, 8192),
+    # guide_pdf via guide_floor(n)=max(1600n, 12000). No 51,200 / 34-slide
+    # literal is enforced here any more (the verifier registry fixture in
+    # tests/test_fix17_verifier_import_failclosed.py mirrors this call shape).
+    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
+                                                _MIN_BYTES["deck_pdf"],
+                                                scale_by_slides=True, floor_formula="pdf"),
+    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
+                                                _MIN_BYTES["guide_pdf"],
+                                                scale_by_slides=True, floor_formula="guide"),
     # Slice 3: shadowed against the sealed dual-file strip-equals verdict
     # (verify_fish_tag) — report-only unless PRES_TRUST_BOUNDARY_ENFORCE=1.
     "P8.4-FISH-TAG":      _shadow_composite_verifier("fish_tag:strip_equals", _verify_fish_tag),
@@ -2620,6 +3811,15 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-CHECKOUT-BUILD": _verify_upsell_checkout_build,
     "P-U-FORM-CHECKOUT":  _verify_upsell_form_checkout,
     "P-U-VSL-BUILD":      _verify_upsell_vsl_build,
+    # --- PRES-011: external-install receipts (Skill 06/44 adapters) ---
+    "P-U-GHL-SALES":      _verify_ghl_sales_install,
+    "P-U-GHL-VSL":        _verify_ghl_vsl_install,
+    "P-U-FORM-GATE":      _verify_form_gate_install,
+    # --- FIX 112: the two remaining missing producers ---
+    "P-STYLE-SPEC":       _verify_style_spec,
+    "P-STYLE-PICK":       _verify_style_pick,
+    "P8.3-INFOGRAPHIC":   _verify_infographic_checklist,
+    "P-BUNDLE-GATE":      _verify_bundle_gate,
 }
 
 
@@ -2633,79 +3833,709 @@ PHASE_VERIFIERS: dict[str, Callable] = {
 # empty artifact is a hard FAIL (same vacuous-pass defect class B3 fixed).
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# FIX 107 — ONE artifact resolver for the engine's presence check AND every
+# verifier. The F60 defect: P-U-QC's artifact lives under working/upsell/ (its
+# verifier resolved it there) while the engine's _artifacts_present checked
+# only the literal run root, so the final phase waited forever on its own PASS.
+# The fix was two independent resolvers that can (and did) drift apart. This is
+# now the single resolution rule, exported for both sides:
+#   * the verifiers here resolve through it (see _pu_artifact_paths below);
+#   * presentation_job.phases._artifacts_present delegates to it for the exact
+#     same patterns, so an artifact the engine waits on and the artifact the
+#     verifier attests can never be two different files again.
+# Order of resolution (identical on both sides): literal run-dir path first
+# (canonical for the core pipeline), then the working/upsell/ root convention
+# (the P-U-* branch phases write under it).
+# ---------------------------------------------------------------------------
+
+def artifact_path(run_dir: Path, key: str) -> Optional[Path]:
+    """Resolve ONE declared produces_artifact key under the run dir.
+
+    Returns the first existing file for the key, or None. Handles:
+      * a trailing '/*' — returns the upsell-root directory itself when it
+        exists and is non-empty (COLLATERAL's 'delivery/{deck_slug}-FINAL/upsell/*');
+      * the working/upsell/ root convention (P-U-* branch phases);
+      * the literal run-dir-relative path (core pipeline phases).
+
+    This is THE single resolution rule for the engine's presence check
+    (presentation_job.phases._artifacts_present) and every verifier here —
+    one function, one ordering, no mirror to drift.
+    """
+    key = (key or "").strip()
+    if not key:
+        return None
+    if key.endswith("/*"):
+        base = run_dir / "working" / "upsell" / key[:-2]
+        if base.is_dir() and any(base.iterdir()):
+            return base
+        return None
+    if any(c in key for c in "*?["):
+        for prefix in (Path("."), Path("working") / "upsell"):
+            matches = [p for p in sorted(run_dir.glob(str(prefix / key)))
+                       if p.is_file()]
+            if matches:
+                return max(matches, key=lambda p: p.stat().st_mtime)
+        return None
+    for prefix in (Path("."), Path("working") / "upsell"):
+        cand = run_dir / prefix / key
+        if cand.is_file():
+            return cand
+    return None
+
+
+def artifact_paths(run_dir: Path, keys: List[str]) -> List[Path]:
+    """Resolve a phase's whole declared produces_artifact list through
+    artifact_path (FIX 107: one resolver for engine and verifiers)."""
+    out: List[Path] = []
+    for k in keys:
+        p = artifact_path(run_dir, k)
+        if p is not None:
+            out.append(p)
+    return out
+
+
 def _pu_artifact_paths(run_dir: Path, artifacts: List[str]) -> List[Path]:
     """Resolve a phase's declared produces_artifact list under the run dir.
-    Handles the manifest's 'a + b' multi-artifact spelling and the
-    working/upsell/... root convention."""
-    out: List[Path] = []
+    FIX 107: delegates to artifact_paths() — the ONE resolver shared with the
+    engine's _artifacts_present. Handles the manifest's 'a + b' multi-artifact
+    spelling and the working/upsell/... root convention."""
+    expanded: List[str] = []
     for art in artifacts:
         art = art.strip()
         if not art:
             continue
-        # Wildcard tail (COLLATERAL's 'delivery/{deck_slug}-FINAL/upsell/*'):
-        # verify the directory exists and is non-empty instead.
-        if art.endswith("/*"):
-            base = run_dir / "working" / "upsell" / art[:-2]
-            if base.is_dir() and any(base.iterdir()):
-                out.append(base)
+        # Manifest 'a + b' multi-artifact spelling.
+        if " + " in art:
+            expanded.extend(part.strip() for part in art.split(" + ") if part.strip())
+        else:
+            expanded.append(art)
+    return artifact_paths(run_dir, expanded)
+
+
+def _pu_manifest_declared_artifacts(phase_id: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """PRES-012: the CANONICAL manifest resolver, not a hand-built upward walk.
+
+    Returns (declared_artifacts, None) or (None, config_error_reason). The
+    canonical resolver is manifest_source.resolve_manifest (the ONE resolver
+    every lockstep tool in this directory uses) -- it refuses (SystemExit) when
+    no manifest can be proven, which here becomes a CONFIGURATION ERROR verdict,
+    never a silent removal of the gate semantics. A manifest that lacks the
+    phase id is likewise a configuration error: the verifier must never shrink
+    to a weaker check when the manifest it is told to enforce is absent.
+    """
+    try:
+        import manifest_source
+        path, provenance = manifest_source.resolve_manifest(Path(__file__).resolve().parent)
+    except SystemExit:
+        return None, ("AF-U-CONFIG: no canonical PIPELINE-MANIFEST.json could be resolved "
+                      f"for {phase_id} -- the verifier refuses to guess its artifact "
+                      "contract (PRES-012: a missing manifest is a configuration error, "
+                      "never a weaker check)")
+    except Exception as exc:  # noqa: BLE001 -- any resolver failure is config, not pass
+        return None, f"AF-U-CONFIG: manifest resolver failed ({exc!r}) for {phase_id}"
+    try:
+        man = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return None, f"AF-U-CONFIG: resolved manifest {path} unreadable ({exc!r})"
+    declared: List[str] = []
+    for ph in (man.get("phases") or []):
+        if not isinstance(ph, dict) or ph.get("id") != phase_id:
             continue
-        for prefix in (Path("working") / "upsell", Path(".")):
-            cand = run_dir / prefix / art
-            if cand.is_file():
-                out.append(cand)
-                break
-    return out
+        pa = ph.get("produces_artifact")
+        if isinstance(pa, str):
+            declared.append(pa)
+        elif isinstance(pa, list):
+            declared.extend(a for a in pa if isinstance(a, str))
+    if not declared:
+        return None, (f"AF-U-CONFIG: manifest v{man.get('manifest_version')} declares no "
+                      f"produces_artifact for {phase_id} (resolved from {provenance}) -- "
+                      "the verifier cannot enforce a contract the manifest does not state")
+    return declared, None
+
+
+def _pu_phase_shape(phase_id: str) -> str:
+    """The schema-specific checker family for one P-U-* phase id (PRES-012).
+
+    Every phase gets a SPECIFIC verifier; the generic any-path check is gone.
+    Shapes: json (parseable JSON object), receipt (the unified
+    build_receipt/ghl_build_receipt family), ghl_receipt (GHL receipts with the
+    full schema_version/scope/revision/hash contract), html (real assembled
+    page markers), png (decoded image), text (non-empty content), collection
+    (non-empty upsell collateral dir), qc (scorecard with per-criterion rows
+    and independent-reviewer provenance), form (Skill-44 gate form/workflow
+    plan objects)."""
+    if phase_id.endswith("P-U-GHL-SALES") or phase_id.endswith("P-U-GHL-VSL"):
+        return "ghl_receipt"
+    if phase_id == "P-U-FORM-GATE":
+        return "form_gate"
+    if phase_id == "P-U-QC":
+        return "upsell_qc"
+    if phase_id == "P-U-COLLATERAL":
+        return "collection"
+    if phase_id.endswith("P-U-HTML-SALES") or phase_id.endswith("P-U-HTML-CHECKOUT") or phase_id.endswith("P-U-HTML-VSL"):
+        return "html"
+    if phase_id.endswith("P-U-DESIGN-RENDER-SALES") or phase_id.endswith("P-U-DESIGN-RENDER-CHECKOUT") or phase_id.endswith("P-U-DESIGN-RENDER-VSL"):
+        return "png"
+    return "text_or_json"
+
+
+_PU_JSON_ARTIFACTS = ("copy_ledger.json", "gate-form.json", "gate-workflow.json")
+
+def _pu_check_json_object(run_dir: Path, rel: str) -> List[str]:
+    """A declared .json artifact must parse as a JSON OBJECT (not a bare string,
+    not prose). Returns the reason list ('' == pass)."""
+    p = artifact_path(run_dir, rel)
+    reasons: List[str] = []
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return [f"{rel}: not valid JSON ({exc.__class__.__name__}) -- a prose/junk file "
+                "is not this phase's artifact"]
+    if not isinstance(obj, dict):
+        return [f"{rel}: JSON must be an object (got {type(obj).__name__})"]
+    return reasons
+
+
+def _pu_check_receipt_identity(run_dir: Path, p: Path, *, scope_key: str) -> List[str]:
+    """PRES-012 unified receipt contract (build_receipt / ghl_build_receipt).
+
+    A receipt is TRUSTED only when it is a parseable JSON object carrying:
+      * schema_version (a non-empty string) -- an unversioned receipt cannot be
+        judged against any contract;
+      * scope: the run it belongs to -- deck_slug (or run_id) must be present;
+      * provenance: an execution_id/request_id naming the run that produced it;
+      * identity hashes: at least one sha256 over the INPUT the receipt claims
+        to represent (input_sha256 / artifact_sha256 / content_sha256);
+    and for a GHL receipt (ghl_build_receipt.json) additionally:
+      * location_id (the client GHL location the work claims to live in) that is
+        non-empty and is NOT a placeholder (a made-up location is a fabrication);
+      * at least one remote artifact id (page_id/form_id/funnel_id/file_id) that
+        is non-empty;
+      * every preview_url/page_url is an http(s) URL that is not a placeholder
+        host and not a made-up domain (example.com/.invalid/localhost etc.).
+    A receipt whose fields are present but self-contradictory (e.g. a location
+    id that differs from the run's resolved location) still FAILS -- identity is
+    checked against what the run itself declares (intake.json), never trusted
+    from the receipt alone."""
+    reasons: List[str] = []
+    tag = p.name
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return [f"{tag}: not valid JSON ({exc.__class__.__name__}) -- a prose 'I did it' "
+                "receipt is not execution evidence"]
+    if not isinstance(obj, dict):
+        return [f"{tag}: receipt must be a JSON object (got {type(obj).__name__})"]
+
+    def _first(*keys: str) -> str:
+        for k in keys:
+            v = obj.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
+    schema_version = _first("schema_version", "receipt_schema_version")
+    if not schema_version:
+        reasons.append(
+            f"{tag}: carries no schema_version -- PRES-012 requires a versioned receipt "
+            "(schema_version) so the contract it claims to satisfy is named")
+    scope = _first("deck_slug", "run_id", "scope")
+    if not scope:
+        reasons.append(
+            f"{tag}: carries no run scope (deck_slug/run_id/scope) -- a receipt that "
+            "names no run cannot be bound to THIS run")
+    execution_id = _first("execution_id", "request_id", "execution")
+    if not execution_id:
+        reasons.append(
+            f"{tag}: carries no execution_id/request_id -- a receipt with no execution "
+            "identity proves nothing about who ran what")
+    input_sha = _first("input_sha256", "input_hash", "artifact_sha256", "content_sha256", "receipt_input_sha256")
+    if not input_sha:
+        reasons.append(
+            f"{tag}: carries no revision/input hash (input_sha256/artifact_sha256/"
+            "content_sha256) -- a receipt that hashes nothing cannot be tied to the "
+            "exact inputs it claims to represent")
+    if re.search(r"[0-9a-f]{64}", input_sha or "") is None:
+        reasons.append(
+            f"{tag}: the revision/input hash {input_sha!r} is not a sha256-shaped "
+            "digest -- a made-up hash is not provenance")
+
+    # GHL-specific identity (ghl_build_receipt.json family).
+    if scope_key == "ghl_receipt" or "ghl" in p.name:
+        location_id = _first("location_id", "ghl_location_id")
+        if not location_id:
+            reasons.append(
+                f"{tag}: carries no location_id -- a GHL receipt must name the client "
+                "location it claims to have touched")
+        elif _scb is not None:
+            try:
+                placeholder_hosts = _scb.PLACEHOLDER_HOSTS
+            except Exception:  # noqa: BLE001
+                placeholder_hosts = ()
+            loc_l = location_id.lower()
+            if any(ph in loc_l for ph in ("placeholder", "example", "test", "changeme", "todo")):
+                reasons.append(
+                    f"{tag}: location_id {location_id!r} reads as a placeholder -- a made-up "
+                    "location is a fabrication, not a push record")
+        remote_ids = {
+            k: _first(k) for k in
+            ("page_id", "form_id", "funnel_id", "workflow_id", "file_id", "media_id", "site_id")
+        }
+        if not any(remote_ids.values()):
+            reasons.append(
+                f"{tag}: carries no remote artifact id (page_id/form_id/funnel_id/"
+                "workflow_id/file_id) -- a GHL push receipt must name WHAT was created")
+        urls = obj.get("preview_urls") or obj.get("public_urls") or []
+        if isinstance(urls, list):
+            bad_urls: List[str] = []
+            for u in urls:
+                ok, why = _pu_real_url(u)
+                if not ok:
+                    bad_urls.append(why)
+            if bad_urls:
+                reasons.append(
+                    f"{tag}: preview URL(s) not real: {'; '.join(bad_urls[:2])} -- a "
+                    "made-up URL is not execution evidence")
+        elif _first("preview_url", "public_url"):
+            ok, why = _pu_real_url(_first("preview_url", "public_url"))
+            if not ok:
+                reasons.append(f"{tag}: preview URL not real ({why})")
+        # Remote readback (READ-ONLY list-back, mirrors _verify_ghl_upload):
+        # when the canonical LOCATION PIT resolves, the receipt's claimed remote
+        # artifact must survive a real list-back. Never mutates; NOTE-fails-soft
+        # on a box whose PIT does not resolve.
+        reasons.extend(_pu_ghl_readback_reasons(run_dir, obj))
+    return reasons
+
+
+def _pu_real_url(u: object) -> Tuple[bool, str]:
+    """http(s) URL whose host is real: not a placeholder host or subdomain of
+    one (mirrors sales_checkout_builder._real_url / PLACEHOLDER_HOSTS)."""
+    if not isinstance(u, str) or not u.strip().lower().startswith(("http://", "https://")):
+        return False, f"{u!r} is not an http(s) URL"
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(u.strip()).hostname or "").lower()
+    except (ValueError, TypeError):
+        return False, f"{u!r} does not parse as a URL"
+    if not host:
+        return False, f"{u!r} has no host"
+    placeholder_hosts = ("example.com", "example.org", "example.net", "example.edu",
+                         "invalid", "localhost", "127.0.0.1", "0.0.0.0",
+                         "test.com", "changeme.com", "todo.com", "foo.bar")
+    if any(host == ph or host.endswith("." + ph) for ph in placeholder_hosts):
+        return False, f"{u!r} resolves to placeholder host {host!r}"
+    return True, host
+
+
+def _pu_ghl_readback_reasons(run_dir: Path, receipt: dict) -> List[str]:
+    """READ-ONLY remote readback for a GHL receipt (PRES-012 step 3/4). When the
+    canonical LOCATION PIT + location resolve, the receipt's file_id/page_id
+    must survive a real read-only list-back of the GHL media library. A receipt
+    that does not survive the listing is a fabrication. Fail-soft on transport/
+    scope absence (NOTE reason) -- a box without GHL env cannot be forced to
+    read back, but a box whose PIT DOES resolve gets the real check."""
+    reasons: List[str] = []
+    try:
+        import ghl_media
+        pit = ghl_media.resolve_location_pit()
+        loc = ghl_media.resolve_location_id()
+    except Exception as exc:  # noqa: BLE001
+        return [f"NOTE: GHL readback skipped (env/import: {exc})"]
+    if not pit or not loc:
+        return [f"NOTE: GHL readback skipped (no LOCATION PIT/location id)"]
+    # Only the FILE-kind receipts (media pushes) have a listable id; page/form
+    # receipts name page_id/form_id which the media list-back cannot see, so
+    # those receipts stand on their identity + hash contract here.
+    file_id = str(receipt.get("file_id") or receipt.get("media_id") or "").strip()
+    if not file_id:
+        return reasons
+    try:
+        listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
+    except Exception as exc:  # noqa: BLE001 -- read-only transport issue is NOTE-soft
+        return [f"NOTE: GHL readback failed ({exc})"]
+    entries = listing.get("data") or []
+    found = any(
+        isinstance(e, dict) and str(e.get("fileId") or e.get("_id") or "") == file_id
+        for e in entries
+    )
+    if not found:
+        reasons.append(
+            "ghl receipt: the claimed remote file id is NOT present in the GHL "
+            "media library listing (read-only list-back) -- a receipt that does "
+            "not survive a real readback is a fabrication")
+    return reasons
+
+
+def _pu_check_html(run_dir: Path, rel: str) -> List[str]:
+    """A declared HTML artifact must be a real assembled page: non-trivial
+    content, an <h1>/<body> skeleton, and NOT a bare placeholder."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    if len(text.strip()) < 200:
+        return [f"{rel}: only {len(text.strip())} chars -- too small to be a real "
+                "assembled page"]
+    low = text.lower()
+    if "<body" not in low:
+        return [f"{rel}: has no <body> element -- not a real assembled page"]
+    if "lorem ipsum" in low or "placeholder" in low.replace("placeholder=", "") and "<h1" not in low:
+        return [f"{rel}: reads as a placeholder/wireframe page, not assembled content"]
+    return []
+
+
+def _pu_check_png(run_dir: Path, rel: str) -> List[str]:
+    """A declared PNG artifact must decode: real PNG magic + plausible header
+    dimensions (the stdlib struct read; no third-party dependency)."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    data = p.read_bytes()
+    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return [f"{rel}: not a PNG (bad magic) -- a renamed/decoy file is not this "
+                "phase's artifact"]
+    # IHDR: width/height at fixed offsets; a 0x0 image is not a real render.
+    try:
+        import struct
+        w, h = struct.unpack(">II", data[16:24])
+        if w == 0 or h == 0:
+            return [f"{rel}: PNG decodes to {w}x{h} -- a zero-dimension image is not "
+                    "a real rendered design"]
+    except Exception as exc:  # noqa: BLE001
+        return [f"{rel}: PNG header unreadable ({exc!r})"]
+    return []
+
+
+def _pu_check_text(run_dir: Path, rel: str) -> List[str]:
+    """A declared text/markdown artifact must carry real content (>= 40 chars
+    of non-whitespace) -- one junk line is not a fragment."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    if p.stat().st_size == 0:
+        return [f"{rel}: file is zero bytes"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    if len(text.strip()) < 40:
+        return [f"{rel}: only {len(text.strip())} chars of content -- too small to "
+                "be a real authored fragment"]
+    return []
+
+
+# The three page-design prompts: `prompts/<page>.design.txt`. Kept as ONE
+# pattern so the verifier arm and the producer's own registry agree.
+_DESIGN_PROMPT_REL_RE = re.compile(r"^prompts/[A-Za-z0-9_-]+\.design\.txt$")
+
+
+def _pu_check_design_prompt(run_dir: Path, rel: str) -> List[str]:
+    """PD-TEST-098: a page-design prompt (`prompts/<page>.design.txt`) must sit
+    inside the SHARED prompt band its render phase enforces.
+
+    THE DEFECT THIS CLOSES -- and why the artifacts.py predicate alone was NOT
+    enough. `_pu_check_text` accepted these files on ">= 40 chars" alone, so
+    `phase_verifiers.verify('P-U-DESIGN-SALES', run)` returned `(True, [])` on
+    the live 58,482-char prompt. Two authorities then re-blessed the artifact
+    that `Engine._revalidate_banked` had just announced as invalid:
+
+      1. `Engine._phase_artifact_satisfied` (phases.py:2670) is presence AND
+         this verifier, and `wo_satisfied` (phases.py:2813) uses it to complete
+         a phase WITHOUT dispatching -- so the engine re-attested the phase
+         `done`, rc=0, artifact byte-unchanged;
+      2. the dispatcher's own idempotent pre-check (dispatcher.py:5121-5160)
+         consults the same verifier and returned `skipped_satisfied`;
+      3. and because that re-attestation path is NOT gated on
+         `status == 'done'`, it also covers `running`/`pending` phases -- the
+         DEADLOCK-1 window, where `_revalidate_banked` never runs at all.
+
+    Net effect before this check: 0 model calls, artifact unchanged, render
+    phases refused exactly as before. This verifier IS the seam all three
+    consult, so the band belongs here (and the `artifacts.validate_artifact`
+    arm stays as the banked re-validation half).
+
+    The band is READ FROM `prompt_gate` -- the same shared source the render
+    gate and the producer use, never a second copy. Length is measured on the
+    stripped text, exactly as `build_infographic.resolve_design_prompt` and
+    `prompt_gate.prompt_problems` measure it."""
+    p = artifact_path(run_dir, rel)
+    if p is None:
+        return [f"{rel}: file not found -- phase artifact missing"]
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{rel}: unreadable ({exc!r})"]
+    length = len(text.strip())
+    if length < 40:
+        return [f"{rel}: only {length} chars of content -- too small to "
+                "be a real authored fragment"]
+    try:
+        import prompt_gate as _pg
+    except Exception as exc:  # noqa: BLE001
+        # FAIL CLOSED, deliberately: this gate decides whether a phase may be
+        # marked DONE without re-authoring, so an unverifiable band must not
+        # silently re-bless the artifact. (The artifacts.py arm degrades the
+        # other way on purpose -- it must not turn every banked design prompt
+        # into a permanent re-author loop -- and DISCLOSES that in its verdict.)
+        return [f"{rel}: PD-TEST-098 band check UNAVAILABLE -- prompt_gate "
+                f"could not be imported ({type(exc).__name__}: {exc}); refusing "
+                "to attest an unverifiable design prompt"]
+    # PD-TEST-113 -- THE WHOLE GATE, NOT JUST ITS LENGTH CLAUSE.
+    #
+    # This verifier used to enforce exactly two rules of the shared gate:
+    # AF-P1 (floor) and AF-P2 (ceiling). `prompt_gate.prompt_problems` applies
+    # more than that, and the CONSUMER
+    # (`build_infographic.resolve_design_prompt`) calls the WHOLE gate. So a
+    # design prompt could clear this verifier, be attested `done` by the
+    # engine, and then be refused by its own render phase on a rule this seam
+    # never checked -- and `prior_reasons` could never carry that requirement
+    # back to the producer, because the producer is only ever told the reasons
+    # THIS function emits. The re-author loop was therefore structurally
+    # incapable of converging on the unstated rules.
+    #
+    # Measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4:
+    # all three design prompts PASSED this verifier at 13,513 / 14,612 /
+    # 12,296 chars, and P-U-DESIGN-RENDER-SALES / -VSL then refused them with
+    # `AF-R3: forbidden hardcoded demographic default 'default demographic'`
+    # and `AF-P13: negative block does not name defect class(es): placeholder/
+    # bracket tokens, anatomical artifacts` -- one full paid re-author plus a
+    # quarantined render phase per undiscovered rule, discovered one gate code
+    # at a time.
+    #
+    # THE FIX: delegate to the ONE shared authority rather than restate a
+    # subset of it. `prompt_problems` is the same accumulating, non-raising
+    # function the render path and build_deck's provers call, so this phase now
+    # fails on exactly the rules its consumer enforces -- no more, no fewer,
+    # and no second copy of any rule to drift. Verified against the live run:
+    # `prompt_problems` on the three banked artifacts returns byte-identical
+    # findings to the render refusals above (2 / 0 / 1 problems), including
+    # AF-R3 and both AF-P13 class lists.
+    #
+    # `copy_val` stays None deliberately -- AF-P-VERBATIM needs a slide's exact
+    # copy, which is a property of the CONSUMING slide, not of this aggregate
+    # page prompt; the render path applies it per slide with the copy in hand.
+    # The floor/ceiling constants this function already imported remain the
+    # single source for the length rule, now applied by `prompt_problems`
+    # itself.
+    # D1 (independent review of PR #1148): the CONSUMER feeds the STRIPPED text (`build_infographic.resolve_design_prompt` does `stripped = text.strip()` then `prompt_gate.prompt_problems(stripped)`). `prompt_gate`'s structural check matches the literal `'Do not '` INCLUDING its trailing space, so a file whose only such literal is a trailing-space EOF satisfies `prompt_problems(raw)` and is REFUSED by the consumer. Passing `text` here reproduced that divergence one layer up; pass exactly what the consumer passes.
+    problems = _pg.prompt_problems(text.strip())
+    if problems:
+        return [f"{rel}: {problem}" for problem in problems]
+    return []
+
+
+def _pu_check_form_gate(run_dir: Path, rel: str) -> List[str]:
+    """P-U-FORM-GATE's two declared Skill-44 plan artifacts. Each must be a
+    parseable JSON OBJECT with the Skill-44 operation shape: gate-form.json
+    needs a form definition (name + fields list); gate-workflow.json needs a
+    workflow definition (name + at least one action/step). The two files are
+    TWO outputs -- either one missing is the phase's own declared output
+    missing, never satisfied by its sibling."""
+    reasons: List[str] = []
+    obj_reasons = _pu_check_json_object(run_dir, rel)
+    if obj_reasons:
+        return obj_reasons
+    p = artifact_path(run_dir, rel)
+    obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    name = obj.get("name") or obj.get("form_name") or obj.get("workflow_name")
+    if not (isinstance(name, str) and name.strip()):
+        reasons.append(f"{rel}: no operation name (name/form_name/workflow_name) -- "
+                       "a Skill-44 plan object must name the form/workflow it declares")
+    fields = obj.get("fields") or obj.get("actions") or obj.get("steps")
+    if rel.endswith("gate-form.json") and not (isinstance(fields, list) and fields):
+        reasons.append(f"{rel}: no fields list -- a gate form plan must declare the "
+                       "capture fields it installs")
+    if rel.endswith("gate-workflow.json") and not (isinstance(fields, list) and fields):
+        reasons.append(f"{rel}: no actions/steps list -- a Skill-44 workflow plan must "
+                       "declare what the workflow does")
+    return reasons
+
+
+def _pu_check_qc_scorecard(run_dir: Path, rel: str) -> List[str]:
+    """P-U-QC's upsell scorecard: per-criterion rows with numeric scores and an
+    independent-reviewer provenance block (build_deck._qc_independence_reason --
+    the SAME check every other QC gate uses; a self-graded scorecard cannot
+    pass)."""
+    reasons: List[str] = _pu_check_json_object(run_dir, rel)
+    if reasons:
+        return reasons
+    p = artifact_path(run_dir, rel)
+    obj = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    criteria = obj.get("criteria")
+    if not (isinstance(criteria, list) and criteria):
+        reasons.append(f"{rel}: no criteria rows -- a scorecard that grades nothing "
+                       "attests nothing")
+    else:
+        scored = [c for c in criteria if isinstance(c, dict)
+                  and isinstance(c.get("score"), (int, float))]
+        if len(scored) != len(criteria):
+            reasons.append(f"{rel}: {len(criteria) - len(scored)} criteria row(s) carry "
+                           "no numeric score -- every row must be honestly scored")
+    independence = _bd_fn("_qc_independence_reason") if _bd is not None else None
+    if independence is not None:
+        try:
+            why = independence(obj) or ""
+        except Exception as exc:  # noqa: BLE001
+            why = f"independence check raised {exc!r}"
+        if why:
+            reasons.append(f"{rel}: {why}")
+    else:
+        blk = obj.get("qc_independence")
+        blk = blk if isinstance(blk, dict) else {}
+        reviewer = blk.get("graded_by") or obj.get("graded_by") or ""
+        if not (isinstance(reviewer, str) and reviewer.strip()):
+            reasons.append(f"{rel}: no independent-reviewer provenance (qc_independence."
+                           "graded_by) -- a self-graded scorecard cannot pass")
+    return reasons
+
+
+def _pu_check_collection(run_dir: Path, rel: str) -> List[str]:
+    """A declared collection artifact ('delivery/<slug>-FINAL/upsell/*') must
+    resolve to a NON-EMPTY directory of real files -- an empty upsell dir is
+    the phase's declared output missing.
+
+    Resolution order (never silently weaker):
+      1. the literal run-dir directory (after {deck_slug} substitution),
+      2. the working/upsell/ root convention (the P-U-* branch phases),
+      3. a glob of the pattern's parent for the collection family.
+    """
+    base = rel[:-2] if rel.endswith("/*") else rel
+    candidates: List[Path] = []
+    literal = run_dir / base
+    if literal.is_dir():
+        candidates.append(literal)
+    upsell_dir = run_dir / "working" / "upsell" / base
+    if upsell_dir.is_dir():
+        candidates.append(upsell_dir)
+    if "/" in base:
+        parent = run_dir / base.rsplit("/", 1)[0]
+        fam = base.rsplit("/", 1)[-1]
+        if parent.is_dir():
+            candidates.extend(sorted(m for m in parent.glob(f"{fam}*") if m.is_dir()))
+    for p in candidates:
+        members = [m for m in p.iterdir() if m.is_file()]
+        if not members:
+            return [f"{rel}: collection directory {p.name!r} is empty -- every "
+                    "expected collection member is required, not the directory alone"]
+        empties = [m.name for m in members if m.stat().st_size == 0]
+        if empties:
+            return [f"{rel}: empty collection member(s): {', '.join(empties)}"]
+    if not candidates:
+        return [f"{rel}: no collection content found -- the phase's declared "
+                "output set is missing"]
+    # Candidates existed but every one was empty/already-reported above; the
+    # first empty-dir reason already returned. Reaching here means at least one
+    # candidate dir had members (the loop returned False only on empties) --
+    # a populated collection passes.
+    return []
 
 
 def _make_pu_verifier(phase_id: str, artifacts: List[str]):
     def _verify(run_dir: Path) -> Tuple[bool, List[str]]:
         from presentation_job.defers import evaluate_defers_unless, load_intake
-        import json as _json
+
+        # ── PRES-012: the manifest is the CONTRACT, resolved canonically ──────
+        # The declared produces_artifact comes from the canonical manifest
+        # resolver, never from the registry's hand-maintained list alone. A
+        # missing/unreadable/phase-less manifest is a CONFIGURATION ERROR
+        # (fail-closed), never a weaker check.
+        declared, config_error = _pu_manifest_declared_artifacts(phase_id)
+        if config_error:
+            return False, [config_error]
+
         # Gate state: manifest entry drives the same evaluate the planner uses.
         gate = None
         try:
-            man = _json.loads((Path(__file__).resolve().parent.parent /
-                               ".." / ".." / ".." / ".." / ".." / "universal-sops" /
-                               "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
-                              .read_text(encoding="utf-8"))
+            import manifest_source
+            man_path, _prov = manifest_source.resolve_manifest(Path(__file__).resolve().parent)
+            man = json.loads(Path(man_path).read_text(encoding="utf-8"))
             gate = next((ph.get("defers_unless") for ph in man["phases"]
                          if ph["id"] == phase_id), None)
+        except SystemExit:
+            gate = None
         except Exception:
             gate = None
         intake = load_intake(run_dir)
         if gate and intake and not evaluate_defers_unless(gate, intake):
             return True, [f"NOTE: {phase_id} deferred -- defers_unless not "
                           f"satisfied by this run's intake answers"]
-        paths = _pu_artifact_paths(run_dir, artifacts)
-        # F16 follow-up: declared paths are written under the working/upsell root
-        # convention but declared relative to it ('copy/sales.fragment.md'), so the
-        # on-disk relpath ('working/upsell/copy/sales.fragment.md') never string-
-        # equals the declaration. Compare by declared-suffix instead of equality.
-        resolved_suffixes = set()
-        for x in paths:
-            try:
-                resolved_suffixes.add(str(x.relative_to(run_dir)))
-            except ValueError:
-                resolved_suffixes.add(str(x))
-        missing = [str(a) for a in artifacts
-                   if not any(str(r).endswith(str(a)) for r in resolved_suffixes)]
-        if not paths:
-            return False, [f"AF-U-{phase_id}: none of the declared artifacts "
-                           f"({', '.join(artifacts)}) exist under the run dir -- "
-                           f"the phase ran but produced nothing provable"]
-        # SMOKE-1 F16 (live run pj_8fa53071c9df, 2026-09-01): `missing` was computed
-        # and then never consulted, so a multi-artifact phase whose FIRST artifact
-        # existed verified True forever while the second (copy_ledger.json) was
-        # never written — the dispatcher logged already_satisfied every ~60s and
-        # the engine deadlocked to budget expiry. A declared artifact that is
-        # missing is a hard FAIL, exactly the vacuous-pass class B3 closed.
-        if missing:
-            return False, [f"AF-U-{phase_id}: declared artifact(s) missing: "
-                           f"{', '.join(missing)}"]
-        empty = [str(x) for x in paths
-                 if x.is_file() and x.stat().st_size == 0]
-        if empty:
-            return False, [f"AF-U-{phase_id}: empty artifact(s): {', '.join(empty)}"]
+
+        # ── EVERY declared output is required -- no any-path satisfaction ────
+        # The manifest's 'a + b' spelling is expanded; a collection member
+        # ('.../*') resolves through the shared resolver and must be non-empty.
+        reasons: List[str] = []
+        shape = _pu_phase_shape(phase_id)
+        expanded: List[str] = []
+        for art in declared:
+            art = art.strip()
+            if not art:
+                continue
+            if " + " in art:
+                expanded.extend(part.strip() for part in art.split(" + ") if part.strip())
+            else:
+                expanded.append(art)
+        # Token substitution: the manifest spells collection paths with
+        # {deck_slug} (e.g. 'delivery/{deck_slug}-FINAL/upsell/*'). Resolve it
+        # from the run's own intake deck_slug -- the same token the engine's
+        # resolve_artifact_patterns substitutes -- so a collection declared in
+        # the manifest resolves to the run's REAL directory, never a literal
+        # '{deck_slug}' path that nothing wrote.
+        deck_slug = ""
+        try:
+            intake_obj = json.loads((run_dir / "working" / "copy" / "intake.json")
+                                    .read_text(encoding="utf-8", errors="replace"))
+            if isinstance(intake_obj, dict):
+                deck_slug = str(intake_obj.get("deck_slug") or "").strip()
+        except Exception:  # noqa: BLE001 -- an unresolved token stays literal
+            deck_slug = ""
+        for rel in expanded:
+            if "{deck_slug}" in rel and deck_slug:
+                rel = rel.replace("{deck_slug}", deck_slug)
+            if rel.endswith("/*"):
+                reasons.extend(_pu_check_collection(run_dir, rel))
+                continue
+            p = artifact_path(run_dir, rel)
+            if p is None:
+                reasons.append(f"{rel}: file not found -- phase artifact missing")
+                continue
+            if p.stat().st_size == 0:
+                reasons.append(f"{rel}: file is zero bytes")
+                continue
+            if shape == "ghl_receipt":
+                reasons.extend(_pu_check_receipt_identity(run_dir, p, scope_key="ghl_receipt"))
+            elif shape == "form_gate":
+                reasons.extend(_pu_check_form_gate(run_dir, rel))
+            elif shape == "html":
+                reasons.extend(_pu_check_html(run_dir, rel))
+            elif shape == "png":
+                reasons.extend(_pu_check_png(run_dir, rel))
+            elif shape == "upsell_qc":
+                reasons.extend(_pu_check_qc_scorecard(run_dir, rel))
+            elif shape == "collection":
+                reasons.extend(_pu_check_collection(run_dir, rel))
+            elif _DESIGN_PROMPT_REL_RE.match(rel):
+                # PD-TEST-098: the page-design prompt carries the SHARED prompt
+                # band, not just ">= 40 chars". This is the seam the engine's
+                # wo_satisfied re-attestation AND the dispatcher's
+                # already_satisfied pre-check both consult.
+                reasons.extend(_pu_check_design_prompt(run_dir, rel))
+            elif rel.endswith(".json") or rel in _PU_JSON_ARTIFACTS:
+                reasons.extend(_pu_check_json_object(run_dir, rel))
+            else:
+                reasons.extend(_pu_check_text(run_dir, rel))
+        if reasons:
+            return False, [f"AF-U-{phase_id}: " + r for r in reasons]
         return True, []
     _verify.__name__ = f"_verify_{phase_id.lower().replace('-', '_')}"
     return _verify
@@ -2716,15 +4546,40 @@ for _pid, _arts in (
     ("P-U-CHECKOUT-COPY",  ["copy/checkout.fragment.md"]),
     ("P-U-VSL-RESEARCH",   ["vsl-research.md"]),
     ("P-U-VSL-COPY",       ["copy/vsl.fragment.md"]),
-    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt", "design/sales-design.png"]),
-    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt", "design/checkout-design.png"]),
-    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt", "design/vsl-design.png"]),
+    # DEFECT-4 (manifest v67): the agent phase authors the PROMPT ONLY. It used
+    # to list design/<page>-design.png here as well, which is the RENDER phase's
+    # artifact -- the same-artifact multi-producer shape that let one phase's
+    # output satisfy another's presence check (P-SP-P3-HYGIENE, v24.2.0). The
+    # manifest's produces_artifact now matches this list exactly.
+    ("P-U-DESIGN-SALES",   ["prompts/sales.design.txt"]),
+    ("P-U-DESIGN-CHECKOUT",["prompts/checkout.design.txt"]),
+    ("P-U-DESIGN-VSL",     ["prompts/vsl.design.txt"]),
+    # FIX 28 render phases: the agent phase above now authors the prompt only;
+    # the script executor P-U-DESIGN-RENDER-* produces design/<page>-design.png
+    # through build_infographic.py --spec design (no hand step). Each render
+    # phase verifies its own PNG so the registry covers every manifest phase id.
+    ("P-U-DESIGN-RENDER-SALES",   ["design/sales-design.png"]),
+    ("P-U-DESIGN-RENDER-CHECKOUT",["design/checkout-design.png"]),
+    ("P-U-DESIGN-RENDER-VSL",     ["design/vsl-design.png"]),
     ("P-U-HTML-SALES",     ["pages/sales.fragment.html"]),
     ("P-U-HTML-CHECKOUT",  ["pages/checkout.fragment.html"]),
     ("P-U-HTML-VSL",       ["pages/vsl.fragment.html"]),
-    ("P-U-FORM-GATE",      ["ecosystem/gate-form.json", "workflows/gate-workflow.json"]),
-    ("P-U-GHL-SALES",      ["build_receipt.json"]),
-    ("P-U-GHL-VSL",        ["build_receipt.json"]),
+    # PRES-011: P-U-FORM-GATE / P-U-GHL-SALES / P-U-GHL-VSL are NOT in this
+    # generic presence table anymore. Their receipts prove REMOTE installs
+    # (adapter IDs + readback + ops-ledger provenance via
+    # ghl_external_installer.validate_receipt), which bare existence can
+    # never establish -- see _verify_ghl_sales_install /
+    # _verify_ghl_vsl_install / _verify_form_gate_install above, registered
+    # in PHASE_VERIFIERS alongside the upsell-build verifiers. Re-adding
+    # them here would OVERWRITE those substance verifiers with the generic
+    # checker (this loop assigns unconditionally).
+    # DEFECT-4 (manifest v67): both GHL funnel builds declared the SAME bare
+    # `build_receipt.json`, so whichever ran first satisfied the other's
+    # presence check (and the dispatcher's already_satisfied pre-check would
+    # skip the second outright). Each funnel now writes its receipt inside its
+    # own funnel directory. The names are deliberately NOT
+    # working/<funnel>/build_receipt.json: those two paths already belong to
+    # sales_checkout_builder.py and vsl_builder.py respectively.
     ("P-U-COLLATERAL",     ["delivery/upsell/*"]),
     ("P-U-QC",             ["qc/upsell-scorecard.json"]),
 ):
@@ -2749,11 +4604,20 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     BEFORE dispatching to the per-phase verifier, this function checks the run's
     attestation record (process_manifest.json) for SIMULATED entries.  A SIMULATED
     result without a valid allowed_simulated declaration FAILS the phase — this
-    check runs first so no verifier can silently accept a SIMULATED attestation."""
+    check runs first so no verifier can silently accept a SIMULATED attestation.
+
+    FIX 109: before even the SIMULATED check, the intake provenance refusal runs
+    (see _intake_provenance_refusal): an out-of-band intake.json edit refuses
+    EVERY non-producer phase, naming the file's current sha256."""
     fn: Optional[Callable] = PHASE_VERIFIERS.get(phase_id)
     if fn is None:
         return False, [f"no verifier registered for {phase_id!r} — pass"]
 
+    # ---- FIX 109: intake provenance pre-phase refusal (naming the sha) ----
+    refusal = _intake_provenance_refusal(phase_id, Path(run_dir))
+    if refusal is not None:
+        return False, [refusal]
+    # ---- end FIX 109 ----
 
     # ---- ANTI-DRIFT CORE (WORK-ITEM-14c): SIMULATED rejection ----
     # Check BEFORE the per-phase verifier so a SIMULATED attestation cannot be
@@ -3020,6 +4884,27 @@ def _selftest() -> None:
 # SLICE-2 wiring: register the converted gate verifiers into the shared
 # registry at module load (idempotent; see _register_slice2_verifiers).
 _register_slice2_verifiers()
+
+# ---------------------------------------------------------------------------
+# FIX 107 — bind the verifier symbol contract AT IMPORT TIME.
+#
+# This is the preflight boundary for the verifier registry itself: the engine
+# imports phase_verifiers before any phase runs, so a rename/drift anywhere in
+# the contract below FAILS THE IMPORT naming module.symbol — the engine's FIX 17
+# fail-closed path (VerifierImportError) then aborts the run carrying that name,
+# instead of every dependent verifier silently degrading to weaker checks.
+# Modules genuinely ABSENT from the box stay the documented degraded mode
+# (assert_bound skips them); a module that is PRESENT but lost a symbol is a
+# hard error. The preflight gate (build_deck.run_preflight) also calls
+# assert_bound() explicitly as its first gate, so a post-import hot patch that
+# dropped a symbol is named at preflight in the same process too.
+# ---------------------------------------------------------------------------
+try:
+    _FIX107_BOUND_SYMBOLS = assert_bound()
+except ImportError:
+    raise
+# A successfully bound contract is recorded for the preflight gate to echo; no
+# further action needed at import time.
 
 
 if __name__ == "__main__":

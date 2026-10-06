@@ -14,6 +14,42 @@ This bridge:
              start. No shortcuts: the deck can only build through
              presentation-canonical-entry.sh's governed gates.
 
+PRES-008 — DURABLE SUBMISSION STATES, NOT A BOOLEAN LEDGER
+----------------------------------------------------------
+The old bridge declared a submission "processed" (a bare session id appended
+to the poll ledger) whenever cmd_ingest returned 0 — and cmd_ingest returned 0
+when the CC card existed EVEN WHEN the engine dispatch had been refused, and
+when the worker's /api/dept-start answered 202 deferred. A submission the
+engine never launched was excluded from every later poll: the deck stalled
+with a card and no builder, and the bridge had lost the retry.
+
+The bridge now drives every submission through launch_ledger.py's durable
+per-submission state document (working/checkpoints/intake_submission_state.json
+inside the run dir, atomic write, crash-safe):
+
+    staged -> board_registered -> launch_pending -> launching
+           -> worker_acknowledged           (handoff COMPLETE)
+    failed_retryable  (an attempt failed; bounded backoff re-arms)
+    blocked_actionable (permanent refusal / exhausted budget; remediation
+                        recorded; other sessions keep progressing)
+
+  - Handoff completes ONLY on a persisted current execution id PLUS a live
+    worker-start acknowledgement (a held launch lease alone is NOT completion;
+    a 202 deferred is NOT success; a bare rc 0 is NOT success).
+  - The board task id and run binding persist through launch retries; the
+    bridge never re-registers a card that exists (no duplicate cards).
+  - A live existing worker's acknowledgement is an IDEMPOTENT success: resume
+    discovers the running engine, acks the current execution, and starts no
+    second executor.
+  - Refusals/deferrals retry with bounded exponential backoff; CEO/operator
+    notification thresholds fire once per threshold.
+  - Completed intake records and checkpoints are never overwritten by a
+    retry: the run-dir record is written exactly once, in `staged`.
+  - A crash inside `launching` (between dispatch and ledger write) is
+    recoverable: the next tick finds the live worker by its recorded pid,
+    acks, and completes — one active execution per run, ownership recoverable
+    (launch_ledger's claim TTL takes over a crashed poller's claim).
+
 It mirrors the canonical intake-miniapp bridge (intake_bridge.py) for the
 hosted-session path, and adds the /api/dept-start hand-off for the static-app
 path. Stdlib only (urllib) — nothing to install on a box.
@@ -24,15 +60,32 @@ INTAKE_ADMIN_TOKEN (never from argv, never logged).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib
+import hmac
 import json
 import os
 import pathlib
+import re
+import subprocess
 import sys
+import tempfile
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
+
+
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+
+try:  # the durable submission-state machine sits next to this bridge
+    import launch_ledger as _ll
+except ImportError:  # pragma: no cover — a broken tree must name itself
+    _ll = None
+
 sys.path.insert(0, str(HERE.parent))
 
 try:
@@ -99,6 +152,562 @@ _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
 
+# ---------------------------------------------------------------------------
+# PRES-008 — launch-policy classification of launcher refusals.
+#
+# A dispatch refusal is not one thing. Environment faults (notify unconfigured,
+# capacity unmeasured, credit preflight, OCR engine missing) are curable
+# WITHOUT touching the intake — they retry with bounded backoff. A permanent
+# refusal (deck type unresolvable, mode invalid, model plan unsatisfiable)
+# would produce the same refusal on every retry forever, so it BLOCKS the
+# submission with a remediation instead of consuming the retry budget.
+# ---------------------------------------------------------------------------
+#: launcher DISPATCH_* refusals that retry (curable environment faults).
+RETRYABLE_REFUSAL_RCS = {-4, -6, -7, -8, -11}
+#: launcher DISPATCH_* refusals that are permanent for this submission.
+PERMANENT_REFUSAL_RCS = {-5, -9, -10}
+#: -1 spawn failure / -2 already running / -3 already DONE are handled by
+#: their own branches, never classified here.
+
+
+def _refusal_summary(pid_rc: int) -> str:
+    codes = {
+        -4: "AF-CAPACITY-UNMEASURED",
+        -5: "AF-DECK-TYPE-UNKNOWN",
+        -6: "AF-CREDIT-PREFLIGHT",
+        -7: "AF-NOTIFY-UNCONFIGURED",
+        -8: "AF-OCR-ENGINE-MISSING",
+        -9: "AF-MODE-INVALID",
+        -10: "AF-MODEL-PLAN-UNSATISFIED",
+        -11: "AF-MANIFEST-REPIN-FAILED",
+        -1: "spawn failure",
+        -2: "already running",
+        -3: "already DONE",
+    }
+    return f"{codes.get(pid_rc, 'refused')} (rc={pid_rc})"
+
+
+def _bridge_notify(message: str) -> None:
+    """Best-effort operator notice via report.dispatch3("intake-bridge", ...).
+    presentation_job/report.py is the ONE dispatch implementation in this
+    codebase (shell-safe argv, subsystem-label resolution); when the package
+    is not reachable the message lands in this process's stdout, which the
+    poll cron captures — never silently dropped, never a fabricated send."""
+    try:
+        pj_pkg = _load_presentation_job()
+        report = None
+        if pj_pkg is not None:
+            report = getattr(pj_pkg, "report", None)
+        if report is None:
+            try:
+                import importlib as _importlib
+                report = _importlib.import_module("presentation_job.report")
+            except ImportError:
+                report = None
+        if report is not None and hasattr(report, "dispatch3"):
+            report.dispatch3("intake-bridge", "pres008", message)
+            return
+    except Exception:  # noqa: BLE001 — notify must never break the bridge
+        pass
+    print(json.dumps({"status": "operator_notice", "channel": "stdout-fallback",
+                      "message": message[:400]}), file=sys.stderr)
+
+
+def _make_notifier():
+    """Notifier callable handed to launch_ledger. The kind names the reason;
+    every message goes through _bridge_notify exactly once per threshold."""
+    def _notify(kind: str, submission_id: str, message: str) -> None:
+        _bridge_notify(f"[{kind}] {message}")
+    return _notify
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _retry_policy() -> dict:
+    """Bounded-backoff policy from env (all knobs documented in launch_ledger)."""
+    thresholds = os.environ.get("PRES008_NOTIFY_THRESHOLDS", "")
+    parsed: list = []
+    for part in thresholds.replace(" ", "").split(","):
+        if part.isdigit():
+            parsed.append(int(part))
+    return {
+        "backoff_base_s": _env_float("PRES008_BACKOFF_BASE_S", _ll.DEFAULT_BACKOFF_BASE_S),
+        "backoff_cap_s": _env_float("PRES008_BACKOFF_CAP_S", _ll.DEFAULT_BACKOFF_CAP_S),
+        "max_attempts": _env_int("PRES008_MAX_RETRY_ATTEMPTS", _ll.DEFAULT_MAX_RETRY_ATTEMPTS),
+        "notify_thresholds": tuple(parsed) if parsed else _ll.DEFAULT_NOTIFY_THRESHOLDS,
+        "claim_ttl_s": _env_float("PRES008_CLAIM_TTL_S", _ll.DEFAULT_CLAIM_TTL_S),
+    }
+
+
+def _submission_hold(run_dir, session_id: str, policy: dict,
+                     *, initial: str = "staged",
+                     holder: dict | None = None,
+                     run_dir_str: str = "") -> dict:
+    """Acquire (fresh) or re-acquire (this poller's own claim) the durable
+    state document for this submission. A LIVE FOREIGN claim returns {} —
+    the caller skips this session this tick (one active execution per run;
+    the claim is recoverable after the claim TTL). A CORRUPT state file is
+    quarantined into an explicit blocked_actionable document (never silently
+    reset, never a permanent skip)."""
+    doc = _ll.load(run_dir, session_id)
+    if doc is not None:
+        if _ll.claim_is_fresh(doc, (holder or {}).get("claimed_by", ""),
+                              ttl_s=policy["claim_ttl_s"]):
+            return {}
+        return _ll.reclaim(run_dir, session_id, doc, holder=holder)
+    fresh = _ll.acquire_new(run_dir, session_id, initial=initial, holder=holder,
+                            run_dir_str=run_dir_str)
+    if fresh is not None:
+        return fresh
+    # acquire_new failed two ways: (a) a live foreign claimant won the race —
+    # skip this tick; (b) an UNREADABLE state file blocks the O_EXCL create.
+    # Distinguish: load() returned None for an EXISTING file => corrupt.
+    if _ll.state_path(run_dir, session_id).exists():
+        return _ll.quarantine_corrupt(run_dir, session_id)
+    return {}
+
+
+def _record_run_dir_files(run_dir: pathlib.Path, intake: dict, verbose: bool) -> bool:
+    """Write the run-dir record EXACTLY ONCE (PRES-008: never overwrite a
+    completed intake/checkpoint on retry). Idempotent by content: when
+    working/copy/intake.json already exists this is a no-op — the retry
+    re-reads what the first attempt wrote, and the engine's sealed intake
+    (0444, launcher FIX 34) is never touched."""
+    intake_path = run_dir / "working" / "copy" / "intake.json"
+    if intake_path.is_file():
+        if verbose:
+            print(f"run-dir record already present under {run_dir}/working/ -- "
+                  "retry keeps it (never overwrites completed intake)", file=sys.stderr)
+        return True
+    if intake_writer is None:
+        return False
+    intake_writer.migrate_intake(intake)
+    missing = intake_writer.validate_intake_completeness(intake)
+    if missing:
+        raise ValueError("required canonical fields missing: " + ", ".join(missing))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    intake_writer.write_intake_file(run_dir, intake)
+    intake_writer.write_ledger(run_dir, intake)
+    if hasattr(intake_writer, "write_transcript"):
+        intake_writer.write_transcript(run_dir, intake)
+    intake_writer.emit_configuration_pending_events(run_dir, intake, intake.get("intake_session_id", ""))
+    if verbose:
+        print(f"wrote run-dir record under {run_dir}/working/")
+    return True
+
+
+def _ensure_board_card(run_dir: pathlib.Path, intake: dict, session_id: str,
+                       doc: dict, policy: dict) -> tuple[str, str]:
+    """Register (or recover) the CC kanban card. Returns (state, task_id):
+
+      "registered", task_id  -- card exists (freshly created, recovered from
+                                the submission record, or recovered from the
+                                run manifest)
+      "unavailable", ""      -- board transport/config failure: retryable
+
+    Dedup by construction: the submission's board_task_id persists across
+    retries, so a retry NEVER re-ingests a card that exists; when the
+    submission record predates the manifest stamp, the manifest's cc_task_id
+    is adopted instead of minting a second card. cc_board.ingest_deck_task is
+    itself idempotent (sha256(source_ref+title) key server-side) — the local
+    record makes that idempotency durable across bridge restarts.
+    """
+    expected_task = str(intake.get("cc_task_id") or "").strip()
+    existing = str(doc.get("board_task_id") or "").strip()
+    if expected_task:
+        if existing and existing != expected_task:
+            raise ValueError("submission ledger board task conflicts with authenticated contract")
+        return "registered", expected_task
+    if existing:
+        return "registered", existing
+    manifest_task = ""
+    try:
+        man = run_dir / "working" / "checkpoints" / "process_manifest.json"
+        if man.is_file():
+            manifest_task = str((json.loads(man.read_text(encoding="utf-8"))
+                                 .get("cc_task_id")) or "").strip()
+    except (OSError, ValueError):
+        manifest_task = ""
+    if manifest_task:
+        return "registered", manifest_task
+    cc = _load_cc_board()
+    if cc is not None and hasattr(cc, "ingest_deck_task"):
+        brief = intake.get("deck_brief") or {}
+        title = brief.get("OFFER_NAME") or intake.get("intake_session_id") or session_id
+        desc = (f"Intake captured by the Presentation Interview app ({session_id}).\n"
+                + json.dumps(intake.get("deck_brief") or intake.get("answers") or {},
+                             indent=2))
+        # FIX F19: the requester already stamped onto `intake` (canonical env
+        # vars -> PRESENTER_CHAT_ID back-compat -> operator fallback) — CC-board
+        # registration and the engine's working/copy/intake.json never disagree.
+        task_id = cc.ingest_deck_task(
+            run_dir,
+            deck_slug=session_id,
+            title=f"Deck — {title}",
+            description=desc,
+            priority="medium",
+            requester_chat_id=intake.get("requester_chat_id", ""),
+        )
+        if task_id:
+            return "registered", str(task_id)
+        # FIX F12/PRES-008: None = no card exists. Retryable — never success.
+        return "unavailable", ""
+    return "no-cc-board", ""
+
+
+def _dispatch_launch(run_dir: pathlib.Path, intake: dict, session_id: str,
+                     doc: dict, policy: dict, verbose: bool) -> tuple[str, str]:
+    """Attempt the engine launch for an already-registered submission.
+
+    Returns (verdict, detail):
+      "launched"            -- engine process spawned under the run lease;
+                               submission moves to launching, then completes
+                               on the live-worker acknowledgement below.
+      "refused_retryable"   -- environment refusal: bounded backoff re-arms.
+      "refused_permanent"   -- permanent refusal: blocked_actionable.
+      "lease_held"          -- another actor owns the dispatch window; the
+                               submission stays launch_pending (a held lease
+                               alone is NEVER completion).
+      "no_engine"           -- presentation_job unreachable: retryable.
+      "acknowledged"        -- a live existing worker was discovered and its
+                               start acknowledged (idempotent success).
+    """
+    pj = _load_presentation_job()
+    if pj is None:
+        return "no_engine", "presentation_job not reachable"
+    launcher = getattr(pj, "launcher", None)
+    lease_mod = getattr(pj, "lease", None)
+    if launcher is None or lease_mod is None:
+        try:
+            import importlib as _importlib
+            if launcher is None:
+                launcher = _importlib.import_module("presentation_job.launcher")
+            if lease_mod is None:
+                lease_mod = _importlib.import_module("presentation_job.lease")
+        except ImportError as exc:
+            return "no_engine", f"presentation_job incomplete: {exc}"
+
+    # A live existing worker is an idempotent success: discover it BEFORE any
+    # spawn — the crash-window recovery (state.json/.engine.pid named a pid
+    # that is alive) completes the handoff without a second executor.
+    if _ll.engine_alive(run_dir):
+        exec_id = str(intake.get("cc_execution_id") or _ll.execution_id_of(run_dir) or "")
+        if exec_id:
+            _ll.mark_worker_acknowledged(
+                run_dir, session_id, doc, exec_id,
+                engine_pid=_ll._read_run_state(run_dir).get("pid"),
+                note="existing live worker discovered; acknowledgement idempotent")
+            return "acknowledged", f"live worker holds the run ({exec_id})"
+
+    # launcher.dispatch_new validates the engine's presentation_type vocabulary
+    # (from_scratch/content_personal/content_general/signature).  The sealed
+    # deck_type is a separate derived display axis (for example webinar), so
+    # passing it here rejects a valid from_scratch intake before the engine.
+    presentation_type = str(intake.get("presentation_type") or "").strip()
+    client = str(intake.get("requester_chat_id") or intake.get("intake_session_id")
+                 or session_id or "").strip() or "operator"
+    holder = {"who": "intake-bridge", "session_id": session_id}
+    lease = None
+    try:
+        lease = lease_mod.acquire(run_dir, holder=holder,
+                                  ttl_s=lease_mod.DEFAULT_TTL_S, wait_s=30.0)
+        if lease is None:
+            lease_doc = lease_mod.read(run_dir) or {}
+            return ("lease_held",
+                    "lease held by pid {pid} on host {host}; submission stays "
+                    "launch_pending for the next tick".format(
+                        pid=lease_doc.get("pid"), host=lease_doc.get("host")))
+        # A CC-signed operator receipt pins the execution identity before launch;
+        # ordinary Worker submissions retain the lease-derived identity.
+        exec_id = str(intake.get("cc_execution_id") or _ll.mint_execution_id(lease))
+        # `run_mode` is the execution axis resolved from the validated
+        # resource-plan child, not the informational answer `mode`. Passing it
+        # makes launcher preflight, the immutable mode plan and engine env use
+        # the exact declared Ultra/Standard/Economy choice.
+        run_mode = intake.get("run_mode")
+        pid = launcher.dispatch_new(str(run_dir), client=client,
+                                    deck_type=presentation_type, background=True,
+                                    mode=run_mode)
+        if isinstance(pid, int) and pid > 0:
+            _ll.mark_launching(run_dir, session_id, doc, exec_id,
+                               why="dispatch in flight under run lease")
+            # The launcher forked an engine. Completion still waits for the
+            # LIVE-worker proof: state.json/.engine.pid naming a live pid.
+            live = _ll.engine_alive(run_dir)
+            live_exec = _ll.execution_id_of(run_dir) or exec_id
+            if live and live_exec:
+                _ll.mark_worker_acknowledged(
+                    run_dir, session_id, _ll.load(run_dir, session_id) or doc,
+                    live_exec, engine_pid=pid,
+                    note="engine spawned and holds the run")
+                return "launched", f"engine dispatched (pid {pid}) and acknowledged"
+            return "launched", (f"engine dispatched (pid {pid}) — awaiting the "
+                                "live-worker acknowledgement on the next tick")
+        if pid in PERMANENT_REFUSAL_RCS:
+            _ll.mark_blocked(
+                run_dir, session_id, _ll.load(run_dir, session_id) or doc,
+                reason=f"engine dispatch permanently refused: {_refusal_summary(pid)} "
+                       f"(presentation_type {presentation_type!r})",
+                remediation=(
+                    "fix the submission's deck_type/mode/model-plan (see the "
+                    "refusal code in this submission's state file), correct "
+                    "the intake if the deck type itself is wrong, then delete "
+                    f"{_ll.state_path(run_dir, session_id)} to re-drive it"),
+                notify=True, notifier=_make_notifier())
+            return "refused_permanent", _refusal_summary(pid)
+        if pid in RETRYABLE_REFUSAL_RCS:
+            return "refused_retryable", _refusal_summary(pid)
+        if pid == -2:
+            # Already running: a worker exists that our pid probe could not
+            # see (started between probe and spawn). Treat as the discover path.
+            live_exec = _ll.execution_id_of(run_dir) or exec_id
+            _ll.mark_worker_acknowledged(
+                run_dir, session_id, _ll.load(run_dir, session_id) or doc,
+                live_exec, note="launcher reports the engine already running")
+            return "acknowledged", "engine already running (idempotent ack)"
+        if pid == -3:
+            return "acknowledged", "run already DONE (idempotent ack)"
+        return "refused_retryable", _refusal_summary(pid)
+    except Exception as exc:  # noqa: BLE001 — a dispatch failure must never break ingest
+        return "refused_retryable", f"dispatch error: {type(exc).__name__}: {exc}"
+    finally:
+        if lease is not None:
+            try:
+                lease_mod.release(lease)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _mark_handoff_failure(run_dir: pathlib.Path, session_id: str, doc: dict,
+                          policy: dict, failure_class: str, reason: str,
+                          permanent_note: str = "") -> dict:
+    """Route one failed attempt into the bounded retry (or block it when the
+    refusal is permanent). The state document carries the truth even if this
+    process dies before returning."""
+    return _ll.mark_retry_pending(
+        run_dir, session_id, doc, reason, failure_class=failure_class,
+        backoff_base_s=policy["backoff_base_s"],
+        backoff_cap_s=policy["backoff_cap_s"],
+        max_attempts=policy["max_attempts"],
+        notify_thresholds=policy["notify_thresholds"],
+        notifier=_make_notifier())
+
+
+def _out(rc: int, report: dict) -> dict:
+    """Stamp the bridge rc (the durable-state rc contract) onto a report."""
+    report["_rc"] = rc
+    report.setdefault("state", "")
+    return report
+
+
+def _drive_submission(run_dir: pathlib.Path, intake: dict, session_id: str,
+                      policy: dict, verbose: bool) -> dict:
+    """Drive ONE submission through the durable states toward completion.
+
+    Acquires the per-tick driver claim, then delegates to
+    _drive_submission_claimed; releases the claim afterwards (any verdict).
+    Returns a report dict carrying "_rc" — the bridge rc, which is 0 ONLY when
+    the submission's handoff is COMPLETE (worker_acknowledged) — never on a
+    deferral, never on a refusal, never on "card created but engine not
+    launched". The poll loop maps that rc onto the durable state, never onto a
+    boolean ledger.
+    """
+    doc = _submission_hold(run_dir, session_id, policy,
+                           holder={"claimed_by": _poller_id()}, run_dir_str=str(run_dir))
+    if not doc:
+        return _out(7, {"verdict": "claim_held_elsewhere",
+                        "detail": "a live claim by another poller holds this submission"})
+    try:
+        return _drive_submission_claimed(run_dir, intake, session_id, policy,
+                                         verbose, doc)
+    finally:
+        # The claim serialized THIS tick's concurrent drivers; release it so
+        # the next tick re-drives without waiting out the claim TTL. A
+        # crashed driver never reaches this — its stale claim is taken over
+        # after the TTL (recoverable ownership).
+        latest = _ll.load(run_dir, session_id)
+        if latest is not None:
+            _ll.release_claim(run_dir, session_id, latest)
+
+
+def _drive_submission_claimed(run_dir: pathlib.Path, intake: dict,
+                              session_id: str, policy: dict, verbose: bool,
+                              doc: dict) -> dict:
+
+    # Complete stays complete (idempotent re-poll).
+    if _ll.is_complete(doc):
+        return _out(0, {"verdict": "already_complete", "state": _ll.WORKER_ACKNOWLEDGED,
+                        "detail": _ll.describe(doc)})
+    # Blocked stops consuming retries — other sessions keep progressing.
+    if _ll.is_blocked(doc):
+        return _out(8, {"verdict": "blocked", "state": _ll.BLOCKED_ACTIONABLE,
+                        "detail": doc.get("blocked", {}).get("reason", ""),
+                        "remediation": doc.get("blocked", {}).get("remediation", "")})
+    # Bounded backoff: not due yet.
+    if not _ll.due_for_retry(doc):
+        return _out(7, {"verdict": "backoff", "state": doc.get("state"),
+                        "detail": f"next retry at {doc.get('next_retry_at')} "
+                                  f"(attempt {doc.get('retry_attempt') or 0})"})
+
+    # 1) the run-dir record — exactly once, in staged.
+    try:
+        record_ok = _record_run_dir_files(run_dir, intake, verbose)
+    except Exception as exc:  # noqa: BLE001 — classified below
+        record_ok = exc
+    if isinstance(record_ok, Exception):
+        # A PERMANENT intake-grounding refusal (UngroundedDeckTypeError /
+        # RunModeVocabularyError: no real presentation_type / run-mode answer
+        # exists) would fail identically on every retry — PRES-008 surfaces it
+        # as blocked_actionable with a remediation, while other sessions
+        # progress. Nothing was written (the writer fails closed).
+        if type(exc := record_ok).__name__ in ("UngroundedDeckTypeError",
+                                               "RunModeVocabularyError"):
+            doc = _ll.load(run_dir, session_id) or doc
+            _ll.mark_blocked(
+                run_dir, session_id, doc,
+                reason=f"intake permanently ungrounded: {type(record_ok).__name__}: "
+                       f"{str(record_ok)[:300]}",
+                remediation=("the intake is missing the presentation_type / "
+                             "run-mode answer the deck-type axis requires — "
+                             "collect it (or amend the intake via the sanctioned "
+                             "amendment path), then delete this submission state "
+                             f"file ({_ll.state_path(run_dir, session_id)}) to "
+                             "re-drive it"),
+                notify=True, notifier=_make_notifier())
+            return _out(8, {"verdict": "blocked", "state": _ll.BLOCKED_ACTIONABLE,
+                            "detail": f"intake permanently ungrounded: {type(record_ok).__name__}"})
+        # Any other writer fault is an environment problem: retryable.
+        doc = _ll.load(run_dir, session_id) or doc
+        _mark_handoff_failure(run_dir, session_id, doc, policy,
+                              "intake_write_failed",
+                              f"{type(record_ok).__name__}: {record_ok}")
+        return _out(2, {"verdict": "retry_scheduled",
+                        "detail": f"run-dir record write failed ({type(record_ok).__name__}); retry scheduled"})
+    if not record_ok:
+        doc = _ll.load(run_dir, session_id) or doc
+        _mark_handoff_failure(run_dir, session_id, doc, policy,
+                              "intake_write_failed",
+                              "intake_writer.py not importable — cannot stamp the run dir")
+        return _out(2, {"verdict": "retry_scheduled",
+                        "detail": "run-dir record unavailable; retry scheduled"})
+
+    # 2) the board card — persisted BEFORE any launch attempt, so the binding
+    #    survives launch retries and the card is never duplicated.
+    board_state, task_id = _ensure_board_card(run_dir, intake, session_id, doc, policy)
+    if board_state == "registered":
+        doc = _ll.load(run_dir, session_id) or doc
+        if str(doc.get("board_task_id") or "") != task_id or doc.get("state") == _ll.STAGED:
+            doc = _ll.transition(run_dir, session_id, doc, _ll.BOARD_REGISTERED,
+                                 board_task_id=task_id,
+                                 why="board card registered/recovered")
+    elif board_state == "unavailable":
+        doc = _ll.load(run_dir, session_id) or doc
+        _mark_handoff_failure(run_dir, session_id, doc, policy,
+                              "board_unavailable",
+                              "cc_board.ingest_deck_task returned None (board URL "
+                              "unset or transport failure); retry scheduled")
+        return _out(5, {"verdict": "retry_scheduled",
+                        "detail": "board card unavailable; retry scheduled"})
+    else:  # "no-cc-board": the worker /api/dept-start fallback path
+        rc, note = _dept_start_via_worker(session_id, intake)
+        if rc != 0:
+            doc = _ll.load(run_dir, session_id) or doc
+            _mark_handoff_failure(run_dir, session_id, doc, policy,
+                                  "worker_deferred" if rc == 202 else "board_unavailable",
+                                  note)
+            return _out(7 if rc == 202 else 4, {
+                "verdict": "retry_scheduled",
+                "detail": note})
+        # The worker acked the start intent — but PRES-008 completion still
+        # requires a live worker on THIS run dir. The worker-created card and
+        # engine become discoverable on the next poll via _dispatch_launch's
+        # discovery path; record the binding and go launch_pending.
+        doc = _ll.load(run_dir, session_id) or doc
+        if doc.get("state") == _ll.STAGED:
+            doc = _ll.transition(run_dir, session_id, doc, _ll.BOARD_REGISTERED,
+                                 board_worker_ack=True,
+                                 why="worker /api/dept-start accepted the start")
+        doc = _ll.load(run_dir, session_id) or doc
+        doc = _ll.transition(run_dir, session_id, doc, _ll.LAUNCH_PENDING,
+                             why="worker accepted the start; awaiting a live worker")
+        return _out(7, {"verdict": "launch_pending",
+                        "detail": "worker accepted the start; completion waits for a "
+                                  "live worker on the run dir"})
+
+    # 3) the launch — under the run lease, idempotent on a live worker.
+    doc = _ll.load(run_dir, session_id) or doc
+    verdict, detail = _dispatch_launch(run_dir, intake, session_id, doc, policy,
+                                       verbose)
+    if verdict == "acknowledged":
+        return _out(0, {"verdict": "complete", "state": _ll.WORKER_ACKNOWLEDGED,
+                        "detail": detail})
+    if verdict == "launched":
+        doc = _ll.load(run_dir, session_id) or doc
+        if _ll.is_complete(doc):
+            return _out(0, {"verdict": "complete", "state": _ll.WORKER_ACKNOWLEDGED,
+                            "detail": detail})
+        return _out(7, {"verdict": "launching", "state": doc.get("state"),
+                        "detail": detail})
+    if verdict == "lease_held":
+        return _out(7, {"verdict": "launch_pending", "state": doc.get("state"),
+                        "detail": detail})
+    if verdict == "refused_permanent":
+        return _out(8, {"verdict": "blocked", "state": _ll.BLOCKED_ACTIONABLE,
+                        "detail": detail})
+    if verdict == "no_engine":
+        doc = _ll.load(run_dir, session_id) or doc
+        _mark_handoff_failure(run_dir, session_id, doc, policy,
+                              "engine_unavailable", detail)
+        return _out(6, {"verdict": "retry_scheduled",
+                        "detail": detail})
+    # refused_retryable
+    doc = _ll.load(run_dir, session_id) or doc
+    _mark_handoff_failure(run_dir, session_id, doc, policy,
+                          "dispatch_refused", detail)
+    doc = _ll.load(run_dir, session_id) or doc
+    return _out(7, {"verdict": "retry_scheduled", "state": doc.get("state"),
+                    "detail": detail})
+
+
+def _poller_id() -> str:
+    """This poller process's claim identity (per-process, so two concurrent
+    pollers never mistake each other for themselves — even two pollers born
+    in the same second, whose pid@second stamps would collide)."""
+    return f"pid:{os.getpid()}@{uuid.uuid4().hex[:8]}"
+
+
+def _dept_start_via_worker(session_id: str, intake: dict) -> tuple[int, str]:
+    """The Worker /api/dept-start fallback. Returns (http_status_or_rc, note).
+    A 202 'deferred' is NOT success (PRES-008): it means COMMAND_CENTER_URL is
+    unset on the worker and the card does not exist — the submission stays
+    unprocessed and retries."""
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    status, resp = _http("POST", _DEPT_START_URL.rstrip("/") + "/api/dept-start",
+                         token=admin,
+                         body={"intake_session_id": session_id, "intake": intake})
+    if status in (200, 201):
+        return status, json.dumps(resp)
+    if status == 202:
+        return 202, ("worker returned 202 deferred (COMMAND_CENTER_URL unset) — "
+                     "NOT success; submission stays unprocessed and retries")
+    return status, f"dept-start failed (HTTP {status}): {resp.get('error')}"
+
+
+_DEPT_START_URL = ""  # set from args before _dept_start_via_worker runs
+
+
 def _http(method: str, url: str, *, token: str | None = None, body: dict | None = None,
           timeout: int = 20) -> tuple[int, dict]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -121,16 +730,20 @@ def _http(method: str, url: str, *, token: str | None = None, body: dict | None 
 
 
 def _fetch_intake(args) -> dict:
-    """Fetch the finished intake record from the Worker (by session id)."""
+    """Fetch the finished intake record from the Worker (by session id).
+
+    PRES-009 QC repair (F3c): carries the box's tenant scope alongside the id
+    (see _scoped_query) — a tuple-stored intake is only reachable through its
+    own tenant scope; an unscoped fetch returns only pre-tenant flat rows.
+    """
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
     if not admin:
-        print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
-        sys.exit(2)
-    url = args.worker_url.rstrip("/") + "/api/intake?id=" + args.session_id
+        raise RuntimeError("INTAKE_ADMIN_TOKEN not set in env")
+    base = args.worker_url.rstrip("/") + "/api/intake?id=" + urllib.parse.quote(str(args.session_id), safe="")
+    url = base + _scoped_query(args).replace("?", "&")
     status, resp = _http("GET", url, token=admin)
     if status != 200:
-        print(f"error: intake fetch failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
-        sys.exit(3)
+        raise RuntimeError(f"intake fetch failed (HTTP {status}): {resp.get('error')}")
     return resp
 
 
@@ -184,173 +797,1209 @@ def stamp_requester(intake: dict, env: dict | None = None,
     return intake
 
 
+def _load_presentation_job():
+    """Locate the presentation_job package root (the scripts/ directory that
+    CONTAINS it) the same way every other sanctioned sibling is resolved here:
+    by file path across the candidate roots, never a mix of boxes/checkouts.
+    Candidate layouts covered:
+      PRESENTATIONS_SCRIPTS override (deployed boxes);
+      <presentations>/scripts (this checkout: interview-app sits under
+      presentations/intake/, so presentations/ is HERE x3 parents up);
+      <intake>/scripts and the OC workspace path (other deployed shapes).
+    Returns the imported package or None -- never raises (a box without the
+    department scripts installed keeps its pre-FIX-61 behavior)."""
+    for root in (
+        pathlib.Path(os.environ["PRESENTATIONS_SCRIPTS"]) if os.environ.get("PRESENTATIONS_SCRIPTS") else None,
+        HERE.parent.parent.parent / "scripts",
+        HERE.parent.parent / "scripts",
+        pathlib.Path.home() / ".openclaw" / "workspace" / "departments" / "Presentations" / "scripts",
+    ):
+        if root is None:
+            continue
+        if (root / "presentation_job" / "launcher.py").is_file():
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            try:
+                import presentation_job  # noqa: F401
+                return presentation_job
+            except ImportError:
+                continue
+    return None
+
+
+def _load_operator_launch_environment() -> dict:
+    """Load the selected box env store for a direct CC bridge launch.
+
+    Scheduler shells already call ``presentation_job.env_store`` before they
+    dispatch. The authenticated CC contract path invokes this Python bridge
+    directly, so it must use that same sanctioned loader before launcher
+    preflight. The loader parses selected stores without executing them; it
+    reports only names/counts and rejects an unresolved required transport.
+    """
+    if _load_presentation_job() is None:
+        raise RuntimeError("presentation_job is not reachable for launch environment")
+    try:
+        store = importlib.import_module("presentation_job.env_store")
+        assignments, report = store.resolve()
+        unresolved = store.unresolved_required(report)
+    except Exception as exc:  # noqa: BLE001 -- fail closed at the known boundary
+        raise RuntimeError(f"operator launch environment is unavailable: {type(exc).__name__}") from exc
+    if unresolved:
+        raise RuntimeError("operator launch required environment is unresolved: " + ", ".join(sorted(unresolved)))
+    # resolve() guarantees a nonblank process value wins; retain that rule at
+    # the assignment boundary too, so a future resolver regression cannot
+    # overwrite an operator's one-invocation override. Values are never logged
+    # or serialized.
+    for name, value in assignments.items():
+        if not str(os.environ.get(name) or "").strip():
+            os.environ[name] = value
+    return report
+
+
+# ---------------------------------------------------------------------------
+# PD-025 — authenticated operator-contract handoff
+# ---------------------------------------------------------------------------
+# This path intentionally shares the normal driver's ledger, resolver and
+# durable bridge.  It does not accept a browser/Worker tenant tuple, does not
+# mint a requester identity, and never writes an engine state directly.
+_OPERATOR_CONTRACT_VERSION = 1
+_OPERATOR_CONTRACT_REQUIRED = (
+    "task_id", "execution_id", "source", "title", "presentation_type",
+    "run_mode", "workhorse_model", "slide_count", "pitch_included",
+    "want_teleprompter", "want_speech_script", "want_audio_deliverable",
+    "want_audio_demo", "want_ghl_upload", "want_sales_checkout", "want_vsl_page",
+    "deliverable_set", "delivery_destinations", "answers",
+)
+
+
+def validate_operator_contract(contract: dict) -> dict:
+    """Validate the server-authenticated presentation contract before any write.
+
+    The caller is responsible for authentication at the Command Center boundary;
+    this function rejects a client-shaped or incomplete payload rather than
+    treating free-form text as consent or a tenant identity.
+    """
+    if not isinstance(contract, dict):
+        raise ValueError("operator contract must be a JSON object")
+    if contract.get("version") != _OPERATOR_CONTRACT_VERSION:
+        raise ValueError("operator contract version is unsupported")
+    missing = [k for k in _OPERATOR_CONTRACT_REQUIRED
+               if contract.get(k) is None or contract.get(k) == ""]
+    if missing:
+        raise ValueError("operator contract missing: " + ", ".join(missing))
+    if contract.get("source") != "operator-delegated":
+        raise ValueError("operator contract source must be operator-delegated")
+    if contract.get("presentation_type") != "from_scratch":
+        raise ValueError("operator contract presentation_type is not supported")
+    if contract.get("run_mode") not in ("ultra", "standard", "economy"):
+        raise ValueError("operator contract has invalid run_mode")
+    if contract.get("workhorse_model") != "deepseek-flash@deepseek-direct":
+        raise ValueError("operator contract workhorse must be deepseek-flash@deepseek-direct")
+    if contract.get("pitch_included") is not False:
+        raise ValueError("operator contract must explicitly declare pitch_included=false")
+    yes_no_extras = ("want_teleprompter", "want_speech_script", "want_audio_deliverable",
+                     "want_ghl_upload", "want_sales_checkout", "want_vsl_page")
+    if any(contract.get(k) not in ("yes", "no") for k in yes_no_extras):
+        raise ValueError("operator contract optional toggles must be yes or no")
+    if not isinstance(contract.get("want_audio_demo"), bool):
+        raise ValueError("operator contract want_audio_demo must be boolean")
+    deliverable_set = contract.get("deliverable_set")
+    if not isinstance(deliverable_set, str) or not deliverable_set.strip():
+        raise ValueError("operator contract deliverable_set must be a non-empty string")
+    destinations = contract.get("delivery_destinations")
+    if not (isinstance(destinations, str) and destinations.strip()) and not (
+            isinstance(destinations, list) and destinations and
+            all(isinstance(v, str) and v.strip() for v in destinations)):
+        raise ValueError("operator contract delivery_destinations must be a non-empty string or string list")
+    if not isinstance(contract.get("answers"), dict):
+        raise ValueError("operator contract answers must be an object")
+    return contract
+
+
+def _driver_path() -> pathlib.Path:
+    for root in (
+        pathlib.Path(os.environ.get("PRESENTATIONS_SCRIPTS", "")) if os.environ.get("PRESENTATIONS_SCRIPTS") else None,
+        HERE.parent.parent.parent / "scripts",
+        pathlib.Path.home() / ".openclaw" / "workspace" / "departments" / "Presentations" / "scripts",
+    ):
+        if root and (root / "deck-intake-driver.py").is_file():
+            return root / "deck-intake-driver.py"
+    raise RuntimeError("deck-intake-driver.py is not installed")
+
+
+def _canonical_contract_bytes(contract: dict) -> bytes:
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+# Public operator intake uses a small, user-facing answer shape.  Translate
+# only documented semantic aliases into the driver’s canonical question ids;
+# arbitrary keys must fail before a receipt, ledger entry, or partial intake is
+# written.  `mode` is a user-facing classification and is intentionally not a
+# driver answer (resource_plan owns execution mode).
+_OPERATOR_ANSWER_ALIASES = {"brief": "client_notes"}
+_OPERATOR_ANSWER_IGNORED = {"mode"}
+
+
+def _operator_driver_answers(contract: dict, driver: pathlib.Path) -> dict[str, str]:
+    schema_path = driver.parent.parent / "intake" / "deck-intake-questions.json"
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        driver_ids = {row["id"] for row in schema.get("questions", [])
+                      if isinstance(row, dict) and isinstance(row.get("id"), str)}
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise RuntimeError(f"canonical intake question schema is unavailable: {exc}") from exc
+    # The driver permits this typed merged-turn subfield directly.
+    driver_ids.add("pitch_included")
+
+    supplied = contract["answers"]
+    answers: dict[str, str] = {}
+    unknown: list[str] = []
+    for key, value in supplied.items():
+        if key in _OPERATOR_ANSWER_IGNORED:
+            continue
+        target = _OPERATOR_ANSWER_ALIASES.get(key, key)
+        if target not in driver_ids:
+            unknown.append(key)
+            continue
+        prior = answers.get(target)
+        if prior is not None and prior != value:
+            raise ValueError(f"operator contract answers conflict after mapping: {key} -> {target}")
+        answers[target] = value
+    if unknown:
+        raise ValueError("operator contract has unsupported answer keys: " + ", ".join(sorted(unknown)))
+    return answers
+
+
+def verify_operator_contract_receipt(envelope: dict, *, secret: str | None = None) -> dict:
+    """Verify the CC-issued HMAC envelope before any local intake write."""
+    if not isinstance(envelope, dict) or envelope.get("receipt_version") != 1:
+        raise ValueError("operator contract receipt version is invalid")
+    contract = envelope.get("contract")
+    supplied = envelope.get("receipt_hmac")
+    key = (secret if secret is not None else os.environ.get("WEBHOOK_SECRET", "")).encode("utf-8")
+    if not key or not isinstance(contract, dict) or not isinstance(supplied, str):
+        raise ValueError("operator contract receipt is unsigned")
+    expected = hmac.new(key, _canonical_contract_bytes(contract), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, supplied):
+        raise ValueError("operator contract receipt signature is invalid")
+    return contract
+
+
+def _verified_operator_model_plan(contract: dict) -> dict:
+    """Confirm the driver's supported profile projection retained this contract.
+
+    The resource profile is the sole cross-worker model-plan store. A sealed
+    intake field is provenance, not a routing override, so a missing or
+    different profile plan must refuse before launcher/model-plan gating can
+    silently use a department default. This function only reads that durable
+    projection; it never writes credentials, profiles, or ledger entries.
+    """
+    pj = _load_presentation_job()
+    if pj is None:
+        raise RuntimeError("presentation_job is not reachable for model-plan verification")
+    try:
+        import importlib as _importlib
+        profile_mod = _importlib.import_module("presentation_job.resource_profile")
+        router = _importlib.import_module("presentation_job.model_router")
+    except ImportError as exc:
+        raise RuntimeError(f"presentation model-plan modules are unavailable: {exc}") from exc
+    raw = str(contract["workhorse_model"])
+    model, provider = raw.split("@", 1)
+    profile = profile_mod.load_profile()
+    slot = router.plan_slot(router.model_plan(profile), "workhorse")
+    if slot != {"provider": provider, "model": model}:
+        raise RuntimeError(
+            "authenticated operator workhorse was not retained by the supported "
+            f"resource profile (expected {provider}/{model}, got {slot!r})")
+    return {"provider": provider, "model": model,
+            "run_mode": str(contract["run_mode"])}
+
+
+def drive_operator_contract(contract: dict, run_dir: pathlib.Path, *,
+                            driver_path: pathlib.Path | None = None,
+                            launch: bool = True,
+                            receipt_hmac: str | None = None) -> dict:
+    """Run a CC-authenticated operator contract through the normal local path.
+
+    It writes a compact immutable receipt, invokes the real turn-gated driver
+    for each server-validated answer, then delegates to `_drive_submission`.
+    `launch=False` is only for offline integration tests; production callers
+    use the bridge/lease/launcher path and never invoke the engine directly.
+    """
+    contract = validate_operator_contract(contract)
+    rd = pathlib.Path(run_dir).expanduser().resolve()
+    driver = pathlib.Path(driver_path or _driver_path())
+    # Validate every supplied answer against the installed canonical driver
+    # before creating the receipt or any partial intake artifact.
+    answers = _operator_driver_answers(contract, driver)
+    receipt_path = rd / "working" / "interview" / "operator_contract.json"
+    contract_sha = hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest()
+    existing = receipt_path.is_file()
+    sealed_intake = rd / "working" / "copy" / "intake.json"
+    ledger_path = rd / "working" / "interview" / "intake_ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.is_file() else {}
+    needs_initialization = not (bool(ledger.get("complete")) or ledger.get("status") == "complete")
+    if existing:
+        try:
+            prior = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"operator contract receipt is unreadable: {exc}")
+        if (prior.get("contract_sha256") != contract_sha or
+                prior.get("receipt_hmac") != receipt_hmac or
+                prior.get("task_id") != contract["task_id"] or
+                prior.get("execution_id") != contract["execution_id"]):
+            raise ValueError("operator contract conflicts with existing run receipt")
+    elif (rd / "state.json").exists() or (rd / "working" / "copy" / "intake.json").exists():
+        raise ValueError("initialized run lacks an authenticated operator contract receipt")
+    else:
+        rd.mkdir(parents=True, exist_ok=False)
+    receipt = {
+        "version": _OPERATOR_CONTRACT_VERSION,
+        "source": "operator-delegated",
+        "receipt_version": 1 if receipt_hmac else None,
+        "receipt_hmac": receipt_hmac,
+        "contract_sha256": hashlib.sha256(_canonical_contract_bytes(contract)).hexdigest(),
+        "task_id": contract["task_id"],
+        "execution_id": contract["execution_id"],
+        "title": contract["title"],
+        "contract_fields": {k: contract[k] for k in (
+            "presentation_type", "run_mode", "workhorse_model", "slide_count",
+            "pitch_included", "want_sales_checkout", "want_vsl_page")},
+    }
+    if not existing:
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    # The validated mapper already removes user-facing `mode` and converts
+    # semantic `brief` to canonical `client_notes`.
+    answers.update({
+        "deck_type_source": "presentation_type: from_scratch; pitch_included: false",
+        "resource_plan": "workhorse: deepseek-flash@deepseek-direct; mode: " + contract["run_mode"],
+        "core_deliverables": ("deliverable_set: " + contract["deliverable_set"] +
+                              "; want_teleprompter: " + contract["want_teleprompter"] +
+                              "; want_speech_script: " + contract["want_speech_script"] +
+                              "; want_audio_deliverable: " + contract["want_audio_deliverable"]),
+        "delivery_and_ghl": ("delivery_destinations: " + (", ".join(contract["delivery_destinations"])
+                             if isinstance(contract["delivery_destinations"], list) else contract["delivery_destinations"]) +
+                             "; want_ghl_upload: " + contract["want_ghl_upload"]),
+        "growth_assets": ("want_sales_checkout: " + contract["want_sales_checkout"] +
+                          "; want_vsl_page: " + contract["want_vsl_page"]),
+        "audio_settings": ("want_audio_demo: " + ("yes" if contract["want_audio_demo"] else "no") +
+                           "; speech_speed_preference: default"),
+        "duration_and_slide_count": "slide_count: " + str(contract["slide_count"]),
+    })
+    if needs_initialization:
+        answered = ledger.get("entries", {}) if isinstance(ledger.get("entries", {}), dict) else {}
+        for question_id, text in answers.items():
+            # The driver records each question id atomically. Replaying only
+            # missing turns resumes a partial transcript without duplicate turns.
+            if question_id in answered:
+                continue
+            proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd),
+                                   "--answer", str(question_id), str(text)],
+                                  text=True, capture_output=True, check=False)
+            if proc.returncode:
+                raise RuntimeError("driver refused %s: %s" % (question_id, proc.stderr[-500:]))
+        proc = subprocess.run([sys.executable, str(driver), "--run-dir", str(rd), "--complete"],
+                              text=True, capture_output=True, check=False)
+        if proc.returncode:
+            raise RuntimeError("driver completion refused: " + proc.stderr[-500:])
+    # The direct CC bridge bypasses scheduler shells, so load their sanctioned
+    # selected-box environment before the launcher/model consumers run.
+    launch_environment = _load_operator_launch_environment()
+    # The driver is the sole intake writer. Verify the separately durable
+    # model-plan projection before the bridge can hand this run to launcher.
+    # The sealed intake remains driver-owned and is never amended here.
+    model_selection = _verified_operator_model_plan(contract)
+    intake_path = sealed_intake
+    intake = json.loads(intake_path.read_text(encoding="utf-8"))
+    intake["cc_task_id"] = contract["task_id"]
+    intake["cc_execution_id"] = contract["execution_id"]
+    if not launch:
+        return {"run_dir": str(rd), "receipt": str(receipt_path),
+                "driver_complete": True, "model_selection": model_selection,
+                "launch_environment": launch_environment}
+    if _ll is None:
+        raise RuntimeError("launch_ledger.py is not importable")
+    # PD-TEST-036: a same-contract recovery after the reviewed PD034 launcher
+    # repair reopens only its recorded obsolete webinar/type refusal. The
+    # ledger function preserves the prior block and never resets retry budget.
+    session_id = "operator-" + contract["task_id"]
+    prior = _ll.load(rd, session_id)
+    if prior is not None:
+        _ll.reopen_verified_operator_repair(
+            rd, session_id, prior, task_id=contract["task_id"],
+            contract_sha256=receipt["contract_sha256"],
+            repair_key="pd034-presentation-type-launcher")
+    stamp_requester(intake)
+    # Do not overwrite the driver record: requester resolution must have been
+    # available before completion, otherwise resolve_intake correctly refuses.
+    if not intake.get("requester_chat_id"):
+        raise RuntimeError("no sanctioned operator requester is configured")
+    policy = _retry_policy()
+    report = _drive_submission(rd, intake, session_id, policy, False)
+    return {"run_dir": str(rd), "receipt": str(receipt_path),
+            "model_selection": model_selection, "launch_environment": launch_environment,
+            "bridge": report}
+
+
+
+# ---- subcommand: mint (Fix 63: moved from the deprecated intake-miniapp ------
+#      bridge; --company-id duplicate-argument bug repaired — only the
+#      required=True instance is kept)
+
+def _mint_session(worker_url: str, *, token: str, run_id: str, box_id: str,
+                  company_id: str, installation_id: str, presentation_id: str,
+                  questions_payload: dict, confirm_code: bool = False,
+                  recipient_chat_id: str | None = None,
+                  ttl_days: float | None = None) -> tuple[int, dict]:
+    """POST /api/sessions — the single mint call both `mint` and `new` use.
+
+    Returns (rc, response dict). rc 0 means the worker minted a session; the
+    dict carries the machine-usable bits (token / session_id / capability_url
+    plus `reused: true` when the worker matched an existing open session).
+    Never echoes the admin token.
+    """
+    body = {
+        # PRES-009: the caller's --run-id is DISPLAY-ONLY. The worker mints the
+        # durable company/installation/presentation/run tuple server-side; the
+        # tenant ids name WHO and WHICH deck this intake feeds and are required.
+        "run_id": run_id,
+        "box_id": box_id,
+        "company_id": company_id,
+        "installation_id": installation_id,
+        "presentation_id": presentation_id,
+        "questions_payload": questions_payload,
+        "want_confirm_code": bool(confirm_code),
+    }
+    if recipient_chat_id:
+        body["recipient_chat_id"] = recipient_chat_id
+    if ttl_days:
+        body["ttl_days"] = ttl_days
+    status, resp = _http("POST", worker_url.rstrip("/") + "/api/sessions",
+                         token=token, body=body)
+    if status not in (200, 201):
+        return 3, {"error": f"mint failed (HTTP {status}): {resp.get('error')}"}
+    out = {
+        "token": resp.get("token"),
+        "session_id": resp.get("session_id"),
+        "capability_url": resp.get("capability_url"),
+        "reused": resp.get("reused", False),
+        "run_id": resp.get("run_id"),
+        "intake_session_id": resp.get("intake_session_id"),
+        "company_id": resp.get("company_id"),
+        "installation_id": resp.get("installation_id"),
+        "presentation_id": resp.get("presentation_id"),
+    }
+    if resp.get("confirm_code"):
+        out["confirm_code"] = resp["confirm_code"]  # box speaks this in chat if used
+    return 0, out
+
+
+def cmd_mint(args) -> int:
+    """Open a hosted intake session and print the capability link."""
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    payload = json.loads(pathlib.Path(args.questions).read_text(encoding="utf-8"))
+    rc, out = _mint_session(
+        args.worker_url, token=admin, run_id=args.run_id, box_id=args.box_id,
+        company_id=args.company_id, installation_id=args.installation_id,
+        presentation_id=args.presentation_id, questions_payload=payload,
+        confirm_code=args.confirm_code, recipient_chat_id=args.recipient_chat_id,
+        ttl_days=args.ttl_days)
+    if rc != 0:
+        print(f"error: {out['error']}", file=sys.stderr)
+        return rc
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+# ---- subcommand: new (Fix 63) ------------------------------------------------
+
+def _runs_root(cli_value: str) -> pathlib.Path:
+    """Root directory for per-presentation run dirs.
+
+    Resolution: --runs-dir CLI flag, then PRESENTATIONS_RUNS_DIR env, then a
+    `runs` directory beside the interview-app root (relative to this bridge).
+    """
+    if cli_value:
+        return pathlib.Path(cli_value).expanduser()
+    env = os.environ.get("PRESENTATIONS_RUNS_DIR", "").strip()
+    if env:
+        return pathlib.Path(env).expanduser()
+    return HERE.parent.parent / "runs"
+
+
+def _build_questions_payload(presentation_id: str) -> dict:
+    """Build the questions payload via the interview-app payload builder.
+
+    Runs payload/build_questions_payload.py (sibling of the bridge dir) as a
+    subprocess writing to a temp file, reads the JSON back, and removes the
+    temp file. Raises RuntimeError on failure.
+    """
+    builder = HERE.parent / "payload" / "build_questions_payload.py"
+    if not builder.is_file():
+        raise RuntimeError(f"questions payload builder not found: {builder}")
+    fd, tmp_name = tempfile.mkstemp(prefix="questions_payload_", suffix=".json")
+    os.close(fd)
+    tmp = pathlib.Path(tmp_name)
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(builder), "--run-id", presentation_id,
+             "--out", str(tmp)],
+            capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"build_questions_payload.py failed (rc {proc.returncode}): "
+                f"{(proc.stderr or proc.stdout).strip()[:300]}")
+        return json.loads(tmp.read_text(encoding="utf-8"))
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _write_session_record(run_dir: pathlib.Path, record: dict) -> None:
+    (run_dir / "session.json").write_text(
+        json.dumps(record, indent=2), encoding="utf-8")
+
+
+def _read_session_record(runs_root: pathlib.Path, presentation_id: str) -> dict:
+    rec_path = runs_root / presentation_id / "session.json"
+    if not rec_path.is_file():
+        raise RuntimeError(
+            f"no session record at {rec_path} — was this session created by "
+            f"`intake_bridge.py new`?")
+    return json.loads(rec_path.read_text(encoding="utf-8"))
+
+
+def cmd_new(args) -> int:
+    """Fix 63: start a NEW interview session for a fresh deck request.
+
+    Generates a fresh presentation_id (uuid4, never reused), builds the
+    questions payload from the canonical JSONs, mints the hosted session,
+    creates an empty run directory named after the presentation_id, stores
+    session.json inside it (so `resume` can resolve the worker session id),
+    and prints the client's interview link.
+
+    If the worker reports `reused: true`, that is an error: a brand-new deck
+    request must never inherit an old session. A new presentation_id is
+    generated and mint is retried (max 3 attempts).
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    runs_root = _runs_root(args.runs_dir)
+    try:
+        runs_root.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"error: cannot create runs root {runs_root}: {e}", file=sys.stderr)
+        return 2
+    box_id = os.environ.get("INTAKE_BOX_ID", "").strip() or "fleet-box"
+    for attempt in range(1, 4):
+        presentation_id = str(uuid.uuid4())
+        try:
+            payload = _build_questions_payload(presentation_id)
+        except RuntimeError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        rc, out = _mint_session(
+            args.worker_url, token=admin, run_id=args.title, box_id=box_id,
+            company_id=args.company_id, installation_id=args.installation_id,
+            presentation_id=presentation_id, questions_payload=payload,
+            recipient_chat_id=args.recipient_chat_id)
+        if rc != 0:
+            print(f"error: {out['error']}", file=sys.stderr)
+            return rc
+        if out.get("reused"):
+            print(f"warning: attempt {attempt}: worker reused an existing session "
+                  f"for presentation_id {presentation_id}; generating a fresh id "
+                  f"and retrying", file=sys.stderr)
+            continue
+        run_dir = runs_root / presentation_id
+        try:
+            run_dir.mkdir(parents=False, exist_ok=False)
+        except FileExistsError:
+            print(f"error: run dir already exists: {run_dir}", file=sys.stderr)
+            return 6
+        except OSError as e:
+            print(f"error: cannot create run dir {run_dir}: {e}", file=sys.stderr)
+            return 6
+        record = {
+            "presentation_id": presentation_id,
+            "session_id": out.get("session_id"),
+            "intake_session_id": out.get("intake_session_id"),
+            "token": out.get("token"),
+            "capability_url": out.get("capability_url"),
+            "title": args.title,
+            "company_id": args.company_id,
+            "installation_id": args.installation_id,
+            "created_at": int(time.time()),
+        }
+        _write_session_record(run_dir, record)
+        print(f"Interview link: {out.get('capability_url') or ''}")
+        print(f"presentation_id: {presentation_id}")
+        print(f"session_id: {out.get('session_id')}")
+        print(f"run_dir: {run_dir}")
+        print(f"title: {args.title}")
+        return 0
+    print("error: mint kept reusing an existing session after 3 attempts",
+          file=sys.stderr)
+    return 3
+
+
+# ---- subcommand: resume (Fix 63) ----------------------------------------------
+
+def cmd_resume(args) -> int:
+    """Fix 63: re-mint an expired/lost interview link for an existing session.
+
+    The CLI takes --presentation-id (the run-dir key created by `new`). The
+    worker's /api/sessions/renew accepts session_id or run_id (not
+    presentation_id), so the session.json written by `new` is read to resolve
+    the worker's session id. Prints the renewed interview link and stores the
+    new token back into session.json.
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    runs_root = _runs_root(args.runs_dir)
+    try:
+        record = _read_session_record(runs_root, args.presentation_id)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    session_id = record.get("session_id") or ""
+    if not session_id:
+        print("error: session.json has no session_id; cannot resume",
+              file=sys.stderr)
+        return 2
+    status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions/renew",
+                         token=admin, body={"session_id": session_id})
+    if status not in (200, 201):
+        print(f"error: resume failed (HTTP {status}): {resp.get('error')}",
+              file=sys.stderr)
+        return 3
+    if resp.get("token"):
+        record["token"] = resp["token"]
+    if resp.get("capability_url"):
+        record["capability_url"] = resp["capability_url"]
+    try:
+        _write_session_record(runs_root / args.presentation_id, record)
+    except OSError as e:
+        print(f"warning: could not update session.json: {e}", file=sys.stderr)
+    print(f"Renewed interview link: {resp.get('capability_url') or ''}")
+    print(f"presentation_id: {args.presentation_id}")
+    print(f"session_id: {resp.get('session_id') or session_id}")
+    return 0
+
+
+# ---- subcommand: list (Fix 63) ------------------------------------------------
+
+def cmd_list(args) -> int:
+    """Fix 63: list interview sessions — worker intakes plus local run dirs.
+
+    Calls GET /api/intake/list (tenant-scoped by --company-id /
+    --installation-id, like poll) for finished intakes, then walks the local
+    runs root (the same resolution `new` uses). For each local session.json
+    prints title, presentation_id, and status (finished when the worker
+    reports the session finished, otherwise open).
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)",
+              file=sys.stderr)
+        return 2
+    url = args.worker_url.rstrip("/") + "/api/intake/list"
+    scope = _scoped_query(args)
+    if scope:
+        url += "?" + scope.lstrip("?&")
+    http_status, resp = _http("GET", url, token=admin)
+    finished: set = set()
+    if http_status == 200:
+        for item in resp.get("intakes", []) or []:
+            sid = item.get("session_id")
+            if sid:
+                finished.add(sid)
+    else:
+        print(f"warning: /api/intake/list failed (HTTP {http_status}): "
+              f"{resp.get('error')}; showing local run dirs only",
+              file=sys.stderr)
+    runs_root = _runs_root(args.runs_dir)
+    rows = []
+    if runs_root.is_dir():
+        for child in sorted(runs_root.iterdir()):
+            rec_path = child / "session.json"
+            if not child.is_dir() or not rec_path.is_file():
+                continue
+            try:
+                record = json.loads(rec_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            rows.append({
+                "title": record.get("title") or "(untitled)",
+                "presentation_id": record.get("presentation_id") or child.name,
+                "status": ("finished" if record.get("session_id") in finished
+                           else "open"),
+            })
+    if not rows:
+        print(f"(no local interview sessions under {runs_root})")
+        return 0
+    print(f"{'title':<40} {'presentation_id':<38} status")
+    for row in rows:
+        print(f"{str(row['title'])[:40]:<40} {row['presentation_id']:<38} "
+              f"{row['status']}")
+    return 0
+
+
+def cmd_operator_contract(args) -> int:
+    """Drive a server-validated local operator contract through the normal bridge."""
+    contract_path = pathlib.Path(args.contract_file).expanduser().resolve()
+    try:
+        envelope = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract = verify_operator_contract_receipt(envelope)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(json.dumps({"status": "invalid_operator_contract", "error": str(exc)}), file=sys.stderr)
+        return 2
+    try:
+        report = drive_operator_contract(contract, pathlib.Path(args.run_dir),
+                                         launch=not args.no_launch,
+                                         receipt_hmac=envelope["receipt_hmac"])
+    except (ValueError, RuntimeError) as exc:
+        print(json.dumps({"status": "operator_contract_rejected", "error": str(exc)}), file=sys.stderr)
+        return 8
+    bridge_report = report.get("bridge") if isinstance(report, dict) else None
+    rc = int(bridge_report.get("_rc", 0)) if isinstance(bridge_report, dict) else 0
+    status = ("worker_acknowledged" if rc == 0 else
+              "deferred" if rc == 7 else
+              "blocked" if rc == 8 else "retry_scheduled")
+    print(json.dumps({"status": status, "task_id": contract["task_id"],
+                      "execution_id": contract["execution_id"], **report}, sort_keys=True))
+    return rc
+
 def cmd_ingest(args) -> int:
+    """PRES-008: one submission, driven through the durable states. The return
+    code mirrors the submission's DURABLE STATE, never a boolean 'processed':
+
+      0  worker_acknowledged  — handoff COMPLETE (current execution id + live
+                                worker start acknowledged)
+      2  run-dir record unavailable            -> failed_retryable
+      4  board transport unreachable           -> failed_retryable
+      5  board card unavailable (ingest None)  -> failed_retryable
+      6  engine unavailable                    -> failed_retryable
+      7  deferred (launch_pending / backoff /
+                claim held / worker 202)      -> stays retryable
+      8  blocked_actionable — permanent refusal or exhausted budget
+    """
     intake_payload = _fetch_intake(args)
     intake = intake_payload.get("intake") or intake_payload
     intake.setdefault("intake_session_id", args.session_id)
 
     # fix/deck-type-routing-bypass follow-up, extended by FIX F19: this
     # bridge needs a requester_chat_id stamped into `intake` itself, here,
-    # BEFORE intake_writer.write_intake_file() below persists it as
+    # BEFORE intake_writer.write_intake_file() persists it as
     # working/copy/intake.json -- the ONE file the engine's
     # resolve_intake.py reads -- or an app-submitted deck's engine job could
     # never report to the client who submitted it. See stamp_requester()'s
     # own docstring for the full resolution order.
     stamp_requester(intake)
 
-    # 1) Write the run-dir record (dept-format intake.json + completed ledger
-    #    + the GATE 0b conversation transcript).
-    if intake_writer is not None:
-        run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
-        run_dir.mkdir(parents=True, exist_ok=True)
-        intake_writer.write_intake_file(run_dir, intake)
-        intake_writer.write_ledger(run_dir, intake)
-        if hasattr(intake_writer, "write_transcript"):
-            intake_writer.write_transcript(run_dir, intake)
-        if args.verbose:
-            print(f"wrote run-dir record under {run_dir}/working/")
-    else:
-        print("error: intake_writer.py not importable — cannot stamp the run dir", file=sys.stderr)
+    # PRES-008: per-session directories are the DEFAULT and a shared target
+    # directory for multiple submissions is forbidden (see
+    # _per_session_dirs_active).
+    run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+    if _per_session_dirs_active(args, intakes=1):
+        run_dir = run_dir / args.session_id
+
+    policy = _retry_policy()
+    if _ll is None:
+        print("error: launch_ledger.py not importable — cannot drive durable "
+              "submission states (PRES-008)", file=sys.stderr)
         return 2
 
-    # 2) Trigger the presentation department start (kanban card, no shortcuts).
-    cc = _load_cc_board()
-    if cc is not None and hasattr(cc, "ingest_deck_task"):
-        brief = intake.get("deck_brief") or {}
-        title = brief.get("OFFER_NAME") or intake.get("intake_session_id") or args.session_id
-        desc = f"Intake captured by the Presentation Interview app ({args.session_id}).\n" + json.dumps(intake.get("deck_brief") or intake.get("answers") or {}, indent=2)
-        # FIX F19: use the value already resolved onto `intake` above (canonical
-        # env vars -> PRESENTER_CHAT_ID back-compat -> operator fallback) instead
-        # of re-reading raw PRESENTER_CHAT_ID -- so CC-board registration and the
-        # engine's own working/copy/intake.json never disagree on the requester.
-        task_id = cc.ingest_deck_task(
-            run_dir,
-            deck_slug=args.session_id,
-            title=f"Deck — {title}",
-            description=desc,
-            priority="medium",
-            requester_chat_id=intake.get("requester_chat_id", ""),
-        )
-        if task_id:
-            print(json.dumps({"status": "dept_started", "session_id": args.session_id, "task_id": task_id}))
-            return 0
-        # FIX F12: a None here means NO kanban card exists — returning 0 lets
-        # cmd_poll mark the session processed and the card is silently never
-        # created, never retried. Return nonzero so poll leaves the session
-        # unprocessed and retries on the next pass.
-        print(json.dumps({"status": "dept_start_failed", "session_id": args.session_id,
-                          "note": "cc_board.ingest_deck_task returned None (board URL unset or transport failure); session left for retry"}),
-              file=sys.stderr)
-        return 5
+    global _DEPT_START_URL
+    _DEPT_START_URL = args.worker_url  # the fallback posts to the SAME worker
 
-    # 3) Fall back to the Worker /api/dept-start endpoint.
-    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
-    status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/dept-start", token=admin,
-                         body={"intake_session_id": args.session_id, "intake": intake})
-    if status in (200, 201, 202):
-        print(json.dumps(resp))
-        return 0
-    print(f"error: dept-start failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
-    return 4
+    report = _drive_submission(run_dir, intake, args.session_id, policy,
+                               verbose=bool(getattr(args, "verbose", False)))
+    rc = report.get("_rc")
+    verdict = report.get("verdict")
+    print(json.dumps({"status": verdict, "session_id": args.session_id,
+                      "run_dir": str(run_dir),
+                      "state": (report.get("state") or ""),
+                      **{k: v for k, v in report.items()
+                         if k not in ("_rc", "verdict")}}),
+          file=(sys.stderr if rc else sys.stdout))
+    return rc
+
+
+
+def _per_session_dirs_active(args, intakes: int = 1) -> bool:
+    """PRES-008: per-session directories are the DEFAULT. A legacy opt-out is
+    honored ONLY for a root that provably holds one submission — a shared
+    target directory for MULTIPLE submissions is forbidden outright (two
+    submissions in one run dir would race one lease, one engine pid slot, one
+    state document). Returns True when the submission must stamp under
+    <run-dir>/<session-id>/."""
+    if getattr(args, "per_session_dirs", True):
+        return True
+    return intakes > 1  # the forbidden shape: opt-out overridden, never shared
+
+
+def _tenant_scope(args) -> tuple[str, str]:
+    """PRES-009 QC repair (F3c): the box's tenant identity for worker scoping.
+
+    Resolution order: explicit CLI args (--company-id/--installation-id) then
+    the per-box env (INTAKE_COMPANY_ID / INTAKE_INSTALLATION_ID). Both must be
+    present for the bridge to present tenant scope to the worker; with only
+    one set the scope is invalid and is NOT sent (the worker then serves only
+    pre-tenant flat rows — fail closed, never a half-tuple guess).
+    """
+    company = str(getattr(args, "company_id", "") or os.environ.get("INTAKE_COMPANY_ID", "") or "")
+    installation = str(getattr(args, "installation_id", "") or os.environ.get("INTAKE_INSTALLATION_ID", "") or "")
+    return company, installation
+
+
+def _scoped_query(args) -> str:
+    """Query-string fragment carrying the tenant scope, '' when unscoped."""
+    company, installation = _tenant_scope(args)
+    if company and installation:
+        return "?company_id=" + urllib.parse.quote(company, safe="") \
+            + "&installation_id=" + urllib.parse.quote(installation, safe="")
+    return ""
 
 
 def _list_intakes(args) -> list:
-    """GET /api/intake/list — enumerate finished intakes stored in the worker."""
+    """GET /api/intake/list — one page of PENDING finished intakes.
+
+    PRES-023: the worker's list endpoint is a paginated scoped pending index.
+    This function follows `truncated`/`cursor` across pages (bounded by
+    --max-pages, default 10) so more submissions than one page are ALL
+    discovered exactly once per poll, and acks every session this box has in
+    its processed checkpoint so the worker removes processed rows from the
+    index — discovery cost tracks PENDING work, not history.
+
+    Ack protocol: each processed session is sent as a repeatable
+    `ack=<session_id>&stored_at_<session_id>=<stored_at>` pair, so the worker
+    can delete the exact index row without any per-row lookup, and no ack is
+    dropped by a batch cap. Acks are bounded per REQUEST (MAX_ACKS_PER_POLL,
+    200) only by transport sanity — anything left over rides the next poll
+    and is reported, never silently discarded.
+    """
     admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
     if not admin:
         print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
         sys.exit(2)
-    url = args.worker_url.rstrip("/") + "/api/intake/list"
-    status, resp = _http("GET", url, token=admin)
-    if status != 200:
-        print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
-        sys.exit(3)
-    return resp.get("intakes") or []
+    base = args.worker_url.rstrip("/") + "/api/intake/list"
+    intakes: list = []
+    cursor = None
+    pages = 0
+    max_pages = int(getattr(args, "max_pages", 10) or 10)
+    # session_id -> stored_at for every processed session still on the index.
+    all_acks = _pending_acks(args)
+    # Previously-flushed acks whose rows the worker has already removed must
+    # not occupy the per-request ack budget forever: on the FIRST request of
+    # this poll, the pending listing itself is the ground truth — only ids the
+    # worker still reports are acked; anything else is gone from the index and
+    # its ack work is complete. Polls before the first listing simply ack
+    # nothing (the discovery below feeds the next poll's acks).
+    acked: dict = {}
+    primed = False
+    while True:
+        url = base
+        params: list[str] = [_scoped_query(args).lstrip("?&")] if _scoped_query(args) else []
+        if cursor:
+            params.append("cursor=" + urllib.parse.quote(str(cursor)))
+        if acked:
+            batch = sorted(acked.items())[:MAX_ACKS_PER_POLL]
+            for sid, stored_at in batch:
+                params.append("ack=" + urllib.parse.quote(str(sid)))
+                params.append(f"stored_at_{urllib.parse.quote(str(sid))}={int(stored_at or 0)}")
+            for sid, _ in batch:
+                acked.pop(sid, None)
+        if params:
+            url += "?" + "&".join(params)
+        status, resp = _http("GET", url, token=admin)
+        if status != 200:
+            print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+            sys.exit(3)
+        prev_count = len(intakes)
+        intakes.extend(resp.get("intakes") or [])
+        pages += 1
+        if not primed:
+            # After the FIRST page of the poll: the pending listing is ground
+            # truth — ack exactly the processed ids the index still holds
+            # (bounded). Rows already gone never consume the budget, so the
+            # ack set cannot wedge on stale entries.
+            primed = True
+            pending_now = {}
+            for it in intakes[prev_count:]:
+                sid = str(it.get("session_id") or "")
+                if sid and sid in all_acks:
+                    pending_now[sid] = all_acks[sid] or it.get("stored_at") or 0
+            acked = dict(sorted(pending_now.items())[:MAX_ACKS_PER_POLL])
+        if not resp.get("truncated") or not resp.get("cursor"):
+            break
+        cursor = resp.get("cursor")
+        if pages >= max_pages:
+            # Unacked remainder stays pending — next poll picks it up. Never
+            # silently drop: report the truncation.
+            print(json.dumps({"status": "poll_page_budget",
+                              "pages": pages, "note": "more pages pending; next poll continues"}),
+                  file=sys.stderr)
+            break
+    # Flush leftover acks (the last page broke out of the loop before another
+    # request could carry them): one final ack-only request per bounded batch.
+    while acked:
+        batch = sorted(acked.items())[:MAX_ACKS_PER_POLL]
+        params = [_scoped_query(args).lstrip("?&")] if _scoped_query(args) else []
+        for sid, stored_at in batch:
+            params.append("ack=" + urllib.parse.quote(str(sid)))
+            params.append(f"stored_at_{urllib.parse.quote(str(sid))}={int(stored_at or 0)}")
+        for sid, _ in batch:
+            acked.pop(sid, None)
+        status, resp = _http("GET", base + "?" + "&".join(params), token=admin)
+        if status != 200:
+            print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+            sys.exit(3)
+    return intakes
+
+
+# ---- versioned processed checkpoint (PRES-023) ------------------------------
+#
+# The old ledger was a plain text file rewritten WHOLE on every
+# _mark_processed: read set -> add -> write_text(entire set). Two concurrent
+# pollers (or a poller and a manual ingest) lost each other's entries, and a
+# crash mid-write could truncate the file — silently un-processing sessions.
+#
+# The checkpoint is now a VERSIONED append: each processed session is one JSON
+# line {"session_id", "version", "recorded_at"} with a monotonically
+# increasing version, appended (never rewritten). Readers fold the lines into
+# the latest state (a session id's PRESENCE is its processed fact — duplicates
+# and superseded lines are harmless), and a torn tail line (crash mid-append)
+# is skipped, never fatal. Concurrent writers interleave lines; no entry is
+# ever lost because nothing is rewritten.
+
+# Max ack pairs sent on ONE list request (transport sanity bound, not a
+# correctness bound — the remainder rides the next poll and is reported).
+MAX_ACKS_PER_POLL = 200
+
+
+def _pending_acks(args) -> dict:
+    """session_id -> stored_at for every processed session whose row may still
+    sit on the worker's pending index. Used to drive the repeatable
+    ack=<sid>&stored_at_<sid>=<ts> pairs; entries whose stored_at is unknown
+    carry 0 and the worker resolves the row against the index itself."""
+    processed = _processed_ledger(args) if _checkpoint_exists(args) else set()
+    acks: dict = {}
+    for sid in processed:
+        acks[str(sid)] = 0
+    # Attach a known stored_at when the worker previously reported the row:
+    # <poll-ledger>.stored_at.json maps session_id -> stored_at, maintained by
+    # the poll loop below. Best-effort — 0 always works.
+    meta = pathlib.Path(str(_checkpoint_path(args)) + ".stored_at.json")
+    try:
+        known = json.loads(meta.read_text())
+        if isinstance(known, dict):
+            for sid, ts in known.items():
+                if str(sid) in acks:
+                    acks[str(sid)] = int(ts or 0)
+    except (OSError, ValueError):
+        pass
+    return acks
+
+
+def _remember_stored_at(args, sid: str, stored_at) -> None:
+    meta = pathlib.Path(str(_checkpoint_path(args)) + ".stored_at.json")
+    try:
+        known = json.loads(meta.read_text())
+        if not isinstance(known, dict):
+            known = {}
+    except (OSError, ValueError):
+        known = {}
+    known[sid] = int(stored_at or 0)
+    # Bounded sidecar: drop ids the checkpoint no longer holds (their rows are
+    # long gone from the index, so their stored_at can never be needed).
+    try:
+        live = _processed_ledger(args)
+        known = {k: v for k, v in known.items() if k in live}
+    except OSError:
+        pass
+    try:
+        meta.write_text(json.dumps(known, sort_keys=True))
+    except OSError:
+        pass
+
+
+def _checkpoint_path(args) -> pathlib.Path:
+    return pathlib.Path(getattr(args, "poll_ledger", "") or str(pathlib.Path(getattr(args, "run_dir", ".")) / "poll-checkpoint.jsonl")).expanduser()
+
+
+def _checkpoint_exists(args) -> bool:
+    return _checkpoint_path(args).is_file()
 
 
 def _processed_ledger(args) -> set:
-    """Read the poll ledger (session ids already ingested) if present."""
-    led = pathlib.Path(args.poll_ledger).expanduser()
+    """Fold the versioned checkpoint into the set of processed session ids.
+
+    Legacy format support: a plain-text ledger (the pre-PRES-023 format) is
+    still readable (whitespace-separated ids) — a legacy file is transparently
+    upgraded on the next _mark_processed."""
+    led = _checkpoint_path(args)
     try:
-        return set(led.read_text().split())
+        raw = led.read_text()
     except FileNotFoundError:
         return set()
+    done: set = set()
+    legacy = False
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                rec = json.loads(line)
+                sid = rec.get("session_id")
+                if sid:
+                    done.add(str(sid))
+            except json.JSONDecodeError:
+                continue  # torn tail line from a crashed append — skip
+        else:
+            legacy = True
+            done.update(line.split())
+    if legacy:
+        # Upgrade transparently: fold legacy ids into the versioned format.
+        try:
+            _append_checkpoint_lines(led, [{"session_id": s, "version": _next_version(done), "recorded_at": 0, "migrated_from": "legacy-ledger"} for s in sorted(done)])
+        except OSError:
+            pass
+    return done
+
+
+def _next_version(done: set) -> int:
+    return len(done) + 1
+
+
+def _append_checkpoint_lines(led: pathlib.Path, records: list) -> None:
+    led.parent.mkdir(parents=True, exist_ok=True)
+    with open(led, "a", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec, sort_keys=True) + "\n")
 
 
 def _mark_processed(args, session_id: str) -> None:
-    """Append a session id to the poll ledger (idempotent — a session is ingested once)."""
-    led = pathlib.Path(args.poll_ledger).expanduser()
-    led.parent.mkdir(parents=True, exist_ok=True)
-    done = _processed_ledger(args)
-    done.add(session_id)
-    led.write_text("\n".join(sorted(done)) + "\n")
+    """Append one versioned checkpoint line (idempotent, append-only — never a
+    full rewrite, so concurrent writers and crash-recovery never lose an
+    entry)."""
+    _append_checkpoint_lines(_checkpoint_path(args), [{
+        "session_id": session_id,
+        "version": 0,  # folded by readers; monotonic per line order
+        "recorded_at": int(time.time()),
+        "durable_complete": True,
+    }])
+
+
+def _valid_session_id(sid: object) -> bool:
+    """PRES-009: a session id may become a filesystem path segment (per-session
+    run dirs) and a poll-ledger token. Accept ONLY opaque ids — 3-64 chars,
+    start alphanumeric, then [A-Za-z0-9._-]; never '/', '\\', '..' or control
+    characters. The old code appended whatever the worker returned unvalidated:
+    a traversal-shaped sid ("../other-run", an absolute path, "a/../b") could
+    stamp a run dir OUTSIDE the configured root."""
+    if not isinstance(sid, str):
+        return False
+    if len(sid) < 3 or len(sid) > 64:
+        return False
+    if "/" in sid or "\\" in sid or "\x00" in sid or ".." in sid:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", sid))
+
+
+def _shared_dir_forbidden(args, sid: str) -> bool:
+    """PRES-009: per-session dirs are OFF and the ledger already holds at least
+    one DIFFERENT session — this submission would share its target directory.
+    True (forbidden)."""
+    processed = _processed_ledger(args)
+    return any(other != sid for other in processed)
 
 
 def cmd_poll(args) -> int:
-    """Discover finished intakes via the list endpoint and ingest each one once."""
-    intakes = _list_intakes(args)
+    """PRES-008: discover finished intakes and drive each through the durable
+    submission states. There is NO boolean processed ledger any more — a
+    session's durable state document (working/checkpoints/
+    intake_submission_state.json inside its own run dir) is the only
+    processed/complete record, and it is only terminal at
+    worker_acknowledged or blocked_actionable. rc=0 from cmd_ingest means
+    COMPLETE, never merely "the card exists": 202 deferrals, dispatch
+    refusals, held leases, and backoff all leave the submission retryable,
+    so the next poll re-drives it."""
+    if _ll is None:
+        print("error: launch_ledger.py not importable — cannot drive durable "
+              "submission states (PRES-008)", file=sys.stderr)
+        return 2
+    try:
+        intakes = _list_intakes(args)
+    except Exception as exc:  # noqa: BLE001 — a list failure is whole-batch, not per-session
+        print(json.dumps({"status": "poll_list_failed",
+                          "error": f"{type(exc).__name__}: {exc}"}), file=sys.stderr)
+        return 3
     if args.verbose:
         print(f"poll: {len(intakes)} stored intake(s) discovered")
-    processed = _processed_ledger(args)
-    ingested = 0
-    skipped = 0
+    policy = _retry_policy()
+    completed = 0
+    deferred = 0
+    blocked = 0
+    crashes = 0
+    rejected = 0
+    completed_ids = set()
+    try:
+        for line in _checkpoint_path(args).read_text().splitlines():
+            try:
+                row = json.loads(line)
+                if row.get("durable_complete") is True: completed_ids.add(row["session_id"])
+            except (ValueError, AttributeError, KeyError): pass
+    except OSError: pass
     for it in intakes:
         sid = it.get("session_id")
-        if not sid:
+        if sid in completed_ids:
             continue
-        if sid in processed:
-            skipped += 1
-            if args.verbose:
-                print(f"poll: {sid} already processed — skip")
+        if not _valid_session_id(sid):
+            # PRES-009: a malformed/traversal-shaped sid is never appended to
+            # any path and never added to the ledger — it is reported and
+            # skipped so the operator can see the source refusing it.
+            rejected += 1
+            print(json.dumps({"status": "invalid_session_id_rejected",
+                              "session_id": sid if isinstance(sid, str) else repr(sid),
+                              "reason": "opaque-id validation failed; not used as a path or ledger token"}),
+                  file=sys.stderr)
             continue
-        # Ingest this session (mirrors `ingest` with a per-session run dir).
+        # PRES-008: per-session directories are the DEFAULT; a shared target
+        # directory for multiple submissions is forbidden. --no-per-session-dirs
+        # is the explicit legacy opt-out for a single-session run root.
         run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
-        if args.per_session_dirs:
+        if _per_session_dirs_active(args, intakes=len(intakes)):
             run_dir = run_dir / sid
+        elif _shared_dir_forbidden(args, sid):
+            print(json.dumps({"status": "shared_target_dir_forbidden",
+                              "session_id": sid,
+                              "reason": "per-session dirs are OFF but the poll ledger already holds another session; pass --per-session-dirs (default) so submissions never share one run dir"}),
+                  file=sys.stderr)
+            rejected += 1
+            continue
         # Reuse the ingest machinery via a synthetic args namespace.
+        # PRES-009 QC repair (F3c): carry the tenant scope into cmd_ingest so
+        # its /api/intake?id= fetch is tenant-scoped like the list call.
         sub = argparse.Namespace(
             worker_url=args.worker_url, session_id=sid, run_dir=str(run_dir),
+            company_id=getattr(args, "company_id", ""),
+            installation_id=getattr(args, "installation_id", ""),
             verbose=args.verbose, func=cmd_ingest,
+            per_session_dirs=False, no_per_session_dirs=False,
         )
-        # FIX F13: one poison session (malformed payload, transport crash) used
-        # to raise out of the loop and kill the whole poll batch — every other
-        # waiting session behind it was never attempted. Contain the failure to
-        # the single session; unprocessed sessions retry on the next poll.
+        # FIX F13 (retained): one poison session (malformed payload, transport
+        # crash) must never raise out of the loop — every other waiting session
+        # behind it still gets its tick. A crash leaves the durable state
+        # untouched, so the next poll re-drives the session. SystemExit
+        # included: _fetch_intake/_list_intakes raise RuntimeError now, but a
+        # module still calling sys.exit must not take the batch down.
         try:
             rc = cmd_ingest(sub)
-        except Exception as exc:  # noqa: BLE001 — poll must survive any single bad session
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 — poll must survive any single bad session
+            crashes += 1
             print(json.dumps({"status": "ingest_crashed", "session_id": sid,
                               "error": f"{type(exc).__name__}: {exc}"}), file=sys.stderr)
             continue
         if rc == 0:
             _mark_processed(args, sid)
-            ingested += 1
-            print(json.dumps({"status": "ingested", "session_id": sid}))
+            _remember_stored_at(args, sid, it.get("stored_at") or 0)
+            completed += 1
+        elif rc == 8:
+            blocked += 1
         else:
-            # Failed — do NOT mark processed; the next poll retries it.
-            print(json.dumps({"status": "ingest_failed", "session_id": sid, "rc": rc}))
+            deferred += 1
     print(json.dumps({"status": "poll_done", "discovered": len(intakes),
-                      "ingested": ingested, "already_processed": skipped}))
+                      "completed": completed, "deferred": deferred,
+                      "blocked": blocked, "crashed": crashes, "rejected": rejected}))
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    i = sub.add_parser("ingest", help="pull a finished intake + write run dir + start the presentation dept")
+    i = sub.add_parser("ingest", help="pull a finished intake + drive it through the durable submission states")
     i.add_argument("--worker-url", required=True)
     i.add_argument("--session-id", required=True, help="the intake_session_id from the app")
     i.add_argument("--run-dir", required=True, help="deck run directory to stamp")
+    i.add_argument("--company-id", default="", help="PRES-009: tenant company id for worker scoping "
+                   "(overrides INTAKE_COMPANY_ID env; both ids required for scoped reads)")
+    i.add_argument("--installation-id", default="", help="PRES-009: fleet installation id for worker scoping "
+                   "(overrides INTAKE_INSTALLATION_ID env; both ids required for scoped reads)")
+    i.add_argument("--no-per-session-dirs", action="store_true",
+                   help="LEGACY opt-out: stamp this one intake directly under --run-dir "
+                        "(only for a root that never holds a second submission)")
     i.add_argument("--verbose", action="store_true")
-    i.set_defaults(func=cmd_ingest)
-    p = sub.add_parser("poll", help="list finished intakes and ingest each once")
+    i.set_defaults(func=cmd_ingest, per_session_dirs=True)
+    o = sub.add_parser("operator-contract", help="drive a CC-authenticated structured operator contract locally")
+    o.add_argument("--contract-file", required=True, help="server-written JSON contract; never a client receipt")
+    o.add_argument("--run-dir", required=True, help="new, empty run directory for this immutable task/execution")
+    o.add_argument("--no-launch", action="store_true", help="offline verification only; production always launches through the bridge")
+    o.set_defaults(func=cmd_operator_contract)
+    p = sub.add_parser("poll", help="list finished intakes and drive each through the durable states")
     p.add_argument("--worker-url", required=True)
     p.add_argument("--run-dir", required=True, help="deck run directory to stamp each intake under")
-    p.add_argument("--poll-ledger", required=True, help="path to the poll ledger (processed session ids)")
-    p.add_argument("--per-session-dirs", action="store_true",
-                   help="stamp each intake under <run-dir>/<session-id>/ instead of a single run dir")
+    p.add_argument("--poll-ledger", default="", help="path to the poll ledger (processed session ids)")
+    p.add_argument("--company-id", default="", help="PRES-009: tenant company id for worker scoping "
+                   "(overrides INTAKE_COMPANY_ID env; both ids required for scoped reads)")
+    p.add_argument("--installation-id", default="", help="PRES-009: fleet installation id for worker scoping "
+                   "(overrides INTAKE_INSTALLATION_ID env; both ids required for scoped reads)")
+    p.add_argument("--per-session-dirs", dest="per_session_dirs", action="store_true", default=True,
+                   help="stamp each intake under <run-dir>/<session-id>/ (PRES-009 DEFAULT: ON — "
+                        "submissions must never share one target directory)")
+    p.add_argument("--no-per-session-dirs", dest="per_session_dirs", action="store_false",
+                   help="opt out for a single-session deployment; refused when the poll ledger "
+                        "already holds a different session")
+    p.add_argument("--max-pages", type=int, default=10,
+                   help="bounded list pages per poll (PRES-023 pagination; default 10)")
     p.add_argument("--verbose", action="store_true")
-    p.set_defaults(func=cmd_poll)
+    p.set_defaults(func=cmd_poll, per_session_dirs=True)
+
+    m = sub.add_parser("mint", help="open a hosted intake session and print the capability link")
+    m.add_argument("--worker-url", required=True)
+    m.add_argument("--run-id", required=True, help="DISPLAY-ONLY human run name; the worker mints the durable run id")
+    m.add_argument("--box-id", required=True)
+    m.add_argument("--company-id", required=True, help="PRES-009: tenant company id (opaque, 3-64 chars)")
+    m.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id (opaque, 3-64 chars)")
+    m.add_argument("--presentation-id", required=True, help="PRES-009: deck/presentation id (opaque, 3-64 chars)")
+    m.add_argument("--questions", required=True, help="path to a questions_payload.json (from build_questions_payload.py)")
+    m.add_argument("--confirm-code", action="store_true", help="mint a 6-digit high-trust code")
+    m.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
+    m.add_argument("--ttl-days", type=float, default=None)
+    m.set_defaults(func=cmd_mint)
+    n = sub.add_parser("new", help="Fix 63: start a NEW interview session for a fresh deck request (fresh presentation_id)")
+    n.add_argument("--worker-url", required=True)
+    n.add_argument("--company-id", required=True, help="PRES-009: tenant company id")
+    n.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id")
+    n.add_argument("--title", required=True, help="deck name (display-only; stored as the session display name)")
+    n.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
+    n.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (default: PRESENTATIONS_RUNS_DIR env, else <interview-app>/runs)")
+    n.set_defaults(func=cmd_new)
+    r = sub.add_parser("resume", help="Fix 63: re-mint an expired/lost interview link for an existing session")
+    r.add_argument("--worker-url", required=True)
+    r.add_argument("--presentation-id", required=True, help="the presentation id from `new` (run dir holds the worker session id)")
+    r.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (same resolution as `new`)")
+    r.set_defaults(func=cmd_resume)
+    l = sub.add_parser("list", help="Fix 63: list interview sessions (worker intakes + local run dirs)")
+    l.add_argument("--worker-url", required=True)
+    l.add_argument("--company-id", required=True, help="PRES-009: tenant company id")
+    l.add_argument("--installation-id", default="", help="PRES-009: fleet installation id (INTAKE_INSTALLATION_ID env fallback)")
+    l.add_argument("--runs-dir", default="", help="root for per-presentation run dirs (same resolution as `new`)")
+    l.set_defaults(func=cmd_list)
     args = ap.parse_args(argv)
     return args.func(args)
 

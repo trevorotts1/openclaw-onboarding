@@ -77,6 +77,9 @@ jobs:
           pip install -e ".[dev]" 2>/dev/null || pip install -e .
           pip install pytest
 
+      - name: Event timing intelligence and pre-write refusal (offline)
+        run: python3 -m pytest tests/test_workflow_timing.py -q
+
       - name: "AC 19 — Router picks Tier 0 for nurture intent"
         run: |
           python3 -m pytest tests/test_e2e_unit11.py \

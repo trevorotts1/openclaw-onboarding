@@ -33,7 +33,8 @@ from presentation_job.supervisor import (
     DEFAULT_MAX_RESTARTS, DEFAULT_BACKOFF_SECONDS,
     LEDGER_FILENAME, EVENTS_FILENAME, ALARM_FILENAME,
 )
-from presentation_job.state import LOCK_FILENAME, EXIT_OK, pid_is_alive
+from presentation_job.state import (LOCK_FILENAME, EXIT_OK, pid_is_alive,
+                                    EXIT_SUPERVISOR_STALLED)
 
 
 NOW = datetime(2026, 8, 27, 21, 0, 0, tzinfo=timezone.utc)
@@ -217,22 +218,35 @@ class TestDeadWorkerActiveRun:
         assert "WORKER_DEAD" not in out
 
     def test_no_action_when_no_active_run_no_lock(self, tmp_path):
+        # PRES-019: missing lock is reconciled against the execution ledger.
+        # This run has no process_manifest.json and no in-flight phase
+        # records, so the reconciliation is CLEAR: really inactive, no
+        # action -- same verdict as before, now with proof instead of
+        # assumption.
         root = tmp_path
         _run(root / "never-started", lock=False)
         rc, out = _run_sup(root, apply=True, scan_depth=1)
         assert rc == EXIT_OK
-        assert "not active (no lock)" in out
+        assert "not active (no lock" in out
         assert [e for e in _events(root) if e["event"] == "worker_dead"] == []
 
-    def test_stale_dead_run_is_never_restarted(self, tmp_path):
-        # A dead run abandoned days ago is a corpse, not a casualty.
+    def test_stale_dead_run_escalates_never_cancels(self, tmp_path):
+        # PRES-019: a dead run abandoned days ago is ESCALATED loudly --
+        # stale age is visibility, never an implicit cancellation and never
+        # an unrequested restart.
         root = tmp_path
-        _run(root / "corpse", updated_at=(NOW - timedelta(hours=100)).isoformat(timespec="seconds"))
+        rd = _run(root / "corpse", updated_at=(NOW - timedelta(hours=100)).isoformat(timespec="seconds"))
         rc, out = _run_sup(root, apply=True, scan_depth=1, max_idle_hours=72.0)
         assert rc == EXIT_OK
-        assert "STALE_DEAD_RUN" in out
+        assert "STALE_ESCALATED" in out
+        assert "ESCALATION, not cancellation" in out
         kinds = [e["event"] for e in _events(root)]
-        assert "stale_dead_run" in kinds and "restart" not in kinds
+        assert "stale_escalated" in kinds and "restart" not in kinds
+        # never a terminal write: state.json is untouched by the supervisor
+        st = json.loads((rd / "state.json").read_text())
+        assert st.get("terminal") is None
+        row = [e for e in kinds if e == "stale_escalated"]
+        assert row
 
     def test_fresh_dead_run_is_within_restart_window(self, tmp_path):
         root = tmp_path
@@ -426,3 +440,197 @@ class TestCliWiring:
             assert exc.code == 2  # argparse EXIT_USAGE
         else:
             raise AssertionError("--supervise without --scan-root must die")
+
+# ---------------------------------------------------------------------------
+# PRES-019 -- recovery defaults, missing-lock reconciliation, stale
+# escalation, and progress deadlines. Each leg names the defect it pins.
+# ---------------------------------------------------------------------------
+
+def _process_manifest(run_dir: Path, rows: list) -> None:
+    """Write an execution ledger the way phases._engine_attest leaves one."""
+    mdir = run_dir / "working" / "checkpoints"
+    mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / "process_manifest.json").write_text(
+        json.dumps({"phase_attestations": rows}, indent=2))
+
+
+class TestMissingLockReconciledFromLedger:
+    """PRES-019: a live flock proves process ownership, not useful work --
+    and its ABSENCE proves nothing either. A non-terminal state.json with no
+    lock is reconciled against the run's own execution ledger."""
+
+    def test_missing_lock_with_inflight_ledger_is_treated_as_dead(self, tmp_path):
+        root = tmp_path
+        rd = _run(root / "lockless", lock=False)
+        # phase P2-COPY started (attempts recorded) but never attested
+        rd_state = json.loads((rd / "state.json").read_text())
+        rd_state["phases"] = [{"id": "P2-COPY", "status": "running",
+                               "attempts": 1, "updated_at": NOW.isoformat()}]
+        (rd / "state.json").write_text(json.dumps(rd_state))
+        _process_manifest(rd, [{"phase_id": "P0A-INTAKE", "status": "done",
+                                "attested_at": NOW.isoformat()}])
+        rc, out = _run_sup(root, apply=False, scan_depth=1)
+        assert "MISSING_LOCK_RECONCILED" in out
+        assert "P2-COPY started and never finished" in out
+        assert "WORKER_DEAD" in out  # shares the dead-run path
+
+    def test_missing_lock_with_clear_ledger_is_inactive(self, tmp_path):
+        root = tmp_path
+        rd = _run(root / "clear", lock=False)
+        rc, out = _run_sup(root, apply=True, scan_depth=1)
+        assert rc == EXIT_OK
+        assert "not active (no lock" in out
+        assert "MISSING_LOCK_RECONCILED" not in out
+
+    def test_missing_lock_reconciled_restart_charges_budget(self, tmp_path):
+        # The reconciled run takes the SAME restart path and budget as a
+        # dead worker -- here the spawn fails (missing scripts), so the
+        # ledger records an attempt exactly as TestAlarmNotLoop expects.
+        root = tmp_path
+        rd = _run(root / "lockless-charged", lock=False)
+        st = json.loads((rd / "state.json").read_text())
+        st["phases"] = [{"id": "P2-COPY", "status": "running", "attempts": 1}]
+        (rd / "state.json").write_text(json.dumps(st))
+        _process_manifest(rd, [])
+        scripts = tmp_path / "no-scripts"
+        for i in range(3):
+            rc, out = _run_sup(root, apply=True, scan_depth=1, max_restarts=3,
+                               backoff_seconds=0, scripts_dir=scripts)
+        ledger = json.loads((root / LEDGER_FILENAME).read_text())
+        assert ledger["runs"][str(rd)]["attempts"] == 3
+        assert rc == 15  # budget exhausted -> alarm, same ceiling as DEAD
+
+    def test_missing_lock_reconciled_only_when_phase_started(self, tmp_path):
+        # A pending phase never touched is a run that never started work:
+        # the ledger must NOT claim in-flight from a bare pending record.
+        root = tmp_path
+        rd = _run(root / "untouched", lock=False)
+        st = json.loads((rd / "state.json").read_text())
+        st["phases"] = [{"id": "P2-COPY", "status": "pending"}]
+        (rd / "state.json").write_text(json.dumps(st))
+        rc, out = _run_sup(root, apply=True, scan_depth=1)
+        assert rc == EXIT_OK
+        assert "MISSING_LOCK_RECONCILED" not in out
+        assert "not active (no lock" in out
+
+
+class TestStaleEscalation:
+    """PRES-019: stale age escalates unfinished work; it is not implicit
+    cancellation, and a four-day-old client request stays visible."""
+
+    def test_four_day_old_run_escalates_with_notify(self, tmp_path):
+        root = tmp_path
+        rd = _run(root / "fourday",
+                  updated_at=(NOW - timedelta(days=4)).isoformat(timespec="seconds"))
+        rc, out = _run_sup(root, apply=True, scan_depth=1, max_idle_hours=72.0)
+        assert rc == EXIT_OK
+        assert "STALE_ESCALATED" in out
+        assert "ESCALATION, not cancellation" in out
+        events = [e for e in _events(root) if e["event"] == "stale_escalated"]
+        assert len(events) == 1
+        assert events[0]["escalation"] is True
+        assert events[0]["cancelled"] is False
+
+    def test_escalated_run_is_never_marked_terminal(self, tmp_path):
+        # The supervisor is read-only on run dirs (Super Spec 8.3): the
+        # escalation must never write terminal=BLOCKED/ABANDONED into the
+        # run it is escalating -- cancellation is a human's explicit act.
+        root = tmp_path
+        rd = _run(root / "stay-open",
+                  updated_at=(NOW - timedelta(days=4)).isoformat(timespec="seconds"))
+        before = (rd / "state.json").read_text()
+        _run_sup(root, apply=True, scan_depth=1, max_idle_hours=72.0)
+        assert (rd / "state.json").read_text() == before
+
+    def test_cancelled_abandoned_never_restarts(self, tmp_path):
+        # Explicitly cancelled work (the department's own retirement marker,
+        # terminal=ABANDONED) never restarts -- unchanged F4 contract, pinned
+        # beside the escalation so the two can never be conflated.
+        root = tmp_path
+        rd = _run(root / "cancelled", terminal="ABANDONED",
+                  updated_at=(NOW - timedelta(days=4)).isoformat(timespec="seconds"))
+        rc, out = _run_sup(root, apply=True, scan_depth=1, max_idle_hours=72.0)
+        assert rc == EXIT_OK
+        assert "STALE_ESCALATED" not in out
+        assert "RESTART" not in out
+        assert [e for e in _events(root)] == []
+
+
+class TestProgressDeadline:
+    """PRES-019: check progress deadlines as well as PID. A held-but-stalled
+    worker -- lock alive, run past its phase budget x grace -- alarms."""
+
+    def _stale_heartbeat(self, run_dir: Path, minutes_ago: float,
+                         budget_minutes: float = 20) -> None:
+        st = json.loads((run_dir / "state.json").read_text())
+        st["heartbeat"] = {
+            "last_checkpoint_at":
+                (NOW - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds"),
+            "current_phase": "P4-RENDER",
+            "budget_minutes": budget_minutes,
+            "interval_minutes": 10,
+        }
+        (run_dir / "state.json").write_text(json.dumps(st))
+
+    def test_held_but_stalled_alarms(self, tmp_path):
+        root = tmp_path
+        rd = _run(root / "wedged")
+        fh = _alive_lock(rd)  # real held lock => ALIVE verdict
+        try:
+            self._stale_heartbeat(rd, minutes_ago=600, budget_minutes=20)
+            rc, out = _run_sup(root, apply=True, scan_depth=1)
+        finally:
+            fh.close()
+        assert rc == EXIT_SUPERVISOR_STALLED
+        assert "STALLED" in out
+        assert "lock held but no progress" in out
+        assert "NOT restarted behind a live holder" in out
+        events = [e for e in _events(root) if e["event"] == "stalled"]
+        assert len(events) == 1
+        assert events[0]["age_minutes"] > 30.0
+
+    def test_within_deadline_is_healthy(self, tmp_path):
+        root = tmp_path
+        rd = _run(root / "honest")
+        fh = _alive_lock(rd)
+        try:
+            self._stale_heartbeat(rd, minutes_ago=5, budget_minutes=240)
+            rc, out = _run_sup(root, apply=True, scan_depth=1)
+        finally:
+            fh.close()
+        assert rc == EXIT_OK
+        assert "STALLED" not in out
+
+    def test_no_heartbeat_is_skipped_not_stalled(self, tmp_path):
+        # No heartbeat at all: UNDETERMINED, never a guessed deadline.
+        root = tmp_path
+        rd = _run(root / "no-hb")
+        fh = _alive_lock(rd)
+        try:
+            st = json.loads((rd / "state.json").read_text())
+            st.pop("heartbeat", None)
+            (rd / "state.json").write_text(json.dumps(st))
+            rc, out = _run_sup(root, apply=True, scan_depth=1)
+        finally:
+            fh.close()
+        assert rc == EXIT_OK
+        assert "STALLED" not in out
+
+    def test_stalled_alarm_is_report_only_safe(self, tmp_path):
+        # The alarm fires in report-only mode too -- detection is never
+        # gated on --apply. The D2 read-only pin still holds for the tree.
+        root = tmp_path
+        rd = _run(root / "wedged-ro")
+        fh = _alive_lock(rd)
+        try:
+            self._stale_heartbeat(rd, minutes_ago=600, budget_minutes=20)
+            before = {p: (p.stat().st_mtime_ns, p.stat().st_size)
+                      for p in root.rglob("*") if p.is_file()}
+            rc, out = _run_sup(root, apply=False, scan_depth=1)
+            after = {p: (p.stat().st_mtime_ns, p.stat().st_size)
+                     for p in root.rglob("*") if p.is_file()}
+        finally:
+            fh.close()
+        assert rc == EXIT_SUPERVISOR_STALLED
+        assert "STALLED" in out
+        assert after == before

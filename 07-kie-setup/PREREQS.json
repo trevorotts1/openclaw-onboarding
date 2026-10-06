@@ -18,6 +18,14 @@
       "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 07."
     },
     {
+      "id": "skill-74-kie-live-adapter",
+      "type": "skill",
+      "label": "Skill 74 — KIE Live Adapter",
+      "check": { "skill": "74-kie-live-adapter" },
+      "severity": "optional",
+      "satisfy": "Install Skill 74 (74-kie-live-adapter, Python 3 standard library only). Skills 66, 67 and 68 run validate, preflight and submit through it; without it they fall back to their own static tables and curl. It is optional here, not required, because Skill 74 itself requires Skill 07 first and a required dependency in both directions would be circular."
+    },
+    {
       "id": "kie-account",
       "type": "manual",
       "label": "Kie.ai Account (app.kie.ai)",
@@ -37,7 +45,7 @@
       "id": "kie-credits",
       "type": "manual",
       "label": "Kie.ai Credits (non-zero balance)",
-      "check": { "note": "Operator-verified: a live balance cannot be proven offline. Verify via GET https://api.kie.ai/api/v1/account/balance with Authorization: Bearer $KIE_API_KEY" },
+      "check": { "note": "Operator-verified: a live balance cannot be proven offline. Verify via GET https://api.kie.ai/api/v1/chat/credit with Authorization: Bearer $KIE_API_KEY and check that the response body code is 200 (the body is {code,msg,data:<number>}; HTTP status alone is not enough)" },
       "severity": "optional",
       "satisfy": "Top up credits at https://app.kie.ai/billing. A zero-credit account returns HTTP 402 on all generation tasks. Minimum recommended: $5 for initial setup verification (one smoke-test image ~$0.04–$0.10)."
     }

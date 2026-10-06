@@ -85,6 +85,9 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **WordPress Specialist** | WordPress-specific work - theme customization, plugin selection, plugin conflicts, WooCommerce, security hardening. |
 | **Signature Funnel Specialist** | The web-development door onto the Trevor Otts Signature Funnel engine (Skill 49). |
 | **Sales Page Assets Specialist** | The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56). |
+| **Conversion Rate Optimization Specialist Phase2** | **** for the department of the company, reporting to the . |
+| **SEO Specialist Phase2** | **** for the department of the company, reporting to the . |
+| **Web Accessibility A11Y Specialist Phase2** | Accessibility gate for every web surface ships to a client of the vertical. |
 
 ### What each specialist is for, with an example request
 
@@ -153,6 +156,21 @@ and it will pick the right one, or you can ask for a specialist by name.
 - *What it is for:* The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine (Skill 56).
 - *Example request:* "Have the Sales Page Assets Specialist take this on: The web-development door onto the Trevor Otts Direct-Response Sales Page Assets engine."
 
+**Conversion Rate Optimization Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Conversion Rate Optimization Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
+
+**SEO Specialist Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the SEO Specialist Phase2 take this on: **** for the department of the company, reporting to the ."
+
+**Web Accessibility A11Y Specialist Phase2**
+
+- *What it is for:* Accessibility gate for every web surface ships to a client of the vertical.
+- *Example request:* "Have the Web Accessibility A11Y Specialist Phase2 take this on: Accessibility gate for every web surface ships to a client of the vertical."
+
 
 ---
 
@@ -164,9 +182,10 @@ You never have to know these by name or type a command. Just say what you want i
 | If you say something like… | This department will… |
 |---|---|
 | "build me a form in GHL" · "build me a page in GHL" · "publish this page" · "install this funnel in GHL" | Delivery rail that installs/publishes forms and pages into GHL |
-| "build my funnel" · "build me a landing page" · "an opt-in and upsell chain" · "a full funnel" | Builds a Signature Funnel |
+| "build my funnel" · "signature funnel" · "3/5/7 step funnel" · "an opt-in and upsell chain" | Builds a Signature Funnel |
 | "a sales page" · "upsell and downsell copy" · "a high-ticket page" · "write my sales page" | Builds a Direct-Response sales-page asset stack from one survey (the DR sibling of Skill 49) |
 | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" · "build an immersive funnel" | Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels |
+| "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" | Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->

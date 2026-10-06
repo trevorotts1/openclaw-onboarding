@@ -91,6 +91,7 @@ build_probe() {   # $1 = dir the probe.sh will live in
     echo 'note()    { echo "NOTE: $*"; }'
     echo 'warn()    { echo "WARN: $*"; }'
     echo 'success() { echo "SUCCESS: $*"; }'
+    echo 'export OPENCLAW_COMPANY_NAME=FixtureBusiness OPENCLAW_COMPANY_SLUG=fixture-business'
     echo 'resolve_owner_name() { printf "%s" "Test Owner"; }'
     extract_bootstrap_fn
     echo 'bootstrap_command_center_shell'
@@ -185,7 +186,7 @@ if printf '%s' "$OUT" | grep -q 'already runs a Command Center app'; then
 else
   pass "T1: no false \"already runs\" skip"
 fi
-if printf '%s' "$OUT" | grep -q 'SUCCESS: Command Center locked shell bootstrapped' \
+if printf '%s' "$OUT" | grep -q 'SUCCESS: Command Center interview prerequisites verified' \
    && printf '%s' "$LOG_CONTENT" | grep -q 'STUB-RUN-FULL-INSTALL called'; then
   pass "T1: bootstrap was actually ATTEMPTED (run-full-install.sh invoked)"
 else
@@ -217,7 +218,7 @@ echo
 echo "== T3 - CONTROL: pm2 absent entirely => unchanged (bootstrap attempted) =="
 OUT=$(run_scenario t3 "" 0)
 LOG_CONTENT="$(cat "$TMPROOT/t3/log.txt" 2>/dev/null || true)"
-if printf '%s' "$OUT" | grep -q 'SUCCESS: Command Center locked shell bootstrapped' \
+if printf '%s' "$OUT" | grep -q 'SUCCESS: Command Center interview prerequisites verified' \
    && printf '%s' "$LOG_CONTENT" | grep -q 'STUB-RUN-FULL-INSTALL called' \
    && ! printf '%s' "$OUT" | grep -q 'already runs a Command Center app'; then
   pass "T3: pm2 absent from PATH still proceeds to bootstrap, as before"

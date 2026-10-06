@@ -148,18 +148,23 @@ fi
 check "2.2" "Each dept has a director subfolder (00-*/)" \
   "[ -d \"$COMPANY_DIR/departments\" ] && [ \$(find \"$COMPANY_DIR/departments\" -maxdepth 2 -type d -name '00-*' | wc -l) -gt 0 ]" \
   "Re-run build-workforce.py; create_role_workspace() failed"
-# 2.3 — symlink check
+# 2.3 — symlink check (N29 amended 2026-07-31: real-file copies are canonical;
+# a symlink is rejected by the runtime's workspace-root boundary guard — see
+# CHECK 9.9, the hard-fail/authoritative version of this same rule. Before this
+# fix, 2.3 scored the opposite of 9.9: it passed on symlinks and warned on the
+# real-file copies 9.9 requires, so a healthy N29-compliant box printed a
+# misleading "should be symlinked" warning on every run.)
 if [ -d "$COMPANY_DIR/departments" ]; then
   COPIED=$(find "$COMPANY_DIR/departments" -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   SYMLINKED=$(find "$COMPANY_DIR/departments" -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$COPIED" = "0" ] && [ "$SYMLINKED" -gt 0 ]; then
-    green "  ✓ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — none copied"; PASS=$((PASS+1))
-  elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
-    yellow "  ⚠ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Files copied instead of symlinked ($COPIED)|Re-run build-workforce.py")
+  if [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
+    green "  ✓ 2.3  AGENTS/TOOLS/USER.md are real-file copies ($COPIED) — none symlinked (N29)"; PASS=$((PASS+1))
+  elif [ "$SYMLINKED" -gt 0 ] && [ "$COPIED" = "0" ]; then
+    yellow "  ⚠ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — should be real-file copies per N29; the runtime rejects a symlink here (see CHECK 9.9) (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
+    WARNINGS+=("2.3|Files symlinked instead of real-file copies ($SYMLINKED)|Re-run update-skills.sh or install.sh Step 10a (link_shared_core_files) to materialize real-file copies")
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" -gt 0 ]; then
     yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected — warn-mode, Rule 3.5)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Mixed symlinks and copies ($COPIED copies, $SYMLINKED symlinks)|Delete the copies, re-run build")
+    WARNINGS+=("2.3|Mixed symlinks and copies ($COPIED copies, $SYMLINKED symlinks)|Remove the symlinked instances; re-run update-skills.sh or install.sh Step 10a to materialize real-file copies for all")
   else
     na "2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"
   fi
@@ -168,7 +173,8 @@ if [ -d "$COMPANY_DIR/departments" ]; then
 fi
 # 2.4 — dept directors in agents.list[]
 # H2: inject via env var — OCJSON path must not be shell-expanded inside a Python string literal
-DIR_AGENTS=$(OC_JSON="$OCJSON" python3 -c "import json,os; cfg=json.load(open(os.environ['OC_JSON'])); print(sum(1 for a in cfg.get('agents',{}).get('list',[]) if a.get('id','').startswith('dept-')))" 2>/dev/null)
+# Roster = agents.entries (OpenClaw 2026.9.x, id is the key) + legacy agents.list[].
+DIR_AGENTS=$(OC_JSON="$OCJSON" python3 -c "import json,os; cfg=json.load(open(os.environ['OC_JSON'])); print(sum(1 for a in [dict(v, id=k) for k, v in (cfg.get('agents',{}).get('entries') or {}).items() if isinstance(v, dict)] + [a for a in (cfg.get('agents',{}).get('list') or []) if isinstance(a, dict)] if a.get('id','').startswith('dept-')))" 2>/dev/null)
 if [ -n "$DIR_AGENTS" ] && [ "$DIR_AGENTS" -gt 0 ]; then
   green "  ✓ 2.4  $DIR_AGENTS department director agents in agents.list[]"; PASS=$((PASS+1))
 else
@@ -180,7 +186,7 @@ BAD_CONFIG=$(python3 -c "
 import json
 cfg=json.load(open('$OCJSON'))
 bad=[]
-for a in cfg.get('agents',{}).get('list',[]):
+for a in [dict(v, id=k) for k, v in (cfg.get('agents',{}).get('entries') or {}).items() if isinstance(v, dict)] + [a for a in (cfg.get('agents',{}).get('list') or []) if isinstance(a, dict)]:
     if a.get('id','').startswith('dept-'):
         s=a.get('subagents',{})
         if (a.get('bootstrapMaxChars') != 200000 or
@@ -455,10 +461,14 @@ sys.exit(1)
 # ─── CHECK 7: Task Assignments / Kanban ──────────────────────────────────────
 echo
 blue "── CHECK 7: Task Assignments (Kanban / Command Center) ──"
-CC_DB=""
-for c in "$HOME/projects/command-center/mission-control.db" "$HOME/projects/mission-control/mission-control.db" "/opt/mission-control/mission-control.db"; do
-  [ -f "$c" ] && CC_DB="$c" && break
-done
+# The shared resolver is the DB the running CC uses (env/.env.local first,
+# 0-byte decoys skipped). Fallback: the old list, non-empty files only.
+CC_DB="$(python3 "$ROOT/shared-utils/resolve_db.py" --path 2>/dev/null || true)"
+if [ -z "$CC_DB" ]; then
+  for c in "$HOME/projects/command-center/mission-control.db" "$HOME/projects/mission-control/mission-control.db" "/opt/mission-control/mission-control.db"; do
+    [ -s "$c" ] && CC_DB="$c" && break
+  done
+fi
 if [ -n "$CC_DB" ]; then
   green "  ✓ 7.0  Mission Control DB present at $CC_DB"; PASS=$((PASS+1))
   # 7.1 — dept count in DB matches departments.json
@@ -513,7 +523,7 @@ BAD_WS=$(python3 -c "
 import json, os
 cfg=json.load(open('$OCJSON'))
 bad=[]
-for a in cfg.get('agents',{}).get('list',[]):
+for a in [dict(v, id=k) for k, v in (cfg.get('agents',{}).get('entries') or {}).items() if isinstance(v, dict)] + [a for a in (cfg.get('agents',{}).get('list') or []) if isinstance(a, dict)]:
     if a.get('id','').startswith('dept-'):
         ws=a.get('workspace','')
         if not os.path.isdir(ws):
@@ -560,8 +570,11 @@ agents = cfg.get("agents", {})
 # CANON_DIR = box's own default agent workspace (per-agent main override ->
 # agents.defaults.workspace), resolved to a real path.
 canon = ""
+_main = (agents.get("entries") or {}).get("main") if isinstance(agents.get("entries"), dict) else None
+if isinstance(_main, dict) and _main.get("workspace"):
+    canon = os.path.expanduser(_main["workspace"])
 for ag in agents.get("list", []) or []:
-    if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+    if not canon and isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
         canon = os.path.expanduser(ag["workspace"]); break
 if not canon:
     ws = agents.get("defaults", {}).get("workspace")

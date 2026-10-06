@@ -1,8 +1,0 @@
-{
- "provider": "deepseek-direct",
- "plan": "operator-pool",
- "max_concurrent": 500,
- "source": "operator-ruling-2026-09-01",
- "answered_at": "2026-09-01T10:51:07-04:00",
- "_note": "REVISED 2026-09-01 by Trevor (operator): Ultra ceiling 100->500; deepseek-direct is a NO_CAP_PROVIDERS entry, declared max_concurrent=500 honoured verbatim as a self-throttle (case 0). Delete this file to be asked again."
-}

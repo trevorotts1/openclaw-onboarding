@@ -86,6 +86,12 @@ class BoardMirror:
         self.store = store
         self.report = reporter
         self._config = _get_cc_board().board_config(os.environ)
+        # FIX 57: parent_task_id is cached PER RUN ID, never process-wide. The
+        # 2026-08-31 incident had 47 of 49 children of a second job nested under
+        # the FIRST job's parent because a resolved parent id outlived its run.
+        # This map is instance state on a BoardMirror that is created once per
+        # Engine (phases.py Engine.__init__), so it dies with the run.
+        self._parent_by_run = {}
         self._resolve_task_id()
 
     # ------------------------------------------------------------------
@@ -148,7 +154,8 @@ class BoardMirror:
                     try:
                         task_id = cc.ingest_deck_task(
                             self.run_dir, deck, title, desc,
-                            priority="normal", env=os.environ)
+                            priority="normal", env=os.environ,
+                            run_id=self._run_slug())
                         if task_id:
                             board_state["task_id"] = task_id
                             board_state.pop("task_id_missing_at", None)
@@ -253,9 +260,39 @@ class BoardMirror:
                 "description": description,
             }
 
+            # FIX 57: pass run_id in the BOARD identity namespace (_run_slug,
+            # not _run_id -- the job_id is the per-run cache key and never
+            # reaches the board) so the parent card's source_ref (its Ref:
+            # line) and external_session_id (its Session: line) are THIS
+            # run's identity -- the same namespace the child Session: line
+            # and sweep._card_ref_identity read, so the pairing can match.
             task_id = cc.ingest_deck_task(
                 self.run_dir, deck_slug, title, description,
-                priority="normal", env=os.environ)
+                priority="normal", env=os.environ,
+                run_id=self._run_slug())
+            # PRES-052: local and CC destinations acknowledge SEPARATELY. A
+            # successful card ingest acknowledges the matching logical relay
+            # event on the CC destination only; a CC failure (None) leaves
+            # local progress untouched and emits a queued CC row instead.
+            try:
+                try:
+                    from . import relay as _relay
+                except ImportError:
+                    import relay as _relay  # type: ignore[no-redef]
+                if task_id:
+                    for _eid, _vis in list(
+                            _relay.read_display(self.run_dir).items()):
+                        if _vis.get("state") == _relay.STATE_QUEUED:
+                            _relay.ack_cc(self.state, self.run_dir, str(_eid),
+                                          store=self.store)
+                            break
+                else:
+                    _relay.emit(self.state, self.run_dir, "progress",
+                                "CC card ingest pending — local progress "
+                                "continues (CC failure does not suppress local).",
+                                store=self.store)
+            except Exception:  # noqa: BLE001 — never let relay break board
+                pass
             if task_id:
                 board_state["task_id"] = task_id
                 board_state.pop("task_id_missing_at", None)
@@ -272,7 +309,12 @@ class BoardMirror:
         return self._wrap(_do)
 
     def phase_progress(self, phase_id, note):
-        """Post mid-run activity. Never patch_phase -- use post_activity instead."""
+        """Post mid-run activity. Never patch_phase -- use post_activity instead.
+
+        activity_type is pinned to 'updated' (FIX 57 activity-type alignment):
+        the CC CreateActivitySchema accepts only {spawned, updated, completed,
+        file_created, status_changed} -- 'comment' is not a member and a strict
+        server 422s it, silently dropping every mid-run phase breadcrumb."""
         cc = _get_cc_board()
 
         def _do():
@@ -284,8 +326,42 @@ class BoardMirror:
                     f"or check board.no_task_id for root cause"
                 )
                 return None
-            return cc.post_activity(self.run_dir, task_id, phase_id, note,
-                                    activity_type="comment", scores=None, env=os.environ)
+            ok = cc.post_activity(self.run_dir, task_id, phase_id, note,
+                                      activity_type="updated", scores=None, env=os.environ)
+            # PRES-052: a confirmed CC activity acknowledges the matching
+            # logical relay event on the CC destination only. A CC failure
+            # (False) never touches the local ack — local progress survives
+            # a CC outage by construction.
+            try:
+                try:
+                    from . import relay as _relay
+                except ImportError:
+                    import relay as _relay  # type: ignore[no-redef]
+                if ok:
+                    for _eid, _vis in list(
+                            _relay.read_display(self.run_dir).items()):
+                        if (_vis.get("stage") == phase_id
+                                and _vis.get("state") in (
+                                    _relay.STATE_QUEUED,
+                                    _relay.STATE_ACKED_LOCAL)):
+                            _relay.ack_cc(self.state, self.run_dir, str(_eid),
+                                          store=self.store)
+                            break
+                else:
+                    _relay.note_attempt(
+                        self.state, self.run_dir,
+                        next((str(_eid) for _eid, _vis in
+                              _relay.read_display(self.run_dir).items()
+                              if _vis.get("stage") == phase_id
+                              and _vis.get("state") not in (
+                                  _relay.STATE_ACKED_LOCAL,
+                                  _relay.STATE_ACKED_CC,
+                                  _relay.STATE_ACKED_BOTH,
+                                  _relay.STATE_TIMEOUT)),
+                             ""), "cc", store=self.store)
+            except Exception:  # noqa: BLE001 — never let relay break board
+                pass
+            return ok
 
         return self._wrap(_do)
 
@@ -353,16 +429,59 @@ class BoardMirror:
         return self._wrap(_do)
 
     # -- Option B child cards ---------------------------------------------
+    def _run_id(self):
+        """This run's identity for the per-run parent cache key: state.json's
+        job_id (minted 'pj_...' in __main__.cmd_new), falling back to the run
+        dir name. Instance-internal only -- it never reaches the board."""
+        rid = self.state.get("job_id")
+        if rid:
+            return str(rid)
+        return self.run_dir.name
+
+    def _run_slug(self):
+        """This run's identity in the BOARD's namespace: intake.deck_slug
+        (FIX 48 makes resolve_intake write deck_slug = run dir name), falling
+        back to the run dir name -- the same two sources sweep._deck_slug
+        reads and the SAME value open_card() sent as source_ref. cc_board
+        sends it as BOTH source_ref and external_session_id (cc_board.py
+        :614,626), so the parent card's description carries 'Session: <slug>'
+        and 'Ref: <slug>'. A child's Session line must be in this namespace
+        or the parent's Ref could never match it."""
+        slug = (self.state.get("intake") or {}).get("deck_slug")
+        if slug:
+            return str(slug)
+        return self.run_dir.name
+
     def _resolve_parent_task_id(self):
-        """Dual-recovery parent id lookup: state["board"]["task_id"] first,
-        process_manifest.json's cc_task_id second -- the same two sources
-        task_id_anywhere() checks."""
+        """Parent id lookup, cached PER RUN ID (FIX 57).
+
+        Resolution order per run_id:
+          1. state["board"]["task_id"] (live truth: open_card re-stamps it on
+             re-ingest),
+          2. process_manifest.json's cc_task_id,
+          3. the per-run cache (a memo only, never an override).
+
+        Sources 1 and 2 are both under THIS run_dir, so a value recovered from
+        them can only belong to this run. The cache is instance state on a
+        BoardMirror created once per Engine, so it is NEVER process-wide and a
+        second concurrent job cannot inherit this run's parent -- the exact
+        mechanism behind the 47-of-49 misparenting incident."""
+        cc = _get_cc_board()
+        rid = self._run_id()
         tid = (self.state.get("board") or {}).get("task_id")
-        if tid:
-            return str(tid)
-        manifest = _get_cc_board()._read_manifest(self.run_dir)
-        val = manifest.get("cc_task_id")
-        return str(val) if val else None
+        if not tid:
+            try:
+                manifest = cc._read_manifest(self.run_dir)
+            except Exception:
+                manifest = {}
+            tid = manifest.get("cc_task_id")
+        if not tid:
+            cached = self._parent_by_run.get(rid)
+            if cached:
+                return str(cached)
+            return None
+        self._parent_by_run[rid] = str(tid)
+        return str(tid)
 
     def _resolve_child_task_id(self, phase_id):
         """Dual-recovery child id lookup for one phase: state["board"]
@@ -384,7 +503,40 @@ class BoardMirror:
         children[phase_id] = task_id
         self.store.save(self.state)
 
-    def child_report(self, phase_id, title, description, status, note):
+    def _registry_path(self):
+        return self.run_dir / "working" / "checkpoints" / "cc-board-deliverables.json"
+
+    def _load_deliverable_registry(self):
+        """task_id -> [absolute paths already registered on that card].
+
+        PD-TEST-195 (adversarial review): the CC route is NOT idempotent, so the
+        client must remember what it has already registered. Kept ON DISK so the
+        skip survives a resume -- the case that actually produces duplicates.
+        Any read/parse failure returns an empty map: re-registering is the safe
+        direction to fail in.""" 
+        try:
+            import json as _json
+            p = self._registry_path()
+            if not p.exists():
+                return {}
+            data = _json.loads(p.read_text())
+            return data if isinstance(data, dict) else {}
+        except Exception:  # noqa: BLE001 -- never block a unit on bookkeeping
+            return {}
+
+    def _save_deliverable_registry(self, reg):
+        try:
+            import json as _json
+            p = self._registry_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(_json.dumps(reg, indent=1, sort_keys=True))
+            tmp.replace(p)
+        except Exception:  # noqa: BLE001 -- never block a unit on bookkeeping
+            pass
+
+    def child_report(self, phase_id, title, description, status, note,
+                     deliverables=None):
         """Ensure a child card exists for `phase_id` (created ONCE, on the
         first call for that phase -- idempotent via the dual state+manifest
         check in _resolve_child_task_id, so a phase reporting progress twice
@@ -392,6 +544,15 @@ class BoardMirror:
         patch_phase status-PATCH helper every other advance in this class
         uses (e.g. status='done' once the phase's verifier has passed,
         status='blocked' on a gate failure).
+
+        FIX 57 — run identity on every child mint: the ingest description
+        carries a 'Session: <run id>' line (this run's board-namespace slug)
+        and the parent card's description carries 'Ref: <deck_slug>'. A child
+        whose Session differs from the parent's Ref identity is HELD with
+        deck_run_identity_mismatch instead of being patched/parented into the
+        wrong run's set: the mismatch is recorded on the movement receipt and
+        surfaced as a board.identity_mismatch event, and no child card is
+        minted against a parent that does not belong to this run.
 
         No parent card yet (board disabled, or the parent ingest never
         landed) => nothing to nest a child under => clean no-op, same as
@@ -404,20 +565,161 @@ class BoardMirror:
             parent_task_id = self._resolve_parent_task_id()
             if not parent_task_id:
                 return None
+            run_id = self._run_slug()
+            if not self._parent_belongs_to_run(parent_task_id, run_id):
+                detail = (f"deck_run_identity_mismatch: parent {parent_task_id} "
+                          f"is not this run's card (run id {run_id!r}) -- child "
+                          f"card for phase {phase_id} HELD, never parented into "
+                          f"another run's set")
+                self.report.event("board.identity_mismatch", detail)
+                try:
+                    cc._record_movement(self.run_dir, {
+                        "phase_id": phase_id, "kind": "child_ingest",
+                        "target": "deck_run_identity_mismatch",
+                        "endpoint": "POST /api/tasks/ingest",
+                        "http_status": None, "ok": False,
+                        "detail": detail,
+                    })
+                except Exception:
+                    pass
+                return None
             child_task_id = self._resolve_child_task_id(phase_id)
             if not child_task_id:
+                session_line = f"Session: {run_id}"
+                ref_line = f"Ref: {parent_task_id}:{phase_id}"
+                child_description = description if description else ""
+                if session_line not in child_description:
+                    child_description = (
+                        f"{child_description}\n\n{session_line}\n{ref_line}".strip()
+                    )
+                # FIX 57 child Session line: run_id rides in
+                # external_session_id (the card's Session: provenance line on
+                # the wire), matching the Session: line already written into
+                # the description above and pairing against the parent's Ref:
+                # (= run id, since open_card now ingests with run_id) for the
+                # deck_run_identity_mismatch hold.
                 child_task_id = cc.ingest_child_task(
-                    self.run_dir, parent_task_id, phase_id, title, description,
-                    priority="normal", env=os.environ)
+                    self.run_dir, parent_task_id, phase_id, title,
+                    child_description, priority="normal", env=os.environ,
+                    run_id=run_id)
                 if not child_task_id:
                     return None
                 self._remember_child_task_id(phase_id, child_task_id)
             if status not in cc.CC_TASK_STATUSES:
                 raise ValueError(f"invalid status: {status!r}")
+            # PD-TEST-195: REGISTER THE WORK BEFORE CLOSING THE CARD.
+            #
+            # The CC server refuses a done-transition with no completion
+            # evidence -- measured live on pres-operator-1d269693:
+            #   patch_phase P-STYLE-PREVIEW->done non-OK (HTTP 403):
+            #   {'error': 'Forbidden: cannot mark a task done with no completion
+            #    evidence.', 'hint': '... Register it with POST
+            #    /api/tasks/<id>/deliverables ... {"deliverable_type":"file",
+            #    "title":"<name>","path":"<absolute path>"} ...'}
+            # The phase had genuinely produced its artifacts (nine style samples
+            # on disk) and the engine had verified them, so the board was left
+            # DISAGREEING WITH THE RUN: it showed the phase not-done while the
+            # engine held it done. That is the opposite of an accurate Kanban,
+            # and it is silent -- patch_phase is fail-soft, so nothing stopped.
+            #
+            # NOT IDEMPOTENT SERVER-SIDE -- verified by adversarial review, and
+            # the earlier "idempotent enough" claim here was WRONG. The CC route
+            # (command-center app/src/app/api/tasks/[id]/deliverables/route.ts)
+            # mints a fresh crypto.randomUUID() and does a plain INSERT with NO
+            # ON CONFLICT and NO unique index on task_deliverables, then
+            # broadcasts an SSE event. So a re-run / re-admitted / resumed phase
+            # -- the exact path this engine is built around -- would re-POST
+            # every artifact and accumulate duplicate rows (a re-admitted
+            # 9-sample phase leaves 18 rows, not 9), each POST also forcing the
+            # server to read and sha256 the whole file.
+            #
+            # The client therefore dedupes against a per-run registry ON DISK,
+            # so the skip survives a resume (which is the case that matters).
+            # Still FAIL-SOFT: every call is wrapped, a failure is reported, and
+            # the transition always happens -- a board that cannot be told is
+            # not a reason to hold the deck.
+            if status == "done" and deliverables:
+                _reg = self._load_deliverable_registry()
+                for _path in deliverables:
+                    _p = str(_path or "").strip()
+                    if not _p:
+                        continue
+                    _abs = _p if os.path.isabs(_p) else str(self.run_dir / _p)
+                    if _abs in _reg.get(child_task_id, ()):
+                        continue  # already on the card; a second POST duplicates it
+                    if not os.path.exists(_abs):
+                        self.report.event(
+                            "board.deliverable_missing",
+                            f"child_report({phase_id!r}): artifact not on disk, "
+                            f"not registering it as completion evidence: {_abs}")
+                        continue
+                    try:
+                        ok = cc.register_deliverable(
+                            child_task_id, _abs, meta={"title": os.path.basename(_abs),
+                                                       "type": phase_id},
+                            env=os.environ, deliverable_type="file")
+                    except Exception as exc:  # noqa: BLE001 -- never block the deck
+                        ok = False
+                        self.report.event(
+                            "board.deliverable_error",
+                            f"child_report({phase_id!r}): registering {_abs} raised "
+                            f"{type(exc).__name__}: {exc}")
+                    if ok:
+                        _reg.setdefault(child_task_id, []).append(_abs)
+                        self._save_deliverable_registry(_reg)
+                    else:
+                        self.report.event(
+                            "board.deliverable_unregistered",
+                            f"child_report({phase_id!r}): could not register {_abs} "
+                            "as completion evidence; the done-transition may be "
+                            "refused by the board")
             return cc.patch_phase(self.run_dir, child_task_id, phase_id, status,
                                   note, env=os.environ)
 
         return self._wrap(_do)
+
+    def _parent_belongs_to_run(self, parent_task_id, run_id):
+        """FIX 57 identity check: does the parent card this child would nest
+        under provably belong to THIS run?
+
+        OFFLINE provenance (zero network — the sanctioned child-card tests
+        budget their HTTP call sequences exactly, and the identity evidence
+        is already on disk): process_manifest.json lives INSIDE this run's
+        run_dir, and stamp_task_id writes cc_task_id AND the matching
+        cc_registration.deck_slug in the SAME atomic merge from the SAME
+        ingest_deck_task call (cc_board.py:666,1238) — so a registration
+        tag present in this run's manifest is, by construction, the
+        deck_slug THIS run's ingest sent as the parent's source_ref.
+
+        Accept when the registered slug equals EITHER candidate identity:
+        _run_slug (intake.deck_slug -> run dir name -- what the sweep
+        resolves) or the raw run dir name (what phases.py passes to
+        open_card as deck_slug -- the pre-FIX-48 engine handle, and the
+        value actually stamped on the card when the ENGINE opened it).
+
+        UNDETERMINED is not a mismatch: no registration tag in the manifest
+        (older stamps, a hand-written task_id, a test stub) returns True and
+        lets the mint proceed. Only a POSITIVE registration naming a foreign
+        slug holds the child with deck_run_identity_mismatch -- the in-memory
+        parent leak shape this run's per-run cache (_parent_by_run) alone
+        already closes; this is the on-disk belt on that suspender."""
+        cc = _get_cc_board()
+        try:
+            manifest = cc._read_manifest(self.run_dir)
+        except Exception:
+            manifest = {}
+        reg = manifest.get("cc_registration") if isinstance(manifest, dict) else None
+        if isinstance(reg, dict):
+            slug = reg.get("deck_slug")
+            if slug:
+                slug = str(slug)
+                candidates = {str(run_id), str(self.run_dir.name)}
+                return any(
+                    slug == cand or slug.startswith(f"{cand}:")
+                    for cand in candidates
+                )
+        # No registration tag -> UNDETERMINED, never a mismatch.
+        return True
 
 
 # ------------------------------------------------------------------

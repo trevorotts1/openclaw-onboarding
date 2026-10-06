@@ -148,9 +148,83 @@ _PERSONA = "Director of Presentations"
 # engine into the CC ingest completion path. Called after a CC task card is
 # successfully created (or re-fetched via idempotency). Best-effort, fail-soft
 # -- a failed engine launch never blocks the deck build or the board registration.
+#
+# FIX 18 (lease discipline): this launcher is one of the lease's five named
+# launch paths (lease.py's docstring: "the door, supervisor._restart,
+# launcher.dispatch, presentation-intake-poll.sh, cc_board._dispatch_engine_if_idle").
+# It acquires the run lease BEFORE spawning and, on success, releases it again
+# before the Popen — the exact acquire -> spawn-hand-off pattern supervisor.
+# _restart uses, for the same reason: the resumed engine's own __main__ acquire
+# is the hand-off, and a lease still held by THIS pid when the child starts
+# would refuse the child (same-host live pid, unexpired lease => takeover
+# denied) and the child would then have to wait out the whole TTL. A live
+# holder keeps the lease: no spawn, log it, return — the run already has an
+# owner, which is the lease doing its job. The lease is a GUARDED import, not
+# a gate: if presentation_job.lease is absent or acquire raises, the launch
+# proceeds UNLEASED and says so in the log — degrade loudly, never crash the
+# dispatch callback (same discipline as supervisor._acquire_restart_lease).
+_DISPATCH_LEASE_TTL_SECONDS = 300  # headroom over the engine's own acquire; matches supervisor's restart TTL
+
+
+# F2b (auto-repin, third spawn path). This callback is the THIRD place that
+# Popens the engine directly. F2 put the auto-repin gate in launcher.dispatch,
+# which covers the poller because the poller goes through the launcher; this
+# path and supervisor._restart do not, so both were uncovered. A run whose
+# pinned manifest sha no longer matches the file on disk dies
+# EXIT_MANIFEST_MISMATCH (7) about a second after the spawn -- measured: a
+# stale-pin `presentation_job.py --run --run-dir <run>` exits 7 before the run
+# loop, because `--run` reaches the same pin check in __main__.main as
+# `--resume` does (FIX 22 made the two entry modes share it).
+#
+# THE BOARD MIRRORS, IT NEVER GATES. That invariant is untouched here. This
+# helper cannot raise, cannot block a deck build, and returns "spawn anyway"
+# for every outcome except one: a PROVEN sha mismatch that the engine's own
+# `--repin` could not cure. Refusing to spawn in that single case is not
+# gating a build -- the spawn would produce a corpse, and a corpse builds
+# nothing. Everything else (no launcher import, no state.json, no pin, an
+# unreadable state file, the gate raising where it is documented not to) is
+# UNDETERMINED and dispatches exactly as it did before this fix.
+# PRESENTATION_AUTO_REPIN=0 disables the gate inside the gate itself.
+def _repin_gate_or_none(run_path, engine, scripts_dir) -> Optional[str]:
+    """None to spawn; a reason string when the spawn is refused. Never raises."""
+    try:
+        from presentation_job.launcher import auto_repin_gate, REPIN_AUTOFAIL_CODE
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- an absent launcher must not break dispatch
+        _log(f"auto-repin unavailable ({type(exc).__name__}: {exc}) -- "
+             f"dispatching {run_path} on the existing pin")
+        return None
+    try:
+        verdict = auto_repin_gate(Path(run_path), Path(engine), Path(scripts_dir))
+    # SystemExit is in the net on purpose: `die()` is how every manifest helper
+    # reports trouble, and one escaping here would abort the CC ingest callback
+    # -- the board would then be gating a build, which it may never do.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- fail-soft
+        _log(f"auto-repin raised {type(exc).__name__}: {exc} -- dispatching "
+             f"{run_path} on the existing pin")
+        return None
+    if verdict is None:
+        return None
+    return (f"{REPIN_AUTOFAIL_CODE}: the manifest moved under this run and "
+            f"`presentation_job.py --repin --run-dir {run_path}` could not "
+            f"cure it. NOT spawning: the engine would die "
+            f"EXIT_MANIFEST_MISMATCH in about a second. See "
+            f"{Path(run_path) / 'working' / 'logs' / 'repin.log'}")
+
+
 def _dispatch_engine_if_idle(run_dir) -> None:
     """If the engine is not running for this run_dir, launch it as a background
-    subprocess via presentation_job --run. Fail-soft: never raises."""
+    subprocess via presentation_job --run. Fail-soft: never raises.
+
+    FIX 18: acquires the run lease first (guarded import; unleased launch with
+    a logged reason when the module is absent), refuses when a live holder owns
+    the run, and releases the lease right before the spawn so the child engine
+    acquires it as its own hand-off.
+
+    F2b: runs the launcher's own auto_repin_gate before the Popen, so a run
+    whose manifest moved is re-pinned instead of spawning an engine that dies
+    EXIT_MANIFEST_MISMATCH. Fail-soft in both directions -- see
+    _repin_gate_or_none: only a proven, uncurable mismatch withholds the
+    spawn, and nothing here ever raises or blocks a build."""
     import subprocess as _subprocess
     run_path = Path(run_dir) if not isinstance(run_dir, Path) else run_dir
     state_json = run_path / "state.json"
@@ -161,9 +235,17 @@ def _dispatch_engine_if_idle(run_dir) -> None:
         terminal = st.get("terminal")
     except (json.JSONDecodeError, OSError):
         return
-    # Do not re-launch a job that is already done/blocked, or one whose engine
-    # PID is already alive.
-    if terminal in ("DONE", "BLOCKED"):
+    # Do not re-launch a job that is already done/blocked/retired, or one whose
+    # engine PID is already alive.
+    #
+    # F4: ABANDONED is the third of the department's terminal values -- the
+    # sanctioned retirement marker (FAULT #11). supervisor.py has skipped
+    # ("DONE", "BLOCKED", "ABANDONED") since it was written; this dispatcher
+    # and presentation-intake-poll.sh knew only two of the three, so a board
+    # tick could re-launch an engine for a run a human had explicitly retired.
+    # Retiring a run must actually retire it, in every actor that can start an
+    # engine.
+    if terminal in ("DONE", "BLOCKED", "ABANDONED"):
         return
     pid = st.get("engine_pid")
     if isinstance(pid, int) and pid > 0:
@@ -178,15 +260,68 @@ def _dispatch_engine_if_idle(run_dir) -> None:
     engine = here / "presentation_job.py"
     if not engine.is_file():
         return
+
+    # FIX 18 -- lease before launch. cc_board.py sits at scripts/ next to the
+    # presentation_job package, so the package is importable from this file's
+    # directory (the dispatch callback may run with a different cwd, so the
+    # path insert is explicit and symmetric with how the tests import cc_board).
+    lease = None
+    lease_note = ""
     try:
+        import sys as _sys
+        _here = str(here)
+        if _here not in _sys.path:
+            _sys.path.insert(0, _here)
+        try:
+            from presentation_job import lease as _lease_mod
+        except ImportError:
+            _lease_mod = None
+        if _lease_mod is not None:
+            lease = _lease_mod.acquire(
+                run_path,
+                {"who": "cc_board.dispatch", "purpose": "cc_board.engine_dispatch"},
+                ttl_s=_DISPATCH_LEASE_TTL_SECONDS,
+            )
+            if lease is None:
+                holder_desc = ""
+                try:
+                    holder_desc = _lease_mod.describe_holder(run_path)
+                except Exception:  # noqa: BLE001 -- a read failure must not hide the refusal
+                    holder_desc = ""
+                detail = holder_desc or "an unreadable lease at working/.lease.json"
+                _log(f"engine dispatch refused for {run_path}: lease held by {detail}")
+                return  # the run has an owner; not a spawn failure
+            lease_note = "; lease acquired, verified unowned"
+        else:
+            lease_note = "; UNLEASED: presentation_job.lease unavailable"
+    except Exception as exc:  # noqa: BLE001 -- lease trouble must not kill the dispatch callback
+        lease = None
+        lease_note = f"; UNLEASED: lease acquire raised {type(exc).__name__}: {exc}"
+
+    try:
+        # F2b -- repin gate, INSIDE the try so the finally below still hands the
+        # lease back on a refusal, and while the lease is held so the repin's
+        # state write cannot race a second owner. Fail-soft: only a proven,
+        # uncurable mismatch refuses; everything else returns None and spawns.
+        repin_refusal = _repin_gate_or_none(run_path, engine, here)
+        if repin_refusal is not None:
+            _log(f"engine dispatch refused for {run_path}: {repin_refusal}{lease_note}")
+            return
         _subprocess.Popen(
             [sys.executable or "python3", str(engine), "--run", "--run-dir", str(run_path)],
             shell=False, cwd=str(here),
             start_new_session=True, close_fds=True,
         )
-        _log(f"engine dispatched for {run_path}")
+        _log(f"engine dispatched for {run_path}{lease_note}")
     except (OSError, _subprocess.SubprocessError) as exc:
         _log(f"engine dispatch failed for {run_path}: {exc}")
+    finally:
+        if lease is not None:
+            try:
+                from presentation_job import lease as _lease_mod2
+                _lease_mod2.release(lease)
+            except Exception:  # noqa: BLE001 -- a failed release must not abort the dispatch
+                pass
 
 # U030 (audit E1): the statuses whose PATCH payload carries proof the narrower
 # status endpoint cannot accept. POST /api/tasks/{id}/status validates against
@@ -581,6 +716,7 @@ def ingest_deck_task(
     env: Optional[dict] = None,
     requester_chat_id: Optional[str] = None,
     requester_channel: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> Optional[str]:
     """Ingest (or idempotently re-fetch) a deck task on the CC board.
 
@@ -594,7 +730,17 @@ def ingest_deck_task(
     return never blocks the deck build; the offline gate is satisfied by the
     cc_register_attempted flag.
 
-    Idempotency key is sha256(source_ref + title) — deterministic per deck."""
+    Idempotency key is sha256(source_ref + title). FIX 57 (per-run parent
+    identity): when `run_id` is supplied, source_ref (and therefore the
+    idempotency key AND the card's ``Ref:`` provenance line AND the
+    ``Session:`` line via external_session_id) is the RUN id, not the
+    deck_slug — so two concurrent runs of the same deck each mint their OWN
+    parent card instead of the server deduping the second run's parent onto
+    the first run's card (the R5B §E.4 "47 of 49 children pointed at the
+    first job's parent" defect). Without run_id the exact legacy deck_slug
+    behavior is preserved byte-for-byte. The deck_slug is still recorded —
+    in the title and, when run_id is set, folded into the description's
+    provenance block — so the board stays human-readable."""
     if run_dir is None:
         return None
 
@@ -611,7 +757,41 @@ def ingest_deck_task(
         )
         return None
 
-    source_ref = deck_slug or "deck"
+    # PD-066 — an enabled board with NO credentials is not "enabled" in any
+    # useful sense: _request() below would attach neither the Bearer nor the
+    # HMAC, and the Command Center's middleware rejects the write 401
+    # ('missing-header') before the route's own signature check is reached.
+    # Name the missing variables HERE, so the operator gets a diagnosable line
+    # instead of a bare 401 that looks like a wrong-secret fault. This does NOT
+    # change control flow: the attempt still runs and still fails soft, and no
+    # auth check anywhere is weakened or bypassed.
+    if not cfg["token"] or not cfg["secret"]:
+        _missing = []
+        if not cfg["token"]:
+            _missing.append("MC_API_TOKEN/CC_API_TOKEN")
+        if not cfg["secret"]:
+            _missing.append("WEBHOOK_SECRET/CC_WEBHOOK_SECRET")
+        _log(
+            "board enabled but credentials missing from THIS process env "
+            f"({', '.join(_missing)}) — the CC will reject the registration "
+            "401. The sanctioned fix is the entry-point env store "
+            "(presentation_job.env_store.load_into_process). "
+            "cc_register_attempted=True already logged."
+        )
+
+    # FIX 57 — per-run parent identity. With a run_id the card's source_ref
+    # (its ``Ref:`` line) and external_session_id (its ``Session:`` line) are
+    # BOTH the run id, so (a) the idempotency key sha256(source_ref + title)
+    # is run-scoped — two concurrent runs of the same deck never collide onto
+    # one parent — and (b) a child carrying Session: = run id matches its own
+    # parent's Ref:, which is exactly the identity pairing the board's
+    # deck_run_identity_mismatch hold checks. No run_id => legacy deck_slug
+    # source_ref, byte-identical payloads.
+    rid = (run_id or "").strip()
+    if rid:
+        source_ref = rid
+    else:
+        source_ref = deck_slug or "deck"
     idem_input = f"{source_ref}{title}".encode("utf-8")
     idempotency_key = hashlib.sha256(idem_input).hexdigest()
 
@@ -626,6 +806,12 @@ def ingest_deck_task(
         "external_session_id": source_ref,
         "idempotency_key": idempotency_key,
     }
+    if rid and (deck_slug or "").strip() and rid != (deck_slug or "").strip():
+        # Keep the deck handle visible on the run-scoped parent card without
+        # touching the identity fields (Ref:/Session: stay the run id).
+        payload["description"] = (
+            f"{description} [deck: {deck_slug}]".strip()
+        )
 
     rcid = (requester_chat_id or "").strip()
     rchan = (requester_channel or "").strip()
@@ -740,6 +926,7 @@ def ingest_child_task(
     description: str,
     priority: str = "normal",
     env: Optional[dict] = None,
+    run_id: Optional[str] = None,
 ) -> Optional[str]:
     """Ingest (or idempotently re-fetch) a per-phase CHILD task card, nested
     under `parent_task_id` via the `parent_task_id` field on the ingest
@@ -751,6 +938,15 @@ def ingest_child_task(
     guard is the SECOND line of defense; the FIRST is the caller
     (BoardMirror.child_report) checking read_child_task_id()/state and never
     calling this function at all once a child_task_id is already known.
+
+    FIX 57 (per-run parent identity): when `run_id` is supplied it rides in
+    ``external_session_id`` — the card's ``Session:`` provenance line — so
+    every child of a run carries Session: = its own run's id. The board's
+    deck_run_identity_mismatch hold pairs that Session: against the parent's
+    ``Ref:`` (also the run id, since ingest_deck_task(run_id=...) sets
+    source_ref = run_id): a child whose Session differs from its parent's Ref
+    is HELD, not patched. Without run_id the legacy ``<parent>:<phase>``
+    Session value is preserved byte-for-byte.
 
     Returns the child task_id string on success, else None. FAIL-SOFT — same
     contract as ingest_deck_task: never raises, and a None return never
@@ -768,6 +964,7 @@ def ingest_child_task(
         )
         return None
 
+    rid = (run_id or "").strip()
     source_ref = f"{parent_task_id}:{phase_id}"
     idempotency_key = hashlib.sha256(source_ref.encode("utf-8")).hexdigest()
 
@@ -779,7 +976,7 @@ def ingest_child_task(
         "source_ref": source_ref,
         "department_slug": _DEPARTMENT_SLUG,
         "persona": _PERSONA,
-        "external_session_id": source_ref,
+        "external_session_id": rid or source_ref,
         "parent_task_id": parent_task_id,
         "stage": phase_id,
         "idempotency_key": idempotency_key,
@@ -1226,6 +1423,7 @@ def register_deliverable(
     meta: Optional[dict] = None,
     *,
     env: Optional[dict] = None,
+    deliverable_type: str = "url",
 ) -> bool:
     """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
 
@@ -1277,8 +1475,18 @@ def register_deliverable(
                 title = str(_val)
                 break
 
+    # PD-TEST-195: the CC server requires completion EVIDENCE before a task may
+    # be marked `done` ("cannot mark a task done with no completion evidence"),
+    # and CreateDeliverableSchema's enum is file|url|artifact|image. A phase that
+    # produces a LOCAL artifact must therefore register it as `file` with an
+    # absolute path; registering everything as `url` (the previous behaviour)
+    # left the board unable to see the work and the done-transition 403'd.
+    _dtype = (deliverable_type or "url").strip().lower()
+    if _dtype not in ("file", "url", "artifact", "image"):
+        _log(f"register_deliverable: unknown deliverable_type {_dtype!r}; using 'url'.")
+        _dtype = "url"
     payload: dict = {
-        "deliverable_type": "url",
+        "deliverable_type": _dtype,
         "title": title,
         "path": artifact_url,
     }
@@ -1298,8 +1506,8 @@ def register_deliverable(
         return False
 
     if 200 <= http_status < 300:
-        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
-             f"http={http_status}.")
+        _log(f"task {tid} deliverable registered: type={_dtype} "
+             f"path={artifact_url!r} http={http_status}.")
         return True
 
     _log(
@@ -1308,6 +1516,73 @@ def register_deliverable(
         "blackceo-command-center."
     )
     return False
+
+
+# ---------------------------------------------------------------------------
+# DELIVERABLES REGISTRATION (plural) — FIX 7 engine close path.
+#
+# register_deliverable() above posts ONE file. The engine's close() (Fix 7
+# HOW: "cc_board.register_deliverables() for all ten files") needs the
+# curated flat deliverables/ folder registered on the parent card so the
+# task can leave in_progress. This wrapper walks the curated folder (the
+# flat run_dir/deliverables/ set curate.py assembled, standardized
+# destination names from presentation_job.deliverables.DESTINATION_FILENAMES
+# when importable, else whatever the folder holds) and posts each file,
+# FAIL-SOFT per file: one bad registration never stops the rest and never
+# blocks the close. Returns the number of deliverables registered 2xx.
+# ---------------------------------------------------------------------------
+def register_deliverables(
+    task_id: str,
+    run_dir,
+    *,
+    env: Optional[dict] = None,
+    deck_slug: str = "",
+) -> int:
+    """Register every file in the run's flat deliverables/ folder on the
+    parent card via register_deliverable, one POST per file.
+
+    Reads run_dir/deliverables/ (curate.py's output). Files that cannot be
+    read or post non-2xx are logged and skipped; a disabled board or a
+    missing folder registers nothing. FAIL-SOFT: never raises; the count
+    returned is informational, never a gate."""
+    if run_dir is None:
+        return 0
+    deliv_dir = Path(run_dir) / "deliverables"
+    if not deliv_dir.is_dir():
+        _log(f"register_deliverables: no {deliv_dir} — nothing to register.")
+        return 0
+    try:
+        paths = sorted(p for p in deliv_dir.iterdir() if p.is_file())
+    except OSError as exc:
+        _log(f"register_deliverables: could not list {deliv_dir} ({exc}).")
+        return 0
+    if not paths:
+        _log("register_deliverables: deliverables/ is empty — nothing to register.")
+        return 0
+
+    slug = (deck_slug or "").strip()
+    registered = 0
+    for path in paths:
+        name = path.name
+        # A human title from the standardized name: DECK-FINAL.pptx ->
+        # "deck (DECK-FINAL.pptx)"-style is overkill; the filename IS the
+        # board-readable label. Fold the size in so the reviewer sees mass.
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = -1
+        meta = {
+            "type": "deck_deliverable",
+            "title": name,
+            "size_bytes": size,
+        }
+        if slug:
+            meta["slug"] = slug
+        if register_deliverable(task_id, path.resolve().as_uri(), meta=meta, env=env):
+            registered += 1
+    _log(f"register_deliverables: {registered}/{len(paths)} deliverable(s) "
+         f"registered on task {task_id}.")
+    return registered
 
 
 # ---------------------------------------------------------------------------

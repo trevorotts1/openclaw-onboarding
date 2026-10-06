@@ -1,7 +1,7 @@
 ---
 name: social-media-in-a-box
-description: Run my social week end-to-end — the productionized weekly social-media engine. Takes a weekly theme and: validates readiness (Kie.ai credits / OpenRouter balance / GHL Private Integration Token / status), writes a week of platform-native content (7-part cliffhanger series + platform reformatter), generates media (Midjourney image with Gemini 4-grid judge, Sora 25s video, Nano-Banana carousel with a Gemini QC loop and SeedDream repair, podcast cover art), posts through the CLIENT's OWN Go High Level (Convert & Flow) location and connected social accounts, and writes the plan back to the content calendar. Modes week | day | carousel | video | podcast-cover | plan | clean across facebook / instagram / linkedin (+PDF) / youtube / tiktok / pinterest / google-business. Every SACRED character/count band and JSON contract is enforced by deterministic, fail-closed Python provers (not prose); the run mints a signed certificate proving ZERO Anthropic per run. NO n8n and NO Airtable at runtime — prompts are baked in, state is a local SQLite ledger, deliverables are local + labeled. Client runtime uses CLIENT providers ONLY, never Anthropic.
-version: 0.2.12
+description: Run my social week end-to-end — the productionized weekly social-media engine. Takes a weekly theme and: validates readiness (Kie.ai credits / OpenRouter balance / GHL Private Integration Token / status), writes a week of platform-native content (7-part cliffhanger series + platform reformatter), generates media (GPT Image 2.5 Sunburst image with vision QC, a 25s video storyboard rendered through the Skill 67 (kie-video) model selector, GPT Image 2.5 Sunburst carousel with a Gemini QC loop and SeedDream repair, GPT Image 2.5 Sunburst podcast cover art), posts through the CLIENT's OWN Go High Level (Convert & Flow) location and connected social accounts, and writes the plan back to the content calendar. Modes week | day | carousel | video | podcast-cover | plan | clean across facebook / instagram / linkedin (+PDF) / youtube / tiktok / pinterest / google-business. Every SACRED character/count band and JSON contract is enforced by deterministic, fail-closed Python provers (not prose); the run mints a signed certificate proving ZERO Anthropic per run. NO n8n and NO Airtable at runtime — prompts are baked in, state is a local SQLite ledger, deliverables are local + labeled. Client runtime uses CLIENT providers ONLY, never Anthropic.
+version: v1.7.9
 ---
 
 # Social Media in a Box (Skill 57)
@@ -51,10 +51,10 @@ the gates by calling the orchestrator directly.
 
 | # | Module | What it does |
 |---|--------|--------------|
-| 0 | **Preflight** (`modules/0-preflight`) | Fail-closed readiness gate: Kie.ai credits ≥ 200, OpenRouter balance ≥ $5, GHL PIT valid, required config present, status == Paid. FAIL → labeled report + notification; run blocked. |
+| 0 | **Preflight** (`modules/0-preflight`) | Fail-closed readiness gate: Kie.ai credit balance ≥ the planned image/video estimate x 1.30 (200 credits is the absolute floor), OpenRouter balance ≥ $5, GHL PIT valid, required config present, status == Paid. FAIL → labeled report + notification; run blocked. |
 | 1 | **Planner** (`modules/1-planner`) | LOCAL replacement for the `social-planner-*` n8n webhooks: create the planner sheet, sync theme-of-week, append the normalized 20-column weekly row. |
 | 2 | **Content engine** (`modules/2-content-engine`) | 7-part cliffhanger series (prompt 15) + platform reformatter (prompt 16) + single-call / per-day engines (prompts 01–04). Every output passes `validate_contract.py` + `prove_bands.py`. |
-| 3 | **Media core** (`modules/3-media-core`) | Image (Midjourney → Prompt-Doctor retry → Gemini 4-grid judge → SeedDream resize), video (Sora storyboard, exactly 25.0s), carousel image (Nano-Banana → Gemini QC loop → SeedDream edit → strip-text fallback), podcast **cover** art. Driven by the local SQLite `ledger.py`. |
+| 3 | **Media core** (`modules/3-media-core`) | Image (GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`, Skill 66 id, AGENTS.md N43) via Kie.ai → Prompt-Doctor retry → vision QC → SeedDream resize), video (storyboard, exactly 25.0s; the render model is picked by the Skill 67 (kie-video) model selector, never named here; no Sora anywhere), carousel image (GPT Image 2.5 sunburst, 3:4 per the N43 4:5 substitution → Gemini QC loop → SeedDream edit → strip-text fallback), podcast **cover** art (same GPT Image 2.5 sunburst id Skill 58 sends). Driven by the local SQLite `ledger.py`. |
 | 4 | **Publisher** (`modules/4-publisher`) | GHL-direct per-platform sub-modes + 10-slide FB/IG & 9-slide LinkedIn-PDF carousel assembly + `clean` rollback. Normalized result `{platform, success, totalPosts, processedAccounts, errors}`. |
 
 ## Sixteen modes → phase subsets (`SOCIAL-MANIFEST.json` `modes`)
@@ -105,6 +105,20 @@ list, this file, or the config alone.
   key with their chosen model + 2 fallbacks (`route:"fallback"`); vision QC = the client's Gemini;
   media = the client's Kie.ai. Zero `claude-*` / concrete-Anthropic-model ids in any client-path
   file; the manifest proves the model chain per run.
+- ⛔ **Provider-first model choice (F31).** The client's chosen provider (Ollama Cloud, OpenRouter,
+  or a direct provider such as DeepSeek) and chosen model + approved fallbacks are authoritative.
+  Provider-verified FULL slugs (suffix variants like `openrouter/z-ai/glm-5.3-flash` included) are
+  recognized from `shared-utils/model-capabilities.json` (`verified_slugs`) — a new model is added
+  to that inventory, never to selector code. Selection is never silently upgraded to a newer version.
+  A removed model activates only an approved fallback in saved order; without one, an explicit
+  selection request — no silent substitution, no indefinite wait. Resolution:
+  `shared-utils/social_model_policy.py` (provider-first, per-role policy, immutable revision) with
+  direct-provider adapters in `shared-utils/provider_adapters.py` (DeepSeek direct included; never
+  implicitly re-routed through OpenRouter or Ollama).
+- ⛔ **Visual QC sees the asset (F37).** The vision-QC reviewer (grid judge / QC loop) MUST be able
+  to actually view the generated image — a text-only model never produces a passing visual-QC
+  certificate, and a missing vision reviewer leaves that review visibly pending (it never
+  auto-downgrades to a text attempt).
 - **Posting = the client's OWN** Private Integration Token + locationId + connected social accounts,
   through `services.leadconnectorhq.com/social-media-posting/{locationId}/posts`. Never operator
   keys; never co-mingled across brands; agency mode hard-fails on a shared PIT/locationId.

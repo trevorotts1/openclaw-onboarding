@@ -221,10 +221,44 @@ class Ledger:
                 key             TEXT PRIMARY KEY,
                 value           TEXT
             );
+            CREATE TABLE IF NOT EXISTS rescue_admissions (
+                admission_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                operation_id     TEXT NOT NULL,
+                source           TEXT NOT NULL,
+                box              TEXT,
+                signal           TEXT,
+                event_id         INTEGER,
+                dedup_key        TEXT,
+                status           TEXT NOT NULL,
+                ticket_id        TEXT,
+                reply_digest     TEXT,
+                admission_schema TEXT,
+                detail           TEXT,
+                exception_type   TEXT,
+                attempted_at     TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS ix_events_open  ON events(ack_state, signal);
             CREATE INDEX IF NOT EXISTS ix_events_ts    ON events(tick_ts);
             CREATE INDEX IF NOT EXISTS ix_stamps_key   ON baseline_stamps(key_path);
             CREATE INDEX IF NOT EXISTS ix_digests_key  ON digests(dedup_key, sent_ts);
+            CREATE INDEX IF NOT EXISTS ix_admissions_op ON rescue_admissions(operation_id, admission_id);
+            CREATE TABLE IF NOT EXISTS escalation_state (
+                operation_id     TEXT PRIMARY KEY,
+                source           TEXT NOT NULL,
+                box              TEXT,
+                signal           TEXT,
+                event_id         INTEGER,
+                dedup_key        TEXT,
+                attempt          INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at  TEXT,
+                last_error       TEXT,
+                receipt_status   TEXT,
+                receipt_ticket_id TEXT,
+                receipt_digest   TEXT,
+                outcome          TEXT,
+                updated_at       TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_escalation_next ON escalation_state(next_attempt_at);
             """
         )
         self.conn.execute(
@@ -252,6 +286,20 @@ class Ledger:
         if severity not in VALID_SEVERITIES:
             raise ValueError("invalid severity %r" % severity)
         ts = tick_ts or now_utc()
+        # write-layer guard: events.dedup_key must never be empty/NULL. A
+        # caller that forgets to pass one (the root cause of the 2026-08-21
+        # alert-storm bug - ews_alert.py route_finding wrote thousands of
+        # identical "no operator target" events with dedup_key=None because
+        # nothing stopped it) still gets a stable, non-empty key here, derived
+        # the SAME way ews_sentinel.py's own finding factory (F()) already
+        # defaults one: "<signal>|<key_path>". NOTE this is a hygiene guard,
+        # not a throttle: record_event() has never enforced dedup on this
+        # column and still doesn't - callers are responsible for checking
+        # recent_digest()/record_digest() themselves before deciding whether
+        # to write at all (see ews_alert.py route_finding). This guard only
+        # guarantees the column is always something a later query can
+        # group/filter on, never NULL.
+        dedup_key = dedup_key or ("%s|%s" % (signal, key_path or ""))
         cur = self.conn.execute(
             "INSERT INTO events(signal,severity,key_path,class,detail,tick_ts,dedup_key) "
             "VALUES(?,?,?,?,?,?,?)",
@@ -399,6 +447,114 @@ class Ledger:
         else:
             row = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM digests WHERE sent_ts >= ?", (since_iso,)).fetchone()
+        return int(row["n"])
+
+    # ---- rescue admission journal (RR-015) ---------------------------------
+    # Durable per-attempt journal for the SHARED admission client
+    # (scripts/lib/rescue_admission.py). One row per admission attempt, status
+    # + ids + a reply DIGEST -- never the reply body, never a credential value.
+    # An attempt here does NOT change incident state: the caller (ews_alert
+    # escalate / ews_fleet dead-man) decides ack transitions from the receipt.
+    def record_admission_attempt(self, operation_id, source, box=None, signal=None,
+                                 event_id=None, dedup_key=None, status="failed",
+                                 ticket_id=None, reply_digest=None,
+                                 admission_schema=None, detail=None,
+                                 exception_type=None):
+        cur = self.conn.execute(
+            "INSERT INTO rescue_admissions(operation_id,source,box,signal,event_id,"
+            "dedup_key,status,ticket_id,reply_digest,admission_schema,detail,"
+            "exception_type,attempted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (str(operation_id), str(source), box, signal, event_id, dedup_key,
+             str(status), ticket_id, reply_digest, admission_schema, detail,
+             exception_type, now_utc()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def latest_admission(self, operation_id):
+        """The newest journaled attempt for an operation id, else None."""
+        row = self.conn.execute(
+            "SELECT * FROM rescue_admissions WHERE operation_id=? "
+            "ORDER BY admission_id DESC LIMIT 1", (str(operation_id),)).fetchone()
+        return dict(row) if row else None
+    # ---- escalation state (RR-005) -----------------------------------------
+    # One row per stable escalation operation, SEPARATE from incident
+    # resolution (events.ack_state). Only a validated durable admission
+    # receipt flips the operation to accepted; every failed or uncertain send
+    # keeps retry eligibility via next_attempt_at + last_error. The receipt
+    # fields (status/ticket/digest) live here apart from the incident row so
+    # reconciling the operation never rewrites incident state by itself.
+    def get_escalation(self, operation_id):
+        row = self.conn.execute(
+            "SELECT * FROM escalation_state WHERE operation_id=?",
+            (str(operation_id),)).fetchone()
+        return dict(row) if row else None
+
+    def record_escalation_attempt(self, operation_id, source, box=None,
+                                  signal=None, event_id=None, dedup_key=None,
+                                  receipt_status=None, receipt_ticket_id=None,
+                                  receipt_digest=None, last_error=None,
+                                  retry_seconds=1800):
+        op = str(operation_id)
+        cur = self.get_escalation(op)
+        attempt = int(cur["attempt"] or 0) + 1 if cur else 1
+        now = now_utc()
+        if receipt_status in ("admitted", "replay"):
+            outcome = "accepted"
+            nxt = None
+            err = None
+        elif receipt_status == "dry_run":
+            outcome = "dry_run"
+            nxt = None
+            err = last_error
+        elif receipt_status in ("no_enrollment", "client_unavailable"):
+            outcome = "deferred"
+            nxt = None
+            err = last_error
+        elif receipt_status == "refused":
+            outcome = "failed"
+            nxt = None
+            err = last_error
+        else:
+            outcome = "attempted"
+            try:
+                base = datetime.now(timezone.utc) + timedelta(seconds=retry_seconds)
+                nxt = base.replace(microsecond=0).isoformat()
+            except Exception:
+                nxt = None
+            err = last_error
+        self.conn.execute(
+            "INSERT INTO escalation_state(operation_id,source,box,signal,"
+            "event_id,dedup_key,attempt,next_attempt_at,last_error,"
+            "receipt_status,receipt_ticket_id,receipt_digest,outcome,"
+            "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(operation_id) DO UPDATE SET source=excluded.source,"
+            "box=excluded.box,signal=excluded.signal,event_id=excluded.event_id,"
+            "dedup_key=excluded.dedup_key,attempt=excluded.attempt,"
+            "next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error,"
+            "receipt_status=excluded.receipt_status,"
+            "receipt_ticket_id=excluded.receipt_ticket_id,"
+            "receipt_digest=excluded.receipt_digest,outcome=excluded.outcome,"
+            "updated_at=excluded.updated_at",
+            (op, str(source), box, signal, event_id, dedup_key, attempt, nxt,
+             err, receipt_status, receipt_ticket_id, receipt_digest, outcome,
+             now))
+        self.conn.commit()
+        return self.get_escalation(op)
+
+    def reconcile_escalation(self, operation_id):
+        """Re-read the stable operation row before any resend: returns the
+        stored row (or None). A stored accepted receipt means the caller must
+        NOT resend -- the ticket already exists."""
+        return self.get_escalation(str(operation_id))
+
+    def count_admissions(self, status=None):
+        if status:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM rescue_admissions WHERE status=?",
+                (str(status),)).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM rescue_admissions").fetchone()
         return int(row["n"])
 
 
@@ -549,6 +705,27 @@ def self_test():
         assert len(led.open_events()) == 0
         assert not led.ack_event(999999)  # nonexistent
         print("  events case: PASS (record/query/ack, nonexistent ack is False)")
+
+        # write-layer guard: an event written with NO dedup_key still gets a
+        # stable, non-empty one derived - the general-case defense for the
+        # alert-storm bug class (any call site that forgets to pass one, not
+        # just ews_alert.py route_finding). This does NOT throttle repeat
+        # writes by itself (record_event never has); it only guarantees the
+        # column is never NULL, so a caller must still check
+        # recent_digest()/record_digest() before deciding whether to write.
+        eid_nodedup = led.record_event("S9", "P2", key_path="skills.tree", klass="drift",
+                                       detail="no dedup_key passed")
+        row = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+               if e["event_id"] == eid_nodedup][0]
+        assert row["dedup_key"] == "S9|skills.tree", row["dedup_key"]
+        # an explicit dedup_key always wins over the derived default
+        eid_explicit = led.record_event("S9", "P2", key_path="skills.tree", klass="drift",
+                                        detail="explicit key", dedup_key="S9|explicit-override")
+        row2 = [e for e in led.events_since("2000-01-01T00:00:00+00:00")
+                if e["event_id"] == eid_explicit][0]
+        assert row2["dedup_key"] == "S9|explicit-override", row2["dedup_key"]
+        print("  write-layer guard case: PASS (empty dedup_key derived as signal|key_path; "
+              "an explicit key still wins)")
 
         # invalid severity is refused
         try:

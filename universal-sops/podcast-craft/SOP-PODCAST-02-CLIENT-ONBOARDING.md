@@ -28,7 +28,18 @@ Run `ghl_credential_gate.py --client <slug> --expected-location-id <id> --state-
 
 ### 2.2 Webhook route and secret
 
-Generate the route secret with `openssl rand -hex 32`; write it to the client's env store as `PODCAST_INTAKE_HOOK_SECRET` (verify SET in the LIVE process environment, not just in a file), or to `~/.openclaw/secrets/podcast-intake.secret` mode 0600 owned by the runtime user. Add the OpenClaw Webhooks plugin route: id `podcast-intake-<slug>`, bound sessionKey `podcast:intake:<slug>` (owned by this client's podcast department agent), SecretRef `source: env` pointing at `PODCAST_INTAKE_HOOK_SECRET`. Validate the route against the INSTALLED gateway's schema before applying (schema drift is a known trap; the installed contract keys the routes map at `plugins.entries.webhooks.config.routes` and the SecretRef is exactly `{ source, provider, id }`). Apply per the box's restart doctrine (Mac: the kickstart-then-stop sequence; VPS: compose recreate so env changes load), then confirm the gateway is healthy. The plaintext secret transits no chat, no document, no repo, no log.
+Generate the route secret with `openssl rand -hex 32`; write it to the client's env store as `PODCAST_INTAKE_HOOK_SECRET` (verify SET in the LIVE process environment, not just in a file), or to `~/.openclaw/secrets/podcast-intake.secret` mode 0600 owned by the runtime user. Then run, as the runtime user and never as root:
+
+    58-podcast-production-engine/scripts/register-podcast-hook.sh --client-slug <slug>
+
+It writes BOTH surfaces of the intake contract in one idempotent pass, and it is the only supported way to write them:
+
+1. **The TaskFlow control surface** (the Webhooks plugin route): id `podcast-intake-<slug>`, bound sessionKey `podcast:intake:<slug>` (owned by this client's podcast department agent), SecretRef `source: env` pointing at `PODCAST_INTAKE_HOOK_SECRET`, at `plugins.entries.webhooks.config.routes`. This route is driven from INSIDE the podcast agent's own turn and accepts only a `{"action":"create_flow", ...}` envelope. The upstream survey sender must never post here.
+2. **The gateway hook mapping** (the trigger the upstream sender actually posts to): `hooks.mappings[]` id `podcast-intake-<slug>`, `match.path` `podcast-intake-<slug>`, `action: agent`, `agentId` the podcast department agent, `sessionKey` `podcast:intake:<slug>`, `sessionMode: persistent`, `wakeMode: now`, `deliver: false`, `allowUnsafeExternalContent: false`, plus a deterministic `messageTemplate`. Without this mapping a submission lands, the ledger records `received`, and nothing ever advances.
+
+The same run enables the gateway hooks ingress and, when the box has no `hooks.token` yet, points it at the SAME env label as the route SecretRef (`${PODCAST_INTAKE_HOOK_SECRET}`), so onboarding manages ONE secret for both surfaces. When `hooks.token` is ALREADY set by another integration it is NEVER overwritten; the registrar says so in its output, and the upstream sender must then carry that existing box token instead. Recorded trade-off: the hooks token is box-wide, bounded by `hooks.allowedAgentIds` and `hooks.allowedSessionKeyPrefixes`, which the registrar keeps as tight as the box's other integrations allow.
+
+Prove the write with `register-podcast-hook.sh --verify --client-slug <slug>` (read-only, exit 0 PASS / 2 FAIL); it is the same read-back `provision-podcast-client.sh` gates activation on. The registrar also runs `openclaw config validate` and restores its own backup if the merged config is rejected. Apply per the box's restart doctrine (Mac: the kickstart-then-stop sequence; VPS: compose recreate so env changes load), then confirm the gateway is healthy. The plaintext secret transits no chat, no document, no repo, no log.
 
 ### 2.3 Cloudflare provisioning
 
@@ -68,7 +79,16 @@ The `book_teaser` custom field (Interview mode) may not exist in the client's ac
 
 ### 2.8 Upstream sender and sample payload
 
-Configure the ONE upstream sender the client actually uses (a Convert and Flow workflow webhook action, Make.com, or n8n): method POST, the public URL, header `Authorization: Bearer <secret>` (value pasted from the credential store, never from chat), a FLAT JSON body carrying the survey fields plus `contact_id`, `location_id`, `podcast_id`, mode, and style. Capture one real sample payload and add it to the mapper's test fixtures so the deterministic mapper stays covered for this pipeline family. Record route id, sessionKey, secret LOCATION (env var name or file path, never the value), upstream pipeline type, sample payload fixture path, and date in the setup notes.
+Configure the ONE upstream sender the client actually uses (a Convert and Flow workflow webhook action, Make.com, or n8n):
+
+- **Method:** POST.
+- **URL:** `https://<client-hooks-host>/hooks/podcast-intake-<slug>`. The `-<slug>` suffix is REQUIRED: it is the gateway hook mapping's `match.path`. Do NOT point the sender at `/plugins/webhooks/podcast-intake-<slug>`; that surface accepts only `{"action":"create_flow", ...}` and answers a flat survey body with HTTP 400 `action: Invalid discriminator value. Expected 'create_flow'`.
+- **Header:** `Authorization: Bearer <the box hooks token>` (value pasted from the credential store, never from chat). The gateway reads the token from `Authorization: Bearer` or `x-openclaw-token` and from NOWHERE ELSE, so a secret carried as a payload field or a query parameter is rejected. If a client's sender cannot set a header, that client's intake must be sent by one that can, and the substitution goes in the setup notes.
+- **Body:** a FLAT JSON object carrying the survey fields plus `contact_id`, `location_id`, `podcast_id`, mode, and style. No `action` wrapper.
+
+In the Convert and Flow snapshot this is custom value 4 (`podcast_intake_webhook_url`, the full per-slug `/hooks/` URL) and custom value 5 (`podcast_intake_hook_secret`, sent as the Bearer header), per `58-podcast-production-engine/PODCAST-SNAPSHOT-BUILD-MANIFEST.md` Section B.
+
+Capture one real sample payload and add it to the mapper's test fixtures so the deterministic mapper stays covered for this pipeline family. Record route id, hook mapping id, sessionKey, secret LOCATION (env var name or file path, never the value), upstream pipeline type, sample payload fixture path, and date in the setup notes.
 
 ### 2.9 Facebook-ads workflow activation (per-client, once the client connects Facebook)
 
@@ -100,6 +120,57 @@ connected Lead Form and cannot be scripted). Re-run
 afterward and confirm the required 4 still PASS. Record the activation date
 and the Facebook ad-account id (never the token) in the per-client setup
 notes.
+
+### 2.10 Document delivery (Step 12): Google Drive, then Notion
+
+Step 12 renders the Episode Package and the Speech Script and then DELIVERS them
+through a two-tier chain, so the episode documents reach the client wherever the box
+is provisioned. Whichever tier delivers records its ids and links in the documents
+plan, so Step 16 writes real links into Convert and Flow instead of placeholders.
+
+**Tier 1, Google Drive.** Prerequisite: Skill 14 (`14-google-workspace-integration`)
+installed on this box with the client's OWN service account. Each document is
+uploaded as a Google Doc and shared anyone-with-the-link-can-edit.
+
+| Setting | Env | Notes |
+|---|---|---|
+| Service-account key | `GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` | Falls back to the Skill 14 default location `~/clawd/secrets/gcp-service-account.json`. |
+| Impersonated user | `GCP_IMPERSONATE_USER` or `GWS_ACCOUNT` | The Workspace user the service account acts as through domain-wide delegation. |
+| Destination folder | `PODCAST_DRIVE_ROOT_FOLDER_ID` | OPTIONAL. Unset, the documents land in the impersonated user's own Drive root. |
+
+Delivery speaks the Drive REST API directly and never invokes the `gws` binary,
+because a bare headless `gws` call wipes the box's credential store.
+
+**Tier 2, Notion.** Tried when Skill 14 is not configured on this box or the Drive
+call delivered nothing. Nearly every client box already has Notion connected.
+Prerequisite: the client's own integration token and an EXPLICIT client-owned parent
+page, the same contract `37-zhc-closeout` uses.
+
+| Setting | Env | Notes |
+|---|---|---|
+| Integration token | `NOTION_API_TOKEN` (also `NOTION_API_KEY`, `NOTION_TOKEN`) | The CLIENT's own token. The agency token named by `ZHC_AGENCY_NOTION_TOKEN` is refused. |
+| Parent page | `NOTION_PODCAST_PARENT`, else `NOTION_PARENT_PAGE_ID`, else `NOTION_WORKSPACE_ROOT_ID` | Must be explicit. Ownership is never inferred from a workspace-wide search, and the agency parent named by `ZHC_AGENCY_NOTION_PARENT_PAGE_ID` is refused. |
+| API version | `NOTION_API_VERSION` | OPTIONAL. Defaults to `2022-06-28`. |
+
+The integration must be shared with that parent page. Step 12 creates one
+`Podcast Episodes` page under it, once, then one page per episode beneath that.
+Re-running Step 12 for the same episode REPLACES that page's content; it never
+creates a duplicate. The page carries an episode properties block (title, date,
+style, mode, runtime) and the rendered content as Notion blocks. The Notion API
+cannot upload a file, so the published audio from Step 15 is LINKED, never uploaded.
+
+**Tier 3, neither configured.** Step 12 keeps the intent-only record and logs ONE
+line naming both prerequisites. The episode still completes and the rendered files
+on disk remain the deliverables.
+
+Never an operator or agency credential on either tier: each box points at its own
+client's Workspace and its own client's Notion. Confirm readiness with
+`python3 58-podcast-production-engine/scripts/render_documents.py detect`, which
+prints a `tier 1 drive delivery:` line and a `tier 2 notion delivery:` line
+reporting SET or NOT SET by label and never a value. An API error on either tier is
+recorded on the plan and never fails the episode.
+
+---
 
 ## 3. TEST-SUBMISSION VERIFICATION (T1 to T9; all must pass before go-live)
 

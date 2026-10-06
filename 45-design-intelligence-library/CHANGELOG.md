@@ -1,6 +1,33 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
-## [v1.3.4] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
+## v2.1.9 - 2026-10-06 - No Nano Banana fallback for social or ad images
+
+- `social-media-designs`, `facebook-ad-designs`, `advertisement-designs` `_RULES.md`: Nano Banana is never used (labeled or not); the 4:5 "only on the Nano Banana fallback" clauses are replaced by "request 3:4, crop to 4:5". The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules.
+
+## v2.1.8 - 2026-10-06 - Facebook and advertisement rules name GPT Image 2.5 Sunburst explicitly
+
+- `facebook-ad-designs/_RULES.md` and `advertisement-designs/_RULES.md`: the "Photoreal person" and "people-led" routing lines now name GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, `-image-to-image` with a reference) instead of "GPT-Image 2.5", Nano Banana 2 stays a labeled non-text fallback, and the odd "Sunburst LONG" label is replaced by the rule 12 full-length prompt statement (`07-kie-setup/references/kie-common-rules.md`). `social-media-designs/_RULES.md` was reviewed and already matches (Sunburst for all social images, no Ideogram route, rule 12 length, podcast cover 1400 x 1400 with 2K minimum).
+
+## v2.1.7 - 2026-10-06 - Ideogram leftovers aligned to the GPT Image 2.5 Sunburst default
+
+- `_system/MODEL-SPECS.md` v1.7, `advertisement-designs/_RULES.md`, `facebook-ad-designs/_RULES.md`: no Ideogram route for ads; default is GPT Image 2.5 Sunburst, consistent with `social-media-designs/_RULES.md`.
+- `MODEL-SPECS.md`, `banner-designs/_RULES.md`, `book-cover-designs/_RULES.md`: the remaining Ideogram V3 rows are labeled a deliberate non-social specialty route (true `negative_prompt`).
+- `_system/prompt-bands.json` `text_bearing_medium` is untouched (prompt-budget lane).
+
+## v2.1.6 - 2026-10-06 - social routing correction: no Ideogram route
+
+- See the corrected `social-media-designs/_RULES.md` entry under v2.1.5 below (same PR). Prompt-length wording there now defers to rule 12 of `07-kie-setup/references/kie-common-rules.md` (the old 9,000-19,000 restatement is removed); `prompt-bands.json` and `diu_validator.py` are migrated by the prompt-budget change, not here.
+
+## v2.1.5 - 2026-10-05 - close open items on the image consumers PR
+
+- `social-media-designs/_RULES.md`: CORRECTED. GPT Image 2.5 Sunburst for ALL social images (legacy gpt-image-2 only for 3:1, 1:3, 9:21; N43 substitutions incl. 4:5 -> 3:4); Nano Banana 2 only as a labeled fallback; there is NO Ideogram V3 route for social (Skill 35 routes every image to Sunburst). The earlier claim that every Skill 35 deliverable must route to Ideogram, and the 'deliberate Ideogram specialty route' wording added earlier in this PR, are removed. Note: `_system/prompt-bands.json` (not edited here) still carries a legacy `text_bearing_medium` band that names an Ideogram endpoint and a GK-20 rationale to the same effect; it is not a social route and needs its own follow-up (the band names are validated by `diu_validator.py` tests).
+
+## v2.1.4 - 2026-10-05 - fix(image consumers): sunburst-first order, unified model ids and credit preflight
+
+- Routing (owner order, AGENTS.md N43): GPT-Image 2.5 first everywhere in MODEL-SPECS Section 2, PHOTO-SHOOT-SOP modes A/B/C/F, and the advertisement, facebook-ad, personal-photo-shoot, powerpoint and social-media category rules; Nano Banana 2 fallback only. Deliberate exception kept and labelled: ultra-wide 4:1/8:1 (2.5 does not serve them). (An Ideogram quote-card exception listed here earlier was wrong and was removed in v2.1.6.)
+- `library/_system/MODEL-SPECS.md` v1.6: relabelled a DATED SNAPSHOT. Authority is the Skill 66 policy and registry plus the Skill 74 live catalog (`kie_live_adapter.py validate` / `price`); the "only file that changes" claim removed; owner house rules kept. Documents that the v1.4 changelog row (gpt-image-2 primary for presentations) is historical and superseded by sunburst (Section 2, AGENTS.md N43). No model ids changed: `nano-banana-2` matches Skill 66, and `seedream/4.5-edit` matches the live KIE docs enum.
+
+## [2.0.0] - 2026-07-15 - GK-20: band<->routing contradiction reconciled in ONE place (`prompt-bands.json` v2), CI locks added
 
 ### Why
 `prompt-bands.json` (P3-05, v1.3.3) listed `nano-banana-2` as a `text_bearing_long` endpoint and
@@ -242,3 +269,7 @@ the routing rule could never both be satisfied as written.
 ---
 
 ## End of Skill 45 CHANGELOG
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

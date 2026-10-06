@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/unit/install-kickoff-owner-name.test.sh
 #
-# Regression test for the 2026-08-20 fleet defect (proven live on Teresa
-# Pelham's Mac, v22.0.54): fire_install_kickoff_triplet() referenced
+# Regression test for the 2026-08-20 fleet defect on a client Mac:
+# fire_install_kickoff_triplet() referenced
 # ${owner_name} in the terminal fallback block, but the variable was only
 # assigned inside the fresh-install-only else-branch. On an update/re-roll
 # (OPENCLAW_IS_FRESH_INSTALL != 1) the first branch ran, owner_name was never

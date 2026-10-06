@@ -33,7 +33,7 @@ call sites (fix spec). Resolution order:
        exposes resolve_alias() -- FIX 13 is authoritative and this module
        defers to it;
     2. the built-in DEFAULT_ALIAS_REGISTRY here, which pins only the ids
-       this box has LIVE-CONFIRMED (deepseek-v4-pro / deepseek-v4-flash on
+       this box has LIVE-CONFIRMED (deepseek-v4-pro / deepseek-flash on
        the native DeepSeek endpoint) plus the GLM/Ollama/Kie labels from the
        fix-spec table, to be superseded by FIX 13's live catalog the moment
        that module lands.
@@ -80,6 +80,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -113,16 +114,20 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                         "model": "deepseek-v4-pro",
                         "modality": "text", "context_class": "long",
                         "live_confirmed": True},
-    "deepseek-v4-flash": {"provider": "deepseek-direct",
-                          "model": "deepseek-v4-flash",
-                          "modality": "text", "context_class": "standard",
-                          "live_confirmed": True},
+    "deepseek-flash": {"provider": "deepseek-direct",
+                      "model": "deepseek-flash",
+                      "modality": "text", "context_class": "standard",
+                      "live_confirmed": True},
     "glm-5.3": {"provider": "openrouter",
-                "model": "glm-5.3",
+                # F30 (SMOKE-1): served id is z-ai/glm-5.3; bare "glm-5.3" is
+                # not in OpenRouter's wired inventory (419 probed 2026-09-01),
+                # so the alias never became eligible and fell through.
+                "model": "z-ai/glm-5.3",
                 "modality": "text", "context_class": "long",
                 "note": "GLM 5.3 via OpenRouter (fix-spec fallback column)"},
     "glm-flash": {"provider": "openrouter",
-                  "model": "glm-flash",
+                  # F30: served id z-ai/glm-5.3-flash (probed 2026-09-01)
+                  "model": "z-ai/glm-5.3-flash",
                   "modality": "text", "context_class": "standard",
                   "note": "GLM Flash-class text model (fix-spec fallback)"},
     "glm-ocr": {"provider": "ollama-cloud",
@@ -136,30 +141,147 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# FIX 17b: the router's candidate aliases and the FIX 13 catalog's alias
+# vocabulary are two names for the same route. The catalog
+# (model_catalog.json) is the ONLY place a literal model id may live, so
+# resolve_alias() resolves the router alias THROUGH this mapping into the
+# catalog's alias space first; the built-in DEFAULT_ALIAS_REGISTRY above is
+# the fallback for aliases the catalog does not name (the GLM/OpenRouter
+# labels), never a second source of truth for the ones it does.
+ROUTER_CATALOG_ALIAS: Dict[str, str] = {
+    "deepseek-v4-pro": "text.strong",
+    "deepseek-flash": "text.fast",
+    "gpt-image-2": "image.t2i",
+    "gpt-image-2-5": "image.t2i",
+    "glm-ocr": "vision.ocr",
+}
+
+
 def resolve_alias(alias: str) -> Dict[str, Any]:
-    """One alias -> ({provider, model, modality, ...}) or {} when unknown.
+    """One alias -> ({provider, model, modality, ..., served_ids}) or {} when
+    unknown.
 
     FIX 13's model_catalog wins when present; this built-in registry is the
-    fallback, never duplicated at call sites."""
+    fallback, never duplicated at call sites. FIX 17a: the catalog's
+    served_ids table -- {provider: served model id} keyed (alias, provider) --
+    rides through on the resolved definition so the router can name the id
+    each provider's endpoint actually accepts (openrouter serves
+    z-ai/glm-5.3-flash for the judge class; deepseek-direct serves
+    deepseek-flash for the same alias).
+    FIX 17b: the router READS THE CATALOG -- the alias is first mapped into
+    the catalog's own vocabulary (ROUTER_CATALOG_ALIAS) and resolved through
+    presentation_job.model_catalog, so provider, model and served_ids all
+    come from model_catalog.json, the single literal-id store. A catalog
+    entry also wins over the registry for the router alias it backs."""
+    candidates = [alias]
+    mapped = ROUTER_CATALOG_ALIAS.get(alias)
+    if mapped and mapped != alias:
+        candidates.insert(0, mapped)  # catalog vocabulary first (FIX 17b)
     try:  # FIX 13 hook -- the live catalog is authoritative when landed
         from presentation_job import model_catalog as _catalog  # type: ignore
-        resolved = None
-        for name in ("resolve_alias", "resolve"):  # FIX 13 landed names
-            resolver = getattr(_catalog, name, None)
-            if callable(resolver):
-                try:
-                    resolved = resolver(alias)
-                except Exception:
-                    resolved = None  # fail-closed catalog miss -> registry
-                if isinstance(resolved, dict) and resolved.get("provider") \
-                        and resolved.get("model"):
-                    out = dict(resolved)
-                    out.setdefault("modality", "text")
-                    out.setdefault("context_class", "standard")
-                    return out
+        for probe in candidates:
+            resolved = None
+            for name in ("resolve_alias", "resolve"):  # FIX 13 landed names
+                resolver = getattr(_catalog, name, None)
+                if callable(resolver):
+                    try:
+                        resolved = resolver(probe)
+                    except Exception:
+                        resolved = None  # fail-closed catalog miss -> next
+                    if isinstance(resolved, dict) and resolved.get("provider") \
+                            and resolved.get("model"):
+                        out = dict(resolved)
+                        out.setdefault("modality", "text")
+                        out.setdefault("context_class", "standard")
+                        # FIX 17a: normalise the served_ids keys to canonical
+                        # dash-form provider ids so `ollama_cloud` (underscore
+                        # drift) and `ollama-cloud` resolve identically.
+                        raw_served = out.get("served_ids")
+                        if isinstance(raw_served, dict) and raw_served:
+                            norm = getattr(_catalog, "normalize_provider_id", None)
+                            if callable(norm):
+                                out["served_ids"] = {
+                                    str(norm(k)): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                            else:
+                                out["served_ids"] = {
+                                    str(k).strip().lower()
+                                    .replace("_", "-").replace(" ", "-"): str(v)
+                                    for k, v in raw_served.items()
+                                    if str(v).strip()
+                                }
+                        return out
     except Exception:  # noqa: BLE001 -- catalog absence never breaks routing
         pass
+    # Saved-config compat: an older Flash alias stored in a client plan folds
+    # to the live id. The legacy id is never sent; _eligible judges the live
+    # served id, so the fold happens before the registry fallback too.
+    try:  # catalog shim is authoritative for the legacy mapping when present
+        from presentation_job import model_catalog as _compat_catalog  # type: ignore
+        fold = getattr(_compat_catalog, "fold_legacy_flash_model_id", None)
+        if callable(fold):
+            folded = fold(alias)
+            if folded != alias:
+                if folded in DEFAULT_ALIAS_REGISTRY:
+                    return dict(DEFAULT_ALIAS_REGISTRY.get(folded) or {})
+                alias = folded
+    except Exception:  # noqa: BLE001 -- shim absence never breaks routing
+        pass
     return dict(DEFAULT_ALIAS_REGISTRY.get(alias) or {})
+
+
+def _norm_provider(provider: Any) -> str:
+    """FIX 17a provider-id normalisation for the router side.
+
+    `ollama_cloud` vs `ollama-cloud` is the same provider spelled twice;
+    the profile store and the catalog must never disagree about that.
+    capacity.normalize_provider is the cap-table authority when importable;
+    the string fold (lowercase, underscores/spaces -> dashes) covers the
+    rest. Unknown providers pass through normalised unchanged -- folding a
+    name is never evidence the provider exists."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    try:  # cap-table authority (deepseek -> deepseek-direct, ollama fold)
+        from . import capacity as _cap  # package-relative
+    except ImportError:  # pragma: no cover - direct file run
+        try:
+            import capacity as _cap  # type: ignore[no-redef]
+        except ImportError:
+            _cap = None  # type: ignore[assignment]
+    if _cap is not None and hasattr(_cap, "normalize_provider"):
+        try:
+            mapped = _cap.normalize_provider(token)
+        except Exception:  # noqa: BLE001 -- normalisation never raises upward
+            mapped = None
+        if mapped:
+            return str(mapped)
+    if token == "deepseek":
+        return "deepseek-direct"
+    return token
+
+
+def _norm_model_id(model_id: Any) -> str:
+    """FIX 17b model-id normalisation for wired-inventory comparison.
+
+    Same fold resource_profile._norm_model_id uses: lowercase, every
+    non-alphanumeric run collapsed to a single dash. 'zai/glm-5.3-flash:free',
+    'GLM 5.3 Flash' and 'glm_5_3_flash' land on one comparable shape --
+    spelling drift only, never a prefix/family inference."""
+    return re.sub(r"[^a-z0-9]+", "-", str(model_id).lower()).strip("-") or ""
+
+
+def _served_model(alias_def: Dict[str, Any], provider: str) -> str:
+    """FIX 17a: the served model id one provider's endpoint accepts for this
+    alias, or the alias's plain model id when no (alias, provider) row
+    exists. A missing served row falls back to the alias model verbatim --
+    the fallback is the catalog's own declared id, never an invented one."""
+    served = alias_def.get("served_ids")
+    if isinstance(served, dict) and served:
+        hit = served.get(_norm_provider(provider))
+        if isinstance(hit, str) and hit.strip():
+            return hit
+    return str(alias_def.get("model") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +309,9 @@ PHASE_CAPABILITY: Dict[str, str] = {
     # Copy + prompt authoring (high-throughput long-form)
     "P4-COPY": "authoring",
     "P4-PROMPT": "prompt_authoring",
+    # FIX 112: the copy stage's fanout unit (per-slide style-variant candidates)
+    # is creative-cheap structured text, same class as the design direction.
+    "P-STYLE-SPEC": "creative_cheap",
     "PF-DESIGN": "creative_cheap",
     # Independent cheap text judges
     "P1Q-COPY-QC": "judge",
@@ -226,14 +351,26 @@ DEFAULT_CAPABILITY = "authoring"
 # fix-spec table's Default + Ordered-fallback columns. The fallback rule is
 # the modality doctrine: reasoning/long classes never drop to Flash.
 CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
+    # OPERATOR RULING 2026-09-04: Flash leads on authoring work. Flash's
+    # DeepSeek Direct ceiling is 2500 concurrent vs Pro's 500, so a wide
+    # per-slide fan-out is only reachable on Flash; Pro remains the fallback
+    # for anything Flash cannot serve. reasoning_long and long_synthesis are
+    # deliberately NOT changed -- those classes still never see Flash.
+    #
+    # NOTE: "allow_flash_fallback" below is INERT. It is declared here and
+    # read NOWHERE in this tree (2 occurrences, both declarations, zero
+    # consumers -- verified against a CAPABILITY_CANDIDATES control with 1
+    # declaration and 2 consumers). Fallback order is enforced ONLY by the
+    # order of this list, and a class refuses Flash only by omitting it.
+    # Do not trust this key to gate anything.
     "authoring": [
+        {"alias": "deepseek-flash"},
         {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
-        {"alias": "deepseek-v4-flash"},
         {"alias": "glm-5.3"},
     ],
-    "prompt_authoring": [  # P4-PROMPT: pro -> flash when context fits -> GLM
+    "prompt_authoring": [  # P4-PROMPT: flash -> pro -> GLM
+        {"alias": "deepseek-flash"},
         {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
-        {"alias": "deepseek-v4-flash"},
         {"alias": "glm-5.3"},
     ],
     "reasoning_long": [  # no Flash fallback: long context + reasoning
@@ -250,36 +387,37 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "glm-5.3"},
     ],
     "cheap_text": [
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
     "creative_cheap": [  # PF-DESIGN cheap creative text
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
     "judge": [  # independent cheap text judge
-        {"alias": "deepseek-v4-flash"},
+        {"alias": "deepseek-flash"},
         {"alias": "glm-flash"},
         {"alias": "glm-5.3"},
     ],
-    "vision_ocr": [  # SMOKE-1 F26 (2026-09-01): glm-ocr@ollama-cloud has no
-                     # OLLAMA_CLOUD_API_KEY on this box, so EVERY typography-QC
-                     # dispatch died auth-side before authoring anything and the
-                     # phase blocked 3x on "produced nothing." F26 moved the
-                     # catalog vision.ocr class itself to deepseek-v4-pro, so the
-                     # ladder leads with the catalog class (text review of the
-                     # design spec; rendered-pixel typography is QC'd at
-                     # preview/P-IMAGE-QC). Restore glm-ocr when the ollama-cloud
-                     # key is provisioned on the operator box.
-        {"alias": "vision.ocr"},
+    "vision_ocr": [  # vision + OCR only; no owner -> park fail-closed
+        # F30 (SMOKE-1, 2026-09-01): glm-ocr (ollama-cloud) needs
+        # OLLAMA_CLOUD_API_KEY which no env store on the operator box carries,
+        # so the single-candidate chain exhausted every wave with
+        # "OLLAMA_CLOUD_API_KEY not set". F30b: OpenRouter credits are
+        # exhausted (HTTP 402 at any token budget -- balance is negative),
+        # so the OCR readback falls to deepseek-direct (proven live 2026-09-01
+        # with a 1-token smoke call). deepseek-v4-pro is a text model; the
+        # P-IMAGE-QC OCR readback is text-QC over baked-prompt text, not raw
+        # pixel vision, so a text model satisfies the verifier.
         {"alias": "deepseek-v4-pro"},
         {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
     "image_render": [  # Kie render; the script executor owns the phase
         {"alias": "gpt-image-2"},
+        {"alias": "gpt-image-2-5"},
     ],
     "speech_text": [
         {"alias": "deepseek-v4-pro"},
@@ -287,6 +425,332 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
     ],
     "mechanical": [],  # no LLM route, ever
 }
+
+
+# ---------------------------------------------------------------------------
+# CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
+#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#    forced to do anything. So as a client should be able to choose whatever
+#    they want to be their primary workhorse or authoring model."
+#
+# CAPABILITY_CANDIDATES above is therefore the DEFAULT for a client who
+# declares NOTHING -- it stopped being the only answer. A client's declaration
+# lives in the resource profile (resource_profile.record_model_plan ->
+# profile["model_plan"]), which is the ONE store every consumer already reads:
+# resolve_route() loads it on every call, and the P4-PROMPT fan-out children
+# re-resolve in a SEPARATE process (parallel_prompt_worker) where a run-dir
+# sidecar would be unreachable but the env-resolved profile path is inherited.
+#
+# The declaration is data, not code:
+#   profile["model_plan"] = {
+#     "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
+#     "reasoning": {...} | null,
+#     "judge":     {...} | null,
+#     "thinking":  "max"|"high"|"medium"|"low"|"off"|null,
+#     "floor_waivers": ["reasoning_long", ...],
+#     "source": "interview"|"cli", "declared_at": "<ISO8601>"}
+#
+# NOTE ON THE KEY NAMES (binding): resource_profile.redact_record() DROPS every
+# profile key matching (api[-_]?key|key|token|secret|password|passwd|auth|
+# credential|cookie|bearer) on EVERY save and EVERY load. "auth" is a substring
+# of "authoring", so a slot named "authoring_model" would VANISH from the store
+# on the next save with no error. The slot is called "workhorse" for that
+# reason, and no dict persisted into the profile is ever keyed by a capability
+# class name (the per-class table below is a LIST of rows, not a dict keyed by
+# "authoring"). tests/test_model_plan.py pins this.
+# ---------------------------------------------------------------------------
+
+#: The alias-prefix a client-declared candidate carries in a decision's
+#: candidate list, so telemetry can tell a client choice from a default one.
+CLIENT_ALIAS_PREFIX = "client:"
+
+#: Which capability classes each client slot governs. vision_ocr, image_render
+#: and mechanical are deliberately NOT client-slotted in v1: OCR/render classes
+#: are modality-bound to a provider the client rarely owns a substitute for,
+#: and mechanical phases carry no LLM route at all.
+#:
+#: `judge` is NOT reachable from the workhorse slot, by design and not by
+#: omission: this module exists partly because "QC judges could silently ride
+#: the same model identity that authored the artifact" (header, WHAT THIS IS).
+#: Spilling a declared workhorse into the judge class would re-open exactly
+#: that hole, so the judge slot must be named EXPLICITLY to take effect.
+SLOT_CLASSES: Dict[str, Tuple[str, ...]] = {
+    "workhorse": ("authoring", "prompt_authoring", "cheap_text",
+                  "creative_cheap", "speech_text"),
+    "reasoning": ("reasoning_long", "long_synthesis", "research_synthesis"),
+    "judge": ("judge",),
+}
+
+#: Reverse index: capability class -> the slot that governs it (None = not
+#: client-slotted in v1).
+CLASS_SLOT: Dict[str, str] = {
+    cls: slot for slot, classes in SLOT_CLASSES.items() for cls in classes
+}
+
+#: THE INVARIANTS, as data beside the candidate table. A client choice is
+#: honoured only when it clears the floor of the class it would serve (or the
+#: client explicitly waived that class -- see floor_waivers). Same doctrine as
+#: capacity: an UNKNOWN reading is never rounded upward into a capability.
+CLASS_FLOORS: Dict[str, Dict[str, str]] = {
+    "authoring": {"context_class": "standard", "modality": "text"},
+    "prompt_authoring": {"context_class": "standard", "modality": "text"},
+    "cheap_text": {"context_class": "standard", "modality": "text"},
+    "creative_cheap": {"context_class": "standard", "modality": "text"},
+    "speech_text": {"context_class": "standard", "modality": "text"},
+    "judge": {"context_class": "standard", "modality": "text"},
+    # the modality doctrine, unchanged: these three cannot hold the research
+    # bundle on a standard window, so "long" is a FLOOR, not a preference.
+    "reasoning_long": {"context_class": "long", "modality": "text"},
+    "long_synthesis": {"context_class": "long", "modality": "text"},
+    "research_synthesis": {"context_class": "long", "modality": "text"},
+    "vision_ocr": {"context_class": "standard", "modality": "vision"},
+    "image_render": {"context_class": "standard", "modality": "image"},
+}
+
+#: Anything not named above is held to the ordinary text floor.
+DEFAULT_CLASS_FLOOR: Dict[str, str] = {"context_class": "standard",
+                                       "modality": "text"}
+
+#: The context classes that SATISFY each context floor. "standard" is the
+#: baseline every text model clears, so an UNKNOWN reading clears it too --
+#: there is nothing below standard to fall short of. "long" is a real
+#: capability claim, and only a model the catalog SAYS is long satisfies it:
+#: "unknown" is deliberately absent from that set, because the absence of a
+#: reading is never evidence of a longer window (the same doctrine that stops
+#: an unmeasured capacity ceiling from becoming a wide one).
+_CONTEXT_SATISFIES: Dict[str, frozenset] = {
+    "standard": frozenset({"standard", "long", "unknown"}),
+    "long": frozenset({"long"}),
+}
+
+
+def class_floor(capability: str) -> Dict[str, str]:
+    """The floor one capability class imposes on any model that serves it."""
+    return dict(CLASS_FLOORS.get(capability) or DEFAULT_CLASS_FLOOR)
+
+
+def floor_verdict(alias_def: Dict[str, Any], capability: str) -> Dict[str, Any]:
+    """Does this resolved model meet `capability`'s floor? Never guesses up.
+
+    context_class: a class demanding "long" is met ONLY by a model the catalog
+    says is "long". An arbitrary wired id resolves to context_class "unknown"
+    (nobody measured it) and UNKNOWN FAILS the long floor -- absence of a
+    reading is never evidence of a long window, exactly as an unmeasured
+    capacity ceiling never becomes a wide one.
+    modality: exact. A vision or image model is not a text authoring model and
+    a text model is not an OCR model."""
+    required = class_floor(capability)
+    ctx = str(alias_def.get("context_class") or "unknown").strip().lower()
+    mod = str(alias_def.get("modality") or "unknown").strip().lower()
+    reasons: List[str] = []
+    need_ctx = str(required.get("context_class") or "standard")
+    if ctx not in _CONTEXT_SATISFIES.get(need_ctx, frozenset({need_ctx})):
+        reasons.append(
+            f"context_class {ctx!r} does not meet the {need_ctx!r} floor of "
+            f"capability {capability!r}"
+            + (" -- UNKNOWN is the absence of a reading, never evidence of a "
+               "longer window" if ctx == "unknown" else ""))
+    need_mod = str(required.get("modality") or "text")
+    if mod != need_mod:
+        reasons.append(f"modality {mod!r} is not the {need_mod!r} modality "
+                       f"capability {capability!r} requires")
+    return {
+        "ok": not reasons,
+        "required": required,
+        "context_class": ctx,
+        "modality": mod,
+        "reason": "; ".join(reasons) or f"meets the {capability} floor",
+    }
+
+
+def model_plan(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The client's declared model plan block, or {} when none is declared."""
+    if not isinstance(profile, dict):
+        return {}
+    plan = profile.get("model_plan")
+    return plan if isinstance(plan, dict) else {}
+
+
+def plan_slot(plan: Dict[str, Any], slot: str) -> Optional[Dict[str, str]]:
+    """One slot's declared {provider, model}, normalised, or None.
+
+    A half-declared slot (provider without model, or the reverse) is NOT a
+    declaration: it returns None rather than being completed with a guess."""
+    raw = (plan or {}).get(slot)
+    if not isinstance(raw, dict):
+        return None
+    provider = _norm_provider(raw.get("provider"))
+    model = str(raw.get("model") or "").strip()
+    if not provider or not model:
+        return None
+    return {"provider": provider, "model": model}
+
+
+def _registry_capability_meta(model_id: str) -> Dict[str, Any]:
+    """The modality/context_class DEFAULT_ALIAS_REGISTRY states for this id.
+
+    WHY THIS EXISTS (verified 2026-09-04): model_catalog.json declares ZERO
+    capability metadata -- `context_class` and `modality` appear 0 times in the
+    whole file -- so resolve_alias()'s setdefault() hands back "standard"/"text"
+    for EVERY catalog-backed alias, deepseek-v4-pro included. The catalog is
+    authoritative for the literal ids (FIX 17b) and says nothing about
+    capability; this registry is where capability is actually declared. Reading
+    the floor off the catalog's defaults would judge the department's own
+    long-context model as standard-context, so the client's declaration is
+    measured against the table that actually states the fact.
+
+    Matches by alias key first, then by the id each registry row serves, so a
+    client who types the served id ("z-ai/glm-5.3") is judged the same as one
+    who types the alias ("glm-5.3"). Returns {} when nothing declares it --
+    and {} means UNKNOWN, which never clears a long floor."""
+    key = str(model_id or "").strip()
+    row = DEFAULT_ALIAS_REGISTRY.get(key)
+    if not isinstance(row, dict):
+        nm = _norm_model_id(key)
+        row = next((r for r in DEFAULT_ALIAS_REGISTRY.values()
+                    if nm and _norm_model_id(r.get("model")) == nm), None)
+    if not isinstance(row, dict):
+        return {}
+    return {f: row[f] for f in ("modality", "context_class") if f in row}
+
+
+def declared_alias_def(declared: Dict[str, str]) -> Tuple[Dict[str, Any], str]:
+    """Resolve one declared {provider, model} into an alias_def-shaped dict.
+
+    Three honest outcomes, in order:
+      catalog-alias      -- the id is a router/catalog alias AND names the same
+                            provider: the catalog row is used verbatim, so its
+                            served_ids/modality/context_class all apply.
+      catalog-repointed  -- the id is a known alias but the client named a
+                            DIFFERENT endpoint for it: the model's capability
+                            metadata (modality/context_class -- properties of
+                            the MODEL) rides along, while provider and served
+                            id come from what the client actually declared.
+      wired-id           -- an arbitrary id no catalog names: synthesized with
+                            context_class "unknown" (which fails every long
+                            floor) and modality "text" (the class of work every
+                            client-slotted class does). Nothing is inferred
+                            from the id's spelling.
+    """
+    provider = declared["provider"]
+    model = declared["model"]
+    resolved = resolve_alias(model)
+    meta = _registry_capability_meta(model)
+    if resolved and resolved.get("provider") and resolved.get("model"):
+        out = dict(resolved)
+        out.update(meta)  # capability is declared HERE, never by the catalog
+        out.setdefault("modality", "text")
+        out.setdefault("context_class", "standard")
+        if _norm_provider(out.get("provider")) == provider:
+            # Same provider, canonically spelled: the catalog may say
+            # "deepseek" where the client (and the profile store, and the key
+            # canon) say "deepseek-direct". Stamp the canonical form so the
+            # decision reports the route the client actually declared -- a
+            # fold, never a repoint (the equality above already proved that).
+            out["provider"] = provider
+            return out, "catalog-alias"
+        out["provider"] = provider
+        out["model"] = model
+        out["served_ids"] = {provider: model}
+        return out, "catalog-repointed"
+    synth: Dict[str, Any] = {"provider": provider, "model": model,
+                             "modality": "text", "context_class": "unknown",
+                             "served_ids": {provider: model}}
+    synth.update(meta)
+    return synth, ("registry-id" if meta else "wired-id")
+
+
+def client_plan_for(capability: str,
+                    profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The client's declaration for one capability class, or None.
+
+    Returns {slot, via, declared, alias, alias_def, alias_source, floor,
+    waived, capability}. `via`:
+      "declared"        -- the client named THIS slot;
+      "workhorse-spill" -- only the workhorse was named, and this is a
+                           reasoning class: per the launch policy the
+                           workhorse governs it too WHEN IT MEETS THE FLOOR,
+                           and falls back VISIBLY when it does not.
+    A spill can never be waived: a waiver is something a client asks for about
+    a model they NAMED for that job, never something inferred on their behalf.
+    """
+    plan = model_plan(profile)
+    if not plan:
+        return None
+    slot = CLASS_SLOT.get(capability)
+    if slot is None:
+        return None  # vision_ocr / image_render / mechanical: not slotted in v1
+    declared = plan_slot(plan, slot)
+    via = "declared"
+    if declared is None and slot == "reasoning":
+        declared = plan_slot(plan, "workhorse")
+        via = "workhorse-spill"
+    if declared is None:
+        return None
+    alias_def, alias_source = declared_alias_def(declared)
+    floor = floor_verdict(alias_def, capability)
+    waivers = {str(w).strip() for w in (plan.get("floor_waivers") or [])
+               if str(w).strip()}
+    return {
+        "capability": capability,
+        "slot": slot,
+        "via": via,
+        "declared": dict(declared),
+        "alias": f"{CLIENT_ALIAS_PREFIX}{slot}",
+        "alias_def": alias_def,
+        "alias_source": alias_source,
+        "floor": floor,
+        "waived": bool((not floor["ok"]) and via == "declared"
+                       and capability in waivers),
+    }
+
+
+def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The per-class table the launcher banner and the client report print.
+
+    `classes` is a LIST of rows, never a dict keyed by capability class --
+    "authoring" contains "auth" and would be dropped by the profile's
+    redaction rule if this shape were ever persisted there (see the header
+    note above)."""
+    plan = model_plan(profile)
+    rows: List[Dict[str, Any]] = []
+    for capability in sorted(CAPABILITY_CANDIDATES):
+        if capability == "mechanical":
+            continue
+        default_alias = str(
+            (CAPABILITY_CANDIDATES.get(capability) or [{}])[0].get("alias") or "")
+        pick = client_plan_for(capability, profile)
+        if pick is None:
+            rows.append({
+                "capability": capability, "slot": None, "via": None,
+                "source": "department-default", "provider": None, "model": None,
+                "default_alias": default_alias, "floor": None,
+                "detail": "no client declaration covers this class",
+            })
+            continue
+        applied = pick["floor"]["ok"] or pick["waived"]
+        rows.append({
+            "capability": capability,
+            "slot": pick["slot"],
+            "via": pick["via"],
+            "source": "client-plan" if applied else "department-default",
+            "provider": pick["declared"]["provider"],
+            "model": pick["declared"]["model"],
+            "default_alias": default_alias,
+            "floor": ("ok" if pick["floor"]["ok"]
+                      else ("waived" if pick["waived"] else "failed")),
+            "detail": pick["floor"]["reason"],
+        })
+    slots = {slot: plan_slot(plan, slot) for slot in SLOT_CLASSES}
+    return {
+        "declared": bool(plan),
+        "slots": slots,
+        "thinking": plan.get("thinking"),
+        "floor_waivers": sorted(str(w) for w in (plan.get("floor_waivers") or [])),
+        "source": plan.get("source"),
+        "declared_at": plan.get("declared_at"),
+        "classes": rows,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -298,32 +762,125 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
 # wall-clock operator-box stability window (>=95% of eligible Ultra runs
 # complete without concurrency-caused retry exhaustion, zero safety gates
-# bypassed, telemetry complete).
-# REVISION 2026-09-01 (Trevor, explicit approval, this session): ceiling
-# 100 -> 500. The 7-day stability gate above is recorded as amended by the
-# same operator ruling; the ceiling remains HUMAN-ratified and remains
-# smaller-than-provider-advertised (500 == the DeepSeek advertise cap, not above it). Standard and Economy derive from the
+# bypassed, telemetry complete). Standard and Economy derive from the
 # MEASURED client capacity/cost policy and may never exceed the same
 # client/provider ceiling. Nothing here touches the network: ceilings come
 # from the client's resource profile (FIX 8 ceiling fields), the
 # conservative floor, and the human-ratified constant below.
+#
+# FIX 15 + FIX 16 (one PR, F15 first -- F16's width axis is only honest once
+# F15 makes the plan report the number that will be applied):
+#
+#   F15  mode_concurrency() reported a width NOTHING downstream applied. On
+#        the operator box the launcher banner and .mode-plan.json said
+#        "concurrency plan 8" for standard while capped_width() ran the
+#        P4-PROMPT wave at 100 (review K3). It now answers exactly what
+#        capped_width() will apply, or UNDETERMINED.
+#   F16  ultra and standard were BYTE-IDENTICAL end to end (review section 6)
+#        because mode_ceiling() handed both the same 100. F16 narrowed
+#        STANDARD_MODE_CEILING to 25 to create a difference. Where nothing
+#        was measured the axis is inert and SAYS SO -- see
+#        mode_operator_ceiling() and _unmeasured_notice().
+#
+# U3 (2026-09-07) -- F16's 25 IS UNDONE; F15 STAYS. STANDARD_MODE_CEILING is
+#        back at the operator's 100. The 25 was a review SUGGESTION whose own
+#        text said "Trevor's call", shipped without that call and applied
+#        wider than the suggestion proposed (every width, not just the
+#        fan-out QC phases). F15's honesty -- the plan reporting the width
+#        that will actually be applied -- is untouched and must stay.
+#        FIX 61.5: ultra is 400, standard is 25 -- the axis is REAL, not
+#        cosmetic. Unmeasured clients get their mode's ceiling.
 
 MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
 
 #: The operator ceiling -- a HUMAN-ratified constant, never provider-advertised.
-ULTRA_OPERATOR_CEILING = 500  # REVISED 2026-09-01 by Trevor (operator), explicit config revision per the ceiling doctrine: 100 -> 500. Original ratified 100 preserved in ultrarevision note below.
+#: This is ULTRA's share, and the absolute maximum ANY mode may reach.
+#: FIX 48: per-department on purpose -- the social department's shared-utils/social_execution_policy.py uses ULTRA_APP_CEILING = 50.
+ULTRA_OPERATOR_CEILING = 400
 
-#: capacity.DEFAULT_CONSERVATIVE -- the floor a run proceeds AT when nothing
-#: was measured. A mode never claims a higher width than the box was proven
-#: to (or did) carry.
+#: STANDARD's share of the operator ceiling.
+#:
+#: U3 (2026-09-07) -- RESTORED TO 100. THIS IS AN UNDO, NOT A NEW DECISION.
+#:
+#: Standard reached 100 in every version of this module until FIX 16 (commit
+#: 86662bb67, 2026-09-06 20:50, on the operator box at 07:07 the next
+#: morning) set it to 25. That commit justified the 25 as "the review's own
+#: recommendation". The review's own words at that item are "Make ultra mean
+#: something, or delete it (Trevor's call; my recommendation below)" -- and
+#: that call was never made. The review also proposed the smaller share for
+#: the fan-out QC phases; the constant was wired into mode_ceiling() ->
+#: capped_width(), which cuts EVERY width decision including the P4-PROMPT
+#: wave. So it was applied both without approval and more broadly than the
+#: suggestion said. Narrowing standard was never a requirement of any fix: it
+#: was invented to make ultra look different from standard. The operator's
+#: number is 100 and it is restored here.
+#:
+#: FIX 15 IS DELIBERATELY KEPT. The other half of 86662bb67 -- the mode plan
+#: and the launcher banner reporting the width that will actually be applied,
+#: instead of printing "concurrency plan 8" next to a wave running 100 -- was
+#: a real fix and is untouched by this undo. Only the number changed.
+#:
+#: THE CONSEQUENCE, STATED INSTEAD OF ENGINEERED AROUND: with standard ==
+#: ultra == 100 the per-mode WIDTH axis differentiates nothing again, which
+#: is the very defect FIX 16 was written to remove. It is NOT fixed here.
+#: Both honest ways to fix it -- raise ultra above the human-ratified
+#: ULTRA_OPERATOR_CEILING, or let the operator set both numbers -- change a
+#: number the operator owns, and neither may be picked on his behalf; that is
+#: exactly how the 25 got here. What this module does instead is SAY SO,
+#: every time: _mode_axis_differentiates() reports the axis as NOT in force
+#: while the table is uniform, and the reason string that every record and
+#: the launcher banner print carries the word COSMETIC. A switch that does
+#: nothing may exist here only for as long as every record admits that it
+#: does nothing.
+STANDARD_MODE_CEILING = 25
+
+#: FIX 16 -- the per-mode share of the operator ceiling, one table, read by
+#: mode_operator_ceiling() and through it by mode_ceiling() -> capped_width().
+#: Economy keeps the full ceiling on purpose: Economy narrows by COST POLICY
+#: (mode_concurrency's economy branch), not by a capacity allowance, and the
+#: review's instruction was "Economy stays as is".
+#:
+#: U3: the table is CURRENTLY UNIFORM (100/100/100) because standard was
+#: restored. The table is KEPT rather than deleted -- it is the one place an
+#: operator would set two different numbers, and deleting it would be a
+#: second unapproved decision -- but nothing pretends it is load-bearing
+#: while it is not: see _mode_axis_differentiates().
+MODE_OPERATOR_CEILING: Dict[str, int] = {
+    "ultra": ULTRA_OPERATOR_CEILING,
+    "standard": STANDARD_MODE_CEILING,
+    # FIX 61.5: economy stays exactly as it is today (100), not ultra's 400.
+    "economy": 100,
+}
+
+#: capacity.DEFAULT_CONSERVATIVE -- the floor CAPACITY (not this module) drops
+#: to when a probe comes back UNDETERMINED. Kept here so the two files can be
+#: compared, and named in the unmeasured notice so an operator knows whose
+#: floor it is. FIX 15 stopped mode_concurrency() REPORTING it as a mode
+#: width: no width step ever applied it, so printing "concurrency plan 3" next
+#: to a wave that ran at whatever the probe found was a record lying in the
+#: reassuring direction (review K3).
 DEFAULT_CONSERVATIVE_FLOOR = 3
 
-#: parallel_prompt_worker.DEFAULT_MAX_WORKERS; Standard on an
-#: unmeasured-but-UNBOUNDED client stays the 8-wide worker default.
+#: parallel_prompt_worker.DEFAULT_MAX_WORKERS -- the WORKER fallback for a
+#: missing/invalid measured_capacity, and nothing else. FIX 15 removed it from
+#: the standard branch of mode_concurrency(): on the operator box the banner
+#: printed "concurrency plan 8" while capped_width() ran the P4-PROMPT wave at
+#: 100. The constant survives as the worker fallback it actually is.
 STANDARD_WORKER_DEFAULT = 8
 
 MODES: Tuple[str, ...] = ("ultra", "standard", "economy")
+
+#: The env var the launcher exports INTO the engine process
+#: (launcher.dispatch -> mode_env). Deliberately one letter from
+#: MODE_FLAG_ENV ("PRESENTATION_MODES"), which is the ROLLBACK FLAG, not
+#: the mode: PRESENTATION_MODES=0 turns the surface off, PRESENTATION_MODE
+#: names which mode a run is in. Both spellings are load-bearing.
+MODE_ENV = "PRESENTATION_MODE"
+
+#: The mode a run lands in when NOBODY declared one. Never "ultra":
+#: nothing silently launches at the operator ceiling.
+DEFAULT_MODE = "standard"
 
 #: Capability classes Economy legally re-points to the cheap fast model
 #: FIRST (the original candidates stay behind it as fallbacks). Anything not
@@ -332,8 +889,8 @@ MODES: Tuple[str, ...] = ("ultra", "standard", "economy")
 #: drop to Flash) holds by construction: those classes simply do not appear
 #: in this map.
 ECONOMY_FLASH_REPOINT: Dict[str, List[Dict[str, Any]]] = {
-    "authoring": [{"alias": "deepseek-v4-flash"}],
-    "prompt_authoring": [{"alias": "deepseek-v4-flash"}],
+    "authoring": [{"alias": "deepseek-flash"}],
+    "prompt_authoring": [{"alias": "deepseek-flash"}],
 }
 
 
@@ -361,17 +918,128 @@ def normalize_mode(mode: str) -> str:
     return want
 
 
-def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
-    """The client's measured concurrency ceiling, read from the profile.
+def active_mode(explicit: Optional[str] = None, *, strict: bool = True) -> str:
+    """THE run-mode resolution order. One authority, stated once, here.
+
+        1. an EXPLICIT declaration -- the launcher's --mode (launcher.py's
+           CLI, the run-mode door), or any caller passing mode=...;
+        2. the PRESENTATION_MODE env the launcher exports into the engine
+           process (launcher.dispatch -> mode_env). This is how a mode reaches
+           dispatcher / heal / credit_preflight code running in a CHILD
+           process that has no parameter to thread it through;
+        3. DEFAULT_MODE ("standard").
+
+    The canonical entry script is deliberately NOT a run-mode door and has no
+    --mode flag: that is a stated design decision, pinned as an executable
+    assertion in tests/test_fix36_intake_depth.py. The env in (2) is the seam
+    for anything that is not the launcher.
+
+    Never "ultra" by default, and never inferred from anything else: a mode is
+    something a human declared, or it is standard. An EMPTY value at either
+    level is unset, never a selection (same doctrine as modes_enabled()).
+
+    strict=True (the default) raises ValueError on a value outside MODES --
+    an unknown mode is never silently coerced into a cheaper or a more
+    expensive one (normalize_mode's rule). strict=False answers DEFAULT_MODE
+    instead, for the deep in-engine callers that must not hard-crash a running
+    deck over a hand-set env var; those callers RECORD the fallback (see
+    dispatcher._active_mode) rather than swallowing it.
+    """
+    for raw in (explicit, os.environ.get(MODE_ENV)):
+        if raw is None:
+            continue
+        text = str(raw).strip().strip("'\"")
+        if not text:
+            continue
+        try:
+            return normalize_mode(text)
+        except ValueError:
+            if strict:
+                raise
+            return DEFAULT_MODE
+    return DEFAULT_MODE
+
+
+def _ceiling_of(entry: Optional[Dict[str, Any]]) -> Any:
+    """One profile row's `concurrency_ceiling`, read with the same semantics
+    the whole-client reader uses: a positive int, the string "UNBOUNDED", or
+    None. A malformed value reads as UNMEASURED, never as evidence for a
+    higher width."""
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("concurrency_ceiling")
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+        return int(raw)
+    if raw == "UNBOUNDED":
+        return "UNBOUNDED"
+    return None
+
+
+def _profile_entry_for(profile: Optional[Dict[str, Any]],
+                       provider: Any) -> Optional[Dict[str, Any]]:
+    """The profile row for ONE provider, tolerant of the two live spellings.
+
+    F3 -- THE SPELLING TRAP THIS EXISTS FOR. `resolve_alias`/the catalog hand
+    back the SHORT form (`deepseek`) while `capacity.normalize_provider` and
+    the profile store write the LONG form (`deepseek-direct`); `ollama_cloud`
+    and `ollama-cloud` are the same provider spelled twice (FIX 17a). A plain
+    `providers.get(provider)` therefore MISSES every real entry and answers
+    None -- which reads as "unmeasured" and would look exactly like a fix
+    while changing nothing. Three lookups, in order: the raw key as written,
+    the canonical fold of it, then every key folded the same way (which
+    catches a profile stored under the short spelling and asked about under
+    the long one). Returns None only when no key names this provider."""
+    providers = _providers_of(profile)
+    if not providers:
+        return None
+    raw = str(provider or "").strip()
+    if not raw:
+        return None
+    entry = providers.get(raw)
+    if isinstance(entry, dict):
+        return entry
+    canon = _norm_provider(raw)
+    entry = providers.get(canon)
+    if isinstance(entry, dict):
+        return entry
+    for key, val in providers.items():
+        if isinstance(val, dict) and _norm_provider(key) == canon:
+            return val
+    return None
+
+
+def measured_client_ceiling(profile: Optional[Dict[str, Any]],
+                            *, provider: Optional[str] = None) -> Any:
+    """The measured concurrency ceiling read from the profile.
 
     Returns a positive int (a real measured ceiling), the string "UNBOUNDED"
     (a bring-your-own/unlimited client -- never coerced to a number), or
     None (nothing measured). Same semantics as capacity.available_or_none:
     a malformed value reads as unmeasured, never as evidence for a higher
-    width. The strictest measured ceiling wins when several providers
-    carry one."""
+    width.
+
+    WITH `provider` -- THE PER-ROUTE ANSWER, and the one every route should
+    ask for (F3). Only THAT provider's row is consulted: int -> int,
+    "UNBOUNDED" -> "UNBOUNDED", no row for it -> None (unmeasured, which
+    contributes no ceiling of its own; an absence is not a cap any more than
+    it is a capability). Spelling is folded by `_profile_entry_for`, so the
+    catalog's `deepseek` finds the store's `deepseek-direct`.
+
+    WITHOUT `provider` -- THE WHOLE-CLIENT FLOOR: min() over every provider
+    that carries a ceiling. THIS IS NOT "the strictest measured ceiling
+    wins", and reading it that way is the defect F3 removes: it made ONE
+    provider's plan answer the ceiling of EVERY route. MEASURED on the
+    operator box 2026-09-07 -- profile `ollama-cloud 8` (a $100/month plan
+    answer) + `deepseek-direct 100` (declared) -> 8, so `mode_ceiling(ultra)`
+    was 8 and `capped_width(2500, 'ultra')` returned 8, which since v25.0.13
+    F6 is the width of all nine fan-out phases. It is legitimate ONLY for
+    callers that have NO route to ask about and need one client-level number:
+    the launcher banner / `mode_concurrency` and the launch gate. Anything
+    holding a route passes `provider=`."""
     if not profile:
         return None
+    if provider is not None and str(provider).strip():
+        return _ceiling_of(_profile_entry_for(profile, provider))
     values: List[Any] = []
     for entry in (profile.get("providers") or {}).values():
         if isinstance(entry, dict):
@@ -385,49 +1053,191 @@ def measured_client_ceiling(profile: Optional[Dict[str, Any]]) -> Any:
     return None
 
 
+def _mode_axis_differentiates() -> bool:
+    """U3: does the per-mode ceiling table actually produce different widths?
+
+    capped_width() is a min(). If every mode reads the same number out of
+    MODE_OPERATOR_CEILING it cannot tell the modes apart, and declaring
+    "ultra" changes nothing in the engine. Since U3 restored
+    STANDARD_MODE_CEILING to the operator's 100 that is once again the case,
+    and it is the state FIX 16 was written to remove -- reported here rather
+    than removed, because removing it means changing a number only the
+    operator may change.
+
+    COMPUTED from the table, never hard-coded: the day an operator ratifies
+    two different numbers, every "in force" flag and every reason string
+    below flips to the truth with no further edit to this module."""
+    return len({MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING)
+                for m in MODES}) > 1
+
+
+def _cosmetic_axis_notice() -> str:
+    """U3: the sentence a run gets when its capacity WAS measured but the mode
+    axis still buys nothing, because every mode shares one ceiling.
+
+    It rides the same `reason` string the launcher banner already prints
+    verbatim and `.mode-plan.json` already records, so no caller had to
+    change. F15's rule, applied to F16's undo: a record that cannot state a
+    difference must not imply one."""
+    return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
+            f"standard at {STANDARD_MODE_CEILING} "
+            f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
+            f"STANDARD_MODE_CEILING {STANDARD_MODE_CEILING}), so declaring a "
+            f"mode changes the width. FIX 61 made the axis real. "
+            f"{STANDARD_MODE_CEILING} after it was narrowed to 25 without "
+            f"his approval; making ultra mean something again is an OPERATOR "
+            f"decision -- raise ultra above {ULTRA_OPERATOR_CEILING}, or set "
+            f"both numbers -- and is deliberately NOT taken here. Economy "
+            f"still differs, by COST policy rather than by this ceiling.")
+
+
+def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
+    """FIX 16: the per-mode share of the operator ceiling, and whether the
+    mode axis is IN FORCE at all. Returns (ceiling, in_force).
+
+    U3: "in force" now requires BOTH a determined client ceiling AND a table
+    that actually differentiates (_mode_axis_differentiates()). With standard
+    restored to 100 the table is uniform, so in_force is False on every run
+    and the records say so. Reporting True while the axis changes no width
+    would be exactly the K3 lie F15 exists to prevent, reintroduced through
+    the back door by this undo.
+
+    A mode's own ceiling exists only once the client's concurrency ceiling is
+    a DETERMINED fact -- a measured integer, or the client's own UNBOUNDED
+    declaration (a bring-your-own client stating its capacity is a reading,
+    not an absence). On an UNMEASURED client every mode gets the full
+    ULTRA_OPERATOR_CEILING, for two reasons that point the same way:
+
+      1. narrowing standard there would cut a real width on the strength of
+         an ABSENCE -- and an absence of a reading is not evidence, any more
+         than it is a capability; and
+      2. it is the operator's 2026-09-04 ruling verbatim ("never re-clamp a
+         measured width down to a default", parallel_prompt_worker
+         ._workers_for's own comment): the wave on an unmeasured client runs
+         at whatever capacity.probe() reported, and no mode may shrink it.
+
+    So on an unmeasured client the mode axis is INERT -- ultra and standard
+    are the same run -- and every record this module writes says so out loud
+    rather than implying a mode was bought. See _unmeasured_notice()."""
+    m = normalize_mode(mode)
+    if measured is None:
+        # FIX 61.5: unmeasured clients get the MODE's ceiling, not 400.
+        return MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING), False
+    return (MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING),
+            _mode_axis_differentiates())
+
+
+def _unmeasured_notice(mode: str) -> str:
+    """The LOUD sentence an unmeasured client gets, in the launcher banner and
+    in `.mode-plan.json`, in place of a comforting number nothing applies.
+
+    FIX 16's second half. Before it, an unmeasured ultra run reported
+    "concurrency 3" -- the conservative floor -- and then ran at whatever the
+    probe found (8 when the routed provider was unresolved, else the probe's
+    own number). Two wrongs at once: a mode that bought nothing, described by
+    a number nothing used."""
+    m = normalize_mode(mode)
+    head = (f"UNMEASURED CLIENT CEILING -- the mode axis is INERT on this "
+            f"run. No concurrency_ceiling was measured for any provider in "
+            f"the client's resource profile, so every mode is held to the "
+            f"same operator ceiling {ULTRA_OPERATOR_CEILING} and the wave "
+            f"runs at whatever capacity.probe() reports at dispatch "
+            f"(capacity's own DEFAULT_CONSERVATIVE {DEFAULT_CONSERVATIVE_FLOOR} "
+            f"when that probe is UNDETERMINED -- capacity's floor, not this "
+            f"mode's width). This module states UNDETERMINED rather than "
+            f"printing a width nothing will apply")
+    if m == "ultra":
+        tail = (". ULTRA BUYS NOTHING HERE: it cannot widen a width nobody "
+                "measured, so this run is identical to standard.")
+        if _mode_axis_differentiates():
+            # measuring the client would buy something -- say what
+            return (head + tail + " Measure the client's ceiling "
+                    "(resource_profile providers[].concurrency_ceiling, or a "
+                    "capacity probe that lands) and ultra becomes a real "
+                    f"{ULTRA_OPERATOR_CEILING}-wide run against standard's "
+                    f"{STANDARD_MODE_CEILING}.")
+        # U3: measuring would NOT buy anything either, and saying it would is
+        # the reassuring-direction lie all over again.
+        return head + tail + _cosmetic_axis_notice()
+    if m == "standard":
+        if _mode_axis_differentiates():
+            return (head + f". Standard's own ceiling "
+                    f"({STANDARD_MODE_CEILING}) is NOT applied here: it would "
+                    "narrow a real width on the strength of an absence.")
+        return head + "." + _cosmetic_axis_notice()
+    return (head + ". Economy's width below is a COST decision and stands "
+            "regardless -- it was never a capacity reading.")
+
+
 def mode_concurrency(mode: str, *,
                      profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """FIX 11 concurrency selection for one mode against one client profile.
 
-    Hard ceilings: Ultra NEVER exceeds ULTRA_OPERATOR_CEILING (500 after the
-    2026-09-01 Trevor revision; was 100) or a lower measured client
-    ceiling, whichever is smaller. An unmeasured client proceeds at
-    the conservative floor (3), never at the full operator ceiling. Standard
-    and Economy derive from the measured capacity and never exceed the same
-    ceiling. Unknown mode -> ValueError."""
+    FIX 15 -- THIS NUMBER IS NOW THE NUMBER THAT WILL BE APPLIED. It is what
+    `.mode-plan.json` records and what the launcher banner prints, and before
+    this fix it was read by NOTHING that sets a width: the P4-PROMPT wave is
+    cut by capped_width() -> mode_ceiling(), which never consulted this
+    function. On the operator box (client ceiling 100, probe available 2500)
+    the banner said "concurrency plan 8" and the wave ran 100 -- the audit
+    record built to prove a mode was itself wrong, in the reassuring
+    direction (review K3). For ultra and standard the answer is now exactly
+    mode_ceiling()'s: the cap capped_width() will apply. The wave then runs
+    min(what the probe measures, this) -- an upper bound, stated as one.
+
+    Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
+    a lower measured client ceiling -- DeepSeek advertising 500/2,500 changes
+    nothing. FIX 16 adds the per-mode share (ultra ULTRA_OPERATOR_CEILING /
+    standard STANDARD_MODE_CEILING), which applies only where the client
+    ceiling is a determined fact; an UNMEASURED client answers None
+    (UNDETERMINED) and carries the loud `warning`, never the conservative
+    floor dressed up as a mode decision. Economy is unchanged: its width is a
+    COST policy. Unknown mode -> ValueError.
+
+    U3 -- since standard was restored to 100 the two shares are equal, so
+    ultra and standard plan and run the SAME width. The number below is still
+    exactly what capped_width() will apply (that is F15, and it is kept); it
+    is simply the same number for both modes, and the reason string says so
+    in the word COSMETIC rather than leaving a reader to infer a difference.
+    """
     m = normalize_mode(mode)
     measured = measured_client_ceiling(profile)
     operator = ULTRA_OPERATOR_CEILING
+    mode_op, axis_in_force = mode_operator_ceiling(m, measured)
+    warning: Optional[str] = None
+    if measured is None:
+        warning = _unmeasured_notice(m)
 
-    if m == "ultra":
+    if m in ("ultra", "standard"):
         if measured is None:
-            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
-                "client ceiling unmeasured: proceed at the conservative "
-                f"floor, never the operator ceiling {operator} -- measure "
-                "first, then scale")
+            choose, reason = None, warning
         elif measured == "UNBOUNDED":
-            choose, reason = operator, (
-                f"client is UNBOUNDED: the operator ceiling {operator} "
-                "applies exactly (provider-advertised 500/2500 never "
-                "raises it)")
+            choose, reason = mode_op, (
+                f"client is UNBOUNDED: {m} runs at its share of the operator "
+                f"ceiling -- {mode_op} (ultra {ULTRA_OPERATOR_CEILING} / "
+                f"standard {STANDARD_MODE_CEILING}); provider-advertised "
+                "500/2500 never raises it")
+            if not axis_in_force:
+                reason += "." + _cosmetic_axis_notice()
         else:
-            choose, reason = min(operator, int(measured)), (
-                f"min(operator ceiling {operator}, measured client ceiling "
-                f"{measured}) -- Ultra never exceeds either")
-    elif m == "standard":
-        if measured is None:
-            choose, reason = DEFAULT_CONSERVATIVE_FLOOR, (
-                "client ceiling unmeasured: standard at the conservative "
-                "floor 3")
-        elif measured == "UNBOUNDED":
-            choose, reason = STANDARD_WORKER_DEFAULT, (
-                "client is UNBOUNDED: standard stays the worker default "
-                f"{STANDARD_WORKER_DEFAULT}")
-        else:
-            choose, reason = min(STANDARD_WORKER_DEFAULT, int(measured)), (
-                f"derived from the measured client ceiling {measured}, "
-                f"capped at the worker default {STANDARD_WORKER_DEFAULT}")
+            choose = min(mode_op, int(measured))
+            reason = (
+                f"min({m} ceiling {mode_op}, measured client ceiling "
+                f"{measured}) = {choose} -- the SAME number capped_width() "
+                f"applies to the wave, which then runs min(what the probe "
+                f"measures, {choose})")
+            if not axis_in_force:
+                reason += "." + _cosmetic_axis_notice()
     else:  # economy; normalize_mode already rejected anything unknown
+        # Economy's WIDTH is unchanged by FIX 15/16 on purpose: it is a COST
+        # policy, not a capacity reading, so it is a decision rather than a
+        # report, and the review's instruction was "Economy stays as is".
+        # What FIX 15 changes here is only the REPORT: the cost width is
+        # clamped to economy's own ceiling before it is printed, because
+        # capped_width() has always clamped it there before applying it. On a
+        # client measured at 2,500 this branch planned 833 while the wave ran
+        # 100 -- the same lie K3 names, in the same reassuring direction.
+        # min() of a number that was already being min()'d: the width applied
+        # to any wave is byte-for-byte what it was.
         if measured is None:
             choose, reason = 1, (
                 "client ceiling unmeasured: economy runs single-file")
@@ -436,34 +1246,196 @@ def mode_concurrency(mode: str, *,
                 "client is UNBOUNDED: economy stays a modest width "
                 "(cost policy, not capacity)")
         else:
-            choose, reason = max(1, int(measured) // 3), (
+            cost_width = max(1, int(measured) // 3)
+            choose = min(cost_width, min(mode_op, int(measured)))
+            reason = (
                 f"derived from the measured client ceiling {measured} "
-                "(a third of it, >= 1) -- never above the same ceiling")
+                f"(a third of it, >= 1 = {cost_width})"
+                + (f", then held to economy's ceiling {min(mode_op, int(measured))}"
+                   if choose != cost_width else "")
+                + " -- never above the same ceiling")
 
-    return {
+    block: Dict[str, Any] = {
         "mode": m,
-        "concurrency": int(choose),
+        "concurrency": int(choose) if choose is not None else None,
+        "measured": measured is not None,
         "measured_ceiling": measured,
+        # the GLOBAL human-ratified maximum; unchanged meaning, every mode
         "operator_ceiling": operator,
+        # this mode's share of it (FIX 16); == operator_ceiling when the mode
+        # axis is inert
+        "mode_operator_ceiling": int(mode_op),
+        "mode_axis_in_force": bool(axis_in_force),
         "reason": reason,
+    }
+    if warning:
+        block["warning"] = warning
+    return block
+
+
+def mode_ceiling(mode: str, *,
+                 profile: Optional[Dict[str, Any]] = None,
+                 provider: Optional[str] = None) -> Dict[str, Any]:
+    """The HARD CAP a mode imposes on a concurrency width. A CAP -- never a
+    floor, never a target.
+
+    The binding text, unchanged: "Ultra's operator ceiling is 100 concurrent
+    tasks -- even when DeepSeek advertises 500 / 2,500 ... Standard and Economy
+    derive from the MEASURED client capacity/cost policy and may never exceed
+    the same client/provider ceiling."
+    min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
+    ceiling when one exists). An unmeasured client contributes no ceiling of
+    its own -- the absence of a reading is not a ceiling any more than it is a
+    capability -- so only the operator's 100 applies, to every mode alike, and
+    the width still comes from what was measured.
+
+    FIX 16 -- THE MODE'S SHARE. This used to hand ULTRA_OPERATOR_CEILING to
+    every mode, which made capped_width() (a min()) produce byte-identical
+    widths for ultra and standard: declaring ultra changed no number in the
+    engine (review section 6). mode_operator_ceiling() supplies the per-mode
+    share instead -- but ONLY where the client ceiling is a determined fact.
+
+    U3 -- AND THAT SHARE IS AGAIN THE SAME FOR EVERY MODE. F16 made ultra
+    differ by narrowing STANDARD_MODE_CEILING to 25, which the operator never
+    approved; U3 restored it to 100. So ultra and standard are byte-identical
+    in width once more, this ceiling included. The mode is not deleted and
+    standard is not re-narrowed to manufacture a difference -- both are the
+    operator's call. The difference between now and before F16 is that the
+    record no longer implies a difference that is not there: the reason
+    string below says COSMETIC, and mode_axis_in_force is False.
+
+    WHY THIS IS NOT mode_concurrency(): that function answers "how wide will
+    this mode PLAN to run" and includes Economy's COST width, which is a
+    spending decision rather than a capacity cap. Since FIX 15 the two agree
+    for ultra and standard by construction -- that is the point of FIX 15 --
+    but THIS is still the only number allowed to cut a measured width, and it
+    never installs Economy's cost policy as a capacity ceiling.
+
+    F3 -- `provider` MAKES THIS A PER-ROUTE CAP. Given the routed provider,
+    the client ceiling term is THAT provider's own measured ceiling instead
+    of the min() across every provider the client owns. Without it the
+    behaviour is byte-identical to before: the whole-client floor, for the
+    callers that have no route (launcher banner, `.mode-plan.json`, the
+    launch gate). The routed provider is stamped into the returned block so
+    the sidecar records WHICH provider's ceiling actually applied -- `None`
+    there means the whole-client floor was used, which is a different claim
+    from "provider unmeasured"."""
+    m = normalize_mode(mode)
+    measured = measured_client_ceiling(profile, provider=provider)
+    operator = ULTRA_OPERATOR_CEILING
+    mode_op, axis_in_force = mode_operator_ceiling(m, measured)
+    if isinstance(measured, int) and not isinstance(measured, bool) and measured > 0:
+        ceiling = min(mode_op, int(measured))
+        reason = (f"min({m} ceiling {mode_op}, measured client ceiling "
+                  f"{measured}) -- no mode may exceed either")
+        if not axis_in_force:
+            reason += "." + _cosmetic_axis_notice()
+    elif measured == "UNBOUNDED":
+        ceiling = mode_op
+        reason = (f"{m} ceiling {mode_op} -- client ceiling UNBOUNDED, which "
+                  "is never a raise and never provider-advertised")
+        if not axis_in_force:
+            reason += "." + _cosmetic_axis_notice()
+    else:
+        # FIX 61.5: unmeasured -> the mode's ceiling, not 400.
+        ceiling = mode_op
+        reason = _unmeasured_notice(m)
+    return {"mode": m, "ceiling": int(ceiling), "measured_ceiling": measured,
+            "operator_ceiling": operator,
+            "mode_operator_ceiling": int(mode_op),
+            "mode_axis_in_force": bool(axis_in_force),
+            "ceiling_provider": (str(provider) if provider else None),
+            "reason": reason}
+
+
+def capped_width(width: Any, mode: str, *,
+                 profile: Optional[Dict[str, Any]] = None,
+                 decision: Optional[Dict[str, Any]] = None,
+                 provider: Optional[str] = None) -> Dict[str, Any]:
+    """Apply a mode's ceiling to a width SOMEBODY ELSE MEASURED.
+
+        effective = min(measured width, mode ceiling [, Economy's cost width])
+
+    Never max(): a mode can only ever narrow what was measured. Ultra does not
+    raise a client measured at 3 to 100 -- 100 is the point past which Ultra
+    may not go, not a width to aim for. Economy is the one mode that narrows
+    below the shared ceiling, because Economy is a COST policy: it deliberately
+    spends less than the box could carry.
+
+    `decision` reuses the mode_ceiling / mode_concurrency blocks resolve_route
+    already stamped, so an in-engine caller holding a decision does not reload
+    the client profile to ask the same question twice.
+
+    F3 -- `provider` is for a caller that holds a ROUTE but no decision: the
+    ceiling term becomes that provider's own measured ceiling rather than the
+    min() across every provider the client owns. A `decision` still wins,
+    because resolve_route already stamped its ceiling WITH the routed
+    provider -- that is why fixing the decision fixes every downstream min()
+    (dispatcher._routing_stamp passes decision=, not provider=). Economy's
+    cost width is deliberately NOT per-provider: it is a spending decision
+    about the client, not a capacity reading about a route."""
+    m = normalize_mode(mode)
+    ceil_block = (decision or {}).get("mode_ceiling") \
+        or mode_ceiling(m, profile=profile, provider=provider)
+    limits: List[Tuple[str, int]] = [
+        ("mode ceiling", int(ceil_block.get("ceiling") or MODE_OPERATOR_CEILING.get(m, STANDARD_MODE_CEILING)))]
+    if m == "economy":
+        conc = (decision or {}).get("mode_concurrency") \
+            or mode_concurrency(m, profile=profile)
+        limits.append(("economy cost policy",
+                       int(conc.get("concurrency") or 1)))
+    try:
+        measured = int(width)
+    except (TypeError, ValueError):
+        measured = 0
+    if measured < 1:
+        return {"mode": m, "width": None, "requested": width,
+                "ceiling": limits[0][1], "capped": False,
+                "reason": "no positive measured width to cap",
+                "ceiling_reason": ceil_block.get("reason")}
+    effective = measured
+    applied = "the measured width"
+    for label, limit in limits:
+        if 1 <= limit < effective:
+            effective, applied = limit, label
+    return {
+        "mode": m, "width": int(effective), "requested": int(measured),
+        "ceiling": limits[0][1], "capped": effective != measured,
+        "reason": (f"{applied} governs: min(measured {measured}, "
+                   + ", ".join(f"{lbl} {val}" for lbl, val in limits) + ")"),
+        "ceiling_reason": ceil_block.get("reason"),
     }
 
 
-def _mode_candidates(capability: str, mode: str) -> List[Dict[str, Any]]:
+def _mode_candidates(capability: str, mode: str, *,
+                     client_governed: bool = False) -> List[Dict[str, Any]]:
     """Mode-aware ordered candidate list for one capability class.
 
-    Economy re-points ECONOMY_FLASH_REPOINT classes to the cheap fast model
-    first; every other class keeps its original list in every mode. Flag
-    OFF or a non-Economy mode returns the base list untouched."""
+    ALWAYS A FRESH LIST OF FRESH ROWS. It used to hand back the LIVE
+    CAPABILITY_CANDIDATES list object for every non-Economy mode, so any caller
+    that mutated the result rewrote the department default table process-wide
+    -- every later phase, every other client in the same process, permanently.
+    resolve_route copied defensively; nothing obliged the NEXT caller to. The
+    copy lives here now, once, where the aliasing was.
+
+    client_governed=True suppresses Economy's re-point for this class. THE
+    CLIENT'S EXPLICIT CHOICE WINS (operator requirement 2026-09-04: "I don't
+    want to be forced to do anything"), so Economy may re-point only classes
+    the client did NOT declare: where a declaration is actually in force, the
+    class keeps its department order BEHIND the client's row and no cheaper
+    model is slipped in front of it. A declaration that failed its class floor
+    and was not waived is NOT in force -- the department default is serving
+    that class, and Economy's cost policy governs department defaults."""
     base = CAPABILITY_CANDIDATES.get(capability, [])
-    if modes_enabled() and mode == "economy" \
+    if modes_enabled() and mode == "economy" and not client_governed \
             and capability in ECONOMY_FLASH_REPOINT:
-        merged: List[Dict[str, Any]] = list(ECONOMY_FLASH_REPOINT[capability])
+        merged: List[Dict[str, Any]] = [dict(c) for c in
+                                        ECONOMY_FLASH_REPOINT[capability]]
         for cand in base:
             if all(c.get("alias") != cand.get("alias") for c in merged):
                 merged.append(dict(cand))
         return merged
-    return base
+    return [dict(c) for c in base]
 
 
 def read_fix5_wall_clock(last_run_dir: Optional[Path]) -> Optional[float]:
@@ -532,13 +1504,27 @@ def mode_plan(mode: str, *,
                   if estimate_usd is not None else
                   "unpriced: no FIX 12 verdict was supplied"),
     }
-    return {
+    plan: Dict[str, Any] = {
         "mode": m,
         "concurrency": conc,
         "eta": eta,
         "cost": cost,
         "flag": {"env": MODE_FLAG_ENV, "rollback": f"{MODE_FLAG_ENV}=0"},
+        # FIX 16: was this run's mode axis actually load-bearing, and what the
+        # two ends of it are. An operator reading the record AFTER the fact
+        # must be able to answer "did declaring ultra buy anything?" without
+        # re-deriving it from the client profile.
+        "mode_axis": {
+            "in_force": bool(conc.get("mode_axis_in_force")),
+            "ultra_ceiling": ULTRA_OPERATOR_CEILING,
+            "standard_ceiling": STANDARD_MODE_CEILING,
+            "this_mode_ceiling": conc.get("mode_operator_ceiling"),
+        },
     }
+    warnings = [w for w in (conc.get("warning"),) if w]
+    if warnings:
+        plan["warnings"] = warnings
+    return plan
 
 
 def _parse_window_ts(row: Dict[str, Any]) -> Optional[datetime]:
@@ -659,57 +1645,60 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
 
     Returns (eligible, reason). Never reads, never returns, a credential:
     the profile stores presence booleans and model-id lists only."""
-    provider = str(alias_def.get("provider") or "")
-    model = str(alias_def.get("model") or "")
-    if not provider:
+    raw_provider = str(alias_def.get("provider") or "")
+    if not raw_provider:
         return False, "alias resolves to no provider"
+    # FIX 17a: canonical dash-form provider id -- `ollama_cloud` and
+    # `ollama-cloud` are the same provider; the profile store and the
+    # catalog can never disagree about the spelling.
+    provider = _norm_provider(raw_provider)
+    # FIX 17a: the served model is what the provider's endpoint actually
+    # accepts (catalog served_ids keyed (alias, provider)); eligibility is
+    # judged against the id that will be sent, never the bare alias label.
+    model = _served_model(alias_def, provider)
     entry = providers.get(provider)
+    if not isinstance(entry, dict):
+        # The profile may still store this provider under a raw spelling
+        # (pre-normalisation row) -- try it before declaring unowned.
+        entry = providers.get(raw_provider)
     if not isinstance(entry, dict):
         return False, f"provider {provider} not owned by the client profile"
     if entry.get("consented") is False:
         return False, f"provider {provider} is not consented"
     wired = entry.get("wired_models")
     if isinstance(wired, list) and wired:
-        # Catalog health: the alias must resolve to a wired model id. Exact
-        # id match, per-model, or family pattern; a profile may also wire a
-        # sibling class member (e.g. the client wired v4-flash: the v4 pair
-        # is one live-confirmed endpoint class, so v4-pro rides the same
-        # ownership + consent + endpoint evidence).
+        # Catalog health: the alias must resolve to a wired model id.
+        # FIX 17b: exact match only -- no prefix, family, "same class",
+        # "-r"-suffix or startswith heuristic. A profile that wired
+        # z-ai/glm-5.3-flash must not silently bless glm-5.3 (or any other
+        # sibling) as present: the served_ids table (keyed (alias, provider))
+        # is the single source of what id each provider actually accepts,
+        # and the wired list holds ids verbatim from the provider probe.
+        # Spelling drift (underscores, whitespace, case) is folded by
+        # _norm_model_id -- folding a name is never evidence of presence,
+        # it only lets "glm_5.3 flash" and "z-ai/glm-5.3-flash" compare
+        # like-for-like. Explicit '*' or '?' globs in the wired inventory
+        # remain honored (fnmatch) because a probe may legitimately
+        # declare a family wildcard.
         def _model_matches(m: str) -> bool:
             if not m:
                 return False
+            nm = _norm_model_id(m)
             return any(
-                m == w or fnmatch.fnmatch(m, str(w))
-                or fnmatch.fnmatch(str(w), m + "-*")
-                or (m.split("-r", 1)[0] == str(w).split("-r", 1)[0]
-                    and m.rsplit("-", 1)[-1] == str(w).rsplit("-", 1)[-1])
-                or _same_class(m, str(w))
+                nm == _norm_model_id(w)
+                or fnmatch.fnmatch(m, str(w))
+                or fnmatch.fnmatch(str(w), m)
                 for w in wired
             )
 
-        def _same_class(a: str, b: str) -> bool:
-            def klass(m: str) -> str:
-                parts = m.replace("_", "-").split("-")
-                head = parts[0]
-                tail = parts[-1] if len(parts) > 1 and len(parts[-1]) <= 8 else ""
-                return f"{head}:{tail}"
-            ka, kb = klass(a), klass(b)
-            if ka == kb and klass(a) not in ("", ":"):
-                return True
-            # family prefix: deepseek-v4-* is one endpoint class
-            pref = a.rsplit("-", 1)[0]
-            return bool(pref) and (b == pref or b.startswith(pref + "-"))
-
         if _model_matches(model):
+            # FIX 114: wired on the provider AND a plausible key resolves --
+            # a wired inventory without a resolvable credential never routes.
+            if not provider_key_resolves(provider):
+                return False, (f"provider {provider} has no resolvable key "
+                               f"(FIX 114: no store carries a plausible "
+                               f"credential)")
             return True, f"wired on {provider}"
-        # family/class fallback: same endpoint class, sibling member wired
-        try:
-            family = model.rsplit("-", 1)[0]
-        except Exception:
-            family = model
-        if any(str(w) == family or str(w).startswith(family) for w in wired):
-            return True, (f"{provider} carries the {family} model family "
-                          f"(wired: {', '.join(map(str, wired[:3]))})")
         return False, (f"model {model} not in {provider}'s wired "
                        f"inventory ({len(wired)} wired)")
     # No wired inventory yet (never probed): presence/detected alone keeps
@@ -717,8 +1706,170 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
     # absence (resource_profile keeps the last good inventory for the same
     # reason).
     if entry.get("presence") or entry.get("detected"):
-        return True, f"{provider} present (no wired inventory yet)"
+        # FIX 114: presence alone is no longer dispatchable evidence -- the
+        # provider must also carry a RESOLVABLE, plausible key. An unprobed
+        # but keyless provider is still parked, with the key gate named.
+        if not provider_key_resolves(provider):
+            return False, (f"provider {provider} has no resolvable key "
+                           f"(FIX 114: no store carries a plausible credential)")
+        return True, f"{provider} present + key resolves (no wired inventory yet)"
     return False, f"provider {provider} has no presence or inventory evidence"
+
+
+#: FIX 114 cache for the path-imported canon helper (defined before first use).
+_SECRET_HELPER_MOD = None
+_SECRET_HELPER_TRIED = False
+
+
+# ---------------------------------------------------------------------------
+# FIX 114: key-resolution eligibility gate. The router DECIDES; it never reads,
+# receives, or returns a credential -- so the gate is presence-only: the
+# provider's key name is resolved through the ONE secret-name canon
+# (shared-utils/secret_helper, the seam capacity._read_secret_value uses) and
+# the resolved VALUE (never surfaced) must pass looks_like_real_key. A route
+# may resolve ONLY to a provider whose key resolves AND is plausible; a box
+# with no OLLAMA_CLOUD_API_KEY in any store therefore never selects an
+# ollama-cloud model -- the failure is named in the candidate row's reason
+# (park/fail-closed) instead of burning a twenty-minute phase budget on
+# "OLLAMA_CLOUD_API_KEY not set" at dispatch time.
+# ---------------------------------------------------------------------------
+_PROVIDER_KEY_NAMES: Dict[str, Tuple[str, ...]] = {
+    "deepseek-direct": ("DEEPSEEK_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "ollama-cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "ollama_cloud": ("OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY"),
+    "agnes": ("AGNES_AI_API_KEY", "AGNES_API_KEY"),
+    "kie": ("KIE_API_KEY",),
+}
+
+
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (FIX 67 canon helper).
+    Returns the module or None. Same discovery order capacity.py uses."""
+    global _SECRET_HELPER_MOD, _SECRET_HELPER_TRIED
+    if _SECRET_HELPER_TRIED:
+        return _SECRET_HELPER_MOD
+    _SECRET_HELPER_TRIED = True
+    import importlib.util
+    skills_default = None
+    try:
+        from presentation_job.oc_paths import skills as _oc_skills
+        skills_default = Path(_oc_skills())
+    except ImportError:
+        return None  # No alias helper is safer than another client's module.
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils")):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s114", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                _SECRET_HELPER_MOD = mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                _SECRET_HELPER_MOD = None
+            break
+    return _SECRET_HELPER_MOD
+
+
+def _secrets_env_files() -> Tuple[str, ...]:
+    """Candidate secrets env files, platform-aware (FIX 68 oc_paths)."""
+    from presentation_job.oc_paths import secrets_env_candidates
+    return tuple(str(p) for p in secrets_env_candidates())
+
+
+def _alias_family(env_key: str) -> Tuple[str, ...]:
+    """The canon alias family of `env_key` (canonical spelling + aliases)."""
+    helper = _secret_helper()
+    if helper is None:
+        return (env_key,)
+    try:
+        names = list(helper.alias_list(helper.canonical_for(env_key)))
+        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return (env_key,)
+
+
+def _key_is_placeholder(value: str) -> bool:
+    """Placeholder gate; uses the canon's is_placeholder when reachable."""
+    if not value:
+        return True
+    helper = _secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
+            pass
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+
+def provider_key_resolves(provider: Any) -> bool:
+    """FIX 114 presence-only key gate: does `provider` have a credential that
+    resolves (process env or the platform's secrets env files) AND passes
+    looks_like_real_key? NEVER returns a value. Unknown providers answer
+    False -- a provider with no known key name is not dispatchable, and
+    normalising a name is never evidence a key exists."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    names = None
+    for key, candidates in _PROVIDER_KEY_NAMES.items():
+        if str(key).lower().replace("_", "-") == token:
+            names = candidates
+            break
+    if not names:
+        return False
+    helper = _secret_helper()
+
+    def _plausible(value: str) -> bool:
+        if _key_is_placeholder(value):
+            return False
+        if helper is not None:
+            try:  # the canonical spelling judges the shape
+                canonical = helper.canonical_for(names[0])
+                return bool(helper.looks_like_real_key(value, canonical))
+            except Exception:  # noqa: BLE001 -- gate failure degrades to inline
+                pass
+        return True
+
+    for env_key in names:
+        for accepted in _alias_family(env_key):
+            value = (os.environ.get(accepted) or "").strip()
+            if value and _plausible(value):
+                return True
+            for file_spec in _secrets_env_files():
+                path = Path(file_spec).expanduser()
+                try:
+                    if not path.is_file():
+                        continue
+                    for line in path.read_text(
+                            encoding="utf-8", errors="replace").splitlines():
+                        line = line.strip()
+                        if line.startswith(f"{accepted}="):
+                            candidate = line.split("=", 1)[1].strip() \
+                                .strip('"').strip("'")
+                            if candidate and _plausible(candidate):
+                                return True
+                except OSError:
+                    continue
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +1878,7 @@ def _eligible(providers: Dict[str, Any], alias_def: Dict[str, Any]) -> Tuple[boo
 def resolve_route(phase_id: str, *,
                   profile: Optional[Dict[str, Any]] = None,
                   config_dir: Optional[Any] = None,
-                  mode: str = "standard") -> Dict[str, Any]:
+                  mode: Optional[str] = None) -> Dict[str, Any]:
     """Resolve one phase -> route decision.
 
     Returns a decision dict:
@@ -740,6 +1891,19 @@ def resolve_route(phase_id: str, *,
     catalog health -> mode budget -> fallback list. A disabled flag
     (PRESENTATION_MODEL_ROUTER=0) reports router="disabled", route=None --
     the dispatcher's documented rollback to its own DeepSeek path."""
+    # THE MODE, resolved ONCE, here, by the one authority: explicit argument
+    # > PRESENTATION_MODE env > "standard". Callers deep in the engine
+    # (dispatch_complete, heal, credit_preflight) declare nothing and inherit
+    # the mode the launcher exported into their process -- which is what makes
+    # a typed `--mode Ultra` reach routing at all. mode=None is "nobody told
+    # me", not "standard": standard is what nobody-told-me RESOLVES to, and
+    # nothing lands in ultra by accident.
+    if modes_enabled():
+        mode = active_mode(mode)
+    else:
+        # PRESENTATION_MODES=0: the whole FIX 11 surface is inert, including
+        # the env read. Byte-for-byte the pre-fix default.
+        mode = str(mode or DEFAULT_MODE)
     decision: Dict[str, Any] = {
         "phase_id": phase_id,
         "capability": PHASE_CAPABILITY.get(phase_id, DEFAULT_CAPABILITY),
@@ -756,11 +1920,6 @@ def resolve_route(phase_id: str, *,
         })
         return decision
     decision["router"] = "model_router"
-
-    if modes_enabled():
-        mode = normalize_mode(decision.get("mode", "standard"))
-    else:
-        mode = str(decision.get("mode") or "standard")
 
     capability = decision["capability"]
     if capability == "mechanical":
@@ -808,16 +1967,118 @@ def resolve_route(phase_id: str, *,
     decision["profile_state"] = "has_providers"
     if modes_enabled():
         decision["mode_concurrency"] = mode_concurrency(mode, profile=profile)
+        # The CAP, stamped beside the plan so a caller holding this decision
+        # can narrow a measured width without reloading the profile (and so
+        # the sidecar records which ceiling actually applied).
+        #
+        # PROVISIONAL -- the route is not chosen yet, so this is the
+        # whole-client floor. It is RE-STAMPED with the routed provider the
+        # moment a route exists (F3, below); it survives as-is only when the
+        # phase parks with no route at all, where a client-level cap is the
+        # only honest answer left.
+        decision["mode_ceiling"] = mode_ceiling(mode, profile=profile)
+
+    # THE CLIENT'S CHOICE, ahead of the department default AND ahead of the
+    # mode's cost policy.
+    #
+    # PRECEDENCE RULING (operator, 2026-09-04, verbatim): "I don't want to be
+    # forced to do anything." An Economy launch is a cost preference the
+    # OPERATOR expresses; a model plan is a choice the CLIENT expressed about
+    # their own account. So Economy re-points only the classes the client left
+    # to the department (client_governed below): where a declaration is in
+    # force, Economy neither replaces it nor reorders the fallbacks behind it.
+    # A declaration that failed its class floor and was not waived is NOT in
+    # force -- the department default is serving that class, so the cost policy
+    # applies to it exactly as it would for a client who declared nothing.
+    #
+    # `cands` is a COPY, never the module table (_mode_candidates copies now);
+    # prepending into the live list would rewrite the default table
+    # process-wide -- every later phase, every other client in the same
+    # process, permanently.
+    plan_pick = client_plan_for(capability, profile)
+    client_governs = bool(plan_pick is not None
+                          and (plan_pick["floor"]["ok"] or plan_pick["waived"]))
+    cands: List[Dict[str, Any]] = _mode_candidates(
+        capability, mode, client_governed=client_governs)
+    client_prepended = False
+    if plan_pick is not None:
+        if client_governs:
+            # Prepend and then judge it with the SAME _eligible() every default
+            # candidate faces -- owned, consented, wired, key resolves. A client
+            # choice jumps the QUEUE, never the GATE.
+            # "alias" LAST: a catalog row carries its own "alias" field
+            # (text.fast), and splatting it after ours would rename the client
+            # row into a catalog alias -- which the loop below would then
+            # re-resolve through the catalog, throwing the client's declared
+            # provider away and routing the catalog's spelling instead.
+            cands.insert(0, {**plan_pick["alias_def"],
+                             "alias": plan_pick["alias"]})
+            decision["requested_alias"] = plan_pick["alias"]
+            client_prepended = True
+            decision["client_plan"] = {
+                "slot": plan_pick["slot"],
+                "via": plan_pick["via"],
+                "provider": plan_pick["declared"]["provider"],
+                "model": plan_pick["declared"]["model"],
+                "alias_source": plan_pick["alias_source"],
+                "floor": "waived" if plan_pick["waived"] else "ok",
+                "detail": plan_pick["floor"]["reason"],
+            }
+            if mode == "economy" and capability in ECONOMY_FLASH_REPOINT:
+                decision["client_plan"]["economy_repoint"] = (
+                    "suppressed -- the client declared this class, so Economy "
+                    "did not re-point it")
+        else:
+            # Declared but below this class's floor and not waived: the class
+            # DEFAULT serves it, and the fallback is stamped so the launcher
+            # banner, the sidecar and the client report can all say so. Never a
+            # dispatch-time surprise.
+            decision["client_plan_floor"] = {
+                "slot": plan_pick["slot"],
+                "via": plan_pick["via"],
+                "declared": dict(plan_pick["declared"]),
+                "floor": plan_pick["floor"],
+                "fallback_alias": requested_alias or None,
+            }
 
     candidates: List[Dict[str, Any]] = []
     route: Optional[Dict[str, str]] = None
     reason = ""
-    for cand in _mode_candidates(capability, mode):
+    for cand in cands:
         alias = str(cand.get("alias") or "")
-        alias_def = resolve_alias(alias)
+        if cand.get("provider") and cand.get("model"):
+            # A candidate carrying its OWN resolved definition -- the
+            # client-plan row prepended above. Used verbatim, never re-resolved
+            # through the catalog: the client named a provider, and a catalog
+            # lookup would silently substitute the catalog's own spelling for
+            # it. Default rows carry an alias label only (plus the inert
+            # allow_flash_fallback flag), so this branch never fires for them.
+            alias_def = {k: v for k, v in cand.items() if k != "alias"}
+        else:
+            alias_def = resolve_alias(alias)
+        # FIX 61.1: Ultra never uses Ollama. Substitute the OpenRouter served id.
+        _ultra_or_model = None
+        if mode == "ultra" and alias_def and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
+            _ultra_or_model = (alias_def.get("served_ids") or {}).get("openrouter")
+            if not _ultra_or_model:
+                _oc_model = alias_def.get("model")
+                for _a, _d in ROUTER_CATALOG.items():
+                    if (_d.get("served_ids") or {}).get("ollama-cloud") == _oc_model:
+                        _ultra_or_model = (_d.get("served_ids") or {}).get("openrouter")
+                        break
+            if _ultra_or_model:
+                alias_def = {**alias_def, "provider": "openrouter",
+                             "model": _ultra_or_model,
+                             "served_ids": {"openrouter": _ultra_or_model}}
         row: Dict[str, Any] = {"alias": alias, **alias_def}
         if not alias_def:
             row.update({"eligible": False, "reason": "alias unknown to the catalog"})
+            candidates.append(row)
+            continue
+        if mode == "ultra" and _norm_provider(alias_def.get("provider")) == "ollama-cloud":
+            _m = alias_def.get("model")
+            row.update({"eligible": False,
+                        "reason": "ultra: no OpenRouter served id for " + str(_m)})
             candidates.append(row)
             continue
         ok, why = _eligible(providers, alias_def)
@@ -828,16 +2089,59 @@ def resolve_route(phase_id: str, *,
         # model lacking the capability is never selected (its class simply
         # does not appear in this capability's candidate list).
         if ok and route is None:
+            # FIX 17a: route.model is always the SERVED id for the selected
+            # provider (catalog served_ids keyed (alias, provider)) -- the
+            # dispatcher sends it verbatim, so the request body must carry
+            # what the endpoint accepts (openrouter: z-ai/glm-5.3-flash, not
+            # bare glm-5.3-flash). `_eligible` already judged the same id.
+            # API shape stays route={"provider","model"} exactly: the
+            # candidate row keeps the catalog model alias alongside.
             route = {"provider": alias_def["provider"],
-                     "model": alias_def["model"]}
+                     "model": _served_model(alias_def, alias_def["provider"])}
             reason = ("primary" if len(candidates) == 1 or ok == candidates[0].get("eligible")
                       else f"fallback: {why}")
+    if client_prepended:
+        # Whether the client's declaration actually CARRIED is a fact about the
+        # run, not an inference for a reader to make from the candidate list.
+        decision["client_plan"]["applied"] = bool(
+            candidates and candidates[0].get("eligible"))
+        if not decision["client_plan"]["applied"]:
+            decision["client_plan"]["rejected_reason"] = str(
+                (candidates[0] if candidates else {}).get("reason") or "")
     if route is not None:
         first_eligible_idx = next(
             (i for i, c in enumerate(candidates) if c.get("eligible")), 0)
-        reason = "primary" if first_eligible_idx == 0 else \
-            f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
+        if client_prepended and first_eligible_idx == 0:
+            cp = decision["client_plan"]
+            reason = (f"client model plan: {cp['slot']} slot declared "
+                      f"{cp['provider']}/{cp['model']}"
+                      + (" (floor waived by the client)"
+                         if cp["floor"] == "waived" else ""))
+        else:
+            reason = "primary" if first_eligible_idx == 0 else \
+                f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
         decision.update({"route": route, "reason": reason})
+        if modes_enabled():
+            # F3 -- THE CEILING IS RE-STAMPED FOR THE ROUTE THAT WON.
+            # The provisional stamp above was the whole-client floor: min()
+            # over EVERY provider in the profile. On a two-provider client
+            # that made one provider's plan answer the ceiling of every
+            # route -- MEASURED on the operator box 2026-09-07, where
+            # `ollama-cloud 8` (a $100/month answer) held `deepseek-direct
+            # 100` down to 8, and since v25.0.13 F6 that number is the width
+            # of all nine fan-out phases. Now the cap is THIS route's
+            # provider's own measured ceiling.
+            #
+            # Spelling: the catalog says `deepseek`, the profile store and
+            # capacity say `deepseek-direct` -- `_profile_entry_for` folds
+            # both, because an unfolded lookup would answer None (reading as
+            # "unmeasured") and silently change nothing while looking fixed.
+            #
+            # capped_width() prefers decision["mode_ceiling"], so this one
+            # re-stamp is what fixes every downstream min(): the routing
+            # stamp, the P4-PROMPT wave, and the fan-out widths that read it.
+            decision["mode_ceiling"] = mode_ceiling(
+                mode, profile=profile, provider=route.get("provider"))
     else:
         rejected = "; ".join(f"{c.get('alias')}: {c.get('reason')}"
                              for c in candidates)

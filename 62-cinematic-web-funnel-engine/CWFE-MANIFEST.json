@@ -50,7 +50,7 @@
      "af_code": "AF-CWFE-P6-ANCHOR"},
     {"id": "P7-STILLS", "order": 7, "name": "Scene stills",
      "produces_artifact": "asset-ledger.json (approved scene images)",
-     "delegate": "47-movie-producer/kie-adapters :: kie_image.py (gpt-image-2-text-to-image / gpt-image-2-image-to-image)",
+     "delegate": "47-movie-producer/kie-adapters :: kie_image.py (gpt-image-2-5-sunburst-text-to-image / gpt-image-2-5-sunburst-image-to-image)",
      "gate": "scripts/prove_media.py", "py_symbol": "prove_media.evaluate_stills",
      "af_code": "AF-CWFE-P7-STILLS"},
     {"id": "P8-DRAFT", "order": 8, "name": "Draft motion",

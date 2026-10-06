@@ -12,7 +12,7 @@
 # WHAT IT DOES (S7 render leg only): takes the image prompt produced by the
 # Layer 1 cover-prompt generator (pin aw-11, the Senior Book-Cover Design
 # Specialist, structured image-prompt object) and renders the book cover on the
-# CLIENT's OWN Kie.ai account using model GPT-image-2 against the TEXT-TO-IMAGE
+# CLIENT's OWN Kie.ai account using model GPT-image-2.5 against the TEXT-TO-IMAGE
 # PORTRAIT endpoint LIVE-VERIFIED at Wave 0 (W0.6.json). It submits createTask,
 # waits with a bounded re-poll of recordInfo, downloads the result PNG to a
 # local target path, and proves the file is a real portrait 1024x1536 PNG on
@@ -29,21 +29,18 @@
 # landscape ratio, so a cover can never render 16:9. The 16:9 image-to-image
 # presentation recipe is a DIFFERENT endpoint shape and is NEVER reused here.
 #
-# THE KIE CONTRACT (pattern of record: Skill 46 kie-slide-submitter.js +
-# box-kv-poller.js; live shape of record: W0.6.json). Skills 07/46 are the
-# pattern reference exactly as Skill 14 is only a pattern reference for
-# drive_adapter.py (SPEC 10.1): this adapter calls the Kie REST endpoints
-# DIRECTLY with the Python standard library, reusing the verified createTask /
-# recordInfo / allowlist / browser-User-Agent-download facts, so the engine's
-# delivery layer stays stdlib-only with no Node runtime dependency.
-#   createTask : POST https://api.kie.ai/api/v1/jobs/createTask
-#                model "gpt-image-2-text-to-image",
-#                input {prompt, aspect_ratio "2:3", output_format "png"}
-#   recordInfo : GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=...
-#                data.state in {waiting,queuing,generating,success,fail};
-#                data.resultJson -> resultUrls[] (or images[].url)
-#   download   : result CDN host is allowlisted; the CDN 403s the default
-#                urllib UA, so a browser User-Agent is REQUIRED (W0.6).
+# THE KIE TRANSPORT (one KIE path): every KIE call is Skill 74's CLI
+# (74-kie-live-adapter/scripts/kie_live_adapter.py submit | wait | save --mode active --json), found as a
+# sibling skill folder. This adapter keeps only its own policy: the model, the portrait override, the named
+# styles, the result-host allowlist, the render-state sidecar, the portrait read-back and the typed exit
+# codes. It carries no createTask, recordInfo or download HTTP code of its own (live shape of record:
+# W0.6.json; the contract itself now lives in Skill 74's references/adapter-contract.md).
+#   submit : model "gpt-image-2-5-sunburst-text-to-image", input {prompt, aspect_ratio "2:3", output_format "png"}
+#   wait   : bounded poll (the ceiling below), result URLs from the finished job
+#   save   : downloads the result; the result CDN 403s the default urllib User-Agent, so this adapter passes
+#            the browser User-Agent below (--user-agent, W0.6) and only allowlisted hosts (--allow-host).
+#   If Skill 74 is not installed the render HOLDS (exit 3, held_reason kie_transport_missing); there is no
+#   fallback to a second client.
 # SINGLE-IMAGE PATH: a cover is ONE image, so deck size 1 <= callback threshold
 # 5 => useCallbacks=false (Skill 46 fix 33): the box SKIPS the callback Worker
 # and polls recordInfo DIRECTLY. That direct bounded poll IS the "bounded
@@ -75,11 +72,11 @@
 # NOTHING Anthropic in this runtime file; Convert and Flow naming in every
 # client surface; the Kie key is resolved BY LABEL from the client env stores
 # (live process env first) and is NEVER printed (SET / NOT SET only) and NEVER
-# hardcoded; writes run as the node user, never root. STDLIB ONLY (urllib +
+# hardcoded; writes run as the node user, never root. STDLIB ONLY (subprocess +
 # json + hashlib): zero third-party deps; the self-test makes ZERO network
 # calls and spends ZERO credits.
 # =============================================================================
-"""cover_render.py - the Kie.ai GPT-image-2 portrait cover render adapter (S7)."""
+"""cover_render.py - the Kie.ai GPT-image-2.5 portrait cover render adapter (S7)."""
 
 from __future__ import annotations
 
@@ -88,11 +85,10 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
-import time
-import urllib.error
+import tempfile
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -103,15 +99,13 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 FIELD_MAP_PATH = SKILL_DIR / "config" / "field-map.json"
 
 # --------------------------------------------------------------------------- #
-# Kie contract (W0.6.json live-verified; Skill 46 pattern of record)
+# Kie transport (Skill 74) and cover policy (W0.6.json live-verified)
 # --------------------------------------------------------------------------- #
-DEFAULT_KIE_BASE_URL = "https://api.kie.ai"
-CREATE_TASK_PATH = "/api/v1/jobs/createTask"
-RECORD_INFO_PATH = "/api/v1/jobs/recordInfo"
+KIE_ADAPTER_SKILL = "74-kie-live-adapter"
 
 # Primary cover model (W0.6): the TEXT-TO-IMAGE portrait model, NOT the
 # image-to-image presentation recipe.
-COVER_MODEL = "gpt-image-2-text-to-image"
+COVER_MODEL = "gpt-image-2-5-sunburst-text-to-image"
 
 # THE OVERRIDE. Skill 46's submitter defaults aspect_ratio to "16:9"; a cover is
 # portrait, so this adapter pins "2:3" (W0.6: 2:3 -> exactly 1024x1536).
@@ -226,10 +220,6 @@ MOZILLA_UA = (
 DEFAULT_KEY_LABELS = ("KIE_API_KEY",)
 DEFAULT_BASE_URL_LABELS = ("KIE_BASE_URL",)
 
-# The Kie account-credit balance endpoint (W0.9) -- read-only, zero generation
-# tokens; used only to classify a pre-flight (never a mandatory gate here).
-CREDIT_PATH = "/api/v1/chat/credit"
-
 # Bounded re-poll defaults (Skill 46 box-kv-poller fallback ceiling 10 min).
 DEFAULT_POLL_INTERVAL_S = 5.0
 DEFAULT_POLL_CEILING_S = 600.0
@@ -249,6 +239,7 @@ HELD_CALLBACK_LOST = "callback_lost"
 HELD_TASK_FAILED = "task_failed"
 HELD_RENDER_NOT_PORTRAIT = "render_not_portrait"
 HELD_DOWNLOAD_FAILED = "download_failed"
+HELD_TRANSPORT_MISSING = "kie_transport_missing"
 
 RESULT_CONTRACT = "anthology-engine-cover-render-result"
 
@@ -388,60 +379,6 @@ def _looks_like_literal_key(s: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# HTTP (stdlib urllib; captures 4xx/5xx status instead of raising through)
-# --------------------------------------------------------------------------- #
-class _Resp:
-    __slots__ = ("status", "json", "raw", "error_reason")
-
-    def __init__(self, status=0, data=None, raw=b"", error_reason=None):
-        self.status = status
-        self.json = data
-        self.raw = raw
-        self.error_reason = error_reason
-
-
-def _request(url, method="GET", headers=None, body=None, timeout=30.0, want_json=True):
-    """One HTTP call. Returns _Resp. Never raises for an HTTP status; a transport
-    failure (URLError / socket) yields status 0 with error_reason set. The Kie
-    key rides only in the Authorization header the caller supplies; never logged."""
-    data = None
-    hdrs = dict(headers or {})
-    if body is not None:
-        data = json.dumps(body).encode("utf-8")
-        hdrs.setdefault("Content-Type", "application/json")
-    hdrs.setdefault("User-Agent", MOZILLA_UA)
-    req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            status = getattr(resp, "status", None) or resp.getcode()
-            parsed = None
-            if want_json and raw:
-                try:
-                    parsed = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    parsed = None
-            return _Resp(status=status, data=parsed, raw=raw)
-    except urllib.error.HTTPError as e:
-        raw = b""
-        try:
-            raw = e.read()
-        except Exception:
-            pass
-        parsed = None
-        if want_json and raw:
-            try:
-                parsed = json.loads(raw.decode("utf-8"))
-            except Exception:
-                parsed = None
-        return _Resp(status=e.code, data=parsed, raw=raw, error_reason="http_%s" % e.code)
-    except urllib.error.URLError as e:
-        return _Resp(status=0, error_reason="urlerror:%s" % getattr(e, "reason", "unknown"))
-    except Exception as e:  # timeout, socket, etc.
-        return _Resp(status=0, error_reason="transport:%s" % type(e).__name__)
-
-
-# --------------------------------------------------------------------------- #
 # Field map (read-only): the cover link-field pair this adapter NAMES so the
 # downstream artifact-record captures BOTH cover link fields.
 # --------------------------------------------------------------------------- #
@@ -540,36 +477,6 @@ def apply_style(base_prompt, style):
     return "\n".join(parts)
 
 
-def _extract_result_urls(data: dict):
-    """Pull image URLs out of a recordInfo 'success' payload. data.resultJson is
-    a JSON string (W0.6) -> resultUrls[]; also tolerate images[].url and
-    resultImageUrl (Skill 46 box-kv-poller._extractResultJsonUrls)."""
-    rj = (data or {}).get("resultJson")
-    if isinstance(rj, str):
-        try:
-            rj = json.loads(rj)
-        except Exception:
-            rj = None
-    urls = []
-    if isinstance(rj, dict):
-        if isinstance(rj.get("resultUrls"), list):
-            urls += [u for u in rj["resultUrls"] if isinstance(u, str)]
-        if isinstance(rj.get("images"), list):
-            urls += [i.get("url") for i in rj["images"] if isinstance(i, dict) and i.get("url")]
-        if isinstance(rj.get("resultImageUrl"), str):
-            urls.append(rj["resultImageUrl"])
-    # Some shapes surface resultUrls at the top level of data.
-    if isinstance((data or {}).get("resultUrls"), list):
-        urls += [u for u in data["resultUrls"] if isinstance(u, str)]
-    # De-dup, preserve order.
-    seen, out = set(), []
-    for u in urls:
-        if u and u not in seen:
-            seen.add(u)
-            out.append(u)
-    return out
-
-
 # --------------------------------------------------------------------------- #
 # The render (the one paid, external step) + read-back verification
 # --------------------------------------------------------------------------- #
@@ -582,101 +489,137 @@ class RenderHeld(Exception):
         self.detail = detail
 
 
-def _kie_headers(key):
-    return {"Authorization": "Bearer %s" % key, "Content-Type": "application/json"}
+def _find_kie_adapter():
+    """Skill 74's CLI as a sibling skill folder (numbered source or runtime tree), else None."""
+    roots = [SKILL_DIR.parent, Path(os.environ.get("OPENCLAW_SKILLS_DIR") or "."),
+             Path.home() / ".openclaw" / "skills", Path("/data/.openclaw/skills")]
+    for root in roots:
+        cand = root / KIE_ADAPTER_SKILL / "scripts" / "kie_live_adapter.py"
+        if cand.is_file():
+            return cand
+    return None
 
 
-def _create_task(base_url, key, body, timeout):
-    r = _request(base_url + CREATE_TASK_PATH, method="POST", headers=_kie_headers(key),
-                 body=body, timeout=timeout)
-    if r.status == 402:
-        raise RenderHeld(HELD_CREDIT_OUT, "createTask 402 insufficient credits")
-    if r.status in (401, 403):
-        raise RenderHeld(HELD_AUTH, "createTask %s unauthorized" % r.status)
-    if r.status == 0:
-        raise RenderHeld(HELD_PROVIDER_UNREACHABLE, r.error_reason or "createTask transport")
-    j = r.json or {}
-    task_id = (j.get("data") or {}).get("taskId")
-    if r.status != 200 or (j.get("code") not in (200, None)) or not task_id:
-        # A non-200 body code is a provider-side rejection; hold for retry.
-        raise RenderHeld(HELD_PROVIDER_UNREACHABLE,
-                         "createTask code=%s status=%s" % (j.get("code"), r.status))
-    return task_id
+def _local_base_url(base_url):
+    """Only a localhost base (a test mock) is handed to Skill 74, which owns the KIE host and refuses any other."""
+    try:
+        host = (urllib.parse.urlparse(base_url or "").hostname or "").lower()
+    except ValueError:
+        return None
+    return base_url.rstrip("/") if host in ("127.0.0.1", "localhost") else None
 
 
-def _poll_record_info(base_url, key, task_id, interval_s, ceiling_s, backoff_max_s):
-    """Bounded re-poll of recordInfo. Returns result URLs on success; raises
-    RenderHeld(callback_lost) at the ceiling and RenderHeld(task_failed) on a
-    provider 'fail' state. Backoff respects Kie's 10-req/s query budget."""
-    deadline = time.monotonic() + ceiling_s
-    delay = interval_s
-    url = base_url + RECORD_INFO_PATH + "?taskId=" + urllib.parse.quote(task_id, safe="")
-    hdrs = {"Authorization": "Bearer %s" % key}
-    last_state = "unknown"
-    while time.monotonic() < deadline:
-        time.sleep(delay)
-        r = _request(url, method="GET", headers=hdrs, timeout=30.0)
-        if r.status == 0:
-            # Transient transport blip: back off and keep polling within ceiling.
-            delay = min(delay * 2.0, backoff_max_s)
-            continue
-        if r.status in (401, 403):
-            raise RenderHeld(HELD_AUTH, "recordInfo %s unauthorized" % r.status)
-        data = (r.json or {}).get("data") or {}
-        state = data.get("state", "unknown")
-        last_state = state
-        if state == "success":
-            urls = _extract_result_urls(data)
-            safe = [u for u in urls if _host_allowlisted(u)]
-            if not safe:
-                # 'success' with zero allowlisted URLs is not a landed render.
-                raise RenderHeld(HELD_DOWNLOAD_FAILED, "success but 0 allowlisted result URLs")
-            return safe
-        if state == "fail":
-            raise RenderHeld(HELD_TASK_FAILED,
-                             "failCode=%s" % data.get("failCode"))
-        # waiting | queuing | generating -> backoff and continue.
-        delay = min(delay * 1.5, backoff_max_s)
-    raise RenderHeld(HELD_CALLBACK_LOST,
-                     "recordInfo ceiling %.0fs reached, last state=%s" % (ceiling_s, last_state))
+def _kie74(command, args=(), *, key, base_url=None, request=None, timeout=300.0, poll_initial=None):
+    """Run `kie_live_adapter.py <command> --mode active --json ...` and return its JSON result dict.
 
-
-def _download_and_verify(urls, out_png: Path, timeout):
-    """Download the first allowlisted URL that yields a valid PORTRAIT PNG, write
-    it to out_png, and return (source_url, width, height, sha256). Raises
-    RenderHeld on download failure or a non-portrait result (nothing landed)."""
-    last_reason = "no urls"
-    for u in urls:
-        if not _host_allowlisted(u):
-            _log("result URL host not allowlisted; dropping")
-            continue
-        req = urllib.request.Request(u, method="GET", headers={"User-Agent": MOZILLA_UA})
+    The key travels in the child environment, never on the command line. Raises RenderHeld when Skill 74 is
+    not installed or prints nothing usable."""
+    script = _find_kie_adapter()
+    if script is None:
+        raise RenderHeld(HELD_TRANSPORT_MISSING,
+                         "Skill %s (the single KIE transport) is not installed; no fallback client exists"
+                         % KIE_ADAPTER_SKILL)
+    env = dict(os.environ)
+    env["KIE_API_KEY"] = key
+    local = _local_base_url(base_url)
+    if local:
+        env["KIE_LIVE_API_BASE"] = local
+        env["KIE_LIVE_UPLOAD_BASE"] = local
+    if poll_initial is not None:
+        env["KIE_LIVE_POLL_INITIAL"] = str(poll_initial)
+    with tempfile.TemporaryDirectory(prefix="cover-kie74-") as work:
+        cmd = [sys.executable, str(script), command, "--mode", "active", "--json"] + [str(a) for a in args]
+        if request is not None:
+            req = Path(work) / "request.json"
+            req.write_text(json.dumps(request), encoding="utf-8")
+            cmd += ["--request", str(req)]
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                status = getattr(resp, "status", None) or resp.getcode()
-                if status != 200:
-                    last_reason = "http %s" % status
-                    continue
-                data = resp.read()
-        except Exception as e:
-            last_reason = "download:%s" % type(e).__name__
-            continue
-        dims = _png_dimensions(data)
-        if not dims:
-            last_reason = "not a PNG"
-            continue
-        width, height = dims
-        if not (height > width):
-            # The whole point of this unit: a cover must be portrait.
-            raise RenderHeld(HELD_RENDER_NOT_PORTRAIT,
-                             "rendered %dx%d is not portrait (height must exceed width)"
-                             % (width, height))
-        out_png.parent.mkdir(parents=True, exist_ok=True)
-        tmp = out_png.with_suffix(out_png.suffix + ".part")
-        tmp.write_bytes(data)
-        os.replace(str(tmp), str(out_png))
-        sha = hashlib.sha256(data).hexdigest()
-        return u, width, height, sha
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 60, env=env, check=False)
+        except subprocess.TimeoutExpired:
+            raise RenderHeld(HELD_PROVIDER_UNREACHABLE, "Skill 74 %s did not finish" % command)
+    try:
+        out = json.loads(done.stdout)
+    except ValueError:
+        raise RenderHeld(HELD_PROVIDER_UNREACHABLE, "Skill 74 %s returned no JSON (exit %s)" % (command, done.returncode))
+    return out if isinstance(out, dict) else {}
+
+
+def _err(res):
+    e = res.get("error") or {}
+    return e.get("code"), str(e.get("msg") or "")[:200]
+
+
+def _create_task(kie, base_url, key, body, timeout):
+    res = kie("submit", (), key=key, base_url=base_url, request=body, timeout=timeout)
+    if res.get("task_id"):
+        return res["task_id"]
+    code, msg = _err(res)
+    if code == 402:
+        raise RenderHeld(HELD_CREDIT_OUT, "createTask 402 insufficient credits")
+    if code in (401, 403):
+        raise RenderHeld(HELD_AUTH, "createTask %s unauthorized" % code)
+    # Anything else (network, a non-200 body code, a schema refusal) is a provider-side rejection; hold for retry.
+    raise RenderHeld(HELD_PROVIDER_UNREACHABLE, "createTask code=%s %s" % (code, msg))
+
+
+def _wait_for_result(kie, base_url, key, task_id, interval_s, ceiling_s):
+    """Bounded wait through Skill 74 (first poll after interval_s, then its backoff, never past ceiling_s).
+    Returns allowlisted result URLs; RenderHeld(callback_lost) at the ceiling, (task_failed) on a provider
+    'fail' state, (auth) on 401/403."""
+    res = kie("wait", ("--task-id", task_id, "--timeout", int(ceiling_s)), key=key, base_url=base_url,
+              timeout=ceiling_s + 30, poll_initial=interval_s)
+    state = res.get("state")
+    if state == "success":
+        safe = [u for u in (res.get("result_urls") or []) if _host_allowlisted(u)]
+        if not safe:
+            # 'success' with zero allowlisted URLs is not a landed render.
+            raise RenderHeld(HELD_DOWNLOAD_FAILED, "success but 0 allowlisted result URLs")
+        return safe
+    code, msg = _err(res)
+    if code == "timeout":
+        raise RenderHeld(HELD_CALLBACK_LOST, "wait ceiling %.0fs reached, last state=%s" % (ceiling_s, state))
+    if code in (401, 403):
+        raise RenderHeld(HELD_AUTH, "wait %s unauthorized" % code)
+    if (res.get("data") or {}).get("state_raw") == "fail":
+        raise RenderHeld(HELD_TASK_FAILED, "failCode=%s" % code)
+    raise RenderHeld(HELD_PROVIDER_UNREACHABLE, "wait code=%s %s" % (code, msg))
+
+
+def _download_and_verify(kie, base_url, key, task_id, urls, out_png: Path, timeout):
+    """Skill 74 `save` (browser User-Agent, Kie result hosts only), then keep the first file that is a valid
+    PORTRAIT PNG: write it to out_png and return (source_url, width, height, sha256). Raises RenderHeld on
+    download failure or a non-portrait result (nothing landed)."""
+    args = ["--task-id", task_id, "--user-agent", MOZILLA_UA]
+    for host in KIE_RESULT_HOSTS:
+        args += ["--allow-host", host]
+    with tempfile.TemporaryDirectory(prefix="cover-save-") as work:
+        res = kie("save", args + ["--save-dir", work], key=key, base_url=base_url, timeout=timeout + 60)
+        saved = [Path(p) for p in (res.get("saved_paths") or [])]
+        if not saved:
+            code, msg = _err(res)
+            raise RenderHeld(HELD_DOWNLOAD_FAILED, "save code=%s %s" % (code, msg or "no file saved"))
+        last_reason = "no urls"
+        for idx, path in enumerate(saved):
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                last_reason = "read:%s" % type(exc).__name__
+                continue
+            dims = _png_dimensions(data)
+            if not dims:
+                last_reason = "not a PNG"
+                continue
+            width, height = dims
+            if not (height > width):
+                # The whole point of this unit: a cover must be portrait.
+                raise RenderHeld(HELD_RENDER_NOT_PORTRAIT,
+                                 "rendered %dx%d is not portrait (height must exceed width)" % (width, height))
+            out_png.parent.mkdir(parents=True, exist_ok=True)
+            tmp = out_png.with_suffix(out_png.suffix + ".part")
+            tmp.write_bytes(data)
+            os.replace(str(tmp), str(out_png))
+            source = urls[idx] if idx < len(urls) else (urls[0] if urls else "")
+            return source, width, height, hashlib.sha256(data).hexdigest()
     raise RenderHeld(HELD_DOWNLOAD_FAILED, last_reason)
 
 
@@ -690,8 +633,9 @@ def render(prompt, out_png: Path, participant_key="",
            poll_ceiling_s=DEFAULT_POLL_CEILING_S,
            poll_backoff_max_s=DEFAULT_POLL_BACKOFF_MAX_S,
            create_timeout_s=DEFAULT_CREATE_TIMEOUT_S,
-           download_timeout_s=DEFAULT_DOWNLOAD_TIMEOUT_S):
-    """Render the cover and return (exit_code, result_manifest). Never prints a
+           download_timeout_s=DEFAULT_DOWNLOAD_TIMEOUT_S, kie_fn=None):
+    """Render the cover and return (exit_code, result_manifest). `kie_fn` replaces the Skill 74 runner
+    (the offline self-test and the unit tests inject a stub; production leaves it None). Never prints a
     secret. On any 'cannot complete now' condition returns (EX_HELD, manifest
     with status 'held' + held_reason) so hold_queue.py + alert-dedup.py own the
     durable hold and the single deduped founder alert."""
@@ -779,9 +723,7 @@ def render(prompt, out_png: Path, participant_key="",
 
     if base_url is None:
         _, base_url = _env_first(list(DEFAULT_BASE_URL_LABELS))
-        base_url = (base_url or DEFAULT_KIE_BASE_URL).rstrip("/")
-    else:
-        base_url = base_url.rstrip("/")
+    kie = kie_fn or _kie74
 
     try:
         # Resume an in-flight task if a state sidecar already holds a taskId
@@ -796,17 +738,17 @@ def render(prompt, out_png: Path, participant_key="",
                                    "participant_key": participant_key,
                                    "aspect_ratio": aspect, "model": model,
                                    "submitted_at": _utcnow()})
-            task_id = _create_task(base_url, key_val, body, create_timeout_s)
+            task_id = _create_task(kie, base_url, key_val, body, create_timeout_s)
             _write_state(out_png, {"status": "submitted", "task_id": task_id,
                                    "participant_key": participant_key,
                                    "aspect_ratio": aspect, "model": model,
                                    "submitted_at": _utcnow()})
-            _log("createTask accepted; polling recordInfo (bounded re-poll)")
+            _log("job accepted by Skill 74; bounded wait")
         manifest["task_id"] = task_id
 
-        urls = _poll_record_info(base_url, key_val, task_id,
-                                 poll_interval_s, poll_ceiling_s, poll_backoff_max_s)
-        source_url, width, height, sha = _download_and_verify(urls, out_png, download_timeout_s)
+        urls = _wait_for_result(kie, base_url, key_val, task_id, poll_interval_s, poll_ceiling_s)
+        source_url, width, height, sha = _download_and_verify(kie, base_url, key_val, task_id, urls,
+                                                              out_png, download_timeout_s)
 
         manifest.update({
             "status": "rendered",
@@ -915,13 +857,12 @@ def _load_prompt(args) -> str:
 def cmd_plan() -> int:
     lf = _cover_link_fields()
     print("cover_render.py  (S7 cover render adapter, unit W1.14)")
-    print("  model            : %s  (Kie GPT-image-2 text-to-image, W0.6)" % COVER_MODEL)
+    print("  model            : %s  (Kie GPT-image-2.5 text-to-image, W0.6)" % COVER_MODEL)
     print("  aspect_ratio     : %s  (PORTRAIT; overrides Skill 46 default %s)"
           % (COVER_ASPECT, SKILL46_DEFAULT_ASPECT))
     print("  target geometry  : %dx%d portrait" % (COVER_WIDTH, COVER_HEIGHT))
-    print("  createTask       : POST %s" % (DEFAULT_KIE_BASE_URL + CREATE_TASK_PATH))
-    print("  recordInfo       : GET  %s" % (DEFAULT_KIE_BASE_URL + RECORD_INFO_PATH))
-    print("  path             : single image -> direct bounded recordInfo re-poll")
+    print("  transport        : %s CLI (submit | wait | save); no KIE client in this file" % KIE_ADAPTER_SKILL)
+    print("  path             : single image -> one bounded wait through Skill 74")
     print("                     (deck size 1 <= callback threshold 5; Skill 46 fix 33)")
     print("  on lost callback : HELD (exit 3) -> hold_queue.py + alert-dedup.py")
     print("  credential       : Kie key by LABEL %s (env-first; never printed)"
@@ -1026,14 +967,8 @@ def self_test() -> int:
     b2 = build_create_body("a cover", resolution="2K", callback_url="https://x/cb")
     assert b2["input"]["resolution"] == "2K" and b2["callBackUrl"] == "https://x/cb"
 
-    # Result-URL extraction across the W0.6 (resultJson string) and Skill 46 shapes.
-    ok_host = "https://tempfile.aiquickdraw.com/x.png"
-    data_str = {"resultJson": json.dumps({"resultUrls": [ok_host]})}
-    assert _extract_result_urls(data_str) == [ok_host]
-    data_imgs = {"resultJson": {"images": [{"url": ok_host}]}}
-    assert _extract_result_urls(data_imgs) == [ok_host]
-
     # Allowlist.
+    ok_host = "https://tempfile.aiquickdraw.com/x.png"
     assert _host_allowlisted(ok_host) is True
     assert _host_allowlisted("https://evil.example.com/x.png") is False
     assert _host_allowlisted("not a url") is False
@@ -1141,6 +1076,70 @@ def self_test() -> int:
     except FileNotFoundError:
         pass  # committed template always ships alongside; skip only if absent
 
+    # --- Skill 74 transport: the whole render through an injected stub runner ---------------
+    def _png(w, h):
+        return (b"\x89PNG\r\n\x1a\n" + (13).to_bytes(4, "big") + b"IHDR" + w.to_bytes(4, "big")
+                + h.to_bytes(4, "big") + b"\x08\x02\x00\x00\x00")
+
+    def _stub(portrait=True, wait=None, submit=None):
+        calls = []
+
+        def kie(command, args=(), *, key, base_url=None, request=None, timeout=300.0, poll_initial=None):
+            calls.append((command, list(args), request, key, poll_initial))
+            if command == "submit":
+                return submit or {"state": "queued", "task_id": "T-1"}
+            if command == "wait":
+                return wait or {"state": "success", "task_id": "T-1", "result_urls": [ok_host, "https://evil.example/x.png"]}
+            assert command == "save", command
+            work = Path(list(args)[list(args).index("--save-dir") + 1])
+            (work / "T-1_0.png").write_bytes(_png(1024, 1536) if portrait else _png(1536, 1024))
+            return {"state": "success", "saved_paths": [str(work / "T-1_0.png")]}
+        kie.calls = calls
+        return kie
+
+    os.environ["__AE_STUB_KEY"] = "stub-key-value-0123456789"
+    st = _stub()
+    code, man = render("draw a cover", _d / "k1.png", key_labels=("__AE_STUB_KEY",), kie_fn=st,
+                       poll_interval_s=5.0)
+    assert code == EX_OK and man["status"] == "rendered" and man["task_id"] == "T-1", man
+    assert man["source_url"] == ok_host and man["dimensions"] == {"width": 1024, "height": 1536, "portrait": True}
+    cmds = [c[0] for c in st.calls]
+    assert cmds == ["submit", "wait", "save"], cmds
+    sub = st.calls[0]
+    assert sub[2]["model"] == COVER_MODEL and sub[2]["input"]["aspect_ratio"] == "2:3"
+    assert st.calls[1][4] == 5.0                              # first poll delay handed to Skill 74
+    save_args = st.calls[2][1]
+    assert MOZILLA_UA in save_args and "--user-agent" in save_args  # the W0.6 browser User-Agent requirement
+    assert [save_args[i + 1] for i, a_ in enumerate(save_args) if a_ == "--allow-host"] == list(KIE_RESULT_HOSTS)
+    assert all(c[3] == "stub-key-value-0123456789" for c in st.calls)  # key goes only through the key argument
+    # idempotent replay: the PNG is on disk, so the transport is never called again
+    st2 = _stub()
+    code, man = render("draw a cover", _d / "k1.png", key_labels=("__AE_STUB_KEY",), kie_fn=st2)
+    assert code == EX_OK and st2.calls == []
+    # a landscape result HOLDS and writes nothing
+    code, man = render("draw a cover", _d / "k2.png", key_labels=("__AE_STUB_KEY",), kie_fn=_stub(portrait=False))
+    assert code == EX_HELD and man["held_reason"] == HELD_RENDER_NOT_PORTRAIT and not (_d / "k2.png").exists()
+    # typed holds from Skill 74 results
+    for k, (sub_, wait_, reason) in enumerate((
+            ({"state": "fail", "error": {"code": 402, "msg": "credits"}}, None, HELD_CREDIT_OUT),
+            ({"state": "fail", "error": {"code": 401, "msg": "key"}}, None, HELD_AUTH),
+            ({"state": "fail", "error": {"code": "network", "msg": "down"}}, None, HELD_PROVIDER_UNREACHABLE),
+            (None, {"state": "running", "task_id": "T-1", "error": {"code": "timeout", "msg": "deadline"}}, HELD_CALLBACK_LOST),
+            (None, {"state": "fail", "task_id": "T-1", "error": {"code": "500", "msg": "x"}, "data": {"state_raw": "fail"}}, HELD_TASK_FAILED),
+            (None, {"state": "success", "task_id": "T-1", "result_urls": ["https://evil.example/x.png"]}, HELD_DOWNLOAD_FAILED))):
+        code, man = render("draw a cover", _d / ("h%d.png" % k), key_labels=("__AE_STUB_KEY",),
+                           kie_fn=_stub(wait=wait_, submit=sub_))
+        assert code == EX_HELD and man["held_reason"] == reason, (reason, man)
+    # resume: a sidecar holding a task id waits on it and never submits again (cost-safe)
+    _write_state(_d / "r.png", {"status": "submitted", "task_id": "T-1"})
+    st3 = _stub()
+    code, man = render("draw a cover", _d / "r.png", key_labels=("__AE_STUB_KEY",), kie_fn=st3)
+    assert code == EX_OK and [c[0] for c in st3.calls] == ["wait", "save"]
+    # only a localhost base reaches Skill 74; a real KIE host is owned by Skill 74
+    assert _local_base_url("http://127.0.0.1:9") == "http://127.0.0.1:9"
+    assert _local_base_url("https://example.com") is None and _local_base_url(None) is None
+    del os.environ["__AE_STUB_KEY"]
+
     print("cover_render self-test: OK "
           "(portrait override, PNG read-back, Kie body/parse, allowlist, link fields, "
           "4 named styles + 1 type-only, apply_style, render_style_set, field-map coherence)")
@@ -1149,7 +1148,7 @@ def self_test() -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Render an anthology cover: Kie GPT-image-2 PORTRAIT 1024x1536 (S7).")
+        description="Render an anthology cover: Kie GPT-image-2.5 PORTRAIT 1024x1536 (S7).")
     ap.add_argument("--participant-key", default="", help="composite contact_id::anthology_id (logging/result keying)")
     ap.add_argument("--prompt", help="the aw-11 image prompt text")
     ap.add_argument("--prompt-file", help="path to the aw-11 prompt (raw text or a JSON object with a 'prompt' field)")
@@ -1163,7 +1162,7 @@ def main(argv=None) -> int:
     ap.add_argument("--aspect", default=COVER_ASPECT, help="aspect ratio (portrait only; default 2:3)")
     ap.add_argument("--model", default=COVER_MODEL, help="Kie image model (default %s)" % COVER_MODEL)
     ap.add_argument("--resolution", default=None, help="optional Kie resolution (omit for the W0.6 default 1024x1536)")
-    ap.add_argument("--base-url", default=None, help="Kie base URL override (else KIE_BASE_URL label, else api.kie.ai)")
+    ap.add_argument("--base-url", default=None, help="test hook: localhost base URL handed to Skill 74 (the KIE host is owned by Skill 74)")
     ap.add_argument("--key-label", dest="key_labels", action="append",
                     help="env label(s) for the Kie key (default KIE_API_KEY); repeatable")
     ap.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL_S)

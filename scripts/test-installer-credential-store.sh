@@ -63,9 +63,13 @@ command -v jq >/dev/null 2>&1 || true   # not required; QC scripts do not need i
 build_sandbox() {
   local skill="$1" home
   home="$(mktemp -d)"
-  mkdir -p "$home/.openclaw/skills"
+  mkdir -p "$home/.openclaw/skills" "$home/.openclaw/platform" "$home/fixture-bin"
   cp "$REPO_ROOT/lib-shared.sh" "$home/.openclaw/skills/lib-shared.sh"
+  cp "$REPO_ROOT/platform/common.sh" "$home/.openclaw/platform/common.sh"
   cp -R "$REPO_ROOT/$skill" "$home/.openclaw/skills/$skill"
+  # Credential-store assertions need no network response.
+  printf '#!/bin/sh\nexit 1\n' > "$home/fixture-bin/curl"
+  chmod +x "$home/fixture-bin/curl"
   printf '%s' "$home"
 }
 
@@ -76,7 +80,8 @@ build_sandbox() {
 #   0 = found · 1 = not found
 qc_reports_set() {
   local home="$1" skill="$2" qc="$3" label="$4" out
-  out="$(HOME="$home" bash "$home/.openclaw/skills/$skill/$qc" 2>&1)"
+  out="$(env -i HOME="$home" OPENCLAW_ROOT="$home/.openclaw" PATH="$home/fixture-bin:$PATH" \
+      "$BASH" "$home/.openclaw/skills/$skill/$qc" 2>&1)"
   printf '%s' "$out" | grep -qF "✓ PASS — ${label}"
 }
 

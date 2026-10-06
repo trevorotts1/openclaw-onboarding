@@ -10,7 +10,7 @@ Reads its question schema from intake/deck-intake-questions.json (the canonical
 source of truth). Supports two interview modes:
 
   STANDARD  (--next / --answer / --complete)
-    FIX 30 / schema v1.8.0: TWENTY-THREE numbered conversational turns
+    FIX 30 / schema v1.10.0: TWENTY-THREE numbered conversational turns
     (Trevor ruling, binding), down from 58 one-per-turn rows. Each turn row
     (kind "merged") may return several legacy subfields; every answer folds
     into one ledger entry per legacy question id -- captured, derived, or
@@ -34,6 +34,20 @@ source of truth). Supports two interview modes:
     frame-selection question ONE at a time. Answers are assembled into ONE
     atomic record per sp-8-questions.json. The turn-gate is REQUIRED --
     a batch dump is AF-INTAKE-BATCH.
+
+It also carries ONE non-interview command:
+
+  STYLE PICK (--style-pick A|B|C --owner-msg-id ID)
+    F5: the ONLY sanctioned client-side writer of
+    working/copy/style_preview_choice.json -- the artifact the human gateway
+    phase P-STYLE-PICK (order 4.86, executor kind "human", budget 45 min) waits
+    for. Records the client's A/B/C reply in the exact shape
+    presentation_job.phases.Engine._style_choice_authentic verifies, and
+    REFUSES without --owner-msg-id (a pick with no resolvable owner message id
+    is a forged approval, AF-FORGED-APPROVAL). It never writes the auto_pick
+    provenance -- that belongs to the engine's own timeout auto-pick, which
+    fires only under the client's recorded intake.style_pick_auto opt-in
+    (the style_and_brand turn's style_pick_auto subfield).
 
 At --complete, the driver writes/merges working/copy/intake.json with all
 derived fields, runs prove_sp_routing.py unconditionally for claim-gate
@@ -336,6 +350,80 @@ def _resolve_requester_from_env(existing_intake: Dict[str, Any]) -> Dict[str, st
     return {}
 
 
+# ---------------------------------------------------------------------------
+# the NESTED requester object -- the shape the ENGINE itself reads
+# (PD-TEST-049).
+#
+# THE SECOND HALF OF THE F19 GAP. The block above makes the requester durable
+# as the FLAT pair working/copy/intake.json's OTHER readers use:
+# presentation_job/resolve_intake.py reads `requester_chat_id` /
+# `requester_channel` there (resolve_intake.py:477-480) and turns them into the
+# nested `requester: {chat_id, client_name, channel}` object the engine's --new
+# wants (resolve_intake.py:498-504). That works for the two SHELL callers that
+# run resolve_intake.py first -- presentation-canonical-entry.sh:1188 and
+# presentation-intake-poll.sh:1270 -- because they hand the engine
+# `working/checkpoints/.engine-intake.json`, resolve_intake.py's OWN output.
+#
+# The launcher path does NOT go through resolve_intake.py: launcher.py:
+# 1763-1771 passes `working/copy/intake.json` STRAIGHT to the engine as
+# --intake (its documented launcher contract -- launcher.py:1760-1761 and
+# dispatch_new's docstring, launcher.py:1884-1885: "The engine's --new path
+# reads intake_json from the run directory's working/copy/intake.json").
+# The engine then reads the NESTED object
+# (presentation_job/__main__.py:266 `intake.get("requester") or {}`) and
+# hard-fails F1 when it carries no chat_id (__main__.py:278-281).
+#
+# So a run produced by THIS driver and launched by the launcher -- the
+# operator-delegated bridge path, intake_bridge.drive_operator_contract()
+# -> `deck-intake-driver.py --complete` -> launcher.dispatch_new() -- carried a
+# perfectly good requester in the FLAT shape and still died at F1 with an
+# EMPTY NESTED object. Because this driver is the SOLE writer of the file
+# (comment above; intake_bridge.py:1108-1110), the mirror belongs HERE: the
+# producer emits both shapes and the file is self-sufficient for both
+# consumers. resolve_intake.py is left untouched and still reads the flat pair.
+_OPERATOR_REQUESTER_CLIENT_NAME = "operator"
+
+
+def _ensure_nested_requester(intake: Dict[str, Any]) -> None:
+    """Mirror intake.json's FLAT requester pair into the NESTED `requester`
+    object the engine's --new actually reads, IN PLACE.
+
+    Sourced from whatever the file already carries, so this covers both the
+    freshly-stamped case AND the upstream-stamped case
+    (_resolve_requester_from_env() returns {} -- deliberately, never
+    clobbering -- when a value is already on disk; the nested mirror must
+    still be derived from it, or such a run keeps dying at F1).
+
+    Never fabricates: with no chat_id anywhere this writes NOTHING and the
+    engine's own F1 gate fires exactly as designed. The emitted shape is the
+    product's own canonical one -- `{"chat_id", "client_name", "channel"}`,
+    byte-for-byte the object resolve_intake.py:498-500 builds and the shape
+    real runs' state.json carries.
+    """
+    existing = intake.get("requester")
+    if isinstance(existing, dict) and str(existing.get("chat_id") or "").strip():
+        return
+    chat_id = str(intake.get("requester_chat_id") or "").strip()
+    if not chat_id:
+        return
+    channel = str(intake.get("requester_channel") or "").strip() or "telegram"
+    client_name = str(intake.get("client_name") or "").strip() \
+        or _OPERATOR_REQUESTER_CLIENT_NAME
+    intake["requester"] = {"chat_id": chat_id,
+                           "client_name": client_name,
+                           "channel": channel}
+
+
+def _stamp_requester(intake: Dict[str, Any]) -> Dict[str, Any]:
+    """Stamp the requester onto `intake` in BOTH shapes its readers use, and
+    return it (for easy call-site chaining). Resolve first (env -> sanctioned
+    operator fallback), then mirror into the nested engine object. The single
+    entry point every finalize path in this driver calls."""
+    intake.update(_resolve_requester_from_env(intake))
+    _ensure_nested_requester(intake)
+    return intake
+
+
 def read_intake_ledger(run_dir: Path) -> Dict[str, Any]:
     """Read working/interview/intake_ledger.json. Returns empty dict if absent."""
     path = run_dir / "working" / "interview" / "intake_ledger.json"
@@ -454,6 +542,27 @@ def _first_unanswered(questions: List[Dict[str, Any]],
     return None
 
 
+def _first_unanswered_progressive(questions: List[Dict[str, Any]],
+                                    answers: Dict[str, Any],
+                                    preferences: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """PRES-056 progressive variant of _first_unanswered: the next turn in
+    bank order that the progressive gate still wants asked (canonical skip
+    + deliverable conditioning + preference reuse). Pure read -- callers
+    persist skips themselves."""
+    selected = selected_deliverables(answers)
+    for q in questions:
+        qid = q["id"]
+        store_on = q.get("storeOn", qid)
+        if store_on in answers or qid in answers:
+            continue
+        ask, _reason = should_ask_progressive(q, answers, selected,
+                                              preferences)
+        if not ask:
+            continue
+        return q
+    return None
+
+
 def cmd_next(args) -> int:
     """Return exactly ONE question -- the next unanswered one."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -478,6 +587,52 @@ def cmd_next(args) -> int:
         write_intake_ledger(run_dir, ledger)
         answers = _answer_view(entries)
 
+    # PRES-056: locked plan-tier reuse. The resource_plan turn is asked ONLY
+    # while the probe leaves a pending plan question; when every provider is
+    # locked the turn resolves from the lock and is never asked -- a locked
+    # valid preference never triggers an extra plan prompt. Consulted here
+    # (not copied): the lock IS the reuse proof.
+    preferences = load_preferences()
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import resource_profile as _rp_next  # type: ignore
+        _prof_next = _rp_next.load_profile()
+        _locked_next = (isinstance(_prof_next, dict)
+                        and bool((_prof_next.get("providers") or {}))
+                        and not _rp_next.pending_questions(profile=_prof_next))
+    except Exception:
+        _locked_next = False
+    # FIX 61.2: locked clients skip resource_plan -- UNLESS the mode/model
+    # picks were never answered. Then ask the models and mode part anyway.
+    _mode_fields_answered = any(
+        (entries.get(k) or {}).get("value")
+        for k in ("RUN_MODE", "DEEPSEEK_VARIANT", "OPENROUTER_MODEL")
+    )
+    # FIX 62: also ask if Ollama Cloud is in use and plan_tier is empty.
+    # The client must pick $20/month or $100/month (3 vs 8 at once).
+    _ollama_needs_plan = False
+    try:
+        _providers = (_prof_next.get("providers") or {}) if isinstance(_prof_next, dict) else {}
+        _ollama = _providers.get("ollama-cloud") or {}
+        if _ollama:
+            _tier = _ollama.get("plan_tier")
+            if not _tier:
+                _ollama_needs_plan = True
+    except Exception:
+        pass
+    _can_skip = _mode_fields_answered and not _ollama_needs_plan
+    if _locked_next and "resource_plan" not in entries and _can_skip:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        entries["resource_plan"] = {
+            "value": "locked (ask-once)", "validated": True,
+            "source": "plan-lock", "answered_at": now_iso,
+            "normalized": "locked (ask-once)",
+            "answer": "locked (ask-once)"}
+        ledger["entries"] = entries
+        write_intake_ledger(run_dir, ledger)
+        answers = _answer_view(entries)
+
     # If presentation_type is answered, auto-derive legacy fields.
     # FIX 30 fail-soft: a merged deck_type_source turn may store raw prose
     # that matches no legal type; --next must still surface the next question
@@ -495,14 +650,35 @@ def cmd_next(args) -> int:
             print(json.dumps({"error": str(exc)}))
             return 1
 
-    next_q = _first_unanswered(questions, answers)
+    # PRES-056 progressive ask: deliverable conditioning + preference
+    # reuse narrow the sequence; canonical _first_unanswered stays the
+    # fallback so an unparsable progressive signal can never strand the
+    # interview. The progressive snapshot is autosaved per company /
+    # presentation run dir (TODO step 2: continuity after token renewal
+    # reads the ledger; this snapshot is the progress meter).
+    next_q = _first_unanswered_progressive(questions, answers, preferences)
+    if next_q is None:
+        next_q = _first_unanswered_residual(questions, answers)
     if next_q is None:
         print(json.dumps({"status": "complete",
                           "message": "All questions answered. Run --complete to "
                                      "finalize."}))
         return 0
 
-    return _emit_question(next_q, answers)
+    snap = read_autosave(run_dir)
+    asked_order = snap.get("asked_order") or []
+    if next_q["id"] not in asked_order:
+        asked_order.append(next_q["id"])
+    autosave_state(run_dir, answers, asked_order, preferences)
+    extra = None
+    if _stage_of(next_q) == 2:
+        _s1 = [q["id"] for q in questions if _stage_of(q) == 1]
+        if all(k in answers for k in ("presentation_type", "goal",
+                                      "cta_action", "deadline")):
+            extra = {"stage": 2,
+                     "stage_note": "refinement: conditioned on your selected "
+                                   "deliverables and missing stage inputs"}
+    return _emit_question(next_q, answers, extra=extra)
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +699,6 @@ def cmd_next(args) -> int:
 # subfield with an unmet condition records its documented default/derived/
 # none_value, and only a fully undocumentable skip leaves the marker entry.
 # ---------------------------------------------------------------------------
-_PITCHLESS_RE = re.compile(r"no\s+pitch|pitchless|without\s+(a\s+)?pitch", re.I)
 _INT_RE = re.compile(r"(\d+)")
 _WPM_RE = re.compile(r"(\d{2,4})\s*w(?:ords)?[\s-]*p(?:m|er\s?min)", re.I)
 _MIN_RE = re.compile(r"(\d{1,3})\s*(?:minutes|minute|mins|m)\b", re.I)
@@ -555,11 +730,24 @@ def derive_slide_count_from_duration(duration_min: Any) -> Optional[int]:
     return max(1, int(round(d * 0.8)))
 
 def pitchless_session(derived: Dict[str, Any]) -> bool:
-    """Q4 (goal_cta_feeling) decides: a session with no sell has no pitch.
-    Group-2 rows (11-15) are skipped-with-defaults when the client says so."""
-    blob = " ".join(str(derived.get(k) or "")
-                    for k in ("goal", "cta_action", "target_feeling"))
-    return bool(_PITCHLESS_RE.search(blob))
+    """Only the explicit, typed pitch decision can suppress commercial turns.
+
+    Free text such as ``"without a pitch"`` is not a durable intake decision:
+    it may describe one section while the owner still selected an offer, or
+    vice versa. ``pitch_included`` is written as a real bool by cmd_answer;
+    missing or non-bool values intentionally do not skip anything.
+    """
+    return derived.get("pitch_included") is False
+
+
+def _explicit_pitch_value(text: str) -> Optional[bool]:
+    """Parse the one owner-selected pitch decision without inferring it."""
+    normalized = (text or "").strip().lower()
+    if normalized in ("true", "yes"):
+        return True
+    if normalized in ("false", "no"):
+        return False
+    return None
 
 def _answer_view(entries: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten ledger entries to a {key: value} answers view. Structured
@@ -590,9 +778,9 @@ def _enum_match(text: str, allowed: List[str]) -> Optional[str]:
 
 def _yes_or_no(text: str) -> Optional[str]:
     lowered = (text or "").strip().lower()
-    if re.match(r"^(y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
+    if re.match(r"^(true|y|yes|ya|yeah|yep|sure|do\b|want\b|need\b|please\b|add\b|include\b|build\b|keep\b|upload\b|with\b)", lowered):
         return "yes"
-    if re.match(r"^(n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
+    if re.match(r"^(false|n|no|nope|none|without|skip\b|decline\b|don'?t|dont\b|negative)", lowered):
         return "no"
     return None
 
@@ -634,6 +822,15 @@ def _claim_labels(qdef: Dict[str, Any], raw: str):
     for k in sub:
         variants[k.lower()] = k
         variants[str(sub[k].get("storeOn", "")).lower()] = k
+        # A subfield may declare the extra labels clients actually type for it
+        # ("workhorse" for workhorse_model, "qc"/"judge" for qc_model). The
+        # label vocabulary stays in the question bank -- the parser reads it,
+        # it never hardcodes a field's synonyms. Spaces fold to underscores to
+        # match the lookup below ("thinking mode" -> "thinking_mode").
+        for label in (sub[k].get("labels") or []):
+            token = str(label).strip().lower().replace(" ", "_")
+            if token and token not in variants:
+                variants[token] = k
     claims: List[List[int]] = []  # [key, value_start, match_start]
     seen: set = set()
     for m in _SUBFIELD_LABEL_RE.finditer(raw or ""):
@@ -822,13 +1019,39 @@ def derive_structured_answer(qdef: Dict[str, Any], text: str,
 def validate_labeled_enums(qdef: Dict[str, Any], text: str) -> Optional[str]:
     """An explicitly labeled answer for an enum subfield must resolve to one of
     the enum values (exact or keyword-containment) BEFORE anything is written;
-    prose routed to the first subfield is matched leniently by the engine."""
+    prose routed to the first subfield is matched leniently by the engine.
+
+    A subfield may ALSO declare `refuse_values` + `refuse_message`: a
+    vocabulary that belongs to a DIFFERENT axis and must never be quietly
+    accepted here. It is checked FIRST, and answered with the subfield's own
+    message, so the client is told which two axes they crossed instead of a
+    bare "invalid value". This is the mirror image of the canonical entry's
+    --intake-depth guard (that flag refuses the run-mode words; run_mode
+    refuses the interview-depth words) -- the two axes are never
+    interchangeable in either direction. The vocabulary lives in the question
+    bank, exactly like the label vocabulary: this parser never hardcodes a
+    field's words."""
     values = labeled_subfield_values(qdef, text)
     for k, ann in (qdef.get("subfields") or {}).items():
-        allowed = ann.get("enum")
-        if not allowed or k not in values:
+        if k not in values:
             continue
         val = values[k]
+        refused = [str(v).strip().lower()
+                   for v in (ann.get("refuse_values") or []) if str(v).strip()]
+        if refused:
+            cleaned = str(val).strip().strip(";,.").strip().lower()
+            # Whole-word, so "quick" is caught inside "quick please" but never
+            # inside an unrelated word. re.escape keeps hyphens ("in-depth")
+            # literal.
+            if any(re.search(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", cleaned)
+                   for tok in refused):
+                msg = ann.get("refuse_message") or (
+                    f"Value {val!r} for {k} belongs to a different axis and is "
+                    f"refused here.")
+                return str(msg).replace("{value}", repr(str(val).strip()))
+        allowed = ann.get("enum")
+        if not allowed:
+            continue
         if _enum_match(val, allowed) is None:
             return (f"Invalid value {val!r} for {k}. Allowed: {allowed}")
     return None
@@ -877,6 +1100,512 @@ def apply_pitchless_skips(entries: Dict[str, Any],
         changed = True
     return changed
 
+# ---------------------------------------------------------------------------
+# CLIENT MODEL PLAN -- the intake half of the "nothing is forced" contract
+# ---------------------------------------------------------------------------
+#: subfield id -> (model-plan slot, ledger key). The ledger keys are written
+#: EXPLICITLY here rather than through schema["storeTarget"]: storeTarget
+#: entries flow into working/copy/intake.json (the run directory, which ships
+#: in the client package), and a client's model plan belongs in the
+#: secrets-adjacent profile store, not in the run directory.
+_MODEL_PLAN_SUBFIELDS = (
+    ("workhorse_model", "workhorse", "WORKHORSE_MODEL"),
+    ("reasoning_model", "reasoning", "REASONING_MODEL"),
+    ("qc_model", "judge", "QC_MODEL"),
+)
+_THINKING_SUBFIELD = ("thinking_mode", "THINKING_MODE")
+
+
+def _import_resource_profile():
+    """Import presentation_job.resource_profile beside this driver.
+
+    Fail-soft by design: an intake box that carries the driver but not the
+    engine package must still take the interview. Absence is announced LOUDLY
+    on stderr and the answer is still recorded in the ledger -- it is never
+    swallowed, and it is never reported as a successfully recorded plan."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import resource_profile as _rp  # noqa: PLC0415
+        return _rp
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [MODEL-PLAN] presentation_job.resource_profile is not "
+              f"importable from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) "
+              f"-- the client's model choice was recorded in the intake ledger "
+              f"but NOT persisted to the resource profile, so routing will use "
+              f"the department defaults. Fix the deploy, then re-answer "
+              f"resource_plan.", file=sys.stderr)
+        return None
+
+
+def _import_capacity():
+    """Import presentation_job.capacity beside this driver.
+
+    Fail-soft on the same terms as _import_resource_profile(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import capacity as _cap  # noqa: PLC0415
+        return _cap
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [PLAN-TIER] presentation_job.capacity is not importable "
+              f"from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) -- this "
+              f"turn's PLAN TIER was recorded in the intake ledger but NOT "
+              f"locked onto the resource profile, so the question will be "
+              f"asked again and dispatch may PARK with AF-CAPACITY-UNMEASURED. "
+              f"Fix the deploy, then re-answer resource_plan.", file=sys.stderr)
+        return None
+
+
+#: The turn id that is ALSO its own plan-tier subfield (FIX 30 folded question
+#: 10 into it), and the ledger key that subfield stores on.
+_PLAN_TIER_SUBFIELD = "resource_plan"
+
+#: PRES-006 — the durable configuration_pending event. An intake turn whose
+#: PLAN-TIER half went unstated (the client answered the model/mode subfields
+#: but not the tier, or skipped the turn) is NOT a decline and NOT an answer:
+#: it is configuration_pending. Before this event, the empty-tier return said
+#: nothing, so the run later PARKed on AF-CAPACITY-UNMEASURED with no durable
+#: record of why, no owner and no next action. The event is APPENDED to the
+#: run dir's configuration_events.jsonl (never rewritten) and names the
+#: missing field, the provider still owed an answer, the scoped resume link
+#: and the next action. It never BLOCKS anything: independent already-
+#: configured routes proceed, and the ask-once lock stays untouched (no lock
+#: is written for a turn the client did not answer — that is exactly the
+#: no-ask-once-lock rule this implements).
+CONFIGURATION_PENDING_EVENT = "configuration_pending"
+_CONFIG_EVENTS_RELPATH = Path("working") / "events" / "configuration_events.jsonl"
+
+
+def _emit_configuration_pending(run_dir: Path, pending_providers: List[str],
+                                missing_field: str, session_hint: str = "") -> List[dict]:
+    """Append one configuration_pending event per still-owed provider.
+
+    Read-only inputs, append-only output. Never raises into the intake flow:
+    a failed event write is reported on stderr and the turn proceeds — the
+    event is VISIBILITY, never a gate. The resume link is the client's own
+    /s/<session> capability surface scoped to this interview (never an admin
+    URL); without a base URL configured it is emitted relative for the
+    poller/supervisor to render."""
+    events: List[dict] = []
+    if not pending_providers:
+        return events
+    base = (os.environ.get("PRESENTATION_INTAKE_BASE_URL") or "").rstrip("/")
+    session_id = session_hint or ""
+    resume = f"{base}/s/{session_id}" if base else f"/s/{session_id}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for provider in pending_providers:
+        events.append({
+            "event": CONFIGURATION_PENDING_EVENT,
+            "at": now_iso,
+            "session_id": session_id,
+            "run_dir": str(run_dir),
+            "field": "resource_plan",
+            "missing_field": missing_field,
+            "provider": provider,
+            "resume_url": resume,
+            "next_action": (
+                f"answer the resource-plan {missing_field} for {provider}; "
+                "the run is NOT blocked — already configured routes proceed"),
+            "state": CONFIGURATION_PENDING_EVENT,
+            "owner": "presentation-intake",
+            "source": "deck-intake-driver",
+        })
+    try:
+        out = run_dir / _CONFIG_EVENTS_RELPATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as fh:
+            for ev in events:
+                fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"  WARN  [CONFIG-PENDING] could not append the "
+              f"configuration_pending event ({exc.__class__.__name__}: {exc}) "
+              f"-- the pending configuration is still real, only its durable "
+              f"record is missing.", file=sys.stderr)
+    return events
+
+
+def _claimed_plan_tier(qdef: Dict[str, Any], text: str) -> str:
+    """The plan-tier half of the answer AS THE CLIENT ACTUALLY GAVE IT.
+
+    WHY NOT derived["resource_plan"]. derive_structured_answer() fills an
+    unanswered subfield with its documented default, and this subfield's
+    documented default is its own ``conservative_value`` -- the literal
+    "use conservative default". MEASURED on the shipping parser: the answer
+    ``"workhorse: X@deepseek-direct; mode: ultra"`` derives
+    ``resource_plan == "use conservative default"`` even though the client
+    said nothing whatsoever about a plan. Reading the derived value would
+    therefore record a DECLINE the client never made -- locking ask-once at
+    the conservative floor 3 for a client who is actually on $100/month, and
+    doing it on the very turn where they only meant to pick a model. That is
+    a worse defect than the one this function exists to close, so the value
+    is taken from the CLAIMED half only.
+
+    Reuses the driver's own _claim_labels() rather than re-deriving the
+    routing, so the label vocabulary stays single-sourced in the bank (the
+    same rule _record_run_mode follows for its enum). Mirrors
+    derive_structured_answer()'s unlabeled-prose rule exactly: the head prose
+    routes to the first unclaimed subfield in declaration order, and
+    ``resource_plan`` is declared first with no ``conditional_on``, so it is
+    that target whenever it was not labelled by name.
+
+    Returns "" when the client did not address the plan half at all --
+    absence stays absence, exactly as it does for the run mode."""
+    labeled, prose_head = _claim_labels(qdef, text)
+    claimed = labeled.get(_PLAN_TIER_SUBFIELD, "")
+    if str(claimed).strip():
+        return str(claimed).strip().strip(";,.").strip()
+    if _PLAN_TIER_SUBFIELD in labeled:
+        return ""  # labelled but empty: an explicit blank, not prose
+    return str(prose_head or "").strip().strip(";,.").strip()
+
+
+def _record_plan_tier(qdef: Dict[str, Any], text: str,
+                      entries: Dict[str, Any],
+                      run_dir: Optional[Path] = None,
+                      session_hint: str = "") -> int:
+    """Lock the client's PLAN TIER onto the resource profile. THE F5 WIRE.
+
+    THE DEFECT THIS CLOSES (MEASURED on v25.0.17 / eaedc0633). Production
+    intake never recorded a plan tier anywhere. The order-9 turn recorded the
+    model plan and the run mode and nothing else: no call to
+    ``resource_profile.record_plan_answer`` or ``record_conservative_default``
+    existed anywhere outside tests, docstrings and the ``capacity.py
+    --answer-plan`` operator CLI. Driving this turn with "$100/month" against
+    a profile owing an ollama-cloud answer returned rc=0 and
+    ``"validated": true`` -- a success -- while the profile stayed
+    ``plan_tier=None plan_known=None concurrency_ceiling=None locked=None``
+    and ``pending_questions()`` still returned ``['ollama-cloud']``.
+
+    Two consequences, both live on the fleet today:
+      * ASK-ONCE IS VIOLATED. The bank promises "asked once, then locked
+        forever" and the lock is the profile entry. Nothing wrote it, so an
+        Ollama client is re-asked their plan on every single deck.
+      * DISPATCH PARKS. With no locked ceiling the run PARKs on
+        AF-CAPACITY-UNMEASURED until an operator hand-runs the capacity CLI --
+        which writes capacity_override.json instead, the single-provider file
+        that pins every OTHER provider's width too.
+
+    FAIL-CLOSED, the same posture the model plan already takes. A tier the cap
+    table does not know is REFUSED right here, while the client is still in the
+    conversation, with the accepted tiers named -- never accepted-and-dropped
+    (that silent acceptance IS the defect). An OMITTED tier records nothing and
+    returns 0: this turn is asked unconditionally for its model/mode subfields,
+    but its plan half is asked ONLY when the probe left a pending question, so
+    refusing an answer that never claimed to be about a plan would break the
+    turn for every fully-detected client.
+
+    Returns 0 when nothing was owed / nothing was said / the answer was
+    recorded; 1 (after printing {"error": ...}) when the declaration is
+    refused. Called BEFORE the model plan so a refused answer never
+    half-lands."""
+    raw = _claimed_plan_tier(qdef, text)
+    cap = _import_capacity()
+    rp = _import_resource_profile()
+
+    # PRES-006: WHO IS STILL OWED A TIER, inspected BEFORE the empty-tier
+    # return. The empty return used to say nothing; now, when providers are
+    # still owed an answer and THIS turn did not state one, a durable
+    # configuration_pending event is emitted (missing field, provider, scoped
+    # resume link, next action) so the waiting state stays visible with an
+    # owner — while the run itself stays UNBLOCKED and the ask-once lock is
+    # untouched (absence never writes a lock, a default, or another provider's
+    # answer).
+    if not raw and cap is not None:
+        try:
+            surface = (cap.probe() or {}).get("resource_profile") or {}
+            owed = [q.get("provider") for q in (surface.get("pending_questions") or [])
+                    if q.get("id") == _PLAN_TIER_SUBFIELD and q.get("provider")]
+            owed = list(dict.fromkeys(owed))
+            if owed:
+                _emit_configuration_pending(run_dir or Path.cwd(), owed,
+                                            _PLAN_TIER_SUBFIELD,
+                                            session_hint=session_hint)
+        except Exception:  # noqa: BLE001 — visibility must never kill intake
+            pass
+
+    if not raw:
+        return 0  # the client said nothing about a plan: absence is absence
+
+    if cap is None or rp is None:
+        return 0  # already announced loudly on stderr; the ledger keeps the answer
+
+    # WHO IS OWED AN ANSWER. Read from the probe rather than guessed here --
+    # it is the same surface the bank's own help text names as the ask-gate
+    # ("asked only when capacity.probe()['resource_profile']
+    # ['pending_questions'] is non-empty").
+    try:
+        surface = (cap.probe() or {}).get("resource_profile") or {}
+        pending = [q.get("provider") for q in (surface.get("pending_questions") or [])
+                   if q.get("id") == _PLAN_TIER_SUBFIELD and q.get("provider")]
+    except Exception as exc:  # noqa: BLE001 -- a probe failure must not kill intake
+        print(f"  WARN  [PLAN-TIER] the capacity probe failed "
+              f"({exc.__class__.__name__}: {exc}) -- cannot tell which provider "
+              f"is owed a plan answer, so the tier was recorded in the intake "
+              f"ledger but NOT locked onto the resource profile.",
+              file=sys.stderr)
+        return 0
+    # De-duplicate while keeping probe order (two sources can name one provider).
+    pending = list(dict.fromkeys(pending))
+    if not pending:
+        return 0  # a fully detected client is never asked the plan half
+
+
+    # THE DECLINE. Its literal comes from the BANK's own conservative_value,
+    # never a constant duplicated here -- the same single-source rule the run
+    # mode follows for its enum.
+    ann = (qdef.get("subfields") or {}).get(_PLAN_TIER_SUBFIELD) or {}
+    decline = str(ann.get("conservative_value") or "").strip().lower()
+    if decline and raw.strip().lower() == decline:
+        for provider in pending:
+            try:
+                rp.record_conservative_default(provider)
+            except Exception as exc:  # noqa: BLE001 -- a store failure is loud
+                print(json.dumps({"error": f"could not record the conservative "
+                                           f"default for {provider} "
+                                           f"({exc.__class__.__name__}): {exc}"}))
+                return 1
+        return 0
+
+    # A REAL TIER. Matched per provider against PLANS_BY_PROVIDER, so a tier
+    # that belongs to another provider's table can never be recorded against
+    # this one ("$100/month" is an ollama-cloud row, never a deepseek one).
+    matched = []
+    for provider in pending:
+        plan = cap.normalize_plan(raw, provider)
+        if plan and plan in (cap.PLANS_BY_PROVIDER.get(provider) or ()):
+            matched.append((provider, plan))
+    if not matched:
+        offers = "; ".join(
+            f"{p}: {', '.join(cap.PLANS_BY_PROVIDER.get(p) or ()) or '(none)'}"
+            for p in pending)
+        print(json.dumps({"error":
+            f"refusing the plan tier {raw!r}: it is not a plan any provider "
+            f"still owing an answer can be on. Accepted tiers -- {offers} -- "
+            f"or answer {ann.get('conservative_value')!r} to decline and keep "
+            f"the conservative default. The tier is recorded ONCE and then "
+            f"locked, so it is refused here rather than accepted and dropped."}))
+        return 1
+
+    for provider, plan in matched:
+        try:
+            rp.record_plan_answer(provider, plan)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}))
+            return 1
+        except Exception as exc:  # noqa: BLE001 -- a store failure is loud, not silent
+            print(json.dumps({"error": f"could not record the plan tier for "
+                                       f"{provider} ({exc.__class__.__name__}): "
+                                       f"{exc}"}))
+            return 1
+    return 0
+
+
+def _record_client_model_plan(derived: Dict[str, Any],
+                              entries: Dict[str, Any]) -> int:
+    """Persist the resource_plan turn's model subfields as a client model plan.
+
+    Returns 0 when there is nothing to record or the plan was recorded, and 1
+    (after printing {"error": ...}) when the client's declaration is refused --
+    so the client is told AT INTAKE, with the wired inventory named, instead of
+    at dispatch time. Called BEFORE the ledger is written, so a refused answer
+    never half-lands."""
+    # The merged-turn label parser hands a value through with the client's own
+    # punctuation still attached ("...@deepseek-direct; qc: ..."), so the
+    # trailing separator is trimmed HERE -- once -- and the ledger records the
+    # same cleaned text that is recorded on the profile.
+    def _clean(raw):
+        return str(raw or "").strip().strip(";,.").strip()
+
+    picks = {slot: _clean(derived.get(sub))
+             for sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
+    thinking = _clean(derived.get(_THINKING_SUBFIELD[0])).lower()
+    # FIX 61.2: client picks the DeepSeek variant (flash|pro) and OpenRouter model.
+    deepseek_variant = _clean(derived.get("deepseek_variant")).lower()
+    openrouter_model = _clean(derived.get("openrouter_model"))
+    if deepseek_variant == "flash":
+        picks["workhorse"] = "deepseek-flash@deepseek-direct"
+    elif deepseek_variant == "pro":
+        picks["workhorse"] = "deepseek-v4-pro@deepseek-direct"
+    if not any(picks.values()) and not thinking and not openrouter_model:
+        return 0  # every slot omitted: the department defaults stand
+
+    # Mirror the answers onto their storeOn ledger keys (see the note above:
+    # deliberately not routed through storeTarget/intake.json).
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for sub, slot, key in _MODEL_PLAN_SUBFIELDS:
+        value = picks[slot]
+        entries[key] = {"value": value, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": value, "answer": value}
+    # FIX 61.2: mirror the new fields to their storeOn ledger keys.
+    if deepseek_variant:
+        entries["DEEPSEEK_VARIANT"] = {"value": deepseek_variant, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": deepseek_variant, "answer": deepseek_variant}
+    if openrouter_model:
+        entries["OPENROUTER_MODEL"] = {"value": openrouter_model, "validated": True,
+                        "source": "deck-intake-driver", "answered_at": now_iso,
+                        "normalized": openrouter_model, "answer": openrouter_model}
+    entries[_THINKING_SUBFIELD[1]] = {
+        "value": thinking, "validated": True, "source": "deck-intake-driver",
+        "answered_at": now_iso, "normalized": thinking, "answer": thinking}
+
+    rp = _import_resource_profile()
+    if rp is None:
+        return 0  # already announced loudly on stderr; the answer is kept
+    plan: Dict[str, Any] = {slot: (picks[slot] or None)
+                            for _sub, slot, _key in _MODEL_PLAN_SUBFIELDS}
+    plan["thinking"] = thinking or None
+    # FIX 61.2: openrouter_model rides the plan; ultra uses it to replace Ollama steps.
+    if openrouter_model:
+        plan["openrouter_model"] = openrouter_model
+    try:
+        rp.record_model_plan(plan, source="interview")
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 1
+    except Exception as exc:  # noqa: BLE001 -- a store failure is loud, not silent
+        print(json.dumps({"error": f"could not record the model plan "
+                                   f"({exc.__class__.__name__}): {exc}"}))
+        return 1
+    return 0
+
+
+#: The client's RUN-MODE declaration (FIX 11: ultra|standard|economy). It
+#: rides the SAME resource_plan turn as the model plan above and is therefore
+#: NOT a 24th turn -- session_budget.max_turns stays 23 (Trevor ruling, pinned
+#: by tests/test_model_plan.py::test_the_bank_still_carries_exactly_twenty_three_turns).
+_RUN_MODE_SUBFIELD = ("run_mode", "RUN_MODE")
+
+
+def _record_run_mode(qdef: Dict[str, Any], derived: Dict[str, Any],
+                     entries: Dict[str, Any]) -> None:
+    """Mirror the resource_plan turn's run-mode subfield onto its RUN_MODE
+    ledger key, normalised to the bank's own vocabulary.
+
+    Written EXPLICITLY here rather than through schema["storeTarget"], for the
+    same reason the model plan is (see _MODEL_PLAN_SUBFIELDS): storeTarget
+    entries flow into working/copy/intake.json -- the deck brief the authoring
+    phases read -- and a run mode is an EXECUTION axis, not deck content. Its
+    reader is presentation-intake-poll.sh, which carries it to the run-mode
+    door (launcher --mode on the resume path; PRESENTATION_MODE on the
+    new-intake path, which does not go through the launcher at all).
+
+    The allowed vocabulary is read from the BANK (this subfield's own enum),
+    never from a constant duplicated here -- the same single-source rule the
+    label vocabulary follows in _claim_labels.
+
+    An omitted or unrecognised declaration writes NOTHING. Absence is absence,
+    and model_router.DEFAULT_MODE ("standard") then applies downstream. Never
+    "ultra" by default: nothing silently launches at the operator ceiling.
+
+    Writing nothing also means a RE-ANSWER of this turn that omits the mode
+    leaves an earlier declaration standing. That is deliberate: a client who
+    already said ultra is not "saying nothing", so a later answer about models
+    must not silently downgrade their run -- and the asymmetry is the safe one,
+    because only an explicit "ultra" can ever escalate TO ultra."""
+    sub_id, ledger_key = _RUN_MODE_SUBFIELD
+    ann = (qdef.get("subfields") or {}).get(sub_id) or {}
+    allowed = [str(v).strip().lower() for v in (ann.get("enum") or [])]
+    want = str(derived.get(sub_id) or "").strip().strip(";,.").strip().lower()
+    if not want or want not in allowed:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rec = {"value": want, "validated": True, "source": "deck-intake-driver",
+           "answered_at": now_iso, "normalized": want, "answer": want}
+    entries[ledger_key] = rec
+    entries[sub_id] = rec
+
+
+#: The client's STYLE-PICK AUTO opt-in (F5). Like the run mode above it rides
+#: an EXISTING turn as a labelled subfield and therefore never adds a 24th turn
+#: (Trevor ruling, session_budget.max_turns=23). Its host turn is
+#: `style_and_brand` (order 15), NOT `resource_plan`: resource_plan's own help
+#: text says it is asked ONLY when the capacity probe left a pending question
+#: ("a fully detected client is never asked it"), so an opt-in parked there
+#: would be unreachable for most clients, whereas style_and_brand is
+#: required + block_gate and is asked on every deck.
+_STYLE_PICK_AUTO_SUBFIELD = ("style_pick_auto", "STYLE_PICK_AUTO")
+
+
+def _record_style_pick_auto(qdef: Dict[str, Any], derived: Dict[str, Any],
+                            entries: Dict[str, Any]) -> None:
+    """Mirror the style turn's style-pick-auto subfield onto its
+    STYLE_PICK_AUTO ledger key as a REAL BOOLEAN.
+
+    Why a boolean and not the answered string: the engine's opt-in reader,
+    presentation_job.phases.Engine._style_pick_intake_auto(), tests
+    ``auto is True`` against intake.json's ``style_pick_auto`` (falling back to
+    ``pre_presentation_capture.STYLE_PICK_AUTO``). The generic merged-turn
+    writer in cmd_answer records an enum subfield as the answered STRING
+    ("yes"), and ``"yes" is True`` is False -- so without this explicit record
+    a client who opted in would still park at P-STYLE-PICK. This runs AFTER
+    that generic loop and overwrites both keys with the boolean.
+
+    Unlike the run mode this one IS routed into working/copy/intake.json: the
+    opt-in is read from the run directory by the engine, so it must land there.
+    cmd_complete's flat merge carries entries["style_pick_auto"] to the intake
+    root (the engine's primary read), and the bank's storeTarget entry carries
+    entries["STYLE_PICK_AUTO"] to pre_presentation_capture.STYLE_PICK_AUTO
+    (the engine's fallback read).
+
+    The allowed vocabulary is read from the BANK (this subfield's own enum),
+    never from a constant duplicated here -- the same single-source rule
+    _record_run_mode and _claim_labels follow.
+
+    An omitted or unrecognised answer writes NOTHING: absence is absence, and
+    the engine reads a missing/falsy field as NO opt-in, so the pick stays a
+    real owner decision. An explicit "no" IS recorded (as False) so a client
+    who declined is on the record as having been asked -- it reads identically
+    to absence at the gate.
+
+    Re-answering the turn WITHOUT the subfield leaves an earlier declaration
+    standing, exactly as _record_run_mode does: a client who already said yes
+    is not "saying nothing", and a later answer about brand colours must not
+    silently revoke their standing consent. Only an explicit "no" revokes it.
+    """
+    sub_id, ledger_key = _STYLE_PICK_AUTO_SUBFIELD
+    ann = (qdef.get("subfields") or {}).get(sub_id) or {}
+    allowed = [str(v).strip().lower() for v in (ann.get("enum") or [])]
+    want = str(derived.get(sub_id) or "").strip().strip(";,.").strip().lower()
+    if not want or want not in allowed:
+        # Nothing declared (or unparseable). Never invent an opt-in -- and
+        # never leave the generic subfield loop's RAW STRING (or its skipped
+        # "" placeholder) sitting on these keys, where a downstream reader
+        # could mistake the truthy string "no" for a decision.
+        #
+        # A STANDING declaration from an earlier answer survives, on BOTH keys.
+        # The generic loop records an unclaimed no-default subfield as a
+        # skipped entry under the SUBFIELD ID only and never touches the
+        # storeOn key, so a naive pop leaves STYLE_PICK_AUTO holding the
+        # standing boolean while style_pick_auto -- the key cmd_complete's flat
+        # merge carries to the intake ROOT, and the engine's FIRST read -- is
+        # gone. The two keys must never disagree about a consent, so whichever
+        # one still carries a boolean is mirrored back onto the other.
+        standing = None
+        for key in (ledger_key, sub_id):
+            prior = entries.get(key)
+            if isinstance(prior, dict) and isinstance(prior.get("value"), bool):
+                standing = prior
+                break
+        if standing is None:
+            entries.pop(ledger_key, None)
+            entries.pop(sub_id, None)
+            return
+        entries[ledger_key] = standing
+        entries[sub_id] = standing
+        return
+    value = want == "yes"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rec = {"value": value, "validated": True, "source": "deck-intake-driver",
+           "answered_at": now_iso, "normalized": value, "answer": want}
+    entries[ledger_key] = rec
+    entries[sub_id] = rec
+
+
 def cmd_answer(args) -> int:
     """Record one answer and return the next question."""
     run_dir = args.run_dir.expanduser().resolve()
@@ -896,9 +1625,26 @@ def cmd_answer(args) -> int:
         if q["id"] == qid:
             qdef = q
             break
+    # pitch_included is a typed subfield of the first merged type/source
+    # turn.  Accept its id directly as well because the local bridge records
+    # individual canonical fields; this does not create another interview
+    # turn or loosen its validation.
+    if qdef is None and qid == "pitch_included":
+        qdef = {"id": qid, "storeOn": "PITCH_INCLUDED",
+                "prompt": "Does this presentation include a pitch?"}
     if qdef is None:
         print(json.dumps({"error": f"Unknown question id: {qid}"}))
         return 1
+
+    # The pitch branch is a typed owner decision, never a text inference.
+    # Validate before creating a ledger row so malformed or contradictory
+    # answers leave no partial intake state behind.
+    pitch_value: Optional[bool] = None
+    if qid == "pitch_included":
+        pitch_value = _explicit_pitch_value(text)
+        if pitch_value is None:
+            print(json.dumps({"error": "pitch_included must be an explicit yes/no or true/false decision"}))
+            return 1
 
     # Validate enum values (plain rows keep the legacy exact-match gate)
     allowed = qdef.get("allowed_values")
@@ -917,12 +1663,24 @@ def cmd_answer(args) -> int:
     # never silently left stale or (the old bug) clobbered.
     already_complete = bool(ledger.get("complete")) or ledger.get("status") == "complete"
     entries = ledger.get("entries", {})
+    prior_answers = _answer_view(entries)
+    if qid == "pitch_included":
+        prior_type = prior_answers.get("presentation_type")
+        if prior_type == "signature" and pitch_value is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
     store_on = qdef.get("storeOn", qid)
     entries[store_on] = {"value": text.strip(), "validated": True,
                          "source": "deck-intake-driver",
                          "answered_at": datetime.now(timezone.utc).isoformat()}
     # Also store by question id for lookup
     entries[qid] = entries[store_on]
+    if qid == "pitch_included":
+        pitch_record = dict(entries[store_on])
+        pitch_record.update({"value": pitch_value, "normalized": pitch_value,
+                             "answer": "true" if pitch_value else "false"})
+        entries[store_on] = pitch_record
+        entries[qid] = pitch_record
 
     # FIX 30: merged-turn answer -- split into legacy subfield records, each
     # with the SAME shape the drift-side waiver builder reads (validated +
@@ -963,6 +1721,10 @@ def cmd_answer(args) -> int:
                             "normalized": parent, "answer": text.strip()}
         # presentation_type special (mirrors the legacy plain-row handler)
         ptype = derived.get("presentation_type")
+        selected_pitch = derived.get("pitch_included")
+        if ptype == "signature" and selected_pitch is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
+            return 1
         if ptype in LEGAL_PRESENTATION_TYPES:
             try:
                 dl = derive_legacy_fields(
@@ -991,11 +1753,54 @@ def cmd_answer(args) -> int:
                      or re.search(r"slide[_ ]?count\s*[:=]", text, re.I)):
             structured_intake_writes["client_requested_slide_count"] = int(sc_m.group(0))
 
+        # CLIENT MODEL PLAN (operator requirement 2026-09-04): the client is
+        # never forced onto a department default. Recorded HERE, at intake, so
+        # a provider the profile does not carry or a model it does not wire is
+        # refused while the client is still in the conversation -- never
+        # twenty minutes into a dispatch. The plan's home is the
+        # secrets-adjacent resource profile (never intake.json, never the run
+        # directory): the P4-PROMPT fan-out children re-resolve routes in a
+        # separate process that inherits the profile path but has no run_dir.
+        if qid == "resource_plan":
+            # CLIENT PLAN TIER (F5) -- FIRST, because it is the ask-once lock.
+            # Before this wire, production intake recorded the model plan and
+            # the run mode and NOTHING about the plan tier, so the profile lock
+            # the bank promises ("asked once, then locked") was never written:
+            # an Ollama client was re-asked every deck and dispatch PARKed on
+            # AF-CAPACITY-UNMEASURED until an operator hand-ran the capacity
+            # CLI. Recorded ahead of the model plan so a refused tier never
+            # half-lands a model plan either.
+            rc = _record_plan_tier(qdef, text, entries, run_dir=run_dir,
+                                   session_hint=str(run_dir.name))
+            if rc != 0:
+                return rc
+            # FIX 16: CLIENT RUN MODE (FIX 11) is recorded FIRST, so the
+            # declared mode is always recorded even when the model plan is
+            # refused. Previously _record_run_mode ran after
+            # _record_client_model_plan, and a refused model plan dropped
+            # the declared ultra on a box with no provider profile.
+            _record_run_mode(qdef, derived, entries)
+            rc = _record_client_model_plan(derived, entries)
+            if rc != 0:
+                return rc
+
+        # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
+        # is required + block_gate and therefore asked on EVERY deck (unlike
+        # resource_plan, which the capacity probe can skip entirely). Written
+        # explicitly, as a real boolean, because the engine's opt-in reader
+        # tests `auto is True` and the generic loop above records the answered
+        # string. See _record_style_pick_auto for the full contract.
+        if qid == "style_and_brand":
+            _record_style_pick_auto(qdef, derived, entries)
+
     # Handle presentation_type -- derive legacy fields immediately
     if qid == "presentation_type":
         ptype = text.strip()
         if ptype not in LEGAL_PRESENTATION_TYPES:
             print(json.dumps({"error": f"Invalid presentation_type {ptype!r}"}))
+            return 1
+        if ptype == "signature" and prior_answers.get("pitch_included") is False:
+            print(json.dumps({"error": "signature presentations require pitch_included:true"}))
             return 1
         try:
             derived = derive_legacy_fields(ptype)
@@ -1073,7 +1878,29 @@ def cmd_answer(args) -> int:
         ledger["entries"] = entries
         write_intake_ledger(run_dir, ledger)
         answers = _answer_view(entries)
-    next_q = _first_unanswered(questions, answers)
+    # PRES-056: persist newly confirmed preference-bearing values to the
+    # profile (autosave direction ledger -> profile) and refresh the
+    # progressive snapshot, so pause/renew/resume and simultaneous decks
+    # keep answers and resource choices.
+    try:
+        save_preferences(entries)
+    except Exception:
+        pass
+    try:
+        _answers_now = _answer_view(entries)
+        _sel_now = selected_deliverables(_answers_now)
+        _prefs_now = load_preferences()
+        _snap_now = read_autosave(run_dir)
+        _order_now = _snap_now.get("asked_order") or []
+        if qid not in _order_now:
+            _order_now.append(qid)
+        autosave_state(run_dir, _answers_now, _order_now, _prefs_now)
+    except Exception:
+        pass
+    _prefs_next = load_preferences()
+    next_q = _first_unanswered_progressive(questions, answers, _prefs_next)
+    if next_q is None:
+        next_q = _first_unanswered_residual(questions, answers)
     if next_q is None:
         payload = {"status": "complete",
                   "message": "All questions answered. Run --complete "
@@ -1137,6 +1964,15 @@ def cmd_complete(args) -> int:
     intake = read_intake_json(run_dir)
     for store_key, entry in entries.items():
         if isinstance(entry, dict):
+            # A commercial-only field skipped because the owner selected an
+            # informational deck is not an empty client answer. Keep the
+            # provenance marker in the ledger but do not manufacture a root
+            # intake value that a later consumer could mistake for supplied
+            # content.
+            if (entry.get("skipped") and store_key in
+                    ("named_methodology", "time_to_result",
+                     "NAMED_METHODOLOGY", "TIME_TO_RESULT")):
+                continue
             val = entry.get("value")
             if val is not None:
                 intake[store_key] = val
@@ -1199,7 +2035,10 @@ def cmd_complete(args) -> int:
     # fix/deck-type-routing-bypass follow-up: stamp the requester identity
     # (env -> intake.json) so the engine's resolve_intake.py has something to
     # read besides an empty ledger. See _resolve_requester_from_env() above.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: _stamp_requester() also mirrors it into the NESTED
+    # `requester` object the engine's own --new reads -- this run's real
+    # consumer, because the launcher passes THIS file straight to --intake.
+    _stamp_requester(intake)
 
     # Mark interview_confirmed
     intake["interview_confirmed"] = True
@@ -1424,27 +2263,45 @@ def _load_sp_spec() -> Dict[str, Any]:
         SCRIPTS_DIR.parent.parent / "51-signature-presentation" / "intake" / "sp-8-questions.json",
         Path.home() / ".openclaw" / "skills" / "51-signature-presentation" / "intake" / "sp-8-questions.json",
     ]
+    # FIX 19 repair: this mirror lives at
+    # 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/,
+    # so the hard-coded spots never cover a plain repo checkout, where skill 51
+    # sits at the REPO ROOT (51-signature-presentation/intake/...). Walk up from
+    # this script and check each ancestor for the spec. Bounded so a missing
+    # spec still fails fast.
+    _d = SCRIPTS_DIR.resolve()
+    for _ in range(10):
+        _cand = _d / "51-signature-presentation" / "intake" / "sp-8-questions.json"
+        if _cand not in cands:
+            cands.append(_cand)
+        _d = _d.parent
+    # FIX 19: also honor the deployment env roots — the canonical driver runs from
+    # repo checkouts and skill installs the three hard-coded spots never cover.
+    _skills_dir = (os.environ.get("OC_SKILLS_DIR") or "").strip()
+    _oc_root = (os.environ.get("OPENCLAW_ROOT") or "").strip()
+    if _skills_dir:
+        cands.append(Path(_skills_dir) / "51-signature-presentation" / "intake" / "sp-8-questions.json")
+    if _oc_root:
+        cands.append(Path(_oc_root) / "51-signature-presentation" / "intake" / "sp-8-questions.json")
     for cand in cands:
         if cand.is_file():
             with open(cand, "r", encoding="utf-8") as fh:
                 SP_EIGHT_QUESTIONS_SPEC = json.load(fh)
             return SP_EIGHT_QUESTIONS_SPEC
-    # Fallback: embedded minimal spec
-    SP_EIGHT_QUESTIONS_SPEC = {
-        "questions": [
-            {"id": "sp_q1", "order": 0, "prompt": "What is the OFFER this signature talk sells?",
-             "kind": "text", "required": True},
-            {"id": "sp_q2", "order": 1, "prompt": "Who is the ONE ideal client?",
-             "kind": "text", "required": True},
-            {"id": "sp_q3", "order": 2, "prompt": "What is their #1 PROBLEM right now?",
-             "kind": "text", "required": True},
-        ],
-        "frame_question": {
-            "id": "signature_frame", "prompt": "Choose a Signature frame: The Rulebook / The Vault / The Quest / The Original.",
-            "kind": "enum", "allowed_values": ["rulebook", "vault", "quest", "original"],
-        },
-    }
-    return SP_EIGHT_QUESTIONS_SPEC
+    # FIX 19: fail closed. The old embedded fallback silently ran an invented
+    # 3-question bank (sp_q1..sp_q3) with exit 0 — an interview the Sacred 8
+    # Questions spec never authorized. There is no embedded fallback anymore:
+    # a missing spec is a fatal configuration error.
+    print(
+        "FATAL [FIX 19]: sp-8-questions.json not found in any known location "
+        "(checked: " + ", ".join(str(c) for c in cands) + "). "
+        "Set OC_SKILLS_DIR or OPENCLAW_ROOT to the skills/deploy root, or run "
+        "from a repo checkout containing "
+        "51-signature-presentation/intake/sp-8-questions.json. "
+        "The driver refuses to invent a question bank.",
+        file=sys.stderr,
+    )
+    sys.exit(3)
 
 
 def cmd_signature(args) -> int:
@@ -1456,6 +2313,26 @@ def cmd_signature(args) -> int:
     Legacy bare --signature (no subcommand): returns a pointer to use the
     turn-gate. The old escape hatch that dumped the full payload is gone."""
     run_dir = args.run_dir.expanduser().resolve()
+
+    # Fix 7 (C1): --signature combined with the STANDARD-mode --next / --answer
+    # flags is a caller error -- the signature turn-gate is --sig-next /
+    # --sig-answer. Fail closed with a message naming the right flag instead of
+    # silently ignoring the legacy flag (old behavior: exit 0, answer dropped).
+    if getattr(args, 'next', False):
+        print(json.dumps({
+            "status": "error",
+            "message": "with --signature, use --sig-next (not --next): "
+                       "deck-intake-driver.py --run-dir <RUN_DIR> --signature --sig-next",
+        }))
+        return 2
+    if getattr(args, 'answer', None):
+        print(json.dumps({
+            "status": "error",
+            "message": "with --signature, use --sig-answer ID TEXT (not --answer): "
+                       "deck-intake-driver.py --run-dir <RUN_DIR> --signature "
+                       '--sig-answer <ID> "<TEXT>"',
+        }))
+        return 2
 
     if getattr(args, 'sig_next', False):
         return _sig_next(run_dir)
@@ -1857,7 +2734,8 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     # requester here too, or a signature-mode deck driven straight to
     # --record never picks up either the chat-surface env vars or the
     # operator fallback. See _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
@@ -1949,7 +2827,8 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     # function exists specifically for "tooling that already ran the
     # turn-gate through another surface") never picks one up. See
     # _resolve_requester_from_env()'s own docstring.
-    intake.update(_resolve_requester_from_env(intake))
+    # PD-TEST-049: BOTH shapes, as in cmd_complete -- see _stamp_requester().
+    _stamp_requester(intake)
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)
@@ -2043,6 +2922,694 @@ def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
 # ---------------------------------------------------------------------------
 # question-set export
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# PRES-056 -- progressive intake: stage plan, preference reuse, review/edit,
+# deliverable-conditioned refinement, autosave, UX metrics.
+#
+# The 23-turn bank is the CEILING (Trevor ruling, session_budget.max_turns=23),
+# never the norm. Every canonical required field, storeTarget mapping and
+# waiver (decline-reason) contract is unchanged: this block only decides WHAT
+# to ask next, from WHERE a value may come, and HOW progress is measured.
+# Nothing here writes deck content, offer/pricing/research facts, credentials
+# or plan tiers -- those stay with their existing writers and stores.
+# ---------------------------------------------------------------------------
+
+#: Stage-1 beats in ask order: the first interaction groups into purpose /
+#: audience, existing materials, desired outputs, deadline/CTA and
+#: provider/resource preference (TODO PRES-056 step 1). Beats are read from
+#: the bank ("stage_beat" on stage-1 rows) with this literal order as the
+#: fallback when a bank copy predates the metadata.
+STAGE1_BEAT_ORDER = (
+    "purpose/audience",
+    "existing materials",
+    "desired outputs",
+    "deadline/CTA",
+    "provider/resource preference",
+)
+
+#: Deliverable tokens the refinement stage conditions on (TODO PRES-056
+#: step 2). Derived ONLY from the client's own core/growth/audio answers,
+#: never assumed: "deck" is on once the brief exists, "sales_checkout" /
+#: "vsl_page" follow want_sales_checkout / want_vsl_page == yes, "audio"
+#: follows want_audio_deliverable (or want_audio_demo) == yes.
+DELIVERABLE_DECK = "deck"
+DELIVERABLE_SALES = "sales_checkout"
+DELIVERABLE_VSL = "vsl_page"
+DELIVERABLE_AUDIO = "audio"
+
+#: Preference keys reused across decks without re-interview (TODO PRES-056
+#: step 1: reuse confirmed values). Model-plan slots live on the profile
+#: (the router reads them there directly -- never copied); creative prefs
+#: are copied into the ledger by --reuse-preferences with provenance
+#: "preference-reuse". RESOURCE_PLAN/plan-tier locks are consulted in
+#: place (is_plan_locked) and never copied: the lock IS the reuse proof.
+#: RUN_MODE and STYLE_PICK_AUTO are deliberately ABSENT: the run mode
+#: defaults to standard unless the client declares it on THIS deck (never
+#: ultra by inheritance), and the style auto-pick is a per-deck consent.
+PREFERENCE_REUSE_KEYS = (
+    "WORKHORSE_MODEL", "REASONING_MODEL", "QC_MODEL", "THINKING_MODE",
+    "STYLE_PREFS", "BRAND_PRIMARY", "DARK_OK", "VISUAL_MIX",
+    "LOGO_ON_SLIDES", "TARGET_WPM",
+)
+
+#: Preference-bearing ledger keys saved back to the profile's creative_prefs
+#: once the client confirms them in-run (autosave direction ledger->profile).
+CREATIVE_PREF_KEYS = (
+    "STYLE_PREFS", "BRAND_PRIMARY", "DARK_OK", "VISUAL_MIX",
+    "LOGO_ON_SLIDES", "TARGET_WPM",
+)
+
+#: Advanced settings surface: shown on demand (or once confirmed), never
+#: re-interviewed while locked. Vocabulary read from the BANK first --
+#: same single-source rule as _record_run_mode / _claim_labels.
+ADVANCED_SETTING_KEYS = (
+    "WORKHORSE_MODEL", "REASONING_MODEL", "QC_MODEL", "THINKING_MODE",
+    "RUN_MODE", "RESOURCE_PLAN", "STYLE_PICK_AUTO", "TARGET_WPM",
+)
+
+#: UX targets (fixture-designed; bank session_budget.ux_targets mirrors).
+UX_TARGET_NEW_CLIENT_MAX = 11
+UX_TARGET_REPEAT_CLIENT_MAX = 6
+UX_BASELINE_TURNS = 23
+
+
+def _stage_of(qdef):
+    """Bank stage for one question row; defaults keep old banks working."""
+    try:
+        return int(qdef.get("stage", 2 if (qdef.get("order") or 0) >= 10 else 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def stage_plan(schema):
+    """Group the ask sequence into stage 1 (brief) + stage 2 (refinement).
+
+    Returns {"stage1": [turn ids...], "stage2": [turn ids...],
+    "review_after": <last stage-1 turn id>}. Read-only: derived from the
+    bank's stage metadata, never hardcoded here."""
+    questions = get_questions(schema)
+    s1 = [q["id"] for q in questions if _stage_of(q) == 1]
+    s2 = [q["id"] for q in questions if _stage_of(q) == 2]
+    return {"stage1": s1, "stage2": s2,
+            "review_after": s1[-1] if s1 else None}
+
+
+def selected_deliverables(answers):
+    """Deliverables the CLIENT selected, from their own toggle answers.
+
+    {"deck"} is always present (the brief exists to build a deck);
+    sales_checkout / vsl_page join on an explicit yes; audio joins on an
+    explicit yes to want_audio_deliverable or want_audio_demo. Anything
+    else (omitted, declined, unparseable) stays out -- omission and decline
+    differ downstream and neither is invented here."""
+    selected = {DELIVERABLE_DECK}
+    if _truthy_value(answers.get("want_sales_checkout")):
+        selected.add(DELIVERABLE_SALES)
+    if _truthy_value(answers.get("want_vsl_page")):
+        selected.add(DELIVERABLE_VSL)
+    if _truthy_value(answers.get("want_audio_deliverable")) or \
+            _truthy_value(answers.get("want_audio_demo")):
+        selected.add(DELIVERABLE_AUDIO)
+    return selected
+
+
+def _decline_present(answers):
+    """True when any waiver toggle carries an explicit client "no"."""
+    for key in ("want_teleprompter", "want_speech_script", "want_ghl_upload",
+                "want_audio_deliverable", "want_sales_checkout",
+                "want_vsl_page"):
+        val = answers.get(key)
+        if isinstance(val, bool):
+            if val is False:
+                return True
+        elif isinstance(val, str) and val.strip().lower() in (
+                "no", "false", "n", "0", "none"):
+            return True
+    return False
+
+
+def _refine_condition_met(qdef, answers, selected):
+    """True when a stage-2 turn's bank refine_condition is satisfied: every
+    listed deliverable selected AND every listed missing-input turn answered.
+
+    Turns without bank metadata stay unconditional (old banks behave as
+    before): the condition can only narrow the interview, never widen it.
+    An unparsable condition fails OPEN (ask) so no required field is lost.
+    A decline_context turn still surfaces when a decline that feeds it was
+    actually recorded -- conditioned-out toggles never need reasons, but a
+    recorded "no" always does. With no bank condition (the bank leaves
+    decline_context unconditional) the all-yes rule applies: skip only when
+    every waiver toggle is answered AND none declined."""
+    cond = qdef.get("refine_condition")
+    if not cond:
+        if qdef["id"] == "decline_context":
+            toggles = ("want_teleprompter", "want_speech_script",
+                       "want_ghl_upload", "want_audio_deliverable",
+                       "want_sales_checkout", "want_vsl_page")
+            if _decline_present(answers):
+                return True
+            if all(answers.get(t) is not None for t in toggles):
+                return False
+        return True
+    if qdef["id"] == "decline_context":
+        # Asked when a decline was recorded (reasons owed) or while any
+        # waiver toggle is still unanswered (fail OPEN so a reason owed is
+        # never lost). Skipped only when every toggle is answered AND none
+        # declined -- there is nothing to explain. Omitted versus declined
+        # stays distinct: silence routes here, never to a reason.
+        # EXCEPTION: the all-yes run answers every toggle yes. The waiver
+        # contract's own bank rows make each reason conditional_on its
+        # toggle == "no", so the turn derives to documented defaults with
+        # no client words owed. Asking it anyway costs the all-yes run its
+        # only skippable turn, so it is skipped exactly then.
+        toggles = ("want_teleprompter", "want_speech_script",
+                   "want_ghl_upload", "want_audio_deliverable",
+                   "want_sales_checkout", "want_vsl_page")
+        if _decline_present(answers):
+            return True
+        if all(answers.get(t) is not None for t in toggles):
+            # All toggles answered yes: the bank's own conditional_on
+            # (each reason only when its toggle == "no") leaves no reason
+            # owed, so the turn is skipped. The waiver contract is met by
+            # the toggle rows themselves, not by an empty reasons turn.
+            return False
+        return True
+    want = cond.get("deliverables") or []
+    if any(w not in selected for w in want):
+        return False
+    for dep in cond.get("missing_inputs") or []:
+        if answers.get(dep) is None and dep not in answers:
+            return False
+    return True
+
+
+def _answer_present(answers, key, store_on):
+    for cand in (key, store_on):
+        val = answers.get(cand)
+        if isinstance(val, dict):
+            if any(_answer_present(val, sk, sk) for sk in val):
+                return True
+            continue
+        if val is None:
+            continue
+        if isinstance(val, str) and not val.strip():
+            continue
+        return True
+    return False
+
+
+def _preference_holds(preferences, key, store_on):
+    for cand in (key, store_on):
+        if cand in preferences and preferences[cand] not in (None, ""):
+            return True
+    return False
+
+
+def _preference_satisfies(qdef, answers, preferences):
+    """True when every required subfield of this turn is already satisfied
+    by a locked preference or an in-run answer, with AT LEAST one subfield
+    satisfied from a preference (defaults alone never satisfy -- otherwise
+    a defaulted turn would always skip even for a brand-new client).
+
+    Subfields with documented defaults / derived values / none_values do
+    not need a preference. Preference reuse NEVER fabricates a ledger
+    entry: it only reports the turn as satisfied when the preference store
+    already holds a confirmed value AND the ledger carries it (via
+    --reuse-preferences, provenance "preference-reuse", or the client's
+    own earlier answer in this run)."""
+    if not preferences:
+        return False
+    sub = qdef.get("subfields") or {}
+    if not sub:
+        return False
+    hit = False
+    for key, ann in sub.items():
+        store_on = str(ann.get("storeOn") or key)
+        if _answer_present(answers, key, store_on):
+            if _preference_holds(preferences, key, store_on):
+                hit = True
+            elif key in PREFERENCE_REUSE_KEYS or store_on in PREFERENCE_REUSE_KEYS:
+                # Reused from a locked preference (copied by
+                # --reuse-preferences or confirmed in a prior deck): the
+                # ledger IS the preference record. Only keys on the reuse
+                # list count -- a fresh client answer to a non-reuse key is
+                # just an answer, never a preference hit.
+                hit = True
+            continue
+        if _preference_holds(preferences, key, store_on):
+            hit = True
+            continue
+        if ("default" in ann or "none_value" in ann or "derived" in ann
+                or ann.get("no_note") or "conservative_value" in ann
+                or key == "target_wpm"):
+            continue
+        cond = ann.get("conditional_on")
+        if cond and not _condition_met(cond, answers):
+            continue
+        return False
+    return hit
+
+
+def should_ask_progressive(qdef, answers, selected, preferences):
+    """PRES-056 ask gate: canonical should_ask AND deliverable conditioning
+    AND preference reuse. A turn already answered, canonically skipped,
+    refinement-conditioned-out, or satisfied from a locked preference is
+    not asked again."""
+    if qdef["id"] == "audio_settings" and not (
+            _truthy_value(answers.get("want_audio_deliverable"))
+            or _truthy_value(answers.get("want_audio_demo"))):
+        # Asked only when the client selected audio (core deliverables or
+        # the audio demo flag). Silence is never consent for a paid
+        # deliverable: an unanswered toggle skips the turn too, and the
+        # waiver contract is untouched.
+        return False, "refine-condition-unmet"
+    should, _reason = should_ask(qdef, answers)
+    if not should:
+        return False, "canonical-skip"
+    if _stage_of(qdef) == 2 and not _refine_condition_met(
+            qdef, answers, selected):
+        return False, "refine-condition-unmet"
+    if _preference_satisfies(qdef, answers, preferences):
+        return False, "preference-reuse"
+    return True, None
+
+
+def _residual_skippable(qdef, answers):
+    """Turns the canonical safety-net sweep still skips: audio_settings when
+    audio was not selected, decline_context when no decline was recorded.
+    Keeps the fallback from re-asking what the progressive gate settled."""
+    if qdef["id"] == "audio_settings" and not (
+            _truthy_value(answers.get("want_audio_deliverable"))
+            or _truthy_value(answers.get("want_audio_demo"))):
+        return True
+    if qdef["id"] == "decline_context":
+        toggles = ("want_teleprompter", "want_speech_script",
+                   "want_ghl_upload", "want_audio_deliverable",
+                   "want_sales_checkout", "want_vsl_page")
+        if not _decline_present(answers) and all(
+                answers.get(t) is not None for t in toggles):
+            return True
+    return False
+
+
+def _first_unanswered_residual(questions, answers):
+    """Canonical-order safety net: first unanswered, canonically-askable
+    turn MINUS the two principled progressive skips. Pure read."""
+    for q in questions:
+        qid = q["id"]
+        store_on = q.get("storeOn", qid)
+        if store_on in answers or qid in answers:
+            continue
+        should, _reason = should_ask(q, answers)
+        if not should:
+            continue
+        if _residual_skippable(q, answers):
+            continue
+        return q
+    return None
+
+
+def review_summary(schema, answers):
+    """Review-and-edit summary after stage 1: one row per captured field
+    with its value. Values come ONLY from the ledger's own answers view --
+    never invented, never defaulted here. The agent renders this and lets
+    the client correct any row (a correction is a normal --answer, which
+    re-validates; downstream invalidation follows the existing ledger and
+    provenance rules)."""
+    questions = get_questions(schema)
+    rows = []
+    for q in questions:
+        if _stage_of(q) != 1:
+            continue
+        sub = q.get("subfields") or {}
+        for key, ann in sub.items():
+            store_on = str(ann.get("storeOn") or key)
+            val = answers.get(key, answers.get(store_on))
+            if isinstance(val, dict):
+                continue
+            if val is None or (isinstance(val, str) and not val.strip()):
+                rows.append({"field": key, "storeOn": store_on,
+                             "value": None, "state": "missing"})
+            else:
+                rows.append({"field": key, "storeOn": store_on,
+                             "value": val, "state": "captured"})
+    return {"beats": list(STAGE1_BEAT_ORDER), "fields": rows,
+            "missing": [r["field"] for r in rows if r["state"] == "missing"]}
+
+
+def measure_progress(schema, answers, asked_count, preferences=None,
+                     returning_client=False):
+    """UX measurement against the 23-turn baseline (bank ux_targets).
+
+    Returns {"asked": n, "baseline": 23, "saved": 23-n, "target": t,
+    "meets_target": bool, "preference_hits": m}. asked_count is the number
+    of interactions the run actually spent. The baseline is informational
+    -- a required SOP/QC obligation is never dropped to hit a target, so
+    this measures, never gates."""
+    target = (UX_TARGET_REPEAT_CLIENT_MAX if returning_client
+              else UX_TARGET_NEW_CLIENT_MAX)
+    hits = 0
+    if preferences:
+        for key in PREFERENCE_REUSE_KEYS:
+            if preferences.get(key) not in (None, ""):
+                hits += 1
+    return {"asked": asked_count, "baseline": UX_BASELINE_TURNS,
+            "saved": max(0, UX_BASELINE_TURNS - asked_count),
+            "target": target, "meets_target": asked_count <= target,
+            "preference_hits": hits,
+            "returning_client": returning_client}
+
+
+def autosave_state(run_dir, answers, asked_order, preferences=None):
+    """Autosave per company/presentation run dir (TODO step 2): one atomic
+    write of the progressive snapshot beside the ledger. Crash-safe: tmp +
+    os.replace, same pattern as the ledger writers. Resume-after-renewal
+    reads the LEDGER (the authority); this snapshot is the progress meter
+    and the asked-order log. Never touches the profile store (preferences
+    live there under their own locks)."""
+    dest = run_dir / "working" / "interview"
+    dest.mkdir(parents=True, exist_ok=True)
+    snap = {"saved_at": datetime.now(timezone.utc).isoformat(),
+            "asked_order": list(asked_order),
+            "answers": {k: v for k, v in answers.items()
+                        if not str(k).startswith("_")},
+            "preference_keys": sorted((preferences or {}).keys())}
+    path = dest / "progressive_state.json"
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(snap, fh, indent=2, default=str)
+    os.replace(tmp, path)
+    return snap
+
+
+def read_autosave(run_dir):
+    """Read the progressive autosave snapshot. {} when absent/unreadable --
+    an absent snapshot is never evidence of anything (negative-result
+    contract: absence is absence, the interview just starts at turn 1)."""
+    path = run_dir / "working" / "interview" / "progressive_state.json"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+            return obj if isinstance(obj, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def load_preferences(config_dir=None):
+    """Read-only view of locked client preferences for reuse decisions.
+
+    Sources: the resource profile -- model_plan slots, creative_prefs --
+    the ONE store each already lives in; plus the plan-tier lock marker
+    (consulted in place, never copied as a value). Returns a flat
+    {LEDGER_KEY: value} map of CONFIRMED values only; nothing is invented,
+    and an unreadable profile yields {} (new client), never an error."""
+    prefs = {}
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import resource_profile as _rp  # type: ignore
+    except Exception:
+        return {}
+    try:
+        prof = _rp.load_profile(config_dir)
+    except Exception:
+        return {}
+    if not isinstance(prof, dict):
+        return {}
+    if prof.get("error") and not prof.get("providers"):
+        return {}
+    plan = _rp.model_plan(profile=prof) or {}
+    slot_keys = {"workhorse": "WORKHORSE_MODEL", "reasoning": "REASONING_MODEL",
+                 "judge": "QC_MODEL"}
+    for slot, ledger_key in slot_keys.items():
+        spec = plan.get(slot)
+        if isinstance(spec, dict) and spec.get("model") and spec.get("provider"):
+            prefs[ledger_key] = f"{spec['model']}@{spec['provider']}"
+        elif isinstance(spec, str) and spec.strip():
+            prefs[ledger_key] = spec.strip()
+    thinking = plan.get("thinking")
+    if isinstance(thinking, str) and thinking.strip().lower() in (
+            "max", "high", "medium", "low", "off"):
+        prefs["THINKING_MODE"] = thinking.strip().lower()
+    creative = prof.get("creative_prefs") or {}
+    if isinstance(creative, dict):
+        for key in ("style_prefs", "brand_primary", "dark_ok", "visual_mix",
+                    "logo_on_slides", "target_wpm"):
+            val = creative.get(key)
+            if val is None or (isinstance(val, str) and not val.strip()):
+                continue
+            prefs[key.upper()] = val
+    # The plan-tier lock marker is set ONLY when no provider still owes a
+    # plan answer (pending_questions() empty) AND at least one provider is
+    # locked. A partially-locked profile must still be asked -- otherwise a
+    # pending provider's tier would never be recorded and dispatch would
+    # PARK on AF-CAPACITY-UNMEASURED. The lock IS the reuse proof, consulted
+    # in place and never copied as a value.
+    try:
+        still_owed = _rp.pending_questions(profile=prof)
+    except Exception:
+        still_owed = None
+    if not still_owed:
+        try:
+            locked = any(_rp.is_plan_locked(p, profile=prof)
+                         for p in (prof.get("providers") or {}))
+        except Exception:
+            locked = False
+        if locked:
+            prefs["RESOURCE_PLAN"] = "locked"
+    return prefs
+
+
+def save_preferences(entries, config_dir=None):
+    """Persist newly CONFIRMED preference-bearing ledger values to the
+    profile's creative_prefs (autosave direction ledger -> profile).
+
+    Only validated, non-empty values move; the profile's own redact + save
+    path applies. Returns the list of keys saved. Never raises -- a store
+    failure is reported on stderr and the ledger keeps the answer."""
+    saved = []
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import resource_profile as _rp  # type: ignore
+    except Exception as exc:
+        print(f"  WARN  [PREF-SAVE] resource_profile not importable "
+              f"({exc.__class__.__name__}): preferences kept in ledger only.",
+              file=sys.stderr)
+        return saved
+    try:
+        prof = _rp.load_profile(config_dir)
+    except Exception as exc:
+        print(f"  WARN  [PREF-SAVE] could not load profile "
+              f"({exc.__class__.__name__}): preferences kept in ledger only.",
+              file=sys.stderr)
+        return saved
+    if not isinstance(prof, dict) or (prof.get("error") and not prof.get("providers")):
+        return saved
+    creative = prof.setdefault("creative_prefs", {})
+    if not isinstance(creative, dict):
+        return saved
+    for key in CREATIVE_PREF_KEYS:
+        entry = entries.get(key)
+        if not isinstance(entry, dict) or not entry.get("validated"):
+            continue
+        val = entry.get("value")
+        if val is None or (isinstance(val, str) and not val.strip()):
+            continue
+        creative[key.lower()] = val
+        saved.append(key)
+        low = {"STYLE_PREFS": "style_prefs", "BRAND_PRIMARY": "brand_primary",
+               "DARK_OK": "dark_ok", "VISUAL_MIX": "visual_mix",
+               "LOGO_ON_SLIDES": "logo_on_slides",
+               "TARGET_WPM": "target_wpm"}.get(key)
+        if low:
+            low_entry = entries.get(low)
+            if isinstance(low_entry, dict) and low_entry.get("validated"):
+                low_val = low_entry.get("value")
+                if low_val is not None and not (
+                        isinstance(low_val, str) and not low_val.strip()):
+                    creative[low] = low_val
+    if not saved:
+        return saved
+    try:
+        _rp.save_profile(prof, config_dir)
+    except Exception as exc:
+        print(f"  WARN  [PREF-SAVE] could not save profile "
+              f"({exc.__class__.__name__}): preferences kept in ledger only.",
+              file=sys.stderr)
+        return []
+    return saved
+
+
+def record_preference_reuse(entries, preferences):
+    """Copy locked preference values into the ledger with provenance
+    "preference-reuse" (never "client-answered"): every required downstream
+    field keeps a real / approved-derived / pending provenance, and reuse
+    is distinguishable from a fresh client answer in the ledger.
+
+    Only keys in PREFERENCE_REUSE_KEYS that the profile confirms AND the
+    ledger does not already carry are copied. Model-plan slots are NOT
+    copied (the router reads them from the profile directly); the
+    RESOURCE_PLAN lock marker is NOT copied (consulted in place).
+    Returns the list of keys copied."""
+    copied = []
+    if not preferences:
+        return copied
+    #: UPPER ledger key -> lowercase subfield id. The generic merged-turn
+    #: writer records BOTH cases (entries[subfield] and entries[storeOn]);
+    #: reuse must do the same so ledger readers pinning either case
+    #: (e.g. the provenance gate reads lowercase visual_mix) agree.
+    lower = {"STYLE_PREFS": "style_prefs", "BRAND_PRIMARY": "brand_primary",
+             "DARK_OK": "dark_ok", "VISUAL_MIX": "visual_mix",
+             "LOGO_ON_SLIDES": "logo_on_slides", "TARGET_WPM": "target_wpm"}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for key in PREFERENCE_REUSE_KEYS:
+        if key in ("WORKHORSE_MODEL", "REASONING_MODEL", "QC_MODEL",
+                   "THINKING_MODE"):
+            continue
+        if key in entries:
+            continue
+        val = preferences.get(key)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            continue
+        rec = {"value": val, "validated": True,
+               "source": "preference-reuse",
+               "answered_at": now_iso, "normalized": val, "answer": str(val)}
+        entries[key] = rec
+        if key in lower and lower[key] not in entries:
+            entries[lower[key]] = rec
+        copied.append(key)
+    return copied
+
+
+def _progressive_context(schema, entries):
+    """Shared read for the progressive commands: answers view, selected
+    deliverables, locked preferences, asked order. Read-only."""
+    answers = _answer_view(entries)
+    selected = selected_deliverables(answers)
+    preferences = load_preferences()
+    plan = stage_plan(schema)
+    return answers, selected, preferences, plan
+
+
+def cmd_brief_status(args):
+    """Read-only: stage plan + review-and-edit summary + UX measurement.
+
+    The agent calls this after stage 1 (or any time) to render the grouped
+    brief, show what is missing, and read the measured interaction count
+    against the fixture-designed targets. Never writes, never gates."""
+    run_dir = args.run_dir.expanduser().resolve()
+    schema = load_question_schema()
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    answers, selected, preferences, plan = _progressive_context(
+        schema, entries)
+    snap = read_autosave(run_dir)
+    asked_order = snap.get("asked_order") or []
+    raw_turns = read_intake_transcript_raw(run_dir)
+    asked_count = len(asked_order) or (len(raw_turns) // 2)
+    returning = bool(preferences)
+    summary = review_summary(schema, answers)
+    measurement = measure_progress(schema, answers, asked_count,
+                                   preferences, returning)
+    print(json.dumps({
+        "stage_plan": plan,
+        "stage1_beats": list(STAGE1_BEAT_ORDER),
+        "selected_deliverables": sorted(selected),
+        "review": summary,
+        "measurement": measurement,
+        "returning_client": returning,
+        "ledger_status": ledger.get("status", "not-started"),
+    }, indent=2, default=str))
+    return 0
+
+
+def cmd_reuse_preferences(args):
+    """Copy locked client preferences into this run's ledger (provenance
+    "preference-reuse") so a repeat client is not re-interviewed.
+
+    Copies creative-pref keys only; model-plan slots stay on the profile
+    (the router reads them there) and the plan-tier lock is consulted in
+    place. Prints what was copied; the next --next then skips satisfied
+    turns. A locked valid preference never triggers an extra plan prompt:
+    when every provider is locked, the resource_plan turn resolves from
+    the lock and is not asked."""
+    run_dir = args.run_dir.expanduser().resolve()
+    schema = load_question_schema()
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    _answers, _selected, preferences, _plan = _progressive_context(
+        schema, entries)
+    if not preferences:
+        print(json.dumps({"status": "no-preferences",
+                          "message": "No locked preferences found (new "
+                                     "client). Interview starts at turn 1.",
+                          "copied": []}))
+        return 0
+    copied = record_preference_reuse(entries, preferences)
+    if copied:
+        ledger["entries"] = entries
+        if ledger.get("status") != "complete":
+            ledger["status"] = "in_progress"
+        ledger["updated_at"] = datetime.now(timezone.utc).isoformat()
+        write_intake_ledger(run_dir, ledger)
+    print(json.dumps({"status": "reused", "copied": copied,
+                      "preference_keys": sorted(preferences.keys())},
+                     indent=2))
+    return 0
+
+
+def cmd_advanced_settings(args):
+    """Read-only: the advanced panel (model slots, thinking, run mode,
+    reserve-relevant plan state, style auto-pick, speech pace) with each
+    value's source: the locked preference, the in-run answer, or unset.
+
+    Exposes advanced model/thinking/reserve settings WITHOUT repeatedly
+    interviewing the same client: a locked value is shown, never re-asked.
+    Reserve figures come from the capacity cap table via the profile's
+    locked ceilings -- this command reports them, never sets them."""
+    run_dir = args.run_dir.expanduser().resolve()
+    schema = load_question_schema()
+    ledger = read_intake_ledger(run_dir)
+    entries = ledger.get("entries", {})
+    answers, _selected, preferences, _plan = _progressive_context(
+        schema, entries)
+    bank = {q["id"]: q for q in schema.get("questions", [])}
+    panel = []
+    for key in ADVANCED_SETTING_KEYS:
+        row = {"key": key, "value": None, "source": "unset"}
+        if _answer_present(answers, key, key):
+            row["value"] = answers.get(key, answers.get(key))
+            entry = entries.get(key)
+            row["source"] = ("preference-reuse"
+                             if isinstance(entry, dict)
+                             and entry.get("source") == "preference-reuse"
+                             else "this-interview")
+        elif key in preferences and preferences[key] not in (None, ""):
+            row["value"] = preferences[key]
+            row["source"] = ("plan-lock" if key == "RESOURCE_PLAN"
+                             else "locked-preference")
+        vocab = None
+        for q in bank.values():
+            ann = (q.get("subfields") or {}).get(key.lower(), {})
+            if ann and ann.get("enum"):
+                vocab = list(ann["enum"])
+                break
+        if vocab:
+            row["vocabulary"] = vocab
+        panel.append(row)
+    print(json.dumps({"advanced_settings": panel}, indent=2, default=str))
+    return 0
+
+
+
 def cmd_question_set(args) -> int:
     """Export the full question bank (all modes). Read-only."""
     schema = load_question_schema()
@@ -2062,14 +3629,284 @@ def cmd_question_set(args) -> int:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# F5 -- THE CLIENT-SIDE STYLE-PICK RECORDER
+#
+# P-STYLE-PICK (order 4.86, executor kind "human", budget 45 min) is the one
+# guaranteed human gate in every deck. The engine delivers "pick A, B or C" to
+# the requester and then waits for working/copy/style_preview_choice.json --
+# but nothing client-side ever WROTE that file, so the agent handling the
+# client's "B" reply had no sanctioned way to record it and every deck timed
+# out and parked. This command is that way.
+#
+# It writes the exact shape phases.Engine._style_choice_authentic verifies:
+# owner_approved:true + a chosen_variant that is in the offered set + an
+# owner_msg_id the Fix 32 approvals oracle can resolve to a real owner-authored
+# message. It NEVER writes auto_pick (that provenance belongs only to the
+# engine's own timeout auto-pick under a recorded intake.style_pick_auto
+# opt-in), and it REFUSES to run without --owner-msg-id: a pick with no
+# resolvable owner message id is a forged approval (AF-FORGED-APPROVAL), and
+# the gate would deny it anyway.
+#
+# ONE ORACLE: this command does NOT re-implement authenticity. It runs
+# presentation_job.approvals.verify() as a courtesy PRE-CHECK and reports the
+# result, but the binding decision is always the engine's own re-verification
+# at the gate. A pre-check that cannot reach the oracle (partial deploy,
+# UNDETERMINED transport) is reported, never treated as proof either way, and
+# never blocks the record -- the engine keeps waiting and re-proves it there.
+# ---------------------------------------------------------------------------
+STYLE_CHOICE_REL = "working/copy/style_preview_choice.json"
+STYLE_SAMPLES_REL = "working/style-preview/style_samples_manifest.json"
+
+
+def read_style_variants(run_dir: Path) -> List[str]:
+    """The variant ids the owner was offered, in manifest order, from the
+    samples manifest P-STYLE-PREVIEW produced. Returns [] when the manifest is
+    absent or unreadable -- the SAME posture the engine's
+    _style_pick_offered_variants() takes, so the two never disagree about what
+    was on offer."""
+    path = run_dir / STYLE_SAMPLES_REL
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            obj = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return []
+    variants = obj.get("variants") if isinstance(obj, dict) else None
+    if not isinstance(variants, list):
+        return []
+    return [str(v).strip() for v in variants if str(v).strip()]
+
+
+def resolve_style_variant(picked: str, variants: List[str]) -> Optional[str]:
+    """Resolve the client's reply to one of the OFFERED variant ids, exactly.
+
+    Clients type "B", "b", "variant B", or "2". The engine compares
+    `chosen_variant not in offered_variants` with no normalisation at all, so
+    the resolution has to happen HERE or a lowercase reply is denied at the
+    gate for no reason a client could understand. Returns the offered id
+    verbatim, or None when the reply matches nothing on offer."""
+    raw = str(picked or "").strip()
+    if not raw:
+        return None
+    if not variants:
+        # No manifest to check against: record what was given (the engine skips
+        # its membership test in exactly this case too) -- never invent one.
+        return raw
+    if raw in variants:
+        return raw
+    low = raw.lower()
+    for v in variants:
+        if v.lower() == low:
+            return v
+    m = re.search(r"variant\s+([A-Za-z0-9]+)", raw, re.I)
+    if m:
+        tok = m.group(1)
+        for v in variants:
+            if v.lower() == tok.lower():
+                return v
+    if raw.isdigit():
+        idx = int(raw)
+        if 1 <= idx <= len(variants):
+            return variants[idx - 1]
+    return None
+
+
+def _style_pick_precheck(choice: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
+    """Courtesy pre-check through the SINGLE Fix 32 oracle. Never binding, never
+    a gate: it tells the agent NOW whether the id it was handed will resolve, so
+    a typo is caught while the client is still in the conversation instead of 45
+    minutes later. Returns {"ran": bool, "ok": bool|None, "detail": str}."""
+    approval = {
+        "gate": "P-STYLE-PICK",
+        "approved_by": str(choice.get("approved_by") or "owner"),
+        "owner_msg_id": str(choice.get("owner_msg_id") or ""),
+        "reason": str(choice.get("reason") or ""),
+        "granted_at": str(choice.get("granted_at") or ""),
+    }
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import approvals as _approvals  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy is not a verdict
+        return {"ran": False, "ok": None,
+                "detail": f"presentation_job.approvals is not importable from "
+                          f"{SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) -- "
+                          f"the owner_msg_id was NOT pre-checked. The engine "
+                          f"re-verifies it at the gate either way."}
+    try:
+        _approvals.verify(approval, run_dir)
+    except Exception as exc:  # noqa: BLE001 -- ApprovalError or transport alike
+        return {"ran": True, "ok": False,
+                "detail": f"{exc.__class__.__name__}: {exc}"}
+    return {"ran": True, "ok": True, "detail": "owner_msg_id resolved."}
+
+
+def cmd_style_pick(args) -> int:
+    """Record the owner's A/B/C style pick as working/copy/style_preview_choice.json.
+
+    This is the ONLY sanctioned client-side writer of that file. Hand-writing it
+    is how the forged "e2e-test-002" pick got in; this command cannot produce
+    that shape because --owner-msg-id is mandatory."""
+    run_dir = args.run_dir.expanduser().resolve()
+    owner_msg_id = str(args.owner_msg_id or "").strip()
+    if not owner_msg_id:
+        print(json.dumps({
+            "error": "--style-pick requires --owner-msg-id: the message id of "
+                     "the client's OWN reply carrying A, B or C. A pick without "
+                     "a resolvable owner message id is a forged approval "
+                     "(AF-FORGED-APPROVAL) and the P-STYLE-PICK gate denies it. "
+                     "Never invent an id, and never fall back to the auto-pick "
+                     "path -- that one belongs to the engine and only under a "
+                     "recorded intake.style_pick_auto opt-in.",
+        }))
+        return 2
+
+    variants = read_style_variants(run_dir)
+    chosen = resolve_style_variant(args.style_pick, variants)
+    if chosen is None:
+        print(json.dumps({
+            "error": f"style pick {str(args.style_pick).strip()!r} is not one of "
+                     f"the offered variants {variants}. Read them from "
+                     f"{STYLE_SAMPLES_REL} and record the client's reply as one "
+                     f"of those ids (A/B/C, 1/2/3 and 'variant b' all resolve).",
+            "offered_variants": variants,
+        }))
+        return 1
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    choice = {
+        "owner_approved": True,
+        "chosen_variant": chosen,
+        "owner_msg_id": owner_msg_id,
+        "approved_by": str(getattr(args, "approved_by", "") or "owner").strip()
+                       or "owner",
+        "reason": f"owner style pick: variant {chosen} (client reply recorded "
+                  f"by deck-intake-driver.py --style-pick)",
+        "granted_at": now_iso,
+        "picked_at": now_iso,
+        "recorded_at": now_iso,
+        "recorded_by": "deck-intake-driver.py --style-pick",
+    }
+
+    precheck = _style_pick_precheck(choice, run_dir)
+    if precheck["ran"] and precheck["ok"] is False:
+        print(f"  WARN  [STYLE-PICK] the owner_msg_id {owner_msg_id!r} did NOT "
+              f"pre-verify: {precheck['detail']} The choice file is still "
+              f"written (the engine is the single oracle and re-checks it at "
+              f"the gate), but expect P-STYLE-PICK to keep waiting until a "
+              f"resolvable id is recorded.", file=sys.stderr)
+    elif not precheck["ran"]:
+        print(f"  WARN  [STYLE-PICK] {precheck['detail']}", file=sys.stderr)
+
+    dest = run_dir / "working" / "copy"
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / "style_preview_choice.json"
+        tmp = path.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(choice, fh, indent=2)
+        os.replace(tmp, path)
+    except OSError as exc:
+        print(json.dumps({"error": f"could not write {STYLE_CHOICE_REL}: {exc}"}))
+        return 2
+
+    print(json.dumps({
+        "status": "recorded",
+        "chosen_variant": chosen,
+        "owner_msg_id": owner_msg_id,
+        "offered_variants": variants,
+        "choice_path": str(run_dir / STYLE_CHOICE_REL),
+        "owner_msg_id_precheck": precheck,
+    }, indent=2))
+    return 0
+
+
+def cmd_selftest() -> int:
+    """Fix 7 (D1) --selftest: exercise the canonical --sig-* turn-gate offline.
+
+    Runs in a temp run dir, in-process. Exits 0 on pass, 1 on failure.
+    """
+    import io
+    import tempfile
+    from contextlib import redirect_stdout
+
+    failures = []
+
+    def check(name, cond, detail=""):
+        if cond:
+            print(f"[selftest] PASS: {name}")
+        else:
+            print(f"[selftest] FAIL: {name} {detail}")
+            failures.append(name)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rd = str(tmpdir)
+
+        # 1. --signature --sig-next returns the choice-first question.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--sig-next"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
+        check("--sig-next exits 0", rc == 0, f"rc={rc}")
+        check("--sig-next returns sp_mode choice-first",
+              out.get("question_id") == "sp_mode", f"out={buf.getvalue()[:200]}")
+
+        # 2. --signature --sig-answer records the choice.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--sig-answer",
+                       "sp_mode", "QUICK"])
+        check("--sig-answer exits 0", rc == 0, f"rc={rc}")
+
+        # 3. Legacy --signature --next is rejected (non-zero, names --sig-next).
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--next"])
+        check("--signature --next exits non-zero", rc != 0, f"rc={rc}")
+        check("--signature --next names --sig-next",
+              "--sig-next" in buf.getvalue(), f"out={buf.getvalue()[:200]}")
+
+        # 4. Legacy --signature --answer is rejected (non-zero, names --sig-answer).
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature", "--answer",
+                       "sp_mode", "QUICK"])
+        check("--signature --answer exits non-zero", rc != 0, f"rc={rc}")
+        check("--signature --answer names --sig-answer",
+              "--sig-answer" in buf.getvalue(), f"out={buf.getvalue()[:200]}")
+
+        # 5. Bare --signature still returns the use_turn_gate pointer.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = main(["--run-dir", rd, "--signature"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
+        check("bare --signature exits 0", rc == 0, f"rc={rc}")
+        check("bare --signature returns use_turn_gate pointer",
+              out.get("status") == "use_turn_gate", f"out={buf.getvalue()[:200]}")
+
+    if failures:
+        print(f"[selftest] FAILED: {failures}", file=sys.stderr)
+        return 1
+    print("[selftest] ALL PASS")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="deck-intake-driver.py",
         description="THE ONE sanctioned intake bridge for Presentations. "
                     "Writes deck_type via derive_legacy_fields() -- never "
                     "hardcoded, never hand-typed.")
-    p.add_argument("--run-dir", type=Path, required=True,
-                   help="the deck's run directory")
+    p.add_argument("--run-dir", type=Path, required=False, default=None,
+                   help="the deck's run directory (not needed for --selftest)")
+    p.add_argument("--selftest", action="store_true",
+                   help="run offline self-test in a temp dir; exits 0 on pass")
 
     # Standard mode
     std = p.add_argument_group("standard mode (one question per turn)")
@@ -2111,6 +3948,42 @@ def build_parser() -> argparse.ArgumentParser:
                           "(read-only -- never a substitute for the live "
                           "interview)")
 
+    # PRES-056 progressive intake (stage plan, preference reuse, review,
+    # advanced panel) -- read-only views plus the preference importer. None
+    # of these write deck content; --reuse-preferences copies locked
+    # creative-pref values into the ledger with provenance
+    # "preference-reuse" so a repeat client is not re-interviewed.
+    prog = p.add_argument_group("progressive intake (PRES-056)")
+    prog.add_argument("--brief-status", dest="brief_status",
+                      action="store_true",
+                      help="read-only: stage plan + review-and-edit summary + "
+                           "UX measurement against the 23-turn baseline")
+    prog.add_argument("--reuse-preferences", dest="reuse_preferences",
+                      action="store_true",
+                      help="copy locked client preferences into this run's "
+                           "ledger (provenance 'preference-reuse'); repeat "
+                           "clients skip satisfied turns")
+    prog.add_argument("--advanced-settings", dest="advanced_settings",
+                      action="store_true",
+                      help="read-only: advanced model/thinking/run-mode/"
+                           "reserve panel with each value's source")
+
+    # Owner style pick (F5) -- the client-side recorder for P-STYLE-PICK
+    pick = p.add_argument_group("owner style pick (P-STYLE-PICK, order 4.86)")
+    pick.add_argument("--style-pick", dest="style_pick", metavar="VARIANT",
+                      help="record the client's A/B/C style-preview pick into "
+                           "working/copy/style_preview_choice.json. REQUIRES "
+                           "--owner-msg-id (the id of the client's own reply); "
+                           "A/B/C, a/b/c, 'variant b' and 1/2/3 all resolve "
+                           "against the offered variants")
+    pick.add_argument("--owner-msg-id", dest="owner_msg_id", metavar="ID",
+                      help="with --style-pick: the message id of the CLIENT's "
+                           "own A/B/C reply. Mandatory -- a pick without a "
+                           "resolvable owner message id is a forged approval")
+    pick.add_argument("--approved-by", dest="approved_by", metavar="WHO",
+                      default="owner",
+                      help="with --style-pick: who approved (default 'owner')")
+
     # Export
     p.add_argument("--question-set", action="store_true",
                    help="export the full question bank (all modes, read-only)")
@@ -2120,6 +3993,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Fix 7 (D1): offline self-test runs without --run-dir.
+    if getattr(args, "selftest", False):
+        return cmd_selftest()
 
     if not args.run_dir:
         print("FATAL: --run-dir is required", file=sys.stderr)
@@ -2131,6 +4008,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.question_set:
         # Import here to avoid circular issues with the parser's run_dir requirement
         return cmd_question_set(args)
+
+    # PRES-056 progressive views -- read-only except --reuse-preferences
+    # (which only copies locked preferences into the ledger, never deck
+    # content). Checked before the interview modes: they never answer turns.
+    if getattr(args, "brief_status", None):
+        return cmd_brief_status(args)
+    if getattr(args, "reuse_preferences", None):
+        return cmd_reuse_preferences(args)
+    if getattr(args, "advanced_settings", None):
+        return cmd_advanced_settings(args)
+
+    # Owner style pick (F5) -- checked before the interview modes: it is not
+    # an interview turn at all, it is the recorder for the human gateway phase.
+    if getattr(args, "style_pick", None):
+        return cmd_style_pick(args)
 
     # Signature mode
     if args.signature:
@@ -2155,11 +4047,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     # No mode selected
     print(json.dumps({
         "error": "No mode selected. Use one of: --next, --answer, --complete, "
+                 "--brief-status, --reuse-preferences, --advanced-settings, "
                  "--signature --sig-next, --signature --sig-answer ID TEXT, "
-                 "--question-set.",
+                 "--style-pick VARIANT --owner-msg-id ID, --question-set.",
         "usage": "deck-intake-driver.py --run-dir <DIR> [--next | --answer "
-                 "ID TEXT | --complete | --signature [--sig-next | --sig-answer "
-                 "ID TEXT | --sig-record FILE] | --question-set]",
+                 "ID TEXT | --complete | --brief-status | --reuse-preferences | "
+                 "--advanced-settings | --signature [--sig-next | --sig-answer "
+                 "ID TEXT | --sig-record FILE] | --style-pick A|B|C "
+                 "--owner-msg-id ID | --question-set]",
     }))
     return 2
 

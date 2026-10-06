@@ -187,8 +187,9 @@ Base URL: https://services.leadconnectorhq.com
 CONTACTS:
 • Search: GET /contacts/search?query=email
 • Get: GET /contacts/{contactId}
-• Create: POST /contacts/
-• Update: PUT /contacts/{contactId}
+• Add/save (DEFAULT for generic add/save): POST /contacts/upsert with match keys (email and/or phone) + supplied fields only; HighLevel resolves create-vs-update per the Location-level Allow Duplicate Contact configuration. Never send a tags array here.
+• Create (explicit NEW record ONLY): POST /contacts/
+• Update: PUT /contacts/{contactId} (supplied fields only; never a tags array — use POST /contacts/{contactId}/tags)
 
 CONVERSATIONS:
 • Send SMS: POST /conversations/messages

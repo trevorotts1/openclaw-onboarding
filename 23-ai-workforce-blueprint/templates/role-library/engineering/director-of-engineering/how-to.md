@@ -630,7 +630,7 @@ For this role, the authoritative sources are:
 
 **Tier 4 -- Role-specific foundational texts:**
 
-- **"Accelerate" by Nicole Forsgren, Jez Humble, Gene Kim** -- The research foundation for DORA metrics and the evidence base for modern software delivery practices. Required reading for every Director of Engineering.
+- **"Accelerate"** -- The research foundation for DORA metrics and the evidence base for modern software delivery practices. Required reading for every Director of Engineering.
 - **"The Phoenix Project" and "The Unicorn Project" by Gene Kim** -- Narrative case studies in engineering operations, DevOps transformation, and the business cost of technical debt.
 - **"A Philosophy of Software Design" by John Ousterhout** -- The authoritative text on software complexity management, module design, and writing code that is maintainable at scale.
 - **OWASP (owasp.org)** -- The definitive reference for web application security. OWASP Top 10 is the minimum security checklist for every web-facing system. OWASP Application Security Verification Standard (ASVS) is the detailed security audit framework.

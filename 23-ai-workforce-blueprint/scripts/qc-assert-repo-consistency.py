@@ -521,8 +521,16 @@ def evaluate(skill_dir):
                             dept_path, dept_id, roles,
                             workspace_root=Path(td), dry_run=True)
                     created = len(summary.get("roles_created", []))
-                    instantiate_ok = created == len(roles)
+                    # v25.4.0 — DIRECTOR REQUIRED: when the roster names no
+                    # director, instantiate_department scaffolds one (flagged
+                    # for human review). The dry-run then materializes
+                    # len(roles)+1 — that is the CORRECT behavior, not drift.
+                    _scaffolded = bool(summary.get("director_scaffolded"))
+                    expected = len(roles) + (1 if _scaffolded else 0)
+                    instantiate_ok = created == expected
                     inst_detail = f"{created}/{len(roles)} roles"
+                    if _scaffolded:
+                        inst_detail += " (+1 scaffolded director)"
                     if not instantiate_ok:
                         failures.append((dept_id, "INSTANTIATE",
                                          f"dry-run materialized {created} of "

@@ -17,7 +17,7 @@ has ever put their name on. Doctrine root: `universal-sops/CLIENT-WEBINAR-DECK-S
 There is exactly ONE way decks get built in this department, and it is deterministic:
 
 1. You read the source material and write **`slides.json`** (and ONLY `slides.json`).
-2. You run the build script: `python3 <SCRIPTS_DIR>/build_deck.py slides.json out.pptx`.
+2. You run the ONE canonical entry command, `bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out out.pptx`, which gates the run and dispatches `run_signature_deck.py` and `build_deck.py` (never run `build_deck.py` directly).
 3. The script — not you — renders every image on KIE.ai, downloads and verifies each
    PNG, and assembles the `.pptx`.
 4. You register the `.pptx` the script produced as the deliverable.
@@ -63,18 +63,18 @@ These are checked at QC (AF-I14 scans your runtime session trace for the build p
   `.pptx`. A non-zero exit means the build FAILED — report the failure; never fake a
   deliverable.
 
-The only permitted image path in this department is, transitively, the script:
+The only permitted image path in this department is, transitively, the script behind the canonical entry command:
 
 ```
-python3 <SCRIPTS_DIR>/build_deck.py slides.json out.pptx
+bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out out.pptx
 ```
 
-`build_deck.py` internally performs the ONLY confirmed-correct live flow:
+`build_deck.py` (reached only through that command) internally performs the ONLY confirmed-correct live flow:
 - Submit: `POST https://api.kie.ai/api/v1/jobs/createTask` with the `input{}` wrapper
 - Poll: `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` until `data.state == "success"`
 - Parse: `data.resultJson` (JSON string) → `resultUrls[0]` → download + verify PNG
 
-Every prompt the script composes ends with the MANDATORY English/Latin-only pin, verbatim:
+Every prompt the script sends (the authored per-slide prompt, verbatim) carries the MANDATORY English/Latin-only pin; the script appends it only when the authored prompt does not already contain it:
 
 > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK or
 > non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter. No
@@ -100,8 +100,7 @@ deliverables API.
 **Two layers, always in order — full detail in `BUILDER-PROMPT.md`, doctrine home
 `universal-sops/PRESENTATION-MASTER-DOCTRINE.md`.** LAYER A is the multi-phase authoring
 pipeline the runner (`run_signature_deck.py --next`) walks you through one step at a
-time — intake, structure, copy, and the hand-authored 9,000–18,000-character rich
-per-slide image prompt (`working/prompts/slide-NN.txt`). LAYER B is the deterministic
+time — intake, structure, copy, and the hand-authored rich per-slide image prompt (`working/prompts/slide-NN.txt`), written to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; 16,000 to 18,000 characters now, while the renderer's own 9,000 to 18,000 gate stands). LAYER B is the deterministic
 render: `presentation-canonical-entry.sh` (never `build_deck.py` directly) dispatches
 `run_signature_deck.py` → `build_deck.py`, which reads those rich prompts **VERBATIM** —
 it does **not** compose a prompt from a bare `scene`/`copy` pair, and a `slides.json`
@@ -115,8 +114,8 @@ until it serves `P4-RENDER`, then dispatch the render via:
 ```
 bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx
 ```
-The canonical path renders every slide on KIE.ai (`gpt-image-2-text-to-image` /
-`-image-to-image`, 16:9, 2K), retries up to 3× per slide, verifies each PNG, then
+The canonical path renders every slide on KIE.ai (`gpt-image-2-5-sunburst-text-to-image` /
+`-image-to-image`, 16:9, 2K), submits every slide once (0.6 seconds apart; a 429 on submit sleeps 20 seconds and retries, at most 15 times in a row), polls every 10 seconds with a 900-second cap per task, downloads each result with an authenticated GET, verifies each PNG, then
 assembles a full-bleed `.pptx` (no text boxes — the copy is baked into each image), and
 runs the postflight completeness gate over the full deliverable bundle. It prints a JSON
 summary:
@@ -164,9 +163,9 @@ Reply with exactly (ONLY if `build_deck.py` exited 0):
 
 ## Error Handling
 
-- `build_deck.py` exits non-zero → the deck is NOT built. Read the printed `failures`. Fix
-  `slides.json` if it was a content/JSON problem and re-run the script. If KIE is
-  unreachable or a slide cannot be rendered after the script's retries, report the failure
+- The canonical render command exits non-zero → the deck is NOT built. Read the printed `failures`. Fix
+  `slides.json` or the Layer-A input if it was a content problem and re-run the SAME command (slides already recorded complete in `working/checkpoints/pending_tasks.json` are reused, so a finished slide is never re-billed). If KIE is
+  unreachable or a slide cannot be rendered, report the failure
   via the activities API and leave the task for the orchestrator — **do NOT** substitute a
   placeholder, hand-make an image, or report `TASK_COMPLETE`.
 - `python-pptx` not installed → the script exits 2 with that message; `pip3 install python-pptx` then re-run the script. (You never assemble a `.pptx` yourself.)
@@ -180,5 +179,6 @@ Reply with exactly (ONLY if `build_deck.py` exited 0):
 - Never say "I'll route this to the slide builder."
 - Never register or report anything other than the `.pptx` `build_deck.py` produced.
 - Never report `TASK_COMPLETE` when the script exited non-zero.
+- Never run `build_deck.py` or `run_signature_deck.py` directly, and never copy a Skill 74 file (`kie_live_adapter.py`) into the run directory (the render guard blocks both).
 - Never skip the deliverable registration step.
 - Never leave the task status in backlog or in_progress after completing work.

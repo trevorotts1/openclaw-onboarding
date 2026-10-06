@@ -100,18 +100,24 @@ for label, value in checks:
     status = "✓ FOUND" if value else "✗ empty"
     print(f"  {status}  {label}: {value!r}")
 
-# Path 4 — per-agent bindings
-print(f"  Path 4: agents.list[*].bindings.telegram")
+# Path 4 — per-agent bindings, in both roster shapes: agents.entries
+# (OpenClaw 2026.9.x, keyed by id) and the legacy agents.list[].
+print(f"  Path 4: agents.entries.*.bindings.telegram / agents.list[*].bindings.telegram")
+_agents = cfg.get("agents", {}) if isinstance(cfg.get("agents"), dict) else {}
+_entries = _agents.get("entries") if isinstance(_agents.get("entries"), dict) else {}
+_roster = [(f"agents.entries.{k}", k, v) for k, v in _entries.items()]
+_roster += [(f"agents.list[{i}]", ag.get("id", "?"), ag)
+            for i, ag in enumerate(_agents.get("list", []) or []) if isinstance(ag, dict)]
 agent_hits = []
-for i, ag in enumerate(cfg.get("agents", {}).get("list", []) or []):
-    bindings = (ag.get("bindings") or {}).get("telegram") or {}
+for where, aid, ag in _roster:
+    bindings = ((ag.get("bindings") if isinstance(ag, dict) else None) or {}).get("telegram") or {}
     if bindings:
-        agent_hits.append((i, ag.get("id", "?"), bindings))
+        agent_hits.append((where, aid, bindings))
 if agent_hits:
-    for i, aid, b in agent_hits:
-        print(f"    agents.list[{i}] (id={aid}) telegram bindings: {b}")
+    for where, aid, b in agent_hits:
+        print(f"    {where} (id={aid}) telegram bindings: {b}")
 else:
-    print(f"    ✗ no agents.list[].bindings.telegram blocks found")
+    print(f"    ✗ no agents.entries/agents.list bindings.telegram blocks found")
 
 # Also dump any 'telegram' block at unknown nesting
 print()

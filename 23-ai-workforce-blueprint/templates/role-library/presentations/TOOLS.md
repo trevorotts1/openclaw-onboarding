@@ -56,8 +56,8 @@ The scripts directory defaults to the materialized department's `scripts/` folde
 `--scripts-dir` overrides it. The script refuses rather than searching or guessing.
 
 **Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
-render also requires the hand-authored 9,000–18,000-character rich per-slide prompt files
-(`working/prompts/slide-NN.txt`) and every other upstream Layer-A artifact the manifest
+render also requires the hand-authored rich per-slide prompt files
+(`working/prompts/slide-NN.txt`, sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; until the renderer gate (9,000 to 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, write 16,000 to 18,000 characters so both pass) and every other upstream Layer-A artifact the manifest
 requires before the render preflight will pass. The full two-layer procedure — walk
 `run_signature_deck.py --next` phase by phase, THEN dispatch the canonical entry command
 above — is in `BUILDER-PROMPT.md`; read it first on every deck task. Treat the mechanics
@@ -120,21 +120,58 @@ runtime:
    > All text rendered in the image MUST be in English, Latin alphabet ONLY. NO Chinese/CJK
    > or non-Latin characters anywhere. Render the copy spelled correctly, letter-for-letter.
    > No garbled, misspelled, or invented text.
-3. Calls KIE.ai (`gpt-image-2-text-to-image`, 16:9, 2K) via the ONLY verified live recipe:
+3. Calls KIE.ai at 16:9 / 2K resolution via the ONLY verified live recipe:
    `POST /api/v1/jobs/createTask` → `GET /api/v1/jobs/recordInfo?taskId=<id>` →
    parse `data.resultJson` (a JSON string) → `resultUrls[0]`. It refuses the dead endpoint.
-4. Downloads each result UNAUTHENTICATED to `<renders_dir>/slide-NN.png` and VERIFIES PNG
-   magic bytes + non-zero size. Retries a failing slide up to 3×.
+   The model id is NEVER a literal here — `build_deck.py` resolves its render classes
+   (`image.t2i`, and `image.i2i` for a URL-logo run, which the canonical command does not reach today)
+   from the central versioned catalog per submit, so a catalog bump changes the next render without a code
+   edit. The batch path submits every slide once, 0.6 seconds apart (the governor also paces
+   the `kie` provider at 1.33 per second, at most 13 starts per rolling 10 seconds), then runs
+   one poll pass over all pending tasks every 10 seconds and downloads each slide the moment
+   its own task succeeds. A task still unfinished after 900 seconds is a terminal failure for
+   that slide (never a silent hang); HTTP 429 on submit sleeps 20 seconds and retries, at most
+   15 times in a row.
+4. Downloads each result to `<renders_dir>/slide-NN.png` with the client's own key as the
+   Bearer header plus a browser User-Agent (an unauthenticated GET of the KIE result URL
+   returns 403), and VERIFIES PNG magic bytes + non-zero size, the 16:9 / 2K shape, and an
+   OCR readback of the baked text against the approved copy. In the batch path a slide that
+   fails (terminal KIE state, bad PNG, OCR mismatch, poll cap) is recorded as a failure, the
+   run exits 1 with no `.pptx`, and re-running the same command reuses every slide already
+   verified in `pending_tasks.json` and submits only the rest. The single-slide helper (used
+   for the style-preview samples) re-submits a failing slide from scratch, up to 6 attempts
+   by default (`BUILD_DECK_SLIDE_MAX_ATTEMPTS`) with exponential backoff (4 seconds doubling,
+   capped at 90 seconds). A 401 or 403 is never retried on any path, and a poll timeout is
+   never re-submitted. Before any render the script also proves the key with a one-shot auth
+   check (a 401 aborts with exit 4) and checks the OCR engine and the credit balance.
 5. Assembles all slide PNGs into a 16:9 `.pptx` (10 × 5.625 in), ONE full-bleed picture per
    slide, NO text boxes (the copy is baked into each image).
-6. Prints a JSON summary and sets an exit code:
+6. Writes the receipts below, prints a JSON summary and sets an exit code:
    ```json
    { "slidesRendered": N, "kieTaskIds": ["..."], "outputPath": ".../out.pptx", "failures": [] }
    ```
 
+**Receipts (what proves a slide was really rendered):** `working/checkpoints/pending_tasks.json`
+(the KIE task id is written before polling and replaced by the verified PNG's sha256 once
+the slide is downloaded; a resumed run reuses only slides recorded complete there, so a
+crash never re-bills a finished slide), `renders/slide-NN.ocr.json` (the OCR readback
+record), the render record in `working/checkpoints/process_manifest.json`, and `kieTaskIds`
+in the summary. Credits are checked once before any render by the runner's balance
+preflight (`GET /api/v1/chat/credit`, abort `AF-KIE-BALANCE`, exit 4). The price authority
+is `kie_live_adapter.py price` (rule 7 of kie-common-rules.md); the `unit_costs` in
+`model_catalog.json` are a dated snapshot, not an authority.
+
+**The image chain, end to end:** authored prompt -> prompt budget (above) -> model pin
+(`model_catalog.json` aliases `image.t2i` and `image.i2i`, a department pin that outranks
+Skill 74 and the `latest-family` default; a newer GPT Image generation is adopted by an
+operator catalog bump, never silently) -> transport (this script only) -> receipts. Skill 74
+(`74-kie-live-adapter`) is mechanics for other skills and is NEVER copied into or run from a
+deck run directory: the render guard (`canonical_render_guard.py`) blocks any `*.py` there
+that mentions `createTask`, `recordInfo` or `api.kie.ai` (`AF-CANONICAL-RENDER-BYPASS`).
+
 **Exit codes (the contract you act on):**
 - `0` — every slide rendered and the `.pptx` was written. `outputPath` is your deliverable.
-- `1` — one or more slides failed after retries (NO `.pptx` written), or assembly failed.
+- `1` — one or more slides failed (NO `.pptx` written), or assembly failed.
   Read `failures`. Fix `slides.json` if it was a content problem and re-run; otherwise
   report the failure. NEVER substitute an image.
 - `2` — fatal config error (no `KIE_API_KEY`, bad `slides.json`, `python-pptx` missing).
@@ -169,10 +206,20 @@ Authoritative schema: `slides.schema.json` (render-template directory). Each ele
 - `logo` — optional brand wordmark (rendered as text). Omit if none.
 - `layout` — optional placement hint. Omit for a safe default.
 
-The deterministic pipeline uses `mode: "t2i"` only (text-to-image). The script does not pass
-logo image files. (The separate `kie_generate.py` helper supports image-to-image logo
-placement for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE for
-`build_deck.py` and you do not invoke it for a standard deterministic deck build.)
+The deterministic pipeline renders each slide as **text-to-image by default** — a slide
+with no official logo is a plain t2i generation. The canonical command has NO `--logo`
+option (the entry exits with "unknown argument"). When the deck has an OFFICIAL logo, set
+`brand.logo_image_path` in `working/copy/intake.json` to a LOCAL PNG file (absolute, or relative
+to the run directory; a URL there makes the renderer exit 2, so a logo that exists only as a hosted
+URL is downloaded to a local PNG in the run directory first). The render stays t2i and
+`assemble_pptx` places the exact PNG on every slide at assembly time (top-right, ~13% of slide
+width, 0.25 inch margin). The URL image-to-image mode (`build_deck.py --logo <https URL>`, the logo
+riding `input_urls`) exists in the renderer but is not forwarded by the entry or the runner, so it
+is not available to a department agent until lane D plumbs it; never hand-run `build_deck.py` to
+reach it (AF-CANONICAL-RENDER-BYPASS). You never pass logo image files into `slides.json` — its `logo` field is a TEXT wordmark only, and there is
+no per-slide `mode` choice for a deck build. (The separate `kie_generate.py` helper runs
+standalone i2i jobs for the full webinar pipeline per SOP-IMG-01, but it is OUT OF SCOPE
+for `build_deck.py` and you do not invoke it for a standard deterministic deck build.)
 
 ---
 
@@ -186,6 +233,6 @@ is already done.
 ## Artifact Directory
 
 The task message always contains an `ARTIFACT_DIR` line. Use that exact path. Pass
-`<ARTIFACT_DIR>/presentation.pptx` to `build_deck.py` as the output path; the script writes
+`<ARTIFACT_DIR>/presentation.pptx` to `presentation-canonical-entry.sh` as `--out`; the renderer writes
 the renders under `<ARTIFACT_DIR>/presentation/renders/` (or the `renders_dir` you pass).
 `mkdir -p $ARTIFACT_DIR` first if it does not exist.

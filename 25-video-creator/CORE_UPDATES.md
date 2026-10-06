@@ -20,6 +20,7 @@ Add this section:
 - Purpose: generate and assemble videos (for example: text to video, image to video, multi-clip assembly)
 - Primary provider: KIE.ai (uses `KIE_API_KEY`)
 - Default outputs: text-to-video writes a prompt/timestamp filename in the current working directory; script-to-video writes beside the input script; multi-clip assembly writes `assembled.mp4` in the current working directory.
+- Python venv: `~/.openclaw/venvs/video-creator/` (activate before running scripts; never inside a skills folder)
 ```
 
 ### MEMORY.md

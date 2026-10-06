@@ -182,13 +182,16 @@ def resolve_agents_md(agent_id: str, explicit: str | None):
             data = json.loads(cfg.read_text())
         except Exception:
             data = {}
-        for ag in (data.get("agents", {}).get("list") or []):
-            if isinstance(ag, dict) and ag.get("id") == agent_id:
-                ws = ag.get("workspace")
-                if ws:
-                    workspace = Path(os.path.expanduser(ws))
-                    resolved_from = f"agents.list[{agent_id}].workspace"
-                break
+        # Both roster shapes: agents.entries (OpenClaw 2026.9.x, keyed by id)
+        # wins, then legacy agents.list[] -- same as the shared helper.
+        agents = data.get("agents") if isinstance(data.get("agents"), dict) else {}
+        entries = agents.get("entries") if isinstance(agents.get("entries"), dict) else {}
+        lst = agents.get("list") if isinstance(agents.get("list"), list) else []
+        hits = [("entries", v) for k, v in entries.items() if str(k).lower() == agent_id.lower()]
+        hits += [("list", a) for a in lst if isinstance(a, dict) and str(a.get("id", "")).lower() == agent_id.lower()]
+        if hits and isinstance(hits[0][1], dict) and hits[0][1].get("workspace"):
+            workspace = Path(os.path.expanduser(hits[0][1]["workspace"]))
+            resolved_from = f"agents.{hits[0][0]}[{agent_id}].workspace"
         if workspace is None:
             dw = (data.get("agents", {}) or {}).get("defaults", {}).get("workspace")
             if dw:

@@ -94,6 +94,11 @@ fi
 # ── Test 3: record-dept-decision.sh confirmation gate ────────────────────────
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
+# Use the real limiter with a private ledger, including on machines that have
+# an installed OpenClaw workspace. A fresh CI runner has no default workspace.
+export INTERVIEW_RATE_LIMIT_STATE_FILE="$TMPD/.interview-rate-limit.json"
+export INTERVIEW_RATE_LIMIT_MAX=60
+export INTERVIEW_RATE_LIMIT_WINDOW_SECONDS=3600
 STATE="$TMPD/.workforce-build-state.json"
 
 seed_state() {
@@ -159,6 +164,13 @@ if [ "$cw" = "no" ]; then ok "custom decline written directly"; else bad "custom
 cack="$(jq -r '.canonicalReconciliation.decisions["my-custom-lab"].lossWarningAck // "none"' "$STATE")"
 if [ "$cack" = "none" ]; then ok "no lossWarningAck on a non-floor decline (nothing to lose)"; else bad "unexpected lossWarningAck on custom: $cack"; fi
 
+# Corrupt only a disposable copy: concurrent CI/local readers must never see
+# this test's deliberately broken naming map in the checked-out skill.
+cp -R "$SKILL_DIR" "$TMPD/skill"
+NAMING_MAP="$TMPD/skill/department-naming-map.json"
+RECORDER="$TMPD/skill/scripts/record-dept-decision.sh"
+LOSS_READER="$TMPD/skill/scripts/department-loss-warning.py"
+
 # ── Test 4: FAIL-CLOSED — an unreadable/corrupt naming map must NOT let a floor
 #    department decline slip through silently (P2-05 QC regression) ────────────
 # BUG (pre-fix): the reader returned rc=3 (indistinguishable from a genuine
@@ -168,7 +180,7 @@ if [ "$cack" = "none" ]; then ok "no lossWarningAck on a non-floor decline (noth
 # recorder fails closed (refuse unless --confirm-loss).
 MAP_BAK="$TMPD/naming-map.orig"
 cp "$NAMING_MAP" "$MAP_BAK"
-# Extend cleanup so the REAL map is always restored, even on an early exit.
+# Restore the disposable map on early exit as well as the normal path.
 trap 'cp -f "$MAP_BAK" "$NAMING_MAP" 2>/dev/null; rm -rf "$TMPD"' EXIT
 
 # 4a: corrupt the map, decline a FLOOR dept WITHOUT --confirm-loss => refuse, NOT written
@@ -201,10 +213,53 @@ python3 "$LOSS_READER" --dept billing-finance >/dev/null 2>&1; rrc=$?
 set -e
 if [ "$rrc" -eq 4 ]; then ok "reader returns rc=4 INDETERMINATE under a corrupt map (never a false rc=3)"; else bad "reader expected rc=4 under a corrupt map, got $rrc"; fi
 
-# Restore + prove the repo is left clean.
+# Restore + prove the disposable map is valid again.
 cp -f "$MAP_BAK" "$NAMING_MAP"
-if jq -e '.mandatory | length' "$NAMING_MAP" >/dev/null 2>&1; then ok "naming map restored intact after the fail-closed test"; else bad "naming map NOT restored — repo left dirty"; fi
+if jq -e '.mandatory | length' "$NAMING_MAP" >/dev/null 2>&1; then ok "naming map restored intact after the fail-closed test"; else bad "disposable naming map NOT restored"; fi
 
 echo ""
+# ── Test 5: an explicit fixture ledger preserves the production rate gate ───
+seed_state
+if INTERVIEW_RATE_LIMIT_MAX=1 bash "$RECORDER" --dept billing-finance --decision yes \
+  --source owner-interview --by owner123 --session budget-control --state "$STATE" >"$TMPD/budget.log" 2>&1; then
+  ok "private ledger allows the first request within budget"
+else
+  bad "first rate-control request failed: $(cat "$TMPD/budget.log")"
+fi
+if INTERVIEW_RATE_LIMIT_MAX=1 bash "$RECORDER" --dept billing-finance --decision no --confirm-loss \
+  --source owner-interview --by owner123 --session budget-control --state "$STATE" >"$TMPD/budget.log" 2>&1; then
+  bad "private ledger bypassed the submission cap"
+else
+  rc=$?
+  if [ "$rc" -eq 89 ] && grep -q 'has 1 submissions (max 1)' "$TMPD/budget.log"; then
+    ok "private ledger still refuses a request beyond the configured cap (rc89)"
+  else
+    bad "rate-control request expected rc89, got $rc: $(cat "$TMPD/budget.log")"
+  fi
+fi
+if [ "$(jq -r '.canonicalReconciliation.decisions["billing-finance"].decision' "$STATE")" = yes ]; then
+  ok "rate-limited decline did not mutate the recorded owner decision"
+else
+  bad "rate-limited decline changed the recorded owner decision"
+fi
+if jq -e '.sessions["dept-decision:budget-control"] | length == 1' "$INTERVIEW_RATE_LIMIT_STATE_FILE" >/dev/null; then
+  ok "accepted request is durably recorded in the private ledger"
+else
+  bad "private ledger lost its accepted request or counted a refused request"
+fi
+for invalid_ledger in relative-ledger.json ''; do
+  if INTERVIEW_RATE_LIMIT_STATE_FILE="$invalid_ledger" bash "$RECORDER" --dept billing-finance --decision no --confirm-loss \
+    --source owner-interview --by owner123 --session invalid-ledger --state "$STATE" >"$TMPD/budget.log" 2>&1; then
+    bad "invalid explicit ledger fell back to a default workspace"
+  else
+    rc=$?
+    if [ "$rc" -eq 89 ] && grep -q 'no state file path - REFUSED' "$TMPD/budget.log"; then
+      ok "invalid explicit ledger fails closed without falling back (rc89)"
+    else
+      bad "invalid ledger expected rc89, got $rc: $(cat "$TMPD/budget.log")"
+    fi
+  fi
+done
+
 echo "── test-opt-out-loss-warning: $PASS passed, $FAIL failed ──"
 [ "$FAIL" -eq 0 ] || exit 1

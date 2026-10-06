@@ -81,6 +81,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Invoicing And AR Specialist** | Invoicing & Accounts Receivable (AR) Specialist at the company, the guardian of the company's incoming cash flow. |
 | **Subscription Recurring Revenue Specialist** | Manages subscription billing - sign-ups, upgrades, downgrades, cancellations, dunning for failed payments. |
 | **Tax Liaison Specialist** | Manages relationship with external tax preparers. |
+| **CRM Specialist Phase2** | **** in the department of the company, reporting to the . |
+| **Fp A Forecasting Analyst Phase2** | **** for the department of the company, reporting to the . |
 
 ### What each specialist is for, with an example request
 
@@ -128,6 +130,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Manages relationship with external tax preparers.
 - *Example request:* "Have the Tax Liaison Specialist take this on: Manages relationship with external tax preparers."
+
+**CRM Specialist Phase2**
+
+- *What it is for:* **** in the department of the company, reporting to the .
+- *Example request:* "Have the CRM Specialist Phase2 take this on: **** in the department of the company, reporting to the ."
+
+**Fp A Forecasting Analyst Phase2**
+
+- *What it is for:* **** for the department of the company, reporting to the .
+- *Example request:* "Have the Fp A Forecasting Analyst Phase2 take this on: **** for the department of the company, reporting to the ."
 
 
 ---

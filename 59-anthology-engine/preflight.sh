@@ -18,6 +18,14 @@
 #   (default) RESOLVE -- resolve every tier from the client's OWN openclaw.json and
 #                        write model-map.json into OUT_DIR (fail-closed, never a
 #                        <CLIENT_*> placeholder and never a guessed default).
+#                        OWNER PINS: a top-level "owner_pins" object in an existing
+#                        OUT_DIR/model-map.json ({"HEAVY-WRITER": "<client model id>"})
+#                        survives re-resolution. Each pin is validated like any
+#                        resolved link (Anthropic-deny + provider support + the
+#                        client's OWN inventory), placed at order 1 of that role's
+#                        chain with the auto-resolved links kept as fallbacks, and
+#                        carried forward verbatim. An invalid pin FAILS CLOSED
+#                        (exit 2, AF-AE-UNRESOLVED-MODELMAP); never silently dropped.
 #   --check           -- PRE-GATE: read an existing OUT_DIR/model-map.json and
 #                        fail-closed if it still carries <CLIENT_*> placeholders
 #                        (AF-AE-UNRESOLVED-MODELMAP) or an Anthropic-family id
@@ -72,11 +80,16 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit
 _OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
 [ -d "/data/.openclaw" ] && _OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
 if [ -f "$_OC_SECRETS_ENV" ]; then
+    # Snapshot the currently-exported vars so the secrets file can only ADD
+    # credentials, never overwrite an already-set value (an explicit env value --
+    # e.g. a caller's KIE_API_KEY="" presence probe -- must win over the file).
+    _OC_PREV_EXPORTS="$(export -p)"
     set -a; # shellcheck disable=SC1090
     source "$_OC_SECRETS_ENV" 2>/dev/null || true
     set +a
+    eval "$_OC_PREV_EXPORTS"
 fi
-unset _OC_SECRETS_ENV
+unset _OC_SECRETS_ENV _OC_PREV_EXPORTS
 
 if [ "$MODE" = "gate_credential" ]; then
     CAF_CRED="$SELF_DIR/scripts/caf_credential_gate.py"
@@ -348,19 +361,23 @@ for name, t in tiers_tmpl.items():
         # S7 covers route through cover_render.py / Kie (never model_router).
         # Gate on KIE_API_KEY only: the IMAGE tier is a Kie PORTRAIT route that does
         # NOT consume an inventory image_generation model. Resolve whenever KIE_API_KEY
-        # is set; hold with a WARNING + absent_behavior when it is not.
+        # is set; FAIL CLOSED (exit 2) when it is not -- IMAGE is a REQUIRED tier and
+        # the header contract is fail-closed on an unresolved REQUIRED tier, so the
+        # S7 cover HOLD is surfaced now (at resolve / GATE 1b), never as a silently
+        # degraded map.
         kie_configured = os.environ.get("KIE_API_KEY", "").strip() != ""
         if not kie_configured:
-            # Degrade, never fail: the S7 cover HOLDS (as this comment documents);
-            # the rest of the pipeline is unaffected. IMAGE goes to
-            # unresolved_optional so the box resolves with a warning instead of
-            # exiting 2 on a missing image key.
-            unresolved_optional.append(name)
+            # The absent_behavior WARNING documents what would hold (S7 cover),
+            # then the resolver fails closed BEFORE any map is written.
             print("WARNING: IMAGE tier unresolved -- KIE_API_KEY not set. "
                   "S7 cover generation will HOLD: %s"
                   % t.get("absent_behavior", "cover ships as a prompt doc."),
                   file=sys.stderr)
-            continue
+            print("AF-AE-UNRESOLVED-MODELMAP: REQUIRED tier IMAGE unresolved -- "
+                  "KIE_API_KEY not set. The engine never resolves a REQUIRED tier "
+                  "to a substituted default; set the client's OWN Kie key and re-run.",
+                  file=sys.stderr)
+            sys.exit(2)
         # Derive the native model label from the client's image-generation inventory
         # model if present; otherwise use the Kie provider label (the IMAGE tier is a
         # Kie PORTRAIT route that does not consume an LLM model).
@@ -433,13 +450,215 @@ if unresolved_optional:
           % ", ".join(sorted(unresolved_optional)),
           file=sys.stderr)
 
+# --------------------------------------------------------------------------
+# OWNER PINS. RESOLVE rewrites model-map.json unconditionally and update-skills.sh
+# re-runs preflight on every roll, so a hand-tuned chain was clobbered by the next
+# update. An owner may PIN a role to one of the CLIENT's OWN models by adding a
+# top-level "owner_pins" object to the resolved model-map.json:
+#
+#     "owner_pins": { "HEAVY-WRITER": "ollama/kimi-k2.6:0711-cloud" }
+#
+# Each pin is validated through the SAME checks an auto-resolved link passes
+# (Anthropic-deny, to_link provider support, and membership in the client's OWN
+# configured inventory), then placed at ORDER 1 of that role's chain with the
+# auto-resolved links kept behind it as ordered fallbacks. owner_pins is carried
+# forward verbatim into the written map so the NEXT roll honors it again. A pin
+# that fails any check FAILS CLOSED (exit 2, AF-AE-UNRESOLVED-MODELMAP); a pin is
+# never silently dropped, downgraded, or rewritten. Pins are applied BEFORE the
+# JUDGE-independence invariant, so a pin that collapses JUDGE onto HEAVY-WRITER is
+# caught here at resolve, never mid-run at S9 Gate B.
+# --------------------------------------------------------------------------
+existing_map = {}
+existing_path = os.path.join(OUT_DIR, "model-map.json")
+if os.path.isfile(existing_path):
+    try:
+        existing_map = json.load(open(existing_path, encoding="utf-8"))
+    except Exception as exc:
+        # An unreadable map is NOT fail-closed: the resolver's job is to write a good
+        # one, and a truncated map must still self-heal on the next roll exactly as it
+        # did before owner pins existed. Any pins it carried are unrecoverable, so say
+        # so LOUDLY rather than losing them quietly.
+        print("WARNING: the existing model-map.json at %s is unreadable or invalid JSON (%s). "
+              "It is being re-resolved from scratch. If it carried an owner_pins block, those "
+              "pins are GONE and must be re-added to the rewritten map."
+              % (existing_path, exc), file=sys.stderr)
+        existing_map = {}
+owner_pins = existing_map.get("owner_pins") if isinstance(existing_map, dict) else None
+if owner_pins is not None and not isinstance(owner_pins, dict):
+    print("AF-AE-UNRESOLVED-MODELMAP: owner_pins in %s must be an OBJECT mapping role name to "
+          "model id (got %s). Fix the block and re-run."
+          % (existing_path, type(owner_pins).__name__), file=sys.stderr)
+    sys.exit(2)
+owner_pins = owner_pins or {}
+inventory_by_low = {m.strip().lower(): m for m in inventory}
+pinnable = sorted(n for n in resolved_tiers if n != "IMAGE")
+
+for role, pinned in sorted(owner_pins.items()):
+    if not isinstance(pinned, str) or not pinned.strip():
+        print("AF-AE-UNRESOLVED-MODELMAP: owner pin for role %r is not a model-id string. "
+              "Each owner_pins value must be one of the client's OWN configured model ids."
+              % role, file=sys.stderr)
+        sys.exit(2)
+    pin = pinned.strip()
+    if role == "IMAGE":
+        print("AF-AE-UNRESOLVED-MODELMAP: owner_pins names the IMAGE tier, which is a Kie cover "
+              "route and not an LLM chain, so it carries no pinnable model. Remove "
+              "owner_pins.IMAGE and re-run. Pinnable roles on this box: %s."
+              % ", ".join(pinnable), file=sys.stderr)
+        sys.exit(2)
+    if role not in resolved_tiers:
+        print("AF-AE-UNRESOLVED-MODELMAP: owner_pins names role %r, which this box does not "
+              "resolve. Pinnable roles on this box: %s."
+              % (role, ", ".join(pinnable) or "(none)"), file=sys.stderr)
+        sys.exit(2)
+    if banned.search(pin):
+        # The denied id is deliberately NOT echoed back.
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin for %s names a DENIED model family. "
+              "The engine never runs an Anthropic-family model. Pin one of the client's OWN "
+              "non-Anthropic models and re-run." % role, file=sys.stderr)
+        sys.exit(2)
+    if pin.lower() not in inventory_by_low:
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin %s -> %s is NOT one of the client's OWN "
+              "configured models, so the engine refuses to route to it. Add the model to the "
+              "client's openclaw.json or pin one it already carries. Client models discovered: %s"
+              % (role, pin, ", ".join(inventory) or "(none)"), file=sys.stderr)
+        sys.exit(2)
+    link = to_link(inventory_by_low[pin.lower()])
+    if not link:
+        print("AF-AE-UNRESOLVED-MODELMAP: the owner pin %s -> %s names a provider the anthology "
+              "router does not carry. Pin a model on one of: %s."
+              % (role, pin, ", ".join(sorted(PROVIDER_META))), file=sys.stderr)
+        sys.exit(2)
+
+    chain = resolved_tiers[role].get("chain", [])
+    pin_key = (link["provider"], link["model"])
+    # The template primary's maxTokens belongs to whichever link is primary, so it
+    # moves onto the pin rather than staying on the link the pin displaced.
+    carried_max = None
+    for existing_link in chain:
+        if existing_link.get("maxTokens"):
+            carried_max = existing_link.pop("maxTokens")
+            break
+    primary = dict(link)
+    if carried_max:
+        primary["maxTokens"] = carried_max
+    new_chain = [primary]
+    new_chain.extend(l for l in chain
+                     if (l.get("provider"), l.get("model")) != pin_key)
+    for i, l in enumerate(new_chain):
+        l["order"] = i + 1
+    resolved_tiers[role]["chain"] = new_chain
+    print("  owner pin honored: %s -> %s" % (role, pin))
+
+# --------------------------------------------------------------------------
+# THE JUDGE FALLBACK CHAIN (never refuse on a box with one main model).
+#
+# A judge may not grade its own draft, so the JUDGE tier must not resolve to the
+# same model as HEAVY-WRITER. On a box whose ONLY configured model is its one
+# main model, the old resolution-time invariant below failed closed (exit 2,
+# AF-AE-JUDGE-INDEPENDENCE) and the skill refused to install at all.
+#
+# Instead, when the automatically resolved JUDGE primary collides with the
+# HEAVY-WRITER primary, prepend the ordered JUDGE-fallback providers the client
+# has BOTH configured (a model in their own inventory) AND keyed (the
+# provider's credential label resolves), in this exact order:
+#     1) DeepSeek Flash on Ollama Cloud, 2) DeepSeek Flash on OpenRouter,
+#     3) DeepSeek Direct (deepseek-flash), 4) Agnes.
+# First one that is configured and ANSWERS wins (model_router advances the
+# chain at call time); the previous links stay behind it as ordered fallbacks,
+# and the strict independence invariant below still runs on the FINAL primary
+# (equal-provider-or-model chain heads, and a single-provider box carrying no
+# key for any of the four, remain a fail-closed refusal -- never a silent
+# same-model map).
+# --------------------------------------------------------------------------
+# (provider, id-prefix, model pattern, credential labels) in STRICT order per the
+# standing order. The DeepSeek patterns are the fleet's OWN classifier from
+# shared-utils/select_model.py (imported above as `sm`) -- never a reinvented
+# pattern; the prefix check keeps each rung on its own provider surface.
+_JUDGE_FALLBACK_ORDER = (
+    ("ollama-cloud", ("ollama/", "ollama-cloud/"), sm.DEEPSEEK_FLASH_OLLAMA["pattern"],
+     ("OLLAMA_API_KEY",)),
+    ("openrouter", ("openrouter/",), sm.DEEPSEEK_FLASH_OPENROUTER["pattern"],
+     ("OPENROUTER_API_KEY",)),
+    ("deepseek", ("deepseek/",), re.compile(r"^(?:deepseek/)?deepseek-flash$"),
+     ("DEEPSEEK_API_KEY",)),
+    ("agnes", ("agnes/",), re.compile(r"^(?:agnes/)?agnes-(\d+(?:\.\d+)*)-flash$"),
+     ("AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY")),
+)
+
+
+def _ver_key(_mid):
+    _m = re.search(r"-v?(\d+(?:\.\d+)*)", _mid)
+    return tuple(int(x) for x in _m.group(1).split(".")) if _m else ()
+
+
+def judge_fallback_link(exclude_ids=frozenset()):
+    """First fallback provider (strict order) the client has BOTH configured in
+    their OWN inventory AND keyed, AND whose model is not the writer's own
+    (a judge may never be the draft's model, so a rung that IS the writer is
+    skipped and the walk continues). Returns an order-less chain link, or None.
+    Keys are asked by LABEL only; no value is ever read or printed here."""
+    for _prov, _prefixes, _rx, _labels in _JUDGE_FALLBACK_ORDER:
+        _hits = [m for m in inventory
+                 if m.strip().lower().startswith(_prefixes)
+                 and _rx.match(m.strip().lower())]
+        if not _hits:
+            continue
+        if not any(os.environ.get(l, "").strip() for l in _labels):
+            continue
+        _mid = max(_hits, key=_ver_key) if any(_ver_key(m) for m in _hits) else sorted(_hits)[0]
+        if _prov == "ollama-cloud":
+            _link = {"provider": _prov, "model": _mid.split("/", 1)[1],
+                     "credential_label": _labels[0], "slotting": "baseUrl",
+                     "baseUrl": "https://ollama.com/v1"}
+        else:
+            _link = {"provider": _prov, "model": _mid.split("/", 1)[1] if "/" in _mid else _mid,
+                     "credential_label": _labels[0], "slotting": "apiKey"}
+        if _link_identity(_link) in exclude_ids:
+            continue  # this rung IS (or normalizes to) the writer; keep walking
+        return _link
+    return None
+
+
+# Deduped against ALL providers: a box whose inventory carries the same DeepSeek
+# Flash SKU under two provider prefixes (e.g. ollama/ and ollama-cloud/ -- two
+# distinct STRINGS, one model) must not get two links the judge harness would
+# read as genuinely independent resolutions.
+def _link_identity(link):
+    model = str(link.get("model", "")).lower()
+    if model.endswith(":cloud"):
+        model = model[:-len(":cloud")]
+    return model
+
+
+_hw_chain_all = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
+_jg_chain_all = resolved_tiers.get("JUDGE", {}).get("chain", [])
+_hw_ids = {_link_identity(l) for l in _hw_chain_all}
+# An EXPLICIT owner pin is never silently dropped or rewritten (pin doctrine
+# above), so the judge-fallback pass only auto-repairs the AUTO-resolved case.
+# A pin that collapses JUDGE onto HEAVY-WRITER still fails closed below.
+_jg_pinned = any(str(_r).strip().upper() == "JUDGE" for _r in owner_pins)
+if _hw_chain_all and _jg_chain_all and not _jg_pinned:
+    _hw0, _jg0 = _hw_chain_all[0], _jg_chain_all[0]
+    if _link_identity(_hw0) == _link_identity(_jg0):
+        _fb = judge_fallback_link(exclude_ids=_hw_ids)
+        if _fb is not None:
+            _jg_chain_all[:] = [_fb] + [l for l in _jg_chain_all
+                                        if _link_identity(l) != _link_identity(_fb)]
+            for _i, _l in enumerate(_jg_chain_all):
+                _l["order"] = _i + 1
+            resolved_tiers["JUDGE"]["chain"] = _jg_chain_all
+            print("  JUDGE fallback chain: primary -> %s/%s (first configured + keyed "
+                  "provider in the standing order; previous links kept as ordered fallbacks)"
+                  % (_fb.get("provider"), _fb.get("model")))
+
 # Resolution-time JUDGE independence invariant (AF-AE-JUDGE-INDEPENDENCE). A judge
 # may not grade its own draft, so the JUDGE tier must NOT resolve to the same primary
-# model as HEAVY-WRITER. For a THIN single-model client the REQUIRED-tier fallback
-# (client_best) resolves both tiers to the one configured model -- that passes tier
-# resolution but trips judge_harness.enforce_independence mid-run at S9 Gate B. Make
-# it a fail-closed resolution-time invariant so the box is flagged now (at resolve /
-# GATE 1b), not deep in the run. Compare the resolved PRIMARY provider+model.
+# model as HEAVY-WRITER. After the fallback pass above this only fires when no
+# distinct fallback provider is both configured and keyed on this box (a
+# single-provider box with no key for any of the four) -- still flagged now (at
+# resolve / GATE 1b), never deep in the run. Compare the resolved PRIMARY
+# provider+model.
 hw_chain = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
 jg_chain = resolved_tiers.get("JUDGE", {}).get("chain", [])
 if hw_chain and jg_chain:
@@ -447,9 +666,10 @@ if hw_chain and jg_chain:
     if (hw0.get("provider"), hw0.get("model")) == (jg0.get("provider"), jg0.get("model")):
         print("AF-AE-JUDGE-INDEPENDENCE: the JUDGE tier resolved to the SAME model as "
               "HEAVY-WRITER (%s/%s); a judge cannot grade its own draft and the QC step would "
-              "fail closed mid-run at S9 Gate B. The client has no second distinct (non-Anthropic) "
-              "model for independent QC. Configure at least one additional client model and re-run. "
-              "Client models discovered: %s"
+              "fail closed mid-run at S9 Gate B. No judge fallback provider (DeepSeek Flash on "
+              "Ollama Cloud, DeepSeek Flash on OpenRouter, DeepSeek Direct, Agnes) is both "
+              "configured in the client's OWN inventory and keyed on this box. Configure at least "
+              "one of those for the client and re-run. Client models discovered: %s"
               % (jg0.get("provider"), jg0.get("model"), ", ".join(inventory) or "(none)"),
               file=sys.stderr)
         sys.exit(2)
@@ -464,6 +684,11 @@ resolved = {
     "tiers": resolved_tiers,
     "no_formatter_tier": True,
 }
+
+# Carry owner_pins forward VERBATIM so the next roll honors the same pins (the
+# resolver rewrites this file on every update; an unpreserved pin would be lost).
+if owner_pins:
+    resolved["owner_pins"] = owner_pins
 
 # Carry forward provider_caps from the template so the runtime cap is active.
 template_caps = tmpl.get("provider_caps")

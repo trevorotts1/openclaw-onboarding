@@ -3,9 +3,10 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** Director of Presentations
 **Role type:** specialist
+**Role number:** ROLE-33
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 1.0
-**Last updated:** 2026-06-14
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
 
@@ -158,7 +159,7 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 | **Master SOP — CLIENT-WEBINAR-DECK-SOP.md (v2.3)** | World Engine (SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11), no-fabrication rules, the proven exemplar | `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Read-only authority. The World Engine grounds setting to plausibility; you extend grounding to the client's specific content. The master wins every conflict. |
 | **Grounded-content reference (per deck)** | The client's book, message, offer, and methodology specifics the imagery must depict | Project record / working directory | Assembled from the client's material plus the Deep Research Specialist's findings. Your scoring baseline. |
 | **Deep Research Specialist findings** | Grounded proof, case studies, and real-world knowledge that should flow into the imagery | Proof inventory | Ensure these findings reach the IMAGE prompts, not only the copy. |
-| **Generated slide images plus receipts** | The actual imagery to verify against the grounded-content reference | `_local/jobs/{job-id}/` | Verify from downloaded local files confirmed in receipts; never from an expiring resultUrl. |
+| **Generated slide images plus receipts** | The actual imagery to verify against the grounded-content reference | `working/renders/slide-NN.png` with the receipts in `working/checkpoints/pending_tasks.json` and `working/checkpoints/process_manifest.json` (the `_local/jobs/{job-id}/` job folder when the deck runs as a job) | Verify from the downloaded local PNG that the receipts confirm; never from an expiring KIE result URL (they may expire in about 24 hours, `07-kie-setup/references/kie-common-rules.md` rule 8). |
 | **Rendered final deck (PPTX to PDF to PNG)** | The assembled deck to confirm the imagery tells the client's specific story | QC Specialist final-deck render | Score grounding on the rendered pages, the artifact the audience sees. |
 | **Project Management Platform** | Grounding status, prompt scores, final-deck pass records | Web login via TOOLS.md | Every people-or-scene-bearing deck carries a prompt grounding record and a final-deck grounding pass. |
 
@@ -289,7 +290,7 @@ Before any people-or-scene-bearing deck advances, it must pass these gates:
 - **Signature Presentation Architect** — gives you: the narrative architecture and the SEE-journey pain and promise beats so you know which client moments the imagery must make visible. Format: arc document plus journey map. Frequency: per deck.
 - **Deep Research Specialist (Presentations)** — gives you: grounded proof, case studies, and real-world knowledge to flow into the imagery. Format: proof inventory. Frequency: per deck.
 - **Director of Presentations** — gives you: the deck brief with the grounded-content variable and sign-off to begin. Format: project record. Frequency: per deck.
-- **Generation Operator / Slide Submitter** — gives you: the generated images and receipts to verify against the grounded-content reference. Format: local files plus receipts. Frequency: per batch.
+- **Slide Submitter** — gives you: the generated images and receipts (`working/renders/`, `pending_tasks.json`) to verify against the grounded-content reference. Format: local files plus receipts. Frequency: per render run.
 - **QC Specialist** — gives you: the rendered final-deck PNG pages for the final-deck grounding pass. Format: rendered pages. Frequency: per deck at final QC.
 
 ### You hand work off to:
@@ -372,7 +373,7 @@ The Deep Research Specialist's grounded findings reach the copy, but the imagery
 | 4 | **Fabricating a client moment to ground a prompt.** | An empty grounded-content field. | Mark `[CONTENT PENDING]` and request the content; never invent (SOP 9.1 step 2). |
 | 5 | **Skipping the final-deck grounding pass.** | Assuming prompt scoring is enough. | The final-deck pass is a blocking artifact; re-verify on the rendered deck (SOP 9.4). |
 | 6 | **Trusting DIU-sourced imagery to be grounded.** | The DIU Golden Rule strips client content. | DIU imagery is the highest generic risk; re-verify grounding (Section 17, Edge Case 17.4). |
-| 7 | **Scoring grounding from an expiring resultUrl.** | Convenience. | Verify from local files confirmed in receipts (SOP tools note). |
+| 7 | **Scoring grounding from an expiring resultUrl.** | Convenience. | Verify from the local PNG the receipts confirm (SOP tools note); KIE result URLs may expire in about 24 hours. |
 
 ---
 
@@ -381,7 +382,7 @@ The Deep Research Specialist's grounded findings reach the copy, but the imagery
 **Tier 1 — Always consult first (authoritative for this role):**
 
 - **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** -- SOP-PITCH-02-VALUE-STACK-AND-PROMISES (proof) + SOP-SLIDE-00 AF ruleset + devils-advocate-presentations SOP 9.1 (PRESENTATION-MASTER-DOCTRINE.md §4) (no fabrication), SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11 (World Engine), SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (emotional job of the image). The constitution for grounding setting and proof; you extend it to the client's specific content.
-- **The proven exemplar deck (Lyric's "Enrollment On Autopilot").** Study how each image is welded to the message and carries an emotional job; never copy its content.
+- **The reference exemplar deck.** Study how each image is welded to the message and carries an emotional job; never copy its content.
 - **Governing intelligence GP-16 (imagery carries the show; make the pain visible).** Trevor's belief that strong imagery can carry a faceless webinar and that pain must be felt.
 
 **Tier 2 — Operational references:**
@@ -446,12 +447,6 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 6. The Deep Research Specialist's research format changes such that research-to-image flow must be re-wired.
 7. A Devil's Advocate challenge specific to this role (imagery grounding, pain visibility, generic-but-plausible) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.
-
-When triggered, the Director runs:
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/revise-how-to.py --role image-grounding-steward
-```
-which spawns a sub-agent to update this file with the relevant changes.
 
 ---
 

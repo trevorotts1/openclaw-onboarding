@@ -8,5 +8,5 @@
 - Short — loopable script (last sentence flows back into the first to encourage replays).
 
 ## Contract
-- Uses the Sora video lane output (storyboard 3–7 scenes, EXACTLY 25.0s; `AF-SM-STORYBOARD`).
+- Uses the 25.0s video lane output (storyboard 3–7 scenes, EXACTLY 25.0s; `AF-SM-STORYBOARD`).
 - Result: `{platform:"youtube", success, totalPosts, processedAccounts, errors}`.

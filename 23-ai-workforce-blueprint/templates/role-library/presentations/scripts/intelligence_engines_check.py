@@ -221,6 +221,14 @@ def _has_any(text_lc, tokens):
     return any(t.lower() in text_lc for t in tokens)
 
 
+# FIX 35 — the footer/band cue vocabulary the AF-HOOK placement scan watches.
+# The old ±140-char context window substring-matched these four phrases; the
+# negation-aware scan (scan_negation_aware) now consumes the same vocabulary so
+# a PROHIBITED placement ("no footer band on any slide", "never a footer stamp")
+# no longer counts as a placement. Same four phrases as the legacy scan.
+_FOOTER_CUE_TOKENS = ("footer", "bottom band", "lower band", "bottom strip")
+
+
 # --------------------------------------------------------------------------- #
 # Prompt-side engines (Facial / Lighting / World / Representation hair).
 # Only people/scene slides are gated. A prompt that declares no PEOPLE element
@@ -331,7 +339,28 @@ def _check_hook_image(run_dir, problems):
       AF-HOOK-IMG-MISSING  (DECK)  hook baked on <3 slides (refrain not established)
       AF-HOOK-4            (slide) hook baked >=2x on a single slide (per-slide stamp)
       AF-HOOK              (slide) hook baked into a FOOTER / bottom band (never a stamp)
-    Defers (clean) when no prompts exist yet or no canonical hook is declared."""
+    Defers (clean) when no prompts exist yet or no canonical hook is declared.
+    FIX 35: the footer-cue context scan is negation-aware (see the scan below)."""
+    # FIX 35: negation-aware footer-cue scan imports presentation_job.scanners the
+    # same way build_deck's gates do (normal import first, path-based fallback);
+    # on failure _scanners stays None and the legacy context-window scan runs —
+    # the check keeps its pre-FIX-35 teeth rather than going blind.
+    try:
+        from presentation_job import scanners as _scanners_mod
+    except Exception:
+        _scanners_mod = None
+    if _scanners_mod is None:
+        try:
+            import sys as _sys
+            _pkg = str(Path(__file__).resolve().parent / "presentation_job")
+            _parent = str(Path(__file__).resolve().parent)
+            if _pkg not in _sys.path:
+                _sys.path.insert(0, _pkg)
+            if _parent not in _sys.path:
+                _sys.path.insert(0, _parent)
+            from presentation_job import scanners as _scanners_mod
+        except Exception:
+            _scanners_mod = None
     prompts_dir = run_dir / "prompts"
     if not prompts_dir.is_dir():
         return  # pre-prompt phase — defer
@@ -352,11 +381,22 @@ def _check_hook_image(run_dir, problems):
                 "detail": f"the canonical hook is baked {count}x into the prompt for "
                           f"{slide}. A single slide carries the refrain at most once "
                           "(per-slide over-stamp; the Hook is a suppressor)."})
-        # footer-band / bottom-stamp scan: hook adjacent to a footer cue
+        # footer-band / bottom-stamp scan: hook adjacent to a footer cue.
+        # FIX 35: the footer-cue scan is NEGATION-AWARE. A prompt that PROHIBITS
+        # the placement ("no footer band on any slide", "never a footer stamp")
+        # is not a footer placement; the old ±140-char context window counted
+        # the cue inside a negation and mis-fired AF-HOOK. The hook hit itself
+        # and the cue words sit in the same sentence, so the negation window
+        # (NEGATION_WINDOW_TOKENS after a negator, same sentence) suppresses the
+        # cue exactly when it is a prohibition; a cue outside a negated span
+        # still fires. Falls back to the legacy window scan when the scanners
+        # module cannot be imported (the check keeps its pre-FIX-35 teeth).
         for m in re.finditer(re.escape(h), text_lc):
             ctx = text_lc[max(0, m.start() - 140): m.start() + len(h) + 140]
-            if "footer" in ctx or "bottom band" in ctx or "lower band" in ctx \
-                    or "bottom strip" in ctx:
+            cue_hits = _scanners_mod.scan_negation_aware(ctx, _FOOTER_CUE_TOKENS) \
+                if _scanners_mod is not None else [
+                    (t, ctx.find(t)) for t in _FOOTER_CUE_TOKENS if t in ctx]
+            if cue_hits:
                 problems.append({
                     "code": "AF-HOOK", "slide": slide, "phase": "Phase Prompt-QC",
                     "detail": f"{slide} bakes the canonical hook into a FOOTER / bottom "
@@ -414,6 +454,20 @@ def _first_index_with(blocks, predicate):
     return None
 
 
+def _pitch_applicability_for_copy(run_dir):
+    """`(applicable, refusal)` from the ONE authority, or `(True, None)` when it
+    cannot be consulted.
+
+    FAIL DIRECTION, deliberately: a degraded import keeps TODAY'S behaviour
+    (demand the beats) rather than silently switching the engines off. Only an
+    EXPLICIT pitchless verdict -- `applicable is False` with no refusal -- defers."""
+    try:
+        import pitch_engines_check as _pec
+        return _pec.pitch_applicability(run_dir)
+    except Exception:  # noqa: BLE001
+        return True, None
+
+
 def check_copy(run_dir, problems):
     copy_md = run_dir / "copy" / "slides_copy.md"
     if not copy_md.exists():
@@ -421,6 +475,35 @@ def check_copy(run_dir, problems):
     md = copy_md.read_text()
     md_lc = md.lower()
     blocks = _parse_slide_blocks(md)
+
+    # PD-TEST-125 (CORRECTED). The beats this function demands are PITCH content.
+    # The P4-COPY contract's FIRST rule states that when `intake.json`'s
+    # `pitch_included` is false for a non-signature deck, "commercial ARC beats
+    # (VILLAIN, FELT_STAKES, NAMED_METHOD, EXPECTATION and PRICE) are not
+    # applicable and must not be fabricated". Demanding them here therefore
+    # CONTRADICTS the contract and leaves an honest author no answer at all: plant
+    # them and trip AF-PITCH-LEAK, or omit them and trip AF-NO-VILLAIN.
+    #
+    # Measured live on pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4: a
+    # pitchless webinar deck (`pitch_included: false`, `deck_type: webinar`) was
+    # refused on AF-NO-VILLAIN while `build_deck._chk_pitch_leak` ALREADY reported
+    # AF-PITCH-LEAK on the SAME copy ("slides_copy.md: 'cost of inaction'").
+    #
+    # CORRECTION (independent review of PR #1153): an earlier draft of this comment
+    # claimed 'no text satisfies both'. That is FALSE -- the reviewer wrote a
+    # pitchless copy that satisfies both ('The real enemy is the broken system...'
+    # plus a cost stated without a forbidden token). The real conflict is
+    # CONTRACT-versus-ENGINE, not checker-versus-checker: the contract told the
+    # author to write `<!-- ARC: COST_OF_INACTION -->` (point 9) while AF-PITCH-LEAK
+    # forbids that token -- so the two checkers CAN agree, but only on copy the
+    # contract forbade. That is what the gate in `_unit_payload_enrichment`'s
+    # contract points 8/9/12 fixes, and it is why the deferral below is scoped to
+    # the beats the contract itself exempts.
+    #
+    # This defers through the SAME `pitch_engines_check.pitch_applicability` that
+    # the pitch checker already honours, so the two cannot drift.
+    _pitch_on, _pitch_refusal = _pitch_applicability_for_copy(run_dir)
+    commercial_beats_apply = not (_pitch_on is False and _pitch_refusal is None)
 
     # --- EMOTIONAL — AF-NO-FELT-STAKES (DECK) ---
     # A FELT_STAKES beat: a concrete number paired with a personal-loss frame,
@@ -437,14 +520,14 @@ def check_copy(run_dir, problems):
     def is_ladder(body):
         return any(re.search(rf"\b{t}\b", body, re.IGNORECASE) for t in LADDER_BEAT_TAGS)
     ladder_idx = _first_index_with(blocks, is_ladder)
-    if felt_idx is None:
+    if felt_idx is None and commercial_beats_apply:
         problems.append({
             "code": "AF-NO-FELT-STAKES", "slide": "DECK", "phase": "Phase 1Q",
             "detail": "no FELT_STAKES beat anywhere: the deck never quantifies the cost "
                       "of inaction in concrete human terms (a number paired with a "
                       "personal-loss frame, the 'mornings left' device) before the "
                       "offer. Add one felt-stakes slide (SOP-ENGINE-00 Emotional)."})
-    elif ladder_idx is not None and felt_idx > ladder_idx:
+    elif commercial_beats_apply and ladder_idx is not None and felt_idx > ladder_idx:
         problems.append({
             "code": "AF-NO-FELT-STAKES", "slide": "DECK", "phase": "Phase 1Q",
             "detail": f"FELT_STAKES beat appears (block #{felt_idx+1}) AFTER the first "
@@ -458,14 +541,14 @@ def check_copy(run_dir, problems):
         return _has_any(body.lower(), HERO_TOKENS)
     v_idx = _first_index_with(blocks, has_villain)
     h_idx = _first_index_with(blocks, has_hero)
-    if v_idx is None:
+    if v_idx is None and commercial_beats_apply:
         problems.append({
             "code": "AF-NO-VILLAIN", "slide": "DECK", "phase": "Phase 1Q",
             "detail": "no VILLAIN/antagonist beat anywhere in the arc. 'No one cares "
                       "about the hero until they meet the villain' — name the antagonist "
                       "(the broken system / old way / the thing stopping them) before "
                       "the hero/solution beat (SOP-ENGINE-00 Story; SOP-STORY-01)."})
-    elif h_idx is not None and v_idx > h_idx:
+    elif commercial_beats_apply and h_idx is not None and v_idx > h_idx:
         problems.append({
             "code": "AF-NO-VILLAIN", "slide": "DECK", "phase": "Phase 1Q",
             "detail": f"VILLAIN beat (block #{v_idx+1}) appears AFTER the HERO/solution "
@@ -481,7 +564,16 @@ def check_copy(run_dir, problems):
     # --- NARRATIVE HARMONY — the arc holds end-to-end (hook->villain->stakes->
     #     promise->price->recap). This is the orchestration layer above the
     #     individual writing engines; it fires at COPY-QC, before any prompt. ---
-    check_narrative_harmony(run_dir, problems)
+    # D1 (independent review of PR #1153): the harmony walk is NOT wholly
+    # commercial. The contract's FIRST rule exempts only VILLAIN / FELT_STAKES /
+    # NAMED_METHOD / EXPECTATION / PRICE -- the HOOK -> PROMISE -> RECAP ordering
+    # is still REQUIRED of a pitchless deck (contract point 2 names
+    # AF-NARRATIVE-HARMONY). Deferring the whole walk short-circuited a
+    # contract-required check, and it bought nothing: harmony only ever orders
+    # beats that are PRESENT, so it exerts no fabrication pressure at all.
+    # So call it ALWAYS and let it drop just the commercial beats.
+    check_narrative_harmony(run_dir, problems,
+                            commercial_beats_apply=commercial_beats_apply)
     return
 
 
@@ -549,7 +641,13 @@ def _check_recap_copy(blocks, problems):
                   "Recap/Re-Pitch)."})
 
 
-def check_narrative_harmony(run_dir, problems):
+#: The beats the P4-COPY contract exempts on a pitchless deck. Every other beat in
+#: the walk is still required, so this list -- not the whole walk -- is what the
+#: deferral may drop.
+_COMMERCIAL_HARMONY_BEATS = frozenset({"VILLAIN", "FELT_STAKES", "PRICE"})
+
+
+def check_narrative_harmony(run_dir, problems, commercial_beats_apply=True):
     """NARRATIVE HARMONY — the writing arc holds end-to-end, in order:
         HOOK -> VILLAIN -> FELT_STAKES -> PROMISE -> PRICE -> RECAP.
 
@@ -604,6 +702,8 @@ def check_narrative_harmony(run_dir, problems):
         ("PRICE", first_idx(_has_price_beat)),
         ("RECAP", recap_after_price()),
     ]
+    if not commercial_beats_apply:
+        beats = [(n, i) for n, i in beats if n not in _COMMERCIAL_HARMONY_BEATS]
     present = [(name, idx) for name, idx in beats if idx is not None]
 
     # walk adjacent present beats; flag any pair whose order is inverted

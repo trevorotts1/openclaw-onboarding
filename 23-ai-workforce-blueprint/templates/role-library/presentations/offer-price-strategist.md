@@ -137,7 +137,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.1 -- Spread Value-Ladder Choreography (ANCHOR -> DROP1/2/3 -> FINAL)
 
-**When to run:** Concurrently with Phase 1 (copy writing). Must complete before the Slide Copywriter reaches the Price Ladder section.
+**When to run:** Concurrently with Phase 1 (copy writing) as a fanout dispatch -- this SOP is one of the parallel agents the Director fans out at order 4, and its fanout slot is governed by the governor: `max_concurrent_agents` / `writer_agents_recommended` in `working/checkpoints/capacity_plan.json` (see capacity-reliability-engineer.md Step 0.5). Must complete before the Slide Copywriter reaches the Price Ladder section.
 
 **Inputs:**
 - intake.json (FINAL_PRICE, payment_plan if any, stated_anchor if client provided one)
@@ -147,7 +147,6 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. Read FINAL_PRICE from intake.json. If no FINAL_PRICE is present, stop immediately and notify the Director. Do NOT invent a price.
 2. Set the ANCHOR. The ANCHOR is a VALUE anchor, not a price, and it is NOT a drop. It is a value plant placed mid-teach inside Secret #1 or #2 (around the 32% mark of the deck), establishing what a system like this is WORTH, and it carries the explicit memory hook in copy and presenter note: "Remember this number. Hold onto it. Keep watching." Rule: ANCHOR_VALUE must be >= 3x the FINAL real buy price and must sit above the highest value-ladder rung. If the client has stated an anchor in intake.json, use it IF it satisfies this rule. If the stated anchor is < 3x FINAL_PRICE, flag the discrepancy to the Director and propose a compliant anchor. Record the source: `anchor_source: "client_stated"` or `anchor_source: "strategist_proposed"`.
 3. Build the SPREAD VALUE LADDER. The proven structure (the proven 75-slide reference run) walks a VALUE ladder down -- $[ANCHOR] -> $[DROP1] -> $[DROP2] -> $[DROP3] -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
-3. Build the SPREAD VALUE LADDER. The proven structure walks a VALUE ladder down -- from ANCHOR_VALUE through DROP1/DROP2/DROP3 rungs -- spread across the deck, then SHATTERS it with the real price reveal. The rungs sit at approximately these percentages of the total deck slide count:
    - ANCHOR: ~32% mark (value plant with memory hook, mid-teach, NOT a drop)
    - DROP1: ~47% mark ("because you showed up live")
    - DROP2: ~68% mark ("because you believed")
@@ -203,7 +202,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.2 -- Offer Stack and Value-Anchor Construction
 
-**When to run:** Concurrently with SOP 9.1 -- after ANCHOR_PRICE is set, immediately build the offer stack narrative.
+**When to run:** Concurrently with SOP 9.1 (same order-4 fanout dispatch, governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`) -- after ANCHOR_PRICE is set, immediately build the offer stack narrative.
 
 **Inputs:**
 - intake.json (offer_components: list of what is included in the offer)
@@ -311,7 +310,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.4 -- PRICE_MODE straight (one-reveal sequence)
 
-**When to run:** Concurrently with Phase 1, when intake.json has `PRICE_MODE: "straight"` (one price, stated once). Replaces the SPREAD VALUE LADDER of SOP 9.1; the cross-slide consistency gate (SOP 9.3) and the no-strip rule (SOP 9.2) still apply.
+**When to run:** Concurrently with Phase 1, when intake.json has `PRICE_MODE: "straight"` (one price, stated once) -- same fanout dispatch as SOP 9.1: one of the parallel agents fanned out at order 4, subject to the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`. Replaces the SPREAD VALUE LADDER of SOP 9.1; the cross-slide consistency gate (SOP 9.3) and the no-strip rule (SOP 9.2) still apply.
 
 **Inputs:**
 - intake.json (FINAL_PRICE, offer_components, VIP_TIER if any, payment_plan if any)
@@ -342,7 +341,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.5 -- VIP Tier (two-option close)
 
-**When to run:** Concurrently with SOP 9.1 or 9.4, whenever intake.json has `VIP_TIER: true`.
+**When to run:** Concurrently with SOP 9.1 or 9.4 (same order-4 fanout dispatch, governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`), whenever intake.json has `VIP_TIER: true`.
 
 **Inputs:**
 - intake.json (VIP_TIER, VIP_PRICE, VIP_SPOTS, VIP contents)
@@ -378,7 +377,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.6 -- Priceless Pitch / Cost-vs-Value
 
-**When to run:** Concurrently with Phase 1, for EVERY deck. The cost-vs-value answer is mandatory in every offer section; the priceless elevation is used specifically when the offer outcome is non-monetary.
+**When to run:** Concurrently with Phase 1, for EVERY deck -- one of the parallel agents in the same order-4 fanout dispatch, its slot governed by the governor (`max_concurrent_agents` in `working/checkpoints/capacity_plan.json`). The cost-vs-value answer is mandatory in every offer section; the priceless elevation is used specifically when the offer outcome is non-monetary.
 
 **Inputs:**
 - intake.json (offer outcome, whether the offer produces measurable money, LTV inputs if monetary)
@@ -412,7 +411,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.7 -- SP-EXPERT: Expertise Over Charisma and the Ascension Ladder
 
-**When to run:** Concurrently with SOP 9.1 or 9.4, during the offer-design phase, before price_ladder.json is finalized.
+**When to run:** Concurrently with SOP 9.1 or 9.4 (same order-4 fanout dispatch, governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`), during the offer-design phase, before price_ladder.json is finalized.
 
 **Governing principle (SP-EXPERT):** The offer is won by demonstrated capability, not by charm or enthusiasm. People buy expertise. The entry product (a low-price offer, a free resource, a challenge, a mini-course, or any first transaction) is the buy-in signal: the first rung of the ASCENSION LADDER, the moment the audience self-identifies as a buyer and signals readiness for deeper engagement. The pitch works because the presenter proved they know what they are doing -- through a framework, a result, a specific mechanism, a case study -- before any price was named.
 
@@ -457,7 +456,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.8 -- The Guarantee (required component 6) and the Scarcity Factor (required component 7)
 
-**When to run:** Concurrently with SOP 9.1 or 9.4, before price_ladder.json is finalized. Both are required components of every deck (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4), rule 21).
+**When to run:** Concurrently with SOP 9.1 or 9.4 (same order-4 fanout dispatch, governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`), before price_ladder.json is finalized. Both are required components of every deck (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4), rule 21).
 
 **Inputs:**
 - intake.json (any client-stated guarantee, refund policy, results promise; `VIP_SPOTS`, real cohort dates, real enrollment caps, real expiry windows)
@@ -497,7 +496,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.9 -- Re-Pitch Choreography (4 to 7 slides AFTER the FINAL price)
 
-**When to run:** Concurrently with SOP 9.1 or 9.4, after the FINAL price reveal is placed. This is the genuinely MISSING structural beat (FIX-7): a deck that reveals the FINAL price and then simply ends is incomplete. The re-pitch sits AFTER the FINAL price and BEFORE the hook-reprise close (master arc: after section I scarcity, before section J hook callback).
+**When to run:** Concurrently with SOP 9.1 or 9.4 (same order-4 fanout dispatch, governed by the governor's `max_concurrent_agents` in `working/checkpoints/capacity_plan.json`), after the FINAL price reveal is placed. This is the genuinely MISSING structural beat (FIX-7): a deck that reveals the FINAL price and then simply ends is incomplete. The re-pitch sits AFTER the FINAL price and BEFORE the hook-reprise close (master arc: after section I scarcity, before section J hook callback).
 
 **Inputs:**
 - price_ladder.json (FINAL price, anchor value, callback, drops with earned reasons)
@@ -680,7 +679,7 @@ numeric_audit.txt shows: [N] prices/values found across [N] slides. All verified
 | 2 | Setting drops too close together (e.g., $[FINAL_PRICE] to a figure just below it) | Each drop should be perceptually meaningful -- at least 10% reduction. |
 | 3 | Not running Gate 5 after Copywriter makes copy revisions | Gate 5 must re-run after ANY copy change that touches a numeric value. |
 | 4 | Mixing payment plan and full price on the same slide without clarity | Payment plan slide must clearly label "OR 3 payments of $X" -- never imply the price is the installment. |
-| 5 | Using round numbers for all values (looks fake) | Mix precise and round values: e.g. a $[ANCHOR] anchor and a $[FINAL_PRICE] final rather than flat $10,000 and $3,000. |
+| 5 | Shipping off-ladder/non-round rung numbers (e.g. a $1,200 rung where $1,000 is doctrinal) without a flag | Use round doctrinal numbers for the five-rung ladder and flag any off-ladder rung to the Director (SOP 9.4 step 3; AF-DEN). Never dress a non-round rung up as "more realistic" to dodge the flag. |
 | 6 | Skipping SOP 9.7 because there is no explicit ENTRY_PRODUCT in intake.json | SOP 9.7 runs on every deck to verify expertise appears before the price; the ascension check is not optional even on single-offer decks. |
 | 7 | Treating the entry product as a separate pitch (pitching it before or after the core offer instead of encoding it as rung 1 of the ascension ladder) | Encode entry product in price_ladder.json.sp_expert before handing to the Copywriter; the Copywriter uses this to frame it as the doorway, not a separate sale. |
 

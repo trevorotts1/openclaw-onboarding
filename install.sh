@@ -26,73 +26,37 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v22.0.88"
+ONBOARDING_VERSION="v25.3.21"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
 # ----------------------------------------------------------
 # Determine platform: env override takes priority, then auto-detect.
-_DETECT_PLATFORM="${OPENCLAW_PLATFORM:-}"
-if [ -z "$_DETECT_PLATFORM" ]; then
-    if [ -d "/data/.openclaw" ]; then
-        _DETECT_PLATFORM="vps"
-    else
-        _DETECT_PLATFORM="mac"
-    fi
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+_PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
+_PLATFORM_COMMON_TEMP=""
+if [ ! -f "$_PLATFORM_COMMON" ]; then
+    _PLATFORM_COMMON_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/common.sh" -o "$_PLATFORM_COMMON_TEMP" || { rm -f "$_PLATFORM_COMMON_TEMP"; exit 1; }
+    _PLATFORM_COMMON="$_PLATFORM_COMMON_TEMP"
+fi
+source "$_PLATFORM_COMMON" || exit 1
+[ -z "$_PLATFORM_COMMON_TEMP" ] || rm -f "$_PLATFORM_COMMON_TEMP"
+_DETECT_PLATFORM="$(oc_detect_platform)" || exit 1
+if [ -n "${OPENCLAW_PLATFORM:-}" ] && [ "$OPENCLAW_PLATFORM" != "$_DETECT_PLATFORM" ]; then
+    echo "OPENCLAW_PLATFORM conflicts with the actual operating system." >&2; exit 1
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 
-# Source platform bootstrap (sets OC_CONFIG, OC_JSON, OC_PLATFORM, etc.
-# and runs platform-specific pre-flight).
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
-if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
-    # shellcheck source=/dev/null
-    source "$_PLATFORM_BOOTSTRAP"
-else
-    # Fallback when running via curl (no local repo clone yet).
-    # Inline the minimal path setup required before the clone happens.
-    if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
-        OC_PLATFORM="vps"
-        OC_CONFIG="/data/.openclaw"
-        OC_JSON="/data/.openclaw/openclaw.json"
-        OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
-        OC_WORKSPACE_DEFAULT="/data/.openclaw/workspace"
-        OC_CREDENTIALS="/data/.openclaw/credentials"
-        OC_AGENTS="/data/.openclaw/agents"
-        OC_SKILLS_DIR="/data/.openclaw/skills"
-        OC_LOGS="/data/.openclaw/logs"
-        OC_BACKUPS="/data/.openclaw/backups"
-        OC_INSTALL_LOG_DIR="/data/.openclaw/logs/install"
-        OC_AUTH_PROFILES="/data/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_DOWNLOADS="/data/Downloads"
-        # v13.8.3: set LOG_FILE on the VPS curl-fallback path too. Without it,
-        # `note "Log file: $LOG_FILE"` (and every `>> "$LOG_FILE"`) aborts under
-        # `set -euo pipefail` with `LOG_FILE: unbound variable`. Mirrors the mac
-        # fallback branch below and platform/vps/bootstrap.sh §7.
-        mkdir -p "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    else
-        OC_PLATFORM="mac"
-        OC_CONFIG="$HOME/.openclaw"
-        OC_JSON="$HOME/.openclaw/openclaw.json"
-        OC_CREDENTIALS="$HOME/.openclaw/credentials"
-        OC_AGENTS="$HOME/.openclaw/agents"
-        OC_SKILLS_DIR="$HOME/.openclaw/skills"
-        OC_LOGS="$HOME/.openclaw/logs"
-        OC_AUTH_PROFILES="$HOME/.openclaw/agents/main/agent/auth-profiles.json"
-        OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-        OC_DOWNLOADS="$HOME/Downloads"
-        OC_BACKUPS="$HOME/Downloads/openclaw-backups"
-        OC_INSTALL_LOG_DIR="$HOME/Downloads/openclaw-backups/install-logs"
-        OC_LEGACY_CLAWD="$HOME/clawd"
-        OC_WORKSPACE_DEFAULT="$HOME/.openclaw/workspace"
-        mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
-        LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
-        exec 1> >(tee -a "$LOG_FILE") 2>&1
-    fi
+_PLATFORM_BOOTSTRAP_TEMP=""
+if [ ! -f "$_PLATFORM_BOOTSTRAP" ]; then
+    _PLATFORM_BOOTSTRAP_TEMP="$(mktemp)" || exit 1
+    curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh" -o "$_PLATFORM_BOOTSTRAP_TEMP" || { rm -f "$_PLATFORM_BOOTSTRAP_TEMP"; exit 1; }
+    _PLATFORM_BOOTSTRAP="$_PLATFORM_BOOTSTRAP_TEMP"
 fi
+source "$_PLATFORM_BOOTSTRAP" || exit 1
+[ -z "$_PLATFORM_BOOTSTRAP_TEMP" ] || rm -f "$_PLATFORM_BOOTSTRAP_TEMP"
 
 set -euo pipefail
 
@@ -235,6 +199,31 @@ PYEOF
 # outright over a missing helper file. When the shared lib IS found, its real
 # oc_cron_tombstoned (durable file-marker check) is used instead.
 command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1; }
+
+# ----------------------------------------------------------
+# Presentations SCHEDULER installers (F12) — shared with update-skills.sh.
+# ----------------------------------------------------------
+# SINGLE canonical definition of install_intake_poll_schedule() (FIX 61, moved
+# here verbatim from Step 6.6b below) and install_watchdog_schedule() (new), so
+# the ROLL path installs and repairs the SAME schedules the install path does,
+# with no copy-paste drift. Sourced AFTER the cron helpers above on purpose:
+# the lib guards its own fallbacks with `command -v`, so this file's richer
+# definitions win. Best-effort source, fail-closed fallbacks below.
+_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-presentation-schedules.sh"
+if [ -f "$_lib_pres_sched_self" ]; then
+  # shellcheck source=/dev/null
+  source "$_lib_pres_sched_self"
+  export OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED=1
+fi
+# FAIL CLOSED, never `{ :; }`. A no-op returning 0 would let Step 6.6b's rc
+# latch print success on a box where nothing was ever scheduled — the exact
+# silent-success class this repo has been burned by (see the v20.0.91 notes on
+# oc_state_seed and install_onboarding_resume_cron above). Returning 1 makes
+# Step 6.6b's `error`+exit fire and say why.
+command -v install_intake_poll_schedule >/dev/null 2>&1 || install_intake_poll_schedule() { return 1; }
+command -v install_watchdog_schedule    >/dev/null 2>&1 || install_watchdog_schedule()    { return 1; }
+command -v _fix61_resolve_scripts_src   >/dev/null 2>&1 || _fix61_resolve_scripts_src()   { return 1; }
+command -v _fix61_selected_workspace    >/dev/null 2>&1 || _fix61_selected_workspace()    { return 1; }
 
 # ----------------------------------------------------------
 # Path variables are already set by the platform bootstrap block above.
@@ -438,7 +427,7 @@ OC_LOGS = os.path.join(OC_CONFIG, "logs")
 # owner-chat target — doing so routes every cron delivery to the operator
 # instead of the client.  Confirmed live misrouting on multiple client boxes
 # (all crons wired to the operator ID instead of the client).
-# The operator's Mac env may export TELEGRAM_CHAT_ID=5252140759 (or equivalent)
+# The operator's Mac env may export TELEGRAM_CHAT_ID=<operator chat id> (or equivalent)
 # and the SSH session that runs install.sh inherits it, causing S20 to resolve
 # the operator ID instead of the client owner ID.
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
@@ -855,6 +844,8 @@ This is a Mac mini install (local macOS). All paths under ~/.openclaw/. When INS
 
 Default to Mac when ambiguous. Do NOT ask __OWNER_NAME__ ("Mac or VPS?") — always Mac.
 
+PHASE 0 — Before NEW onboarding, ask the client/owner name and company name; save with scripts/onboarding-identity.py. Reuse saved identity on resumes. Never guess a company from an owner name.
+
 PHASE 1 — Read the docs first (do not skip):
 1. Read ~/.openclaw/Start Here.md end to end.
 2. Read ~/.openclaw/INSTALL-CONTRACT.md end to end. Non-negotiable: Rule 0 (wave cap = 10), Rule 1 (read every .md first), Rule 16 (read INSTALL-GOTCHAS.md).
@@ -863,10 +854,10 @@ PHASE 1 — Read the docs first (do not skip):
 5. Set up workspace files (USER.md, AGENTS.md, TOOLS.md at workspace root, symlinked into per-role workspaces).
 
 PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
-Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 5 — about to set up X skills, ~Y minutes.
+Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/68-... (63 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/74-... (69 active + 5 archived).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -1648,17 +1639,18 @@ looks_like_real_key() {
         # actually a deliberate test string from a tutorial).
     fi
 
-    # ── Stage 2: obvious-placeholder substring rejection ────────────
+    # ── Stage 2: obvious-placeholder WHOLE-TOKEN rejection ──────────
+    # A placeholder word only counts as a whole token: at the start of the value or
+    # after a non-alphanumeric delimiter, and not followed by a letter or digit. It never matches inside a random
+    # alphanumeric run, so real keys that happen to contain demo, todo, sample and so on are not falsely rejected.
+    # Same token list and boundary rule as shared-utils/secret_helper.py
+    # _PLACEHOLDER_TOKENS (parity test: tests/unit/looks-like-real-key-parity.test.sh).
+    local _ph_re='(^|[^a-z0-9])(placeholder|insert_your|insert-your|your_client|your_token|replace_me|replace-me|paste-your|paste_your|paste-real|paste_real|enter_your|enter-your|token_here|replaceme|change_me|change-me|pastereal|your_key|your-key|your_api|your-api|changeme|test_key|test-key|fake_key|fake-key|set_your|set-your|none_yet|key_here|yourkey|example|fill_in|fill-in|not_set|not-set|missing|sample|fillin|no_key|dummy|nokey|unset|here|demo|todo|tbd)([^a-z0-9]|$)|x{5,}'
     case "$lo" in
-        *xxxxx*|*your_key*|*your-key*|*your_api*|*your-api*|*yourkey*|*your_token*) return 1 ;;
-        *replace_me*|*replace-me*|*replaceme*|*changeme*|*change_me*|*change-me*) return 1 ;;
-        *_here*|*-here*|*placeholder*|*example*|*sample*|*dummy*|*demo*) return 1 ;;
-        *test_key*|*fake_key*|*sk-test*|*sk-xxx*|*sk-example*|*sk-replace*) return 1 ;;
-        *todo*|*tbd*|*fill_in*|*fillin*|*paste-your*|*paste_your*) return 1 ;;
-        *insert_your*|*enter_your*|*set_your*|*no_key*|*none_yet*) return 1 ;;
-        # The exact "EXAMPLE" suffix gitleaks documentation uses (AKIAIOSFODNN7EXAMPLE)
-        *EXAMPLE|*example) return 1 ;;
+        sk-test*|sk-xxx*|sk-example*|sk-replace*) return 1 ;;
+        *example) return 1 ;;
     esac
+    if [[ "$lo" =~ $_ph_re ]]; then return 1; fi
     case "$val" in
         \<*\>|\[*\]|\{\{*\}\}) return 1 ;;
     esac
@@ -1890,15 +1882,10 @@ PROVIDER_REGEX = {
     "GOHIGHLEVEL_LOCATION_ID":   r"^[A-Za-z0-9]{20,28}$",
 }
 
-PLACEHOLDER_SUBSTRINGS = (
-    'xxxxx', 'your_key', 'your-key', 'your_api', 'your-api', 'yourkey',
-    'your_token', 'replace_me', 'replace-me', 'replaceme', 'changeme',
-    'change_me', 'change-me', '_here', '-here', 'placeholder',
-    'sample', 'dummy', 'demo', 'test_key', 'fake_key', 'sk-test', 'sk-xxx',
-    'sk-example', 'sk-replace', 'todo', 'tbd', 'fill_in', 'fillin',
-    'paste-your', 'paste_your', 'insert_your', 'enter_your',
-    'set_your', 'no_key', 'none_yet',
-)
+# Whole-token placeholder rule, same as looks_like_real_key and secret_helper.py:
+# a placeholder word counts only at the start or after a non-alphanumeric delimiter,
+# and not before a letter. Never inside a random alphanumeric run.
+PLACEHOLDER_TOKEN_RE = re.compile(r'(?<![a-z0-9])(?:placeholder|insert_your|insert-your|your_client|your_token|replace_me|replace-me|paste-your|paste_your|paste-real|paste_real|enter_your|enter-your|token_here|replaceme|change_me|change-me|pastereal|your_key|your-key|your_api|your-api|changeme|test_key|test-key|fake_key|fake-key|set_your|set-your|none_yet|key_here|yourkey|example|fill_in|fill-in|not_set|not-set|missing|sample|fillin|no_key|dummy|nokey|unset|here|demo|todo|tbd)(?![a-z0-9])|x{5,}')
 
 def shannon_entropy(s):
     if not s: return 0.0
@@ -1925,8 +1912,8 @@ def looks_like_real_key(val, canonical=None):
 
     # Stage 2: placeholder substring rejection (case-insensitive)
     lo = val.lower()
-    for sub in PLACEHOLDER_SUBSTRINGS:
-        if sub in lo: return False
+    if re.match(r'sk-(?:test|xxx|example|replace)', lo) or PLACEHOLDER_TOKEN_RE.search(lo): return False
+    if lo.endswith('example'): return False
     if val.startswith('<') and val.endswith('>'): return False
     if val.startswith('[') and val.endswith(']'): return False
     if val.startswith('{{') and val.endswith('}}'): return False
@@ -2307,34 +2294,10 @@ has_cred() {
 # Directory Discovery
 # ----------------------------------------------------------
 discover_skills_dir() {
-    # Mac canonical skills location is ~/Downloads/openclaw-master-files (where
-    # this installer extracts to). Fallbacks include the onboarding stage dir,
-    # legacy locations, and the ~/openclaw-onboarding clone if present.
-    local CANDIDATES="$OC_DOWNLOADS/openclaw-master-files"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/skills"
-    CANDIDATES="$CANDIDATES|$OC_CONFIG/onboarding"
-    CANDIDATES="$CANDIDATES|$HOME/openclaw-onboarding"
-
-    local dirs="$CANDIDATES"
-    while [ -n "$dirs" ]; do
-        local DIR
-        if echo "$dirs" | grep -q "|"; then
-            DIR=$(echo "$dirs" | cut -d'|' -f1)
-            dirs=$(echo "$dirs" | cut -d'|' -f2-)
-        else
-            DIR="$dirs"; dirs=""
-        fi
-        if [ -d "$DIR" ]; then
-            local SKILL_COUNT
-            SKILL_COUNT=$(find "$DIR" -maxdepth 1 -type d -name "[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
-            if [ "$SKILL_COUNT" -gt "0" ]; then
-                echo "$DIR"
-                return
-            fi
-        fi
-    done
-    
-    echo "$OC_DOWNLOADS/openclaw-master-files"
+  # The selected client root is authoritative on Mac, native Linux and Docker.
+  # Downloads/legacy copies are source archives, never an alternate live client.
+  local active="${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}"
+  printf '%s\n' "$active"
 }
 
 discover_skills() {
@@ -2407,6 +2370,162 @@ discover_skills() {
 # by content hash (read back + compare) before being counted as a success.
 # File mode/ownership are preserved across the rewrite.
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# v25.1.74 — reclaim_unify_backups (end-of-roll global .bak-unify reclaim)
+#
+# WHY THIS EXISTS ON TOP OF _lsc_prune_baks. The per-target pruner added in
+# v25.1.72/73 only ever reaches a path the unify scan ENUMERATED. That scan
+# builds its list from $OC_ROOT/workspaces, <workspace>/agents and
+# <workspace>/departments, keeping only dirs that still carry a live
+# AGENTS.md / IDENTITY.md / SOUL.md. Three populations are therefore never
+# reclaimed — all three measured on client boxes 2026-09-22:
+#
+#   1. ORPHANS — a role folder whose live core files were deleted or moved
+#      still holds its .bak-unify backlog but fails the scan filter, so
+#      nothing ever reaches it. Hidden archive dot-dirs (for example a
+#      .billing-LEGACY-DUPLICATE-ARCHIVED folder) are the same shape.
+#   2. OUT OF TREE — <workspace>/zero-human-company/<co>/departments/... and
+#      ~/clawd/zero-human-company/<co>/departments/... sit under neither
+#      agents/ nor departments/, so the scan never descends into them.
+#   3. AN EARLY EXIT — a roll whose unify step refuses (workspace unresolved),
+#      is skipped, or filters a workspace out bounds nothing at all.
+#
+# Fleet total when this was written: 71,805 *.bak-unify-* files / ~8.4 GB
+# across 6 client boxes, oldest 2026-06-07, still growing.
+#
+# WHAT IT DOES. ONE pass at the end of every roll over the resolved OpenClaw
+# root(s), the resolved workspace and ~/clawd: group every backup by its
+# target prefix and keep only the newest $UNIFY_BAK_KEEP (default 3 — the same
+# single knob _lsc_prune_baks and the python writer already honour). Reports
+# the count reclaimed. ALWAYS returns 0: a reclaim must never be the thing
+# that fails a roll. The per-target prune is unchanged and still runs first.
+#
+# SAFETY. A file is deletable ONLY when its basename matches
+#     <target>.bak-unify-<8 digits>-<6 digits>[-<n>]
+# exactly — the -<n> tail being the python writer's same-second de-dupe
+# suffix. A live AGENTS.md / TOOLS.md / USER.md cannot match that pattern, and
+# neither can a hand-made .bak-manual or an AGENTS.md.bak-unify-notatimestamp
+# decoy. Symlinks and non-regular files are never unlinked.
+#
+# UNIFY_BAK_KEEP=0 keeps none. That is the meaning it ALREADY carries in both
+# shipped pruners and in docs/SHARED-CORE-FILES.md, so this pass does not give
+# the one knob a second meaning. It is safe because the pattern above makes a
+# live core file unmatchable: 0 can empty the backup set, never the tree.
+#
+# python3 is already a hard dependency of the unify step (_lsc_sha256 and the
+# content-preservation pass both use it); if it is absent the reclaim reports
+# a skip and the per-target prune still applies. bash 3.2 / BSD-safe: no
+# associative arrays, no mapfile, no `find -printf`, no `head -n -N`.
+# ----------------------------------------------------------
+reclaim_unify_backups() {
+  local _keep="${UNIFY_BAK_KEEP:-3}"
+  case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    note "[unify-reclaim] SKIP: no python3 on PATH (the per-target prune still applied)"
+    return 0
+  fi
+
+  # Every root this box could hold a .bak-unify population under. Missing ones
+  # are dropped here; the pass below de-dupes what is left by realpath, so a
+  # symlinked workspace is never walked twice.
+  local _oc_root=""
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    _oc_root="$(resolve_oc_root 2>/dev/null || echo '')"
+  fi
+  if [ -z "$_oc_root" ]; then
+    _oc_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _oc_root="/data/.openclaw"
+  fi
+
+  # $HOME/.openclaw covers the Docker /home/node layout (HOME is /home/node
+  # there) and _oc_root covers the VPS /data layout, so neither is listed as a
+  # literal -- every root below is derived from THIS box's own resolution.
+  # ~/clawd and ~/.clawdbot are both LIVE workspace roots on real boxes (see
+  # the TRAP 1 pre-clear note: one box's ~/.openclaw/workspace is a symlink
+  # INTO ~/.clawdbot/workspace), and both hold measured .bak-unify populations.
+  local _roots="" _r
+  for _r in \
+      "$_oc_root" \
+      "$HOME/.openclaw" \
+      "$HOME/clawd" \
+      "$HOME/.clawdbot" \
+      "${OC_WS_RESOLVED:-}" \
+      "${WORKSPACE_DIR:-}"; do
+    [ -n "$_r" ] || continue
+    [ -d "$_r" ] || continue
+    _roots="${_roots}${_r}
+"
+  done
+
+  if [ -z "$_roots" ]; then
+    note "[unify-reclaim] no existing root to scan -- nothing to do"
+    return 0
+  fi
+
+  local _n=""
+  _n="$(UNIFY_RECLAIM_KEEP="$_keep" UNIFY_RECLAIM_ROOTS="$_roots" python3 - 2>/dev/null <<'PYEOF' || echo ''
+import os, re
+
+keep  = int(os.environ.get("UNIFY_RECLAIM_KEEP", "3"))
+roots = [r for r in os.environ.get("UNIFY_RECLAIM_ROOTS", "").split("\n") if r]
+
+# The ONLY deletable shape. A live core file cannot match it.
+PAT  = re.compile(r"^(?P<target>.+)\.bak-unify-\d{8}-\d{6}(?:-\d+)?$")
+SKIP = (".git", "node_modules", ".venv", "venv", "__pycache__")
+
+# Roots nest (the workspace usually lives INSIDE the OpenClaw root), so the
+# same subtree is walked more than once. Collecting each group as a SET keyed
+# on the real directory makes a second visit a no-op instead of doubling the
+# list and over-deleting.
+groups = {}
+for root in roots:
+    try:
+        real = os.path.realpath(root)
+    except OSError:
+        continue
+    if not os.path.isdir(real):
+        continue
+    for dirpath, dirnames, filenames in os.walk(real, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in SKIP]
+        try:
+            realdir = os.path.realpath(dirpath)
+        except OSError:
+            realdir = dirpath
+        for fn in filenames:
+            m = PAT.match(fn)
+            if m:
+                groups.setdefault((realdir, m.group("target")), set()).add(fn)
+
+deleted = 0
+for (parent, _target), nameset in groups.items():
+    if keep and len(nameset) <= keep:
+        continue
+    names = sorted(nameset)         # %Y%m%d-%H%M%S sorts chronologically
+    doomed = names if keep == 0 else names[:-keep]
+    for n in doomed:
+        p = os.path.join(parent, n)
+        if not PAT.match(os.path.basename(p)):      # belt and braces
+            continue
+        if os.path.islink(p) or not os.path.isfile(p):
+            continue
+        try:
+            os.unlink(p)
+            deleted += 1
+        except OSError:
+            pass
+print(deleted)
+PYEOF
+)"
+  case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+  if [ "$_n" -gt 0 ]; then
+    note "[unify-reclaim] RECLAIMED $_n orphaned/out-of-tree .bak-unify backup(s) (keep=$_keep)"
+  else
+    note "[unify-reclaim] nothing to reclaim (keep=$_keep)"
+  fi
+  return 0
+}
+
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
@@ -2476,14 +2595,17 @@ except Exception:
   }
 
   # _lsc_mode_owner PATH -> "<mode>|<uid>:<gid>" for an existing file, or ""
-  # if PATH doesn't exist. Tries BSD stat(1) syntax (Mac) then GNU stat(1)
-  # syntax (Linux/VPS/Docker) — the same fallback pattern already used
-  # elsewhere in this file (see the INSTALL_FLAG lock-age check).
+  # if PATH doesn't exist. GNU stat(1) syntax FIRST (Linux/VPS/Docker), then
+  # BSD (Mac): GNU reads `-f FMT` as "filesystem status of FMT and PATH" and
+  # prints that block to stdout before failing, so a BSD-first chain handed
+  # chmod/chown a multi-line value on Linux. BSD rejects -c with no stdout.
   _lsc_mode_owner() {
     local _p="$1" _m="" _o=""
     [ -e "$_p" ] || return 0
-    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
-    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    _m="$(stat -c '%a' "$_p" 2>/dev/null || stat -f '%OLp' "$_p" 2>/dev/null)"
+    [[ "$_m" =~ ^[0-7]+$ ]] || _m=""
+    _o="$(stat -c '%u:%g' "$_p" 2>/dev/null || stat -f '%u:%g' "$_p" 2>/dev/null)"
+    [[ "$_o" =~ ^[0-9]+:[0-9]+$ ]] || _o=""
     printf '%s|%s' "$_m" "$_o"
   }
 
@@ -2512,6 +2634,34 @@ except Exception:
     else
       echo "FAIL"
     fi
+  }
+
+  # _lsc_prune_baks PATH -> echoes the number of old backups it deleted.
+  # Keeps only the $UNIFY_BAK_KEEP newest <PATH>.bak-unify-<ts> siblings
+  # (default 3; 0 keeps none), deleting oldest-first. The unify backup used to
+  # be UNBOUNDED: a canonical file that differs between rolls leaves one
+  # FULL-SIZE backup per agent per roll, forever. Measured live on a client Mac
+  # Mini 2026-09-21: 25,604 AGENTS.md.bak-unify-* files / 4.3 GB across the
+  # department tree, written daily since 2026-06-23, disk at 95%. Only this
+  # target's OWN timestamped unify backups are ever touched -- nothing else is
+  # deleted, and the newest $UNIFY_BAK_KEEP are always kept, so the
+  # "never deleted" promise becomes "the last N are never deleted".
+  # Timestamps are %Y%m%d-%H%M%S, so a lexicographic sort is chronological.
+  # bash 3.2 / BSD-safe: no `head -n -N`, no associative arrays.
+  _lsc_prune_baks() {
+    local _p="$1" _keep="${UNIFY_BAK_KEEP:-3}" _list="" _n=0 _cut=0 _old="" _pruned=0
+    case "$_keep" in ''|*[!0-9]*) _keep=3 ;; esac
+    _list="$(ls -1d "$_p".bak-unify-* 2>/dev/null | sort || true)"
+    if [ -z "$_list" ]; then echo 0; return 0; fi
+    _n="$(printf '%s\n' "$_list" | wc -l | tr -d ' ')"
+    _cut=$(( _n - _keep ))
+    if [ "$_cut" -le 0 ]; then echo 0; return 0; fi
+    while IFS= read -r _old; do
+      [ -n "$_old" ] || continue
+      if rm -f "$_old" 2>/dev/null; then _pruned=$(( _pruned + 1 )); fi
+    done < <(printf '%s\n' "$_list" | sed -n "1,${_cut}p")
+    echo "$_pruned"
+    return 0
   }
 
   # Precompute each canonical file's hash ONCE (not per-workspace; this repo
@@ -2571,7 +2721,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
 
   local W
   while IFS= read -r W; do
@@ -2611,6 +2761,23 @@ PYEOF
         continue
       fi
 
+      # BACKLOG PRUNE. Bound this target's existing .bak-unify set on EVERY
+      # run, before deciding what to do with the file itself. Pruning only
+      # after writing a NEW backup would never reach the case that actually
+      # holds the fleet's 4.3 GB: a role folder whose AGENTS.md was since
+      # deleted (U053 disposition) still carries thousands of backups and
+      # takes the "absent -> leave absent" path below, so a roll would walk
+      # straight past them forever. Here it covers every branch -- symlink,
+      # identical, divergent and absent. A backup written further down prunes
+      # again, so the set still lands on exactly $UNIFY_BAK_KEEP.
+      local _NBACKLOG
+      _NBACKLOG="$(_lsc_prune_baks "$LINKPATH")"
+      case "$_NBACKLOG" in ''|*[!0-9]*) _NBACKLOG=0 ;; esac
+      if [ "$_NBACKLOG" -gt 0 ]; then
+        note "[link-shared] PRUNE $_NBACKLOG stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+        PRUNED=$((PRUNED + _NBACKLOG))
+      fi
+
       if [ -L "$LINKPATH" ]; then
         # MIGRATION: a symlink is a relic of the pre-amendment behavior, and
         # the runtime boundary guard rejects it at read time regardless of
@@ -2643,9 +2810,21 @@ PYEOF
         # this agent's OWN IDENTITY.md (additive only), then overwrite with
         # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
-        cp -p "$LINKPATH" "$BAK" 2>/dev/null \
-          && { note "[link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
-          || { warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"; continue; }
+        if cp -p "$LINKPATH" "$BAK" 2>/dev/null; then
+          note "[link-shared] BACKUP $LINKPATH -> $BAK"
+          BACKED_UP=$((BACKED_UP + 1))
+          # Bound the backup set for THIS target (see _lsc_prune_baks).
+          local _NPRUNED
+          _NPRUNED="$(_lsc_prune_baks "$LINKPATH")"
+          case "$_NPRUNED" in ''|*[!0-9]*) _NPRUNED=0 ;; esac
+          if [ "$_NPRUNED" -gt 0 ]; then
+            note "[link-shared] PRUNE $_NPRUNED stale .bak-unify backup(s) for $LINKPATH (keep=${UNIFY_BAK_KEEP:-3})"
+            PRUNED=$((PRUNED + _NPRUNED))
+          fi
+        else
+          warn "[link-shared] backup failed for $LINKPATH — leaving file untouched"
+          continue
+        fi
 
         local AGENT_NAME
         AGENT_NAME="$(basename "$W_REAL")"
@@ -2712,7 +2891,7 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -2724,22 +2903,16 @@ PYEOF
 # ----------------------------------------------------------
 # U006 — Co-locate the canonical presentation entry script + its guard
 # into the materialized Presentations department scripts/ directory.
-# Resolves the workspace via obs_resolve_workspace (this file's own
-# convention), not oc_resolve_workspace_announced.
+# Uses the same selected-client workspace as the intake scheduler; failures
+# never fall through to another installation's department.
 # ----------------------------------------------------------
 colocate_presentation_entry() {
-  local dept_scripts=""
-  if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    local ws; ws="$(obs_resolve_workspace 2>/dev/null || true)"
-    if [ -n "$ws" ]; then
-      dept_scripts="$ws/departments/Presentations/scripts"
-    fi
-  fi
-  if [ -z "$dept_scripts" ]; then
-    local _home_ws="${HOME}/.openclaw/workspace"
-    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
-    dept_scripts="$_home_ws/departments/Presentations/scripts"
-  fi
+  local ws dept_scripts
+  ws="$(_fix61_selected_workspace)" || {
+    echo "  [U006] presentation entry co-location REFUSED: selected client workspace unresolved" >&2
+    return 1
+  }
+  dept_scripts="$ws/departments/Presentations/scripts"
   if [ ! -d "$dept_scripts" ]; then
     echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
     return 0
@@ -2804,6 +2977,31 @@ except Exception as e:
 PYEOF
 }
 
+# Required first-onboarding identity, before bootstrap, secrets or resource creation.
+# curl|bash consumes stdin as code: the helper prompts through /dev/tty only.
+collect_onboarding_identity() {
+    local helper="$_SCRIPT_DIR/scripts/onboarding-identity.py" temporary="" result
+    if [ ! -f "$helper" ]; then
+        temporary="$(mktemp)" || return 8
+        if ! curl -fsSL "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${ONBOARDING_VERSION}/scripts/onboarding-identity.py" -o "$temporary"; then
+            rm -f "$temporary"; return 8
+        fi
+        helper="$temporary"
+    fi
+    if ! result=$(python3 "$helper" --root "$OC_CONFIG" --workspace "$OC_WORKSPACE_DEFAULT" --interactive); then
+        [ -z "$temporary" ] || rm -f "$temporary"
+        printf '%s\n' "$result" >&2
+        echo "Before new onboarding, ask the client/owner name and company name. Pass their answers as OPENCLAW_OWNER_NAME and OPENCLAW_COMPANY_NAME to the installer, then resume." >&2
+        return 8
+    fi
+    [ -z "$temporary" ] || rm -f "$temporary"
+    OPENCLAW_OWNER_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
+    OPENCLAW_COMPANY_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
+    OPENCLAW_COMPANY_SLUG=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
+    export OPENCLAW_OWNER_NAME OPENCLAW_COMPANY_NAME OPENCLAW_COMPANY_SLUG
+}
+collect_onboarding_identity || exit 8
+
 # ----------------------------------------------------------
 # Bookkeeping: install dir + stale-state cleanup (v10.5.5)
 # ----------------------------------------------------------
@@ -2830,7 +3028,12 @@ fi
 # Stale-lock auto-clear: if the lock file exists but is > 60 minutes old,
 # the previous run crashed mid-install. Wipe it instead of blocking.
 if [ -f "$INSTALL_FLAG" ]; then
-    LOCK_AGE_MINS=$(( ( $(date +%s) - $(stat -f %m "$INSTALL_FLAG" 2>/dev/null || stat -c %Y "$INSTALL_FLAG" 2>/dev/null || echo 0) ) / 60 ))
+    # GNU `stat -c` FIRST: on Linux `stat -f` is filesystem status and prints
+    # several lines before failing over, which broke this arithmetic. BSD
+    # rejects -c with no stdout. Integer guard, as run-full-install.sh _cc_mtime.
+    _lock_mtime="$(stat -c %Y "$INSTALL_FLAG" 2>/dev/null || stat -f %m "$INSTALL_FLAG" 2>/dev/null)"
+    [[ "$_lock_mtime" =~ ^[0-9]+$ ]] || _lock_mtime=0
+    LOCK_AGE_MINS=$(( ( $(date +%s) - _lock_mtime ) / 60 ))
     if [ "$LOCK_AGE_MINS" -gt 60 ] 2>/dev/null; then
         warn "Stale install lock detected (${LOCK_AGE_MINS} min old) — auto-clearing and continuing"
         rm -f "$INSTALL_FLAG"
@@ -3107,6 +3310,9 @@ success "State carryover initialized at $RESUME_FILE"
 note "Configuring canonical sub-agent + bootstrap settings (v9.7.8 spec)..."
 backup_config_file "$OCJSON"
 
+# Installed runtime version, for the agents.defaults.maxConcurrent decision below.
+_OC_RUNTIME_VERSION="$(openclaw --version 2>/dev/null | tr -d '\r' | head -n1 | tr -d '[:space:]' || true)"
+
 python3 << PYEOF
 import json, os, sys
 
@@ -3158,6 +3364,37 @@ try:
 except (TypeError, ValueError):
     prev_concurrent = None
 sub['maxConcurrent'] = cap_ceiling if (prev_concurrent is None or prev_concurrent > cap_ceiling) else prev_concurrent
+
+# agents.defaults.maxConcurrent — EXPLICIT, so a runtime default cannot move it.
+#
+# OpenClaw 2026.9.5 changes this key's DEFAULT from clamp(8..16, cpus) to
+# max(8, cpus*4) with NO ceiling. On a 12-core box an absent key silently goes
+# from 12 to 48 the moment the fleet rolls onto 9.5 — a quadrupling nobody
+# asked for and nothing logs.
+#
+# The PRESENT-ONLY rule above (and in scripts/capacity-monitor.sh) exists
+# because AgentDefaultsSchema is .strict(): creating this key on a runtime that
+# PREDATES it makes that runtime reject the client's ENTIRE config. So the key
+# is created only when the installed runtime is >= 2026.9.5, where it provably
+# exists; on anything older an absent key is still correct and is left alone.
+# An existing value is ALWAYS preserved — it is an operator choice or a
+# capacity-monitor heal, and this must never clobber it.
+_oc_ver = "$_OC_RUNTIME_VERSION"
+def _ver_ge_9_5(v):
+    parts = (v or "").lstrip("vV").split(".")
+    try:
+        nums = [int(x) for x in parts[:3]]
+    except ValueError:
+        return False
+    return len(nums) == 3 and tuple(nums) >= (2026, 9, 5)
+if 'maxConcurrent' in defaults:
+    print("  OK agents.defaults.maxConcurrent preserved at %s (explicit; 9.5's new default cannot move it)" % defaults['maxConcurrent'])
+elif _ver_ge_9_5(_oc_ver):
+    defaults['maxConcurrent'] = 8
+    print("  OK Set agents.defaults.maxConcurrent=8 explicitly (runtime %s >= 2026.9.5, whose default is max(8, cpus*4) with no ceiling)" % _oc_ver)
+else:
+    print("  -- agents.defaults.maxConcurrent left ABSENT (runtime %s predates 2026.9.5; AgentDefaultsSchema is strict and would reject the config)" % (_oc_ver or "unknown"))
+
 # Hard set thinking level
 sub['thinking'] = 'high'
 
@@ -3212,7 +3449,7 @@ if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
     # ALWAYS end on a NON-Ollama provider. An Ollama Cloud weekly cap / 429 is
     # ACCOUNT-level, so an all-Ollama chain fails as a single unit and takes the
     # client's entire company down at once.
-    _seed.append(_pick('openrouter/deepseek/deepseek-v4-flash', 'agnes/agnes-2.5-flash'))
+    _seed.append(_pick('openrouter/deepseek/deepseek-v4-flash', 'agnes/agnes-3.0-flash'))
 
     _seed = [m for i, m in enumerate(_seed) if m and m not in _seed[:i]]
 
@@ -3610,7 +3847,7 @@ done
 
 # v10.10.0 P0-007: Trigger agent execution of Start Here.md, not just copy.
 # The bash install.sh has done its bootstrap. The actual onboarding work
-# (read 52 skills, wave-install, run interview, build ZHC, etc.) is the
+# (read 64 skills, wave-install, run interview, build ZHC, etc.) is the
 # agent's job — driven by Start Here.md. We've copied the file; we now
 # need to MAKE SURE the agent reads it. Three independent channels (the
 # triple-fire in fire_install_kickoff_triplet at end of install.sh) all
@@ -3627,6 +3864,16 @@ fi
 # Copy scripts folder
 if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
+fi
+
+# Platform helpers are runtime dependencies of the delivered Skill32 resume command.
+if [ -d "$ONBOARDING_DIR/platform" ]; then
+    mkdir -p "$SKILLS_DIR/../platform"
+    cp -Rp "$ONBOARDING_DIR/platform/." "$SKILLS_DIR/../platform/"
+fi
+if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
+    echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
+    exit 8
 fi
 
 # >>> CANONICAL-CONFIG-DELIVERY-BEGIN
@@ -3666,6 +3913,74 @@ if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh 2>/dev/null || true
     chmod +x "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     success "shared-utils installed to $SKILLS_DIR/shared-utils"
+    # JEV-027 D27 (ss 12.1/17.1, A54/A45): verify the canonical decision
+    # core + policy packs landed with the wholesale copy above. Additive
+    # check only — missing entries are a loud warning, never an abort;
+    # the updater's stamp gate (update-skills.sh _SHAREDUTILS_STATUS) is
+    # the enforcing side on existing boxes.
+    _D27_MISSING=""
+    for _D27_REL in \
+        "decision_engine/contracts/schema.py" \
+        "decision_engine/policies/question_pack.json" \
+        "decision_engine/policies/task_pack.json" \
+        "decision_engine/policies/mixed_pack.json" \
+        "decision_engine/policies/control_pack.json" \
+        "decision_engine/ladder/ladder.py" \
+        "decision_engine/evaluators/five_layer.py" \
+        "decision_engine/personas/collapse_policy.py" \
+        "decision_engine/personas/evidence_profiles.py" \
+        "decision_engine/personas/voice_match.py" \
+        "decision_engine/parts/__init__.py" \
+        "decision_engine/modes/__init__.py" \
+        "decision_engine/modes/modes.py" \
+        "decision_engine/modes/cohort.py" \
+        "decision_engine/providers/typesafe_direct.py" \
+        "decision_engine/providers/openrouter_decisions.py" \
+        "decision_engine/providers/credential_resolver.py" \
+        "adaptive_weights.py" \
+        "semantic_task_fit.py" \
+        "embedding_engine.py" \
+        "ceo_execution_policy.py" \
+        "secret_helper.py" \
+        "decision-engine.py"; do
+        [ -f "$SKILLS_DIR/shared-utils/$_D27_REL" ] || _D27_MISSING="${_D27_MISSING} ${_D27_REL}"
+    done
+    if [ -n "$_D27_MISSING" ]; then
+        warn "decision core incomplete on box (JEV D27): missing from $SKILLS_DIR/shared-utils:${_D27_MISSING}"
+        warn "  Re-run install.sh or update-skills.sh to repair; no config was touched by this check."
+    else
+        success "decision core verified in $SKILLS_DIR/shared-utils (JEV D27: contracts/policies/ladder/providers)"
+    fi
+    unset _D27_MISSING _D27_REL
+
+    # >>> DECISION-MODE-PRESERVE-BEGIN  (A62 clause 4)
+    # A62: "Explicit modes survive install/update." The store is
+    # $OC_CONFIG/decision-engine-mode.conf (one word: auto|shadow|legacy|off)
+    # and NO step in this repo writes it — that absence IS the preservation
+    # guarantee, because there is no release-default write for an explicit
+    # client value to lose to. What was missing was a RECEIPT: nothing proved
+    # an explicit off/legacy/shadow reached the installed core, so a box could
+    # run the release default for its whole life with every gate green. This
+    # step runs INSIDE the shared-utils block, after the canonical core is
+    # verified above, and asks the SAME authority the decision core uses
+    # (decision_engine.modes) rather than re-implementing the merge. A CORRUPT
+    # value is never rewritten and never silently absorbed by the default.
+    # NON-FATAL by design: a mode-store typo must not abort fleet install
+    # (see update-skills.sh for the enforcing side). rc 2 = unprovable receipt,
+    # which is reported as such and never as a pass.
+    if [ -f "$ONBOARDING_DIR/scripts/decision-engine-mode.py" ]; then
+        _DEM_RC=0
+        python3 "$ONBOARDING_DIR/scripts/decision-engine-mode.py" \
+            --shared-utils "$SKILLS_DIR/shared-utils" \
+            --oc-config "$OC_CONFIG" --assert-preserved || _DEM_RC=$?
+        case "$_DEM_RC" in
+            0) : ;;
+            1) warn "decision-engine mode store is CORRUPT — see the ACTION above. No file was written; the box keeps running the stored value until you fix it." ;;
+            *) warn "decision-engine mode receipt could not be produced (rc=$_DEM_RC) — the canonical modes module was not loadable from $SKILLS_DIR/shared-utils. An UNPROVEN receipt is not a pass." ;;
+        esac
+        unset _DEM_RC
+    fi
+    # <<< DECISION-MODE-PRESERVE-END
 fi
 
 # v14.24.0: Install universal-sops/ SOP cluster (Skills 47/48 source tree).
@@ -3754,7 +4069,41 @@ if [ ! -f "$SKILLS_DIR/$_PODCAST_ACTIVATION_SKILL/scripts/webhook/intake_handler
 else
     success "Podcast activation layer present in the skills dir (register-podcast-hook.sh, webhook/intake_handler.py, install-podcast-department.sh); no scheduler installed by design: the only recurring podcast cron is the daily smoke test"
 fi
+
 unset _PODCAST_ACTIVATION_SKILL _PODCAST_ACTIVATION_FILES _ACT_FILE _ACT_SRC _ACT_DEST
+
+# ----------------------------------------------------------
+# roll-3b: RUN the activation wiring, do not merely deliver it.
+#
+# The block above only ENSURES the activation files exist. Until this call,
+# nothing on any client box ever ACTIVATED the podcast engine: activation lived
+# solely inside provision-podcast-client.sh, so a box provisioned before the
+# activation layer shipped, or one whose provision aborted, stayed dark forever
+# (intake lands, the ledger says received, the dashboard says Received, and
+# nothing runs). 58-podcast-production-engine/wire.sh is the guarded entry point
+# and is the SAME file update-skills.sh's per-skill wiring loop picks up by
+# name, so the install path and the update path activate identically.
+#
+# It is safe on every box: with no podcast client slug and no intake secret it
+# prints a WARN naming SOP-PODCAST-07 and exits 0. It refuses to run as root
+# (a root-owned openclaw.json freezes the gateway) and never restarts the
+# gateway. A nonzero exit is a real activation failure on a box that HAS a
+# podcast client, and is surfaced as a WARN, never an aborted install.
+# ----------------------------------------------------------
+_PODCAST_WIRE="$SKILLS_DIR/58-podcast-production-engine/wire.sh"
+if [ -f "$_PODCAST_WIRE" ]; then
+    chmod +x "$_PODCAST_WIRE" 2>/dev/null || true
+    if [ "$(id -u)" = "0" ]; then
+        warn "Podcast activation: skipped wire.sh because this install is running as root; re-run it as the node user: sudo -u \"\${PODCAST_NODE_USER:-node}\" $_PODCAST_WIRE --idempotent"
+    elif bash "$_PODCAST_WIRE" --idempotent >>"$LOG_FILE" 2>&1; then
+        success "Podcast activation wiring ran (wire.sh --idempotent); see $LOG_FILE for the slug/secret resolution and the activation health result"
+    else
+        warn "Podcast activation wiring reported a failure for this box's podcast client (see $LOG_FILE). Run universal-sops/podcast-craft/SOP-PODCAST-07-ACTIVATION-RESCUE.md; intake will land and never advance until it is fixed"
+    fi
+else
+    warn "Podcast activation: 58-podcast-production-engine/wire.sh is not in this onboarding package; this box cannot self-activate the podcast engine (provision-podcast-client.sh remains the only activation path)"
+fi
+unset _PODCAST_WIRE
 
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
@@ -3848,6 +4197,22 @@ for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.s
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
         success "Installed memory-health cron script: $SCRIPT"
+    fi
+done
+
+# LEAN BOOTSTRAP (docs/COMPACT-CORE-SOP.md): the daily measure, the weekly
+# compaction, the engine they both drive and the validator that owns the lean
+# targets. Persisted to the same dir for the same reason as the block above —
+# ensure-pipeline-crons.sh resolves cron scripts from $OC_ROOT/scripts, and a
+# registered cron has to keep resolving after the temp clone is cleaned up.
+# update-skills.sh delivers the whole scripts/ tree and needs no list; install.sh
+# copies by name, so these four have to be named here or a FRESH box would
+# register two crons pointing at scripts that were never installed.
+for SCRIPT in bootstrap-validate-daily.sh bootstrap-compact-weekly.sh compact-bootstrap.py validate-core-references.py bootstrap-pointerize.py; do
+    if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
+        cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
+        chmod +x "$SCRIPTS_DIR/$SCRIPT"
+        success "Installed lean-bootstrap script: $SCRIPT"
     fi
 done
 
@@ -3983,29 +4348,59 @@ PYEOF
     unset _BROWSER_HEAL_OUT
 fi
 
-# Install google-genai if needed.
-# v14.1.3: use `python3 -m pip` (portable) instead of the bare `pip3` binary.
-# On a fresh Linux container python3-pip may be installed as a module with NO
-# `pip3` on PATH, so `pip3 install` would be "command not found". `python3 -m pip`
-# also guarantees the package lands in the SAME interpreter the import check uses.
+# FIX 71: NO `--break-system-packages` anywhere in this installer. Externally
+# managed environments (macOS 13+ python, PEP 668 Debian containers) reject the
+# bare install, so try a --user install first, then pipx, and fail LOUDLY with
+# the manual remediation instead of punching through the environment marker.
 if ! python3 -c "import google.genai" 2>/dev/null; then
     note "Installing google-genai package..."
-    python3 -m pip install google-genai --break-system-packages 2>/dev/null || \
-        python3 -m pip install google-genai 2>/dev/null || \
-        warn "google-genai install failed - manual install required"
+    if python3 -m pip install --user google-genai >> "$LOG_FILE" 2>&1 \
+       && python3 -c "import google.genai" 2>/dev/null; then
+        success "google-genai installed via pip --user"
+    elif command -v pipx >/dev/null 2>&1 && pipx inject google-genai 2>/dev/null; then
+        success "google-genai installed via pipx inject"
+    else
+        warn "google-genai install failed — manual install required: python3 -m pip install --user google-genai (or a venv)"
+    fi
 else
     success "google-genai already installed"
 fi
+
+# ----------------------------------------------------------
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
 # ----------------------------------------------------------
 # Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
 # Each verified individually; failures LOUDLY warn (not silently swallowed).
-# Mac install order: uv → pip3 --break-system-packages → pip3 → pipx fallback.
+# v6.6.0 / Step 6.4: Skill 22 Python pipeline dependencies (Mac)
+# ----------------------------------------------------------
+# Install pdfplumber, pypdf, ebooklib, mobi, beautifulsoup4, aiohttp, numpy.
+# Each verified individually; failures LOUDLY warn (not silently swallowed).
+# FIX 71 install order: uv → pip --user → venv pip → pipx fallback. NO
+# --break-system-packages anywhere — an externally-managed environment (PEP
+# 668, macOS 13+) is worked WITH (user site / a venv), never punched through.
 # ────────────────────────────────────────────────────────────────────────────
 
 step "Step 6.4: Installing Skill 22 Python pipeline dependencies (Mac)"
+
+# FIX 71: shared scratch venv for packages a PEP-668 system python refuses.
+# Reused by _install_py_pkg_mac attempt 3 and any consumer needing a clean
+# interpreter. Lives under the OpenClaw root next to .venv-presentations.
+_ensure_s22_fallback_venv() {
+    local VENV_ROOT
+    if [ -d "/data/.openclaw" ]; then VENV_ROOT="/data/.openclaw"; else VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"; fi
+    local VENV_DIR="$VENV_ROOT/.venv-skill22"
+    local VENV_PY="$VENV_DIR/bin/python"
+    if [ -x "$VENV_PY" ]; then
+        echo "$VENV_PY"; return 0
+    fi
+    if python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1 || true
+        echo "$VENV_PY"; return 0
+    fi
+    return 1
+}
 
 _install_py_pkg_mac() {
     local pkg="$1"
@@ -4028,29 +4423,42 @@ _install_py_pkg_mac() {
         fi
     fi
 
-    # Attempt 2: pip --break-system-packages (macOS 13+ externally-managed python).
-    # v14.1.3: `python3 -m pip` instead of bare `pip3` — portable. Resolves to the
-    # SAME pip on Mac, and works on a fresh Linux container where pip is installed
-    # as a module with no `pip3` binary on PATH (this helper now also runs Skill 22
-    # deps on VPS, where bare `pip3` would have been "command not found").
-    if python3 -m pip install --user "$pkg" --break-system-packages >> "$LOG_FILE" 2>&1; then
+    # Attempt 2: pip --user. v14.1.3: `python3 -m pip` instead of bare `pip3` —
+    # portable. Resolves to the SAME pip on Mac, and works on a fresh Linux
+    # container where pip is installed as a module with no `pip3` binary on
+    # PATH (this helper now also runs Skill 22 deps on VPS, where bare `pip3`
+    # would have been "command not found"). FIX 71: no --break-system-packages;
+    # on a PEP-668 system python this attempt simply fails and we fall through.
+    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
         if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip --break-system-packages"
+            success "$display installed via pip --user"
             return 0
         fi
     fi
 
-    # Attempt 3: pip without the flag (older pip that lacks --break-system-packages)
-    if python3 -m pip install --user "$pkg" >> "$LOG_FILE" 2>&1; then
-        if python3 -c "import $import" 2>/dev/null; then
-            success "$display installed via pip"
+    # Attempt 3 (FIX 71): the Skill 22 fallback venv — guaranteed importable
+    # there even on an externally-managed system python.
+    local _s22_venv_py
+    if _s22_venv_py="$(_ensure_s22_fallback_venv)" && [ -n "$_s22_venv_py" ]; then
+        if "$_s22_venv_py" -m pip install --quiet "$pkg" >> "$LOG_FILE" 2>&1; then
+            if "$_s22_venv_py" -c "import $import" 2>/dev/null; then
+                success "$display installed via Skill 22 fallback venv ($_s22_venv_py)"
+                return 0
+            fi
+        fi
+    fi
+
+    # Attempt 4: pipx (runs apps in their own venvs — never touches system site).
+    if command -v pipx >/dev/null 2>&1; then
+        if pipx inject skill22-shared "$pkg" >> "$LOG_FILE" 2>&1; then
+            success "$display installed via pipx (skill22-shared)"
             return 0
         fi
     fi
 
     warn "WARN: $display installation failed after all attempts."
     warn "      Skill 22 book extraction may fail for formats requiring $display."
-    warn "      Manual fix: python3 -m pip install --user $pkg --break-system-packages"
+    warn "      Manual fix: python3 -m pip install --user $pkg  (or: python3 -m venv ~/.openclaw/.venv-skill22 && ~/.openclaw/.venv-skill22/bin/pip install $pkg)"
     return 1
 }
 
@@ -4077,6 +4485,8 @@ else
 fi
 
 # ----------------------------------------------------------
+
+# ----------------------------------------------------------
 # Step 6.5: Presentation pipeline runtime dependencies
 # ----------------------------------------------------------
 # Skill 23 (AI Workforce Blueprint) includes a presentation pipeline that needs:
@@ -4090,14 +4500,15 @@ fi
 #   • ffmpeg + ffprobe — webinar video render + size probe (Feature L2-G,
 #     P9.6-WEBINAR-VIDEO, build_webinar_video.py → webinar_ffmpeg.py)
 #
-# Platform branches:
-#   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
-#          via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
+# Platform branches (FIX 71: both platforms install python deps into the
+# department venv <root>/.venv-presentations — NEVER system python):
+#   Mac  — venv first (ensure_presentation_venv above); poppler via formula;
+#          LibreOffice via NONINTERACTIVE cask (no sudo hang); symlink on PATH.
 #   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
 #          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
 #          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
-#          brew on these images). Python deps (reportlab, python-pptx, pypdf) via pip
-#          --break-system-packages into the SAME python3 that build_deck.py runs.
+#          brew on these images). Python deps (reportlab, python-pptx, pypdf,
+#          pytesseract) into /data/.openclaw/.venv-presentations via its own pip.
 #          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
@@ -4121,6 +4532,71 @@ fi
 
 step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, pypdf, poppler, LibreOffice, ffmpeg)"
 
+# ----------------------------------------------------------
+# FIX 71 — the department venv: <root>/.venv-presentations
+# ----------------------------------------------------------
+# <root> is the OpenClaw root: /data/.openclaw on a VPS container, ~/.openclaw
+# on a Mac. ALL presentation-pipeline python deps (reportlab, python-pptx,
+# pypdf, pytesseract, Pillow) install INTO THIS VENV — never into the system
+# python, never with --break-system-packages. The interpreter is exported to
+# every consumer via PRESENTATION_PIPELINE_INTERPRETER (secrets/.env export
+# line per FIX 72, so `set -a; . secrets/.env` reaches the door, the engine,
+# and every child python). ocr-deps.json's install_policy already names this
+# exact shape ("install into the pipeline's dedicated venv ... and point
+# PRESENTATION_PIPELINE_INTERPRETER at that venv's interpreter").
+# Idempotent: an existing healthy venv with all four imports is a byte-identical
+# no-op. A venv missing deps gets ONLY the missing packages pip-installed into
+# it (venv pip has no PEP 668 marker, so no flag is ever needed).
+ensure_presentation_venv() {
+    local VENV_ROOT
+    if [ -d "/data/.openclaw" ]; then
+        VENV_ROOT="/data/.openclaw"
+    else
+        VENV_ROOT="${OC_CONFIG:-$HOME/.openclaw}"
+    fi
+    local VENV_DIR="$VENV_ROOT/.venv-presentations"
+    local VENV_PY="$VENV_DIR/bin/python"
+    local VENV_PIP="$VENV_DIR/bin/pip"
+
+    if [ -x "$VENV_PY" ]        && "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+        success "FIX 71: presentation venv already healthy at $VENV_DIR (reportlab, pptx, pypdf, pytesseract all import)"
+    else
+        note "FIX 71: creating presentation venv at $VENV_DIR ..."
+        if ! python3 -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+            warn "FIX 71: python3 -m venv failed at $VENV_DIR — the presentation pipeline will fall back to the system python3. Manual fix: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+            return 0
+        fi
+        # venv pip is self-contained (no PEP 668 external-management marker) —
+        # a bare install works, no --break-system-packages, ever.
+        local _pkgs="reportlab python-pptx pypdf pytesseract Pillow"
+        note "FIX 71: installing $_pkgs into $VENV_DIR ..."
+        if "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG_FILE" 2>&1            && "$VENV_PY" -m pip install --quiet $_pkgs >> "$LOG_FILE" 2>&1; then
+            if "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+                success "FIX 71: presentation venv populated — reportlab, pptx, pypdf, pytesseract import in $VENV_PY"
+            else
+                warn "FIX 71: venv packages installed but the import check FAILED — see $LOG_FILE. Manual: $VENV_PY -c 'import reportlab, pptx, pypdf, pytesseract'"
+            fi
+        else
+            warn "FIX 71: pip install into $VENV_DIR failed (network/offline?) — see $LOG_FILE. Manual: $VENV_PY -m pip install $_pkgs"
+        fi
+    fi
+
+    # Export the interpreter path via the FIX 72 writer: an export line in
+    # secrets/.env + a mirror in openclaw.json env.vars. Consumers (door,
+    # engine, qc gates) read it with set -a or from the gateway env.
+    local _venv_val="$VENV_PY"
+    if command -v _shared_write_env >/dev/null 2>&1; then
+        _shared_write_env "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
+        if command -v _shared_write_ocjson >/dev/null 2>&1; then
+            _shared_write_ocjson "PRESENTATION_PIPELINE_INTERPRETER" "$_venv_val"
+        fi
+        success "FIX 71: PRESENTATION_PIPELINE_INTERPRETER=$_venv_val (export line in $OC_SECRETS_ENV + openclaw.json env.vars)"
+    else
+        warn "FIX 71: _shared_write_env unavailable — set PRESENTATION_PIPELINE_INTERPRETER=$_venv_val manually in $OC_SECRETS_ENV"
+    fi
+    export PRESENTATION_PIPELINE_INTERPRETER="$VENV_PY"
+}
+ensure_presentation_venv
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
     # Resolve the REAL Debian apt-get (NOT the Linuxbrew shim). On these images
@@ -4177,25 +4653,39 @@ else
     echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
 fi
 
-# --- Python deps into the SAME interpreter build_deck.py runs.
-"$PY3" -m pip install --break-system-packages --quiet reportlab >> "$LOG" 2>&1 \
-    && echo "[$(ts)] reportlab OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: reportlab install failed" >> "$LOG"
-"$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
-    && echo "[$(ts)] python-pptx OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
-"$PY3" -m pip install --break-system-packages --quiet pypdf >> "$LOG" 2>&1 \
-    && echo "[$(ts)] pypdf OK" >> "$LOG" \
-    || echo "[$(ts)] WARN: pypdf install failed (workbook PDF read-back)" >> "$LOG"
+# --- Python deps into the FIX 71 department venv (NEVER system python, never
+# --- --break-system-packages). The venv lives on the /data bind-mount, so it
+# --- DOES survive a force-recreate; this script still (re)asserts idempotently.
+VENV_DIR="/data/.openclaw/.venv-presentations"
+VENV_PY="$VENV_DIR/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+    echo "[$(ts)] FIX 71: creating venv at $VENV_DIR" >> "$LOG"
+    python3 -m venv "$VENV_DIR" >> "$LOG" 2>&1 \
+        && echo "[$(ts)] venv created" >> "$LOG" \
+        || echo "[$(ts)] WARN: venv creation failed at $VENV_DIR" >> "$LOG"
+fi
+if [ -x "$VENV_PY" ]; then
+    if ! "$VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+        echo "[$(ts)] FIX 71: pip install reportlab python-pptx pypdf pytesseract Pillow (venv pip, no external-management marker)" >> "$LOG"
+        "$VENV_PY" -m pip install --quiet --upgrade pip >> "$LOG" 2>&1 || true
+        "$VENV_PY" -m pip install --quiet reportlab python-pptx pypdf pytesseract Pillow >> "$LOG" 2>&1 \
+            && echo "[$(ts)] FIX 71: venv packages OK" >> "$LOG" \
+            || echo "[$(ts)] WARN: venv pip install failed (see above)" >> "$LOG"
+    else
+        echo "[$(ts)] FIX 71: venv already healthy — pip install skipped" >> "$LOG"
+    fi
+else
+    echo "[$(ts)] WARN: no venv interpreter at $VENV_PY — presentation python deps NOT installed" >> "$LOG"
+fi
 
-# --- Verify (same checks qc-completeness.sh hard-fails on).
+# --- Verify (same checks qc-completeness.sh hard-fails on) — under the VENV
+# --- interpreter when present, system python3 otherwise.
 command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
 command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
-"$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
-"$PY3" -c "import pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify pypdf OK" >> "$LOG" || echo "[$(ts)] WARN: pypdf import failed (workbook PDF read-back)" >> "$LOG"
+_CHK_PY="$PY3"; [ -x "$VENV_PY" ] && _CHK_PY="$VENV_PY"
+"$_CHK_PY" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx+pypdf OK ($_CHK_PY)" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx/pypdf import failed under $_CHK_PY" >> "$LOG"
 command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
 command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
-
 echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
 REASSERT_EOF
     chmod +x "$_VPS_REASSERT_SCRIPT"
@@ -4211,15 +4701,20 @@ REASSERT_EOF
     command -v pdftoppm >/dev/null 2>&1 \
         && success "pdftoppm (poppler-utils) on PATH" \
         || warn "pdftoppm NOT on PATH after install — Phase-6 QC PNG extraction will fail. Manual fix: $_APT_GET install -y poppler-utils"
-    "$_PY3" -c "import reportlab" >/dev/null 2>&1 \
-        && success "reportlab importable in $_PY3" \
-        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: $_PY3 -m pip install --break-system-packages reportlab"
-    "$_PY3" -c "import pptx" >/dev/null 2>&1 \
-        && success "python-pptx importable in $_PY3" \
-        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
-    "$_PY3" -c "import pypdf" >/dev/null 2>&1 \
-        && success "pypdf importable in $_PY3" \
-        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: $_PY3 -m pip install --break-system-packages pypdf"
+    _VENV_PY="/data/.openclaw/.venv-presentations/bin/python"
+    _IMP_PY="$_PY3"; [ -x "$_VENV_PY" ] && _IMP_PY="$_VENV_PY"
+    "$_IMP_PY" -c "import reportlab" >/dev/null 2>&1 \
+        && success "reportlab importable in $_IMP_PY" \
+        || warn "reportlab NOT importable — presenter-guide PDF will not render. Manual fix: ${_VENV_PY} -m pip install reportlab (create venv first: python3 -m venv /data/.openclaw/.venv-presentations)"
+    "$_IMP_PY" -c "import pptx" >/dev/null 2>&1 \
+        && success "python-pptx importable in $_IMP_PY" \
+        || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: ${_VENV_PY} -m pip install python-pptx"
+    "$_IMP_PY" -c "import pypdf" >/dev/null 2>&1 \
+        && success "pypdf importable in $_IMP_PY" \
+        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: ${_VENV_PY} -m pip install pypdf"
+    "$_IMP_PY" -c "import pytesseract" >/dev/null 2>&1 \
+        && success "pytesseract importable in $_IMP_PY" \
+        || warn "pytesseract NOT importable — OCR read-back will fail. Manual fix: ${_VENV_PY} -m pip install pytesseract Pillow (plus the tesseract binary)"
     command -v ffmpeg >/dev/null 2>&1 \
         && success "ffmpeg on PATH (webinar video render, P9.6)" \
         || warn "ffmpeg NOT on PATH after install — the webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: $_APT_GET install -y ffmpeg"
@@ -4297,10 +4792,22 @@ REASSERT_EOF
 
 else
     # ── MAC ARM ───────────────────────────────────────────────────────────────
-    # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
-    _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
-    _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
-    _install_py_pkg_mac "pypdf"       "pypdf"      "pypdf (workbook PDF read-back verification, P8.25-WORKBOOK)"
+    # ── MAC ARM ───────────────────────────────────────────────────────────────
+    # FIX 71: the department venv was already created + populated at the top of
+    # Step 6.5 (ensure_presentation_venv — .venv-presentations with reportlab,
+    # python-pptx, pypdf, pytesseract, Pillow and the PRESENTATION_PIPELINE_
+    # INTERPRETER export line). Nothing system-side is needed for python deps;
+    # the _install_py_pkg_mac helper stays reserved for the Skill 22 deps in
+    # Step 6.4 (pdfplumber/ebooklib/mobi/… — a DIFFERENT pipeline's packages).
+    if command -v python3 >/dev/null 2>&1; then
+        _MAC_VENV_PY="${PRESENTATION_PIPELINE_INTERPRETER:-}"
+        [ -z "$_MAC_VENV_PY" ] && _MAC_VENV_PY="${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/python"
+        if [ -x "$_MAC_VENV_PY" ] && "$_MAC_VENV_PY" -c "import reportlab, pptx, pypdf, pytesseract" >/dev/null 2>&1; then
+            success "Mac presentation venv verified: reportlab, pptx, pypdf, pytesseract import in $_MAC_VENV_PY"
+        else
+            warn "Mac presentation venv incomplete — re-running ensure_presentation_venv checks is advised. Manual: python3 -m venv ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations && ${OC_CONFIG:-$HOME/.openclaw}/.venv-presentations/bin/pip install reportlab python-pptx pypdf pytesseract Pillow"
+        fi
+    fi
 
     # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
     if command -v pdftoppm >/dev/null 2>&1; then
@@ -4425,6 +4932,94 @@ else
         warn "To install Calibre manually: install Homebrew (https://brew.sh), then run: brew install --cask calibre"
     fi
 fi
+
+# ----------------------------------------------------------
+# Step 6.6b (FIX 61): Schedule the intake-completion poll
+# ----------------------------------------------------------
+# WORK-ITEM-02's mechanical bridge: a finished intake interview must reach the
+# deck engine even when nobody is watching the board. presentation-intake-poll.sh
+# scans for completed intakes whose engine was never launched and dispatches it
+# (under the FIX 61 dispatch lease). A poll script that is never SCHEDULED is a
+# dead letter — staged submissions would sit forever (the exact QC.md FIX 61
+# failure). This installer wires the schedule:
+#   Mac — render scripts/presentation-intake-poll.plist.template into
+#         ~/Library/LaunchAgents/com.blackceo.presentation-intake-poll.plist
+#         (replacing <POLL_SCRIPT_PATH> / <LOG_PATH>) and launchctl load it.
+#   VPS — a 5-minute SILENT main-session openclaw cron running the same script
+#         (there is no launchd in the container; same mechanism as the
+#         reassert-presentation-deps cron above).
+# _FIX61_RC latches the outcome: a failed schedule install surfaces in the
+# step's exit status instead of being swallowed (Gate 8 clause 5).
+# ────────────────────────────────────────────────────────────────────────────
+# The three functions that used to be DEFINED here — install_intake_poll_schedule(),
+# _fix61_selected_workspace() and _fix61_resolve_scripts_src() — now live in
+# lib-presentation-schedules.sh, sourced near the top of this file, and are
+# UNCHANGED there. F12 moved them for one reason: update-skills.sh could not
+# reach a function defined inline in install.sh, so a fleet ROLL could not
+# repair the intake poll (measured: 'presentation-intake-poll' appears 0 times
+# in update-skills.sh, against 25 in this file). The same lib adds
+# install_watchdog_schedule(), which schedules presentation-watchdog.sh — the
+# stall watchdog, the board reconcile, the SUPERVISOR and run-discovery — and
+# which no installer in this repo has ever called.
+PRESENTATIONS_SCRIPTS_SRC="$(_fix61_resolve_scripts_src || true)"
+
+# This call used to sit bare under `set -e`, so a `return 1` killed the whole
+# installer on the spot — with no message, and with the rc latch below never
+# reached despite its comment promising the outcome "surfaces in the step's
+# exit status instead of being swallowed". Suspend errexit so the latch can
+# actually latch (the `set +e` / `set -e` pair this file already uses), then
+# fail LOUDLY and deliberately: a box that ships the Presentations department
+# with no dispatcher scheduled is worse than a box whose install stopped and
+# said why.
+_FIX61_RC=0
+set +e
+install_intake_poll_schedule
+_FIX61_RC=$?
+set -e
+if [ "$_FIX61_RC" -ne 0 ]; then
+    error "FIX 61: intake-poll schedule install FAILED (rc=$_FIX61_RC) — the presentation intake poll is NOT scheduled on this box. Staged deck submissions would sit undispatched forever."
+    echo "  Presentations scripts dir resolved to: ${PRESENTATIONS_SCRIPTS_SRC:-<UNRESOLVED>}"
+    echo "  Correct that path, then re-run install.sh."
+    send_telegram_progress "ERROR: FIX 61 intake-poll schedule failed. Install aborted."
+    exit 1
+fi
+export _FIX61_RC
+
+# ----------------------------------------------------------
+# Step 6.6c (F12a): Schedule the watchdog + supervisor
+# ----------------------------------------------------------
+# The poll scheduled above starts work. NOTHING scheduled above recovers it.
+# presentation-watchdog.sh carries four passes — stall watchdog, board
+# reconcile, SUPERVISOR (an engine process that died behind an active run gets
+# detected and, in apply mode, restarted under a bounded backed-off budget) and
+# run-discovery — and until now no installer in this repo referenced it at all
+# (measured with python3 str.count over the full file text: this file carried
+# 'presentation-watchdog' 0 times and 'supervisor' 0 times, against a
+# 'presentation-intake-poll' control of 25 in the same file). So every client
+# box shipped with the poll and with ZERO automated recovery, and every stalled
+# deck needed a human.
+#
+# NOT FATAL, unlike FIX 61 above, and the asymmetry is deliberate. A missing
+# poll means submitted work never starts — the box is inert and an abort is the
+# honest outcome. A missing watchdog means work that starts is not supervised:
+# strictly worse than having it, strictly better than a box with no
+# Presentations department at all. Aborting an entire fleet install over a
+# failed `launchctl load` would trade a real capability for a bigger outage.
+# The rc is latched, exported and stated LOUDLY instead.
+#
+# The supervisor's --apply (restart) mode is NOT armed here — see F12c in
+# lib-presentation-schedules.sh. It is gated on F2 (auto-repin) being deployed.
+_FIX12_RC=0
+set +e
+install_watchdog_schedule
+_FIX12_RC=$?
+set -e
+if [ "$_FIX12_RC" -ne 0 ]; then
+    warn "F12: watchdog/supervisor schedule install FAILED (rc=$_FIX12_RC) — this box has NO automated stall detection and NO engine-liveness supervision. A stalled deck run will sit until a human notices."
+    echo "  Presentations scripts dir resolved to: ${PRESENTATIONS_SCRIPTS_SRC:-<UNRESOLVED>}"
+    echo "  Install continues (the intake poll above IS scheduled); re-run update-skills.sh to retry the watchdog."
+fi
+export _FIX12_RC
 
 # ----------------------------------------------------------
 # v6.6.0 / Step 6.7: Install Skill 22 persona-inbox-watcher cron (Mac)
@@ -5438,7 +6033,7 @@ if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" = "1" ] && command -v oc_stat
     # obs_* seed + resume cron then had to do all the work). Correct order below.
     SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
-        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
@@ -5513,7 +6108,12 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 63 active skills install in 5 dependency-aware waves, not by number order.
+The 69 active skills install in 6 dependency-aware waves, not by number order.
+The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
+gating 50 of the 69 active skills; the remaining 19 are copied to every box by the installer's
+[0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
+that cannot reach qc-passed on a client box). The per-wave rosters printed below document Waves 1-5;
+Wave 6 (extensions & domain verticals) is defined in that library and must be read from there.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -5880,6 +6480,12 @@ fi
 # ----------------------------------------------------------
 step "Step 10a: Unifying shared core files (AGENTS/TOOLS/USER copied from this box's canonical)"
 link_shared_core_files "$WORKSPACE_DIR" || warn "link_shared_core_files reported warnings (install continues)"
+
+# END-OF-ROLL GLOBAL RECLAIM. The per-target prune inside the step above only
+# reaches paths the unify scan enumerated; this bounds the orphaned +
+# out-of-tree populations it cannot see, and runs even when that step refused.
+# See reclaim_unify_backups() for the three shapes and the safety pattern.
+reclaim_unify_backups || true
 
 # ----------------------------------------------------------
 # Step 10b: Seed Core.md Terminology into MEMORY.md (idempotent)
@@ -6419,7 +7025,7 @@ if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" = "1" ]; then
 else
     warn "lib-onboarding-resume-cron.sh NOT FOUND — the onboarding-resume cron was NOT installed."
     warn "  This box will NOT auto-resume onboarding; skills can stall at pending with nothing to drive them."
-    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
+    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (the retired scripts/update-skills.sh copy was deleted outright, OCT4 issue #10)."
 fi
 
 # ----------------------------------------------------------
@@ -7362,7 +7968,7 @@ install_skill_48_facebook_ad_generator
 # deterministic model-free provers, the no-skip orchestrator, and the canonical
 # fail-closed entry). NO external clone. Skill 49 owns the IP + the gates: it
 # AUTHORS the SACRED 12-section Hero copy + the per-section 5,000-19,000-char
-# gpt-image-2 prompts inside its own fail-closed pipeline, then DELEGATES image
+# gpt-image-2.5 prompts inside its own fail-closed pipeline, then DELEGATES image
 # generation to Skill 47 (kie_image.py) and ALL GoHighLevel media + funnel/page
 # build to Skill 6 (the ONE GHL delivery rail). It never forks a Kie call or a GHL
 # REST call. A "signature funnel" request routes here through the shared STEP-0
@@ -7389,7 +7995,7 @@ install_skill_49_signature_funnel() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 49 (Signature Funnel) installed -> $SKILL_DEST"
-    note "Skill 49 is the methodology + enforcement layer for the Trevor Otts Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
+    note "Skill 49 is the methodology + enforcement layer for the Trevor fixture-client-e Signature Funnel: the SACRED 12-section Hero copy system, per-section 5,000-19,000-char gpt-image-2.5 prompts, and a configurable 3/5/7-step GHL funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching), each gated as a SACRED structure by five fail-closed deterministic model-free provers (intake, 12-section copy contract, image-prompt two-floor gate, no-pitch thank-you + image-provenance, signed certificate)."
     note "It runs P0..P10 through one canonical entry (signature-funnel-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delegates image generation to Skill 47 (kie_image.py) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail). A 'signature funnel' request routes here via the shared STEP-0 funnel-engine selector in Skill 6. Nothing is published without explicit human approval. Skill 6, Skill 47, and Skill 07 (Kie.ai) are prerequisites."
     return 0
 }
@@ -7508,7 +8114,7 @@ install_skill_52_avatar_intelligence() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 52 (Avatar Alchemist) installed -> $SKILL_DEST"
-    note "Skill 52 is the methodology + enforcement layer for the Trevor Otts Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
+    note "Skill 52 is the methodology + enforcement layer for the Trevor fixture-client-e Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
     note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
     return 0
 }
@@ -7655,7 +8261,7 @@ install_skill_55_product_bio() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 55 (Product Bio Engine) installed -> $SKILL_DEST"
-    note "Skill 55 is the methodology + enforcement layer for the Trevor Otts master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
+    note "Skill 55 is the methodology + enforcement layer for the Trevor fixture-client-e master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
     note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's, never Anthropic model ids; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
     return 0
 }
@@ -7671,7 +8277,7 @@ install_skill_55_product_bio
 # the eight fail-closed model-free provers, the no-skip orchestrator, and the
 # canonical fail-closed entry). NO external clone. Skill 56 is the DIRECT-RESPONSE
 # sibling of Skill 49 (Signature Funnel): it AUTHORS the 8-section main sales page
-# (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B), a downsell
+# (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B), a downsell
 # recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form,
 # 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan,
 # from one "Ultimate AI Sales Page Writer" survey. Every SACRED count/band is
@@ -7702,7 +8308,7 @@ install_skill_56_sales_page_assets() {
     chmod +x "$SKILL_DEST/scripts/"*.py 2>/dev/null || true
 
     success "Skill 56 (Sales Page Assets) installed -> $SKILL_DEST"
-    note "Skill 56 is the methodology + enforcement layer for the Trevor Otts Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor Otts 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
+    note "Skill 56 is the methodology + enforcement layer for the Trevor fixture-client-e Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
     note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47, and Skill 44 are prerequisites."
     return 0
 }
@@ -7902,8 +8508,10 @@ bootstrap_command_center_shell() {
         return 0
     fi
 
-    local CC_DIR="$HOME/projects/command-center"
-    [ -d "/data/.openclaw" ] && CC_DIR="/data/projects/command-center"
+    local CC_DIR="${CC_APP_DIR:-$HOME/projects/command-center}"
+    if [ -z "${CC_APP_DIR:-}" ] && [ "${OC_CONFIG:-}" = "/data/.openclaw" ]; then
+        CC_DIR="/data/projects/command-center"
+    fi
 
     # Absence check 1 — a valid Command Center checkout already present.
     if [ -d "$CC_DIR/.git" ] && [ -f "$CC_DIR/package.json" ]; then
@@ -7965,23 +8573,16 @@ bootstrap_command_center_shell() {
         return 0
     fi
 
-    local _bccs_owner _bccs_slug
-    _bccs_owner=$(resolve_owner_name)
-    if [ -z "$_bccs_owner" ] || [ "$_bccs_owner" = "there" ]; then
-        note "No owner identity resolved yet — Command Center bootstrap trigger deferred (will retry on the next update-skills.sh run)"
-        return 0
+    local _bccs_slug="${OPENCLAW_COMPANY_SLUG:-}" _bccs_company="${OPENCLAW_COMPANY_NAME:-}"
+    if [ -z "$_bccs_slug" ] || [ -z "$_bccs_company" ]; then
+        warn "Client/company intake is missing — collect the two names before creating the Command Center"
+        return 8
     fi
-    _bccs_slug=$(printf '%s' "$_bccs_owner" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-    if [ -z "$_bccs_slug" ]; then
-        warn "Owner name '$_bccs_owner' slugified to empty — Command Center bootstrap trigger deferred"
-        return 0
-    fi
-
-    note "Bootstrapping the locked Command Center shell for slug '$_bccs_slug' (name-derived; interview not yet complete)..."
-    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_owner" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
-        success "Command Center locked shell bootstrapped (slug=$_bccs_slug) — will unlock automatically once the AI Workforce interview completes"
+    note "Bootstrapping the locked Command Center for the saved company..."
+    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" --app-dir "$CC_DIR" >>"$LOG_FILE" 2>&1; then
+        success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
     else
-        warn "Command Center bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; a later update-skills.sh run will retry"
+        warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"
     fi
     return 0
 }
@@ -8351,6 +8952,48 @@ if [ "$OC_PLATFORM" = "mac" ]; then
 fi
 
 # ----------------------------------------------------------
+# LAYER E: Mac RESCUE-TUNNEL reboot-stale watchdog + sshd enable (root, sudo).
+# ----------------------------------------------------------
+# A separate gap from the self-heal block above, and the block above cannot
+# cover it. The rescue cloudflared connector on a client Mac is a SYSTEM-domain
+# daemon named com.blackceo.rescue-<slug>, installed by an operator runbook, not
+# by this repo. After a reboot it can come back holding a stale cached edge
+# address and dial the LAN router (RFC1918 address on port 7844) forever. The
+# process is ALIVE, so launchd KeepAlive keeps it, install-watchdog-agent.sh's
+# pgrep check reports OK, and the box is dark to the operator until someone
+# notices by hand. The same reboot sometimes comes back with Remote Login off in
+# the launchd system domain, which removes the last way in.
+#
+# "Alive" is not "registered". Layer E reads the connector's own log and acts
+# only on the positive evidence of the stale state (repeated RFC1918:7844 dial
+# targets with ZERO "Registered tunnel connection" lines), then kicks the daemon
+# and, separately, re-enables sshd when the authoritative
+# `launchctl print-disabled system` view says it is off.
+#
+# It needs root (system-domain launchctl), so this uses `sudo -n`: if a
+# passwordless sudo ticket is not available the install is NOT blocked. It warns
+# with the exact one-line command instead. Fail-soft by design, exactly like the
+# self-heal block above.
+if [ "$OC_PLATFORM" = "mac" ]; then
+    step "Installing Mac rescue-tunnel reboot-stale watchdog (com.blackceo.rescue-tunnel-watchdog, needs sudo)"
+    _RESCUE_WD_INSTALLER="$ONBOARDING_DIR/platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh"
+    if [ -f "$_RESCUE_WD_INSTALLER" ]; then
+        if sudo -n true 2>/dev/null; then
+            if sudo -n bash "$_RESCUE_WD_INSTALLER" 2>&1 | tee -a "$LOG_FILE"; then
+                success "Rescue-tunnel watchdog installed (every 120s, root LaunchDaemon)"
+            else
+                warn "install-rescue-tunnel-watchdog.sh returned non-zero - watchdog NOT confirmed. Re-run by hand: sudo bash $_RESCUE_WD_INSTALLER"
+            fi
+        else
+            warn "No passwordless sudo, so the rescue-tunnel watchdog was NOT installed (the install continues normally). Run this ONE command on this box, entering your own password:"
+            warn "    sudo bash $_RESCUE_WD_INSTALLER"
+        fi
+    else
+        note "rescue-tunnel watchdog installer not in bundle ($_RESCUE_WD_INSTALLER) - skipping (older onboarding bundle, harmless)"
+    fi
+fi
+
+# ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
 # ----------------------------------------------------------
 note "Restarting OpenClaw gateway..."
@@ -8445,7 +9088,7 @@ fire_install_kickoff_triplet() {
     # below always prints it, and on an update/re-roll the fresh-install-only
     # else-branch that used to own the assignment never runs, leaving the
     # variable unbound under `set -u` and aborting the terminal fallback
-    # BEFORE the gateway restart fires (proven on Teresa Pelham's box).
+    # BEFORE the gateway restart fires (proven on fixture-client-h's box).
     local owner_name
     owner_name=$(resolve_owner_name "$openclaw_json")
 
@@ -8562,7 +9205,7 @@ PHASE 2 — Install the skills in waves, with PROGRESS UPDATES:
   acronyms ("QC", "sub-agent", "manifest"), no technical paths.
 
   BEFORE each wave, send a Telegram message like:
-    "Starting on Wave 2 of 5 now. About to set up 18 utility skills
+    "Starting on Wave 2 of 6 now. About to set up 18 utility skills
      in parallel — this should take about 10 minutes."
 
   AFTER each wave, send a Telegram message like:
@@ -8824,6 +9467,119 @@ else
 fi
 echo ""
 
+# ----------------------------------------------------------
+# Agent Exchange Telemetry plugin (Headquarters capture, 2026-10-04).
+# The passive observer of the native sessions_send/sessions_spawn exchange path
+# and the run-scoped lifecycle terminal stream. It replaces no tool, edits no
+# parameters, invokes no agent, changes no model and synthesizes no dialogue.
+#
+# WHY IT IS INSTALLED EXPLICITLY HERE. This extension is path-loaded from
+# ~/.openclaw/extensions (origin:"config", never "bundled"), so nothing
+# discovers it by sibling scan: an unregistered copy on disk is a copy that
+# never loads, and Headquarters capture silently reports zero exchanges. The
+# install must therefore deploy the directory AND register the id, exactly as
+# the CEO Routing Doctrine block above does.
+#
+# THE SAME THREE DEFECTS THE DOCTRINE BLOCK DOCUMENTS APPLY HERE, for the same
+# reasons (read that block's comments before editing this one):
+#   • `cp -R "$_TE_SRC/." "$_TE_DST/"` — the "/." form, or run 2 nests a second
+#     copy and every later roll adds another.
+#   • `plugins.entries.<id>` gets `enabled` ONLY. `hooks` on an entries id is
+#     additionalProperties:false and `allowPromptInjection` there made
+#     `openclaw config validate` FAIL — a failed validate is fatal at gateway
+#     startup (gateway never starts, cron freezes forever, silently).
+#   • `plugins.load.paths` is appended ONLY if absent and `plugins.allow` is
+#     EXTENDED only when it already exists and lacks the id. Never create an
+#     allowlist where none existed: that disables every other plugin on the box.
+#
+# ADDITIVE, unlike the doctrine block in one place: the entry is merged with
+# setdefault and only `enabled` is forced. An operator (or a later target
+# capability check) may have written the extension's own `config` block
+# (companyId / installationId / workspaceDir — the trusted identity the plugin
+# may NOT read from hook context). Overwriting that object would silently blank
+# the box's capture identity, so it is preserved. No credentials or provider
+# settings are touched: only plugins.entries / load.paths / allow, key NAMES
+# only, no key VALUE is ever printed.
+#
+# KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO update-skills.sh.
+# ----------------------------------------------------------
+note "Installing Agent Exchange Telemetry plugin (Headquarters capture)..."
+_TE_SRC="$ONBOARDING_DIR/extensions/agent-exchange-telemetry"
+_TE_DST="$HOME/.openclaw/extensions/agent-exchange-telemetry"
+if [ -d "$_TE_SRC" ]; then
+    mkdir -p "$_TE_DST"
+    # Errors are NOT swallowed (no 2>/dev/null || true): a real copy failure
+    # must be visible instead of shipping a box whose Headquarters feed is
+    # permanently empty with a green install log.
+    if ! cp -R "$_TE_SRC/." "$_TE_DST/"; then
+        warn "FAILED to copy agent-exchange-telemetry into $_TE_DST — plugin NOT installed"
+    else
+        python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    # ADDITIVE merge, deliberately NOT the doctrine block's whole-object
+    # assignment: this entry has a configSchema, so an existing `config` object
+    # (companyId / installationId / workspaceDir — the plugin's ONLY trusted
+    # source for those, per capture-bindings F-1/F-2) must survive the install.
+    # Only `enabled` is forced true; every other key is left exactly as written.
+    _entry = cfg.setdefault("plugins", {}).setdefault("entries", {}).setdefault("agent-exchange-telemetry", {})
+    _entry["enabled"] = True
+    # TARGET CAPABILITY CHECK (the binding's third clause). The plugin may NOT
+    # read the caller's installation identity from hook context or from tool
+    # params (capture-bindings F-1: no installationId exists on that surface),
+    # so the trusted pair has to come from the box's OWN configuration. Derive
+    # it from what this box already recorded — openclaw.json env.vars first,
+    # then the installer's own environment — and write ONLY what is actually
+    # present: an absent value stays absent (the plugin then records honest
+    # uncorrelated capture health rather than a guessed company). Never
+    # overwrite an operator-set config block.
+    _config = _entry.setdefault("config", {})
+    _vars = cfg.get("env", {}).get("vars", {}) if isinstance(cfg.get("env"), dict) else {}
+    for _key, _env in (("companyId", "MC_COMPANY_ID"), ("installationId", "MC_INSTALLATION_ID")):
+        if _config.get(_key):
+            continue                                   # operator value wins
+        _val = _vars.get(_env) or os.environ.get(_env) or ""
+        if isinstance(_val, str) and _val.strip():
+            _config[_key] = _val.strip()
+    if not _config:
+        _entry.pop("config", None)                     # never leave an empty block behind
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never a "/Users/%s" literal — the /Users prefix
+    # is macOS-only and would point every Linux box (VPS + Contabo) at a
+    # directory that does not exist, so the extension would never load.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED ids and runs EARLIER in a roll than
+    # this installer, so without this the telemetry plugin is silently dropped
+    # from the allowlist on a later roll. Only EXTEND an existing allowlist.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "agent-exchange-telemetry" not in _allow:
+        _allow.append("agent-exchange-telemetry")
+    # ATOMIC WRITE + timestamped backup: a signal or full disk mid-write would
+    # TRUNCATE openclaw.json and the gateway would not start.
+    _bak = "%s.bak.xet-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.xet"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("agent-exchange-telemetry enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+        success "Agent Exchange Telemetry plugin installed + enabled (passive Headquarters capture)"
+    fi
+else
+    warn "agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
+fi
+echo ""
+
 # U006 — Co-locate the canonical presentation entry script + guard into the
 # materialized department's scripts/ directory.
 colocate_presentation_entry
@@ -8863,6 +9619,15 @@ else
     note "ensure-heartbeat-defaults.sh not in bundle — skipping (set manually: openclaw config set agents.defaults.heartbeat.every 6h)"
 fi
 
+# BURN GUARD (same script update-skills.sh runs every roll): weekly system-owned
+# skill-collection-review crons OFF on a fresh box. Advisory-only, never fatal.
+_BURN_GUARD="$ONBOARDING_DIR/scripts/ensure-burn-guard.sh"
+if [ -f "$_BURN_GUARD" ]; then
+    bash "$_BURN_GUARD" 2>>"$LOG_FILE" | tee -a "$LOG_FILE" || true
+else
+    note "burn-guard: ADVISORY ensure-burn-guard.sh not in bundle — skipped"
+fi
+
 # ----------------------------------------------------------
 # Loop / furnace protection activation (Skill 60 EWS + Skill 61 Loop Protection).
 # GRAPHICS-FURNACE-CONTEXT-RESCUE-SPEC Topic 2, §2.3 item 2. Runs the shared
@@ -8884,6 +9649,19 @@ if [ -f "$_ACT_LOOP" ]; then
     bash "$_ACT_LOOP" --role client --skills-dir "$SKILLS_DIR" 2>&1 | tee -a "$LOG_FILE" | tail -6 || true
 else
     note "activate-loop-protection.sh not in bundle — loop protection wiring skipped (older bundle)."
+fi
+
+# ----------------------------------------------------------
+# Memory maintenance (Skill 31): nightly embedding-cache prune + a READ-ONLY
+# index drift check, as silent `openclaw cron --command` jobs (no agent turn,
+# never re-embeds). The SAME installer update-skills.sh runs on every roll via
+# the per-skill wiring loop. Best-effort — never aborts the install.
+# ----------------------------------------------------------
+_MEM_MAINT="$SKILLS_DIR/31-upgraded-memory-system/install.sh"
+if [ -f "$_MEM_MAINT" ]; then
+    bash "$_MEM_MAINT" 2>&1 | tee -a "$LOG_FILE" | tail -3 || true
+else
+    note "Skill 31 install.sh not in bundle — memory maintenance crons skipped (older bundle)."
 fi
 
 fire_install_kickoff_triplet

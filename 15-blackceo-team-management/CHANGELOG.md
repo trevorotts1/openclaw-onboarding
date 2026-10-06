@@ -4,7 +4,22 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## [v6.7.2] - 2026-07-17
+## [7.1.1] - 2026-09-17
+
+### Fixed - DOCS (roster key naming)
+
+- `SKILL.md` described the `remote-rescue` agent as living in `agents.list`, the legacy array
+  form only. `qc-blackceo-team-management.sh` has accepted both the `agents.entries{}` map form
+  and the legacy `agents.list[]` array form since the entries/list split, so the doc named only
+  half of what the gate checks and read as a hard requirement for the legacy shape. Both
+  occurrences (the Layer 2 isolation description and the "what breaks isolation" bullet) now
+  read `agents.entries` (or legacy `agents.list`).
+- Documentation only. The QC script, the `remote-rescue` requirement and the installer are
+  unchanged.
+
+---
+
+## [7.0.0] - 2026-07-17
 
 ### Fixed - PRIVACY (fleet no-client-names invariant)
 
@@ -60,3 +75,7 @@ Added 5 HARD auto-fail gates that fail QC if:
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 - Fixed isolation rules: context/data isolation only. Communication is allowed when explicitly directed. Removed communication lockdown interpretation.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

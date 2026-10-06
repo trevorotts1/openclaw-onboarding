@@ -46,7 +46,7 @@ This skill pack provides:
 
 GHL enforces per-location rate limits. General guidance from the master reference:
 - Respect 429 responses and back off with exponential retry
-- Batch contact imports instead of looping single creates
+- Batch contact imports instead of looping single creates; single generic add/save goes to POST /contacts/upsert (match keys + supplied fields only, never a tags array); POST /contacts/ is for an explicitly requested NEW record only
 - Read-heavy operations (GET) have higher limits than writes
 
 ### Required Headers (every call)

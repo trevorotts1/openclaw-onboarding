@@ -2,7 +2,7 @@
 
 **Department:** Presentations
 **Department head:** Director of Presentations
-**Folder:** `departments/presentations/`
+**Folder:** `departments/Presentations/`
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
@@ -35,7 +35,7 @@ Reach for this department when you want any of the following:
 - Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
 - The front door for one specific request.
 - Owns P9-DELIVER multi-destination deck delivery.
-- First-Time-User Onboarding specialist for the Presentations department at BlackCEO.
+- First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -77,24 +77,25 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Capacity Reliability Engineer** | Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has. |
 | **Content To Presentation Architect** | The front door for one specific request. |
 | **Delivery Concierge** | Owns P9-DELIVER multi-destination deck delivery. |
-| **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells. |
+| **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host. |
 | **Fish Audio / Expression Specialist** | Makes the audio demonstration of the Presenter's Speech sound like a real. |
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
 | **Media Librarian GHL Updater** | Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR. |
 | **Offer Price Strategist** | Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar. |
-| **Pptx Assembly Specialist** | Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). |
+| **Pptx Assembly Specialist** | Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx. |
 | **Presenter Coach** | Owns the live-presentation preparation layer. |
 | **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per. |
 | **Presenters Speech Writer** | Writes the FULL word-for-word "here is what you say" script keyed to each slide. |
 | **Slide Copywriter** | Writes every word on every slide (P4-COPY). |
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). |
-| **Slide Submitter** | Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER, slide-image-creator, unreconciled). |
+| **Slide Submitter** | Supervises the one canonical render command that sends every prompt to Kie.ai. |
 | **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
-| **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
+| **Prompt Author** | You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 | **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
 | **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
+| **Scripts Specialist** | Owns the text layer of every deck. |
 
 ### What each specialist is for, with an example request
 
@@ -125,8 +126,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **First Time Onboarding Presentations**
 
-- *What it is for:* First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells.
-- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at BlackCEO."
+- *What it is for:* First-Time-User Onboarding specialist for the Presentations department at the company, the Onboarding Host.
+- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at the company."
 
 **Fish Audio / Expression Specialist**
 
@@ -150,8 +151,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Pptx Assembly Specialist**
 
-- *What it is for:* Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed).
-- *Example request:* "Have the Pptx Assembly Specialist take this on: Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5."
+- *What it is for:* Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx.
+- *Example request:* "Have the Pptx Assembly Specialist take this on: Assembles the final PowerPoint from the verified renders through the shipped."
 
 **Presenter Coach**
 
@@ -180,8 +181,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Slide Submitter**
 
-- *What it is for:* Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER, slide-image-creator, unreconciled).
-- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT Image 2 (no owns_phase in manifest v51; P4-RENDER."
+- *What it is for:* Supervises the one canonical render command that sends every prompt to Kie.ai.
+- *Example request:* "Have the Slide Submitter take this on: Supervises the one canonical render command that sends every prompt to Kie.ai."
 
 **Typography Architect**
 
@@ -190,8 +191,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Prompt Author**
 
-- *What it is for:* You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000.
-- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt."
+- *What it is for:* You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12.
+- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the prompt budget of the pinned image model."
 
 **Attention Content Strategist**
 
@@ -212,6 +213,11 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* You own one question end to end.
 - *Example request:* "Have the Per-Client Representation and Casting Director ("The Mirror") take this on: You own one question end to end."
+
+**Scripts Specialist**
+
+- *What it is for:* Owns the text layer of every deck.
+- *Example request:* "Have the Scripts Specialist take this on: Owns the text layer of every deck."
 
 
 ---
@@ -310,7 +316,7 @@ All image generation MUST route through the canonical module `build_deck.py`. A 
 
 ## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
 
-A slide image MUST be generated via kie.ai GPT Image 2. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+A slide image MUST be generated via kie.ai GPT Image 2.5 Sunburst. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
 
 ---
 

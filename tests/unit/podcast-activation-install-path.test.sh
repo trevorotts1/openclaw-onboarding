@@ -277,6 +277,75 @@ else
     pass "convention: zero em dashes on the activation lines of direct-to-agent-install.md"
 fi
 
+# --- 9: roll-3b ACTIVATES, it does not merely deliver ------------------------
+# Delivery without activation is the whole defect: install.sh's roll-3 block
+# copies the activation files and stops, update-skills.sh had no podcast branch
+# at all, and its per-skill wiring loop runs wire.sh / install.sh /
+# scripts/install.sh / setup-*.sh, none of which skill 58 shipped. So the only
+# activation path in existence was provision-podcast-client.sh, and any box
+# provisioned before the activation layer shipped stayed dark forever.
+WIRE_SH="$REPO_ROOT/58-podcast-production-engine/wire.sh"
+UPDATE_SH="$REPO_ROOT/update-skills.sh"
+
+awk '
+    /^# roll-3b: RUN the activation wiring/ { grab = 1 }
+    grab { print }
+    grab && /^unset _PODCAST_WIRE$/ { exit }
+' "$INSTALL_SH" > "$WORK/block3b.sh"
+if [ -s "$WORK/block3b.sh" ]; then
+    pass "roll-3b activation block present in install.sh"
+    if bash -n "$WORK/block3b.sh" 2>/dev/null; then
+        pass "roll-3b block parses as bash"
+    else
+        fail "roll-3b block is not valid bash"
+    fi
+    grep -q 'wire.sh' "$WORK/block3b.sh" \
+        && pass "roll-3b invokes the podcast wire entry point" \
+        || fail "roll-3b does not invoke wire.sh"
+    grep -q -- '--idempotent' "$WORK/block3b.sh" \
+        && pass "roll-3b calls wire.sh with the updater's --idempotent convention" \
+        || fail "roll-3b does not pass --idempotent"
+    grep -q 'id -u' "$WORK/block3b.sh" \
+        && pass "roll-3b skips activation when the install is running as root" \
+        || fail "roll-3b has no root guard (a root-owned openclaw.json freezes the gateway)"
+    grep -qE '(^|[^a-zA-Z])exit [1-9]' "$WORK/block3b.sh" \
+        && fail "roll-3b must never abort the install; a wiring failure is a warn" \
+        || pass "roll-3b never aborts the install on a wiring failure"
+    grep -q "$EMDASH" "$WORK/block3b.sh" \
+        && fail "convention: em dash found in the roll-3b block" \
+        || pass "convention: zero em dashes in the roll-3b block"
+else
+    fail "roll-3b activation block missing from install.sh: delivery without activation is the defect"
+fi
+
+# The updater side: wire.sh exists, is executable, and is a name the per-skill
+# wiring loop already looks for, so no podcast-specific branch is needed there.
+if [ -x "$WIRE_SH" ]; then
+    pass "58-podcast-production-engine/wire.sh exists and is executable"
+else
+    fail "58-podcast-production-engine/wire.sh missing or not executable: update-skills.sh cannot wire the engine"
+fi
+if [ -f "$WIRE_SH" ]; then
+    bash -n "$WIRE_SH" 2>/dev/null && pass "wire.sh parses as bash" || fail "wire.sh is not valid bash"
+    grep -q -- '--idempotent' "$WIRE_SH" \
+        && pass "wire.sh accepts the updater's --idempotent flag" \
+        || fail "wire.sh does not accept --idempotent"
+    grep -q 'SOP-PODCAST-07' "$WIRE_SH" \
+        && pass "wire.sh names SOP-PODCAST-07 when it cannot activate" \
+        || fail "wire.sh does not name the activation rescue SOP"
+    grep -q 'id -u' "$WIRE_SH" \
+        && pass "wire.sh refuses to run as root" \
+        || fail "wire.sh has no root guard"
+    grep -q "$EMDASH" "$WIRE_SH" \
+        && fail "convention: em dash found in wire.sh" \
+        || pass "convention: zero em dashes in wire.sh"
+fi
+if [ -f "$UPDATE_SH" ] && grep -q 'SKILL_DIR/wire.sh' "$UPDATE_SH"; then
+    pass "update-skills.sh per-skill wiring loop runs a skill's wire.sh by name"
+else
+    fail "update-skills.sh does not run a skill's wire.sh; the update path cannot activate the engine"
+fi
+
 echo ""
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

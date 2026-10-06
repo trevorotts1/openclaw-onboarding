@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Box-side bridge between the hosted intake mini-app and deck-intake-driver.py.
+"""Box-side bridge between the hosted intake mini-app and deck-intake-turngate.py.
 
 The mini-app is a FRONT-END to the existing intake state machine, not a second
 one. This bridge:
@@ -7,7 +7,7 @@ one. This bridge:
   mint  -> POST /api/sessions (box-authenticated) and print the capability link
            the box speaks to the client in chat.
   sync  -> poll GET /api/sessions/<token>/answers?since=<cursor> and REPLAY each
-           new answer through deck-intake-driver.py --answer <id> "<text>" then
+           new answer through deck-intake-turngate.py --answer <id> "<text>" then
            --next, so working/interview/intake_ledger.json, the provers, Gate 0
            and presentation-canonical-entry.sh's GATE 0 are all UNCHANGED (the intake-ledger check was relocated from the retired deck-build-guard.sh, U025). On completion it runs
            --complete (standard) or assembles the record and runs
@@ -38,16 +38,16 @@ SP_QUESTIONS = [f"q{i}" for i in range(1, 9)]
 
 
 def _driver_path(explicit: str | None) -> pathlib.Path:
-    """Locate deck-intake-driver.py: explicit override, else walk up from here."""
+    """Locate deck-intake-turngate.py: explicit override, else walk up from here."""
     if explicit:
         return pathlib.Path(explicit).expanduser().resolve()
     here = pathlib.Path(__file__).resolve()
     for parent in here.parents:
-        cand = parent / "23-ai-workforce-blueprint" / "scripts" / "deck-intake-driver.py"
+        cand = parent / "23-ai-workforce-blueprint" / "scripts" / "deck-intake-turngate.py"
         if cand.is_file():
             return cand
     # Fall back to the conventional relative location; caller errors if missing.
-    return (here.parents[2] / "scripts" / "deck-intake-driver.py").resolve()
+    return (here.parents[2] / "scripts" / "deck-intake-turngate.py").resolve()
 
 
 # ---- pure command builders (unit-tested offline) ----------------------------
@@ -124,11 +124,21 @@ def cmd_mint(args) -> int:
         return 2
     payload = json.loads(pathlib.Path(args.questions).read_text(encoding="utf-8"))
     body = {
+        # PRES-009: the caller's --run-id is DISPLAY-ONLY. The worker mints the
+        # durable company/installation/presentation/run tuple server-side; the
+        # tenant ids name WHO and WHICH deck this intake feeds and are required.
         "run_id": args.run_id,
         "box_id": args.box_id,
+        "company_id": args.company_id,
+        "installation_id": args.installation_id,
+        "presentation_id": args.presentation_id,
         "questions_payload": payload,
         "want_confirm_code": bool(args.confirm_code),
     }
+    if args.company_id:
+        body["company_id"] = args.company_id
+    if args.recipient_chat_id:
+        body["recipient_chat_id"] = args.recipient_chat_id
     if args.ttl_days:
         body["ttl_days"] = args.ttl_days
     status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions", token=admin, body=body)
@@ -138,12 +148,99 @@ def cmd_mint(args) -> int:
     # Emit the machine-usable bits for the caller; never echo the admin token.
     out = {
         "token": resp.get("token"),
+        "session_id": resp.get("session_id"),
         "capability_url": resp.get("capability_url"),
         "reused": resp.get("reused", False),
+        "run_id": resp.get("run_id"),
+        "intake_session_id": resp.get("intake_session_id"),
+        "company_id": resp.get("company_id"),
+        "installation_id": resp.get("installation_id"),
+        "presentation_id": resp.get("presentation_id"),
     }
     if resp.get("confirm_code"):
         out["confirm_code"] = resp["confirm_code"]  # box speaks this in chat if used
     print(json.dumps(out, indent=2))
+    return 0
+
+
+# ---- subcommand: renew (PRES-024) --------------------------------------------
+
+def cmd_renew(args) -> int:
+    """Re-mint an expired/lost capability link for a STABLE intake session.
+
+    PRES-024: the token is the renewable grant; the session identity (and every
+    answer on it) is permanent. This calls the worker's /api/sessions/renew,
+    which issues a NEW expiring token bound to the SAME session/company/run,
+    revokes the previous token, and preserves questions schema + answers +
+    revision (resuming at the exact first unmet question). The company binding
+    is mandatory when the session carries one — a wrong-company renewal is
+    refused by the worker (403) and refused here before the call.
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)", file=sys.stderr)
+        return 2
+    body: dict = {}
+    if args.session_id:
+        body["session_id"] = args.session_id
+    elif args.run_id:
+        body["run_id"] = args.run_id
+    else:
+        print("error: --session-id or --run-id required", file=sys.stderr)
+        return 2
+    if args.company_id:
+        body["company_id"] = args.company_id
+    if args.ttl_days:
+        body["ttl_days"] = args.ttl_days
+    status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/sessions/renew", token=admin, body=body)
+    if status not in (200, 201):
+        print(f"error: renew failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+        return 3
+    out = {
+        "token": resp.get("token"),
+        "session_id": resp.get("session_id"),
+        "run_id": resp.get("run_id"),
+        "revision": resp.get("revision"),
+        "capability_url": resp.get("capability_url"),
+        "resume_question_id": resp.get("resume_question_id"),
+        "answered_count": resp.get("answered_count"),
+        "renewed": True,
+    }
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+# ---- subcommand: record-retry-link (PRES-024) --------------------------------
+
+def cmd_record_retry_link(args) -> int:
+    """Record that a retry link was sent to the session's BOUND recipient.
+
+    The worker refuses (422) and nothing is recorded when the presented
+    recipient is not the session's bound recipient — the delivery log stays
+    fail-closed. The capability_url/token the caller actually sent is accepted
+    for the audit row (so the log names the exact link that went out).
+    """
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env (box→worker auth)", file=sys.stderr)
+        return 2
+    body: dict = {"recipient_chat_id": args.recipient_chat_id}
+    if args.session_id:
+        body["session_id"] = args.session_id
+    elif args.run_id:
+        body["run_id"] = args.run_id
+    else:
+        print("error: --session-id or --run-id required", file=sys.stderr)
+        return 2
+    if args.channel:
+        body["channel"] = args.channel
+    if args.token_sent:
+        body["token"] = args.token_sent
+    status, resp = _http("POST", args.worker_url.rstrip("/") + "/api/admin/retry-link", token=admin, body=body)
+    if status not in (200, 201):
+        print(f"error: retry-link recording failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+        return 3
+    print(json.dumps(resp, indent=2))
     return 0
 
 
@@ -157,7 +254,7 @@ def _run_driver(cmd: list[str]) -> tuple[int, str]:
 def cmd_sync(args) -> int:
     driver = str(_driver_path(args.driver))
     if not pathlib.Path(driver).is_file():
-        print(f"error: deck-intake-driver.py not found at {driver}", file=sys.stderr)
+        print(f"error: deck-intake-turngate.py not found at {driver}", file=sys.stderr)
         return 2
     run_dir = str(pathlib.Path(args.run_dir).expanduser().resolve())
     base = args.worker_url.rstrip("/") + f"/api/sessions/{args.token}/answers"
@@ -220,19 +317,41 @@ def main(argv: list[str]) -> int:
 
     m = sub.add_parser("mint", help="open a hosted intake session and print the capability link")
     m.add_argument("--worker-url", required=True)
-    m.add_argument("--run-id", required=True)
+    m.add_argument("--run-id", required=True, help="DISPLAY-ONLY human run name; the worker mints the durable run id")
     m.add_argument("--box-id", required=True)
+    m.add_argument("--company-id", required=True, help="PRES-009: tenant company id (opaque, 3-64 chars)")
+    m.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id (opaque, 3-64 chars)")
+    m.add_argument("--presentation-id", required=True, help="PRES-009: deck/presentation id (opaque, 3-64 chars)")
     m.add_argument("--questions", required=True, help="path to a questions_payload.json (from build_questions_payload.py)")
     m.add_argument("--confirm-code", action="store_true", help="mint a 6-digit high-trust code")
+    m.add_argument("--company-id", default=None, help="bind the session to a company (renewal must present the same one)")
+    m.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
     m.add_argument("--ttl-days", type=float, default=None)
     m.set_defaults(func=cmd_mint)
 
-    s = sub.add_parser("sync", help="poll answers and replay them through deck-intake-driver.py")
+    rn = sub.add_parser("renew", help="PRES-024: re-mint a lost/expired capability link for the same stable session")
+    rn.add_argument("--worker-url", required=True)
+    rn.add_argument("--session-id", default=None, help="the stable session id (from mint)")
+    rn.add_argument("--run-id", default=None, help="alternative lookup: the run the session feeds")
+    rn.add_argument("--company-id", default=None, help="must equal the company the session was minted with")
+    rn.add_argument("--ttl-days", type=float, default=None)
+    rn.set_defaults(func=cmd_renew)
+
+    rl = sub.add_parser("record-retry-link", help="PRES-024: record a retry-link delivery to the bound recipient")
+    rl.add_argument("--worker-url", required=True)
+    rl.add_argument("--session-id", default=None)
+    rl.add_argument("--run-id", default=None)
+    rl.add_argument("--recipient-chat-id", required=True, help="must equal the session's bound recipient (worker refuses otherwise)")
+    rl.add_argument("--channel", default=None)
+    rl.add_argument("--token-sent", default=None, help="the token whose capability link was sent (audit)")
+    rl.set_defaults(func=cmd_record_retry_link)
+
+    s = sub.add_parser("sync", help="poll answers and replay them through deck-intake-turngate.py")
     s.add_argument("--worker-url", required=True)
     s.add_argument("--token", required=True)
     s.add_argument("--run-dir", required=True)
     s.add_argument("--question-set", choices=["standard", "signature"], default="standard")
-    s.add_argument("--driver", default=None, help="override path to deck-intake-driver.py")
+    s.add_argument("--driver", default=None, help="override path to deck-intake-turngate.py")
     s.add_argument("--since", type=int, default=0)
     s.add_argument("--poll-interval", type=float, default=45.0)
     s.add_argument("--max-seconds", type=float, default=7 * 24 * 3600)

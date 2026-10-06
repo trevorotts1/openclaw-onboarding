@@ -2,7 +2,7 @@
 
 **Cluster:** Design System (density-floor overhaul)
 **Owner roles:** Typography Architect (builds the LAYOUT MAP, SOP 9.2) + Slide Image Creator (renders the assigned archetype + position). Enforced by: QC Specialist (Phase 3 prompt QC, Phase 5 image QC, Phase 6 final deck QC).
-**Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 7.2 the five archetypes)
+**Master authority:** universal-sops/PRESENTATION-MASTER-DOCTRINE.md crosswalk — §7.2: the five archetypes A1–A5 live in this file (`SOP-DESIGN-03`) + `brand-steward` SOP [univ design-system]
 **Version:** 1.0
 
 > A premium deck rotates image position (left, right, top, bottom, full-bleed) and varies word placement across the deck so it reads as one cohesive piece, not a cookie-cutter chassis. The reference failure case's later revision rotated image position (real improvement) but the word block stayed the identical five-part vertical stack (kicker caps, headline, subhead, footer hook, italic caption) on nearly every slide: a rigid recurring chassis. This SOP makes layout variety an enforceable gate, not a hope.
@@ -18,7 +18,7 @@ Turn the master SOP's five-archetype system into an ENFORCED rotation. The five 
 ## 2. The Hard Rule
 
 1. The deck rotates image position across the five archetypes: image LEFT (A2), image RIGHT (A2 mirrored), image TOP (A3), image FULL-BLEED (A1), and TYPE-DOMINANT/portrait (A4/A5). At least THREE of the five archetypes appear in the deck.
-2. No single archetype is used on the whole deck. No archetype exceeds ~50% of slides (a soft cap that triggers review; see the enforcement check for the hard auto-fail).
+2. No single archetype is used on the whole deck. No archetype exceeds 60% of slides (`ARCHETYPE_DOMINANCE_CEILING` = 0.60; see the enforcement check — exceeding it is the hard auto-fail).
 3. No two CONSECUTIVE slides share BOTH the same archetype AND the same word-block position. The eye must move between adjacent slides.
 4. Word-block position rotates across the deck: lower-left, lower-right, centered, top-band, left-panel, right-panel. The identical five-part vertical stack on every slide (the reference-case rigid chassis) is banned.
 5. The deck is cohesive: the brand grammar (palette, type ladder, logo placement, kicker/rule devices) is constant; it is the LAYOUT and word placement that vary. Variety is in position and archetype, not in inventing new colors or fonts per slide.
@@ -71,5 +71,5 @@ The check runs on the LAYOUT MAP at Phase 1.5 (Typography Architect self-audit) 
 ## 6. Research Base
 
 - The gold-standard reference proof: the five-archetype system + rotated image position + rotated word placement is the empirical model for cohesive-but-varied.
-- Master SOP Section 7.2 (the five proven archetypes and the rule that rotating five strong layouts beats inventing a new layout per slide).
+- Crosswalk §7.2: the five proven archetypes (this file, `SOP-DESIGN-03`) and the rule that rotating five strong layouts beats inventing a new layout per slide.
 - The reference-case forensic Dimension F (the rigid word-block chassis is the named defect this SOP prevents).

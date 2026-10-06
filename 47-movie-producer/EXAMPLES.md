@@ -122,9 +122,9 @@ print("Kie result URL:", result.data.get("kie_result_url"))
 
 Expected `selected_provider`: `kie`
 
-### Text-to-video fallback (no source image)
+### Text-to-video (no source image)
 
-The `kie_video.py` adapter automatically falls back to `veo3_fast` when no source image is provided:
+`gemini-omni-video` is the default model even without a source image. The `kie_video.py` adapter falls back to `veo3_fast` (POST `/api/v1/veo/generate`) only when the primary model fails, not because an image is missing:
 
 ```python
 from tools.tool_registry import registry
@@ -139,7 +139,7 @@ result = selector.execute({
     "output_path": "outputs/market-timelapse.mp4"
 })
 
-print("Model used:", result.data.get("kie_model"))
+print("Model used:", result.data.get("model"))
 print("Kie task ID:", result.data.get("kie_task_id"))
 ```
 

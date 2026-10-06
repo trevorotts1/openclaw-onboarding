@@ -9,8 +9,9 @@
 # Strategy: a single local mock HTTP server (Python stdlib) emulates BOTH
 #   - the KIE upload service (file-base64-upload / file-url-upload)
 #   - the KIE job API (jobs/createTask, jobs/recordInfo)
-# We point the script at it via KIE_UPLOAD_BASE + KIE_API_BASE and drive the
-# REAL script end-to-end. The mock records every reference URL it was asked to
+# The script runs every KIE call through Skill 74 (the sibling 74-kie-live-adapter CLI); we point
+# Skill 74 at the mock with its localhost-only hooks (KIE_LIVE_API_BASE / KIE_LIVE_UPLOAD_BASE, which the
+# older KIE_API_BASE / KIE_UPLOAD_BASE names still map to) and drive the REAL script end-to-end. The mock records every reference URL it was asked to
 # put in the video job so we can assert it was a public (mock-hosted) URL and
 # NEVER a file:// or on-disk path.
 #
@@ -33,6 +34,8 @@ if [[ ! -f "$TARGET" ]]; then
 fi
 
 WORK="$(mktemp -d)"
+# Skill 74 timing for a mock: no 1.1 second discovery spacing, short first poll.
+export KIE_LIVE_MIN_SPACING=0 KIE_LIVE_POLL_INITIAL=0.1
 trap 'kill "${MOCK_PID:-}" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 # ---- mock HTTP server ----------------------------------------------------
@@ -100,6 +103,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path.split("?")[0]
+        if p.startswith("/api/v1/models/") and p.endswith("/schema"):
+            # Skill 74 validates every request against the model schema before it spends credits.
+            return self._send(200, {"code": 200, "data": {"model": p.split("/api/v1/models/")[1][:-7], "openapi": {
+                "paths": {"/api/v1/jobs/createTask": {"post": {"requestBody": {"content": {"application/json": {
+                    "schema": {"type": "object", "properties": {"model": {"type": "string"},
+                                                                "input": {"type": "object"}}}}}}}}}}}})
         q = dict(kv.split("=", 1) for kv in self.path.split("?", 1)[1].split("&")) if "?" in self.path else {}
         if p == "/api/v1/jobs/recordInfo":
             tid = q.get("taskId", "")
@@ -167,7 +176,7 @@ run_script() {
   # Run against the mock. Short timeouts so the test is fast.
   HOME="$WORK/nohome" \
   ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="test-key" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" \
   ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   OC_ROOT_OVERRIDE="$OC/.openclaw" \
@@ -192,7 +201,7 @@ jq -n --arg i1 "file://$ORG_PNG" --arg i1l "$ORG_PNG" \
   '{companyName:"TestCo",ownerName:"Owner",agentName:"CEO",industry:"testing",
     infographic1Url:$i1, infographic1LocalPath:$i1l}' > "$STATE"
 rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="k" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   bash "$TARGET" >"$WORK/t1.out" 2>&1; echo $?)
 
@@ -215,7 +224,7 @@ jq -n --arg i1 "file://$ORG_PNG" --arg i1l "$ORG_PNG" \
   '{companyName:"TestCo",ownerName:"Owner",agentName:"CEO",industry:"testing",
     infographic1Url:$i1, infographic1LocalPath:$i1l}' > "$STATE"
 rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="k" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   bash "$TARGET" >"$WORK/t2.out" 2>&1; echo $?)
 
@@ -235,7 +244,7 @@ jq -n --arg i1 "https://tempfile.aiquickdraw.com/abc/expired-org.png" \
   '{companyName:"TestCo",ownerName:"Owner",agentName:"CEO",industry:"testing",
     infographic1Url:$i1, infographic1LocalPath:""}' > "$STATE"
 rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="k" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   bash "$TARGET" >"$WORK/t3.out" 2>&1; echo $?)
 if [[ "$rc" == "0" ]]; then pass "T3: exited 0 with an existing public URL"; else fail "T3: exited $rc"; info "$(tail -5 "$WORK/t3.out")"; fi
@@ -254,7 +263,7 @@ jq -n --arg i1 "$PUBURL" \
   '{companyName:"TestCo",ownerName:"Owner",agentName:"CEO",industry:"testing",
     infographic1Url:$i1, infographic1LocalPath:""}' > "$STATE"
 rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="k" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" ZHC_REHOST_PUBLIC_REFS=0 \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" ZHC_REHOST_PUBLIC_REFS=0 \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   bash "$TARGET" >"$WORK/t4.out" 2>&1; echo $?)
 job_imgs=$(tail -1 "$REFLOG")
@@ -270,7 +279,7 @@ jq -n --arg i1 "file://$ORG_PNG" --arg i1l "$ORG_PNG" \
   '{companyName:"TestCo",ownerName:"Owner",agentName:"CEO",industry:"testing",
     infographic1Url:$i1, infographic1LocalPath:$i1l}' > "$STATE"
 rc=$(HOME="$WORK/nohome" ZHC_STATE_FILE="$STATE" ZHC_LOG_FILE="$LOG" \
-  KIE_API_KEY="k" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
+  KIE_API_KEY="zhc-test-key-0123456789" KIE_UPLOAD_BASE="$BASE" KIE_API_BASE="$BASE" \
   ZHC_CELEBRATION_VIDEO_MODEL="gemini-omni-video" ZHC_VIDEO_POLL_TIMEOUT_SEC=30 \
   bash "$TARGET" >"$WORK/t5.out" 2>&1; echo $?)
 # Genuine non-recoverable failure: script exits non-zero. run-closeout.sh's
@@ -283,7 +292,9 @@ if [[ -s "$REFLOG" ]] && tail -1 "$REFLOG" | grep -q "file://"; then fail "T5: f
 # ==========================================================================
 echo "=== TEST 6: static guards present in the source (defense in depth) ==="
 if grep -q 'ensure_public_url' "$TARGET"; then pass "T6: ensure_public_url() present"; else fail "T6: ensure_public_url() missing"; fi
-if grep -q 'file-base64-upload' "$TARGET" && grep -q 'file-url-upload' "$TARGET"; then pass "T6: both KIE upload endpoints wired"; else fail "T6: upload endpoints missing"; fi
+if grep -q 'kie74_upload_file' "$TARGET" && grep -q 'kie74_upload_url' "$TARGET"; then pass "T6: both uploads go through Skill 74 (upload --file / --url)"; else fail "T6: Skill 74 upload wiring missing"; fi
+LIB="$SCRIPT_DIR/lib-kie74.sh"
+if ! grep -qE 'api\.kie\.ai|redpandaai|Authorization: Bearer|recordInfo|jobs/createTask' "$TARGET" "$LIB"; then pass "T6: no KIE host, endpoint or auth header in the script or its lib (one KIE path)"; else fail "T6: a second KIE client crept back in"; fi
 if grep -qE 'INFOGRAPHIC1_URL" == https://\*' "$TARGET" || grep -q '== https://\*' "$TARGET"; then pass "T6: https-only guard on image_urls (no non-https reference ever sent)"; else fail "T6: https-only guard missing"; fi
 if grep -qi 'image fetch failed' "$TARGET"; then pass "T6: image-fetch-failed transient classification present"; else fail "T6: image-fetch transient handling missing"; fi
 

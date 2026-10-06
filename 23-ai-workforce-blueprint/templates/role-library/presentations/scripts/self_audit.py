@@ -58,6 +58,52 @@ except ImportError as exc:
         "worthless. Restore presentation_job/deliverables.py alongside this script."
     ) from exc
 
+# FIX 103 (MASTER Part 8, SMOKE-1 addenda): every deck-size floor scales by
+# slide count, from ONE helper. The F49 inline scaler below used to re-derive
+# the reference-deck ratio inline with its own slide-count walk — a divergent
+# copy of the floor formula (both components came from the reference deck).
+# It now delegates to deliverable_floors.pdf_floor(n) (== max(1506*n, 8192);
+# 1506*34 reproduces the reference floor exactly) and reads the slide count
+# via deliverable_floors.slide_count(run_dir), which reads slides.json and
+# never a constant. The import is guarded: if the floors module is absent the
+# audit falls back to the same formula locally, so behaviour never changes on
+# a mid-fleet-roll box.
+try:
+    from presentation_job.deliverable_floors import pdf_floor, slide_count, guide_floor  # noqa: F401
+except ImportError:  # pragma: no cover — merge-order safety only
+    def guide_floor(n_slides: int) -> int:
+        """Local fallback identical to deliverable_floors.guide_floor."""
+        try:
+            _n = int(n_slides)
+        except (TypeError, ValueError):
+            _n = 0
+        return max(1600 * max(_n, 0), 12000)
+
+    def pdf_floor(n_slides: int) -> int:
+        """Local fallback identical to deliverable_floors.pdf_floor (F49 formula)."""
+        try:
+            _n = int(n_slides)
+        except (TypeError, ValueError):
+            _n = 0
+        return max(1506 * max(_n, 0), 8192)
+
+    def slide_count(run_dir) -> int:  # noqa: F811 — fallback, same contract
+        """Local fallback identical to deliverable_floors.slide_count:
+        the F49 walker over working/copy/slides.json (+ parent walk)."""
+        root = os.path.dirname(os.path.abspath(str(run_dir))) if run_dir else ""
+        for cand in (os.path.join(root, "working", "copy", "slides.json"),
+                     os.path.join(root, "..", "working", "copy", "slides.json")):
+            try:
+                with open(cand, encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, list):
+                    return len(data)
+                if isinstance(data, dict) and isinstance(data.get("slides"), list):
+                    return len(data["slides"])
+            except Exception:  # noqa: BLE001
+                continue
+        return 0
+
 # The runtime audit list is derived from the single source of truth.
 # The 'filename' field is the flat-folder name (standardized_dest).
 DELIVERABLE_AUDIT_LIST = [
@@ -90,6 +136,15 @@ BONUS_ITEMS = [
         "magic_desc": "Bundle completeness gate record",
     },
 ]
+
+
+def _count_deck_slides(deliverables_dir: str) -> int:
+    """FIX 103: slide count for floor scaling -- delegates to THE one reader
+    (deliverable_floors.slide_count), which reads slides.json / arc_allocation.json
+    wherever it resolves (run-dir working/copy, or the deliverables sibling walking
+    up to the run root) and NEVER returns a constant. Returns 0 when undeterminable
+    (spec floors used unchanged)."""
+    return slide_count(deliverables_dir or ".")
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +397,35 @@ def audit_all(deliverables_dir: str) -> dict:
     results = []
     bonus_results = []
 
+    # F49 (SMOKE-1, 2026-09-01): scale the guide/deck PDF floors by THIS deck's
+    # slide count — the reference byte floor was measured on the reference deck,
+    # and every other gate (P8.2 verifier, bundle gate) scales identically. The
+    # spec list stays the authority; the per-run floor is computed here and
+    # applied to the deck-size-scaled items.
+    # FIX 103 (MASTER Part 8, SMOKE-1 addenda): the F49 inline scaler is gone —
+    # this audit delegates to THE one helper (deliverable_floors.pdf_floor /
+    # slide_count -- max(1506*n, 8192), the slide count read from slides.json,
+    # never a constant); the guarded local fallbacks (same names, same formulas)
+    # keep the audit working on a mid-roll box. 1506*34 reproduces the reference
+    # floor exactly, so the reference deck enforces the same floor it always did;
+    # below the reference the floor scales down with the deck.
+    # speech_pdf is NOT in the scaled set: its floor is the doctrine-ratified
+    # 3,000-byte absolute (P3-01(c)5 reconciliation), not a reference-deck
+    # calibration — scaling it would make an honest 12-slide speech PDF
+    # ("below the 3KB stub floor it always passed") structurally unpassable.
+    n_slides = _count_deck_slides(deliverables_dir)
     for item in DELIVERABLE_AUDIT_LIST:
+        item = dict(item)
+        # FIX 103: each row scales with ITS OWN helper formula — guide_pdf via
+        # guide_floor(n)=max(1600n, 12000), deck_pdf via pdf_floor(n)=max(1506n,
+        # 8192) — exactly as phase_verifiers' P8.1/P8.2 verifiers and build_deck's
+        # run_postflight_gate scale the same two rows. One helper family, no
+        # site re-derives the arithmetic.
+        if n_slides:
+            if item.get("key") == "guide_pdf":
+                item["min_bytes"] = guide_floor(n_slides)
+            elif item.get("key") == "deck_pdf":
+                item["min_bytes"] = pdf_floor(n_slides)
         fp = _find_file(deliverables_dir, item["filename"])
         r = audit_deliverable(fp, item)
         results.append(r)

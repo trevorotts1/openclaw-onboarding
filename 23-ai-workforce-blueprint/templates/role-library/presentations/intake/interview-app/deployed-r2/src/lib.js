@@ -41,6 +41,43 @@ export function isValidTokenShape(token) {
   return typeof token === "string" && /^[0-9a-f]{32}$/.test(token);
 }
 
+// ---------------------------------------------------------------------------
+// PRES-024 — stable session identity vs renewable access-token grants.
+// ---------------------------------------------------------------------------
+// The token is the CAPABILITY (what you hold in the link); the session_id is
+// the IDENTITY (where the answers live). A renewal mints a fresh token bound
+// to the SAME session_id / company / presentation run and revokes the old
+// token; expiry of a token never erases the session's data.
+
+/** Stable 128-bit session identity (hex), generated once per intake session. */
+export function randomSessionId(getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)) {
+  const buf = new Uint8Array(16);
+  getRandomValues(buf);
+  return [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** A session id is well-formed if it is 32 lowercase-hex chars. */
+export function isValidSessionIdShape(id) {
+  return typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
+}
+
+/**
+ * First unmet active question id — the exact question a resumed session must
+ * present. Optional-but-unanswered questions are still "met" only when an
+ * answer exists on record; conditionally-inactive questions never count as
+ * unmet (same rule completeSession enforces). Returns null when complete.
+ */
+export function firstUnmetQuestionId(payload, answeredIds, answers) {
+  const answered = new Set(answeredIds);
+  const qs = orderedQuestions(payload, answers);
+  for (const q of qs) {
+    if (answered.has(q.id)) continue;
+    if (isQuestionActive(q, answers) === false) continue;
+    return q.id;
+  }
+  return null;
+}
+
 /**
  * Validate a questions_payload handed to /api/sessions. Returns {ok, error}.
  * We keep this permissive about extra fields (the JSONs carry help/labels we

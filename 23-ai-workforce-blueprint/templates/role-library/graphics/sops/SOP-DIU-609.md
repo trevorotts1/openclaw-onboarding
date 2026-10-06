@@ -24,7 +24,7 @@ The Photo Shoot Director owns the hosting policy and consent gate; the Generatio
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` | §1 (reference-image size limits per endpoint — 30MB for GPT-I2I/NB2; 10MB for Seedream/Wan), §5.2 (`input_urls` — GPT-Image 2 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
+| `_system/MODEL-SPECS.md` | §1 (reference-image size limits per endpoint — 30MB for GPT-I2I/NB2; 10MB for Seedream/Wan), §5.2 (`input_urls` — GPT-Image-2.5 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
 | `_system/PHOTO-SHOOT-SOP.md` | §2 (identity-sourcing hierarchy — the four source tiers and verification requirement), §3 (IDENTITY.md schema — reference image paths and quality notes) | How refs are located; where verified hosted URLs are written back |
 | `45-design-intelligence-library/` → `07-kie-setup/` | Media-librarian pattern (GHL media library as client-owned hosting) | GHL media library as the approved identity-ref hosting target |
 | `templates/role-library/presentations/` → `media-librarian` pattern | ImgBB ephemeral-upload flow reference | Non-person asset upload procedure |
@@ -41,7 +41,7 @@ All size limits and endpoint param names are read from MODEL-SPECS at runtime. D
    - Likeness present → follow **Path L (Identity Hosting)** below.
    - No likeness (style swatches, logo assets, product photos without people, abstract textures) → follow **Path N (Non-Person Hosting)** below.
 
-2. **Verify consent is active** for every likeness before any upload step. Read the consent record at `_local/consent/{client-id}.json` (schema per SOP-DIU-608). Status must be `active`. If status is `none`, `pending`, `expired`, or `revoked`: halt this shoot, notify the Photo Shoot Director and CDO, do not upload. Consent check is not delegated to the Generation Operator.
+2. **Verify consent is active** for every likeness before any upload step. Read the consent record at `personal-photo-shoot/{client-slug}/CONSENT.md` (schema per SOP-DIU-608). Status must be `active`. If status is `none`, `pending`, `expired`, or `revoked`: halt this shoot, notify the Photo Shoot Director and CDO, do not upload. Consent check is not delegated to the Generation Operator.
 
 3. **Record the classification decision** in the current shoot record at `_local/shoots/{shoot-id}/shoot-record.json` as `hosting_path: "identity"` or `hosting_path: "non-person"`. Write this before any upload.
 
@@ -76,7 +76,7 @@ Run these checks against every candidate image file before any upload call. Any 
 
 4. **Pass hosted URLs to the Generation Operator.** The Operator populates the correct Kie.ai endpoint param (`input_urls`, `image_input`, or `image_urls` per MODEL-SPECS §5.2/5.3/5.5) using only the verified hosted URLs from `hosted-refs.json`. The Operator never uses a local file path or CF-tunnel URL as a Kie.ai reference param.
 
-5. **Deletion is mandatory.** After the Kie.ai task reaches `state: success` and postflight verification is complete (SOP-DIU-601), the Generation Operator calls the GHL MCP deletion endpoint using the `ghl_media_id` recorded in step 2. Record the deletion result in `hosted-refs.json` as `deleted_at: "{iso8601}"`. A hosted identity reference that has not been deleted within 24 hours of job completion is an escalation trigger (see below).
+5. **Deletion is mandatory.** After the Kie.ai task reaches `state: success` and the Render Dispatcher's postflight verification is complete (SOP-DIU-601), the Generation Operator calls the GHL MCP deletion endpoint using the `ghl_media_id` recorded in step 2. Record the deletion result in `hosted-refs.json` as `deleted_at: "{iso8601}"`. A hosted identity reference that has not been deleted within 24 hours of job completion is an escalation trigger (see below).
 
 6. **Log deletion in shoot record.** Update `_local/shoots/{shoot-id}/shoot-record.json` with `identity_refs_deleted: true` and `deleted_at`. This is the audit trail for consent revocation, licensing audits, and SOP-DIU-610 rights manifest entries.
 
@@ -107,7 +107,7 @@ Run these checks against every candidate image file before any upload call. Any 
 | Input | Required | Source |
 |---|---|---|
 | Reference image files (local paths on the client box) | Yes | PHOTO-SHOOT-SOP §2 sourcing hierarchy — already verified by Photo Shoot Director |
-| Consent record for every likeness image | Yes | `_local/consent/{client-id}.json` via SOP-DIU-608 |
+| Consent record for every likeness image | Yes | `personal-photo-shoot/{client-slug}/CONSENT.md` via SOP-DIU-608 |
 | Resolved Kie.ai endpoint (determines size cap) | Yes | MODEL-SPECS §2 routing decision (SOP-DIU-302) |
 | Shoot record (`shoot-record.json`) | Yes | Created at shoot open; written by Photo Shoot Director |
 | GHL MCP credentials (client box) | Yes (Path L) | Client box env stores — GHL_API_KEY / location ID |
@@ -129,7 +129,7 @@ Run these checks against every candidate image file before any upload call. Any 
 ## Handoff Conditions
 
 - **Hosting validated and URLs live:** Generation Operator receives `hosted-refs.json` with verified URLs and populates the Kie.ai template. Preflight continues per SOP-DIU-601.
-- **Job completed and postflight passed (SOP-DIU-601):** Generation Operator immediately triggers deletion for all hosted refs. Photo Shoot Director receives the closed `hosted-refs.json` for inclusion in the SOP-DIU-610 Rights Manifest.
+- **Job completed and postflight passed (SOP-DIU-601, run by the Render Dispatcher):** Generation Operator immediately triggers deletion for all hosted refs. Photo Shoot Director receives the closed `hosted-refs.json` for inclusion in the SOP-DIU-610 Rights Manifest.
 - **Hosting pre-validation failure:** Itemized failure list returned to Photo Shoot Director. No upload. No Kie.ai submission. Operator does not resize or reformat — returns to Photo Shoot Director for decision.
 - **Consent not active:** Photo Shoot Director and CDO notified. Shoot halted. No upload under any circumstances until consent record is updated.
 

@@ -39,11 +39,30 @@ from .scan_roots import (
 # ---------------------------------------------------------------------------
 
 
+def _slugify(name: str) -> str:
+    """Same normalization as curate._resolve_deck_slug's final step:
+    lowercase, every non-[a-z0-9] run collapsed to one hyphen, stripped,
+    floored to 'deck' so an all-punctuation name still resolves."""
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-") or "deck"
+
+
 def _deck_slug(run_dir: Path, state: dict) -> Optional[str]:
     """The title-independent board handle: cc_board sends it as BOTH source_ref and
     external_session_id (cc_board.py:496,499). NEVER derive a match from the card title --
     the idempotency key is sha256(source_ref + title) (:488), so an edited title yields a
-    different key and a naive re-ingest would MINT A DUPLICATE."""
+    different key and a naive re-ingest would MINT A DUPLICATE.
+
+    FIX 48: resolution now ends in the run directory's own name, slugified -- the
+    same 5-step chain curate._resolve_deck_slug (curate.py:594) and
+    manifest.resolve_artifact_pattern (manifest.py:227) already use, whose
+    step 5 is run_dir.name. Before this fallback a run whose state.intake
+    carried no deck_slug (older/newer writer, or an upstream writer that
+    never stamps it) was rejected wholesale as not_a_run_dir -- the exact
+    rejection class that made the 15-minute board-reconcile-sweep exit
+    EXIT_SWEEP_ALL_REJECTED and look unhealthy. run_dir.name is also what
+    phases.py passes to board.open_card when the engine itself opens a card,
+    so the fallback produces the handle the engine already uses."""
     slug = (state.get("intake") or {}).get("deck_slug")
     if slug:
         return str(slug)
@@ -52,7 +71,8 @@ def _deck_slug(run_dir: Path, state: dict) -> Optional[str]:
         slug = intake.get("deck_slug")
         if slug:
             return str(slug)
-    return None
+    # FIX 48 fallback (curate step 5): the directory name, slugified.
+    return _slugify(run_dir.name)
 
 
 def _resolve_task_id(state: dict, run_dir: Path) -> Optional[str]:
@@ -106,6 +126,51 @@ def _target_status(state: dict) -> Optional[str]:
         if isinstance(p, dict) and p.get("status") in ("running", "done"):
             return "in_progress"
     return None
+
+
+def _card_ref_identity(state: dict, run_dir: Path) -> Optional[str]:
+    """FIX 57: the board-namespace run identity this run's card SHOULD carry.
+    The card's 'Ref:' provenance line (rendered by the ingest route from the
+    source_ref cc_board.ingest_deck_task sent) must equal this value, else the
+    recorded card belongs to a DIFFERENT run. Same two sources _deck_slug
+    reads (state.intake.deck_slug -> working/copy/intake.json -> run dir name,
+    slugified) -- FIX 48's run-dir-name fallback included, so the identity is
+    exactly the handle the engine itself used when it opened the card."""
+    slug = (state.get("intake") or {}).get("deck_slug")
+    if slug:
+        return str(slug)
+    intake = _read_json(run_dir / "working" / "copy" / "intake.json")
+    if intake and isinstance(intake, dict):
+        slug = intake.get("deck_slug")
+        if slug:
+            return str(slug)
+    return _slugify(run_dir.name)
+
+
+def _card_ref_matches_run(state: dict, run_dir: Path, card: dict) -> Optional[bool]:
+    """FIX 57: does the card's 'Ref:' provenance line name THIS run?
+
+    Parses the card description's 'Ref: <value>' line (the ingest route
+    renders source_ref there) and compares against _card_ref_identity.
+    Returns:
+      True  -> matches (or no Ref: line readable -- UNDETERMINED, never a
+               mismatch; only a POSITIVE foreign read holds a card)
+      False -> a Ref: line was read and names a DIFFERENT run -- a positive
+               deck_run_identity_mismatch
+      None  -> `card` is not a usable dict at all
+    Never raises."""
+    if not isinstance(card, dict):
+        return None
+    desc = card.get("description") or ""
+    if not isinstance(desc, str) or not desc:
+        return True  # UNDETERMINED
+    my_ref = _card_ref_identity(state, run_dir)
+    for line in desc.splitlines():
+        s = line.strip()
+        if s.startswith("Ref:"):
+            ref_val = s[4:].strip()
+            return ref_val == my_ref or ref_val.startswith(f"{my_ref}:")
+    return True  # no Ref: line -> UNDETERMINED
 
 
 def _find_run_dirs(scan_root: Path, scan_depth: int) -> List[Path]:
@@ -164,6 +229,28 @@ def _classify(
     task_id = _resolve_task_id(state, run_dir)
 
     if task_id:
+        # FIX 57: identity check BEFORE the behind-check. A card whose Ref:
+        # names a different run is HELD as deck_run_identity_mismatch -- the
+        # sweep must never patch or re-nest another run's card, and never
+        # count it "consistent" (a held card is divergence, not health).
+        # UNDETERMINED (card dict unreadable / no description / no Ref: line)
+        # is never a mismatch -- the sweep proceeds to the behind-check.
+        try:
+            import cc_board as _ccb_ident
+            cfg = _ccb_ident.board_config(os.environ)
+            if cfg is not None:
+                try:
+                    _st, _body = _ccb_ident._request(
+                        "GET", f"{cfg['base_url']}/api/tasks/{task_id}", {}, cfg)
+                    _card = _body if isinstance(_body, dict) else None
+                except (OSError, ValueError):
+                    _card = None
+                matched = _card_ref_matches_run(state, run_dir, _card)
+                if matched is False:
+                    return ("deck_run_identity_mismatch",
+                            f"task_id={task_id} Ref names another run")
+        except Exception:
+            pass  # probe failure is UNDETERMINED, never a mismatch
         # Card exists. Check if it is behind.
         movements_path = run_dir / "working" / "checkpoints" / "cc-board.json"
         movements_data = _read_json(movements_path)
@@ -325,6 +412,7 @@ def reconcile_sweep(
         "card_behind": [],
         "consistent": [],
         "finished_no_card": [],
+        "deck_run_identity_mismatch": [],
         "failure": [],
     }
 
@@ -372,6 +460,9 @@ def reconcile_sweep(
             outcomes.setdefault(outcome, []).append((run_dir, detail))
 
             # --- Actionable (card_missing or card_behind) -> always write findings ---
+            # FIX 57: deck_run_identity_mismatch is HELD, never actionable --
+            # patching or re-nesting another run's card is exactly the
+            # cross-run contamination this outcome exists to stop.
             is_actionable = outcome in ("card_missing", "card_behind")
 
             if is_actionable:
@@ -505,6 +596,7 @@ def reconcile_sweep(
         f"consistent: {counts.get('consistent', 0)}",
         f"too_old: {counts.get('too_old', 0)}",
         f"finished_no_card: {counts.get('finished_no_card', 0)}",
+        f"deck_run_identity_mismatch: {counts.get('deck_run_identity_mismatch', 0)}",
         f"not_a_run_dir: {counts.get('not_a_run_dir', 0)}",
     ]
     if counts.get("failure", 0):
@@ -523,6 +615,18 @@ def reconcile_sweep(
             "reconcile-board: WARNING — deduped count > 0. "
             "Cards existed that the local record did not know about. "
             "Guard A may be too loose.",
+            flush=True,
+        )
+
+    # FIX 57: a held identity mismatch is divergence the operator must see --
+    # it is the 47-of-49 misparenting incident shape, and it must never read
+    # as a clean sweep.
+    if counts.get("deck_run_identity_mismatch", 0):
+        print(
+            f"reconcile-board: WARNING -- {counts['deck_run_identity_mismatch']} "
+            f"run dir(s) HELD with deck_run_identity_mismatch: the recorded "
+            f"card's Ref: provenance names a DIFFERENT run -- nothing was "
+            f"patched or re-nested for these (held, never actionable)",
             flush=True,
         )
 

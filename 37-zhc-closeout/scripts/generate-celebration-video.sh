@@ -8,18 +8,20 @@
 #     (model slug: gemini-omni-video). Reason: Gemini Omni accepts image
 #     references (we can hand it the just-rendered workforce-chart PNG so
 #     brand colors and CEO agent name carry through into the video).
-#     Endpoint: POST /api/v1/jobs/createTask + GET /api/v1/jobs/recordInfo
 #
 #   FALLBACK: Veo 3.1 via KIE.ai (model slug: veo3 or veo3_fast).
 #     Veo 3.1 / veo3_fast is the GENERAL-PURPOSE default video model
 #     elsewhere in OpenClaw - it just isn't ideal for *this* celebration
 #     use case because Veo3 cannot accept an image guidance reference.
-#     Endpoint: POST /api/v1/veo/generate + GET /api/v1/veo/record-info
+#
+# KIE transport: every call (upload, createTask, poll, download) is Skill 74's CLI via lib-kie74.sh; Skill 74
+# submits to the path each model's schema declares. If Skill 74 is not installed this script stops with a clear
+# error. The veo3 / veo3_fast fallback therefore needs a model whose schema Skill 74 can read.
 #
 # Env overrides:
 #   ZHC_CELEBRATION_VIDEO_MODEL  default: gemini-omni-video
 #                                accepts:  gemini-omni-video | veo3 | veo3_fast
-#   ZHC_VIDEO_DURATION           default: 4 (Gemini) or 8 (Veo)
+#   ZHC_VIDEO_DURATION           default: 8 (Gemini Omni and Veo)
 #                                Gemini Omni typically supports 4-8s.
 #                                Veo3 supports 4, 6, or 8s.
 #   ZHC_CELEBRATION_VIDEO_ASPECT default: 16:9. Accepts 16:9 or 9:16.
@@ -43,15 +45,12 @@
 #   tempfile URLs were passed verbatim with NO retry -> "Image fetch failed".
 #   FIX: ensure_public_url() now GUARANTEES every reference image is a fresh,
 #   durable, model-reachable https URL BEFORE the video call:
-#     - file:// or on-disk path -> KIE base64 upload (file-base64-upload)
-#     - existing http(s) URL     -> KIE re-host (file-url-upload), so an expired
+#     - file:// or on-disk path -> KIE upload (Skill 74 `upload --file`)
+#     - existing http(s) URL     -> KIE re-host (Skill 74 `upload --url`), so an expired
 #                                   or flaky tempfile becomes a fresh KIE-hosted
 #                                   URL the model can fetch.
 #   Both uploaders retry-with-backoff. submit_gemini_omni()/poll also treat
-#   "image fetch failed" as a transient and retry. Endpoints (KIE, same key):
-#     POST https://kieai.redpandaai.co/api/file-base64-upload
-#     POST https://kieai.redpandaai.co/api/file-url-upload
-#   (see 07-kie-setup/kie-setup-full.md "File upload APIs"). Uploaded files are
+#   "image fetch failed" as a transient and retry. Uploaded files are
 #   retained ~3 days -- ample for the closeout window. If a reference still can't
 #   be made public, it is simply OMITTED (the video renders prompt-only) rather
 #   than poisoning the request with an unfetchable URL.
@@ -106,6 +105,10 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
   state_set() { local tmp; tmp=$(mktemp); jq "$1" "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"; }
 fi
 
+# One KIE path: Skill 74 (upload, createTask, poll, download). See lib-kie74.sh.
+# shellcheck source=lib-kie74.sh disable=SC1090,SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-kie74.sh"
+
 # ----------------------------------------------------------------------
 # PUBLIC REFERENCE IMAGE RESOLUTION (2026-06-20 "Image fetch failed" fix)
 #
@@ -116,14 +119,9 @@ fi
 #   2. ephemeral / flaky URL   -> e.g. a KIE tempfile.* that has expired or a
 #      CDN the model backend intermittently cannot pull -> "Image fetch failed".
 #
-# KIE_UPLOAD_BASE: the KIE temp-file upload service (07-kie-setup). It returns a
-# durable (~3 day) KIE-hosted https URL that the SAME KIE/Gemini backend can
-# always fetch. Overridable for tests.
-KIE_UPLOAD_BASE="${KIE_UPLOAD_BASE:-https://kieai.redpandaai.co}"
-# KIE_API_BASE: the createTask/recordInfo + veo job API host. Overridable for
-# tests (lets the harness point the whole pipeline at a local mock). Production
-# default is the real KIE host.
-KIE_API_BASE="${KIE_API_BASE:-https://api.kie.ai}"
+# Uploads and re-hosting go through Skill 74 (`upload --file` / `upload --url`, KIE temp-file service,
+# durable ~3 day KIE-hosted https URL). KIE_UPLOAD_BASE / KIE_API_BASE remain test hooks only (lib-kie74.sh
+# maps them to Skill 74's localhost-only KIE_LIVE_* hooks, so a harness can point the pipeline at a local mock).
 # Re-host EVERY reference (even already-public ones) so the model always gets a
 # fresh, first-party KIE URL? Default on -- this is what kills the recurring
 # transient "Image fetch failed" on tempfile/CDN URLs. Set 0 to pass through
@@ -145,153 +143,11 @@ _local_to_disk() {
   printf '%s' "$u"
 }
 
-# _mime_for <path> -> best-effort image mime type for the base64 data URL.
-_mime_for() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-    *.png)         echo "image/png" ;;
-    *.jpg|*.jpeg)  echo "image/jpeg" ;;
-    *.webp)        echo "image/webp" ;;
-    *.gif)         echo "image/gif" ;;
-    *)             echo "image/png" ;;
-  esac
-}
+# _upload_local_to_public <disk_path> -> echoes a public KIE URL (Skill 74 upload), or non-zero.
+_upload_local_to_public() { kie74_upload_file "$(_local_to_disk "$1")"; }
 
-# _curl_retry: POST a JSON body with retry-with-backoff on transient failures.
-# Echoes the response body; returns non-zero only after all attempts fail.
-# Treats HTTP 5xx / 429 / 408 / connection failures as transient.
-#
-# Args: <url> <body> <label> [attempts] [body_file]
-#   body_file (5th arg, optional): when set, the request body is read FROM THIS
-#   FILE via curl --data-binary @file instead of being passed inline as a
-#   command-line argument. This is MANDATORY for the base64 image-upload body:
-#   a >~128KB base64 payload passed through argv ("-d $body") overflows ARG_MAX
-#   and the whole call dies with "Argument list too long" (the recurring brand
-#   reference-image upload failure). Reading the body from a file keeps the big
-#   payload off the argument list entirely. $body is ignored when $body_file set.
-_curl_retry_post() {
-  local url="$1"; local body="$2"; local label="$3"
-  local attempts="${4:-4}"
-  local body_file="${5:-}"
-  local i resp http_code rc
-  # Build the data argument array once: read from file (no argv limit) when a
-  # body_file is provided, otherwise inline the (small) body string.
-  local data_args
-  if [[ -n "$body_file" ]]; then
-    data_args=(--data-binary "@$body_file")
-  else
-    data_args=(-d "$body")
-  fi
-  for (( i=1; i<=attempts; i++ )); do
-    resp=$(curl -sS -m 60 -w '\n__HTTP_CODE__%{http_code}' -X POST "$url" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-      -H "Content-Type: application/json" \
-      "${data_args[@]}" 2>/dev/null)
-    rc=$?
-    http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
-    resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
-    if [[ $rc -eq 0 && "$http_code" =~ ^2 ]]; then
-      printf '%s' "$resp"
-      return 0
-    fi
-    # transient? (curl failure, or 408/429/5xx)
-    if [[ $rc -ne 0 || "$http_code" =~ ^5 || "$http_code" == "429" || "$http_code" == "408" || -z "$http_code" ]]; then
-      log "WARN" "$label: transient failure (rc=$rc http=${http_code:-none}, attempt $i/$attempts); retrying"
-      sleep $(( i * i * 2 ))
-      continue
-    fi
-    # any other 4xx is terminal for this call
-    log "WARN" "$label: non-retryable HTTP ${http_code}: $(printf '%s' "$resp" | head -c 160)"
-    return 1
-  done
-  log "WARN" "$label: exhausted $attempts attempts"
-  return 1
-}
-
-# _upload_local_to_public <disk_path> -> echoes a public KIE URL, or non-zero.
-_upload_local_to_public() {
-  local path; path="$(_local_to_disk "$1")"
-  if [[ ! -s "$path" ]]; then
-    log "WARN" "ref-upload: local file missing/empty: $path"
-    return 1
-  fi
-  if [[ -z "${KIE_API_KEY:-}" ]]; then
-    log "WARN" "ref-upload: KIE_API_KEY unset; cannot upload local reference $path"
-    return 1
-  fi
-  local mime fname resp url b64_file body_file
-  mime="$(_mime_for "$path")"
-  fname="zhc-ref-$(date -u +%s)-$(basename "$path")"
-
-  # ARG-LIST-TOO-LONG fix (recurring brand-image failure): the reference image's
-  # base64 must NEVER touch the command line. Previously the full base64 was
-  # interpolated into `jq -n --arg data "data:...;base64,${b64}"` (and then into
-  # `curl -d "$body"`). For any image >~128KB this overflows ARG_MAX and the
-  # whole upload dies with "jq: Argument list too long", so the brand reference
-  # silently never reached the video model. FIX: stream the base64 to a temp
-  # file, read it INTO jq via --rawfile (no argv), build the JSON body to a
-  # second temp file, and POST it with curl --data-binary @file (no argv).
-  b64_file="$(mktemp "${TMPDIR:-/tmp}/zhc-ref-b64.XXXXXX")"
-  body_file="$(mktemp "${TMPDIR:-/tmp}/zhc-ref-body.XXXXXX")"
-  # base64 with no line wrapping. GNU coreutils uses -w0; BSD/macOS base64 has no
-  # -w flag and never wraps by default. Try -w0, fall back to plain + strip \n.
-  if ! base64 -w0 < "$path" > "$b64_file" 2>/dev/null; then
-    base64 < "$path" 2>/dev/null | tr -d '\n' > "$b64_file"
-  fi
-  if [[ ! -s "$b64_file" ]]; then
-    log "WARN" "ref-upload: base64 of $path produced no data"
-    rm -f "$b64_file" "$body_file"
-    return 1
-  fi
-  # --rawfile data <file> binds $data to the file's raw contents (the base64),
-  # bypassing the argument list entirely. The data: prefix is concatenated
-  # inside jq so the giant string is never an argv element.
-  if ! jq -n \
-    --rawfile data "$b64_file" \
-    --arg prefix "data:${mime};base64," \
-    --arg p "images/zhc-closeout" \
-    --arg f "$fname" \
-    '{base64Data: ($prefix + ($data | rtrimstr("\n"))), uploadPath: $p, fileName: $f}' \
-    > "$body_file"; then
-    log "WARN" "ref-upload: jq failed to build base64 upload body for $path"
-    rm -f "$b64_file" "$body_file"
-    return 1
-  fi
-  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-base64-upload" "" "ref-upload(base64)" 4 "$body_file") || {
-    rm -f "$b64_file" "$body_file"; return 1
-  }
-  rm -f "$b64_file" "$body_file"
-  url=$(printf '%s' "$resp" | jq -r '.data.downloadUrl // .downloadUrl // .data.url // empty' 2>/dev/null)
-  if [[ -n "$url" && "$url" == http* ]]; then
-    printf '%s' "$url"
-    return 0
-  fi
-  log "WARN" "ref-upload(base64): no downloadUrl in response: $(printf '%s' "$resp" | head -c 160)"
-  return 1
-}
-
-# _rehost_url_to_public <http_url> -> echoes a fresh KIE-hosted URL, or non-zero.
-_rehost_url_to_public() {
-  local src="$1"
-  if [[ -z "${KIE_API_KEY:-}" ]]; then
-    log "WARN" "ref-rehost: KIE_API_KEY unset; cannot re-host $src"
-    return 1
-  fi
-  local fname body resp url
-  fname="zhc-ref-$(date -u +%s).png"
-  body=$(jq -n \
-    --arg u "$src" \
-    --arg p "images/zhc-closeout" \
-    --arg f "$fname" \
-    '{fileUrl: $u, uploadPath: $p, fileName: $f}')
-  resp=$(_curl_retry_post "$KIE_UPLOAD_BASE/api/file-url-upload" "$body" "ref-rehost(url)") || return 1
-  url=$(printf '%s' "$resp" | jq -r '.data.downloadUrl // .downloadUrl // .data.url // empty' 2>/dev/null)
-  if [[ -n "$url" && "$url" == http* ]]; then
-    printf '%s' "$url"
-    return 0
-  fi
-  log "WARN" "ref-rehost(url): no downloadUrl in response: $(printf '%s' "$resp" | head -c 160)"
-  return 1
-}
+# _rehost_url_to_public <http_url> -> echoes a fresh KIE-hosted URL (Skill 74 upload --url), or non-zero.
+_rehost_url_to_public() { kie74_upload_url "$1"; }
 
 # ensure_public_url <raw_ref> -> echoes a model-reachable https URL on stdout,
 # or echoes nothing + returns non-zero if the ref cannot be made public (the
@@ -335,6 +191,9 @@ if [[ -n "$_existing_video_url" && "$_existing_video_url" != "null" && -s "$LOCA
   log "INFO" "celebration video already produced (url set + $LOCAL_MP4 present) -- skipping regeneration (idempotent; no paid re-spend)"
   exit 0
 fi
+
+# Skill 74 is required from here on (the idempotent skip above does not need it).
+kie74_locate || exit 1
 
 COMPANY_NAME=$(state_get '.companyName'); [[ -z "$COMPANY_NAME" ]] && COMPANY_NAME="Your Company"
 OWNER_NAME=$(state_get '.ownerName'); [[ -z "$OWNER_NAME" ]] && OWNER_NAME="the Owner"
@@ -443,9 +302,10 @@ case "$MODEL" in
 esac
 
 # ----------------------------------------------------------------------
-# Submit + poll: Gemini Omni Video
+# Request: Gemini Omni Video (default) or Veo 3.x (general-purpose fallback). Skill 74 runs it:
+# validate against the model's live schema, submit to the path that schema declares, poll, save.
 # ----------------------------------------------------------------------
-submit_gemini_omni() {
+build_request_gemini_omni() {
   # v10.X.4: KIE rejects requests without aspect_ratio with 422 "Aspect ratio
   # only supports [16:9, 9:16]". Always inject one. Env override is validated
   # to those two values to avoid round-tripping a 422 back to the operator.
@@ -500,143 +360,36 @@ submit_gemini_omni() {
       --arg aspect "$aspect" \
       '{prompt: $prompt, duration: $dur, aspect_ratio: $aspect, generate_audio: true}')
   fi
-  local body
-  body=$(jq -n \
-    --arg model "$MODEL" \
-    --argjson input "$input_obj" \
-    '{model: $model, input: $input}')
-  curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-    -H "Content-Type: application/json" \
-    -d "$body"
+  jq -n --arg model "$MODEL" --argjson input "$input_obj" '{model: $model, input: $input}'
 }
 
-poll_gemini_omni() {
-  local task_id="$1"
-  local elapsed=0
-  local wait_sec
-  local timeout_sec="${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"
-  while (( elapsed < timeout_sec )); do
-    local resp
-    resp=$(curl -sS "$KIE_API_BASE/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
-    local state
-    state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
-    case "$state" in
-      success)
-        echo "$resp" | jq -r '.data.resultJson' 2>/dev/null \
-          | jq -r '.resultUrls[0] // .videoUrl // .url // .resultUrl // empty' 2>/dev/null
-        return 0
-        ;;
-      fail)
-        local msg
-        msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown failure"')
-        # "Image fetch failed" (and kin) are TRANSIENT on the model side: the
-        # backend couldn't pull a reference image this time. Signal the outer
-        # retry loop (rc=2) so it RE-SUBMITS -- the references are already public
-        # and get re-hosted to a fresh KIE URL on the next ensure step. Without
-        # this, the recurring "Image fetch failed" across multiple recent closeouts
-        # was a one-and-done hard fail.
-        if echo "$msg" | grep -qiE 'image fetch failed|fetch.*image|failed to (fetch|download|load).*(image|url)|image.*(download|fetch).*fail'; then
-          log "WARN" "Gemini Omni job $task_id: transient image-fetch failure ('$msg') -- signalling re-submit"
-          return 2
-        fi
-        log "ERROR" "Gemini Omni job $task_id failed: $msg"
-        return 1
-        ;;
-    esac
-    if (( elapsed < 60 )); then wait_sec=5
-    elif (( elapsed < 300 )); then wait_sec=15
-    else wait_sec=30
-    fi
-    sleep "$wait_sec"
-    elapsed=$((elapsed + wait_sec))
-  done
-  log "ERROR" "Gemini Omni job $task_id timed out after ${elapsed}s"
-  return 1
-}
-
-# ----------------------------------------------------------------------
-# Submit + poll: Veo 3.x (general-purpose fallback)
-# ----------------------------------------------------------------------
-submit_veo() {
-  local body
-  body=$(jq -n \
+build_request_veo() {
+  jq -n \
     --arg model "$MODEL" \
     --arg prompt "$PROMPT" \
     --argjson duration "$DURATION" \
-    '{model: $model, prompt: $prompt, aspect_ratio: "9:16", duration: $duration, generate_audio: true}')
-  curl -sS --fail-with-body -X POST "$KIE_API_BASE/api/v1/veo/generate" \
-    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-    -H "Content-Type: application/json" \
-    -d "$body"
+    '{model: $model, input: {prompt: $prompt, aspect_ratio: "9:16", duration: $duration, generate_audio: true}}'
 }
 
-poll_veo() {
-  # v10.X.4: timeout 900 -> 1800 (env override ZHC_VIDEO_POLL_TIMEOUT_SEC).
-  # errorCode/HTTP 500 mid-poll is now treated as transient (Veo upstream
-  # blip), backoff 30s, up to 3 consecutive 500s before giving up.
-  local task_id="$1"
-  local elapsed=0
-  local wait_sec
-  local timeout_sec="${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"
-  local consecutive_500=0
-  while (( elapsed < timeout_sec )); do
-    local resp http_code
-    resp=$(curl -sS -w '\n__HTTP_CODE__%{http_code}' \
-      "$KIE_API_BASE/api/v1/veo/record-info?taskId=$task_id" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
-    http_code=$(printf '%s' "$resp" | awk -F'__HTTP_CODE__' 'END{print $2}')
-    resp=$(printf '%s' "$resp" | sed 's/__HTTP_CODE__[0-9]*$//')
-
-    # Pull body-level errorCode (KIE returns 200 HTTP but errorCode=500 inside
-    # data when its upstream Veo provider has a transient hiccup).
-    local body_err_code
-    body_err_code=$(echo "$resp" | jq -r '.data.errorCode // .errorCode // empty' 2>/dev/null)
-
-    # Treat HTTP 5xx OR body errorCode=500 as transient: backoff + retry.
-    if { [[ -n "$http_code" && "$http_code" =~ ^5 ]] || [[ "$body_err_code" == "500" ]]; }; then
-      consecutive_500=$((consecutive_500 + 1))
-      if (( consecutive_500 > 3 )); then
-        log "ERROR" "VEO poll: 4 consecutive transient 500s for $task_id; giving up"
-        return 1
-      fi
-      log "WARN" "VEO poll got 500 (transient, attempt $consecutive_500/3), retrying in 30s"
-      sleep 30
-      elapsed=$((elapsed + 30))
-      continue
-    fi
-    # Any other 4xx is terminal.
-    if [[ -n "$http_code" && "$http_code" =~ ^4 ]]; then
-      log "ERROR" "VEO poll HTTP $http_code for $task_id: $(echo "$resp" | head -c 200)"
-      return 1
-    fi
-    consecutive_500=0
-
-    local success_flag
-    success_flag=$(echo "$resp" | jq -r '.data.successFlag // empty' 2>/dev/null)
-    case "$success_flag" in
-      1|"1")
-        echo "$resp" | jq -r '.data.response.resultUrls[0] // .data.response.videoUrl // .data.resultJson' 2>/dev/null \
-          | { read first; if [[ "$first" == \{* ]]; then echo "$first" | jq -r '.resultUrls[0] // .videoUrl // .url // empty'; else echo "$first"; fi; }
-        return 0
-        ;;
-      -1|"-1")
-        local msg
-        msg=$(echo "$resp" | jq -r '.data.errorMessage // .data.failMsg // .msg // "unknown"')
-        log "ERROR" "VEO job $task_id failed: $msg"
-        return 1
-        ;;
-    esac
-    if (( elapsed < 60 )); then wait_sec=5
-    elif (( elapsed < 300 )); then wait_sec=15
-    else wait_sec=30
-    fi
-    log "INFO" "step=celebration-video poll for $task_id: in-progress (elapsed=${elapsed}s)"
-    sleep "$wait_sec"
-    elapsed=$((elapsed + wait_sec))
-  done
-  log "ERROR" "VEO job $task_id timed out after ${elapsed}s"
+# run_video_job <request_json>: Skill 74 `run` (submit, wait, save the MP4). Sets JOB_JSON and
+# result_url / task_id. Returns 0 on success, 2 on a transient "image fetch failed" (caller re-hosts and
+# re-submits), 1 otherwise.
+run_video_job() {
+  local req_file="$1" msg
+  JOB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/zhc-video-job.XXXXXX")"
+  JOB_JSON=""
+  if JOB_JSON=$(kie74_run "$req_file" "$JOB_DIR" "${ZHC_VIDEO_POLL_TIMEOUT_SEC:-1800}"); then
+    return 0
+  fi
+  msg=$(_kie74_error "$JOB_JSON")
+  # "Image fetch failed" (and kin) are TRANSIENT on the model side: the backend couldn't pull a reference
+  # image this time. Signal the outer retry loop (rc=2) so it RE-SUBMITS -- the references are already
+  # public and get re-hosted to a fresh KIE URL on the next ensure step.
+  if echo "$msg" | grep -qiE 'image fetch failed|fetch.*image|failed to (fetch|download|load).*(image|url)|image.*(download|fetch).*fail'; then
+    log "WARN" "$MODEL job: transient image-fetch failure ('$msg') -- signalling re-submit"
+    return 2
+  fi
+  log "ERROR" "$MODEL job failed: $msg"
   return 1
 }
 
@@ -650,6 +403,7 @@ PRIMARY_MODEL="$MODEL"
 ZHC_VIDEO_RETRY_BACKOFF_BASE="${ZHC_VIDEO_RETRY_BACKOFF_BASE:-4}"
 attempt=0
 result_url=""
+SAVED_MP4=""
 while (( attempt < 3 )); do
   attempt=$((attempt + 1))
   if (( attempt == 3 )) && [[ "$MODEL" == "gemini-omni-video" ]]; then
@@ -658,51 +412,36 @@ while (( attempt < 3 )); do
     log "INFO" "attempt $attempt: falling back to $MODEL (general-purpose video default)"
   fi
 
-  log "INFO" "attempt $attempt/3: submitting video job model=$MODEL duration=${DURATION}s"
-  poll_rc=0
+  log "INFO" "attempt $attempt/3: submitting video job model=$MODEL duration=${DURATION}s (Skill 74)"
+  REQ_FILE="$(mktemp "${TMPDIR:-/tmp}/zhc-video-req.XXXXXX")"
   case "$MODEL" in
-    gemini-omni-video)
-      submit_resp=$(submit_gemini_omni || true)
-      task_id=$(echo "$submit_resp" | jq -r '.data.taskId // .taskId // empty' 2>/dev/null)
-      if [[ -n "$task_id" ]]; then
-        log "INFO" "attempt $attempt: submitted gemini-omni-video taskId=$task_id"
-        result_url=$(poll_gemini_omni "$task_id"); poll_rc=$?
-        # rc=2 -> transient "image fetch failed": the model couldn't pull a
-        # reference. Re-host the ORIGINAL references to brand-new public KIE URLs
-        # so the next submit hands the model fresh, definitely-fetchable URLs.
-        if (( poll_rc == 2 )); then
-          log "WARN" "attempt $attempt: image-fetch transient; re-hosting references to fresh public URLs before re-submit"
-          if [[ -n "$INF1_SRC_ORIG" && "$INF1_SRC_ORIG" != "null" ]]; then
-            if _pub=$(ensure_public_url "$INF1_SRC_ORIG"); then INFOGRAPHIC1_URL="$_pub"; else INFOGRAPHIC1_URL=""; fi
-          fi
-          if [[ -n "$LOGO_SRC_ORIG" && "$LOGO_SRC_ORIG" != "null" ]]; then
-            if _pub=$(ensure_public_url "$LOGO_SRC_ORIG"); then LOGO_URL="$_pub"; else LOGO_URL=""; fi
-          fi
-          result_url=""
-        fi
-      fi
-      ;;
-    veo3|veo3_fast)
-      submit_resp=$(submit_veo || true)
-      task_id=$(echo "$submit_resp" | jq -r '.data.taskId // .taskId // empty' 2>/dev/null)
-      if [[ -n "$task_id" ]]; then
-        log "INFO" "attempt $attempt: submitted veo taskId=$task_id"
-        result_url=$(poll_veo "$task_id" || true)
-      fi
-      ;;
+    gemini-omni-video) build_request_gemini_omni > "$REQ_FILE" ;;
+    veo3|veo3_fast)    build_request_veo > "$REQ_FILE" ;;
   esac
-
-  if [[ -z "${task_id:-}" ]]; then
-    log "WARN" "attempt $attempt: submit failed, response: $(echo "${submit_resp:-}" | head -c 200)"
-    sleep $(( ZHC_VIDEO_RETRY_BACKOFF_BASE ** attempt ))
-    continue
+  run_video_job "$REQ_FILE"; job_rc=$?
+  rm -f "$REQ_FILE"
+  if (( job_rc == 0 )); then
+    result_url=$(printf '%s' "$JOB_JSON" | jq -r '.result_urls[0] // empty' 2>/dev/null)
+    SAVED_MP4=$(printf '%s' "$JOB_JSON" | jq -r '.saved_paths[0] // empty' 2>/dev/null)
+  elif (( job_rc == 2 )) && [[ "$MODEL" == "gemini-omni-video" ]]; then
+    # rc=2 -> transient "image fetch failed": the model couldn't pull a reference. Re-host the ORIGINAL
+    # references to brand-new public KIE URLs so the next submit hands the model fresh, fetchable URLs.
+    log "WARN" "attempt $attempt: image-fetch transient; re-hosting references to fresh public URLs before re-submit"
+    if [[ -n "$INF1_SRC_ORIG" && "$INF1_SRC_ORIG" != "null" ]]; then
+      if _pub=$(ensure_public_url "$INF1_SRC_ORIG"); then INFOGRAPHIC1_URL="$_pub"; else INFOGRAPHIC1_URL=""; fi
+    fi
+    if [[ -n "$LOGO_SRC_ORIG" && "$LOGO_SRC_ORIG" != "null" ]]; then
+      if _pub=$(ensure_public_url "$LOGO_SRC_ORIG"); then LOGO_URL="$_pub"; else LOGO_URL=""; fi
+    fi
   fi
-  if [[ -n "$result_url" && "$result_url" != "null" ]]; then
+
+  if [[ -n "$result_url" && "$result_url" != "null" && -s "$SAVED_MP4" ]]; then
     log "INFO" "attempt $attempt: success remote-url=$result_url"
     break
   fi
-  log "WARN" "attempt $attempt: did not produce a usable URL"
+  log "WARN" "attempt $attempt: did not produce a usable video"
   result_url=""
+  rm -rf "${JOB_DIR:-/nonexistent-zhc}" 2>/dev/null
   sleep $(( ZHC_VIDEO_RETRY_BACKOFF_BASE ** attempt ))
 done
 
@@ -712,15 +451,16 @@ if [[ -z "$result_url" ]]; then
 fi
 
 # ----------------------------------------------------------------------
-# CRITICAL: download MP4 bytes locally so the Telegram step can upload.
+# CRITICAL: the MP4 bytes must be on disk so the Telegram step can upload.
 # (Telegram cannot inline-render a tempfile.aiquickdraw.com URL because the
-# CDN serves it with content-disposition: attachment.)
+# CDN serves it with content-disposition: attachment.) Skill 74 already saved the file; move it into place.
 # ----------------------------------------------------------------------
-log "INFO" "downloading celebration video bytes to $LOCAL_MP4"
-if ! curl -fL --max-time 180 -o "$LOCAL_MP4" "$result_url" >> "$LOG_FILE" 2>&1; then
-  log "ERROR" "failed to download celebration video bytes from $result_url"
+log "INFO" "placing celebration video bytes at $LOCAL_MP4"
+if ! mv -f "$SAVED_MP4" "$LOCAL_MP4"; then
+  log "ERROR" "failed to place the saved celebration video at $LOCAL_MP4"
   exit 1
 fi
+rm -rf "${JOB_DIR:-/nonexistent-zhc}" 2>/dev/null
 if [[ ! -s "$LOCAL_MP4" ]]; then
   log "ERROR" "downloaded video file is empty at $LOCAL_MP4"
   exit 1

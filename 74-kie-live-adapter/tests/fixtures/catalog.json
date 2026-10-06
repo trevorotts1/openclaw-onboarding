@@ -1,0 +1,5 @@
+{"code":200,"msg":"success","data":{"total":4,"models":[
+{"model":"gpt-image-2-5-sunburst-text-to-image","slug":"gpt-image-2-5-sunburst-text-to-image","title":"GPT Image 2.5","provider":"OpenAI","taskType":["Text to Image"],"description":null,"pricingDesc":"A 1K image costs 6 credits (0.03 USD)"},
+{"model":"kling/v2-1-master-text-to-video","slug":"kling/v2-1-master-text-to-video","title":"Kling 2.1","provider":"Kling","taskType":["Text to Video","Image to Video"],"description":"video","pricingDesc":"A 5-second video costs 160 credits"},
+{"model":"suno/generate","slug":"suno/generate","title":"Suno","provider":"Suno","taskType":["Text to Music"],"description":"music","pricingDesc":"12 credits"},
+{"model":"flux-kontext/edit","slug":"flux-kontext/edit","title":"Flux edit","provider":"Black Forest","taskType":["Image to Image"],"description":"edit","pricingDesc":"4 credits"}]}}

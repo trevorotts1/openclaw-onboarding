@@ -3,6 +3,7 @@
 **Department:** {{DEPARTMENT_NAME}}
 **Reports to:** Director of Presentations
 **Role type:** specialist
+**Role number:** ROLE-32
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
 **Version:** 1.0
 **Last updated:** 2026-06-14
@@ -456,12 +457,6 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 6. The tally method (how the cast of an image is counted) is changed for consistency.
 7. A Devil's Advocate challenge specific to this role (representation accuracy, the NO-PEOPLE default, the tally points) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.
-
-When triggered, the Director runs:
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/revise-how-to.py --role representation-casting-director
-```
-which spawns a sub-agent to update this file with the relevant changes.
 
 ---
 

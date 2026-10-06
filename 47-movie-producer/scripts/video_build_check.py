@@ -34,6 +34,7 @@ when a checker is called directly (e.g. by the negative-test suite).
 
 import json
 import re
+import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -119,10 +120,17 @@ HANDOFF_TARGETS = [
 
 # Phase-0 Kie balance pre-flight constants (AF-VID-KIE-BALANCE).
 VID_KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"
-VID_KIE_BALANCE_FLOOR_MULTIPLIER = 1.25  # headroom over the bare estimate (retries)
+# Owner rule (fleet-wide, 2026-10): required balance = estimated cost x 1.30. Same value in
+# Skill 48 (FBAD_KIE_BALANCE_FLOOR_MULTIPLIER). Canonical rule text:
+# 07-kie-setup/references/kie-common-rules.md. Was 1.25 before v15.0.2.
+VID_KIE_BALANCE_FLOOR_MULTIPLIER = 1.30  # headroom over the bare estimate (retries)
 # Kie credits are denominated per-call; a job's estimated_cost_usd is in USD, so the
 # balance floor is expressed in credits via this conservative USD->credit factor.
-VID_CREDIT_PER_USD = 100
+# ONE shared constant: credits per USD = 200. Verified 2026-10-05 from first-party KIE
+# sources: the kie.ai/pricing page header "1 credit ~= $0.005 USD" (200 credits per USD) and
+# the kie-models vendor reference example "160 credits (0.80 USD)" (also 200 per USD). Both
+# agree. The earlier value 100 under-required the balance by half.
+VID_CREDIT_PER_USD = 200
 
 
 # ---------------------------------------------------------------------------
@@ -602,44 +610,116 @@ def _chk_budget_overrun(run_dir: Path) -> str:
 # ===========================================================================
 # Phase-0 Kie balance pre-flight — AF-VID-KIE-BALANCE (shared with the driver)
 # ===========================================================================
+_KIE_CLIENT = None  # (client module, "skill74" | "embedded"), resolved once per process
+
+
+def _kie_client():
+    """The Skill 74 client for the credit read: the installed sibling skill when present, else the
+    embedded copy in kie-adapters/tools/graphics/kie_image.py (same selection as the two adapters).
+    Returns (module, label) or (None, None). KIE_SKILL74_DIR is a test hook ("" = Skill 74 absent)."""
+    global _KIE_CLIENT
+    if _KIE_CLIENT is not None:
+        return _KIE_CLIENT
+    import os
+    import types
+
+    def load(code, name):
+        mod = types.ModuleType("kie_live_adapter_client")
+        mod.__file__ = name
+        exec(compile(code, name, "exec"), mod.__dict__)  # in memory: nothing is written next to the source
+        return mod
+
+    override = os.environ.get("KIE_SKILL74_DIR")
+    if override is not None:
+        dirs = [Path(override)] if override else []
+    else:
+        roots = list(Path(__file__).resolve().parents)
+        roots += [Path(os.environ["OPENCLAW_SKILLS_DIR"])] if os.environ.get("OPENCLAW_SKILLS_DIR") else []
+        roots += [Path.home() / ".openclaw" / "skills", Path("/data/.openclaw/skills")]
+        dirs = [r / "74-kie-live-adapter" for r in roots]
+    _KIE_CLIENT = (None, None)
+    for d in dirs:
+        f = d / "scripts" / "kie_live_adapter.py"
+        if f.is_file():
+            _KIE_CLIENT = (load(f.read_text(encoding="utf-8"), str(f)), "skill74")
+            break
+    else:
+        sibling = Path(__file__).resolve().parent.parent / "kie-adapters" / "tools" / "graphics" / "kie_image.py"
+        begin, end = "# >>> BEGIN EMBEDDED SKILL-74 CLIENT", "# <<< END EMBEDDED SKILL-74 CLIENT"
+        if sibling.is_file():
+            text = sibling.read_text(encoding="utf-8")
+            if begin in text and end in text:
+                _KIE_CLIENT = (load(text[text.index(begin):text.index(end)], "kie_image.py#embedded-skill-74-client"), "embedded")
+    return _KIE_CLIENT
+
+
 def _fetch_kie_balance(api_key: str, url: str = VID_KIE_CREDIT_URL,
                        timeout: int = 30) -> float:
-    """GET the live Kie credit balance. Returns the numeric balance. Raises
-    RuntimeError on a network/parse error so the caller fails LOUD rather than
-    treating an unknown balance as 'enough'. Parses the common Kie response shapes
-    ({data:<number>} / {data:{credit|credits|balance}} / a top-level number)."""
-    import urllib.request
-    import urllib.error
-    req = urllib.request.Request(url, headers={
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/json",
-    })
+    """Read the live Kie credit balance through Skill 74 (credits: GET /api/v1/chat/credit with Bearer auth,
+    body `code` checked: an HTTP 200 carrying code 401 is an error, never a balance). Returns the numeric
+    balance. Raises RuntimeError on any error so the caller fails LOUD rather than treating an unknown balance
+    as 'enough'. The Skill 74 client is the installed sibling skill when present, else the embedded copy
+    (same path selection as the adapters). A non-default ``url`` is honoured only for a localhost host (the
+    tests' unreachable endpoint); the key is never sent anywhere else."""
+    import os
+    from urllib.parse import urlparse
+    client, label = _kie_client()
+    if client is None:
+        raise RuntimeError("no KIE client: Skill 74 is not installed and the embedded copy in kie_image.py is missing")
+    env = {"KIE_API_KEY": api_key, "KIE_LIVE_ADAPTER_MODE": "active",
+           "HOME": os.environ.get("HOME") or str(Path.home())}
+    if url != VID_KIE_CREDIT_URL:
+        parsed = urlparse(url)
+        if parsed.hostname in ("127.0.0.1", "localhost"):
+            env["KIE_LIVE_API_BASE"] = f"{parsed.scheme}://{parsed.netloc}"
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
-        raise RuntimeError(f"Kie credit endpoint unreachable ({url}): {exc}")
-    try:
-        obj = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Kie credit response is not JSON: {exc}; body={raw[:200]!r}")
+        result = client.Adapter(env=env).cmd_credits()
+    except Exception as exc:  # a client-side failure is an unverifiable balance too
+        raise RuntimeError(f"Kie credit read failed ({label}): {exc}")
+    if result.get("state") != "success":
+        err = result.get("error") or {}
+        raise RuntimeError(f"Kie credit endpoint unreachable or refused ({label}): {err.get('code')}: {str(err.get('msg'))[:200]}")
+    credits = (result.get("data") or {}).get("credits")
     candidates = []
-    if isinstance(obj, (int, float)):
-        candidates.append(obj)
-    if isinstance(obj, dict):
-        data_val = obj.get("data")
-        if isinstance(data_val, (int, float)):
-            candidates.append(data_val)
-        for container in (data_val if isinstance(data_val, dict) else None, obj):
-            if not isinstance(container, dict):
-                continue
-            for k in ("credit", "credits", "balance", "remaining", "available"):
-                v = container.get(k)
-                if isinstance(v, (int, float)):
-                    candidates.append(v)
+    if isinstance(credits, (int, float)) and not isinstance(credits, bool):
+        candidates.append(credits)
+    if isinstance(credits, dict):
+        for k in ("credit", "credits", "balance", "remaining", "available"):
+            v = credits.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                candidates.append(v)
     if not candidates:
-        raise RuntimeError(f"Kie credit response carried no numeric balance: {raw[:200]!r}")
+        raise RuntimeError(f"Kie credit response carried no numeric balance: {str(credits)[:200]!r}")
     return float(candidates[0])
+
+
+def real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
+    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    import os
+    if not raw or not str(raw).strip():
+        return None
+    # Nearest copy first (a repo checkout or the installed skills dir that holds this
+    # file), then the explicit override, then the standard install roots.
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "secret_helper.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                from secret_helper import looks_like_real_key
+            except Exception:
+                return None
+            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
 
 
 def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
@@ -667,7 +747,8 @@ def kie_balance_preflight(run_dir: Path, estimated_cost_usd: float,
     if balance < estimated_floor:
         return ("AF-VID-KIE-BALANCE: Kie.ai credit balance is below the estimated floor "
                 f"for this job. balance={balance:g} credits, "
-                f"estimated_floor={estimated_floor:g} (estimated_cost "
+                f"estimated_floor={estimated_floor:g}, shortfall="
+                f"{estimated_floor - balance:g} credits (estimated_cost "
                 f"${estimated_cost_usd:g} x {VID_CREDIT_PER_USD} credits/USD x "
                 f"{VID_KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any "
                 "paid dispatch so the run does not die mid-production. Top up and retry.")

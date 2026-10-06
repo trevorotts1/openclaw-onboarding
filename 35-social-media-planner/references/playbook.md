@@ -185,8 +185,8 @@ If the core files do not contain sufficient brand information, the AI must notif
 ### The Tech Stack
 
 - **AI Brain:** OpenClaw
-- **Image Generation:** kie.ai (Primary: Nano Banana 2 | Backup: Nano Banana Pro)
-- **Video Generation:** kie.ai (Veo 3.1 Fast for image-to-video segments) + FFmpeg for merging
+- **Image Generation:** kie.ai GPT Image 2.5 Sunburst for every image (`gpt-image-2-5-sunburst-text-to-image`; `gpt-image-2-5-sunburst-image-to-image` when a reference image is supplied). Owner order 2026-10-05; AGENTS.md N43 fleet pin. See Section 8.
+- **Video Generation:** kie.ai through Skill 67 (`67-kie-video` owns model selection and dispatch; see Section 16) + FFmpeg for merging
 - **Audio/Podcast:** Fish Audio S2 with inline emotion tags (requires Fish Audio API key + Voice ID. Depends on Skill 30: Fish Audio API Reference)
 - **Podcast Publishing:** n8n webhook automation (handles Podbean auth, upload, episode numbering, scheduling, and client email confirmation)
 - **CRM / Posting:** GoHighLevel (Convert and Flow)
@@ -236,7 +236,7 @@ Once core content is complete, the Main Agent spins up Sub-Agents:
 | Sub-Agent 5: Image Generator | Generates all daily images (7x 4:5, 7x 2:3, 7x 9:16), carousel images (4:5, 9:16, 2:3 sets), blog featured image, podcast cover image. Adds text overlays. | Day titles/headlines from core content | All images for the week |
 | Sub-Agent 6: Blog & Email Writer | Writes the blog post (Day 7) and the email newsletter (Tuesday). | Core content + research for all 7 days | 1 blog post, 1 email newsletter |
 | Sub-Agent 7: Podcast Script Writer | Writes the podcast script with Fish Audio S2 emotion tags. | Core content + research for all 7 days | 1 podcast script |
-| Sub-Agent 8: Video Producer | Generates B-roll images, creates 8-second video segments via kie.ai Veo 3.1 Lite, generates narration audio via Fish Audio S2, merges with FFmpeg. | Core content for Day 1 and Day 7 | 2 x 60-second videos |
+| Sub-Agent 8: Video Producer | Generates B-roll images, creates 8-second video segments via kie.ai through Skill 67 (default request: Veo 3.1 Lite, `veo3_lite`), generates narration audio via Fish Audio S2, merges with FFmpeg. | Core content for Day 1 and Day 7 | 2 x 60-second videos |
 
 **Phase 3: QC (QC Sub-Agents, Parallel)**
 Once Phase 2 Sub-Agents return their outputs, the Main Agent spins up QC agents to review everything against the checklist in Section 19. Multiple QC agents can run in parallel checking different content types. Any failures are sent back to the originating Sub-Agent for revision (up to 3 retries).
@@ -320,9 +320,9 @@ This step is automated via the heartbeat.md file. Every Saturday, the AI reaches
 15. Verify that each day works as a standalone piece while connecting to the series.
 
 **Step 4: Generate Images**
-16. Generate 7 images at 4:5 (1080 x 1350) for feed posts using Nano Banana 2 via kie.ai.
-17. Generate 7 images at 2:3 (1000 x 1500) for Pinterest using Nano Banana 2 via kie.ai.
-18. Generate 7 images at 9:16 (1080 x 1920) for Stories/Reels/TikTok using Nano Banana 2 via kie.ai.
+16. Generate 7 images at 4:5 (1080 x 1350) for feed posts via kie.ai GPT Image 2.5 Sunburst (request 3:4 per N43, then crop to 4:5; see Section 8).
+17. Generate 7 images at 2:3 (1000 x 1500) for Pinterest via kie.ai GPT Image 2.5 Sunburst.
+18. Generate 7 images at 9:16 (1080 x 1920) for Stories/Reels/TikTok via kie.ai GPT Image 2.5 Sunburst.
 19. Generate YouTube thumbnails at 16:9 (1280 x 720) as needed.
 20. Generate 1 blog post featured image at 16:9 (1200 x 630) for the weekly blog post.
 
@@ -355,7 +355,7 @@ This step is automated via the heartbeat.md file. Every Saturday, the AI reaches
 
 **Step 8: Create Video Content**
 35. Follow the Video Production Pipeline in Section 16.
-36. Generate 8-second video segments from the daily images using Veo 3.1 Lite via kie.ai.
+36. Generate 8-second video segments from the daily images through Skill 67 (default request: Veo 3.1 Lite, `veo3_lite`).
 37. Merge segments with audio using FFmpeg on OpenClaw.
 38. Produce one 60-second video for Day 1 (opener) and one for Day 7 (grand finale) at 9:16 (1080 x 1920).
 
@@ -385,7 +385,43 @@ After all content is scheduled and logged to Google Sheets:
 54. Memory-core captures these notes automatically. Dreaming may promote high-value insights (e.g., "Hormozi-style content produced 2x engagement on sales-focused themes") into MEMORY.md overnight.
 55. Memory Wiki can compile weekly performance into a structured "Social Media Performance" wiki page over time.
 
+**Step 12b: Record Measured Outcomes (F40 — never fabricate performance)**
+
+A completion certificate or delivery receipt proves a post was CREATED and
+PUBLISHED; it is NOT evidence that the content performed. The measured-outcome
+loop (shared-utils/social_measured_outcomes.py, mirrored in the Command
+Center) keeps creation, publication and ACTUAL audience response separate:
+
+56. Collect provider-supported metrics per post with the account id, the
+    post id, the measurement window and fetched_at, through the GHL analytics
+    adapter (57-social-media-in-a-box/scripts/ghl_contracts.py
+    `extract_post_metrics` over the posts/list readback) or manual input.
+    Store them with `social_measured_outcomes.record_metric` under the
+    client's own company directory ($SOCIAL_OUTCOMES_DIR/<company_id>/).
+57. A metric the provider did not report is UNKNOWN — never zero, never
+    interpolated. State the gap in the memory note: "reach: UNKNOWN for 2 of
+    3 posts (not reported)"; never write "0 engagement".
+58. Save baseline and trial variants BEFORE comparing:
+    `register_variant(company, variable, label, role='baseline')` for the
+    current standard, and one trial per cycle with EXACTLY ONE major variable
+    changed (format | hook | timing | creative) named in `compared_to`.
+    Never change two variables between cycles.
+59. Review performance at the agreed cadence (weekly default) with
+    `review_company(company_id)`. The review's recommendation cites the
+    actual posts and windows read. Low samples (fewer than 5 known
+    observations) stay TENTATIVE and receive no proposals — a tentative
+    conclusion never triggers uncontrolled content or spending increases.
+60. Keep client-specific memory client-specific: never reuse another
+    company's private creative, hooks, personas or results. Every read and
+    write is scoped to one company directory.
+61. Performance proposals may change formats, hooks, timing and creative —
+    NEVER the saved provider/model selection or publishing policy/consent
+    (those are the client's explicit choices, F31/F37; the policy guard
+    rejects such proposals outright).
+
 **Dependency Note:** This skill depends on Skill 31 (Upgraded Memory System) for memory-core, Dreaming, and Memory Wiki functionality. If Skill 31 is not installed, Steps 51-55 are skipped and the AI logs to MEMORY.md directly instead.
+
+**Dependency Note:** Image and video generation depend on Skills 66, 67 and 74 (policy, video selector, live adapter) and on the client's own `KIE_API_KEY` (`07-kie-setup`).
 
 **Dependency Note:** This skill depends on Skill 30 (Fish Audio API Reference) for podcast production via Fish Audio S2. If Skill 30 is not installed, podcast production (Step 7) is skipped and the AI notifies the client: "Podcast production requires Fish Audio S2 (Skill 30). Install Skill 30 to enable weekly podcast episodes."
 
@@ -642,7 +678,7 @@ There are exactly THREE ways an image for this skill gets produced. Pick ONE per
 
 | # | Path | When to use | Producer | Credential | Gate before it counts |
 |---|------|-------------|----------|------------|------------------------|
-| 1 | **kie.ai direct** (DEFAULT) | The skill's own pipeline produces the asset and no Agnes/Graphics override is in play. This is the normal weekly path. | kie.ai — Ideogram V3 DESIGN for any text/headline image (every Section-18 deliverable); Nano Banana 2/Pro only for non-text imagery (Section 8 routing table). | `KIE_API_KEY` | `pregen_prompt_gate.py check` (Section 8a) BEFORE the paid call; Section 19 post-gen QC after. |
+| 1 | **kie.ai direct** (DEFAULT) | The skill's own pipeline produces the asset and no Agnes/Graphics override is in play. This is the normal weekly path. | kie.ai GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference) for every image, text-bearing or not (Section 8 model table, AGENTS.md N43). | `KIE_API_KEY` | `pregen_prompt_gate.py check` (Section 8a) BEFORE the paid call; Section 19 post-gen QC after. |
 | 2 | **Agnes (Skill 63 image / Skill 64 video)** | The request explicitly names Agnes ("generate this with Agnes"), OR an upstream skill/operator routes the asset to Agnes, OR kie.ai is unavailable and Agnes is the configured fallback. Agnes is OPT-IN, never the silent default. | Skill 63 `agnes-image-2.1-flash` (synchronous text-to-image / image-to-image) for stills; Skill 64 `agnes-video-v2.0` (async create-task → poll) for video segments. | `AGNES_AI_API_KEY` (existing fleet credential) | Same `pregen_prompt_gate.py check` routing rule still applies (text-overlay assets must not be routed to a non-text-rendering model); then upload to GHL CDN. |
 | 3 | **Graphics department handoff** | A human/department supplies the finished asset instead of this skill generating it. The Image Generator step is REPLACED, not skipped. | Graphics department (external) — the skill only receives + QC-gates the file. | none (no generation call) | Section 19a input-quality gate: REJECT any graphics-department asset lacking a SOP-GIP-02 QC receipt scoring >= 8.5 (`pregen_prompt_gate.py check --asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json`). |
 
@@ -655,12 +691,17 @@ Path 1 — kie.ai direct (default, text-overlay daily image):
 # 1) Gate the prompt BEFORE spending the paid call (Section 8a)
 python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
   --prompt-file working/prompts/day1-primary.txt \
-  --model ideogram-v3-design \
+  --model gpt-image-2-5-sunburst-text-to-image \
   --platform instagram --ratio 4:5 --pixels 1080x1350 \
   --text-overlay "Three Moves That Doubled Our Pipeline" \
   --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
   --avoid-list-file working/compiled-negatives.txt
-# 2) Generate via kie.ai (Ideogram V3 DESIGN for text-led images), save to working/images/day1.png
+# 2) Check the prompt budget, validate the payload, check credits, run the job (Skill 74, section 8c)
+KIE=~/.openclaw/skills/74-kie-live-adapter/scripts/kie_live_adapter.py
+python3 $KIE prompt-budget --model gpt-image-2-5-sunburst-text-to-image --check --prompt-file working/prompts/day1-primary.txt
+python3 $KIE validate  --model gpt-image-2-5-sunburst-text-to-image --payload working/jobs/day1/input.json --json
+python3 $KIE preflight --model gpt-image-2-5-sunburst-text-to-image --json
+python3 $KIE run --request working/jobs/day1/req.json --save-dir working/images --mode active --json
 # 3) Upload to GHL CDN (SKILL.md Media Delivery Contract — NO -F "hosted=true")
 curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" -H "Version: 2021-07-28" \
@@ -699,23 +740,31 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
   --prompt-file working/prompts/day1-primary.txt \
   --asset-source graphics-department \
   --qc-receipt-file working/jobs/day1/qc/image_qc_report.json \
-  --model ideogram-v3-design --platform instagram --ratio 4:5 --pixels 1080x1350
+  --model gpt-image-2-5-sunburst-text-to-image --platform instagram --ratio 4:5 --pixels 1080x1350
 # exit 0 only if the SOP-GIP-02 receipt scores >= 8.5 (Section 19a); then upload to GHL CDN.
 ```
 
 ### Image Generation Models
 
-**Model routing rule (P3-05 fix — read this before picking a model):** every image this skill produces carries a baked text/headline overlay (Section 18) — there is no non-text image type in this playbook. Section 45's own documented routing rule
-(`45-design-intelligence-library/library/social-media-designs/_RULES.md`, "Model routing") states: *"Quote-card / text-led posts -> Ideogram V3 DESIGN."* Nano Banana 2/Pro are strong general image models but are NOT text-rendering specialists —
-routing every headline-bearing image to them was the root cause plausibly driving Section 18's "spelling errors on image text, retry up to 3x" failure loop (P3-05 root-cause finding). The fix:
+**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.5 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
 
-| Model | Role | When to use | Cost (1K) | Cost (2K) | Cost (4K) |
-|-------|------|-------------|-----------|-----------|-----------|
-| **Ideogram V3 DESIGN** | **PRIMARY for every Section-18 deliverable** | ANY image carrying baked text/headline copy — i.e. every regular daily image, carousel slide, blog featured image, and podcast cover this playbook produces. | see kie.ai pricing (Ideogram V3) | — | — |
-| Nano Banana 2 | Non-text imagery only | Photoreal/lifestyle backgrounds, mood/reference shots, or any asset with NO on-image text at all. | $0.04 | $0.06 | $0.09 |
-| Nano Banana Pro | Non-text imagery backup only | Same non-text scope as Nano Banana 2, used as its backup. | $0.09 | $0.09 | $0.12 |
+| Model id | Role | When to use |
+|----------|------|-------------|
+| `gpt-image-2-5-sunburst-text-to-image` | **DEFAULT for every image** | Every daily image, carousel slide, blog featured image, podcast cover, and thumbnail, with or without a reference. Endpoint `POST /api/v1/jobs/createTask`; poll `GET /api/v1/jobs/recordInfo`. |
+| `gpt-image-2-5-sunburst-image-to-image` | **DEFAULT when a reference image is supplied** | Logo, product, layout or style references, passed as `input_urls` with the role-correct per-reference instruction (`shared-utils/social_prompt_policy.json` `reference_roles`). |
+| legacy `gpt-image-2-*` | Only for ratios 3:1, 1:3, 9:21 | Skill 35 produces none of these ratios, so it never uses the legacy model. |
+| `flare` variants | Never | Not registered; needs a new operator ruling. |
+| Nano Banana 2 / Nano Banana Pro | Never used for social images | Refused by `pregen_prompt_gate.py` in every case, labeled or not. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules (3:1, 1:3, 9:21; Skill 35 produces none). |
 
-Every prompt MUST pass `scripts/pregen_prompt_gate.py check` (Section 8a) before generation — the gate REFUSES (exit 6, `AF-SM-MODEL-ROUTING`) a text-overlay prompt routed to Nano Banana, making the old failure mode structurally impossible rather than merely discouraged.
+**Ratios (N43):** request 2:3, 9:16, 16:9 and 1:1 as they are. 4:5 is not requested directly: request **3:4** and center-crop to 4:5 (1080 x 1350) after generation, keeping the headline and logo inside the 4:5 safe area. Resolution: default `1K`; use `2K` for the 1400 x 1400 podcast cover.
+
+**Auto-latest (rule 13):** the Sunburst ids above are today's answer. When KIE ships a newer GPT Image generation with both routes, the default moves to it: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image --capability "Text to Image,Image to Image" --json`. A department pin or an explicit request still wins, and every automatic switch is receipted and reported.
+
+**Prompt budget:** the final transmitted prompt uses 95 to 100 percent of the routed model's character maximum and never less than 80 percent (rule 12 of `07-kie-setup/references/kie-common-rules.md`). The maximum is read live with `kie_live_adapter.py prompt-budget --model <id>`, never remembered. Count after assembly (references, negatives and the baked headline included); never truncate silently. `pregen_prompt_gate.py` still carries the older house length check, which is being migrated to rule 12; when the two disagree, rule 12 and Skill 74 are the authority.
+
+> **This playbook holds no prices.** The one price authority is `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Limits and enums: `kie_live_adapter.py validate` or that registry. Skill 66 (`66-kie-image`) owns image model policy. KIE rules (endpoints, rate limit, credit preflight, saving results): `07-kie-setup/references/kie-common-rules.md`.
+
+Every prompt MUST pass `scripts/pregen_prompt_gate.py check` (Section 8a) before generation. The gate defaults `--model` to the Sunburst text-to-image id, refuses Nano Banana in every case (exit 6, `AF-SM-MODEL-ROUTING`; the old `--fallback-label` flag has no effect).
 
 ### Section 8a — PRE-GENERATION Prompt QC Gate (P3-05 step 9, mandatory before every generation call)
 
@@ -724,14 +773,14 @@ Before ANY image prompt reaches kie.ai, run it through the gate. This is the pre
 ```bash
 python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
   --prompt-file working/prompts/day1-primary.txt \
-  --model ideogram-v3-design \
+  --model gpt-image-2-5-sunburst-text-to-image \
   --platform instagram --ratio 4:5 --pixels 1080x1350 \
   --text-overlay "Three Moves That Doubled Our Pipeline" \
   --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
   --avoid-list-file working/compiled-negatives.txt
 ```
 
-The gate checks (all FORM-level, exit 3 if any is missing): the platform ratio + pixel spec are both declared; brand colors are named; a MERGED negative/avoid-list is attached (Section 8b — never generate with no avoid-list); the exact on-image copy from Section 18 is baked verbatim into the prompt body; and the mandatory brand-safety clause ("brand-appropriate, appropriate for the client's audience, no suggestive content") is present. Once FORM clears, the gate checks routing (exit 6 if wrong): a text-overlay prompt on Nano Banana is refused outright (see Section 8 above). If the image originates from the Graphics department rather than this skill's own pipeline, pass `--asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json` — the gate REJECTS a graphics-department asset with no SOP-GIP-02 QC receipt scoring >= 8.5 instead of posting it (Section 19a).
+The gate checks (all FORM-level, exit 3 if any is missing): the platform ratio + pixel spec are both declared; brand colors are named; a MERGED negative/avoid-list is attached (Section 8b — never generate with no avoid-list); the exact on-image copy from Section 18 is baked verbatim into the prompt body; and the mandatory brand-safety clause ("brand-appropriate, appropriate for the client's audience, no suggestive content") is present. Once FORM clears, the gate checks routing (exit 6 if wrong): Nano Banana is refused unless it is explicitly labeled as a non-text fallback, and always refused for a text-overlay prompt (see Section 8 above). If the image originates from the Graphics department rather than this skill's own pipeline, pass `--asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json` — the gate REJECTS a graphics-department asset with no SOP-GIP-02 QC receipt scoring >= 8.5 instead of posting it (Section 19a).
 
 ### Section 8b — Load Skill 45's Negative-Prompting Rules BEFORE Writing Any Prompt (P3-05 step 7)
 
@@ -740,6 +789,21 @@ The Image Prompt Engineer step (INSTRUCTIONS.md Phase 2) MUST load these two fil
 2. `45-design-intelligence-library/library/social-media-designs/_RULES.md` — the social-media-designs category rules: aspect ratios, hard rules (never text over faces, 9:16 safe zones, mobile-first legibility), and the model routing rule (Section 8).
 
 Write the merged avoid-list to `working/compiled-negatives.txt` for the run (or per-image if content varies) and pass it to Section 8a's gate via `--avoid-list-file`. This gives the retry loop a MEMORY of prior failure classes instead of retrying blind (the gap the P3-05 root-cause finding names explicitly).
+
+### Section 8c: Social image job: policy, budget, validate, preflight, run, save, publish
+
+Every paid image (daily, carousel, blog, podcast cover, thumbnail) follows this chain. Skill 66 owns image model policy, Skill 74 owns mechanics, and `07-kie-setup/references/kie-common-rules.md` wins on any conflict. `run-publishing-cycle.sh` writes the resolved model and these steps into `cycle-manifest.json` under `media`.
+
+1. **Policy.** Model = the Sunburst default above (rule 13 auto-latest). A client `image-model.json` naming Nano Banana, Midjourney, Ideogram or legacy GPT Image 2 is ignored and reported (`media.violations`), never silently honored.
+2. **Gate.** `pregen_prompt_gate.py check` (Section 8a) before any spend.
+3. **Budget.** `kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <f>`. Exit 3 means add the printed characters, exit 4 means cut them. Expand with real visual decisions, never filler.
+4. **Validate.** `kie_live_adapter.py validate --model <id> --payload input.json` (live schema, registry fallback). Fix every listed error.
+5. **Preflight.** `kie_live_adapter.py preflight --model <id>`: the balance must cover price x 1.30. Estimates come from `price --model <id>`; never type a price.
+6. **Run.** `kie_live_adapter.py run --request req.json --save-dir <dir> --mode active --json`. The adapter ships in shadow mode, so name `--mode active` on the call (or have the operator set it). `submit` never picks or changes a model; on `skipped` or `fail`, apply the documented fallback and record it. Never retry createTask after a network error (it can charge twice); stop on 401 or 403.
+7. **Save and publish.** The adapter saves the file before the link expires. Upload it to the GHL Media Library and use only the CDN `url` (SKILL.md Media Delivery Contract), then Section 17.
+8. **Video.** Same chain through Skill 67: its selector picks the model (Section 16), then `validate`, `preflight` and `run` as above. No Sora.
+
+If Skill 74 is not installed, Skill 66's `validate_prompt.py` and `validate_payload.py` stand in for steps 3 and 4 and the run uses the static createTask path in `07-kie-setup`; record that fact in the receipt.
 
 ### Weekly Image Production Schedule
 
@@ -752,8 +816,7 @@ Write the merged avoid-list to `working/compiled-negatives.txt` for the run (or 
 | Podcast Cover | 1:1 | 1400 x 1400 (2K res) | 0 | 1 | Podbean episode cover art (min 1400x1400 required) |
 | Thumbnail | 16:9 | 1280 x 720 | As needed | As needed | YouTube Thumbnails |
 
-Weekly cost at 1K: 23 images x $0.04 = $0.92/week
-Weekly cost at 2K: 23 images x $0.06 = $1.38/week
+Weekly image cost: multiply the image count (23 per week with the podcast cover) by the per-image price from the Skill 74 price command above. Never quote a remembered figure.
 
 ---
 
@@ -810,12 +873,14 @@ If a specific week's content demands a more detailed, text-heavy LinkedIn carous
 
 ### Carousel Image Costs
 
-| Item | Count | Cost |
-|------|-------|------|
-| 4:5 carousel images (shared across FB, IG, LinkedIn) | 7-9 | $0.28-$0.36 (Nano Banana 2 at 1K) |
-| 9:16 carousel images (TikTok) | 7-9 | $0.28-$0.36 |
-| 2:3 carousel images (Pinterest) | 7-9 | $0.28-$0.36 |
-| **Total carousel images per week** | **21-27** | **$0.84-$1.08** |
+| Item | Count |
+|------|-------|
+| 4:5 carousel images (shared across FB, IG, LinkedIn) | 7-9 |
+| 9:16 carousel images (TikTok) | 7-9 |
+| 2:3 carousel images (Pinterest) | 7-9 |
+| **Total carousel images per week** | **21-27** |
+
+Cost = image count x the per-image price from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` for the model Section 8 routes each slide to. This playbook holds no prices.
 
 ### Carousel Specs Per Platform (Quick Reference)
 
@@ -1118,7 +1183,7 @@ Follow these steps in order:
 - Use short paragraphs (2-3 sentences max).
 - Include a featured image (generated at 16:9, 1200x630 pixels).
 
-5. **Blog Image:** Generate one featured image at 16:9 (1200 x 630 pixels) using Nano Banana 2 that visually represents the weekly theme.
+5. **Blog Image:** Generate one featured image at 16:9 (1200 x 630 pixels) via kie.ai GPT Image 2.5 Sunburst (16:9) that visually represents the weekly theme.
 
 ---
 
@@ -1169,7 +1234,7 @@ Fish Audio S2 uses [square bracket] tags placed anywhere in the script. Tags aff
 
 Podbean and Apple Podcasts require podcast artwork between 1400 x 1400 and 3000 x 3000 pixels, 1:1 square, JPEG or PNG, RGB color space, 72 dpi, under 500 KB file size. If the generated image exceeds 500 KB, resize it before uploading to GHL. Use ImageMagick: `convert input.png -resize 1400x1400 -quality 85 output.jpg` or increase JPEG compression until under 500 KB.
 
-**Generate one 1400 x 1400 (1:1) image using Nano Banana 2 at 2K resolution.** The 1K resolution would produce approximately 1024 x 1024, which is below Podbean's minimum of 1400 x 1400. Use 2K to meet the requirement. Cost: $0.06 per image.
+**Generate one 1:1 cover via kie.ai GPT Image 2.5 Sunburst at 2K (1:1 is a supported ratio), then deliver it as a 1400 x 1400 JPEG.** A 1K output is about 1024 x 1024, below Podbean's 1400 x 1400 minimum, so request 2K (confirm with `kie_live_adapter.py validate`). Podbean accepts 1400 to 3000 px; the 2K output is inside that range, but export a 1400 x 1400 RGB JPEG under 500 KB so the same file also satisfies Skill 57's `AF-SM-PODCAST-COVER` band (exactly 1400 x 1400). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
 
 The image should visually represent the weekly theme and include the client's branding.
 
@@ -1358,7 +1423,7 @@ The agent does NOT publish directly to Podbean. Publishing goes through an n8n w
 **Publishing Flow:**
 1. Agent generates podcast audio via Fish Audio S2 (MP3, 192 kbps)
 2. Agent uploads the audio file to a public HTTPS host. GHL Media Library is the DEFAULT host; a Google Drive direct-download link is the sanctioned fallback when GHL credentials are down. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL (or the Drive fallback) first.
-3. Agent generates the podcast cover image via kie.ai Nano Banana 2 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
+3. Agent generates the podcast cover image via kie.ai, generated with GPT Image 2.5 Sunburst per Section 8 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
 4. Agent uploads the cover image to the same host as step 2.
 5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies the REQUIRED fields below are present and non-null/non-empty in the payload, especially `image_url`, `client_last_name`, and `client_email`. A 2026-07-12 production incident sent a payload missing required fields, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real hosted `image_url`, or the client's last name/email are not known, DO NOT send the webhook request. Finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete or contract-v1 payload before making any Podbean call and sends an honest refusal (entry guard, GK-01/U63, extended for contract v2), but the agent must not rely on it as the primary check. It is a backstop, not a substitute for sending a complete payload.
 6. Agent sends the following JSON payload to the webhook, with the shared auth header.
@@ -1429,31 +1494,33 @@ The connection is held until the publish completes (download plus upload of a fu
 
 ---
 
-## 16. Video Production Pipeline (kie.ai + FFmpeg)
+## 16. Video Production Pipeline (kie.ai through Skill 67 + FFmpeg)
+
+**Model policy owner: Skill 67 (`67-kie-video`).** Which video model is used is decided by Skill 67's selector (`scripts/select_video_model.py`) and its registry (`models.json`), not by this playbook. An explicit pick by the client or a department manifest wins. This skill's default request is Veo 3.1 Lite, which Skill 67 names `veo3_lite` (dedicated route `POST /api/v1/veo/generate`). Note that an unqualified request to the selector resolves to `veo3_fast`, so name `veo3_lite` explicitly when you want it. OpenAI Sora is prohibited by the Video department and is never used. KIE rules (endpoints, rate limit of 20 createTask calls per 10 seconds, credit preflight of estimated cost x 1.30, saving each result immediately, the client's own key): `07-kie-setup/references/kie-common-rules.md`. Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
 
 ### Video Standard
 - **Duration:** 55-60 seconds (target window; ffprobe must confirm)
 - **Ratio:** 9:16 (1080 x 1920 pixels)
 - **Output:** MP4, H.264 codec, 30fps
 
-### Key constraint: AI video tools generate clips up to ~8-10 seconds each
+### Key constraint: AI video tools generate short clips
 
-The kie.ai video tool (Veo 3.1 Lite) generates individual clips of up to 8-10 seconds. A 55-60 second Reel requires multiple sequential clips. The agent MUST handle this entirely autonomously using the storyboard + generate + FFmpeg merge pipeline below. **The agent NEVER asks the client to record the video themselves.** Client self-recording is a hard fallback of last resort only when clip generation has failed after all retries (see Fallback at end of this section).
+The kie.ai Veo 3.1 family generates individual short clips (exact durations: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` or Skill 67's registry). A 55-60 second Reel requires multiple sequential clips. The agent MUST handle this entirely autonomously using the storyboard + generate + FFmpeg merge pipeline below. **The agent NEVER asks the client to record the video themselves.** Client self-recording is a hard fallback of last resort only when clip generation has failed after all retries (see Fallback at end of this section).
 
-### Cost Comparison of Video Models on kie.ai (Verified April 2026)
+### Comparison of Video Models on kie.ai (no prices; see Skill 74)
 
-| Model | Credits/Video (8 sec) | Cost/Video | Quality Notes |
-|-------|----------------------|-----------|---------------|
-| Veo 3.1 Lite | 30 credits | ~$0.15 | Good for social. Fastest. Lowest cost. Slightly less fine detail than Fast on complex textures. On phone screens, most viewers cannot tell the difference from Fast. |
-| Veo 3.1 Fast | 60 credits | ~$0.30 | Strong for social. 2x faster than Standard. Quality only 1-8% lower than Standard. Best for when you need a step up from Lite. |
-| Veo 3.1 Quality | 250 credits | ~$1.25 | Cinematic. Highest fidelity. Reserved for hero content or client deliverables only. Too expensive for weekly social content. |
-| Grok Imagine | ~20 credits | ~$0.10/6sec (~$0.13/8sec) | Fast generation with synchronized audio. Supports text-to-video and image-to-video. Cheapest option. Quality is strong for social but less cinematic control than Veo 3.1. |
+> This table holds no prices. Other skills once quoted conflicting Veo prices; all were removed. Price any model with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`) before a Rule Zero announcement; never quote a remembered number to a client.
 
-High-tier credit top-ups (+10% bonus) reduce effective pricing further.
+| Model | Quality Notes |
+|-------|---------------|
+| Veo 3.1 Lite | Good for social. Fastest, lowest tier. Slightly less fine detail than Fast on complex textures; on phone screens most viewers cannot tell the difference. |
+| Veo 3.1 Fast | Strong for social. A step up from Lite. |
+| Veo 3.1 Quality | Cinematic, highest fidelity. Reserved for hero content or client deliverables only; not for weekly social content. |
+| Grok Imagine | Fast generation with synchronized audio, text-to-video and image-to-video. Less cinematic control than Veo 3.1. See the routing note below. |
 
-Source: kie.ai pricing pages, verified April 11, 2026. Credits at $0.005 per credit. Grok Imagine pricing from kie.ai Grok Imagine API page.
+**Default request: Veo 3.1 Lite** (`veo3_lite` in Skill 67; KIE's Veo docs state 9:16 is natively supported on the Veo 3.1 models) for weekly social video, unless the client, a department manifest, or Skill 67's selector says otherwise. Veo 3.1 Fast (`veo3_fast`) is the step up. Avoid Quality mode (`veo3`) for weekly social content.
 
-**Recommended model: Veo 3.1 Lite** for primary video production. Use Grok Imagine as a cost-saving alternative when synchronized audio matters more than cinematic control. Use Veo 3.1 Fast for upgrade situations. Avoid Quality mode for weekly social content.
+**Grok Imagine:** it is listed in KIE's live catalog (first-party docs index, docs.kie.ai/llms.txt, checked 2026-10-05) and named by the Video department as a Kie model, but it is not in Skill 67's curated video registry (verified 2026-08-26). It is DISCOVERED and not approved for automatic routing. Use it only when the client or a department manifest names it explicitly (Skill 67: an explicit pick wins), after `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` and `price --model <id>` confirm it live.
 
 ### Video Production Schedule
 
@@ -1499,10 +1566,11 @@ Visual prompt: [detailed, continuity-consistent prompt]
 
 #### Step B: Generate Each Clip
 
-Generate one clip per scene using the existing kie.ai video tool:
-- Model: Veo 3.1 Lite (image-to-video from a Nano Banana 2 source image, OR text-to-video)
-- Aspect ratio: 9:16 (vertical, 1080x1920 where supported)
+Generate one clip per scene through Skill 67 (`67-kie-video`: select, validate payload, dispatch, wait, visual QC):
+- Model: the default request is Veo 3.1 Lite (`veo3_lite`); Skill 67's selector decides if another model is named (image-to-video from a source image, OR text-to-video)
+- Aspect ratio: 9:16 (vertical, 1080x1920 where supported; check with Skill 67's `validate_payload.py` before dispatch)
 - Duration: ~8 seconds per clip
+- Save each finished clip to disk immediately (KIE download URLs expire)
 - Naming: `raw_scene_01.mp4`, `raw_scene_02.mp4`, ... `raw_scene_N.mp4`
 
 If a clip fails to generate, retry up to 3 times before marking it failed. Log each failure. Do not fall back to client self-recording until ALL retries for ALL failed clips are exhausted (see Fallback).
@@ -1605,19 +1673,16 @@ The helper script `scripts/merge_reel.sh` implements Steps D-G in a parameterize
 
 #### Step H: Cost Summary
 
-- Images for scenes (Nano Banana 2 at 1K): 8 x $0.04 = ~$0.32
-- Video clips (Veo 3.1 Lite at 8 sec each): 8 x $0.15 = $1.20
-- **Total per 60-second video:** ~$1.52
-- **Weekly cost for 2 videos (Day 1 + Day 7):** ~$3.04
+Compute the estimate from live prices, not from memory: (scene images x image price) + (8 clips x clip price per 8 second clip), each price from the Skill 74 price command above. Weekly cost for 2 videos (Day 1 + Day 7) is twice that. Announce the total (Rule Zero) and run the credit preflight before the batch.
 
 ### Alternative Pipeline: Text-to-Video (Simpler, Slightly More Expensive)
 
 If image-to-video quality is insufficient, generate each scene from text prompts instead of source images:
 
 1. Write a detailed text-to-video prompt per scene (use the storyboard visual prompts from Step A directly).
-2. Generate each segment using Veo 3.1 Fast text-to-video on kie.ai.
+2. Generate each segment through Skill 67 using Veo 3.1 Fast text-to-video (`veo3_fast`).
 3. Proceed through Steps D-G above (normalize, merge, VO overlay, QC) — identical process.
-4. Cost: $0.30 per segment x 8 = $2.40 per video (vs $1.52 for image-to-video).
+4. Cost: price the text-to-video path and the image-to-video path with the Skill 74 price command and compare; do not assume either is cheaper.
 
 ### Fallback (LAST RESORT — client self-recording)
 
@@ -1903,7 +1968,7 @@ Every image generated for social posts must include text overlay (a title or hea
 
 ### If Image Text Has Spelling Errors
 
-**First remedy — check the routing, not just the copy (P3-05 fix):** before regenerating with "corrected" text, confirm the prompt was routed to Ideogram V3 DESIGN (Section 8) and cleared the Section 8a pre-generation gate. A recurring spelling-error loop on a prompt that WAS correctly gated and routed is a genuine model defect; a spelling-error loop on a prompt that skipped the gate or was routed to Nano Banana is a routing defect, not a text defect — fix the routing first, then retry.
+**First remedy — check the routing, not just the copy (P3-05 fix):** before regenerating with "corrected" text, confirm the prompt was generated with GPT Image 2.5 Sunburst (Section 8) and cleared the Section 8a pre-generation gate. A recurring spelling-error loop on a prompt that WAS correctly gated and routed is a genuine model defect; a spelling-error loop on a prompt that skipped the gate or was routed to Nano Banana is a routing defect, not a text defect — fix the routing first, then retry.
 
 1. QC agent identifies the spelling error.
 2. Confirm routing + gate compliance (above) before assuming the copy itself is at fault.
@@ -1953,7 +2018,7 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 
 **Image Checks:**
 - [ ] The prompt passed `scripts/pregen_prompt_gate.py check` BEFORE generation (Section 8a) — a prompt generated without a passing gate run is itself a QC failure, regardless of how the resulting image looks
-- [ ] Text-overlay images were routed to Ideogram V3 DESIGN, never Nano Banana (Section 8)
+- [ ] Every image was generated with GPT Image 2.5 Sunburst (`-text-to-image`, or `-image-to-image` with a reference); Nano Banana is never allowed (Section 8)
 - [ ] If the asset originated from the Graphics department, it carries a SOP-GIP-02 QC receipt scoring >= 8.5 (Section 19a) — an ungated graphics-department asset is REJECTED, not posted
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
@@ -2001,7 +2066,7 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 - [ ] Duration is 10-15 minutes
 
 **Video Checks:**
-- [ ] Video is 60 seconds
+- [ ] Video is within the 55-60 second target window
 - [ ] Video is 9:16 (1080 x 1920)
 - [ ] Video is MP4, H.264, 30fps
 - [ ] Audio track is synced
@@ -2025,10 +2090,12 @@ When an image asset for this week's content did NOT come from this skill's own S
 
 ### kie.ai Error Handling
 
+The canonical KIE rules (`07-kie-setup/references/kie-common-rules.md`) win on any conflict with this section: dead and live endpoints, the createTask rate limit, credit preflight (estimated cost x 1.30 before a paid batch), saving results immediately, and the client's own key. Video dispatch errors are also handled by Skill 67's retry ladder.
+
 If any kie.ai API call fails (image generation, video generation):
 
-1. **Automatic retry:** The AI retries the failed call up to 3 times with a 10-second delay between attempts.
-2. **After 3 failures:** Send an immediate Telegram message to the user with:
+1. **Automatic retry:** Retry only what is safe: a rejected-before-queue 429 (body `code` 429) up to 3 times with a 10-second delay, and status polling. Never retry createTask after a network error (it can charge twice), and never retry 401, 402, 404, 422, 433 or 455: check the body `code`, not only the HTTP status. On 401 or 403 stop after one attempt and report once. A 422 is fixed (prompt or payload) and re-run through Section 8c, not blindly resent.
+2. **After the allowed attempts fail:** Send an immediate Telegram message to the user with:
    - What failed (e.g., "Image generation for Day 3 at 4:5 ratio failed")
    - Why it failed (the error message from kie.ai)
    - "Standing by for your instructions"
@@ -2186,15 +2253,16 @@ Plus 16:9 thumbnails (1280x720) for YouTube and blog featured image (1200x630) a
 
 ### Weekly Cost Estimate
 
-| Item | Cost |
-|------|------|
-| 22 images at 1K (Nano Banana 2: 7x 4:5, 7x 2:3, 7x 9:16, 1x blog) | $0.88 |
-| 1 podcast cover at 2K (Nano Banana 2) | $0.06 |
-| 2 videos at 60 sec each (Veo 3.1 Lite, 8 clips per video) | ~$3.00 |
-| Fish Audio S2 podcast (self-hosted) | Compute only |
-| **Total per week** | **~$3.94** |
+> This section holds no dollar figures. The old table used April 2026 snapshot prices at Nano Banana 2 rates. Every image is now GPT Image 2.5 Sunburst (Section 8). Price every line item with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
 
----
+| Item | Quantity | Price source |
+|------|----------|--------------|
+| Images (7x 4:5, 7x 2:3, 7x 9:16, 1x blog) | 22 | Skill 74 price command, per image model used (Section 8) |
+| Podcast cover (2K) | 1 | Skill 74 price command |
+| Videos at 60 sec each (8 clips per video) | 2 (16 clips) | Skill 74 price command, per clip |
+| Fish Audio S2 podcast (self-hosted) | 1 | Compute only |
+
+Total per week = the sum of quantity x live price for each line.
 
 ---
 
@@ -2339,32 +2407,7 @@ Image cell sizing by ratio:
 - 1:1 images: Column width 14 (~101px display), Row height 100pt (~133px). Full image visible, proportionally smaller.
 
 **Row/Column Sizing (CRITICAL):**
-When the AI writes image URLs using =IMAGE() formulas, it MUST also resize the rows and columns to display the images properly. Raw URLs in cells that are too small display as truncated text. The AI MUST call the Google Sheets API batchUpdate method to set:
-- Image columns: pixelSize 108 (for 4:5, 2:3, 1:1) or 79 (for 9:16)
-- Data rows containing images: pixelSize 133 (for 4:5, 2:3, 1:1) or 153 (for 9:16)
-
-Example batchUpdate request for a Day tab (column D, rows 2-21):
-```json
-{
-  "requests": [
-    {
-      "updateDimensionProperties": {
-        "range": {"sheetId": 123, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 4},
-        "properties": {"pixelSize": 108},
-        "fields": "pixelSize"
-      }
-    },
-    {
-      "updateDimensionProperties": {
-        "range": {"sheetId": 123, "dimension": "ROWS", "startIndex": 1, "endIndex": 21},
-        "properties": {"pixelSize": 133},
-        "fields": "pixelSize"
-      }
-    }
-  ]
-}
-```
-The n8n webhook (`social-planner-row-append`) should apply this sizing automatically when it detects an =IMAGE() formula in the payload. If the webhook does not handle sizing, the AI MUST call the Sheets API directly after appending the row.
+When the AI writes image URLs using =IMAGE() formulas, it MUST also resize the rows and columns to display the images properly. Raw URLs in cells that are too small display as truncated text. The `social-planner-row-append` webhook applies the sizing ITSELF in its batchUpdate — SPEC build-contract widths: Posts platform/account columns 170px, date column 110px, preview column 220px, state 140px, QC 130px; appended data rows 133px tall; Images preview column P 220px. The AI does NOT re-apply 108px/79px legacy sizing — those values are superseded. Only when a write receipt reports the resize failed (best-effort by contract) does the AI call the Google Sheets API `spreadsheet.batchUpdate` directly with those SPEC widths.
 
 **Video Links:**
 Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
@@ -2378,7 +2421,7 @@ Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
 3. Write "Week of [start date] - [end date], [year]" in Column A.
 4. For each platform sheet, write all 7 days of content across the columns: Day 1 post in column B, Day 1 comment in column C, Day 1 image in column D, Day 2 post in column E, etc.
 5. **Insert image URLs using =IMAGE("url", 1) for inline display — NEVER write a raw URL as text.** Every image cell value must be a formula string starting with `=IMAGE(`. Raw URLs render as unclickable text and defeat the purpose of the visual planner.
-6. **Resize image columns and data rows** via batchUpdate (see "Row/Column Sizing" above) so the =IMAGE() thumbnails display at full size. Image columns → 108px wide (79px for 9:16); data rows → 133px tall (153px for 9:16). Apply to ALL tabs that contain images, not just one.
+6. **Column/row sizing** — the webhook applies it (see "Row/Column Sizing" above; SPEC widths 170/110/220/140/130, data rows 133px, Images preview 220px). Only when the write receipt reports the resize failed, call batchUpdate directly with those SPEC widths.
 7. Write content at 100-120 characters per cell (2-3 lines visible). The AI writes the full content to the cell, but the fixed row height naturally hides anything beyond the preview. Click the cell to see full text in the formula bar.
 8. Insert video links using =HYPERLINK().
 9. For the Images master sheet, write all 3 ratios per day across columns (4:5 URL, 4:5 Preview, 2:3 URL, 2:3 Preview, 9:16 URL, 9:16 Preview) for each of the 7 days. Preview columns use =IMAGE(); URL columns may stay as text.
@@ -2401,8 +2444,8 @@ This section documents what the playbook covers, confirms completeness, and iden
 | 7-Part Series Framework | Complete | Television show structure. One of Seven through Seven of Seven. Pitch intensity scales from soft (Day 1) to maximum (Day 7). |
 | Content Zone System | Complete | 6 zones defined with platform-specific character limits. Zone 1 (Mobile Hook) is sacred. Recaps never in the hook zone. |
 | Platform Specifications | Complete | Facebook, Instagram, LinkedIn, YouTube, TikTok, Pinterest. Image ratios, character limits, truncation points, carousel specs all documented. |
-| Image Production | Complete | Nano Banana 2 via kie.ai. 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Text overlay with creative fonts. Spelling QC. Family-friendly prompts. Brand colors from core files. |
-| Video Production | Complete | 2 videos per week (Day 1 opener, Day 7 finale). Veo 3.1 Lite via kie.ai. Grok Imagine as backup. FFmpeg merge with 192 kbps audio. Full cost comparison table. |
+| Image Production | Complete | kie.ai GPT Image 2.5 Sunburst for every image (owner order 2026-10-05, N43), 3:4 requested and cropped to 4:5. 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Text overlay with creative fonts. Spelling QC. Family-friendly prompts. Brand colors from core files. |
+| Video Production | Complete | 2 videos per week (Day 1 opener, Day 7 finale). Veo 3.1 Lite (`veo3_lite`) default request through Skill 67 on kie.ai. FFmpeg merge with 192 kbps audio. Video model comparison table with no prices (live prices: Skill 74). |
 | Podcast Production | Complete | Fish Audio S2 with inline [square bracket] emotion tags. 192 kbps MP3 for Podbean. 1400x1400 cover image at 2K resolution. Example script with emotion tags. |
 | Blog Post| Complete | 1,500-2,500 words. Soft pitch in the middle, intentional pitch at the end. SEO optimized. Featured image at 16:9. |
 | Email Newsletter | Complete | Tuesday 9 AM. TLDR at top, soft pitch at 25%, second soft pitch at 50%, intentional appointment pitch at end. 600-1,000 words. |
@@ -2412,12 +2455,12 @@ This section documents what the playbook covers, confirms completeness, and iden
 | GHL Social Planner API | Complete | All endpoints documented. GHL handles all posting AND commenting. Scheduling logic: 7 days ahead, Sunday start, 9:00 AM. |
 | Sub-Agent Architecture | Complete | 4 phases. Main Agent handles research + core content. 8 parallel Sub-Agents for production. QC agents validate. Main Agent schedules and logs. |
 | QC Agent System | Complete | 40+ checkbox items across 8 categories: Text, Comments, Images, Scheduling, Blog, Podcast Script, Podcast Audio, Video. 3 retry max before Telegram alert. |
-| Error Handling | Complete | kie.ai retry 3x then Telegram. Insufficient funds = no retry, immediate Telegram. GHL retry 3x. Fish Audio retry 3x. Standard notification format. |
+| Error Handling | Complete | kie.ai: safe retries only (429 and polling), body `code` checked, no createTask retry after a network error, 401/403 stop, then Telegram. Insufficient funds = no retry, immediate Telegram. GHL retry 3x. Fish Audio retry 3x. Standard notification format. |
 | Heartbeat.md | Complete | Saturday 8 AM, Noon, 6 PM + Sunday 7 AM. Max 4 asks. Friendly conversational messages. Telegram fallback if no response by Sunday 9 AM. |
 | Google Sheet Structure | Complete | 19 worksheets, color-coded tabs, horizontal 7-day storyboard layout, image cells sized to ratio, text wrapping at 2-3 lines, =IMAGE() for inline display, =HYPERLINK() for videos, conditional formatting on status columns, freeze panes, "Week of" identifiers. |
 | LinkedIn PDF Generation | Complete | ImageMagick and Python/Pillow commands provided for converting 4:5 carousel images to PDF on OpenClaw. |
 | Content Hacks | Complete | Edge cases for Day 1 (no recap), Day 7 (no forward cliffhanger), weekend posting, cross-platform referencing. |
-| Weekly Cost Estimate | Complete | ~$3.94/week total (22 images at 1K, 1 podcast cover at 2K, 2 videos via Veo 3.1 Lite). |
+| Weekly Cost Estimate | Complete | No dollar figures; each line item (about 22 images, 1 podcast cover, 2 videos of 8 clips) is priced live with the Skill 74 price command. |
 
 ### Known Limitation
 

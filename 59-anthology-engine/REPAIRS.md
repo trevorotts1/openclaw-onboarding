@@ -25,7 +25,7 @@ no legacy workflow and ships no bridge or migration tooling.
 | D14 | Skill 53 cards to a never-seeded books department (CEO catch-all) | REPAIR -- the engine SEEDS its own Anthology department first, idempotent, verified by reading it back | provision-anthology-client.sh (department seed) |
 | D15 | No participant-facing surface in the Command Center | REPAIR -- a new token-scoped public route; foreign, expired, and replayed tokens refused | gate_engine.py (AF-AE-TOKEN-REFUSED) |
 | D16 | Five HTML-formatter LLM calls | DROP -- formatting is deterministic Python; there is NO formatter model tier | config/pdf-house-style + guard-font-floor.py |
-| D17 | The cover render on a 16:9 presentation recipe with a literal key | REPAIR -- the client's own Kie.ai GPT-image-2 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint through Skills 07 and 46; the literal-header class forbidden | cover_render.py + caf_credential_gate.py |
+| D17 | The cover render on a 16:9 presentation recipe with a literal key | REPAIR -- the client's own Kie.ai GPT-image-2.5 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint through Skills 07 and 46; the literal-header class forbidden | cover_render.py + caf_credential_gate.py |
 
 ## Source gaps carried forward (recorded, not invented)
 

@@ -111,12 +111,12 @@ if [[ "$B_EXIT" -ne 0 ]]; then
 else
   fail "(B) guard did NOT bite the sibling file -- the exemption has widened to the whole 03-agent-browser/ directory (exit 0)"
 fi
-if printf '%s' "$B_OUT" | grep -q "03-agent-browser/scripts/zz-planted-sibling-probe.sh"; then
+if grep -q "03-agent-browser/scripts/zz-planted-sibling-probe.sh" <<<"$B_OUT"; then
   pass "(B) guard's failure output names the planted SIBLING file"
 else
   fail "(B) guard should name the sibling file (got: $(printf '%s' "$B_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"
 fi
-if printf '%s' "$B_OUT" | grep -q "03-agent-browser/scripts/lib-backstop-conformance.sh"; then
+if grep -q "03-agent-browser/scripts/lib-backstop-conformance.sh" <<<"$B_OUT"; then
   fail "(B) guard's failure output should NOT name the exempted lib-backstop-conformance.sh"
 else
   pass "(B) guard's failure output correctly does NOT name the exempted lib-backstop-conformance.sh"

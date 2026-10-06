@@ -97,11 +97,60 @@ PREDICATES: Dict[str, Callable] = {
 # convention -- it is deliberate and must not be reversed.
 
 
+def _state_store_update_phase(state_store: Any, phase_id: str,
+                              artifact_type: str, fields: Dict) -> None:
+    """FIX 26: write a predicate result through a real StateStore.
+
+    The engine's StateStore has no update_phase method, so the old bridge was
+    a permanent no-op. Take the store's in-memory state (or its load()),
+    find/create the phase record by id, record fields[artifact_type] plus the
+    remaining fields, and save atomically. Never raises into callers."""
+    state = getattr(state_store, "state", None)
+    if state is None:
+        try:
+            state = state_store.load()
+        except Exception:
+            return
+    if not isinstance(state, dict):
+        return
+    phases = state.setdefault("phases", [])
+    record = None
+    for ps in phases:
+        if isinstance(ps, dict) and ps.get("id") == phase_id:
+            record = ps
+            break
+    if record is None:
+        record = {"id": phase_id, "status": "pending", "artifacts": [],
+                  "sha256": {}, "attempts": 0, "heal_events": [],
+                  "attested_at": None}
+        phases.append(record)
+    record[artifact_type] = fields.get("value", True)
+    for k, v in fields.items():
+        if k != "value":
+            record[k] = v
+    try:
+        state_store.save(state)
+    except Exception:
+        pass
+
+
 def checkpoint(state_store: Any, phase_id: str, artifact_type: str,
                **fields: Any) -> None:
-    if not hasattr(state_store, "update_phase"):
+    """FIX 26: the predicate path writes through a REAL store.
+
+    The old bridge required a store with update_phase (nothing in this
+    package provides one) and so silently dropped every result. Now: a
+    duck-typed update_phase store is used as before (exactly what
+    tests/test_checkpoint.py pins), otherwise the store is handled as a
+    StateStore (state/load + save with state['phases']) and the phase record
+    is updated directly. A store with neither shape is still a no-op —
+    never raise, and a save failure never propagates."""
+    if not hasattr(state_store, "update_phase") and not hasattr(state_store, "save"):
         return
     try:
-        state_store.update_phase(phase_id, artifact_type, **fields)
+        if hasattr(state_store, "update_phase"):
+            state_store.update_phase(phase_id, artifact_type, **fields)
+            return
+        _state_store_update_phase(state_store, phase_id, artifact_type, dict(fields))
     except Exception:
         pass

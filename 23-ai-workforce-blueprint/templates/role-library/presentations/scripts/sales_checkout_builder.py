@@ -95,6 +95,8 @@ EXIT CODES
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -711,47 +713,136 @@ page they just left, never a different site.
 # <!DOCTYPE>/<html>/<head>/<body> wrapper). Inline <style> is fine inside a bare
 # fragment (lint_ghl_fragment explicitly allows it, confirmed render-surviving).
 # ---------------------------------------------------------------------------
+def _cta_escape_attr(s: Any) -> str:
+    import html as _h
+    return _h.escape(str(s or ""), quote=True)
+
+
+def _cta_escape_text(s: Any) -> str:
+    import html as _h
+    return _h.escape(str(s or ""), quote=False)
+
+
+def _resolve_page_cta_href(*, page_role: str, fields: Dict[str, str],
+                           deck_slug: str = "",
+                           form_receipt: Optional[dict] = None) -> str:
+    """Verified CTA route for an assembled page. PRES-025: no production CTA
+    may resolve to #/empty/javascript: -- a caller-supplied cta_href wins when
+    it passes the protocol allowlist (approved-URL reuse, binding-checked by
+    checkout_form_builder), else the form receipt's verified action, else the
+    sales page routes to the checkout funnel route and the checkout page to
+    its own relative route."""
+    try:
+        import checkout_form_builder as _cfb
+    except ImportError:
+        _cfb = None  # type: ignore[assignment]
+    candidate = str(fields.get("cta_href") or "").strip()
+    if candidate and _cfb is not None:
+        try:
+            return _cfb.resolve_cta_href(page_role=page_role,
+                                         deck_slug=deck_slug or "checkout",
+                                         form_receipt=form_receipt,
+                                         approved_url=candidate)
+        except ValueError:
+            candidate = ""
+        if candidate:
+            return candidate
+    if _cfb is not None:
+        try:
+            return _cfb.resolve_cta_href(page_role=page_role,
+                                         deck_slug=deck_slug or "checkout",
+                                         form_receipt=form_receipt)
+        except ValueError:
+            pass
+    slug = (deck_slug or "checkout").strip() or "checkout"
+    return f"/{slug}-checkout" if page_role == "sales" else f"/{slug}"
+
+
 def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
                     fields: Dict[str, str], hero_image_src: Optional[str],
-                    marker: str) -> str:
+                    marker: str, deck_slug: str = "",
+                    form_receipt: Optional[dict] = None) -> str:
     prim, sec, acc, base, ink = (
         brand["primary"], brand["secondary"], brand["accent"], brand["base"], brand["ink"]
     )
-    headline = fields.get("headline", "")
-    subhead = fields.get("subhead", "")
-    cta = fields.get("cta", "")
+    headline = _cta_escape_text(fields.get("headline", ""))
+    subhead = _cta_escape_text(fields.get("subhead", ""))
+    cta = _cta_escape_text(fields.get("cta", ""))
+    safe_client = _cta_escape_text(client_name)
+    safe_marker = _cta_escape_attr(marker)
+    safe_hero = _cta_escape_attr(hero_image_src) if hero_image_src else ""
+    cta_href = _cta_escape_attr(
+        _resolve_page_cta_href(page_role=page_role, fields=fields,
+                               deck_slug=deck_slug,
+                               form_receipt=form_receipt))
     hero_img_tag = (
-        f'<img src="{hero_image_src}" alt="{client_name} {page_role} hero" '
+        f'<img src="{safe_hero}" alt="{safe_client} {page_role} hero" '
         f'style="width:100%;max-width:100%;display:block;border-radius:12px;margin:0 0 24px;">'
         if hero_image_src else
         '<!-- hero image not yet hosted in GHL media (offline/no-push build) -->'
     )
+    # PRES-025: the checkout page carries the REAL order form (Skill 44
+    # field contract, standards-shaped until the Skill 06 widget embed lands),
+    # so the page never looks like a checkout while its button does nothing.
+    # The order-summary / reassurance copy rides inside the same section so
+    # the offline content-string gate keeps passing unchanged.
     body_extra = ""
+    cta_block = f"""
+  <a class="cta-button" href="{cta_href}">{cta}</a>"""
     if page_role == "sales":
         body_extra = f"""
     <div class="proof">
-      <p>{fields.get('proof', '')}</p>
+      <p>{_cta_escape_text(fields.get('proof', ''))}</p>
     </div>"""
     else:
+        # Fix 1 (D3): the checkout form collects a phone number, so it
+        # carries the two SMS consent checkboxes (transactional +
+        # marketing). Both are unchecked by default and optional; buying
+        # never requires either one (TCPA). The live GHL form keeps its own
+        # "Terms & Conditions" element with the same wording (the contract
+        # "consent" block in checkout_form_builder.py).
+        from checkout_form_builder import (
+            resolve_consent_copy as _consent_copy)
+        _consent = _consent_copy({"company": client_name}, {})
+        consent_html = "".join(
+            f'<label class="consent"><input type="checkbox" '
+            f'name="consent_{b["kind"].replace("_sms", "")}" value="yes" />'
+            f"{_cta_escape_text(b['text'])}</label>"
+            for b in _consent["boxes"]
+        )
         body_extra = f"""
     <div class="order-summary">
-      <p>{fields.get('order_line', '')}</p>
-      <p class="reassurance">{fields.get('reassurance', '')}</p>
+      <p>{_cta_escape_text(fields.get('order_line', ''))}</p>
+      <p class="reassurance">{_cta_escape_text(fields.get('reassurance', ''))}</p>
+    </div>
+    <div class="order-form">
+      <!-- SKILL44_WIDGET seam: the live GHL native form embed replaces this
+           standards-shaped form at Skill 06 integration time (verbatim snippet,
+           no SRI). Field names/keys are the contract: email + full_name. -->
+      <form id="checkout-order-form" action="{cta_href}" method="post">
+        <label>Email Address <input type="email" name="email" required /></label>
+        <label>Full Name <input type="text" name="full_name" required /></label>
+        <label>Cell Phone <input type="tel" name="phone" /></label>
+        {consent_html}
+        <button type="submit" class="cta-button">{cta} — Complete Order</button>
+      </form>
     </div>"""
-    return f"""<!-- ZHC-SALES-CHECKOUT-BUILDER marker={marker} page_role={page_role} -->
+        cta_block = ""
+    return f"""<!-- ZHC-SALES-CHECKOUT-BUILDER marker={safe_marker} page_role={page_role} -->
 <style>
   .zhc-{page_role}-page {{ font-family: 'Montserrat', Arial, sans-serif; background:{base}; color:{ink}; padding:32px 24px; }}
   .zhc-{page_role}-page h1 {{ color:{ink}; font-size:2.4em; font-weight:800; margin:0 0 12px; }}
   .zhc-{page_role}-page h2 {{ color:{sec}; font-size:1.3em; font-weight:600; margin:0 0 24px; }}
-  .zhc-{page_role}-page .cta-button {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; padding:16px 32px; border-radius:8px; text-decoration:none; font-size:1.1em; }}
+  .zhc-{page_role}-page .cta-button {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; padding:16px 32px; border:0; border-radius:8px; text-decoration:none; font-size:1.1em; cursor:pointer; }}
   .zhc-{page_role}-page .proof, .zhc-{page_role}-page .order-summary {{ background:#fff; border:1px solid {sec}; border-radius:10px; padding:18px; margin:24px 0; }}
+  .zhc-{page_role}-page .order-form label {{ display:block; margin:0 0 12px; }}
+  .zhc-{page_role}-page .order-form input {{ display:block; width:100%; box-sizing:border-box; margin:4px 0 0; padding:10px; border:1px solid {sec}; border-radius:6px; }}
   .zhc-{page_role}-page .reassurance {{ color:{sec}; font-size:0.95em; }}
 </style>
 <div class="zhc-{page_role}-page">
   {hero_img_tag}
   <h1>{headline}</h1>
-  <h2>{subhead}</h2>{body_extra}
-  <a class="cta-button" href="#">{cta}</a>
+  <h2>{subhead}</h2>{body_extra}{cta_block}
 </div>
 """
 
@@ -772,6 +863,28 @@ def _html_content_strings_present(html: str, fields: Dict[str, str]) -> List[str
 # kie.ai design — reuse kie_generate.py verbatim (subprocess), never a new
 # implementation of the KIE call (task rule: reuse the canonical helper).
 # ---------------------------------------------------------------------------
+def _kie_tasks_module():
+    """Import the shared PRES-032 lifecycle (kie_tasks.py beside this file)."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import kie_tasks  # noqa: E402
+    return kie_tasks
+
+
+def _kie_spec_for(kie_tasks, prompt_entry: Dict[str, Any]) -> dict:
+    return kie_tasks.build_spec(
+        prompt=prompt_entry.get("prompt", ""),
+        mode=prompt_entry.get("mode", "t2i"),
+        model=None,  # builders pin model via kie_generate catalog, not here
+        aspect_ratio=prompt_entry.get("aspect_ratio", ASPECT_RATIO),
+        resolution=prompt_entry.get("resolution", RESOLUTION),
+        copy=prompt_entry.get("copy"),
+        input_urls=(prompt_entry.get("input_urls", [])
+                    if str(prompt_entry.get("mode", "t2i")).lower() == "i2i" else []),
+    )
+
+
 def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[bool, str]:
     kie_script = _here() / "kie_generate.py"
     if not kie_script.is_file():
@@ -786,6 +899,25 @@ def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
+        # PRES-032 replaces the F51 size-only reuse: the hero PNGs are reused
+        # after a failed re-bake ONLY when each PNG's sidecar (.qc.json)
+        # records the CURRENT prompt spec hash + matching sha256 with a
+        # verified QC stamp. A changed hero prompt NEVER accepts the old PNG
+        # merely because it exists above a byte floor.
+        try:
+            kie_tasks = _kie_tasks_module()
+        except Exception as exc:  # noqa: BLE001 — no lifecycle, no reuse claim
+            return False, f"kie_generate.py exited {proc.returncode} ({exc})"
+        matched = [p.get("slide") for p in prompts
+                   if kie_tasks.render_reuse_ok(
+                       renders_dir / f"{p.get('slide')}.png",
+                       kie_tasks.spec_hash(_kie_spec_for(kie_tasks, p)))]
+        if matched and len(matched) == len(prompts):
+            print(f"  PRES-032: kie_generate exited {proc.returncode}; reusing "
+                  f"spec-matched verified hero renders "
+                  f"({', '.join(str(r) for r in matched)})", file=sys.stderr)
+            return True, ("kie_generate.py: reused spec-matched verified "
+                          "hero renders")
         return False, f"kie_generate.py exited {proc.returncode}"
     return True, "kie_generate.py: all slides downloaded"
 
@@ -930,15 +1062,72 @@ def verify_push_receipt(run_dir: Path) -> Tuple[Optional[bool], str, dict]:
 # ---------------------------------------------------------------------------
 # Front-door nonce (identical contract to workbook_builder.py / build_deck.py)
 # ---------------------------------------------------------------------------
+def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
+    """FIX 25: run-scoped PER-PHASE nonce file
+    <run_dir>/working/checkpoints/.nonce-<sanitized phase id>. The sanitizer mirrors
+    phases._nonce_phase_token / build_deck._entry_nonce_phase_file byte-for-byte."""
+    import re as _re
+    safe = ""
+    try:
+        safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
+    except Exception:  # noqa: BLE001
+        safe = ""
+    if not safe:
+        return run_dir / ENTRY_NONCE_REL
+    return run_dir / ENTRY_NONCE_REL.parent / f".nonce-{safe}"
+
+
 def _verify_entry_nonce(run_dir: Path) -> bool:
+    """True iff OC_DECK_ENTRY_NONCE is set AND equals the content of the nonce file
+    for this admission. FIX 25 (per-phase nonce): when OC_DECK_ENTRY_NONCE_FILE is
+    set, that value selects the per-phase compare target -- script phases run
+    CONCURRENTLY in one wave, each with its own minted file. The value is either a
+    phase id (path derived as <run-dir>/working/checkpoints/.nonce-<sanitized id>)
+    or a filesystem path accepted ONLY when it resolves inside this run's
+    checkpoints dir with a `.nonce-` basename. Without OC_DECK_ENTRY_NONCE_FILE the
+    legacy run-scoped .canonical-entry-nonce handshake applies (standalone
+    canonical entry). A missing env var, a missing file, or any mismatch -> False
+    (fail-closed). Port of build_deck._verify_entry_nonce (consumer side of the
+    engine's per-phase mint).
+
+    PD-TEST-115: this function used to read ONLY the legacy run-scoped file, while
+    `phases._run_script_phase` (phases.py:2298-2323) mints and exports a PER-PHASE
+    nonce and names it in OC_DECK_ENTRY_NONCE_FILE. The env var therefore carried
+    the per-phase secret and the comparison target was the run-scoped file, so the
+    two could never match and this phase could never pass its own front door --
+    measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4,
+    where P-U-CHECKOUT-BUILD was quarantined with AF-CANONICAL-RENDER-BYPASS."""
     import hmac
     env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
     if len(env_nonce) < 16:
         return False
-    nf = run_dir / ENTRY_NONCE_REL
+    nonce_ref = (os.environ.get("OC_DECK_ENTRY_NONCE_FILE") or "").strip()
+    if nonce_ref:
+        if "/" in nonce_ref or "\\" in nonce_ref:
+            # Path-form value: confine it to THIS run's checkpoints dir with a
+            # .nonce-* basename; anything else (traversal, foreign dir) fails closed
+            ck_dir = (run_dir / ENTRY_NONCE_REL.parent).resolve()
+            cand = Path(nonce_ref)
+            if not cand.is_absolute():
+                cand = Path.cwd() / cand
+            try:
+                cand = cand.resolve()
+            except OSError:
+                return False
+            if cand.parent != ck_dir or not cand.name.startswith(".nonce-"):
+                return False
+            nf = cand
+        else:
+            nf = _entry_nonce_phase_file(run_dir, nonce_ref)
+    else:
+        nf = run_dir / ENTRY_NONCE_REL
     try:
-        file_nonce = nf.read_text(encoding="utf-8").strip()
+        if not nf.is_file():
+            return False
+        file_nonce = nf.read_text(encoding="utf-8", errors="replace").strip()
     except OSError:
+        return False
+    if len(file_nonce) < 16:
         return False
     return hmac.compare_digest(env_nonce, file_nonce)
 
@@ -965,7 +1154,11 @@ def _record_ledger(run_dir: Path, record: dict) -> None:
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
-def main(argv: Optional[List[str]] = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    """The ONE argparse surface of this module (FIX 100: the manifest's executor.cmd
+    must match this parser — the selftest's reconciliation guard tokenises every
+    manifest cmd that names this script and feeds it to THIS parser, so a flag set
+    change here or a cmd change in PIPELINE-MANIFEST.json fails the selftest)."""
     ap = argparse.ArgumentParser(
         description="Build the sales page + checkout page (kie.ai design -> copy -> "
                     "HTML -> delegated GHL funnel push), gated on WANT_SALES_CHECKOUT."
@@ -977,6 +1170,66 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="offline smoke build: copy+design+HTML only, no nonce required, "
                          "no GHL push plan/receipt steps")
     ap.add_argument("--selftest", action="store_true", help="offline deterministic self-test")
+    return ap
+
+
+def _manifest_cmd_guard(manifest_path: Path) -> List[str]:
+    """FIX 100 reconciliation check: every executor.cmd in the canonical manifest
+    that names THIS script must parse under THIS module's argparse. Returns a list
+    of failure strings (empty = reconciled). See the selftest's step-7 comment for
+    the full rationale. Pure/offline: no dispatch, no network, no file writes."""
+    import shlex as _shlex
+
+    fails: List[str] = []
+    try:
+        _mp = Path(manifest_path)
+        _phases = json.loads(_mp.read_text(encoding="utf-8")).get("phases", [])
+    except Exception as exc:  # noqa: BLE001
+        return [f"FIX-100 guard: manifest {manifest_path} unreadable: {exc}"]
+    _parser = _build_parser()
+    _my_cmds = [
+        (p.get("id"), p.get("executor", {}).get("cmd", ""))
+        for p in _phases
+        if isinstance(p, dict) and "sales_checkout_builder.py"
+        in str(p.get("executor", {}).get("cmd", ""))
+    ]
+    if not _my_cmds:
+        return [
+            f"FIX-100 guard: no executor.cmd naming sales_checkout_builder.py found in "
+            f"{manifest_path} — the phases vanished from the manifest or the cmd was "
+            "renamed; the manifest/argparse seam is unverified."
+        ]
+    for _pid, _cmd in _my_cmds:
+        # Tokenise then substitute (same order as
+        # run_signature_deck._build_executor_argvs at real dispatch time).
+        try:
+            _toks = _shlex.split(str(_cmd))
+            _script_tok = next(t for t in _toks if t.endswith("sales_checkout_builder.py"))
+            _flags = _toks[_toks.index(_script_tok) + 1:]
+        except (ValueError, StopIteration):
+            fails.append(f"FIX-100 guard: {_pid} executor.cmd {_cmd!r} did not tokenise")
+            continue
+        _argv = [tok.replace("{run_dir}", "/tmp/fix100") for tok in _flags]
+        _buf_err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(_buf_err):
+                _ns = _parser.parse_args(_argv)
+            if _ns.selftest:
+                fails.append(f"FIX-100 guard: {_pid} cmd {_cmd!r} resolves to --selftest")
+            if _ns.no_push:
+                fails.append(
+                    f"FIX-100 guard: {_pid} cmd {_cmd!r} carries --no-push — a manifest "
+                    "phase must never dispatch the offline smoke path")
+        except SystemExit:
+            fails.append(
+                f"FIX-100 guard: {_pid} executor.cmd {_cmd!r} is REJECTED by this "
+                f"script's argparse ({_buf_err.getvalue().strip()}) — manifest/argparse "
+                "drift is back (FIX 100 regression). Fix the manifest cmd or the flag set.")
+    return fails
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = _build_parser()
     args = ap.parse_args(argv)
 
     if args.selftest:
@@ -1098,9 +1351,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         reassurance=brief.get("PRIMARY_OBJECTION") or "Secure checkout. Your information is protected.",
     )
     sales_html = build_page_html(page_role="sales", brand=brand, client_name=client_name,
-                                 fields=sales_fields_html, hero_image_src=sales_img_src, marker=marker)
+                                 fields=sales_fields_html, hero_image_src=sales_img_src, marker=marker,
+                                 deck_slug=deck_slug)
     checkout_html = build_page_html(page_role="checkout", brand=brand, client_name=client_name,
-                                    fields=checkout_fields_html, hero_image_src=checkout_img_src, marker=marker)
+                                    fields=checkout_fields_html, hero_image_src=checkout_img_src, marker=marker,
+                                    deck_slug=deck_slug)
     (html_dir / "sales.html").write_text(sales_html, encoding="utf-8")
     (html_dir / "checkout.html").write_text(checkout_html, encoding="utf-8")
     print(f"\n=== HTML written -> {html_dir}/{{sales,checkout}}.html ===")
@@ -1441,6 +1696,29 @@ def _selftest() -> int:
         if ledger.get("a") != 1 or ledger.get("b") != 2:
             fails.append(f"ledger round-trip lost a field: {ledger}")
 
+    # 7) FIX 100 — MANIFEST/ARGPARSE RECONCILIATION GUARD (permanent, offline).
+    #    SALES-CHECKOUT-BUILDER-SOP.md §3/§7 recorded the live Wave C defect: the
+    #    manifest once wired `--mode sales|checkout|form-checkout` while this
+    #    script's argparse has only --run-dir/--skip-design/--no-push/--selftest,
+    #    so every dispatch crashed with "unrecognized arguments" (exit 2) before
+    #    doing any work. The manifest was reconciled (PIPELINE-MANIFEST.json
+    #    manifest_version 54: all three P-U-SALES/CHECKOUT/FORM-CHECKOUT cmds cite
+    #    this script with --run-dir only, + --skip-design where intended). This
+    #    guard makes that reconciliation TESTABLE FOREVER: it tokenises every
+    #    executor.cmd that names this script (the same shlex tokenise-then-
+    #    substitute order run_signature_deck._build_executor_argvs uses at real
+    #    dispatch time), substitutes {run_dir}, feeds each argv through THIS
+    #    module's own argparse parser, and fails if ANY flag the manifest names is
+    #    not a flag this parser accepts — the exact mismatch class FIX 100 closed,
+    #    re-detected the moment anyone reintroduces it in either file.
+    try:
+        import manifest_source as _ms
+        _manifest_path, _src = _ms.resolve_manifest(_here())
+        fails.extend(_manifest_cmd_guard(Path(_manifest_path)))
+    except SystemExit:
+        raise  # manifest_source.refuse() already explained itself on stderr
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"FIX-100 guard could not run (manifest unreadable?): {exc}")
     if fails:
         print("sales_checkout_builder selftest -> FAIL")
         for f in fails:
@@ -1453,7 +1731,8 @@ def _selftest() -> int:
           "prompt band + content-gate pass/zero-content-refuse/wireframe-refuse; HTML "
           "content + ghl_rest_canvas.html_fragment/images-as-media-links/new_page_blob/"
           "funnel_create/step_create/page_autosave (all offline, no session); receipt "
-          "absent/placeholder/real; ledger round-trip)")
+          "absent/placeholder/real; ledger round-trip; FIX-100 manifest/argparse "
+          "reconciliation guard)")
     return 0
 
 

@@ -57,6 +57,37 @@ Return as JSON array with this structure:
 Only include the platforms and post types that were requested. Make content authentic and engaging for each platform's audience.
 ```
 
+---
+
+## F28 — CONTENT QUALITY BEYOND LENGTH (binding supplement)
+
+The length bands in `config/bands.json` are the SHAPE, never the standard. A post that meets its band but fails any rule below is NOT done. A post SHORTER than its band that is genuinely effective and passes every rule below MAY PASS WITHOUT PADDING — filler to hit a number is a defect, not compliance.
+
+### Build every brief from the approved inputs
+
+Each generation brief MUST be assembled from: the client's **approved brand profile** (voice, palette, offer wording), the **audience**, the **offer** for this cycle, the **source material** the client supplied, the week's **theme**, and the **recent content history** (prior weeks' posts — for variety, never for repetition). Missing input → clarification, never invention.
+
+### Factual claims carry sources
+
+Every factual claim (percentages, multipliers, study/survey/research references, superlatives, big numbers) must have a **source URL recorded in the brief**. An uncertain client fact is **routed to clarification or omitted** — never guessed, never dressed up as fact. A fact without evidence FAILS quality QC (`AF-QUALITY-FACT`).
+
+### Quality rubric (scored on every post)
+
+| Dimension | What must be true |
+|---|---|
+| Specificity | Concrete details (numbers, names, steps, places) — not vague abstraction. |
+| Voice | Reads as the approved brand profile's voice — a different brand's voice FAILS (`AF-QUALITY-VOICE`). |
+| Usefulness | The audience can act on it (how-to, avoidance, benefit stated). |
+| Factual support | Facts have sources; no claim stands on vibes (`AF-QUALITY-FACT`). |
+| Distinctiveness | Not a repeat of recent history (overlap > 0.60 FAILS, `AF-QUALITY-DUPLICATE`); no engagement bait. |
+| CTA | The approved call to action is present and relevant (`AF-QUALITY-CTA`). |
+
+The rubric is enforced deterministically by `shared-utils/social_content_quality.py` (fixture-driven tests, no live model calls). Subsequent cycles use client feedback and available performance data to improve briefs — **never invent results**; absent analytics stays absent.
+
+### Adapt to account capabilities and format limits
+
+Each approved idea is adapted to the receiving account's actual capabilities and each platform's format limits (see the platform strategy profiles in Skill 35 `references/platform-strategies/`) — the same theme is never copy-pasted across platforms, and a variant must retain the approved meaning (`AF-QUALITY-MEANING-DRIFT` fails otherwise).
+
 
 ---
 

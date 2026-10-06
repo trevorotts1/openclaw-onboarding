@@ -121,19 +121,51 @@ JSON
 JSON
 
   echo "$OC_ROOT"
+  # Current-policy markers for the other two carriers (v25.2.22 fix 3: the
+  # loaded verdict requires the policy in AGENTS.md and the plugin dist too).
+  cat > "$WORKSPACE/AGENTS.md" <<'EOF'
+<!-- CEO_ROUTING_NO_LOOPHOLES_V4_3 -->
+## CEO routing - no loopholes (V4.3)
+EOF
+  mkdir -p "$OC_ROOT/extensions/ceo-routing-doctrine/dist"
+  printf '// Routing doctrine preamble (V4.3)\n' > "$OC_ROOT/extensions/ceo-routing-doctrine/dist/index.js"
 }
 
 build_fixture_soul() {
   local WORKSPACE="$1"
-  local STATE="$2"  # loaded | stale | duck-bug
+  local STATE="$2"  # loaded | loaded-v4 | loaded-v3 | stale-v2 | stale | duck-bug
 
   case "$STATE" in
     loaded)
       cat > "$WORKSPACE/SOUL.md" <<'EOF'
-<!-- CEO_ORCHESTRATOR_RULE_V2 -->
+<!-- CEO_ORCHESTRATOR_RULE_V4_3 -->
 ## PRIME DIRECTIVE
 
 I am the master orchestrator.
+EOF
+      ;;
+    loaded-v4)
+      # Bare V4 was accepted during the transition; v25.2.22 fix 3 removes that
+      # acceptance - a box left on V4 must NOT report loaded.
+      cat > "$WORKSPACE/SOUL.md" <<'EOF'
+<!-- CEO_ORCHESTRATOR_RULE_V4 -->
+## PRIME DIRECTIVE
+
+Old transition block, no longer accepted as loaded.
+EOF
+      ;;
+    loaded-v3)
+      # V3 was accepted during the V3 -> V4 transition; fix 3 removes it.
+      cat > "$WORKSPACE/SOUL.md" <<'EOF'
+<!-- CEO_ORCHESTRATOR_RULE_V3 -->
+Previous policy, no longer accepted as loaded.
+EOF
+      ;;
+    stale-v2)
+      # V2 is two policies old: the runner must NOT report it as loaded.
+      cat > "$WORKSPACE/SOUL.md" <<'EOF'
+<!-- CEO_ORCHESTRATOR_RULE_V2 -->
+Old directive.
 EOF
       ;;
     stale)
@@ -322,7 +354,7 @@ LOADED_PRESENT=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(s
 # ── Test 4: Marker truth table ────────────────────────────────────────────────
 section "Test 4: Loaded-marker truth table"
 
-for state in loaded stale duck-bug; do
+for state in loaded loaded-v4 loaded-v3 stale-v2 stale duck-bug; do
   FX4="$(mktemp -d)"
   CALLS4="$FX4/calls.log"
   touch "$CALLS4"
@@ -450,7 +482,7 @@ PM2_CALLED=$(grep -c "pm2" "$CALLS6" 2>/dev/null || echo 0)
 
 # Result should be ok, partial, or dry-run (not crashed)
 R6_VAL=$(echo "$R6" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result','?'))" 2>/dev/null)
-[[ "$R6_VAL" =~ ^(ok|partial|failed|dry-run)$ ]] \
+[[ "$R6_VAL" =~ ^(ok|partial|failed|dry-run|rolled_back)$ ]] \
   && pass "Apply mode: runner emitted valid JSON result ($R6_VAL)" \
   || fail "Apply mode: invalid result: $R6_VAL"
 

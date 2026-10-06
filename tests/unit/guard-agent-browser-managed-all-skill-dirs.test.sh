@@ -145,12 +145,12 @@ if [[ "$B_EXIT" -eq 0 ]]; then
 else
   fail "(B) current guard should PASS on the clean tree -- auto-discovery introduced a false positive. Output: $(printf '%s' "$B_OUT" | tail -15)"
 fi
-if printf '%s' "$B_OUT" | grep -q '44-convert-and-flow-operator'; then
+if grep -q '44-convert-and-flow-operator' <<<"$B_OUT"; then
   pass "(B) current guard's scan-roots line names 44-convert-and-flow-operator (the P3-08 root)"
 else
   fail "(B) current guard did not list 44-convert-and-flow-operator among its scan roots"
 fi
-if printf '%s' "$B_OUT" | grep -q '62-hypothetical-future-skill'; then
+if grep -q '62-hypothetical-future-skill' <<<"$B_OUT"; then
   pass "(B) current guard's scan-roots line names the never-before-seen 62-* dir (true auto-discovery)"
 else
   fail "(B) current guard did not list 62-hypothetical-future-skill among its scan roots -- not truly auto-discovering"
@@ -181,12 +181,12 @@ if [[ "$C_EXIT" -ne 0 ]]; then
 else
   fail "(C) current guard did NOT bite with unmanaged spawns planted in 44-*/62-* (exit 0 -- still blind to these roots)"
 fi
-if printf '%s' "$C_OUT" | grep -q "44-convert-and-flow-operator/tools/zz-planted-unmanaged-probe.sh"; then
+if grep -q "44-convert-and-flow-operator/tools/zz-planted-unmanaged-probe.sh" <<<"$C_OUT"; then
   pass "(C) current guard's failure output names the 44-convert-and-flow-operator/ planted file"
 else
   fail "(C) current guard should name the 44-* planted file (got: $(printf '%s' "$C_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"
 fi
-if printf '%s' "$C_OUT" | grep -q "62-hypothetical-future-skill/zz-planted-unmanaged-probe.sh"; then
+if grep -q "62-hypothetical-future-skill/zz-planted-unmanaged-probe.sh" <<<"$C_OUT"; then
   pass "(C) current guard's failure output names the 62-hypothetical-future-skill/ planted file (a dir that did not exist when the guard was written)"
 else
   fail "(C) current guard should name the 62-* planted file (got: $(printf '%s' "$C_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"

@@ -1,0 +1,11 @@
+{
+  "name": "social-planner-n8n-expression-parser-qc",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node verify.cjs"
+  },
+  "dependencies": {
+    "@n8n/tournament": "1.10.1"
+  }
+}

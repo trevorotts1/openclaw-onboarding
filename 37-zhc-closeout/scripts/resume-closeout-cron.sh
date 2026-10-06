@@ -107,19 +107,21 @@ state_get() {
 # while a still-running (nohup'd) run-closeout.sh writes the SAME file; the shared
 # lock serializes those read-modify-writes so neither can lost-update the other.
 # shellcheck source=lib-closeout-state.sh disable=SC1090,SC1091
-if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" 2>/dev/null; then
-  # Fallback for an older bundle without the shared lib: unlocked atomic write.
-  state_set() {
-    local tmp
-    tmp=$(mktemp)
-    if jq "$1" "$STATE_FILE" > "$tmp"; then
-      mv "$tmp" "$STATE_FILE"
-    else
-      rm -f "$tmp"
-      log "state_set failed for: $1"
-      return 1
-    fi
-  }
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh" || exit 1
+COMPLETION_SCRIPT="$_WORKFORCE_STATE_DIR/workforce_completion.py"
+CLEANUP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cleanup-closeout.py"
+
+# Hold a kernel-owned claim across this tick; never delete a live runner lock.
+if [[ "${WORKFORCE_RUNNER_OWNER:-}" != "$PPID" ]]; then
+  exec "$WORKFORCE_PYTHON" "$_WORKFORCE_STATE_DIR/workforce_state.py" run "$STATE_FILE.closeout-resume" bash "$0" "$@"
+fi
+
+# ---- owner-sends hold: no closeout dispatch while held (durable; this cron
+# never clears it -- the stall-fingerprint reset below touches only its own
+# closeoutResumePaused keys) ----
+if owner_sends_held; then
+  log "OWNER SENDS HELD: ${OWNER_SENDS_HOLD_REASON} -- run-closeout.sh NOT dispatched."
+  exit 0
 fi
 
 # ---- run count (defense-in-depth cap) ----
@@ -173,24 +175,15 @@ self_remove_cron() {
   fi
   log "self_remove_cron($reason): removing cron $uuid"
   if command -v openclaw >/dev/null 2>&1; then
-    openclaw cron rm "$uuid" 2>>"$LOG_FILE" || log "cron rm failed (tolerated)"
+    if openclaw cron rm "$uuid" 2>>"$LOG_FILE"; then
+      state_set 'del(.closeoutResumeUuid) | .closeoutResumeRegisteredAt = null | .closeoutCleanupPending = false'
+      return 0
+    fi
   fi
-  # Clear the UUID from state
-  state_set 'del(.closeoutResumeUuid) | .closeoutResumeRegisteredAt = null' 2>/dev/null || true
+  state_set '.closeoutCleanupPending = true'
+  log "cron removal pending; retaining UUID for retry"
+  return 1
 }
-
-# ---- lockfile (prevent double-fire) ----
-if [[ -f "$LOCK_FILE" ]]; then
-  lock_age=$(( $(date -u +%s) - $(date -u -r "$LOCK_FILE" +%s 2>/dev/null || date -u +%s) ))
-  if (( lock_age < STALE_LOCK_MINUTES * 60 )); then
-    log "lockfile held ($lock_age s old, limit=${STALE_LOCK_MINUTES}m) — closeout may still be running; skip"
-    exit 0
-  fi
-  log "stale lockfile removed ($lock_age s old)"
-  rm -f "$LOCK_FILE"
-fi
-touch "$LOCK_FILE"
-trap 'rm -f "$LOCK_FILE"' EXIT
 
 # ---- no state file → nothing to do ----
 if [[ ! -f "$STATE_FILE" ]]; then
@@ -211,9 +204,9 @@ if [[ -z "$build_completed" || "$build_completed" == "null" ]]; then
 fi
 
 # Kill condition 2: already done or sent
-if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]]; then
+if [[ "$closeout_status" == "done" || "$closeout_status" == "sent" ]] && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
   log "closeoutStatus=$closeout_status -- complete; self-removing cron (kill condition met)"
-  self_remove_cron "closeout complete ($closeout_status)"
+  "$WORKFORCE_PYTHON" "$CLEANUP_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "verified cleanup pending; keeping recovery cron"
   exit 0
 fi
 
@@ -330,10 +323,10 @@ verify_critical_legs() {
 if (( total_done == 7 )); then
   if (( critical_failed_recorded == 1 )); then
     log "all 7 leg fields are present, but closeoutStatus=failed is recorded -- REFUSING to stamp done (ghost-closeout guard). Re-launching run-closeout.sh so its verified finalize decides."
-  elif verify_critical_legs; then
+  elif verify_critical_legs && "$WORKFORCE_PYTHON" "$COMPLETION_SCRIPT" "$STATE_FILE" --closeout >>"$LOG_FILE" 2>&1; then
     log "all 7 closeout deliverable legs present AND critical legs VERIFIED (telegram confirmed, org-chart present) -- marking closeoutStatus=done and self-removing cron"
-    state_set '.closeoutStatus = "done" | .closeoutCompletedAt = (now | strftime("%Y-%m-%dT%H:%M:%SZ")) | .closeoutPendingSlots = []' || true
-    self_remove_cron "all-7-legs-done-verified"
+    # Shared evaluator committed verified completion before cleanup.
+    "$WORKFORCE_PYTHON" "$CLEANUP_SCRIPT" "$STATE_FILE" >>"$LOG_FILE" 2>&1 || log "verified cleanup pending; recovery identity retained"
     exit 0
   else
     log "all 7 leg FIELDS present but CRITICAL legs UNVERIFIED (pending: ${critical_pending}) -- stamping partial, NOT done (ghost-closeout guard). Re-launching run-closeout.sh."

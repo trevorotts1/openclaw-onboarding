@@ -287,7 +287,7 @@
       "stage": "Phase-0",
       "level": "JOB",
       "in_ruleset": true,
-      "trigger": "Phase-0 Kie.ai balance pre-flight. For a paid job the live credit balance (GET https://api.kie.ai/api/v1/chat/credit) is below the estimated floor for this job (estimated_cost_usd x VID_KIE_BALANCE_FLOOR_MULTIPLIER), OR the balance could not be verified. HARD-ABORTS (exit 4) before any paid dispatch so a run never dies mid-production. An unverifiable balance is never treated as 'enough'.",
+      "trigger": "Phase-0 Kie.ai balance pre-flight. For a paid job the live credit balance (GET https://api.kie.ai/api/v1/chat/credit) is below the estimated floor for this job (estimated_cost_usd x VID_CREDIT_PER_USD x VID_KIE_BALANCE_FLOOR_MULTIPLIER), OR the balance could not be verified. HARD-ABORTS (exit 4) before any paid dispatch so a run never dies mid-production. An unverifiable balance is never treated as 'enough'.",
       "enforced_by": "executive_producer",
       "py_symbol": "kie_balance_preflight",
       "secondary_py_symbols": [

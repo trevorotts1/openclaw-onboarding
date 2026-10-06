@@ -1,0 +1,74 @@
+name: Owner-sends hold + board company guard
+
+# Automatic OWNER messages (the Skill 23 Presentations welcome, the Skill 37
+# closeout celebration) must stop on every path while the durable owner-sends
+# hold is set, and the welcome must fire only on a FULL library-gate pass. A
+# client's board lanes must land under its ONE company (no raw-slug duplicate
+# company row, no whole-seed abort on a CC 'default' queue), with a supported,
+# idempotent repair command.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shared-utils/owner_sends_hold.py"
+      - "23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh"
+      - "23-ai-workforce-blueprint/scripts/verify-library-gate.sh"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "37-zhc-closeout/scripts/run-closeout.sh"
+      - "37-zhc-closeout/scripts/resume-closeout-cron.sh"
+      - "37-zhc-closeout/scripts/send-telegram-celebration.sh"
+      - "37-zhc-closeout/scripts/lib-closeout-state.sh"
+      - "32-command-center-setup/scripts/seed-dashboard-content.py"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
+      - "32-command-center-setup/scripts/repair-board-company.py"
+      - "tests/unit/test_owner_sends_hold.py"
+      - "tests/unit/test_board_company_repair.py"
+      - "tests/unit/test_no_department_for_default_lane.py"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/unit/test_starter_tasks_gate.sh"
+      - ".github/workflows/owner-sends-hold-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "shared-utils/owner_sends_hold.py"
+      - "23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh"
+      - "23-ai-workforce-blueprint/scripts/verify-library-gate.sh"
+      - "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+      - "37-zhc-closeout/scripts/run-closeout.sh"
+      - "37-zhc-closeout/scripts/resume-closeout-cron.sh"
+      - "37-zhc-closeout/scripts/send-telegram-celebration.sh"
+      - "37-zhc-closeout/scripts/lib-closeout-state.sh"
+      - "32-command-center-setup/scripts/seed-dashboard-content.py"
+      - "32-command-center-setup/scripts/seed-workspaces.py"
+      - "32-command-center-setup/scripts/repair-board-company.py"
+      - "tests/unit/test_owner_sends_hold.py"
+      - "tests/unit/test_board_company_repair.py"
+      - "tests/unit/test_no_department_for_default_lane.py"
+      - "32-command-center-setup/scripts/scaffold-agent-files.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "tests/unit/test_starter_tasks_gate.sh"
+      - ".github/workflows/owner-sends-hold-guard.yml"
+
+jobs:
+  owner-sends-hold-guard:
+    name: Owner sends held on every path; board lanes under one company
+    runs-on: ubuntu-latest
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install jq
+        run: command -v jq || sudo apt-get install -y jq
+      - name: Owner-sends hold (welcome, gate, celebration, closeout paths)
+        run: python3 tests/unit/test_owner_sends_hold.py
+      - name: Board company (duplicate row, default queue, repair command)
+        run: python3 tests/unit/test_board_company_repair.py
+      - name: Structural 'default' lane gets no head agent and no departments/default
+        run: python3 tests/unit/test_no_department_for_default_lane.py
+      - name: Starter tasks only after closeout, never on an update roll
+        run: bash tests/unit/test_starter_tasks_gate.sh

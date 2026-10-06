@@ -22,12 +22,26 @@ The agent is doing the same work `install.sh` would have done in your terminal �
 
 You are about to install or update OpenClaw Onboarding via the direct-to-agent path (no terminal). Follow these steps in order. Do NOT skip steps. Do NOT improvise.
 
-### 0. Pre-flight — detect platform
-Determine whether the target host is:
-- **Mac:** `~/.openclaw/`, `~/clawd/`, `~/Downloads/openclaw-master-files/` apply.
-- **VPS Hostinger Docker:** `/data/.openclaw/`, `/data/.openclaw/workspace/`, `/data/.openclaw/master-files/` apply.
+### 0. Pre-flight — detect the operating system and runtime
 
-For the rest of these instructions, substitute the correct paths for the detected platform.
+Read the actual operating system (`uname -s`) and whether OpenClaw runs natively or inside a container. Hostinger and Contabo are provider names, not evidence of Docker.
+
+- **macOS (Darwin):** default root `~/.openclaw`.
+- **Native Linux VPS:** default root `~/.openclaw`; preserve an existing selected `/data/.openclaw` installation or explicit `OPENCLAW_ROOT`.
+- **Docker:** operate inside the client's exact running container. A mounted `/data` normally uses `/data/.openclaw`; preserve explicit inside-container root/workspace pins. Never install a second copy on the host to replace a stopped or ambiguous container.
+
+Preserve `OPENCLAW_ROOT`, the saved configured workspace, and any matching `OPENCLAW_WORKSPACE_PATH` / `OPENCLAW_WORKSPACE_ROOT` pins. After downloading, use `platform/common.sh` to resolve the same values as the terminal path. `<skills-dir>` is `<config-root>/skills`; it is not a Downloads archive. See [portable platforms](docs/portable-onboarding-platforms.md).
+
+### First onboarding: collect the owner and company names before setup
+
+Before a **brand-new** onboarding, ask these two questions in the current client conversation and wait for their answers:
+
+1. **What is the name of the client or owner of this ZHC?**
+2. **What is the name of the company?**
+
+Do not infer the company from the owner name, Telegram display name, hostname or agency profile. Pass the actual answers as separate arguments to `python3 <config-root>/scripts/onboarding-identity.py --root <config-root> --workspace <workspace-root> --owner-name "<answer 1>" --company-name "<answer 2>"`. Before scripts are downloaded, collect the answers and pass `OPENCLAW_OWNER_NAME` and `OPENCLAW_COMPANY_NAME` in the **installer process** environment. With curl piping, use `curl ... | env OPENCLAW_OWNER_NAME="<answer 1>" OPENCLAW_COMPANY_NAME="<answer 2>" bash`; setting them only on curl does not pass them to bash. Use proper argument quoting; never evaluate a client answer as shell code.
+
+The helper saves `<config-root>/onboarding-identity.json` before resources are created. Reuse it on retries. An established workforce keeps its existing company UUID, slug and answers; updates do not restart intake or rename it. Missing inputs return `needs-input` (exit 8); ask the missing question and resume. The terminal installer asks through `/dev/tty` when available. An agent must ask in the conversation, not leave a background terminal waiting for the client. Names are intake metadata, not fabricated interview answers.
 
 ### 1. Confirm capacity envelope
 Verify the runtime allows:
@@ -68,6 +82,22 @@ Fetch the latest skill bundle from the unified repo (auto-detects Mac vs VPS):
 - Mac + VPS: `https://github.com/trevorotts1/openclaw-onboarding`
 
 Place every skill folder under `<skills-dir>/`. Place root files (`Start Here.md`, `INSTALL-CONTRACT.md`, `AGENTS.md`, `cron-prompt.txt`, `check-updates.sh`, `force-update.sh`, etc.) at `<config-root>/`. Place `shared-utils/` under `<skills-dir>/shared-utils/`.
+
+Also copy the repository root `scripts/` directory to `<config-root>/scripts/` and `platform/` to `<config-root>/platform/`. The full `shared-utils/` tree belongs at `<config-root>/skills/shared-utils/`, including `service_env.py`; do not deliver only individual helper files. The installed layout must include:
+
+- `<config-root>/platform/common.sh`
+- `<config-root>/scripts/onboarding-identity.py` and `prebuild-standard-workforce.py`
+- `<config-root>/skills/shared-utils/service_env.py`
+- `<config-root>/skills/23-ai-workforce-blueprint/scripts/workforce_state.py`
+- `<config-root>/skills/32-command-center-setup/scripts/run-full-install.sh`
+
+If any is missing, finish delivering the same bundle before running Skill32. Now persist the two answers already collected in the conversation:
+
+```text
+python3 <config-root>/scripts/onboarding-identity.py --root <config-root> --workspace <workspace-root> --owner-name "<client/owner answer>" --company-name "<company answer>"
+```
+
+Require exit 0 before installing skill waves or creating company resources. If it reports `needs-input`, ask the missing question in the conversation and retry with the answer. This direct path does not run `install.sh`, so setting installer environment variables alone is insufficient; the helper call here is required. Preserve existing saved identities on updates.
 
 This delivery INCLUDES the Podcast Production Engine (skill 58) activation layer. Verify that all three of these files exist under `<skills-dir>/58-podcast-production-engine/scripts/` after the download:
 

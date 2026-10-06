@@ -64,7 +64,7 @@ When a test fails:
 | Failure | Standard fix |
 |---|---|
 | Text on or touching a face | Move text instruction earlier in prompt; add explicit zone separation ("headline confined to upper-left zone; subject's face occupies upper-right zone; minimum clear margin between them"); add to avoid-list; restate at prompt end |
-| Misspelled rendered text | Quote text + "render this text exactly, correctly spelled"; route to Ideogram V3 (DESIGN) or GPT-Image 2; shorten the string if possible |
+| Misspelled rendered text | Quote text + "render this text exactly, correctly spelled"; route to Ideogram V3 (DESIGN) or GPT-Image 2.5; shorten the string if possible |
 | Reference image copied verbatim (subjects/text reproduced) | Mandatory Nano Banana 2 style-reference-only directive (MODEL-SPECS §4); reduce ref count to 1; strengthen "do not copy" language |
 | Washed-out / ashy deep skin tones | Add "rich, warm, dimensional deep brown skin with golden highlights"; specify lighting warmth; avoid-list "ashy, greyed, desaturated skin" |
 | Saturation drift (output flatter than style) | Name the saturation explicitly ("vivid, high-saturation, punchy color throughout"); name each key color twice |

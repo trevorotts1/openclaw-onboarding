@@ -1,8 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schemas/interview-section/v1",
   "section": "deck-intake",
-  "version": "1.8.0",
-  "description": "Deck intake v1.8.0 (FIX 30, Trevor ruling): 23 numbered conversational turns, down from 58 one-per-turn rows. Each turn row (kind 'merged') may return several legacy subfields; conditional subfields write documented defaults/derived values, never null. Alias rows (\"alias\": true) keep the exact legacy ids/prompts/enums for consumers that pin physical rows (interview-app payload, anti-fab checks, drift driver) and are filtered out of the ask sequence while PRESENTATION_INTAKE_V2 is on. PRESENTATION_INTAKE_V2=0 restores the legacy ask-all-rows behavior. Waiver and store-target contracts unchanged.",
+  "version": "1.12.0",
+  "description": "Deck intake v1.12.0 (Flash route correction): identical 23 merged turns, 20 required, 48 physical rows, same prompts (order-9 workhorse example now deepseek-flash@deepseek-direct, legacy deepseek-v4-flash still accepted), enums, required flags, storeTarget and waiver contract as v1.11.0. New stage metadata groups stage-1 into five beats (purpose/audience, existing materials, desired outputs, deadline/CTA, provider/resource preference) with a review-and-edit summary, conditions later turns on selected deliverables plus missing stage inputs, reuses locked client preferences without re-interview, and sets UX targets (new-client valid brief at most 11 interactions, repeat-client at most 6, preference reuse 100%). 23 turns is the CEILING, never the norm.",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
     "from_scratch": {
@@ -96,11 +96,19 @@
     "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
     "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
     "STANDARD_MODE": "pre_presentation_capture.STANDARD_MODE",
-    "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN"
+    "RESOURCE_PLAN": "pre_presentation_capture.RESOURCE_PLAN",
+    "STYLE_PICK_AUTO": "pre_presentation_capture.STYLE_PICK_AUTO"
   },
   "session_budget": {
     "max_turns": 23,
-    "max_minutes": 25
+    "max_minutes": 25,
+    "ux_targets": {
+      "new_client_valid_brief_max_interactions": 11,
+      "repeat_client_valid_brief_max_interactions": 6,
+      "preference_reuse_rate": 1.0,
+      "baseline_turns": 23,
+      "note": "PRES-056: targets set at fixture design. A required SOP/QC obligation is never dropped to hit a target; targets measure interaction count only."
+    }
   },
   "questions": [
     {
@@ -108,7 +116,7 @@
       "section": "deck-intake",
       "order": 0.5,
       "kind": "merged",
-      "prompt": "What are we building: from scratch, from your content for one person, from your content for a broader audience, or a 4-phase Signature Presentation? If content-based, name/share the source and give the one core idea the audience must retain.",
+      "prompt": "What are we building: from scratch, from your content for one person, from your content for a broader audience, or a 4-phase Signature Presentation? Does it end with an offer or pitch (yes/no)? If content-based, name/share the source and give the one core idea the audience must retain.",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -121,6 +129,11 @@
             "signature"
           ],
           "note": "branch keyword decides; legacy deck_type/creation_mode/presentation_mode/audience_mode derive from it via the standard mapping"
+        },
+        "pitch_included": {
+          "storeOn": "PITCH_INCLUDED",
+          "note": "explicit owner decision; true keeps commercial turns and false suppresses only commercial turns; never inferred or defaulted",
+          "kind": "boolean"
         },
         "signature_source": {
           "storeOn": "SIGNATURE_SOURCE",
@@ -145,7 +158,9 @@
           },
           "none_value": ""
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "existing materials"
     },
     {
       "id": "audience_recipient_cast",
@@ -172,7 +187,9 @@
         "representation_mix": {
           "storeOn": "REPRESENTATION_MIX"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "purpose/audience"
     },
     {
       "id": "grounding_and_method",
@@ -188,9 +205,14 @@
         },
         "named_methodology": {
           "storeOn": "NAMED_METHODOLOGY",
-          "none_value": "no named method"
+          "conditional_on": {
+            "id": "pitch_included",
+            "equals": true
+          }
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "existing materials"
     },
     {
       "id": "goal_cta_feeling",
@@ -210,7 +232,9 @@
         "target_feeling": {
           "storeOn": "TARGET_FEELING"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "purpose/audience"
     },
     {
       "id": "promise_objection_timing",
@@ -228,9 +252,15 @@
           "storeOn": "PRIMARY_OBJECTION"
         },
         "time_to_result": {
-          "storeOn": "TIME_TO_RESULT"
+          "storeOn": "TIME_TO_RESULT",
+          "conditional_on": {
+            "id": "pitch_included",
+            "equals": true
+          }
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "purpose/audience"
     },
     {
       "id": "hook_and_tone",
@@ -248,7 +278,9 @@
         "tone": {
           "storeOn": "TONE"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "purpose/audience"
     },
     {
       "id": "duration_and_slide_count",
@@ -268,7 +300,9 @@
           "derived": "duration_math",
           "note": "blank slide count derived from duration: max(1, round(duration_min * 0.8)) at ~1.25 slides/minute"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "desired outputs"
     },
     {
       "id": "deadline_and_notes",
@@ -285,7 +319,9 @@
         "client_notes": {
           "storeOn": "CLIENT_NOTES"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "deadline/CTA"
     },
     {
       "id": "interview_depth",
@@ -305,14 +341,16 @@
           "default": "QUICK",
           "note": "answer selects later optional detail; never changes the 23-turn ceiling"
         }
-      }
+      },
+      "stage": 1,
+      "stage_beat": "provider/resource preference"
     },
     {
       "id": "resource_plan",
       "section": "deck-intake",
       "order": 9,
       "kind": "merged",
-      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.'",
+      "prompt": "I detected these presentation providers and plans: [redacted detected summary]. Confirm the plan/tier for any provider whose concurrency cannot be detected, or choose 'use conservative default.' You own the model choice too -- nothing is forced. Give a slot as model@provider, labelled -- workhorse: deepseek-flash@deepseek-direct (your authoring/copy workhorse; older deepseek-v4-flash configs still accepted); reasoning: (long-context synthesis); qc: z-ai/glm-5.3-flash@openrouter (independent judge); thinking: max/high/medium/low/off; mode: ultra/standard/economy (how hard this deck's BUILD runs -- not how long this interview is; that is the separate quick/in-depth question). An omitted slot stays on the department default. No API key, no endpoint URL, no account id -- tier label, model id and provider id only. Also pick your DeepSeek variant (flash|pro) and your OpenRouter model (free text, e.g. z-ai/glm-5.3-flash).",
       "required": false,
       "block_gate": false,
       "subfields": {
@@ -320,10 +358,121 @@
           "storeOn": "RESOURCE_PLAN",
           "conservative_value": "use conservative default",
           "note": "FIX 8: asked once when probe data is incomplete, then locked via resource_profile.is_plan_locked; never re-asked"
+        },
+        "workhorse_model": {
+          "storeOn": "WORKHORSE_MODEL",
+          "default": "",
+          "labels": [
+            "workhorse",
+            "workhorse model",
+            "primary model",
+            "authoring model",
+            "workhorse_model"
+          ],
+          "note": "CLIENT MODEL PLAN: the client's primary authoring/copy model, written as model@provider. Blank keeps the department default (model_router.CAPABILITY_CANDIDATES). Governs the authoring, prompt_authoring, cheap_text, creative_cheap and speech_text classes, and the reasoning classes too when it meets their long-context floor. Slot is called 'workhorse', never 'authoring_model': resource_profile.redact_record drops every key matching 'auth', so an 'authoring_model' key would vanish from the store on save."
+        },
+        "reasoning_model": {
+          "storeOn": "REASONING_MODEL",
+          "default": "",
+          "labels": [
+            "reasoning",
+            "reasoning model",
+            "long context model",
+            "reasoning_model"
+          ],
+          "note": "CLIENT MODEL PLAN: long-context reasoning/synthesis model, as model@provider. Blank = department default. Naming a model that does not meet the long-context floor is HONOURED and recorded as an explicit floor waiver -- the client is never forced -- and the waiver is printed at launch."
+        },
+        "qc_model": {
+          "storeOn": "QC_MODEL",
+          "default": "",
+          "labels": [
+            "qc",
+            "qc model",
+            "judge",
+            "judge model",
+            "qc_model"
+          ],
+          "note": "CLIENT MODEL PLAN: the independent QC judge model, as model@provider. Blank = department default. Must be named explicitly: the workhorse never spills into the judge class, so a judge can never silently ride the same model identity that authored the artifact."
+        },
+        "thinking_mode": {
+          "storeOn": "THINKING_MODE",
+          "default": "",
+          "enum": [
+            "max",
+            "high",
+            "medium",
+            "low",
+            "off"
+          ],
+          "labels": [
+            "thinking",
+            "thinking mode",
+            "thinking_mode"
+          ],
+          "note": "CLIENT MODEL PLAN: recorded on the profile now; wiring it into per-call reasoning_effort is a separate change and is NOT done in this one."
+        },
+        "run_mode": {
+          "storeOn": "RUN_MODE",
+          "default": "",
+          "enum": [
+            "ultra",
+            "standard",
+            "economy"
+          ],
+          "labels": [
+            "mode",
+            "run mode",
+            "run_mode",
+            "build mode",
+            "deck mode"
+          ],
+          "refuse_values": [
+            "quick",
+            "in-depth",
+            "in_depth",
+            "indepth"
+          ],
+          "refuse_message": "run mode got interview-depth vocabulary {value}. The RUN-MODE axis (FIX 11) is ultra|standard|economy and decides how the deck is BUILT (concurrency, ceiling, model mix); the INTERVIEW-DEPTH axis (FIX 30/36 standard_mode, --intake-depth) is quick|in-depth and decides how much of this interview you are asked. The two axes are never interchangeable and never share a slot.",
+          "note": "CLIENT RUN MODE (FIX 11): the client's own ultra|standard|economy declaration, riding THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23). Case-insensitive in, normalised lowercase out. An omitted or unrecognised answer records NOTHING and the launcher's own default (standard) applies: never ultra by default, because nothing silently launches at the operator ceiling. Deliberately NOT in storeTarget -- a run mode is an execution axis, not deck content, so it stays out of working/copy/intake.json's deck_brief. presentation-intake-poll.sh reads the RUN_MODE ledger key and hands it to the run-mode door (launcher --mode on the resume path, PRESENTATION_MODE on the new-intake path, which does not go through the launcher). Re-answering this turn WITHOUT a mode leaves an earlier declaration standing -- a client who already said ultra is not 'saying nothing', and a later answer about models must not silently downgrade their run; only an explicit new mode changes it, and only an explicit 'ultra' ever escalates to ultra. Distinct from interview_depth.standard_mode in every respect; see refuse_message."
+        },
+        "deepseek_variant": {
+          "storeOn": "DEEPSEEK_VARIANT",
+          "enum": [
+            "flash",
+            "pro"
+          ],
+          "labels": [
+            "deepseek",
+            "deepseek variant"
+          ],
+          "note": "FIX 61: client picks their DeepSeek variant (flash=fast/cheap, pro=strongest). Sets the workhorse slot."
+        },
+        "openrouter_model": {
+          "storeOn": "OPENROUTER_MODEL",
+          "labels": [
+            "openrouter",
+            "openrouter model"
+          ],
+          "note": "FIX 61: client picks their OpenRouter model (free text, e.g. z-ai/glm-5.3-flash). In ultra it replaces any Ollama-routed step."
+        },
+        "ollama_plan": {
+          "storeOn": "OLLAMA_PLAN",
+          "enum": [
+            "$20/month",
+            "$100/month"
+          ],
+          "labels": [
+            "ollama plan",
+            "ollama_plan",
+            "ollama cloud plan"
+          ],
+          "note": "FIX 62: client picks their Ollama Cloud plan tier ($20/month = 3 concurrent, $100/month = 8 concurrent). Recorded via resource_profile.record_plan_answer into the provider's cap-table entry; governs concurrency on Ollama-routed steps. Tier names match capacity.PLANS_BY_PROVIDER exactly."
         }
       },
-      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- after the answer is recorded it is marked locked, copied into the capacity override, and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only.",
-      "resolverHint": "Feeds resource_profile.record_plan_answer/provider/plan -> capacity.persist_plan_answer() projects the locked ceiling into capacity_override.json, and scripts/presentation_job/resource_profile.py stores the locked profile (never in-repo, never printed verbatim -- redaction contract). ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock."
+      "help": "Ask-once contract (FIX 8): this is the ONLY question this interview ever asks about plans/limits. It is asked only when the automatic probe could not determine a provider's concurrency (capacity.probe()['resource_profile']['pending_questions'] is non-empty); a fully detected client is never asked it. The machine lock lives in resource_profile.py -- the resource profile is THE store for this answer, and after it is recorded there the provider entry is marked locked and NO later run or probe refresh ever re-asks. A decline ('use conservative default') is recorded the same way and keeps the conservative default (3). Never paste credentials, API keys, endpoints, or any account identifier anywhere in this answer -- plan tier name only. MODEL CHOICE (operator requirement 2026-09-04): the client is never forced onto a department default. The workhorse/reasoning/qc/thinking subfields of this SAME turn record a client model plan through resource_profile.record_model_plan() into profile['model_plan']; model_router.resolve_route consults it AHEAD of CAPABILITY_CANDIDATES, which becomes the default for a client who declares nothing. A declared provider the profile does not carry, or a model that provider's wired inventory does not list, is REFUSED right here at intake (the answer returns an error naming the wired inventory it was checked against) -- never at dispatch time. Answering this turn again with different models UPDATES the plan and appends to the audit log; a client changing their workhorse never needs an operator.",
+      "resolverHint": "Feeds resource_profile.record_plan_answer(provider, plan) -- scripts/presentation_job/resource_profile.py IS the store for the plan tier, holding the tier, the cap-table ceiling and the ask-once lock in one per-provider entry (never in-repo, never printed verbatim -- redaction contract). The production writer is deck-intake-driver.py's _record_plan_tier() on THIS turn: it matches the tier against capacity.PLANS_BY_PROVIDER for each provider the probe still reports as owed an answer, records it per provider, and REFUSES the turn (naming the accepted tiers) rather than accepting a tier it cannot record. ASK ONLY when capacity.probe()['resource_profile']['pending_intake_ids'] contains 'resource_plan'; after record_plan_answer (or record_conservative_default for the decline) it is locked and pending_questions() returns empty forever, which is the ask-once proof surface. Probe refresh (apply_probe_refresh) updates detected fields WITHOUT touching the lock. The model subfields feed resource_profile.record_model_plan(plan, source='interview') -> profile['model_plan'] + profile['interview']['model_plan'] audit rows. They are deliberately NOT in storeTarget: the model plan lives in the secrets-adjacent profile store, never in the run directory's intake.json.",
+      "stage": 1,
+      "stage_beat": "provider/resource preference"
     },
     {
       "id": "offer_and_stack",
@@ -341,7 +490,8 @@
           "storeOn": "OFFER_STACK"
         }
       },
-      "pitchless_skip": true
+      "pitchless_skip": true,
+      "stage": 2
     },
     {
       "id": "event_access",
@@ -363,7 +513,8 @@
           "note": "derived from event_price on the same turn, then confirmed"
         }
       },
-      "pitchless_skip": true
+      "pitchless_skip": true,
+      "stage": 2
     },
     {
       "id": "price_structure",
@@ -393,7 +544,8 @@
           "none_value": ""
         }
       },
-      "pitchless_skip": true
+      "pitchless_skip": true,
+      "stage": 2
     },
     {
       "id": "payment_and_vip",
@@ -430,7 +582,8 @@
           "none_value": ""
         }
       },
-      "pitchless_skip": true
+      "pitchless_skip": true,
+      "stage": 2
     },
     {
       "id": "proof_assets",
@@ -445,14 +598,15 @@
           "storeOn": "PROOF_ASSETS"
         }
       },
-      "pitchless_skip": true
+      "pitchless_skip": true,
+      "stage": 2
     },
     {
       "id": "style_and_brand",
       "section": "deck-intake",
       "order": 15,
       "kind": "merged",
-      "prompt": "Style: fresh clean-white default, or match brand? Give the primary brand color/logo source, any style preferences, and say if dark slides are OK.",
+      "prompt": "Style: fresh clean-white default, or match brand? Give the primary brand color/logo source, any style preferences, and say if dark slides are OK. Later I will send you 3 style directions to pick from (A, B or C) and wait 45 minutes for your reply -- say \"style pick auto: yes\" if you would rather I pick the first variant for you when that wait runs out instead of pausing the deck; leave it out and I will always wait for your pick.",
       "required": true,
       "block_gate": true,
       "subfields": {
@@ -471,8 +625,26 @@
           "storeOn": "DARK_OK",
           "kind": "boolean",
           "default": false
+        },
+        "style_pick_auto": {
+          "storeOn": "STYLE_PICK_AUTO",
+          "enum": [
+            "yes",
+            "no"
+          ],
+          "labels": [
+            "style pick auto",
+            "style_pick_auto",
+            "auto pick",
+            "auto style pick",
+            "pick for me",
+            "auto-pick"
+          ],
+          "note": "STYLE-PICK AUTO OPT-IN (F5): rides THIS turn as a labelled subfield -- it never adds a 24th turn (Trevor ruling, session_budget.max_turns=23), the same ruling run_mode rides on the resource_plan turn. Deliberately NOT on resource_plan: that turn is asked ONLY when the capacity probe leaves a pending question (help: 'a fully detected client is never asked it'), so an opt-in parked there would be unreachable for most clients, while style_and_brand is required + block_gate and is therefore asked on every deck. NO default key on purpose: an omitted answer records NOTHING and the engine's phases.Engine._style_pick_intake_auto() reads a missing/falsy field as NO opt-in -- auto-picking for a silent client is the forgery FIX 29 exists to prevent. 'yes' is recorded by deck-intake-driver._record_style_pick_auto() as the BOOLEAN True (never the string 'yes': the engine tests `auto is True`) on the STYLE_PICK_AUTO ledger key and on the intake root key style_pick_auto that cmd_complete merges into working/copy/intake.json."
         }
-      }
+      },
+      "help": "STYLE-PICK AUTO (F5): the style_pick_auto subfield is the client's own standing consent for the P-STYLE-PICK owner gateway (order 4.86, executor kind \"human\", budget 45 min). Recorded 'yes' -> intake.style_pick_auto = true (boolean) -> on a timeout the engine writes working/copy/style_preview_choice.json itself with auto_pick:true provenance and NO owner_msg_id, and the deck keeps rendering. Absent or 'no' -> the phase parks BLOCKED and waits for a real owner pick, which is recorded with `deck-intake-driver.py --run-dir <DIR> --style-pick A|B|C --owner-msg-id <id>`. The opt-in NEVER forges an owner_msg_id and never substitutes for a real pick that arrives in time -- a pick always wins over the timeout.",
+      "stage": 2
     },
     {
       "id": "visual_mix",
@@ -487,7 +659,8 @@
           "storeOn": "VISUAL_MIX",
           "default": "mix"
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "logo_placement",
@@ -504,7 +677,8 @@
           "default": false,
           "none_value": "cover/close only"
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "core_deliverables",
@@ -535,7 +709,8 @@
           "boolish": true,
           "default": "yes"
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "delivery_and_ghl",
@@ -554,7 +729,8 @@
           "boolish": true,
           "default": "yes"
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "growth_assets",
@@ -575,7 +751,8 @@
           "boolish": true,
           "default": "no"
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "audio_settings",
@@ -609,6 +786,16 @@
           "default": 140,
           "note": "blank WPM derives: default=130, medium=140, fast=155"
         }
+      },
+      "stage": 2,
+      "refine_condition": {
+        "deliverables": [
+          "audio"
+        ],
+        "missing_inputs": [
+          "core_deliverables",
+          "duration_and_slide_count"
+        ]
       }
     },
     {
@@ -668,7 +855,8 @@
           },
           "no_note": true
         }
-      }
+      },
+      "stage": 2
     },
     {
       "id": "presentation_type",
@@ -782,7 +970,11 @@
       "required": true,
       "block_gate": true,
       "resolverHint": "Feeds pitch_engines_check.chk_branded_method (AF-NO-BRANDED-METHOD / AF-METHOD-FABRICATED) -- the ONLY source of a client-supplied method name; a NAMED_METHOD beat may not appear on a slide without this answer or an owner_approved:true record in method_name_approval.json.",
-      "alias": true
+      "alias": true,
+      "conditional_on": {
+        "id": "pitch_included",
+        "equals": true
+      }
     },
     {
       "id": "goal",
@@ -847,7 +1039,11 @@
       "required": true,
       "block_gate": true,
       "resolverHint": "Feeds pitch_engines_check.chk_time_to_result (AF-NO-TIME-TO-RESULT) -- the deck's EXPECTATION beat must carry a duration token (day/week/month/session) sourced from this answer, never fabricated.",
-      "alias": true
+      "alias": true,
+      "conditional_on": {
+        "id": "pitch_included",
+        "equals": true
+      }
     },
     {
       "id": "tone",
@@ -916,8 +1112,8 @@
       "id": "want_sales_checkout",
       "section": "deck-intake",
       "order": 20.01,
-      "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no)",
-      "help": "Default YES. The sales page + checkout page is a standard upsell deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
+      "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no) A 'yes' builds the sales page, the checkout page, and wires the checkout order form (lead-capture; card payments only in the provider sandbox until a merchant is connected -- live charges are never invented).",
+      "help": "Default YES. The sales page + checkout page + checkout order form is a standard upsell deliverable and one of the engine's fail-closed gates. The form ships as lead-capture (order form + follow-up workflow); live card charges need a connected merchant, otherwise the checkout phase reports an explicit actionable blocker while deck work continues. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely. [FIX 30 alias row: captured inside merged turn 21; kept for legacy consumers. Set PRESENTATION_INTAKE_V2=0 to ask this row directly.]",
       "kind": "text",
       "allowed_values": [
         "yes",
@@ -1082,7 +1278,7 @@
     }
   ],
   "waiver_field_mapping": {
-    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "_comment": "U026 \u2014 the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT \u2014 a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
     "teleprompter": {
       "toggle": "want_teleprompter",
       "reason": "teleprompter_declined_reason"
@@ -1111,7 +1307,7 @@
   "intake_v2": {
     "flag_env": "PRESENTATION_INTAKE_V2",
     "default": "on",
-    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 19 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
+    "rollback": "set PRESENTATION_INTAKE_V2=0 in the driver environment: get_questions then returns every physical row (23 merged turns + 25 legacy aliases), reproducing the pre-FIX-30 one-question-per-turn interview. Bank backups live at presentation-fix-tests/backups/phase-b/deck-intake-questions.json.pre-fix30.",
     "mapping": {
       "presentation_type": "captured:turn 1 (presentation_type)",
       "recipient_name": "conditional:turn 2 (asked when branch=content_personal)",

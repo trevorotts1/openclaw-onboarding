@@ -130,17 +130,17 @@ if [[ "$B_EXIT" -ne 0 ]]; then
 else
   fail "(B) guard did NOT bite with unmanaged spawns planted in 41-*/03-*/44-* (exit 0 -- the guard is still blind to at least one root)"
 fi
-if printf '%s' "$B_OUT" | grep -q "41-build-with-ai-playbook/scripts/zz-planted-unmanaged-probe.sh"; then
+if grep -q "41-build-with-ai-playbook/scripts/zz-planted-unmanaged-probe.sh" <<<"$B_OUT"; then
   pass "(B) guard's failure output names the 41-build-with-ai-playbook/ planted file"
 else
   fail "(B) guard should name the 41-* planted file (got: $(printf '%s' "$B_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"
 fi
-if printf '%s' "$B_OUT" | grep -q "03-agent-browser/zz-planted-unmanaged-probe.sh"; then
+if grep -q "03-agent-browser/zz-planted-unmanaged-probe.sh" <<<"$B_OUT"; then
   pass "(B) guard's failure output names the 03-agent-browser/ planted file"
 else
   fail "(B) guard should name the 03-* planted file (got: $(printf '%s' "$B_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"
 fi
-if printf '%s' "$B_OUT" | grep -q "44-convert-and-flow-operator/tools/zz-planted-tier4-workflow-builder.py"; then
+if grep -q "44-convert-and-flow-operator/tools/zz-planted-tier4-workflow-builder.py" <<<"$B_OUT"; then
   pass "(B) guard's failure output names the 44-convert-and-flow-operator/ planted file (P3-08)"
 else
   fail "(B/P3-08) guard should name the 44-* planted file -- the guard is still BLIND to Skill 44 (got: $(printf '%s' "$B_OUT" | grep -i 'fail\|zz-planted' | head -5 | tr '\n' ';'))"

@@ -1,9 +1,10 @@
 {
-  "$schema_note": "SACRED character/count bands for Social Media in a Box (Skill 57). SINGLE SOURCE OF TRUTH — scripts/prove_bands.py reads THIS file (never hardcodes the numbers) and measures stripped lengths deterministically. Every band is transcribed verbatim from the canonical super-prompts baked in prompts/ (09 FB/IG carousel, 10 LinkedIn carousel, 15 7-part series, 16 reformatter, 08 Sora storyboard). Bands are the DEFAULT floor; a logged client-exact override wins and is recorded on the process certificate (client gets EXACTLY what they ask for — never floored). max:null means an open upper bound (a MINIMUM floor).",
+  "$schema_note": "SACRED character/count bands for Social Media in a Box (Skill 57). SINGLE SOURCE OF TRUTH — scripts/prove_bands.py reads THIS file (never hardcodes the numbers) and measures stripped lengths deterministically. Every band is transcribed verbatim from the canonical super-prompts baked in prompts/ (09 FB/IG carousel, 10 LinkedIn carousel, 15 7-part series, 16 reformatter, 08 storyboard for the 25.0s duration lane). Bands are the DEFAULT floor; a logged client-exact override wins and is recorded on the process certificate (client gets EXACTLY what they ask for — never floored). max:null means an open upper bound (a MINIMUM floor).",
   "version": "1.0.0",
   "bands": {
     "caption_fb_ig": {"min": 1500, "max": 1800, "unit": "chars", "field": "carouselCaption", "applies": ["facebook", "instagram"], "prompt": "09", "af": "AF-SM-CAPTION-BAND"},
     "caption_linkedin": {"min": 1500, "max": 1900, "unit": "chars", "field": "carouselCaption", "applies": ["linkedin"], "prompt": "10", "af": "AF-SM-CAPTION-BAND"},
+    "$image_prompt_note": "image_prompt_carousel and image_prompt_series band the AUTHORED seed prompt (the content contract written by prompts 09/10/15). They are not the transmitted KIE prompt: prompt 05 expands each seed to 95 to 100 percent of the routed model's maxLength (floor 80 percent) per Skill 74 prompt-budget before dispatch (rule 12 of 07-kie-setup/references/kie-common-rules.md).",
     "image_prompt_carousel": {"min": 1000, "max": 1700, "unit": "chars", "field": "prompt", "prompt": "09/10/12", "af": "AF-SM-IMGPROMPT-BAND"},
     "image_prompt_series": {"min": 1800, "max": null, "unit": "chars", "field": "imageprompt", "prompt": "15", "af": "AF-SM-IMGPROMPT-BAND"},
     "post_body_words": {"min": 300, "max": null, "unit": "words", "field": "body", "prompt": "15", "af": "AF-SM-POSTBODY-WORDS"},
@@ -31,6 +32,10 @@
     "blog_title": {"min": 1, "max": 80, "unit": "chars", "field": "title", "prompt": "19", "af": "AF-SM-BLOG-TITLE"},
     "blog_meta": {"min": 0, "max": 160, "unit": "chars", "field": "metaDescription", "prompt": "19", "af": "AF-SM-BLOG-META"},
     "blog_body_words": {"min": 700, "max": null, "unit": "words", "field": "body", "prompt": "19", "af": "AF-SM-BLOG-BODY"},
-    "stories_caption": {"min": 0, "max": 250, "unit": "chars", "field": "storiesCaption", "prompt": "16", "af": "AF-SM-STORIES-CAPTION"}
+    "stories_caption": {"min": 0, "max": 250, "unit": "chars", "field": "storiesCaption", "prompt": "16", "af": "AF-SM-STORIES-CAPTION"},
+
+    "$f28_quality_note": "F28 (2026-09-08): the bands above are the SHAPE floor, never the quality standard. Every post ALSO clears the F28 quality rubric (specificity, voice, usefulness, factual support, distinctiveness, CTA) enforced deterministically by shared-utils/social_content_quality.py: AF-QUALITY-FACT (unsupported factual claim — every fact needs a source URL in the brief; uncertain client facts route to clarification or get omitted), AF-QUALITY-VOICE (a different brand's voice), AF-QUALITY-DUPLICATE (prior-week overlap > 0.60), AF-QUALITY-CTA (approved CTA missing), AF-QUALITY-MEANING-DRIFT (platform variant lost the approved meaning). Short effective copy passes WITHOUT padding: never pad to hit a band. Briefs are built from the approved brand profile, audience, offer, source material, theme and recent history.",
+    "quality_duplicate_overlap_max": {"exact_max": 0.60, "unit": "jaccard", "af": "AF-QUALITY-DUPLICATE"},
+    "quality_variant_meaning_overlap_min": {"exact_min": 0.18, "unit": "jaccard", "af": "AF-QUALITY-MEANING-DRIFT"}
   }
 }

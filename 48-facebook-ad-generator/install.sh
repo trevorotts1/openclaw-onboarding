@@ -40,7 +40,7 @@ fi
 # v22.0.65 ordering fix: Guard A (ad_gate_integrity_check.py) FATALs when
 # working/recovery-coverage.json is absent, but that file is only emitted by
 # test_ad_recovery.py. A fresh sync (rm -rf wipes working/ first) could never
-# pass step 3 before step 4 (rc=2 on sonatta-camara + qxqt). Run the recovery
+# pass step 3 before step 4 (rc=2 on fixture-client-a + qxqt). Run the recovery
 # proof HERE, before Guard A, so the check always sees the emitted coverage.
 echo "--- enforcement self-test ---"
 python3 "${SKILL_DIR}/scripts/ad_sync_check.py" >/dev/null

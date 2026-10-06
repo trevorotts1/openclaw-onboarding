@@ -1,0 +1,31 @@
+{
+  "brand_id": "<client-slug>",
+  "source": "CLIENT_MUST_SUPPLY (brand intake sheet or owner-provided brand guide)",
+  "palette": {"gold": "CLIENT_MUST_SUPPLY", "navy": "CLIENT_MUST_SUPPLY", "cream": "CLIENT_MUST_SUPPLY"},
+  "logo_only_colors": {"black": "CLIENT_MUST_SUPPLY", "white": "CLIENT_MUST_SUPPLY"},
+  "color_tolerance": 3,
+  "fonts": {"display": "CLIENT_MUST_SUPPLY", "body": "CLIENT_MUST_SUPPLY", "accent": "CLIENT_MUST_SUPPLY"},
+  "font_policy": {
+    "when_brand_fonts_missing": "derive-document",
+    "requires_rationale": true,
+    "requires_reviewer": true,
+    "note": "CLIENT context: agent derives best display/body/accent for this client's job, documents rationale in bible, reviewer approves. Never blocked on fonts."
+  },
+  "banned_fonts": ["Inter", "Arial", "Helvetica", "Helvetica Neue", "Roboto", "Open Sans", "system-ui",
+                   "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif-only"],
+  "logo": {"files": "CLIENT_MUST_SUPPLY", "masthead_files": "CLIENT_MUST_SUPPLY"},
+  "founder_photos": "CLIENT_MUST_SUPPLY",
+  "people_rule": "CLIENT_MUST_SUPPLY",
+  "default_creative_direction": "SECRET_SAUCE_ONLY",
+  "grade": {"block_file": "assets/brand/signature-grade-block.txt",
+            "min_mean_saturation": null, "min_luma_std": null},
+  "page_design_rules": [
+    "CLIENT_MUST_SUPPLY",
+    "CLIENT_MUST_SUPPLY",
+    "CLIENT_MUST_SUPPLY",
+    "CLIENT_MUST_SUPPLY"
+  ],
+  "banned_page_patterns": [
+    "CLIENT_MUST_SUPPLY"
+  ]
+}

@@ -9,7 +9,12 @@ Some funnels are not generic page-plans — they are a specific, IP-gated produc
 with their own SACRED copy/image contract and their own fail-closed pipeline:
 
   * Skill 49 (signature-funnel) — the Trevor Otts 12-section Hero + 3/5/7 funnel.
-  * Skill 56 (sales-page-assets) — PLANNED second entry (direct-response / VSL).
+  * Skill 56 (sales-page-assets) — registered second entry (direct-response / VSL).
+  * Skill 62 (cinematic-web-funnel-engine) — registered third entry (cinematic
+    scenes + scroll runtime, Vercel-hosted), carrying readiness.status "skeleton"
+    (offline build complete; live E2E deliberately HELD pending an operator-approved
+    live run). STEP-0 refuses to route a production build into a skeleton engine
+    unless --force-skeleton is passed.
 
 This selector reads ``funnel-engines/registry.json`` (the ONE registry every such
 engine registers itself into), scores the request against each engine's match
@@ -28,8 +33,10 @@ DESIGN CONTRACT (mirrors funnel_matcher.py)
 * GUIDE, never a gate: a below-threshold score never prevents a build, and an
   explicit user desire ("build the signature funnel") routes by name.
 * EXTENSIBLE WITHOUT CODE CHANGE: a new engine is one appended object in
-  registry.json engines[]. This module discovers it automatically. Skill 56 will
-  register the second entry; no edit here is needed for it to be selectable.
+  registry.json engines[]. This module discovers it automatically (Skill 56 and
+  Skill 62 registered this way; no edit here was needed for them to be
+  selectable). An engine carrying readiness.status "skeleton" is selectable only
+  via --force-skeleton.
 * Skill 6 is the ONE GHL delivery rail. This selector only picks the AUTHORING
   engine; the engine delegates delivery back to Skill 6.
 
@@ -76,6 +83,8 @@ _CAP_SIGNAL = 2.0
 
 DEC_ROUTE = "ROUTE_TO_ENGINE"
 DEC_NONE = "NO_ENGINE_MATCH"
+DEC_REFUSE_SKELETON = "REFUSE_SKELETON"   # match-decision flex_decision for a refused skeleton route
+_SKELETON_FLAG = "--force-skeleton"       # the ONLY way past the skeleton guard
 
 _STOPWORDS = {
     "a", "an", "the", "to", "for", "of", "and", "or", "my", "me", "i", "we",
@@ -265,6 +274,61 @@ def select_engine(request: Any, registry: dict | None = None, *,
     }
 
 
+def _apply_skeleton_guard(decision: dict, force_skeleton: bool) -> tuple[dict, dict | None]:
+    """STEP-0 skeleton guard (P1-9).
+
+    A winning engine carrying ``readiness.status == "skeleton"`` (offline build
+    complete; live E2E deliberately HELD pending an operator-approved live run) is
+    NOT certify_capable, so a production route into it is refused unless the caller
+    passes ``force_skeleton=True`` (the ``--force-skeleton`` CLI flag).
+
+    Returns ``(decision, skeleton_guard)``:
+
+      * refused -> decision rewritten NO_ENGINE_MATCH-style (never raises, never
+        stamps) + ``skeleton_guard`` {"required_flag", "engine_id", "refused": True}.
+      * forced  -> decision kept ROUTE_TO_ENGINE with ``skeleton_guard``
+        {"required_flag", "engine_id", "refused": False, "forced": True} attached,
+        plus a loud warning on stderr.
+      * no skeleton readiness -> decision unchanged, guard None.
+    """
+    if decision.get("decision") != DEC_ROUTE:
+        return decision, None
+    eng = decision.get("engine") or {}
+    readiness = eng.get("readiness") or {}
+    if readiness.get("status") != "skeleton":
+        return decision, None
+    guard = {"required_flag": _SKELETON_FLAG, "engine_id": decision.get("engine_id")}
+    if not force_skeleton:
+        refused = {
+            "decision": DEC_NONE,
+            "engine": None,
+            "engine_id": None,
+            "ranked": decision.get("ranked", []),
+            "rationale": (
+                f"SKELETON GUARD: winning engine '{decision.get('engine_id')}' carries "
+                f"readiness.status='skeleton' (certify_capable=false; offline build "
+                f"complete, live E2E deliberately HELD pending an operator-approved live "
+                f"run). Refusing to stamp a production route into it — pass "
+                f"{_SKELETON_FLAG} to force the route deliberately. The build itself is "
+                f"never blocked: the caller falls through to the template-first matcher."),
+            "skeleton_guard": dict(guard, refused=True),
+            # carried so the REFUSE_SKELETON receipt can record the readiness block
+            # even though the refused decision no longer holds the engine object.
+            "readiness": {"status": readiness.get("status"),
+                          "certify_capable": readiness.get("certify_capable")},
+            "ts": _ts(),
+        }
+        return refused, refused["skeleton_guard"]
+    forced = dict(guard, refused=False, forced=True)
+    decision = dict(decision)
+    decision["skeleton_guard"] = forced
+    print(f"[funnel_engine_selector] WARNING: {_SKELETON_FLAG} set — routing into "
+          f"skeleton engine '{decision.get('engine_id')}' "
+          f"(readiness.status='skeleton', certify_capable=false). Not certify-capable "
+          f"for production.", file=sys.stderr)
+    return decision, forced
+
+
 def _engine_structure_path(engine: dict) -> str | None:
     """Resolve the engine's STRUCTURE/contract JSON path for the FAB-QC match-decision
     ``template_path`` (the file whose bands/sections the built copy is scored against).
@@ -295,7 +359,8 @@ def _engine_structure_path(engine: dict) -> str | None:
     return None
 
 
-def _emit_engine_match_decision(routing: str, decision: dict, task: dict) -> None:
+def _emit_engine_match_decision(routing: str, decision: dict, task: dict,
+                                skeleton_guard: dict | None = None) -> None:
     """Write ``routing/match-decision.json`` for an ENGINE-routed build (FIX-COPY-02).
 
     Shape parity with the template-first matcher's receipt (funnel_matcher.step0_match)
@@ -319,6 +384,25 @@ def _emit_engine_match_decision(routing: str, decision: dict, task: dict) -> Non
             "confidence": decision.get("confidence"),
             "ts": decision.get("ts", _ts()),
         }
+        if skeleton_guard is not None:
+            readiness = decision.get("readiness") or (engine.get("readiness") or {})
+            if readiness.get("status"):
+                receipt["readiness"] = {"status": readiness.get("status"),
+                                        "certify_capable": readiness.get("certify_capable")}
+            if skeleton_guard.get("refused"):
+                # SKELETON GUARD receipt: flex_decision != ROUTE_TO_ENGINE keeps it
+                # inert to v2_dispatcher's engine copy-ledger path while the evidence
+                # trail still records WHY the engine route was refused.
+                receipt["flex_decision"] = DEC_REFUSE_SKELETON
+                receipt["route"] = DEC_REFUSE_SKELETON
+                receipt["confident_match"] = False
+                receipt["engine_id"] = skeleton_guard.get("engine_id")
+                receipt["reason"] = (
+                    f"skeleton guard: engine '{skeleton_guard.get('engine_id')}' carries "
+                    f"readiness.status='skeleton'; pass {_SKELETON_FLAG} to override")
+                receipt["skeleton_guard"] = skeleton_guard
+            else:
+                receipt["skeleton_guard"] = skeleton_guard
         with open(os.path.join(routing, "match-decision.json"), "w",
                   encoding="utf-8") as f:
             json.dump(receipt, f, indent=2)
@@ -328,7 +412,8 @@ def _emit_engine_match_decision(routing: str, decision: dict, task: dict) -> Non
 
 def step0_select_engine(task: dict, evidence_root: str, *,
                         registry_path: str | None = None,
-                        threshold: float = DEFAULT_THRESHOLD) -> dict:
+                        threshold: float = DEFAULT_THRESHOLD,
+                        force_skeleton: bool = False) -> dict:
     """STEP-0 engine selector — the front of the funnel-build flow.
 
     Runs BEFORE the template-first funnel matcher. Reads the board ``task``,
@@ -340,6 +425,10 @@ def step0_select_engine(task: dict, evidence_root: str, *,
         GHL delivery back to Skill 6.
       * NO_ENGINE_MATCH -> task is untouched; the caller proceeds to step0_match
         (template-first) as before.
+      * SKELETON GUARD -> a winning engine carrying readiness.status='skeleton' is
+        refused unless force_skeleton=True (CLI --force-skeleton): the task is left
+        untouched, a REFUSE_SKELETON match-decision receipt is written, and a
+        NO_ENGINE_MATCH-style decision is returned so the caller falls through.
 
     Never raises into the build loop (selection is advisory glue)."""
     try:
@@ -351,21 +440,25 @@ def step0_select_engine(task: dict, evidence_root: str, *,
             "explicit_funnel": task.get("explicit_funnel", ""),
         }
         decision = select_engine(request, registry, threshold=threshold)
+        decision, skeleton_guard = _apply_skeleton_guard(decision, force_skeleton)
 
         routing = os.path.join(evidence_root, "routing")
         os.makedirs(routing, exist_ok=True)
         with open(os.path.join(routing, "funnel-engine-match.json"), "w",
                   encoding="utf-8") as f:
             json.dump(decision, f, indent=2)
+        record = {
+            "ts": decision.get("ts", _ts()),
+            "decision": decision["decision"],
+            "engine_id": decision.get("engine_id"),
+            "confidence": decision.get("confidence"),
+            "request": request,
+        }
+        if decision.get("skeleton_guard"):
+            record["skeleton_guard"] = decision["skeleton_guard"]
         with open(os.path.join(routing, "funnel-engine-decisions.jsonl"), "a",
                   encoding="utf-8") as f:
-            f.write(json.dumps({
-                "ts": decision.get("ts", _ts()),
-                "decision": decision["decision"],
-                "engine_id": decision.get("engine_id"),
-                "confidence": decision.get("confidence"),
-                "request": request,
-            }, ensure_ascii=False) + "\n")
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         if decision["decision"] == DEC_ROUTE:
             task["funnel_engine"] = decision["engine_id"]
@@ -378,7 +471,14 @@ def step0_select_engine(task: dict, evidence_root: str, *,
             # flagship engine products. Emit a match-decision receipt now with
             # flex_decision=ROUTE_TO_ENGINE + template_path -> the engine's structure
             # JSON, so the FAB producer fires and the gate binds on engine builds too.
-            _emit_engine_match_decision(routing, decision, task)
+            _emit_engine_match_decision(routing, decision, task,
+                                        skeleton_guard=decision.get("skeleton_guard"))
+        elif decision.get("skeleton_guard", {}).get("refused"):
+            # SKELETON GUARD: no task stamps (the task must never name a skeleton
+            # engine as its production route); emit a REFUSE_SKELETON receipt so the
+            # evidence trail records WHY the engine route was refused.
+            _emit_engine_match_decision(routing, decision, task,
+                                        skeleton_guard=decision["skeleton_guard"])
         return decision
     except Exception as exc:  # noqa: BLE001 — selection must never block a build
         return {"decision": DEC_NONE, "engine": None,
@@ -405,6 +505,11 @@ def _self_test() -> int:
     check("registry loaded", reg.get("_loaded") is True)
     ids = {e.get("id") for e in reg.get("engines", [])}
     check("signature-funnel registered", "signature-funnel" in ids)
+    check("sales-page-assets registered", "sales-page-assets" in ids)
+    by_id = {e.get("id"): e for e in reg.get("engines", [])}
+    check("cinematic-web-funnel-engine registered as skeleton",
+          ((by_id.get("cinematic-web-funnel-engine") or {}).get("readiness") or {}).get("status")
+          == "skeleton")
 
     # explicit name routes to the signature engine
     d1 = select_engine("build me a signature funnel for my coaching offer", reg)
@@ -444,6 +549,9 @@ def main(argv=None) -> int:
     ap.add_argument("--list", action="store_true", help="List registered engines.")
     ap.add_argument("--registry", default=None, help="Path to registry.json.")
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    ap.add_argument("--force-skeleton", action="store_true",
+                    help="Explicit override: allow routing into an engine whose "
+                         "readiness.status is 'skeleton' (not certify_capable).")
     ap.add_argument("--self-test", action="store_true", help="Run the deterministic self-test.")
     ap.add_argument("--json", action="store_true", help="Raw JSON output for --match/--list.")
     args = ap.parse_args(argv)
@@ -454,24 +562,40 @@ def main(argv=None) -> int:
     reg = load_registry(args.registry)
 
     if args.list:
-        out = [{"id": e.get("id"), "skill": e.get("skill"), "name": e.get("name"),
-                "entry": e.get("entry"), "priority": e.get("priority", 0)}
-               for e in reg.get("engines", [])]
+        out = []
+        for e in reg.get("engines", []):
+            o = {"id": e.get("id"), "skill": e.get("skill"), "name": e.get("name"),
+                 "entry": e.get("entry"), "priority": e.get("priority", 0)}
+            rd = e.get("readiness") or {}
+            if rd.get("status"):
+                o["readiness_status"] = rd.get("status")
+            out.append(o)
         print(json.dumps(out, indent=2) if args.json else
-              "\n".join(f"- {o['id']} ({o['skill']}): {o['name']} -> {o['entry']}"
-                        for o in out) or "(no engines registered)")
+              "\n".join(
+                  f"- {o['id']} ({o['skill']}): {o['name']} -> {o['entry']}"
+                  + (f" [readiness: {o['readiness_status']}]"
+                     if "readiness_status" in o else "")
+                  for o in out) or "(no engines registered)")
         return 0
 
     if args.match:
         decision = select_engine(args.match, reg, threshold=args.threshold)
+        decision, skeleton_guard = _apply_skeleton_guard(decision, args.force_skeleton)
         if args.json:
             print(json.dumps(decision, indent=2))
         else:
             print(f"decision : {decision['decision']}")
-            if decision["decision"] == DEC_ROUTE:
+            if skeleton_guard is not None and skeleton_guard.get("refused"):
+                print(f"engine   : {skeleton_guard.get('engine_id')} "
+                      f"(readiness.status='skeleton' — NOT certify_capable; refused)")
+                print(f"override : pass {_SKELETON_FLAG} to force the route deliberately")
+            elif decision["decision"] == DEC_ROUTE:
                 print(f"engine   : {decision['engine_id']} ({decision['skill']})")
                 print(f"entry    : {decision['entry']}")
                 print(f"confidence: {decision['confidence']} (>= {decision['threshold']})")
+                if skeleton_guard is not None:
+                    print(f"WARNING  : {_SKELETON_FLAG} — skeleton engine, "
+                          f"not certify-capable; forced route")
             print(f"rationale: {decision['rationale']}")
         return 0
 

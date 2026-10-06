@@ -1,0 +1,1203 @@
+#!/usr/bin/env python3
+"""D07 direct-first ladder (JEV spec 1.1, sections 3.1/3.5/3.6/3.8).
+
+Orchestrates the REAL provider modules — D04 ``typesafe_direct``, D05
+``openrouter_decisions``, D06 ``credential_resolver`` — never reimplements
+them. Stdlib only. No network at import. No disk reads. No process
+environment reads or writes. No key material ever appears in results or logs.
+
+Order (3.1): usable direct credential -> usable OpenRouter credential ->
+no-JEV fallback hook. Order is among *eligible* routes only: a stage is
+skipped with a typed reason when its credential is absent, its circuit is
+open, its permissions deny, or the root budget is gone.
+
+Budgets (3.5/3.6): one RootDeadline stamped at ladder entry. Every stage
+receives remaining budget only; nothing extends the root expiry. At most
+one direct attempt plus one OpenRouter attempt per run; provider-level
+retries inside a stage report their attempt counts and consume the SAME
+accounting (no nested retry multiplication).
+
+Late results (3.5.3): an ``ok`` provider result is adopted ONLY after the
+fence recheck. The ladder root expiry fences it directly, and when a D23
+commit store is supplied (``commit_store``) the verdict also carries that
+store's fence token and every adoption rechecks it through the REAL D23
+``check_fence`` (root expiry, mode/policy revision changes). A fenced
+late result may settle usage accounting but can never become the verdict:
+the run stops spending and falls to the no-JEV path. Committing the
+verdict re-checks the same token again inside ``cas_commit``.
+
+Permissions (3.8): caller-supplied policy answers spend/transmit per
+remote call. Reservation happens BEFORE send, a policy recheck happens at
+the send boundary, reconcile happens after. Nothing gate-related runs
+inside the network call. ``not_authorized`` / ``data_not_permitted`` /
+``budget_exhausted`` are recorded separately from technical errors. A
+FAILED or REFUSED reservation fences the send: no reservation, no
+dispatch (A60). ``SqliteBudgetStore`` is the atomic engine underneath the
+reserve/reconcile hooks — one conditional ``UPDATE`` inside
+``BEGIN IMMEDIATE``, so concurrent reservations have exactly one winner.
+
+Callers inject fakes for offline tests; defaults wire the real modules.
+"""
+
+from __future__ import annotations
+
+import math
+import sqlite3
+import time
+from pathlib import Path
+
+# ── skip reasons (typed provenance per stage) ──────────────────────────
+SKIP_NO_CREDENTIAL = "no_credential"
+SKIP_NOT_AUTHORIZED = "not_authorized"
+SKIP_DATA_NOT_PERMITTED = "data_not_permitted"
+SKIP_BUDGET_EXHAUSTED = "budget_exhausted"
+SKIP_ROOT_DEADLINE = "root_deadline_expired"
+SKIP_FENCED_LATE_RESULT = "fenced_late_result"
+SKIP_CIRCUIT_OPEN = "circuit_open"
+SKIP_TECHNICAL_UNAVAILABLE = "technical_unavailable"
+SKIP_LOW_CONFIDENCE = "low_confidence_review"
+SKIP_SETTLEMENT_RESERVE = "settlement_reserve"
+
+PROVIDER_DIRECT = "typesafe_direct"
+PROVIDER_OPENROUTER = "openrouter"
+
+__all__ = [
+    "SKIP_NO_CREDENTIAL",
+    "SKIP_NOT_AUTHORIZED",
+    "SKIP_DATA_NOT_PERMITTED",
+    "SKIP_BUDGET_EXHAUSTED",
+    "SKIP_ROOT_DEADLINE",
+    "SKIP_FENCED_LATE_RESULT",
+    "SKIP_CIRCUIT_OPEN",
+    "SKIP_TECHNICAL_UNAVAILABLE",
+    "SKIP_LOW_CONFIDENCE",
+    "SKIP_SETTLEMENT_RESERVE",
+    "PROVIDER_DIRECT",
+    "PROVIDER_OPENROUTER",
+    "RootDeadline",
+    "AttemptAccounting",
+    "CircuitBreaker",
+    "PermissionsGate",
+    "SqliteBudgetStore",
+    "DirectFirstLadder",
+]
+
+# Reserve-hook classification (A60). A reserve result that is NEITHER the
+# default no-op shape NOR a granted reservation is a failure/refusal.
+_RESERVE_NOOP_KEYS = frozenset(("reservation", "estimated"))
+_BUDGET_REFUSALS = frozenset((
+    "insufficient_remaining_budget",   # SqliteBudgetStore: debit lost
+    "unknown_budget_key",              # no configured allowance for key
+))
+
+
+def _reserve_error(reservation):
+    """Typed reason when a reserve result must fence the send, else None.
+
+    Grant (``reservation`` truthy) and the default no-op shape
+    (``{"reservation": None, "estimated": ...}``) both return None and let
+    the send proceed. Anything else — an ``error`` key (a refusal, e.g.
+    ``insufficient_remaining_budget``), a ``None``/non-dict/empty result,
+    or any extra non-grant key — is a failure/refusal and fences the send
+    (A60: no send without a successful reservation).
+    """
+    if not isinstance(reservation, dict):
+        return "reserve_failed"
+    if reservation.get("error"):
+        # fail-closed even if a token accompanies the error: money path
+        return str(reservation["error"])
+    if reservation.get("reservation"):
+        return None          # hold exists: proceeds; settled after the send
+    if set(reservation) <= _RESERVE_NOOP_KEYS and "estimated" in reservation:
+        return None                      # default no-op reserve: not a fence
+    return "reserve_failed"
+
+
+def _reservation_granted(reservation):
+    """True when a reserve result carries an actual hold."""
+    return (isinstance(reservation, dict)
+            and bool(reservation.get("reservation")))
+
+
+def _load_modes():
+    """Return the REAL D34 modes module (decision_engine/modes/modes.py).
+
+    Package import first; file-location fallback when ladder.py is loaded
+    standalone (offline test convention). Never a copy: the configured-mode
+    authority stays in D34 (3.6/A62/A63), the ladder only obeys it.
+    """
+    try:
+        from .. import modes as _modes
+        return _modes
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    existing = sys.modules.get("d07_decision_modes")
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(
+        "d07_decision_modes",
+        Path(__file__).resolve().parent.parent / "modes" / "modes.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["d07_decision_modes"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_commit():
+    """Return the REAL D23 commit module (decision_engine/commit/commit.py).
+
+    Package import first; file-location fallback when ladder.py is loaded
+    standalone (offline test convention). Registered under one stable
+    ``sys.modules`` key (the key ``commit/dispatch.py`` already uses) so the
+    ``FencedError`` a caller catches is the SAME class the ladder raises.
+    The fence gates stay owned by D23; nothing is restated here.
+    """
+    try:
+        from ..commit import commit as _commit
+        return _commit
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    commit_py = Path(__file__).resolve().parent.parent / "commit" / "commit.py"
+    key = "jev_d23_commit:" + str(commit_py)
+    existing = sys.modules.get(key)
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(key, str(commit_py))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_providers():
+    """Return (typesafe_direct, openrouter_decisions, credential_resolver).
+
+    Package import first; file-location fallback when ladder.py is loaded
+    standalone (offline test convention). Both paths load the REAL D04/D05/
+    D06 modules — nothing here reimplements transport, validation, or
+    credential scoping.
+    """
+    try:
+        from ..providers import credential_resolver as _cr
+        from ..providers import openrouter_decisions as _or
+        from ..providers import typesafe_direct as _ts
+        return _ts, _or, _cr
+    except ImportError:
+        pass
+    import importlib.util
+    import sys
+    prov_dir = Path(__file__).resolve().parent.parent / "providers"
+    loaded = []
+    for mod_name, fname in (
+        ("d07_typesafe_direct", "typesafe_direct.py"),
+        ("d07_openrouter_decisions", "openrouter_decisions.py"),
+        ("d07_credential_resolver", "credential_resolver.py"),
+    ):
+        existing = sys.modules.get(mod_name)
+        if existing is not None:
+            loaded.append(existing)
+            continue
+        spec = importlib.util.spec_from_file_location(
+            mod_name, prov_dir / fname)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = module
+        spec.loader.exec_module(module)
+        loaded.append(module)
+    return loaded[0], loaded[1], loaded[2]
+
+
+# ── RootDeadline ───────────────────────────────────────────────────────
+class RootDeadline:
+    """One monotonic root budget stamped at ladder entry (spec 3.5.1/3.5.2).
+
+    ``clock`` returns seconds like ``time.monotonic`` (inject a fake for
+    tests). There is deliberately NO extend/reset method: slow calls,
+    restarts, and failovers never grant fresh budget.
+    """
+
+    def __init__(self, budget_ms, *, clock=None, start_s=None,
+                 settlement_reserve_ms=0):
+        self._clock = clock or time.monotonic
+        self.start_s = float(start_s) if start_s is not None else float(
+            self._clock())
+        self.budget_ms = float(budget_ms)
+        self.expiry_s = self.start_s + self.budget_ms / 1000.0
+        self.settlement_reserve_ms = float(settlement_reserve_ms)
+
+    @property
+    def expiry_ms(self):
+        return self.expiry_s * 1000.0
+
+    def now_s(self):
+        return float(self._clock())
+
+    def remaining_ms(self):
+        return self.expiry_s * 1000.0 - self.now_s() * 1000.0
+
+    def expired(self):
+        return self.remaining_ms() <= 0
+
+    def send_budget_ms(self, op_limit_ms=None, stage_remaining_ms=None):
+        """Smallest of remaining-root-minus-reserve, op limit, stage left."""
+        cands = [self.remaining_ms() - self.settlement_reserve_ms]
+        if op_limit_ms is not None:
+            cands.append(float(op_limit_ms))
+        if stage_remaining_ms is not None:
+            cands.append(float(stage_remaining_ms))
+        return max(0.0, min(cands))
+
+    def inside_reserve(self):
+        """True when the settlement reserve has been reached (3.5.2).
+
+        Past this point the remaining root budget belongs to settlement:
+        the reserve is a START-GATE on remote work, not merely a discount
+        applied to the timeout argument. No send may begin here.
+        """
+        return self.remaining_ms() <= self.settlement_reserve_ms
+
+
+# ── AttemptAccounting ──────────────────────────────────────────────────
+class AttemptAccounting:
+    """Per-stage attempt counts + estimated/actual cost accumulation.
+
+    Every underlying attempt — including a provider-level retry inside one
+    stage — is recorded here against the SAME totals, so nested retries
+    cannot multiply the budget.
+    """
+
+    def __init__(self):
+        self.attempts: dict = {}
+        self.estimated_cost = 0.0
+        self.actual_cost = 0.0
+
+    def record(self, stage, attempts=1, estimated=0.0, actual=0.0):
+        self.attempts[stage] = self.attempts.get(stage, 0) + int(attempts)
+        self.estimated_cost += float(estimated)
+        self.actual_cost += float(actual)
+        return self.attempts[stage]
+
+    def total_attempts(self):
+        return sum(self.attempts.values())
+
+    def summary(self):
+        return {
+            "attempts": dict(self.attempts),
+            "total_attempts": self.total_attempts(),
+            "estimated_cost": self.estimated_cost,
+            "actual_cost": self.actual_cost,
+        }
+
+
+# ── CircuitBreaker ─────────────────────────────────────────────────────
+class CircuitBreaker:
+    """Per-provider failure threshold with cooldown + single half-open probe.
+
+    ``clock`` returns seconds like ``time.monotonic``. After
+    ``failure_threshold`` failures the provider opens: ``allow`` returns
+    False without calling it. Once ``cooldown_ms`` elapses, exactly ONE
+    half-open probe is allowed; it closes on success, re-opens on failure.
+    """
+
+    STATE_CLOSED = "closed"
+    STATE_OPEN = "open"
+    STATE_HALF_OPEN = "half_open"
+
+    def __init__(self, failure_threshold=3, cooldown_ms=60000, clock=None):
+        self.failure_threshold = int(failure_threshold)
+        self.cooldown_ms = float(cooldown_ms)
+        self._clock = clock or time.monotonic
+        self._failures: dict = {}
+        self._opened_at: dict = {}
+        self._probe_in_flight: dict = {}
+
+    def _now_ms(self):
+        return float(self._clock()) * 1000.0
+
+    def state_of(self, provider):
+        if provider in self._opened_at:
+            if self._now_ms() - self._opened_at[provider] >= self.cooldown_ms:
+                return self.STATE_HALF_OPEN
+            return self.STATE_OPEN
+        return self.STATE_CLOSED
+
+    def allow(self, provider):
+        """True when the provider may be called now (consumes the probe)."""
+        state = self.state_of(provider)
+        if state == self.STATE_CLOSED:
+            return True
+        if state == self.STATE_OPEN:
+            return False
+        # Half-open: exactly one probe until it resolves.
+        if self._probe_in_flight.get(provider):
+            return False
+        self._probe_in_flight[provider] = True
+        return True
+
+    def record_success(self, provider):
+        self._failures.pop(provider, None)
+        self._opened_at.pop(provider, None)
+        self._probe_in_flight.pop(provider, None)
+
+    def record_failure(self, provider):
+        count = self._failures.get(provider, 0) + 1
+        self._failures[provider] = count
+        self._probe_in_flight.pop(provider, None)
+        if count >= self.failure_threshold:
+            self._opened_at[provider] = self._now_ms()
+
+
+# ── atomic budget store (A60) ──────────────────────────────────────────
+_BUDGET_SCHEMA = """
+CREATE TABLE IF NOT EXISTS allowances (
+    budget_key TEXT PRIMARY KEY,
+    remaining  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reservations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    budget_key TEXT NOT NULL,
+    provider   TEXT NOT NULL,
+    estimated  REAL NOT NULL,
+    held       REAL NOT NULL,
+    actual     REAL,
+    state      TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+"""
+
+# One conditional write is the sole grant/refuse decision (A60).
+_BUDGET_DEBIT_SQL = (
+    "UPDATE allowances SET remaining = remaining - ? "
+    "WHERE budget_key = ? AND remaining >= ?")
+
+
+class SqliteBudgetStore:
+    """Atomic company budget store over a caller-supplied SQLite file.
+
+    WHY atomic: every reservation is ONE conditional write —
+    ``UPDATE allowances SET remaining = remaining - ? WHERE budget_key = ?
+    AND remaining >= ?`` — executed inside a ``BEGIN IMMEDIATE``
+    transaction. ``BEGIN IMMEDIATE`` takes SQLite's database write lock at
+    transaction start, so the check and the decrement cannot interleave
+    with any other writer (thread, process, or a restart racing the same
+    file); the statement's ``rowcount`` (1 = granted, 0 = refused) is the
+    winner/loser decision. This is a store-level conditional write, not an
+    application lock. State lives on disk, so holds survive restart.
+
+    ``reserve_fn(budget_key)`` binds the ladder's reserve hook shape
+    (``(provider, estimate)``); ``reconcile(provider, reservation,
+    actual)`` settles a hold and accepts either the gate's full reserve
+    result or the bare reservation token. Money rules: refunds happen only
+    for a measured underspend; ``actual=None`` (or corrupt values) marks
+    the hold uncertain and frees nothing; an overrun is debited only from
+    money actually available and ``remaining`` is never driven below zero.
+
+    Stdlib only. No network, no environment reads, no default path: the
+    caller supplies the database path. No key material is stored or read.
+    """
+
+    def __init__(self, db_path, allowances=None, timeout=10.0):
+        path = Path(db_path)
+        if not path.is_absolute():
+            # A relative path silently forks the store by working
+            # directory: two writers, two files, no shared atomicity.
+            raise ValueError("budget store path must be absolute")
+        self._path = str(path)
+        self._timeout = float(timeout)
+        con = self._connect()
+        try:
+            con.executescript(_BUDGET_SCHEMA)
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                for key, amount in dict(allowances or {}).items():
+                    amount = float(amount)
+                    if not math.isfinite(amount) or amount < 0:
+                        raise ValueError(
+                            "invalid allowance for %r" % (key,))
+                    # INSERT OR IGNORE: an existing row is never re-granted
+                    # (restart must not resurrect already-reserved money).
+                    con.execute(
+                        "INSERT OR IGNORE INTO allowances"
+                        "(budget_key, remaining) VALUES(?, ?)",
+                        (str(key), amount))
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+        finally:
+            con.close()
+
+    # ── internals ──────────────────────────────────────────────────────
+    def _connect(self):
+        # isolation_level=None: this class drives BEGIN/COMMIT explicitly.
+        return sqlite3.connect(self._path, timeout=self._timeout,
+                               isolation_level=None)
+
+    # ── reads ──────────────────────────────────────────────────────────
+    def remaining(self, budget_key):
+        """Current remaining amount, or None when the key is unknown."""
+        con = self._connect()
+        try:
+            row = con.execute(
+                "SELECT remaining FROM allowances WHERE budget_key = ?",
+                (str(budget_key),)).fetchone()
+        finally:
+            con.close()
+        return None if row is None else float(row[0])
+
+    def reservation(self, reservation_id):
+        """Raw reservation row as a dict, or None when absent."""
+        con = self._connect()
+        try:
+            con.row_factory = sqlite3.Row
+            row = con.execute(
+                "SELECT * FROM reservations WHERE id = ?",
+                (int(reservation_id),)).fetchone()
+        finally:
+            con.close()
+        return None if row is None else dict(row)
+
+    # ── reserve / reconcile ────────────────────────────────────────────
+    def reserve(self, budget_key, provider, amount):
+        """Atomically debit ``amount``; returns the gate-shaped result.
+
+        Granted -> ``{"reservation": token, "estimated": amount}``
+        Refused -> ``{"reservation": None, "error": ...
+                      ("insufficient_remaining_budget" | "unknown_budget_key")}``
+        Store down -> raises (the gate maps that to ``reserve_failed``).
+        """
+        key = str(budget_key)
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not math.isfinite(amount) or amount <= 0:
+            return {"reservation": None, "estimated": amount,
+                    "error": "invalid_reservation_amount"}
+        con = self._connect()
+        try:
+            con.execute("BEGIN IMMEDIATE")     # write lock: check+debit
+            cur = con.execute(                 # no check-then-act race
+                _BUDGET_DEBIT_SQL, (amount, key, amount))
+            if cur.rowcount != 1:
+                row = con.execute(
+                    "SELECT remaining FROM allowances"
+                    " WHERE budget_key = ?", (key,)).fetchone()
+                con.rollback()
+                if row is None:
+                    return {"reservation": None, "estimated": amount,
+                            "error": "unknown_budget_key"}
+                return {"reservation": None, "estimated": amount,
+                        "error": "insufficient_remaining_budget",
+                        "reason": "budget", "remaining": float(row[0])}
+            cur = con.execute(
+                "INSERT INTO reservations"
+                "(budget_key, provider, estimated, held, actual, state,"
+                " created_at) VALUES(?, ?, ?, ?, NULL, 'held', ?)",
+                (key, str(provider), amount, amount, time.time()))
+            token = {"id": int(cur.lastrowid), "budget_key": key,
+                     "provider": str(provider), "amount": amount}
+            con.commit()
+            return {"reservation": token, "estimated": amount}
+        except Exception:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+
+    def reserve_fn(self, budget_key):
+        """The reserve hook (``(provider, estimate)``) bound to one key."""
+        key = str(budget_key)
+
+        def _reserve(provider, estimate):
+            return self.reserve(key, provider, estimate)
+
+        return _reserve
+
+    def reconcile(self, provider, reservation, actual):
+        """Settle the hold named by ``reservation`` (gate result or token).
+
+        Refunds ONLY a measured underspend. ``actual=None`` (or a
+        non-finite/negative actual) marks the hold uncertain and frees
+        nothing — uncertain usage is never released prematurely (A60).
+        Returns a typed dict, never raises on bad input; a store failure
+        raises and leaves the hold debited (the gate surfaces it).
+        """
+        token = reservation
+        if isinstance(token, dict) and "id" not in token:
+            inner = token.get("reservation")
+            token = inner if isinstance(inner, dict) else token
+        rid = token.get("id") if isinstance(token, dict) else None
+        if rid is None:
+            return {"ok": False, "error": "unknown_reservation"}
+        uncertain = actual is None
+        if not uncertain:
+            try:
+                actual = float(actual)
+            except (TypeError, ValueError):
+                uncertain = True
+            else:
+                if not math.isfinite(actual) or actual < 0:
+                    uncertain = True
+        con = self._connect()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT budget_key, held, state FROM reservations"
+                " WHERE id = ?", (int(rid),)).fetchone()
+            if row is None:
+                con.rollback()
+                return {"ok": False, "error": "unknown_reservation"}
+            key, held, state = row[0], float(row[1]), row[2]
+            if state != "held":
+                con.rollback()
+                return {"ok": False, "error": "reservation_not_held"}
+            if uncertain:
+                con.execute(
+                    "UPDATE reservations SET state = 'uncertain'"
+                    " WHERE id = ?", (int(rid),))
+                con.commit()
+                return {"ok": True, "settled": False, "held": held,
+                        "released": 0.0,
+                        "reason": "uncertain_usage_held"}
+            released = 0.0
+            charged = float(actual)
+            if actual < held:                  # measured underspend refund
+                released = held - actual
+                con.execute(
+                    "UPDATE allowances SET remaining = remaining + ?"
+                    " WHERE budget_key = ?", (released, key))
+            elif actual > held:                # overrun: no fallback overdraw
+                extra = actual - held
+                cur = con.execute(
+                    _BUDGET_DEBIT_SQL, (extra, key, extra))
+                if cur.rowcount != 1:
+                    row = con.execute(
+                        "SELECT remaining FROM allowances"
+                        " WHERE budget_key = ?", (key,)).fetchone()
+                    charged = held + (float(row[0]) if row else 0.0)
+                    con.execute(
+                        "UPDATE allowances SET remaining = 0"
+                        " WHERE budget_key = ?", (key,))
+            con.execute(
+                "UPDATE reservations SET state = 'settled', actual = ?,"
+                " held = ? WHERE id = ?", (float(actual), charged, int(rid)))
+            con.commit()
+            return {"ok": True, "settled": True, "charged": charged,
+                    "released": released}
+        except Exception:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+
+
+# ── PermissionsGate ────────────────────────────────────────────────────
+class PermissionsGate:
+    """Caller-supplied spend/transmit policy + reserve/reconcile hooks.
+
+    ``policy_fn(provider, purpose)`` returns e.g.
+    ``{"spend_ok": bool, "transmit_ok": bool, "reason": str}``.
+    Default denies everything (fail-closed). Never raises: a broken policy
+    denies rather than permits.
+    """
+
+    def __init__(self, policy_fn=None, reserve_fn=None, reconcile_fn=None):
+        self._policy = policy_fn or (
+            lambda provider, purpose: {
+                "spend_ok": False, "transmit_ok": False,
+                "reason": "no_policy"})
+        self._reserve = reserve_fn or (
+            lambda provider, estimate: {
+                "reservation": None, "estimated": estimate})
+        self._reconcile = reconcile_fn or (
+            lambda provider, reservation, actual: None)
+        self.errors = []
+
+    def _note_error(self, kind, provider, detail):
+        self.errors.append({"kind": kind, "provider": provider,
+                            "detail": str(detail)})
+
+    def check(self, provider, purpose="decide"):
+        try:
+            perms = dict(self._policy(provider, purpose))
+        except Exception:
+            perms = {"spend_ok": False, "transmit_ok": False,
+                     "reason": "policy_error"}
+        return {
+            "spend_ok": bool(perms.get("spend_ok")),
+            "transmit_ok": bool(perms.get("transmit_ok")),
+            "reason": perms.get("reason"),
+        }
+
+    @staticmethod
+    def decide_skip(perms):
+        """Map a denied permission check to its typed skip reason."""
+        if not perms["spend_ok"]:
+            if perms.get("reason") == "budget":
+                return SKIP_BUDGET_EXHAUSTED
+            return SKIP_NOT_AUTHORIZED
+        if not perms["transmit_ok"]:
+            return SKIP_DATA_NOT_PERMITTED
+        return None
+
+    def reserve(self, provider, estimate):
+        """Never raises. A raised hook maps to a typed ``reserve_failed``
+        refusal so the caller can fence the send (A60)."""
+        try:
+            return self._reserve(provider, estimate)
+        except Exception as exc:
+            self._note_error("reserve_error", provider, type(exc).__name__)
+            return {"reservation": None, "estimated": estimate,
+                    "error": "reserve_failed"}
+
+    def spend_skip(self, provider, reservation):
+        """A60 fence: typed skip reason when the reservation is not good.
+
+        Returns ``None`` only for a granted hold or the default no-op
+        reserve; every other shape (raised hook, error key, None, empty)
+        is a failure/refusal and fences the send. Known budget sentinels
+        map to ``budget_exhausted``; everything else is a technical
+        failure (``technical_unavailable``) — an exact budget-exhausted
+        claim is only made when the store said so.
+        """
+        reason = _reserve_error(reservation)
+        if reason is None:
+            return None
+        if reason in _BUDGET_REFUSALS:
+            return SKIP_BUDGET_EXHAUSTED
+        return SKIP_TECHNICAL_UNAVAILABLE
+
+    def reconcile(self, provider, reservation, actual):
+        """Never raises. Errors are recorded on ``self.errors`` and returned
+        as a typed dict — never swallowed (A60). The hold stays debited:
+        uncertain usage frees nothing until a successful settle."""
+        try:
+            out = self._reconcile(provider, reservation, actual)
+        except Exception as exc:
+            self._note_error("reconcile_error", provider,
+                             "%s: %s" % (type(exc).__name__, exc))
+            return {"ok": False, "error": "reconcile_failed",
+                    "detail": "%s: %s" % (type(exc).__name__, exc)}
+        if isinstance(out, dict) and out.get("error"):
+            self._note_error("reconcile_error", provider, out["error"])
+            return out
+        return {"ok": True} if out is None else out
+
+
+# ── default wiring: REAL D04/D05/D06 ───────────────────────────────────
+def _default_resolve(company_id, stores, context):
+    _, _, cr = _load_providers()
+    return cr.resolve_company_credentials(company_id, stores, context)
+
+
+def _default_direct_call(*, body, api_key, timeout_ms, http_post=None):
+    ts, _, _ = _load_providers()
+    return ts.post_decisions(body, api_key=api_key,
+                             timeout_s=timeout_ms / 1000.0,
+                             http_post=http_post)
+
+
+def _default_openrouter_call(*, state, questions, expected, candidates=(),
+                             api_key=None, key_env=None, timeout_s=2.5,
+                             transport=None):
+    _, oro, _ = _load_providers()
+    outcome, detail = oro.send_decisions(
+        state, questions, expected, api_key=api_key, env=key_env,
+        allowed_candidates=candidates, transport=transport,
+        timeout=timeout_s)
+    result = {"outcome": outcome, "attempts": 1,
+              "estimated_cost": 0.0, "actual_cost": 0.0, "detail": detail}
+    if outcome == "ok":
+        result["payload"] = detail
+    return result
+
+
+def _default_no_jev_fallback(summary):
+    skips = [s.get("skip_reason") for s in summary.get("stages", [])]
+    return {"decision_source": "no_jev", "ok": True,
+            "outcome": "no_jev_fallback",
+            "detail": "no eligible JEV route; deterministic local fallback",
+            "stage_skips": skips}
+
+
+def _as_result(raw):
+    """Normalize a sender return to the accounting dict shape."""
+    if not isinstance(raw, dict):
+        return {"outcome": "transport_error", "attempts": 1,
+                "estimated_cost": 0.0, "actual_cost": 0.0,
+                "detail": "sender returned non-object"}
+    out = dict(raw)
+    try:
+        out["attempts"] = max(1, int(out.get("attempts", 1)))
+    except (TypeError, ValueError):
+        out["attempts"] = 1
+    for key in ("estimated_cost", "actual_cost"):
+        try:
+            out[key] = float(out.get(key, 0.0))
+        except (TypeError, ValueError):
+            out[key] = 0.0
+    out.setdefault("outcome", "transport_error")
+    return out
+
+
+def _status_configured(status):
+    if status is None:
+        return False
+    configured = getattr(status, "configured", None)
+    if configured is not None:
+        return bool(configured)
+    if isinstance(status, dict):
+        return status.get("state") == "configured" or bool(
+            status.get("configured"))
+    return False
+
+
+# ── DirectFirstLadder ──────────────────────────────────────────────────
+class DirectFirstLadder:
+    """Authorized direct-first ladder over the real D04/D05/D06 modules.
+
+    At most one direct attempt plus one OpenRouter attempt per run; the
+    no-JEV fallback hook runs last. Every remote stage flows through the
+    permissions gate (check -> reserve -> recheck -> send -> reconcile)
+    and shares the single root deadline and attempt accounting.
+    """
+
+    def __init__(self, *, resolve_credentials=None, direct_call=None,
+                 openrouter_call=None, no_jev_fallback=None,
+                 policy_fn=None, reserve_fn=None, reconcile_fn=None,
+                 clock=None, circuit=None, failure_threshold=3,
+                 cooldown_ms=60000, max_total_attempts=2,
+                 root_budget_ms=300000, stage_budget_ms=6000,
+                 provider_timeout_ms=2500, settlement_reserve_ms=2000,
+                 commit_store=None):
+        self._resolve = resolve_credentials or _default_resolve
+        self._direct = direct_call or _default_direct_call
+        self._openrouter = openrouter_call or _default_openrouter_call
+        self._fallback = no_jev_fallback or _default_no_jev_fallback
+        self._gate = PermissionsGate(policy_fn, reserve_fn, reconcile_fn)
+        self._clock = clock or time.monotonic
+        self._circuit = circuit or CircuitBreaker(
+            failure_threshold, cooldown_ms, clock=self._clock)
+        self.max_total_attempts = int(max_total_attempts)
+        self.root_budget_ms = float(root_budget_ms)
+        self.stage_budget_ms = float(stage_budget_ms)
+        self.provider_timeout_ms = float(provider_timeout_ms)
+        self.settlement_reserve_ms = float(settlement_reserve_ms)
+        # Optional D23 store for this preparation generation. When supplied,
+        # the verdict carries that store's fence token and every adoption
+        # rechecks it through the REAL D23 ``check_fence`` (3.5.3).
+        self._commit_store = commit_store
+        self._commit = _load_commit() if commit_store is not None else None
+
+    def _issue_fence_token(self):
+        """D23 fence token for this run, or None when no store is wired."""
+        if self._commit is None:
+            return None
+        return self._commit.issue_fence_token(self._commit_store)
+
+    def _fence_reason(self, root, token):
+        """Recheck the late-result gates for a would-be-adopted ok (3.5.3).
+
+        Returns a typed reason when the result must be REFUSED (root expiry,
+        or the store's mode/policy revision moved mid-call), else None.
+        Fail-closed: an unexpected check error counts as fenced.
+        """
+        if root.expired():
+            return "root_expired"
+        if self._commit is not None and token is not None:
+            try:
+                self._commit.check_fence(self._commit_store, token)
+            except Exception as exc:
+                return getattr(exc, "reason", "fenced")
+        return None
+
+    @property
+    def circuit(self):
+        return self._circuit
+
+    def _stage_record(self, stage, provider, outcome, skip_reason=None,
+                      attempts=0, timeout_ms=None, remaining_ms=None):
+        record = {"stage": stage, "provider": provider, "outcome": outcome,
+                  "skip_reason": skip_reason, "attempts": attempts}
+        if timeout_ms is not None:
+            record["timeout_ms"] = timeout_ms
+        if remaining_ms is not None:
+            record["remaining_ms_at_entry"] = remaining_ms
+        return record
+
+    def _run_provider(self, *, provider, cred_status, send, accounting,
+                      root, stage_start_s, purpose, order_log,
+                      mode_skip=None):
+        """One gated provider stage. Returns (stage_record, result-or-False).
+
+        ``mode_skip`` is the D34 configured-mode verdict. When set it is the
+        FIRST gate: no credential lookup, reservation, or send happens
+        (off/legacy/shadow emit ZERO JEV/probe traffic — A62/A63).
+        """
+        remaining = root.remaining_ms()
+        if mode_skip is not None:
+            order_log.append("skip:%s:%s" % (provider, mode_skip))
+            return self._stage_record(provider, provider, "skipped",
+                                      mode_skip, 0, None, remaining), False
+        if root.expired():
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_ROOT_DEADLINE, 0, None,
+                                      remaining), False
+        if accounting.total_attempts() >= self.max_total_attempts:
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_BUDGET_EXHAUSTED, 0, None,
+                                      remaining), False
+        if not _status_configured(cred_status):
+            order_log.append("skip:%s:%s" % (provider, SKIP_NO_CREDENTIAL))
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_NO_CREDENTIAL, 0, None,
+                                      remaining), False
+        if not self._circuit.allow(provider):
+            order_log.append("skip:%s:%s" % (provider, SKIP_CIRCUIT_OPEN))
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_CIRCUIT_OPEN, 0, None,
+                                      remaining), False
+        perms = self._gate.check(provider, purpose)
+        order_log.append("policy_check:%s" % provider)
+        skip = self._gate.decide_skip(perms)
+        if skip is not None:
+            order_log.append("skip:%s:%s" % (provider, skip))
+            return self._stage_record(provider, provider, "skipped",
+                                      skip, 0, None, remaining), False
+        reservation = self._gate.reserve(provider, 1.0)
+        order_log.append("reserve:%s" % provider)
+        fence = self._gate.spend_skip(provider, reservation)
+        if fence is not None:
+            # A60: a FAILED or REFUSED reservation fences the send. No hold
+            # exists, so there is nothing to reconcile; nothing is spent.
+            order_log.append("skip:%s:%s" % (provider, fence))
+            return self._stage_record(provider, provider, "skipped",
+                                      fence, 0, None, remaining), False
+        # Recheck at the send boundary; reservation already held, no DB
+        # transaction spans the network call below.
+        perms2 = self._gate.check(provider, purpose)
+        order_log.append("policy_recheck:%s" % provider)
+        skip2 = self._gate.decide_skip(perms2)
+        if skip2 is not None:
+            self._gate.reconcile(provider, reservation, 0.0)
+            order_log.append("reconcile:%s" % provider)
+            order_log.append("skip:%s:%s" % (provider, skip2))
+            return self._stage_record(provider, provider, "skipped",
+                                      skip2, 0, None, remaining), False
+        elapsed_stage = (float(self._clock()) - stage_start_s) * 1000.0
+        stage_left = self.stage_budget_ms - elapsed_stage
+        # Send-boundary reserve gate (3.5.2/A55 clause 2). The reserve is
+        # enforced HERE, at the one place a remote call begins, so the
+        # guarantee never depends on a caller's entry-time check: time may
+        # have been spent since entry (credential resolve, policy, queue
+        # waits) and the entry check cannot see that. A zero send budget
+        # means every remaining millisecond belongs to settlement.
+        timeout_ms = root.send_budget_ms(self.provider_timeout_ms,
+                                         stage_left)
+        if root.inside_reserve():
+            self._gate.reconcile(provider, reservation, 0.0)
+            order_log.append("reconcile:%s" % provider)
+            order_log.append("skip:%s:%s" % (provider,
+                                             SKIP_SETTLEMENT_RESERVE))
+            return self._stage_record(provider, provider, "skipped",
+                                      SKIP_SETTLEMENT_RESERVE, 0,
+                                      timeout_ms, remaining), False
+        order_log.append("send:%s" % provider)
+        try:
+            raw = send(timeout_ms)
+        except (ValueError, TypeError):
+            raise  # caller-shaped request defect; handled as defect, never sent
+        except Exception as exc:
+            raw = {"outcome": "transport_error", "attempts": 1,
+                   "detail": "%s: %s" % (type(exc).__name__, exc)}
+        result = _as_result(raw)
+        # Settle the hold with MEASURED usage. Only a proven-ok outcome has
+        # a measured actual; failure/uncertain usage settles with None so
+        # no money is freed prematurely (A60).
+        actual = result["actual_cost"] if result.get("outcome") == "ok" else None
+        self._gate.reconcile(provider, reservation, actual)
+        order_log.append("reconcile:%s" % provider)
+        accounting.record(provider, result["attempts"],
+                          result["estimated_cost"], result["actual_cost"])
+        return self._stage_record(provider, provider, result["outcome"],
+                                  None, result["attempts"], timeout_ms,
+                                  remaining), result
+
+    def run(self, *, company_id, stores=(), context=None, state=None,
+            questions=None, keys=None, direct_specs=None,
+            openrouter_expected=None, openrouter_candidates=(),
+            purpose="decide", order_log=None, direct_http=None,
+            openrouter_transport=None, root_deadline=None,
+            no_jev_fallback=None, config=None, mode_permissions=None):
+        """Run direct -> OpenRouter -> no-JEV. Never raises on data.
+
+        ``keys`` maps credential names to caller-supplied values (resolved
+        through the REAL D04/D05 key resolvers; never read from disk or
+        environment here). ``direct_http`` / ``openrouter_transport`` inject
+        fake transports for offline tests. Returns typed provenance; key
+        material never appears in it.
+
+        ``config`` is the caller-supplied decision config (D34/D02 shape:
+        ``{"configuredMode": "auto"|"shadow"|"legacy"|"off", ...}``). Mode
+        semantics are owned by the REAL D34 module (``..modes``) and only
+        obeyed here (3.6/A62/A63): off/legacy/shadow emit ZERO JEV/probe
+        traffic — no credential resolution, no reservation, no send.
+        ``mode_permissions`` is an optional callable ``() -> dict`` with
+        ``spend_ok``/``transmit_ok``; it is consulted for ``auto`` only, and
+        when omitted auto stays eligible exactly as before (the per-provider
+        PermissionsGate remains the spending authority).
+
+        When a D23 store is wired at construction (``commit_store``), the
+        verdict carries that store's fence token and an ``ok`` result is
+        adopted only after the D23 fence recheck (3.5.3): a late result that
+        lands after the root expiry, or after the store's mode/policy
+        revision moved, settles usage accounting but never becomes the
+        verdict — the run stops spending and falls to the no-JEV path.
+        """
+        ts, oro, _ = _load_providers()
+        modes = _load_modes()
+        cfg = config if isinstance(config, dict) else {}
+        mode = cfg.get("configuredMode", "auto")
+        spend_ok = transmit_ok = True
+        if callable(mode_permissions):
+            try:
+                perms = dict(mode_permissions() or {})
+            except Exception as exc:
+                perms = {"spend_ok": False, "transmit_ok": False,
+                         "reason": "policy_error:%s" % type(exc).__name__}
+            spend_ok = bool(perms.get("spend_ok"))
+            transmit_ok = bool(perms.get("transmit_ok"))
+        effective = modes.resolve_effective_path(
+            mode, spend_ok=spend_ok, transmit_ok=transmit_ok)
+        mode_skip = None
+        if not modes.jev_traffic_permitted(mode):
+            mode_skip = {
+                "off": modes.REASON_MODE_OFF,
+                "legacy": modes.REASON_MODE_LEGACY,
+                "shadow": modes.REASON_MODE_SHADOW,
+            }[mode]
+        elif effective["effective_path"] == modes.EFFECTIVE_NO_JEV:
+            mode_skip = effective["reason"]
+        log = order_log if order_log is not None else []
+        self._gate.errors = []      # per-run error surface (A60)
+        accounting = AttemptAccounting()
+        root = root_deadline or RootDeadline(
+            self.root_budget_ms, clock=self._clock,
+            settlement_reserve_ms=self.settlement_reserve_ms)
+        fence_token = self._issue_fence_token()
+        stage_start_s = float(self._clock())
+        stages = []
+        fenced_reason = None
+        # Set when D04 flags a valid-but-low-confidence answer (3.4:276).
+        low_confidence = None
+
+        key_map = dict(keys or {})
+        if mode_skip is not None:
+            # Zero JEV-path work: no credential resolution, no reservation,
+            # no send. The no-JEV stage below is the only thing that runs.
+            creds = {}
+            log.append("skip:credentials:%s" % mode_skip)
+        else:
+            try:
+                creds = self._resolve(company_id, stores, context or {})
+            except Exception as exc:
+                creds = {}
+                stages.append(self._stage_record(
+                    "credentials", "none", "transport_error",
+                    SKIP_TECHNICAL_UNAVAILABLE, 0, None, root.remaining_ms()))
+                log.append("skip:credentials:resolver_error:%s"
+                           % type(exc).__name__)
+        direct_status = (creds or {}).get("direct")
+        or_status = (creds or {}).get("openrouter")
+
+        mode_info = {"configuredMode": mode,
+                     "effectivePath": effective["effective_path"],
+                     "skipReason": effective["reason"]}
+
+        # ── stage 1: direct (D04) ──
+        def _send_direct(timeout_ms):
+            body = ts.build_request(state or {}, list(questions or []))
+            resolved = ts.resolve_direct_key(key_map)
+            return self._direct(body=body, api_key=resolved.get("value"),
+                                timeout_ms=timeout_ms,
+                                http_post=direct_http)
+
+        try:
+            record, result = self._run_provider(
+                provider=PROVIDER_DIRECT, cred_status=direct_status,
+                send=_send_direct, accounting=accounting, root=root,
+                stage_start_s=stage_start_s, purpose=purpose,
+                order_log=log, mode_skip=mode_skip)
+        except (ValueError, TypeError) as exc:
+            # Caller-shaped request defect (e.g. bad question shape): the
+            # stage is unusable, not a transport failure. Never sent.
+            record, result = self._stage_record(
+                PROVIDER_DIRECT, PROVIDER_DIRECT, "integration_defect",
+                SKIP_TECHNICAL_UNAVAILABLE, 0, None,
+                root.remaining_ms()), None
+            log.append("skip:%s:request_defect" % PROVIDER_DIRECT)
+        stages.append(record)
+        if isinstance(result, dict) and result.get("outcome") == "ok":
+            payload = result.get("payload")
+            fenced_reason = self._fence_reason(root, fence_token)
+            if fenced_reason is not None:
+                # Late ok: usage already settled in accounting above; it
+                # may NOT become the verdict (3.5.3). Record the refusal;
+                # no circuit failure (the provider itself did not fail) and
+                # no further spending on this fenced generation.
+                record["fence_reason"] = fenced_reason
+                log.append("fenced:%s:%s" % (PROVIDER_DIRECT, fenced_reason))
+            else:
+                # A06 fence recheck passed: the ok may still be refused by
+                # the A07 approved-model gate (3.7) before adoption.
+                returned = payload.get("model") if isinstance(payload, dict) \
+                    else None
+                if returned is None:
+                    returned = result.get("model_snapshot")
+                if returned is not None and not ts.is_approved_model(returned):
+                    # Spec 3.7: never silently accept an unrelated model
+                    # version; the request is reusable against another route.
+                    self._circuit.record_failure(PROVIDER_DIRECT)
+                    stages[-1]["outcome"] = "model_foreign"
+                    log.append("skip:%s:model_foreign" % PROVIDER_DIRECT)
+                elif direct_specs is None:
+                    self._circuit.record_success(PROVIDER_DIRECT)
+                    return self._verdict(PROVIDER_DIRECT, True, stages,
+                                         accounting, root, mode_info,
+                                         fence_token)
+                else:
+                    ok, _, diags = ts.normalize_response(payload or {},
+                                                         direct_specs)
+                    if ok:
+                        self._circuit.record_success(PROVIDER_DIRECT)
+                        low = [d for d in (diags or []) if isinstance(d, dict)
+                               and d.get("code") == "low_confidence"]
+                        if not low:
+                            return self._verdict(PROVIDER_DIRECT, True, stages,
+                                                 accounting, root, mode_info,
+                                                 fence_token)
+                        # 3.4:276 valid but low-confidence: carry the
+                        # calibrated signal to the non-JEV review; never
+                        # discard it.
+                        low_confidence = low
+                        stages[-1]["outcome"] = "low_confidence"
+                        log.append("low_confidence:%s" % PROVIDER_DIRECT)
+                    else:
+                        self._circuit.record_failure(PROVIDER_DIRECT)
+                        stages[-1]["outcome"] = "invalid_response"
+        elif isinstance(result, dict):
+            self._circuit.record_failure(PROVIDER_DIRECT)
+
+        # ── stage 2: OpenRouter (D05) ──
+        # 3.4:276: a valid but low-confidence direct answer must not be
+        # sent to another JEV endpoint to compare confidence; the calibrated
+        # signal already raised at stage 1 routes it to non-JEV review.
+        or_gate_skip = (SKIP_LOW_CONFIDENCE if low_confidence is not None
+                        else mode_skip)
+
+        def _send_openrouter(timeout_ms):
+            key, _ = oro.resolve_key(None, key_map)
+            return self._openrouter(
+                state=state or {}, questions=list(questions or []),
+                expected=openrouter_expected or [],
+                candidates=tuple(openrouter_candidates or ()),
+                api_key=key, key_env=key_map,
+                timeout_s=timeout_ms / 1000.0,
+                transport=openrouter_transport)
+
+        if fenced_reason is not None:
+            # Generation fenced mid-run: stop spending. No OpenRouter send;
+            # its ok could not be adopted either, under the same fence.
+            # ``result`` is cleared so the stage-1 ok can never be adopted
+            # under the OpenRouter label below.
+            result = None
+            record = self._stage_record(
+                PROVIDER_OPENROUTER, PROVIDER_OPENROUTER, "skipped",
+                SKIP_FENCED_LATE_RESULT, 0, None, root.remaining_ms())
+            record["fence_reason"] = fenced_reason
+            log.append("skip:%s:%s" % (PROVIDER_OPENROUTER,
+                                       SKIP_FENCED_LATE_RESULT))
+        else:
+            record, result = self._run_provider(
+                provider=PROVIDER_OPENROUTER, cred_status=or_status,
+                send=_send_openrouter, accounting=accounting, root=root,
+                stage_start_s=stage_start_s, purpose=purpose, order_log=log,
+                mode_skip=or_gate_skip)
+        stages.append(record)
+        if isinstance(result, dict) and result.get("outcome") == "ok":
+            fenced_reason = self._fence_reason(root, fence_token)
+            if fenced_reason is not None:
+                record["fence_reason"] = fenced_reason
+                log.append("fenced:%s:%s" % (PROVIDER_OPENROUTER,
+                                             fenced_reason))
+            else:
+                self._circuit.record_success(PROVIDER_OPENROUTER)
+                return self._verdict(PROVIDER_OPENROUTER, True, stages,
+                                     accounting, root, mode_info,
+                                     fence_token)
+        if isinstance(result, dict) and fenced_reason is None:
+            self._circuit.record_failure(PROVIDER_OPENROUTER)
+
+        # ── stage 3: no-JEV fallback hook (local, always permitted) ──
+        fallback = no_jev_fallback or self._fallback
+        review = {"stages": stages,
+                  "accounting": accounting.summary(),
+                  "expired": root.expired()}
+        if low_confidence is not None:
+            # 3.4:276 the calibrated signal travels with the review.
+            review["low_confidence"] = low_confidence
+        try:
+            dunk = fallback(review)
+        except Exception as exc:
+            dunk = {"decision_source": "no_jev", "ok": False,
+                    "outcome": "fallback_error",
+                    "detail": type(exc).__name__}
+        if not isinstance(dunk, dict):
+            dunk = {"decision_source": "no_jev", "ok": False,
+                    "outcome": "fallback_error",
+                    "detail": "fallback returned non-object"}
+        dunk.setdefault("decision_source", "no_jev")
+        stages.append(self._stage_record(
+            "no_jev", "no_jev", dunk.get("outcome", "no_jev_fallback"),
+            SKIP_ROOT_DEADLINE if root.expired() else None, 0, None,
+            root.remaining_ms()))
+        verdict = self._verdict("no_jev", bool(dunk.get("ok")), stages,
+                                accounting, root, mode_info, fence_token)
+        verdict["fallback"] = {k: v for k, v in dunk.items()
+                               if k != "decision_source"}
+        if low_confidence is not None:
+            verdict["low_confidence"] = low_confidence
+        return verdict
+
+    def _verdict(self, source, ok, stages, accounting, root, mode_info=None,
+                 fence_token=None):
+        verdict = {"decision_source": source, "ok": bool(ok), "stages": stages,
+                   "accounting": accounting.summary(),
+                   "root": {"budget_ms": self.root_budget_ms,
+                            "remaining_ms": root.remaining_ms(),
+                            "expired": root.expired(),
+                            "expiry_ms": root.expiry_ms}}
+        if mode_info is not None:
+            verdict["mode"] = mode_info
+        if fence_token is not None:
+            # Handed to the caller so the D23 ``cas_commit`` re-checks it
+            # at write time: a verdict whose generation moved between this
+            # recheck and the commit is refused there too (3.5.3).
+            verdict["fence_token"] = dict(fence_token)
+        errors = getattr(self._gate, "errors", None)
+        if errors:
+            # A60: reconcile/reserve errors are surfaced, never swallowed.
+            verdict["gate_errors"] = [dict(e) for e in errors]
+            if any(e.get("kind") == "reconcile_error" for e in errors):
+                verdict["accounting_uncertain"] = True
+        return verdict

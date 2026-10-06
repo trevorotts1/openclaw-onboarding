@@ -9,7 +9,10 @@ pattern on ~/clawd/fleet-prover/prove-floor.py (which this file does NOT edit).
 
 It proves, with receipts, the four ZHE wrappings the spec/plan name (spec §1 steps 4–7):
   (a) FLOOR DEPARTMENTS present AND registered as agents — built-as-files AND
-      registered-as-agents in openclaw.json agents.list[] (not just folders on disk).
+      registered-as-agents in openclaw.json agents.entries / agents.list[] (not just
+      folders on disk). REQUIRED = the client's departments.json + the standard floor
+      (minus provenanced declines), not a folder scan; a folder outside that set is a
+      WARN ("stray template folder"), never a FAIL, and is never deleted.
   (b) PERSONAS CANONICAL — the full canonical persona roster (count DERIVED from the
       persona-categories.json index, not a fixed literal) + canonical persona-categories.json
       + a section-tagged coaching-personas index (gemini-index.sqlite, ~4413 rows,
@@ -57,14 +60,16 @@ falls through to the FULL ZHE (the apply-diff build has run; the full sequence a
   • READS / ASSERTS AGAINST (real call sites it is built to verify):
       - interview state .workforce-build-state.json  (schema: 23-ai-workforce-blueprint/
         build-state-schema.json; key `interviewComplete`) → EXEMPTION
-      - openclaw.json agents.list[] entries `id: dept-<slug>` written by
+      - openclaw.json agents.entries keys / legacy agents.list[] ids `dept-<slug>` written by
         32-command-center-setup/scripts/materialize-dept-agents.sh:221-262   → check (a)
       - personas dir + index: shared-utils/embedding_engine.py:133-134
         (WORKSPACE_ROOT/data/coaching-personas/{personas,gemini-index.sqlite});
         section tags written by 23-ai-workforce-blueprint/scripts/section-tag-migration.py
         (embeddings.mode / embeddings.section_number); canonical categories
         persona-categories.json (PRD 2.7 canonical: workspace/data/coaching-personas/)  → (b)
-      - mission-control.db candidates: materialize-dept-agents.sh:436-438 (+ projects/*)
+      - mission-control.db: the running CC's DATABASE_PATH (env, then the CC app dir's
+        .env.local, else its cwd default), then layout candidates
+        materialize-dept-agents.sh:436-438 (+ projects/*); 0-byte decoys skipped
         `workspaces` table rows = board lanes                                  → check (c)
       - AGENTS.md at WORKSPACE/AGENTS.md (apply-fleet-standards.sh:530) with markers:
           routing:   CEO_ORCHESTRATOR_RULE_V* / CEO_ROUTING_NO_LOOPHOLES_V1
@@ -113,7 +118,7 @@ STANDARD_READY fixture modes (verification gate for the third verdict):
                                            write the same fixture shapes under DIR (for
                                            downstream gates that want a fixture to prove).
 
-Receipt: receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
+Receipt: <openclaw root>/state/zhe-receipts/<box>-<UTCiso>.json   — {box, overall_pass, exempt, checks:{...}, ts, ...}
   standard-prebuilt boxes additionally carry {standard_ready: true, verdict: "standard-ready"}
 Exit code: 0 iff overall_pass (or exempt) is true, else 1; 2 on bad invocation.
 """
@@ -121,7 +126,33 @@ import json, os, sys, datetime, subprocess, shlex, re, base64
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(HERE, "box-registry.json")
-RECEIPTS_DIR = os.path.join(HERE, "receipts")
+# Receipts once lived in HERE/receipts, inside the hashed skill tree: every run
+# after an update changed the skill's content digest and the fleet roll rolled
+# the box back ("skill 23 digest mismatch"). They are run output, so they live
+# in the box's state dir; old ones are moved out on the next write.
+LEGACY_RECEIPTS_DIR = os.path.join(HERE, "receipts")
+
+
+def receipts_dir():
+    d = os.environ.get("ZHE_RECEIPTS_DIR", "").strip()
+    if d:
+        return d
+    root = os.environ.get("OPENCLAW_ROOT", "").strip() or (
+        "/data/.openclaw" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw"))
+    return os.path.join(root, "state", "zhe-receipts")
+
+
+def _move_legacy_receipts(out):
+    import shutil
+    if not os.path.isdir(LEGACY_RECEIPTS_DIR):
+        return
+    for name in os.listdir(LEGACY_RECEIPTS_DIR):
+        if name.endswith(".json"):
+            shutil.move(os.path.join(LEGACY_RECEIPTS_DIR, name), os.path.join(out, name))
+    try:
+        os.rmdir(LEGACY_RECEIPTS_DIR)
+    except OSError:
+        pass   # something else is in there: leave it
 
 PROVER_VERSION = "1.1"
 
@@ -335,6 +366,44 @@ except Exception:
     # Fallback to the canonical new-install path only (legacy ~/clawd excluded
     # per AF3; detect_platform handles it when importable).
     _SECRETS_FILES = [os.path.expanduser("~/.openclaw/secrets/.env")]
+
+# The ONE departments.json envelope normalizer. The chosen artifact legitimately
+# ships as a bare LIST *or* as an object wrapping that list under "departments"
+# (retire-confirmed-decline.sh's {removedWithProvenance, departments}; a build
+# envelope adding company / total_departments / total_roles). Gating on
+# isinstance(data, list) scored the object shape as "present but lists no
+# departments" — a RED verdict on a valid artifact.
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared-utils"))
+try:
+    from departments_payload import departments_or_empty as _departments_or_empty  # type: ignore
+except ImportError:  # pragma: no cover - box predating shared-utils/departments_payload.py
+    def _departments_or_empty(data, path=None):  # type: ignore[misc]
+        # KEEP IN SYNC with shared-utils/departments_payload.py. A slug-keyed
+        # object of department objects folds to a list; the ENTRY's own
+        # id/slug/folder wins over the map key, and a slug taken FROM the key
+        # loses a trailing "-dept". Anything with a non-object value is a
+        # metadata envelope whose keys are never departments.
+        if isinstance(data, dict):
+            wrapped = data.get("departments", data)
+            if isinstance(wrapped, list):
+                return wrapped
+            if (isinstance(wrapped, dict) and wrapped
+                    and all(isinstance(v, dict) for v in wrapped.values())):
+                out = []
+                for k, v in wrapped.items():
+                    e = dict(v)
+                    r = next((x.strip() for x in (e.get("id"), e.get("slug"),
+                              e.get("folder")) if isinstance(x, str) and x.strip()), None)
+                    if r is None:
+                        r = k.strip()
+                        if r.endswith("-dept") and len(r) > 5:
+                            r = r[:-5]
+                    e.setdefault("id", r); e.setdefault("slug", r)
+                    out.append(e)
+                return out
+            return []
+        return data if isinstance(data, list) else []
 
 
 def _load_secrets():
@@ -557,37 +626,115 @@ def discover_departments(fs, oc_root):
     return found
 
 
+def required_departments(fs, oc_root, ws, state, folders):
+    """The departments this box is REQUIRED to have an agent + board lane for:
+    the client's chosen list (<company>/departments.json, else build-state
+    chosenDepartments.slugs) PLUS the standard floor (mandatory + universal-primary,
+    minus provenanced owner declines — department-floor.py's own rules).
+
+    A folder scan is NOT the requirement: role-library template copies
+    (founding-member-concierge, launch-operations, ...) land under departments/
+    without ever being chosen, the lane seeders build lanes only from
+    departments.json, and materialize-dept-agents.sh registers an agent only for
+    an active lane — so nothing supported could ever satisfy a stray folder.
+
+    Returns (required, source, stray): required maps the canonical label to every
+    spelling it may appear under (folder names + canonicalized chosen/floor slugs);
+    stray lists folders outside the requirement (reported, never failed, never
+    deleted). No chosen list at all (a pre-artifact build) => every folder stays
+    required, exactly the old behaviour. A missing sibling module => the same."""
+    df, bj = _load_floor_module(), _load_board_join_module()
+    if df is None or bj is None:
+        return {s: {s} for s in folders}, "folder-scan (floor/board-join module unavailable)", []
+    canon = bj._load_canonical_slug()
+    key = bj.make_keyer(df, canon)
+
+    company_dir, _ = _resolve_company_dirs(fs, ws, oc_root)
+    chosen = check_standard_ready_chosen_artifact(fs, company_dir, None).get("chosen") or []
+    source = "departments.json"
+    if not chosen:
+        rec = ((state.get("canonicalReconciliation") or {}).get("chosenDepartments") or {})
+        chosen = [s for s in (rec.get("slugs") or []) if isinstance(s, str) and s]
+        source = "build-state chosenDepartments"
+    if not chosen:
+        return {s: {s} for s in folders}, "folder-scan (no chosen list)", []
+
+    nm = df.load_naming_map()
+    declined = df.declined_set(state)
+    floor = [c for c in df.mandatory_ids(nm) + df.universal_primary_vertical_departments(nm)
+             if df._norm(c) not in declined]
+
+    required = {}
+    for raw in list(chosen) + floor:
+        k = key(raw)
+        if k:
+            required.setdefault(canon(k) or k, set()).add(canon(raw) or raw)
+    label_of = {key(lbl): lbl for lbl in required}
+    stray = []
+    for name in sorted(folders):
+        lbl = label_of.get(key(name))
+        if lbl is None:
+            stray.append(name)
+        else:
+            required[lbl].add(name)
+    return required, source, stray
+
+
 # ---------------------------------------------------------------------------
 # CHECK (a): floor departments present AND registered as agents (not just files)
 # ---------------------------------------------------------------------------
 
-def check_depts_registered(fs, oc_root, cfg):
+def registered_agent_ids(cfg):
+    """Agent ids from BOTH roster shapes: `agents.entries` (object keyed by id, the
+    OpenClaw 2026.9.x post-migration schema) and legacy `agents.list[]`. Union of the
+    two, same as update-skills.sh _registry_snapshot()."""
+    agents = cfg.get("agents") if isinstance(cfg, dict) else None
+    if not isinstance(agents, dict):
+        return set()
+    ids = set()
+    entries = agents.get("entries")
+    if isinstance(entries, dict):
+        ids.update(str(k) for k, v in entries.items() if isinstance(v, dict))
+    for a in (agents.get("list") if isinstance(agents.get("list"), list) else []):
+        if isinstance(a, dict) and a.get("id"):
+            ids.add(str(a["id"]))
+    return ids
+
+
+def check_depts_registered(fs, oc_root, cfg, required=None):
+    """`required` is required_departments()'s label -> spellings map; None holds
+    every discovered folder (the pre-requirement behaviour)."""
     depts = discover_departments(fs, oc_root)
-    agent_ids = set()
-    if isinstance(cfg, dict):
-        for a in (((cfg.get("agents") or {}).get("list")) or []):
-            if isinstance(a, dict) and a.get("id"):
-                agent_ids.add(a["id"])
-    # materialize-dept-agents.sh registers each dept as agent id "dept-<slug>".
-    registered, unregistered = [], []
-    for slug in sorted(depts):
-        if f"dept-{slug}" in agent_ids:
-            registered.append(slug)
-        else:
-            unregistered.append(slug)
+    if required is None:
+        required = {s: {s} for s in depts}
+    agent_ids = {a.lower() for a in registered_agent_ids(cfg)}
+    canon = _canonical_dept_slug_fn()
+    # materialize-dept-agents.sh registers each dept as agent id "dept-<slug>". An
+    # alias folder (legal-compliance) is satisfied by its canonical agent (dept-legal):
+    # the lane is canonical, and materialize only registers against a live lane.
+    registered, unregistered, exempt = [], [], []
+    for slug in sorted(required):
+        if slug in OPERATOR_BOARD_DEPTS:
+            exempt.append(slug)
+            continue
+        names = {slug} | set(required[slug])
+        ids = {f"dept-{n}".lower() for n in names} | {f"dept-{canon(n)}" for n in names}
+        (registered if ids & agent_ids else unregistered).append(slug)
     present = len(depts) > 0
     return {
         "pass": bool(present and not unregistered),
         "departments_present": sorted(depts.keys()),
         "depts_present_count": len(depts),
+        "required_departments": sorted(required),
         "registered_as_agents": registered,
         "files_without_agent": unregistered,
+        "operator_board_exempt": exempt,
         "agents_list_count": len(agent_ids),
         "detail": (
             "no department folders present (ZHE step 2/4 did not build)" if not present
-            else (f"{len(unregistered)} dept folder(s) not registered as agents "
-                  f"(built-as-files only): {', '.join(unregistered)}" if unregistered
-                  else f"all {len(depts)} departments built AND registered as agents")
+            else (f"{len(unregistered)} required dept(s) not registered as agents: "
+                  f"{', '.join(unregistered)}" if unregistered
+                  else f"all {len(registered)} required departments registered as agents")
         ),
     }
 
@@ -750,8 +897,27 @@ print(json.dumps(r))
 # CHECK (c): Command Center board reachable + dept lanes present
 # ---------------------------------------------------------------------------
 
-def check_command_center(fs, oc_root, dept_slugs):
-    candidates = [
+# The Command Center app dirs. The running CC opens DATABASE_PATH from its own
+# .env.local, else <app dir>/mission-control.db (src/lib/db/index.ts getDbPath;
+# mirrored by run-full-install.sh cc_prepare_database_environment).
+_CC_APP_DIRS = ("~/projects/command-center", "/data/projects/command-center")
+
+# Departments whose board is the OPERATOR's Command Center, not the client's: they are
+# exempt from BOTH the client board-lane and the client dept-agent requirement.
+# rescue-rangers is the operator-only fleet escalation department — its tickets are
+# boarded on the operator's CC by the operator receiver/poller
+# (role-library/rescue-rangers/scripts/rescue_cc_board.py), its brain runs on the
+# operator Mac, it is never in a client's chosen departments.json, and
+# seed-workspaces.py never gives it a client lane. materialize-dept-agents.sh registers
+# an agent only for a live lane, so demanding its agent while exempting its lane was a
+# requirement nothing could ever satisfy.
+OPERATOR_BOARD_DEPTS = {"rescue-rangers"}
+
+
+def _cc_db_layout_candidates(oc_root):
+    # Fallbacks when no CC app dir / env override names the DB
+    # (materialize-dept-agents.sh:436-438 + projects/*).
+    return [
         os.path.join(oc_root, "workspaces", "command-center", "mission-control.db"),
         os.path.join(oc_root, "workspace", "mission-control.db"),
         os.path.join(oc_root, "data", "mission-control.db"),
@@ -760,21 +926,56 @@ def check_command_center(fs, oc_root, dept_slugs):
         "~/projects/mission-control/mission-control.db",
         "/opt/mission-control/mission-control.db",
     ]
-    db_path = next((c for c in candidates if fs.isfile(c)), None)
-    if db_path is None:
+
+
+def resolve_cc_db(fs, oc_root):
+    """Find the mission-control.db the running Command Center uses, probed inside the
+    box (read-only; never creates a DB). Order: $DASHBOARD_DB_PATH / $DATABASE_PATH
+    (shared-utils/resolve_db.py), then each CC app dir's configured DB, then the layout
+    candidates. A 0-byte file is always skipped; a layout candidate is only taken if it
+    has a `workspaces` table (a stray decoy must not shadow the live board). Returns the
+    probe dict: db (path or None), tables, workspace_rows, lane_blob, skipped, error."""
+    return box_python(fs, _SQL_CC_RESOLVE.format(
+        app_dirs=repr(list(_CC_APP_DIRS)), layout=repr(_cc_db_layout_candidates(oc_root))))
+
+
+def _canonical_dept_slug_fn():
+    """The board-join gate's slug normalizer (shared-utils/canonical_slug.py), so the
+    lane check and the standalone gate can never normalize differently."""
+    bj = _load_board_join_module()
+    try:
+        return bj._load_canonical_slug()
+    except Exception:  # noqa: BLE001
+        return lambda s: s
+
+
+def check_command_center(fs, oc_root, dept_slugs, aliases=None):
+    cc = resolve_cc_db(fs, oc_root)
+    db_path = cc.get("db")
+    if not db_path:
         return {
-            "pass": False, "db_found": False, "db_candidates": candidates,
-            "detail": "mission-control.db not found among candidates (CC not provisioned)",
+            "pass": False, "db_found": False,
+            "db_candidates": _cc_db_layout_candidates(oc_root),
+            "db_skipped": cc.get("skipped", []),
+            "detail": ("mission-control.db not found among candidates (CC not provisioned)"
+                       if cc else "mission-control.db probe did not run on the box "
+                                  "(python3 failed) — undetermined, not proven absent"),
         }
-    cc = box_python(fs, _SQL_CC_PROBE.format(db=repr(db_path)))
     tables = cc.get("tables", []) or []
     rows = int(cc.get("workspace_rows", 0) or 0)
     lane_blob = cc.get("lane_blob", []) or []
-    # dept lanes present: each discovered dept slug appears in some workspaces row.
+    # dept lanes present: each discovered dept slug appears in some workspaces row,
+    # as-is or under its canonical slug (the seeder writes workspaces.slug through
+    # canonical_dept_slug, e.g. folder legal-compliance -> lane "legal"), or under any
+    # spelling in `aliases` (required_departments(): folder names + chosen slugs).
+    canon = _canonical_dept_slug_fn()
     lanes_missing = []
     for slug in sorted(dept_slugs):
-        needle = slug.lower()
-        if not any(needle in blob for blob in lane_blob):
+        if slug in OPERATOR_BOARD_DEPTS:
+            continue
+        needles = {n for s in {slug} | set((aliases or {}).get(slug, ()))
+                   for n in (s.lower(), (canon(s) or s).lower())}
+        if not any(n in blob for n in needles for blob in lane_blob):
             lanes_missing.append(slug)
     has_ws_table = "workspaces" in tables
     board_live = has_ws_table and rows > 0
@@ -782,12 +983,13 @@ def check_command_center(fs, oc_root, dept_slugs):
         "pass": bool(board_live and not lanes_missing),
         "db_found": True,
         "db_path": db_path,
+        "db_skipped": cc.get("skipped", []),
         "has_workspaces_table": has_ws_table,
         "workspace_rows": rows,
         "dept_lanes_missing": lanes_missing,
         "cc_error": cc.get("error"),
         "detail": (
-            "workspaces table absent" if not has_ws_table
+            f"workspaces table absent in {db_path}" if not has_ws_table
             else "board has 0 workspace rows (dead board)" if rows == 0
             else (f"{len(lanes_missing)} dept lane(s) missing: {', '.join(lanes_missing)}"
                   if lanes_missing else f"board live: {rows} lane(s), all depts present")
@@ -795,22 +997,71 @@ def check_command_center(fs, oc_root, dept_slugs):
     }
 
 
-_SQL_CC_PROBE = """
+_SQL_CC_RESOLVE = """
 import sqlite3, json, os
-p = {db}
-r = {{}}
-try:
-    c = sqlite3.connect(p, timeout=30.0); cur = c.cursor()
-    tabs = [x[0] for x in cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-    r["tables"] = tabs
-    if "workspaces" in tabs:
+app_dirs = {app_dirs}
+layout = {layout}
+
+def env_local_db(d):
+    try:
+        with open(os.path.join(d, ".env.local"), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    v = ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if line.startswith("DATABASE_PATH="):
+            v = line.split("=", 1)[1].strip().strip("'\\"")
+    # Expand "~" BEFORE the join: a "~/..." value is home-relative, never app-dir-relative.
+    return os.path.join(d, os.path.expanduser(v) if v else "mission-control.db")
+
+cands = [(os.environ.get(k, "").strip(), True) for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH")]
+cands += [(env_local_db(os.path.expanduser(d)), True) for d in app_dirs]
+cands += [(p, False) for p in layout]
+
+r = {{"db": None, "skipped": []}}
+seen, fallback = set(), None
+for p, authoritative in cands:
+    if not p:
+        continue
+    p = os.path.expanduser(p)
+    real = os.path.realpath(p)
+    if real in seen:
+        continue
+    seen.add(real)
+    try:
+        if os.path.getsize(p) == 0:
+            r["skipped"].append(p + ": 0-byte")
+            continue
+    except OSError:
+        continue
+    try:
+        c = sqlite3.connect(p, timeout=30.0)
+        tabs = [x[0] for x in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        c.close()
+    except Exception as e:
+        tabs = []
+        r.setdefault("error", str(e))
+    if authoritative or "workspaces" in tabs:
+        r["db"], r["tables"] = p, tabs
+        break
+    r["skipped"].append(p + ": no workspaces table")
+    fallback = fallback or (p, tabs)
+if r["db"] is None and fallback:
+    r["db"], r["tables"] = fallback
+if r["db"] and "workspaces" in r["tables"]:
+    try:
+        c = sqlite3.connect(r["db"], timeout=30.0); cur = c.cursor()
         r["workspace_rows"] = cur.execute("SELECT count(*) FROM workspaces").fetchone()[0]
-        rows = cur.execute("SELECT * FROM workspaces").fetchall()
-        r["lane_blob"] = [" ".join(str(v) for v in row).lower() for row in rows]
-    c.close()
-except Exception as e:
-    r["error"] = str(e)
+        r["lane_blob"] = [" ".join(str(v) for v in row).lower()
+                          for row in cur.execute("SELECT * FROM workspaces").fetchall()]
+        c.close()
+    except Exception as e:
+        r["error"] = str(e)
 print(json.dumps(r))
 """
 
@@ -1069,6 +1320,7 @@ def check_standard_ready_chosen_artifact(fs, company_dir, departments_dir):
             "pass": False, "artifact_present": True, "artifact_path": artifact,
             "detail": "departments.json is unparseable",
         }
+    data = _departments_or_empty(data, path=artifact)
     slugs = []
     if isinstance(data, list):
         for entry in data:
@@ -1086,6 +1338,7 @@ def check_standard_ready_chosen_artifact(fs, company_dir, departments_dir):
         "artifact_present": True,
         "artifact_path": artifact,
         "chosen_count": len(slugs),
+        "chosen": slugs,
         "detail": (
             f"chosen artifact present ({len(slugs)} departments)" if ok
             else "departments.json present but lists no departments"
@@ -1113,17 +1366,9 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
             "pass": False,
             "detail": "no company/departments dir resolved — cannot run the board join",
         }
-    # Locate the CC db with the SAME candidate list check (c) uses, plus the board-join
+    # Locate the CC db with the SAME resolver check (c) uses, plus the board-join
     # module's own resolver as a last resort.
-    db_path = None
-    for cand in (
-        os.path.join(oc_root, "workspaces", "command-center", "mission-control.db"),
-        os.path.join(oc_root, "workspace", "mission-control.db"),
-        os.path.join(oc_root, "data", "mission-control.db"),
-    ):
-        if fs.isfile(cand):
-            db_path = cand
-            break
+    db_path = resolve_cc_db(fs, oc_root).get("db")
     if db_path is None:
         try:
             db_path = str(bj.resolve_db() or "") or None
@@ -1197,7 +1442,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
 
     provisioned = bj.read_provisioned(departments_dir, df)
     key = bj.make_keyer(df, canonical_dept_slug)
-    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key)
+    verdict = bj.join(chosen, provisioned, [r[0] for r in displayed_rows], key,
+                      bj.stray_template_keys(df, key))
     ok = verdict.get("rc") == bj.RC_OK
     return {
         "pass": ok,
@@ -1207,6 +1453,8 @@ def check_standard_ready_board_join(fs, oc_root, ws, company_dir, departments_di
         "chosen_source": chosen_source,
         "counts": verdict.get("counts"),
         "drift_classes": verdict.get("drift_classes"),
+        "stray_template_departments": [
+            e["department"] for e in verdict.get("stray_template_departments") or []],
         "detail": (
             "board join holds: chosen == provisioned == displayed" if ok
             else "board join DRIFT: " + ", ".join(verdict.get("drift_classes") or ["unknown"])
@@ -1534,11 +1782,23 @@ def prove(box_id, client, fs, local_root=None, with_subprovers=False):
         return receipt
 
     # ----- THE FOUR ZHE WRAPPINGS -----
-    a = check_depts_registered(fs, oc_root, cfg)
+    folders = discover_departments(fs, oc_root)
+    required, required_source, stray = required_departments(fs, oc_root, ws, state, folders)
+    a = check_depts_registered(fs, oc_root, cfg, required)
+    a["required_source"] = required_source
+    a["stray_template_folders"] = stray
     dept_slugs = a["departments_present"]
     receipt["checks"]["floor_depts_registered_as_agents"] = a
     receipt["checks"]["personas_canonical"] = check_personas_canonical(fs, ws)
-    receipt["checks"]["command_center_board"] = check_command_center(fs, oc_root, dept_slugs)
+    receipt["checks"]["command_center_board"] = check_command_center(
+        fs, oc_root, sorted(required), required)
+    if stray:
+        # Folders nobody chose (role-library template copies): no agent or lane can be
+        # seeded for them, so they WARN — never FAIL, and never deleted.
+        receipt["warnings"] = [
+            f"{len(stray)} stray template folder(s) under departments/, not in "
+            f"{required_source} or the standard floor (no agent/lane required): "
+            + ", ".join(stray)]
     receipt["checks"]["agents_md_doctrine"] = check_agents_md_doctrine(fs, ws, oc_root)
     # Bulletproofing (c): expected-set equality (over- AND under-provision fail).
     receipt["checks"]["provisioning_receipt_equality"] = check_provisioning_receipt(
@@ -1577,15 +1837,19 @@ def print_summary(r):
         return
     for name, c in r["checks"].items():
         print(f"  [{'PASS' if c['pass'] else 'FAIL'}] {name}: {c.get('detail', '')}")
+    for w in r.get("warnings", []):
+        print(f"  [WARN] {w}")
     for name, sub in r.get("subprovers", {}).items():
         print(f"  [{sub['status'].upper()}] subprover {name}")
     print(f"OVERALL: {'PASS' if r['overall_pass'] else 'FAIL'}")
 
 
 def write_receipt(r):
-    os.makedirs(RECEIPTS_DIR, exist_ok=True)
+    out = receipts_dir()
+    os.makedirs(out, exist_ok=True)
+    _move_legacy_receipts(out)
     safe = r["ts"].replace(":", "").replace("+00:00", "Z")
-    path = os.path.join(RECEIPTS_DIR, f"{r['box']}-{safe}.json")
+    path = os.path.join(out, f"{r['box']}-{safe}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(r, f, indent=2, ensure_ascii=False)
     return path
@@ -1787,6 +2051,11 @@ def standard_ready_selftest():
       prebuilt-broken  -> STANDARD_READY fail (exit 1)
     Exit 0 iff all three expectations hold."""
     import tempfile, shutil
+    # Hermetic: prove the fixture's board, never this machine's live Command Center.
+    global _CC_APP_DIRS
+    _CC_APP_DIRS = ()
+    for k in ("DASHBOARD_DB_PATH", "DATABASE_PATH"):
+        os.environ.pop(k, None)
     tmp = tempfile.mkdtemp(prefix="zhe-standard-ready-")
     results = []
     all_ok = True

@@ -14,6 +14,25 @@ _MIN_BYTES = {s["key"]: s["min_bytes"] for s in _DELIVERABLE_AUDIT_SPEC}
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
 QC_PASS_THRESHOLD = 8.5
+# The phase that OWES working/qc/final_qc_report.json. Mirrors the PIPELINE-MANIFEST.json
+# entry (id / order / produces_artifact) so the operator-facing reason in _qc_gate names a
+# real, schedulable phase instead of asserting no producer exists. These constants are
+# pinned to the manifest by tests/test_f21_text_truth.py: change the manifest and the test
+# fails until they are updated together. Deliberately NOT read from the manifest at import
+# time -- gates.py is imported by close() paths that must not depend on a resolvable manifest
+# on disk, and a wrong-but-tested constant beats a silent fallback to a stale string.
+#
+# QC_AGGREGATE_EVIDENCE_REL is state.json, NOT the dispatcher sidecar. P-QC-AGGREGATE declares
+# executor kind "script", and a script phase runs through Engine._run_script_phase ->
+# _run_script_phase_locked, which records via Engine._checkpoint into state.json's phases[]
+# entry (status / attempts / heal_events, plus quarantined_reason + quarantined_at when
+# _fail_unit quarantines it). working/work-orders/<phase>.dispatcher-log.jsonl is written by
+# dispatcher._append_sidecar for AGENT phases only -- phases.py's own _sidecar_pending
+# docstring says so outright ("the engine never writes it"). Pointing a stuck operator at a
+# file this phase never creates would be the same class of lie F21 exists to remove.
+QC_AGGREGATE_PHASE_ID = "P-QC-AGGREGATE"
+QC_AGGREGATE_PHASE_ORDER = 8.65
+QC_AGGREGATE_EVIDENCE_REL = "state.json"
 # ocr_readback was removed from this tuple deliberately (see _ocr_gate below): MASTER-SPEC
 # section 7.4 and decision D10 require an unchecked slide-content readback to BLOCK the job,
 # and D10 names it as the one gate no waiver can pass either. U013 originally staged it here
@@ -21,26 +40,36 @@ QC_PASS_THRESHOLD = 8.5
 # producer question is orthogonal to whether a missing/unchecked record should ever be
 # allowed to reach DONE, and the spec's answer for "unchecked" is unconditional: no.
 #
-# `qc` was removed from this tuple for the identical reason, in a follow-up fix. It was left
-# behind when ocr_readback was fixed with a "that reasoning still holds for qc" note (see
-# CHANGELOG) -- but a QC review of that very fix flagged it as the same defect shape, still
-# open: no phase anywhere writes working/qc/final_qc_report.json (verified by grep across the
-# whole repo -- the manifest's six QC phases each write their OWN domain report --
-# copy_qc_report.json, typography_qc_report.json, prompt_qc_report.json, image_qc_report.json,
-# priority_shift_report.json, speech_qc_report.json -- and nothing aggregates them into
-# final_qc_report.json), so this gate's input was permanently absent, and being warn-only meant
-# a job could reach DONE with NO QC score at all. D10's own doctrine names this shape directly:
-# "a check that defers because its input is missing is a fail-open wearing a fail-closed label."
-# The correct fix mirrors ocr_readback exactly: _qc_gate below now sets warn_only=False on every
-# branch, so close() always routes a missing/unreadable/sub-threshold QC report into the
-# blocking `failures` list, never the non-blocking `gate_warnings` list. Unlike ocr_readback,
-# `qc` stays a member of GATE_KEYS (not NON_WAIVABLE_GATES) -- the department's ratified
-# strictness decision is fail-closed by default, with the client's own quoted request (via
-# waivers.json, validated by waivers.py) as the ONLY bypass. A genuine producer for
-# final_qc_report.json (an aggregation phase over the six domain reports) does not exist yet;
-# until it does, every real job either produces one (out of band) or is blocked here, on
-# purpose -- see CHANGELOG [Unreleased] qc-gate-fail-closed for the full account of why
-# blocking, not a silent pass, is the only honest behaviour for a gate whose input is absent.
+# `qc` was removed from this tuple for the identical reason, in a follow-up fix. When that fix
+# was written there was genuinely no producer for working/qc/final_qc_report.json: the manifest's
+# six QC phases each wrote only their OWN domain report (copy_qc_report.json,
+# typography_qc_report.json, prompt_qc_report.json, image_qc_report.json,
+# priority_shift_report.json, speech_qc_report.json) and nothing aggregated them. This gate's
+# input was therefore permanently absent, and being warn-only meant a job could reach DONE with
+# NO QC score at all. D10's own doctrine names that shape directly: "a check that defers because
+# its input is missing is a fail-open wearing a fail-closed label." The fix mirrors ocr_readback
+# exactly: _qc_gate below sets warn_only=False on every branch, so close() always routes a
+# missing/unreadable/sub-threshold QC report into the blocking `failures` list, never the
+# non-blocking `gate_warnings` list. Unlike ocr_readback, `qc` stays a member of GATE_KEYS (not
+# NON_WAIVABLE_GATES) -- the department's ratified strictness decision is fail-closed by default,
+# with the client's own quoted request (via waivers.json, validated by waivers.py) as the ONLY
+# bypass.
+#
+# TEXT-TRUTH (F21, 2026-09): the "no producer exists" half of the paragraph above WAS true when
+# it was written and is NOT true any more, and it stayed in the operator-facing failure reason
+# long after it went stale -- an outside reviewer read it and filed a P0 for a defect that does
+# not exist. The producer landed with manifest_version 34 -> 35 (see manifest.py's version log:
+# "merging fix/qc-gate-fail-closed adds P-QC-AGGREGATE"). As of manifest_version 67 the phase
+# P-QC-AGGREGATE is scheduled at order 8.65, owned by qc-specialist-presentations, executor
+# `python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode`, declares
+# produces_artifact = "working/qc/final_qc_report.json", and consumes exactly the six domain
+# reports listed above. A missing final_qc_report.json today means THAT PHASE did not produce
+# it -- not that nothing can. Blocking is still the only honest behaviour, but the reason an
+# operator reads must point them at the phase and at the evidence that phase actually leaves
+# behind (its state.json phases[] record -- see QC_AGGREGATE_EVIDENCE_REL above for why that
+# is state.json and not the dispatcher sidecar), not at a producer gap that closed.
+# See CHANGELOG [Unreleased] qc-gate-fail-closed for the original account. Guarded by
+# tests/test_f21_text_truth.py -- do not reintroduce a "no phase produces this" claim here.
 WARN_ONLY_GATES = ()
 class Gates:
     def __init__(self, run_dir: Path, state: Dict[str, Any]) -> None:
@@ -190,16 +219,25 @@ class Gates:
         # here, on every branch, so a missing, unreadable, unscored, or sub-threshold QC report
         # lands in close()'s blocking `failures` list, never the non-blocking `gate_warnings`
         # list. See the WARN_ONLY_GATES comment above for the full account of why this gate
-        # used to defer (no phase produces final_qc_report.json) and why deferring is exactly
-        # the fail-open shape the doctrine forbids: a missing input BLOCKS, it does not pass.
+        # used to defer (at the time, nothing produced final_qc_report.json) and why deferring
+        # is exactly the fail-open shape the doctrine forbids: a missing input BLOCKS, it does
+        # not pass. The producer EXISTS now -- P-QC-AGGREGATE, order 8.65 -- so the reason below
+        # names the phase that owes the file, never "no phase produces it" (F21).
         p = self.run_dir / "working" / "qc" / "final_qc_report.json"
         if not p.is_file():
             return {"state":"fail","warn_only":False,
-                    "reason":f"no final QC report at {p.relative_to(self.run_dir)} -- no phase "
-                             "in the current manifest produces this file, so the deck's overall "
-                             f"QC score (>= {QC_PASS_THRESHOLD} required) cannot be verified. "
-                             "This cannot close silently: either a genuine final_qc_report.json "
-                             "must be produced, or the client must be asked to waive this gate "
+                    "reason":f"no final QC report at {p.relative_to(self.run_dir)} -- "
+                             f"{QC_AGGREGATE_PHASE_ID} (order {QC_AGGREGATE_PHASE_ORDER}) did not "
+                             "produce it -- see that phase's record in "
+                             f"{QC_AGGREGATE_EVIDENCE_REL} (phases[] entry "
+                             f"id={QC_AGGREGATE_PHASE_ID}: status, attempts, heal_events, "
+                             "quarantined_reason) for why. "
+                             f"Without the report the deck's overall QC score "
+                             f"(>= {QC_PASS_THRESHOLD} required) cannot be verified. "
+                             "This cannot close silently: either "
+                             f"{QC_AGGREGATE_PHASE_ID} must run to completion (executor: "
+                             "scripts/qc_aggregate.py, which aggregates the six domain QC "
+                             "reports), or the client must be asked to waive this gate "
                              "(waivers.json, rule=qc, quoting the client's own words)."}
         try: obj = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:

@@ -44,7 +44,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md`. QC-pattern authority
 
 **Steps:** run the prover (exit 0 required); then semantically confirm the teaching band teaches (no offer name, no price, no enroll/scarcity CTA) and the final teaching step bridges without pitching (may promise what comes next, may not name a price or product).
 
-**Outputs:** the Phase-3 hygiene verdict.
+**Outputs:** the Phase-3 hygiene verdict, written to `working/qc/sp_p3_hygiene_report.json` (this phase's own `produces_artifact`). NEVER write to `working/copy/sp_structure.json` — that is P-SP-STRUCTURE's ledger and this station's input.
 
 **Failure mode:** AF-SP-P3-PITCH.
 

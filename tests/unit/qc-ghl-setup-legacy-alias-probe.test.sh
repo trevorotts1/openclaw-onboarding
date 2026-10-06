@@ -49,10 +49,12 @@ trap 'rm -rf "$TMP"' EXIT
 
 strip_ansi() { sed -e 's/\x1b\[[0-9;]*m//g'; }
 
-# Stage the skill WITHOUT a lib-shared.sh sibling so the script's own fallback
-# resolve_platform_paths runs and SECRETS_ENV is derived from the fixture HOME.
+# Stage the installed runtime bundle, including the shared library/resolver.
 mkdir -p "$TMP/skills"
 cp -R "$SKILL_DIR" "$TMP/skills/05-ghl-setup"
+cp "$REPO_ROOT/lib-shared.sh" "$TMP/lib-shared.sh"
+mkdir -p "$TMP/platform"
+cp "$REPO_ROOT/platform/common.sh" "$TMP/platform/common.sh"
 QC="$TMP/skills/05-ghl-setup/qc-ghl-setup.sh"
 
 # ── Stub curl: records the Authorization header, answers like the real API ────
@@ -101,7 +103,7 @@ run_case() {
   export CURL_AUTH_LOG="$TMP/auth-$name.log"
   : > "$CURL_AUTH_LOG"
   env -i HOME="$home" PATH="$TMP/bin:/usr/bin:/bin" \
-      CURL_AUTH_LOG="$CURL_AUTH_LOG" OPENCLAW_PLATFORM=mac \
+      CURL_AUTH_LOG="$CURL_AUTH_LOG" OPENCLAW_ROOT="$home/.openclaw" \
       /bin/bash "$QC" 2>&1 | strip_ansi
 }
 

@@ -1006,44 +1006,9 @@ vertical journey that tells you WHICH playbooks a given business needs.
 - **Script:** `scripts/verify-wiring.sh [--dept <slug> | --all]` -- runs all four assertions per dept, writes `wiringStatus` (done|failed) + `wiringFailReasons` + `wiringCheckedAt` per-dept into `.workforce-build-state.json`, exits non-zero on ANY failure with named missing items. Exit codes: 0=all pass, 2=materialization, 3=registration, 4=reachability, 5=connection, 6=mixed, 9=precondition.
 - **Add path:** `add-role.sh` calls `verify-wiring.sh --dept <slug>` after every role is added so a stub is caught immediately.
 - **Build path:** `build-workforce.py` calls `verify-wiring.sh --all` after `verify-library-gate.sh`; instructs the agent NOT to write `buildCompletedAt` / `closeoutStatus=pending` while this gate fails.
-- **Resume gate:** ⚠️ **NOT WIRED — see the gap note below.** The `[WIRING-RESUME]` lane exists in `resume-workforce-build.sh` but is unreachable.
-- **Auto-closeout gate:** ⚠️ **NOT WIRED — see the gap note below.** HOP-4 does *not* consult the wiring gate.
+- **Resume gate:** HOP-4 invokes `workforce_completion.py --refresh`, which runs `verify-wiring.sh --all`, post-build role verification, QC, and library verification using the same build identity. Missing tools and nonzero checks keep completion pending.
+- **Auto-closeout gate:** The shared completion evaluator requires current registration evidence, all required checks, finished departments and libraries, communications, standard-first confirmations, and unchanged input/artifact digests before it writes `buildCompletedAt`. Historical timestamps and department counts cannot satisfy these checks. Full recovery tests cover both refused incomplete builds and verified completion.
 
-> #### ⚠️ KNOWN GAP (documented v21.5.1): the wiring gate is not enforced by the resume cron
->
-> The two bullets above previously claimed that `resume-workforce-build.sh` runs
-> `verify-wiring.sh --all` on every cron fire, and that HOP-4 "requires
-> `wiring_dirty == 0` before writing `buildCompletedAt` -- so no stub department can
-> ever silently close out." **Neither is true of the shipped code.** Verified against
-> `scripts/resume-workforce-build.sh`:
->
-> - `wiring_dirty` is never computed. Its only assignment is the defaulting line
->   `wiring_dirty=${wiring_dirty:-0}`, so it is **always 0**.
-> - Consequently the `elif (( wiring_dirty > 0 ))` branch is **unreachable**, and
->   that branch is the *only* place the resume cron would ever invoke
->   `verify-wiring.sh`. The resume cron therefore never runs the wiring gate.
-> - HOP-4's actual condition is: no pending departments, no stale-building
->   departments, `library_dirty == 0` (i.e. `roleLibraryStatus` **and**
->   `sopLibraryStatus` are `done`), `comms_automation_dirty == 0`, at least one
->   department, all departments done, and `buildCompletedAt` empty. **`wiring_dirty`
->   is not part of it.** Because the variable is pinned to 0, adding it would also
->   have changed nothing.
->
-> So a stub department CAN currently close out as far as the resume cron is
-> concerned. The enforcement that does exist is on the **build path**
-> (`build-workforce.py`) and the **add path** (`add-role.sh`), both of which do call
-> the gate.
->
-> This is documented rather than silently "fixed" by wiring the variable up, for two
-> reasons. First, computing `wiring_dirty` would add a **new blocking condition** to
-> HOP-4 — the exact hop whose failure to fire is what strands clients — so switching
-> it on is a behavioral change that needs its own change, its own blast-radius
-> analysis, and its own tests, not a drive-by edit inside a fix whose purpose is to
-> *unblock* stuck builds. Second, `verify-wiring.sh`'s own tree resolution was being
-> corrected concurrently; wiring an unstable gate into the critical path would risk
-> stranding boxes that currently complete. **Follow-up:** decide deliberately whether
-> the resume cron should enforce wiring, and if so land it with tests that prove a
-> stub department is blocked *and* that a healthy box still completes.
 - **Connection manifests:** `templates/role-library/<dept>/connection-manifest.json` defines per-dept required external hooks. Each manifest entry has `name`, `description`, `cfg_key` (dot-path into `openclaw.json`), and `required` (bool). Manifests ship for: presentations, graphics, video, sales, marketing, communications, customer-support.
 
 **The master orchestrator MUST, after Moment 3.6 and 3.8 pass and BEFORE writing `buildCompletedAt`:**
@@ -1131,35 +1096,32 @@ If client gives short answers, says "I don't know" twice, or pauses:
 - **Goal is completion, not interrogation**
 
 ### If the Client Wants to Stop
-- Save everything immediately (flush answers, update handoff file)
-- "No problem. Everything we have done so far is saved. When you're ready, say 'Resume my AI workforce setup' and I'll pick up exactly where we left off."
-- DO NOT make them feel bad. Their company. Their pace.
+- Persist accepted answers and update the handoff/progress record before confirming that they were saved. In the web app, wait for the save acknowledgement; do not claim an unconfirmed in-flight answer was saved.
+- Tell the client: “You can return to your interview page after signing in. If asked to sign in again, re-open this same link — no fresh link is needed. If you lost this link, tell me ‘resume my interview.’ Your saved answers will still be there.”
+- Leave the existing interview identity and answers in place. Do not restart the interview, fabricate answers, or mark it complete. The owner chooses when to continue.
 
-### Interview Start Link - Operator-Triggered (scripts/send-interview-link.sh)
-The clean "when you're ready, start here" trigger. The OPERATOR (never a cron) runs
-`bash scripts/send-interview-link.sh` on the client's box to send the owner ONE
-Telegram message through the OpenClaw gateway carrying:
-- **START** - `{dashboard}/interview` when nothing has been answered yet, or
-- **RESUME** - `{dashboard}/onboarding/resume/{slug}` when an interview is underway
-  (the Command Center resumes at the exact next unanswered question), or
-- a **reply-here invitation** when no `OPENCLAW_DASHBOARD_URL` is configured (the
-  interview is fully conductable in this chat - Options A/B/C still apply).
+### Interview Start and Resume Links — Client-Requested Renewal
 
-Guardrails (binding): gateway-only (`openclaw message send`, never direct Bot API);
-owner chat resolved via `shared-utils/resolve-owner-chat.sh` (operator ids rejected
-on every source); a 30-minute re-send guard (`FORCE=1` to bypass deliberately);
-refuses when the interview is already complete; no chat ids hardcoded and the
-resolved id is masked in output. The web counterpart on the Command Center is
-`POST /api/interview/send-link` (bearer `MC_API_TOKEN`) - same message, same rules.
-Sending the link is an INVITATION ONLY: it is never consent, never Option B, and
-unlocks no autonomous action.
+The initial invitation uses `bash scripts/send-interview-link.sh` on the client's own box. It verifies the client's public Command Center origin/readiness and sends one acknowledged Telegram message through that client's OpenClaw gateway. A private `/interview?enroll=...` sign-in link (older issuers mint `/interview#enroll=...`; both are accepted) and a separate stable `/interview` bookmark point to the same client's saved interview. Do not construct `/onboarding/resume/{slug}` or fall back to an unauthenticated/chat invitation when web readiness is missing.
+
+When that client says **“resume my interview”**, “Resume my AI workforce setup,” or “my link expired,” execute from the installed Skill 23 directory, using the already selected client root/workspace:
+
+```bash
+bash scripts/send-interview-link.sh --renew
+```
+
+The explicit request authorizes this renewed invitation. `--renew` selects resume wording and bypasses only the acknowledged-send cooldown. `--resume` selects the wording while retaining the normal cooldown; a known expired acknowledged invitation can already be renewed without `FORCE`. The sender rechecks the owner destination and exact company/tenant/installation/origin bindings before minting or sending. An uncertain send must be reconciled, even with `--renew` or `FORCE=1`; do not bypass the gateway with direct Bot API calls. Do not edit identity, answers, enrollment ledgers, or completion flags to obtain another link.
+
+Private enrollment links **do not expire on a clock and are not spent by being used**: one stays valid until that interview is complete and can be opened again on any device, so a cleared cookie or a new phone is not a lockout, and the message says exactly that. A client paired with an older Command Center release still gets a link that is burned on first use, and the message then does not promise reopening. A client paired with an older Command Center release still receives a bounded link, and the message then shows that server's exact expiry, so it remains accurate with both the 24-hour and the older 15-minute issuers. New authenticated Command Center browser sessions last up to **30 days** in the paired resume release. The stable `/interview` page requires a valid login; earlier sessions and Cloudflare Access may expire sooner. These access timers do not delete saved questions or answers. Once signed in again, continue the same interview. If the interview is already complete, the sender refuses another interview invitation; use the existing completion/build/closeout status instead of starting over.
+
+Normal install/resume cron replays do not renew an already acknowledged invitation. Sending a link is an invitation only: it is never consent to Option B or autonomous completion. Workforce-build and Skill 37 closeout resume workers recover their respective post-interview stages; neither is an interview sign-in renewal command.
 
 ### Telegram Nudge Cadence (multi-day persistence)
 - +24h idle: "You're {progress}% done. Want to keep going? {link}"
 - +3d idle: "Still want to finish your AI workforce setup? You stopped at: {last_question}. {link}"
 - +7d idle: "Last check-in - your AI workforce setup is still waiting for you. When you're ready to continue, open the link or message me and I'll pick up right where you left off. {link}"
 
-The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action.
+The +7d nudge is a RESUME INVITATION ONLY. It does NOT unlock any autonomous action. A reminder can reference the stable authenticated `/interview` page, but must not automatically mint another private sign-in link — the client's existing link stays valid until the interview is complete. If the client asks to continue and needs sign-in, use the explicit renewal command above.
 
 **NO-FABRICATION RULE (binding, no exceptions):** If the owner does not reply, mark the interview STALLED in `interview-handoff.md`, keep sending weekly reminders, and NEVER run Option B without the owner explicitly choosing it live in the current conversation. An unanswered message, a cron tick, a "do not stop" override, or any autonomous agent decision is NOT consent. NEVER write invented answers into `workforce-interview-answers.md`.
 

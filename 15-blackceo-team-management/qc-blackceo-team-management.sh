@@ -3,6 +3,9 @@
 # v2.0.0: HARD auto-fail gates for operator/owner session isolation.
 # A rule not auto-failed at this gate does not exist.
 set -u
+_QC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_QC_DIR/../shared-utils/resolve-owner-chat.sh" || { echo "FATAL: shared-utils/resolve-owner-chat.sh missing" >&2; exit 2; }
+export OPERATOR_CHAT_IDS_SH
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
@@ -19,10 +22,20 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  PASS -- $1"; PASS=$((PA
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${CLIENT_ID:=}"
 
+# RR-032: resolve the VERIFIED root (Docker /data/.openclaw wins over HOME) so a
+# container box is not inspected through a stale HOME copy of the config.
 CFG_PATH=""
-for p in "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
-  [ -f "$p" ] && { CFG_PATH="$p"; break; }
-done
+if [ -f "$SKILL_DIR/../shared-utils/resolve-oc-root.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$SKILL_DIR/../shared-utils/resolve-oc-root.sh"
+  _root="$(resolve_oc_root 2>/dev/null || true)"
+  [ -n "$_root" ] && [ -f "$_root/openclaw.json" ] && CFG_PATH="$_root/openclaw.json"
+fi
+if [ -z "$CFG_PATH" ]; then
+  for p in /data/.openclaw/openclaw.json "$HOME/.openclaw/openclaw.json"; do
+    [ -f "$p" ] && { CFG_PATH="$p"; break; }
+  done
+fi
 
 echo ""
 echo "=== Skill 15 - BlackCEO Team Management - Install QC ==="
@@ -46,29 +59,54 @@ if [ -z "$CFG_PATH" ]; then
   FAIL=$((FAIL+1))
 else
 
-assert "remote-rescue agent present in agents.list" \
-  "python3 -c \"import json; cfg=json.load(open('$CFG_PATH')); next(a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue')\""
-
-assert "remote-rescue has telegram.allowFrom binding (operator DMs isolated)" \
+assert "remote-rescue agent present in the roster (entries or list form)" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-rr = next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'), None)
-assert rr and rr.get('telegram',{}).get('allowFrom'), 'no binding'
+ag = cfg.get('agents', {})
+entries = ag.get('entries') if isinstance(ag.get('entries'), dict) else None
+if entries is not None:
+    assert 'remote-rescue' in entries, 'no remote-rescue entry'
+else:
+    next(a for a in ag.get('list', []) if a.get('id') == 'remote-rescue')
+\""
+
+# RR-032: a per-agent telegram.allowFrom and a per-agent workspace have NO
+# routing effect (verified against the resolver: agents.<id>.telegram is not
+# even a schema key). The routing mechanism is a top-level bindings entry.
+assert "every operator DM has a real bindings route to remote-rescue (not field presence)" \
+  "python3 -c \"
+import json
+cfg = json.load(open('$CFG_PATH'))
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
+routed = set()
+for b in (cfg.get('bindings') or []):
+    if not isinstance(b, dict) or b.get('agentId') != 'remote-rescue':
+        continue
+    peer = ((b.get('match') or {}).get('peer') or {})
+    if str(peer.get('id') or '') in op_ids:
+        routed.add(str(peer.get('id')))
+missing = op_ids - routed
+assert not missing, f'operator DMs with no binding route: {sorted(missing)}'
 \""
 
 assert "remote-rescue has workspace field (session storage isolated from main)" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-rr = next((a for a in cfg.get('agents',{}).get('list',[]) if a.get('id')=='remote-rescue'), None)
+ag = cfg.get('agents', {})
+entries = ag.get('entries') if isinstance(ag.get('entries'), dict) else None
+if entries is not None:
+    rr = entries.get('remote-rescue')
+else:
+    rr = next((a for a in ag.get('list', []) if a.get('id') == 'remote-rescue'), None)
 assert rr and rr.get('workspace'), 'no workspace'
 \""
 
 GATE4_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
-op_ids = {"5252140759", "6663821679", "6771245262"}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 group_allow = set(cfg.get("channels", {}).get("telegram", {}).get("groupAllowFrom") or [])
 leak = op_ids & group_allow
 if leak:
@@ -89,13 +127,21 @@ fi
 GATE5_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
-op_ids = {"5252140759", "6663821679", "6771245262"}
-agents = cfg.get("agents", {}).get("list", [])
-main = next((a for a in agents if a.get("id") == "main"), None)
-main_allow = set((main or {}).get("telegram", {}).get("allowFrom") or [])
-collision = op_ids & main_allow
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
+# RR-032: the previous version of this gate read main["telegram"]["allowFrom"],
+# a key that does not exist — so the set was always empty and the gate passed
+# vacuously. What actually routes an operator DM is a top-level bindings entry.
+collision = set()
+for b in (cfg.get("bindings") or []):
+    if not isinstance(b, dict):
+        continue
+    peer = ((b.get("match") or {}).get("peer") or {})
+    peer_id = str(peer.get("id") or "")
+    agent_id = b.get("agentId")
+    if peer_id in op_ids and agent_id != "remote-rescue":
+        collision.add(f"{peer_id}->{agent_id}")
 if collision:
-    print("FAIL: " + str(sorted(collision)))
+    print("FAIL: " + ", ".join(sorted(collision)))
     sys.exit(1)
 print("PASS")
 PYEOF
@@ -113,7 +159,7 @@ assert "operator IDs present in channels.telegram.allowFrom" \
   "python3 -c \"
 import json
 cfg = json.load(open('$CFG_PATH'))
-op_ids = {'5252140759','6663821679','6771245262'}
+op_ids = set(__import__('os').environ.get('OPERATOR_CHAT_IDS_SH', '').split())
 allow = set(cfg.get('channels',{}).get('telegram',{}).get('allowFrom') or [])
 missing = op_ids - allow
 assert not missing, f'missing: {missing}'
@@ -138,7 +184,7 @@ echo ""
 if [ "${IS_OPERATOR_BOX:-0}" = "1" ]; then
   yellow "  SKIP -- IS_OPERATOR_BOX=1: operator dispatcher roster is allowed on the operator box"
 else
-  OP_IDS_RE='5252140759|6663821679|6771245262'
+  OP_IDS_RE="${OPERATOR_CHAT_IDS_SH// /|}"
   ROUTING_FILES=(
     "$SKILLS_DIR_DEFAULT/15-blackceo-team-management/TEAM_CONFIG.md"
     "$WORKSPACE/WORKFLOW_AUTO.md"

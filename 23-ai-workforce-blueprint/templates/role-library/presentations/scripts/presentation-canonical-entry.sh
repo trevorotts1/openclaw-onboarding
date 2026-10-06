@@ -86,8 +86,8 @@ note() { echo "=== [$PROG] $* ==="; }
 # next line fails this way. One definition, used by both the engine path and
 # the legacy-fallback path below.
 _mint_nonce() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
+    if [ -n "${PRESENTATION_PY:-}" ] || command -v python3 >/dev/null 2>&1; then
+        "${PRESENTATION_PY:-python3}" -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null && return 0
     fi
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -hex 32 2>/dev/null && return 0
@@ -139,6 +139,10 @@ EOF
 # Arg parsing
 # ---------------------------------------------------------------------------
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
+# PRES-035: declared here so `set -u` is safe for every pre-resolver use
+# (stamp_intake_depth, owner_skip_*). The PRES-035 resolver block below
+# replaces it with the validated pin before any gate runs.
+PRESENTATION_PY="${PRESENTATION_PY:-python3}"
 SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
 PLAN=0 ADHOC=0 RESUME=0
 # FIX 36(3) — intake-depth axis, deliberately SEPARATE from the run-mode axis.
@@ -201,7 +205,7 @@ esac
 stamp_intake_depth() {
     local depth="$1"
     command -v python3 >/dev/null 2>&1 || { note "intake-depth not stamped (no python3)"; return 0; }
-    DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" python3 - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
+    DEPTH="$depth" INTAKE_COPY="$RUN_DIR/working/copy/intake.json" "$PRESENTATION_PY" - <<'PY' || note "intake-depth stamp: non-fatal write failure (logged, build continues)"
 import json, os, time
 p = os.environ["INTAKE_COPY"]
 depth = os.environ["DEPTH"]
@@ -266,7 +270,12 @@ fi
 # agent improvise. --plan (read-only inspection) is EXEMPT: inspecting a run
 # dir must never consume its entry budget.
 # ---------------------------------------------------------------------------
-if [ "$PLAN" -eq 0 ]; then
+# FIX 11: a --resume of an existing run is a continuation, not a new
+# attempt — it must not consume the entry budget.
+# FIX 11: declare a safe default so the success-path reset below is a no-op
+# when the increment is skipped (set -u is active; rm -f "" is harmless).
+_ATTEMPT_FILE=""
+if [ "$PLAN" -eq 0 ] && { [ "$RESUME" -eq 0 ] || [ ! -f "$RUN_DIR/state.json" ]; }; then
     _ATTEMPT_FILE="$RUN_DIR/working/checkpoints/.canonical-entry-attempts"
     mkdir -p "$(dirname "$_ATTEMPT_FILE")"
     _ATTEMPTS=$(( $(cat "$_ATTEMPT_FILE" 2>/dev/null | tr -d ' ') + 1 ))
@@ -346,7 +355,7 @@ owner_skip_approved() {
     local gate="$1"
     [ -f "$PROC_MANIFEST" ] || return 1
     command -v python3 >/dev/null 2>&1 || return 1
-    GATE="$gate" PM="$PROC_MANIFEST" python3 - <<'PY'
+    GATE="$gate" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 gate = os.environ["GATE"]
 try:
@@ -384,7 +393,7 @@ PY
 _record_dep_gate_bypassed() {
     local via="$1" reason="${2:-}"
     command -v python3 >/dev/null 2>&1 || return 0
-    VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" python3 - <<'PY' || true
+    VIA="$via" REASON="$reason" PM="$PROC_MANIFEST" "$PRESENTATION_PY" - <<'PY' || true
 import json, os, time
 pm = os.environ["PM"]
 rec = {
@@ -448,7 +457,7 @@ trace_fail() {
     echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
     echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
     echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
-    echo "  --next/--answer) so the driver writes the transcript itself." >&2
+    echo "  --sig-next/--sig-answer) so the driver writes the transcript itself." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }
@@ -476,7 +485,7 @@ owner_skip_intake() {
     local pm="$run_dir/working/checkpoints/process_manifest.json"
     [ -f "$pm" ] || return 1
     command -v python3 >/dev/null 2>&1 || return 1
-    PM="$pm" python3 - <<'PY'
+    PM="$pm" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     obj = json.load(open(os.environ["PM"]))
@@ -526,7 +535,7 @@ check_intake_ledger() {
     fi
     if command -v python3 >/dev/null 2>&1; then
         local complete
-        complete="$(python3 -c "
+        complete="$("$PRESENTATION_PY" -c "
 import json, sys
 try:
     d = json.load(open('$_INTAKE_LEDGER'))
@@ -589,11 +598,11 @@ check_intake_trace() {
     [ "$PLAN" -eq 1 ] && return 0
     _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
     if [ ! -f "$_INT_TRACE" ]; then
-        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --sig-next/--sig-answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
     fi
     if command -v python3 >/dev/null 2>&1; then
         local _trace_bytes
-        _trace_bytes="$(python3 -c "
+        _trace_bytes="$("$PRESENTATION_PY" -c "
 import json, sys
 p = '$run_dir/working/interview/intake_transcript.json'
 try:
@@ -605,7 +614,7 @@ print('%d' % len(raw.strip()))
 " 2>/dev/null)"
         _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
         if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
-            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --sig-next/--sig-answer/--sig-record and do NOT hand-write the transcript. No owner override for the trace."
         fi
     else
         # python3 absent: size-only fallback.
@@ -620,6 +629,38 @@ print('%d' % len(raw.strip()))
 check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
+# ===========================================================================
+# GATE 0c — DRIFT GATES (FIX 113, warning-only per D6)
+# ===========================================================================
+# Runs the presentations drift gates BEFORE the build starts. Per D6, drift is
+# a WARNING, never a build-stopper:
+#   - Drift found: log LOUDLY (operator channel, never client-facing), build continues.
+#   - Gate script missing or unrunnable: log an ERROR (still operator channel),
+#     build STILL continues — a missing gate must not brick a render.
+# The _ENGINE_RC reset below ensures a GATE 0c warning never leaks into the
+# engine's exit-code accounting.
+note "GATE 0c — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
+_GATE0C_SCRIPT="$SELF_DIR/presentations-drift-gates.sh"
+_ENGINE_RC=0
+if [ ! -f "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
+elif [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
+  note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
+else
+  _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
+  _GATE0C_RC=$?
+  if [ "$_GATE0C_RC" -ne 0 ]; then
+    note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
+    note "GATE 0c drift detail (operator channel, never client-facing):"
+    echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+  else
+    note "GATE 0c PASSED (no drift)"
+  fi
+  unset _GATE0C_OUT _GATE0C_RC
+fi
+_ENGINE_RC=0
+unset _GATE0C_SCRIPT
+
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)"
@@ -632,6 +673,141 @@ note "GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx, pypdf)
 # drops in the run dir — and every honored bypass is recorded as a
 # dep_gate_bypassed entry in process_manifest.json so no skip is ever silent.
 _TEST_CONTEXT_MARKER="$RUN_DIR/working/checkpoints/.test-context"
+# PRES-035 — resolve ONE pipeline interpreter BEFORE any gate runs python.
+# Precedence: PRESENTATION_PIPELINE_INTERPRETER when non-blank, absolute
+# and executable (the selected client config / per-client override — a
+# set-but-unusable value is REPORTED and falls through, never silently
+# skipped); else the client venv via pipeline_interp.py; else PATH python3
+# last-resort. Validated (must actually execute) before the gates; every
+# python below runs through $PRESENTATION_PY. Rollback:
+# PRESENTATION_PIPELINE_PIN=0 restores bare `python3` everywhere.
+PRESENTATION_PY="python3"
+_pres35_resolve_entry_interpreter() {
+    local _pin="${PRESENTATION_PIPELINE_INTERPRETER:-}" _resolved=""
+    if [ "${PRESENTATION_PIPELINE_PIN:-1}" = "0" ]; then
+        PRESENTATION_PY="python3"; export PRESENTATION_PY; return 0
+    fi
+    if [ -n "$_pin" ]; then
+        case "$_pin" in /*)
+            if [ -x "$_pin" ]; then _resolved="$_pin"; fi ;;
+        esac
+        if [ -z "$_resolved" ]; then
+            echo "  [interp] PRESENTATION_PIPELINE_INTERPRETER=$_pin unusable (missing or not executable) — resolving the client venv instead; fix the pin or re-run update-skills.sh" >&2
+        fi
+    fi
+    if [ -z "$_resolved" ] && [ -f "$SCRIPTS_DIR/presentation_job/pipeline_interp.py" ]; then
+        _resolved="$(cd "$SCRIPTS_DIR" && python3 -m presentation_job.pipeline_interp --resolve 2>/dev/null || true)"
+    fi
+    [ -n "$_resolved" ] || _resolved="python3"
+    if ! "$_resolved" -c 'import sys' >/dev/null 2>&1; then
+        echo "PRESENTATION_INTERPRETER_INVALID: $_resolved does not execute — refusing before any gate runs" >&2
+        return 1
+    fi
+    PRESENTATION_PY="$_resolved"
+    export PRESENTATION_PY PRESENTATION_PIPELINE_INTERPRETER="$_resolved"
+    _PRES35_VER="$("$_resolved" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo unknown)"
+    echo "  [interp] pipeline interpreter: $PRESENTATION_PY (Python $_PRES35_VER)"
+    return 0
+}
+_pres35_resolve_entry_interpreter || exit 2
+# read_run_mode <run_dir> prints the declared mode, or NOTHING AT ALL.
+# Absence is absence: the launcher's own default (model_router.DEFAULT_MODE,
+# "standard") then applies. It never guesses ultra -- nothing silently
+# launches at the operator ceiling.
+#
+# The vocabulary is NOT duplicated here: it is read from
+# presentation_job.model_router, the single authority active_mode() itself
+# uses. A tree where that import fails prints nothing and SAYS SO on stderr;
+# an unvalidatable declaration is dropped, never guessed. stderr is
+# deliberately NOT sent to /dev/null (unlike the lease helpers above): a
+# helper that dies inside this heredoc must be loud, not silent.
+# ---------------------------------------------------------------------------
+read_run_mode() {
+    python3 - "$1" "$SCRIPTS_DIR" <<'PYMODE'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+scripts_dir = sys.argv[2]
+
+if scripts_dir not in sys.path:
+    sys.path.insert(0, scripts_dir)
+try:
+    from presentation_job.model_router import MODES, normalize_mode
+except Exception as exc:  # noqa: BLE001 -- a partial deploy must be LOUD
+    print(f"[run-mode] could not import presentation_job.model_router from "
+          f"{scripts_dir} ({exc.__class__.__name__}: {exc}) -- a declared run "
+          f"mode cannot be validated against the one authority, so NONE is "
+          f"passed and the launcher default (standard) applies. Fix the "
+          f"deploy.", file=sys.stderr)
+    raise SystemExit(0)
+
+
+def normalised(raw):
+    """One candidate -> a legal mode, or None (with a loud line for garbage)."""
+    text = str(raw or "").strip().strip("'\"").strip(";,.").strip()
+    if not text:
+        return None
+    try:
+        return normalize_mode(text)
+    except ValueError:
+        print(f"[run-mode] the intake declared {text!r}, which is not one of "
+              f"{'|'.join(MODES)} -- ignoring it and letting the launcher "
+              f"default (standard) apply. A run mode is never guessed.",
+              file=sys.stderr)
+        return None
+
+
+def load(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def entry_value(entries, key):
+    val = entries.get(key)
+    if isinstance(val, dict):
+        return val.get("value", val.get("normalized"))
+    return val
+
+
+candidates = []
+
+# 1) the intake ledger -- where deck-intake-driver._record_run_mode writes it.
+entries = load(run_dir / "working" / "interview" / "intake_ledger.json").get("entries")
+if isinstance(entries, dict):
+    for key in ("RUN_MODE", "run_mode"):
+        candidates.append(entry_value(entries, key))
+    # ... and the structured parent record, when the turn stored the dict form.
+    parent = entries.get("resource_plan")
+    if isinstance(parent, dict) and isinstance(parent.get("value"), dict):
+        candidates.append(parent["value"].get("run_mode"))
+
+# 2) intake.json, for a client whose declaration arrived through a bridge that
+#    writes the run directory's intake rather than the ledger.
+intake = load(run_dir / "working" / "copy" / "intake.json")
+for key in ("RUN_MODE", "run_mode"):
+    candidates.append(intake.get(key))
+capture = intake.get("pre_presentation_capture")
+if isinstance(capture, dict):
+    candidates.append(capture.get("RUN_MODE"))
+
+seen = set()
+for candidate in candidates:
+    text = str(candidate or "").strip()
+    if not text or text.lower() in seen:
+        continue
+    seen.add(text.lower())
+    mode = normalised(candidate)
+    if mode:
+        print(mode)
+        break
+PYMODE
+}
+
 deps_check() {
     if [ "${QC_SKIP_PRESENTATION_DEPS:-0}" = "1" ]; then
         if [ -f "$_TEST_CONTEXT_MARKER" ]; then
@@ -644,11 +820,31 @@ deps_check() {
         echo "        $PROC_MANIFEST." >&2
     fi
     local missing=()
+    # Record resolved native tools while retaining video-only optional dependencies.
+    for _t in soffice pdftoppm ffmpeg ffprobe tesseract; do
+        echo "  [tools] $_t: $(command -v "$_t" 2>/dev/null || echo ABSENT)"
+    done
+    local video_missing=()
+    # PRES-033: the pipeline python deps live in the DEPARTMENT VENV (FIX 71),
+    # never the system interpreter. Resolve the SAME interpreter
+    # qc-completeness.sh resolves: PRESENTATION_PIPELINE_INTERPRETER first, else
+    # <root>/.venv-presentations/bin/python, else bare python3 (last fallback,
+    # reported honestly). A wrong-interpreter box (system python without the
+    # modules) is therefore caught HERE, not only in the update-time gate.
+    local _gate_py=""
+    if [ -n "${PRESENTATION_PIPELINE_INTERPRETER:-}" ] && [ -x "${PRESENTATION_PIPELINE_INTERPRETER}" ]; then
+        _gate_py="${PRESENTATION_PIPELINE_INTERPRETER}"
+    else
+        for _cand in "/data/.openclaw/.venv-presentations/bin/python" "$HOME/.openclaw/.venv-presentations/bin/python"; do
+            if [ -x "$_cand" ]; then _gate_py="$_cand"; break; fi
+        done
+    fi
+    [ -n "$_gate_py" ] || _gate_py="python3"
     command -v soffice  >/dev/null 2>&1 || missing+=("soffice (LibreOffice/libreoffice-impress)")
     command -v pdftoppm >/dev/null 2>&1 || missing+=("pdftoppm (poppler/poppler-utils)")
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c "import reportlab, pptx" >/dev/null 2>&1 \
-            || missing+=("python(reportlab+python-pptx)")
+    if command -v "$_gate_py" >/dev/null 2>&1; then
+        "$_gate_py" -c "import reportlab, pptx" >/dev/null 2>&1 \
+            || missing+=("python(reportlab+python-pptx under $_gate_py)")
         # Feature L2-D (P8.25-WORKBOOK): pypdf is a REAL runtime dep of the workbook
         # phase (workbook_builder.py reads the assembled PDF back with pypdf to prove
         # the AcroForm fields + /NeedAppearances survived before it may upload). It is
@@ -656,25 +852,42 @@ deps_check() {
         # here so a box without pypdf fails the dep gate BEFORE the workbook phase runs
         # (owner-token skippable via PRESENTATION_DEPS_MISSING exactly like the other
         # deps).
-        python3 -c "import pypdf" >/dev/null 2>&1 \
-            || missing+=("python(pypdf)")
+        "$_gate_py" -c "import pypdf" >/dev/null 2>&1 \
+            || missing+=("python(pypdf under $_gate_py)")
     else
-        missing+=("python3")
+        missing+=("$_gate_py (interpreter not executable)")
     fi
-    # Feature L2-G (P9.6-WEBINAR-VIDEO): ffmpeg is a REAL runtime dep of the webinar
-    # phase (build_webinar_video.py -> webinar_ffmpeg.py renders the Ken Burns + xfade
-    # slideshow + muxes the audio). It is NOT gated by the audio phase's own check, so
-    # it must be gated here so a box without ffmpeg fails the dep gate BEFORE the
-    # webinar phase runs (owner-token skippable via PRESENTATION_DEPS_MISSING exactly
-    # like the other deps).
-    command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
-    command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    # PRES-033: ffmpeg/ffprobe are classified OPTIONAL (video-only) in
+    # presentation-deps.json. A missing optional video dep must NOT block
+    # independent deck work — it lands in the video-only set and disables only
+    # the P9.6-WEBINAR-VIDEO branch. It can never hide a required gap either:
+    # required deps are checked above and stay in `missing`.
+    command -v ffmpeg >/dev/null 2>&1 || video_missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
+    command -v ffprobe >/dev/null 2>&1 || video_missing+=("ffprobe (webinar video probe; part of ffmpeg)")
+    if [ "${#video_missing[@]}" -gt 0 ]; then
+        echo "  ℹ PRESENTATION_VIDEO_DEPS_MISSING (optional branch): ${video_missing[*]} — deck, presenter guide, workbook and QC can still run; the P9.6-WEBINAR-VIDEO branch is disabled until these resolve." >&2
+    fi
     if [ "${#missing[@]}" -gt 0 ]; then
         # FIX-PRES-09(iv): event-shaped reassert. On a VPS the runtime deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
         # cron, self-heal HERE on the GATE-1 failure path — run the idempotent
         # reassert script ONCE, then re-check, before failing the run.
-        local _reassert="/data/.openclaw/scripts/reassert-presentation-deps.sh"
+        # PRES-033: the reassert path is resolved from the CANONICAL OpenClaw root
+        # (resolve_oc_root: /data/.openclaw on VPS else $HOME/.openclaw), never a
+        # hardcoded /data/.openclaw path that can point at a different box's root
+        # inside a custom-mount container.
+        local _pres_root=""
+        # NOTE the [ -n ] guard: an assignment of an EMPTY string still exits 0,
+        # so a resolver that ran but found no root must not count as a resolution.
+        if declare -F resolve_oc_root >/dev/null 2>&1 \
+           && _pres_root="$(resolve_oc_root 2>/dev/null || true)" \
+           && [ -n "$_pres_root" ]; then
+            :
+        else
+            _pres_root="$HOME/.openclaw"
+            [ -d "/data/.openclaw" ] && _pres_root="/data/.openclaw"
+        fi
+        local _reassert="$_pres_root/scripts/reassert-presentation-deps.sh"
         if [ "${OPENCLAW_PLATFORM:-}" = "vps" ] && [ -x "$_reassert" ] \
            && [ "${_DEPS_REASSERT_TRIED:-0}" != "1" ]; then
             _DEPS_REASSERT_TRIED=1
@@ -725,10 +938,10 @@ deps_check || {
 note "GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable)"
 ghl_module_check() {
     command -v python3 >/dev/null 2>&1 || {
-        echo "  (python3 absent; GHL module check skipped)"; return 0; }
+        echo "  (pipeline interpreter absent; GHL module check skipped)"; return 0; }
     local _ghl_err
     _ghl_err="$(PYTHONPATH="$SCRIPTS_DIR${PYTHONPATH:+:$PYTHONPATH}" \
-        python3 -c "import ghl_media" 2>&1)" && {
+        "$PRESENTATION_PY" -c "import ghl_media" 2>&1)" && {
         echo "  OK: ghl_media importable from $SCRIPTS_DIR"
         return 0
     }
@@ -761,7 +974,7 @@ ghl_module_check || {
 note "GATE 2/3 — BYPASS-SCAN (hand-rolled renderer detection in $RUN_DIR)"
 bypass_scan() {
     command -v python3 >/dev/null 2>&1 || { echo "  (python3 absent; scan skipped)"; return 0; }
-    RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" python3 - <<'PY'
+    RUN_DIR="$RUN_DIR" SCRIPTS_DIR="$SCRIPTS_DIR" "$PRESENTATION_PY" - <<'PY'
 import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
 scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
@@ -862,14 +1075,14 @@ version_hash_pin() {
     #     it means the actual renderer has drifted from the manifest/ruleset and
     #     the door FAILS CLOSED exactly as before.
     if [ -f "$SCRIPTS_DIR/sync_check.py" ] && command -v python3 >/dev/null 2>&1; then
-        if python3 "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
+        if "$PRESENTATION_PY" "$SCRIPTS_DIR/sync_check.py" --json >/tmp/_pce_sync.$$ 2>&1; then
             echo "  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack"
             rm -f /tmp/_pce_sync.$$
         else
             # sync_check exited 4 (drift). Classify: only A5/A6 (library-only) -> proceed evented.
             # NOTE: the temp path is passed via env var because the heredoc is
             # QUOTED ('PY') and bash does not expand $$ inside it.
-            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" python3 - <<'PY'
+            if _PCE_SYNC_TMP="/tmp/_pce_sync.$$" "$PRESENTATION_PY" - <<'PY'
 import json, os, sys
 try:
     d = json.load(open(os.environ["_PCE_SYNC_TMP"]))
@@ -887,7 +1100,7 @@ PY
             then
                 sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
-                python3 - <<'PY' || true
+                "$PRESENTATION_PY" - <<'PY' || true
 # write a CC event so the drift debt is surfaced, not hidden
 import json, os, urllib.request
 try:
@@ -1023,7 +1236,7 @@ for _mc in "$SCRIPTS_DIR/../sops/PIPELINE-MANIFEST.json" \
            "$(cd "$SCRIPTS_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"; do
     [ -n "$_mc" ] || continue
     [ -f "$_mc" ] || continue
-    _PHASE_COUNT="$(python3 -c "
+    _PHASE_COUNT="$("$PRESENTATION_PY" -c "
 import json
 m = json.load(open('$_mc'))
 print(len(m.get('phases', [])))
@@ -1034,7 +1247,7 @@ if [ -z "$_PHASE_COUNT" ]; then
     # FIX 36(5): last resort — the canonical resolver (manifest_source.py),
     # same resolution order sync_check documents (sops/ sibling first, then
     # the cluster copy), so a partial install never shows a stale count.
-    _PHASE_COUNT="$(python3 - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
+    _PHASE_COUNT="$("$PRESENTATION_PY" - "$SCRIPTS_DIR" <<'PY' 2>/dev/null || true
 import sys
 from pathlib import Path
 here = Path(sys.argv[1]).resolve()
@@ -1046,7 +1259,7 @@ except Exception:
     pass
 PY
 )"
-    [ -n "$_PHASE_COUNT" ] && _PHASE_COUNT="$(python3 -c "
+    [ -n "$_PHASE_COUNT" ] && _PHASE_COUNT="$("$PRESENTATION_PY" -c "
 import json
 m = json.load(open('$_PHASE_COUNT'))
 print(len(m.get('phases', [])))
@@ -1061,14 +1274,14 @@ if [ "$PLAN" -eq 1 ]; then
     # hardcoded number.
     echo "  Manifest phases: $_PHASE_COUNT"
     if [ "$RESUME" -eq 0 ]; then
-    echo "  Would run:  python3 $ENGINE_ENTRY --new --run-dir $RUN_DIR"
+    echo "  Would run:  $PRESENTATION_PY $ENGINE_ENTRY --new --run-dir $RUN_DIR"
     fi
-    echo "  Then:       python3 $ENGINE_ENTRY --run --run-dir $RUN_DIR"
+    echo "  Then:       $PRESENTATION_PY $ENGINE_ENTRY --run --run-dir $RUN_DIR"
     echo "  All phases walked mechanically. 6 fail-closed gates at close()."
     exit 0
 fi
 
-if [ -f "$ENGINE_ENTRY" ] && command -v python3 >/dev/null 2>&1; then
+if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
     # Step 1: Resolve the intake ledger into the engine's --new intake JSON
@@ -1086,9 +1299,14 @@ run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
     if [ -n "$INTAKE_DEPTH" ]; then
-        _RESOLVE_DEPTH_ARGS="--intake-depth $INTAKE_DEPTH"
+        # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
+        # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
+        # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
+        # passing "QUICK" died with "invalid choice" and engine_fail
+        # AF-DECK-TYPE-UNKNOWN. Lowercase for the resolver call only.
+        _RESOLVE_DEPTH_ARGS="--intake-depth $(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')"
     fi
-    _RESOLVE_OUT="$(python3 "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
+    _RESOLVE_OUT="$("$PRESENTATION_PY" "$RESOLVE_INTAKE" --ledger "$INTAKE_LEDGER" \
         --out "$_ENGINE_INTAKE_TMP" --source canonical-entry $_RESOLVE_DEPTH_ARGS 2>&1)"
     _RESOLVE_RC=$?
     if [ "$_RESOLVE_RC" -eq 5 ]; then
@@ -1100,9 +1318,20 @@ presentation_type: $_RESOLVE_OUT"
     fi
     note "$_RESOLVE_OUT"
 
+    # FIX 8: the chat path never read the run mode, so the engine silently
+    # fell back to standard even when the intake declared ultra. Read
+    # RUN_MODE from the intake ledger (same read pattern as
+    # presentation-intake-poll.sh read_run_mode) and export it as
+    # PRESENTATION_MODE -- the documented env seam for non-launcher callers
+    # (model_router.active_mode). No --mode flag: this script is deliberately
+    # not a run-mode door.
+    RUN_MODE="$(read_run_mode "$RUN_DIR")"
+    export PRESENTATION_MODE="$RUN_MODE"
+    if [ -n "$RUN_MODE" ]; then note "run mode from intake ledger: $RUN_MODE"; else note "no run mode declared in intake; engine default (standard) applies"; fi
+
     # Step 2: Create the engine job (state.json).
     # This is idempotent -- if state.json already exists, the engine refuses to overwrite.
-    _CREATE_OUT="$(python3 "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
+    _CREATE_OUT="$("$PRESENTATION_PY" "$ENGINE_ENTRY" --new --run-dir "$RUN_DIR" --intake "$_ENGINE_INTAKE_TMP" 2>&1)"
     _CREATE_RC=$?
     if [ "$_CREATE_RC" -ne 0 ]; then
         # state.json may already exist from a prior run -- that's OK, reuse it.
@@ -1122,9 +1351,21 @@ $_CREATE_OUT"
     # runs 6 fail-closed gates in close(), and posts progress to the CC board.
     # Returns the engine's exit code directly to the caller.
     note "Engine run starting -- $_PHASE_COUNT manifest phases, all mechanically enforced"
-    _ENGINE_RUN_CMD=(python3 "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
+    _ENGINE_RUN_CMD=("$PRESENTATION_PY" "$ENGINE_ENTRY" --run --run-dir "$RUN_DIR")
 
     # Re-apply the front-door nonce + env so the render phases still gate correctly
+    # FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. Two
+    # concurrent door invocations used to share ONE .canonical-entry-nonce file, so
+    # sibling B's mint (or exit-trap unlink) destroyed sibling A's in-flight
+    # handshake and killed phases like P9.6 and close. The engine minted per-phase
+    # files since FIX 25; the door now matches it: this invocation's own file is
+    # .nonce-<sanitized phase id> and OC_DECK_ENTRY_NONCE_FILE names it. The
+    # legacy run-scoped .canonical-entry-nonce is ALSO minted with the same value
+    # so consumers that only read the legacy path (workbook_builder.py,
+    # sales_checkout_builder.py before their FIX 106 upgrade) keep passing — it is
+    # never a sibling's target, because every sibling's trap unlinks only its own
+    # per-phase file plus the legacy one it minted (same value, atomic 0600
+    # rewrites, no cross-sibling read window).
     NONCE_DIR="$RUN_DIR/working/checkpoints"
     NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
     mkdir -p "$NONCE_DIR"
@@ -1132,19 +1373,30 @@ $_CREATE_OUT"
     [ -n "$OC_DECK_ENTRY_NONCE" ] || die "could not mint the front-door nonce"
     ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
     chmod 600 "$NONCE_FILE" 2>/dev/null || true
+    # FIX 106: per-phase companion file (same nonce value, phase-keyed name).
+    _NONCE_PHASE_TOKEN="$(printf '%s' "$PHASE" | tr -c 'A-Za-z0-9_.-' '_')"
+    NONCE_PHASE_FILE="$NONCE_DIR/.nonce-${_NONCE_PHASE_TOKEN}"
+    ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_PHASE_FILE" )
+    chmod 600 "$NONCE_PHASE_FILE" 2>/dev/null || true
     export OC_DECK_ENTRY_NONCE
+    export OC_DECK_ENTRY_NONCE_FILE="${_NONCE_PHASE_TOKEN}"
     export OC_DECK_CANONICAL_ENTRY=1
     export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
     # F16 — U047 Rule 3.5 staging is OVER: canonical runs enforce the three
     # pixel-level gates (AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED)
     # by default; only an explicit PRESENTATION_SLIDE_GEOMETRY_ENFORCE=0 opts out.
     export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
-    trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+    # FIX 106: the exit trap unlinks THIS invocation's per-phase file (and the
+    # legacy file it minted); a concurrent sibling's per-phase file is a different
+    # path and is never touched.
+    trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
     note "run: ${_ENGINE_RUN_CMD[*]}"
     "${_ENGINE_RUN_CMD[@]}"
     _ENGINE_RC=$?
-    rm -f "$NONCE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
+    # FIX 11: a successful engine run resets the entry-attempt budget.
+    [ "$_ENGINE_RC" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+    rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" "$_ENGINE_INTAKE_TMP" 2>/dev/null || true
     exit "$_ENGINE_RC"
 else
     # The engine component is genuinely absent from this box -- the ONE
@@ -1169,7 +1421,7 @@ fi
 # FALLBACK: the old 2-of-20 path. Runs only when the engine is unavailable.
 # ===========================================================================
 note "FALLBACK: dispatching the legacy orchestrator (run_signature_deck.py -- 2 of ~20 phases)"
-cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
+cmd=("$PRESENTATION_PY" "$RUNNER" --run-dir "$RUN_DIR")
 cmd+=(--slides "$SLIDES" --out "$OUT" --phase "$PHASE")
 [ -n "$PLATFORM" ] && cmd+=(--platform "$PLATFORM")
 [ "$ADHOC" -eq 1 ] && cmd+=(--adhoc)
@@ -1185,6 +1437,18 @@ note "run: ${cmd[*]}"
 # box-visible comments and were forgeable by any model that read the repo. A random
 # per-run nonce cannot be conjured from shipped source; it is consumed (deleted)
 # after the run so a stale env value can never be replayed.
+#
+# FIX 106 (MASTER Part 8): the nonce is keyed by run id AND phase id. A single
+# shared .canonical-entry-nonce let two concurrent door invocations overwrite and
+# unlink each other's handshake (sibling B's trap rm killed sibling A's phase, e.g.
+# P9.6 and close). Each invocation now ALSO mints its own phase-keyed file
+# .nonce-<sanitized PHASE> and exports OC_DECK_ENTRY_NONCE_FILE=<phase token>;
+# build_deck._verify_entry_nonce prefers that per-phase target and confines it to
+# this run's checkpoints dir with a .nonce- basename. The legacy run-scoped file is
+# still minted with the same value for consumers that have not been upgraded
+# (workbook_builder.py et al.) — every sibling rewrites it atomically 0600 with the
+# SAME value it exports, and unlinks only its OWN phase-keyed file, so no sibling's
+# handshake can be destroyed by another's exit.
 # ===========================================================================
 NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.canonical-entry-nonce"
@@ -1198,7 +1462,14 @@ OC_DECK_ENTRY_NONCE="$(_mint_nonce)"
 # Write 0600 BEFORE exporting (umask 077 guarantees no group/other bits on create).
 ( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_FILE" )
 chmod 600 "$NONCE_FILE" 2>/dev/null || true
+# FIX 106: phase-keyed companion file + OC_DECK_ENTRY_NONCE_FILE (same sanitizer
+# alphabet as build_deck._entry_nonce_phase_file / phases._nonce_phase_token).
+_NONCE_PHASE_TOKEN="$(printf '%s' "$PHASE" | tr -c 'A-Za-z0-9_.-' '_')"
+NONCE_PHASE_FILE="$NONCE_DIR/.nonce-${_NONCE_PHASE_TOKEN}"
+( umask 077; printf '%s' "$OC_DECK_ENTRY_NONCE" > "$NONCE_PHASE_FILE" )
+chmod 600 "$NONCE_PHASE_FILE" 2>/dev/null || true
 export OC_DECK_ENTRY_NONCE
+export OC_DECK_ENTRY_NONCE_FILE="${_NONCE_PHASE_TOKEN}"
 # Legacy marker kept for informational/back-compat wiring only — it is NO LONGER
 # sufficient on its own; the nonce above is the real gate.
 export OC_DECK_CANONICAL_ENTRY=1
@@ -1221,9 +1492,13 @@ export KIE_PROMPT_GATE="${KIE_PROMPT_GATE:-presentations}"
 export PRESENTATION_SLIDE_GEOMETRY_ENFORCE="${PRESENTATION_SLIDE_GEOMETRY_ENFORCE:-1}"
 
 # Consume/rotate the nonce on ANY exit (normal or signal) so it can never be replayed.
-trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
+# FIX 106: unlink BOTH this invocation's phase-keyed file and the legacy file — a
+# concurrent sibling's phase-keyed file is a different path and is never touched.
+trap 'rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
 "${cmd[@]}"
 _rc=$?
-rm -f "$NONCE_FILE" 2>/dev/null || true
+# FIX 11: a successful fallback run resets the entry-attempt budget.
+[ "$_rc" -eq 0 ] && rm -f "$_ATTEMPT_FILE"
+rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

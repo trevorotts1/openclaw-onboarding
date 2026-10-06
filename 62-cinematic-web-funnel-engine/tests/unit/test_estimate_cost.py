@@ -119,8 +119,8 @@ class EstimateSceneRealRegistryTests(unittest.TestCase):
         forecast = ec.estimate_scene(_scene(generation_model="kie-veo3-fast"), self.registry)
         self.assertTrue(forecast.resolved)
         self.assertTrue(forecast.verified)
-        self.assertEqual(forecast.estimated_cost_usd, 0.40)
-        self.assertEqual(forecast.provider_model_slug, "veo3_fast")
+        self.assertEqual(forecast.estimated_cost_usd, 0.30)
+        self.assertEqual(forecast.provider_model_slug, "veo-3-1")
 
     def test_unverified_unpriced_model_fails_closed_not_free(self) -> None:
         forecast = ec.estimate_scene(
@@ -147,7 +147,7 @@ class EstimateSceneRealRegistryTests(unittest.TestCase):
             _scene(generation_model="kie-veo3-fast", expected_generation_count=3), self.registry
         )
         self.assertEqual(forecast.quantity, 3.0)
-        self.assertEqual(forecast.estimated_cost_usd, 1.20)
+        self.assertEqual(forecast.estimated_cost_usd, 0.90)
 
 
 class EstimateScenePlanAggregationTests(unittest.TestCase):
@@ -165,7 +165,7 @@ class EstimateScenePlanAggregationTests(unittest.TestCase):
         self.assertTrue(forecast.complete)
         self.assertTrue(forecast.all_verified)
         self.assertEqual(forecast.unresolved_scene_ids, [])
-        self.assertAlmostEqual(forecast.total_estimated_usd, 0.40 + 0.80)
+        self.assertAlmostEqual(forecast.total_estimated_usd, 0.30 + 0.60)
         self.assertEqual(forecast.registry_snapshot_id, self.registry.snapshot_id)
 
     def test_one_unresolved_scene_marks_the_whole_forecast_incomplete(self) -> None:
@@ -179,11 +179,11 @@ class EstimateScenePlanAggregationTests(unittest.TestCase):
         self.assertFalse(forecast.complete)
         self.assertEqual(forecast.unresolved_scene_ids, ["s2"])
         # total still reflects the resolvable scene(s) for visibility.
-        self.assertAlmostEqual(forecast.total_estimated_usd, 0.40)
+        self.assertAlmostEqual(forecast.total_estimated_usd, 0.30)
 
     def test_unverified_but_resolved_scene_marks_all_verified_false(self) -> None:
         plan = _scene_plan(
-            [_scene(scene_id="s1", generation_model="kie-gpt-image-2-text-to-image", duration_seconds=None)]
+            [_scene(scene_id="s1", generation_model="kie-gpt-image-2-5-sunburst-text-to-image", duration_seconds=None)]
         )
         forecast = ec.estimate_scene_plan(plan, self.registry, resolutions={"s1": "2K"}, strict=False)
         self.assertTrue(forecast.complete)

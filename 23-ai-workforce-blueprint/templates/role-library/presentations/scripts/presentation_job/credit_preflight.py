@@ -26,8 +26,11 @@ Estimation method (fix spec, binding):
 
 Unit costs come from FIX 13's versioned provider catalog (model_catalog.json
 `unit_costs` per model). A model whose unit_costs block is null / carries
-status "cost_unknown" is treated as cost_unknown -> preflight BLOCKS until a
-price is entered, never assumed free. Rate shapes understood:
+status "cost_unknown" is a FIX 13 WARNING: the phase is excluded from the
+numeric estimate, estimate_source says "unpriced", and the launch proceeds
+loudly -- never assumed free, never silently priced, and never blocking every
+model phase on a not-yet-priced catalog. ollama-cloud is spec-priced at $0.00
+(monthly pool). Rate shapes understood:
   * per_call_usd / per_image_usd  -- flat cost per call (render/OCR)
   * per_million_tokens_in_usd + per_million_tokens_out_usd -- token-metered;
     cost per phase = calls x measured avg tokens (last run) x rate/1e6, and
@@ -67,14 +70,24 @@ never opens sockets, never reads credentials):
     "mode": <mode>,
     "flag": "on" | "off",
     "total_estimate_usd": float,
+    "estimated_cost": float,      # FIX 13: same number, the proof's name
+    "estimate_source": "catalog" | "unpriced" | None,   # FIX 13
     "per_provider": [{provider, estimate_usd, phases, calls, rate_source,
                       balance, balance_evidence, shortfall_usd}],
-    "blocking": [{code, provider, phase_id?, detail}],
+    "blocking": [{code, provider, phase_id?, detail}],   # ONLY balance blocks
+    "warnings": [{code, provider, phase_id?, detail}],   # FIX 13: never block
     "downgrade_to": str | None,
     "balance_evidence": "measured" | "unverified",
     "notify": [str, ...],     # operator messages (report.dispatch payloads)
     "reasons": [str, ...],    # human-readable trace of every decision
   }
+
+FIX 13 SEMANTICS (master spec): `cost_unknown` is a WARNING + estimate_source
+"unpriced" -- the verdict proceeds with a numeric estimate over the priced
+phases and names every unpriced one. The ONLY fail-closed blocks left are the
+balance-file shortfall (insufficient_balance, a known-negative balance) and
+an unresolvable route map from launcher_gate. ollama-cloud prices at $0.00
+(monthly pool) by spec, catalog priced or not.
 
 SECRETS: nothing here reads, receives, or emits a credential. Only provider
 ids, model ids, counts, and dollar figures appear in a verdict.
@@ -89,6 +102,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -120,6 +134,22 @@ CODE_COST_UNKNOWN = "cost_unknown"
 CODE_INSUFFICIENT_BALANCE = "insufficient_balance"
 CODE_CALLS_UNESTIMATED = "calls_unestimated"
 CODE_NO_ROUTES = "no_routes"
+#: FIX 13: an unpriced model is a WARNING, never a block -- the verdict still
+#: carries a numeric estimate over the priced phases and names the unpriced
+#: ones, so a fresh box with a not-yet-priced catalog launches (loudly) rather
+#: than blocking every model phase forever.
+CODE_UNPRICED_WARN = "unpriced_warn"
+#: FIX 13 estimate_source values: "catalog" when every LLM phase priced off
+#: the catalog, "unpriced" when >= 1 phase priced but some rode the WARN path,
+#: None when nothing could be priced at all.
+ESTIMATE_SOURCE_CATALOG = "catalog"
+ESTIMATE_SOURCE_UNPRICED = "unpriced"
+
+#: Providers billed from a monthly pool rather than per call: the master fix
+#: spec FIX 13 prices ollama-cloud at 0 ("ollama-cloud 0 (monthly pool)"). A
+#: route on this provider is priced $0.00 even when the catalog block is
+#: still cost_unknown -- recorded in rate_source, never silent.
+ZERO_COST_PROVIDERS = ("ollama-cloud", "ollama_cloud")
 
 
 def flag_enabled() -> bool:
@@ -164,6 +194,12 @@ def _alias_for_route(route: Optional[Dict[str, Any]]) -> Optional[str]:
         if ep == provider or ep.split("-")[0] == provider.split("-")[0]:
             if entry.get("model") == model:
                 return alias
+        # FIX 6: the catalog's served_ids map (provider -> live model id)
+        # also identifies the alias -- e.g. an OpenRouter-served id the
+        # alias's own "model" field doesn't spell.
+        served = entry.get("served_ids")
+        if isinstance(served, dict) and served.get(provider) == model:
+            return alias
     return None
 
 
@@ -177,6 +213,26 @@ def _rate_for(route: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     A missing catalog, an unmapped (provider, model), or a null unit_costs
     block all resolve to cost_unknown -- the spec's fail-closed case.
     """
+    provider = str((route or {}).get("provider") or "")
+    # FIX 13: ollama-cloud is monthly-pool billed -- $0.00 per call by spec,
+    # even before (or without) a priced catalog block.
+    if provider in ZERO_COST_PROVIDERS:
+        return {"status": "priced", "shape": "per_call",
+                "per_call_usd": 0.0, "alias": None,
+                "rate_source": "spec: ollama-cloud 0 (monthly pool)"}
+    # FIX 6: OpenRouter prices come from the live model list's `pricing`
+    # field (cached for the run); the static catalog is only the fallback.
+    # This covers every OpenRouter model, including the client-selected one.
+    if provider == "openrouter":
+        live = _openrouter_live_pricing()
+        live_model = str((route or {}).get("model") or "")
+        hit = live.get(live_model)
+        if hit is not None:
+            return {"status": "priced", "shape": "per_million_tokens",
+                    "per_million_tokens_in_usd": hit["in_usd_per_mtok"],
+                    "per_million_tokens_out_usd": hit["out_usd_per_mtok"],
+                    "alias": None,
+                    "rate_source": "openrouter live list"}
     alias = _alias_for_route(route)
     if alias is None or _catalog is None:
         return {"status": CODE_COST_UNKNOWN, "shape": None,
@@ -208,8 +264,98 @@ def _rate_for(route: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# OpenRouter live pricing (FIX 6: OpenRouter prices at $0)
+# ---------------------------------------------------------------------------
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_FETCH_TIMEOUT_S = 10
+
+# The live list, cached for the run: {model_id: {"in_usd_per_mtok": float,
+# "out_usd_per_mtok": float}}. {} means "fetched and failed, or empty" --
+# the static catalog then answers as fallback for the rest of the run.
+_openrouter_pricing_cache: Optional[Dict[str, Dict[str, float]]] = None
+
+
+def _reset_openrouter_pricing_cache() -> None:
+    """Test seam: forget the cached live list so the next lookup refetches."""
+    global _openrouter_pricing_cache
+    _openrouter_pricing_cache = None
+
+
+def _openrouter_live_pricing() -> Dict[str, Dict[str, float]]:
+    """OpenRouter's live model list as {id: per-million-token USD rates}.
+
+    Prices come from each entry's `pricing` field (prompt/completion are USD
+    per token on the wire). Cached for the run. Any fetch or parse failure
+    yields {} so the caller falls back to the static catalog -- never a
+    guess, never an exception.
+    """
+    global _openrouter_pricing_cache
+    if _openrouter_pricing_cache is not None:
+        return _openrouter_pricing_cache
+    table: Dict[str, Dict[str, float]] = {}
+    try:
+        req = urllib.request.Request(
+            OPENROUTER_MODELS_URL,
+            headers={"User-Agent": "presentations-credit-preflight"},
+        )
+        with urllib.request.urlopen(req,
+                                    timeout=OPENROUTER_FETCH_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        data = payload.get("data") if isinstance(payload, dict) else None
+        for item in data or []:
+            if not isinstance(item, dict):
+                continue
+            model_id = str(item.get("id") or "").strip()
+            pricing = item.get("pricing")
+            if not model_id or not isinstance(pricing, dict):
+                continue
+            try:
+                in_usd = float(pricing.get("prompt")) * 1_000_000
+                out_usd = float(pricing.get("completion")) * 1_000_000
+            except (TypeError, ValueError):
+                continue
+            table[model_id] = {"in_usd_per_mtok": in_usd,
+                               "out_usd_per_mtok": out_usd}
+    except Exception:  # noqa: BLE001 -- fetch/parse failure -> catalog fallback
+        pass
+    _openrouter_pricing_cache = table
+    return table
+
+
+# ---------------------------------------------------------------------------
 # Expected calls (FIX 5 measured history, else the plan's own counts)
 # ---------------------------------------------------------------------------
+
+def check_openrouter_model(model_id: str) -> tuple:
+    """Validate an OpenRouter model id against the live list.
+
+    FIX 61.3: In ultra, an unknown or retired OpenRouter model must stop the
+    run BEFORE any spend. Checks the model id against the live OpenRouter
+    list, including its expiration_date. Returns (ok: bool, reason: str).
+    Refusal message names the model plainly.
+    """
+    if not model_id or not str(model_id).strip():
+        return True, ""  # no model declared: nothing to check
+    mid = str(model_id).strip()
+    live = _openrouter_live_pricing()
+    if mid not in live:
+        return False, (
+            f"ultra: OpenRouter model {mid!r} is unknown (not on the live "
+            f"OpenRouter model list) -- ultra launch refused BEFORE any spend"
+        )
+    exp = live[mid].get("expiration_date")
+    if exp:
+        try:
+            from datetime import datetime, timezone
+            exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if exp_dt < now:
+                return False, "ultra: OpenRouter model " + repr(mid) + " is retired"
+        except (ValueError, TypeError):
+            pass
+    return True, 
+
+
 def read_measured_calls(run_dir: Optional[Path]) -> Dict[str, int]:
     """Per-phase call counts from the LAST completed run's FIX 5 telemetry.
 
@@ -398,6 +544,7 @@ def preflight(mode: str, *,
 
     per_provider: Dict[str, Dict[str, Any]] = {}
     blocking: List[Dict[str, Any]] = []
+    warnings: List[Dict[str, Any]] = []
     reasons: List[str] = []
     notify: List[str] = []
     total = 0.0
@@ -413,38 +560,68 @@ def preflight(mode: str, *,
         calls = _phase_calls(phase_id, measured_calls=measured_calls,
                              plan_calls=plan_calls)
         if calls is None:
-            blocking.append({
+            # FIX 13: an unestimable call count is a WARNING, not a block --
+            # the phase is excluded from the estimate and named in
+            # warnings[]; the launch proceeds loudly rather than blocking on
+            # missing telemetry (the fresh-box case has no history at all).
+            warnings.append({
                 "code": CODE_CALLS_UNESTIMATED, "provider": provider,
                 "phase_id": phase_id,
                 "detail": (f"phase {phase_id} on {provider} has no expected "
                            f"call count: no FIX 5 measured provider_calls for "
-                           f"it and no plan slide/task count -- refusing to "
-                           f"guess a spend constant"),
+                           f"it and no plan slide/task count -- phase "
+                           f"excluded from the estimate (unpriced), never a "
+                           f"guessed spend constant"),
             })
-            reasons.append(f"{phase_id}: calls unestimated -> blocked")
+            reasons.append(f"{phase_id}: calls unestimated -> WARN (excluded "
+                           f"from estimate)")
             continue
         rate = _rate_for(route)
         if rate.get("status") != "priced":
             alias = rate.get("alias") or _alias_for_route(route) or "?"
-            blocking.append({
+            # FIX 6: an unpriceable phase on a PAID provider stops an ultra
+            # launch BEFORE any spend -- plain message naming the model.
+            # Standard and economy keep the existing warning below.
+            if str(mode or "").strip().lower() == "ultra" \
+                    and provider not in ZERO_COST_PROVIDERS:
+                model_name = str(route.get("model") or "?")
+                blocking.append({
+                    "code": CODE_COST_UNKNOWN, "provider": provider,
+                    "phase_id": phase_id,
+                    "detail": (f"phase {phase_id} on {provider} cannot be "
+                               f"priced: model {model_name!r} has no usable "
+                               f"rate (catalog alias {alias}; "
+                               f"{rate.get('reason') or 'cost_unknown'}) -- "
+                               f"ultra launch refused BEFORE any spend"),
+                })
+                reasons.append(f"{phase_id}: cost_unknown on {provider} -> "
+                               f"BLOCKED (ultra, unpriceable paid route)")
+                continue
+            # FIX 13: cost_unknown -> WARN + estimate_source "unpriced",
+            # never a block (except the FIX 6 ultra rule above). The
+            # unpriced phase is excluded from the numeric estimate over
+            # priced phases and named here.
+            warnings.append({
                 "code": CODE_COST_UNKNOWN, "provider": provider,
                 "phase_id": phase_id,
                 "detail": (f"model {route.get('model')!r} on {provider} "
                            f"(catalog alias {alias}) has no catalog rate "
                            f"({rate.get('reason') or 'unit_costs cost_unknown'}) "
-                           f"-- treated as cost_unknown; preflight fails "
-                           f"closed until a price is entered, never assumed "
-                           f"free"),
+                           f"-- WARN (estimate_source: unpriced); phase "
+                           f"excluded from the numeric estimate, never "
+                           f"assumed free"),
             })
-            reasons.append(f"{phase_id}: cost_unknown on {provider} -> blocked")
+            reasons.append(f"{phase_id}: cost_unknown on {provider} -> WARN "
+                           f"(excluded from estimate)")
             continue
         actual = actuals.get(phase_id)
         cost = _phase_cost(phase_id, calls, rate, actual)
         if cost is None:
-            blocking.append({
+            warnings.append({
                 "code": CODE_COST_UNKNOWN, "provider": provider,
                 "phase_id": phase_id,
-                "detail": f"phase {phase_id} could not be priced on {provider}",
+                "detail": f"phase {phase_id} could not be priced on "
+                          f"{provider} -- WARN, excluded from the estimate",
             })
             continue
         rate_source = "actuals" if actual else (
@@ -503,13 +680,15 @@ def preflight(mode: str, *,
         reasons.append(f"{provider}: ${bal:.2f} covers est ${est:.2f}")
 
     if llm_phases == 0:
-        blocking.append({
+        # FIX 13: an empty plan warns (estimate 0.0, nothing priced) rather
+        # than blocking -- the balance-file check below still blocks on a
+        # measured shortfall, and a genuinely empty phase plan spends $0.
+        warnings.append({
             "code": CODE_NO_ROUTES, "provider": None,
             "detail": "the phase plan carries no LLM-routed phases -- "
-                      "nothing to preflight, refusing rather than "
-                      "price-checking an empty plan",
+                      "estimate is $0.00 with nothing priced (WARN)",
         })
-        reasons.append("no LLM-routed phases -> blocked")
+        reasons.append("no LLM-routed phases -> WARN (estimate $0.00)")
 
     verdict = "blocked" if blocking else "proceed"
     downgrade_to = _downgrade(mode, blocking, per_provider, balances,
@@ -518,15 +697,35 @@ def preflight(mode: str, *,
         notify.append(
             f"credit preflight REFUSED mode {mode}: "
             + "; ".join(f"[{b['code']}] {b['detail']}" for b in blocking))
+    if warnings:
+        # FIX 13: unpriced/unestimable phases warn loudly but never block.
+        notify.append(
+            f"credit preflight ({mode}): {len(warnings)} phase(s) could not "
+            f"be priced and are excluded from the numeric estimate -- "
+            + "; ".join(f"[{w['code']}] {w.get('phase_id') or '?'}"
+                        for w in warnings))
+    # FIX 13 estimate_source: what the numeric estimate stands on.
+    if warnings and not blocking:
+        est_src = ESTIMATE_SOURCE_UNPRICED
+    elif warnings and blocking:
+        est_src = ESTIMATE_SOURCE_UNPRICED
+    elif llm_phases == 0:
+        est_src = None  # nothing LLM-routed: no estimate basis at all
+    else:
+        est_src = ESTIMATE_SOURCE_CATALOG
     return {
         "verdict": verdict,
         "mode": mode,
         "flag": "on" if flag_enabled() else "off",
         "total_estimate_usd": round(total, 6),
+        # FIX 13/QC alias: the numeric estimate under the name the proof reads.
+        "estimated_cost": round(total, 6),
+        "estimate_source": est_src,
         "per_provider": [dict(p) for p in
                           (per_provider.get(k) for k in sorted(per_provider))
                           if p],
         "blocking": blocking,
+        "warnings": warnings,
         "downgrade_to": downgrade_to,
         "balance_evidence": ("measured" if balance_evidence
                               and all(e == "measured" for e in balance_evidence)
@@ -545,15 +744,15 @@ def _downgrade(mode: str, blocking: List[Dict[str, Any]],
     """Highest cheaper mode whose estimate fits the SAME balances, else None.
 
     Only answers when the block is insufficient_balance (the one case a
-    cheaper mode can fix); cost_unknown / calls_unestimated are never solved
-    by spending less and downgrade to None.
+    cheaper mode can fix). Since FIX 13, cost_unknown / calls_unestimated are
+    warnings and never reach `blocking`; the guard below keeps that contract
+    honest if a future code joins blocking.
     """
     if not blocking or not any(b["code"] == CODE_INSUFFICIENT_BALANCE
                                for b in blocking):
         return None
-    if all(b["code"] != CODE_INSUFFICIENT_BALANCE for b in blocking) is False \
-            and any(b["code"] in (CODE_COST_UNKNOWN, CODE_CALLS_UNESTIMATED)
-                    for b in blocking):
+    if any(b["code"] in (CODE_COST_UNKNOWN, CODE_CALLS_UNESTIMATED)
+           for b in blocking):
         return None  # a price/estimability problem is not a budget problem
     try:
         idx = MODE_ORDER.index(mode)
@@ -593,7 +792,12 @@ def launcher_gate(run_dir: Optional[Path], mode: Optional[str], *,
         phases = []
     for phase_id in phases:
         try:
-            decision = model_router.resolve_route(phase_id)
+            # FIX 11 wire: price the routes THIS MODE will actually take. The
+            # gate already receives the declared mode and priced every phase at
+            # the router's default, so an Economy launch was quoted at the
+            # Standard mix. mode=None (an un-moded caller) still resolves
+            # through model_router.active_mode -> env -> "standard".
+            decision = model_router.resolve_route(phase_id, mode=mode or None)
         except Exception:  # noqa: BLE001 -- a broken route is cost-blocked
             routes[phase_id] = {"route": None}
             continue
@@ -612,9 +816,9 @@ def launcher_gate(run_dir: Optional[Path], mode: Optional[str], *,
                     from presentation_job import dispatcher as _dsp
                 except ImportError:
                     import dispatcher as _dsp  # type: ignore[no-redef]
-                model = getattr(_dsp, "DEEPSEEK_MODEL", None) or "deepseek-v4-flash"
+                model = getattr(_dsp, "DEEPSEEK_MODEL", None) or "deepseek-flash"
             except Exception:  # noqa: BLE001 -- no dispatcher default known
-                model = "deepseek-v4-flash"
+                model = "deepseek-flash"
             decision = dict(decision)
             decision["route"] = {"provider": "deepseek-direct", "model": model}
             decision["reason"] = str(decision.get("reason")
@@ -626,7 +830,8 @@ def launcher_gate(run_dir: Optional[Path], mode: Optional[str], *,
                 "blocking": [{"code": CODE_NO_ROUTES, "provider": None,
                               "detail": "no phase routes could be resolved"}],
                 "mode": mode, "flag": "on", "total_estimate_usd": 0.0,
-                "per_provider": [], "downgrade_to": None,
+                "estimated_cost": 0.0, "estimate_source": None,
+                "per_provider": [], "downgrade_to": None, "warnings": [],
                 "balance_evidence": None, "notify": [], "reasons": []}
     v = preflight(mode or "standard", routes=routes, balances=balances,
                   plan_calls=plan_calls or {},
@@ -665,3 +870,44 @@ def notify_verdict(verdict: Dict[str, Any]) -> None:
             report.dispatch("credit", "credit_preflight", msg)
     except Exception:  # noqa: BLE001 -- never let notify break dispatch
         pass
+
+# ---------------------------------------------------------------------------
+# FIX 13 CLI: `python3 -m presentation_job.credit_preflight --run-dir <dir>`
+# The QC proof runs exactly that and reads the JSON verdict: PROCEED, a
+# numeric estimated_cost, zero cost_unknown rows. Exit 0 on proceed, 1 on
+# blocked -- never on a warning (warnings are not blocks).
+# ---------------------------------------------------------------------------
+def main(argv: Optional[List[str]] = None) -> int:
+    import argparse
+    import sys as _sys
+
+    ap = argparse.ArgumentParser(
+        prog="presentation_job.credit_preflight",
+        description="FIX 12/13 credit preflight verdict for one run dir "
+                    "(prints the JSON verdict to stdout)")
+    ap.add_argument("--run-dir", required=False, default=None,
+                    help="run dir carrying working/telemetry (measured calls) "
+                         "and receiving the .credit-preflight.json sidecar")
+    ap.add_argument("--mode", default="standard",
+                    help="mode being priced (default: standard)")
+    ap.add_argument("--quiet", action="store_true",
+                    help="suppress the notify fan-out (report.dispatch)")
+    args = ap.parse_args(argv)
+
+    v = launcher_gate(Path(args.run_dir).expanduser() if args.run_dir
+                      else None, args.mode)
+    print(json.dumps(v, indent=2, sort_keys=True, default=str))
+    # FIX 5: a disabled preflight never blocks -- the flag-off "skipped"
+    # result exits 0 exactly like a proceed verdict.
+    if v.get("skipped") is not None:
+        return 0
+    if args.quiet:
+        v = dict(v)
+        v["notify"] = []  # nothing is dispatched; the verdict stands
+    else:
+        notify_verdict(v)
+    return 0 if v.get("verdict") == "proceed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

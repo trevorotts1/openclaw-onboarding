@@ -7,8 +7,8 @@
 **Role type:** specialist
 **Role number:** ROLE-18
 **Persona:** Marcus Vane, Type Director (—)
-**Version:** 1.0
-**Last updated:** 2026-06-14
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -268,7 +268,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
 2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
-3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4 and the native-text fallback).
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4; the native-text fallback is eliminated, Decision 5C, AF-OVERLAY-DELIVERED).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**
@@ -539,16 +539,7 @@ On a compressed deck there are fewer archetypes, so the rotation budget is tight
 2. **QC Specialist -- Presentations (ROLE-09)** -- uses the spec as the reference for design-craft auto-fails.
 3. **Director of Presentations (ROLE-01)** -- spawn authority; receives delivery confirmation.
 
-The Director of Presentations is the spawn authority for this role. Dispatch command:
-
-```
-[OPENCLAW_SKILLS]/23-ai-workforce-blueprint/scripts/dispatch-sub-specialist.py \
-  --parent-role director-of-presentations \
-  --specialist-type typography-architect \
-  --problem-statement "<deck slug, owner name, arc_allocation path, style_block path>" \
-  --persona (selected per task by persona-selector) \
-  --persona-version 1
-```
+The Director of Presentations is the spawn authority for this role.
 
 *End of typography-architect.md. All 19 sections present and filled.*
 1. Master SOP version increments (especially the canonical hierarchy stack region or the image-position / TEXT_ANCHOR variety criterion).

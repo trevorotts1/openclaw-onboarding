@@ -1,4 +1,4 @@
-<!-- RESCUE_ESCALATION_BOXNAME_V2 -->
+<!-- RESCUE_ESCALATION_BOXNAME_V3 -->
 ## Escalate to Rescue Rangers (when you are stuck)
 
 When you hit a problem you cannot solve on your own, escalate to Rescue Rangers by POSTing to the n8n webhook. Your gateway CAN reach this public URL outbound.
@@ -24,29 +24,105 @@ An escalation that arrives with the wrong `boxName` cannot be attributed to you,
 ```
 _RR_SECRET_ARGS=()
 [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-cat > /tmp/rr-escalation.json <<JSON
-{
-  "action":          "escalate",
-  "person":          "<real name of the owner or end user this agent serves>",
-  "clientName":      "{{CLIENT}}",
-  "agentName":       "{{AGENT}}",
-  "boxName":         "$_RR_BOX",
-  "boxType":         "{{BOX_TYPE}}",
-  "openclawVersion": "<run: openclaw --version>",
-  "problem":         "<one paragraph, plain text, no double-quote characters>",
-  "alreadyTried":    "<numbered list, plain text, no double-quote characters>",
-  "returnTo":        "{{RETURN_TO}}"
+export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
+# Free text goes in QUOTED heredocs (<<'TXT'): nothing you paste there is ever
+# expanded or run. Replace each <...> line with your own words; leave the
+# IFS=/read and TXT lines exactly as they are.
+IFS= read -r -d '' _RR_PERSON <<'TXT' || true
+<real name of the owner or end user this agent serves>
+TXT
+IFS= read -r -d '' _RR_PROBLEM <<'TXT' || true
+<one paragraph, plain text; quotes, backticks and dollar signs are safe here>
+TXT
+IFS= read -r -d '' _RR_TRIED <<'TXT' || true
+<numbered list of everything you already tried, plain text>
+TXT
+export _RR_PERSON _RR_PROBLEM _RR_TRIED
+python3 - <<'PY'
+import json, os
+e = os.environ
+body = {
+    "action": "escalate",
+    "person": e["_RR_PERSON"].strip(),
+    "clientName": "{{CLIENT}}",
+    "agentName": "{{AGENT}}",
+    "boxName": e["_RR_BOX"],
+    "boxType": "{{BOX_TYPE}}",
+    "openclawVersion": "<run: openclaw --version>",
+    "problem": e["_RR_PROBLEM"].strip(),
+    "alreadyTried": e["_RR_TRIED"].strip(),
+    "returnTo": "{{RETURN_TO}}",
 }
-JSON
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+with open("/tmp/rr-escalation.json", "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(body))
+PY
+_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-escalation.json
+  --data-binary @/tmp/rr-escalation.json)"
 rm -f /tmp/rr-escalation.json
+# RR-002: KEEP THE ADMISSION TICKET ID. The response carries `ticketId`; that
+# id IS the canonical `incident_id` for this incident and it is the ONLY thing
+# that lets your later resolution name the exact ticket it closes. Record it in
+# your task journal (and anywhere you keep this incident's state) as
+# `incident_id`. A resolution that does not carry it cannot be correlated and
+# will NOT close anything automatically.
+# The last line of the reply is the HTTP status; the rest is the JSON answer.
+# Read the printed rescue_rangers_state= line and follow the table below.
+# Never assume the escalation was accepted just because curl ran.
+export _RR_CODE="${_RR_RESP##*$'\n'}"
+export _RR_BODY="${_RR_RESP%$'\n'*}"
+python3 - <<'PY'
+import json, os
+code = os.environ.get("_RR_CODE", "").strip()
+try:
+    doc = json.loads(os.environ.get("_RR_BODY", ""))
+except ValueError:
+    doc = {}
+if not isinstance(doc, dict):
+    doc = {}
+status = str(doc.get("status") or "")
+ticket = str(doc.get("ticketId") or "")
+if code in ("000", "429", "503"):
+    state = "retry_once_in_2_minutes"
+elif code == "403":
+    state = "secret_problem"
+elif code == "400":
+    state = "fix_payload"
+elif code == "200" and status == "duplicate_ignored":
+    state = "already_being_worked"
+elif code == "200" and status in ("accepted_human_followup", "held_account_standing"):
+    state = "relay_message_and_stop"
+elif code == "200" and status == "non_incident":
+    state = "not_an_incident"
+elif code == "200" and ticket:
+    state = "accepted"
+else:
+    state = "unknown_do_not_assume_accepted"
+print("rescue_rangers_state=%s http=%s ticket=%s" % (state, code or "none", ticket or "none"))
+if doc.get("message"):
+    print("rescue_rangers_message=" + str(doc["message"]).replace("\n", " "))
+if doc.get("notificationCapped") is True:
+    print("rescue_rangers_capped=true")
+if ticket:
+    print("incident_id=" + ticket)   # <-- journal this against the incident
+PY
 ```
 
-The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$_RR_BOX` expands to the real slug. Do not quote it. Do not inline the JSON into `-d '...'` single quotes -- the variable would not expand and you would send the literal text `$_RR_BOX`.
+Free text (`person`, `problem`, `alreadyTried`) always goes through the QUOTED heredocs above and python3 turns it into valid JSON. Never paste it into an unquoted heredoc or into `-d '...'`: a quote would break the JSON, and `$VAR`, backticks or `$(...)` in pasted error output would be expanded or RUN on this box (that can leak secrets into the ticket). Only `$_RR_BOX` is a shell variable. Do not hand-write the JSON.
+
+**What the `rescue_rangers_state=` line means -- do exactly this:**
+
+| `rescue_rangers_state` | What you do |
+|-------|-------------|
+| `accepted` | Tell your owner: "I asked Rescue Rangers for help, ticket `<ticket>`." Journal the `incident_id`. The answer arrives later as a NEW message to you; it is not posted anywhere you can poll. |
+| `already_being_worked` | This problem already has a ticket. Do NOT send it again. |
+| `relay_message_and_stop` | Relay `rescue_rangers_message` to your owner in your own words and STOP re-sending this problem. |
+| `not_an_incident` | Rescue Rangers decided this is not an incident. Do NOT re-send it. |
+| `secret_problem` | HTTP 403: the secret is missing or wrong. Tell your owner it is a setup problem. Do NOT retry in a loop. |
+| `fix_payload` | HTTP 400: a required field is missing or empty. Fix the payload and send it once more. |
+| `retry_once_in_2_minutes` | HTTP 429, 503 or no answer: wait 2 minutes and send once more. If it fails again, tell your owner and stop. |
+| `unknown_do_not_assume_accepted` | No usable answer. Do NOT tell your owner help is coming. |
 
 **Field guide:**
 
@@ -60,32 +136,68 @@ The heredoc above is deliberately UNQUOTED (`<<JSON`, not `<<'JSON'`) so that `$
 | `openclawVersion` | Exact string from `openclaw --version` -- no paraphrasing |
 | `problem` | Short, self-contained description of what is happening |
 | `alreadyTried` | Numbered list of every fix already attempted (avoids repeat advice) |
-| `returnTo` | The Telegram chat ID where the Rescue Rangers answer must be posted |
+| `returnTo` | Audit only: recorded on the ticket. Rescue Rangers does NOT post the answer here; the answer reaches you as a new message. |
 
-- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If missing, report to Trevor's chat `5252140759`.
+- `RESCUE_RANGERS_WEBHOOK_URL` is set in your environment. If it is missing, you cannot reach Rescue Rangers: tell your owner it is a setup problem (the same as `secret_problem` in the table above) and do NOT message any personal chat.
 - `RESCUE_RANGERS_WEBHOOK_SECRET` is set alongside the URL. The array pattern above skips the header when unset.
-- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and report the gap to Trevor's chat `5252140759`.
+- `FLEET_STANDING_BOX_SLUG` is set in your environment. If it is missing, that is itself a setup gap -- use the literal `{{BOX_NAME}}` and tell your owner about the setup gap (state `secret_problem`); do NOT message any personal chat.
 - Never put real secrets (API keys, tokens, passwords) in any field. Reference the env var name instead.
 
 **When the fix works**, POST the resolution signal and STOP escalating:
 
 ```
-_RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
-cat > /tmp/rr-resolved.json <<JSON
-{
-  "action":     "escalate",
-  "clientName": "{{CLIENT}}",
-  "agentName":  "{{AGENT}}",
-  "boxName":    "$_RR_BOX",
-  "problem":    "RESOLVED: <one-line what fixed it>"
+_RR_SECRET_ARGS=()
+[ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ] && _RR_SECRET_ARGS=(-H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}")
+export _RR_BOX="${FLEET_STANDING_BOX_SLUG:-{{BOX_NAME}}}"
+export _RR_INCIDENT='<the incident_id journalled from the escalation response>'
+export _RR_ATTEMPT='<the attempt id that produced the fix>'
+IFS= read -r -d '' _RR_FIXED <<'TXT' || true
+<one line: what fixed it>
+TXT
+_RR_FIXED="${_RR_FIXED%$'\n'}"
+export _RR_FIXED
+export _RR_OP="res-$_RR_INCIDENT-$(date -u +%Y%m%dT%H%M%SZ)"
+export _RR_DIGEST="sha256-$(printf '%s' "RESOLVED: $_RR_FIXED" | shasum -a 256 | cut -d' ' -f1)"
+python3 - <<'PY'
+import json, os
+e = os.environ
+body = {
+    "action": "escalate",
+    "clientName": "{{CLIENT}}",
+    "agentName": "{{AGENT}}",
+    "boxName": e["_RR_BOX"],
+    "runtime_id": e["_RR_BOX"],
+    "incident_id": e["_RR_INCIDENT"],
+    "operation_id": e["_RR_OP"],
+    "attempt_id": e["_RR_ATTEMPT"],
+    "result_digest": e["_RR_DIGEST"],
+    "problem": "RESOLVED: " + e["_RR_FIXED"],
 }
-JSON
-curl -s -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
+with open("/tmp/rr-resolved.json", "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(body))
+PY
+_RR_RESP="$(curl -s -w '\n%{http_code}' -X POST "$RESCUE_RANGERS_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   "${_RR_SECRET_ARGS[@]}" \
-  --data-binary @/tmp/rr-resolved.json
+  --data-binary @/tmp/rr-resolved.json)"
 rm -f /tmp/rr-resolved.json
+# The last line is the HTTP status. 200 = recorded. 403 = the X-Rescue-Secret
+# header was missing or wrong (the ticket is STILL OPEN). 409 = the incident_id
+# did not match. Anything else: the ticket is still open -- do not tell the end
+# user it is closed.
+printf '%s\n' "$_RR_RESP"
 ```
+
+**A resolution MUST name the incident it closes.** `incident_id` is the ticket
+id the escalation response returned (journalled as `incident_id` above).
+`operation_id` is unique to THIS resolution attempt and is what makes a replayed
+post an idempotent receipt instead of a second close. Without `incident_id` the
+resolution is treated as LEGACY: it can never guess which ticket to close, so
+nothing is closed and you get a visible correlation error naming same-box
+candidates instead. Re-posting a resolution whose `operation_id` you already
+sent is a no-op receipt -- never a second close, and never a different ticket.
+If you did not journal the `incident_id`, say so and ask the operator; do NOT
+substitute a different ticket id or invent one.
 
 **You MUST tell the end user the outcome** in clear language. State which of these three it was:
 - **(a) We solved it** -- describe what was fixed and confirm normal operation is restored.
@@ -93,10 +205,10 @@ rm -f /tmp/rr-resolved.json
 - **(c) Here is the answer** -- relay the Rescue Rangers response verbatim if it is informational.
 Never leave the end user in the dark about what happened or what comes next. This is non-negotiable.
 
-**Hard cap: 25 exchanges per client per day.** Do not loop endlessly; if unresolved after several exchanges, ping Trevor's chat `5252140759` directly.
+**Daily cap.** Rescue Rangers takes up to 25 escalations per client per day. When the reply sets `notificationCapped` (you will see `rescue_rangers_capped=true`), the ticket still exists and a person sees it, but you will get no more automatic help today: stop sending new escalations for that problem and tell your owner a person on the Rescue Rangers team will follow up. Do not loop endlessly.
 
 > DEPRECATED -- do NOT use the old bot-to-bot method `openclaw message send --channel telegram -t "$RESCUE_RANGERS_HELP_CHAT_ID"`. Bots cannot read other bots, so that escalation never reached the rescue agent. The webhook above is the replacement.
-<!-- END RESCUE_ESCALATION_BOXNAME_V2 -->
+<!-- END RESCUE_ESCALATION_BOXNAME_V3 -->
 
 ## What Rescue Rangers IS + your own wiring (READ BEFORE ANSWERING)
 

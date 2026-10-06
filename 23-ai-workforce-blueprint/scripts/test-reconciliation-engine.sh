@@ -169,8 +169,8 @@ cap = st5.get("canonicalReconciliation", {}).get("customSopsCaptured", [])
 check(any(c.get("isCanonical") is True for c in cap), "build-state records isCanonical=true for billing-finance procedure")
 # custom dept -> authoring source
 _seed_state({})
-os.makedirs(os.path.join(bw.DEPARTMENTS_DIR, "school-of-ai"), exist_ok=True)
-p2 = bw.capture_custom_sops("school-of-ai", {"name": "School of AI", "emoji": "\U0001f393"},
+os.makedirs(os.path.join(bw.DEPARTMENTS_DIR, "cohort-academy"), exist_ok=True)
+p2 = bw.capture_custom_sops("cohort-academy", {"name": "Cohort Academy", "emoji": "\U0001f393"},
                             {"customSops": ["Cohort onboarding: send welcome, grant LMS access, schedule kickoff."]},
                             {"company_name": "Acme"})
 body2 = open(p2).read()

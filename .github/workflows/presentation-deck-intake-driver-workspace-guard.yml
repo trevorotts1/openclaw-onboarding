@@ -4,7 +4,7 @@ name: presentation-deck-intake-driver-workspace-guard
 # "driver invoked from an alien cwd with --workspace writes ONLY under the named
 # workspace (filesystem diff proves zero writes elsewhere)."
 #
-# deck-intake-driver.py is safe today because --run-dir is MANDATORY and resolved
+# deck-intake-turngate.py is safe today because --run-dir is MANDATORY and resolved
 # absolute before any write -- containment is an emergent property of that flag,
 # not of an explicit test. This workflow pins it, so a later change that gives
 # --run-dir a default (e.g. default="working") -- silently restoring the exact
@@ -26,19 +26,19 @@ on:
   push:
     branches: [main]
     paths:
-      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/scripts/deck-intake-turngate.py
       - tests/unit/presentation-deck-intake-driver-workspace.test.sh
       - .github/workflows/presentation-deck-intake-driver-workspace-guard.yml
   pull_request:
     branches: [main]
     paths:
-      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/scripts/deck-intake-turngate.py
       - tests/unit/presentation-deck-intake-driver-workspace.test.sh
       - .github/workflows/presentation-deck-intake-driver-workspace-guard.yml
 
 jobs:
   deck-intake-driver-workspace-guard:
-    name: deck-intake-driver.py workspace-containment guard (Skill 23, U86)
+    name: deck-intake-turngate.py workspace-containment guard (Skill 23, U86)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

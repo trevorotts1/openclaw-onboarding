@@ -150,7 +150,11 @@ FF_INDEX="$SKILL_DIR/templates/role-library/_index.json"
 FF_MAKEGAP="$SKILL_DIR/scripts/make-gap-from-staleness.py"
 FF_DRIVER="$SKILL_DIR/scripts/floor-fill-driver.py"
 FF_WS_ROOT="$OC_ROOT/workspace"
-FF_DEPTS_DIR="$FF_WS_ROOT/departments"
+# The departments tree the build wrote: the build state's companyRoot/departments
+# first, else $FF_WS_ROOT/departments (_qc_paths.departments_root_for -- the same
+# rule the QC checker and detect-stale-artifacts.py use).
+FF_DEPTS_DIR="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from _qc_paths import departments_root_for; print(departments_root_for(sys.argv[2]))' "$SKILL_DIR/scripts" "$FF_WS_ROOT" 2>/dev/null || true)"
+[ -n "$FF_DEPTS_DIR" ] || FF_DEPTS_DIR="$FF_WS_ROOT/departments"
 if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$FF_DRIVER" ] && \
    { [ -d "$FF_DEPTS_DIR" ] || [ -f "$FF_WS_ROOT/.workforce-build-state.json" ]; } && \
    command -v python3 >/dev/null 2>&1; then
@@ -179,7 +183,7 @@ if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$F
         # update-skills.sh turns a non-zero migration into _D2_MIGRATE_STATUS=fail
         # and prints the WORKFORCE-PROVISIONING INCOMPLETE block. Silence here is
         # exactly how a stripped floor survived a "successful" roll.
-        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" --apply 2>&1 | tee -a "$LOG"
+        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace-root "$FF_WS_ROOT" --apply 2>&1 | tee -a "$LOG"
         FF_RC=${PIPESTATUS[0]}
         if [ "${FF_RC:-0}" -ne 0 ]; then
           log "  floor-fill: FAILED (rc ${FF_RC}) — detected floor gap(s) could NOT be materialized from the canonical library; nothing was stubbed. See $LOG"
@@ -189,7 +193,7 @@ if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$F
         fi
       else
         log "  [DRY-RUN] ${FF_GAP_DEPTS} dept(s) have missing floor slots; would run floor-fill-driver.py --apply"
-        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" 2>&1 | tee -a "$LOG" || true
+        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace-root "$FF_WS_ROOT" 2>&1 | tee -a "$LOG" || true
       fi
     else
       log "  floor-fill: floor already complete (no MISSING roles/SOPs) — nothing to materialize"

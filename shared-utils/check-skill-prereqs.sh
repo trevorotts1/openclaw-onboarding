@@ -74,6 +74,22 @@ export OC_STATE_FILE="${STATE_FILE:-}"
 # path. Empty OC_ROOT leaves an unresolvable path, which fails CLOSED (unmet).
 export OC_ROOT="${OC_ROOT:-}"
 
+# ---- Resolve the secret-name canon (FIX 67: one secret-name canon) ----------
+# shared-utils/secret_names.json maps canonical -> aliases. Credential prereqs
+# resolve through it so a key stored under ANY alias satisfies the check.
+# Prefer the installed copy next to this script, then the repo clone. Missing
+# or malformed canon is NON-FATAL: fall back to the built-in table below so a
+# bad manifest can never block an install (same posture as PREREQS.json).
+_canon_candidates=""
+if [ -n "$SKILLS_DIR" ] && [ -f "$SKILLS_DIR/shared-utils/secret_names.json" ]; then
+  _canon_candidates="$SKILLS_DIR/shared-utils/secret_names.json"
+elif [ -n "${OC_CANON_SRC:-}" ] && [ -f "${OC_CANON_SRC}/shared-utils/secret_names.json" ]; then
+  _canon_candidates="${OC_CANON_SRC}/shared-utils/secret_names.json"
+elif [ -f "$(dirname "$SKILL_DIR")/shared-utils/secret_names.json" ]; then
+  _canon_candidates="$(dirname "$SKILL_DIR")/shared-utils/secret_names.json"
+fi
+export OC_SECRET_NAMES_JSON="${_canon_candidates}"
+
 python3 <<'PYEOF'
 import json
 import os
@@ -85,6 +101,117 @@ SKILL_NAME = os.environ["OC_SKILL_NAME"]
 SKILLS_DIR = os.environ.get("OC_SKILLS_DIR", "")
 CONFIG_FILE = os.environ.get("OC_CONFIG_FILE", "")
 STATE_FILE = os.environ.get("OC_STATE_FILE", "")
+
+# ---- FIX 67: one secret-name canon ------------------------------------------
+# Canonical -> aliases, loaded from shared-utils/secret_names.json when the
+# installed copy carries it, else the built-in mirror. Every credential prereq
+# resolves through this table, so a key written under any alias (e.g.
+# BRAVE_SEARCH_API_KEY for BRAVE_API_KEY, or OLLAMA_API_KEY for the
+# OLLAMA_CLOUD_API_KEY canon) satisfies the check on Mac AND VPS.
+BUILTIN_SECRET_ALIASES = {
+    "GOHIGHLEVEL_API_KEY": ["GOHIGHLEVEL_API_KEY", "GHL_PRIVATE_INTEGRATION_TOKEN", "GHL_API_KEY", "GHL_PIT", "HIGHLEVEL_API_KEY", "HIGHLEVEL_TOKEN", "GHL_PRIVATE_TOKEN", "CONVERTFLOW_API_KEY", "CONVERTANDFLOW_API_KEY", "CONVERT_AND_FLOW_API_KEY", "CONVERTFLOW_PIT", "CONVERTANDFLOW_PIT"],
+    "GOHIGHLEVEL_LOCATION_ID": ["GOHIGHLEVEL_LOCATION_ID", "GHL_LOCATION_ID", "HIGHLEVEL_LOCATION_ID", "LOCATION_ID"],
+    "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN": ["GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN", "GHL_FIREBASE_REFRESH_TOKEN", "FIREBASE_REFRESH_TOKEN"],
+    "TELEGRAM_BOT_TOKEN": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN", "TG_BOT_TOKEN", "BOT_TOKEN"],
+    "GEMINI_API_KEY": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_AI_API_KEY", "GEMINI_KEY", "GCP_API_KEY", "GOOGLE_CLOUD_API_KEY"],
+    "GOOGLE_API_KEY": ["GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_AI_API_KEY", "GOOGLE_CLOUD_API_KEY", "GCP_API_KEY"],
+    "OPENAI_API_KEY": ["OPENAI_API_KEY", "OPENAI_KEY", "OPEN_AI_KEY", "OPENAI_TOKEN"],
+    "OPENROUTER_API_KEY": ["OPENROUTER_API_KEY", "OPENROUTER_KEY", "OR_API_KEY", "OPEN_ROUTER_API_KEY"],
+    "FISH_AUDIO_API_KEY": ["FISH_AUDIO_API_KEY", "FISHAUDIO_API_KEY", "FISH_API_KEY"],
+    "FISH_AUDIO_VOICE_ID": ["FISH_AUDIO_VOICE_ID", "FISHAUDIO_VOICE_ID"],
+    "PODBEAN_CLIENT_ID": ["PODBEAN_CLIENT_ID", "PODBEAN_API_KEY"],
+    "PODBEAN_CLIENT_SECRET": ["PODBEAN_CLIENT_SECRET", "PODBEAN_API_SECRET"],
+    "PODBEAN_PODCAST_ID": ["PODBEAN_PODCAST_ID", "PODBEAN_CHANNEL_ID", "PODCAST_ID"],
+    "TAVILY_API_KEY": ["TAVILY_API_KEY", "TAVILY_KEY"],
+    "PERPLEXITY_API_KEY": ["PERPLEXITY_API_KEY", "PERPLEXITY_KEY"],
+    "KIE_API_KEY": ["KIE_API_KEY", "KIE_AI_API_KEY", "KIE_KEY", "KIE_VIDEO_API_KEY", "KIE_API_KEY_IAFS"],
+    "MOONSHOT_API_KEY": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
+    "KIMI_API_KEY": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
+    "OLLAMA_API_KEY": ["OLLAMA_API_KEY", "OLLAMA_CLOUD_API_KEY", "OLLAMA_KEY", "OLLAMA_TOKEN"],
+    "OLLAMA_CLOUD_API_KEY": ["OLLAMA_CLOUD_API_KEY", "OLLAMA_API_KEY", "OLLAMA_KEY", "OLLAMA_TOKEN"],
+    "SUPABASE_SERVICE_ROLE_KEY": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_KEY", "SUPABASE_ANON_KEY"],
+    "VERCEL_TOKEN": ["VERCEL_TOKEN", "VERCEL_API_TOKEN"],
+    "GITHUB_TOKEN": ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_API_TOKEN"],
+    "ANTHROPIC_API_KEY": ["ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "CLAUDE_API_KEY"],
+    "CONTEXT7_API_KEY": ["CONTEXT7_API_KEY", "CTX7_API_KEY", "CONTEXT7_KEY"],
+    "AIRTABLE_TOKEN": ["AIRTABLE_TOKEN", "AIRTABLE_API_KEY", "AIRTABLE_PAT", "AIRTABLE_KEY"],
+    "DEEPSEEK_API_KEY": ["DEEPSEEK_API_KEY", "DEEPSEEK_KEY", "DEEP_SEEK_API_KEY"],
+    "ELEVENLABS_API_KEY": ["ELEVENLABS_API_KEY", "ELEVEN_API_KEY"],
+    "BRAVE_API_KEY": ["BRAVE_API_KEY", "BRAVE_SEARCH_API_KEY"],
+    "BRAVE_SEARCH_API_KEY": ["BRAVE_SEARCH_API_KEY", "BRAVE_API_KEY"],
+    "CLOUDFLARE_ZHW_APPS_API_TOKEN": ["CLOUDFLARE_ZHW_APPS_API_TOKEN", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ZHW_API_TOKEN"],
+    "CLOUDFLARE_ZHW_ACCOUNT_ID": ["CLOUDFLARE_ZHW_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ZHW_ACCOUNT"],
+    "AGNES_API_KEY": ["AGNES_API_KEY", "AGNES_AI_API_KEY", "AGNES_KEY"],
+    "FAL_API_KEY": ["FAL_API_KEY", "FAL_KEY"],
+    "TELEGRAM_OWNER_CHAT_ID": ["TELEGRAM_OWNER_CHAT_ID", "OWNER_CHAT_ID"],
+}
+
+SECRET_NAMES_JSON = os.environ.get("OC_SECRET_NAMES_JSON", "")
+if not SECRET_NAMES_JSON:
+    # Default: the canon ships beside this script in shared-utils (both the
+    # repo checkout and the installed $SKILLS_DIR/shared-utils layout).
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _default_canon = os.path.join(_here, "secret_names.json")
+    if os.path.isfile(_default_canon):
+        SECRET_NAMES_JSON = _default_canon
+if SECRET_NAMES_JSON and os.path.isfile(SECRET_NAMES_JSON):
+    try:
+        with open(SECRET_NAMES_JSON) as _f:
+            _canon = json.load(_f)
+        if isinstance(_canon, dict):
+            # Shape A (this repo, FIX 67): {"canonical_names": {"CANON": ["ALIAS", ...]}}
+            _names = _canon.get("canonical_names")
+            if isinstance(_names, dict):
+                for _canon_name, _aliases in _names.items():
+                    if isinstance(_aliases, list):
+                        BUILTIN_SECRET_ALIASES[_canon_name] = [_canon_name] + [
+                            a for a in _aliases
+                            if isinstance(a, str) and a != _canon_name
+                        ]
+            # Shape B (alternate): {"version": N, "secrets": {"CANON": {"aliases": [...]}}}
+            if _canon.get("version") is not None:
+                for _canon_name, _entry in _canon.get("secrets", {}).items():
+                    if isinstance(_entry, dict) and isinstance(_entry.get("aliases"), list):
+                        BUILTIN_SECRET_ALIASES[_canon_name] = [_canon_name] + [
+                            a for a in _entry["aliases"] if isinstance(a, str)
+                        ]
+    except Exception:
+        pass  # malformed canon is non-fatal: keep the built-in mirror
+
+def canonical_aliases(canonical_name):
+    """All env-var names that hold the SAME credential as <canonical_name>."""
+    return BUILTIN_SECRET_ALIASES.get(canonical_name, [canonical_name])
+
+# ---- Placeholder rejection (FIX 67: placeholder is NEVER a present key) -----
+# Mirrors install.sh looks_like_real_key's obvious-placeholder stage. A stored
+# value like PASTE_REAL_TOKEN satisfies no reader; here it must not satisfy a
+# credential prereq either.
+PLACEHOLDER_SUBSTRINGS = (
+    'xxxxx', 'your_key', 'your-key', 'your_api', 'your-api', 'yourkey',
+    'your_token', 'replace_me', 'replace-me', 'replaceme', 'changeme',
+    'change_me', 'change-me', '_here', '-here', 'placeholder',
+    'sample', 'dummy', 'demo', 'test_key', 'fake_key', 'sk-test', 'sk-xxx',
+    'sk-example', 'sk-replace', 'todo', 'tbd', 'fill_in', 'fillin',
+    'paste-your', 'paste_your', 'paste_real', 'insert_your', 'enter_your',
+    'set_your', 'no_key', 'none_yet',
+)
+
+def looks_like_real_value(value):
+    """Obvious-placeholder rejection (value shape only; no provider regexes
+    here -- the prereq checker is presence-checking, not validating shape)."""
+    if not value:
+        return False
+    lo = value.lower()
+    for sub in PLACEHOLDER_SUBSTRINGS:
+        if sub in lo:
+            return False
+    if value.startswith('<') and value.endswith('>'):
+        return False
+    if value.startswith('[') and value.endswith(']'):
+        return False
+    if value.startswith('{{') and value.endswith('}}'):
+        return False
+    return True
 
 # ---- Parse PREREQS.json ----------------------------------------------------
 try:
@@ -119,9 +246,11 @@ def search_env_var(var_name):
     home = os.path.expanduser("~")
     candidates += [
         os.path.join(home, ".openclaw", "secrets", ".env"),
+        os.path.join(home, ".openclaw", "secrets", "secrets.env"),
         os.path.join(home, ".openclaw", "workspace", ".env"),
         os.path.join(home, "clawd", "secrets", ".env"),
         "/data/.openclaw/secrets/.env",
+        "/data/.openclaw/secrets/secrets.env",
         "/data/.openclaw/workspace/.env",
     ]
     for p in candidates:
@@ -130,8 +259,10 @@ def search_env_var(var_name):
                 with open(p) as f:
                     for line in f:
                         line = line.strip()
+                        if line.startswith("export ") and line[7:].startswith(var_name + "="):
+                            line = line[7:]
                         if line.startswith(var_name + "=") and not line.startswith("#"):
-                            v = line[len(var_name)+1:]
+                            v = line[len(var_name)+1:].strip().strip('"').strip("'")
                             if v:
                                 return v
             except Exception:
@@ -150,10 +281,17 @@ def search_env_var(var_name):
 
 
 def check_credential(check_def):
+    """FIX 67: resolve through the secret-name canon — a key stored under any
+    alias of the declared canonical name satisfies the check — and reject
+    obvious placeholder values (PASTE_REAL_TOKEN & friends never count)."""
     env_var = check_def.get("envVar", "")
     if not env_var:
         return False
-    return bool(search_env_var(env_var))
+    for alias in canonical_aliases(env_var):
+        value = search_env_var(alias)
+        if value and looks_like_real_value(value):
+            return True
+    return False
 
 
 def _skill_id_to_folder(skill_id):

@@ -24,7 +24,10 @@ import os
 import re
 import sys
 
-VERSION = "1.0.0"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
+VERSION = "2.1.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -278,6 +281,24 @@ def validate(payload, model_id_override=None):
         }
 
     model = by_id.get(model_name)
+    if not model and api_family == "kie-market" and isinstance(payload.get("input"), dict):
+        # Not in models.json (a live model KIE added after the registry): the live schema (registry snapshot
+        # fallback) in Skill 74 is the authority for required fields, enums and lengths. The model is only
+        # validated because the caller NAMED it; it is never selected or made a default (no auto-latest for video).
+        got = adapter_bridge.validate(model_name, payload["input"])
+        cap = (got or {}).get("capability") or ""
+        if got and got.get("state") == "validated" and not re.search(r"to[ -]video", cap, re.I):
+            errors.append(f"model {model_name!r} is not a video model per Skill 74 (capability {cap or 'unknown'}); refusing")
+            return {"valid": False, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": checked}
+        if got and got.get("state") == "validated":
+            warnings.append(f"model {model_name!r} is not in models.json; validated by Skill 74 against its schema (explicit pick only, never auto-default)")
+            return {"valid": not errors, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": dict(checked, via="skill-74")}
+        if got and got.get("error"):
+            errors.append("Skill 74 schema validation: %s" % got["error"].get("msg"))
+            return {"valid": False, "model_id": model_name, "api_family": api_family,
+                    "errors": errors, "warnings": warnings, "checked": checked}
     if not model:
         errors.append(f"model {model_name!r} not present in registry ({REGISTRY_PATH})")
         return {
@@ -425,6 +446,34 @@ def validate(payload, model_id_override=None):
 # ---------------------------------------------------------------------------
 # Self-test battery
 # ---------------------------------------------------------------------------
+
+_FAKE_DIRS = []
+
+
+def _fake_adapter(answer):
+    """A stand-in Skill 74 that prints a fixed JSON answer (answer None -> prints nothing: unreachable)."""
+    import tempfile
+    d = tempfile.mkdtemp(prefix="fake74-")
+    _FAKE_DIRS.append(d)
+    script = os.path.join(d, "kie_live_adapter.py")
+    with open(os.path.join(d, "answer.json"), "w") as fh:
+        json.dump(answer, fh)
+    with open(script, "w") as fh:
+        fh.write("import os, sys\nsys.stdout.write(open(os.path.join(os.path.dirname(__file__), 'answer.json')).read())\n")
+    return script
+
+
+def _adapter_cases():
+    """Models absent from models.json, answered by a fake Skill 74. The case name starts with ADAPTER:."""
+    new = {"model": "newvendor/video-9", "input": {"prompt": "A"}}
+    return [
+        ("ADAPTER: live model not in registry validated by Skill 74", (new, {"state": "validated", "capability": "Text to Video, Image to Video", "error": None}), True, None),
+        ("ADAPTER: image model named as video refused", (new, {"state": "validated", "capability": "Text to Image", "error": None}), False, "not a video model"),
+        ("ADAPTER: unknown capability refused", (new, {"state": "validated", "capability": None, "error": None}), False, "not a video model"),
+        ("ADAPTER: schema errors from Skill 74 reject", (new, {"state": "fail", "error": {"code": "validation_failed", "msg": "input.duration: above maximum 15"}}), False, "above maximum 15"),
+        ("ADAPTER: adapter prints nothing -> not present in registry", (new, {}), False, "not present in registry"),
+    ]
+
 
 def selftest():
     failures = []
@@ -830,14 +879,28 @@ def selftest():
         ),
     ]
 
+    saved_adapter = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""  # hermetic: no sibling adapter, no network
+    test_cases += _adapter_cases()
     for name, payload, exp_valid, exp_err in test_cases:
+        if name.startswith("ADAPTER:"):
+            payload, answer = payload
+            os.environ["KIE_LIVE_ADAPTER_PATH"] = _fake_adapter(answer)
         res = validate(payload)
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
         if res["valid"] != exp_valid:
             failures.append(f"FAIL {name}: expected valid={exp_valid} got {res['valid']} ({res['errors']})")
             continue
         if exp_err and not any(exp_err in e for e in res["errors"]):
             failures.append(f"FAIL {name}: expected error {exp_err!r} got {res['errors']}")
 
+    import shutil
+    for d in _FAKE_DIRS:
+        shutil.rmtree(d, ignore_errors=True)
+    if saved_adapter is None:
+        os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    else:
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = saved_adapter
     if failures:
         print("validate_payload.py --self-test FAILED", file=sys.stderr)
         for f in failures:

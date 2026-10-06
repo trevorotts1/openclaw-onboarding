@@ -3,8 +3,9 @@
 #
 # Checks:
 #   G1  ROLE_DISCIPLINE_V1 marker present in the resolved AGENTS.md (exactly once)
-#   G2  CEO_ROUTING_NO_LOOPHOLES_V1 marker present in the resolved AGENTS.md
-#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V2) present in the resolved SOUL.md
+#   G2  CEO_ROUTING_NO_LOOPHOLES_V4_3 marker present in the resolved AGENTS.md
+#   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4_3) present in the resolved SOUL.md
+#   G3b (V4.3) heading present in the installed ceo-routing-doctrine plugin dist
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
 #       "default agent" = first agent with default:true; falls back to id="main"
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
@@ -80,6 +81,39 @@ fi
 
 OC_CONFIG="$OC_ROOT/openclaw.json"
 
+# ─── Decision-engine kill switch mode (KIL-001) ─────────────────────────────
+# Same two sources, same order, as scripts/decision-engine-mode.py: env
+# OPENCLAW_DECISION_ENGINE_MODE, then the first line of
+# $OC_ROOT/decision-engine-mode.conf. Absent: release default 'auto'
+# (RELEASE_DEFAULT writes nothing — preserve-by-construction). off/legacy
+# share the same improved no-JEV engine; both emit zero JEV traffic.
+# G2/G3 honour the switch: auto/shadow REQUIRE V4.3 present; off/legacy
+# REQUIRE it ABSENT (a SUPPORTED kill — presence NOT required off-path).
+# A corrupt/unknown value is FATAL here (fail loud, never silently re-enable).
+KILL_MODE="$(printf '%s' "${OPENCLAW_DECISION_ENGINE_MODE:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+KILL_SOURCE="env"
+if [ -z "$KILL_MODE" ]; then
+  KILL_SOURCE="default"
+  KILL_MODE="auto"
+  if [ -f "$OC_ROOT/decision-engine-mode.conf" ]; then
+    KILL_MODE="$(head -n1 "$OC_ROOT/decision-engine-mode.conf" 2>/dev/null | tr -d '\r' | xargs || true)"
+    KILL_SOURCE="file"
+  fi
+fi
+case "$KILL_MODE" in
+  auto|shadow|legacy|off|model)
+    _info "decision-engine mode: $KILL_MODE (source=$KILL_SOURCE)"
+    ;;
+  *)
+    _fail "decision-engine mode store is CORRUPT: '$KILL_MODE' (source=$KILL_SOURCE, expected one of auto|shadow|legacy|off|model). Nothing was written; write one word to $OC_ROOT/decision-engine-mode.conf or unset \$OPENCLAW_DECISION_ENGINE_MODE."
+    FAILURES=$((FAILURES + 1))
+    ;;
+esac
+KILL_ACTIVE=0
+if [ "$KILL_MODE" = "off" ] || [ "$KILL_MODE" = "legacy" ]; then
+  KILL_ACTIVE=1
+fi
+
 # ─── Gateway version detection (D1 — schema-aware G7b) ───────────────────────
 # OpenClaw 2026.6.8 REJECTS agents.defaults.tools.* so apply-fleet-standards.sh
 # expresses the GOAL-4 no-refusal baseline via the functional ungate instead
@@ -106,10 +140,41 @@ WORKSPACE_DIR=""
 
 WORKSPACE_DIR=$(OC_JSON="$OC_CONFIG" python3 - <<'PYEOF'
 import json, os, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 try:
     cfg = json.load(open(os.environ['OC_JSON']))
-    for ag in cfg.get('agents', {}).get('list', []) or []:
-        if isinstance(ag, dict) and ag.get('id') == 'main':
+    _agents, _OC_IDS = _oc_agents(cfg)
+    for ag in _agents:
+        if (_OC_IDS.get(id(ag)) or ag.get('id')) == 'main':
             ws = ag.get('workspace')
             if ws:
                 print(os.path.expanduser(ws))
@@ -146,7 +211,12 @@ if [ ! -f "$AGENTS_FILE" ]; then
   _fail "G1: AGENTS.md not found at $AGENTS_FILE"
   FAILURES=$((FAILURES + 1))
 else
-  RD_COUNT=$(grep -c "ROLE_DISCIPLINE_V1" "$AGENTS_FILE" 2>/dev/null || echo "0")
+  # Count the block MARKER, not every mention: a Lean Core pointer line
+  # ("**Full text:** ... §ROLE_DISCIPLINE_V1") names it too and read as a
+  # duplicate. (grep -c prints 0 AND exits 1 on no match: `|| true`, never
+  # `|| echo 0`, which made the count "0<newline>0".)
+  RD_COUNT=$(grep -cF "<!-- ROLE_DISCIPLINE_V1 -->" "$AGENTS_FILE" 2>/dev/null || true)
+  RD_COUNT=${RD_COUNT:-0}
   if [ "$RD_COUNT" -eq 1 ]; then
     _pass "G1: ROLE_DISCIPLINE_V1 present in $AGENTS_FILE (count=$RD_COUNT)"
   elif [ "$RD_COUNT" -eq 0 ]; then
@@ -158,23 +228,60 @@ else
   fi
 fi
 
-# ─── G2: CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in AGENTS.md ─────────────────────
-# Version-agnostic: P1-04 bumped the marker to V2 (adds the trust-engine chat-id
-# rule); either the migrated V2 or a not-yet-migrated V1 block satisfies the gate.
-_info "G2: checking CEO_ROUTING_NO_LOOPHOLES (V1 or V2) in $AGENTS_FILE"
-if [ -f "$AGENTS_FILE" ] && grep -qE "CEO_ROUTING_NO_LOOPHOLES_V[0-9]+" "$AGENTS_FILE" 2>/dev/null; then
-  _pass "G2: CEO_ROUTING_NO_LOOPHOLES present in $AGENTS_FILE"
+# ─── G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 in AGENTS.md ──────────────────────────
+# Exact marker (v25.2.22 fix 3): the version-agnostic V[0-9]+ pattern accepted a
+# box left on V1/V2/V4. Only the current V4_3 marker passes; a bare _V4 or older
+# marker means the box missed the roll — run the stamper.
+# KIL-001: G2 honours the kill switch (SUPPORTED, never REQUIRED). Kill off
+# (mode off/legacy): operative V4.3 instructions must be ABSENT — presence NOT
+# required, ABSENCE required. Kill on (auto/shadow): presence required.
+if [ "$KILL_ACTIVE" = "1" ]; then
+  _info "G2: kill switch on (mode=$KILL_MODE) — CEO_ROUTING_NO_LOOPHOLES_V4_3 must be ABSENT from $AGENTS_FILE"
+  if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
+    _fail "G2: kill switch on (mode=$KILL_MODE) but CEO_ROUTING_NO_LOOPHOLES_V4_3 still PRESENT in $AGENTS_FILE — re-run apply-routing-fix.sh to strip operative instructions"
+    FAILURES=$((FAILURES + 1))
+  else
+    _pass "G2: kill switch on (mode=$KILL_MODE) — no operative V4.3 routing block in $AGENTS_FILE"
+  fi
 else
-  _fail "G2: CEO_ROUTING_NO_LOOPHOLES MISSING from $AGENTS_FILE — run apply-routing-fix.sh"
-  FAILURES=$((FAILURES + 1))
+  _info "G2: checking CEO_ROUTING_NO_LOOPHOLES_V4_3 in $AGENTS_FILE"
+  if [ -f "$AGENTS_FILE" ] && grep -qF "CEO_ROUTING_NO_LOOPHOLES_V4_3" "$AGENTS_FILE" 2>/dev/null; then
+    _pass "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 present in $AGENTS_FILE"
+  else
+    _fail "G2: CEO_ROUTING_NO_LOOPHOLES_V4_3 MISSING from $AGENTS_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
 fi
 
 # ─── G3: PRIME DIRECTIVE in SOUL.md ──────────────────────────────────────────
-_info "G3: checking CEO_ORCHESTRATOR_RULE_V2 (PRIME DIRECTIVE) in $SOUL_FILE"
-if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V2" "$SOUL_FILE" 2>/dev/null; then
-  _pass "G3: CEO_ORCHESTRATOR_RULE_V2 (PRIME DIRECTIVE) present in $SOUL_FILE"
+# Exact marker (v25.2.22 fix 3): a box left on V4 or V3 must fail.
+if [ "$KILL_ACTIVE" = "1" ]; then
+  _info "G3: kill switch on (mode=$KILL_MODE) — CEO_ORCHESTRATOR_RULE_V4_3 must be ABSENT from $SOUL_FILE"
+  if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
+    _fail "G3: kill switch on (mode=$KILL_MODE) but CEO_ORCHESTRATOR_RULE_V4_3 still PRESENT in $SOUL_FILE — re-run apply-routing-fix.sh to strip operative instructions"
+    FAILURES=$((FAILURES + 1))
+  else
+    _pass "G3: kill switch on (mode=$KILL_MODE) — no operative V4.3 directive in $SOUL_FILE"
+  fi
 else
-  _fail "G3: CEO_ORCHESTRATOR_RULE_V2 MISSING from $SOUL_FILE — run apply-routing-fix.sh"
+  _info "G3: checking CEO_ORCHESTRATOR_RULE_V4_3 in $SOUL_FILE"
+  if [ -f "$SOUL_FILE" ] && grep -qF "CEO_ORCHESTRATOR_RULE_V4_3" "$SOUL_FILE" 2>/dev/null; then
+    _pass "G3: CEO_ORCHESTRATOR_RULE (PRIME DIRECTIVE) present in $SOUL_FILE"
+  else
+    _fail "G3: CEO_ORCHESTRATOR_RULE_V4_3 MISSING from $SOUL_FILE (a bare V4/V3 marker is not accepted) — run apply-routing-fix.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
+fi
+
+# ─── G3b: plugin routing doctrine heading ───────────────────────────────────
+# v25.2.22 fix 3: the installed plugin dist must be on the (V4.3) heading too,
+# else it keeps prepending an old preamble even when SOUL.md/AGENTS.md are current.
+PLUGIN_DIST="$OC_ROOT/extensions/ceo-routing-doctrine/dist/index.js"
+_info "G3b: checking (V4.3) heading in $PLUGIN_DIST"
+if [ -f "$PLUGIN_DIST" ] && grep -qF "(V4.3)" "$PLUGIN_DIST" 2>/dev/null; then
+  _pass "G3b: (V4.3) heading present in $PLUGIN_DIST"
+else
+  _fail "G3b: (V4.3) heading MISSING from $PLUGIN_DIST — reinstall the plugin (install.sh / update-skills.sh)"
   FAILURES=$((FAILURES + 1))
 fi
 
@@ -188,6 +295,36 @@ fi
 _info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
 G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 from pathlib import Path
 
 # Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
@@ -203,23 +340,31 @@ def _is_router(ag):
         return True
     if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
         return True
-    return ag.get("id") in ROUTER_IDS
+    return _oc_id(ag, "") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents_list = cfg.get("agents", {}).get("list", []) or []
+    agents_list, _OC_IDS = _oc_agents(cfg)
 
     # Priority 1: agent with default:true
     default_agent = None
     for ag in agents_list:
-        if isinstance(ag, dict) and ag.get("default") is True:
+        if ag.get("default") is True:
             default_agent = ag
             break
 
     # Priority 2: fall back to id=="main" (legacy convention)
     if default_agent is None:
         for ag in agents_list:
-            if isinstance(ag, dict) and ag.get("id") == "main":
+            if _oc_id(ag) == "main":
+                default_agent = ag
+                break
+
+    # Priority 3: a known router/CEO id (mirrors G7). A box whose router is not
+    # literally named "main" must not read as "no default agent".
+    if default_agent is None:
+        for ag in agents_list:
+            if _oc_id(ag) in ROUTER_IDS:
                 default_agent = ag
                 break
 
@@ -227,7 +372,7 @@ try:
         print("NO_DEFAULT_AGENT")
         sys.exit(0)
 
-    agent_id = default_agent.get("id", "<unknown>")
+    agent_id = _oc_id(default_agent)
 
     # PA-DEFAULT topology: the default agent is a hands-on personal assistant /
     # owner agent, NOT a router. skills:[] (the pptx router-deny) is intentionally
@@ -238,9 +383,9 @@ try:
 
     skills = default_agent.get("skills")
     if isinstance(skills, list) and len(skills) == 0:
-        print(f"PASS:{agent_id}")
+        print(f"EMPTY_SKILLS:{agent_id}")
     elif skills is None:
-        print(f"MISSING_KEY:{agent_id}")
+        print(f"PASS:{agent_id}")
     else:
         print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}")
 except Exception as e:
@@ -251,15 +396,15 @@ PYEOF
 case "$G4_RESULT" in
   PASS:*)
     _G4_ID="${G4_RESULT#PASS:}"
-    _pass "G4: default agent (id=${_G4_ID}) skills:[] is set (pptx skill blocked)"
+    _pass "G4: default agent (id=${_G4_ID}) inherits installed skills for assigned fallback execution"
     ;;
   PA_DEFAULT_OK:*)
     _G4_ID="${G4_RESULT#PA_DEFAULT_OK:}"
     _pass "G4: default agent (id=${_G4_ID}) is a PERSONAL-ASSISTANT/non-router — pptx router-deny N/A; PA-default topology is valid (v13.2.2)"
     ;;
-  MISSING_KEY:*)
-    _G4_ID="${G4_RESULT#MISSING_KEY:}"
-    _fail "G4: default agent (id=${_G4_ID}) has no 'skills' key in openclaw.json — pptx deny NOT applied; run apply-routing-fix.sh"
+  EMPTY_SKILLS:*)
+    _G4_ID="${G4_RESULT#EMPTY_SKILLS:}"
+    _fail "G4: default agent (id=${_G4_ID}) still has legacy empty skills; run apply-routing-fix.sh"
     FAILURES=$((FAILURES + 1))
     ;;
   HAS_SKILLS:*)
@@ -267,8 +412,7 @@ case "$G4_RESULT" in
     _G4_REST="${G4_RESULT#HAS_SKILLS:}"
     _G4_ID="${_G4_REST%%:*}"
     _G4_SKILLS="${_G4_REST#*:}"
-    _fail "G4: default agent (id=${_G4_ID}) skills is not empty: ${_G4_SKILLS} — run apply-routing-fix.sh"
-    FAILURES=$((FAILURES + 1))
+    _pass "G4: default agent (id=${_G4_ID}) retains owner-configured skills: ${_G4_SKILLS}"
     ;;
   NO_DEFAULT_AGENT)
     _fail "G4: no default agent found in openclaw.json agents.list (no default:true entry and no id=main fallback)"
@@ -430,6 +574,36 @@ fi
 
 G7_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
 import json, sys
+
+def _oc_agents(cfg):
+    """Live agent dicts + an identity->id map, from agents.entries (canonical,
+    keyed by agent id) with a fallback to legacy agents.list.
+
+    Returns LIVE references into cfg so a caller may mutate an entry and write
+    cfg back — building copies here would make the L2/L5 appliers mutate a
+    throwaway, write the file back unchanged and still report success.
+
+    The id is carried in a side map, NEVER written into the entry:
+    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
+    config would fail validation.
+    """
+    _ag = cfg.get("agents", {}) or {}
+    _en = _ag.get("entries", {}) or {}
+    if isinstance(_en, dict) and _en:
+        lst = [v for v in _en.values() if isinstance(v, dict)]
+        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
+    else:
+        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
+        ids = {id(a): a.get("id") for a in lst}
+    return lst, ids
+
+
+def _oc_id(ag, default="<unknown>"):
+    """Agent id for a dict returned by _oc_agents()."""
+    if not isinstance(ag, dict):
+        return default
+    return _OC_IDS.get(id(ag)) or ag.get("id") or default
+
 from pathlib import Path
 
 # NOTE: the REQUIRED_DENY production-tool set was REMOVED 2026-08-05 (gate
@@ -445,11 +619,11 @@ def _is_router(ag):
         return True
     if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
         return True
-    return ag.get("id") in ROUTER_IDS
+    return _oc_id(ag, "") in ROUTER_IDS
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents = cfg.get("agents", {}).get("list", []) or []
+    agents, _OC_IDS = _oc_agents(cfg)
 
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent
     # (default:true FIRST, then id=="main", then a known CEO id). If that default
@@ -459,20 +633,20 @@ try:
     # what the v13.1.3 over-broadening caused downstream).
     ceo = None
     for ag in agents:
-        if isinstance(ag, dict) and ag.get("default") is True:
+        if ag.get("default") is True:
             ceo = ag; break
     if ceo is None:
         for ag in agents:
-            if isinstance(ag, dict) and ag.get("id") == "main":
+            if _oc_id(ag) == "main":
                 ceo = ag; break
     if ceo is None:
         for ag in agents:
-            if isinstance(ag, dict) and ag.get("id") in CEO_IDS:
+            if _oc_id(ag) in CEO_IDS:
                 ceo = ag; break
     if ceo is None:
         print("NO_CEO_AGENT"); sys.exit(0)
 
-    cid = ceo.get("id", "<unknown>")
+    cid = _oc_id(ceo)
 
     # PA-DEFAULT topology → no CEO gate expected on the default agent. But if a
     # SEPARATE router agent ALSO exists on the box (e.g. a dept-ceo alongside a PA
@@ -482,7 +656,7 @@ try:
         if router is None:
             print(f"PA_DEFAULT_OK:{cid}"); sys.exit(0)
         ceo = router
-        cid = ceo.get("id", "<unknown>")
+        cid = _oc_id(ceo)
 
     tools = ceo.get("tools")
     if not isinstance(tools, dict):
@@ -610,7 +784,14 @@ try:
 
     # FORM B — functional ungate (the satisfied baseline on 2026.6.8).
     exec_cfg = (cfg.get("tools") or {}).get("exec") or {}
-    exec_full = exec_cfg.get("security") == "full" and exec_cfg.get("ask") == "off"
+    # tools.exec.mode is the NORMALIZED policy surface; each mode resolves to an
+    # underlying (security, ask) pair — docs/tools/permission-modes.md:
+    #   full -> security "full" / ask "off"   (run host exec without prompts)
+    # A config carrying only mode="full" is therefore already ungated, but this
+    # gate used to read the raw pair alone and FATAL'd on it. Accept either form.
+    exec_full = exec_cfg.get("mode") == "full" or (
+        exec_cfg.get("security") == "full" and exec_cfg.get("ask") == "off"
+    )
     sub_allow = (agents_defaults.get("subagents") or {}).get("allowAgents") or []
     sub_ungated = isinstance(sub_allow, list) and "*" in sub_allow
     form_b = exec_full and sub_ungated

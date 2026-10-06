@@ -8,6 +8,23 @@ CLIENT_SLUG="${1:?Usage: ./create-tunnel.sh <client-slug> <company-name> <contac
 COMPANY_NAME="${2:?Missing company name}"
 CONTACT_EMAIL="${3:?Missing contact email}"
 WEBHOOK_URL="https://main.blackceoautomations.com/webhook/command-center-register-v3"
+# One home-path resolver: an explicit OPENCLAW_ROOT/OC_ROOT pin wins, else
+# shared-utils/resolve-oc-root.sh decides (/data/.openclaw on VPS/Docker,
+# $HOME/.openclaw on Mac) -- never a second inline copy of the rule.
+_OC_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/resolve-oc-root.sh"
+if [[ -n "${OPENCLAW_ROOT:-${OC_ROOT:-}}" && -d "${OPENCLAW_ROOT:-${OC_ROOT:-}}" ]]; then
+  OC_ROOT="${OPENCLAW_ROOT:-${OC_ROOT:-}}"
+elif [[ -f "$_OC_RESOLVER" ]]; then
+  # shellcheck source=/dev/null
+  source "$_OC_RESOLVER"
+  OC_ROOT="$(resolve_oc_root 2>/dev/null || true)"
+  [[ -n "$OC_ROOT" ]] || OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+else
+  OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+fi
+
+: "${CC_TUNNEL_IDEMPOTENCY_KEY:?invoke through run-full-install.sh for a persistent installation-scoped request key}"
+: "${CC_TUNNEL_EXPECTED_HOST:?invoke through run-full-install.sh for the registered client hostname}"
 
 if ! command -v cloudflared >/dev/null 2>&1; then
   echo "cloudflared not found. Installing..."
@@ -27,17 +44,18 @@ echo "[1/5] Requesting tunnel from the operator's system..."
 # non-idempotent webhook treated as a brand-new registration on every retry.
 REQUEST_BODY=$(CLIENT_SLUG="$CLIENT_SLUG" COMPANY_NAME="$COMPANY_NAME" CONTACT_EMAIL="$CONTACT_EMAIL" \
   python3 -c 'import json,os; print(json.dumps({"clientName":os.environ["CLIENT_SLUG"],"companyName":os.environ["COMPANY_NAME"],"contactEmail":os.environ["CONTACT_EMAIL"]}))')
-# Retry ONLY on transport failure (curl error / empty response) with backoff, so
-# a flaky network doesn't fail the whole install. We deliberately do NOT retry a
-# RECEIVED non-success response: this registration webhook is non-idempotent, so
-# re-POSTing after the server already answered could double-register a tunnel.
+# A transport failure may occur after acceptance. Make exactly one request;
+# persisted request state and authenticated readiness reconcile an ambiguous
+# outcome before any further external creation. The server may use the stable
+# idempotency key, but safety does not assume that it implements deduplication.
 RESPONSE=""
 _attempt=0
-for _delay in 0 2 4; do
+for _delay in 0; do
   [ "$_delay" -gt 0 ] && { echo "[1/5] webhook transport retry in ${_delay}s..."; sleep "$_delay"; }
   _attempt=$((_attempt+1))
   RESPONSE=$(curl -sS -m 30 -X POST "$WEBHOOK_URL" \
     -H "Content-Type: application/json" \
+    -H "Idempotency-Key: ${CC_TUNNEL_IDEMPOTENCY_KEY:?missing installation-scoped request key}" \
     -d "$REQUEST_BODY" 2>/dev/null) && [ -n "$RESPONSE" ] && break
 done
 if [ -z "$RESPONSE" ]; then
@@ -45,7 +63,7 @@ if [ -z "$RESPONSE" ]; then
   echo "ESCALATE: message the operator with this client slug ($CLIENT_SLUG) and note the webhook" >&2
   echo "  at $WEBHOOK_URL did not respond. Do NOT attempt to create a Cloudflare tunnel any other" >&2
   echo "  way — do NOT run 'cloudflared tunnel login', do NOT create a Cloudflare account. The" >&2
-  echo "  tunnel can only be issued by the operator's n8n system; wait for the operator to confirm" >&2
+  echo "  tunnel can only be issued by the operator's n8n system; reconcile the original request before any retry; wait for the operator to confirm" >&2
   echo "  the webhook is back up, then re-run this script." >&2
   exit 1
 fi
@@ -53,7 +71,7 @@ fi
 STATUS=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
 if [ "$STATUS" != "success" ]; then
   echo "ERROR: webhook failed" >&2
-  echo "$RESPONSE" >&2
+  echo "Registration returned a non-success status; response body withheld because it may contain credentials." >&2
   echo "ESCALATE: message the operator with this client slug ($CLIENT_SLUG) and the response body" >&2
   echo "  above. Do NOT attempt to create a Cloudflare tunnel any other way — do NOT run" >&2
   echo "  'cloudflared tunnel login', do NOT create a Cloudflare account." >&2
@@ -62,25 +80,38 @@ fi
 
 TUNNEL_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['tunnelToken'])")
 SUBDOMAIN=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['subdomain'])")
+if [[ -z "$TUNNEL_TOKEN" || "$SUBDOMAIN" != "$CC_TUNNEL_EXPECTED_HOST" ]]; then
+  echo "ERROR: registration response does not match the requested client host; reconcile request before retry" >&2
+  exit 1
+fi
 
-echo "[2/5] Saving tunnel token to ~/.openclaw/secrets/.env (canonical) + ~/.openclaw/.env (legacy)"
-mkdir -p ~/.openclaw
-# Legacy location (kept so run-full-install.sh's subdomain-hint check still fires)
+echo "[2/5] Saving client tunnel token to the selected installation secret files"
+mkdir -p "$OC_ROOT"
+# Legacy token location; never used as proof of a public origin
 TMP_ENV=$(mktemp)
-grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' ~/.openclaw/.env 2>/dev/null > "$TMP_ENV" || true
+grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' "$OC_ROOT"/.env 2>/dev/null > "$TMP_ENV" || true
 echo "CLOUDFLARE_TUNNEL_TOKEN=$TUNNEL_TOKEN" >> "$TMP_ENV"
-mv "$TMP_ENV" ~/.openclaw/.env
+mv "$TMP_ENV" "$OC_ROOT"/.env
 # Canonical secrets location (QC.md + qc-command-center-setup.sh read this one)
-mkdir -p ~/.openclaw/secrets
+mkdir -p "$OC_ROOT"/secrets
 TMP_SECRETS=$(mktemp)
-grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' ~/.openclaw/secrets/.env 2>/dev/null > "$TMP_SECRETS" || true
+grep -v '^CLOUDFLARE_TUNNEL_TOKEN=' "$OC_ROOT"/secrets/.env 2>/dev/null > "$TMP_SECRETS" || true
 echo "CLOUDFLARE_TUNNEL_TOKEN=$TUNNEL_TOKEN" >> "$TMP_SECRETS"
-mv "$TMP_SECRETS" ~/.openclaw/secrets/.env
-chmod 600 ~/.openclaw/secrets/.env
+mv "$TMP_SECRETS" "$OC_ROOT"/secrets/.env
+chmod 600 "$OC_ROOT"/secrets/.env
 
 echo "[3/5] Starting tunnel via PM2"
+# The connector token is a bearer credential: never on argv (visible in ps).
+# cloudflared reads it from a mode-600 file via --token-file (same flag the
+# Mac tunnel daemon already uses); --token-file also takes precedence over a
+# stale TUNNEL_TOKEN in the environment.
+TOKEN_FILE="$OC_ROOT/secrets/tunnel-command-center.token"
+( umask 077; mkdir -p "$(dirname "$TOKEN_FILE")" )
+printf '%s' "$TUNNEL_TOKEN" > "$TOKEN_FILE"
+chmod 600 "$TOKEN_FILE"
+TUNNEL_TOKEN=""
 pm2 delete cloudflare-tunnel >/dev/null 2>&1 || true
-pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN" --name cloudflare-tunnel >/dev/null
+pm2 start "cloudflared tunnel run --token-file $TOKEN_FILE" --name cloudflare-tunnel >/dev/null
 pm2 save >/dev/null
 
 echo "[4/5] Waiting for tunnel to come online..."
@@ -89,6 +120,10 @@ sleep 15
 # shared-utils/cc-tunnel-ingress.sh (CC_INGRESS_PORT) and run-full-install.sh
 # (DASHBOARD_PORT=4000). tests/unit/cc-tunnel-ingress-guard.test.sh asserts this
 # literal stays equal to the lib's CC_INGRESS_PORT so the two can never drift.
+# shellcheck source=/dev/null
+if [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/cc-tunnel-ingress.sh" ]]; then
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../shared-utils" 2>/dev/null && pwd)/cc-tunnel-ingress.sh"
+fi
 CC_INGRESS_PORT="${CC_INGRESS_PORT:-4000}"
 LOCAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${CC_INGRESS_PORT}" 2>/dev/null || echo "000")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$SUBDOMAIN" 2>/dev/null || echo "000")

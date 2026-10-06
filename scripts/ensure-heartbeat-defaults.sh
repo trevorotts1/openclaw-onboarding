@@ -4,7 +4,8 @@
 # furnace.
 #
 # Runtime contract (see resolveHeartbeatAgents in openclaw):
-#   * If ANY agent in agents.list has a .heartbeat block -> ALLOWLIST mode:
+#   * If ANY agent in the roster (agents.entries on OpenClaw 2026.9.x, else the
+#     legacy agents.list) has a .heartbeat block -> ALLOWLIST mode:
 #     only those agents heartbeat.  (safe)
 #   * Else if agents.defaults.heartbeat exists -> EVERY agent heartbeats
 #     (FURNACE), at agents.defaults.heartbeat.every or a 30m fallback.
@@ -15,7 +16,8 @@
 #
 # This script therefore does two INDEPENDENT things:
 #   (B) Per-agent block  — if no agent has a .heartbeat block, add one to the
-#       primary agent (agent with default==true, else index 0) with a cheap
+#       primary agent (agent with default==true, else the first roster
+#       entry) with a cheap
 #       SOVEREIGN heartbeat model derived from the box's own provider config.
 #       Runs REGARDLESS of the current interval (decoupled from the gate below).
 #   (A) Interval default  — raise agents.defaults.heartbeat.every to 6h ONLY
@@ -52,7 +54,7 @@ command -v python3 >/dev/null 2>&1 && HAVE_PY=1
 
 # ---------- probe the config (single pass) ---------------------------------
 # Emits one line, fields separated by US (0x1f) so empty fields are preserved:
-#   OK <has_block> <primary_idx> <primary_id> <hb_model> <hb_every> <should_raise>
+#   OK <has_block> <primary_idx> <primary_id> <hb_model> <hb_every> <should_raise> <shape>
 # or "PARSEFAIL" for an existing-but-unparseable config.
 # has_block   : 1 if any agent already has a .heartbeat block (allowlist active)
 # primary_*   : primary agent (default==true, else index 0); empty if none
@@ -61,6 +63,9 @@ command -v python3 >/dev/null 2>&1 && HAVE_PY=1
 # hb_every    : interval to write on the per-agent block (>=6h; current if the
 #               operator already dialled up, else "6h")
 # should_raise: 1 if agents.defaults.heartbeat.every is unset or < 6h
+# shape       : "entries" (agents.entries, keyed by id -- OpenClaw 2026.9.x) or
+#               "list" (legacy agents.list[]). Writes go to the SAME shape:
+#               creating agents.list on an entries box is `Unrecognized key`.
 PROBE=""
 if [ "$HAVE_PY" = "1" ]; then
   PROBE=$(OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null
@@ -72,7 +77,7 @@ def emit(*fields):
 oc = os.environ.get("OC_JSON", "")
 if not oc or not os.path.exists(oc):
     # No config yet: treat as fresh (no block, no primary, raise to 6h).
-    emit("OK", "0", "", "", "", "6h", "1")
+    emit("OK", "0", "", "", "", "6h", "1", "list")
     sys.exit(0)
 try:
     with open(oc) as fh:
@@ -83,32 +88,41 @@ except Exception:
 
 agents = cfg.get("agents", {})
 agents = agents if isinstance(agents, dict) else {}
-lst = agents.get("list", [])
-lst = lst if isinstance(lst, list) else []
+# entries wins when present (same precedence as materialize-dept-agents.sh);
+# in entries mode the id is the KEY, never a field of the entry.
+entries = agents.get("entries")
+if isinstance(entries, dict) and entries:
+    shape = "entries"
+    roster = [(str(k), v) for k, v in entries.items()]
+else:
+    shape = "list"
+    lst = agents.get("list", [])
+    lst = lst if isinstance(lst, list) else []
+    roster = [(str(a.get("id", "") or "") if isinstance(a, dict) else "", a) for a in lst]
 defaults = agents.get("defaults", {})
 defaults = defaults if isinstance(defaults, dict) else {}
 
 # Allowlist mode active? (matches runtime hasExplicitHeartbeatAgents: any
 # agent with a non-null heartbeat value.)
 has_block = 1 if any(
-    isinstance(a, dict) and a.get("heartbeat") is not None for a in lst
+    isinstance(a, dict) and a.get("heartbeat") is not None for _, a in roster
 ) else 0
 
-# Primary agent: first with truthy `default`, else index 0 (matches runtime
-# resolveDefaultAgentId).
+# Primary agent: first with truthy `default`, else the first roster entry
+# (matches runtime resolveDefaultAgentId).
 p_idx = ""
 p_id = ""
-if lst:
+if roster:
     sel = None
-    for i, a in enumerate(lst):
+    for i, (_, a) in enumerate(roster):
         if isinstance(a, dict) and a.get("default"):
             sel = i
             break
     if sel is None:
         sel = 0
-    if isinstance(lst[sel], dict):
+    if isinstance(roster[sel][1], dict):
         p_idx = str(sel)
-        p_id = str(lst[sel].get("id", "") or "")
+        p_id = roster[sel][0]
 
 # Interval: should we raise, and what interval belongs on the per-agent block?
 hb = defaults.get("heartbeat", {})
@@ -149,14 +163,20 @@ if fbs:
     if cheap:
         hb_model = cheap[-1]
 
-emit("OK", has_block, p_idx, p_id, hb_model, hb_every, should_raise)
+emit("OK", has_block, p_idx, p_id, hb_model, hb_every, should_raise, shape)
 PYEOF
 ) || true
 fi
 
-STATUS=""; HAS_BLOCK=""; PRIMARY_IDX=""; PRIMARY_ID=""; HB_MODEL=""; HB_EVERY="6h"; SHOULD_RAISE="1"
+STATUS=""; HAS_BLOCK=""; PRIMARY_IDX=""; PRIMARY_ID=""; HB_MODEL=""; HB_EVERY="6h"; SHOULD_RAISE="1"; SHAPE="list"
 if [ -n "$PROBE" ]; then
-  IFS=$'\x1f' read -r STATUS HAS_BLOCK PRIMARY_IDX PRIMARY_ID HB_MODEL HB_EVERY SHOULD_RAISE <<<"$PROBE" || true
+  IFS=$'\x1f' read -r STATUS HAS_BLOCK PRIMARY_IDX PRIMARY_ID HB_MODEL HB_EVERY SHOULD_RAISE SHAPE <<<"$PROBE" || true
+fi
+# CLI path of the primary agent in the box's OWN roster shape.
+if [ "$SHAPE" = "entries" ]; then
+  PRIMARY_PATH="agents.entries.$PRIMARY_ID"
+else
+  PRIMARY_PATH="agents.list[$PRIMARY_IDX]"
 fi
 
 if [ "$STATUS" = "PARSEFAIL" ]; then
@@ -173,20 +193,21 @@ elif [ -n "$PRIMARY_IDX" ] && [ -n "$PRIMARY_ID" ]; then
   echo "  Adding per-agent heartbeat block to primary agent '$PRIMARY_ID' (index $PRIMARY_IDX)..."
   _added=0
   if command -v openclaw >/dev/null 2>&1; then
-    # CLI array access requires a numeric index (id-bracket is unsupported).
-    if openclaw config set "agents.list[$PRIMARY_IDX].heartbeat.every" "$HB_EVERY" 2>>"$LOG_FILE"; then
+    # list: CLI array access requires a numeric index (id-bracket is
+    # unsupported). entries: the id is the key.
+    if openclaw config set "$PRIMARY_PATH.heartbeat.every" "$HB_EVERY" 2>>"$LOG_FILE"; then
       _added=1
       if [ -n "$HB_MODEL" ]; then
-        openclaw config set "agents.list[$PRIMARY_IDX].heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true
+        openclaw config set "$PRIMARY_PATH.heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true
         openclaw config set "agents.defaults.heartbeat.model" "$HB_MODEL" 2>>"$LOG_FILE" || true
       fi
     fi
   fi
   if [ "$_added" = "1" ]; then
     if [ -n "$HB_MODEL" ]; then
-      echo "  ✓ Per-agent heartbeat: agents.list[$PRIMARY_ID].heartbeat={every:$HB_EVERY, model:$HB_MODEL}"
+      echo "  ✓ Per-agent heartbeat: $PRIMARY_PATH ($PRIMARY_ID).heartbeat={every:$HB_EVERY, model:$HB_MODEL}"
     else
-      echo "  ✓ Per-agent heartbeat: agents.list[$PRIMARY_ID].heartbeat.every=$HB_EVERY (no cheap sovereign model derivable — model pin skipped)"
+      echo "  ✓ Per-agent heartbeat: $PRIMARY_PATH ($PRIMARY_ID).heartbeat.every=$HB_EVERY (no cheap sovereign model derivable — model pin skipped)"
     fi
   elif [ -f "$OC_JSON" ] && [ "$HAVE_PY" = "1" ]; then
     # Fallback: direct Python JSON edit (resolves the primary itself so it never
@@ -207,7 +228,13 @@ with open(oc) as fh:
 agents = cfg.setdefault("agents", {})
 if not isinstance(agents, dict):
     sys.exit(1)
-lst = agents.get("list", [])
+# Same shape rule as the probe: agents.entries (keyed by id) wins, else the
+# legacy agents.list[]. Never create the other shape.
+entries = agents.get("entries")
+if isinstance(entries, dict) and entries:
+    lst = list(entries.values())
+else:
+    lst = agents.get("list", [])
 if not isinstance(lst, list) or not lst:
     sys.exit(0)  # no agents -> safe skip
 
@@ -216,7 +243,7 @@ if not isinstance(lst, list) or not lst:
 if any(isinstance(a, dict) and a.get("heartbeat") is not None for a in lst):
     sys.exit(0)
 
-# Primary: first with truthy `default`, else index 0.
+# Primary: first with truthy `default`, else the first roster entry.
 sel = None
 for i, a in enumerate(lst):
     if isinstance(a, dict) and a.get("default"):
@@ -230,7 +257,7 @@ if not isinstance(lst[sel], dict):
 block = {"every": hb_every}
 if hb_model:
     block["model"] = hb_model
-lst[sel]["heartbeat"] = block
+lst[sel]["heartbeat"] = block  # live dict inside cfg in both shapes
 
 if hb_model:
     defaults = agents.setdefault("defaults", {})
@@ -246,7 +273,7 @@ with open(tmp, "w") as fh:
 shutil.move(tmp, oc)
 PYEOF
   else
-    echo "  ⚠ Cannot add per-agent heartbeat block (no openclaw CLI / no python3) — manual: openclaw config set 'agents.list[$PRIMARY_IDX].heartbeat.every' $HB_EVERY" >&2
+    echo "  ⚠ Cannot add per-agent heartbeat block (no openclaw CLI / no python3) — manual: openclaw config set '$PRIMARY_PATH.heartbeat.every' $HB_EVERY" >&2
   fi
 else
   echo "  ⚠ Could not resolve a primary agent — per-agent heartbeat block not added (safe-skip)" >&2

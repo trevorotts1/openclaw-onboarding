@@ -11,12 +11,18 @@
 #
 # This test breaks CI if a future edit drops either:
 #   (A) install.sh Step 6.5 installing all four deps for BOTH platforms
-#       - MAC arm: reportlab + python-pptx (via _install_py_pkg_mac), poppler,
-#         and LibreOffice (brew --cask, NONINTERACTIVE).
-#       - VPS arm: reportlab + python-pptx (pip --break-system-packages),
-#         libreoffice-impress + poppler-utils via the REAL /usr/bin/apt-get
-#         (NOT the /usr/local/bin brew shim), re-asserted via `openclaw cron
-#         create` (the OpenClaw scheduler), NOT a system @reboot crontab.
+#       (FIX 71 contract: Python deps go into the department venv
+#       <root>/.venv-presentations — NEVER the system python, NEVER with
+#       --break-system-packages):
+#       - MAC arm: ensure_presentation_venv creates + populates the venv
+#         (reportlab, python-pptx, pypdf, pytesseract, Pillow) and exports
+#         PRESENTATION_PIPELINE_INTERPRETER; poppler via brew; LibreOffice
+#         (brew --cask, NONINTERACTIVE).
+#       - VPS arm: python deps into /data/.openclaw/.venv-presentations via its
+#         own venv pip (no PEP 668 marker), libreoffice-impress + poppler-utils
+#         via the REAL /usr/bin/apt-get (NOT the /usr/local/bin brew shim),
+#         re-asserted via `openclaw cron create` (the OpenClaw scheduler), NOT
+#         a system @reboot crontab.
 #   (B) qc-completeness.sh HARD-FAILING (exit 6, PRESENTATION_DEPS_MISSING) when
 #       any of the four deps is missing — verified by actually running the gate
 #       with a stubbed PATH. Also asserts it does NOT exit 6 when the bypass var
@@ -60,17 +66,29 @@ echo "(A) install.sh Step 6.5 installs the four deps for BOTH platforms"
 # Step 6.5 marker present.
 assert_install_has "Step 6.5 block present" 'Step 6\.5: (Installing|Presentation)'
 
-# --- MAC arm: all four deps ---
-assert_install_has "MAC: reportlab via _install_py_pkg_mac"   '_install_py_pkg_mac "reportlab"'
-assert_install_has "MAC: python-pptx via _install_py_pkg_mac" '_install_py_pkg_mac "python-pptx"'
+# --- FIX 71: the department venv is the ONE python-deps surface, both platforms ---
+assert_install_has "FIX 71: ensure_presentation_venv defined"  '^ensure_presentation_venv\(\)'
+assert_install_has "FIX 71: venv called at Step 6.5 top"       '^ensure_presentation_venv$'
+assert_install_has "FIX 71: venv installs reportlab"           '_pkgs="reportlab python-pptx pypdf pytesseract Pillow"'
+assert_install_has "FIX 71: interpreter exported to consumers" 'export PRESENTATION_PIPELINE_INTERPRETER='
+
+# Negative guard: NO active --break-system-packages anywhere in the installer
+# (FIX 71). Comment-only mentions are fine; an active usage is a regression.
+if grep -vE '^[[:space:]]*#' "$INSTALL_SH" | grep -Eq -- '--break-system-packages'; then
+    fail "FIX 71: installer still carries an ACTIVE --break-system-packages usage"
+else
+    pass "FIX 71: no active --break-system-packages in installer (comment mentions only)"
+fi
+
+# --- MAC arm: poppler + LibreOffice (python deps come from the venv above) ---
 assert_install_has "MAC: poppler via brew"                    'brew install poppler'
 assert_install_has "MAC: LibreOffice via NONINTERACTIVE cask" 'NONINTERACTIVE=1 brew install --cask libreoffice'
 
-# --- VPS arm: all four deps via the REAL apt + pip ---
+# --- VPS arm: all four deps via the REAL apt + the FIX 71 venv ---
 assert_install_has "VPS: real apt-get path /usr/bin/apt-get"  '_APT_GET="/usr/bin/apt-get"'
 assert_install_has "VPS: installs libreoffice-impress + poppler-utils via apt" 'apt.*install.*libreoffice-impress.*poppler-utils|libreoffice-impress poppler-utils'
-assert_install_has "VPS: reportlab via pip --break-system-packages" 'pip install --break-system-packages.*reportlab'
-assert_install_has "VPS: python-pptx via pip --break-system-packages" 'pip install --break-system-packages.*python-pptx'
+assert_install_has "VPS: reassert uses the department venv"    'VENV_DIR="/data/.openclaw/.venv-presentations"'
+assert_install_has "VPS: venv pip install (no external-management marker)" '"\$VENV_PY" -m pip install --quiet reportlab python-pptx pypdf pytesseract Pillow'
 
 # --- VPS durability: OpenClaw scheduler cron, NOT a system @reboot crontab ---
 # The reassert cron is registered via the runtime-compatible _oc_cron_silent_main
@@ -139,23 +157,37 @@ for b in soffice pdftoppm; do
 done
 cat > "$PYSHIM_DIR/python3" <<PYSHIM
 #!/usr/bin/env bash
-if [ "\$1" = "-c" ] && printf '%s' "\$2" | grep -q "import reportlab, pptx"; then exit 1; fi
+if [ "\$1" = "-c" ] && printf '%s' "\$2" | grep -q "import reportlab, pptx, pypdf"; then exit 1; fi
 exec "$REAL_PY" "\$@"
 PYSHIM
 chmod +x "$PYSHIM_DIR/python3"
 
-# Only meaningful if soffice + pdftoppm actually resolved on this runner.
+# Only meaningful if soffice + pdftoppm actually resolved on this runner AND the
+# runner has no healthy department venv — the FIX 71 gate resolves the venv
+# interpreter FIRST and, when it exists, imports there bypass the system-python
+# shim entirely (so the "broken import" condition cannot be provoked). CI
+# runners have neither soffice/pdftoppm nor the venv, so the sub-check runs
+# there; a provisioned operator box takes the SKIP.
+_B2_OK=0
 if [ -e "$PYSHIM_DIR/soffice" ] && [ -e "$PYSHIM_DIR/pdftoppm" ]; then
-    GATE_RC=0
-    PATH="$PYSHIM_DIR" "$PYSHIM_DIR/bash" "$QC_SH" --quiet > "$TMPDIR_TEST/missing-py.log" 2>&1 || GATE_RC=$?
-    if [ "$GATE_RC" -eq 6 ] && grep -q "python(reportlab+python-pptx)" "$TMPDIR_TEST/missing-py.log"; then
-        pass "gate exits 6 when reportlab/python-pptx import fails"
+    if [ -x "${PRESENTATION_PIPELINE_INTERPRETER:-$HOME/.openclaw/.venv-presentations/bin/python}" ] \
+       && "${PRESENTATION_PIPELINE_INTERPRETER:-$HOME/.openclaw/.venv-presentations/bin/python}" -c "import reportlab, pptx, pypdf" >/dev/null 2>&1; then
+        echo "  SKIP: healthy department venv present — FIX 71 gate imports there, bypassing the system-python shim; broken-import condition not provable here"
+        _B2_OK=1
     else
-        fail "gate did NOT exit 6 on broken python import (got $GATE_RC)"
-        sed -n '1,20p' "$TMPDIR_TEST/missing-py.log" | sed 's/^/    > /'
+        GATE_RC=0
+        PATH="$PYSHIM_DIR" "$PYSHIM_DIR/bash" "$QC_SH" --quiet > "$TMPDIR_TEST/missing-py.log" 2>&1 || GATE_RC=$?
+        if [ "$GATE_RC" -eq 6 ] && grep -q "python(reportlab+python-pptx+pypdf" "$TMPDIR_TEST/missing-py.log"; then
+            pass "gate exits 6 when reportlab/python-pptx/pypdf import fails"
+            _B2_OK=1
+        else
+            fail "gate did NOT exit 6 on broken python import (got $GATE_RC)"
+            sed -n '1,20p' "$TMPDIR_TEST/missing-py.log" | sed 's/^/    > /'
+        fi
     fi
 else
     echo "  SKIP: soffice/pdftoppm not installed on this runner — python-import sub-check skipped"
+    _B2_OK=1
 fi
 
 # (b3) bypass var -> gate must NOT exit 6 (proves the gate is the failure source).

@@ -1,0 +1,111 @@
+{
+ "_fixture": "SYNTHETIC values, REAL `openclaw audit --kind agent_run --json` envelope + event field names. Newest first, as the CLI returns.",
+ "events": [
+  {
+   "action": "agent.run.finished",
+   "actor": {
+    "id": "fixture",
+    "type": "agent"
+   },
+   "agentId": "fixture",
+   "errorCode": "run_failed",
+   "eventId": "fx-104",
+   "eventType": "agent_run",
+   "kind": "agent_run",
+   "occurredAt": 1789999880000,
+   "redaction": "metadata_only",
+   "runId": "r4",
+   "schemaVersion": 1,
+   "sequence": 104,
+   "sessionId": "sid-1",
+   "sessionKey": "agent:fixture:cron:1",
+   "sourceSequence": 104,
+   "status": "failed"
+  },
+  {
+   "action": "agent.run.finished",
+   "actor": {
+    "id": "fixture",
+    "type": "agent"
+   },
+   "agentId": "fixture",
+   "errorCode": "run_failed",
+   "eventId": "fx-103",
+   "eventType": "agent_run",
+   "kind": "agent_run",
+   "occurredAt": 1789999880000,
+   "redaction": "metadata_only",
+   "runId": "r3",
+   "schemaVersion": 1,
+   "sequence": 103,
+   "sessionId": "sid-1",
+   "sessionKey": "agent:fixture:cron:1",
+   "sourceSequence": 103,
+   "status": "failed"
+  },
+  {
+   "action": "agent.run.finished",
+   "actor": {
+    "id": "fixture",
+    "type": "agent"
+   },
+   "agentId": "fixture",
+   "errorCode": "run_failed",
+   "eventId": "fx-102",
+   "eventType": "agent_run",
+   "kind": "agent_run",
+   "occurredAt": 1789999880000,
+   "redaction": "metadata_only",
+   "runId": "r2",
+   "schemaVersion": 1,
+   "sequence": 102,
+   "sessionId": "sid-1",
+   "sessionKey": "agent:fixture:cron:1",
+   "sourceSequence": 102,
+   "status": "failed"
+  },
+  {
+   "action": "agent.run.finished",
+   "actor": {
+    "id": "fixture",
+    "type": "agent"
+   },
+   "agentId": "fixture",
+   "errorCode": "run_failed",
+   "eventId": "fx-101",
+   "eventType": "agent_run",
+   "kind": "agent_run",
+   "occurredAt": 1789999880000,
+   "redaction": "metadata_only",
+   "runId": "r1",
+   "schemaVersion": 1,
+   "sequence": 101,
+   "sessionId": "sid-1",
+   "sessionKey": "agent:fixture:cron:1",
+   "sourceSequence": 101,
+   "status": "failed"
+  },
+  {
+   "action": "agent.run.finished",
+   "actor": {
+    "id": "fixture",
+    "type": "agent"
+   },
+   "agentId": "fixture",
+   "errorCode": "run_failed",
+   "eventId": "fx-100",
+   "eventType": "agent_run",
+   "kind": "agent_run",
+   "occurredAt": 1789999880000,
+   "redaction": "metadata_only",
+   "runId": "r0",
+   "schemaVersion": 1,
+   "sequence": 100,
+   "sessionId": "sid-1",
+   "sessionKey": "agent:fixture:cron:1",
+   "sourceSequence": 100,
+   "status": "failed"
+  }
+ ],
+ "nextCursor": "99"
+}

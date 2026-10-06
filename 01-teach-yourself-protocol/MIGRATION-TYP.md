@@ -120,14 +120,13 @@ For each bloated section in a bootstrap file:
 3. Replaces the section in the bootstrap file with a **MIGRATION NOTICE** block
    that includes:
    - The full path to the extracted file.
-   - Instructions for the agent to write a proper TYP summary (10–25 lines,
-     Five Question Test).
+   - Instructions for the agent to replace the notice (the script's notice text still
+     says 10 to 25 lines; follow the pointer standard in the next section instead).
    - An explicit warning: NEVER paste the content back.
 
-**The agent writes the summary, not the script.** Automated summarization would produce
-summaries that fail the Five Question Test. The notice gives the agent the full doc path
-and the criteria; the agent writes the correct summary the next time it encounters the
-notice in context.
+**The agent writes the pointer, not the script.** An automated pointer would guess the
+WHEN triggers badly. The notice gives the agent the full doc path; the agent writes the
+correct pointer the next time it encounters the notice in context.
 
 ### Step 6: Inject Missing Subagent Rule
 
@@ -150,14 +149,13 @@ If the mandatory TYP rule block was absent from AGENTS.md:
 The script produces MIGRATION NOTICE blocks in bootstrap files. The agent must act on each:
 
 1. **Read the full content** at the extracted file path.
-2. **Write a proper TYP summary** (10–25 lines) in the bootstrap file, replacing the
-   MIGRATION NOTICE block.
-3. **Five Question Test** — the summary must answer:
-   - What is this? (one sentence)
-   - When do I use it? (triggers)
-   - What do I need to know right now? (key facts)
-   - Full reference path?
-   - When should I go deeper?
+2. **Write a pointer** (one line, at most two sentences) in the bootstrap file, replacing the
+   MIGRATION NOTICE block. Always-on rules from the extracted section (safety rules,
+   never-do rules, hard constraints) go back inline, shortened.
+3. **Pointer test**: the pointer must answer:
+   - WHAT is this?
+   - WHERE is the full reference? (full path)
+   - WHEN should I read it? (concrete trigger words a user would say)
 4. **Confirm** to the operator what was summarized, where the full doc lives, and
    that the bootstrap file is now clean.
 

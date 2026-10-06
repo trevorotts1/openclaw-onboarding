@@ -2,13 +2,14 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
+version: v2.2.0
 metadata:
-  version: "1.0.0"
+  version: "2.2.0"
   priority: HIGH
 ---
 
@@ -25,10 +26,17 @@ wait (callback or poll), and visually QC the result.
 1. **Explicit wins.** If the user names a model/family and it can satisfy the
    request, use it — capability match and user preference win. Never "fix" an
    explicit pick.
-2. **Else GPT Image 2 is the preferred default** for high-fidelity general KIE
+2. **Else the GPT Image default is the newest GPT Image generation in KIE's live
+   catalog** (owner order 2026-10-05: if a new GPT Image model comes out, the
+   system moves to it automatically; resolved by Skill 74 `latest-family`, with
+   the `models.json` default as the fallback when the adapter is absent or
+   unreachable; today that is GPT Image 2.5 Sunburst), preferred for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
-   creative instructions (owner's preference, spec 7.4), when compatible
-   (respecting its ratio/resolution exclusions).
+   creative instructions (owner's preference, operator ruling 2026-09-09,
+   supersedes GPT Image 2), when compatible (respecting its ratio/resolution
+   exclusions). GPT Image 2 (legacy) is RETAINED, not retired, and is the
+   required route for aspect ratios 3:1, 1:3, 9:21 only — the selector routes
+   those three there automatically.
 3. Else by capability match:
    - Nano Banana Pro / Nano Banana 2 — strong general/multi-reference
      alternatives.
@@ -56,20 +64,22 @@ wait (callback or poll), and visually QC the result.
    check against the registry cap (rules A–E). Verified caps hard-fail
    (exit 2); owner-observed and NOT_PUBLISHED only warn.
 4. **Validate the payload** (`scripts/validate_payload.py`) — reference counts,
-   MB/format, ratio/resolution enums, per-family rules (GPT Image 2
-   per-resolution exclusions, Wan n/bbox, Ideogram strength, seedream
-   output_format gaps). Validation happens BEFORE dispatching so bad payloads
-   never burn credits.
-5. **Dispatch** — POST createTask; then callBackUrl (Skill 46 relay) or
-   recordInfo polling (2–3s initial, stepped backoff, respect 429, stop
-   ~10–15 min), OR both (callbacks preferred, polling as fallback).
+   MB/format, ratio/resolution enums, per-family rules (GPT Image 2 / GPT
+   Image 2.5 per-resolution exclusions — two separate rule sets, never
+   merged, Wan n/bbox, Ideogram strength, seedream output_format gaps).
+   Validation happens BEFORE dispatching so bad payloads never burn credits.
+5. **Dispatch through Skill 74** — `kie_live_adapter.py validate` (live schema,
+   registry fallback), then `preflight` (balance must cover price x 1.30), then
+   `submit --mode active` (production batches add `--callback-url` of the Skill 46
+   relay), or recordInfo polling (2–3s initial, stepped backoff, respect 429, stop
+   ~10–15 min). See INSTRUCTIONS.md Step 5. Skill 74 never picks the model.
 6. **QC** — actually inspect the image (references/qc.md), confirm
    dimensions/ratios/ref fidelity/typography/anatomy; retry only along the
    controlled 5-step ladder, never silently burning credits.
 
-## Registry (machine-readable source of truth)
+## Registry (curated policy, not the catalog)
 
-`models.json` — 30 entries covering all spec 7.2 families and their routes,
+`models.json` is this skill's CURATED POLICY and verified-override registry: which models we route to, the owner-confirmed caps, ratio and reference rules, and the routing defaults. It is NOT the exhaustive KIE catalog and is not the live source of limits or prices: the live schema (checked through Skill 74 `validate`) and Skill 74 `price` are, with the generated snapshot as their fallback. A model absent from `models.json` is DISCOVERED, never an automatic default. `models.json` — 32 entries covering all spec 7.2 families and their routes,
 each with `source_url`, `last_verified_at`, `cap_status`, prompt caps, house
 band, reference limits, resolutions, ratios, and known inconsistencies. Every
 numeric limit is traceable to a quoted first-party value fetched 2026-08-26.
@@ -77,9 +87,13 @@ NOT_PUBLISHED/UNDETERMINED values are `null` — nothing is invented.
 
 Key cap facts (full matrix: `references/models.md`):
 
-- GPT Image 2: operator-confirmed 25,000 chars (`OWNER_CONFIRMED`, 2026-08-27 —
-  authoritative; docs page's "maximum 20,000 characters" is stale; warn-only,
-  never hard-fail; house band 5,000–19,000 with ~9,000 target is legal).
+- GPT Image 2 (legacy): operator-confirmed 25,000 chars (`OWNER_CONFIRMED`,
+  2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
+  20,000 characters" is stale; warn-only, never hard-fail; house band
+  5,000–19,000 with ~9,000 target is legal).
+- GPT Image 2.5 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
+  docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
+  confirmation does not carry forward and has not been retested on 2.5).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
   converted to a fake char cap (rule D). Docs schemas: maxLength 5000 chars.
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;
@@ -89,16 +103,20 @@ Key cap facts (full matrix: `references/models.md`):
   invented vendor law; no hard rejections above 19,000 unless a verified cap
   exists.
 
-## House prompt band (spec 5)
+## Prompt budget (owner order 2026-10-05)
 
-- desired minimum when legal: 5,000 chars; normal target: ~9,000; preferred
-  max: 19,000. Short user prompts are EXPANDED, never rejected (§5.3).
-- Expansion adds real control (objective, subject, environment, composition,
-  lens, lighting, material, palette, typography, brand rules, reference roles,
-  preservation rules, negatives, output requirements, QC details) — never junk
-  padding (§5.4).
-- Cron/scheduled jobs store creative INTENT and compose the prompt at
-  execution time against the model chosen then (§5.5).
+Supersedes the old house band (5,000 / 9,000 / 19,000). A prompt uses 95-100% of
+the model's character max and is never below 80% of it. The limit comes from Skill
+74 `prompt-budget` (live schema, registry fallback); `validate_prompt.py` enforces
+it: below 80% rejected (prints the exact chars to ADD), above 100% rejected (exact
+chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
+(spoken text, lyrics) has no floor.
+- Short user prompts are EXPANDED first, never padded with junk (real control:
+  objective, subject, environment, composition, lens, lighting, material, palette,
+  typography, brand rules, reference roles, preservation rules, negatives,
+  output requirements, QC details).
+- Cron/scheduled jobs store creative INTENT and compose the prompt at execution
+  time against the model chosen then (§5.5).
 
 ## Prerequisites
 
@@ -111,7 +129,7 @@ Key cap facts (full matrix: `references/models.md`):
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** — you are here.
-2. **models.json** — machine-readable capability registry (30 entries).
+2. **models.json** — machine-readable capability registry (32 entries).
 3. **references/models.md** — human golden matrix + per-family guidance.
 4. **references/prompt-policy.md** — prompt rules A–E, per-family bands.
 5. **references/api-patterns.md** — generic createTask/recordInfo conventions
@@ -119,7 +137,7 @@ Key cap facts (full matrix: `references/models.md`):
 6. **references/qc.md** — real visual QC checklist + retry ladder.
 7. **INSTRUCTIONS.md** — daily usage walkthrough.
 8. **INSTALL.md** — credential check + connect verification.
-9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2 t2i/i2i, Wan bbox,
+9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.5 t2i/i2i, Wan bbox,
    Seedream i2i, NB2 i2i).
 10. **CORE_UPDATES.md** — core-file wiring (performed by `wire.sh`).
 11. **QC.md** — verification checklist.
@@ -134,15 +152,21 @@ Key cap facts (full matrix: `references/models.md`):
 - **Validators run before dispatch.** Never send too many refs, an illegal
   ratio/resolution for the model, an over-limit prompt, or an unsupported mode
   combination.
-- **GPT Image 2 ratio rules are hard:** 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21;
-  `auto` yields 1K only; 1:1 cannot convert to 4K. `validate_payload.py`
-  enforces all three.
+- **GPT Image 2 / GPT Image 2.5 ratio rules are hard, and are SEPARATE rule
+  sets (operator ruling 2026-09-09, never merged):**
+  - GPT Image 2 (legacy, 3:1/1:3/9:21 route only): 2K/4K exclude 5:4, 4:5,
+    3:1, 1:3, 9:21; `auto` yields 1K only; 1:1 cannot convert to 4K.
+  - GPT Image 2.5 (default): 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only).
+    The legacy `auto`-1K-only and `1:1`-never-4K rules are RETIRED here —
+    not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
+    operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
+    3:1, 1:3, 9:21 are not served at all and route to the legacy model instead.
+  `validate_payload.py` enforces both rule sets, keyed by exact model id.
 - **Wan bbox/n rules:** each input image supports up to 2 boxes; `n` 1–4
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.
 - **Credential:** `KIE_API_KEY` env var; never echo/cat/log the value.
 - **Rate limits:** 20 new generation requests/10 seconds, 100+ concurrent per
-  account; 429 = rejected before queueing — back off. Media deleted after 14
-  days; result URLs expire ~24h — persist immediately when needed.
+  account; 429 = rejected before queueing — back off. Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - **Logo I2I rule:** any client logo/brand-mark generation MUST be image-to-
   image with the logo as a reference, never text-to-image; style-reference
   attachments carry the mandatory style-reference-only directive.

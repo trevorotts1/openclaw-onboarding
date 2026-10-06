@@ -1,0 +1,75 @@
+{
+ "_fixture": "SYNTHETIC values, REAL OpenClaw 2026.9.8 `sessions --all-agents --active 1440 --json` field names (captured read-only on the operator box). now=1790000000000 ms.",
+ "activeMinutes": 1440,
+ "allAgents": true,
+ "count": 4,
+ "hasMore": false,
+ "limitApplied": 100,
+ "path": null,
+ "sessions": [
+  {
+   "abortedLastRun": false,
+   "agentId": "fixture",
+   "inputTokens": 2500000,
+   "key": "agent:fixture:cron:1",
+   "kind": "direct",
+   "model": "deepseek-v4",
+   "modelProvider": "deepseek",
+   "outputTokens": 2500000,
+   "status": "done",
+   "totalTokens": 5000000,
+   "totalTokensFresh": true,
+   "updatedAt": 1789999700000
+  },
+  {
+   "abortedLastRun": false,
+   "agentId": "fixture",
+   "inputTokens": 3500000,
+   "key": "agent:fixture:cron:2",
+   "kind": "direct",
+   "model": "glm-5:cloud",
+   "modelProvider": "ollama-cloud",
+   "outputTokens": 3500000,
+   "status": "done",
+   "totalTokens": 7000000,
+   "totalTokensFresh": true,
+   "updatedAt": 1789999520000
+  },
+  {
+   "abortedLastRun": false,
+   "agentId": "fixture",
+   "inputTokens": 4500000,
+   "key": "agent:fixture:cron:3",
+   "kind": "direct",
+   "lastInteractionAt": 1789999880000,
+   "model": "qwen3",
+   "modelProvider": "ollama-local",
+   "outputTokens": 4500000,
+   "status": "done",
+   "totalTokens": 9000000,
+   "totalTokensFresh": true,
+   "updatedAt": 1789999820000
+  },
+  {
+   "abortedLastRun": false,
+   "agentId": "fixture",
+   "inputTokens": 1500000,
+   "key": "agent:fixture:cron:4",
+   "kind": "direct",
+   "model": "mystery",
+   "modelProvider": "acme",
+   "outputTokens": 1500000,
+   "status": "done",
+   "totalTokens": 3000000,
+   "totalTokensFresh": true,
+   "updatedAt": 1789998200000
+  }
+ ],
+ "stores": [
+  {
+   "agentId": "fixture",
+   "path": "/fixture/openclaw-agent.sqlite"
+  }
+ ],
+ "totalCount": 4
+}

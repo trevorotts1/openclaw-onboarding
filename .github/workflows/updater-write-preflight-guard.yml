@@ -1,0 +1,68 @@
+name: updater write pre-flight guard
+
+# THE DEFECT THIS LOCKS (measured 2026-09-17, nine Hostinger VPS boxes).
+#
+# Inside each openclaw container, /data/.openclaw/workspace/AGENTS.md was
+# root:root 0644 while /data/.openclaw and /data/.openclaw/workspace are
+# node:node 0700 and update-skills.sh runs as uid 1000 (node). The file was
+# READABLE and NOT WRITABLE, so every read-side gate passed, the content gate
+# PASSED, and then the CORE_UPDATES merge, hundreds of lines into an embedded
+# python program, opened AGENTS.md for append and died with
+#   PermissionError: [Errno 13] Permission denied: .../workspace/AGENTS.md
+# The run exited 1 halfway through, the version stamp was WITHHELD, and the
+# operator got a raw traceback buried in the middle of a very long log with a
+# green content gate printed above it. Nine boxes sat STALE.
+#
+# WHAT THIS GUARD PINS
+#   * update-skills.sh carries a write pre-flight and CALLS it from main(),
+#     before the CORE_UPDATES merge.
+#   * The pre-flight proves writability with a REAL write attempt, never `-w`.
+#   * An unrepairable path yields ONE actionable PERMISSION BLOCK line and
+#     blocks the run; a repairable one is repaired and logged FIXED.
+#   * No write-mode open() in the CORE_UPDATES program sits outside a try, so a
+#     permission failure can never resurface as a traceback.
+#
+# ANTI-VACUITY. The suite extracts the shell block and the python program
+# VERBATIM from update-skills.sh between markers and exits 2 if a marker drifts
+# or vanishes, so it can never silently test nothing. It runs a KNOWN-GOOD
+# CONTROL (a writable AGENTS.md must merge, stamp and exit 0) before the
+# negative case, and it FAILS rather than skipping if CI ever runs it as root,
+# because uid 0 bypasses every permission check the suite exists to prove.
+#
+# Hermetic: bash + stdlib python, mktemp -d only, no network, no fleet box.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "tests/unit/updater-write-preflight-permission-block.test.sh"
+      - ".github/workflows/updater-write-preflight-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "tests/unit/updater-write-preflight-permission-block.test.sh"
+      - ".github/workflows/updater-write-preflight-guard.yml"
+
+jobs:
+  write-preflight:
+    name: "update-skills.sh refuses early on a root-owned workspace file"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The updater still parses
+        run: bash -n update-skills.sh
+
+      - name: The suite still parses
+        run: bash -n tests/unit/updater-write-preflight-permission-block.test.sh
+
+      - name: Write pre-flight and PERMISSION BLOCK contract
+        run: bash tests/unit/updater-write-preflight-permission-block.test.sh

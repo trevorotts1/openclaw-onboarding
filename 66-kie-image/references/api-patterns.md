@@ -48,7 +48,9 @@ Authorization: Bearer <KIE_API_KEY>
 
 Response `data` fields: `taskId`, `model`, `state` (enum `waiting`, `queuing`,
 `generating`, `success`, `fail`), `param` (original request JSON), `resultJson`
-(only on success; images: `{"resultUrls": []}`), `failCode`/`failMsg` (empty on
+(only on success; a JSON STRING, images: `{"resultUrls": []}`), `response` (the
+same content already parsed, e.g. `{"resultUrls": [...]}`; Suno audio tasks use
+`response.data[].audio_url`), `failCode`/`failMsg` (empty on
 success), `costTime` ms, `completeTime`/`createTime`/`updateTime` Unix ms,
 `creditsConsumed`.
 
@@ -62,7 +64,7 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 - Initial delay 2–3s; then stepped/exponential backoff (spec 6.3).
 - Respect 429 (rejected requests do not enter the queue); back off.
 - Cap total wait by modality/model; stop after 10–15 min (docs verbatim).
-- Download results immediately — result URLs expire after ~24h.
+- Download results immediately. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## 4. Callbacks
 
@@ -87,11 +89,15 @@ validation error (`recordInfo is null`), 429 rate limited, 433, 455 maintenance,
 - Limits per account. Excess → HTTP 429, rejected before queueing.
 - "Generated media files: stored for 14 days, then automatically deleted" —
   persist final media into durable storage immediately when long-term access is
-  needed (spec 6.4). Result URLs expire ~24h.
+  needed (spec 6.4). Result URL retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 
 ## 6. Per-family request schemas (verbatim from research)
 
-### 6.1 GPT Image 2
+### 6.1 GPT Image 2 (Legacy)
+
+LEGACY route, retained by operator ruling 2026-09-09 for aspect ratios 3:1,
+1:3, 9:21 only — GPT Image 2.5 Sunburst (6.1b, below) is now the default.
+This section's schema is UNCHANGED.
 
 t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
 
@@ -108,6 +114,32 @@ t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
 - "Images with the aspect ratio set to \"auto\" or without a specified aspect
   ratio parameter will only be converted to 1K images"; "Images with a 1:1
   aspect ratio cannot be converted to 4K images".
+
+### 6.1b GPT Image 2.5 Sunburst (Default, operator ruling 2026-09-09)
+
+OWNER-PREFERRED DEFAULT, supersedes GPT Image 2 above. Two-model system: this
+route does NOT serve 3:1, 1:3, 9:21 (those dispatch to 6.1 above instead).
+
+t2i model `gpt-image-2-5-sunburst-text-to-image`; i2i model
+`gpt-image-2-5-sunburst-image-to-image`.
+
+- `prompt` (required; max 20,000 chars per KIE docs dated 2026-09-09 — DOCS
+  status, NOT owner-confirmed; the GPT Image 2 25K owner-confirmation does
+  not carry forward, see prompt-policy.md).
+- `aspect_ratio`: `auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16,
+  16:27, 9:8, 8:9` (13 values; 5:4/4:5/2:1/1:2/3:1/1:3/9:21 are NOT in this
+  enum — see the routing note below).
+- `resolution`: `1K`, `2K`, `4K`.
+- i2i refs: `input_urls` array, **maxItems: 16**, max 30MB, formats JPEG/PNG/
+  WEBP/JPG (carried forward unchanged from GPT Image 2 — not ruled on).
+- Per-resolution exclusions: 27:16, 16:27, 9:8, 8:9 are 1K only (2K/4K
+  rejected). The legacy "auto -> 1K only" and "1:1 cannot convert to 4K"
+  rules are RETIRED here — not restated in the 2.5 docs.
+- Routing (operator ruling 2026-09-09, enforced by `scripts/select_image_model.py`,
+  never as a raw API-level substitution): 5:4, 4:5, 2:1, 1:2 dispatch here via
+  an operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
+  3:1, 1:3, 9:21 are NOT served here at all and dispatch to the legacy 6.1
+  route instead.
 
 ### 6.2 Qwen Image 3.0 / Pro
 
@@ -131,7 +163,7 @@ t2i model `gpt-image-2-text-to-image`; i2i model `gpt-image-2-image-to-image`.
   formats: JPEG, PNG, WEBP Maximum file size: 30MB; Maximum files: 10".
 - Lite: `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image`; refs
   14 @ 30 MB.
-- 4.5: `seedream/4.5-text-to-image`, `seedream/4-5-edit`; refs 14 @ 30 MB
+- 4.5: `seedream/4.5-text-to-image`, `seedream/4.5-edit`; refs 14 @ 30 MB
   (playground editor; README says 10 — UNDETERMINED); NO `output_format` field.
 - `quality`: `Basic` | `High` | `Ultra` (Lite only for Ultra). Pro: Basic=1K /
   High=2K. Lite: Basic=2K / High=3K / Ultra=4K. 4.5: Basic=2K / High=4K.

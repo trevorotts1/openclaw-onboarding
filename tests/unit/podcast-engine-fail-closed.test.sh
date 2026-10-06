@@ -46,10 +46,16 @@ trap 'rm -rf "$ROOT"' EXIT
 
 # ── fake curl ─────────────────────────────────────────────────────────────────
 # podbean_publish.sh invokes `curl -K <(cfg_lines ...) ... -w $'\n%{http_code}'`,
-# so the URL lives inside the config file, not argv. The double reads the config,
+# so the METHOD and URL both live inside the config file, not argv (cfg_lines
+# writes `request = "<method>"` and `url = "<url>"`). The double reads both,
 # matches the url against a scripted table in $CURL_SCRIPT (one `pattern|code|body`
 # per line, first match wins) and emits body, newline, status — exactly the shape
 # http_request() parses.
+#
+# The call log records "<METHOD> <url>" per line, not the bare url. The episode
+# COUNT read and the episode CREATE are both /episodes?access_token=... and are
+# told apart ONLY by their method (GET vs POST); logging the url alone let a
+# count read satisfy "reached the episode-create call".
 mkfakecurl() {
   local bindir="$1"
   mkdir -p "$bindir"
@@ -62,10 +68,17 @@ for a in "$@"; do
   prev="$a"
 done
 url=""
+method=""
+# $cfg is a process substitution (/dev/fd/N), a PIPE: it can be read exactly
+# ONCE. Slurp it into a variable and parse that, or the second reader silently
+# gets an empty stream and every request looks like a GET.
+cfgdata=""
 if [ -n "$cfg" ] && [ -r "$cfg" ]; then
-  url="$(sed -n 's/^url = "\(.*\)"$/\1/p' "$cfg" | head -1)"
+  cfgdata="$(cat "$cfg" 2>/dev/null)"
+  url="$(printf '%s\n' "$cfgdata" | sed -n 's/^url = "\(.*\)"$/\1/p' | head -1)"
+  method="$(printf '%s\n' "$cfgdata" | sed -n 's/^request = "\(.*\)"$/\1/p' | head -1)"
 fi
-printf '%s\n' "$url" >> "${CURL_CALLLOG:-/dev/null}"
+printf '%s %s\n' "${method:-GET}" "$url" >> "${CURL_CALLLOG:-/dev/null}"
 code=200
 body='{}'
 if [ -n "${CURL_SCRIPT:-}" ] && [ -r "$CURL_SCRIPT" ]; then
@@ -82,12 +95,25 @@ FAKE
   chmod +x "$bindir/curl"
 }
 
+# A publishable description. The engine enforces a MINIMUM show-notes floor
+# (PODBEAN_MIN_DESCRIPTION_LEN, default 200 chars) so a stub can never reach a
+# client feed; anything shorter is refused BEFORE the isolation guard is reached.
+SHOW_NOTES="$(printf 'Real show notes for the regression suite. %.0s' 1 2 3 4 5 6)"
+
 run_publish() {
   local name="$1"; shift
   local sb="$ROOT/$name"
   mkdir -p "$sb/bin" "$sb/home" "$sb/tmp"
   mkfakecurl "$sb/bin"
   printf 'not really an mp3' > "$sb/master.mp3"
+  printf 'not really a jpeg' > "$sb/cover.jpg"
+  # PODBEAN_LOCAL_MODE_OK=1 states what this suite is: the operator's own box
+  # exercising the LOCAL transport. The channel-scoping guard under test lives
+  # ONLY on the broker/local path (proxy mode delegates the whole publish to
+  # n8n), so LOCAL is the transport that has a guard to prove.
+  # PODBEAN_RETRY_BASE_DELAY=0 is the shipped test hook for the retry backoff:
+  # it keeps the retry COUNT intact and only removes the sleeps, so the four
+  # refusal cases do not spend ~18s waiting out real backoff.
   env -i \
     PATH="$sb/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
     HOME="$sb/home" TMPDIR="$sb/tmp" \
@@ -95,11 +121,50 @@ run_publish() {
     PODBEAN_PODCAST_ID="chan-target" \
     PODBEAN_CLIENT_ID="test-client-id" \
     PODBEAN_CLIENT_SECRET="test-client-secret" \
-    bash "$PUBLISH" --audio "$sb/master.mp3" --title "A Test Episode" 2>&1
+    PODBEAN_LOCAL_MODE_OK=1 \
+    PODBEAN_RETRY_BASE_DELAY=0 \
+    bash "$PUBLISH" --audio "$sb/master.mp3" --title "A Test Episode" \
+      --description "$SHOW_NOTES" --cover "$sb/cover.jpg" 2>&1
 }
 
+# The episode CREATE is a POST; the episode COUNT read is a GET to the same
+# path. Match the method too, or a count read counts as a create.
 reached_episode_create() {
-  /usr/bin/grep -q '/episodes?access_token' "$ROOT/$1/curl.log" 2>/dev/null
+  /usr/bin/grep -q '^POST .*/episodes?access_token' "$ROOT/$1/curl.log" 2>/dev/null
+}
+
+# Every refusal case must fail INSIDE the isolation guard, not before it. A run
+# that never issued a single request died in argument or mode validation, which
+# is a different defect wearing the same red — and the reason this suite could
+# sit red for two months looking like a dead guard.
+reached_the_guard() {
+  [ -s "$ROOT/$1/curl.log" ]
+}
+
+# Bash's `${OUT: -200}` yields the EMPTY STRING whenever OUT is shorter than 200
+# characters (zsh returns the whole string, which is why this reads as correct).
+# Every refusal message here is under 200 chars, so each one printed as
+# "(got: )" and was read as "the script produced nothing at all".
+# tail -c is correct at every length.
+tail_of() { printf '%s' "$1" | /usr/bin/tail -c "${2:-240}"; }
+
+# ── the downstream happy path, appended to EVERY scenario ─────────────────────
+# Without these, a refusal fixture starves the audio upload and the run dies at
+# uploadAuthorize no matter what the guard does -- which made every
+# "no episode-create request was sent" assertion VACUOUSLY true: they passed
+# just as well with the guard deleted. With them, the ONLY thing between the run
+# and an episode-create is the isolation guard, so those assertions can fail.
+#
+# The episode COUNT read is the only /episodes call carrying &offset=0&limit=1;
+# matching on that (not on the token value, which differs per scenario) keeps
+# the CREATE reachable by the later, broader pattern. First match wins, so order
+# here is load-bearing.
+downstream_ok() {
+  cat <<'DOWNSTREAM'
+offset=0&limit=1|200|{"count":3}
+files/uploadAuthorize|200|{"presigned_url":"https://upload.example/put","file_key":"key-1"}
+/episodes?access_token|200|{"episode":{"id":"ep-4","permalink_url":"https://example.invalid/e/4"}}
+DOWNSTREAM
 }
 
 echo ""
@@ -111,11 +176,17 @@ cat > "$ROOT/list-fail/curl.script" <<'SCRIPT'
 oauth/token|200|{"access_token":"base-token"}
 /podcasts|503|{"error":"service unavailable"}
 SCRIPT
+downstream_ok >> "$ROOT/list-fail/curl.script"
 OUT="$(run_publish list-fail)"; RC=$?
+if reached_the_guard list-fail; then
+  ok "a failed channel listing reached the isolation guard (a request was actually issued)"
+else
+  bad "a failed channel listing never reached the isolation guard -- the run died before issuing ANY request, in argument or mode validation, not in the guard (got: $(tail_of "$OUT" 240))"
+fi
 if [ "$RC" -ne 0 ]; then ok "listing failure -> non-zero exit"; else bad "listing failure -> exit 0"; fi
 case "$OUT" in
   *"isolation guard"*) ok "listing failure names the isolation guard" ;;
-  *) bad "listing failure gave no isolation-guard reason (got: ${OUT: -200})" ;;
+  *) bad "listing failure gave no isolation-guard reason (got: $(tail_of "$OUT" 240))" ;;
 esac
 if reached_episode_create list-fail; then
   bad "an episode-create request was sent after a failed channel listing"
@@ -129,7 +200,13 @@ cat > "$ROOT/list-empty/curl.script" <<'SCRIPT'
 oauth/token|200|{"access_token":"base-token"}
 /podcasts|200|{"podcasts":[]}
 SCRIPT
+downstream_ok >> "$ROOT/list-empty/curl.script"
 OUT="$(run_publish list-empty)"; RC=$?
+if reached_the_guard list-empty; then
+  ok "an empty identifier list reached the isolation guard (a request was actually issued)"
+else
+  bad "an empty identifier list never reached the isolation guard -- the run died before issuing ANY request, in argument or mode validation, not in the guard (got: $(tail_of "$OUT" 240))"
+fi
 if [ "$RC" -ne 0 ]; then ok "empty identifier list -> non-zero exit"; else bad "empty identifier list -> exit 0"; fi
 if reached_episode_create list-empty; then
   bad "an episode-create request was sent with no confirmed channel"
@@ -144,11 +221,17 @@ multiplePodcastsToken|500|{"error":"nope"}
 oauth/token|200|{"access_token":"base-token"}
 /podcasts|200|{"podcasts":[{"id":"chan-target"},{"id":"chan-other-client"}]}
 SCRIPT
+downstream_ok >> "$ROOT/scope-fail/curl.script"
 OUT="$(run_publish scope-fail)"; RC=$?
+if reached_the_guard scope-fail; then
+  ok "a failed scoped-token request reached the isolation guard (a request was actually issued)"
+else
+  bad "a failed scoped-token request never reached the isolation guard -- the run died before issuing ANY request, in argument or mode validation, not in the guard (got: $(tail_of "$OUT" 240))"
+fi
 if [ "$RC" -ne 0 ]; then ok "scoped-token failure on a multi-channel account -> non-zero exit"; else bad "scoped-token failure -> exit 0"; fi
 case "$OUT" in
   *"account-wide token"*) ok "scoped-token failure refuses the account-wide token by name" ;;
-  *) bad "scoped-token failure did not name the account-wide token (got: ${OUT: -200})" ;;
+  *) bad "scoped-token failure did not name the account-wide token (got: $(tail_of "$OUT" 240))" ;;
 esac
 if reached_episode_create scope-fail; then
   bad "an episode-create request was sent on an unscoped token (multi-channel account)"
@@ -163,7 +246,13 @@ multiplePodcastsToken|200|{"podcasts":[]}
 oauth/token|200|{"access_token":"base-token"}
 /podcasts|200|{"podcasts":[{"id":"chan-target"},{"id":"chan-other-client"}]}
 SCRIPT
+downstream_ok >> "$ROOT/scope-empty/curl.script"
 OUT="$(run_publish scope-empty)"; RC=$?
+if reached_the_guard scope-empty; then
+  ok "an empty scoped-token response reached the isolation guard (a request was actually issued)"
+else
+  bad "an empty scoped-token response never reached the isolation guard -- the run died before issuing ANY request, in argument or mode validation, not in the guard (got: $(tail_of "$OUT" 240))"
+fi
 if [ "$RC" -ne 0 ]; then ok "empty scoped-token response -> non-zero exit"; else bad "empty scoped-token response -> exit 0"; fi
 if reached_episode_create scope-empty; then
   bad "an episode-create request was sent after an empty scoped-token response"
@@ -177,13 +266,12 @@ mkdir -p "$ROOT/healthy"
 cat > "$ROOT/healthy/curl.script" <<'SCRIPT'
 oauth/token|200|{"access_token":"base-token"}
 /podcasts|200|{"podcasts":[{"id":"chan-target"}]}
-/episodes?access_token|200|{"count":3}
-files/uploadAuthorize|200|{"presigned_url":"https://upload.example/put","file_key":"key-1"}
 SCRIPT
+downstream_ok >> "$ROOT/healthy/curl.script"
 OUT="$(run_publish healthy)"
 case "$OUT" in
   *"already scoped"*) ok "healthy single-channel account passes the isolation guard" ;;
-  *) bad "healthy single-channel account was blocked by the isolation guard (got: ${OUT: -240})" ;;
+  *) bad "healthy single-channel account was blocked by the isolation guard (got: $(tail_of "$OUT" 240))" ;;
 esac
 case "$OUT" in
   *"isolation guard"*) bad "healthy single-channel account hit an isolation-guard refusal" ;;

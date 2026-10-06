@@ -25,6 +25,13 @@
 #             10 = CF token missing; 11 = token invalid;
 #             12 = one or more required scopes missing;
 #             13 = no existing tunnel; 14 = no domain identified.
+# Safe env reader: parses KEY=VALUE, never sources a client-owned file.
+_ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/env-load.sh"
+[ -f "$_ENVLOAD" ] || _ENVLOAD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../shared-utils/env-load.sh"
+# shellcheck source=/dev/null
+[ -f "$_ENVLOAD" ] && . "$_ENVLOAD"
+_env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [ -f "$1" ] && { set -a; . "$1"; set +a; }; fi; }
+
 set -uo pipefail
 
 API="https://api.cloudflare.com/client/v4"
@@ -39,9 +46,9 @@ if [ -z "${MASTER_FILES_DIR:-}" ] && [ -f "$MASTER_FILES_POINTER" ]; then
   MASTER_FILES_DIR="$(head -n1 "$MASTER_FILES_POINTER")"
 fi
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
-[ -f "$SECRETS_ENV_FILE" ] && { set -a; . "$SECRETS_ENV_FILE"; set +a; } || true
+_env_read "$SECRETS_ENV_FILE" || true
 RUN_STATE="${RUN_STATE_FILE:-${MASTER_FILES_DIR:-$HOME/.openclaw}/.skill38-run-state.env}"
-[ -f "$RUN_STATE" ] && { set -a; . "$RUN_STATE"; set +a; } || true
+_env_read "$RUN_STATE" || true
 
 upsert_state() {
   local k="$1" v="$2"

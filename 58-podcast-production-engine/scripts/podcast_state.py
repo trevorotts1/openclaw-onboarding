@@ -411,6 +411,39 @@ CREATE TABLE IF NOT EXISTS podcast_job_payloads (
   stored_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A durable, provider-neutral checkpoint for an individual runbook action.
+-- The state writer, not an agent prompt or a second scheduler, owns these
+-- claims.  A process that dies after `begin` retains the same idempotency key
+-- on recovery; a completed action is never dispatched again.
+CREATE TABLE IF NOT EXISTS podcast_step_receipts (
+  job_id          TEXT NOT NULL REFERENCES podcast_jobs(job_id) ON DELETE CASCADE,
+  step            TEXT NOT NULL,
+  action          TEXT NOT NULL,
+  state           TEXT NOT NULL CHECK (state IN ('begun','complete')),
+  idempotency_key TEXT NOT NULL,
+  result_sha256   TEXT,
+  provider_ref    TEXT,
+  begun_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at    TEXT,
+  PRIMARY KEY (job_id, step, action)
+);
+CREATE INDEX IF NOT EXISTS idx_psr_job ON podcast_step_receipts(job_id, begun_at);
+
+-- Immutable local evidence for worker-owned content and boundary actions.
+-- Later steps need frozen research, blueprints and scripts after a restart.
+-- The state writer owns the row so an approved artifact cannot be silently
+-- replaced during recovery.
+CREATE TABLE IF NOT EXISTS podcast_step_artifacts (
+  job_id          TEXT NOT NULL REFERENCES podcast_jobs(job_id) ON DELETE CASCADE,
+  step            TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  sha256          TEXT NOT NULL,
+  content_json    TEXT NOT NULL,
+  recorded_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (job_id, step, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_psa_job ON podcast_step_artifacts(job_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS podcast_dashboard_tokens (
   token_id     TEXT PRIMARY KEY,
   client_id    TEXT NOT NULL,
@@ -730,6 +763,275 @@ def _is_publish_required_preset(preset: str | None) -> bool:
         return False
     flags = preset_flags(preset)
     return bool(flags.get("publish_podbean")) or bool(flags.get("store_media"))
+
+
+# ---------------------------------------------------------------------------
+# Client-safety release gates (duplicate guest / rescue-advanced / no source).
+#
+# The near-miss these close: a guest whose episode had ALREADY been published
+# was queued a second time and sat one step from re-publishing to a live client
+# feed. Three holes lined up.
+#
+#   1. The create-time duplicate guard compared ONLY `submission_fingerprint`,
+#      and that column holds TWO DIFFERENT FORMATS -- the webhook's canonical
+#      job_key when one is supplied, and the local content sha256 otherwise
+#      (see cmd_create, SK2-14). The two hash different field sets and can
+#      never be compared to each other, so the same guest stored one way was
+#      invisible to a submission stored the other way. A guard that only
+#      catches byte-identical fingerprints is not a guard. `contact_id` is the
+#      guest's real identity and was never compared at all.
+#   2. A rescue/activation proof advances a REAL job parked in `received`
+#      (SOP-PODCAST-07 Section 3 names that the PREFERRED proof path) and left
+#      no marker behind, so a job a test pushed into the live queue was
+#      indistinguishable from one its own production run advanced.
+#   3. A package with no source material could walk all the way to a publish
+#      step without anything stopping it.
+#
+# All three now fail CLOSED and require a per-job human release. The release is
+# deliberately NOT a boolean: PODCAST_OPERATOR_RELEASE names the job_id (or, at
+# create time, the guest identity) being released, so a stray `=1` left in a
+# shell profile cannot silently disarm every gate on every job forever.
+# ---------------------------------------------------------------------------
+
+OPERATOR_RELEASE_ENV = "PODCAST_OPERATOR_RELEASE"
+
+#: Transitions that put client-facing content in front of an audience. These
+#: are the only ones the gates below stop; earlier production stages stay free
+#: to move so a blocked job can still be worked on.
+PUBLISH_WARD_STATUSES = frozenset({"publishing", "enrolling", "complete"})
+
+
+def canonical_guest_id(contact_id) -> str:
+    """Canonical, comparable form of a contact identifier.
+
+    Case and punctuation carry no identity: `MayaRandleGuest01`,
+    `mayarandleguest01` and `maya-randle-guest-01` are ONE guest. Folding them
+    together is what lets the duplicate guard match a guest across the two
+    stored fingerprint formats, which it could never do by comparing the
+    fingerprints themselves.
+
+    This deliberately over-matches rather than under-matches: it feeds a BLOCK,
+    and a false stop costs a human release while a false pass costs a client a
+    duplicate episode on a live feed.
+    """
+    return re.sub(r"[^a-z0-9]+", "", str(contact_id or "").lower())
+
+
+def _release_granted(token: str) -> bool:
+    """True when the operator explicitly released THIS job / guest.
+
+    The env var holds a comma- or whitespace-separated list of job ids or guest
+    ids. Matching is canonical so the operator never has to reproduce
+    punctuation exactly, and an empty or unset value never releases anything.
+    """
+    raw = os.environ.get(OPERATOR_RELEASE_ENV, "")
+    if not raw.strip() or not token:
+        return False
+    wanted = canonical_guest_id(token)
+    if not wanted:
+        return False
+    return any(canonical_guest_id(part) == wanted
+               for part in re.split(r"[,\s]+", raw) if part)
+
+
+def published_jobs_for_guest(conn, client_id: str, contact_id: str,
+                             exclude_job_id: str | None = None) -> list:
+    """Jobs for the SAME client and the SAME canonical guest that already
+    reached an audience: a publish timestamp, a Podbean permalink, or status
+    `complete`. Any one of those means an episode for this guest is live.
+
+    The canonical fold happens in Python, not SQL: SQLite's LOWER() is
+    ASCII-only and cannot strip punctuation. The candidate set is one client's
+    already-published episodes, which is small and indexed (idx_pj_contact).
+    """
+    wanted = canonical_guest_id(contact_id)
+    if not wanted:
+        return []
+    rows = conn.execute(
+        "SELECT job_id, contact_id, episode_title, podbean_permalink, "
+        "publish_timestamp, status FROM podcast_jobs WHERE client_id = ? AND ("
+        "publish_timestamp IS NOT NULL OR podbean_permalink IS NOT NULL "
+        "OR status = 'complete')",
+        (client_id,),
+    ).fetchall()
+    return [r for r in rows
+            if r["job_id"] != exclude_job_id
+            and canonical_guest_id(r["contact_id"]) == wanted]
+
+
+#: Canonical marker `advance --rescue-proof` stamps on the job event log.
+RESCUE_ADVANCE_MARKER = "FORCE-ADVANCED BY RESCUE/TEST PATH"
+
+#: Free-text notes that MEAN the same thing but predate the marker. The rows
+#: this fix exists for were labelled by hand, so detection has to read what was
+#: actually written, not only what we stamp from now on. A forward-only
+#: structured marker would leave every already-queued job unguarded.
+_RESCUE_NOTE_PATTERNS = (
+    RESCUE_ADVANCE_MARKER.lower(),
+    "sop-podcast-07",
+    "activation rescue",
+    "rescue proof",
+    "proof flow",
+    "force-advanced",
+    "force advanced",
+)
+
+
+def rescue_advance_notes(conn, job_id: str) -> list:
+    """Event notes showing this job was advanced by a rescue or test path
+    rather than by its own production run."""
+    try:
+        rows = conn.execute(
+            "SELECT note FROM podcast_job_events WHERE job_id = ? AND note IS NOT NULL",
+            (job_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    found = []
+    for r in rows:
+        low = str(r["note"]).lower()
+        if any(p in low for p in _RESCUE_NOTE_PATTERNS):
+            found.append(r["note"])
+    return found
+
+
+#: Payload keys carrying the guest's own words -- the source material an
+#: episode is written FROM. q1..q10 mirror compute_fingerprint's canonical set.
+_SOURCE_ANSWER_KEYS = tuple(f"q{i}_answer" for i in range(1, 11)) + (
+    "additional_info", "transcript", "interview_transcript", "raw_transcript",
+)
+
+#: Phrases a research package uses to admit it had nothing to work from. A
+#: package that says this about itself must never reach a publish step quietly.
+_NO_SOURCE_ADMISSIONS = (
+    "no raw interview transcript",
+    "no interview transcript",
+    "no transcript was provided",
+    "no transcript provided",
+    "transcript not provided",
+    "no transcript available",
+    "no source material",
+    "without a transcript",
+)
+
+
+def source_material_verdict(conn, job_id: str) -> tuple:
+    """(verdict, detail) for whether this job has source material to write from.
+
+    verdict is "present", "absent" or "unknown".
+
+    Only a POSITIVE admission blocks: a recorded research package (or the stored
+    intake payload) that SAYS in so many words that no transcript / no source
+    material was provided. Absence of answers is deliberately NOT treated as
+    absence of source material -- the engine accepts minimal payloads, so a
+    "nothing found, therefore nothing exists" rule would false-stop legitimate
+    jobs. UNKNOWN is a real and correct answer here, and it does not block.
+    """
+    # 1. A recorded research package that admits it had no source material.
+    try:
+        rows = conn.execute(
+            "SELECT kind, content_json FROM podcast_step_artifacts WHERE job_id = ?",
+            (job_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    for r in rows:
+        low = str(r["content_json"] or "").lower()
+        for phrase in _NO_SOURCE_ADMISSIONS:
+            if phrase in low:
+                return ("absent",
+                        "the recorded '%s' artifact states: \"%s\"" % (r["kind"], phrase))
+
+    # 2. The same admission carried on the stored intake payload.
+    try:
+        r = conn.execute(
+            "SELECT payload_json FROM podcast_job_payloads WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return ("unknown", "payload table unreadable")
+    if not r or not r[0]:
+        return ("unknown", "no stored intake payload (scrubbed, or never stored)")
+    raw_low = str(r[0]).lower()
+    for phrase in _NO_SOURCE_ADMISSIONS:
+        if phrase in raw_low:
+            return ("absent", "the stored intake payload states: \"%s\"" % phrase)
+
+    # 3. Positively confirm the guest's own words are present, when they are.
+    try:
+        payload = json.loads(r[0])
+    except (TypeError, ValueError):
+        return ("unknown", "intake payload is not readable JSON")
+    if not isinstance(payload, dict):
+        return ("unknown", "intake payload is not a JSON object")
+    nested = payload.get("answers")
+    answers = nested if isinstance(nested, dict) else {}
+    for key in _SOURCE_ANSWER_KEYS:
+        val = payload.get(key)
+        if val is None:
+            val = answers.get(key)
+        if isinstance(val, str):
+            if val.strip():
+                return ("present", "payload carries %s" % key)
+        elif val not in (None, "", [], {}):
+            return ("present", "payload carries %s" % key)
+    # ponytail: no answers found is UNKNOWN, never "absent". Tighten to a block
+    # only if intake is ever guaranteed to carry answers for every preset.
+    return ("unknown", "no answers found, but absence is not an admission")
+
+
+def assert_release_gates(conn, job_id: str, row, to_status: str) -> list:
+    """The ONE client-safety chokepoint every forward mover routes through.
+
+    Called by `advance` AND by `resume` -- a held job resumes straight back to
+    its recorded resume_stage, which can itself BE `publishing`, and that path
+    previously had no gate of any kind.
+
+    Returns the list of findings that an explicit operator release OVERRODE, so
+    the caller can record them inside its own transaction (the audit note and
+    the transition then commit together, or neither does). Raises WriterRefused
+    when there is no release: these are hard stops, not warnings.
+    """
+    if to_status not in PUBLISH_WARD_STATUSES:
+        return []
+
+    blocks = []
+
+    prior = published_jobs_for_guest(conn, row["client_id"], row["contact_id"],
+                                     exclude_job_id=job_id)
+    if prior:
+        first = prior[0]
+        where = (first["podbean_permalink"] or first["publish_timestamp"]
+                 or "already marked complete")
+        blocks.append(
+            "an episode for this guest (contact %s) is ALREADY PUBLISHED as job "
+            "%s (%s); publishing this job would duplicate it on a live client feed"
+            % (row["contact_id"], first["job_id"], where)
+        )
+
+    rescue = rescue_advance_notes(conn, job_id)
+    if rescue:
+        blocks.append(
+            "this job was FORCE-ADVANCED by a rescue/test path rather than by its "
+            "own production run (%r); a job a test moved into the live queue is not "
+            "publishable without a human saying so" % (rescue[0],)
+        )
+
+    verdict, detail = source_material_verdict(conn, job_id)
+    if verdict == "absent":
+        blocks.append(
+            "this job has NO source material to write an episode from: %s" % detail
+        )
+
+    if not blocks:
+        return []
+    if _release_granted(job_id):
+        return blocks
+    raise WriterRefused(
+        "advance to '%s' refused for %s -- %s.  These are hard stops, not "
+        "warnings. Release requires a human: set %s=%s for THIS run."
+        % (to_status, job_id, "; ".join(blocks), OPERATOR_RELEASE_ENV, job_id)
+    )
 
 
 def check_transition(row: sqlite3.Row, to_status: str, preset: str | None = None,
@@ -1081,6 +1383,26 @@ def cmd_create(conn, args):
         _board_mirror_create(job_id, row["client_id"], row["show_name"])
         return
 
+    # Guest-identity duplicate guard (client safety). The fingerprint lookup
+    # above compares BYTES, and submission_fingerprint holds two different hash
+    # formats (the webhook job_key vs the local content sha256), so it cannot
+    # see the same guest stored the other way. Compare the guest's real,
+    # canonical identity instead. An ALREADY PUBLISHED episode for this guest is
+    # a hard stop, not a warning the pipeline may walk past.
+    already = published_jobs_for_guest(conn, args.client_id, args.contact_id)
+    if already and not _release_granted(args.contact_id):
+        first = already[0]
+        where = (first["podbean_permalink"] or first["publish_timestamp"]
+                 or "already marked complete")
+        raise WriterRefused(
+            "create refused: an episode for guest '%s' is ALREADY PUBLISHED as job "
+            "%s (%s). This submission's fingerprint differs from that job's, so the "
+            "byte-comparison idempotency check could not see it -- the guest identity "
+            "did. Release requires a human: set %s=%s for THIS run."
+            % (args.contact_id, first["job_id"], where,
+               OPERATOR_RELEASE_ENV, args.contact_id)
+        )
+
     job_id = new_job_id()
     ts = iso(now_utc())
     conn.execute("BEGIN IMMEDIATE")
@@ -1222,6 +1544,12 @@ def cmd_advance(conn, args):
                 "job is not a test job."
             )
 
+    # Client-safety release gates (duplicate guest / rescue-advanced / no
+    # source material). Hard stops on any publish-ward transition; an explicit
+    # operator release returns the findings so they are audited below inside
+    # the same transaction as the transition itself.
+    overridden = assert_release_gates(conn, args.job_id, row, to_status)
+
     frm = row["status"]
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -1254,6 +1582,18 @@ def cmd_advance(conn, args):
             _append_event(conn, args.job_id, frm, to_status,
                           "required-outputs WAIVED via --force-waiver [reason: %s]: %s"
                           % (waiver_reason, ", ".join(waived)))
+
+        # A rescue/activation proof advances a REAL job (SOP-PODCAST-07 Section
+        # 3). Stamp a durable marker so the job can never later reach a publish
+        # step as though its own production run had moved it.
+        if getattr(args, "rescue_proof", False):
+            _append_event(conn, args.job_id, frm, to_status, RESCUE_ADVANCE_MARKER)
+
+        # Audit an operator release so a gate lifted by hand is never silent.
+        for finding in overridden:
+            _append_event(conn, args.job_id, frm, to_status,
+                          "release gate OVERRIDDEN via %s: %s"
+                          % (OPERATOR_RELEASE_ENV, finding))
 
         if to_status == "complete":
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
@@ -1304,6 +1644,165 @@ def cmd_output(conn, args):
         conn.execute("ROLLBACK")
         raise
     _emit(args, {"job_id": args.job_id, "field": field, "set": True})
+
+
+_RECEIPT_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _receipt_token(label: str, value: str) -> str:
+    """Validate an opaque checkpoint component before it reaches SQLite.
+
+    Provider response bodies, prompts, media URLs, and raw request payloads do
+    not belong in the receipt table.  The caller supplies only a stable action
+    label, idempotency key, and optionally an opaque provider-side reference.
+    """
+    if not value or not _RECEIPT_TOKEN_RE.fullmatch(value):
+        raise UsageError(
+            f"{label} must be an opaque 1-128 character token "
+            "([A-Za-z0-9._:-]); do not put content, URLs, or secrets in a receipt"
+        )
+    return value
+
+
+def _sha256_file(path: str) -> str:
+    if not path or not os.path.isfile(path):
+        raise UsageError("--result-file must name a readable local evidence file")
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            while True:
+                block = fh.read(1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+    except OSError as exc:
+        raise UsageError(f"could not read --result-file: {exc}") from exc
+    return digest.hexdigest()
+
+
+def cmd_receipt(conn, args):
+    """Claim or complete one idempotent runbook action.
+
+    This is intentionally a tiny state-writer primitive, not a worker daemon.
+    A registered agent calls `begin` before an external action, performs the
+    action using this stable key, then records only an evidence digest with
+    `complete`. A live begun receipt is deliberately NON-RUNNABLE to every
+    later invocation. We cannot distinguish a dead worker from one that is
+    between a remote side effect and its receipt, so replay is unsafe; reconcile
+    the provider's supported idempotency/readback result before completing it.
+    """
+    row = _load_job(conn, args.job_id)
+    _assert_active(conn, row["client_id"])
+    step = _receipt_token("step", args.step)
+    action = _receipt_token("action", args.action)
+    key = _receipt_token("idempotency key", args.idempotency_key)
+    provider_ref = (_receipt_token("provider ref", args.provider_ref)
+                    if args.provider_ref else None)
+    evidence_hash = _sha256_file(args.result_file) if args.result_file else None
+    if args.receipt_action == "complete" and evidence_hash is None:
+        raise UsageError("receipt complete requires --result-file (only its SHA-256 is stored)")
+    if args.receipt_action == "begin" and (args.result_file or args.provider_ref):
+        raise UsageError("receipt begin accepts no --result-file or --provider-ref")
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT state, idempotency_key, result_sha256, provider_ref "
+            "FROM podcast_step_receipts WHERE job_id = ? AND step = ? AND action = ?",
+            (args.job_id, step, action),
+        ).fetchone()
+        if existing and existing["idempotency_key"] != key:
+            raise TransitionError(
+                "duplicate dispatch refused: existing receipt has a different idempotency key"
+            )
+
+        if args.receipt_action == "begin":
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO podcast_step_receipts "
+                    "(job_id, step, action, state, idempotency_key, begun_at) "
+                    "VALUES (?, ?, ?, 'begun', ?, ?)",
+                    (args.job_id, step, action, key, iso(now_utc())),
+                )
+                disposition = "acquired"
+                _append_event(conn, args.job_id, row["status"], row["status"],
+                              f"receipt begun: step={step} action={action}")
+            elif existing["state"] == "complete":
+                disposition = "already_complete"
+            else:
+                disposition = "in_progress"
+            conn.execute("COMMIT")
+            _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                         "disposition": disposition, "idempotency_key": key})
+            return
+
+        if existing is None:
+            raise TransitionError("receipt complete refused: action was never begun")
+        if existing["state"] == "complete":
+            if existing["result_sha256"] != evidence_hash or existing["provider_ref"] != provider_ref:
+                raise TransitionError("duplicate completion refused: receipt evidence differs")
+            conn.execute("COMMIT")
+            _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                         "disposition": "already_complete", "idempotency_key": key})
+            return
+        conn.execute(
+            "UPDATE podcast_step_receipts SET state = 'complete', result_sha256 = ?, "
+            "provider_ref = ?, completed_at = ? WHERE job_id = ? AND step = ? AND action = ?",
+            (evidence_hash, provider_ref, iso(now_utc()), args.job_id, step, action),
+        )
+        _append_event(conn, args.job_id, row["status"], row["status"],
+                      f"receipt complete: step={step} action={action}")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    _emit(args, {"job_id": args.job_id, "step": step, "action": action,
+                 "disposition": "completed", "idempotency_key": key,
+                 "result_sha256": evidence_hash})
+
+
+def cmd_artifact(conn, args):
+    """Record one immutable, local worker artifact as canonical JSON."""
+    row = _load_job(conn, args.job_id)
+    _assert_active(conn, row["client_id"])
+    step = _receipt_token("step", args.step)
+    kind = _receipt_token("artifact kind", args.kind)
+    if not args.file or not os.path.isfile(args.file):
+        raise UsageError("artifact record requires a readable --file")
+    try:
+        with open(args.file, "rb") as handle:
+            parsed = json.loads(handle.read().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise UsageError("artifact --file must contain UTF-8 JSON") from exc
+    canonical = json.dumps(parsed, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"))
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT sha256 FROM podcast_step_artifacts WHERE job_id = ? AND step = ? AND kind = ?",
+            (args.job_id, step, kind),
+        ).fetchone()
+        if existing is not None and existing["sha256"] != digest:
+            raise TransitionError(
+                "artifact replacement refused: existing step artifact has different content"
+            )
+        if existing is None:
+            conn.execute(
+                "INSERT INTO podcast_step_artifacts (job_id, step, kind, sha256, content_json) VALUES (?, ?, ?, ?, ?)",
+                (args.job_id, step, kind, digest, canonical),
+            )
+            _append_event(conn, args.job_id, row["status"], row["status"],
+                          f"artifact recorded: step={step} kind={kind}")
+            disposition = "recorded"
+        else:
+            disposition = "already_recorded"
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    _emit(args, {"job_id": args.job_id, "step": step, "kind": kind,
+                 "sha256": digest, "disposition": disposition})
 
 
 def _coerce(value: str, kind: str):
@@ -1369,6 +1868,9 @@ def cmd_resume(conn, args):
     target = row["resume_stage"]
     if not target:
         raise TransitionError("held job has no resume_stage recorded")
+    # A held job resumes DIRECTLY to its recorded stage, which can itself be a
+    # publish-ward stage. Same chokepoint as advance; this path had no gate.
+    overridden = assert_release_gates(conn, args.job_id, row, target)
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(
@@ -1378,6 +1880,10 @@ def cmd_resume(conn, args):
         )
         _append_event(conn, args.job_id, "queued_credit_out", target,
                       "credit restored; resumed from queue")
+        for finding in overridden:
+            _append_event(conn, args.job_id, "queued_credit_out", target,
+                          "release gate OVERRIDDEN via %s: %s"
+                          % (OPERATOR_RELEASE_ENV, finding))
         # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
         ledger_sync = _sync_ledger(args.job_id, target, "resumed")
         if ledger_sync == "broken":
@@ -1974,6 +2480,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "optionally with an operator REASON string "
                         "(`--force-waiver \"<reason>\"`); the waiver and its reason "
                         "are recorded to the job event log (audited)")
+    a.add_argument("--rescue-proof", dest="rescue_proof", action="store_true",
+                   help="this advance is a rescue/activation PROOF on a real job "
+                        "(SOP-PODCAST-07 Section 3), not a production step; stamps a "
+                        "durable marker so the job can never reach a publish step "
+                        "without an explicit human release")
     a.set_defaults(func=cmd_advance)
 
     o = sub.add_parser("output", help="set an output column")
@@ -1981,6 +2492,30 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--field", required=True, choices=sorted(OUTPUT_COLUMNS))
     o.add_argument("--value", required=True)
     o.set_defaults(func=cmd_output)
+
+    rc = sub.add_parser("receipt", help="claim or complete one idempotent runbook action")
+    rc.add_argument("receipt_action", choices=["begin", "complete"])
+    rc.add_argument("--job-id", required=True)
+    rc.add_argument("--step", required=True,
+                    help="runbook step label, for example 12.5")
+    rc.add_argument("--action", required=True,
+                    help="opaque action label, for example show-notes")
+    rc.add_argument("--idempotency-key", required=True,
+                    help="stable key reused after interruption")
+    rc.add_argument("--result-file", default=None,
+                    help="local evidence file; complete stores only its SHA-256")
+    rc.add_argument("--provider-ref", default=None,
+                    help="optional opaque provider-side reference, never a URL or content")
+    rc.set_defaults(func=cmd_receipt)
+
+    ar = sub.add_parser("artifact", help="record immutable local worker evidence")
+    ar.add_argument("--job-id", required=True)
+    ar.add_argument("--step", required=True)
+    ar.add_argument("--kind", required=True,
+                    help="opaque artifact kind, for example research-package")
+    ar.add_argument("--file", required=True,
+                    help="UTF-8 JSON evidence file; canonical JSON and SHA-256 are stored")
+    ar.set_defaults(func=cmd_artifact)
 
     h = sub.add_parser("hold", help="hold a job on the credit-out queue")
     h.add_argument("--job-id", required=True)

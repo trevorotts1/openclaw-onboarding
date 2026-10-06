@@ -564,5 +564,5 @@ test("no Anthropic ids, no {{...}}, no real ids, no hardcoded client/location", 
   // `key: type` pairs, never a bare identifier path.
   assert.ok(!/\{\{[\s]*(#|\/|>|!)?[A-Za-z_$][\w$.]*[\s]*\}\}/.test(src), "no {{...}} template syntax");
   // No literal real client slug or location id.
-  assert.ok(!/karen-vaughn|sheila-reynolds|loc_a_fake|loc_b_fake/.test(src), "no hardcoded client/location");
+  assert.ok(!/fixture-client-[a-z]|loc_a_fake|loc_b_fake/.test(src), "no hardcoded client/location");
 });

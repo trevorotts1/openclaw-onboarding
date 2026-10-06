@@ -3,6 +3,7 @@
 - **Source workflow:** `agency-template-fixed-v3` (Social media in a box. Agency version. Template - FIXED v3)
 - **Model at export time:** OpenRouter (model + 2 fallbacks from client config)
 - **Purpose:** Transforms the Facebook base post into platform-native Instagram + LinkedIn variants (and carries the full platform playbook: FB/IG/LinkedIn/YouTube/Pinterest/Blue Sky/Threads/communities), hook-zone and truncation rules, followUpComment 4-part structure, strict-JSON output keyed by requestedPlatforms.
+- **F39 (2026-09-08) — VERSIONED PLATFORM STRATEGY PROFILES:** the reformatter now CONSUMES the selected platform strategy profile for every requested platform. Profiles live in Skill 35 `references/platform-strategies/<platform>.md` (machine-readable rules in `config/platform-capabilities.json`, versioned with `checked_at` source dates). One theme becomes VISIBLY DIFFERENT native treatments per platform — the audience, format, hook and CTA shape come from the selected profile, never a blind copy. A native feature unsupported through the active adapter yields the approved supported variant or an explicit unavailable mark — never a silent substitution and never a block on other channels. The profile version + checked_at are recorded in the content contract (`shared-utils/social_platform_profiles.py` `record_in_contract`).
 - **Anonymization:** verified clean — no client names or secrets in this prompt text. Client-identifying data in this workflow family lives ONLY in raw-export `pinData` (see ANALYSIS.md `client_name_locations`); it is excluded here.
 
 ## System
@@ -1717,18 +1718,29 @@ LINK URL (DO NOT INCLUDE IN OUTPUT - APPENDED PROGRAMMATICALLY):
 REQUESTED PLATFORMS:
 {{ $json.requestedPlatforms }}
 
+SELECTED PLATFORM STRATEGY PROFILES (F39 — one per requested platform; each carries profile_version + checked_at):
+{{ $json.platformStrategyProfiles }}
+
 === YOUR TASK ===
 
 Transform the ORIGINAL FACEBOOK POST content for EACH platform listed in requestedPlatforms.
 
 IMPORTANT RULES:
 1. Only generate content for platforms in requestedPlatforms
-2. Each platform must have content that feels NATIVE to that platform
+2. Each platform must have content that feels NATIVE to that platform — build it
+   from THAT platform's selected strategy profile (audience, format, hook, CTA
+   shape, measurement goals), so one theme becomes VISIBLY DIFFERENT treatments
+   per platform, never the same caption copied everywhere
 3. Follow all character limits strictly
 4. Rewrite the CALL TO ACTION in an emotionally compelling way for each followUpComment
 5. DO NOT include the link in followUpComment - it will be appended automatically
+6. If the selected profile marks a requested native format unsupported through
+   the active adapter, produce the approved SUPPORTED variant (or mark that one
+   capability unavailable in the output) — never silently substitute, and never
+   let one platform's limitation block the other platforms
 
-Apply all platform-specific rules from your system instructions.
+Apply all platform-specific rules from your system instructions AND from the
+selected strategy profiles.
 
 Output ONLY valid JSON matching the required schema.
 ```

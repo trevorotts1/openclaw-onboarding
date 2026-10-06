@@ -29,6 +29,16 @@ set -euo pipefail
 # caller, present or future.
 INTERVIEW_RATE_LIMIT_SHARED_LITERAL_SENTINEL="interview-web"
 _rate_limit_state_file() {
+  # An explicitly configured ledger keeps offline fixtures and separately
+  # provisioned runtimes out of another installation's default workspace.
+  # Reject relative paths instead of silently falling back to a shared ledger.
+  if [ "${INTERVIEW_RATE_LIMIT_STATE_FILE+x}" = x ]; then
+    case "$INTERVIEW_RATE_LIMIT_STATE_FILE" in
+      /*) printf '%s' "$INTERVIEW_RATE_LIMIT_STATE_FILE" ;;
+      *) printf '' ;;
+    esac
+    return 0
+  fi
   if [ -d /data/.openclaw/workspace ]; then printf '%s' "/data/.openclaw/workspace/.interview-rate-limit.json"
   elif [ -d "$HOME/.openclaw/workspace" ]; then printf '%s' "$HOME/.openclaw/workspace/.interview-rate-limit.json"
   else local _ws="${OC_WORKSPACE_DEFAULT:-}"

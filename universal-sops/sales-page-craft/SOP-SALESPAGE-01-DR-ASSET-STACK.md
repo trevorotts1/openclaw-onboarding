@@ -79,7 +79,8 @@ registered slug (mirrors FAB-QC D4) — no grounding, no generation.
 | P7-BUNDLE | `AF-SP56-BUNDLE-ZHC` / `-FRAGMENT` / `-METHOD` / `-COPYTOKENS` / `-SEO` / `-THANKYOU` | ZHC UPPERCASE container prefix; per-page fragment + method + copy-tokens; SEO block complete; thank-you step present. |
 | P7-BUNDLE | `AF-SP56-BUNDLE-BUMP-ROUTE` | the bump routes to the Skill 44 seam as COPY (route `SKILL44_WIDGET`), never hand-wired. |
 | P9 / run | `AF-SP56-CERT-PHASE-GAP` / `AF-SP56-PROCESS-INTEGRITY` | a signed certificate requires a full P0->P9 pass, no phase skips, valid HMAC. |
-| entry | `AF-SP56-CANONICAL-BYPASS` / `AF-SP56-FRONT-DOOR` / `AF-SP56-HASH-PIN` | no hand-rolled GHL REST / ImgBB / raw image createTask / mail sender in the run dir; the enforcement core matches its pinned head; the orchestrator refuses without the front-door nonce. |
+| P2-IMAGES | `AF-SP56-IMAGES-MISSING` / `AF-SP56-IMAGES-PROVENANCE` | every image record carries a real provider task id. KIE images follow the shared route in `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3 (Skill 66 policy, then Skill 74: validate, preflight, prompt-budget check, `submit --mode active`, save immediately; prompt length per `kie-common-rules.md` rule 12); each success is recorded with `56-sales-page-assets/scripts/kie74_receipt.py --phase P2-IMAGES`. |
+| entry | `AF-SP56-CANONICAL-BYPASS` / `AF-SP56-FRONT-DOOR` / `AF-SP56-HASH-PIN` | no hand-rolled GHL REST / ImgBB / raw image createTask / KIE client script / mail sender in the run dir (Skill 74 result files directly inside `receipts/kie74/` are allow-listed and re-checked); the enforcement core matches its pinned head; the orchestrator refuses without the front-door nonce. |
 | entry | `AF-SP56-MODEL-TIER` / `AF-SP56-MODEL-NOANTHROPIC` | the entry shell resolves the CLIENT's own execution-tier authoring model (role=content), records `routing/model-content-receipt.json`, and `prove_sp_cert.py --model-receipt` gates it fail-closed — execution/content tier required, Anthropic hard-banned by provider field (FIX-XC-09e). |
 
 **Rework loop:** a QC failure returns the exact `AF-SP56-*` code; a bounded re-author loop (verifier !=
@@ -95,7 +96,7 @@ bash 56-sales-page-assets/sales-page-assets-entry.sh --run-dir <RUN_DIR>
 
 The entry runs five fail-closed guards (DEPS -> VERSION -> HASH-PIN -> BYPASS-SCAN -> run-scoped 0600
 nonce) and dispatches `run_sales_page_assets.py`, which walks P0 -> P9 with no phase skips. Writing and
-running a hand-rolled GHL REST call, an ImgBB re-host, a raw image `createTask`, or a mail sender in the
+running a hand-rolled GHL REST call, an ImgBB re-host, a raw image `createTask`, a copied KIE client script, or a mail sender in the
 run dir is the ungoverned path and is FORBIDDEN (`AF-SP56-CANONICAL-BYPASS`). A `python3
 run_sales_page_assets.py` without the front-door nonce dies `AF-SP56-FRONT-DOOR`.
 

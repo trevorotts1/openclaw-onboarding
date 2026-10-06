@@ -149,6 +149,69 @@ def _make_slides(n):
 
 
 # ---------------------------------------------------------------------------
+# F26 — TIMING HELPERS: measure the wait RELATIVE to the configured cap
+#
+# build_deck routes EVERY kie call — every submit AND every poll — through
+# presentation_job/governor.py, whose providers.yaml entry pins kie at
+# `rps: 2.0`. That is one slot every ~0.5s, so a stuck N-slide batch spends
+# N x 0.5s in Phase A and another N x 0.5s on each Phase-B poll pass BEFORE the
+# poll cap is ever consulted. For the 5-slide stuck batch below that is a
+# deterministic 5.0s floor, which is why the old `wall < 5.0` assertion could
+# only fail: it measured governor throughput, not the hard cap it claimed to
+# prove. `max_seconds` is a PHASE-B budget; it never bounded Phase A and it was
+# never what a total-wall constant measured.
+#
+# So the assertions below bound Phase B against the batch's OWN `max_seconds`
+# (two-sided) and derive the per-call pacing from the run's own timestamps.
+# Total wall survives only as a coarse no-hang backstop.
+# ---------------------------------------------------------------------------
+
+# Machine jitter allowance on top of the measured pacing. Generous on purpose:
+# the bound it guards (cap + one poll pass) is what carries the proof, and an
+# unbounded poll loop overshoots it without limit, not by a second.
+_TIMING_SLACK_S = 1.0
+
+
+def _worst_case_pace_s(mock):
+    """Worst-case governor pacing per kie call, from THIS run's own timestamps.
+
+    Every submit and every poll acquires one kie slot from the SAME per-process
+    kie rate bucket, so consecutive call timestamps are spaced by whatever that
+    bucket was willing to hand out at that moment. Two things make an average
+    useless here, and both were observed:
+
+      * the bucket has a burst allowance (`burst: 20`), so a phase can fire
+        several calls back-to-back and only then throttle;
+      * the bucket is process-wide, so the REST OF THE SUITE drains it. Run
+        alone, this file's stuck batch spends 2.5s in Phase A; run inside the
+        full suite it spent 4.9s — in bursts averaging 0.161s/call — while
+        Phase B still paced at a flat ~0.5s/call.
+
+    So take the LARGEST consecutive gap (the slowest the governor actually was,
+    not the mean) and prefer the POLL series, which is the phase `max_seconds`
+    actually budgets. Returns 0.0 when neither series has two samples — e.g. a
+    legacy checkout where `_governor` is None and every acquire is a no-op
+    passthrough, which paces at ~0 and which the bounds below tolerate."""
+    for series in ([t for t, _ in mock.poll_calls],
+                   [t for t, _ in mock.submit_calls]):
+        if len(series) >= 2:
+            return max(later - earlier
+                       for earlier, later in zip(series, series[1:]))
+    return 0.0
+
+
+def _phase_b_seconds(mock, batch_end_ts):
+    """Upper bound on the poll/download phase, from the run's own timestamps.
+
+    Phase B starts only after the last createTask has returned, so
+    (batch_end - last_submit) can only OVERSTATE it. That direction is
+    deliberate: it keeps `phase_b >= max_seconds` mathematically safe, because
+    the poll loop provably breaks only once (now - poll_start) >= max_seconds
+    and poll_start >= the last submit timestamp."""
+    return batch_end_ts - mock.submit_calls[-1][0]
+
+
+# ---------------------------------------------------------------------------
 # TEST 1: 20 prompts submit once, 0.6s apart, ALL land in < 20s, all taskIds
 # ---------------------------------------------------------------------------
 class TestBatchSubmitWindow:
@@ -280,9 +343,10 @@ class TestBatchPollAndDownloadAsFinished:
         print(f"  download span     : {span:.4f}s across {len(set(round(t,4) for t in dl_times))} "
               f"distinct instants (as-finished, not serialized)")
 
-    def test_stuck_task_surfaces_fail_no_hang(self, tmp_path, monkeypatch):
-        """A task that NEVER completes is surfaced as FAIL at the hard cap — never
-        hangs (D14). The batch must terminate and report the stuck slide."""
+    def _run_stuck_batch(self, monkeypatch, tmp_path, n_slides, max_seconds):
+        """Submit `n_slides` tasks that NEVER complete; return the timings.
+
+        Shared by both stuck-task tests so they prove the same code path."""
         mock, download_log = _install_mock(monkeypatch)
         # Make every task never complete: each created task stays "generating"
         # forever by giving it an infinite latency.
@@ -297,18 +361,139 @@ class TestBatchPollAndDownloadAsFinished:
         mock.createTask = never_complete_createTask
         monkeypatch.setattr(bd, "RATE_LIMIT_SLEEP_S", 0.0)
         run_dir = tmp_path / "run"
-        run_dir.mkdir()
+        run_dir.mkdir(parents=True, exist_ok=True)
         renders = tmp_path / "renders"
 
         start = time.time()
         result = bd.render_slides_batch(
-            _make_slides(5), api_key="stub-key", renders_dir=renders, run_dir=run_dir,
-            submit_interval=0.0, poll_interval=0.01,
-            max_seconds=0.05,  # hard cap hit almost immediately
+            _make_slides(n_slides), api_key="stub-key", renders_dir=renders,
+            run_dir=run_dir, submit_interval=0.0, poll_interval=0.01,
+            max_seconds=max_seconds,
         )
-        wall = time.time() - start
-        # terminates (no hang) and surfaces FAIL for the stuck slides
-        assert wall < 5.0, f"batch hung: {wall:.2f}s"
-        assert len(result["failures"]) == 5, f"expected all 5 to surface FAIL: {result['failures']}"
-        for f in result["failures"]:
-            assert "POLL CAP" in f["error"] or "surfaced FAIL" in f["error"], f["error"]
+        end = time.time()
+
+        assert mock.submit_calls, "no createTask ever fired — the mock is not wired"
+        assert mock.poll_calls, (
+            "the stuck batch never polled — nothing exercised the poll cap")
+        # Every pass polls every still-pending task, and a stuck task is never
+        # removed, so the poll count is always a whole number of full passes.
+        assert len(mock.poll_calls) % n_slides == 0, (
+            f"{len(mock.poll_calls)} polls is not a whole number of "
+            f"{n_slides}-task passes")
+        return {
+            "result": result,
+            "mock": mock,
+            "wall": end - start,
+            "phase_b": _phase_b_seconds(mock, end),
+            "passes": len(mock.poll_calls) // n_slides,
+            "one_pass_s": _worst_case_pace_s(mock) * n_slides,
+        }
+
+    def test_stuck_task_surfaces_fail_no_hang(self, tmp_path, monkeypatch):
+        """A task that NEVER completes is surfaced as FAIL at the hard cap — never
+        hangs (D14). The batch must terminate and report the stuck slide.
+
+        F26: the wait this test exists to prove is the batch's OWN configured
+        poll cap, so Phase B is bounded two-sided against `max_seconds` and the
+        pacing the run itself measured. The total-wall number survives only as
+        a coarse no-hang backstop, widened from 5.0 to 8.0 because the
+        governor's kie `rps: 2.0` puts a deterministic 5.0s floor under this
+        5-slide batch (see the F26 note above `_worst_case_pace_s`) — the old
+        threshold sat exactly on that floor and could only fail."""
+        n_slides = 5
+        max_seconds = 0.05  # hard cap hit on the first elapsed check
+        run = self._run_stuck_batch(monkeypatch, tmp_path, n_slides, max_seconds)
+
+        # (1) coarse backstop — the batch terminated at all.
+        assert run["wall"] < 8.0, f"batch hung: {run['wall']:.2f}s"
+
+        # (2) THE POINT OF THIS TEST — the CONFIGURED cap is what ended the
+        #     wait, bounded on both sides against `max_seconds` itself:
+        #       lower  : the loop breaks only once elapsed >= max_seconds, so a
+        #                Phase B shorter than the cap means something else cut
+        #                the wait short.
+        #       upper  : the cap is checked at the top of each pass, so the
+        #                worst honest overshoot is the one pass already in
+        #                flight when the budget came due. Anything beyond that
+        #                is unbounded polling — the D14 hang this guards.
+        ceiling = max_seconds + run["one_pass_s"] + _TIMING_SLACK_S
+        assert run["phase_b"] >= max_seconds, (
+            f"poll phase ran {run['phase_b']:.3f}s but the configured cap was "
+            f"{max_seconds}s — the wait ended before the cap, so the cap was "
+            "not the binding wait")
+        assert run["phase_b"] <= ceiling, (
+            f"poll phase ran {run['phase_b']:.3f}s — the configured cap "
+            f"({max_seconds}s) plus the one poll pass already in flight "
+            f"({run['one_pass_s']:.3f}s) allows at most {ceiling:.3f}s. The cap "
+            "did not bind; the batch kept polling a task that never completes")
+
+        # (3) the cap fired for EVERY stuck slide, and the surfaced error names
+        #     the configured cap — full-string, so a silently different failure
+        #     path (network, shape, terminal state) cannot satisfy it.
+        failures = run["result"]["failures"]
+        assert len(failures) == n_slides, (
+            f"expected all {n_slides} to surface FAIL: {failures}")
+        expected = {
+            f"taskId task-{i} still pending after {max_seconds:.0f}s "
+            "— surfaced FAIL (no hang)"
+            for i in range(1, n_slides + 1)
+        }
+        assert {f["error"] for f in failures} == expected, (
+            f"failures did not come from the poll-cap branch: {failures}")
+
+        print("\nSTUCK-TASK CAP EVIDENCE:")
+        print(f"  configured cap    : {max_seconds}s")
+        print(f"  poll phase        : {run['phase_b']:.3f}s "
+              f"(ceiling {ceiling:.3f}s = cap + one in-flight pass + slack)")
+        print(f"  poll passes       : {run['passes']}")
+        print(f"  total wall        : {run['wall']:.3f}s "
+              f"(governor floor {n_slides * 2 * 0.5:.1f}s at kie rps 2.0)")
+
+    def test_poll_cap_is_the_binding_wait(self, tmp_path, monkeypatch):
+        """F26 regression: the batch waits exactly as long as its CONFIGURED cap
+        says — not for some fixed constant that happens to look right.
+
+        The same never-completing batch is run twice at two different
+        `max_seconds`. If `max_seconds` is genuinely the binding wait, the
+        larger cap must reach its own budget, stop within one poll pass of it,
+        and burn strictly more poll passes than the small cap. A wait governed
+        by anything else — a hard-coded sleep, the governor's pacing alone, a
+        fixed retry count — would spend the same number of passes on both."""
+        n_slides = 2  # >= 2 so the per-call pacing is measurable from Phase A
+        small_cap = 0.05
+        large_cap = 1.5
+
+        low = self._run_stuck_batch(monkeypatch, tmp_path / "low", n_slides, small_cap)
+        high = self._run_stuck_batch(monkeypatch, tmp_path / "high", n_slides, large_cap)
+
+        # both caps actually fired, on every slide
+        for tag, run in (("small", low), ("large", high)):
+            assert len(run["result"]["failures"]) == n_slides, (
+                f"{tag} cap: expected {n_slides} FAILs, "
+                f"got {run['result']['failures']}")
+
+        # raising the cap must buy MORE polling — this is the relative proof
+        assert high["passes"] > low["passes"], (
+            f"cap {large_cap}s spent {high['passes']} poll passes and cap "
+            f"{small_cap}s spent {low['passes']} — the configured cap is not "
+            "what decides how long the batch waits")
+        assert high["phase_b"] > low["phase_b"], (
+            f"cap {large_cap}s waited {high['phase_b']:.3f}s but cap "
+            f"{small_cap}s waited {low['phase_b']:.3f}s — the wait does not "
+            "track the configured cap")
+
+        # and each run stops inside its OWN budget + the pass already in flight
+        for tag, run, cap in (("small", low, small_cap), ("large", high, large_cap)):
+            ceiling = cap + run["one_pass_s"] + _TIMING_SLACK_S
+            assert run["phase_b"] >= cap, (
+                f"{tag} cap {cap}s: poll phase {run['phase_b']:.3f}s ended "
+                "before the configured budget was reached")
+            assert run["phase_b"] <= ceiling, (
+                f"{tag} cap {cap}s: poll phase {run['phase_b']:.3f}s exceeds "
+                f"{ceiling:.3f}s (cap + one in-flight pass + slack) — "
+                "unbounded polling")
+
+        print("\nBINDING-WAIT EVIDENCE (cap is relative, not a constant):")
+        for tag, run, cap in (("small", low, small_cap), ("large", high, large_cap)):
+            print(f"  cap {cap:>5}s -> poll phase {run['phase_b']:.3f}s, "
+                  f"{run['passes']} pass(es), wall {run['wall']:.3f}s")

@@ -60,6 +60,12 @@ def describe_park(state: dict, run_dir=None) -> list[str]:
     n_banked = len(banked)
     lines.append("")
     lines.append(f"phases  : {n_done} of {total_phases} done, {n_banked} artifact(s) banked")
+    # FIX 20: a repinned job carries obsolete rows (phases the manifest no
+    # longer contains). They are not unfinished work — surface them so the
+    # operator can see why the denominator moved.
+    obsolete = [p["id"] for p in phases if p.get("status") == "obsolete"]
+    if obsolete:
+        lines.append(f"obsolete: {len(obsolete)} phase(s) removed at repin: {', '.join(obsolete)}")
 
     # -- Resume re-validation count -------------------------------------------
     # state["resume_revalidation"] is a dict as of U017: {"checked": N, "failed": M}.

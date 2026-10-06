@@ -102,8 +102,7 @@ chunk_paragraphs() {
 notion_curl() {
   local method="$1"; shift
   local url="$1"; shift
-  # SECURITY (process-table credential exposure fix): the Notion token (and, on
-  # Tier 2, the agency token -- see select_tier2_or_skip) used to be interpolated
+  # SECURITY (process-table credential exposure fix): the Notion token used to be interpolated
   # directly into a `-H "Authorization: Bearer ..."` argv, which put the secret in
   # plaintext in this host's process table for the life of every curl call (any
   # `ps`/`ps -eww` on the box could read it). Headers now go through a curl
@@ -221,7 +220,7 @@ with_retry() {
 # auto-complete promise. The resume cron / watchdog re-runs this script, so the
 # client does nothing else after granting access.
 notion_client_action_line() {
-  printf '%s' "Share any one Notion page with your 'ZHC' integration (Notion -> open a page -> ... -> Connections -> add ZHC), or set NOTION_CLOSEOUT_PARENT_PAGE_ID to a page id you've shared. It auto-completes on the next run -- nothing else to do."
+  printf '%s' "Share a page in this client's own Notion with the ZHC integration (Notion -> open a page -> ... -> Connections -> add ZHC), then explicitly set NOTION_CLOSEOUT_PARENT_PAGE_ID to that page id. The staged closeout resumes after ownership verification."
 }
 
 # stage_closeout_locally <reason-class> -- render the full closeout booklet to a
@@ -281,86 +280,40 @@ stage_closeout_locally() {
   log "INFO" "staged full closeout booklet locally -> $stage_md (publishes on next run once a page is shared)"
 }
 
-# ============================================================================
-# TIER 2 -- AGENCY FALLBACK (for clients with NO Notion of their own)
-# ============================================================================
-# Tier 1 (preferred) = the CLIENT's own Notion integration writes the 9-section
-# ZHC page under a page the client shared (true ownership). When the client has
-# no Notion / shared nothing, Tier 1 fail-clear stages locally.
-#
-# Tier 2 is an OPT-IN agency fallback: an AGENCY integration token (operator
-# secret, NEVER a client key, NEVER committed) creates the client's ZHC as a
-# SUBPAGE under a single, PRIVATE agency parent page, then returns a VIEW-ONLY
-# public link to that subpage.
-#
-# OPERATOR PREREQUISITES (one-time, documented in README.md):
-#   1. ZHC_AGENCY_NOTION_TOKEN  -- the agency integration token, set in
-#      ~/.openclaw/secrets/.env (or operator config). NEVER a client token.
-#   2. ZHC_AGENCY_NOTION_PARENT_PAGE_ID -- the agency parent page id. That page
-#      MUST be: (a) shared with the agency integration, and (b) "Published to
-#      web", VIEW-ONLY, in the Notion UI. It MUST stay PRIVATE to workspace
-#      members (do NOT share it with people/teamspaces). Children inherit the
-#      view-only web publish automatically, so each client only ever receives
-#      their OWN subpage's public_url and cannot reach the parent or siblings.
-#
-# IMPORTANT API GROUND TRUTH (verified against developers.notion.com):
-#   The Notion public API CANNOT toggle "share to web" per page -- that is a
-#   read-only `public_url` field, UI-only to enable. So Tier 2 does NOT pretend
-#   to set sharing via the API. It relies on the parent being web-published once
-#   (prereq #2); children inherit it and their `public_url` becomes readable.
-#   Tier 2 reads back `public_url` and returns it. If empty (parent not yet
-#   web-published), it returns the normal page URL and records a clear operator
-#   action -- it NEVER fabricates a share state.
-#
-# select_tier2_or_skip -- if the agency token+parent are configured, switch the
-# active integration token + parent to the agency ones and select Tier 2 so the
-# existing root-create + 9-section builder runs against the agency workspace.
-# Returns 0 (Tier 2 selected) or 1 (not configured -- caller does Tier 1 staging).
-select_tier2_or_skip() {
-  local agency_token="${ZHC_AGENCY_NOTION_TOKEN:-}"
-  local agency_parent="${ZHC_AGENCY_NOTION_PARENT_PAGE_ID:-}"
-  if [[ -z "$agency_token" || -z "$agency_parent" ]]; then
-    log "INFO" "tier2: agency fallback not configured (ZHC_AGENCY_NOTION_TOKEN / ZHC_AGENCY_NOTION_PARENT_PAGE_ID unset) -- using Tier 1 fail-clear staging"
-    return 1
-  fi
-  log "INFO" "tier2: client has no own Notion parent -- using AGENCY fallback under parent $agency_parent"
-  # Switch the active integration to the agency one. ALL subsequent Notion calls
-  # (root create + every create_child_page) now go through the agency token.
-  NOTION_API_TOKEN="$agency_token"
-  PARENT_PAGE_ID="$agency_parent"
-  PARENT_KIND="agency-tier2"
-  NOTION_TIER=2
-  # The subpage title carries the client name so the agency parent lists clients.
-  ROOT_TITLE="${COMPANY_NAME:-Your Company} -- ZHC Closeout"
-  state_set ".notionTier = 2" || true
-  return 0
+# Client ownership is explicit; a global title search cannot establish it.
+COMPANY_ID="$(state_get '.companyId // .company_id')"
+PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-${NOTION_WORKSPACE_ROOT_ID:-}}"
+notion_ownership_hold() {
+  log "ERROR" "Notion ownership unresolved: $1"
+  COMPANY_NAME="$(state_get '.companyName')"; OWNER_NAME="$(state_get '.ownerName')"
+  AGENT_NAME="$(state_get '.agentName')"; CC_URL="$(state_get '.commandCenterUrl')"
+  DEPT_NORM=$(jq -c '.departments // []' "$STATE_FILE" 2>/dev/null || echo '[]')
+  stage_closeout_locally "notion-ownership-unverified"
+  state_set '.closeoutLegStatus.notion = "failed:ownership-unverified" | .notionFailureReason = "Client-owned parent and root ownership must be verified" | .closeoutBlockers = ((.closeoutBlockers // [] | map(select(.class != "notion-ownership-unverified"))) + [{class:"notion-ownership-unverified",resumable:true,staged:true,cleared:false,reason:"Configure this company own integration and explicit shared parent; no agency fallback"}])' || true
+  echo "[NOTION] BLOCKED (staged, resumable): $(notion_client_action_line)" >&2
+  exit 2
 }
+[[ -n "$COMPANY_ID" && -n "$PARENT_PAGE_ID" && -n "${NOTION_API_TOKEN:-}" ]] || notion_ownership_hold "configure this company's own token and explicit shared parent"
+[[ "$PARENT_PAGE_ID" =~ ^[a-zA-Z0-9-]+$ ]] || notion_ownership_hold "invalid parent page identity"
+[[ "$(state_get '.notionTier')" != "2" ]] || notion_ownership_hold "existing agency closeout requires explicit client-owned migration"
+[[ -z "${ZHC_AGENCY_NOTION_TOKEN:-}" || "$NOTION_API_TOKEN" != "$ZHC_AGENCY_NOTION_TOKEN" ]] || notion_ownership_hold "agency token cannot publish client closeout"
+[[ -z "${ZHC_AGENCY_NOTION_PARENT_PAGE_ID:-}" || "$PARENT_PAGE_ID" != "$ZHC_AGENCY_NOTION_PARENT_PAGE_ID" ]] || notion_ownership_hold "agency parent cannot publish client closeout"
+prior_company="$(state_get '.notionOwnership.companyId')"
+prior_parent="$(state_get '.notionOwnership.parentPageId')"
+[[ -z "$prior_company" || "$prior_company" == "$COMPANY_ID" ]] || notion_ownership_hold "stored company ownership conflicts"
+[[ -z "$prior_parent" || "${prior_parent//-/}" == "${PARENT_PAGE_ID//-/}" ]] || notion_ownership_hold "stored parent ownership conflicts"
+parent_proof=$(with_retry notion_curl GET "https://api.notion.com/v1/pages/$PARENT_PAGE_ID" || echo '{}')
+printf '%s' "$parent_proof" | jq -e --arg id "${PARENT_PAGE_ID//-/}" '.object == "page" and (.id|gsub("-";"")) == $id and .archived != true and .in_trash != true' >/dev/null 2>&1 || notion_ownership_hold "configured parent is inaccessible or archived"
 
-# tier2_finalize_share <root_id> -- after the agency subpage + sections are built,
-# read back its public view URL (inherited from the web-published parent) and
-# return the link to deliver. NEVER fabricates a share state.
-tier2_finalize_share() {
-  local root_id="$1"
-  local resp public_url
-  resp=$(with_retry notion_curl GET "https://api.notion.com/v1/pages/${root_id}" || echo "{}")
-  public_url=$(jq_get '.public_url' "$resp" "tier2-public-url")
-  if [[ -n "$public_url" && "$public_url" != "null" ]]; then
-    ROOT_URL="$public_url"
-    state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionTier = 2 | .notionTier2ViewUrl = \"$ROOT_URL\" | .notionTier2ShareState = \"view-only-public\"" || true
-    log "INFO" "tier2: subpage view-only public link = $ROOT_URL (inherited from web-published agency parent)"
-  else
-    # Parent not yet web-published -- return the normal URL, flag the one-time op.
-    state_set ".notionTier = 2 | .notionTier2ShareState = \"parent-not-web-published\"" || true
-    _TS_T2=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    state_set "
-      .closeoutBlockers = (
-        (.closeoutBlockers // [])
-        | map(select(.class != \"notion-tier2-parent-not-published\"))
-        | . + [{\"class\":\"notion-tier2-parent-not-published\",\"reason\":\"Tier 2 agency subpage built, but the agency parent page is not Published-to-web yet, so no view-only public link exists. Operator: publish the agency parent to web (view-only) once -- children inherit it.\",\"since\":\"$_TS_T2\",\"escalatedAt\":null,\"cleared\":false,\"resumable\":true,\"actionable\":\"Publish the agency parent page to web (view-only) in Notion once; children inherit the public view link.\"}]
-      )
-    " || true
-    log "WARN" "tier2: subpage built but agency parent is not web-published -- public_url empty. Returning standard URL; operator must publish the parent to web (view-only) once."
-  fi
+# Select only a unique direct child of the verified client-owned parent.
+owned_page_id() {
+  local body="$1" title="$2" parent="$3"
+  printf '%s' "$body" | jq -er --arg title "$title" --arg parent "${parent//-/}" '
+    if .object != "list" or .has_more != false then error("unverified search") else
+    [.results[]? | select(.object == "page" and .archived != true and .in_trash != true)
+      | select((.parent.page_id // "" | gsub("-";"")) == $parent)
+      | select((.properties.title.title // .properties.Name.title // [] | map(.plain_text // .text.content // "") | join("")) == $title)]
+    | if length > 1 then error("ambiguous owned pages") elif length == 1 then .[0].id else "" end end'
 }
 
 # ---- --refresh-workforce-only mode ----
@@ -384,12 +337,14 @@ if [[ $REFRESH_WORKFORCE_ONLY -eq 1 ]]; then
     log "WARN" "--refresh-workforce-only: NOTION_API_TOKEN not set -- SKIPPING"
     exit 0
   fi
+  root_proof=$(with_retry notion_curl GET "https://api.notion.com/v1/pages/$NOTION_CLOSEOUT_PAGE_ID" || echo '{}')
+  printf '%s' "$root_proof" | jq -e --arg id "${NOTION_CLOSEOUT_PAGE_ID//-/}" --arg parent "${PARENT_PAGE_ID//-/}" '.object == "page" and (.id|gsub("-";"")) == $id and (.parent.page_id // "" | gsub("-";"")) == $parent and .archived != true and .in_trash != true' >/dev/null 2>&1 || notion_ownership_hold "refresh root is not under the verified client parent"
   DEPT_JSON=$(jq -c '.departments' "$STATE_FILE" 2>/dev/null || echo '{}')
   COMPANY_NAME_LOCAL=$(state_get '.companyName'); [[ -z "$COMPANY_NAME_LOCAL" ]] && COMPANY_NAME_LOCAL="Your Company"
   log "INFO" "--refresh-workforce-only: updating Section 5 under page $NOTION_CLOSEOUT_PAGE_ID for $COMPANY_NAME_LOCAL"
   search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
     -d "$(jq -n --arg q "5. Departments and Roles" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" 2>/dev/null || echo "{}")
-  sec5_id=$(echo "$search_resp" | jq -r '.results[0].id // empty' 2>/dev/null || echo "")
+  sec5_id=$(owned_page_id "$search_resp" "5. Departments and Roles" "$NOTION_CLOSEOUT_PAGE_ID") || notion_ownership_hold "section search is ambiguous or incomplete"
   if [[ -n "$sec5_id" ]]; then
     DEPT_COUNT=$(echo "$DEPT_JSON" | jq 'if type == "array" then length elif type == "object" then . | keys | length else 0 end' 2>/dev/null || echo "0")
     with_retry notion_curl PATCH "https://api.notion.com/v1/pages/$sec5_id" \
@@ -475,128 +430,11 @@ fi
 #                                     not fire and the root page is created here.
 PARENT_PAGE_ID="${NOTION_CLOSEOUT_PARENT_PAGE_ID:-${NOTION_WORKSPACE_ROOT_ID:-}}"
 PARENT_KIND="env"
-# NOTION_TIER: 1 = client's own integration + shared page (preferred ownership);
-# 2 = agency fallback subpage under the private agency parent (set by
-# select_tier2_or_skip when the client has no Notion of their own).
+# Only client-owned publication is supported.
 NOTION_TIER=1
 [[ -n "$PARENT_PAGE_ID" ]] && { state_set ".notionTier = 1" || true; }
-# SHARED_PAGE_SEEN: did ANY search return a page result? If every search comes
-# back with zero results, the integration has NO page shared with it (the
-# no-shared-page case) and we must NOT silently fall through to a workspace-root create.
-SHARED_PAGE_SEEN=0
-# note_shared <search-response> -- mark SHARED_PAGE_SEEN if the body is a valid
-# Notion search response carrying >=1 result; surface API errors clearly.
-note_shared() {
-  local body="$1" ctx="${2:-search}"
-  local err; err=$(notion_error_of "$body")
-  if [[ -n "$err" ]]; then
-    log "WARN" "notion search [$ctx] returned API error -- $err"
-    return 0
-  fi
-  is_json "$body" || return 0
-  local n; n=$(printf '%s' "$body" | jq -r '(.results | length) // 0' 2>/dev/null)
-  [[ "$n" =~ ^[0-9]+$ ]] || n=0
-  (( n > 0 )) && SHARED_PAGE_SEEN=1
-}
-
-if [[ -z "$PARENT_PAGE_ID" ]]; then
-  log "INFO" "fallback 2: searching for an existing BlackCEO parent page..."
-  search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
-    -d '{"query":"BlackCEO","filter":{"value":"page","property":"object"},"page_size":5}' || echo "{}")
-  note_shared "$search_resp" "BlackCEO"
-  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:BlackCEO")
-  [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:BlackCEO"
-else
-  # An explicit env-provided parent counts as a shared, accessible page.
-  SHARED_PAGE_SEEN=1
-fi
-if [[ -z "$PARENT_PAGE_ID" ]]; then
-  log "INFO" "fallback 3: searching for an existing OpenClaw parent page..."
-  search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
-    -d '{"query":"OpenClaw","filter":{"value":"page","property":"object"},"page_size":5}' || echo "{}")
-  note_shared "$search_resp" "OpenClaw"
-  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:OpenClaw")
-  [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:OpenClaw"
-fi
-if [[ -z "$PARENT_PAGE_ID" ]]; then
-  log "INFO" "fallback 4: searching for prior-run Zero-Human Company page..."
-  for q in "Your Zero-Human Company" "Zero Human Company" "Zero-Human Company"; do
-    search_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
-      -d "$(jq -n --arg q "$q" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" || echo "{}")
-    note_shared "$search_resp" "zhc:$q"
-    PARENT_PAGE_ID=$(jq_get '.results[0].id' "$search_resp" "parent-search:zhc:$q")
-    if [[ -n "$PARENT_PAGE_ID" ]]; then
-      PARENT_KIND="search:zhc-prior-run:$q"
-      break
-    fi
-  done
-fi
-# Final probe: an unfiltered page-object search. This is the authoritative
-# "is ANYTHING shared with this integration?" check (no-shared-page detection).
-if [[ -z "$PARENT_PAGE_ID" && "$SHARED_PAGE_SEEN" -eq 0 ]]; then
-  probe_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
-    -d '{"filter":{"value":"page","property":"object"},"page_size":1}' || echo "{}")
-  note_shared "$probe_resp" "any-page-probe"
-  PARENT_PAGE_ID=$(jq_get '.results[0].id' "$probe_resp" "parent-search:any-page-probe")
-  [[ -n "$PARENT_PAGE_ID" ]] && PARENT_KIND="search:any-shared-page"
-fi
-
-# ---- NO-SHARED-PAGE DETECTION (no-shared-page detection fix) ----
-# If no parent page was found AND no search ever returned a page, the client's
-# Notion integration has nothing shared with it. Creating at workspace-root will
-# fail for an internal integration, so emit a CLEAR, actionable error and exit
-# WITHOUT producing a placeholder. Allow an explicit opt-in escape hatch
-# (ZHC_NOTION_ALLOW_WORKSPACE_ROOT=1) for true workspace-capable integrations.
-if [[ -z "$PARENT_PAGE_ID" ]]; then
-  if [[ "$SHARED_PAGE_SEEN" -eq 0 && "${ZHC_NOTION_ALLOW_WORKSPACE_ROOT:-0}" != "1" ]]; then
-    # TIER 2 AGENCY FALLBACK: client has no Notion of their own. If the agency
-    # token + parent are configured, build the ZHC as a private agency subpage
-    # instead of staging locally. select_tier2_or_skip switches the active token
-    # + parent in place; we then fall through to the normal root-create flow.
-    if select_tier2_or_skip; then
-      log "INFO" "tier2: proceeding to build agency subpage under $PARENT_PAGE_ID (title: $ROOT_TITLE)"
-    else
-    _ns_action="$(notion_client_action_line)"
-    _ns_reason="notion-no-shared-page: the ZHC Notion integration has no accessible page. $_ns_action"
-    log "ERROR" "$_ns_reason"
-    # FAIL-CLEAR + RESUMABLE: stage the full booklet locally so it is not lost
-    # and publishes instantly on the next run once a page is shared. We do NOT
-    # fabricate a Notion page.
-    stage_closeout_locally "notion-no-shared-page"
-    state_set ".notionFailureReason = \"$_ns_reason\"" || true
-    state_set ".closeoutLegStatus.notion = \"failed:no-shared-page\"" || true
-    _TS_NS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    state_set "
-      .closeoutBlockers = (
-        (.closeoutBlockers // [])
-        | map(select(.class != \"notion-no-shared-page\"))
-        | . + [{\"class\":\"notion-no-shared-page\",\"reason\":\"$_ns_reason\",\"since\":\"$_TS_NS\",\"escalatedAt\":\"$_TS_NS\",\"cleared\":false,\"resumable\":true,\"staged\":true,\"actionable\":\"$_ns_action\"}]
-      )
-    " || true
-    # Operator escalation is OPT-IN. No hardcoded chat, no co-mingling.
-    _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
-    if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
-      openclaw message send --channel telegram -t "$_OP_CHAT" \
-        -m "ZHC HOLD [notion-no-shared-page] $(state_get '.companyName'): $_ns_reason (full closeout staged locally; auto-publishes on next run)" \
-        >>"$LOG_FILE" 2>&1 || true
-    fi
-    echo "[NOTION] BLOCKED (staged, resumable): no page is shared with the ZHC integration." >&2
-    echo "[NOTION] ACTION: $_ns_action" >&2
-    exit 2
-    fi  # end: select_tier2_or_skip else (Tier 1 stage+exit)
-  fi
-  # A page WAS seen but none matched a parent we want: create at workspace root
-  # (opt-in path only, or a genuinely workspace-capable integration).
-  # Skipped entirely when Tier 2 was selected above (PARENT_PAGE_ID is now set).
-  if [[ -z "$PARENT_PAGE_ID" && "$PARENT_KIND" != "agency-tier2" ]]; then
-    log "WARN" "no named parent page matched -- creating at WORKSPACE ROOT (shared_page_seen=$SHARED_PAGE_SEEN, opt-in=${ZHC_NOTION_ALLOW_WORKSPACE_ROOT:-0})"
-    PARENT_PAGE_ID=""
-    PARENT_KIND="workspace-root"
-  fi
-else
-  log "INFO" "parent page id=$PARENT_PAGE_ID (kind=$PARENT_KIND)"
-fi
-
+# Parent was verified above with this client's own integration. Never search
+# other workspace pages as a substitute for explicit ownership.
 # ---- idempotency / RESUME MODE: search for existing root page ----
 # idempotency-resume fix: if the root page already exists, we do NOT exit -- we
 # adopt it as ROOT_ID and fall through to the (idempotent) section population so
@@ -604,19 +442,18 @@ fi
 # root created on a prior run never got its 10 sections.
 existing_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/search" \
   -d "$(jq -n --arg q "$ROOT_TITLE" '{query:$q,filter:{value:"page",property:"object"},page_size:5}')" || echo "{}")
-existing_id=""
-if is_json "$existing_resp"; then
-  existing_id=$(printf '%s' "$existing_resp" | jq -r --arg t "$ROOT_TITLE" \
-    '.results[]? | select((.properties.title.title[0].plain_text // .properties.Name.title[0].plain_text // "") == $t) | .id' 2>/dev/null | head -1)
-else
-  _es_err=$(notion_error_of "$existing_resp")
-  log "WARN" "jq-guard: idempotency search returned non-JSON/unexpected body -- treating as no existing root. ${_es_err:+($_es_err)}"
+existing_id=$(owned_page_id "$existing_resp" "$ROOT_TITLE" "$PARENT_PAGE_ID") || notion_ownership_hold "root search is ambiguous, incomplete or invalid"
+recorded_id="$(state_get '.notionCloseoutPageId // .notionRootPageId')"
+if [[ -n "$recorded_id" && "${recorded_id//-/}" != "${existing_id//-/}" ]]; then
+  notion_ownership_hold "stored root does not match the uniquely verified owned page"
 fi
 RESUME_MODE=0
 if [[ -n "$existing_id" ]]; then
   ROOT_ID="$existing_id"
   ROOT_URL="https://www.notion.so/${ROOT_ID//-/}"
   RESUME_MODE=1
+ownership_json=$(jq -cn --arg company "$COMPANY_ID" --arg parent "$PARENT_PAGE_ID" --arg root "$ROOT_ID" '{companyId:$company,parentPageId:$parent,rootPageId:$root}')
+state_set ".notionOwnership = $ownership_json" || notion_ownership_hold "ownership receipt could not be persisted"
   log "INFO" "root page already exists id=$ROOT_ID -- RESUME MODE: populating missing sections (idempotent, no re-create, no dupes)"
   state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\""
 fi
@@ -630,18 +467,6 @@ if [[ "$RESUME_MODE" -eq 1 ]]; then
   log "INFO" "RESUME MODE: skipping root create, reconciling sections under existing root id=$ROOT_ID"
 else
 log "INFO" "creating root page: $ROOT_TITLE (parent_kind=$PARENT_KIND)"
-if [[ "$PARENT_KIND" == "workspace-root" ]]; then
-  root_body=$(jq -n \
-    --arg title "$ROOT_TITLE" \
-    '{
-      parent: {type: "workspace", workspace: true},
-      properties: {title: {title: [{type: "text", text: {content: $title}}]}},
-      children: [
-        {object: "block", type: "heading_1", heading_1: {rich_text: [{type:"text", text:{content: $title}}]}},
-        {object: "block", type: "paragraph", paragraph: {rich_text: [{type:"text", text:{content: "This is your full closeout document. Read it in order. The sections below explain what you have, how it works, and how to use it."}}]}}
-      ]
-    }')
-else
   root_body=$(jq -n \
     --arg parent "$PARENT_PAGE_ID" \
     --arg title "$ROOT_TITLE" \
@@ -653,30 +478,8 @@ else
         {object: "block", type: "paragraph", paragraph: {rich_text: [{type:"text", text:{content: "This is your full closeout document. Read it in order. The sections below explain what you have, how it works, and how to use it."}}]}}
       ]
     }')
-fi
 root_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$root_body")
 ROOT_ID=$(jq_get '.id' "$root_resp" "root-page-create")
-
-# TIER 2 RETRY: if the Tier-1/workspace-root create failed and we are NOT already
-# on Tier 2, try the agency fallback (when configured) before staging+exiting.
-if [[ ( -z "$ROOT_ID" || "$ROOT_ID" == "null" ) && "$NOTION_TIER" -ne 2 ]]; then
-  if select_tier2_or_skip; then
-    log "INFO" "tier2: retrying root create as agency subpage under $PARENT_PAGE_ID (title: $ROOT_TITLE)"
-    root_body=$(jq -n \
-      --arg parent "$PARENT_PAGE_ID" \
-      --arg title "$ROOT_TITLE" \
-      '{
-        parent: {page_id: $parent},
-        properties: {title: {title: [{type: "text", text: {content: $title}}]}},
-        children: [
-          {object: "block", type: "heading_1", heading_1: {rich_text: [{type:"text", text:{content: $title}}]}},
-          {object: "block", type: "paragraph", paragraph: {rich_text: [{type:"text", text:{content: "This is your full closeout document. Read it in order. The sections below explain what you have, how it works, and how to use it."}}]}}
-        ]
-      }')
-    root_resp=$(with_retry notion_curl POST "https://api.notion.com/v1/pages" -d "$root_body")
-    ROOT_ID=$(jq_get '.id' "$root_resp" "root-page-create-tier2")
-  fi
-fi
 
 if [[ -z "$ROOT_ID" || "$ROOT_ID" == "null" ]]; then
   _notion_err_detail=$(echo "$root_resp" | jq -r '.message // .code // "unknown"' 2>/dev/null || echo "no detail")
@@ -728,6 +531,8 @@ log "INFO" "root page created id=$ROOT_ID url=$ROOT_URL"
 state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\"" || true
 pace
 fi  # end: RESUME_MODE root-create guard
+ownership_json=$(jq -cn --arg company "$COMPANY_ID" --arg parent "$PARENT_PAGE_ID" --arg root "$ROOT_ID" '{companyId:$company,parentPageId:$parent,rootPageId:$root}')
+state_set ".notionOwnership = $ownership_json" || notion_ownership_hold "ownership receipt could not be persisted"
 
 # ---- block helpers ----
 p() {
@@ -1137,13 +942,6 @@ sec10_blocks=$(jq -s '.' \
 create_child_page "10. Your First 7 Days" "$sec10_blocks" >/dev/null
 
 # ---- finalize ----
-# TIER 2: now that the agency subpage + all sections exist, resolve the
-# VIEW-ONLY public link (inherited from the web-published agency parent) and use
-# it as the delivered URL. Tier 1 keeps the standard client-workspace URL.
-if [[ "$NOTION_TIER" -eq 2 ]]; then
-  tier2_finalize_share "$ROOT_ID"
-  log "INFO" "tier2: delivering agency subpage url=$ROOT_URL (tier=2, share=$(state_get '.notionTier2ShareState'))"
-fi
 state_set ".notionRootPageUrl = \"$ROOT_URL\" | .notionCloseoutPageId = \"$ROOT_ID\""
 if [[ "$RESUME_MODE" -eq 1 ]]; then
   log "INFO" "RESUME complete -- root url=$ROOT_URL id=$ROOT_ID (sections created this run=$SECTION_CREATED, already-present skipped=$SECTION_SKIPPED, no dupes)"
@@ -1151,5 +949,5 @@ else
   log "INFO" "notion page tree complete -- root url=$ROOT_URL id=$ROOT_ID (sections created=$SECTION_CREATED, skipped=$SECTION_SKIPPED; notionCloseoutPageId set)"
 fi
 log "INFO" "closeoutLegStatus.notion = pass"
-state_set ".closeoutLegStatus.notion = \"pass\"" || true
+state_set '.closeoutLegStatus.notion = "pass" | .notionCloseoutStaged = false | .notionParentPagePending = false | .closeoutBlockers = ((.closeoutBlockers // []) | map(if .class == "notion-ownership-unverified" or .class == "notion-parent-page-pending" or .class == "notion-root-page-failed" then .cleared = true else . end))' || true
 exit 0

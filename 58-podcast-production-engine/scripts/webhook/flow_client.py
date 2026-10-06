@@ -10,8 +10,15 @@
 # secret is read from the environment and sent as a Bearer token; it is never
 # printed, echoed, or logged (verification is SET / behavior, never the value).
 #
-# LIVE-VERIFIED against the INSTALLED gateway (OpenClaw 2026.6.11,
-# extensions/webhooks/index.js). The action schema differs from the design's
+# LIVE-VERIFIED against the INSTALLED gateway (OpenClaw 2026.9.4,
+# dist/extensions/webhooks/index.js). Re-verified at 2026.9.4: create_flow is
+# still a strictObject of {action, controllerId?, goal(req), status?,
+# notifyPolicy?, currentStep?, stateJson?, waitJson?} and its handler still
+# only calls taskFlow.tryCreateManaged, which is a pure store insert. The
+# route CREATES a queued flow and dispatches NOTHING; no autoAdvance exists
+# anywhere in the installed package. That is why the gateway hook mapping
+# register-podcast-hook.sh writes is the thing that actually triggers
+# production. The action schema differs from the design's
 # illustrative sketch (documented schema drift), so this client matches the
 # installed contract exactly:
 #   create_flow : goal(req), status?, notifyPolicy?, currentStep?, stateJson?,

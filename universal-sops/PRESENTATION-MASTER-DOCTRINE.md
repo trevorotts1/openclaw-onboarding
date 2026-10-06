@@ -6,6 +6,11 @@
 first. Where any other presentation document contradicts it on the *shape of the
 process*, this document wins and the other document is the one to fix.
 
+**THE MASTER SOP (one line, declared once):** the department's master SOP is
+**`universal-sops/CLIENT-WEBINAR-DECK-SOP.md`** (Layer B of this one pipeline); this
+document is its doctrine index + crosswalk, and every "master SOP" citation resolves to
+that file per §4. Declared 2026-09-02 (Fix 94).
+
 ---
 
 ## 0. WHY THIS DOCUMENT EXISTS
@@ -22,7 +27,7 @@ name**:
 
 An agent that followed only doctrine (1) wrote a `slides.json`, ran the entry command, and
 slammed into `build_deck.py`'s ~50 preflight gates demanding a research brief, copy-QC
-report, typography artifacts, owner approvals, and per-slide 9,000–18,000-char rich prompt
+report, typography artifacts, owner approvals, and per-slide rich prompt
 files that doctrine (1) never told it to produce — an impossible-to-complete sanctioned
 path, so it improvised (went off-script). An agent that followed only doctrine (2) chased
 "master SOP Section 4.4" citations into a void.
@@ -44,19 +49,24 @@ and gives the crosswalk that makes every "master SOP Section N" citation resolve
 ### LAYER A — THE AUTHORING PIPELINE (how the artifacts get made)
 The multi-phase, multi-role pipeline governed by `PIPELINE-MANIFEST.json` and the role
 library. This is the intake interview, priority-shift diagnosis, arc allocation, research,
-copywriting, copy-QC, typography, **rich prompt authoring (the 9,000–18,000-char per-slide
-prompt files)**, prompt-QC, and speech. Its output is the set of on-disk artifacts the
+copywriting, copy-QC, typography, **rich prompt authoring (the per-slide
+prompt files, sized by Kie rule 12)**, prompt-QC, and speech. Its output is the set of on-disk artifacts the
 renderer consumes: `working/copy/intake.json`, `slides.json` / `slides_copy.md`,
 `working/prompts/slide-NN.txt`, the QC reports, `PRESENTERS-SPEECH.md`, etc. **Roles,
 phases, and doctrine (the pitch doctrine, the arc, the ten required components, the hook
 ceiling) live here.** The manifest is the single source of truth for the phase order; the
-runner (`run_signature_deck.py`) serves that order one step at a time (see §3).
+engine (`presentation_job.py`, the package the entry command dispatches) walks that order
+in ascending `order` and refuses to skip (see §3). The runner (`run_signature_deck.py`)
+wears two hats, and the wording must never blur them: its `--next`/`--phase` turn-gate
+REMAINS the agent's read-only interface to what is next (§3), while its whole-run
+orchestration is the announced legacy fallback used only for boxes whose engine
+component is absent.
 
 ### LAYER B — THE DETERMINISTIC RENDER + DELIVERY (how the render is invoked)
 `CLIENT-WEBINAR-DECK-SOP.md` (the "Slate" contract). Once Layer A's artifacts exist, the
 render is invoked deterministically: `build_deck.py` reads the pre-authored rich prompts
 **verbatim** (it does **not** compose prompts and has **no** image tool of its own),
-renders every image on kie.ai (`gpt-image-2-text-to-image` / `-image-to-image`, 16:9, 2K —
+renders every image on kie.ai (`gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, 16:9, 2K —
 all pinned inside the script), verifies each PNG, assembles the full-bleed `.pptx`, and then
 runs two distinct gates over two distinct bundles — not a contradiction, but two different
 audiences for two different file sets:
@@ -88,9 +98,14 @@ audiences for two different file sets:
 
 **`universal-sops/` is the canonical doctrine ROOT for the Presentations department.**
 The department copy at
-`23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a **generated
-mirror** of it. When a SOP exists in both places and they disagree, **the `universal-sops/`
-copy wins** and the department mirror is the one to regenerate.
+`23-ai-workforce-blueprint/templates/role-library/presentations/sops/` is a **materialized
+mirror ONLY for `PIPELINE-MANIFEST.json` and `MASTER-QC-AUTOFAIL-RULESET.md`**. For those two files,
+when both places disagree, **the `universal-sops/` copy wins** and the department mirror is the one
+to regenerate. **Exception, recorded in
+`scripts/duplicate-sop-authority.json`:** only `PIPELINE-MANIFEST.json` and
+`MASTER-QC-AUTOFAIL-RULESET.md` are materialized from `universal-sops/` into a department; the
+role-library copy is the canonical side for every duplicated `SOP-*.md` filename, and that file
+records each pinned divergence.
 
 Canonical clusters under `universal-sops/`:
 
@@ -100,7 +115,7 @@ Canonical clusters under `universal-sops/`:
 | This doctrine index + the section crosswalk | `PRESENTATION-MASTER-DOCTRINE.md` (this file) |
 | Slide-craft rules, pipeline manifest, master QC ruleset | `presentation-slide-craft/` (incl. `PIPELINE-MANIFEST.json`, `MASTER-QC-AUTOFAIL-RULESET.md`, `SOP-SLIDE-01..06`) |
 | Typography / layout / logo design system (archetypes A1–A5) | `presentation-design-system/` (`02..05-SOP-*`) |
-| Image / kie call mechanics / model manifest / exemplar prompt | `presentation-image-library/` (`SOP-IMG-01..04`) |
+| Image / kie call mechanics / model manifest / exemplar prompt | `presentation-image-library/` (`SOP-IMG-01..04`; role-library copy canonical per `scripts/duplicate-sop-authority.json`) |
 
 **Promotion backlog (flagged for the universal-sops-reconcile unit, spec §11 A7):** the
 PITCH / STORY / PRIORITY / SIGPRES / MODE / OBJECTION / VISION / ENGINE / HARMONY /
@@ -158,14 +173,14 @@ homes marked **[univ]** already live in a `universal-sops/` cluster.
 | Section 4.2A | the BlackCEO Signature Webinar Arc (labels A–J) | `SOP-STORY-01-VILLAIN-HERO-ARC` + `slide-copywriter` SOP 9.x **[dept]** |
 | Section 4.3 | the 18/24-point Pitch Doctrine | `SOP-PITCH-*` + `SOP-PROCLAMATION-01`; reproduced verbatim (points 1–18) in `devils-advocate-presentations` SOP 9.1 (the operational home for the Kill List) **[dept]** |
 | Section 4.4 | the ten required presentation components | enumerated in `director-of-presentations` SOP (`checklist_of_promises`); enforced in `qc-specialist-presentations` SOP 9.5 structural-completeness **[dept]** |
-| Section 5.1 | hard copy limits (headline/subhead/slide) | `SOP-SLIDE-04-DECK-DENSITY-AND-PACING` + `slide-copywriter` SOP + `SOP-SLIDE-00` AF-C8/AF-OBI **[univ slide-craft]** |
+| Section 5.1 | hard copy limits (headline/subhead/slide) | `SOP-SLIDE-04-DECK-DENSITY-AND-PACING` + `slide-copywriter` SOP + `universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md` AF-C8/AF-OBI **[univ slide-craft]** |
 | Section 5.2 | the per-slide entry template + PRESENTER NOTE | `slide-copywriter` SOP 9.x (the copy-block template) + `presenter-coach` / `presenters-guide-specialist` SOPs **[dept]** |
 | Section 5.4 | guarantee types + real scarcity/urgency | `SOP-PITCH-02` (guarantee) + `SOP-OBJECTION-01` + `offer-price-strategist` SOP **[dept]** |
 | Section 5.5 | the price sequence (both modes, VIP) | `SOP-PITCH-01-SLOW-DROP-PROCESS` + `offer-price-strategist` SOP 9.x **[dept]** |
 | Section 6.1 | hook ceiling + anti-footer + density floor | `SOP-SLIDE-03-HOOK-DOCTRINE` + `qc-specialist-presentations` copy-QC criterion **[univ slide-craft]** |
 | Section 7.2 | the five archetypes A1–A5 | `presentation-design-system/04-SOP-variable-layout-anti-template.md` (`SOP-DESIGN-03`) + `brand-steward` SOP **[univ design-system]** |
 | Section 7.5 | the gold-standard exemplar prompt | `presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md` + `prompt-author-presentations` SOP + `brand-steward` SOP 9.3 **[univ image-library]** |
-| Section 9.0 | the MODEL MANIFEST (declared at echo) | `SOP-IMG-01-KIE-CALL-MECHANICS` + `director-of-presentations` SOP 9.x + `build_deck.py` `MODEL_*` pins **[univ image-library]** |
+| Section 9.0 | the MODEL MANIFEST (declared at echo) | `CLIENT-WEBINAR-DECK-SOP.md` §9.0 (the manifest itself) + `SOP-IMG-01-KIE-CALL-MECHANICS` §2A (routing) + `director-of-presentations` SOP 9.x + `build_deck.py` `MODEL_*` pins **[univ + image-library]** |
 | Section 11.3 | QC render step + ≥ 8.5 pass threshold | `MASTER-QC-AUTOFAIL-RULESET.md` (`SOP-SLIDE-00`) + `qc-specialist-presentations` SOP 9.x **[univ slide-craft]** |
 | Section 11.4 | delivery (destination + bundle) | `SOP-PITCH-05-DELIVERABLE-BUNDLE` + `delivery-concierge` SOP + `CLIENT-WEBINAR-DECK-SOP.md` §9a **[dept + univ]** |
 
@@ -182,7 +197,9 @@ crosswalk.
   gates are untouched by this document.
 - **Does NOT delete either doctrine.** Layer A (the role pipeline) and Layer B (the Slate
   deterministic contract) are both retained — restated as the two layers of one pipeline.
-- **DOES make `universal-sops/` the canonical root** and the department `sops/` a mirror.
+- **DOES make `universal-sops/` the canonical root** and the department `sops/` a mirror for
+  `PIPELINE-MANIFEST.json` and `MASTER-QC-AUTOFAIL-RULESET.md` only; for every duplicated `SOP-*.md`
+  the role-library copy is canonical (`scripts/duplicate-sop-authority.json`).
 - **DOES make the runner (`--next`) the agent's interface to the process** so the process
   is served one enforced step at a time instead of read out of 30 sometimes-conflicting
   documents.

@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v7.0.1 - 2026-09-17 - fix(shell): scripts/add-persona-from-source.sh re-execs under bash 4+ on macOS
+
+The script used the bash-4-only case modifier `${s,,}` behind a hard `#!/bin/bash`
+shebang, which is always bash 3.2 on macOS, so the source-type routing died with
+"bad substitution" on every client Mac. Shebang is now `#!/usr/bin/env bash` and a
+`_OC_BASH_REEXEC` guard re-execs through Homebrew bash, or exits 3 with a loud FATAL
+when none is installed. Locked by tests/unit/bash4-syntax-guard.test.sh.
+
 ## v6.19.4 - 2026-08-04 - fix: INSTALL.md Step 6 pointed at a retired script with a flag no updater ever implemented
 
 Step 6 ("Set Up Weekly Auto-Update") told the agent to run
@@ -249,7 +257,7 @@ AGENTS.md instead of only stamping the "applied" marker. Guarded by `tests/unit/
 
 ---
 
-## [v6.10.0] - 2026-06-27
+## [7.0.0] - 2026-06-27
 
 ### Deepened — acuff-miner-new-model-of-selling + miller-building-storybrand blueprints
 
@@ -487,3 +495,7 @@ pipeline before the Phase 3 persona-blueprint is assembled.
 - Converted INSTALL.md to agent-executable, autonomous execution format.
 - Ensured TYP guardrails are present: MANDATORY TYP CHECK, CONFLICT RULE, and TYP file storage instructions.
 - Fixed duplicate step numbering and added a pipeline execution test step to validate Phase 1, Phase 2, Phase 3 readiness.
+
+## [v7.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
