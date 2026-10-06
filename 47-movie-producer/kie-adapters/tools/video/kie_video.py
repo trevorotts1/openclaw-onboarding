@@ -119,18 +119,16 @@ _TRANSIENT_FETCH_MARKERS = (
 
 
 def _real_kie_key(raw):
-    """Return the key only when the shared secret canon accepts it as a real KIE key.
+    """Return the key only when the secret canon accepts it as a real KIE key.
 
-    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same
-    one key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
-    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
-    helper cannot be imported the key counts as NOT-SET.
+    Uses shared-utils/secret_helper.py when this file sits in a repo checkout or an installed skills
+    tree; the OpenMontage clone and the Docker image have no shared-utils, so the same gate then comes
+    from the EMBEDDED copy of that helper in the sibling kie_image.py (generated verbatim, hash-locked).
+    A placeholder such as the installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: a key
+    the gate cannot approve counts as NOT-SET.
     """
     if not raw or not str(raw).strip():
         return None
-    import sys
-    # Nearest copy first (a repo checkout or the installed skills dir that holds this
-    # file), then the explicit override, then the standard install roots.
     cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
     cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
               os.path.expanduser("~/.openclaw/skills/shared-utils"),
@@ -140,11 +138,15 @@ def _real_kie_key(raw):
             if c not in sys.path:
                 sys.path.insert(0, c)
             try:
-                from secret_helper import looks_like_real_key
+                from secret_helper import looks_like_real_key as shared_gate
             except Exception:
-                return None
-            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
-    return None
+                break  # the shared copy is unusable: use the embedded one below
+            return raw if shared_gate(raw, "KIE_API_KEY") else None
+    block = _embedded_block(_SECRET_BEGIN, _SECRET_END)
+    if block is None:
+        return None  # no gate available at all: fail closed
+    return raw if _exec_module(block, "kie_image.py#embedded-secret-helper").looks_like_real_key(raw, "KIE_API_KEY") else None
+
 
 # ---------------------------------------------------------------------------
 # Skill 74 client: installed sibling skill first, the embedded copy in the
@@ -153,6 +155,8 @@ def _real_kie_key(raw):
 _SKILL74_DIRNAME = "74-kie-live-adapter"
 _EMBED_BEGIN = "# >>> BEGIN EMBEDDED SKILL-74 CLIENT"
 _EMBED_END = "# <<< END EMBEDDED SKILL-74 CLIENT"
+_SECRET_BEGIN = "# >>> BEGIN EMBEDDED SECRET-HELPER"
+_SECRET_END = "# <<< END EMBEDDED SECRET-HELPER"
 _CLIENT: Any = None  # (client module, "skill74" | "embedded") or (None, None) when neither exists
 
 
@@ -173,6 +177,17 @@ def _exec_module(code_text: str, filename: str) -> types.ModuleType:
     return mod
 
 
+def _embedded_block(begin: str, end: str) -> Any:
+    """Text of a generated block in the sibling kie_image.py (same relative layout in the skill and in the clone), or None."""
+    sibling = Path(__file__).resolve().parents[1] / "graphics" / "kie_image.py"
+    if not sibling.is_file():
+        return None
+    text = sibling.read_text(encoding="utf-8")
+    if begin not in text or end not in text:
+        return None
+    return text[text.index(begin):text.index(end)]
+
+
 def _kie_client() -> Any:
     """-> (client module with Adapter / KieError, path label). Printed once per process."""
     global _CLIENT
@@ -185,17 +200,14 @@ def _kie_client() -> Any:
                 print(f"[kie-47] path=skill74 mode=active ({f})", file=sys.stderr)
                 break
         else:
-            sibling = Path(__file__).resolve().parents[1] / "graphics" / "kie_image.py"  # same layout in the repo and in the clone
-            if sibling.is_file():
-                text = sibling.read_text(encoding="utf-8")
-                if _EMBED_BEGIN in text and _EMBED_END in text:
-                    block = text[text.index(_EMBED_BEGIN):text.index(_EMBED_END)]
-                    _CLIENT = (_exec_module(block, str(sibling) + "#embedded-skill-74-client"), "embedded")
-                    print("[kie-47] path=embedded mode=active (Skill 74 not installed; generated copy from kie_image.py)", file=sys.stderr)
+            block = _embedded_block(_EMBED_BEGIN, _EMBED_END)
+            if block is not None:
+                _CLIENT = (_exec_module(block, "kie_image.py#embedded-skill-74-client"), "embedded")
+                print("[kie-47] path=embedded mode=active (Skill 74 not installed; generated copy from kie_image.py)", file=sys.stderr)
     return _CLIENT
 
 
-def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None) -> Any:
+def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None, now: Any = None) -> Any:
     """A Skill 74 Adapter pinned to ``active`` mode for this call (owner order: live)."""
     client, _label = _kie_client()
     if client is None:
@@ -210,6 +222,8 @@ def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None) -> Any:
         kwargs["transport"] = transport
     if sleep is not None:
         kwargs["sleep"] = sleep
+    if now is not None:
+        kwargs["now"] = now
     adapter = client.Adapter(env=env, **kwargs)
     adapter.mode = "active"
     return adapter
@@ -218,6 +232,16 @@ def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None) -> Any:
 def _err_text(result: dict[str, Any]) -> str:
     err = result.get("error") or {}
     return f"{err.get('code')}: {err.get('msg')}" if err else f"state={result.get('state')}"
+
+
+class _KieUnresolved(RuntimeError):
+    """A paid KIE job whose outcome is unknown: it timed out or could not be read (``task_id`` set), or the
+    createTask answer was lost to a network error after the request may have been sent (``task_id`` None).
+    Never fall back to another model and never resubmit: record the task id for the Dispatcher to re-poll."""
+
+    def __init__(self, message: str, task_id: Any = None):
+        super().__init__(message)
+        self.task_id = task_id
 
 
 def _first_result_url(*blocks: Any) -> str:
@@ -615,14 +639,14 @@ class KieVideo(BaseTool):
     @staticmethod
     def _check_prompt(adapter: Any, model: str, prompt: str) -> tuple[str | None, list[str]]:
         """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here).
-        -> (refusal text or None, warnings). Over the model maximum is refused; under the
-        80 percent floor is reported (the floor is enforced by the policy owner Skill 67)."""
+        -> (refusal text or None, warnings). Owner rule 12: a descriptive prompt over the model maximum
+        or under 80 percent of it is a HARD REJECT, and the refusal names the exact characters to cut or add."""
         r = adapter.cmd_prompt_budget(model, check=True, prompt_text=prompt)
         err = r.get("error") or {}
         if err.get("code") == "prompt_above_max":
             return f"kie_video: {model} prompt exceeds the model limit: {err.get('msg')}", []
         if err.get("code") == "prompt_below_floor":
-            return None, [f"prompt below the prompt-budget floor: {err.get('msg')}"]
+            return f"kie_video: {model} prompt is below the 80 percent floor: {err.get('msg')}", []
         return None, []
 
     @staticmethod
@@ -645,13 +669,22 @@ class KieVideo(BaseTool):
         else:
             credits = None
         if refusal:
-            return {"ok": False, "error": refusal, "transient": False, "run": {}, "credits": None, "warnings": warnings}
+            return {"ok": False, "error": refusal, "transient": False, "unresolved": False, "refused": True,
+                    "task_id": None, "run": {}, "credits": None, "warnings": warnings}
         run = adapter.cmd_run({"model": model, "input": task_input}, save_dir, timeout=_POLL_TIMEOUT_SECONDS)
         if run["state"] == "success" and run["saved_paths"]:
-            return {"ok": True, "error": "", "transient": False, "run": run, "credits": credits, "warnings": warnings}
+            return {"ok": True, "error": "", "transient": False, "unresolved": False, "task_id": run["task_id"],
+                    "run": run, "credits": credits, "warnings": warnings}
         msg = _err_text(run) + (f" (task {run['task_id']} may still finish)" if run.get("task_id") else "")
-        transient = run["state"] == "fail" and any(k in msg.lower() for k in _TRANSIENT_FETCH_MARKERS)
-        return {"ok": False, "error": msg, "transient": transient, "run": run, "credits": credits, "warnings": warnings}
+        err = run.get("error") or {}
+        tid = run.get("task_id")
+        verdict = run["state"] == "fail" and "state_raw" in (run.get("data") or {})  # KIE itself reported the task failed
+        # Unknown outcome: a task id exists but KIE has not said it failed (timeout, unreadable status), or
+        # createTask was sent and its answer was lost to a network error. Money may be spent either way.
+        unresolved = (bool(tid) and not verdict) or (not tid and err.get("code") == "network")
+        transient = verdict and any(k in msg.lower() for k in _TRANSIENT_FETCH_MARKERS)
+        return {"ok": False, "error": msg, "transient": transient, "unresolved": unresolved, "task_id": tid,
+                "run": run, "credits": credits, "warnings": warnings}
 
     def _run_veo_legacy(
         self, adapter: Any, model: str, prompt: str, duration: str, aspect_ratio: str,
@@ -669,6 +702,8 @@ class KieVideo(BaseTool):
         try:
             j = adapter.call("POST", adapter.api + "/api/v1/veo/generate", body)
         except Exception as exc:  # Skill 74's KieError: code + redacted msg
+            if getattr(exc, "code", None) == "network":  # the request may have been sent: outcome unknown, never resubmit
+                raise _KieUnresolved(f"Veo submit outcome unknown after a network error ({getattr(exc, 'msg', exc)})")
             raise RuntimeError(f"Veo submit failed: {getattr(exc, 'msg', exc)}")
         task_id = (j.get("data") or {}).get("taskId") or j.get("taskId")
         if not task_id:
@@ -676,7 +711,7 @@ class KieVideo(BaseTool):
         url = self._poll_veo(adapter, task_id)
         saved = adapter.cmd_save(task_id, save_dir, info={"task_id": task_id, "state": "success", "result_urls": [url]})
         if saved["state"] != "success" or not saved["saved_paths"]:
-            raise RuntimeError(f"Veo task {task_id} result could not be saved: {_err_text(saved)}")
+            raise _KieUnresolved(f"Veo task {task_id} succeeded but its result could not be saved: {_err_text(saved)}", task_id)
         return {"task_id": task_id, "url": url, "path": saved["saved_paths"][0]}
 
     def _poll_veo(self, adapter: Any, task_id: str) -> str:
@@ -693,16 +728,16 @@ class KieVideo(BaseTool):
                 if code == "network" or str(code).startswith("5"):
                     transient += 1
                     if transient > 3:
-                        raise RuntimeError(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up")
+                        raise _KieUnresolved(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up", task_id)
                     adapter.sleep(30)
                     elapsed += 30
                     continue
-                raise RuntimeError(f"Veo poll for {task_id} failed: {getattr(exc, 'msg', exc)}")
+                raise _KieUnresolved(f"Veo poll for {task_id} failed: {getattr(exc, 'msg', exc)}", task_id)
             data = j.get("data") or {}
             if str(data.get("errorCode") or j.get("errorCode") or "") == "500":
                 transient += 1
                 if transient > 3:
-                    raise RuntimeError(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up")
+                    raise _KieUnresolved(f"Veo poll for {task_id}: 4 consecutive transient errors; giving up", task_id)
                 adapter.sleep(30)
                 elapsed += 30
                 continue
@@ -712,10 +747,28 @@ class KieVideo(BaseTool):
                 url = _first_result_url(data.get("response"), data.get("resultJson"))
                 if url:
                     return url
-                raise RuntimeError(f"Veo task {task_id} succeeded but no result URL: {data}")
+                raise _KieUnresolved(f"Veo task {task_id} succeeded but no result URL: {data}", task_id)
             if flag == "-1":
                 raise RuntimeError(f"Veo task {task_id} failed: {data.get('errorMessage') or data.get('failMsg') or j.get('msg') or 'unknown'}")
-        raise RuntimeError(f"Veo task {task_id} timed out after {_POLL_TIMEOUT_SECONDS}s")
+        raise _KieUnresolved(f"Veo task {task_id} timed out after {_POLL_TIMEOUT_SECONDS}s (it may still finish)", task_id)
+
+    @staticmethod
+    def _unresolved_result(model: str, task_id: Any, message: str, label: str, warnings: list[str]) -> ToolResult:
+        """A paid job whose outcome is unknown. No fallback model, no resubmission: the task id (when KIE
+        returned one) is recorded in ``data`` for the Dispatcher to re-poll with Skill 74 ``wait``."""
+        if task_id:
+            advice = f"re-poll task {task_id} (Skill 74 wait --task-id {task_id}); do not resubmit or switch model"
+        else:
+            advice = "the createTask answer was lost: check the KIE task list before any resubmission; do not switch model"
+        return ToolResult(
+            success=False,
+            error=f"kie_video: {model} outcome unknown: {message}; {advice}",
+            data={
+                "provider": "kie", "model": model, "kie_task_id": task_id or None,
+                "kie_task_state": "unresolved" if task_id else "createTask_outcome_unknown",
+                "needs_repoll": True, "kie_client_path": label, "warnings": warnings,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Execute
@@ -755,7 +808,7 @@ class KieVideo(BaseTool):
         image_urls = self._resolve_image_urls(inputs)
 
         try:
-            adapter = _new_adapter(api_key, getattr(self, "_transport", None), getattr(self, "_sleep", None))
+            adapter = _new_adapter(api_key, getattr(self, "_transport", None), getattr(self, "_sleep", None), getattr(self, "_now", None))
         except RuntimeError as exc:
             return ToolResult(success=False, error=f"kie_video: {exc}")
         label = _kie_client()[1]
@@ -790,6 +843,8 @@ class KieVideo(BaseTool):
                     task_input["input_urls"] = input_urls  # omitted entirely for text-to-video
                 job = self._run_job(adapter, _SEEDANCE_MODEL, task_input, seconds, save_dir)
                 warnings += job["warnings"]
+                if job["unresolved"]:
+                    return self._unresolved_result(_SEEDANCE_MODEL, job["task_id"], job["error"], label, warnings)
                 if not job["ok"]:
                     return ToolResult(success=False, error=f"kie_video: {_SEEDANCE_MODEL} failed: {job['error']}")
                 adopt(job)
@@ -812,6 +867,10 @@ class KieVideo(BaseTool):
                     if job["ok"]:
                         adopt(job)
                         break
+                    if job["unresolved"]:  # timeout / unreadable status / lost createTask answer: money may be spent
+                        return self._unresolved_result("gemini-omni-video", job["task_id"], job["error"], label, warnings)
+                    if job.get("refused"):  # prompt or credit refusal: a different model must not bypass it
+                        return ToolResult(success=False, error=job["error"])
                     last_error = job["error"]
                     if job["transient"] and attempt == 1:
                         adapter.sleep(5)  # transient image-fetch: one retry with the same references
@@ -824,6 +883,8 @@ class KieVideo(BaseTool):
                             adapter, _FALLBACK_MODEL, prompt, self._snap_duration(_DEFAULT_DURATION, _FALLBACK_MODEL),
                             aspect_ratio, generate_audio, save_dir,
                         )
+                    except _KieUnresolved as exc:
+                        return self._unresolved_result(_FALLBACK_MODEL, exc.task_id, str(exc), label, warnings)
                     except RuntimeError as exc:
                         return ToolResult(
                             success=False,
@@ -837,6 +898,8 @@ class KieVideo(BaseTool):
                     veo = self._run_veo_legacy(
                         adapter, model, prompt, self._snap_duration(duration, model), aspect_ratio, generate_audio, save_dir,
                     )
+                except _KieUnresolved as exc:
+                    return self._unresolved_result(model, exc.task_id, str(exc), label, warnings)
                 except RuntimeError as exc:
                     return ToolResult(success=False, error=f"kie_video: {model} failed: {exc}")
                 task_id, result_url, saved_path = veo["task_id"], veo["url"], veo["path"]

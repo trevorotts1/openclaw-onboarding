@@ -90,16 +90,16 @@ _USD_PER_CREDIT = 0.005      # kie.ai/pricing: 1 credit ~= $0.005 (vendor exampl
 
 
 def _real_kie_key(raw):
-    """Return the key only when the shared secret canon accepts it as a real KIE key.
+    """Return the key only when the secret canon accepts it as a real KIE key.
 
-    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same
-    one key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
-    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
-    helper cannot be imported the key counts as NOT-SET.
+    Uses shared-utils/secret_helper.py when this file sits in a repo checkout or an installed skills
+    tree; the OpenMontage clone and the Docker image have no shared-utils, so the same gate then comes
+    from the EMBEDDED copy of that helper at the bottom of this file (generated verbatim, hash-locked).
+    A placeholder such as the installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: a key
+    the gate cannot approve counts as NOT-SET.
     """
     if not raw or not str(raw).strip():
         return None
-    import sys
     # Nearest copy first (a repo checkout or the installed skills dir that holds this
     # file), then the explicit override, then the standard install roots.
     cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
@@ -111,11 +111,12 @@ def _real_kie_key(raw):
             if c not in sys.path:
                 sys.path.insert(0, c)
             try:
-                from secret_helper import looks_like_real_key
+                from secret_helper import looks_like_real_key as shared_gate
             except Exception:
-                return None
-            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
-    return None
+                break  # the shared copy is unusable: use the embedded one below
+            return raw if shared_gate(raw, "KIE_API_KEY") else None
+    return raw if globals()["looks_like_real_key"](raw, "KIE_API_KEY") else None
+
 
 # ---------------------------------------------------------------------------
 # Skill 74 client: installed sibling skill first, embedded generated copy second.
@@ -158,7 +159,7 @@ def _kie_client() -> Any:
     return _CLIENT
 
 
-def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None) -> Any:
+def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None, now: Any = None) -> Any:
     """A Skill 74 Adapter pinned to ``active`` mode for this call (owner order: live)."""
     client, _label = _kie_client()
     env = {"KIE_API_KEY": api_key, "KIE_LIVE_ADAPTER_MODE": "active", "HOME": os.environ.get("HOME") or str(Path.home())}
@@ -171,6 +172,8 @@ def _new_adapter(api_key: str, transport: Any = None, sleep: Any = None) -> Any:
         kwargs["transport"] = transport
     if sleep is not None:
         kwargs["sleep"] = sleep
+    if now is not None:
+        kwargs["now"] = now
     adapter = client.Adapter(env=env, **kwargs)
     adapter.mode = "active"
     return adapter
@@ -414,14 +417,14 @@ class KieImage(BaseTool):
     @staticmethod
     def _check_prompt(adapter: Any, model: str, prompt: str) -> tuple[str | None, list[str]]:
         """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here).
-        -> (refusal text or None, warnings). Over the model maximum is refused; under the
-        80 percent floor is reported (the floor is enforced by the policy owner Skill 66)."""
+        -> (refusal text or None, warnings). Owner rule 12: a descriptive prompt over the model maximum
+        or under 80 percent of it is a HARD REJECT, and the refusal names the exact characters to cut or add."""
         r = adapter.cmd_prompt_budget(model, check=True, prompt_text=prompt)
         err = r.get("error") or {}
         if err.get("code") == "prompt_above_max":
             return f"kie_image: prompt exceeds the model limit: {err.get('msg')}", []
         if err.get("code") == "prompt_below_floor":
-            return None, [f"prompt below the prompt-budget floor: {err.get('msg')}"]
+            return f"kie_image: prompt is below the 80 percent floor: {err.get('msg')}", []
         return None, []
 
     # ------------------------------------------------------------------
@@ -465,7 +468,7 @@ class KieImage(BaseTool):
         output_format = inputs.get("output_format", "png")
         output_path = Path(inputs.get("output_path", f"kie_generated.{output_format}"))
 
-        adapter = _new_adapter(api_key, getattr(self, "_transport", None), getattr(self, "_sleep", None))
+        adapter = _new_adapter(api_key, getattr(self, "_transport", None), getattr(self, "_sleep", None), getattr(self, "_now", None))
         label = _kie_client()[1]
 
         try:
@@ -1824,3 +1827,133 @@ class Adapter:
             return self.fail(e, data=d)
         return self.result(data=d)
 # <<< END EMBEDDED SKILL-74 CLIENT
+
+
+# >>> BEGIN EMBEDDED SECRET-HELPER (generated by 47-movie-producer/scripts/embed_kie_client.py; do not edit by hand)
+# source: shared-utils/secret_helper.py; the section after the imports is that file from `_REALISH_RE` through
+# `looks_like_real_key`, byte for byte (placeholder, provider-shape and entropy gate).
+_EMBEDDED_SECRET_HELPER_SHA256 = "4988131cec78bbba429d9abc72caf7e54ab54f6477ca9beec3cffb19e4d55718"
+import math
+import re
+from typing import Dict, Optional
+# Value shapes that read as real keys: mixed-case alphanumerics with
+# punctuation like -_:. in provider-typical prefixes, long enough to be real.
+_REALISH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-:.+/=]{9,}$")
+
+_LOW_WORDS = {
+    "true", "false", "yes", "no", "null", "none", "undefined", "n/a", "na",
+}
+# Placeholder WORDS (2026-10 whole-token rule). A word only counts when it is a whole
+# token: preceded by the start of the value or a non-alphanumeric delimiter, and not
+# followed by a letter or digit (it must end at the end or at a delimiter). It never matches inside a
+# random alphanumeric run, so genuine keys that happen to contain "demo", "todo",
+# "sample" and so on are no longer falsely rejected. Kept in step with install.sh
+# looks_like_real_key (same token list, same boundary rule).
+_PLACEHOLDER_TOKENS = (
+    "your_key", "your-key", "your_api", "your-api", "yourkey", "your_token",
+    "replace_me", "replace-me", "replaceme", "changeme", "change_me", "change-me",
+    "here", "placeholder", "example", "sample", "dummy", "demo",
+    "test_key", "test-key", "fake_key", "fake-key",
+    "todo", "tbd", "fill_in", "fill-in", "fillin", "paste-your", "paste_your",
+    "paste-real", "paste_real", "pastereal", "insert_your", "insert-your",
+    "enter_your", "enter-your", "set_your", "set-your", "no_key", "nokey",
+    "none_yet", "not_set", "not-set", "unset", "missing",
+    "your_client", "key_here", "token_here",
+)
+# A run of five or more x (xxxxx) is filler wherever it appears (a random key never has one).
+_PLACEHOLDER_TOKEN_RE = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(
+        re.escape(t) for t in sorted(_PLACEHOLDER_TOKENS, key=len, reverse=True))
+    + r")(?![a-z0-9])|x{5,}")
+# Documented placeholder PREFIXES (sk-test..., sk-xxx..., sk-example..., sk-replace...).
+_PLACEHOLDER_PREFIX_RE = re.compile(r"^sk-(?:test|xxx|example|replace)")
+
+# Provider shape regexes (canonical var name -> anchored regex). Mirrors the
+# stage-1 table in install.sh looks_like_real_key; extend both together.
+_PROVIDER_SHAPE = {
+    "OPENAI_API_KEY": re.compile(r"^sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}$"),
+    "ANTHROPIC_API_KEY": re.compile(r"^sk-ant-(api03-)?[A-Za-z0-9_-]{80,}$"),
+    "GEMINI_API_KEY": re.compile(r"^AIza[A-Za-z0-9_-]{35}$"),
+    "GOOGLE_API_KEY": re.compile(r"^AIza[A-Za-z0-9_-]{35}$"),
+    "OPENROUTER_API_KEY": re.compile(r"^sk-or-(v1-)?[A-Za-z0-9_-]{32,}$"),
+    "GITHUB_TOKEN": re.compile(r"^(gh[poursr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}|[a-f0-9]{40})$"),
+    "BRAVE_SEARCH_API_KEY": re.compile(r"^BSA[A-Za-z][A-Za-z0-9_-]{20,}$"),
+    "BRAVE_API_KEY": re.compile(r"^BSA[A-Za-z][A-Za-z0-9_-]{20,}$"),
+    "TAVILY_API_KEY": re.compile(r"^tvly-[A-Za-z0-9_-]{20,}$"),
+    "DEEPSEEK_API_KEY": re.compile(r"^sk-[a-f0-9]{32,}$"),
+    "OLLAMA_API_KEY": re.compile(r"^[A-Za-z0-9]{32,}$"),
+    "OLLAMA_CLOUD_API_KEY": re.compile(r"^[A-Za-z0-9]{32,}$"),
+    "KIE_API_KEY": re.compile(r"^[A-Za-z0-9_-]{24,}$"),
+    "TELEGRAM_BOT_TOKEN": re.compile(r"^[0-9]{8,12}:[A-Za-z0-9_-]{30,40}$"),
+    "SUPABASE_SERVICE_ROLE_KEY": re.compile(
+        r"^(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]{20,})$"),
+    "GOHIGHLEVEL_API_KEY": re.compile(
+        r"^(eyJ[A-Za-z0-9_.-]{30,}|pit-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{40,})$"),
+    "GOHIGHLEVEL_LOCATION_ID": re.compile(r"^[A-Za-z0-9]{20,28}$"),
+    "ELEVENLABS_API_KEY": re.compile(r"^[a-f0-9]{32}$|^sk_[A-Za-z0-9_-]{32,}$"),
+    "CONTEXT7_API_KEY": re.compile(r"^ctx7sk-[A-Za-z0-9_-]{20,}$"),
+    "CLOUDFLARE_ZHW_APPS_API_TOKEN": re.compile(r"^[A-Za-z0-9_-]{30,}$"),
+}
+
+
+def is_placeholder(value: str) -> bool:
+    """True when the value is obviously a placeholder, empty, or trivially
+    low-information. Pure predicate; no filesystem, no provider regexes."""
+    if value is None:
+        return True
+    value = str(value).strip()
+    if len(value) < 10:
+        return True
+    low = value.lower()
+    if low in _LOW_WORDS:
+        return True
+    if _PLACEHOLDER_PREFIX_RE.search(low) or _PLACEHOLDER_TOKEN_RE.search(low):
+        return True
+    if low.endswith("example"):  # the gitleaks documentation suffix (AKIAIOSFODNN7EXAMPLE)
+        return True
+    # Template shapes: <TODO>, [REPLACE], {{var}}
+    if value.startswith("<") and value.endswith(">"):
+        return True
+    if value.startswith("[") and value.endswith("]"):
+        return True
+    if "{{" in value and "}}" in value:
+        return True
+    return False
+
+
+def _entropy(value: str) -> float:
+    if not value:
+        return 0.0
+    freq: Dict[str, int] = {}
+    for ch in value:
+        freq[ch] = freq.get(ch, 0) + 1
+    n = len(value)
+    return -sum((c / n) * math.log2(c / n) for c in freq.values())
+
+
+def looks_like_real_key(value: str, canonical: Optional[str] = None) -> bool:
+    """Placeholder rejection gate. True only when the value plausibly is a
+    real key for `canonical`. Keep byte-compatible with install.sh's bash
+    implementation of the same name — extend both together."""
+    if value is None:
+        return False
+    value = str(value).strip()
+    if is_placeholder(value):
+        return False
+    low = value.lower()
+
+    # Stage 1: provider shape. A known provider whose documented shape does
+    # NOT match is rejected outright (it is not this provider's credential).
+    shape = _PROVIDER_SHAPE.get(canonical or "")
+    if shape is not None and not shape.match(value):
+        return False
+
+    # Stage 2 (shape gate passed or unknown provider): must look like a key.
+    if not _REALISH_RE.match(value):
+        return False
+
+    # Stage 3: Shannon entropy floor, 3.0 bits/char (gitleaks band).
+    if _entropy(value) < 3.0:
+        return False
+    return True
+# <<< END EMBEDDED SECRET-HELPER

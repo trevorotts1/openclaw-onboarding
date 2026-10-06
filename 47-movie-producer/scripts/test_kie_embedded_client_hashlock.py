@@ -66,13 +66,17 @@ def verify(target_text: str, source_text: str, version: str) -> list[str]:
 def main() -> int:
     base._install_base_tool_stub()
     target_text = gen.TARGET.read_text(encoding="utf-8")
-    if not gen.SRC.is_file():
+    if not gen.SRC.is_file() or not gen.SECRET_SRC.is_file():
         # An installed Skill 47 without Skill 74 beside it: only the stamp can be checked here.
-        print("== Skill 74 source not present beside this skill: checking the stamp only ==")
+        print("== Skill 74 or shared-utils not present beside this skill: checking the stamps only ==")
         block = gen.current_block(target_text) or ""
         body = block.split("\n", 4)[4].rsplit(gen.END, 1)[0] if block else ""
         stamped = next((ln.split('"')[1] for ln in block.split("\n") if ln.startswith("_EMBEDDED_CLIENT_SHA256")), "")
         check("stamped sha256 equals the sha256 of the embedded text", bool(body) and stamped == hashlib.sha256(body.encode("utf-8")).hexdigest())
+        sblock = gen.current_block(target_text, gen.SECRET_BEGIN, gen.SECRET_END) or ""
+        sbody = sblock.split("\n", 7)[7].rsplit(gen.SECRET_END, 1)[0] if sblock else ""
+        sstamp = next((ln.split('"')[1] for ln in sblock.split("\n") if ln.startswith("_EMBEDDED_SECRET_HELPER_SHA256")), "")
+        check("secret-helper stamp equals the sha256 of its embedded text", bool(sbody) and sstamp == hashlib.sha256(sbody.encode("utf-8")).hexdigest())
         print(f"\n{_PASS} passed, {_FAIL} failed")
         return 1 if _FAIL else 0
     src_text = gen.SRC.read_text(encoding="utf-8")
@@ -84,13 +88,35 @@ def main() -> int:
     section = gen.extract_section(src_text)
     check("section starts at the import line and ends inside the Adapter class region (no CLI code)",
           section.startswith("import argparse") and "def main(" not in section and "class Adapter:" in section)
-    check("--check mode exits 0", gen.main(["--check"]) == 0)
+    check("--check mode exits 0 (client and secret helper)", gen.main(["--check"]) == 0)
 
     print("== mutation proof: the lock can fail ==")
     mutated_block = target_text.replace("MAX_UPLOAD = 512 * 1024 * 1024", "MAX_UPLOAD = 513 * 1024 * 1024", 1)
     check("a one-character change inside the embedded block is caught", bool(verify(mutated_block, src_text, version)))
     mutated_src = src_text.replace("CATALOG_TTL = 6 * 3600", "CATALOG_TTL = 7 * 3600", 1)
     check("a change to Skill 74's source (copy not regenerated) is caught", bool(verify(target_text, mutated_src, version)))
+
+    print("== the embedded secret helper is locked to shared-utils/secret_helper.py ==")
+    sec_src = gen.SECRET_SRC.read_text(encoding="utf-8")
+    sec_block = gen.current_block(target_text, gen.SECRET_BEGIN, gen.SECRET_END)
+    check("secret-helper block equals the generator output for the current shared-utils source",
+          sec_block == gen.build_secret_block(sec_src))
+    sec_body = gen.extract_secret_section(sec_src)
+    stamped = next((ln.split('"')[1] for ln in (sec_block or "").split("\n") if ln.startswith("_EMBEDDED_SECRET_HELPER_SHA256")), "")
+    check("secret-helper stamp equals the sha256 of the verbatim slice, and the slice sits in the source",
+          stamped == hashlib.sha256(sec_body.encode("utf-8")).hexdigest() and sec_body in sec_src and sec_body in (sec_block or ""))
+    check("a one-character change in the embedded secret helper is caught",
+          gen.build_secret_block(sec_src) != (sec_block or "").replace("(?:test|xxx|example|replace)", "(?:test|xxx|example|replaced)", 1))
+    check("a change to shared-utils/secret_helper.py (copy not regenerated) is caught",
+          gen.build_secret_block(sec_src.replace("3.0 bits/char", "2.0 bits/char", 1).replace("< 3.0", "< 2.0", 1)) != sec_block)
+    sys.path.insert(0, str(gen.REPO / "shared-utils"))
+    import secret_helper as shared  # noqa: E402
+    ns = base._load_module(Path(gen.TARGET), "kie_image_parity")
+    gate = ns.looks_like_real_key
+    battery = [base.FIXTURE_KEY, "YOUR_CLIENT_KIE_API_KEY_HERE", "short", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa", "PASTE_REAL_TOKEN",
+               "sk-" + base.FIXTURE_KEY, "demo" + base.FIXTURE_KEY, base.FIXTURE_KEY + "-your_key", "<TODO>", "x" * 40, base.FIXTURE_KEY[:20]]
+    check("the embedded gate agrees with shared-utils looks_like_real_key on the whole battery",
+          all(gate(v, "KIE_API_KEY") == shared.looks_like_real_key(v, "KIE_API_KEY") for v in battery))
 
     print("== both adapters pick the right path and send identical bodies on either ==")
     img = base._load_module(base.IMAGE_PY, "kie_image_hashlock")

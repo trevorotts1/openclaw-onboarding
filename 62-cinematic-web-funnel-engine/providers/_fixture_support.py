@@ -3,7 +3,7 @@
 Skill 74 reads the KIE catalog and the per-model schema before it submits, so a
 fully offline fake transport has to answer those GETs too. ``kie_discovery_response``
 answers the three read-only discovery routes (catalog, schema, credit balance)
-with a permissive, deterministic body; the caller's own fixture still answers
+with a permissive, deterministic body (the prompt carries the real 20000 maximum, so the 80 percent floor is exercised); the caller's own fixture still answers
 createTask, recordInfo and upload.
 """
 
@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from .kie import HttpResponse
 
 _JOB = "/api/v1/jobs/createTask"
+FIXTURE_PROMPT_MAX = 20000  # the real image and Seedance prompt maximum: the floor (16000) is enforced in fixture runs too
 
 
 def kie_discovery_response(url: str) -> Optional[HttpResponse]:
@@ -28,7 +29,7 @@ def kie_discovery_response(url: str) -> Optional[HttpResponse]:
             "properties": {
                 "model": {"type": "string"},
                 "callBackUrl": {"type": "string"},
-                "input": {"type": "object", "properties": {"prompt": {"type": "string"}}},
+                "input": {"type": "object", "properties": {"prompt": {"type": "string", "maxLength": FIXTURE_PROMPT_MAX}}},
             },
         }
         openapi = {

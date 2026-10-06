@@ -1,7 +1,7 @@
 ---
 name: movie-producer
 description: Autonomous multi-pipeline video production (the Movie Producer skill) using the OpenMontage agentic engine — real-footage documentary montage (free, zero-key), or Kie.AI-powered image/video generation. Operates on the client's own optional API keys only.
-version: v15.1.0
+version: v15.1.1
 ---
 
 # Movie Producer — Automated Video Production (Skill 47)
@@ -69,7 +69,8 @@ This skill exposes **only `KIE_API_KEY`** in the client `.env`. Operator keys NE
   - `test_video_preflight.py` — negative-test suite (every gate proven to fail-closed)
   - `test_kie_adapter_resultjson_decode.py`: Kie `resultJson` JSON-string test through Skill 74 (also the shared fake-transport harness)
   - `test_kie_adapter_key_and_i2i_field.py`, `test_kie_video_seedance.py`: adapter contracts over a fake Skill 74 transport
-  - `embed_kie_client.py` / `test_kie_embedded_client_hashlock.py`: generate and lock the embedded Skill 74 client
+  - `test_kie_adapter_safety.py`: no fallback on an unknown outcome, the key gate in a bare clone, the 80 percent prompt floor
+  - `embed_kie_client.py` / `test_kie_embedded_client_hashlock.py`: generate and lock the embedded Skill 74 client and secret helper
   - `cc_board.py` — fail-soft Command Center board caller (5 phase cards; legal `review → done`)
   - `test_cc_board.py` — offline proof of the board caller's contract
 - `test-fixtures/make-video-fixtures.sh` — GOOD/BAD run fixtures for the driver self-test

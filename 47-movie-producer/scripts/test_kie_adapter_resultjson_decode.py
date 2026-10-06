@@ -168,6 +168,19 @@ class FakeKieTransport:
         return 404, b'{"code":404,"msg":"no route"}'
 
 
+class FakeClock:
+    """A clock that only moves when the adapter sleeps, so a 30-minute poll deadline passes instantly."""
+
+    def __init__(self):
+        self.t = 1_000_000.0
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
 def fresh_tool(module, cls_name, transport, skill74_dir=None):
     """A tool instance wired to a fake transport; ``skill74_dir`` selects the client path:
     None = auto (Skill 74 from the repo), "" = Skill 74 absent (embedded copy)."""
@@ -181,8 +194,10 @@ def fresh_tool(module, cls_name, transport, skill74_dir=None):
         os.environ["KIE_SKILL74_DIR"] = skill74_dir
     module._CLIENT = None
     tool = getattr(module, cls_name)()
+    clock = FakeClock()
     tool._transport = transport
-    tool._sleep = lambda s: None
+    tool._sleep = clock.sleep
+    tool._now = clock.now
     return tool
 
 
