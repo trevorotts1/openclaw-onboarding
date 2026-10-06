@@ -12,6 +12,6 @@
   {
     "step": "cover-art",
     "provider": "kie",
-    "model": "nano-banana-pro"
+    "model": "gpt-image-2-5-sunburst-text-to-image"
   }
 ]

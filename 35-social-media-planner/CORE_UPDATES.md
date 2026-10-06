@@ -100,17 +100,17 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 6. **On failure: diagnose and retry** — the script diagnoses common causes (invalid API key, invalid voice ID, network error, rate limit, model unavailable) and retries up to 3x. After 3 failures: notify operator via Telegram with diagnostic output, then (only then) offer client the self-record fallback.
 
-7. **Generate 1,400x1,400 cover JPEG** via kie.ai, with KIE GPT Image 2.5 Sunburst per playbook Section 8 (1:1 at 2K; 1400x1400 minimum for Podbean). JPEG only, never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
+7. **Generate the cover** via kie.ai, with KIE GPT Image 2.5 Sunburst per playbook Section 8c (1:1 at 2K, then export a 1400x1400 JPEG: Podbean accepts 1400 to 3000 px, and exactly 1400 also satisfies Skill 57). JPEG only, never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
 
 8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
 
-9. **Prepare webhook payload** with all 7 required keys: `podcast_id` (`[from secrets/.env: PODBEAN_PODCAST_ID]`), `audio_url` (GHL), `image_url` (GHL), `title`, `description`, `publish_date`, `client_email`. **HARD STOP before POSTing:** run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0; this deterministic pre-flight verifies every one of these 7 keys is present and non-null/non-empty in the JSON body — especially `image_url` and `client_email`, the two fields a 2026-07-12 production incident omitted, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed. If step 7/8 (cover art generation/upload) did not complete and yield a real GHL `image_url`, or the client email is not known, DO NOT POST — finish step 7/8 or notify the operator via Telegram first. n8n's own entry guard (GK-01/U63) now refuses an incomplete payload before touching Podbean and sends an honest refusal email, but the agent must not rely on it as the primary check.
+9. **Prepare webhook payload** (contract v2) with all 10 required keys: `contract_version` ("2"), `podcast_id` (`[from secrets/.env: PODBEAN_PODCAST_ID]`), `client_last_name`, `client_email`, `title`, `description`, `audio_url` (GHL), `image_url` (GHL), `publish_date`, `idempotency_key`. **HARD STOP before POSTing:** run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0; this deterministic pre-flight verifies every one of these 10 keys is present (and `contract_version` is "2") and non-null/non-empty in the JSON body — especially `image_url` and `client_email`, the two fields a 2026-07-12 production incident omitted, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed. If step 7/8 (cover art generation/upload) did not complete and yield a real GHL `image_url`, or the client email is not known, DO NOT POST — finish step 7/8 or notify the operator via Telegram first. n8n's own entry guard (GK-01/U63) now refuses an incomplete payload before touching Podbean and sends an honest refusal email, but the agent must not rely on it as the primary check.
 
 10. **Set publish_date** — Day 7 ISO 8601 with time (e.g. `2026-04-19T09:00:00-04:00`). Date-only strings error.
 
-11. **POST to n8n webhook** `https://main.blackceoautomations.com/webhook/podbean-publish`. This responds `200 OK` immediately regardless of downstream outcome (fire-and-forget) — a `200` here only means the request was received, not that the episode published.
+11. **POST to n8n webhook** `https://main.blackceoautomations.com/webhook/podbean-publish`. Contract v2 is synchronous: the connection is held until the publish completes (allow up to 300 seconds) and the response body (`ok`, `permalink_url`, `episode_id`, or a `reason`) is the outcome; follow the status table in playbook.md Section 15. Never treat a bare transport success as published.
 
-12. **Verify response: 200 OK** — retry once after 30s on non-200. If still failing, notify client via Telegram. A "Podcast Publish Refused at Entry Guard" email instead of a success/failure email means the payload was missing a required field (the email names it) and no Podbean call was made — fix the field and resend.
+12. **Verify the response body** (`ok:true` and a `permalink_url`); on 409 or 500 retry once after 30s with the SAME `idempotency_key`. If still failing, notify client via Telegram. A "Podcast Publish Refused at Entry Guard" email instead of a success/failure email means the payload was missing a required field (the email names it) and no Podbean call was made — fix the field and resend.
 
 13. **Log to Google Sheet Podcast tab.**
 
@@ -152,6 +152,8 @@ Podcast episodes are published via n8n webhook.
 **Endpoint:** `POST https://main.blackceoautomations.com/webhook/podbean-publish`
 
 **Required fields:**
+- `contract_version` - the literal "2"
+- `idempotency_key` - stable per episode job (the same key never creates a second episode)
 - `podcast_id` - from memory.md or secrets/.env: PODBEAN_PODCAST_ID
 - `audio_url` - GHL Media Library URL (must upload generated MP3 first)
 - `image_url` - GHL Media Library URL (must upload cover art first, JPEG/PNG, 1:1, 1400x1400 min, under 500 KB)
@@ -165,6 +167,8 @@ Podcast episodes are published via n8n webhook.
 **Payload:**
 ```json
 {
+  "contract_version": "2",
+  "idempotency_key": "[stable per episode job key]",
   "podcast_id": "[from memory.md or secrets/.env: PODBEAN_PODCAST_ID]",
   "audio_url": "[GHL Media Library URL after uploading the generated MP3]",
   "image_url": "[GHL Media Library URL after uploading the generated cover art]",

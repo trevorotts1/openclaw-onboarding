@@ -1,5 +1,9 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.1.8 - 2026-10-06 - Facebook and advertisement rules name GPT Image 2.5 Sunburst explicitly
+
+- `facebook-ad-designs/_RULES.md` and `advertisement-designs/_RULES.md`: the "Photoreal person" and "people-led" routing lines now name GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, `-image-to-image` with a reference) instead of "GPT-Image 2.5", Nano Banana 2 stays a labeled non-text fallback, and the odd "Sunburst LONG" label is replaced by the rule 12 full-length prompt statement (`07-kie-setup/references/kie-common-rules.md`). `social-media-designs/_RULES.md` was reviewed and already matches (Sunburst for all social images, no Ideogram route, rule 12 length, podcast cover 1400 x 1400 with 2K minimum).
+
 ## v2.1.7 - 2026-10-06 - Ideogram leftovers aligned to the GPT Image 2.5 Sunburst default
 
 - `_system/MODEL-SPECS.md` v1.7, `advertisement-designs/_RULES.md`, `facebook-ad-designs/_RULES.md`: no Ideogram route for ads; default is GPT Image 2.5 Sunburst, consistent with `social-media-designs/_RULES.md`.

@@ -37,7 +37,7 @@
   {
     "step": "image-gen",
     "provider": "kie",
-    "model": "nano-banana-pro"
+    "model": "gpt-image-2-5-sunburst-text-to-image"
   },
   {
     "step": "image-edit",
@@ -47,6 +47,6 @@
   {
     "step": "video-gen",
     "provider": "kie",
-    "model": "sora"
+    "model": "wan/3-0-video"
   }
 ]

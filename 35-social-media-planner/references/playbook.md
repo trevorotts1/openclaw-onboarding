@@ -421,6 +421,8 @@ Center) keeps creation, publication and ACTUAL audience response separate:
 
 **Dependency Note:** This skill depends on Skill 31 (Upgraded Memory System) for memory-core, Dreaming, and Memory Wiki functionality. If Skill 31 is not installed, Steps 51-55 are skipped and the AI logs to MEMORY.md directly instead.
 
+**Dependency Note:** Image and video generation depend on Skills 66, 67 and 74 (policy, video selector, live adapter) and on the client's own `KIE_API_KEY` (`07-kie-setup`).
+
 **Dependency Note:** This skill depends on Skill 30 (Fish Audio API Reference) for podcast production via Fish Audio S2. If Skill 30 is not installed, podcast production (Step 7) is skipped and the AI notifies the client: "Podcast production requires Fish Audio S2 (Skill 30). Install Skill 30 to enable weekly podcast episodes."
 
 ---
@@ -694,7 +696,12 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
   --text-overlay "Three Moves That Doubled Our Pipeline" \
   --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
   --avoid-list-file working/compiled-negatives.txt
-# 2) Generate via kie.ai (GPT Image 2.5 Sunburst), save to working/images/day1.png
+# 2) Check the prompt budget, validate the payload, check credits, run the job (Skill 74, section 8c)
+KIE=~/.openclaw/skills/74-kie-live-adapter/scripts/kie_live_adapter.py
+python3 $KIE prompt-budget --model gpt-image-2-5-sunburst-text-to-image --check --prompt-file working/prompts/day1-primary.txt
+python3 $KIE validate  --model gpt-image-2-5-sunburst-text-to-image --payload working/jobs/day1/input.json --json
+python3 $KIE preflight --model gpt-image-2-5-sunburst-text-to-image --json
+python3 $KIE run --request working/jobs/day1/req.json --save-dir working/images --mode active --json
 # 3) Upload to GHL CDN (SKILL.md Media Delivery Contract — NO -F "hosted=true")
 curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" -H "Version: 2021-07-28" \
@@ -751,7 +758,9 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
 
 **Ratios (N43):** request 2:3, 9:16, 16:9 and 1:1 as they are. 4:5 is not requested directly: request **3:4** and center-crop to 4:5 (1080 x 1350) after generation, keeping the headline and logo inside the 4:5 safe area. Resolution: default `1K`; use `2K` for the 1400 x 1400 podcast cover.
 
-**Prompt budget:** the final transmitted prompt must be 9,000 to 19,000 characters (the social-planner house band in `shared-utils/social_prompt_policy.json`, narrower than the 20,000 vendor cap for 2.5). The budget rules (count after assembly, never truncate silently) are in `07-kie-setup/references/kie-common-rules.md` rule 12 (prompt budget).
+**Auto-latest (rule 13):** the Sunburst ids above are today's answer. When KIE ships a newer GPT Image generation with both routes, the default moves to it: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image --capability "Text to Image,Image to Image" --json`. A department pin or an explicit request still wins, and every automatic switch is receipted and reported.
+
+**Prompt budget:** the final transmitted prompt uses 95 to 100 percent of the routed model's character maximum and never less than 80 percent (rule 12 of `07-kie-setup/references/kie-common-rules.md`). The maximum is read live with `kie_live_adapter.py prompt-budget --model <id>`, never remembered. Count after assembly (references, negatives and the baked headline included); never truncate silently. `pregen_prompt_gate.py` still carries the older house length check, which is being migrated to rule 12; when the two disagree, rule 12 and Skill 74 are the authority.
 
 > **This playbook holds no prices.** The one price authority is `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Limits and enums: `kie_live_adapter.py validate` or that registry. Skill 66 (`66-kie-image`) owns image model policy. KIE rules (endpoints, rate limit, credit preflight, saving results): `07-kie-setup/references/kie-common-rules.md`.
 
@@ -780,6 +789,21 @@ The Image Prompt Engineer step (INSTRUCTIONS.md Phase 2) MUST load these two fil
 2. `45-design-intelligence-library/library/social-media-designs/_RULES.md` — the social-media-designs category rules: aspect ratios, hard rules (never text over faces, 9:16 safe zones, mobile-first legibility), and the model routing rule (Section 8).
 
 Write the merged avoid-list to `working/compiled-negatives.txt` for the run (or per-image if content varies) and pass it to Section 8a's gate via `--avoid-list-file`. This gives the retry loop a MEMORY of prior failure classes instead of retrying blind (the gap the P3-05 root-cause finding names explicitly).
+
+### Section 8c: Social image job: policy, budget, validate, preflight, run, save, publish
+
+Every paid image (daily, carousel, blog, podcast cover, thumbnail) follows this chain. Skill 66 owns image model policy, Skill 74 owns mechanics, and `07-kie-setup/references/kie-common-rules.md` wins on any conflict. `run-publishing-cycle.sh` writes the resolved model and these steps into `cycle-manifest.json` under `media`.
+
+1. **Policy.** Model = the Sunburst default above (rule 13 auto-latest). A client `image-model.json` naming Nano Banana, Midjourney, Ideogram or legacy GPT Image 2 is ignored and reported (`media.violations`), never silently honored.
+2. **Gate.** `pregen_prompt_gate.py check` (Section 8a) before any spend.
+3. **Budget.** `kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <f>`. Exit 3 means add the printed characters, exit 4 means cut them. Expand with real visual decisions, never filler.
+4. **Validate.** `kie_live_adapter.py validate --model <id> --payload input.json` (live schema, registry fallback). Fix every listed error.
+5. **Preflight.** `kie_live_adapter.py preflight --model <id>`: the balance must cover price x 1.30. Estimates come from `price --model <id>`; never type a price.
+6. **Run.** `kie_live_adapter.py run --request req.json --save-dir <dir> --mode active --json`. The adapter ships in shadow mode, so name `--mode active` on the call (or have the operator set it). `submit` never picks or changes a model; on `skipped` or `fail`, apply the documented fallback and record it. Never retry createTask after a network error (it can charge twice); stop on 401 or 403.
+7. **Save and publish.** The adapter saves the file before the link expires. Upload it to the GHL Media Library and use only the CDN `url` (SKILL.md Media Delivery Contract), then Section 17.
+8. **Video.** Same chain through Skill 67: its selector picks the model (Section 16), then `validate`, `preflight` and `run` as above. No Sora.
+
+If Skill 74 is not installed, Skill 66's `validate_prompt.py` and `validate_payload.py` stand in for steps 3 and 4 and the run uses the static createTask path in `07-kie-setup`; record that fact in the receipt.
 
 ### Weekly Image Production Schedule
 
@@ -1210,7 +1234,7 @@ Fish Audio S2 uses [square bracket] tags placed anywhere in the script. Tags aff
 
 Podbean and Apple Podcasts require podcast artwork between 1400 x 1400 and 3000 x 3000 pixels, 1:1 square, JPEG or PNG, RGB color space, 72 dpi, under 500 KB file size. If the generated image exceeds 500 KB, resize it before uploading to GHL. Use ImageMagick: `convert input.png -resize 1400x1400 -quality 85 output.jpg` or increase JPEG compression until under 500 KB.
 
-**Generate one 1400 x 1400 (1:1) image via kie.ai GPT Image 2.5 Sunburst at 2K (1:1 is a supported ratio) so it meets the minimum.** A 1K output is about 1024 x 1024, which is below Podbean's minimum of 1400 x 1400, so request 2K (confirm with `kie_live_adapter.py validate`). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
+**Generate one 1:1 cover via kie.ai GPT Image 2.5 Sunburst at 2K (1:1 is a supported ratio), then deliver it as a 1400 x 1400 JPEG.** A 1K output is about 1024 x 1024, below Podbean's 1400 x 1400 minimum, so request 2K (confirm with `kie_live_adapter.py validate`). Podbean accepts 1400 to 3000 px; the 2K output is inside that range, but export a 1400 x 1400 RGB JPEG under 500 KB so the same file also satisfies Skill 57's `AF-SM-PODCAST-COVER` band (exactly 1400 x 1400). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
 
 The image should visually represent the weekly theme and include the client's branding.
 
@@ -2070,8 +2094,8 @@ The canonical KIE rules (`07-kie-setup/references/kie-common-rules.md`) win on a
 
 If any kie.ai API call fails (image generation, video generation):
 
-1. **Automatic retry:** The AI retries the failed call up to 3 times with a 10-second delay between attempts.
-2. **After 3 failures:** Send an immediate Telegram message to the user with:
+1. **Automatic retry:** Retry only what is safe: a rejected-before-queue 429 (body `code` 429) up to 3 times with a 10-second delay, and status polling. Never retry createTask after a network error (it can charge twice), and never retry 401, 402, 404, 422, 433 or 455: check the body `code`, not only the HTTP status. On 401 or 403 stop after one attempt and report once. A 422 is fixed (prompt or payload) and re-run through Section 8c, not blindly resent.
+2. **After the allowed attempts fail:** Send an immediate Telegram message to the user with:
    - What failed (e.g., "Image generation for Day 3 at 4:5 ratio failed")
    - Why it failed (the error message from kie.ai)
    - "Standing by for your instructions"
@@ -2431,7 +2455,7 @@ This section documents what the playbook covers, confirms completeness, and iden
 | GHL Social Planner API | Complete | All endpoints documented. GHL handles all posting AND commenting. Scheduling logic: 7 days ahead, Sunday start, 9:00 AM. |
 | Sub-Agent Architecture | Complete | 4 phases. Main Agent handles research + core content. 8 parallel Sub-Agents for production. QC agents validate. Main Agent schedules and logs. |
 | QC Agent System | Complete | 40+ checkbox items across 8 categories: Text, Comments, Images, Scheduling, Blog, Podcast Script, Podcast Audio, Video. 3 retry max before Telegram alert. |
-| Error Handling | Complete | kie.ai retry 3x then Telegram. Insufficient funds = no retry, immediate Telegram. GHL retry 3x. Fish Audio retry 3x. Standard notification format. |
+| Error Handling | Complete | kie.ai: safe retries only (429 and polling), body `code` checked, no createTask retry after a network error, 401/403 stop, then Telegram. Insufficient funds = no retry, immediate Telegram. GHL retry 3x. Fish Audio retry 3x. Standard notification format. |
 | Heartbeat.md | Complete | Saturday 8 AM, Noon, 6 PM + Sunday 7 AM. Max 4 asks. Friendly conversational messages. Telegram fallback if no response by Sunday 9 AM. |
 | Google Sheet Structure | Complete | 19 worksheets, color-coded tabs, horizontal 7-day storyboard layout, image cells sized to ratio, text wrapping at 2-3 lines, =IMAGE() for inline display, =HYPERLINK() for videos, conditional formatting on status columns, freeze panes, "Week of" identifiers. |
 | LinkedIn PDF Generation | Complete | ImageMagick and Python/Pillow commands provided for converting 4:5 carousel images to PDF on OpenClaw. |

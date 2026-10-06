@@ -29,7 +29,7 @@ Never call `run_social_media.py` directly (front-door-nonce mismatch -> exit 4).
 | `week` | director-of-social-media | Full P0->P8 weekly run; config-enabled folds fan out (P9 newsletter / P10 blog / P11 podcast / P12 engage) as their own certified runs. |
 | `day` | director-of-social-media | Single-day regenerate + publish. |
 | `carousel` | social-media-graphics-specialist | 10-slide FB/IG or 9-slide LinkedIn-PDF (`postAsPdf:true`). |
-| `video` | director-of-social-media | Sora 25.0s lane (`--narrated` -> DEFERRED v0.3.0). |
+| `video` | director-of-social-media | 25.0s single-clip lane; the render model is picked by the Skill 67 selector (`--narrated` -> DEFERRED v0.3.0). |
 | `podcast` | director-of-podcast | Script -> Fish-Audio S2 -> ffprobe bands -> Podbean + 1400x1400 cover. |
 | `newsletter` | email-campaign-strategist | Weekly social-week digest via GHL Campaigns (subject <=60 / preview <=120). |
 | `blog` | content-marketing-strategist | Day-7 long-form via GHL blog (LeadConnector `blogs.write`). |
@@ -51,3 +51,7 @@ A fold whose dependency is unconfigured degrades to a LABELED skip, never a band
 ## 5. HAND OFF TO VERIFY
 
 A mode that mints a certificate hands to SOP-04: `done` is claimed ONLY from the certificate PLUS a live GHL post-listing. The read-only `engage` mode mints no certificate — it hands to SOP-05.
+
+## 6. MEDIA JOBS: ONE KIE CHAIN FOR EVERY PAID IMAGE AND VIDEO
+
+Every paid image, edit and video clip in any mode runs the same chain, in order, and a failed step stops that job: policy (Skill 66 for images, the Skill 67 selector for video) -> the GPT Image 2.5 Sunburst social default (it follows the newest GPT Image generation, rule 13; Nano Banana is never primary) -> prompt budget (`kie_live_adapter.py prompt-budget --check`, 95 to 100 percent of the model maximum, never below 80) -> `validate` -> `preflight` (balance covers price x 1.30) -> `run --mode active` -> save -> publish through GHL. Prices come from `kie_live_adapter.py price`, never a table in an SOP. The detail lives in `57-social-media-in-a-box/modules/3-media-core/README.md` and `07-kie-setup/references/kie-common-rules.md`, which wins on any conflict.
