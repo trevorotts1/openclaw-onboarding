@@ -40,7 +40,7 @@ Dept-scoped: only the task department's craft is offered. Operate the owning ski
 | `AF-PVC-SECRET-LEAK` | `probe_no_secrets.py` | no API keys / voice IDs / signed URLs in prompts, manifests, logs |
 | `AF-PVC-MANIFEST` | `probe_manifest.py` | project_manifest.yaml complete + SecretRef discipline |
 | `AF-PVC-ENV` | `probe_environment.py` | ffmpeg/ffprobe present + SecretRefs resolve + .gitignore covers private assets |
-| `AF-PVC-PROMPT-FLOOR` / `-CEILING` / `-IDENTITY` | `probe_prompt_band.py` | every likeness/reference prompt in the 5,000–19,000 stripped-char band with identity-anchor + negative blocks |
+| `AF-PVC-PROMPT-FLOOR` / `-CEILING` / `-IDENTITY` | `probe_prompt_band.py` | every likeness/reference prompt inside the Kie rule 12 length budget (`07-kie-setup/references/kie-common-rules.md`) with identity-anchor + negative blocks |
 | `AF-PVC-FRAMEPLAN` | `probe_frame_plan.py` | Agnes `num_frames` satisfies `8n+1`, `<= 441`, covers spoken duration + handles |
 | `AF-PVC-SEGMENT-DUR` | `probe_segment_duration.py` | extracted scene WAV duration == audio_end − audio_start (±0.05s) |
 | `AF-PVC-CLIP-TECH` | `probe_video_clip.py` | raw clip orientation/resolution/CFR/duration (ffprobe) |
