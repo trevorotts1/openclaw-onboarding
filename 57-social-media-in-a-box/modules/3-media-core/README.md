@@ -15,7 +15,7 @@ digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-im
 
 ### Video
 Storyboard Architect (08; **3–7 scenes, sum EXACTLY 25.0s**, max 1.5 spoken words/sec) →
-deterministic math validator (`AF-SM-STORYBOARD`) → the Skill 67 (kie-video) model selector (Skill 67) → poll → download.
+deterministic math validator (`AF-SM-STORYBOARD`) → the Skill 67 (kie-video) model selector (a 25 second single clip resolves to a long-clip model such as `wan/3-0-video`; no Sora, no model named in this skill) → poll → download.
 
 ### Carousel image (the QC loop)
 GPT Image 2.5 sunburst generate (12; 3:4, 2K, typographic `textOnImage`; 3:4 is the N43 substitution for 4:5) → **Gemini QC bot** casual-viewer
@@ -38,6 +38,19 @@ thumbnail crop (YouTube 1280×720 focus; FB/IG link-card crop) as an extra ledge
 states, same fail/timeout alerts, same `AF-SM-MEDIA-LEDGER` terminal-state gate. No separate
 pipeline, no new prover: a thumbnail is a media job like any other. (Its content-side sibling —
 FB/IG **Stories captions** — ships as reformatter output banded by `AF-SM-STORIES-CAPTION` ≤250.)
+
+## KIE dispatch contract (every paid image, edit and video job)
+
+Policy owners: Skill 66 (image) and Skill 67 (video). Mechanics: Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py`). Rules: `07-kie-setup/references/kie-common-rules.md` (it wins on any conflict). The social image default is GPT Image 2.5 Sunburst (rule 13 keeps it at the newest GPT Image generation, resolved with `latest-family --family gpt-image`); Nano Banana is never primary. Per job, in order, each step fail-closed:
+
+1. Route: model id from the policy owner (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; video through the Skill 67 selector). Never a model id from memory.
+2. Expand the seed prompt (prompt 05) to 95 to 100 percent of the model maxLength; check with `prompt-budget --model ID --check --prompt-file F` (exit 3 means add the printed characters, exit 4 means cut them).
+3. `validate --model ID --payload input.json` against the live schema (registry fallback).
+4. `preflight --model ID` (balance must cover price x 1.30; this skill's preflight floor of 200 credits also applies). Estimates come from `price --model ID`, never a table in this skill.
+5. `run --request req.json --save-dir DIR --mode active --json` (createTask, poll, save before the links expire). `submit` never picks or changes a model; on `skipped` or `fail` the caller applies its own documented fallback and records it.
+6. Visual QC (Gemini loop), then the finished file goes to the GHL Media Library and only the CDN URL is used downstream.
+
+Podcast cover: the 2K output is larger than the band, so resize to exactly 1400x1400 JPEG (RGB, under 500 KB) before `AF-SM-PODCAST-COVER`. Skill 35 accepts 1400 to 3000 px for Podbean; 1400x1400 satisfies both. The `image_prompt_*` bands in `config/bands.json` limit the authored seed only; the transmitted prompt follows step 2.
 
 ## Ledger discipline (`AF-SM-MEDIA-LEDGER` / `AF-SM-CAROUSEL-FLOOR`)
 

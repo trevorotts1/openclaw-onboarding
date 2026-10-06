@@ -61,7 +61,7 @@ and the Platform-Native Reformatter. **Every** content output passes `validate_c
 | Hashtags | **5–7** | Facebook / Instagram captions | 09 | AF-SM-HASHTAG-COUNT |
 | Hashtags | **exactly 3** | LinkedIn | 10 | AF-SM-HASHTAG-COUNT |
 | Hashtags | **5–15** | Instagram reformat | 16 | AF-SM-HASHTAG-COUNT |
-| Video storyboard | **3–7 scenes, sum EXACTLY 25.0s** | Sora video | 08 | AF-SM-STORYBOARD |
+| Video storyboard | **3–7 scenes, sum EXACTLY 25.0s** | 25.0s video lane | 08 | AF-SM-STORYBOARD |
 | Carousel slides | **10 (FB/IG) / 9 (LinkedIn)** | carousel | 09/10 | AF-SM-CAROUSEL-SLIDES |
 | Carousel assembly floor | **≥ 2 completed images** | carousel | part5/part7 | AF-SM-CAROUSEL-FLOOR |
 
@@ -91,7 +91,7 @@ violation. The publisher cannot be invoked without a PASS certificate in the run
 ## 4. Module contracts
 
 ### Module 0 — Preflight (`preflight_gate.py`)
-Fail-closed readiness per run. Kie.ai credits ≥ **200**, OpenRouter balance ≥ **$5**, GHL Private
+Fail-closed readiness per run. Kie.ai credit balance ≥ the planned image/video estimate x **1.30** (200 credits is this skill's absolute floor; estimates come from Skill 74 `price`), OpenRouter balance ≥ **$5**, GHL Private
 Integration Token valid against `GET /locations/{locationId}`, all required config fields present +
 secrets confirmed SET (never printed), client `status == Paid`. FAIL → labeled failure report +
 configured notification; run blocked (`sys.exit 2`); NO downstream module executes.
@@ -114,12 +114,12 @@ Two engines: (A) single-call N-day multi-platform JSON generator (prompt 01); (B
   vision QC → winner staged; SeedDream resizes 9:16 / 16:9 when the post type demands. The
   Gemini grid selector (07) applies only to a multi-image collage; Midjourney is retired (F29).
 - **Video:** Storyboard Architect (08; 3–7 scenes, **exactly 25.0s**) → deterministic math validator
-  → the Skill 67 (kie-video) model selector (Skill 67) → poll → download.
+  → the Skill 67 (kie-video) model selector → poll → download.
 - **Carousel image:** GPT Image 2.5 sunburst generate (12; 3:4, 2K; N43 substitutes 3:4 for 4:5) → Gemini QC bot casual-viewer test
   (11) → FAIL → SeedDream 4.5 edit from QC feedback (13) → QC 2 → final fallback strips ALL text →
   ledger update. Poll every **30s**; **≥10 complete** (9 LinkedIn) or **120-poll** timeout; assemble
   only with **≥2** images. Every fail/timeout branch alerts the configured channel.
-- **Podcast cover:** 1:1 art (14; GPT Image 2.5 sunburst, same as Skill 58), one retry, fail → notification + empty-URL return. Cover art only;
+- **Podcast cover:** 1:1 art (14; GPT Image 2.5 sunburst, same as Skill 58; the 2K output is resized to exactly 1400x1400 JPEG), one retry, fail → notification + empty-URL return. Cover art only;
   the podcast **audio** episode stays with Skill 35 (PRD Open Decision D3).
 
 ### Module 4 — Publisher (GHL-direct)

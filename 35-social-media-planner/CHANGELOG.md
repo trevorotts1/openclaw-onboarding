@@ -1,5 +1,28 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.11] - 2026-10-06 - Review fixes: GPT Image 2.5+ only, no Nano Banana anywhere, nested banned-model scan
+
+### Fixed
+- `scripts/kie_media_plan.py`: `judge_image_model` now requires GPT Image generation 2.5 or newer (`gpt-image-1-5-*` and legacy `gpt-image-2-*` are ignored and reported). Every string key and value in `image-model.json` and `video-specs.json`, at any nesting depth, is scanned for Sora, Nano Banana, Midjourney, Ideogram and flare; each hit is reported with its path in `media.violations`. Tests added (nested Sora, nested Midjourney, `gpt-image-1-5`).
+- `scripts/pregen_prompt_gate.py`: Nano Banana is refused in every case (exit 6). The `--fallback-label` flag stays accepted but has no effect. Test case 5 now expects refusal. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules.
+- Playbook, `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `CORE_UPDATES.md`: the "labeled non-text Nano Banana fallback" wording is removed.
+
+## [3.6.10] - 2026-10-06 - Skill 74 image chain, run-publishing-cycle media plan, podcast contract v2 validator
+
+### Added
+- `scripts/kie_media_plan.py` (stdlib, no network) and a `media` block in `cycle-manifest.json` written by `run-publishing-cycle.sh`: the image model for the cycle (GPT Image 2.5 Sunburst, or a newer GPT Image generation named in `image-model.json`; rule 13 resolver command included), the Skill 74 steps for every paid job, and where Skills 67 and 74 live. `image-model.json` naming Nano Banana, Midjourney, Ideogram, legacy GPT Image 2 or a flare variant, and `video-specs.json` naming Sora, are ignored and reported in `media.violations` (and as a warning), never silently honored. Tests: `scripts/test_kie_media_plan.py`, a staging test in `test_run_publishing_cycle.py`; both run in `social-planner-suite-guard`.
+- `references/playbook.md` Section 8c: the social image job chain (policy, gate, `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, GHL CDN upload) and the Path 1 example now runs it.
+
+### Fixed
+- Playbook prompt budget: the old 9,000 to 19,000 band statement is replaced by rule 12 (95 to 100 percent of the model maximum, floor 80 percent, read with Skill 74 `prompt-budget`); the gate's own legacy length check is noted as being migrated (gate code is not changed here).
+- Playbook Section 20 and the coverage table: kie.ai retry text contradicted `kie-common-rules.md` and Skill 74 (blind 3x retry). Now: retry only 429 and polling, check the body `code`, never retry createTask after a network error, stop on 401 or 403.
+- Podcast cover: the playbook said "generate 1400 x 1400" while a 2K output is about 2048 px. Now: 2K output, deliver a 1400 x 1400 JPEG (RGB, under 500 KB); Podbean accepts 1400 to 3000 px and Skill 57's band is exactly 1400.
+- `scripts/validate_podcast_publish_payload.py` required 7 fields while playbook Section 15 (contract v2) requires `contract_version` "2", `client_last_name` and `idempotency_key` as well. The validator and its tests now enforce all 10. `CORE_UPDATES.md` described the webhook as "200 OK immediately, fire-and-forget" (contract v1); it now matches the synchronous v2 contract.
+- `INSTALL.md` lists Skills 07, 66, 67 and 74 as the KIE prerequisites; `INSTRUCTIONS.md`, `QC.md`, `README.md` and `SKILL.md` carry the Skill 74 chain and the media-violation check.
+
+### Migration Notes
+- CORE_UPDATES.md changed (podcast steps 7, 9, 11, 12 and the Podbean payload). Existing users should re-run core updates. Risk: LOW.
+
 ## [3.6.9] - 2026-10-06 - Fix: proof script early-return crash
 
 ### Fixed

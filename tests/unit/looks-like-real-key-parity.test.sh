@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Parity test: the bash looks_like_real_key (install.sh) and the python
-# shared-utils/secret_helper.looks_like_real_key must give the SAME verdict for the same
-# placeholder list and for a synthetic real-shaped key. No network, no real credential.
+# Parity test: the bash looks_like_real_key (install.sh), the python
+# shared-utils/secret_helper.looks_like_real_key and the Python copy EMBEDDED in install.sh
+# (the PYEOF resolver block) must give the SAME verdict for the same placeholder list and
+# for a synthetic real-shaped key. No network, no real credential.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-TMPF="$(mktemp)"; trap 'rm -f "$TMPF"' EXIT
+TMPF="$(mktemp)"; EMB="$(mktemp)"; trap 'rm -f "$TMPF" "$EMB"' EXIT
+# Extract the EMBEDDED python twin from install.sh: PROVIDER_REGEX .. looks_like_real_key (stops before def emit).
+{ echo "import os, re, sys"; awk '/^PROVIDER_REGEX = \{/{f=1} /^def emit\(/{f=0} f{print}' "$ROOT/install.sh"; \
+  echo 'print(1 if looks_like_real_key(os.environ["VAL"], "KIE_API_KEY") else 0)'; } > "$EMB"
+[ "$(wc -l < "$EMB")" -gt 20 ] || { echo "FAIL: could not extract the embedded python twin from install.sh"; exit 1; }
+emb() { PYTHONDONTWRITEBYTECODE=1 VAL="$1" python3 "$EMB"; }
 # Extract the bash function body verbatim from install.sh (function start to its closing brace).
 awk '/^looks_like_real_key\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$ROOT/install.sh" > "$TMPF"
 [ -s "$TMPF" ] || { echo "FAIL: could not extract looks_like_real_key from install.sh"; exit 1; }
@@ -33,14 +39,18 @@ for v in "${VALUES[@]}"; do
   if looks_like_real_key "$v" KIE_API_KEY; then b=1; else b=0; fi
   p="$(cd "$ROOT/shared-utils" && PYTHONDONTWRITEBYTECODE=1 VAL="$v" python3 -c 'import os,secret_helper as s; print(1 if s.looks_like_real_key(os.environ["VAL"], "KIE_API_KEY") else 0)')"
   if [ "$b" != "$p" ]; then echo "FAIL: verdict differs bash=$b python=$p for a ${#v}-char value"; FAIL=1; fi
+  e="$(emb "$v")"
+  if [ "$b" != "$e" ]; then echo "FAIL: verdict differs bash=$b embedded-python=$e for a ${#v}-char value"; FAIL=1; fi
 done
 for v in "${REJECT[@]}"; do
   looks_like_real_key "$v" KIE_API_KEY && { echo "FAIL: placeholder not rejected (bash): ${v:0:20}..."; FAIL=1; }
   p="$(cd "$ROOT/shared-utils" && PYTHONDONTWRITEBYTECODE=1 VAL="$v" python3 -c 'import os,secret_helper as s; print(1 if s.looks_like_real_key(os.environ["VAL"], "KIE_API_KEY") else 0)')"
   [ "$p" = 0 ] || { echo "FAIL: placeholder not rejected (python): ${v:0:20}..."; FAIL=1; }
+  [ "$(emb "$v")" = 0 ] || { echo "FAIL: placeholder not rejected (embedded python): ${v:0:20}..."; FAIL=1; }
 done
 for v in "${ACCEPT[@]}"; do
   looks_like_real_key "$v" KIE_API_KEY || { echo "FAIL: real-shaped key rejected (bash): ${v:0:24}..."; FAIL=1; }
+  [ "$(emb "$v")" = 1 ] || { echo "FAIL: real-shaped key rejected (embedded python): ${v:0:24}..."; FAIL=1; }
 done
 # Expected: only the synthetic real-shaped key is accepted.
 looks_like_real_key "YOUR_CLIENT_KIE_API_KEY_HERE" KIE_API_KEY && { echo "FAIL: installer placeholder accepted (bash)"; FAIL=1; }
