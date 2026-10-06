@@ -14,6 +14,8 @@
 #                    resolves (when mode=model), and a capability probe of the
 #                    installed bridge answers schemaVersion 1.x (2 s cap).
 #                    UNDETERMINED when the probe cannot run -- never a pass.
+#   routing-jev-path which path the Jev model would use (own-key / openrouter /
+#                    local-only), from key-NAME presence only; never a value.
 #
 # Exit: 0 = no FAIL (warnings allowed)   1 = at least one FAIL
 #       2 = bad usage                    5 = cannot tell (no OC root / no python3)
@@ -156,6 +158,17 @@ else:
                 warned += 1
         line("routing-works", "PASS",
              "bridge answers schemaVersion %s%s" % (probe, model_txt))
+
+# ---- routing-jev-path: which path would the Jev model use? (key NAMES only, never values) ----
+try:
+    import jev_live
+    jp = jev_live.would_use_path(root)
+    if st["mode"] in ("legacy", "off", "shadow"):
+        line("routing-jev-path", "PASS", "mode=%s sends no Jev traffic; the local engine decides (keys on this box would give: %s)" % (st["mode"], jp))
+    else:
+        line("routing-jev-path", "PASS", "%s (own Jev key, else OpenRouter key, else local engine)" % jp)
+except Exception as exc:
+    line("routing-jev-path", "UNDETERMINED", "could not read the key-name set (%s)" % type(exc).__name__)
 
 print("[routing-check] %s (%d failed, %d warned)" % (
     "FAIL" if failed else "PASS", failed, warned))

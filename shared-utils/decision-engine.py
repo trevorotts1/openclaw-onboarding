@@ -6,8 +6,10 @@ The spec's own released file plan names this path (line 196:
 ``shared-utils/decision_engine/`` as the canonical new decision capability).
 This file is the thin CC-facing front end over that package: ONE process per
 evaluation (spec 2.3 -- no per-candidate spawn), ONE JSON request on stdin,
-ONE JSON response on stdout. Stdlib only, reads/writes no state, needs no key,
-touches no assignment.
+ONE JSON response on stdout. Stdlib only, touches no assignment. It works with
+NO key (local lexical engine); when the box has a Jev key it uses it, else its
+OpenRouter key (the Jev model via OpenRouter), and any failure falls back to the
+local engine (see jev_live.py, docs/ROUTING-MODE.md).
 
 Wire contract, byte-compatible with CC src/lib/decision-engine/
 (bridge.ts / capability.ts / contract.ts, CC v7.6.68+):
@@ -53,6 +55,7 @@ not a stub.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -85,6 +88,13 @@ try:
 except Exception:  # noqa: BLE001
     _switch = None
     _model_route = None
+
+# JEV live chain: own Jev key, else the box's OpenRouter key, else (any failure) the local
+# engine below. Optional sibling: a bridge copied alone simply stays local-only.
+try:
+    import jev_live as _jev_live
+except Exception:  # noqa: BLE001
+    _jev_live = None
 
 # --- C2/CONTRACT: live intent + route (additive; BRIDGE_SCHEMA_VERSION 1.1.0) ---
 
@@ -693,6 +703,26 @@ def _count(ok: bool, reason: str = "") -> None:
         pass
 
 
+def _jev_decide(task, catalog_entries):
+    """The Jev model's placement ({intent, department, confidence, path}) or None, in which
+    case the caller keeps the local engine's answer untouched. Only modes that permit JEV
+    traffic send anything (auto, model; shadow/legacy/off send nothing). Never raises.
+    Records which path was used in routing-events.jsonl only when it CHANGES."""
+    root, mode = _routing_state()
+    if _jev_live is None or root is None:
+        return None
+    try:
+        res = _jev_live.decide(task, catalog_entries, mode, root)
+        if not str(res.get("reason", "")).startswith("mode_"):
+            label = res["path"] if res.get("ok") else "local:" + str(res.get("reason"))
+            if (os.environ.get(_switch.NO_RECORD_ENV) or "").strip() in ("", "0"):
+                # dedupe_s is huge: an identical path as the last event is skipped
+                _switch.log_event(root, "jev_path", dedupe_s=10 ** 9, reason=label)
+        return res if res.get("ok") else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _model_place(task, route, catalog_entries):
     """`model` mode only: when the rules could not place the task, the box's OWN default
     model picks the department. Mutates `route`; returns nothing."""
@@ -914,6 +944,12 @@ def _evaluate() -> int:
         catalog_entries = _standard_floor_catalog()
         catalog_label = "standard-floor" if catalog_entries else "empty"
 
+    # JEV live chain: an exact released-pack match stays authoritative (no call); any
+    # other message is placed by the Jev model when a key path exists. None -> unchanged.
+    jev = _jev_decide(task, catalog_entries) if intent_source == "heuristic" else None
+    if jev:
+        intent = jev["intent"]
+
     route = {
         "action": "none",
         "department": None,
@@ -926,11 +962,16 @@ def _evaluate() -> int:
     elif intent in _INTENT_ROUTE:
         route["action"] = "route"
         dept, conf, fb = _resolve_route_department(task, department, catalog_entries)
+        if jev and jev["department"] and not (department and conf == 1.0 and not fb):
+            # (a department the caller named and the catalog holds still wins)
+            dept, conf, fb = jev["department"], jev["confidence"], jev["department"] == "general-task"
         route["department"] = dept
         route["confidence"] = conf
         route["fallback"] = fb
     # else: existing_task_control / clarification_response / unresolved ->
     # stays action 'none', department None (the caller's existing handling).
+    if jev and route["action"] == "route":
+        route["method"] = "jev_" + jev["path"].replace("-", "_")
     # RF-014 `model` mode: the rules could not place it, so the box's own default
     # model picks (no-op in every other mode).
     if route["action"] == "route":
