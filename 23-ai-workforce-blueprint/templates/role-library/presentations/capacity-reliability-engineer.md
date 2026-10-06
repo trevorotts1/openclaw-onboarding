@@ -6,8 +6,8 @@
 **Reports to:** Director of Presentations
 **Role type:** specialist
 **Persona:** —
-**Version:** 1.0
-**Last updated:** 2026-06-15
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -112,7 +112,7 @@ Re-calibrate the fleet sizing table (see SOP 9.1) against actual run performance
 - `uptime` (CPU load)
 - `df -h` (disk space)
 - One live test turn to Ollama Cloud (model reachability check)
-- Kie.ai balance API (credit balance check)
+- Kie.ai credit endpoint `GET /api/v1/chat/credit` (credit balance check)
 - working/checkpoints/capacity_plan.json (write)
 - cron / launchd (watchdog installation on client's box)
 - openclaw message send (for watchdog alerts -- never direct Telegram API)
@@ -146,9 +146,9 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
    - `free_disk_gb`: available disk on the home partition
 3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the `kimi-k2.6:cloud` model. Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
-4. Check Kie.ai credit balance: call the Kie.ai balance endpoint with the client's KIE_API_KEY. Record: `kie_credits_remaining`.
-5. Calculate image generation budget: SLIDE_COUNT x 2 x $0.03. Record as `budget_ceiling`.
-6. Compare `kie_credits_remaining` to `budget_ceiling`. If credits < budget_ceiling: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
+4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
+5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
+6. Compare `kie_credits_remaining` to `budget_ceiling` x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`). If credits < budget_ceiling x 1.30: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
 7. Apply the fleet sizing table:
    | Free RAM at probe | Max concurrent sub-agents (total) | QC agents | Writer agents |
    |---|---|---|---|
@@ -170,6 +170,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "free_disk_gb": N,
      "ollama_cloud_reachable": true,
      "kie_credits_remaining": N,
+     "per_image_usd": N,
      "budget_ceiling": N,
      "budget_ok": true,
      "model_location": "cloud|local",
@@ -268,7 +269,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 The Director cannot dispatch Phase 1 agents until capacity_plan.json exists with go_nogo = "GO".
 
 ### Gate 2 -- Budget Pre-flight
-kie_credits_remaining >= budget_ceiling before Phase 4 begins.
+kie_credits_remaining >= budget_ceiling x 1.30 (the credit preflight of `07-kie-setup/references/kie-common-rules.md` rule 6) before Phase 4 begins; the renderer's own Phase-0 balance gate (`AF-KIE-BALANCE`, exit 4) is a second, independent check.
 
 ### Gate 3 -- All Required Keys Found
 No required key has `found_in: "NOT FOUND"` in capacity_plan.json before Phase 4 begins.
@@ -399,7 +400,7 @@ If free_disk_gb < 10: the run cannot proceed because image downloads and PPTX as
 ## 18. Update Triggers (When to Revise This Document)
 
 1. Fleet sizing table needs recalibration (based on actual run performance data).
-2. Kie.ai price changes (budget formula: currently $0.03 per image -- verify quarterly).
+2. The live `pricingDesc` for the pinned image model changes materially (the budget formula uses `per_image_usd` from it, with no hard-coded price).
 3. New env stores are added to OpenClaw (currently 4 stores -- if a 5th is added, update SOP 9.3).
 4. Phase 7 watchdog cron interval changes (currently 10 minutes, max 90-minute window).
 5. The operator explicitly requests a revision.

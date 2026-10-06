@@ -20,7 +20,8 @@ The Generation Operator executes a deterministic fallback ladder whenever an API
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` | §2 (routing table — PRIMARY + SECONDARY columns, rate-limit guidance), §3 (LONG-to-MEDIUM fallback rule) | Backup endpoint resolution; rate-limit backoff parameters; tier downgrade rules |
+| `_system/MODEL-SPECS.md` | §2 (routing table, First-choice + Backup columns), §3 (LONG-to-MEDIUM fallback rule) | Backup endpoint resolution; tier downgrade rules |
+| `07-kie-setup/references/kie-common-rules.md` | rate limits, credit preflight | Rate-limit and concurrency numbers and the credit preflight (MODEL-SPECS carries none) |
 | `_system/PPT-ANALYSIS-SOP.md` | §3C (re-route, do not downgrade doctrine) | Library-wide rule against silent resolution downgrade; promoted from deck context to all generation |
 | `_system/TEST-PROTOCOL.md` | §5 (patch-loop criteria — style failures only) | Hard boundary that infrastructure noise does not generate Fidelity Tester strikes |
 
@@ -34,9 +35,9 @@ All routing decisions are made by reading MODEL-SPECS §2 at runtime. Do not cac
 
 | Failure class | First response | Second response | Hard stop |
 |---|---|---|---|
-| **5xx / timeout (transient)** | Retry once after 30-second backoff | Route to backup endpoint (MODEL-SPECS §2 SECONDARY column) with CDO notification | If backup also fails: hard stop — preserve manifest + all receipts; notify CDO |
-| **429 (rate limit)** | Backoff per MODEL-SPECS §2 rate-limit guidance; halve concurrency | Continue at reduced concurrency | If 429 persists for more than 3 events within any 10-minute window: hard stop; notify CDO |
-| **Endpoint down (confirmed)** | Route immediately to backup endpoint from MODEL-SPECS §2 SECONDARY column; notify CDO | — | If backup is also down: hard stop — preserve all manifests + receipts; notify CDO |
+| **5xx / timeout (transient)** | Retry once after 30-second backoff | Route to backup endpoint (MODEL-SPECS §2 Backup column) with CDO notification | If backup also fails: hard stop — preserve manifest + all receipts; notify CDO |
+| **429 (rate limit)** | Back off and halve concurrency, staying inside the canonical Kie limits | Continue at reduced concurrency | If 429 persists for more than 3 events within any 10-minute window: hard stop; notify CDO |
+| **Endpoint down (confirmed)** | Route immediately to backup endpoint from MODEL-SPECS §2 Backup column; notify CDO | — | If backup is also down: hard stop — preserve all manifests + receipts; notify CDO |
 | **402 / credit exhaustion** | Immediate hard stop — do not retry, do not re-route | Preserve manifest + receipts for resume; notify CDO | — |
 | **NSFW checker false positive** | Flag for CDO + human review; halt the specific task; do not auto-retry with prompt mutation | — | CDO decides whether to re-run, modify prompt, or escalate |
 
@@ -50,7 +51,7 @@ All routing decisions are made by reading MODEL-SPECS §2 at runtime. Do not cac
 
 4. **Notify CDO for all non-transient events.** A single successful 30-second retry (5xx / timeout) does not require CDO notification. Every other ladder row — backup re-route, 429 halve, 402 hard stop, NSFW flag — requires CDO notification with the fallback log entry.
 
-5. **Re-route to backup endpoint.** When the ladder directs a backup re-route, open MODEL-SPECS §2 SECONDARY column for the job's task category. Verify the backup endpoint supports the job's requested aspect ratio and tier. If it does not, this is a hard stop — return to CDO with the compatibility gap; do not silently change aspect ratio or tier.
+5. **Re-route to backup endpoint.** When the ladder directs a backup re-route, open MODEL-SPECS §2 Backup column for the job's task category. Verify the backup endpoint supports the job's requested aspect ratio and tier. If it does not, this is a hard stop — return to CDO with the compatibility gap; do not silently change aspect ratio or tier.
 
 6. **Apply tier downgrade only per MODEL-SPECS §3.** If the backup endpoint's LONG tier is also unavailable, apply the MODEL-SPECS §3 LONG-to-MEDIUM rule with explicit CDO notification. If MEDIUM is also unavailable on the backup, this is a hard stop. Never apply a tier downgrade that was not reached by traversing this rule — do not silently generate at a lower quality level.
 
@@ -64,7 +65,7 @@ All routing decisions are made by reading MODEL-SPECS §2 at runtime. Do not cac
 
 | Input | Required | Source |
 |---|---|---|
-| HTTP response from Kie.ai API (`createTask` or `getTaskInfo`) | Yes | Kie.ai API at submission or polling time |
+| HTTP response from Kie.ai API (`createTask` or `recordInfo`) | Yes | Kie.ai API at submission or polling time |
 | MODEL-SPECS §2 routing table (read at runtime) | Yes | `_system/MODEL-SPECS.md` |
 | MODEL-SPECS §3 tier fallback rule (read at runtime) | Yes | `_system/MODEL-SPECS.md` |
 | Job manifest (slide work-list for multi-asset jobs) | Yes | `_local/jobs/{job-id}/manifest.json` written by the requesting role |

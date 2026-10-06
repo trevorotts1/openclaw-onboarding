@@ -7,8 +7,8 @@
 **Role type:** specialist
 **Role number:** ROLE-18
 **Persona:** Marcus Vane, Type Director (—)
-**Version:** 1.0
-**Last updated:** 2026-06-14
+**Version:** 1.1
+**Last updated:** 2026-10-06
 **Industry:** AI-powered brand management and AI-workforce installation for African-American entrepreneurs
 **Generated for:** BlackCEO
 
@@ -268,7 +268,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
 2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
-3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4 and the native-text fallback).
+3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (cross-reference master SOP 7.4; the native-text fallback is eliminated, Decision 5C, AF-OVERLAY-DELIVERED).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**

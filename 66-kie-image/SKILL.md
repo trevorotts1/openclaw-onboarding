@@ -7,9 +7,9 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.1.1
+version: v2.2.1
 metadata:
-  version: "2.1.1"
+  version: "2.2.1"
   priority: HIGH
 ---
 
@@ -68,16 +68,18 @@ wait (callback or poll), and visually QC the result.
    Image 2.5 per-resolution exclusions — two separate rule sets, never
    merged, Wan n/bbox, Ideogram strength, seedream output_format gaps).
    Validation happens BEFORE dispatching so bad payloads never burn credits.
-5. **Dispatch** — POST createTask; then callBackUrl (Skill 46 relay) or
-   recordInfo polling (2–3s initial, stepped backoff, respect 429, stop
-   ~10–15 min), OR both (callbacks preferred, polling as fallback).
+5. **Dispatch through Skill 74** — `kie_live_adapter.py validate` (live schema,
+   registry fallback), then `preflight` (balance must cover price x 1.30), then
+   `submit --mode active` (production batches add `--callback-url` of the Skill 46
+   relay), or recordInfo polling (2–3s initial, stepped backoff, respect 429, stop
+   ~10–15 min). See INSTRUCTIONS.md Step 5. Skill 74 never picks the model.
 6. **QC** — actually inspect the image (references/qc.md), confirm
    dimensions/ratios/ref fidelity/typography/anatomy; retry only along the
    controlled 5-step ladder, never silently burning credits.
 
-## Registry (machine-readable source of truth)
+## Registry (curated policy, not the catalog)
 
-`models.json` — 32 entries covering all spec 7.2 families and their routes,
+`models.json` is this skill's CURATED POLICY and verified-override registry: which models we route to, the owner-confirmed caps, ratio and reference rules, and the routing defaults. It is NOT the exhaustive KIE catalog and is not the live source of limits or prices: the live schema (checked through Skill 74 `validate`) and Skill 74 `price` are, with the generated snapshot as their fallback. A model absent from `models.json` is DISCOVERED, never an automatic default. `models.json` — 32 entries covering all spec 7.2 families and their routes,
 each with `source_url`, `last_verified_at`, `cap_status`, prompt caps, house
 band, reference limits, resolutions, ratios, and known inconsistencies. Every
 numeric limit is traceable to a quoted first-party value fetched 2026-08-26.

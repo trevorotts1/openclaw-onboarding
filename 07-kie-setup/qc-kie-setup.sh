@@ -21,10 +21,30 @@ echo ""
 assert "Skill 07 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/07-kie-setup\" ]"
 assert "KIE_API_KEY set" "[ -n \"$KIE_API_KEY\" ]"
 assert "Secrets file chmod 600" "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
-RESP=$(curl -sS -m 10 -H "Authorization: Bearer $KIE_API_KEY" "https://api.kie.ai/api/v1/chat/credit" 2>/dev/null)
+# KIE_QC_OFFLINE=1 skips every network call (the live credit probe). The adapter checks below never use the network.
 CREDIT_OK=0
-case "$RESP" in *'"code":200'*|*'"code": 200'*) CREDIT_OK=1 ;; esac
-warn_only "kie.ai API responds (body code 200)" "[ \"$CREDIT_OK\" = 1 ]"
+if [ "${KIE_QC_OFFLINE:-0}" = 1 ]; then
+  yellow "  - skipped (KIE_QC_OFFLINE=1): live credit probe"
+else
+  RESP=$(curl -sS -m 10 -H "Authorization: Bearer $KIE_API_KEY" "https://api.kie.ai/api/v1/chat/credit" 2>/dev/null)
+  case "$RESP" in *'"code":200'*|*'"code": 200'*) CREDIT_OK=1 ;; esac
+  warn_only "kie.ai API responds (body code 200)" "[ \"$CREDIT_OK\" = 1 ]"
+fi
+# Skill 74 adapter health, HERMETIC: presence plus `health --json` against a dead localhost port with a
+# throwaway placeholder key (never the real key), so no request leaves this machine. A parseable result
+# naming the adapter proves it runs; the placeholder makes the call fail fast, which is expected.
+ADAPTER=""
+for c in "$SKILL_DIR/../74-kie-live-adapter" "$SKILLS_DIR_DEFAULT/74-kie-live-adapter"; do
+  [ -f "$c/scripts/kie_live_adapter.py" ] && { ADAPTER="$c/scripts/kie_live_adapter.py"; break; }
+done
+warn_only "Skill 74 adapter present (74-kie-live-adapter/scripts/kie_live_adapter.py)" "[ -n \"$ADAPTER\" ]"
+if [ -n "$ADAPTER" ]; then
+  QCTMP="$(mktemp -d)"
+  HJ="$(KIE_API_KEY=qc-placeholder KIE_LIVE_API_BASE=http://127.0.0.1:9 KIE_LIVE_ADAPTER_MODE=shadow KIE_LIVE_CACHE_DIR="$QCTMP" KIE_LIVE_RECEIPT_DIR="$QCTMP/r" PYTHONDONTWRITEBYTECODE=1 python3 "$ADAPTER" health --json 2>/dev/null)"
+  rm -rf "$QCTMP"
+  warn_only "Skill 74 health --json runs and names the adapter (hermetic, no network)" "printf '%s' \"\$HJ\" | python3 -c 'import json,sys; assert json.load(sys.stdin)[\"adapter\"]==\"74-kie-live-adapter\"'"
+fi
+warn_only "common rules file present (references/kie-common-rules.md)" "[ -f \"$SKILL_DIR/references/kie-common-rules.md\" ]"
 warn_only "TOOLS.md references kie.ai" "grep -qi 'kie' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"

@@ -1,3 +1,12 @@
+## [2.0.8] - 2026-10-06 - docs: the hero visual's Kie transport is Skill 74 (one KIE path)
+
+`scripts/31-generate-workflow-visual.sh` and `protocols/workflow-visual-protocol.md` now state that
+any real hero job runs through Skill 74's CLI (`kie_live_adapter.py ... --mode active --json`, a
+sibling skill folder) and that this skill never grows its own createTask, polling, upload or
+download code; Skill 66 stays the model authority. The script is still a stub (no Kie call, no
+model recorded), so no behavior changed. The earlier wording about a Skill 74 shadow-mode
+catalog check is replaced.
+
 ## [2.0.7] - 2026-10-05 - fix: QC follow-ups to 2.0.6 (Skill 66 prereq, fixtures, comments)
 
 `PREREQS.json` gains an optional `skill-66` entry (the image policy owner) and the Skill 07 entry

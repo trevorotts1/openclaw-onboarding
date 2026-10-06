@@ -334,10 +334,12 @@ class KieKvPoller {
     }
     if (!resultJson || typeof resultJson !== 'object') return [];
     // Standard images array: resultJson.images[].url
-    if (Array.isArray(resultJson.images) && resultJson.images.length > 0) {
-      return resultJson.images.map(i => i && i.url).filter(Boolean);
-    }
+    // When every item is null/empty it yields nothing, so fall through to resultUrls below.
     const urls = [];
+    if (Array.isArray(resultJson.images)) {
+      const imgUrls = resultJson.images.map(i => i && i.url).filter(Boolean);
+      if (imgUrls.length > 0) return imgUrls;
+    }
     // Market success shape: resultJson.resultUrls
     if (Array.isArray(resultJson.resultUrls)) urls.push(...resultJson.resultUrls.filter(Boolean));
     // Flux: resultJson.resultImageUrl or similar

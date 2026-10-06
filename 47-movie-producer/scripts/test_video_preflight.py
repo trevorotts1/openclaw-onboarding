@@ -386,20 +386,20 @@ def _probe_kie_credit_body_code() -> list:
             return self
         def __exit__(self, *a):
             return False
-    real = urllib.request.urlopen
+    real = urllib.request.OpenerDirector.open
     try:
-        urllib.request.urlopen = lambda *a, **k: _Resp(
+        urllib.request.OpenerDirector.open = lambda self, *a, **k: _Resp(
             b'{"code": 401, "msg": "You do not have access", "data": 5000}')
         try:
             vbc._fetch_kie_balance("dummy-key-not-real")
             out.append("credit probe accepted an HTTP 200 whose body code is 401")
         except RuntimeError:
             pass
-        urllib.request.urlopen = lambda *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 1234}')
+        urllib.request.OpenerDirector.open = lambda self, *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 1234}')
         if vbc._fetch_kie_balance("dummy-key-not-real") != 1234.0:
             out.append("credit probe did not read data from a code-200 body")
     finally:
-        urllib.request.urlopen = real
+        urllib.request.OpenerDirector.open = real
     # (3) the credit read goes through Skill 74: installed copy first, embedded copy when it is absent.
     import os
     old_dir = os.environ.get("KIE_SKILL74_DIR")
@@ -410,20 +410,20 @@ def _probe_kie_credit_body_code() -> list:
             else:
                 os.environ["KIE_SKILL74_DIR"] = setting
             vbc._KIE_CLIENT = None
-            urllib.request.urlopen = lambda *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 4321}')
+            urllib.request.OpenerDirector.open = lambda self, *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 4321}')
             try:
                 got = vbc._fetch_kie_balance("dummy-key-not-real")
             finally:
-                urllib.request.urlopen = real
+                urllib.request.OpenerDirector.open = real
             label = vbc._kie_client()[1]
             if got != 4321.0 or label != want:
                 out.append(f"credit read via {want}: got balance {got!r} on path {label!r}")
             seen = {}
-            urllib.request.urlopen = lambda req, *a, **k: (seen.setdefault("auth", req.get_header("Authorization")), seen.setdefault("url", req.full_url), _Resp(b'{"code": 200, "data": 1}'))[2]
+            urllib.request.OpenerDirector.open = lambda self, req, *a, **k: (seen.setdefault("auth", req.get_header("Authorization")), seen.setdefault("url", req.full_url), _Resp(b'{"code": 200, "data": 1}'))[2]
             try:
                 vbc._fetch_kie_balance("dummy-key-not-real")
             finally:
-                urllib.request.urlopen = real
+                urllib.request.OpenerDirector.open = real
             if seen.get("url") != "https://api.kie.ai/api/v1/chat/credit" or seen.get("auth") != "Bearer dummy-key-not-real":
                 out.append(f"credit read via {want} did not use Bearer auth on the credit endpoint: {seen}")
     finally:

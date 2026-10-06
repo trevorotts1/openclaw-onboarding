@@ -120,6 +120,7 @@ class BypassScan(unittest.TestCase):
             with tempfile.TemporaryDirectory() as td:
                 shutil.copy(ENTRY, td)
                 (Path(td) / "skill-version.txt").write_text(text + "\n", encoding="utf-8")
+                (Path(td) / "SKILL.md").write_text("---\nversion: " + text + "\n---\n", encoding="utf-8")  # lockstep gate reads it
                 p = subprocess.run(["bash", str(Path(td) / ENTRY.name), "--version-only"],
                                    text=True, capture_output=True)
                 self.assertEqual(p.returncode == 0, ok, f"{text!r}: {p.stdout}{p.stderr}")

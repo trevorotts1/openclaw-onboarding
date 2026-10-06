@@ -33,12 +33,12 @@ Wire skill 45 into the Presentations pipeline as the imagery STYLE-INTELLIGENCE 
 
 Per SOP-DIU-611 and the 00-START-HERE T7b mirror, the two pipelines stay separate and there are exactly TWO legal crossings:
 
-- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1–A5), white-base doctrine, the GPT-Image-2.5 model pin (`presentation_job/model_catalog.json`), narrative + price-ladder + PPTX assembly.
+- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1–A5), white-base doctrine, the department image-model pin (`presentation_job/model_catalog.json`, today GPT Image 2.5 Sunburst), narrative + price-ladder + PPTX assembly.
 - **DIU (in Graphics)** owns PPT-ANALYSIS-SOP: visual style analysis, the 3–8-family Deck Style System, the Rotation Engine, the 7-endpoint roster.
 - **Crossing A:** the Brand Steward consumes a PPT-category style card's **Foundation Prompt Block** as the STYLE BLOCK input for a webinar deck, requested via SOP-DIU-612. This is the ONLY way DIU style content enters a Presentations deck.
 - **Crossing B:** for DIU strategy-(b) decks, the DIU delivers text-clear background imagery to Presentations for editable overlay. (Not the webinar-deck path; out of scope here.)
 
-**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT-Image-2.5 only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
+**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT Image 2.5 Sunburst only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
 
 ---
 
@@ -78,7 +78,7 @@ Run ONCE per box during onboarding so every client starts with at least one prod
 1. Rasterize the source to slide images. If a rendered `.pptx`/PDF of the reference deck exists, use `libreoffice --headless --convert-to pdf` then `pdftoppm -png -r 100`. If only the prompt set exists (no rendered deck), the analyzer reads the prompt set's per-slide ONE-BIG-IDEA + archetype + layout descriptions as the evidence (the reference prompt set IS a structured per-slide spec).
 2. Batch-survey in groups of ~10; tag each slide: layout archetype, dominant colors, text density, imagery type.
 3. Cluster into 3–8 NAMED families (the reference deck maps cleanly to the documented 5-archetype system: A=Full-bleed photo+headline, B=Photo one side/text opposite, C=Photo-top/data-bottom, D=Type-dominant punch, E=Portrait/selfie). Record which slide numbers belong to each family.
-4. Extract the Shared Foundation: Montserrat weight ladder; brand hexes (off-white #FBF7F4, raspberry #C8104E, gold #C9A24B, charcoal #231F20); the gold-gradient/glow/strikethrough price system; logo bottom-right ~9% via I2I; the AVOID list (no black backgrounds).
+4. Extract the Shared Foundation: Montserrat weight ladder; brand hexes (off-white #FBF7F4, raspberry #C8104E, gold #C9A24B, charcoal #231F20); the flat solid-color price system with a drawn strikethrough (a gradient fill or glow on type is banned, SOP-IMG-05 section 2, AF-GRAD); the logo placed by the department's two logo mechanisms (a URL logo placed image-to-image, or a local logo file placed top-right at assembly, SOP-IMG-05 Rule A); the AVOID list (no black backgrounds).
 5. Write the Deck Style System file `PPT-001_gold-standard-reference.md` with the Foundation Prompt Block (800–1,200 chars) + one family card per family (SHORT/MEDIUM/LONG templates).
 6. **Register in INDEX.md:** one PPT row + one row per family (PPT-001-A … PPT-001-E), `Status: production`, version v1.0. The INDEX must no longer read `*(empty)*` for PowerPoint designs.
 7. Test per TEST-PROTOCOL: generate one test slide per family with new content; score family fidelity AND cross-family cohesion.
@@ -99,7 +99,7 @@ When a client supplies a reference deck (concern: "analyze a PowerPoint, detect 
 | 2 | **Crossing A used, not bypassed.** A style-match deck's STYLE BLOCK contains a Foundation Prompt Block sourced from a registered card (recorded `style_card_id@version` in brand_registry.json). | Foundation block sourced via SOP-DIU-612 | Slide Image Creator wrote style from memory / invented a look on a deck that requested a style match (violates SOP-DIU-611 hard rule 3) |
 | 3 | **Single intake point.** The style request went to the CDO via SOP-DIU-612, not to the Generation Operator or Slide Image Creator directly. | CDO intake | A direct DIU call bypassing the CDO |
 | 4 | **Family count is named + evidenced.** The analysis output names 3–8 families and lists member slide numbers per family. | 3–8 named families with slide map | A vague style estimate, >8 families (over-split), or 0 families |
-| 5 | **Webinar deck stayed in the Presentations pipeline.** The deck was NOT routed into the DIU Rotation Engine, and generation used the models named in the Presentations model catalog (`presentation_job/model_catalog.json`, GPT-Image-2.5 only). | Presentations pipeline + GPT-Image-2.5 | Webinar deck routed through the Rotation Engine or a model the catalog does not name |
+| 5 | **Webinar deck stayed in the Presentations pipeline.** The deck was NOT routed into the DIU Rotation Engine, and generation used the models named in the Presentations model catalog (`presentation_job/model_catalog.json`, the GPT Image pin). | Presentations pipeline + the catalog's image pin | Webinar deck routed through the Rotation Engine or a model the catalog does not name |
 | 6 | **Bootstrap seed present (per box).** After onboarding, INDEX.md contains the `PPT-001_gold-standard-reference` production rows. | Seed registered | No seed; library still empty after onboarding |
 | 7 | **No-reference path is clean.** If intake declares NO style reference, no crossing fired and the STYLE BLOCK was built from intake brand fields + the SOP-IMG-03 creative-develop path. | No spurious crossing | A crossing fired with no style reference (wasted DIU spend) |
 

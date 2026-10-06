@@ -53,7 +53,7 @@ Scripts live in `scripts/`.
 
 ## API keys (optional)
 
-- KIE.ai uses: `KIE_API_KEY` (resolved through the shared key canon; KIE video also needs Skill 67 `67-kie-video` installed, or pass `--model <KIE model id>`)
+- KIE.ai uses: `KIE_API_KEY` (resolved through the shared key canon; KIE video also needs Skill 74 `74-kie-live-adapter` installed (the single KIE transport) and Skill 67 `67-kie-video`, or pass `--model <KIE model id>`)
 - Runway uses: `RUNWAY_API_KEY`
 - Pika uses: `PIKA_API_KEY`
 

@@ -6,21 +6,6 @@
 - `SF-PROVER-PIN.sha256` re-recorded with `bash signature-funnel-entry.sh --write-pin`; the entry self-test passes. The entry version gate now anchors the version (`^v?2.x.y$`) and keeps the SKILL.md lockstep and `--check-version`.
 - The golden prompt ledger (`examples/golden-daybreak/prompt_ledger.json`) is re-baselined to real 95 to 100 percent prompts: the authored scene bodies stay, and genuine scene-bound art direction (`direction_bank.py`, never repetition) fills the rest. `build_golden.py` regenerates the ledger, the certificate and the broken-variant results; `verify.sh` is green.
 
-
-## v2.0.3 - 2026-10-05 - Entry shell version gate matches the current v2 contract
-
-### Fixed
-- `signature-funnel-entry.sh` aborted every run and its `--self-test` with `ABORT [VERSION]: skill-version.txt is 'v2.0.2', expected major 1.x`. Two defects: `EXPECTED_MAJOR` was still `"1"` although the skill is on major 2, and the `case` pattern `"1".*` could never match the shipped `vMAJOR.MINOR.PATCH` form (leading `v`), so even a v1.x file would have been refused. The gate now expects major 2, accepts `vMAJOR.MINOR.PATCH`, and also requires SKILL.md frontmatter `version:` to equal skill-version.txt.
-
-### Added
-- `signature-funnel-entry.sh --check-version` (deps + version gate only) and `scripts/test_entry_version.py`, which proves the gate passes on the shipped version and fails closed on major 1, major 3, malformed values and frontmatter drift.
-
-### Pin re-recorded
-`scripts/SF-PROVER-PIN.sha256` was stale on main: `prove_sf_prompt_floor.py` changed on 2026-09-09 after the pin was minted on 2026-07-21, so once the version gate stopped aborting first, the hash-pin step failed next (898c779a... computed vs 8e9755f7... recorded). Re-minted with `bash signature-funnel-entry.sh --write-pin`; no pinned file was edited by this change.
-
-### Not changed
-The entry shell and the new test are not pinned files; `scripts/delegation_receipt.py` is unchanged and still identical in Skills 49 and 56.
-
 ## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
 
 - **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
@@ -56,6 +41,21 @@ The entry shell and the new test are not pinned files; `scripts/delegation_recei
   `scripts/test_sf_bypass_scan.py` (hand-rolled createTask refused, Skill 74 receipts accepted, forged or
   leaked or nested files refused). Both run inside `signature-funnel-entry.sh --self-test` and `verify.sh`.
 - Version bumped to v2.1.0 (SKILL.md frontmatter, skill-version.txt).
+
+## v2.0.3 - 2026-10-05 - Entry shell version gate matches the current v2 contract
+
+### Fixed
+- `signature-funnel-entry.sh` aborted every run and its `--self-test` with `ABORT [VERSION]: skill-version.txt is 'v2.0.2', expected major 1.x`. Two defects: `EXPECTED_MAJOR` was still `"1"` although the skill is on major 2, and the `case` pattern `"1".*` could never match the shipped `vMAJOR.MINOR.PATCH` form (leading `v`), so even a v1.x file would have been refused. The gate now expects major 2, accepts `vMAJOR.MINOR.PATCH`, and also requires SKILL.md frontmatter `version:` to equal skill-version.txt.
+
+### Added
+- `signature-funnel-entry.sh --check-version` (deps + version gate only) and `scripts/test_entry_version.py`, which proves the gate passes on the shipped version and fails closed on major 1, major 3, malformed values and frontmatter drift.
+
+### Pin re-recorded
+`scripts/SF-PROVER-PIN.sha256` was stale on main: `prove_sf_prompt_floor.py` changed on 2026-09-09 after the pin was minted on 2026-07-21, so once the version gate stopped aborting first, the hash-pin step failed next (898c779a... computed vs 8e9755f7... recorded). Re-minted with `bash signature-funnel-entry.sh --write-pin`; no pinned file was edited by this change.
+
+### Not changed
+The entry shell and the new test are not pinned files; `scripts/delegation_receipt.py` is unchanged and still identical in Skills 49 and 56.
+
 
 ## 1.4.0 — 2026-07-21 — A10 / T0-09, T0-11: certificates can no longer mint on self-authored evidence
 

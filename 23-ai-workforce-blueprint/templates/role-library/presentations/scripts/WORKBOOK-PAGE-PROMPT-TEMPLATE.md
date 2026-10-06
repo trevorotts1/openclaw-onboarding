@@ -1,8 +1,8 @@
-# WORKBOOK PAGE PROMPT TEMPLATE — content-in-image workbook page (kie.ai gpt-image-2.5)
+# WORKBOOK PAGE PROMPT TEMPLATE — content-in-image workbook page (kie.ai GPT Image 2.5 Sunburst)
 
 **Scope:** Presentations department P8.25-WORKBOOK (Feature L2-D redesign). Every
 presentation gets a branded, **content-rich** companion workbook: each page image is
-designed via kie.ai `gpt-image-2.5` with the page's **REAL content baked into the image**
+designed via kie.ai GPT Image 2.5 Sunburst with the page's **REAL content baked into the image**
 (headline, subhead, bullets, question, quote, quiz, affirmation, follow-along, contact),
 then assembled into a US-Letter PDF with real AcroForm fields overlaid by
 `workbook_builder.py`.

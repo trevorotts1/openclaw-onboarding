@@ -174,20 +174,45 @@ Bad payloads NEVER reach the API. Validation happens before charging provider
 credits (spec 14).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5: DISPATCH
+STEP 5: DISPATCH THROUGH SKILL 74 (validate, preflight, submit, then QC)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-curl createTask with the model and the validated input object
-(EXAMPLES.md has copy-paste bodies per family). Two wait strategies:
+This skill owns the policy: which model, the prompt, the ratio and reference rules.
+Skill 74 owns the mechanics: live schema, price, balance, the createTask call. Every
+dispatch path runs these four commands in order, from this skill's folder
+(A = python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py):
 
-- Callback (preferred when Skill 46 relay is wired): pass
-  "callBackUrl": "<public https endpoint>". HMAC-SHA256 signature scheme:
-  base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey));
-  timestamp from X-Webhook-Timestamp header, signature in X-Webhook-Signature.
-  Ack with {"code":200,"msg":"success"}. Callback retry policy not exposed —
-  handle idempotently and keep polling as fallback.
-- Polling: initial delay 2–3s, then stepped backoff; respect 429 (rejected
-  before queueing); stop after 10–15 min.
+  1. A validate --model <id> --payload input.json --json
+     Live schema first, the generated registry snapshot as fallback. State must be
+     "validated"; fix every listed error. This is in addition to Steps 3 and 4, never
+     instead of them (models.json caps and per-family rules still run first).
+  2. A preflight --model <id> --units <images> --json
+     Balance must cover price x 1.30. state "fail" with code insufficient_credits:
+     stop and report the shortfall; do not submit.
+  3. A submit --request req.json --mode active [--callback-url <Skill 46 relay URL>] --json
+     req.json is {"model": "<id>", "input": {...}}. Skill 74 never picks or changes the
+     model; the id is the one this skill selected. Production batches (decks, many
+     images) pass the Skill 46 relay URL (see 46-kie-callback-relay SUBMITTER-SOP.md,
+     "Production route via Skill 74"). One-off jobs wait with `A wait --task-id <id>`
+     and save with `A save --task-id <id> --save-dir <dir>`.
+  4. This skill's own QC (Step 6) on the saved file.
+
+If submit returns state "skipped" with fallback_used true, the adapter is off or in
+shadow mode and sent nothing: dispatch with the curl bodies in EXAMPLES.md exactly as
+before (steps 1 and 2 already ran). If the adapter is absent, steps 1 and 2 are
+skipped with a one-line note and the curl path is used.
+
+A model that is not in models.json (for example a newer generation KIE added) is
+DISCOVERED, never auto-default: only the GPT Image default follows `latest-family`
+(owner order 2026-10-05, Step 2). Any other new live model is used only when the
+requester names it; validate_payload.py then checks it against Skill 74's live schema.
+
+Wait strategies (both unchanged): callBackUrl via the Skill 46 relay (HMAC-SHA256
+signature base64(HMAC-SHA256(taskId + "." + timestampSeconds, webhookHmacKey)),
+X-Webhook-Timestamp and X-Webhook-Signature headers, ack with
+{"code":200,"msg":"success"}; handle idempotently and keep polling as fallback), or
+recordInfo polling (initial delay 2-3s, stepped backoff, respect 429, stop after
+10-15 min).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 6: QC — LOOK AT THE IMAGE

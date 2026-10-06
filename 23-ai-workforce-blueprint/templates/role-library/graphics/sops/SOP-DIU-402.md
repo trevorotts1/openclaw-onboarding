@@ -80,7 +80,7 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
 | Retouched image | `_local/deliverables/{client-slug}/{date}/` | Verified, identity-lock intact |
 | Shoot record update | `personal-photo-shoot/{client-slug}/IDENTITY.md` Shoot History | Updated with session log |
 | Rights Manifest receipt (if commercial delivery) | `personal-photo-shoot/{client-slug}/rights-manifests/` | Appended per SOP-DIU-610 |
-| Generation Operator receipt | `_local/receipts/{receipt-id}.json` | `state: complete` (written by Operator) |
+| Generation Operator receipt | `_local/receipts/{receipt-id}.json` | Written by the Operator at submit (`state: submitted`); advanced to `complete` by the Render Dispatcher after postflight |
 
 ---
 

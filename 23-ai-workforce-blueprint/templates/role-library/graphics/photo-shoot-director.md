@@ -257,7 +257,7 @@ This role contributes to the company revenue cascade by: **enabling high-value p
 3. Upload the validated reference images to the client's GHL media library. Record the upload receipts (URLs + upload timestamp) in the shoot record.
 4. Verify each URL fetches correctly: perform a URL-liveness check (HTTP HEAD or GET returning 200 with the expected content-type) before including it in the shoot brief. A URL that returns a non-200 response is not usable — re-upload before submitting to the Operator.
 5. Include the verified hosting URLs in the shoot brief handed to the Generation Operator.
-6. After the Generation Operator confirms job completion and the asset has been downloaded to local storage (per SOP-DIU-601 postflight): trigger deletion of the remote reference images from GHL media. Record deletion confirmation in the shoot record.
+6. After the Generation Operator confirms job completion and the Render Dispatcher's SOP-DIU-601 postflight has verified the asset is downloaded to local storage: trigger deletion of the remote reference images from GHL media. Record deletion confirmation in the shoot record.
 7. Log the full hosting lifecycle (upload → URL verification → use → deletion) in the shoot record. This log is the audit trail that references were not retained on permanent public URLs.
 **Outputs:** Shoot brief with verified reference image URLs; shoot record updated with hosting lifecycle log.
 **Hand to:** Generation Operator (shoot brief with live URLs).

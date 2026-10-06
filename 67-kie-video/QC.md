@@ -16,7 +16,9 @@ recordInfo/callback waiting, and MANDATORY multi-frame visual QC (Frame 0, Midpo
 - [ ] `models.json` parses as valid JSON; exactly 37 models; no duplicate canonical_model_id;
       every entry has `source_url`, `last_verified_at`, and `cap_status`.
 - [ ] The skill package zip does NOT contain `wire.sh` (installers are not shipped in the bundle).
-- [ ] `skill-version.txt` reads `v2.0.3`.
+- [ ] `skill-version.txt` reads `v2.1.1`.
+
+- [ ] Skill 74 wiring: with the adapter folder present, `kie_live_adapter.py validate --model <id> --payload input.json --json` and `preflight --model <id> --units <seconds> --json` run before submit (INSTRUCTIONS.md Step 5); with the adapter absent the skill still works on `models.json` and curl. No auto-latest: a model not in `models.json` is never selected automatically.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01), BYUP (Skill 02), and KIE Setup (Skill 07) are satisfied (PREREQS.json).

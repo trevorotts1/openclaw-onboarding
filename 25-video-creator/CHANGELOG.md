@@ -1,9 +1,47 @@
 # Changelog — video-creator (Skill 25)
 
-## [7.0.4] - 2026-10-06 - fix: the rule 12 prompt check runs on every KIE submit
+## [7.1.1] - 2026-10-06 - fix: the rule 12 prompt check runs on every KIE submit
 
 - The check moved into `_kie_run`, the one place both text-to-video and image-to-video submit from, so it always has the resolved model id (it was dormant before). KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. A model with no known limit is UNKNOWN and has no floor; an image-to-video call with no prompt is not measured.
 - `tests/test_prompt_budget_contract.py` installs a full `requests` stand-in (get, post) and removes it afterwards.
+
+## [7.1.0] - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
+
+### Changed
+- All KIE traffic (file upload, createTask, recordInfo polling, result download) now goes through Skill 74's CLI (`kie_live_adapter.py upload|run --mode active --json`), found as a sibling skill folder the same way Skill 67 is. The key travels in the child process environment, never on the command line.
+- Skill 25 keeps its own policy: model from Skill 67 (or `--model`), the per-model input table and validation, the 900 second deadline, and the output path with the ffprobe check on the finished file.
+- If Skill 74 is not installed the command fails with a clear message. There is no fallback to a second KIE client.
+
+### Removed (duplicate KIE client)
+- `_kie_call` (own HTTP request, body-code check), the own multipart upload to `kieai.redpandaai.co`, the own createTask and recordInfo polling loop, `KIE_API_BASE`, `KIE_UPLOAD_URL`, and the legacy `https://api.kie.ai/v1` endpoint rewrite. `AIProvider('kieai').endpoint` is now `None`.
+
+### Added
+- Runway and Veo now work: `runway` (`image_url`), `veo-3-1`, `veo3`, `veo3_fast`, `veo3_lite` (`image_urls`) are mapped with per-model input specs; the former "dedicated API, not supported" refusal is gone because Skill 74 submits to the path each model's schema declares. Skill 74 v1.1.1 saves a direct result link from such endpoints.
+- Tests: Skill 74 is stubbed at the `kie74` function (23 flow tests rewritten) plus tests that run the real `kie74` against a stub CLI (argv, key in env only, missing-adapter error) and a guard that `ai_providers.py` contains no KIE host or endpoint.
+
+## [7.0.4] - 2026-10-06 — fix: enforce per-model KIE input types; explicit image field type
+
+### Fixed
+- **Per-model input types** (`KIE_INPUT_SPECS` in `ai_providers.py`, from each mapped model's KIE docs page input
+  schema): `duration`, `resolution`, `aspect_ratio`, `seed`, `mode`, `quality` are coerced to the documented type and
+  enum before sending. Examples: Kling v2.5 turbo and Gemini Omni `duration` is a string (`"5"`), MiniMax H3 `duration`
+  is an integer 4 to 15, `resolution` uses each model's own spelling (`1080P`, `2K`, `4k`), and Pixverse takes
+  `quality` (Skill 25's resolution option is renamed). Invalid values fail BEFORE any HTTP call (including before the
+  image upload) with a message naming the allowed values. Documented-required inputs the client cannot know (for
+  example `mode`/`sound`/`multi_shots` on kling-3.0/video, `quality` on Pixverse) fail the same way and are supplied
+  with `input_extra` / new CLI `--input-extra '{"key": value}'` (also on `text_to_video.py`). Models not in the table
+  pass through unchanged.
+- **`--image-field` no longer guesses the type from a trailing "s".** New `--image-field-type string|array`
+  (`image_field_type=` in code); required with `--image-field` unless it names the model's own mapped key.
+- QC nits: Gemini Omni `seed` is limited to 0 to 2147483647; HappyHorse 1.1 `duration` must be integer-valued
+  (5.5 rejected); a model that uses a different key never receives Skill 25's name for it (Pixverse gets `quality`,
+  never `resolution`; both given with different values is an error); `--resolution` on `text_to_video.py` and
+  `image_to_video.py` accepts any value (for example 480p, 540p, 2K) and the model's own table decides, while
+  runway/pika/mock and local mode now reject unsupported values instead of silently ignoring them;
+  `image_to_video.py` no longer int()-casts the duration before per-model validation.
+- Re-verified against fresh docs fetches: kling-3.0-omni/image-to-video (note: its docs allow 16:9, 9:16, 1:1 only with
+  `customize_multi_shots`, otherwise `auto`), happyhorse/image-to-video, wan/3-0-video-prime. No mismatches in the table.
+- CI: the Skill 25 workflow job and step names no longer hard-code a test count (the 93-test anti-vacuity floor stays).
 
 ## [7.0.3] - 2026-10-05 — fix-forward of #1498: correct image field per model
 

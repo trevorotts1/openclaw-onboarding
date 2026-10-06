@@ -44,8 +44,8 @@
       "file": "slides.schema.json",
       "canonical_path": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/slides.schema.json",
       "mirror_path": "23-ai-workforce-blueprint/templates/presentation-render/slides.schema.json",
-      "canonical_sha256": "d9558e56ce97f03dcd91a083ffccb319b195a9a7a03096f3811f32a6b7e60b82",
-      "mirror_sha256": "efd126db2fa85fbcacbf2c69a545256328f74de1b51264ea6a2f55593dfbfa8c",
+      "canonical_sha256": "c7d9b75988f733fdae605e0006efd4489e15f93941c559622b98c5c840cda6ab",
+      "mirror_sha256": "1eda6c8b4de7beda03c9abbab4ae644a9dbffb466c898696630d619ede91ec28",
       "canonical_side": "role-library-scripts",
       "reason": "Pre-existing divergence recorded, not reconciled. Same duplicated-basename class as kie_generate.py, found by the same scan. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-07"

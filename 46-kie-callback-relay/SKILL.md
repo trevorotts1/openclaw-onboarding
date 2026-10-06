@@ -8,9 +8,9 @@ description: >
   crash-safe on-disk task registry. Applies to large decks (above configurable
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
-version: v2.0.3
+version: v2.1.0
 metadata:
-  version: "v2.0.3"
+  version: "v2.1.0"
   skill_number: 46
   requires_skills: [07]
   priority: HIGH
@@ -65,6 +65,23 @@ Box (Mac or Docker)
    v
 Slide rendered
 ```
+
+## Production Route via Skill 74
+
+For production batches (decks, many images) the submit step goes through Skill 74
+(`74-kie-live-adapter`), with this skill supplying the signed callback and the wait:
+
+1. `submitter.prepareCallback({deckId, slideId, targetPath, model})` mints the per-task
+   secret and the signed `callBackUrl` (`/cb?c=&j=&s=&h=`), and writes the registry row.
+2. `kie_live_adapter.py submit --request req.json --callback-url <that URL> --mode active --json`
+   (after the policy skill's `validate` and `preflight`). Skill 74 never picks the model.
+3. `submitter.adoptAdapterTask(<Skill 74 result JSON>)` accepts Skill 74's normalized task
+   metadata (`task_id`, `model_id`, `callback_url`), records the taskId, and waits through the
+   same KV poller, download and "done means a file on disk" rule as `submitDeck`. A result whose
+   `callback_url` was not minted on this box, or a skipped (shadow) submit, never waits.
+
+`submitDeck` (direct createTask) remains and is unchanged. Full contract: SUBMITTER-SOP.md,
+"Production route via Skill 74".
 
 ## Files in This Folder
 

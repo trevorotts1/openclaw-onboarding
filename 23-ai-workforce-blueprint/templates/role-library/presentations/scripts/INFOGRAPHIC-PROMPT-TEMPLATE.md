@@ -22,7 +22,7 @@ its own prompt. The renderer never silently falls back to a thin prompt.**
 
 **Band:** **9,000–18,000 stripped chars** — the same hard floor (AF-P1) and ceiling
 (AF-P2) slide prompts carry. Author to at least 9,000; the spelling-locked checklist
-body + full 8-class negative block naturally exceed it. Target 9,000–14,000.
+body + full 8-class negative block naturally exceed it. Target: the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`), which is 16,000 to 18,000 characters while the 9,000 to 18,000 gate above stands.
 
 **Orientation (the one deliberate override):** this output is **9:16 portrait
 1440x2560 at 2K — NOT a slide.** SOP 9.10 element (a): "Create a 9:16 portrait image at

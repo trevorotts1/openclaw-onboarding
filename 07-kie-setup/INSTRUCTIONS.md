@@ -120,6 +120,13 @@ things you will do: generate images, generate videos, check on jobs, check
 your credits, and upload files. If you have not set up KIE.ai yet, go to
 INSTALL.md first.
 
+Canonical rules: `references/kie-common-rules.md` in this skill folder is the single
+source of truth for authority order, endpoints, rate limits, polling, prompt caps,
+credit preflight, prices, retention, keys and model ids. Where this guide disagrees
+with it, the common rules win. For image, video and TTS dispatch, the modality skills
+(66, 67, 68) run Skill 74 `validate` and `preflight` before `submit --mode active`;
+see 74-kie-live-adapter/INSTRUCTIONS.md.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HOW KIE.AI WORKS (THE BIG PICTURE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -188,15 +195,16 @@ VEO Videos (Google's VEO 3.1):
 - Use the VEO-specific endpoint: POST https://api.kie.ai/api/v1/veo/generate
 - Check status at: GET https://api.kie.ai/api/v1/veo/record-info?taskId=XXX
 - Models: veo3 (Quality) and veo3_fast (Fast)
-- Cost: about $0.40 per clip
+- Cost: about $0.40 per clip (historical figure; check live pricing via GET /api/v1/models pricingDesc or `kie_live_adapter.py price`)
 
 Market Videos (Kling, Sora, Wan, etc.):
 - Use the general endpoint: POST https://api.kie.ai/api/v1/jobs/createTask
 - Check status at: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=XXX
 - Models include:
   - kling-3.0/video (Kling 3.0) - text-to-video, image-to-video, multi-shot
-  - sora2 (Sora 2) - $0.15 per clip
-  - sora2-pro (Sora 2 Pro) - $0.75 per clip
+  - sora2 (Sora 2) - historical $0.15 per clip
+  - sora2-pro (Sora 2 Pro) - historical $0.75 per clip
+  (confirm live pricing with `kie_live_adapter.py price` or GET /api/v1/models pricingDesc)
   - wan-2.1 (Wan video generation)
 
 Key settings for VEO videos:

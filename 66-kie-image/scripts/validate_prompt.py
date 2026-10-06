@@ -48,7 +48,7 @@ def _load_enforcer():
 
 KPE = _load_enforcer()
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 

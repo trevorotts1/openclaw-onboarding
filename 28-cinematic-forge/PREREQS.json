@@ -1,0 +1,55 @@
+{
+  "skill": "28-cinematic-forge",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 - Teach Yourself Protocol",
+      "check": {
+        "skill": "01-teach-yourself-protocol"
+      },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 28."
+    },
+    {
+      "id": "skill-66-kie-image",
+      "type": "skill",
+      "label": "Skill 66 - KIE Image",
+      "check": {
+        "skill": "66-kie-image"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 66 (66-kie-image) before Skill 28: it owns image model choice and generation."
+    },
+    {
+      "id": "skill-67-kie-video",
+      "type": "skill",
+      "label": "Skill 67 - KIE Video",
+      "check": {
+        "skill": "67-kie-video"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 67 (67-kie-video) before Skill 28: it owns the VEO video route and model id."
+    },
+    {
+      "id": "skill-68-kie-audio",
+      "type": "skill",
+      "label": "Skill 68 - KIE Audio",
+      "check": {
+        "skill": "68-kie-audio"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 68 (68-kie-audio) before Skill 28: it owns voice, sound-effect and music generation."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "KIE API Key",
+      "check": {
+        "envVar": "KIE_API_KEY"
+      },
+      "severity": "required",
+      "satisfy": "Add KIE_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600). Confirm it is SET; never print the value. Do NOT mint a new key."
+    }
+  ]
+}

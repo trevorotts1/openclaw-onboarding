@@ -82,15 +82,15 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
 | **Media Librarian GHL Updater** | Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR. |
 | **Offer Price Strategist** | Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar. |
-| **Pptx Assembly Specialist** | Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). |
+| **Pptx Assembly Specialist** | Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx. |
 | **Presenter Coach** | Owns the live-presentation preparation layer. |
 | **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per. |
 | **Presenters Speech Writer** | Writes the FULL word-for-word "here is what you say" script keyed to each slide. |
 | **Slide Copywriter** | Writes every word on every slide (P4-COPY). |
 | **Slide Image Creator** | Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). |
-| **Slide Submitter** | Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled). |
+| **Slide Submitter** | Supervises the one canonical render command that sends every prompt to Kie.ai. |
 | **Typography Architect** | Runs as a PF-DESIGN gate AFTER the Brand Steward emits the STYLE BLOCK and the Director emits arc_allocation.json. |
-| **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
+| **Prompt Author** | You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
 | **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
@@ -151,8 +151,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Pptx Assembly Specialist**
 
-- *What it is for:* Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed).
-- *Example request:* "Have the Pptx Assembly Specialist take this on: Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5."
+- *What it is for:* Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx.
+- *Example request:* "Have the Pptx Assembly Specialist take this on: Assembles the final PowerPoint from the verified renders through the shipped."
 
 **Presenter Coach**
 
@@ -181,8 +181,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Slide Submitter**
 
-- *What it is for:* Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled).
-- *Example request:* "Have the Slide Submitter take this on: Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68."
+- *What it is for:* Supervises the one canonical render command that sends every prompt to Kie.ai.
+- *Example request:* "Have the Slide Submitter take this on: Supervises the one canonical render command that sends every prompt to Kie.ai."
 
 **Typography Architect**
 
@@ -191,8 +191,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Prompt Author**
 
-- *What it is for:* You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000.
-- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt."
+- *What it is for:* You write each slide's rich image prompt to the prompt budget of the pinned image model (rule 12.
+- *Example request:* "Have the Prompt Author take this on: You write each slide's rich image prompt to the prompt budget of the pinned image model."
 
 **Attention Content Strategist**
 
@@ -316,7 +316,7 @@ All image generation MUST route through the canonical module `build_deck.py`. A 
 
 ## AF-LOCAL-CANVAS - No Local Canvas Fabrication (AUTO-FAIL)
 
-A slide image MUST be generated via kie.ai GPT-Image-2.5. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
+A slide image MUST be generated via kie.ai GPT Image 2.5 Sunburst. A slide image fabricated locally (e.g. `canvas = Image.new('RGB', (2048, 1152), ...)`) is FORBIDDEN. The presence of a 2048x1152 `Image.new` call in any run-directory `*.py` file triggers AF-LOCAL-CANVAS.
 
 ---
 
