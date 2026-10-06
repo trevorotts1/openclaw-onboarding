@@ -62,6 +62,13 @@ def create_storyboard(duration, model_id, topic, style="neutral"):
     yields no clips. Never returns a storyboard with an empty segment list.
     """
 
+    if str(model_id).lower().startswith("sora") or str((get_model(model_id) or {}).get("source_base_id", "")).lower() == "sora":
+        raise StoryboardError(
+            f"AF-STORYBOARD-PROHIBITED-MODEL: '{model_id}' is OpenAI Sora, which the Video "
+            "department prohibits (ai-video-generator-specialist.md, 'PROHIBITED - SORA'). "
+            "Use the model Skill 67's selector returns (67-kie-video/scripts/select_video_model.py)."
+        )
+
     model = get_model(model_id)
     if not model:
         raise StoryboardError(
@@ -167,9 +174,6 @@ def main():
     
     args = parser.parse_args()
     
-    if args.model.lower().startswith('sora'):
-        print('Warning: Sora is prohibited by the Video department and is never a default. Use the model Skill 67 selects.', file=sys.stderr)
-
     print(f"Creating storyboard for {args.duration}s {args.topic} video using {args.model}...")
 
     try:

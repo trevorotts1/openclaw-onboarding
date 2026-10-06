@@ -75,6 +75,7 @@ esac
 
 ## Images (every image)
 
+- [ ] Image was generated with KIE GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference); Nano Banana only if explicitly labeled as a non-text fallback
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
 - [ ] Image contains NO violent or inappropriate imagery

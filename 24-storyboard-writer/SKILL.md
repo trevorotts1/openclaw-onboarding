@@ -21,7 +21,7 @@ Ask the user ONE AT A TIME before calling the script:
 2. **How long should it be?** (seconds - default: 60s social, 300s YouTube)
 3. **What platform?** YouTube / TikTok / Instagram / General
 4. **Budget limit?** (optional - if given, use cheapest model that fits)
-5. **Preferred model?** (optional - if none given, recommend based on platform)
+5. **Preferred model?** (optional - if none given, do not recommend from platform: run Skill 67's selector, see below)
 
 **Model choice (policy owner: Skill 67, `67-kie-video`):**
 - If the user names a model, use that model. An explicit pick always wins.
