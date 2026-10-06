@@ -60,7 +60,7 @@ Entry block format:
 - **card_id**: {style card ID} @ **card_version**: {version}
 - **model**: {model slug — MODEL-SPECS §1}
 - **tier**: SHORT | MEDIUM | LONG
-- **filled_prompt_hash**: sha256({exact positive prompt submitted})
+- **filled_prompt_hash**: the request fingerprint defined in the SOP-DIU-602 receipt schema
 - **seed**: {value} | `"no-seed-endpoint"`
 - **reference_provenance**: {source path(s) of all reference images used; "none" if no references}
 - **hosting_method**: {`ghl-media-library` | `imgbb` | `none`} — per SOP-DIU-609

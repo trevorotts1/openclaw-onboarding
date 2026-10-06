@@ -34,7 +34,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 1. **Create a per-task receipt file** at `_local/receipts/{receipt-id}.json` at the moment `createTask` returns. One file per task, per the fleet-proven rule that shared-append ledgers lose writes under concurrent agents.
 
-2. **Write all required fields** (see Receipt Schema below). The `filled_prompt_hash` field (sha256 of the exact filled positive prompt + seed + card version + model) is the idempotent resubmission key — on recovery, compute this fingerprint first and scan existing receipts before creating a new task.
+2. **Write all required fields** (see Receipt Schema below). The `filled_prompt_hash` field (the request fingerprint; formula defined once in the Receipt Schema below) is the idempotent resubmission key — on recovery, compute this fingerprint first and scan existing receipts before creating a new task.
 
 3. **Set `state: submitted`** immediately. The Render Dispatcher's poller will advance the state; the Operator exits after writing this receipt.
 
@@ -44,7 +44,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 1. Read the live `pricingDesc` for the selected model and tier (the only price authority). Compute `estimated_cost = num_tasks × price_per_task`; the live credit balance must cover `estimated_cost` x 1.30 (credit preflight).
 
-2. Sum all `cost_class` values from receipts in `state: complete` for the current billing period.
+2. Sum all receipts in `state: complete` for the current billing period (`actual_cost` where set, else `cost_class`).
 
 3. If `current_period_spend + estimated_cost > monthly_cap`: hard stop. Notify CDO with the spend summary. Do not proceed without a producer override receipt.
 
@@ -54,7 +54,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 ### C. Idempotent resubmission
 
-1. Before creating any new task, compute the request fingerprint: `sha256(model + endpoint + tier + full_filled_positive_prompt + seed + card_id + card_version)`.
+1. Before creating any new task, compute the request fingerprint (the `filled_prompt_hash` formula in the Receipt Schema below; do not restate it).
 
 2. Search existing receipts for a matching `filled_prompt_hash`.
 
@@ -112,7 +112,7 @@ sha256:               {hex or null}
 preflight_passed:     {true|false}
 postflight_verified:  {true|false}
 seed:                 {value or "no-seed-endpoint"}
-filled_prompt_hash:   {sha256 of exact filled positive prompt + seed + card_id + card_version + model}
+filled_prompt_hash:   {request fingerprint: sha256(model + endpoint + tier + full_filled_positive_prompt + seed + card_id + card_version); the one formula, defined here}
 company_id:           {client-box-id}
 dept:                 {department-slug}
 smoke_test:           {true|false}
@@ -143,7 +143,7 @@ smoke_test:           {true|false}
 | Circuit-breaker incident receipt (if triggered) | `_local/receipts/circuit-break-{job-id}.json` | Written at breach event |
 | Smoke test receipt (first-ever generation per client) | `_local/receipts/{receipt-id}.json` | `smoke_test: true`, `state: submitted` |
 | Orphan recovery result (postflight pass; produced by the Render Dispatcher, SOP 9.7) | `_local/results/{job-id}/` | Receipt flipped to `complete` by the Dispatcher |
-| CDO escalation notification | CDO notification channel | Written at: budget gate trip, circuit-breaker trip, orphan >24h, orphan `failed` state |
+| CDO escalation notification | CDO notification channel | Written at: budget gate trip, circuit-breaker trip, orphan past its max-in-flight window (2 h standard, 8 h deck) or 30 days, orphan `failed` state |
 
 ---
 
@@ -154,7 +154,7 @@ smoke_test:           {true|false}
 - **Circuit-breaker trip (per-deliverable):** All remaining tasks for this `job_id` halted; CDO receives incident receipt; resume requires CDO direction with explicit per-task re-authorization.
 - **Circuit-breaker trip (per-day):** All new submissions for this client halted; CDO receives escalation; no resume without CDO reset.
 - **Orphan recovered (completed), handled by the Render Dispatcher:** Receipt flipped to `complete`; CDO + requestor notified; result handed to normal delivery path.
-- **Orphan unrecoverable (failed or >24h stale), escalated by the Render Dispatcher:** CDO receives full receipt; CDO determines whether to regenerate; no silent discard.
+- **Orphan unrecoverable (failed, or past its max-in-flight window: 2 h standard, 8 h deck, 30 days confirmed orphan), escalated by the Render Dispatcher:** CDO receives full receipt; CDO determines whether to regenerate; no silent discard.
 
 ---
 
