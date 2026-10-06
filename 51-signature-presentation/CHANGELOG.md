@@ -1,5 +1,13 @@
 # Changelog - 51 Signature Presentation (51-signature-presentation)
 
+## [2.1.5] - 2026-10-06 - KIE integration: the skill describes the deck image chain the department ships
+
+Documentation only; no prover, gate, ledger or sacred file changed (`MASTERDOC.md`, the four frame templates, `intake/sp-8-questions.json` and `structure/sp_structure.json` are byte-identical, their pins in `scripts/sacred-structure-hashes.json` are untouched).
+
+- **Prompt length.** `SKILL.md` no longer says the suggested-image seed expands to "the 9,000-char prompt floor". It now says the Prompt Author expands the seed to the rich image prompt sized to the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`), and that the renderer's own 9,000 to 18,000 gate still stands, which is the range the frame templates quote.
+- **Model.** "kie.ai gpt-image-2.5 only" becomes the department's image pin in `presentation_job/model_catalog.json`, changed only by an operator catalog bump.
+- **Skill 74.** Added to the prerequisites as read-only tooling that is never copied into a run directory (the render guard blocks it).
+
 ## [2.1.2] - 2026-09-16 - PD-TEST-147 / PD-TEST-140: refresh the intake self-test's stale fixtures
 
 `prove_sp_intake.py --self-test` went red on every PR once the content-provenance

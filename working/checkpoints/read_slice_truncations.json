@@ -1,0 +1,46 @@
+{
+  "truncation_events": 0,
+  "reads": [
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/read_slice_selftest_jtmts9qq/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "lines",
+      "would_exceed_budget": false,
+      "returned_bytes": 478,
+      "slice": {
+        "lines": [
+          50,
+          60
+        ],
+        "lines_total": 4000
+      }
+    },
+    {
+      "file": "/private/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/read_slice_selftest_jtmts9qq/big-sop.md",
+      "total_bytes": 169785,
+      "mode": "bytes",
+      "would_exceed_budget": false,
+      "returned_bytes": 1000,
+      "slice": {
+        "offset": 0,
+        "length": 1000,
+        "bytes_total": 169785
+      }
+    },
+    {
+      "file": "/Users/blackceomacmini/.openclaw/workspace/departments/Presentations/sops/qc-specialist-presentations-sops.md",
+      "total_bytes": 125617,
+      "mode": "lines",
+      "would_exceed_budget": false,
+      "returned_bytes": 432,
+      "slice": {
+        "lines": [
+          262,
+          270
+        ],
+        "lines_total": 661
+      }
+    }
+  ],
+  "total_bytes_returned": 1910
+}

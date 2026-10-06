@@ -2,6 +2,26 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-10-06 - feat(kie): Presentations department integrated with Skill 74
+
+Every Presentations role, SOP and tool document now describes the deck image chain exactly as the shipped code runs it, and agrees with `07-kie-setup/references/kie-common-rules.md`.
+
+#### The chain, as documented now
+- **Authoring.** The Prompt Author writes each slide prompt to the prompt budget of the pinned model (rule 12; read with `kie_live_adapter.py prompt-budget --check`). While the renderer gate stands (9,000 to 18,000 characters in `build_deck.py` and `prompt_gate.py`) the window that passes both is 16,000 to 18,000 characters. Band migration in code belongs to the code lane; the documents follow rule 12 and name the interim window.
+- **Pin.** `presentation_job/model_catalog.json` is a department pin that outranks Skill 74 (rule 1). It follows the newest GPT Image generation (rule 13) only by an operator catalog bump, never silently. Catalog 1.3.1 adds that note to the two image aliases.
+- **Transport and receipts.** One command renders (`presentation-canonical-entry.sh`). The renderer submits every slide once, 0.6 seconds apart, under the provider governor; a 429 on submit sleeps 20 seconds (at most 15 in a row); it polls every 10 seconds with a 900-second cap and downloads with an authenticated GET. Receipts are `pending_tasks.json`, the per-slide `.ocr.json` sidecars and the process manifest render record.
+- **Guard.** `canonical_render_guard.py` blocks a Skill 74 file copied into a run directory; new test `tests/test_skill74_blocked_in_run_dir.py` pins that behaviour.
+
+#### Contradictions fixed
+- **Slide Submitter** rewritten: no hand-typed calls, manual waves, five-minute waits, 60-second polls, 100-poll caps or hand-run smoke tests; it supervises the one command and reads the receipts.
+- **SOP-IMG-05** no longer promises a Pillow logo composite, a lower-right chip or `logo_composite_log.json`. It describes the two real logo mechanisms (URL logo image-to-image; local logo file placed top-right by `assemble_pptx`) and keeps the ban on Pillow creating slide images.
+- **Overlay fallbacks removed** from the QC, assembly and Slide Image Creator roles (Decision 5C): the AF-I1, AF-F4 and AF-F7 remedies are re-prompt and re-seed, then human escalation.
+- **Stale hook-band prose** deleted from the Slide Image Creator; SOUL, IDENTITY, TOOLS and BUILDER-PROMPT no longer tell agents to run `build_deck.py` directly or that the renderer retries three times per slide; the PPTX Assembly role uses the renderer's 10 x 5.625 inch slides and no per-deck assembler; style-probe wording in SOP-IMG-03 matches the nine-sample style preview and the A, B or C pick.
+- **Suggested-roles roster** updated for the Slide Submitter, Slide Image Creator, PPTX Assembly Specialist and Capacity Engineer; the generated how-to-use guide is regenerated.
+
+#### Not changed
+No code, price table, band threshold or renderer pin changed (`build_deck.py`, `run_signature_deck.py` and `CANONICAL-RENDERER-PIN.sha256` untouched). No client box, credential, model or provider setting is touched. Open owner items found while reading are listed in the pull request.
+
 ## [v25.2.16] - 2026-09-29 - SOP-00 NEW INTAKE goes through the decision engine (mc-route.sh auto)
 
 `SOP-00-Owner-Task-Routing.md` carries the CEO_EXECUTION_POLICY_V3 mirror, so its

@@ -6,7 +6,7 @@
 **Role type:** qc
 **Role number:** ROLE-26
 **Persona:** {{CURRENTLY_ASSIGNED_PERSONA or "--"}}
-**Version:** 3.0
+**Version:** 3.1
 **Last updated:** {{ISO_DATE}}
 **Industry:** {{COMPANY_INDUSTRY}}
 **Generated for:** {{COMPANY_NAME}}
@@ -29,7 +29,7 @@ Your report must: gate "Phase Image-QC", carry a per-slide average >= 8.5, conta
 - **AF-LOCAL-CANVAS (cream-template):** a flat cream / typography card with no photographic or designed visual subject -- the local-Pillow signature (a bare `#FFFBF1` fill, typically a tiny under-byte PNG, type dropped on an otherwise blank surface). A legitimate pure-typography slide is a kie.ai bake with real surface treatment, depth, and lighting; a bare flat cream card is AF-LOCAL-CANVAS.
 - **Double-print / words-overlaid (AF-OVERLAY-DELIVERED):** the headline (or any copy) appears BOTH baked into the image AND as a separate native PowerPoint text run stamped on top -- two overlapping copies of the same words, or any native on-slide text layer over the image. The only legitimate words on a slide are the ones baked inside the single kie.ai image; the only legitimate PowerPoint text is the off-slide notes pane.
 - **Under-byte:** any slide PNG below the kie-bake floor of 51,200 bytes (`PLACEHOLDER_MIN_BYTES`) is an auto-fail HERE -- it is not deferred and not averaged out. An under-byte PNG is the fingerprint of a locally fabricated card, not a kie.ai render.
-- **AF-CANONICAL-RENDER-BYPASS:** a slide whose pixels did not come through the canonical `build_deck.py` / `run_signature_deck.py` kie.ai path (no real kie `taskId` provenance / no recordInfo trace). If a render cannot be tied to a canonical kie job, it is a bypass and fails.
+- **AF-CANONICAL-RENDER-BYPASS:** a slide whose pixels did not come through the canonical `build_deck.py` / `run_signature_deck.py` kie.ai path (no real kie task id for the slide in `working/checkpoints/pending_tasks.json` or in the render record of `working/checkpoints/process_manifest.json`, and no `slide-NN.ocr.json` readback record). If a render cannot be tied to a canonical kie job through those receipts, it is a bypass and fails.
 
 A gate may be skipped ONLY by an explicit, LOGGED owner/founder approval token recorded in `process_manifest.json` (`owner_skip_approval`). Never silently, never by your own choice.
 
@@ -173,7 +173,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
    - **AF-LOCAL-CANVAS** (cream-template): The slide is a flat cream / typography card with no photographic or designed visual subject -- the local-Pillow signature (a bare `#FFFBF1` fill with type dropped on a blank surface, typically tiny / under-byte). Pure-typography hook and section slides are kie.ai bakes with real surface depth, lighting, and treatment; a bare flat cream card is AF-LOCAL-CANVAS. This applies to EVERY slide, including cover and section dividers -- none are exempt.
    - **AF-OVERLAY-DELIVERED** (words-overlaid / double-print): Any native PowerPoint text layer stamped over the image, OR the same headline/copy appearing both baked into the image and as a separate native run on top (two overlapping copies). The only legitimate words are baked inside the single kie.ai image; the only legitimate native text is the off-slide notes pane.
    - **AF-UNDER-BYTE**: The slide PNG is below the kie-bake floor of 51,200 bytes (`PLACEHOLDER_MIN_BYTES`). This is a hard auto-fail HERE -- never deferred, never averaged out. An under-byte PNG is the fingerprint of a locally fabricated card rather than a kie.ai render.
-   - **AF-CANONICAL-RENDER-BYPASS**: The slide pixels cannot be tied to a canonical `build_deck.py` / `run_signature_deck.py` kie.ai job (no real kie `taskId` / no recordInfo provenance). A render produced outside the canonical path is a bypass and fails.
+   - **AF-CANONICAL-RENDER-BYPASS**: The slide pixels cannot be tied to a canonical `build_deck.py` / `run_signature_deck.py` kie.ai job (no real kie task id in `working/checkpoints/pending_tasks.json` or the render record of `working/checkpoints/process_manifest.json`). A render produced outside the canonical path is a bypass and fails.
    - **AF-IMAGE-QC-VISION**: No real per-PNG vision read was performed for this slide (no non-null `vision_api_response` record in `working/qc/vision_qc_log.json`), OR the slide was excluded from QC scope. A pixel-blind or scope-excluded slide cannot pass.
 3. For each slide that passes the auto-fail battery, score the following criteria on a 1-10 scale:
    - (a) Copy-vs-pixel parity: every word from `slides_copy.md` appears correctly on the render (score 1-10; a perfect match is 10).
@@ -245,7 +245,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 2. Locate the brand logo in the rendered slide (on slides where LOGO_ON_SLIDES = true). Perform the logo identity check:
    - The mark matches the LOGO_URL reference visually (correct shape, proportions, color).
    - The mark has NOT been recolored, restyled, or redrawn by the image model (a redrawn logo is AF-I2 and forces FAIL).
-   - The mark is placed in the correct zone (typically lower left or lower right, per the design system).
+   - The mark is placed in the correct zone (per the style block for a URL-logo deck rendered image-to-image; top-right, about 13 percent of the slide width, when the deck was rendered with a local logo file and the assembler placed it, SOP-IMG-05 Rule A).
    - The mark is not obscured, cropped, or scaled to illegibility.
 3. Check for logo drift across slides: if the same logo mark renders differently on two slides (different color, shape, or style), flag LOGO-DRIFT and include a cross-slide comparison note in the report.
 4. Verify no DARK background is present on slides where `DARK_OK` is not true in intake.json (this cross-checks AF-I7 from SOP 9.1).
@@ -257,7 +257,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Hand to:** SOP 9.4 (AI artifact and representation audit).
 
-**Failure mode:** If the logo is absent from a slide where LOGO_ON_SLIDES = true in intake.json, record AF-LOGO-ABSENT and return the slide to the Slide Image Creator with the specific instruction to re-render using image-to-image mode with LOGO_URL as the first input_url.
+**Failure mode:** If the logo is absent from a slide where LOGO_ON_SLIDES = true in intake.json, record AF-LOGO-ABSENT and return the slide to the Slide Image Creator with the specific instruction to re-prompt and re-render in image-to-image mode with LOGO_URL as the first input_url (the renderer does this whenever `--logo` is a public https URL; the Director confirms the run command passed it). The re-render goes through the canonical render command only, which reuses slides recorded complete in `pending_tasks.json`, so the Director releases the slide for re-render.
 
 ---
 
@@ -343,7 +343,7 @@ Cross-slide logo drift check: if the logo renders differently on any two slides 
 |-----------|---------------|------------------------|-------|
 | Slide image missing (render failed silently) | Slide Image Creator | Director of Presentations | Human owner |
 | A slide fails AF-I1 (garbled text) on 3 consecutive re-renders | Director of Presentations | Human owner | -- |
-| Logo is absent on a LOGO_ON_SLIDES slide across 2 re-renders | Slide Image Creator (escalate prompt to image-to-image mode) | Director + Prompt Author | Human owner |
+| Logo is absent on a LOGO_ON_SLIDES slide across 2 re-renders | Slide Image Creator (confirm image-to-image mode and the `--logo` URL) | Director (may switch the deck to a local logo file, SOP-IMG-05 Rule A) + Prompt Author | Human owner |
 | Rendered string ambiguous (cannot determine PASS/FAIL by vision) | Director (request human visual check) | Human owner | -- |
 | AF-I9 fires on every re-render for the same slide | Prompt Author (check casting language and demographic-lock instruction) | Director | Human owner |
 | Loop count > 3 for any slide | Director of Presentations | Human owner | -- |
@@ -451,7 +451,7 @@ The representation audit (SOP 9.4) records "no human subjects -- N/A". Criterion
 The hook text is expected on this slide. SOP 9.2 verifies the rendered hook string matches the canonical HOOK in `mission_prd.json` exactly (AF-HOOK-6). The pure-typography treatment (over a low-opacity image, no competing photographic subject at full opacity) is verified against presentation-design-system/03-SOP-pure-typography-hook-slides.md.
 
 ### Edge Case 17.3 -- Price Slide with Strike-Through Price
-Verify the struck-price rendering: the prior price shows a clear visual strike-through, the new lower price renders in a gold gradient or glow treatment, and both are legible. A price slide with no strike treatment or an illegible new price is a scored defect (criteria b and e).
+Verify the struck-price rendering: the prior price shows a clear visual strike-through, the new lower price renders as flat solid-color hero type (a gradient fill or glow on type is AF-GRAD, SOP-IMG-05 section 2), and both are legible. A price slide with no strike treatment or an illegible new price is a scored defect (criteria b and e).
 
 ### Edge Case 17.4 -- Logo Absent on a Non-Logo Slide
 If LOGO_ON_SLIDES = false for a specific slide (per the design system), the absence of the logo is correct and not flagged. Verify this against the per-slide LOGO_ON_SLIDES value in intake.json or the design system before flagging an absent logo.
@@ -463,7 +463,7 @@ If LOGO_ON_SLIDES = false for a specific slide (per the design system), the abse
 1. The image QC auto-fail battery (AF-I codes) is extended or modified in the master SOP.
 2. The vision-pass toolchain (qwen3-vl:235b-cloud, DeepSeek v4 Flash) changes.
 3. The brand color or logo reference for a deck changes (LOGO_URL updated in intake.json).
-4. The KIE.ai render API or output format changes.
+4. The KIE.ai render API or output format changes, or the renderer's receipts change (`pending_tasks.json`, `.ocr.json`, `process_manifest.json`).
 5. The archetype specification (A1-A5) changes in presentation-design-system/04-SOP-variable-layout-anti-template.md.
 6. The operator explicitly requests a revision, or a Devil's Advocate challenge is accepted 3+ times.
 

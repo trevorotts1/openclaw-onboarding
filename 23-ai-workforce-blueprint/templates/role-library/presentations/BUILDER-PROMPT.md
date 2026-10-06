@@ -20,7 +20,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
 - **LAYER A — THE AUTHORING PIPELINE.** The multi-phase, multi-role pipeline
   (`PIPELINE-MANIFEST.json`). Intake, priority-shift diagnosis, arc allocation,
   research, copywriting, copy-QC, typography, and — critically — **hand-authoring the
-  RICH per-slide image prompt** (sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds still enforce the old band until the prompt-budget code change lands) for every slide
+  RICH per-slide image prompt** (sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; until the renderer gate (9,000 to 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, write 16,000 to 18,000 characters so both pass) for every slide
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
 - **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
@@ -103,7 +103,8 @@ orchestrator (`run_signature_deck.py` → `build_deck.py`). The scripts director
 to the materialized department's `scripts/` folder; `--scripts-dir` overrides it. The
 script refuses rather than searching. That canonical path, for every
 slide, reads the pre-authored rich prompt **verbatim**, calls KIE.ai, polls, downloads
-and verifies the PNG, retries up to 3x on failure, assembles all PNGs into a 16:9
+and verifies the PNG (a failed slide fails the run with exit 1; a re-run reuses every slide already
+verified in `pending_tasks.json` and submits only the rest), assembles all PNGs into a 16:9
 `.pptx` (one full-bleed image per slide, **zero** text boxes), runs the postflight
 completeness gate over the full deliverable bundle, and records the phase-attestation
 chain. It prints a JSON summary:
@@ -153,7 +154,19 @@ code) — **never silently, never by your own choice.**
 
 ### PROMPT CHAR-COUNT (the script enforces it)
 
-Every per-slide rich prompt you (or the Slide Image Creator role) author is sized by the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py gate thresholds still enforce the old band until the prompt-budget code change lands. The mandatory English/Latin-only pin
+Length authority is the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`): target 95 to 100 percent of the model's prompt maxLength, hard floor 80 percent, hard ceiling 100 percent. Read the number with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt` (run it from the Skill 74 folder; never copy the adapter into a run directory). For the current pin (maximum 20,000 characters) the floor is 16,000 and the target is 19,000 to 20,000. Until the renderer gate (`PROMPT_CHAR_FLOOR` 9,000 and `PROMPT_CHAR_CEILING` 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, a prompt must satisfy both, so write 16,000 to 18,000 characters now.
+
+**The image chain you are serving, end to end:** authored prompt (`working/prompts/slide-NN.txt`) ->
+prompt budget (above) -> model pin (the `image.t2i` / `image.i2i` aliases in
+`presentation_job/model_catalog.json`, a department pin that outranks Skill 74 and its
+`latest-family` default; a newer GPT Image generation is adopted by an operator catalog bump,
+never silently) -> transport (`build_deck.py` through the one entry command, nothing else) ->
+receipts (`working/checkpoints/pending_tasks.json`, `renders/slide-NN.ocr.json`, the render record
+in `working/checkpoints/process_manifest.json`, and `kieTaskIds` in the summary). Skill 74
+(`74-kie-live-adapter`) is NEVER copied into or run from a run directory: the bypass-scan blocks
+any `*.py` there that mentions `createTask`, `recordInfo` or `api.kie.ai`.
+
+The mandatory English/Latin-only pin
 the render step appends to EVERY prompt (if the authored prompt does not already carry
 it) is, verbatim:
 

@@ -55,7 +55,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 3. Capacity and Reliability Engineer
 **Slug:** capacity-reliability-engineer
-**What it does:** Owns Step 0.5 (system capacity probe) and Phase 7 (resilience watchdog cron). Probes the client's box (free -h, nproc, uptime, df -h), verifies Ollama Cloud reachability, checks Kie.ai credit balance vs. budget ceiling, checks all 4 env stores for required keys, and writes capacity_plan.json with fleet sizing recommendations and a go/no-go decision. Installs a 15-minute watchdog cron after Phase 4 begins; removes it after Phase 6 completes.
+**What it does:** Owns Step 0.5 (system capacity probe) and Phase 7 (resilience watchdog cron). Probes the client's box (free -h, nproc, uptime, df -h), verifies Ollama Cloud reachability, checks Kie.ai credit balance vs. budget ceiling, checks all 4 env stores for required keys, and writes capacity_plan.json with fleet sizing recommendations and a go/no-go decision. Verifies the installer-managed 10-minute presentation watchdog is live once Phase 4 begins (it never installs a per-deck cron).
 **Core SOPs to build:**
 - 01-System-Capacity-Probe-and-Fleet-Sizing.md
 - 02-Resilience-Watchdog-Cron-and-Checkpoint-Recovery.md
@@ -82,7 +82,7 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 6. Slide Submitter
 **Slug:** slide-submitter
-**What it does:** Submits all prompts to Kie.ai GPT-Image-2.5 (owns_phase null at manifest v68; unreconciled). P4-RENDER is owned by slide-image-creator. Uses model gpt-image-2-5-sunburst-image-to-image (with refs) or gpt-image-2-5-sunburst-text-to-image (without refs) per the MODEL MANIFEST. Enforces the documented rate cap of 20 requests / 10 seconds (20 slides/wave + 10s sleep; source docs.kie.ai Section 8, verified 2026-06-14). Polls for completions (5-min initial wait, 60s intervals, 100-poll hard cap). Downloads to working/renders/. MUST call the canonical render module, not a per-deck renderer. Runs the generation budget discipline gate (warn at 1.5x, stop at 2x SLIDE_COUNT x $0.03).
+**What it does:** Supervises the one canonical render command that sends every prompt to Kie.ai. It owns no manifest phase (owns_phase is null at manifest v69; P4-RENDER is owned by slide-image-creator; the render itself is `build_deck.py` behind `presentation-canonical-entry.sh`). Confirms the model pin in `presentation_job/model_catalog.json` (aliases `image.t2i` and `image.i2i`, today the sunburst pair) and the logo mode, runs the SOP-IMG-01 preflight, dispatches the command once, and reads the receipts (`pending_tasks.json`, the OCR sidecars, the process manifest). It never types a KIE call, adds waves or sleeps, or copies a Skill 74 file into the run directory. The renderer paces itself under the 20 createTask per 10 seconds limit (`07-kie-setup/references/kie-common-rules.md` rule 3) and polls every 10 seconds with a 900-second cap. Runs the generation budget discipline gate (price from `kie_live_adapter.py price`, credit preflight price x 1.30, stop at 2x the slide count in task ids).
 **Core SOPs to build:**
 - 01-Model-Manifest-and-Variant-Selection.md
 - 02-KIE-Submit-and-Rate-Cap-20-requests-10-seconds.md
@@ -101,16 +101,16 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 
 ### 8. PPTX Assembly Specialist
 **Slug:** pptx-assembly-specialist
-**What it does:** Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). Each slide is a SINGLE composed gpt-image-2.5 image (text baked in by the model); the only PPTX text part is the off-slide speaker-notes pane (from presenter_notes.json). Native text overlays are ELIMINATED (Decision 5C) — no pptx_text_overlays.json, no native on-slide text runs (AF-OVERLAY-DELIVERED). Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
+**What it does:** Assembles the final PowerPoint from the verified renders through the shipped `build_deck.assemble_pptx()` (python-pptx, 10 x 5.625 inch slides, full-bleed), never a per-deck assembler. Each slide is a SINGLE composed gpt-image-2.5 image (text baked in by the model), plus the exact local logo file as a picture when the deck has one; the only PPTX text part is the off-slide speaker-notes pane (from presenter_notes.json). Native text overlays are ELIMINATED (Decision 5C) — no pptx_text_overlays.json, no native on-slide text runs (AF-OVERLAY-DELIVERED). Renders to PDF via soffice --headless --convert-to pdf, then to PNG pages via pdftoppm -png -r 100 for Phase 6 QC.
 **Core SOPs to build:**
 - 01-PPTX-Build-with-Embedded-Speaker-Notes.md
 - 02-Render-to-PDF-for-Final-QC.md
-- 03-Native-Text-Overlay-Fallback.md
+- 03-Native-Text-Overlay-Fallback.md (ELIMINATED, Decision 5C: a halting guard only, never an overlay path)
 **Role type:** specialist
 
 ### 9. Slide Image Creator
 **Slug:** slide-image-creator
-**What it does:** Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). Targets 5,000-7,500 characters per prompt (range: 1,500-15,000). Applies the STYLE BLOCK from the Brand Steward. Front-loads critical content. Handles price-drop strikethroughs and hook text overlays. Consumes type_layout_system.md from the Typography Architect so the deck rotates layouts instead of stamping one frame. Produces working/prompts/slide-NN-prompt.txt files.
+**What it does:** Writes one 15-element image prompt per slide (P-STYLE-PREVIEW, P4-RENDER). Sizes each prompt to the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; 16,000 to 18,000 characters for the current 20,000-character pin while the renderer's own 9,000 to 18,000 gate stands). Applies the STYLE BLOCK from the Brand Steward. Front-loads critical content. Handles price-drop strikethroughs and hook text overlays. Consumes type_layout_system.md from the Typography Architect so the deck rotates layouts instead of stamping one frame. Produces working/prompts/slide-NN.txt files.
 **Core SOPs to build:**
 - 01-Per-Slide-Prompt-Authoring-15-Element-Spec.md
 - 02-Thirds-Grid-and-Composition.md

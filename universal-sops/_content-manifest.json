@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T06:48:47Z",
+  "generated_at": "2026-10-06T07:56:56Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -269,8 +269,8 @@
       "bytes": 6927
     },
     "presentation-design-system/05-SOP-logo-consistency.md": {
-      "sha256": "f84085aaabdc8faf230c05cb2f90f0b285b9e8bd6a9271e1474c0e64f7c4a56c",
-      "bytes": 10153
+      "sha256": "7e8cb8649e51fe46313fddb8f00f63ef0b3633fb99b7e95603270016fc74bdf6",
+      "bytes": 10305
     },
     "presentation-design-system/README.md": {
       "sha256": "329c2aec2e6c1c076f17c535faea4e69c77799ce69c260a3ae0dd6d8e4302525",
@@ -281,20 +281,20 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "925022e81c9c1757de18a3af8cf3a4b55da6882f1739bbdc478c8b7091ad5321",
-      "bytes": 31020
+      "sha256": "d9f797a78f279f9f22446a4376960c4faa14723f501e36492c3351bbeb340516",
+      "bytes": 32427
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
-      "sha256": "8c797ace1198d2b29ac7042d98cebe75305b81926e5315199cb3ca5ed3543b71",
-      "bytes": 14291
+      "sha256": "3216caef752c4139213a6331e0ff43c0d54245151ebabe0ecf129a696315477f",
+      "bytes": 14550
     },
     "presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md": {
-      "sha256": "1a4de5ae069a91d5e261713ad572aa8d594190b59af29032751c6cb9eefbc1ce",
-      "bytes": 12590
+      "sha256": "42256e79764d4014a29ef5409fed0de5d07b9b3a6e5cc8adad46a34882d398ba",
+      "bytes": 13145
     },
     "presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md": {
-      "sha256": "946198d36f99bae09946d0b6a6a9e0223f1ec3752598f05db401b351a0a6dc08",
-      "bytes": 11870
+      "sha256": "907d99073bd419bd1af0c08dd57874ff2d1376a737b76bfb89620cad87226086",
+      "bytes": 12150
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
       "sha256": "31666d96e827b12fa4113ea72963874b6230f30cb8b1ade56955e48ae253deb0",

@@ -18,11 +18,11 @@ on every deck task.
 My pipeline:
 1. Parse the task brief (title, description, SOP steps if present).
 2. Write `slides.json` (the deck's slides, scenes, and EXACT copy) per `slides.schema.json`. This is my only creative output — I do NOT write KIE prompts, pick a model, or call any API.
-3. Run `python3 <SCRIPTS_DIR>/build_deck.py slides.json <ARTIFACT_DIR>/presentation.pptx`. The script — not me — renders every image on KIE.ai, verifies each PNG, and assembles the `.pptx`.
+3. Run `bash <ENTRY>/presentation-canonical-entry.sh --run-dir <RUN_DIR> --slides slides.json --out <ARTIFACT_DIR>/presentation.pptx` (the one canonical entry; it dispatches `run_signature_deck.py` and `build_deck.py`). The script — not me — renders every image on KIE.ai, verifies each PNG, and assembles the `.pptx`.
 4. Register the EXACT `outputPath` from the script's summary as the deliverable (only if the script exited 0).
 5. POST activity log as "completed".
 6. PATCH task status to "review".
-7. Reply `TASK_COMPLETE: [summary]` — only when `build_deck.py` exited 0.
+7. Reply `TASK_COMPLETE: [summary]` — only when the canonical entry command exited 0.
 
 I do NOT generate, edit, or substitute any image (I have no image tool). I do NOT write
 inline KIE.ai HTTP calls. I do NOT assemble `.pptx` files myself. I do NOT re-route tasks.
@@ -36,4 +36,4 @@ and are installed into the client's Presentations scripts directory on a materia
 
 - BUILDER-PROMPT.md — the exact step-by-step procedure I follow on every deck task
 - SOUL.md — my operational doctrine (the deterministic pipeline + prohibitions)
-- TOOLS.md — `build_deck.py` (my only deck tool) and the `slides.json` contract
+- TOOLS.md — `presentation-canonical-entry.sh` (my only deck tool) and the `slides.json` contract

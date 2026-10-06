@@ -6,7 +6,7 @@
 > `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json`. Procedure:
 > `universal-sops/presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md`.
 
-**Version:** 1.4 | 2026-06-14 (density-floor overhaul: +5 roles, Phase 1.5, the slide-craft / design-system / image-library SOP clusters, and the enforcement-gate auto-fail batteries)
+**Version:** 1.5 | 2026-10-06 (KIE integration with Skill 74: deck image chain, receipts and render guard described exactly as shipped; earlier 2026-06-14 density-floor overhaul: +5 roles, Phase 1.5, the slide-craft / design-system / image-library SOP clusters, and the enforcement-gate auto-fail batteries)
 **Role library path:** 23-ai-workforce-blueprint/templates/role-library/presentations/
 **SOP mirror path:** 23-ai-workforce-blueprint/templates/role-library/presentations/sops/
 
@@ -232,7 +232,7 @@ Each role's Section 9 (Standard Operating Procedures) is mirrored verbatim in so
 | sops/qc-specialist-presentations-sops.md | qc-specialist-presentations.md | 9.1 Copy QC, 9.2 Prompt QC, 9.3 Image QC, 9.4 Loop Control, 9.5 Final Deck QC |
 | sops/slide-copywriter-sops.md | slide-copywriter.md | 9.1 Write Slides, 9.2 Hook Placement, 9.3 Proof Integrity, 9.4 Mode B, 9.7 Doctrine |
 | sops/slide-image-creator-sops.md | slide-image-creator.md | 9.1 15-Element Prompt, 9.2 Archetypes+Composition, 9.3 White-Base+Palette, 9.4 Engines+Overlays, 9.5 Strikethrough |
-| sops/slide-submitter-sops.md | slide-submitter.md | 9.1 Model Manifest, 9.2 KIE Submit, 9.3 Poll+Download, 9.3a API Contract, 9.4 Budget Discipline, 9.5 Smoke Test |
+| sops/slide-submitter-sops.md | slide-submitter.md | 9.1 Model Pin + Mode Rule + Preflight, 9.2 Dispatch the One Render Command, 9.3 Receipts + Exit Codes, 9.3a API Contract, 9.4 Budget Discipline |
 | sops/healer-presentations-sops.md | healer-presentations.md | 9.1 Intake+Triage, 9.2 Diagnosis, 9.3 Fix Forward, 9.4 SOP Surgery, 9.5 Gap Detection, 9.6 Model Census, 9.7 Healing Report, 9.8 Regression Watch, 9.9 Core-File Surgery, 9.10 Settings Repair, 9.11 Teacher-Self, 9.12 Embedding Refresh |
 | sops/typography-architect-sops.md | typography-architect.md | 9.1 Weight Ladder + Type Tokens, 9.2 Five-Archetype Layout Rotation, 9.3 Price-Typography System, 9.4 Per-Slide Type Plan + Anti-Cookie-Cutter Audit |
 | sops/presenters-guide-specialist-sops.md | presenters-guide-specialist.md | 9.1 Build the Speaker Outline, 9.2 Beautiful PDF (font >= 12), 9.3 Notion, 9.4 Surface-Boundary Audit + Delivery |

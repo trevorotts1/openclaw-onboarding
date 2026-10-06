@@ -116,7 +116,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
          proof-assets/            (before/after photos, testimonial screenshots, product images)
      working/
        prompts/                   (per-slide prompt files: slide-NN-prompt.txt)
-       renders/                   (raw downloads from Phase 4 -- pre-QC: slide-NN-raw.png)
+       renders/                   (downloads from Phase 4 -- pre-QC: `slide-NN.png` as the renderer writes it, each with a `slide-NN.ocr.json` readback sidecar; the render receipts live in `checkpoints/pending_tasks.json`)
        checkpoints/               (all checkpoint JSON files)
          media_library.json       (run ledger: paths, GHL folder id, version number)
          run_ledger.json          (per-phase completion log)
