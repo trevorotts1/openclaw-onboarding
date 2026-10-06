@@ -5,6 +5,7 @@
   "modality": "audio",
   "verified_at": "2026-08-26",
   "registry_policy": {
+    "role": "CURATED POLICY and verified-override registry (TTS and Suno limits, enums, owner rulings, the closed STT gate). Not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 (live schema, price) is, with its generated snapshot as fallback. A model missing here is DISCOVERED, never an automatic default. There is no auto-latest for audio.",
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai elevenlabs/suno pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. Not-exposed values stored as null, never invented.",
     "house_band_chars": {
       "min": 5000,

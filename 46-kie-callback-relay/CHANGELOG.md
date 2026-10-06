@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.0] - 2026-10-06 - feat: Skill 74 handoff for production batches
+
+- `kie-slide-submitter.js`: `prepareCallback()` mints the per-task secret and signed `/cb` URL and writes the registry row before submit; `adoptAdapterTask()` accepts Skill 74's normalized task metadata (`task_id`, `model_id`, `callback_url`, via `data.callback_url` or flat), records the taskId and index, and waits through the same KV poller, download and file-on-disk rule as `submitDeck`. A callback URL not minted on this box (j= has no registry row, URL differs, other client) is refused with no wait; a skipped or failed submit returns `failed` without waiting. New export `normalizeAdapterTask`. URL building moved into `_makeCallback()` shared with `submitDeck` (same output).
+- `SKILL.md` and `SUBMITTER-SOP.md`: "Production route via Skill 74" documents `kie_live_adapter.py submit --callback-url <relay URL> --mode active` as the production submit path (Skill 74 v1.1.1 adds the flag). `submitDeck` is unchanged.
+- Worker unchanged: `worker/src/index.js`, `worker/package.json`, `/healthz` (2.0.4) and `DEPLOY.md` keep their version, so no Worker redeploy is needed for this release.
+- Tests: `test/security.test.mjs` 90 assertions before, 106 after (handoff: shapes, minted URL, registry before submit, adopt and wait, tampered and missing URL refused, shadow skip, missing secrets). `qc-kie-callback-relay.sh` QC PASS.
+
+---
+
 ## [v2.0.4] - 2026-10-05 - fix: poller falls through to resultUrls when every images item is empty
 
 ### Fixed

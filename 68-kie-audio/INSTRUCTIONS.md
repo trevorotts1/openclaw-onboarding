@@ -119,6 +119,40 @@ Full 14-op table in references/music.md. Highlights:
 
 Exit 2 = do NOT dispatch. Fix the payload, do not bypass the validator.
 
+## Dispatch through Skill 74 (TTS, Market createTask)
+
+This skill owns the policy: which model, the limits, the enums, the STT gate. Skill 74
+owns the mechanics: live schema, price, balance, the createTask call. For TTS, after
+`validate_audio_request.py` passes, run in order from this skill's folder
+(A = python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py):
+
+  1. A validate --model <id> --payload input.json --json
+     Live schema first, the generated registry snapshot as fallback; state must be
+     "validated". In addition to the validator above, never instead of it.
+  2. A preflight --model <id> --units <thousands of characters> --json
+     Balance must cover price x 1.30 (TTS bills per 1,000 characters). state "fail"
+     with code insufficient_credits: stop and report the shortfall.
+  3. A submit --request req.json --mode active [--callback-url <Skill 46 relay URL>] --json
+     req.json is {"model": "<id>", "input": {...}}. Skill 74 never picks or changes the
+     model. Then `A wait --task-id <id>` and `A save --task-id <id> --save-dir <dir>`;
+     production batches use the Skill 46 relay (46-kie-callback-relay SUBMITTER-SOP.md,
+     "Production route via Skill 74").
+  4. The audio QC below on the saved file.
+
+A TTS model not in models.json is DISCOVERED, never auto-default; when the requester
+names it, validate_audio_request.py checks it against Skill 74's live schema and
+requires a Text to Speech capability. If submit returns state "skipped" with
+fallback_used true, the adapter is off or in shadow mode and sent nothing: dispatch
+with curl as before (steps 1 and 2 already ran). Adapter absent: skip steps 1 and 2
+with a one-line note and use curl.
+
+Suno music (dedicated `/api/v1/generate` family) keeps its curated route: this skill's
+route is authoritative and Skill 74 `submit` is not used for it. KIE's live catalog also
+lists `ai-music-api/*` ids whose schema declares createTask (observed in the Skill 74
+registry snapshot of 2026-10-06); which route is authoritative is an owner decision
+recorded as open in CHANGELOG, not changed here. Run `A price --model <id>` and
+`A preflight --model <id>` for the matching catalog id when one exists.
+
 ## Async completion
 
 - Prefer `callBackUrl`; make the handler idempotent; record provider, model,
@@ -132,7 +166,7 @@ Exit 2 = do NOT dispatch. Fix the payload, do not bypass the validator.
 
 ## STT — never route here
 
-No endpoint, no example, no dispatch. If asked, answer from `references/stt.md`:
+No endpoint, no example, no dispatch. The STT validator also reports (free catalog GET via Skill 74, report only) whether the live catalog lists a speech-to-text candidate; the gate stays closed either way. If asked, answer from `references/stt.md`:
 KIE advertises ElevenLabs STT but no callable endpoint was found (sitemap
 ~460 URLs zero hits; elevenlabs docs dir = 4 models, all TTS/audio-isolation;
 market page 403; WebSearch zero). Status ADVERTISED_NOT_YET_VERIFIED. When a

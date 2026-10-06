@@ -18,6 +18,14 @@
       "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 07."
     },
     {
+      "id": "skill-74-kie-live-adapter",
+      "type": "skill",
+      "label": "Skill 74 — KIE Live Adapter",
+      "check": { "skill": "74-kie-live-adapter" },
+      "severity": "optional",
+      "satisfy": "Install Skill 74 (74-kie-live-adapter, Python 3 standard library only). Skills 66, 67 and 68 run validate, preflight and submit through it; without it they fall back to their own static tables and curl. It is optional here, not required, because Skill 74 itself requires Skill 07 first and a required dependency in both directions would be circular."
+    },
+    {
       "id": "kie-account",
       "type": "manual",
       "label": "Kie.ai Account (app.kie.ai)",

@@ -22,8 +22,8 @@ for f in SKILL.md INSTALL.md INSTRUCTIONS.md CORE_UPDATES.md QC.md CHANGELOG.md 
 done
 chk "wire.sh executable" "[ -x '$D/wire.sh' ]"
 chk "this script executable" "[ -x '$D/qc-74-kie-live-adapter.sh' ]"
-chk "skill-version.txt is v1.1.0 plus newline" "[ \"\$(cat '$D/skill-version.txt')\" = v1.1.0 ] && [ \"\$(tail -c1 '$D/skill-version.txt' | od -An -c | tr -d ' ')\" = '\\n' ]"
-chk "SKILL.md top-level version matches" "head -20 '$D/SKILL.md' | awk '/^version: 1.1.0\$/{f=1} END{exit !f}'"
+chk "skill-version.txt is v1.1.1 plus newline" "[ \"\$(cat '$D/skill-version.txt')\" = v1.1.1 ] && [ \"\$(tail -c1 '$D/skill-version.txt' | od -An -c | tr -d ' ')\" = '\\n' ]"
+chk "SKILL.md top-level version matches" "head -20 '$D/SKILL.md' | awk '/^version: 1.1.1\$/{f=1} END{exit !f}'"
 chk "PREREQS.json valid JSON" "python3 -c \"import json;json.load(open('$D/PREREQS.json'))\""
 chk "vendor-approval.json valid JSON" "python3 -c \"import json;json.load(open('$D/vendor-approval.json'))\""
 chk "registry JSON valid, live-api or public-docs source, every model has limits fields" "python3 -c \"import json;d=json.load(open('$D/references/kie-model-registry.json'));assert d['source'] in ('live-api','public-docs') and d['models'] and all('input_fields' in m and 'prompt_field' in m and 'pricing' in m for m in d['models'])\""
