@@ -3613,11 +3613,9 @@ def _verify_single_prompt(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]
         p = run_dir / "working" / "prompts" / f"slide-{ordinal:02d}.txt"
         if not p.is_file():
             return False, ["no prompt file"]
-        length = len(p.read_text(encoding="utf-8", errors="replace").strip())
-        if length < 9000:
-            return False, [f"AF-P1: {length} chars < 9,000 floor"]
-        if length > 18000:
-            return False, [f"AF-P2: {length} chars > 18,000 ceiling"]
+        probs = _shared_prompt_gate().length_problems(p.read_text(encoding="utf-8", errors="replace").strip())
+        if probs:  # KIE rule 12 band through the shared enforcer (names the exact characters to add or cut)
+            return False, probs
         return True, ["NOTE: build_deck.check_prompt_qc_deterministic unavailable "
                        "-- degraded to a length-only check"]
     try:

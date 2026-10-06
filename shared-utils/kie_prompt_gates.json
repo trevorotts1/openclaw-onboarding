@@ -147,7 +147,8 @@
   "allowed_numeric": {
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py": [
       "PLACEHOLDER_MIN_BYTES",
-      "len-vs-literal:len(path.read_text(errors='replace').strip()) < 500"
+      "len-vs-literal:len(path.read_text(errors='replace').strip()) < 500",
+      "len-compare:size < PLACEHOLDER_MIN_BYTES"
     ],
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py": [
       "MIN_2K_WIDTH"
@@ -169,12 +170,14 @@
       "PNG_MIN_BYTES"
     ],
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/artifacts.py": [
-      "min_b"
+      "min_b",
+      "len-compare:min_b >= 51200"
     ],
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/dispatcher.py": [
       "DEEPSEEK_MAX_OUTPUT_TOKENS",
       "_P4_COPY_UPSTREAM_MAX_CHARS",
-      "budget"
+      "budget",
+      "len-compare:total + len(txt) > budget"
     ]
   },
   "allowed_numeric_reasons": "68 caps are first-party verbatim ceilings (text-to-speech, lyrics) and the policy-owner fallback limits for dedicated routes the Skill 74 schema does not cover; the rest are file-size, output-token, copy-context and context-budget numbers that are not KIE prompt lengths.",

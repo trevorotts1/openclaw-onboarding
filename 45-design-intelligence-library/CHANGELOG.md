@@ -4,6 +4,8 @@
 
 - `prompt-bands.json` v3 holds no length numbers (merged with the GPT Image 2.5 Sunburst default alignment); KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.
 - `prove_gip_prompt_floor.py` derives its fixture sizes from the model max through the validator instead of a literal.
+- `scripts/_kie_prompt_enforcer_embedded.py`: the same embedded, hash-locked fallback for boxes without shared-utils; `diu_validator.py` falls back to it and passes the last-known limit, so `qc-design-intelligence-library.sh` and its fail-closed test (19 of 19) work with only this skill installed.
+
 
 ## v2.1.9 - 2026-10-06 - No Nano Banana fallback for social or ad images
 

@@ -207,6 +207,91 @@ def band_findings(src, name_re=BAND_NAME):
     return out
 
 
+# --- data-flow scan: a length compared with a number, whatever the number is called -----------------------------
+PROMPTISH = re.compile(r"(?i)(?<!negative_)(?<!negative )prompt")  # a negative prompt is its own vendor-capped field
+
+
+def _bigints(node,lo):
+    return [n.value for n in ast.walk(node) if isinstance(n,ast.Constant) and isinstance(n.value,int) and not isinstance(n.value,bool) and n.value>=lo]
+def _target_names(t):
+    if isinstance(t,ast.Name): yield t.id
+    elif isinstance(t,ast.Attribute): yield t.attr
+    elif isinstance(t,(ast.Tuple,ast.List)):
+        for e in t.elts: yield from _target_names(e)
+def _assignments(tree):
+    for n in ast.walk(tree):
+        if isinstance(n,ast.Assign):
+            names=[x for t in n.targets for x in _target_names(t)]; yield names,n.value
+        elif isinstance(n,ast.AnnAssign) and n.value is not None:
+            yield list(_target_names(n.target)),n.value
+        elif isinstance(n,ast.NamedExpr):
+            yield list(_target_names(n.target)),n.value
+def _refs(node):
+    """names and attribute names an expression refers to"""
+    out=set()
+    for n in ast.walk(node):
+        if isinstance(n,ast.Name): out.add(n.id)
+        elif isinstance(n,ast.Attribute): out.add(n.attr)
+    return out
+def _lenleaf(call, prompt_only):
+    if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "len" and call.args):
+        return False
+    return (not prompt_only) or bool(PROMPTISH.search(ast.unparse(call.args[0])))
+
+
+_PASS_THROUGH = {"int", "float", "abs", "round", "min", "max"}
+
+
+def _len_value(node, prompt_only, lenvars):
+    """True when the expression IS a length, or arithmetic over one: len(x), a variable holding one, a sum or
+    difference with them, int()/min()/max() wrappers. Anything else (a function call, a lookup) is not a length."""
+    if _lenleaf(node, prompt_only):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in lenvars
+    if isinstance(node, ast.Attribute):
+        return node.attr in lenvars
+    if isinstance(node, ast.BinOp):
+        return _len_value(node.left, prompt_only, lenvars) or _len_value(node.right, prompt_only, lenvars)
+    if isinstance(node, ast.UnaryOp):
+        return _len_value(node.operand, prompt_only, lenvars)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _PASS_THROUGH:
+        return any(_len_value(a, prompt_only, lenvars) for a in node.args)
+    return False
+
+
+def length_compares(src, lit_min, prompt_only):
+    """Compare nodes where a (prompt) length, directly or through assigned variables, is checked against an integer
+    literal >= lit_min, or against a name/attribute/subscript whose value holds such an integer (any name)."""
+    tree=ast.parse(src)
+    big={}   # name -> literal found in its assigned value
+    lenvars=set()
+    changed=True
+    assigns=list(_assignments(tree))
+    for names,val in assigns:
+        b=_bigints(val,lit_min)
+        if b:
+            for nm in names: big[nm]=b[0]
+    # propagate len-ness through simple intermediate variables (to a fixpoint)
+    while changed:
+        changed=False
+        for names,val in assigns:
+            if _len_value(val, prompt_only, lenvars):
+                for nm in names:
+                    if nm not in lenvars: lenvars.add(nm); changed=True
+    out=[]
+    for n in ast.walk(tree):
+        if not isinstance(n,ast.Compare): continue
+        ops=[n.left]+list(n.comparators)
+        lenish=[o for o in ops if _len_value(o, prompt_only, lenvars)]
+        if not lenish: continue
+        for o in ops:
+            if o in lenish: continue
+            if _bigints(o,lit_min) or (_refs(o)&set(big)):
+                out.append((n.lineno,ast.unparse(n)[:90])); break
+    return out
+
+
 def calls_attr(src, aliases, attrs):
     """True when the module calls <alias>.<attr>(...) for one of the attrs (an AST call, not a mention)."""
     for n in ast.walk(ast.parse(src)):
@@ -275,6 +360,10 @@ def gate_violations(root=REPO, decl=DECL):
         for line, key in band_findings(src):
             if key not in ok_names:
                 bad.append(f"{rel}:{line}: a numeric character band under the name {key!r}")
+        for line, expr in length_compares(src, 1000, False):
+            if "len-compare:" + expr not in ok_names:
+                bad.append(f"{rel}:{line}: a length is compared with an integer of 1,000 or more (any name, through "
+                           f"variables): {expr}")
         tree = ast.parse(src)
         top = {t.id for n in tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
         if top & banned:
@@ -309,6 +398,7 @@ def discovery_violations(root=REPO, decl=DECL):
     declared = set(decl["gate_modules"]) | {d["path"] for d in decl["delegating_gate_modules"]} | \
         {d["path"] for d in decl["adapter_direct_gate_modules"]} | {e["path"] for e in decl["exemptions"]}
     declared.add(decl["enforcer"])
+    declared |= set(decl.get("enforcer_copies", []))
     bad = []
     for base, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -319,7 +409,10 @@ def discovery_violations(root=REPO, decl=DECL):
             if rel in declared:
                 continue
             try:
-                found = undeclared_prompt_length_checks((Path(base) / fn).read_text(encoding="utf-8"))
+                text = (Path(base) / fn).read_text(encoding="utf-8")
+                found = undeclared_prompt_length_checks(text) + [
+                    (ln, "prompt length compared with a number (through variables): " + ex)
+                    for ln, ex in length_compares(text, 500, True)]
             except (SyntaxError, UnicodeDecodeError):
                 continue
             for line, what in found:
@@ -396,6 +489,30 @@ class TestMutationProofs(unittest.TestCase):
         one = dict(self._only("66-kie-image/scripts/validate_prompt.py"), gate_modules=[],
                    data_files=[d for d in DECL["data_files"] if d["path"] == rel])
         self.assertTrue(any("hard-coded length key" in b for b in gate_violations(root, one)))
+
+    def test_keyword_free_names_and_variables_are_caught_in_a_declared_gate(self):
+        rel = "66-kie-image/scripts/validate_prompt.py"
+        for label, extra in (
+                ("THRESH_ALPHA", "\nTHRESH_ALPHA = 9000\ndef _m1(prompt):\n    return len(prompt) < THRESH_ALPHA\n"),
+                ("local lo", "\ndef _m2(prompt):\n    lo = 15000\n    n = len(prompt)\n    return n < lo\n"),
+                ("WINDOW tuple", "\nWINDOW = (9000, 19000)\ndef _m3(prompt):\n    return WINDOW[0] <= len(prompt) <= WINDOW[1]\n"),
+                ("IMG_LO class constant", "\nclass _G:\n    IMG_LO = 19000\n    def ok(self, prompt):\n        return len(prompt) >= self.IMG_LO\n"),
+                ("dict of numbers", "\nSPAN = {'lo': 9000, 'hi': 19000}\ndef _m4(prompt):\n    return SPAN['lo'] <= len(prompt) <= SPAN['hi']\n")):
+            root = self._mutated(rel, lambda s, e=extra: s + e)
+            bad = gate_violations(root, self._only(rel))
+            self.assertTrue(any("a length is compared with an integer of 1,000 or more" in b for b in bad), (label, bad))
+
+    def test_the_unmutated_declared_gates_have_no_such_comparison(self):
+        self.assertEqual(gate_violations(), [])
+
+    def test_a_length_compared_through_a_variable_is_found_in_an_undeclared_module(self):
+        root = Path(tempfile.mkdtemp())
+        (root / "98-other" / "scripts").mkdir(parents=True)
+        (root / "98-other" / "scripts" / "check.py").write_text(
+            "IMG_LO = 19000\ndef a(image_prompt):\n    n = len(image_prompt)\n    return n < 4000\n"
+            "def b(image_prompt):\n    size = len(image_prompt.strip())\n    return size >= IMG_LO\n", encoding="utf-8")
+        bad = discovery_violations(root, DECL)
+        self.assertEqual(len([b for b in bad if "through variables" in b]), 2, bad)
 
     def test_an_undeclared_gate_with_a_prompt_band_is_found_by_discovery(self):
         root = Path(tempfile.mkdtemp())
