@@ -76,7 +76,13 @@ HEALTH_NEEDS_RECONNECT = "needs_reconnect"
 HEALTH_RETRYING = "retrying"
 HEALTH_FAILED = "failed"
 
-KIE_MIN_CREDITS = 200          # per-image-plan estimate floor (kept as the default band)
+# Credit rule (fleet-wide owner rule, 2026-10; canonical text in
+# 07-kie-setup/references/kie-common-rules.md): required balance = estimated cost x 1.30.
+# KIE_MIN_CREDITS = 200 is this skill's stricter documented ABSOLUTE FLOOR: it is the
+# required balance when no client-exact estimate is logged, and an additional floor
+# (required = max(estimate x 1.30, 200)) when one is.
+KIE_MIN_CREDITS = 200
+KIE_BALANCE_MULTIPLIER = 1.30
 OPENROUTER_MIN_BALANCE = 5.0   # per-text-plan estimate floor (kept as the default band)
 PAID_STATUS = "Paid"
 
@@ -209,7 +215,7 @@ def check_kie_credits(cfg, live=False, plan=None):
     est_cfg = (cfg.get("creditEstimates") or {})
     if isinstance(est_cfg, dict) and isinstance(est_cfg.get("images"), (int, float)) \
             and est_cfg["images"] > 0:
-        estimate = est_cfg["images"]
+        estimate = max(est_cfg["images"] * KIE_BALANCE_MULTIPLIER, KIE_MIN_CREDITS)
     if live:
         val = _live_kie_credits(cfg)
     else:
@@ -218,7 +224,9 @@ def check_kie_credits(cfg, live=False, plan=None):
         return [(AF_CREDITS, "Kie.ai credit balance could not be confirmed for the planned "
                              "image/video assets (fail-closed)")]
     if val < estimate:
-        return [(AF_CREDITS, "Kie.ai credits %s below the planned asset estimate %s" % (val, estimate))]
+        return [(AF_CREDITS, "Kie.ai credits %s below the required balance %s (planned asset "
+                             "estimate x %s, floor %s); shortfall %s credits"
+                % (val, estimate, KIE_BALANCE_MULTIPLIER, KIE_MIN_CREDITS, estimate - val))]
     return []
 
 
@@ -478,6 +486,10 @@ def _live_kie_credits(cfg):
     try:
         data = _http_get_json("https://api.kie.ai/api/v1/chat/credit",
                               {"Authorization": "Bearer %s" % key})
+        # KIE can answer HTTP 200 with an error envelope ({"code": 401}); the body
+        # `code` decides, never the HTTP status alone (unverifiable -> None, fail-closed).
+        if isinstance(data, dict) and "code" in data and data.get("code") != 200:
+            return None
         for k in ("credits", "data", "balance", "credit"):
             v = data.get(k) if isinstance(data, dict) else None
             if isinstance(v, (int, float)):

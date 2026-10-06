@@ -17,7 +17,7 @@ Add this section:
 
 ### Storyboard Writer (Skill 24)
 - Location: `~/.openclaw/skills/storyboard-writer/`
-- Purpose: turn a video idea into a structured storyboard that matches model limits (Veo, Sora, etc.)
+- Purpose: turn a video idea into a structured storyboard that matches model limits (Veo, Kling, Seedance, etc.; model choice is owned by Skill 67)
 - Use when: user asks for a storyboard, shot list, scene plan, or "turn this script into a video plan"
 ```
 

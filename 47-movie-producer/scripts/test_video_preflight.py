@@ -373,6 +373,48 @@ CASES = [
 ]
 
 
+def _probe_kie_credit_body_code() -> list:
+    """Owner rule: the credit probe checks the BODY code (HTTP 200 with code 401 is NOT
+    a balance) and the required-balance multiplier is 1.30."""
+    import io
+    import urllib.request
+    out = []
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+    real = urllib.request.urlopen
+    try:
+        urllib.request.urlopen = lambda *a, **k: _Resp(
+            b'{"code": 401, "msg": "You do not have access", "data": 5000}')
+        try:
+            vbc._fetch_kie_balance("dummy-key-not-real")
+            out.append("credit probe accepted an HTTP 200 whose body code is 401")
+        except RuntimeError:
+            pass
+        urllib.request.urlopen = lambda *a, **k: _Resp(b'{"code": 200, "msg": "success", "data": 1234}')
+        if vbc._fetch_kie_balance("dummy-key-not-real") != 1234.0:
+            out.append("credit probe did not read data from a code-200 body")
+    finally:
+        urllib.request.urlopen = real
+    if vbc.VID_KIE_BALANCE_FLOOR_MULTIPLIER != 1.30:
+        out.append("balance floor multiplier is not the fleet-wide 1.30")
+    real_fetch = vbc._fetch_kie_balance
+    try:
+        vbc._fetch_kie_balance = lambda *a, **k: 10.0
+        msg = vbc.kie_balance_preflight(Path("."), 1.0, "ABCDEFGHJKLMNPQRSTUVWXYZabcdefgh")
+        if "shortfall=" not in msg:
+            out.append("47 balance message does not name the shortfall in credits")
+    finally:
+        vbc._fetch_kie_balance = real_fetch
+    if vbc.VID_CREDIT_PER_USD != 200:
+        out.append("credits per USD is not 200 (1 credit is about $0.005, kie.ai/pricing)")
+    if vbc.real_kie_key("YOUR_CLIENT_KIE_API_KEY_HERE") is not None:
+        out.append("installer placeholder key was treated as a real key")
+    return out
+
+
 def main():
     triggered = set()
     failures = []
@@ -419,6 +461,7 @@ def main():
     # FIX-S36-42 / FIX-S36-44 regression probes (additive; no new AF codes).
     failures.extend(_probe_google_embedding_allowed())
     failures.extend(_probe_final_mp4_and_handoff())
+    failures.extend(_probe_kie_credit_body_code())
 
     AF_COVERAGE.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE.write_text(json.dumps({"triggered": sorted(triggered)}, indent=2))

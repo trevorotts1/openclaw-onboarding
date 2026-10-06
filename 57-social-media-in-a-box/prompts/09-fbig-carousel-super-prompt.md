@@ -932,8 +932,8 @@ When you select an Image Style using the randomization protocol, you must apply 
 ### SPECIFICATIONS THAT APPLY TO ALL STYLES
 
 **Canvas Dimensions:**
-- Aspect Ratio: 4:5 (portrait orientation optimized for mobile feeds)
-- Resolution: 1080 x 1350 pixels
+- Aspect Ratio: 3:4 (portrait orientation optimized for mobile feeds; N43 substitutes 3:4 for 4:5)
+- Resolution: 1080 x 1440 pixels
 - All designs must work within this format
 
 **Slides Per Carousel:**
@@ -1038,7 +1038,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Professional carousel slide [NUMBER] of 10, Arrow Flow Connector style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with subtle gradient. Bold sans-serif headline text reading '[TEXT ON IMAGE]' positioned [POSITION]. High-quality photography of [SUBJECT MATTER] with professional color grading, [PLACEMENT]. Directional arrow element in [ARROW COLOR] pointing [DIRECTION] as connective tissue. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, text and visual elements only.] Modern, professional aesthetic. Clean composition with clear visual hierarchy. Typography is crisp and readable. Photorealistic, editorial quality, 8K resolution."
+"Professional carousel slide [NUMBER] of 10, Arrow Flow Connector style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with subtle gradient. Bold sans-serif headline text reading '[TEXT ON IMAGE]' positioned [POSITION]. High-quality photography of [SUBJECT MATTER] with professional color grading, [PLACEMENT]. Directional arrow element in [ARROW COLOR] pointing [DIRECTION] as connective tissue. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, text and visual elements only.] Modern, professional aesthetic. Clean composition with clear visual hierarchy. Typography is crisp and readable. Photorealistic, editorial quality, 8K resolution."
 
 </carousel_design_style_01>
 
@@ -1107,7 +1107,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Dramatic carousel slide [NUMBER] of 10, Dark Glow Impact style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Deep [DARK COLOR] background with subtle texture. Bold headline text '[TEXT ON IMAGE]' in white/light color with subtle glow effect, positioned [POSITION]. [3D ELEMENT OR PHOTOGRAPHY DESCRIPTION] with dramatic lighting, [GLOW COLOR] accent lighting creating depth and atmosphere. Glowing [GLOW ELEMENT TYPE] as connective tissue element. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle glow border bottom left. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, glowing accent element in corner instead.] Moody, high-impact, sophisticated aesthetic. Cinematic lighting, 8K resolution."
+"Dramatic carousel slide [NUMBER] of 10, Dark Glow Impact style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Deep [DARK COLOR] background with subtle texture. Bold headline text '[TEXT ON IMAGE]' in white/light color with subtle glow effect, positioned [POSITION]. [3D ELEMENT OR PHOTOGRAPHY DESCRIPTION] with dramatic lighting, [GLOW COLOR] accent lighting creating depth and atmosphere. Glowing [GLOW ELEMENT TYPE] as connective tissue element. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle glow border bottom left. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, glowing accent element in corner instead.] Moody, high-impact, sophisticated aesthetic. Cinematic lighting, 8K resolution."
 
 </carousel_design_style_02>
 
@@ -1174,7 +1174,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Modern carousel slide [NUMBER] of 10, 3D Object Hero style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with subtle gradient. Prominent 3D rendered [OBJECT DESCRIPTION] as hero element, studio lighting, realistic materials and reflections. Bold modern sans-serif text '[TEXT ON IMAGE]' positioned [POSITION], interacting spatially with 3D object. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner with name and title. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, clean minimal composition.] Contemporary, tech-forward aesthetic. Product photography quality, 8K resolution."
+"Modern carousel slide [NUMBER] of 10, 3D Object Hero style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with subtle gradient. Prominent 3D rendered [OBJECT DESCRIPTION] as hero element, studio lighting, realistic materials and reflections. Bold modern sans-serif text '[TEXT ON IMAGE]' positioned [POSITION], interacting spatially with 3D object. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner with name and title. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, clean minimal composition.] Contemporary, tech-forward aesthetic. Product photography quality, 8K resolution."
 
 </carousel_design_style_03>
 
@@ -1241,7 +1241,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Elegant carousel slide [NUMBER] of 10, Organic Blob Elegant style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Sophisticated organic blob shapes in [COLOR PALETTE] as background elements, overlapping and layered. Refined typography '[TEXT ON IMAGE]' in elegant font, positioned [POSITION] in clear space. [PHOTOGRAPHY OR ILLUSTRATION ELEMENT] integrated with blob composition. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title in bottom area, integrated with blob layout. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, blob shapes extend into full composition.] Contemporary, premium aesthetic. Soft, sophisticated color palette. High-end editorial quality, 8K resolution."
+"Elegant carousel slide [NUMBER] of 10, Organic Blob Elegant style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Sophisticated organic blob shapes in [COLOR PALETTE] as background elements, overlapping and layered. Refined typography '[TEXT ON IMAGE]' in elegant font, positioned [POSITION] in clear space. [PHOTOGRAPHY OR ILLUSTRATION ELEMENT] integrated with blob composition. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title in bottom area, integrated with blob layout. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, blob shapes extend into full composition.] Contemporary, premium aesthetic. Soft, sophisticated color palette. High-end editorial quality, 8K resolution."
 
 </carousel_design_style_04>
 
@@ -1309,7 +1309,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Clean carousel slide [NUMBER] of 10, 3D Character Clean style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background. Stylized 3D character [CHARACTER DESCRIPTION AND POSE/ACTION] as focal element, modern minimal design style, soft studio lighting. Friendly sans-serif text '[TEXT ON IMAGE]' positioned [POSITION]. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title bottom corner, separate from 3D character. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, 3D character is the sole visual personality.] Modern, approachable, clean aesthetic. Pixar-inspired quality, 8K resolution."
+"Clean carousel slide [NUMBER] of 10, 3D Character Clean style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background. Stylized 3D character [CHARACTER DESCRIPTION AND POSE/ACTION] as focal element, modern minimal design style, soft studio lighting. Friendly sans-serif text '[TEXT ON IMAGE]' positioned [POSITION]. [IF CREATOR INFO PROVIDED: Small circular avatar with name and title bottom corner, separate from 3D character. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, 3D character is the sole visual personality.] Modern, approachable, clean aesthetic. Pixar-inspired quality, 8K resolution."
 
 </carousel_design_style_05>
 
@@ -1377,7 +1377,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Sleek carousel slide [NUMBER] of 10, Dark Tech Gradient style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Dark [BASE COLOR] background with sophisticated [GRADIENT COLORS] gradient overlay. Subtle tech texture (fine grid/particle effect). Modern tech-forward typography '[TEXT ON IMAGE]' in light color, positioned [POSITION]. [TECH ELEMENT OR ABSTRACT VISUALIZATION] adding depth and visual interest. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle tech border bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, tech elements extend into full composition.] Premium, cutting-edge tech aesthetic. Sleek and sophisticated, 8K resolution."
+"Sleek carousel slide [NUMBER] of 10, Dark Tech Gradient style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Dark [BASE COLOR] background with sophisticated [GRADIENT COLORS] gradient overlay. Subtle tech texture (fine grid/particle effect). Modern tech-forward typography '[TEXT ON IMAGE]' in light color, positioned [POSITION]. [TECH ELEMENT OR ABSTRACT VISUALIZATION] adding depth and visual interest. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle tech border bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, tech elements extend into full composition.] Premium, cutting-edge tech aesthetic. Sleek and sophisticated, 8K resolution."
 
 </carousel_design_style_06>
 
@@ -1444,7 +1444,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Warm carousel slide [NUMBER] of 10, Layered Soft Emotional style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Soft [COLOR PALETTE] background with layered elements creating depth. Multiple layers including [LAYER ELEMENTS: photography, shapes, textures] at different depths with soft overlay effects. Warm, approachable typography '[TEXT ON IMAGE]' positioned [POSITION] within composition. [IF CREATOR INFO PROVIDED: Small circular avatar softly integrated into bottom area of layered composition. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, layered elements create full emotional composition.] Emotionally resonant, warm, inviting aesthetic. Dreamy editorial quality, 8K resolution."
+"Warm carousel slide [NUMBER] of 10, Layered Soft Emotional style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Soft [COLOR PALETTE] background with layered elements creating depth. Multiple layers including [LAYER ELEMENTS: photography, shapes, textures] at different depths with soft overlay effects. Warm, approachable typography '[TEXT ON IMAGE]' positioned [POSITION] within composition. [IF CREATOR INFO PROVIDED: Small circular avatar softly integrated into bottom area of layered composition. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, layered elements create full emotional composition.] Emotionally resonant, warm, inviting aesthetic. Dreamy editorial quality, 8K resolution."
 
 </carousel_design_style_07>
 
@@ -1511,7 +1511,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Professional carousel slide [NUMBER] of 10, Wire Pattern Professional style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with sophisticated geometric wireframe pattern overlay in [PATTERN COLOR]. Clean sans-serif typography '[TEXT ON IMAGE]' positioned [POSITION] within pattern structure. [PHOTOGRAPHY OR GRAPHIC ELEMENT] integrated with wireframe composition. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle geometric frame bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, wireframe pattern creates complete structural composition.] Professional, technical, sophisticated aesthetic. Clean and precise, 8K resolution."
+"Professional carousel slide [NUMBER] of 10, Wire Pattern Professional style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with sophisticated geometric wireframe pattern overlay in [PATTERN COLOR]. Clean sans-serif typography '[TEXT ON IMAGE]' positioned [POSITION] within pattern structure. [PHOTOGRAPHY OR GRAPHIC ELEMENT] integrated with wireframe composition. [IF CREATOR INFO PROVIDED: Small circular avatar with subtle geometric frame bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, wireframe pattern creates complete structural composition.] Professional, technical, sophisticated aesthetic. Clean and precise, 8K resolution."
 
 </carousel_design_style_08>
 
@@ -1578,7 +1578,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Warm carousel slide [NUMBER] of 10, Paper Line Art style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. [PAPER COLOR] paper texture background with visible grain. Hand-drawn line art illustration of [ILLUSTRATION SUBJECT] in [INK COLOR], organic and authentic style. Typography '[TEXT ON IMAGE]' in [HAND-LETTERED OR COMPLEMENTARY FONT STYLE], positioned [POSITION]. [IF CREATOR INFO PROVIDED: Small circular avatar with paper cutout styling bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, line art illustration creates complete human-feeling composition.] Warm, authentic, hand-crafted aesthetic. Artisanal quality, 8K resolution."
+"Warm carousel slide [NUMBER] of 10, Paper Line Art style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. [PAPER COLOR] paper texture background with visible grain. Hand-drawn line art illustration of [ILLUSTRATION SUBJECT] in [INK COLOR], organic and authentic style. Typography '[TEXT ON IMAGE]' in [HAND-LETTERED OR COMPLEMENTARY FONT STYLE], positioned [POSITION]. [IF CREATOR INFO PROVIDED: Small circular avatar with paper cutout styling bottom left corner. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, line art illustration creates complete human-feeling composition.] Warm, authentic, hand-crafted aesthetic. Artisanal quality, 8K resolution."
 
 </carousel_design_style_09>
 
@@ -1645,7 +1645,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Illustrated carousel slide [NUMBER] of 10, Illustrated Character Narrative style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. [ILLUSTRATION STYLE: editorial/whimsical/modern] illustrated scene with [BACKGROUND DESCRIPTION]. Illustrated character [CHARACTER DESCRIPTION AND ACTION] as focal element. Typography '[TEXT ON IMAGE]' in [COMPLEMENTARY STYLE] positioned [POSITION], integrated with illustration. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner as separate real-person element. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, illustrated character carries the visual personality.] Engaging, narrative-driven, artistically cohesive. Professional illustration quality, 8K resolution."
+"Illustrated carousel slide [NUMBER] of 10, Illustrated Character Narrative style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. [ILLUSTRATION STYLE: editorial/whimsical/modern] illustrated scene with [BACKGROUND DESCRIPTION]. Illustrated character [CHARACTER DESCRIPTION AND ACTION] as focal element. Typography '[TEXT ON IMAGE]' in [COMPLEMENTARY STYLE] positioned [POSITION], integrated with illustration. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner as separate real-person element. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, illustrated character carries the visual personality.] Engaging, narrative-driven, artistically cohesive. Professional illustration quality, 8K resolution."
 
 </carousel_design_style_10>
 
@@ -1712,7 +1712,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Dynamic carousel slide [NUMBER] of 10, Icon Cluster Energy style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background. Energetic cluster of custom icons related to [TOPIC], icons in [ICON STYLE AND COLORS], arranged in [CLUSTER ARRANGEMENT] creating visual energy. Bold typography '[TEXT ON IMAGE]' positioned [POSITION] in clear space within composition. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner in clear space. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, icon cluster creates complete energetic composition.] High-energy, informative, dynamic aesthetic. Crisp icon design, 8K resolution."
+"Dynamic carousel slide [NUMBER] of 10, Icon Cluster Energy style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background. Energetic cluster of custom icons related to [TOPIC], icons in [ICON STYLE AND COLORS], arranged in [CLUSTER ARRANGEMENT] creating visual energy. Bold typography '[TEXT ON IMAGE]' positioned [POSITION] in clear space within composition. [IF CREATOR INFO PROVIDED: Small circular avatar bottom left corner in clear space. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, icon cluster creates complete energetic composition.] High-energy, informative, dynamic aesthetic. Crisp icon design, 8K resolution."
 
 </carousel_design_style_11>
 
@@ -1779,7 +1779,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Clean carousel slide [NUMBER] of 10, Dotted Grid Personal Brand style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with [DOT COLOR] dotted grid pattern overlay as structural element. Professional photography of [SUBJECT] integrated with grid composition. Authoritative typography '[TEXT ON IMAGE]' positioned [POSITION], aligned with grid structure. [IF CREATOR INFO PROVIDED: Circular avatar as authority element, grid-aligned in bottom area with name and title. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, dotted grid and content create complete professional composition.] Clean, authoritative, personal brand aesthetic. Structured and professional, 8K resolution."
+"Clean carousel slide [NUMBER] of 10, Dotted Grid Personal Brand style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Clean [BACKGROUND COLOR] background with [DOT COLOR] dotted grid pattern overlay as structural element. Professional photography of [SUBJECT] integrated with grid composition. Authoritative typography '[TEXT ON IMAGE]' positioned [POSITION], aligned with grid structure. [IF CREATOR INFO PROVIDED: Circular avatar as authority element, grid-aligned in bottom area with name and title. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, dotted grid and content create complete professional composition.] Clean, authoritative, personal brand aesthetic. Structured and professional, 8K resolution."
 
 </carousel_design_style_12>
 
@@ -1846,7 +1846,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Artistic carousel slide [NUMBER] of 10, Conceptual Metaphor Moody style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Moody conceptual photography of [VISUAL METAPHOR DESCRIPTION] representing [CONCEPT]. Atmospheric lighting, [MOOD DESCRIPTORS: dramatic/ethereal/contemplative]. Elegant typography '[TEXT ON IMAGE]' positioned [POSITION] within photographic composition, with [OVERLAY TREATMENT IF NEEDED] for readability. [IF CREATOR INFO PROVIDED: Small circular avatar subtly integrated into bottom area of composition. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, conceptual photography creates complete artistic statement.] Artistic, thought-provoking, moody aesthetic. Fine art photography quality, 8K resolution."
+"Artistic carousel slide [NUMBER] of 10, Conceptual Metaphor Moody style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Moody conceptual photography of [VISUAL METAPHOR DESCRIPTION] representing [CONCEPT]. Atmospheric lighting, [MOOD DESCRIPTORS: dramatic/ethereal/contemplative]. Elegant typography '[TEXT ON IMAGE]' positioned [POSITION] within photographic composition, with [OVERLAY TREATMENT IF NEEDED] for readability. [IF CREATOR INFO PROVIDED: Small circular avatar subtly integrated into bottom area of composition. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, conceptual photography creates complete artistic statement.] Artistic, thought-provoking, moody aesthetic. Fine art photography quality, 8K resolution."
 
 </carousel_design_style_13>
 
@@ -1913,7 +1913,7 @@ IF linkUrl IS NOT PROVIDED:
 
 **AI Generation Prompt Template:**
 
-"Vibrant carousel slide [NUMBER] of 10, Gradient Blob Aspirational style, 4:5 aspect ratio (1080x1350px). [NARRATIVE BEAT] slide. Colorful gradient blobs in [COLOR PALETTE: e.g., coral to purple, teal to gold] as primary visual elements, layered and overlapping. Modern confident typography '[TEXT ON IMAGE]' positioned [POSITION] in clear space within blob composition. [PHOTOGRAPHY OR GRAPHIC ELEMENT] integrated with gradient blobs. [IF CREATOR INFO PROVIDED: Small circular avatar integrated with blob composition in bottom area. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, gradient blobs create complete aspirational composition.] Vibrant, optimistic, aspirational aesthetic. Bright and energetic, 8K resolution."
+"Vibrant carousel slide [NUMBER] of 10, Gradient Blob Aspirational style, 3:4 aspect ratio (1080x1440px). [NARRATIVE BEAT] slide. Colorful gradient blobs in [COLOR PALETTE: e.g., coral to purple, teal to gold] as primary visual elements, layered and overlapping. Modern confident typography '[TEXT ON IMAGE]' positioned [POSITION] in clear space within blob composition. [PHOTOGRAPHY OR GRAPHIC ELEMENT] integrated with gradient blobs. [IF CREATOR INFO PROVIDED: Small circular avatar integrated with blob composition in bottom area. IF CREATOR INFO NOT PROVIDED: No avatar on this slide, gradient blobs create complete aspirational composition.] Vibrant, optimistic, aspirational aesthetic. Bright and energetic, 8K resolution."
 
 </carousel_design_style_14>
 
@@ -2098,7 +2098,7 @@ When you write the detailed image generation prompt (the `prompt` field that mus
   "imageNumber": 3,
   "narrativeBeat": "value",
   "textOnImage": "This Will Make Some People Angry | The uncomfortable truth is that most professionals are optimizing the wrong metrics. Wake-up time doesn't correlate with success, execution speed does.",
-  "prompt": "Dynamic carousel slide 3 of 10, Dark Glow Impact style, 4:5 aspect ratio (1080x1350px). Value slide. Deep navy background with subtle texture. 
+  "prompt": "Dynamic carousel slide 3 of 10, Dark Glow Impact style, 3:4 aspect ratio (1080x1440px). Value slide. Deep navy background with subtle texture. 
 
 HEADLINE TEXT: Large condensed bold sans-serif in ALL CAPS reading 'THIS WILL MAKE SOME PEOPLE ANGRY' stacked vertically, occupying left 60% of slide, positioned in upper third. The word 'ANGRY' has neon cyan glow effect with soft halo behind it creating neon sign appearance.
 
@@ -2216,7 +2216,7 @@ Every image prompt you generate must meet these specifications:
 **Required Components (every prompt must include):**
 
 1. Slide position and context ("Carousel slide X of 10, [STYLE NAME] style")
-2. Aspect ratio specification ("4:5 aspect ratio, 1080x1350px")
+2. Aspect ratio specification ("3:4 aspect ratio, 1080x1440px")
 3. Narrative beat identification ("[hook/value/climax/cta] slide")
 4. Background specification per style guidelines
 5. Primary visual element description

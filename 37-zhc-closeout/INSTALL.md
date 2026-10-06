@@ -78,14 +78,14 @@ reach `run-closeout.sh`:
 ## Cost Cap Configuration
 
 By default the skill uses cost-conscious model choices:
-- Images: `gpt-image-2.5` (~$0.04 each)
-- Video: `veo3_fast` (~$0.40)
+- Images: `gpt-image-2-5-sunburst-text-to-image` first, `nano-banana-2` as the fallback
+- Video: `gemini-omni-video` first, `veo3_fast` as the fallback
 
-To force the higher-quality alternatives, set in the container env BEFORE the closeout fires:
-- `ZHC_IMAGE_MODEL=nano-banana-pro` — overrides gpt-image-2.5
-- `ZHC_VIDEO_MODEL=veo3` — overrides veo3_fast (Veo 3.1 Quality, ~$0.80)
+To force a different model, set in the container env BEFORE the closeout fires (model ids must match Skill 66's registry, `66-kie-image/models.json`):
+- `ZHC_IMAGE_MODEL=<id>` - overrides the Infographic #2 / visual-intelligence primary (default `gpt-image-2-5-sunburst-text-to-image`)
+- `ZHC_CELEBRATION_VIDEO_MODEL=veo3` - overrides the video primary (`ZHC_VIDEO_MODEL` is accepted as an alias); Veo 3.1 Quality
 
-Worst-case cost per client closeout: ~$0.60 in KIE credits.
+Prices: not stated here; use `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`. Canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ## Uninstall (Emergency Only)
 
@@ -103,7 +103,7 @@ Both the workforce-build-resume and closeout-resume crons will no-op gracefully 
 
 ## Known Issues
 
-- **`nano-banana-2` availability is account/region-dependent on KIE.** On accounts/regions where the primary image model is not enabled, KIE returns HTTP 422; `scripts/generate-infographics.sh` detects this and automatically falls back to `gpt-image-2-5-sunburst-text-to-image` (the proven safety net). Set `ZHC_IMAGE_MODEL` to override the primary slug. (The marketing-name slug `gemini-3-1-flash-image` is NOT accepted by KIE — use `nano-banana-2`.)
+- **Image model availability is account/region-dependent on KIE.** `nano-banana-2` returned HTTP 422 "model name not supported" on one client account while working on others. Both image scripts try `gpt-image-2-5-sunburst-text-to-image` first (AGENTS.md N43) and fall back to `nano-banana-2`; on a 422 "not supported" they switch to the other model immediately. Set `ZHC_IMAGE_MODEL` to override the primary slug. (The marketing-name slug `gemini-3-1-flash-image` is NOT accepted by KIE - use `nano-banana-2`.)
 - **`gemini-omni-video` is not enabled on every KIE account.** When the Gemini Omni Video endpoint is unavailable, `scripts/generate-celebration-video.sh` auto-falls-back to `veo3_fast` on its third attempt. Set `ZHC_CELEBRATION_VIDEO_MODEL=veo3_fast` (or `veo3`) to force the general-purpose Veo path.
 
 File any new issues at https://github.com/trevorotts1/openclaw-onboarding/issues.

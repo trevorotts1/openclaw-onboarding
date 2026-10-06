@@ -80,12 +80,12 @@ The skin-tone preservation line is a HARD RULE — skin lightening is the most c
 
 | Mode | What changes | What's locked | Primary endpoint |
 |---|---|---|---|
-| **A. Location** | Setting/background/environment | Identity, (optionally) outfit | Nano Banana 2 or GPT-Image 2.5 I2I |
-| **B. Wardrobe** | Clothing ("blue suit", "red dress", brand-color outfit) | Identity, pose if on existing photo | Seedream 4.5 Edit (on a photo) / NB2 (new scene) |
-| **C. Action & Pose** | Body position, activity (speaking on stage, walking city street, arms crossed power pose) | Identity, wardrobe optional | Nano Banana 2 or GPT-Image 2.5 I2I |
+| **A. Location** | Setting/background/environment | Identity, (optionally) outfit | GPT-Image 2.5 I2I (Nano Banana 2 fallback) |
+| **B. Wardrobe** | Clothing ("blue suit", "red dress", brand-color outfit) | Identity, pose if on existing photo | Seedream 4.5 Edit (on a photo) / GPT-Image 2.5 I2I (new scene; NB2 fallback) |
+| **C. Action & Pose** | Body position, activity (speaking on stage, walking city street, arms crossed power pose) | Identity, wardrobe optional | GPT-Image 2.5 I2I (Nano Banana 2 fallback) |
 | **D. Editorial / Lifestyle** | Full scene built to a style card (e.g., "client in style SI-003") | Identity | GPT-Image 2.5 I2I (refs + LONG style spec) |
 | **E. Slide Integration** | Client placed into a PPT family's visual world | Identity + the deck's foundation style | Per PPT card routing; include foundation block + identity lock |
-| **F. Stylized / Cartoon** | Render style (3D animated character, comic illustration, watercolor portrait, flat vector avatar) | Recognizable identity through the stylization | GPT-Image 2.5 I2I or NB2 |
+| **F. Stylized / Cartoon** | Render style (3D animated character, comic illustration, watercolor portrait, flat vector avatar) | Recognizable identity through the stylization | GPT-Image 2.5 I2I (NB2 fallback) |
 | **G. Retouch** | Targeted corrections on a REAL photo | Everything except the named fix | **Seedream 4.5 Edit — the true editor** |
 
 Mode prompts COMBINE: Identity Lock Block + mode instructions + (if style-driven) the style card prompt with {SUBJECT} = "this exact person from the reference images."

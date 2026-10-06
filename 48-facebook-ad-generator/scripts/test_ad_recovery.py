@@ -278,9 +278,51 @@ def _proof_ghl_resume_recovers(tmp) -> list:
     return f
 
 
+_STUB_KEY = "".join(
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"[(i * 37 + 11) % 57]
+    for i in range(32))   # synthetic high-entropy fixture, not a credential
+
+
+def _proof_keyless_paid_parks(manifest, tmp, oc_root) -> list:
+    """(F) A PAID run with no KIE key (or only the installer placeholder) can never
+    proceed: --recover PARKS it as AF-FBAD-KIE-BALANCE; the legacy --phase path aborts
+    (exit 4) in phase0_preflight."""
+    f = []
+    saved = os.environ.get("KIE_API_KEY")
+    try:
+        for label, val in (("unset", None), ("placeholder", "YOUR_CLIENT_KIE_API_KEY_HERE")):
+            if val is None:
+                os.environ.pop("KIE_API_KEY", None)
+            else:
+                os.environ["KIE_API_KEY"] = val
+            rd = _mk_run(tmp)
+            _good(rd)
+            v, code = ad.cmd_recover(rd, manifest, allow_ephemeral=True)
+            if not (v.get("action") == "PARK" and v.get("parked_by") == "AF-FBAD-KIE-BALANCE"
+                    and code == 5):
+                f.append(f"(F:{label}) keyless paid recover expected PARK AF-FBAD-KIE-BALANCE "
+                         f"(exit 5), got {v.get('action')}/{v.get('parked_by')}/exit={code}.")
+            try:
+                ad.phase0_preflight(rd)
+                f.append(f"(F:{label}) phase0_preflight did not abort a keyless paid run.")
+            except SystemExit as e:
+                if e.code != 4:
+                    f.append(f"(F:{label}) phase0_preflight exit {e.code}, expected 4.")
+    finally:
+        if saved is None:
+            os.environ.pop("KIE_API_KEY", None)
+        else:
+            os.environ["KIE_API_KEY"] = saved
+    return f
+
+
 def main():
     manifest = ad.load_manifest()
     failures = []
+    # Paid fixtures run with a stub key and a stubbed live balance (no network); the
+    # keyless behavior is proven separately in (F).
+    os.environ["KIE_API_KEY"] = _STUB_KEY
+    abc._fetch_kie_balance = lambda *a, **k: 1.0e9
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         oc_root = tmp / "oc-root"
@@ -308,6 +350,7 @@ def main():
         failures += _proof_dangerous_stops(manifest, tmp, oc_root)
         failures += _proof_paid_tmp_refused(manifest, tmp, oc_root)
         failures += _proof_ghl_resume_recovers(tmp)
+        failures += _proof_keyless_paid_parks(manifest, tmp, oc_root)
 
     RECOVERY_COVERAGE.parent.mkdir(parents=True, exist_ok=True)
     RECOVERY_COVERAGE.write_text(json.dumps(coverage, indent=2))
