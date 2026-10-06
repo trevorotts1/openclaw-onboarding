@@ -479,9 +479,17 @@ obs_verify_skill() {
     qc_script="$skill_path/qc-${skill_name}.sh"
   else
     # first qc-*.sh in the folder
+    # qc-built-*.sh are by-hand BUILT-ARTIFACT helpers (they need an argument), so
+    # skip them: skill 44's gate is qc-convert-and-flow.sh, not qc-built-workflow.sh.
     for c in "$skill_path"/qc-*.sh; do
+      case "$(basename "$c")" in qc-built-*) continue ;; esac
       [ -x "$c" ] && { qc_script="$c"; break; }
     done
+    if [ -z "$qc_script" ]; then
+      for c in "$skill_path"/qc-*.sh; do
+        [ -x "$c" ] && { qc_script="$c"; break; }
+      done
+    fi
   fi
   if [ -n "$qc_script" ]; then
     # DEFECT FIX: some qc-*.sh gates (e.g. skill 38's F17/F21/U-1/U-2/U-6

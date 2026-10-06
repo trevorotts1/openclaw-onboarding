@@ -1404,6 +1404,7 @@ jobs:
           bash tests/unit/archived-skill-retirement.test.sh
           bash tests/unit/update-summary.test.sh
           bash tests/unit/frontdoor-999-clone-9router.test.sh
+          bash tests/unit/box-fixes-gates.test.sh
 
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash

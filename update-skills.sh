@@ -4810,6 +4810,15 @@ if [ ! -r "$SKILLS_DIR/../platform/common.sh" ]; then
     echo "FATAL: portable platform helper was not delivered; Command Center launch cannot run" >&2
     exit 8
 fi
+# lib-shared.sh is sourced by skill QC scripts as "$SKILL_DIR/../lib-shared.sh"
+# (= $SKILLS_DIR/lib-shared.sh). Nothing delivered it, so boxes kept a stale copy
+# without BACKUP_DIR_DEFAULT that breaks Skill 02 under `set -u`. Refresh it every
+# roll (non-fatal: a failure only degrades the skills that source it).
+if [ -f "$ONBOARDING_DIR/lib-shared.sh" ]; then
+    mkdir -p "$SKILLS_DIR" && cp -p "$ONBOARDING_DIR/lib-shared.sh" "$SKILLS_DIR/lib-shared.sh" 2>/dev/null \
+      && echo "  ✓ lib-shared.sh delivered to $SKILLS_DIR" \
+      || echo "  ⚠ could not deliver lib-shared.sh to $SKILLS_DIR" >&2
+fi
 
   # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
   # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
