@@ -61,7 +61,7 @@ The skill resolves variables at runtime from these sources. Confirm each is pres
 | Owner profile, audience | `~/.openclaw/USER.md` |
 | API keys (GHL, WordPress, Medium, etc.) | `~/.openclaw/secrets/.env` |
 | Platform URLs, location IDs | `~/.openclaw/secrets/.env` (e.g., `GOHIGHLEVEL_LOCATION_ID`) |
-| Image model preference | `~/.openclaw/config/image-model.json` |
+| Image model preference | `~/.openclaw/config/image-model.json` (default and expected value: `gpt-image-2-5-sunburst-text-to-image`; Nano Banana is never the default) |
 | Video specs (resolution, bitrate) | `~/.openclaw/config/video-specs.json` |
 | Posting cadence, time-of-day | `~/.openclaw/config/social-cadence.json` |
 
@@ -113,8 +113,9 @@ baseline) and `45-design-intelligence-library/library/social-media-designs/_RULE
 not a post-hoc check. Then, before the Image Generator submits ANY prompt, it MUST clear
 `scripts/pregen_prompt_gate.py check` (playbook.md Section 8a) — ratio/pixel spec, brand
 colors, merged avoid-list, verbatim Section-18 copy, and the brand-safety clause are all
-required (exit 3 if any is missing); every text-overlay prompt MUST route to Ideogram V3
-DESIGN, never Nano Banana (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
+required (exit 3 if any is missing); every image uses KIE GPT Image 2.5 Sunburst
+(`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43).
+Nano Banana is never primary and is refused for any text-overlay prompt (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
 is fixed and re-run, never generated. If the week's image asset instead comes from the
 Graphics department, the Image Generator step is REPLACED by the Section 19a input-quality
 gate: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5.

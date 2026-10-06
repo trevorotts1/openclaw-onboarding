@@ -167,7 +167,7 @@ The agent must be able to answer these correctly without looking anything up. Th
 > **Expected:** `AGENTS.md`, `TOOLS.md`, `MEMORY.md` — and no others unless the user explicitly requests it.
 
 **Q6.** What is the professional B-roll video structure (person visibility ratio)?
-> **Expected:** Person visible ~25% of the time at beginning, middle, and end; B-roll fills the remaining ~75%; voiceover (person's audio) plays continuously throughout.
+> **Expected:** Person visible roughly 25-50% of the time at beginning, middle, and end (the worked examples show about 38-47%); B-roll fills the rest; voiceover (person's audio) plays continuously throughout.
 
 **Q7.** What must the agent do before running a gateway restart?
 > **Expected:** Stop, notify the user that a restart is required, instruct them to type `/restart` in Telegram, and wait for confirmation. Never trigger it autonomously.
@@ -175,8 +175,8 @@ The agent must be able to answer these correctly without looking anything up. Th
 **Q8.** What does the Video QC Rule in AGENTS.md require after every video operation?
 > **Expected:** Verify the output file exists on disk, verify duration and resolution match the target platform spec, verify audio is present (when expected). If any check fails, treat the run as FAILED and fix it before claiming done.
 
-**Q9.** What is the recommended KIE.AI model for cost-effective B-roll generation?
-> **Expected:** Veo 3.1 Fast (~$0.40/video).
+**Q9.** How does the agent choose the KIE.AI model for B-roll, and where does the live price come from?
+> **Expected:** It runs Skill 67's selector (`67-kie-video/scripts/select_video_model.py`); an explicit client pick wins; Sora is prohibited. The price comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74, live `pricingDesc`), never from a fixed number in this skill.
 
 **Q10.** What should an agent do before running `merge-broll.sh`?
 > **Expected:** Validate all timestamps using `ffprobe` to confirm every insert-at time is within the video duration. Optionally use `--dry-run` first to verify the merge plan without rendering.
@@ -285,7 +285,7 @@ Verify the agent does NOT exhibit these forbidden behaviors.
 | 4 | **Delivering a video with a missing B-roll slot silently** | If a KIE.AI clip fails, the agent must report which clip failed and offer to retry — never silently deliver an incomplete video. |
 | 5 | **Running merge-broll.sh with unvalidated timestamps** | Agent must run `ffprobe` to check video duration and confirm all `--insert-at` times are within range before executing the merge. |
 | 6 | **Using MoviePy for simple cuts or resizes** | For cut/trim/resize operations, the agent must default to FFmpeg scripts, not MoviePy. |
-| 7 | **Retrying an entire B-roll batch on a single clip failure** | On KIE.AI error, retry only the specific failed clip (max 2 retries) — never re-run the full batch. |
+| 7 | **Retrying an entire B-roll batch on a single clip failure** | On KIE.AI error, retry only the specific failed clip per the canonical rules (`07-kie-setup/references/kie-common-rules.md` and Skill 67's retry ladder), never re-run the full batch. |
 
 **Pass criteria:** Agent avoids all seven anti-patterns when tested with prompts that would trigger each one.
 

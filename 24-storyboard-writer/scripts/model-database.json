@@ -1,4 +1,5 @@
 {
+  "_status": "DATED, NON-AUTHORITATIVE SNAPSHOT (last verified 2024-01-15). Not the canonical model database. Which model to use is owned by Skill 67 (67-kie-video: models.json + scripts/select_video_model.py). Live prices come from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74; fallback snapshot 74-kie-live-adapter/references/kie-model-registry.json). The price numbers in this file are FALLBACK CONSTANTS kept only because model_database.py reads them for the cost estimate; they are not a price authority. If this file disagrees with Skill 67 or Skill 74, they win. Data is kept for storyboard clip-length math only. Sora rows are historical: the Video department prohibits OpenAI Sora.",
   "version": "1.0.0",
   "last_updated": "2024-01-15",
   "models": [
@@ -28,6 +29,7 @@
     },
     {
       "id": "sora",
+      "policy_note": "PROHIBITED by the Video department (ai-video-generator-specialist.md). Historical data only. Never a default, never offered.",
       "name": "Sora",
       "provider": "OpenAI",
       "description": "Cinematic video generation with multiple duration options",
@@ -167,6 +169,7 @@
     "calculation_method": "Based on public API pricing and credit systems"
   },
   "recommendations": {
+    "_note": "Historical 2024 suggestions kept as data. Not a routing policy. Model choice: Skill 67 selector. The sora entry is prohibited.",
     "short_social_content": ["veo", "seed-dance"],
     "cinematic_productions": ["sora", "kling"],
     "budget_conscious": ["wan", "veo"],
