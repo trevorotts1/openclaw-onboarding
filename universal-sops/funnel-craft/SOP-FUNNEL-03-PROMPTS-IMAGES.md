@@ -1,4 +1,4 @@
-# SOP-FUNNEL-03: IMAGE PROMPTS (5,000–19,000) + GENERATION + PROVENANCE
+# SOP-FUNNEL-03: IMAGE PROMPTS (Kie rule 12 budget) + GENERATION + PROVENANCE
 
 **Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
 **Master authority:** `49-signature-funnel/MASTERDOC.md` §4 (the 8-block order + Signature Grade Block)
@@ -11,8 +11,7 @@
 
 ## 0. WHY THIS SOP EXISTS
 
-A short or generic prompt produces a flat, off-brand image. The prompt band is SACRED: **5,000–19,000
-stripped characters** per prompt, enforced by a two-floor gate (length floor + structure/excellence
+A short or generic prompt produces a flat, off-brand image. The prompt band is SACRED and follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap; the Skill 74 v1.1 prompt-budget change in this release aligns the prover `prove_sf_prompt_floor.py` to it), enforced by a two-floor gate (length floor + structure/excellence
 floor). A failing prompt physically CANNOT reach a paid Kie call.
 
 ## 1. THE 8-BLOCK BUILD ORDER (every prompt)
@@ -24,7 +23,7 @@ end-load the negative block.
 
 ## 2. HARD RULES
 
-- **Band:** 5,000–19,000 stripped chars (AF-FUN-PROMPT-FLOOR / AF-FUN-PROMPT-CEILING).
+- **Band:** per rule 12 of `07-kie-setup/references/kie-common-rules.md` (AF-FUN-PROMPT-FLOOR / AF-FUN-PROMPT-CEILING).
 - **Signature Grade Block** (~1,290 chars) embedded verbatim in block 4 of EVERY prompt (AF-FUN-PROMPT-GRADE).
 - **Negative block** present in the final paragraph (AF-FUN-PROMPT-NEGATIVE).
 - **No em dashes** anywhere in an image prompt (AF-FUN-PROMPT-EMDASH) — the model-safety rule.
@@ -36,8 +35,11 @@ end-load the negative block.
 
 Images are generated ONLY through the Skill 47 Kie adapter (`kie_image.py`): `GPT-Image-2.5`,
 text-to-image by default, 16:9 & 2K defaults (Sec 4 → 16:9, Sec 12 → 3:4). The optional
-`reference_images` hook maps to the adapter's `image_input` (≤8 refs; auto image-to-image) with the
-mandatory style-only guard appended. NEVER hand-roll a Kie `createTask` — that is AF-FUN-CANONICAL-BYPASS.
+`reference_images` hook hands the references to the adapter (≤8 refs; auto image-to-image) with the
+mandatory style-only guard appended. The adapter owns the wire field name for the references; the
+live GPT-Image-2.5 image-to-image route takes `input_urls` (AGENTS.md N43), so never write either
+field by hand. Always use the client's own Kie key, and see `07-kie-setup/references/kie-common-rules.md`
+for the shared Kie rules. NEVER hand-roll a Kie `createTask`; that is AF-FUN-CANONICAL-BYPASS.
 
 ## 4. PROVENANCE
 

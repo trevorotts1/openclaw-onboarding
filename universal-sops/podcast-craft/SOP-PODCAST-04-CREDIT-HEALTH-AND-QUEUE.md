@@ -35,9 +35,9 @@ The cron is created with the no-deliver flag so it does not announce into the cl
 
 Per-service check order is cheapest method first, and a model turn is never the method:
 
-- Ollama Cloud: the account credit or usage endpoint over HTTPS with the key in a request header only; never a daemon turn.
+- Ollama Cloud: no account credit or usage endpoint exists (pinned in `config/smoke-endpoints.json`), so there is no free probe: the service reports UNKNOWN and is skipped, never spent on to find out, and never checked through a local daemon turn. (The Anthology engine's smoke test instead treats a 200 model list from `ollama.com/api/tags` as reachability only, never as remaining credit.)
 - OpenRouter: the key endpoint that returns limit and usage and costs nothing.
-- Kie.ai: the remaining-credit lookup, else an HTTPS reachability check (status code only).
+- Kie.ai: the remaining-credit lookup (`GET https://api.kie.ai/api/v1/chat/credit`, Bearer key from the client's own Kie credential), else an HTTPS reachability check (status code only). Never `/api/v1/account/balance` or `/api/v1/user/credits`; those endpoints are dead.
 - Fish Audio: the wallet or balance endpoint, else an HTTPS reachability check. The free tier is never probed and never used for anything client-related.
 
 Rules the script enforces in code:

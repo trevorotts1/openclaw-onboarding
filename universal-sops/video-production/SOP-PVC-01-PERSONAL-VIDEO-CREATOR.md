@@ -11,7 +11,7 @@
 **Persona hints (persona-selector-v2.py `sops.persona_hints`):** `vsevolod-pudovkin-film-technique`, `thorne-youtube-unlocked`, `video-funnels`
 **Purpose:** Create polished videos featuring a consenting person's likeness and Fish Audio voice while preventing lip-sync drift, identity inconsistency, broken scene transitions, mismatched durations, and poor audio mixing.
 
-> **What changed in v2.0.** Every QC gate now has a measurable pass/fail number or a probe script. Every critical tool has a fallback hierarchy and an error-recovery ladder. Credentials are SecretRef-only (never hardcoded). The 5,000–19,000 stripped-char image-prompt band is enforced on every likeness/reference prompt. Research-backed identity-preservation, lip-sync-input, and motion-policy best practices are folded into each phase. A Command Center integration section routes the job to the `video` department card. Nothing in this SOP may be satisfied by "the agent will figure it out" — if a step cannot be automated, it names the exact human attestation required.
+> **What changed in v2.0.** Every QC gate now has a measurable pass/fail number or a probe script. Every critical tool has a fallback hierarchy and an error-recovery ladder. Credentials are SecretRef-only (never hardcoded). The image-prompt length budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`) is enforced on every likeness/reference prompt. Research-backed identity-preservation, lip-sync-input, and motion-policy best practices are folded into each phase. A Command Center integration section routes the job to the `video` department card. Nothing in this SOP may be satisfied by "the agent will figure it out", if a step cannot be automated, it names the exact human attestation required.
 
 ---
 
@@ -55,13 +55,13 @@ This SOP is designed around the following stack. Each capability lists a **prima
 - **Likeness image creation or editing**
   - Primary: GPT Image 2 (`gpt-image-2`) in ChatGPT or the OpenAI API
   - Fallback 1: Agnes Image 2.1 Flash (`agnes-image-2.1-flash`) in image-to-image mode
-  - Fallback 2: Kie.ai/Kai.ai image-generation access
+  - Fallback 2: Kie.ai image generation (Skill 66 `kie-image`, GPT Image 2.5, the client's own `KIE_API_KEY`)
   - Fallback 3: Another image model that supports high-fidelity image-to-image identity preservation
   - **Rule:** always image-to-image from an authorized reference photograph; never rebuild a face from text when a reference exists.
 
 - **Video generation**
   - Primary: Agnes Video V2.0 — Model ID `agnes-video-v2.0`
-  - Fallback (only if Agnes is down and the client approves a substitute in writing): Kie `gemini-omni-video` default / `veo3_fast` fallback via Skill 47. Record the substitution. Do **not** silently swap to a native provider — the Movie Producer provider-audit gate (`AF-VID-PROVIDER-AUDIT`) requires Kie-only sovereignty on client boxes.
+  - Fallback (only if Agnes is down and the client approves a substitute in writing): Kie `gemini-omni-video` default / `veo3_fast` fallback via Skill 47. Record the substitution. Do **not** silently swap to a native provider; the Movie Producer provider-audit gate (`AF-VID-PROVIDER-AUDIT`) requires Kie-only sovereignty on client boxes. Model choice on the Kie route is owned by Skill 67 `kie-video`. Before any Kie call, run the credit preflight (estimated cost x 1.30 against `GET /api/v1/chat/credit`) and persist every result file the moment it is ready. The shared Kie rules (live endpoints, rate limits, retention, key handling) live in `07-kie-setup/references/kie-common-rules.md`.
 
 - **Voice generation**
   - Primary: Fish Audio S2.1-Pro — production model ID `s2.1-pro`
@@ -190,7 +190,8 @@ All credentials resolve through a **SecretRef** — the triple `{ source, provid
 |---|---|---|
 | Fish Audio API key | `FISH_AUDIO_API_KEY` | Voice master + timestamps |
 | OpenAI / GPT-image key | `OPENAI_API_KEY` | Likeness reference images |
-| Agnes / Kie key | `KIE_API_KEY` (client box) | Agnes image + video generation |
+| Agnes key | `AGNES_API_KEY` (client box) | Agnes image + video generation (a separate credential from the Kie key) |
+| Kie key | `KIE_API_KEY` (client box, the client's own) | Kie fallback image + video generation only; never used for Agnes calls |
 | Sync Labs key | `SYNC_LABS_API_KEY` | Lip-sync correction |
 | Suno credential | `SUNO_CREDENTIAL` | Optional music |
 | Fish voice model ID | `FISH_VOICE_REFERENCE_ID` | Cloned/approved voice (treat as secret) |
@@ -322,16 +323,16 @@ Reject source images with: heavy compression; extreme wide-angle distortion; str
 
 Create `01_likeness/identity_bible.md` recording immutable facial characteristics (face shape, skin tone, eye shape/color, nose, lips, smile, teeth, eyebrows, hair, facial hair, age range), wardrobe, accessories, camera defaults (framing, lens feel, camera height, eye line, background, lighting), and identity-failure indicators. The identity bible is the **single source of truth** every prompt is built from.
 
-## 7.3 Create the master talking-head reference — 5,000–19,000-char prompt band
+## 7.3 Create the master talking-head reference: prompt length budget
 
-**MANDATORY (repo standard, from the Agnes/GPT-image prompt-band fix):** every likeness/reference image prompt — GPT-image-2 or Agnes image-to-image — MUST clear the **5,000–19,000 stripped-character band** before it is sent to the image provider. This is the same two-floor gate the Graphics/Sales-Page/Avatar skills enforce (`prove_sp_prompt_floor.py`). A short prompt cannot carry the identity specificity needed to prevent face drift.
+**MANDATORY (repo standard, from the Agnes/GPT-image prompt-band fix):** every likeness/reference image prompt, GPT-image-2 or Agnes image-to-image, MUST clear the prompt length budget of rule 12 of `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap; the Skill 74 v1.1 prompt-budget change in this release aligns `probe_prompt_band.py` to it) before it is sent to the image provider. This is the same two-floor gate the Graphics/Sales-Page/Avatar skills enforce (`prove_sp_prompt_floor.py`). A short prompt cannot carry the identity specificity needed to prevent face drift.
 
 **Enforcement:** `scripts/probe_prompt_band.py` measures the stripped length of every prompt in `01_likeness/*/prompt.txt` (and the Agnes/GPT-image prompt ledgers) and HARD-FAILS:
-- `AF-PVC-PROMPT-FLOOR` if `< 5,000` stripped chars
-- `AF-PVC-PROMPT-CEILING` if `> 19,000` stripped chars
+- `AF-PVC-PROMPT-FLOOR` if below the rule 12 floor
+- `AF-PVC-PROMPT-CEILING` if above the model cap
 - `AF-PVC-PROMPT-IDENTITY` if the identity-anchor + negative blocks are missing
 
-The templates below are **scaffolds**. Each `[BRACKET]` is filled from the identity bible, and the prompt is then expanded with the subject's specific, non-repeating identity detail until it clears 5,000 stripped chars. Padding by repeating one paragraph is caught by the distinct-words density floor in the probe.
+The templates below are **scaffolds**. Each `[BRACKET]` is filled from the identity bible, and the prompt is then expanded with the subject's specific, non-repeating identity detail until it clears the rule 12 floor. Padding by repeating one paragraph is caught by the distinct-words density floor in the probe.
 
 ### GPT Image 2 reference prompt template (expand to ≥ 5,000 stripped chars)
 
@@ -393,7 +394,7 @@ altered features, text, watermark, extra people, or mouth obstruction.
 
 ## 7.4 Reference approval gate (measurable)
 
-The master reference must pass **all** of: identity similarity to the authorized subject (human-attested side-by-side); accurate skin tone; accurate hair and facial hair; mouth visible; no facial distortion; correct orientation; correct framing; no unwanted text; no extra people; no accessories that complicate mouth tracking. `scripts/probe_reference_image.py` validates orientation/resolution/framing from the file; identity similarity is a named human attestation recorded in `11_qc/scene_qc.csv`. If the face is not clearly the authorized subject, reject it — do not proceed to video.
+The master reference must pass **all** of: identity similarity to the authorized subject (human-attested side-by-side); accurate skin tone; accurate hair and facial hair; mouth visible; no facial distortion; correct orientation; correct framing; no unwanted text; no extra people; no accessories that complicate mouth tracking. No probe script exists for the reference image (the cluster ships no `probe_reference_image.py`), so orientation, resolution, and framing are checked by hand against the project manifest and attested together with identity similarity, a named human attestation recorded in `11_qc/scene_qc.csv`. If the face is not clearly the authorized subject, reject it and do not proceed to video.
 
 ## 7.5 Create controlled reference variants
 

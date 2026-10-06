@@ -10,12 +10,12 @@ Every run and every asset is measured against the table below. A violation is a 
 
 | AF code | Stage | Level | Trigger |
 |---|---|---|---|
-| `AF-SM-PREFLIGHT-CREDITS` | P0 | run | Kie.ai credits < 200. |
-| `AF-SM-PREFLIGHT-BALANCE` | P0 | run | OpenRouter balance < $5. |
+| `AF-SM-PREFLIGHT-CREDITS` | P0 | run | Kie.ai credits below the planned image/video asset estimate (default 200 credits; a logged `creditEstimates.images` wins), or the balance cannot be confirmed; checked only when the plan requests images or video. |
+| `AF-SM-PREFLIGHT-BALANCE` | P0 | run | OpenRouter balance below the planned authoring estimate (default $5; a logged `creditEstimates.text` wins), or the balance cannot be confirmed. |
 | `AF-SM-PREFLIGHT-TOKEN` | P0 | run | GHL Private Integration Token invalid against `GET /locations/{locationId}`. |
 | `AF-SM-PREFLIGHT-CONFIG` | P0 | run | a required client-config field is missing/empty. |
 | `AF-SM-PREFLIGHT-STATUS` | P0 | run | client status != Paid. |
-| `AF-SM-DISCOVERY-DRIFT` | P0 | run | C2 live connected-accounts reconcile drift: a configured platform has no live GHL account, OR a live-connected platform is missing from the config enum without a logged `platformsExcluded` entry (the BANNED silent-miss), OR the live listing is unconfirmable in `--live` mode. |
+| `AF-SM-DISCOVERY-DRIFT` | P0 | run | the C2 live connected-accounts listing cannot be confirmed (unreachable or rate-limited) for a GHL-delivery plan. A configured platform with no healthy account, or a connected platform missing from the config enum without a logged `platformsExcluded` entry, is a visible per-account warning in the reconcile report (never silent), not a run-wide block. |
 | `AF-SM-PLAN-INCOMPLETE` | P1 | run | `plan.json` missing `themeOfWeek` or `plannerSheetId`. |
 | `AF-SM-CONTENT-MISSING` | P2 | run | `content.json` not authored. |
 | `AF-SM-CONTRACT-JSON` | P3 | asset | an LLM output is not valid JSON / not the declared object. |
@@ -60,7 +60,7 @@ Every run and every asset is measured against the table below. A violation is a 
 | `AF-SM-BLOG-BODY` | P10 | asset | blog body under 700 words (client-overridable, logged). |
 | `AF-SM-PODCAST-SCRIPT` | P11 | asset | podcast script outside 1,500-2,000 words or < 1 `[emotion]` tag per paragraph. |
 | `AF-SM-PODCAST-DURATION` | P11 | asset | podcast audio outside 600-900 s or under 128 kbps (ffprobe). |
-| `AF-SM-PODCAST-COVER` | P11 | asset | podcast cover not 1400x1400 JPEG. |
+| `AF-SM-PODCAST-COVER` | P11 | asset | podcast cover not exactly 1400x1400 JPEG (this fold's own band; the Podcast Production Engine cover is 1500 to 3000). |
 | `AF-SM-DEFERRED` | defer | run | a capability deferred to a named later version was requested (syndicate C9 v0.4.0 / narrated-video C8 v0.3.0 / persona-adapter C10 v0.5.0 / memory-adapter C11 v0.5.0). The stub fails CLOSED with a clear "deferred to vX.Y.Z" message. |
 
 ## Section 2 — How to run it

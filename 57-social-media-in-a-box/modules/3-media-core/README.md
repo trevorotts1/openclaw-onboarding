@@ -15,7 +15,7 @@ digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-im
 
 ### Video
 Storyboard Architect (08; **3–7 scenes, sum EXACTLY 25.0s**, max 1.5 spoken words/sec) →
-deterministic math validator (`AF-SM-STORYBOARD`) → Kie.ai Sora → poll → download.
+deterministic math validator (`AF-SM-STORYBOARD`) → the Skill 67 (kie-video) model selector (Skill 67) → poll → download.
 
 ### Carousel image (the QC loop)
 GPT Image 2.5 sunburst generate (12; 3:4, 2K, typographic `textOnImage`; 3:4 is the N43 substitution for 4:5) → **Gemini QC bot** casual-viewer
