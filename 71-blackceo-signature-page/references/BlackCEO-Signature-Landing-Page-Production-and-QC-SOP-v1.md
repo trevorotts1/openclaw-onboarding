@@ -42,7 +42,7 @@ The default deliverables for one selected page version are **one full desktop wi
 
 For page-stage work, every applicable required quality criterion must score at least **8/10**, with no automatic failure. A section at 6 cannot be hidden by an overall average of 9. The goal is strong work, not artificially inflating a score.
 
-The primary Graphics repository is stricter for prompts and generated images: retain its **8.5 minimum average**, with **every individual applicable criterion at least 8** under Trevor's newer requirement, and zero auto-fails. The new per-image 5,000-20,000-character range and the current repository's 19,000 ceiling are distinguished in the image guide. This document does not change live validators.
+The primary Graphics repository is stricter for prompts and generated images: retain its **8.5 minimum average**, with **every individual applicable criterion at least 8** under Trevor's newer requirement, and zero auto-fails. The per-image prompt length is the KIE prompt budget (owner order 2026-10-05, `07-kie-setup/references/kie-common-rules.md` rule 12: 95 to 100 percent of the chosen model's character maximum, never below 80 percent), which supersedes the older 5,000-20,000 range and the 19,000 ceiling. This document does not change live validators.
 
 A missing requirement, wrong image, exposed private label, unsupported route, truncated text, broken main action, or unresolved public placeholder is an automatic failure, regardless of aesthetic score.
 
@@ -94,6 +94,8 @@ A checkout URL is sufficient when the button goes to a checkout page. Do not dem
 For booking: request the existing booking link or supported booking embed. For a download/lead magnet: request the actual form action and delivery destination. For a challenge: capture the actual dates/duration and access delivery only when missing. Do not assume all challenges are free or all events are ninety minutes.
 
 ### C. Record the outcome and only the needed image questions
+
+Record the image-engine answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 Record what successful action produces: confirmation, download, event access, booking or checkout success. Reuse existing workflows; do not fabricate bonuses, SMS flows or communities. Collect exact founder/brand names and usable logo/identity assets where required.
 
@@ -193,13 +195,13 @@ Do not generate throwaway campaign photography just to fill this first mockup. E
 
 ### A. Use the image guide, not remembered shortcuts
 
-Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md). For every actual generated-asset entry, author one complete ten-element prompt, 5,000-20,000 characters each. Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
+Read the current Graphics rules and [Image Prompt Creation Guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md). For every actual generated-asset entry, author one complete ten-element prompt sized to the KIE prompt budget for the chosen model (`prompt-budget`, 95 to 100 percent of the model maximum, never below 80 percent; rule 12). Use camera, expression, hair, skin-tone and color-grade intelligence where relevant. People-free assets explicitly remain people-free.
 
 Keep numeric technical ratio/dimension fields in the request/manifest, matched to the prompt's composition. Put all actual rendering instructions, reference directives and negatives inside the counted prompt. Resolve alternatives before submission. No Midjourney flags, spintax, obsolete reference links, shortened generator summaries or blanket ratios.
 
 ### B. Run mechanical checks and independent prompt review
 
-Check each final normalized string's length, declared band, exact text locks, references, negative block, runtime compatibility and hash. Current live repository gates cap at 19,000; use the documented compatible range or separately authorized policy implementation, not a bypass. An automatically generated mechanical report is not independent creative QC.
+Check each final normalized string's length against `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <file>` (exit 3 means add the reported characters, exit 4 means cut them), plus declared band, exact text locks, references, negative block and hash. Do not use a bypass or silently truncate. An automatically generated mechanical report is not independent creative QC.
 
 Repair only failed prompts. No routine human approval is required. A prompt that passes advances immediately. Apply the three-attempt failed-only rule and existing stricter repo triggers.
 
@@ -207,19 +209,19 @@ Repair only failed prompts. No routine human approval is required. A prompt that
 
 ## Stage 8 - Generate the images through the selected KIE route
 
-In OpenClaw, run image generation through Skill 66 (Kie) or Skill 63 (Agnes) per the client's configured engine, using the client's own keys and the job's image cap; do not call image providers directly.
+In OpenClaw, run image generation through the route in `references/kie-generation-route.md`: Skill 66 (policy) then Skill 74 (transport) for Kie, or Skill 63 (Agnes) when the client selected it, using the client's own keys and the job's image cap; do not call image providers directly and never hand-write a createTask call.
 
-### A. Verify and pin the available GPT image model
+### A. Resolve and pin the GPT image model
 
-Use the latest suitable supported GPT image model through KIE as requested. Verify its actual endpoint, reference fields, ratios, resolution options and prompt capacity at the start of the job, then record the pin. A model name in an older document is not guaranteed to remain latest. Do not silently substitute another generator, including a native chat image tool, when the task requires KIE.
+The default is the newest GPT Image generation in KIE's live catalog, resolved by `kie_live_adapter.py latest-family --family gpt-image` (rule 13; GPT Image 2.5 Sunburst today). An explicit client request or a department pin overrides it. Record the resolved model id, its source and its schema limits at the start of the job. A model name in an older document is not guaranteed to remain latest, and no model id is typed from memory. Apply the N43 ratio rules (3:1, 1:3 and 9:21 use the legacy route; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16). Do not silently substitute another generator, including a native chat image tool, when the task requires KIE.
 
 Use client-owned credentials, permitted resources and the authorized spend cap. No keys appear in prompts, public HTML or handoff files. Preserve repository isolation and permission rules. The authoring of this SOP does not authorize a paid generation job.
 
 ### B. Submit the exact passed prompts
 
-One asset per task. Keep the hash/count unchanged after review. Use the account-wide rolling limiter: **no more than 20 new image-generation submissions per 15 seconds**, including repairs and concurrent jobs. The limit is shared, not twenty for each agent. Obey any stricter vendor restriction and 429 backoff. Delivery batches of four/eight/six are packaging choices, not independent rate limits. [W3]
+One asset per task. Keep the hash/count unchanged after review. For each image run, in order: `validate`, `preflight` (balance must cover price x 1.30), `prompt-budget --check`, then `submit --mode active`, `wait`, and `save` immediately (all Skill 74 commands). The KIE limit is 20 createTask requests per 10 seconds per account (rule 3), including repairs and concurrent jobs. The limit is shared, not twenty for each agent. Obey 429 backoff. Delivery batches of four/eight/six are packaging choices, not independent rate limits. [W3]
 
-Track task IDs and state. A 200 response or queued task is not finished. Check an uncertain request's existing state before repeating it. Use the configured callback architecture when available; otherwise poll with the permitted backoff. Download completed masters promptly rather than using temporary generation links as permanent website hosting. [W3]
+Track task IDs and state. A 200 response or queued task is not finished. Check an uncertain request's existing state before repeating it; Skill 74 never retries createTask after a network error. Use the configured callback architecture (Skill 46) when available; otherwise Skill 74 `wait` polls with backoff. Download completed masters immediately (links can expire within 24 hours) rather than using temporary generation links as permanent website hosting. Record the transport receipt that `stage_gate.py` requires. [W3]
 
 **Output:** original masters tied to asset IDs, actual tasks/receipts, measured dimensions and the submitted prompt version. **QC/repair:** completion and provenance must be real. Missing returned output is a failure, not an invitation to reuse an unrelated older picture.
 
@@ -393,15 +395,15 @@ A later repair updates the current artifact and only affected references. It doe
 
 ## Sources and authority notes
 
-The production order, universal scope, below-8 repair rule, failed-only three-attempt allowance, 5,000-20,000 per-image prompt requirement, Google Fonts preference, image naming, shared 20-per-15-second submission ceiling, and no-private-label rule are Trevor's current instructions. The specific action templates and stage deliverables implement those instructions.
+The production order, universal scope, below-8 repair rule, failed-only three-attempt allowance, Google Fonts preference, image naming and no-private-label rule are Trevor's current instructions. The per-image prompt length and the submission limit are governed by `07-kie-setup/references/kie-common-rules.md` (rules 12 and 3), which replaced the earlier 5,000-20,000 range and the earlier 20-per-15-second house ceiling. The specific action templates and stage deliverables implement those instructions.
 
-The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md#15-source-record-and-translation-boundaries). Those sources retain their separate independent roles, stricter 8.5 averages and current 19,000-character runtime cap. The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
+The source Graphics rules and retrieved hashes are recorded in [the image guide](BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md#15-source-record-and-translation-boundaries). Those sources retain their separate independent roles and stricter 8.5 averages; their older 19,000-character cap is superseded for KIE by the prompt budget (rule 12). The supplied legacy Midjourney document informs aesthetic guidance only; it does not control provider syntax or the current page sequence.
 
 Public technical references checked September 30, 2026:
 
 - W1: Google Fonts CSS2 API, https://developers.google.com/fonts/docs/css2 . Named font family/weight/style requests.
 - W2: FontFaceSet.load, https://developer.mozilla.org/en-US/docs/Web/API/FontFaceSet/load . Loaded FontFace objects; not proof of every glyph or final visual fit.
-- W3: KIE Getting Started, https://kie.ai/getting-started . Task lifecycle, current per-account submission limit and temporary media retention. The 15-second house window is deliberately stricter.
+- W3: KIE Getting Started, https://kie.ai/getting-started . Task lifecycle, current per-account submission limit and temporary media retention; see `kie-common-rules.md` rules 3 and 8 for the verified figures.
 - W4: HighLevel Sites Overview, https://help.gohighlevel.com/support/solutions/articles/155000001633-sites-overview . Shared funnel/website builder structure and save/publish distinction.
 - W5: HighLevel Payment Links, https://help.gohighlevel.com/support/solutions/articles/155000002177-payment-links . Hosted checkout tied to actual products/prices; not proof every order form has portable embed code.
 - W6: HighLevel hydration event, https://help.gohighlevel.com/support/solutions/articles/155000002421-hydration-event-in-custom-code-in-funnels . Actual custom-code preview lifecycle guidance.

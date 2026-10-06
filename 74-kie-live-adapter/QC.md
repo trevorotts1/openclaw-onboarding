@@ -2,7 +2,7 @@
 
 ## Hermetic gate (runs anywhere, no network, no key)
 
-`bash qc-74-kie-live-adapter.sh` must exit 0. It checks the file set, JSON validity, version agreement (skill-version.txt v1.1.1 and SKILL.md version 1.1.1), registry JSON validity, shell syntax, no file named model-map.json, runs the unit tests (fake transport, plus a localhost stub for the no-mutation test), and proves the skill folder is byte-identical afterwards.
+`bash qc-74-kie-live-adapter.sh` must exit 0. It checks the file set, JSON validity, version agreement (skill-version.txt v1.1.2 and SKILL.md version 1.1.2), registry JSON validity, shell syntax, no file named model-map.json, runs the unit tests (fake transport, plus a localhost stub for the no-mutation test), and proves the skill folder is byte-identical afterwards.
 
 Unit test files in tests/: test_adapter_contract.py, test_shadow_mode.py, test_no_chat_agent_mutation.py, test_registry_commands.py (price, preflight, prompt-budget, validate fallback, latest-family, success-rate, callBackUrl, mode override, registry build with a fake transport).
 
