@@ -447,7 +447,8 @@ def _estimated_cost(run_dir: Path) -> float:
 
 def _load_kie_api_key() -> str:
     import os
-    return os.environ.get("KIE_API_KEY", "") or ""
+    # A placeholder is NOT-SET (shared secret canon decides).
+    return abc.real_kie_key(os.environ.get("KIE_API_KEY", "")) or ""
 
 
 def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:
@@ -466,8 +467,15 @@ def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:
     est = _estimated_cost(run_dir)
     api_key = _load_kie_api_key()
     if not api_key:
-        print("=== PHASE-0 — no Kie API key on this box; balance preflight deferred to "
-              "the generation subprocess ===", flush=True)
+        # Same rule as Skill 47 (SK1-67): a PAID job with no real Kie key can never run
+        # and its balance cannot be verified. Fail LOUD now, never proceed.
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: " + (abc.kie_balance_preflight(run_dir, est, None) or
+                                   "AF-FBAD-KIE-BALANCE: this is a PAID Kie batch but "
+                                   "KIE_API_KEY is not set on this box, so the credit "
+                                   "balance cannot be verified."), file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
     reason = abc.kie_balance_preflight(run_dir, est, api_key or None)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)

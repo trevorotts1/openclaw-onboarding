@@ -12,20 +12,24 @@
 #        Driven by templates/workforce-org-chart/render.mjs.
 #
 #   workflow  (Infographic #2 - How Work Flows)
-#     -> KIE.AI Nano Banana 2 (Gemini 3.1 Flash Image). Much better text
-#        rendering than GPT Image 2.5, and the workflow diagram is stylized
-#        enough that AI image gen is fine. Fallback: gpt-image-2-5-sunburst-text-to-image.
+#     -> KIE.AI GPT Image 2.5 sunburst (gpt-image-2-5-sunburst-text-to-image)
+#        is the PRIMARY: AGENTS.md N43 (AF-KIE-IMAGE-MODEL-PIN) pins the fleet
+#        to gpt-image-2-5-sunburst-*, and Skill 66 (kie-image) names it the
+#        default. The workflow diagram is stylized enough that AI image gen is
+#        fine. Fallback: nano-banana-2 (Nano Banana 2 / Gemini 3.1 Flash Image).
 #        Override the primary with env var ZHC_IMAGE_MODEL.
+#        Order matches generate-visual-intelligence.sh (sunburst first,
+#        nano-banana-2 fallback). Before v13.1.6 this script ran the reverse
+#        order, which contradicted N43 and its sibling script.
 #        v10.X.4: corrected slug from gemini-3-1-flash-image (KIE 422,
-#        not supported) to nano-banana-2. Confirmed accepted by
-#        api.kie.ai/api/v1/jobs/createTask on 2026-05-26.
-#        v10.X.8: nano-banana-2 availability is ACCOUNT/REGION-dependent on
-#        KIE. It returned 422 "model name not supported" on a client's
+#        not supported) to nano-banana-2.
+#        v10.X.8: model availability is ACCOUNT/REGION-dependent on KIE.
+#        nano-banana-2 returned 422 "model name not supported" on a client's
 #        KIE account on 2026-05-27 even though it worked on other accounts.
-#        This is expected. nano-banana-2 stays the PRIMARY; the retry loop
-#        falls back to gpt-image-2-5-sunburst-text-to-image (the proven safety net) on
-#        attempt 3, which succeeded. Do NOT change
-#        the primary slug; the fallback chain is the fix. See KNOWN-ISSUES.md.
+#        That 422 handling is kept below: if the CURRENT model is rejected as
+#        not supported, the loop switches to the other model immediately
+#        instead of burning a second attempt. See KNOWN-ISSUES.md.
+#        Canonical KIE rules: 07-kie-setup/references/kie-common-rules.md
 #
 # Both shapes of .departments (array AND keyed object) are tolerated, since
 # production state files have been observed using both.
@@ -284,8 +288,8 @@ PROMPT="$(_literal_replace "$PROMPT" '{{INDUSTRY}}'         "$INDUSTRY")"
 PROMPT="$(_literal_replace "$PROMPT" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
 PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-nano-banana-2}"
-FALLBACK_MODEL="gpt-image-2-5-sunburst-text-to-image"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
+FALLBACK_MODEL="nano-banana-2"
 
 submit_job() {
   local model="$1"
@@ -352,10 +356,10 @@ while (( attempt < 3 )); do
   if [[ -z "$task_id" ]]; then
     submit_err=$(echo "$submit_resp" | head -c 300)
     log "WARN" "attempt $attempt: submit failed, response: $submit_err"
-    # nano-banana-2 availability is account/region-dependent on KIE. If the
-    # primary slug is rejected as not-supported (422 "model name not
-    # supported"), do not waste a second primary attempt; jump straight to the
-    # gpt-image-2-5-sunburst-text-to-image safety net. (Added for a client launch, 2026-05-27.)
+    # Model availability is account/region-dependent on KIE. If the primary
+    # slug is rejected as not-supported (422 "model name not supported"), do
+    # not waste a second primary attempt; jump straight to the fallback
+    # (nano-banana-2 by default). (Added for a client launch, 2026-05-27.)
     if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
        && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
       log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
