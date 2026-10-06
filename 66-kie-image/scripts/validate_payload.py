@@ -22,7 +22,7 @@ import os
 import re
 import sys
 
-VERSION = "2.0.4"
+VERSION = "2.0.5"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -111,7 +111,7 @@ def check_refs(model, refs_value, errors, warnings):
             errors.append(
                 "reference image count %d exceeds published maximum %d (%s)" % (
                     len(refs_value), max_count, model["canonical_model_id"]))
-        elif (model.get("canonical_model_id") == "seedream/4-5-edit"
+        elif (model.get("canonical_model_id") == "seedream/4.5-edit"
                 and max_count == 14 and len(refs_value) >= 11):
             warnings.append(
                 "reference count %d is inside the field-editor maximum (14) but the README "
@@ -440,15 +440,15 @@ def selftest():
          _base("seedream/5-lite-image-to-image", {"image_urls": _refs(15)}), False,
          expect_err_contains="exceeds published maximum 14")
     case("seedream 4.5 edit 14 refs OK (warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(14)}), True,
+         _base("seedream/4.5-edit", {"image_urls": _refs(14)}), True,
          expect_warn_contains="10 reference images")
     case("seedream 4.5 edit 11 refs OK (warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(11)}), True,
+         _base("seedream/4.5-edit", {"image_urls": _refs(11)}), True,
          expect_warn_contains="10 reference images")
     case("seedream 4.5 edit 10 refs OK (no warn)",
-         _base("seedream/4-5-edit", {"image_urls": _refs(10)}), True)
+         _base("seedream/4.5-edit", {"image_urls": _refs(10)}), True)
     case("seedream 4.5 edit 15 refs FAIL",
-         _base("seedream/4-5-edit", {"image_urls": _refs(15)}), False,
+         _base("seedream/4.5-edit", {"image_urls": _refs(15)}), False,
          expect_err_contains="exceeds published maximum 14")
     case("wan 2.7 image 9 refs OK",
          _base("wan/2-7-image", {"input_urls": _refs(9)}), True)
