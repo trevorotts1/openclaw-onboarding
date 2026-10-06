@@ -1,12 +1,12 @@
 # Runtime readiness — W0-04 / DTS-104
 
-Owned scope: this file only. No merge, no publish, no self-approve. Repo root is not a git repo (`Is a git repository: false` at invocation), so no commit exists for this unit — artifact = this file. Test evidence: `/Users/blackceomacmini/drama-song-factory-build/lanes/DTS-104-lane/check.py` (run output in `evidence.md` in same lane).
+Owned scope: this file only. No merge, no publish, no self-approve. Repo root is not a git repo (`Is a git repository: false` at invocation), so no commit exists for this unit — artifact = this file. Test evidence: `<build-root>/lanes/DTS-104-lane/check.py` (run output in `evidence.md` in same lane).
 
 ## 1. Workflow guard pattern and caps
 
 Name pattern enforced in the validator, invoked by `guard.py validate()`:
 
-- `/Users/blackceomacmini/.claude/hooks/workflow-guard/validate.mjs:8` — `const NAME_RE=/^[a-z0-9]{2,12}-W[0-9]{1,2}-(build\+qc|build|qc|repair|merge|test)-[A-Z]{2,5}[0-9]{3,}(\.\.[A-Z]{2,5}[0-9]{3,})?-([0-9]{1,2})L$/;`
+- `~/.claude/hooks/workflow-guard/validate.mjs:8` — `const NAME_RE=/^[a-z0-9]{2,12}-W[0-9]{1,2}-(build\+qc|build|qc|repair|merge|test)-[A-Z]{2,5}[0-9]{3,}(\.\.[A-Z]{2,5}[0-9]{3,})?-([0-9]{1,2})L$/;`
 - `validate.mjs:9` — `const NAME_EXAMPLE='pres-W2-build+qc-SKR012..SKR019-8L';`
 - `validate.mjs:33` — bad `meta.name` error tells caller to `Regenerate with make-workflow.py --program <slug> --wave <n> --phase build+qc.`
 - `validate.mjs:105` — `const TOTAL_CEILING=200;` (total-call runaway backstop; `validate.mjs:106` errors above it)
@@ -37,15 +37,15 @@ Running-at-once accounting in `guard.py`:
 
 ## 2. W0-04 launch receipt — PROVEN IDs
 
-Source: guard journal DB `/Users/blackceomacmini/.claude/hooks/workflow-guard/state/guard.sqlite3`, table `launches`, row `id=call_155luf0a` (queried 2026-10-06):
+Source: guard journal DB `~/.claude/hooks/workflow-guard/state/guard.sqlite3`, table `launches`, row `id=call_155luf0a` (queried 2026-10-06):
 
 - Workflow name: `dts-W0-build+qc-DTS101..DTS102-2L`
 - Run ID: `wf_4b8b2d4f-edb`
 - Task ID: `wisxp6m2t`
 - State: `COMPLETED`
-- Transcript: `/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/a0195f87-bf13-4d28-a159-25b8bc09e965.jsonl` (3.0M, exists)
+- Transcript: `<session-dir>.jsonl` (3.0M, exists)
 - Receipt: `{"response_keys": ["status", "taskId", "taskType", "workflowName", "runId", "summary", "transcriptDir", "scriptPath"], "event": "PostToolUse", "task_id": "wisxp6m2t", "run_id": "wf_4b8b2d4f-edb", "visibility": "UNVERIFIED"}`
-- Journal dir: `/Users/blackceomacmini/.claude-nine/projects/-Users-blackceomacmini/a0195f87-bf13-4d28-a159-25b8bc09e965/subagents/workflows/wf_4b8b2d4f-edb/` — `journal.jsonl` 8 lines: line 1 `{"type":"launched"}`, lines 2-3 `started build:DTS-101` / `build:DTS-102`, line 4 `result` DTS-101 `status PASS`, line 5+ `started qc:DTS-101`. Agent journals for both build lanes present in same dir.
+- Journal dir: `<session-dir>/subagents/workflows/wf_4b8b2d4f-edb/` — `journal.jsonl` 8 lines: line 1 `{"type":"launched"}`, lines 2-3 `started build:DTS-101` / `build:DTS-102`, line 4 `result` DTS-101 `status PASS`, line 5+ `started qc:DTS-101`. Agent journals for both build lanes present in same dir.
 
 Visibility verdict: **PROVEN IDs** — background launch returned Task ID + Run ID, receipt row exists, journal + transcript exist with worker events. Guard's own `visibility` marker reads `UNVERIFIED` (means native `/workflows` rendered-tree check not recorded in DB, not that launch failed). No bare `/workflows` tree screenshot in evidence — that half stays UNVERIFIED.
 
@@ -53,7 +53,7 @@ Visibility verdict: **PROVEN IDs** — background launch returned Task ID + Run 
 
 Concrete member models come from the 999-setup wiring script (checked 2026-10-06):
 
-- `/Users/blackceomacmini/drama-song-factory-build/999-setup/.claude/skills/nine-router-setup/scripts/common/configure-nine-router.mjs:450-452` — `dsPrefix="ds"`, `olPrefix="ollama"`, `agPrefix="agnes"`.
+- `<build-root>/999-setup/.claude/skills/nine-router-setup/scripts/common/configure-nine-router.mjs:450-452` — `dsPrefix="ds"`, `olPrefix="ollama"`, `agPrefix="agnes"`.
 - `:383-384` — `dsMaxPrefix = "ds-max"` (custom DeepSeek node for max-thinking Opus lane).
 - `:460` — `const dsMaxFlash = \`${dsMaxPrefix}/deepseek-v4-flash(max)\`; // DS Max = Flash + max`
 - `:465` — `const agFlash = \`${agPrefix}/agnes-2.5-flash\`;`
@@ -80,10 +80,10 @@ Build lane assumption: host ceiling = `cpu_count - 2 = 10`, hard ceiling 10 → 
 
 ## 5. QC seat — bound fallback pending W1-08 pinning
 
-No `policy.qcRoute` exists for this program yet: `find /Users/blackceomacmini/drama-song-factory-build -maxdepth 2 -name .spec-protocol.json` returns nothing (2026-10-06). Bound rule is the packet fallback:
+No `policy.qcRoute` exists for this program yet: `find <build-root> -maxdepth 2 -name .spec-protocol.json` returns nothing (2026-10-06). Bound rule is the packet fallback:
 
-- `/Users/blackceomacmini/drama-song-factory-build/packet/CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_BUILD_DIRECTIVE.md:253` — `**QC route:** use the bound project's explicit \`policy.qcRoute\` when present. If absent, follow the current approved technical-QC seat rule (\`sonnet\` alias under Claude-Nine; Sonnet under plain Claude Code), resolving the actual provider/model before the first verdict. ... \`sonnet-chain\` is not automatically independent of \`opus-chain\`. See \`QC-REPAIR.md\` ...`
-- `/Users/blackceomacmini/drama-song-factory-build/packet/claude-nine-swarm/QC-REPAIR.md:10` — `| QC/recheck | The bound project's explicit **\`policy.qcRoute\`** when present. Otherwise use the current approved technical-QC seat rule: **\`sonnet\` alias for Claude-Nine; Sonnet for plain Claude Code**. Resolve and record its actual model before the first verdict. |`
+- `<build-root>/packet/CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_BUILD_DIRECTIVE.md:253` — `**QC route:** use the bound project's explicit \`policy.qcRoute\` when present. If absent, follow the current approved technical-QC seat rule (\`sonnet\` alias under Claude-Nine; Sonnet under plain Claude Code), resolving the actual provider/model before the first verdict. ... \`sonnet-chain\` is not automatically independent of \`opus-chain\`. See \`QC-REPAIR.md\` ...`
+- `<build-root>/packet/claude-nine-swarm/QC-REPAIR.md:10` — `| QC/recheck | The bound project's explicit **\`policy.qcRoute\`** when present. Otherwise use the current approved technical-QC seat rule: **\`sonnet\` alias for Claude-Nine; Sonnet for plain Claude Code**. Resolve and record its actual model before the first verdict. |`
 - `QC-REPAIR.md:12` — no-QC-pin + default-collides path: select approved callable independent seat, bind before use.
 - `QC-REPAIR.md:16` — W0-04 resolves concrete assignments before first verdict.
 

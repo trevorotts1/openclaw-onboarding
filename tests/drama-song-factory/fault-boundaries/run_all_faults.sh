@@ -1,7 +1,7 @@
 #!/bin/sh
 # run_all_faults.sh: execute every fault-boundary test, print summary table.
 cd "$(dirname "$0")" || exit 2
-LANE=/Users/blackceomacmini/drama-song-factory-build/lanes/DTS-404-lane
+LANE="${DRAMA_SONG_BUILD_ROOT}/lanes/DTS-404-lane"
 mkdir -p "$LANE"
 pass=0; fail=0; failed=""; rows=""
 for t in test_*.py; do

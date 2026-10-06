@@ -7,7 +7,7 @@ waiting 3, parked 4, rejected 5, error 1.
 
 ## Where run state lives
 
-- Build ledger: `/Users/blackceomacmini/drama-song-factory-build/run/` holds
+- Build ledger: `<build-root>/run/` holds
   `state.json` (schema `blackceo.drama-song-factory.state/v1`,
   `build_started_unix` = T0). This is build-orchestration state, not campaign
   spend authority.

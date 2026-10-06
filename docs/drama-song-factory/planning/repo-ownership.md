@@ -6,9 +6,9 @@ Live inspection 2026-10-06 ~11:30 -0400. Method per repo: `git fetch origin main
 
 | Repo | Default branch | origin/main HEAD sha | Inspected tip subject | Local clone |
 |---|---|---|---|---|
-| trevorotts1/openclaw-onboarding | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `f7504fe727d984493ddd3a036c8cc303315382ce` (2026-10-06 09:18:17 -0400, Merge PR #1550 batch/auto-merge) | Merge pull request #1550 | `~/openclaw-onboarding` CLONED (`/Users/blackceomacmini/openclaw-onboarding`, remote `https://github.com/trevorotts1/openclaw-onboarding.git`) |
-| trevorotts1/blackceo-command-center | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `f20edec080e9c5167de577b6ae6290f85db972c6` (2026-10-06 11:12:55 -0400, Merge PR #483) | Merge pull request #483 fix/persona-company-unresolved-house-voice | `~/blackceo-command-center` CLONED (`/Users/blackceomacmini/blackceo-command-center`, remote `https://github.com/trevorotts1/blackceo-command-center.git`) |
-| trevorotts1/999-setup | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `2992a444ca5544fba864631e1a9570147a071e42` (2026-10-05 20:21:03 -0400, Merge PR #26) | Merge pull request #26 sync/blackceo-signature-page-1.1.0-fix | `/Users/blackceomacmini/drama-song-factory-build/999-setup` CLONED (remote `https://github.com/trevorotts1/999-setup.git`) |
+| trevorotts1/openclaw-onboarding | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `f7504fe727d984493ddd3a036c8cc303315382ce` (2026-10-06 09:18:17 -0400, Merge PR #1550 batch/auto-merge) | Merge pull request #1550 | `~/openclaw-onboarding` CLONED (`~/openclaw-onboarding`, remote `https://github.com/trevorotts1/openclaw-onboarding.git`) |
+| trevorotts1/blackceo-command-center | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `f20edec080e9c5167de577b6ae6290f85db972c6` (2026-10-06 11:12:55 -0400, Merge PR #483) | Merge pull request #483 fix/persona-company-unresolved-house-voice | `~/blackceo-command-center` CLONED (`~/blackceo-command-center`, remote `https://github.com/trevorotts1/blackceo-command-center.git`) |
+| trevorotts1/999-setup | main (`refs/remotes/origin/HEAD` -> `origin/main`) | `2992a444ca5544fba864631e1a9570147a071e42` (2026-10-05 20:21:03 -0400, Merge PR #26) | Merge pull request #26 sync/blackceo-signature-page-1.1.0-fix | `~/drama-song-factory-build/999-setup` CLONED (remote `https://github.com/trevorotts1/999-setup.git`) |
 
 ## 2. Numbered skill slot scan (`~/openclaw-onboarding`, dirs `[0-9]*` at repo root)
 

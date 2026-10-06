@@ -47,9 +47,10 @@ EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 # upgrade path: read cap from the published versioned profile per run.
 DEFAULT_REPAIR_CAP = 2
 
-DEFAULT_PROFILE = os.path.expanduser(
-    "/Users/blackceomacmini/drama-song-factory-build/"
-    "core/acceptance-profile.json")
+DEFAULT_PROFILE = os.environ.get("DRAMA_SONG_PROFILE") or os.path.join(
+    os.environ.get("DRAMA_SONG_BUILD_ROOT",
+                   str(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))),
+    "core", "acceptance-profile.json")
 
 VERDICTS = ("FAIL", "PASS", "UNAVAILABLE")
 
