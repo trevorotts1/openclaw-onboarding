@@ -32,6 +32,35 @@ bash scripts/routing-mode.sh threshold [N]
 | "just watch it, don't change anything" | `routing-mode.sh set shadow` |
 | "is routing working?" | `routing-mode.sh status` |
 
+## Which engine decides: the Jev model, else the local engine
+
+JEV now calls the Jev model. In `auto` and `model` mode, for any message the released
+packs do not already answer word for word, the bridge asks the Jev model one question
+for the message type and one for the department, using the first path that exists:
+
+1. **The box's own Jev key** (`TYPESAFE_API_KEY`, or `JEV_API_KEY`, or `JEV_TYPESAFE_API_KEY`). Preferred.
+2. **Else the box's OpenRouter key** (`OPENROUTER_API_KEY`): the same Jev model, reached through OpenRouter.
+3. **Else the local engine**, exactly as it behaved before. Also used when Jev errors,
+   times out, answers badly, or is not sure (top probability under 0.6). The bridge never fails
+   because of Jev.
+
+`legacy`, `off` and `shadow` send nothing to anyone. Keys are read from this box's own
+stores only (process environment, `$OC_CONFIG/secrets/.env`, `$OC_CONFIG/.env`,
+`openclaw.json` `env.vars`); placeholders never count; key values are never logged.
+
+**Spending:** there is no budget limit and no budget store. The default spending rule allows
+spend and transmit for the Jev decision purpose (Jev costs about 4 cents per million tokens).
+
+**Time:** Command Center kills the bridge after 3 seconds. The whole Jev attempt is capped at
+2.2 seconds (own key gets up to 1.2 s, OpenRouter gets what is left), so the local engine
+always has room to answer.
+
+**Seeing which path ran, without noise:** `routing-check.sh` prints one `routing-jev-path`
+line (`own-key`, `openrouter` or `local-only`, from key names only). The bridge also writes a
+`jev_path` line to `routing-events.jsonl` only when the path CHANGES, not per decision. Nothing
+is sent to anyone and nothing new is scheduled; the line appears whenever the existing health
+check already runs.
+
 ## The tripwire (automatic, never touches an owner's choice)
 
 When JEV routing fails **N times in a row** (default 5; `routing-mode.sh threshold N`
@@ -69,6 +98,8 @@ never writes, never sends. Prints one verdict per line:
 
 - `routing-mode` — which mode and WHO chose it (env / store / default / tripped);
 - `routing-tripwire` — armed / tripped (flag path named for Rescue Rangers) / how close;
+- `routing-jev-path`: which path the Jev model would use (`own-key` / `openrouter` /
+  `local-only`), from key NAMES only, never values;
 - `routing-works` — the installed bridge answers a capability probe (2 s cap);
   in `model` mode, whether the box's default model resolves. `off`/`legacy` is an
   honest WARN (owner chose it), a corrupt store FAILS, "cannot tell" is never a pass.
@@ -89,8 +120,10 @@ enum update in the paired release, then `model` works end to end.
 |---|---|
 | `shared-utils/routing_switch.py` | the ONE writer: store, tripwire, events, flag |
 | `shared-utils/model_route.py` | `model` mode pick: own-default-model resolution + the ask |
-| `shared-utils/decision-engine.py` | counts outcomes (auto/model only) and calls the model pick when rules cannot place a task |
+| `shared-utils/jev_live.py` | the Jev chain for the bridge: own key, else OpenRouter, over the existing ladder; unlimited-spend default rule |
+| `shared-utils/decision-engine.py` | asks the Jev chain first, keeps the local engine as the answer when it fails; counts outcomes (auto/model only) and calls the model pick when rules cannot place a task |
 | `scripts/routing-mode.sh` | owner switch (`status` / `set` / `reset` / `threshold`) |
 | `scripts/health/routing-check.sh` | health-gate companion check |
 | `tests/unit/routing-mode-switch.test.sh` | the shell suite (fixture boxes, real scripts) |
 | `tests/unit/test_rf014_model_mode.py` | the bridge seams in-process |
+| `tests/unit/test_jev_live_chain.py` | the Jev chain, offline with fake transports |
