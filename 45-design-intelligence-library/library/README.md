@@ -10,7 +10,7 @@ A self-contained system that teaches any AI agent to analyze image styles, gener
 → Output style cards per `_system/STYLE-CARD-TEMPLATE.md`; register in `INDEX.md`; test per `_system/TEST-PROTOCOL.md`.
 
 **2. "Generate using style {ID}"**
-→ `INDEX.md` → the card → category `_RULES.md` → MASTER-SOP Workflow B → negatives per `_system/NEGATIVE-PROMPTING-SOP.md` → API call per `_system/MODEL-SPECS.md`.
+→ `INDEX.md` → the card → category `_RULES.md` → MASTER-SOP Workflow B → negatives per `_system/NEGATIVE-PROMPTING-SOP.md` → request shape per `_system/MODEL-SPECS.md` → submitted through Skill 74 by the Generation Operator (Prompt Author and Prompt QC first, Render Dispatcher release).
 
 **3. "Build slides using PowerPoint style {ID}"**
 → Style Rotation Engine: `_system/PPT-ANALYSIS-SOP.md` §3B. Slide Manifest FIRST. Always 16:9. Resolution = client's choice (default 2K).
@@ -35,5 +35,5 @@ design-library/
 │   ├── PPT-ANALYSIS-SOP.md    ├── NEGATIVE-PROMPTING-SOP.md
 │   ├── PHOTO-SHOOT-SOP.md     └── TEST-PROTOCOL.md
 ├── {8 design category folders}/   ← each: _RULES.md + style cards
-└── personal photo shoot/          ← _RULES.md + PS- shoot cards + {client}/IDENTITY.md folders
+└── personal photo shoot/          ← _RULES.md + PS- shoot cards + {client}/IDENTITY.md + CONSENT.md folders
 ```

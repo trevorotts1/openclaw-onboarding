@@ -7,10 +7,11 @@
 ## 1. CONSENT & IDENTITY RULES (non-negotiable)
 
 - **CODED FAIL-CLOSED GATE (mandatory first step):** before ANY generation involving a real person, run
-  `python3 scripts/diu_validator.py consent-check --identity-file <IDENTITY.md>`. It hard-fails (exit 4,
-  `AF-DIU-CONSENT`) unless the IDENTITY store carries documented+dated consent, an attested-adult subject,
-  and an at-rest protection attestation. A non-zero exit — including an absent IDENTITY file — means
-  consent is NOT confirmed: STOP, do not generate. This is a code path, not a matter of judgment.
+  `python3 scripts/diu_validator.py consent-check --consent-file personal-photo-shoot/{client-slug}/CONSENT.md`.
+  It hard-fails (exit 4, `AF-DIU-CONSENT`) unless the CONSENT.md record (schema in SOP-DIU-608) is `active`,
+  dated, unexpired, attests an adult subject, and attests at-rest protection of the biometric IDENTITY store.
+  A non-zero exit — including an absent CONSENT.md — means consent is NOT confirmed: STOP, do not generate.
+  This is a code path, not a matter of judgment. IDENTITY.md is not read by the gate.
 - **Minors = HARD NO.** Never generate a minor's likeness without explicit owner + legal sign-off; the gate
   above fails closed on any subject not attested an adult.
 - Generate a real person's likeness ONLY for the client themself or with the client's documented permission, routed through the producer.
@@ -34,18 +35,16 @@ Locate reference images in this order; use the FIRST source that yields usable r
 
 File: `personal-photo-shoot/{client-slug}/IDENTITY.md`
 
-The five fields below are **machine-read by the fail-closed consent gate** (`diu_validator.py consent-check`)
-and MUST be present as explicit `Key: value` lines. Consent that cannot be parsed is treated as absent
-(fail closed). The biometric Identity Description is PII: store it **encrypted-at-rest / access-restricted**,
-never as world-readable plaintext, and NEVER copy it into logs, analytics, or another client's file.
+Consent is NOT stored here: the machine-read consent record is `personal-photo-shoot/{client-slug}/CONSENT.md`
+(schema and status machine in SOP-DIU-608), read by the fail-closed gate `diu_validator.py consent-check`.
+IDENTITY.md carries only a pointer line to it. The biometric Identity Description is PII: store it
+**encrypted-at-rest / access-restricted** (CONSENT.md attests this as `storage_protection`), never as
+world-readable plaintext, and NEVER copy it into logs, analytics, or another client's file.
 
 ```markdown
 # IDENTITY — {Client Name}
 - Slug: {client-slug}
-- Consent: granted            # gate: affirmative (granted/yes/documented) required
-- Consent date: {YYYY-MM-DD}  # gate: a real date required
-- Minor: no                   # gate: subject must be attested an adult; Minors = HARD NO
-- Storage protection: encrypted-at-rest   # gate: biometric store must not be plaintext
+- Consent status & date: active {YYYY-MM-DD} → personal-photo-shoot/{client-slug}/CONSENT.md   # pointer only
 - Created / Updated
 ## Reference Images
 | # | Path or URL | Type (frontal/3-4/full-body) | Quality note |
@@ -111,7 +110,7 @@ Mode prompts COMBINE: Identity Lock Block + mode instructions + (if style-driven
 4. **Natural-result guardrails** in every retouch prompt: "retain natural skin texture and pores, no plastic smoothing, result must look like an unedited photograph."
 5. Output at `quality: high` (4K) for final passes; `basic` for intermediate chain steps.
 
-**Retouch prompt skeleton (Seedream 4.5 Edit, ≤3,000 chars):**
+**Retouch prompt skeleton (Seedream 4.5 Edit, ≤3,000 chars; the skeleton is the structure, and the written prompt is sized to the model's budget per rule 12 of `07-kie-setup/references/kie-common-rules.md` with preserve-first detail, never extra edits or padding):**
 ```
 Keep this person's identity, facial structure, skin tone, pose, expression, lighting,
 clothing, and background completely unchanged. Make exactly one change: {EDIT — e.g.,

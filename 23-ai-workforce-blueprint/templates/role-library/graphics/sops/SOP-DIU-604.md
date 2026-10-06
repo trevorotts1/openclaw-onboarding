@@ -11,7 +11,7 @@
 
 ## Role Mission
 
-The Generation Operator detects hard-rule violations in generated outputs, moves the offending asset out of all delivery and sourcing paths immediately, writes an incident receipt, and notifies the CDO. Quarantine is non-negotiable and has no override path. The Photo Shoot Director reviews every identity-related incident for consent-scope implications. Quarantined assets never reach a client, never seed a future generation, and never leave the quarantine directory without CDO written authorization.
+The Generation Operator detects hard-rule violations in the generated outputs the Render Dispatcher's postflight has verified, moves the offending asset out of all delivery and sourcing paths immediately, writes an incident receipt, and notifies the CDO. Quarantine is non-negotiable and has no override path. The Photo Shoot Director reviews every identity-related incident for consent-scope implications. Quarantined assets never reach a client, never seed a future generation, and never leave the quarantine directory without CDO written authorization.
 
 This SOP closes the worst cascading failure mode in the DIU: an undetected hard-fail output left in a delivery or media-library folder is later picked up by PHOTO-SHOOT-SOP §2's identity-sourcing hierarchy, poisoning every subsequent shoot for that client.
 
@@ -51,7 +51,7 @@ All violation definitions, identity-drift criteria, and avoid-list growth proced
    - `detected_at`: ISO 8601 timestamp
    - `detected_by`: role slug
 
-4. **Flip the generating receipt state.** Update the original receipt in `_local/receipts/` to `state: quarantined`.
+4. **Flip the generating receipt state.** Ask the Render Dispatcher (which advances the lifecycle fields of every receipt; the Operator created it and never rewrites it) to set the original receipt in `_local/receipts/` to `state: quarantined`.
 
 5. **Notify CDO.** Send the incident receipt path and a one-line violation summary immediately. CDO notification is never deferred.
 
@@ -87,7 +87,7 @@ If an output triggers a hard rule, quarantine precedes everything else — inclu
 
 | Input | Required | Source |
 |---|---|---|
-| Generated output asset flagged during postflight visual inspection | Yes | SOP-DIU-601 postflight (step 6 visual check) |
+| Generated output asset flagged during visual inspection | Yes | The file the Render Dispatcher's SOP-DIU-601 postflight verified, inspected by the Generation Operator |
 | OR: Fidelity Tester hard-rule-fail diagnosis | Yes | SOP-DIU-501a / SOP-DIU-501b |
 | Generation receipt for the asset | Yes | `_local/receipts/` — written at submit time (SOP-DIU-602) |
 | Card ID + version, model, tier, filled prompt | Yes | Generation receipt fields |
@@ -101,7 +101,7 @@ If an output triggers a hard rule, quarantine precedes everything else — inclu
 |---|---|---|
 | Quarantined asset | `_local/quarantine/{incident-id}/` | Moved from results; isolated |
 | Incident receipt | `_local/quarantine/{incident-id}/incident.json` | Written |
-| Generating receipt (state updated) | `_local/receipts/{receipt-id}.json` | `state: quarantined` |
+| Generating receipt (state advanced by the Render Dispatcher on request) | `_local/receipts/{receipt-id}.json` | `state: quarantined` |
 | CDO notification | Via OpenClaw `message send` | Sent |
 | Photo Shoot Director notification (identity incidents) | Via OpenClaw `message send` | Sent (if applicable) |
 | Avoid-list growth trigger | Fidelity Tester (NEGATIVE-PROMPTING-SOP §5) | Dispatched |

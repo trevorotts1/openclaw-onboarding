@@ -2,7 +2,7 @@
 
 **ID:** SOP-DIU-609
 **Classification:** ZHC SOP — thin wrapper
-**Owner Role:** Photo Shoot Director (primary); Generation Operator (co-owner — executes the hosting steps before each `createTask` call)
+**Owner Role:** Photo Shoot Director (owns and executes every hosting step: classify, validate, upload, liveness, delete); Generation Operator (consumer only — puts the verified hosted URLs into the `createTask` payload)
 **Section 9 slot:** 9.7
 **Version:** 1.0 | **Date:** 2026-06-12
 **Status:** CANONICAL
@@ -16,7 +16,7 @@ Every Kie.ai reference-image parameter (`input_urls`, `image_input`, `image_urls
 
 **Hard rule:** ANY image containing a real person's likeness must use client-owned hosting only. Identity references are never uploaded to public third-party image hosts, never given permanent URLs, and never committed to git in any form. Non-person assets may use the existing ImgBB ephemeral-upload flow. Both paths require size and format validation before upload and verified deletion after job completion.
 
-The Photo Shoot Director owns the hosting policy and consent gate; the Generation Operator executes the upload steps as part of its SOP-DIU-601 preflight sequence.
+The Photo Shoot Director owns the hosting policy, the consent gate, and every hosting step (validation, upload, liveness check, deletion). The Generation Operator never uploads or deletes; it reads the verified URLs from `hosted-refs.json` into the Kie.ai payload and its SOP-DIU-601 preflight confirms they are present.
 
 ---
 
@@ -24,7 +24,7 @@ The Photo Shoot Director owns the hosting policy and consent gate; the Generatio
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` | §1 (reference-image size limits per endpoint — 30MB for GPT-I2I/NB2; 10MB for Seedream/Wan), §5.2 (`input_urls` — GPT-Image-2.5 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
+| `_system/MODEL-SPECS.md` + the live schema (`kie_live_adapter.py validate`, rule 5 of `07-kie-setup/references/kie-common-rules.md`) | §1 (reference-image size limits per endpoint, a dated snapshot of the live schema), §5.2 (`input_urls` — GPT-Image-2.5 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
 | `_system/PHOTO-SHOOT-SOP.md` | §2 (identity-sourcing hierarchy — the four source tiers and verification requirement), §3 (IDENTITY.md schema — reference image paths and quality notes) | How refs are located; where verified hosted URLs are written back |
 | `45-design-intelligence-library/` → `07-kie-setup/` | Media-librarian pattern (GHL media library as client-owned hosting) | GHL media library as the approved identity-ref hosting target |
 | `templates/role-library/presentations/` → `media-librarian` pattern | ImgBB ephemeral-upload flow reference | Non-person asset upload procedure |
@@ -45,11 +45,11 @@ All size limits and endpoint param names are read from MODEL-SPECS at runtime. D
 
 3. **Record the classification decision** in the current shoot record at `_local/shoots/{shoot-id}/shoot-record.json` as `hosting_path: "identity"` or `hosting_path: "non-person"`. Write this before any upload.
 
-### B. Size and format pre-validation (both paths — Generation Operator)
+### B. Size and format pre-validation (both paths — Photo Shoot Director)
 
-Run these checks against every candidate image file before any upload call. Any failure = hard stop, return itemized list to Photo Shoot Director.
+Run these checks against every candidate image file before any upload call. Any failure = hard stop, record the itemized list in the shoot record.
 
-1. **File size.** Look up the resolved endpoint in MODEL-SPECS §1 to get the applicable size cap. Verify each file is strictly under the cap. Return `HOSTING FAIL: {filename} is {actual_size} — exceeds {cap} cap for {endpoint}` if over. Do not compress and silently retry — return the failure to the Photo Shoot Director for decision.
+1. **File size.** Look up the resolved endpoint's size cap in the live schema (`kie_live_adapter.py validate`, falling back to MODEL-SPECS §1). Verify each file is strictly under the cap. Return `HOSTING FAIL: {filename} is {actual_size} — exceeds {cap} cap for {endpoint}` if over. Do not compress and silently retry — the Photo Shoot Director decides.
 
 2. **Format.** Confirm each file is jpeg, jpg, png, or webp (the formats listed in MODEL-SPECS §1 for reference inputs). Return `HOSTING FAIL: {filename} is unsupported format {ext}` for any other extension.
 
@@ -76,7 +76,7 @@ Run these checks against every candidate image file before any upload call. Any 
 
 4. **Pass hosted URLs to the Generation Operator.** The Operator populates the correct Kie.ai endpoint param (`input_urls`, `image_input`, or `image_urls` per MODEL-SPECS §5.2/5.3/5.5) using only the verified hosted URLs from `hosted-refs.json`. The Operator never uses a local file path or CF-tunnel URL as a Kie.ai reference param.
 
-5. **Deletion is mandatory.** After the Kie.ai task reaches `state: success` and the Render Dispatcher's postflight verification is complete (SOP-DIU-601), the Generation Operator calls the GHL MCP deletion endpoint using the `ghl_media_id` recorded in step 2. Record the deletion result in `hosted-refs.json` as `deleted_at: "{iso8601}"`. A hosted identity reference that has not been deleted within 24 hours of job completion is an escalation trigger (see below).
+5. **Deletion is mandatory.** After the Kie.ai task reaches `state: success` and the Render Dispatcher's postflight verification is complete (SOP-DIU-601), the Photo Shoot Director (told by the Dispatcher's completion notice) calls the GHL MCP deletion endpoint using the `ghl_media_id` recorded in step 2. Record the deletion result in `hosted-refs.json` as `deleted_at: "{iso8601}"`. A hosted identity reference that has not been deleted within 24 hours of job completion is an escalation trigger (see below).
 
 6. **Log deletion in shoot record.** Update `_local/shoots/{shoot-id}/shoot-record.json` with `identity_refs_deleted: true` and `deleted_at`. This is the audit trail for consent revocation, licensing audits, and SOP-DIU-610 rights manifest entries.
 
@@ -110,7 +110,7 @@ Run these checks against every candidate image file before any upload call. Any 
 | Consent record for every likeness image | Yes | `personal-photo-shoot/{client-slug}/CONSENT.md` via SOP-DIU-608 |
 | Resolved Kie.ai endpoint (determines size cap) | Yes | MODEL-SPECS §2 routing decision (SOP-DIU-302) |
 | Shoot record (`shoot-record.json`) | Yes | Created at shoot open; written by Photo Shoot Director |
-| GHL MCP credentials (client box) | Yes (Path L) | Client box env stores — GHL_API_KEY / location ID |
+| GHL MCP credentials (client box) | Yes (Path L) | Client box env stores — GHL_API_KEY / location ID (the client's own; presence reported as SET or NOT-SET only) |
 | ImgBB API key (client box) | Yes (Path N) | Client box env stores |
 
 ---
@@ -129,8 +129,8 @@ Run these checks against every candidate image file before any upload call. Any 
 ## Handoff Conditions
 
 - **Hosting validated and URLs live:** Generation Operator receives `hosted-refs.json` with verified URLs and populates the Kie.ai template. Preflight continues per SOP-DIU-601.
-- **Job completed and postflight passed (SOP-DIU-601, run by the Render Dispatcher):** Generation Operator immediately triggers deletion for all hosted refs. Photo Shoot Director receives the closed `hosted-refs.json` for inclusion in the SOP-DIU-610 Rights Manifest.
-- **Hosting pre-validation failure:** Itemized failure list returned to Photo Shoot Director. No upload. No Kie.ai submission. Operator does not resize or reformat — returns to Photo Shoot Director for decision.
+- **Job completed and postflight passed (SOP-DIU-601, run by the Render Dispatcher):** the Photo Shoot Director immediately deletes all hosted refs and closes `hosted-refs.json` for inclusion in the SOP-DIU-610 Rights Manifest entry.
+- **Hosting pre-validation failure:** Itemized failure list recorded in the shoot record. No upload. No Kie.ai submission. Nobody resizes or reformats silently — the Photo Shoot Director decides (replacement reference or CDO direction).
 - **Consent not active:** Photo Shoot Director and CDO notified. Shoot halted. No upload under any circumstances until consent record is updated.
 
 ---
@@ -140,7 +140,7 @@ Run these checks against every candidate image file before any upload call. Any 
 | Condition | Action |
 |---|---|
 | Consent status is not `active` for a likeness image | Hard stop. Halt the entire shoot. Notify Photo Shoot Director and CDO. No upload, no generation. |
-| File exceeds MODEL-SPECS §1 size cap for the resolved endpoint | Hard stop. Return `HOSTING FAIL` with filename, actual size, and cap. Do not compress silently. Return to Photo Shoot Director. |
+| File exceeds the size cap (live schema, else MODEL-SPECS §1) for the resolved endpoint | Hard stop. Record `HOSTING FAIL` with filename, actual size, and cap. Do not compress silently. Photo Shoot Director decides. |
 | URL-liveness check fails after upload (non-200 HEAD response) | Hard stop. Do not submit Kie.ai task with an unreachable URL. Escalate to CDO if hosting service is unreachable. |
 | GHL media library unreachable (Path L) | Hard stop. Identity refs cannot be hosted on public third-party services. Escalate to CDO. Do not fall back to ImgBB for identity refs under any circumstance. |
 | Identity reference uploaded to a non-client-owned host (detected post-hoc) | Immediate CDO escalation. Attempt to delete from the non-owned host immediately using any available deletion token. Log as a hosting incident in the shoot record. Notify Photo Shoot Director. |

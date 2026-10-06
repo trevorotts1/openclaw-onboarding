@@ -2,7 +2,7 @@
 
 **ID:** SOP-DIU-610
 **Classification:** ZHC SOP — thin wrapper
-**Owner Role:** Photo Shoot Director (primary); Generation Operator (executed at delivery)
+**Owner Role:** Photo Shoot Director (sole writer of manifest entries); Generation Operator (supplies the receipt fields)
 **Version:** 1.0 | **Date:** 2026-06-12
 **Status:** CANONICAL
 **Library-version pin:** PHOTO-SHOOT-SOP v1.0, IDENTITY.md v1.0, MODEL-SPECS v1.0, TEST-PROTOCOL v1.0 (§-refs verified 2026-06-12)
@@ -11,7 +11,7 @@
 
 ## Role Mission
 
-The Photo Shoot Director maintains an append-only Rights Manifest for every client and every shoot. The manifest maps each delivered synthetic-media output to the consent record version, reference provenance, model/prompt fingerprint, seed, delivery date, and disclosure applied. The Generation Operator writes manifest entries at delivery time per this SOP.
+The Photo Shoot Director maintains an append-only Rights Manifest for every client and every shoot: one file per client at `_local/rights-manifest/{client-id}/RIGHTS-MANIFEST.md`, one entry block per delivered output. The manifest maps each delivered synthetic-media output to the consent record version, reference provenance, model/prompt fingerprint, seed, delivery date, and disclosure applied. The Photo Shoot Director writes every entry at delivery time per this SOP, from the Generation Operator's SOP-DIU-602 receipt; the Operator never writes the manifest. This layout is not checked by any code in `diu_validator.py` (the validator's only likeness gate is `consent-check` on CONSENT.md), so this SOP is the single authority for it.
 
 The manifest makes consent revocation, licensing audits, and takedowns executable. Without it, there is no path from a delivered asset back to the consent that authorized it. A Wan `watermark: false` generation is permitted only when this manifest entry exists before delivery. Fields are authored to map 1:1 onto C2PA/Content-Credentials assertions so that when providers expose signed provenance, the manifest is ready to feed it without re-instrumentation.
 
@@ -24,7 +24,7 @@ MINORS POLICY: This SOP applies the absolute hard-no to minors. Minors never app
 | File | Sections used | What it governs |
 |---|---|---|
 | `_system/PHOTO-SHOOT-SOP.md` | §8 step 7 (delivery checklist — manifest entry required before handoff) | Delivery gate: manifest entry is a required step, not optional documentation |
-| `_local/IDENTITY.md` (per-client) | Shoot History section | The per-client shoot history pointer; manifest entries cross-reference and extend it |
+| `personal-photo-shoot/{client-slug}/IDENTITY.md` (per-client) | Shoot History section | The per-client shoot history pointer; manifest entries cross-reference and extend it |
 | `_system/MODEL-SPECS.md` | §5 (taskId, resultUrls fields), §6 (versioning and update protocol) | taskId and resultUrls are the receipt-side keys; the §6 protocol governs disclosure-table versioning |
 | `_system/TEST-PROTOCOL.md` | §7 (asset traceability requirements at production promotion) | Traceability fields the Fidelity Tester requires; manifest satisfies §7 at delivery |
 
@@ -42,11 +42,11 @@ All field definitions, disclosure logic, and consent schema are authoritative in
 
 3. **Record the disclosure-table version.** The manifest header carries the initial `disclosure_table_version`. Every manifest entry records the version in force at delivery time — law changes bump the table version and create a new table file; SOPs do not change.
 
-4. **Seed the cross-reference pointer.** In `_local/IDENTITY.md` Shoot History, add a line pointing to `_local/rights-manifest/{client-id}/RIGHTS-MANIFEST.md`. IDENTITY.md remains thin; the manifest is the detail record.
+4. **Seed the cross-reference pointer.** In `personal-photo-shoot/{client-slug}/IDENTITY.md` Shoot History, add a line pointing to `_local/rights-manifest/{client-id}/RIGHTS-MANIFEST.md`. IDENTITY.md remains thin; the manifest is the detail record.
 
 ### B. Manifest Entry (one entry per delivered output, written at delivery time before asset handoff)
 
-The Generation Operator writes a new entry block to the manifest immediately before handing off any delivered asset. The entry is written before the delivery is marked complete — no exceptions.
+The Photo Shoot Director appends a new entry block to the manifest, as one write, immediately before handing off any delivered asset. The entry is written before the delivery is marked complete — no exceptions.
 
 Entry block format:
 
@@ -75,7 +75,7 @@ Entry block format:
 - **delivery_channel**: {channel slug — e.g., `social_media`, `internal`, `client_direct`}
 - **jurisdiction**: {jurisdiction slug — e.g., `us`, `eu`, `ca`}
 - **delivered_at**: {ISO 8601 timestamp}
-- **delivered_by**: {role slug}
+- **delivered_by**: {role slug of the Photo Shoot Director}
 - **correction_of**: {entry_id} | `null`
 ```
 
@@ -83,7 +83,7 @@ Entry block format:
 
 6. **Update IDENTITY.md Shoot History.** Append the entry ID and delivery date to the Shoot History row for this shoot. IDENTITY.md carries the pointer; the manifest carries the detail.
 
-7. **Notify Photo Shoot Director.** Send the manifest entry ID and asset path on delivery. The Director confirms the consent record version matches the active consent record before the CDO marks the deliverable closed.
+7. **Notify the CDO.** Send the manifest entry ID and asset path on delivery. Before the CDO marks the deliverable closed, the Director has already confirmed the entry's consent record version matches the active consent record.
 
 ### C. Disclosure Table Maintenance (triggered by law/channel change, not by SOP revision)
 
@@ -125,8 +125,8 @@ Entry block format:
 | Output | Location | State at exit |
 |---|---|---|
 | Manifest entry (appended) | `_local/rights-manifest/{client-id}/RIGHTS-MANIFEST.md` | Appended; file is never overwritten |
-| IDENTITY.md Shoot History pointer | `_local/IDENTITY.md` — Shoot History section | Updated with entry ID + delivery date |
-| Photo Shoot Director notification | Via OpenClaw `message send` | Sent before delivery receipt is closed |
+| IDENTITY.md Shoot History pointer | `personal-photo-shoot/{client-slug}/IDENTITY.md` — Shoot History section | Updated with entry ID + delivery date |
+| CDO notification | Via OpenClaw `message send` | Sent before delivery receipt is closed |
 | Licensing audit report (on-demand) | Returned to CDO | Gap list or clean pass |
 | Revocation asset list (on consent revocation) | Returned to Photo Shoot Director + CDO | All matching entries enumerated |
 
@@ -134,9 +134,9 @@ Entry block format:
 
 ## Handoff Conditions
 
-- **Normal delivery:** Manifest entry written and Photo Shoot Director notified before delivery receipt is marked complete. CDO closes the deliverable only after Director confirmation.
+- **Normal delivery:** Manifest entry written by the Photo Shoot Director and the CDO notified before the delivery receipt is marked complete. CDO closes the deliverable only after the entry exists.
 - **Wan `watermark: false` delivery:** Manifest entry written before delivery receipt is marked complete. The entry IS the permission gate — no entry, no delivery.
-- **Consent revocation:** Photo Shoot Director receives the full asset list from the manifest query. CDO directs takedown/archive/notification. Generation Operator takes no action on revoked assets without CDO written direction.
+- **Consent revocation:** Photo Shoot Director queries the manifest for the full asset list. CDO directs takedown/archive/notification. Generation Operator takes no action on revoked assets without CDO written direction.
 - **Disclosure table version bump:** New version file written; manifest header updated; all future entries reference the new version; past entries are untouched.
 - **Licensing audit clean pass:** Returned to CDO. No action required.
 - **Licensing audit gap found:** Escalated to CDO as a blocking finding. No further delivery from the affected shoot until CDO resolves.
@@ -163,7 +163,7 @@ Entry block format:
 ```
 # Rights Manifest — {client-id}
 **Created:** {ISO 8601 date}
-**Maintained by:** Photo Shoot Director (entries written by Generation Operator at delivery)
+**Maintained by:** Photo Shoot Director (sole writer; entries written at delivery)
 **Disclosure table version:** {version}
 **Disclosure table file:** _local/rights-manifest/{client-id}/disclosure-table.json
 **Append-only:** true — entries are never edited or deleted. Corrections use `correction_of` field.

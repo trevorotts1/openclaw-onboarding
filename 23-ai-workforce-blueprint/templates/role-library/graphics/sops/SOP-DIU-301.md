@@ -95,13 +95,13 @@ Do not proceed without a confirmed endpoint and verified API key.
 
 ### Step 7 — Run SOP-DIU-601 preflight gate
 
-Execute SOP-DIU-601 (Preflight & Postflight Mechanical Gates) — all 8 preflight checks — on the fully assembled prompt and configured JSON template. Do not submit to the API until SOP-DIU-601 returns a clean pass.
+Execute SOP-DIU-601 (Preflight & Postflight Mechanical Gates) — all ten preflight steps, including the live `kie_live_adapter.py validate`, `prompt-budget --check` and credit `preflight` calls — on the fully assembled prompt and configured JSON template. Do not submit to the API until SOP-DIU-601 returns a clean pass.
 
 If preflight fails on any check, halt submission immediately. Return the itemized failure list (with check name, expected value, and actual value) to the requestor. Do not improvise a fix — preflight failures are authoring problems, not operator problems.
 
 ### Step 8 — Submit and exit (SOP-DIU-302 steps 7–10)
 
-Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId` from the response immediately. Write the receipt file to `_local/receipts/{receipt-id}.json` with `state: submitted` before exiting. Exit. The Render Dispatcher's poller handles completion detection via `recordInfo` — do not hold the session open polling for results.
+Submit through Skill 74: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py submit --request <req.json> --mode active` (the request body is the MODEL-SPECS §5 JSON template; this is the only `createTask` call in the department). Take `task_id` from the result immediately. Write the receipt file to `_local/receipts/{receipt-id}.json` with `state: submitted` before exiting. Exit. The Render Dispatcher's poller handles completion detection via `recordInfo` — do not hold the session open polling for results.
 
 ---
 
@@ -109,7 +109,7 @@ Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId`
 
 | Input | Required | Source |
 |---|---|---|
-| Style card ID + version | Required | Assembly packet (CDO or requesting role) |
+| Style card ID + version | Required | Assembly packet (CDO or requesting role), released by the Render Dispatcher |
 | All filled `{VARIABLE}` tokens (SUBJECT, HEADLINE_TEXT, etc.) | Required | Assembly packet |
 | Model preference or `auto-route` flag | Required | Assembly packet |
 | Tier (SHORT / MEDIUM / LONG) | Required | Assembly packet |
@@ -153,7 +153,7 @@ Submit via `createTask` per MODEL-SPECS §5 JSON template. Extract `data.taskId`
 | Contradiction found in negative assembly (SOP-DIU-303 step 5) | Halt assembly. Return conflict report (term + source) to prompt author. | Prompt author (CDO or requesting role) |
 | `expand_prompt: false` / `thinking_mode off` not set in production run | Hard stop. Do not submit. Flag to CDO for config correction. | CDO |
 | API key missing from all env stores | Hard stop. Escalate to CDO with list of all stores checked. | CDO |
-| `createTask` returns non-2xx error | Apply SOP-DIU-603 fallback ladder. Escalate if ladder exhausted. | SOP-DIU-603 then CDO |
+| The Skill 74 `submit` returns state `fail` (read the body `code`, not only the HTTP status) | Apply SOP-DIU-603 fallback ladder (never resubmit a `createTask` that may have been sent). Escalate if ladder exhausted. | SOP-DIU-603 then CDO |
 | Budget cap missing or `budget_config` block absent | Halt all generation. Ask CDO to provide config. Never generate without a defined cap. | CDO |
 | Model-swap mid-deck attempted for any reason | Hard stop. A Slide Manifest is a cohesion contract. Escalate immediately. | CDO |
 | Hard-rule violation found in generated output | Immediate quarantine. Do not deliver. Notify CDO and Photo Shoot Director (identity incidents). | SOP-DIU-604 |

@@ -35,8 +35,8 @@ All routing decisions are made by reading MODEL-SPECS §2 at runtime. Do not cac
 
 | Failure class | First response | Second response | Hard stop |
 |---|---|---|---|
-| **5xx / timeout (transient)** | Retry once after 30-second backoff | Route to backup endpoint (MODEL-SPECS §2 Backup column) with CDO notification | If backup also fails: hard stop — preserve manifest + all receipts; notify CDO |
-| **429 (rate limit)** | Back off and halve concurrency, staying inside the canonical Kie limits | Continue at reduced concurrency | If 429 persists for more than 3 events within any 10-minute window: hard stop; notify CDO |
+| **5xx / timeout (transient)** | Before any `createTask` response arrives (connection refused, DNS or TLS failure): retry once after 30-second backoff. After `createTask` was sent and no `task_id` came back: do NOT resubmit (it may already be charged); hand the packet to the Render Dispatcher to check for an orphan before any new submit | If the retry fails: route to backup endpoint (MODEL-SPECS §2 Backup column) with CDO notification | If backup also fails: hard stop — preserve manifest + all receipts; notify CDO |
+| **429 (rate limit)** | Back off and halve concurrency, staying inside the canonical Kie limits (createTask 20 per 10 seconds per account; the adapter itself retries a body-code 429 at most twice because a rejected request never enters the queue) | Continue at reduced concurrency | If 429 persists for more than 3 events within any 10-minute window: hard stop; notify CDO |
 | **Endpoint down (confirmed)** | Route immediately to backup endpoint from MODEL-SPECS §2 Backup column; notify CDO | — | If backup is also down: hard stop — preserve all manifests + receipts; notify CDO |
 | **402 / credit exhaustion** | Immediate hard stop — do not retry, do not re-route | Preserve manifest + receipts for resume; notify CDO | — |
 | **NSFW checker false positive** | Flag for CDO + human review; halt the specific task; do not auto-retry with prompt mutation | — | CDO decides whether to re-run, modify prompt, or escalate |
