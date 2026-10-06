@@ -12,7 +12,10 @@ TREVOR_MUST_SUPPLY), exact palette hexes, logo element, eager images, founder
 hash match, copy parity.
 
 Also covers: mockup mode (exact [data-image-slot] sizes), placeholder
-WARN-when-test_run, TREVOR_MUST_SUPPLY fail-closed, exit codes 0/1/2.
+WARN-when-test_run, TREVOR_MUST_SUPPLY fail-closed, exit codes 0/1/2,
+and the 1.1.1 font fallback: MUST_SUPPLY brand fonts under a
+derive-document font_policy degrade the font checks to WARN (derived) —
+never FAIL — while banned fonts and every other check still FAIL.
 """
 import json
 import subprocess
@@ -194,6 +197,40 @@ def test_must_supply_brand_fails_closed():
         assert "TREVOR_MUST_SUPPLY" in (proc.stderr + proc.stdout)
 
 
+def test_derived_font_policy_warns_not_fails():
+    """fonts must be WARN (not FAIL) when the brand file's fonts are
+    MUST_SUPPLY placeholders under a derive-document font_policy; banned
+    fonts and every other check still FAIL."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        brand = json.loads((GOOD / "brand-fixture.json").read_text(encoding="utf-8"))
+        brand["fonts"] = {"display": "TREVOR_MUST_SUPPLY",
+                          "body": "TREVOR_MUST_SUPPLY",
+                          "accent": "TREVOR_MUST_SUPPLY"}
+        brand["font_policy"] = {"when_brand_fonts_missing": "derive-document",
+                                "requires_rationale": True,
+                                "requires_reviewer": True}
+        (td / "brand.json").write_text(json.dumps(brand), encoding="utf-8")
+        proc = validate(
+            GOOD / "index.html",
+            td / "brand.json",
+            ["--mode", "page", "--run-dir", td / "run"],
+        )
+        report = report_from(td / "run")
+        blob = "\n".join(report["errors"])
+        warns = "\n".join(report["warnings"])
+        font_fails = [e for e in report["errors"] if e.startswith("font:")]
+        font_warns = [w for w in report["warnings"] if "WARN font (derived)" in w]
+        assert not font_fails, f"derived fonts must not FAIL:\n{font_fails}"
+        assert font_warns, "derived fonts must appear as WARN (derived) lines"
+        assert "Georgia" in warns, f"the derived font should be named in WARNs\n{warns}"
+        # The fixture page still passes overall (colors/logo/copy fine) with
+        # the fonts issue downgraded to WARN.
+        assert proc.returncode == 0, (
+            f"fixture page must pass under derived-font policy; got {proc.returncode}\n"
+            f"errors: {report['errors']}\nwarnings: {report['warnings']}")
+
+
 def main():
     tests = [
         test_bad_fails_with_each_reason,
@@ -204,6 +241,7 @@ def main():
         test_mockup_slot_size_mismatch_fails,
         test_missing_inputs_exit_2,
         test_must_supply_brand_fails_closed,
+        test_derived_font_policy_warns_not_fails,
     ]
     failed = 0
     for test in tests:

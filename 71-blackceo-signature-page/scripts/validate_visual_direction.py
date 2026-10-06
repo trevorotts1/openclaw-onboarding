@@ -9,9 +9,15 @@ Order A2 (BLACKCEO-SKILL-71-ENFORCEMENT-FIX-ORDER.md) enforcement:
   owner named at intake.
 - Every page token must sit within the brand file's color_tolerance
   (per RGB channel) of a brand palette color or logo-only color.
-- Every font must be one of the brand file's fonts and never a banned font.
+- Every font must be one of the brand file's fonts and never a banned font —
+  UNLESS the brand file's font_policy says when_brand_fonts_missing =
+  "derive-document" and the brand fonts are still MUST_SUPPLY placeholders:
+  then fonts go from BLOCKED to DERIVE-AND-DOCUMENT (the bible must carry
+  fonts_source "derived", a non-empty font_rationale, and a font_reviewer;
+  banned fonts still FAIL).
 - The brand file must not still carry TREVOR_MUST_SUPPLY /
-  CLIENT_MUST_SUPPLY placeholders (each missing key printed).
+  CLIENT_MUST_SUPPLY placeholders — EXCEPT fonts.* when font_policy
+  authorizes derive-document (each other missing key still printed).
 
 Reads <run_dir>/intake.json and <run_dir>/visual-mockup/page-visual-bible.json.
 The brand file comes from intake.json's brand_file field.
@@ -92,11 +98,21 @@ def main():
 
     reasons = []
 
-    # Brand file: FAIL if any value is still a MUST_SUPPLY placeholder.
+    # Brand file: FAIL if any value is still a MUST_SUPPLY placeholder —
+    # EXCEPT fonts, which the brand file's font_policy may authorize as
+    # derive-document (agent derives the best display/body/accent for the job,
+    # documents the rationale in the bible, reviewer approves; never blocked).
     brand_path = resolve_brand_file(intake, run_dir, skill_root)
     brand = load_json(brand_path, "brand file (%s)" % brand_path)
+    policy = brand.get("font_policy") or {}
+    fonts_derivable = (
+        isinstance(policy, dict)
+        and policy.get("when_brand_fonts_missing") == "derive-document"
+    )
     for path, value in walk_strings(brand):
         if value in MUST_SUPPLY:
+            if fonts_derivable and path.startswith("fonts."):
+                continue
             reasons.append(
                 "FAIL: brand file %s still has %s = %s — this key is not supplied yet"
                 % (brand_path, path, value))
@@ -112,7 +128,6 @@ def main():
         tolerance = 0
     brand_fonts = {v for _, v in walk_strings(brand.get("fonts", {}))}
     banned_fonts = set(brand.get("banned_fonts", []))
-
     # FAIL: no intake direction => SECRET_SAUCE_ONLY mandatory.
     selection_mode = bible.get("selection_mode")
     creative_direction = intake.get("creative_direction")
@@ -153,13 +168,45 @@ def main():
                 "FAIL: page token %s at bible.page_tokens.%s is off-palette (%s; "
                 "tolerance %d per channel)" % (value, path, nearest, tolerance))
 
-    # FAIL: fonts must be brand fonts and never banned fonts.
+    # Fonts: when the brand file's fonts are MUST_SUPPLY placeholders under a
+    # derive-document font_policy, the bible must be DERIVED AND DOCUMENTED:
+    # fonts_source == "derived", a non-empty font_rationale, and every bible
+    # font must name a real family (never a MUST_SUPPLY placeholder). A banned
+    # font always FAILS, derived or not.
+    fonts_missing = bool(fonts_derivable) and any(
+        value in MUST_SUPPLY for _, value in walk_strings(brand.get("fonts", {})))
+    if fonts_missing:
+        font_source = str(bible.get("fonts_source") or "").strip()
+        if font_source != "derived":
+            reasons.append(
+                "FAIL: brand file fonts are TREVOR_MUST_SUPPLY/CLIENT_MUST_SUPPLY and "
+                "font_policy authorizes derive-document, so the bible must set "
+                "fonts_source = \"derived\" (got %r) — derive the best fonts for the job "
+                "and document them" % (font_source or None))
+        rationale = str(bible.get("font_rationale") or "").strip()
+        if not rationale:
+            reasons.append(
+                "FAIL: bible font_rationale is empty — the derived font choice must "
+                "carry a written rationale (why each display/body/accent face fits "
+                "this page's copy and audience)")
+        if str(policy.get("requires_reviewer", True)).lower() in ("true", "1", "yes"):
+            reviewer = str(bible.get("font_reviewer") or "").strip()
+            if not reviewer:
+                reasons.append(
+                    "FAIL: font_policy.requires_reviewer is true but the bible has no "
+                    "font_reviewer — the independent reviewer who approved the derived "
+                    "fonts must be named in the bible")
     for path, value in walk_strings(bible.get("fonts", {})):
         problems = []
-        if value not in brand_fonts:
-            problems.append("not one of the brand file's fonts")
-        if value in banned_fonts:
-            problems.append("in banned_fonts")
+        if value in MUST_SUPPLY:
+            problems.append("is still a %s placeholder" % value)
+        else:
+            if not fonts_missing and value not in brand_fonts:
+                # With derived fonts the brand list holds no real names, so the
+                # membership check does not apply; only banned-font law does.
+                problems.append("not one of the brand file's fonts")
+            if value in banned_fonts:
+                problems.append("in banned_fonts")
         if problems:
             reasons.append("FAIL: font %r at bible.fonts.%s: %s"
                            % (value, path, "; ".join(problems)))

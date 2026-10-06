@@ -71,6 +71,15 @@ If the brand file has any `TREVOR_MUST_SUPPLY` / `CLIENT_MUST_SUPPLY` value, the
 stage is BLOCKED and the run stops with the exact missing item named. Never invent a
 palette, font, logo, or photo.
 
+**Font carve-out:** missing brand fonts are the one exception. `font_policy` in the brand
+file sets `when_brand_fonts_missing: "derive-document"`: if the brand fonts are still
+`TREVOR_MUST_SUPPLY` / `CLIENT_MUST_SUPPLY`, the agent derives the best display/body/accent
+faces for the job, documents the rationale in the visual bible (`fonts_source: "derived"`,
+`font_rationale`, `font_reviewer`), and the reviewer approves — fonts are never blocked.
+Every other `MUST_SUPPLY` / `CLIENT_MUST_SUPPLY` value (palette, logo, masthead files,
+founder photos) still blocks intake until the owner supplies it. Derived fonts remain bound
+by `banned_fonts`: a derived face may never be a banned font.
+
 ## Signature Grade Block
 
 The canonical grade block lives at `assets/brand/signature-grade-block.txt` (extracted

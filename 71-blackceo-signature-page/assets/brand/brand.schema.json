@@ -42,6 +42,17 @@
         "accent": {"type": "string", "minLength": 1}
       }
     },
+    "font_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when_brand_fonts_missing", "requires_rationale", "requires_reviewer"],
+      "properties": {
+        "when_brand_fonts_missing": {"type": "string", "enum": ["derive-document", "blocked"]},
+        "requires_rationale": {"type": "boolean"},
+        "requires_reviewer": {"type": "boolean"},
+        "note": {"type": "string", "minLength": 1}
+      }
+    },
     "banned_fonts": {
       "type": "array",
       "minItems": 1,
