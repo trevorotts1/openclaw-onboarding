@@ -1,5 +1,11 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
+
+- **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
+- **Bypass allow-list is content-checked.** `kie74_receipt.py --check` now also requires a real task id, a known adapter state and mode, a saved or result list, and rejects any top-level key Skill 74 does not emit, so a file with the adapter's three identity fields plus a smuggled command is refused. New tests for the smuggle and placeholder cases. Pin re-recorded.
+- Version bumped to v2.1.1 (SKILL.md frontmatter, skill-version.txt).
+
 ## 2.1.0 — 2026-10-06 — KIE integration: Skill 74 is the one approved image path
 
 ### Changed

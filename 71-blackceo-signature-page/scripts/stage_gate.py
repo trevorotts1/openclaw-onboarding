@@ -540,6 +540,56 @@ def _real_id(value):
     return isinstance(value, str) and value.strip().lower() not in BAD_IDS
 
 
+KIE74_DIR = Path("receipts") / "kie74"
+
+
+def _kie74_file(run_dir, task_id):
+    safe = "".join(c for c in str(task_id) if c.isalnum() or c in "_-")[:80] or "task"
+    return run_dir / KIE74_DIR / f"{safe}.json"
+
+
+def _kie74_problems(run_dir, stage, tasks):
+    """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/."""
+    problems, seen = [], {}
+    for x in tasks:
+        if not isinstance(x, dict) or not _real_id(x.get("task_id")):
+            continue
+        tid = x["task_id"]
+        if tid in seen:
+            problems.append(f"stage {stage}: task_id {tid!r} is used for both {seen[tid]} and {x.get('file')}")
+        seen[tid] = x.get("file")
+        f = _kie74_file(run_dir, tid)
+        try:
+            obj = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            problems.append(f"stage {stage}: task_id {tid!r} has no readable {KIE74_DIR}/{f.name} "
+                            f"(record it with kie74_receipt.py)")
+            continue
+        if not (isinstance(obj, dict) and obj.get("adapter") == "74-kie-live-adapter"
+                and obj.get("task_id") == tid and obj.get("state") == "success"
+                and obj.get("adapter_mode") == "active"):
+            problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
+    ids = {}
+    d = run_dir / KIE74_DIR
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        try:
+            tid = json.loads(f.read_text(encoding="utf-8")).get("task_id")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if tid in ids:
+            problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} and {ids[tid]} carry the same task_id {tid!r}")
+        ids[tid] = f.name
+    return problems
+
+
+def _agnes_selected(run_dir):
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(intake, dict) and str(intake.get("image_engine", "")).strip().lower() == "agnes"
+
+
 def _ratio_problem(who, task):
     req, gen, src = task.get("requested_ratio"), task.get("generated_ratio"), task.get("model_source")
     if not (isinstance(req, str) and isinstance(gen, str) and req and gen):
@@ -548,7 +598,9 @@ def _ratio_problem(who, task):
         if gen != req or src not in ("legacy-ratio-route", "explicit-request", "department-pin"):
             return f"{who}: N43 sends {req} to the legacy route only (generated_ratio {gen!r}, model_source {src!r})"
     elif src in ("explicit-request", "department-pin"):
-        pass  # an explicit request or a pin overrides the default's ratio substitutions
+        # an explicit request or a pin overrides the default's ratio substitutions, with evidence
+        if not (isinstance(task.get("evidence"), str) and task["evidence"].strip()):
+            return f"{who}: model_source {src!r} needs evidence (the request text or the pin id)"
     elif gen != N43_SUBSTITUTIONS.get(req, req):
         return (f"{who}: N43 ratio rule violated: requested {req}, generated {gen}, "
                 f"expected {N43_SUBSTITUTIONS.get(req, req)}")
@@ -574,6 +626,9 @@ def check_transport(run_dir, stage, receipt):
     cost = receipt.get("cost")
     if isinstance(cost, dict) and cost.get("provider") != provider:
         problems.append(f"stage {stage}: cost.provider must be {provider!r} for {skill}, got {cost.get('provider')!r}")
+    if skill == "63-agnes-image" and not _agnes_selected(run_dir):
+        problems.append(f"stage {stage}: the Agnes route needs intake.json image_engine: \"agnes\" "
+                        f"(the client must have selected Agnes)")
     if skill == "74-kie-live-adapter" and t.get("mode") != "active":
         problems.append(f"stage {stage}: transport.mode must be 'active' (shadow never dispatches), got {t.get('mode')!r}")
     files = sorted(str(p.relative_to(run_dir)) for p in run_dir.glob(spec.get("per_file_glob", "")) if p.is_file())
@@ -583,6 +638,8 @@ def check_transport(run_dir, stage, receipt):
     got = sorted(str(x.get("file")) for x in tasks if isinstance(x, dict))
     if got != files:
         problems.append(f"stage {stage}: transport.tasks cover {got} but the stage has {files}")
+    if skill == "74-kie-live-adapter":
+        problems.extend(_kie74_problems(run_dir, stage, tasks))
     for i, x in enumerate(tasks):
         who = f"stage {stage}: transport.tasks[{i}] ({x.get('file') if isinstance(x, dict) else '?'})"
         if not isinstance(x, dict):

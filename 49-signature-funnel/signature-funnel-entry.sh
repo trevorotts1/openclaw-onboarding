@@ -89,10 +89,8 @@ step_version() {
   [ -s "$vf" ] || die "VERSION" "skill-version.txt missing/empty"
   local v; v="$(tr -d '[:space:]' < "$vf")"
   v="${v#v}"   # skill-version.txt carries a leading v (for example v2.1.0)
-  case "$v" in
-    "$EXPECTED_MAJOR".*) : ;;
-    *) die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x" ;;
-  esac
+  [[ "$v" =~ ^${EXPECTED_MAJOR}\.[0-9]+\.[0-9]+$ ]] \
+    || die "VERSION" "skill-version.txt is '$v', expected major $EXPECTED_MAJOR.x.y"
 }
 
 step_hashpin() {
@@ -230,6 +228,7 @@ main() {
       --self-test) mode="selftest"; shift ;;
       --write-pin) mode="writepin"; shift ;;
       --scan-only) mode="scanonly"; shift ;;
+      --version-only) mode="versiononly"; shift ;;
       -h|--help) grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "USAGE" "unknown arg: $1" ;;
     esac
@@ -237,6 +236,7 @@ main() {
   case "$mode" in
     selftest) self_test ;;
     writepin) write_pin ;;
+    versiononly) step_version; echo "VERSION ok" ;;
     scanonly)
       [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "--scan-only needs an existing --run-dir"
       rd="$(cd "$rd" && pwd)"; step_deps; step_bypass_scan "$rd"; echo "BYPASS-SCAN clean: $rd" ;;
