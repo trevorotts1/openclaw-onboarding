@@ -1770,6 +1770,7 @@ This update is **NOT complete** until the VERIFICATION GATE passes. Files on dis
 ### What changed in this update
 - Onboarding version: ${version}
 - New skills installed (require ACTIVATION + GATE): ${new_skills:-none -- updates only}
+${UPDATE_SUMMARY_TEXT:-}
 
 ### How to process each skill that is NOT yet qc-passed
 For each such skill folder under \`~/.openclaw/skills/\`:
@@ -6065,6 +6066,44 @@ print(state + " " + str(len(headers)))
   # Ensure skills directory exists
   mkdir -p "$SKILLS_DIR"
 
+  # RETIRE ARCHIVED SKILLS' OLD LIVE COPIES. The copy loop below skips *-ARCHIVED
+  # folders, so a skill archived on main (11-superdesign, 21-tavily-search, ...)
+  # kept its old LIVE folder on every box forever. The authority is
+  # docs/archived-skill-tombstones.json: each key "NN-name-ARCHIVED" retires the
+  # live "NN-name" folder. It is MOVED (not deleted) to <root>/retired-skills/,
+  # outside the skills dir, so nothing scans it and it can be put back by hand.
+  # Symlinks and any live folder that is not a plain directory are left alone.
+  # Non-fatal: a failure here never aborts the roll.
+  _TOMB_JSON="$EXTRACTED_DIR/docs/archived-skill-tombstones.json"
+  if [ -f "$_TOMB_JSON" ] && command -v python3 >/dev/null 2>&1; then
+    _RETIRE_DEST="$(dirname "$SKILLS_DIR")/retired-skills"
+    python3 - "$_TOMB_JSON" "$SKILLS_DIR" "$_RETIRE_DEST" <<'PYEOF' || echo "  ⚠ archived-skill retirement skipped (non-fatal)" >&2
+import json, os, shutil, sys, time
+tomb, skills, dest = sys.argv[1:4]
+for key in sorted(json.load(open(tomb)).get("archived", {})):
+    if not key.endswith("-ARCHIVED"):
+        continue
+    live = os.path.join(skills, key[:-len("-ARCHIVED")])
+    if os.path.islink(live) or not os.path.isdir(live):
+        continue
+    os.makedirs(dest, exist_ok=True)
+    target = os.path.join(dest, os.path.basename(live))
+    if os.path.exists(target):
+        target += "-" + time.strftime("%Y%m%d%H%M%S")
+    shutil.move(live, target)
+    print("  ✓ retired archived skill %s -> %s" % (os.path.basename(live), target))
+PYEOF
+  fi
+
+  # PLAIN-WORDS "WHAT CHANGED" for the UPDATE PENDING flag. Computed HERE because
+  # the copy loop below overwrites the live skill-version.txt files and the temp
+  # bundle (with its CHANGELOG) is deleted long before the flag is written.
+  # scripts/update-summary.py never fails; empty output just means no extra lines.
+  UPDATE_SUMMARY_TEXT=""
+  if [ -f "$EXTRACTED_DIR/scripts/update-summary.py" ] && command -v python3 >/dev/null 2>&1; then
+    UPDATE_SUMMARY_TEXT="$(python3 "$EXTRACTED_DIR/scripts/update-summary.py" "${CURRENT_VERSION:-}" "$ONBOARDING_VERSION" "$EXTRACTED_DIR/CHANGELOG.md" "$EXTRACTED_DIR" "$SKILLS_DIR" 2>/dev/null || true)"
+  fi
+
   # Copy new skills
   echo "  Installing skills to $SKILLS_DIR..."
   NEW_SKILLS_CSV=""
@@ -9229,6 +9268,13 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   #
   # (Array, not a bare word -- keeps this extensible without a shellcheck
   # SC2066 "loop will only run once" false-flag on a single-element list.)
+  # R6: the same legacy master-files dir also holds a CHANGELOG.md copy that no
+  # roll ever refreshed (boxes froze at v11.18.3). Refresh it WHEN the dir
+  # exists (never create the dir); the bundle is still on disk at this point.
+  if [ -d "$HOME/Downloads/openclaw-master-files" ] && [ -f "$ONBOARDING_DIR/CHANGELOG.md" ]; then
+    cp -p "$ONBOARDING_DIR/CHANGELOG.md" "$HOME/Downloads/openclaw-master-files/CHANGELOG.md" 2>/dev/null \
+      && echo "  ✓ CHANGELOG.md refreshed in openclaw-master-files" || true
+  fi
   _LEGACY_MARKERS=(
     "$HOME/Downloads/openclaw-master-files/.onboarding-version"
   )

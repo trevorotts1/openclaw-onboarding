@@ -1397,6 +1397,14 @@ jobs:
           set -uo pipefail
           bash tests/unit/onboarding-state-lib-order.test.sh
 
+      - name: "box-fix locks: archived-skill retirement, update summary + JEV text, 999 clone on 9Router boxes"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/archived-skill-retirement.test.sh
+          bash tests/unit/update-summary.test.sh
+          bash tests/unit/frontdoor-999-clone-9router.test.sh
+
       - name: Skill 41 L0 static QC checklist (composes every qc-*.sh gate)
         shell: bash
         run: |

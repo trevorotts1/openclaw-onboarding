@@ -225,6 +225,12 @@ purged = [k for k in list(skills) if rollback_re.search(k)]
 for k in purged:
     del skills[k]
 
+# A skill archived on main ("NN-x-ARCHIVED" in the source) is retired: drop the
+# stale key an earlier seed wrote for its old live name "NN-x".
+for k in list(skills):
+    if os.path.isdir(os.path.join(src_dir, k + "-ARCHIVED")):
+        del skills[k]
+
 # Discover non-archived numbered skill folders in the source.
 found = []
 for d in sorted(glob.glob(os.path.join(src_dir, "[0-9]*"))):
