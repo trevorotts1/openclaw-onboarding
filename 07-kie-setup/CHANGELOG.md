@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.1.0] - 2026-10-06 - feat: Skill 74 dependency, adapter health in QC, common rules pointers
+
+- `PREREQS.json` (Rule 16 shape): new `skill-74-kie-live-adapter` entry, severity optional (Skill 74 itself requires Skill 07, so a required entry here would be circular; 66, 67 and 68 fall back to static tables when it is absent).
+- `qc-kie-setup.sh`: checks the adapter is present and that `health --json` runs and names `74-kie-live-adapter`, hermetically (placeholder key, dead localhost port, nothing leaves the machine); checks `references/kie-common-rules.md` exists; `KIE_QC_OFFLINE=1` skips the live credit probe.
+- `SKILL.md`, `INSTRUCTIONS.md`, `QC.md` point to `references/kie-common-rules.md` as the single source of truth and describe the 66/67/68 flow (validate, preflight, submit via Skill 74, then QC).
+- `references/kie-common-rules.md`: removed the "lands in a follow-up change" notes (Skill 74 v1.1 is in this branch's base).
+- Merged PR #1497 (common rules); its v7.0.5 entry is kept below under a distinct heading. Version roll to v7.1.0.
+
+---
+
 ## [v7.0.6] - 2026-10-05 - fix: price figures marked as historical snapshots; kie-setup-full.md sweep
 
 ### Fixed

@@ -24,8 +24,10 @@ pretend otherwise.
 - [ ] The references document the correct model ids (`google/gemini-3-1-flash-tts`, etc.)
       and endpoints (`https://api.kie.ai/api/v1/jobs/createTask` for TTS;
       `/api/v1/generate` family for Suno).
-- [ ] `skill-version.txt` reads `v2.0.3`.
+- [ ] `skill-version.txt` reads `v2.1.0`.
 - [ ] No real credential value appears anywhere in the skill files.
+
+- [ ] Skill 74 wiring: for TTS, `kie_live_adapter.py validate` and `preflight` run before `submit --mode active` (INSTRUCTIONS.md); with the adapter absent the skill works on `models.json` and curl. `validate_audio_request.py --domain stt` may report a live-catalog candidate but dispatch stays rejected (exit 2) and `dispatch_enabled` stays false.
 
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first.

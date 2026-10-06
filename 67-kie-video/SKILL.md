@@ -7,9 +7,9 @@ description: >
   Gemini Omni Video, Runway Dedicated, Veo 3.1 Dedicated), payload validation
   against a machine-readable registry, prompt sizing against published limits,
   asynchronous task dispatch with callbacks or polling, and mandatory real visual QC.
-version: v2.0.4
+version: v2.1.0
 metadata:
-  version: "2.0.4"
+  version: "2.1.0"
   priority: HIGH
 ---
 
@@ -42,12 +42,12 @@ All video tasks are asynchronous: HTTP 200 from createTask or dedicated endpoint
 2. **Select** (`scripts/select_video_model.py`) — Maps natural-language video request to canonical model ID and task mode, or returns alternatives.
 3. **Validate the prompt** (`scripts/validate_prompt.py`) — Model-aware character band check against registry hard caps (Rules A–E). Verified caps hard-fail (exit code 2); NOT_PUBLISHED/LIVE_PROBE_REQUIRED warn with proposed bands.
 4. **Validate the payload** (`scripts/validate_payload.py`) — Endpoint matching, durations, resolutions, media reference counts/sizes, and per-family constraints validated before dispatch to prevent wasted credits.
-5. **Dispatch & Monitor** — POST to createTask or dedicated endpoint. Wait via Skill 46 Webhook Callback (`callBackUrl`) or stepped recordInfo polling (3s -> 5s -> 10s -> 15s; max 15 min).
+5. **Dispatch through Skill 74 & Monitor** — `kie_live_adapter.py validate` (live schema, registry fallback), then `preflight` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay); dedicated Runway/Veo routes keep their curated endpoints (INSTRUCTIONS.md Step 5). Wait via Skill 46 Webhook Callback (`callBackUrl`) or stepped recordInfo polling (3s -> 5s -> 10s -> 15s; max 15 min).
 6. **QC** — Perform multi-frame visual QC on downloaded asset (Frame 0, Midpoint, Final Frame; references/qc.md). Retry along the 5-step controlled retry ladder.
 
 ## Registry & Prompt Doctrine
 
-- `models.json` contains all 37 verified entries with exact first-party endpoints, caps, and parameters.
+- `models.json` is this skill's CURATED POLICY and verified-override registry (37 verified entries with exact first-party endpoints, caps, and parameters). It is not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 `validate` (live schema, registry fallback) and `price` are. A model missing here is DISCOVERED, never an automatic default; there is no auto-latest for video.
 - Standard house band: desired min 5,000 chars, target ~9,000 chars, preferred max 19,000 chars (for models with cap ≥20,000). For smaller cap models, enforce high-density compression without losing control domains.
 
 ## Prerequisites & Auth

@@ -368,6 +368,20 @@ class Misc(Base):
         rc, r = self.run_cli(a2, ["submit", "--request", req, "--mode", "off"])
         self.assertEqual(r["state"], "skipped")
 
+    def test_callback_url_flag_overrides_request_file(self):
+        from fakes import std_routes
+        a, tr, c = make(self.tmp, std_routes(), mode="active")
+        req = os.path.join(self.tmp, "req.json")
+        with open(req, "w") as f:
+            json.dump({"model": MODEL, "input": {"prompt": "x"}, "callBackUrl": "https://old.example/cb"}, f)
+        rc, r = self.run_cli(a, ["submit", "--request", req, "--callback-url", "https://relay.example/cb?j=abc"])
+        self.assertEqual((r["state"], r["data"]["callback_url"], r["data"]["callback_sent"]),
+                         ("queued", "https://relay.example/cb?j=abc", True))
+        body = json.loads(next(x for x in tr.calls if x["method"] == "POST")["body"])
+        self.assertEqual(body["callBackUrl"], "https://relay.example/cb?j=abc")
+        rc, r = self.run_cli(a, ["submit", "--request", req, "--callback-url", "ftp://x"])
+        self.assertEqual((rc, r["error"]["code"]), (1, "bad_request"))
+
     def run_cli(self, a, argv):
         out = io.StringIO()
         rc = K.main(argv, adapter=a, out=out)

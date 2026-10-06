@@ -1313,6 +1313,12 @@ def _load_json(path):
         return json.load(f)
 
 
+def _with_callback(req, url):
+    if url and isinstance(req, dict):
+        req = dict(req, callBackUrl=url)  # validated (http or https) by cmd_submit
+    return req
+
+
 def main(argv=None, adapter=None, out=sys.stdout):
     ap = argparse.ArgumentParser(prog="kie_live_adapter.py", description=__doc__.splitlines()[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -1330,10 +1336,12 @@ def main(argv=None, adapter=None, out=sys.stdout):
     add("schema", ("--model", {"required": True}))
     add("validate", ("--model", {"required": True}), ("--payload", {"required": True}))
     add("upload", ("--file", {}), ("--url", {}), ("--upload-path", {"default": "openclaw/uploads"}))
-    add("submit", ("--request", {"required": True}), ("--dry-run", {"action": "store_true"}))
+    add("submit", ("--request", {"required": True}), ("--dry-run", {"action": "store_true"}),
+        ("--callback-url", {"help": "Skill 46 relay callBackUrl; overrides callBackUrl in the request file"}))
     add("wait", ("--task-id", {"required": True}), ("--timeout", {"type": float, "default": 300}))
     add("run", ("--request", {"required": True}), ("--save-dir", {"required": True}),
-        ("--timeout", {"type": float, "default": None}))
+        ("--timeout", {"type": float, "default": None}),
+        ("--callback-url", {"help": "Skill 46 relay callBackUrl; overrides callBackUrl in the request file"}))
     add("credits")
     add("price", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
     add("preflight", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
@@ -1366,11 +1374,11 @@ def main(argv=None, adapter=None, out=sys.stdout):
                 raise KieError("bad_request", "give exactly one of --file / --url")
             r = ad.cmd_upload(a.file, a.url, a.upload_path)
         elif a.cmd == "submit":
-            r = ad.cmd_submit(_load_json(a.request), a.dry_run)
+            r = ad.cmd_submit(_with_callback(_load_json(a.request), a.callback_url), a.dry_run)
         elif a.cmd == "wait":
             r = ad.cmd_wait(a.task_id, a.timeout)
         elif a.cmd == "run":
-            r = ad.cmd_run(_load_json(a.request), a.save_dir, a.timeout)
+            r = ad.cmd_run(_with_callback(_load_json(a.request), a.callback_url), a.save_dir, a.timeout)
         elif a.cmd == "credits":
             r = ad.cmd_credits()
         elif a.cmd == "price":

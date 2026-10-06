@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.0] - 2026-10-06 - feat: TTS dispatch runs through Skill 74; STT stays gated
+
+- `INSTRUCTIONS.md` and `SKILL.md`: TTS (Market createTask) first runs `kie_live_adapter.py validate` and `preflight --units <thousands of characters>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then audio QC. `skipped` falls back to curl. Suno keeps its curated dedicated route.
+- `validate_audio_request.py` (same wiring Skill 66 got in v1.1): a TTS model NOT in `models.json` is validated by Skill 74 against its live schema and must report a Text to Speech capability; otherwise (or adapter absent) the old "unknown or unsupported model" rejection stands. New `scripts/adapter_bridge.py`. Self-test 21 became 28 checks.
+- STT gate unchanged and fail-closed: `--domain stt` now also asks Skill 74 `discover` (a free, read-only catalog GET) whether the live catalog lists a speech-to-text candidate and REPORTS it; any dispatch attempt still exits 2 and `dispatch_enabled` stays false until the re-proof in `references/stt.md` passes. Tested: candidate listed, still gated.
+- `models.json` is described as the CURATED POLICY and verified-override registry (`registry_policy.role`). No auto-latest for audio.
+
+### Open item (owner decision, not changed here)
+- KIE's live catalog (Skill 74 registry snapshot, 2026-10-06) lists `ai-music-api/*` whose schema declares `/api/v1/jobs/createTask`, while this skill's curated route is the dedicated `/api/v1/generate` family. This change keeps the curated route as the dispatch route and only adds `price` and `preflight` for the matching catalog id. Which route is authoritative is the owner's call.
+- Version roll to v2.1.0 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
 ## [v2.0.3] - 2026-10-05 - fix: dead credit endpoint, version drift, registry and test counts, retention prose
 
 ### Fixed

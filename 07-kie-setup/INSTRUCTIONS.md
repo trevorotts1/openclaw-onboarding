@@ -120,6 +120,13 @@ things you will do: generate images, generate videos, check on jobs, check
 your credits, and upload files. If you have not set up KIE.ai yet, go to
 INSTALL.md first.
 
+Canonical rules: `references/kie-common-rules.md` in this skill folder is the single
+source of truth for authority order, endpoints, rate limits, polling, prompt caps,
+credit preflight, prices, retention, keys and model ids. Where this guide disagrees
+with it, the common rules win. For image, video and TTS dispatch, the modality skills
+(66, 67, 68) run Skill 74 `validate` and `preflight` before `submit --mode active`;
+see 74-kie-live-adapter/INSTRUCTIONS.md.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HOW KIE.AI WORKS (THE BIG PICTURE)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.0] - 2026-10-06 - feat: dispatch runs through Skill 74 (validate, preflight, submit), registry is the curated policy
+
+- `INSTRUCTIONS.md` Step 5 and `SKILL.md`: Market dispatch first runs `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight --units <seconds>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then multi-frame QC. `skipped` (adapter off or shadow) falls back to the curl path; adapter absent skips the first two steps with a note.
+- `validate_payload.py` (same wiring Skill 66 got in v1.1): a Market model that is NOT in `models.json` is validated by Skill 74 against its live schema (registry snapshot fallback) instead of being rejected outright, with a warning that it is an explicit pick only. Adapter absent or silent: the old "not present in registry" rejection. Dedicated Runway and Veo payloads are never routed this way. New `scripts/adapter_bridge.py`. Self-test 29/29 became 32/32.
+- No auto-latest for video: a new live model is DISCOVERED (`discover --modality video`), never selected or made a default.
+- `models.json` is described as the CURATED POLICY and verified-override registry (`registry_policy.role`).
+
+### Open item (owner decision, not changed here)
+- KIE's live catalog (Skill 74 registry snapshot, 2026-10-06) lists `runway`, `veo-3-1` and `veo/*` whose schema declares `/api/v1/jobs/createTask`, while this skill's curated route is the dedicated `/api/v1/runway/generate` and `/api/v1/veo/generate` routes. This change keeps the curated route as the dispatch route and only adds `price` and `preflight` for the matching catalog id. Which route is authoritative is the owner's call.
+- Version roll to v2.1.0 (`SKILL.md`, `QC.md`, `skill-version.txt`, three script `VERSION` constants). Select 43/43, `validate_prompt` 17/17, normalize PASS.
+
+---
+
 ## [v2.0.4] - 2026-10-05 - docs: wording fix in the v2.0.3 entry
 
 - The v2.0.3 entry said the `sync` change was listed as investigate-only in the "release notes"; it was the PR #1492 text. Corrected. Version roll to v2.0.4 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.
