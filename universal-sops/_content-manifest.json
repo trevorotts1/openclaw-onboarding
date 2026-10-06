@@ -1,16 +1,16 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-04T23:08:26Z",
+  "generated_at": "2026-10-06T03:09:18Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "b9e94a26cd2855d8a0c0bfd8f74aa470858b52a7465d0d7c63417f6a921711f6",
-      "bytes": 32101
+      "sha256": "8d139a7820417b6cfd7d1484c11f1139170121d0f6ce95cfe6ee7fb5ce4d2349",
+      "bytes": 33354
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
-      "sha256": "ca4816bd32ebc441a3b2cfbc431f4a735ff1d9ffc7dfa9efdcde705a966acc35",
-      "bytes": 14489
+      "sha256": "005b347c449c3207339c81809d36e4b6fd954c55e4b6a2eb7cd3474dda60dd23",
+      "bytes": 14889
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
       "sha256": "5a560ba13ee88feeae23d6f98145a14ec84872adf2ff6b29792cfa0eda966563",
@@ -33,8 +33,8 @@
       "bytes": 7408
     },
     "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
-      "sha256": "8c304f30237210e1561769a018f6cb5036d031d53808381374571301c8027857",
-      "bytes": 13628
+      "sha256": "f33d9bfd61bfe51407debeb7c7bf6b2252d5b9689d416d4c85d748b9e71a50c9",
+      "bytes": 13946
     },
     "anthology-craft/SOP-ANTHOLOGY-02-CLIENT-ONBOARDING.md": {
       "sha256": "3f0217aea3e6e71bdb2494bea1a7dac4ba340d3b01defa1f9324edd97c530c8d",
@@ -49,8 +49,8 @@
       "bytes": 7695
     },
     "anthology-craft/SOP-ANTHOLOGY-05-CREDIT-HEALTH-AND-QUEUE.md": {
-      "sha256": "c18e101cbd7a1c51271eacb96177c1f4ad11ad030c34591254dcf8e7a983354b",
-      "bytes": 9435
+      "sha256": "80fa3ef5367822f4ed61d3cca10c3de947e1518e41bfa8bcab69f2b046041b85",
+      "bytes": 9514
     },
     "avatar-craft/README.md": {
       "sha256": "64e4ff5333af250a4f99bd7727776171904a81f2a76e40adff218e8501a0c710",
@@ -105,8 +105,8 @@
       "bytes": 2456
     },
     "fb-ad-craft/AD-PIPELINE-MANIFEST.json": {
-      "sha256": "09f2e03959b3866a536169284c75144c732a01ddba65eed29f727083fb62abd9",
-      "bytes": 38928
+      "sha256": "db8defd68caf6c4c6e442bd54fe534ad4ef64b6723f50d2f56677f08e13bf151",
+      "bytes": 39011
     },
     "fb-ad-craft/MASTER-AD-QC-AUTOFAIL-RULESET.md": {
       "sha256": "ef1664b18995ed318199f02438ed2b575da3984ce57a0a1a9a86d1574e366645",
@@ -137,8 +137,8 @@
       "bytes": 2387
     },
     "fb-ad-craft/SOP-FBAD-06-IMAGE-PROMPTS.md": {
-      "sha256": "34e121eb1374b4b96b72adae9d01bc2a28ae4d3bf4381e5286af641a7dbd4e6d",
-      "bytes": 5874
+      "sha256": "0f7e54af2e83fcf5775ada2a9a62dbd7da40c4e636fb39d7965b856403fe751e",
+      "bytes": 6380
     },
     "fb-ad-craft/SOP-FBAD-07-TARGETING.md": {
       "sha256": "8a53df23a821d3558bb88d647a73e025f45d69dbf2981abd166375b91e4d132c",
@@ -205,8 +205,8 @@
       "bytes": 7900
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
-      "sha256": "eb4cc89a4733bae9974be67a3b83c07060b63527051ddbdee0c7e95437afb6fe",
-      "bytes": 2918
+      "sha256": "7277fbe63071f73ecd1d9783a757b2ba97c8ea0f7e6d0c9e5c64e45caf026ad8",
+      "bytes": 3206
     },
     "funnel-craft/SOP-FUNNEL-04-BUILD.md": {
       "sha256": "15216ef46a39b8aa49b3de1e7a2e7f99624a6a133680e379a9032441f0afecf3",
@@ -229,8 +229,8 @@
       "bytes": 3209
     },
     "podcast-craft/SOP-PODCAST-01-ENGINE-RUNBOOK.md": {
-      "sha256": "008edcaaca34d25bbadfec780a2118fd7a6e8debac97f88d0085a8964d6c92a8",
-      "bytes": 22755
+      "sha256": "2f0213faecda3088cb8b6ed694d25a2b0ba92452ab6bce1f94655fd77bcac2fd",
+      "bytes": 22889
     },
     "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
       "sha256": "497f7ee3233aebc9b7466c8a70d8aa8e4d090b21f6a23a1dab41680c6243c7f1",
@@ -241,8 +241,8 @@
       "bytes": 9806
     },
     "podcast-craft/SOP-PODCAST-04-CREDIT-HEALTH-AND-QUEUE.md": {
-      "sha256": "ddeb70fb275c60dc43798c082c93d2b534503d1d16ecc28421eb2833be9b0669",
-      "bytes": 11879
+      "sha256": "f138b4dcac95f1625031b5608b3ea08779c52d63d1cadc583189269836d8a3a9",
+      "bytes": 12183
     },
     "podcast-craft/SOP-PODCAST-05-EPISODE-QC.md": {
       "sha256": "a016211837c64b11b940fa463eb56b7df636888459cdac904b17bdf69bd47d8d",
@@ -369,8 +369,8 @@
       "bytes": 11988
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "263dda9cb4e2ace67410e62847bab766a17248248606fef7022e18490ad1fdc7",
-      "bytes": 8941
+      "sha256": "70c0b259472a60c2b738fc381acbe24c80016868054bbd495339482e7b6dccf7",
+      "bytes": 9327
     },
     "social-media-craft/README.md": {
       "sha256": "99b162e15e67c709f0e9a624bc6c064ad021b16f40f132d6e41c88b399c78aad",
@@ -385,8 +385,8 @@
       "bytes": 3559
     },
     "social-media-craft/SOP-SOCIAL-02-RUN.md": {
-      "sha256": "86db5424bfce288ac2959e4596b6fb0b4a7ef6484f5840dc82f75743b0373c93",
-      "bytes": 4460
+      "sha256": "4d8dc9cd1eb13815220b2970a3a392864f08d9d0e81d40771d170289b22b00f1",
+      "bytes": 5144
     },
     "social-media-craft/SOP-SOCIAL-03-CREATIVE-INTERJECTION.md": {
       "sha256": "2da90891d0129e2652462c4dc61edfb20aef6f83933c4d2ec37c47492a1f1187",
@@ -413,16 +413,16 @@
       "bytes": 2444
     },
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
-      "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",
-      "bytes": 18394
+      "sha256": "2e423dc4b3785658f7e56f737b451a09a462efe5a623277886b8636f900b16fc",
+      "bytes": 18415
     },
     "video-production/README.md": {
       "sha256": "13d47a0d07b2e7cfdfaefae4da3c88c55c82fc09f5f8ed4202aad03ced378c07",
       "bytes": 6478
     },
     "video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md": {
-      "sha256": "c531d1c7b09f8bac7817e5d0072525b3b37f9f7a505af4263d6974a5a3fd9cfc",
-      "bytes": 64048
+      "sha256": "b5ea7774abbd2a6f8cdb9aec425769ce88bc9ce58caec27994115663d8fa9704",
+      "bytes": 64744
     },
     "video-production/VIDEO-PRODUCTION-MANIFEST.json": {
       "sha256": "52d9babd962a1a10bef182b3c0d388b94035b2ceea1daf61f54b6701ac115f7c",

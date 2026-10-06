@@ -36,8 +36,11 @@ end-load the negative block.
 
 Images are generated ONLY through the Skill 47 Kie adapter (`kie_image.py`): `GPT-Image-2.5`,
 text-to-image by default, 16:9 & 2K defaults (Sec 4 → 16:9, Sec 12 → 3:4). The optional
-`reference_images` hook maps to the adapter's `image_input` (≤8 refs; auto image-to-image) with the
-mandatory style-only guard appended. NEVER hand-roll a Kie `createTask` — that is AF-FUN-CANONICAL-BYPASS.
+`reference_images` hook hands the references to the adapter (≤8 refs; auto image-to-image) with the
+mandatory style-only guard appended. The adapter owns the wire field name for the references; the
+live GPT-Image-2.5 image-to-image route takes `input_urls` (AGENTS.md N43), so never write either
+field by hand. Always use the client's own Kie key, and see `07-kie-setup/references/kie-common-rules.md`
+for the shared Kie rules. NEVER hand-roll a Kie `createTask`; that is AF-FUN-CANONICAL-BYPASS.
 
 ## 4. PROVENANCE
 
