@@ -8,7 +8,7 @@
 > governs the *deterministic render + delivery* half of the process. It is **not** the whole
 > process. Before a `slides.json` is written, the department runs **LAYER A — the authoring
 > pipeline** (intake → priority shift → arc → research → copy → copy-QC → typography →
-> **rich prompt authoring (9,000–18,000-char per-slide prompt files)** → prompt-QC → speech),
+> **rich prompt authoring (per-slide prompt files sized by Kie rule 12)** → prompt-QC → speech),
 > governed by `PIPELINE-MANIFEST.json` and the role library and served one enforced step at a
 > time by `run_signature_deck.py --next`. This SOP (**LAYER B**) is how the render is invoked
 > once Layer A's artifacts exist. The two layers are ONE pipeline, not two products or two
@@ -418,14 +418,17 @@ exists at `outputPath` before reporting.
 ## 9. ENFORCEMENT (AF-I14) AND THE MODEL MANIFEST
 
 **9.0 Model manifest (the only place this pipeline names a model).** The script, never the builder,
-applies it, and `intake.json` `model_pin` plus `presentation_job/model_catalog.py` are the machine copy:
+applies it, and `presentation_job/model_catalog.py` is the machine copy:
 - Default: `gpt-image-2-5-sunburst-image-to-image` (a logo, portrait or style reference is supplied in
   `input_urls`) or `gpt-image-2-5-sunburst-text-to-image` (no reference), 16:9, 2K.
 - The legacy `gpt-image-2-*` route is used only for 3:1, 1:3 and 9:21; the `flare` variant is not
   registered (AGENTS.md N43; call mechanics in `presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md`
   section 2A).
-- Prompt caps: 20,000 characters on 2.5 and 25,000 on the legacy route; authored deck prompt files stay
-  inside the 9,000 to 18,000 character band.
+- Prompt caps: 20,000 characters on 2.5 and 25,000 on the legacy route. Prompt length follows rule 12 of
+  `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap:
+  2.5 floor 16,000, legacy floor 20,000). The `build_deck.py` constants PROMPT_CHAR_FLOOR and
+  PROMPT_CHAR_CEILING (AF-P1, AF-P2) are aligned to rule 12 by the Skill 74 v1.1 prompt-budget change in
+  this same release.
 - Key: the client's own `KIE_API_KEY`. The shared Kie rules (live endpoints, rate limits, retention,
   credit preflight) live in `07-kie-setup/references/kie-common-rules.md`.
 

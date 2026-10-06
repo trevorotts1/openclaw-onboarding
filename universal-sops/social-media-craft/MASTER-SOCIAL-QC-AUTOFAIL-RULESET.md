@@ -60,7 +60,7 @@ Every run and every asset is measured against the table below. A violation is a 
 | `AF-SM-BLOG-BODY` | P10 | asset | blog body under 700 words (client-overridable, logged). |
 | `AF-SM-PODCAST-SCRIPT` | P11 | asset | podcast script outside 1,500-2,000 words or < 1 `[emotion]` tag per paragraph. |
 | `AF-SM-PODCAST-DURATION` | P11 | asset | podcast audio outside 600-900 s or under 128 kbps (ffprobe). |
-| `AF-SM-PODCAST-COVER` | P11 | asset | podcast cover not 1400x1400 JPEG. |
+| `AF-SM-PODCAST-COVER` | P11 | asset | podcast cover not exactly 1400x1400 JPEG (this fold's own band; the Podcast Production Engine cover is 1500 to 3000). |
 | `AF-SM-DEFERRED` | defer | run | a capability deferred to a named later version was requested (syndicate C9 v0.4.0 / narrated-video C8 v0.3.0 / persona-adapter C10 v0.5.0 / memory-adapter C11 v0.5.0). The stub fails CLOSED with a clear "deferred to vX.Y.Z" message. |
 
 ## Section 2 — How to run it

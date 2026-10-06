@@ -41,7 +41,7 @@ Each prompt declares these eight sections, in order (AF-FBAD-PROMPT-ORDER):
 
 ### A2. The richness floor
 
-Each prompt is **3,500–18,000 characters** (AF-FBAD-PROMPT-RICHNESS). A thin prompt
+Prompt length follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap: 2.5 floor 16,000). The gate constants PROMPT_MIN_CHARS and PROMPT_MAX_CHARS (AF-FBAD-PROMPT-RICHNESS) are aligned to rule 12 by the Skill 74 v1.1 prompt-budget change in this same release. A thin prompt
 yields generic stock art; this length is what encodes creativity, typography,
 color-grading, quality, and facial-intelligence in enough specificity to be one cohesive
 campaign of 10.
@@ -80,12 +80,12 @@ independent.
 ### B1. The engine (reused as-is)
 
 Generate via the reused Kie adapter `kie_image.py` with the **client's own KIE_API_KEY**.
-The model id is the fleet pin from AGENTS.md N43: `gpt-image-2-5-sunburst-text-to-image`
+The model id is the fleet default from AGENTS.md N43 and rule 11 of the shared Kie rules: `gpt-image-2-5-sunburst-text-to-image`
 (or `-image-to-image` when references are supplied). The 1:1 ratio never routes to the legacy
 `gpt-image-2-*` model, and the `flare` variant is not registered. The gate only checks that the
 id begins `gpt-image-` (AF-FBAD-IMAGE-MODEL), which is a forward-compatible shape check and
-never permission to change the pin: moving to another variant or version needs a new operator
-ruling. Render **1500×1500, 1:1** (AF-FBAD-IMAGE-SIZE). The shared Kie rules (live endpoints,
+never permission to pick a model: the default follows rules 11 and 13 of the shared Kie rules
+(department pins override), and the `flare` variant needs a new owner ruling. Render **1500×1500, 1:1** (AF-FBAD-IMAGE-SIZE). The shared Kie rules (live endpoints,
 rate limits, key handling) live in `07-kie-setup/references/kie-common-rules.md`.
 
 ### B2. Money discipline (the running tally — not a balance call per image)

@@ -30,7 +30,7 @@ Never call `run_social_media.py` directly (front-door-nonce mismatch -> exit 4).
 | `day` | director-of-social-media | Single-day regenerate + publish. |
 | `carousel` | social-media-graphics-specialist | 10-slide FB/IG or 9-slide LinkedIn-PDF (`postAsPdf:true`). |
 | `video` | director-of-social-media | Sora 25.0s lane (`--narrated` -> DEFERRED v0.3.0). |
-| `podcast` | director-of-podcast | Script -> Fish-Audio S2 -> ffprobe bands -> Podbean + 1400x1400 cover. |
+| `podcast` | director-of-podcast | Script -> Fish-Audio S2 -> ffprobe bands -> Podbean + exactly 1400x1400 cover (this fold's own band in `config/bands.json`; the Podcast Production Engine cover is 1500 to 3000 per SOP-PODCAST-01). |
 | `newsletter` | email-campaign-strategist | Weekly social-week digest via GHL Campaigns (subject <=60 / preview <=120). |
 | `blog` | content-marketing-strategist | Day-7 long-form via GHL blog (LeadConnector `blogs.write`). |
 | `engage` | community-manager | Read-only 7-day metrics poll -> anomaly report (SOP-05). |
