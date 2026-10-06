@@ -159,7 +159,7 @@ _COMMON = {
         "Color and grade. Use the project palette, {palette}, as a structure: a dominant family for calm areas, a supporting family for mid-sized elements and the strongest accent for the hero. "
         "Let {subject} take that accent and let {setting} carry the calm dominant family. "
         "The color of the air and the light at {time} should tint the shadows inside {setting} consistently. "
-        "Grade for the mood of {mood}: keep skin, natural materials and any visible daylight within believable ranges, a clean black point and highlights that roll off instead of clipping. "
+        "Grade for the mood of {mood}: keep skin, natural materials and any visible light sources within believable ranges, a clean black point and highlights that roll off instead of clipping. "
         "Keep {materials} true to their own hue under {light} so the grade supports them instead of repainting them."
     ),
     "materials": (
@@ -198,7 +198,7 @@ _COMMON = {
         "The purpose to {purpose} is served by feeling, not by decoration."
     ),
     "scale": (
-        "Scale and proportion. Keep human-scale cues in the {medium} wherever size matters, and keep them consistent relative to {subject} and to the architecture or landscape of {setting}. "
+        "Scale and proportion. Keep human-scale cues in the {medium} wherever size matters, and keep them consistent relative to {subject} and to the structure and surroundings of {setting}. "
         "Do not let {subject} drift in apparent size between frames of this scene, and do not exaggerate it unless the story calls for a monumental feel. "
         "Maintain correct perspective for the lens: parallel lines converge toward vanishing points that agree across objects, and equal objects shrink by equal ratios with distance. "
         "Ground planes and the main horizontal lines in {setting} must recede correctly under {light}."
@@ -304,6 +304,20 @@ _STILL = {
         "Avoiding synthetic artefacts. Check the places where generated pictures usually fail: hands and fingers, teeth and eyes, repeated or cloned texture in {materials}, text-like marks that are not letters, symmetrical duplicates, melted or fused edges where {subject} meets {setting}, and objects that change scale across the frame. "
         "Resolve each of these deliberately: vary the repeated pattern, break the symmetry, give every edge a physical reason and keep every object at one consistent scale."
     ),
+    "negative_space": (
+        "Negative space. Plan the empty areas on purpose: the open space around {subject} gives it presence, and the quiet area kept for copy must stay calm at both crops, {crop_d} on desktop and {crop_m} on mobile. "
+        "Shape the empty space so that it leads toward {subject} instead of leaving a hole, give it a tone that follows {light}, and keep it free of small bright accents. "
+        "A mood of {mood} needs space to breathe, so protect the space even when {setting} offers detail to fill it."
+    ),
+    "light_ratio": (
+        "Lighting ratio. Set the ratio between the key and the fill so that {subject} keeps its form: strong enough that {materials} show their relief under {light}, soft enough that the shadow side still carries detail at {time}. "
+        "Keep the ratio the same across the whole {medium} so that nothing looks lit by a different source, and let the deepest shadow hold the faintest trace of the surfaces around {subject}."
+    ),
+    "accent": (
+        "Accent discipline. From the project palette, {palette}, choose one accent family and place it on {subject} and on at most one other small element. "
+        "Keep {materials} in the calmer neighbouring families so the accent stays rare, and keep the accent's saturation within what {light} would really produce at {time}. "
+        "An accent that appears three times stops being an accent."
+    ),
     "reference": (
         "Reference fidelity. If reference images are supplied they are binding: reproduce the identity, proportions, palette, finish and design vocabulary of {subject} and {setting} exactly and change only what this prompt asks to change. "
         "Where a reference and this prompt disagree on a detail that matters for continuity, the reference wins; anything new is designed so that it looks photographed on the same set on the same day."
@@ -374,6 +388,18 @@ _MOTION = {
         "Ready for web encoding. The clip will be compressed for the page, so keep large gradients in {setting} smooth and free of banding, keep noise and grain even from frame to frame so the encoder does not shimmer, and avoid fine repeating patterns on {materials} that alias when scaled. "
         "Keep the brightness of {subject} steady under {light}, because a fluctuating level reads as flicker once compressed."
     ),
+    "easing": (
+        "Easing and frame rhythm. Over the {duration} seconds, the {cam_move} move at {cam_speed} speed should ease in over roughly the first tenth of the clip and ease out over the last tenth, with a constant speed between. "
+        "Keep that rhythm identical on every playback so the clip scrubs predictably, and keep {motion} locked to the same rhythm so that nothing in the frame accelerates on its own."
+    ),
+    "foreground": (
+        "Foreground elements for parallax. Give the move something near the lens to pass: a soft out-of-focus edge, a surface of {materials} or a partial form that belongs to {setting}, entering and leaving the frame smoothly. "
+        "Keep it dark or low in contrast so it never competes with {subject}, and let it sell the three dimensional depth of the {cam_move} move under {light}."
+    ),
+    "end_hold": (
+        "Ending hold. The last frames settle on the {cam_end} framing and hold steady so that copy and buttons can sit over {subject} without the picture moving under them. "
+        "Hold the light, the focus and the position of {subject} exactly, and let only the faintest ambient motion continue, in keeping with a mood of {mood}."
+    ),
     "pacing": (
         "Pacing. Divide the {duration} seconds into a gentle opening in which the viewer settles on the {cam_start} framing, a steady middle in which {motion} unfolds, and a calm close in which the {cam_end} framing arrives and holds for the last few frames. "
         "Keep the amount of new visual information per second low and steady so the clip stays readable at any scroll speed and feels unhurried. "
@@ -405,13 +431,13 @@ _STILL_ORDER = [
     ("c", "materials"), ("c", "lens"), ("c", "color"), ("s", "boundary"), ("c", "atmosphere"), ("c", "mood"),
     ("c", "continuity"), ("s", "crop"), ("c", "time_conditions"), ("c", "layout"), ("s", "detail"), ("c", "scale"),
     ("c", "background"), ("c", "wear"), ("c", "finish"), ("s", "depth_ready"), ("s", "micro_detail"), ("s", "tonal_range"), ("s", "silhouette"), ("s", "separation"), ("s", "camera_height"),
-    ("s", "story_detail"), ("s", "artefacts"),
+    ("s", "story_detail"), ("s", "negative_space"), ("s", "light_ratio"), ("s", "accent"), ("s", "artefacts"),
     ("s", "reference"), ("c", "people"), ("c", "exclusions"),
 ]
 _VIDEO_ORDER = [
     ("c", "subject"), ("c", "setting"), ("m", "path"), ("c", "composition"), ("c", "light"), ("m", "subject_motion"),
     ("m", "parallax"), ("c", "materials"), ("m", "endpoints"), ("c", "lens"), ("m", "temporal"), ("c", "color"),
-    ("c", "atmosphere"), ("m", "lens_move"), ("c", "mood"), ("m", "light_move"), ("c", "continuity"), ("m", "shutter"), ("m", "plane_handoff"), ("m", "motion_artefacts"), ("m", "encode_ready"), ("m", "pacing"),
+    ("c", "atmosphere"), ("m", "lens_move"), ("c", "mood"), ("m", "light_move"), ("c", "continuity"), ("m", "shutter"), ("m", "plane_handoff"), ("m", "motion_artefacts"), ("m", "encode_ready"), ("m", "easing"), ("m", "foreground"), ("m", "end_hold"), ("m", "pacing"),
     ("c", "time_conditions"), ("c", "layout"), ("m", "scrub"), ("c", "scale"), ("c", "background"), ("c", "wear"), ("c", "finish"),
     ("c", "people"), ("c", "exclusions"),
 ]

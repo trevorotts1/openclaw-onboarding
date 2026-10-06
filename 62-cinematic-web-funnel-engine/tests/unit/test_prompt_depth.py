@@ -158,30 +158,40 @@ def _operator_direction(sec: str, i: int):
     return sc
 
 
+def _four_word_direction(sec: str, i: int):
+    """The shortest plausible direction: four words per field."""
+    sc = scene(sec, i)
+    sc["production_direction"] = {k: " ".join(v.split()[:4]) for k, v in sc["production_direction"].items()}
+    return sc
+
+
+MAXIMA = (20000, 12000, 8000, 5000, 2500, 1000)
+
+
 class BandForEveryInputShapeTests(unittest.TestCase):
-    """Rule 12 is a 95 to 100 percent target, not just the 80 percent floor: it must hold for a project-level still with no
-    scene (concept board, anchor), a scene with no direction, and a scene with concise operator direction."""
+    """Rule 12 is a 95 to 100 percent target, not just the 80 percent floor, for ANY direction shape and ANY model maximum:
+    a project-level still with no scene (concept board, anchor), a scene with no direction, concise 60 to 90 character
+    operator direction, four-word direction, and full planner direction; stills and clips; six maxima."""
 
     def _check(self, sections, label):
-        for mx in (20000,):
-            b = budget(mx)
-            out = pd.fit_prompt("base prompt text", sections, b)
-            self.assertGreaterEqual(len(out), 0.95 * mx, (label, len(out)))
-            self.assertLessEqual(len(out), mx, (label, len(out)))
+        for mx in MAXIMA:
+            with self.subTest(label=label, max=mx):
+                b = budget(mx)
+                out = pd.fit_prompt("base prompt text", sections, b)
+                self.assertGreaterEqual(len(out), 0.95 * mx, (label, mx, len(out)))
+                self.assertLessEqual(len(out), mx, (label, mx, len(out)))
 
     def test_stills_and_clips_reach_95_percent_without_a_scene(self) -> None:
         self._check(pd.image_sections(STYLE), "still, no scene")
         self._check(pd.video_sections(STYLE), "clip, no scene")
 
-    def test_stills_and_clips_reach_95_percent_without_direction(self) -> None:
-        for i, sec in enumerate(SECTIONS):
-            self._check(pd.image_sections(STYLE, _no_direction(sec, i)), f"still, no direction, {sec}")
-            self._check(pd.video_sections(STYLE, _no_direction(sec, i)), f"clip, no direction, {sec}")
-
-    def test_stills_and_clips_reach_95_percent_with_concise_operator_direction(self) -> None:
-        for i, sec in enumerate(SECTIONS):
-            self._check(pd.image_sections(STYLE, _operator_direction(sec, i)), f"still, concise, {sec}")
-            self._check(pd.video_sections(STYLE, _operator_direction(sec, i)), f"clip, concise, {sec}")
+    def test_stills_and_clips_reach_95_percent_for_every_direction_shape(self) -> None:
+        shapes = (("full", scene), ("none", _no_direction), ("concise", _operator_direction), ("four words", _four_word_direction))
+        for name, make in shapes:
+            for i, sec in enumerate(SECTIONS):
+                self._check(pd.image_sections(STYLE, make(sec, i)), f"still, {name}, {sec}")
+                self._check(pd.video_sections(STYLE, make(sec, i)), f"clip, {name}, {sec}")
+                self._check(pd.video_sections(STYLE, make(sec, i), scene("cta", 3)), f"connector, {name}, {sec}")
 
     def test_the_project_level_anchor_uses_the_first_scene_of_the_plan(self) -> None:
         import generate_images as gi
@@ -222,6 +232,18 @@ class MediumAndWorldTests(unittest.TestCase):
         banned = re.compile(r"\b(sky|skies|horizons?|vegetation|weather|foliage|clouds?|breeze|outdoors?)\b", re.I)
         for i, sec in enumerate(SECTIONS):
             text = "\n".join(pd.image_sections(indoor, scene(sec, i)) + pd.video_sections(indoor, scene(sec, i)) + pd.video_sections(indoor, scene(sec, i), scene("cta", 3)))
+            self.assertIsNone(banned.search(text), (sec, banned.search(text)))
+
+    def test_planner_defaults_respect_an_indoor_world(self) -> None:
+        """The planner's defaults must not smuggle in a time of day or a place type that the world may not have."""
+        banned = re.compile(r"\b(sunrise|sunsets?|architecture|landscapes?|daylight|dawn|dusk|midday|(?:mid-|late-)?(?:morning|afternoon)|skies|sky|horizons?)\b", re.I)
+        indoor = dict(STYLE, visual_world="a family bakery kitchen at the back of a shop", lighting_logic="a warm overhead pendant")
+        for i, sec in enumerate(SECTIONS + ["a custom section"]):
+            direction = pj._section_direction(sec, i)
+            self.assertIsNone(banned.search(" ".join(direction.values())), (sec, direction))
+            sc = scene(sec, i)
+            sc["production_direction"] = direction
+            text = "\n".join(pd.image_sections(indoor, sc) + pd.video_sections(indoor, sc))
             self.assertIsNone(banned.search(text), (sec, banned.search(text)))
 
     def test_the_setting_is_not_pasted_more_than_twice_per_paragraph(self) -> None:
