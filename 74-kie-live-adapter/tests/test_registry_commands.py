@@ -187,6 +187,20 @@ class PromptBudget(Base):
         d = a.cmd_prompt_budget(MODEL)["data"]
         self.assertEqual((d["max"], d["limit_source"]), (4000, "policy-owner:66-kie-image"))
 
+    def test_legacy_n43_cap_superseded_warning(self):
+        sk = os.path.join(self.tmp, "skills", "66-kie-image")
+        os.makedirs(sk)
+        with open(os.path.join(sk, "models.json"), "w") as f:
+            json.dump({"models": [{"canonical_model_id": MODEL, "owner_observed_cap_chars": 25000,
+                                   "live_schema_cap_chars": 20000}]}, f)
+        a, tr, c = self.adapter(self.routes(schema(20000)))
+        r = a.cmd_prompt_budget(MODEL, True, "x" * 20001)
+        self.assertEqual((r["data"]["max"], r["data"]["exit_code"]), (20000, 4))
+        self.assertTrue(any("25000" in w and "superseded" in w and "2026-10-05" in w for w in r["warnings"]), r["warnings"])
+        # description-stated limit does not let the old 25,000 override the live figure either
+        a, tr, c = self.adapter(self.routes(schema(None, "Text prompts, up to 20,000 characters.")), env={"KIE_LIVE_CACHE_DIR": os.path.join(self.tmp, "cc")})
+        self.assertEqual(a.cmd_prompt_budget(MODEL)["data"]["max"], 20000)
+
     def test_verbatim_field_has_no_floor(self):
         tts = "elevenlabs/text-to-speech-turbo-2-5"
         doc = {"paths": {K.JOB_PATH: {"post": {"requestBody": {"content": {"application/json": {"schema": {
@@ -423,3 +437,70 @@ paths:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RealPricing(Base):
+    """Units must come from KIE's real phrasings (credits/s, credits / sec, credits per video second, ...)."""
+
+    def test_real_strings_parse_to_the_right_unit(self):
+        from real_pricing import REAL
+        for mid, unit, raw in REAL:
+            self.assertEqual(K.parse_pricing(raw)["unit"], unit, mid)
+
+    def test_duration_prices_stay_per_job(self):
+        from real_pricing import REAL
+        p = K.parse_pricing(dict((m, r) for m, _, r in REAL)["kling/v2-1-pro"])
+        self.assertEqual((p["unit"], p["credits_max"]), ("per-job", 100.0))
+        self.assertEqual(K.estimate_credits(p, 7), 100.0, "per-job price does not scale with units")
+        self.assertEqual(K.parse_pricing("5s at 720p costs 12 credits per video, 10s at 720p costs 30 credits per video")["unit"], "per-job")
+
+    def test_free_is_zero_credits(self):
+        p = K.parse_pricing("Check Voice is free.")
+        self.assertEqual((p["credits_max"], K.estimate_credits(p)), (0.0, 0.0))
+
+    def test_scaling_with_units(self):
+        from real_pricing import REAL
+        raws = dict((m, r) for m, _, r in REAL)
+        sd = K.parse_pricing(raws["bytedance/seedance-2"])
+        top = sd["credits_max"]
+        self.assertEqual(K.estimate_credits(sd, 5), round(top * 5, 4))
+        self.assertEqual(K.preflight_amount(K.estimate_credits(sd, 5)), K.preflight_amount(top * 5))
+        hh = K.parse_pricing(raws["happyhorse/text-to-video"])
+        self.assertEqual((hh["credits_max"], K.estimate_credits(hh, 10)), (48.0, 480.0))
+        tts = K.parse_pricing(raws["elevenlabs/text-to-speech-turbo-2-5"])
+        self.assertEqual(K.estimate_credits(tts, 3), 18.0)  # 6 credits per 1,000 characters x 3 thousand
+
+    def test_price_command_scales_real_seedance(self):
+        from real_pricing import REAL
+        raws = dict((m, r) for m, _, r in REAL)
+        a, tr, c = self.adapter([["GET", "/api/v1/models", [cat(("bytedance/seedance-2", ["Text to Video"], raws["bytedance/seedance-2"]))]]])
+        one = a.cmd_price("bytedance/seedance-2", 1)["data"]
+        five = a.cmd_price("bytedance/seedance-2", 5)["data"]
+        self.assertEqual((one["unit"], five["unit"]), ("per-second", "per-second"))
+        self.assertEqual(five["credits_estimate"], round(one["credits_estimate"] * 5, 4))
+
+    def test_committed_registry_units(self):
+        """Registry-wide: no model whose pricing text is per second is labeled per-job; duration prices stay per-job."""
+        reg = json.loads(slurp(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "kie-model-registry.json")))
+        per_second_ids = {
+            "bytedance/seedance-2", "bytedance/seedance-2-5", "bytedance/seedance-2-fast", "bytedance/seedance-2-mini",
+            "bytedance/seedance-1.5-pro", "happyhorse/text-to-video", "happyhorse-1-1/text-to-video", "kling-3.0/video",
+            "kling-3.0-omni/text-to-video", "kling-3.0/motion-control", "kling/v3-turbo-text-to-video",
+            "pixverse-v6/text-to-video", "minimax-h3/text-to-video", "wan/3-0-video", "wan/3-0-video-prime",
+            "wan/2-2-a14b-speech-to-video-turbo", "wan/2-2-animate-move", "grok-imagine/text-to-video",
+            "kling/ai-avatar-pro", "hailuo/02-image-to-video-pro", "wan/2-7-text-to-video", "infinitalk/from-audio"}
+        per_job_ids = {"kling/v2-1-pro", "kling/v2-1-master-text-to-video", "wan/2-6-text-to-video", "runway",
+                       "kling/v2-5-turbo-text-to-video-pro", "veo-3-1", "gpt-image-2-5-sunburst-text-to-image"}
+        by = {m["id"]: m for m in reg["models"]}
+        for i in per_second_ids:
+            self.assertEqual(by[i]["pricing"]["unit"], "per-second", i)
+        for i in per_job_ids:
+            self.assertEqual(by[i]["pricing"]["unit"], "per-job", i)
+        import re
+        phrase = re.compile(r"(?i)credits?\b[^\n]{0,40}?(?:/|／|per\s+(?:video[\s-])?)\s*(?:s|sec|second)s?\b")
+        for m in reg["models"]:
+            raw = m["pricing"].get("raw") or ""
+            if any("Video" in t for t in m["taskType"]) and phrase.search(raw):
+                self.assertNotEqual(m["pricing"]["unit"], "per-job", m["id"])
+            if raw:
+                self.assertEqual(m["pricing"]["unit"], K.parse_pricing(raw)["unit"], m["id"])

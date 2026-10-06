@@ -112,7 +112,9 @@ def validate_body(prompt, model_id, strict):
         if entry is None:
             return _result(model_id, "UNKNOWN", chars, errors=["model %r not in registry" % model_id], status="UNKNOWN")
         cap = entry.get("cap_status", "NOT_PUBLISHED")
-        mx = entry.get("vendor_hard_cap_chars") or entry.get("owner_observed_cap_chars")
+        # KIE's live schema (20,000 for legacy gpt-image-2) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
+        mx = (entry.get("live_schema_cap_chars") or entry.get("vendor_hard_cap_chars")
+              or entry.get("owner_observed_cap_chars"))
         w = ["Skill 74 adapter unavailable; limit taken from models.json (%s)" % cap]
         if mx:
             r = _from_budget(model_id, cap, chars, budget(mx), "models.json:%s" % cap, w)
@@ -151,7 +153,7 @@ def validate_prompt(prompt, model_id, strict=False):
 # ---------------------------------------------------------------------------
 
 # (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
-# Bridge off: limits come from models.json (gpt-2.5 20,000 DOCS; legacy gpt-image-2 25,000 owner-confirmed;
+# Bridge off: limits come from models.json (gpt-2.5 20,000 DOCS; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
 # wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
 STATIC_CASES = [
     ("wan 5000 = max ok", 5000, "wan/2-7-image", True, "OK", False),
@@ -168,9 +170,10 @@ STATIC_CASES = [
     ("gpt-2.5 9500 (old house target) now rejected", 9500, "gpt-image-2-5-sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
     ("gpt-2.5 300 chars rejected", 300, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
-    ("legacy gpt-image-2 25000 ok", 25000, "gpt-image-2-text-to-image", True, "OK", False),
-    ("legacy gpt-image-2 19999 below its 20000 floor", 19999, "gpt-image-2-text-to-image", False, "BELOW_FLOOR", False),
-    ("legacy gpt-image-2 25001 above max", 25001, "gpt-image-2-text-to-image", False, "ABOVE_MAX", True),
+    ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "OK", False),
+    ("legacy gpt-image-2 15999 below its 16000 floor", 15999, "gpt-image-2-text-to-image", False, "BELOW_FLOOR", False),
+    ("legacy gpt-image-2 20001 above max (N43 25,000 superseded)", 20001, "gpt-image-2-text-to-image", False,
+     "ABOVE_MAX", True),
     ("ideogram 5000 ok", 5000, "ideogram/v3-text-to-image", True, "OK", False),
     ("ideogram 5001 above max", 5001, "ideogram/v3-text-to-image", False, "ABOVE_MAX", True),
     ("imagen4 5000 ok", 5000, "google/imagen4", True, "OK", False),

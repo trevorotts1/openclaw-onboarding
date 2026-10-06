@@ -272,24 +272,40 @@ def _vkey(v):
     return tuple(v)
 
 
+_PER_SECOND_RE = re.compile(
+    r"(?i)credits?\b[^\n]{0,40}?(?:/|\uff0f|\bper\s+(?:video[\s-])?)\s*(?:s|sec|second)s?\b|\b1[\s-]second\b")
+_PER_TOKENS_RE = re.compile(r"(?i)tokens?\b|/\s*1?\s*m\b|per\s+m\b")
+_PER_KCHARS_RE = re.compile(r"(?i)per\s+1,?000\s+characters|per\s+1\s*k\s+characters")
+_PER_IMAGE_RE = re.compile(r"(?i)credits?\b[^\n]{0,30}?(?:per|/)\s*image\b")
+# Units that scale with --units: seconds of output, thousands of characters, images, millions of tokens.
+SCALING_UNITS = ("per-second", "per-1k-chars", "per-image", "per-1m-tokens")
+
+
 def parse_pricing(raw):
-    """Prose pricingDesc -> {credits_min, credits_max, unit, all}. Numbers are credits only (never USD)."""
+    """Prose pricingDesc -> {credits_min, credits_max, unit, all}. Numbers are credits only (never USD).
+    unit: per-1m-tokens, per-second ('credits/s', 'credits / sec', 'credits per video second', '1 second of
+    video costs'), per-1k-chars (TTS), per-image, free-as-per-job, else per-job. A duration price such as
+    'A 5-second video costs 160 credits' or '5s at 720p costs 12 credits per video' is per-job (that clip)."""
     text = raw if isinstance(raw, str) else ""
     nums = [float(x.replace(",", "")) for x in
             re.findall(r"(?i)(\d[\d,]*(?:\.\d+)?)\s*(?:kie\s+)?credits?\b", text)]
-    low = text.lower()
-    unit = ("per-1m-tokens" if re.search(r"tokens?\b|/\s*1?\s*m\b|per\s+m\b", low) else
-            "per-second" if re.search(r"per\s+(?:video\s+)?second|\bper\s+sec\b|1[\s-]second", low) else "per-job")
+    if not nums and re.search(r"(?i)\bfree\b", text):
+        nums = [0.0]
+    unit = ("per-1m-tokens" if _PER_TOKENS_RE.search(text) else
+            "per-second" if _PER_SECOND_RE.search(text) else
+            "per-1k-chars" if _PER_KCHARS_RE.search(text) else
+            "per-image" if _PER_IMAGE_RE.search(text) else "per-job")
     return {"credits_min": min(nums) if nums else None, "credits_max": max(nums) if nums else None,
             "unit": unit, "all": nums}
 
 
 def estimate_credits(parsed, units=1):
-    """Conservative (highest listed tier) estimate; per-second and per-1M-token prices scale by units."""
+    """Conservative estimate: the highest listed tier. Scaling units (seconds, thousand characters, images,
+    million tokens) multiply it by `units`; per-job prices do not."""
     top = parsed.get("credits_max")
     if top is None:
         return None
-    return round(top * (units if parsed.get("unit") != "per-job" else 1), 4)
+    return round(top * (units if parsed.get("unit") in SCALING_UNITS else 1), 4)
 
 
 def preflight_amount(credits):
@@ -416,7 +432,7 @@ def registry_input_schema(entry):
 
 
 def policy_limit(model_id, here=None):
-    """Policy-owner prompt limit from sibling skills 66/67/68. -> (max|None, owner|None, owner_confirmed)."""
+    """Policy-owner prompt limit from sibling skills 66/67/68. -> (max|None, owner|None, owner_confirmed, n43_recorded|None)."""
     here = here or os.path.dirname(os.path.abspath(__file__))
     roots = [os.path.join(here, "..", ".."), os.environ.get("OPENCLAW_SKILLS_DIR") or "",
              os.path.join(os.path.expanduser("~"), ".openclaw", "skills"), "/data/.openclaw/skills"]
@@ -436,17 +452,19 @@ def policy_limit(model_id, here=None):
                 for e in d.get("models") or d.get("entries") or []:
                     if e.get("canonical_model_id") != model_id:
                         continue
+                    if isinstance(e.get("live_schema_cap_chars"), int):  # KIE's live schema supersedes N43's 25,000 (2026-10-05)
+                        return e["live_schema_cap_chars"], owner, False, e.get("owner_observed_cap_chars")
                     if isinstance(e.get("owner_observed_cap_chars"), int):  # N43: owner-confirmed beats stale docs
-                        return e["owner_observed_cap_chars"], owner, True
+                        return e["owner_observed_cap_chars"], owner, True, e["owner_observed_cap_chars"]
                     if isinstance(e.get("vendor_hard_cap_chars"), int):
-                        return e["vendor_hard_cap_chars"], owner, False
+                        return e["vendor_hard_cap_chars"], owner, False, None
                     caps = e.get("caps") or {}
                     for k in ("text_max_chars", "per_turn_text_max_chars", "combined_text_max_chars", "prompt_max_chars"):
                         if isinstance(caps.get(k), int):
-                            return caps[k], owner, False
-                    return None, None, False
+                            return caps[k], owner, False, None
+                    return None, None, False, None
                 break
-    return None, None, False
+    return None, None, False, None
 
 
 # ------------------------------------------------------------------ adapter
@@ -1008,8 +1026,10 @@ class Adapter:
         est = estimate_credits(parsed, units)
         if est is None:
             w = w + ["pricing text has no credit figure; no estimate (price source: %s)" % src]
-        elif parsed["unit"] != "per-job":
-            w = w + ["price is %s; estimate = highest listed rate x units (%s)" % (parsed["unit"], units)]
+        elif parsed["unit"] in SCALING_UNITS:
+            w = w + ["price is %s; estimate = highest listed tier x units (%s)" % (parsed["unit"], units)]
+        if raw and re.search(r"(?i)input video duration", raw):
+            w = w + ["billing counts input plus output video duration: pass --units as the total seconds"]
         d = {"pricing_desc": raw, "credits_min": parsed["credits_min"], "credits_max": parsed["credits_max"],
              "unit": parsed["unit"], "units": units, "credits_estimate": est,
              "preflight_required": preflight_amount(est), "preflight_multiplier": PREFLIGHT_MULT, "price_source": src}
@@ -1076,7 +1096,7 @@ class Adapter:
                 pf, src = dict(pf, **ent["prompt_field"]), "registry"
                 notes += self._reg_note()
         mx, how = pf.get("maxLength"), pf.get("max_source")
-        pol, owner, confirmed = policy_limit(model)
+        pol, owner, confirmed, n43 = policy_limit(model)
         if pf.get("name") is not None and pol:
             if confirmed and how != "schema":
                 notes.append("owner-confirmed limit %s from %s used over %s" % (pol, owner, how or "no stated limit"))
@@ -1085,6 +1105,9 @@ class Adapter:
                 mx, src = pol, "policy-owner:%s" % owner
             elif pol != mx:
                 notes.append("policy owner %s records %s; %s says %s; using %s" % (owner, pol, src, mx, mx))
+        if n43 and mx is not None and n43 != mx:
+            notes.append("N43's recorded %s (owner-confirmed 2026-08-27) is superseded by KIE's live schema as of 2026-10-05: "
+                         "%s is the hard limit (KIE rejects longer prompts)" % (n43, mx))
         if how == "description" and src.startswith(("live", "registry")):
             src += " (stated in the field description, not a schema maxLength)"
         if pf.get("limits_listed"):

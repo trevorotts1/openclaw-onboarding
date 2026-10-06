@@ -196,13 +196,13 @@ ALIASES = {
     # GPT Image 2 route is still reachable via an explicit canonical model id
     # (gpt-image-2-text-to-image / gpt-image-2-image-to-image, matched via
     # MODEL_TO_FAMILY below) or the "legacy"-qualified phrases added here.
-    "gpt-img2": "gpt-image-2-5-sunburst",
-    "gpt img2": "gpt-image-2-5-sunburst",
-    "gpt image 2": "gpt-image-2-5-sunburst",
-    "gpt-image 2": "gpt-image-2-5-sunburst",
-    "gpt image 2.0": "gpt-image-2-5-sunburst",
-    "gpt-image-2.0": "gpt-image-2-5-sunburst",
-    "gpt-image-2": "gpt-image-2-5-sunburst",
+    "gpt-img2": "gpt-image-2",
+    "gpt img2": "gpt-image-2",
+    "gpt image 2": "gpt-image-2",
+    "gpt-image 2": "gpt-image-2",
+    "gpt image 2.0": "gpt-image-2",
+    "gpt-image-2.0": "gpt-image-2",
+    "gpt-image-2": "gpt-image-2",
     # gpt 2.5 / sunburst phrasing (new, added alongside the retargeted aliases
     # above -- no existing alias key was deleted)
     "gpt image 2.5": "gpt-image-2-5-sunburst",
@@ -211,6 +211,10 @@ ALIASES = {
     "gpt image 2.5 sunburst": "gpt-image-2-5-sunburst",
     "gpt-img2.5": "gpt-image-2-5-sunburst",
     "sunburst": "gpt-image-2-5-sunburst",
+    # version-less generic names: the fleet default, which follows the newest generation (owner order 2026-10-05)
+    "gpt image": "gpt-image-2-5-sunburst",
+    "gpt-image": "gpt-image-2-5-sunburst",
+    "openai image": "gpt-image-2-5-sunburst",
     # explicit legacy pin phrasing (retained route, ruling 2026-09-09)
     "gpt image 2 legacy": "gpt-image-2",
     "legacy gpt image 2": "gpt-image-2",
@@ -394,11 +398,11 @@ def family_from_text(text):
 GPT_2_5_LEGACY_ONLY_RATIOS = {"3:1", "1:3", "9:21"}
 GPT_2_5_RATIO_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
 
-# Short human aliases that mean "the fleet GPT Image default" (owner ruling 2026-09-09). Under the owner
-# order of 2026-10-05 these follow the newest generation; an explicit "2.5"/"sunburst" alias or a
-# canonical model id is a pin and never moves.
-GENERIC_GPT_ALIASES = {"gpt-img2", "gpt img2", "gpt image 2", "gpt-image 2", "gpt image 2.0",
-                       "gpt-image-2.0", "gpt-image-2"}
+# Version-less generic names ("gpt image", "gpt-image", "openai image") mean "the fleet GPT Image default" and
+# follow the newest generation (owner order 2026-10-05). Names that carry a version ("gpt image 2", "gpt-img2",
+# "gpt image 2.5", "sunburst") or a canonical model id are pins and never move: "gpt image 2" is the
+# legacy GPT Image 2 family (used with its own N43 ratio rules).
+GENERIC_GPT_ALIASES = {"gpt image", "gpt-image", "openai image"}
 _DEFAULT_MEMO = {}
 
 
@@ -719,7 +723,9 @@ SELFTEST_CASES = [
     ("general product photography request", "gpt-image-2-5-sunburst-text-to-image", True, None),
     ("wan 2.7 image 4K output please", "wan/2-7-image-pro", True, None),
     ("wan/2-7-image with 4K output", None, False, "wan/2-7-image-pro"),
-    ("use gpt-img2 for this headshot edit", "gpt-image-2-5-sunburst-image-to-image", True, None),
+    # Version-2 names are the legacy family (owner correction 2026-10-06); version-less names get the default.
+    ("use gpt-img2 for this headshot edit", "gpt-image-2-image-to-image", True, None),
+    ("use gpt image for this headshot edit", "gpt-image-2-5-sunburst-image-to-image", True, None),
     ("quinn image 3.0 create an infographic", "qwen3/text-to-image", True, None),
     ("z image generate a blue robot", "z-image", True, None),
     ("z image by quinn", "z-image", True, None),
@@ -758,10 +764,16 @@ NEWER = {"state": "success", "data": {"family": "gpt-image", "source": "live", "
 DYNAMIC_CASES = [
     ("newer generation becomes the default (t2i)", NEWER, "general product photography request",
      "gpt-image-3-aurora-text-to-image"),
-    ("newer generation becomes the default (i2i)", NEWER, "edit this headshot with gpt-img2",
+    ("newer generation becomes the default (i2i)", NEWER, "edit this headshot with gpt image",
      "gpt-image-3-aurora-image-to-image"),
-    ("generic alias follows the newest generation", NEWER, "use gpt image 2 for this poster",
+    ("version-less generic alias follows the newest generation", NEWER, "use gpt image for this poster",
      "gpt-image-3-aurora-text-to-image"),
+    ("openai image follows the newest generation", NEWER, "make an openai image of a leaf",
+     "gpt-image-3-aurora-text-to-image"),
+    ("gpt image 2 names version 2: legacy, not auto-latest", NEWER, "use gpt image 2 for this poster",
+     "gpt-image-2-text-to-image"),
+    ("gpt-img2 names version 2: legacy, not auto-latest", NEWER, "edit this headshot with gpt-img2",
+     "gpt-image-2-image-to-image"),
     ("explicit 2.5 alias is a pin and never moves", NEWER, "use gpt image 2.5 sunburst for this poster",
      "gpt-image-2-5-sunburst-text-to-image"),
     ("explicit canonical id is a pin", NEWER, "dispatch with gpt-image-2-5-sunburst-text-to-image explicitly",

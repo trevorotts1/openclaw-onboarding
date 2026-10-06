@@ -79,10 +79,11 @@ Run the normalizer before anything else:
   python3 scripts/normalize_alias.py "<model mention from the request>"
 
 Mappings (spec 13): Cling->Kling, Quinn->Qwen, C Dream/Seed Dream->Seedream,
-Idiogram->Ideogram, Imagine 4->Imagen 4, GPT-img2 / GPT-image 2.0->GPT Image
-2.5 (operator ruling 2026-09-09 — short aliases now resolve to the 2.5
-default; the retained legacy GPT Image 2 route stays reachable via its
-explicit canonical model id or an explicit "legacy" phrase),
+Idiogram->Ideogram, Imagine 4->Imagen 4, GPT-img2 / GPT-image 2.0 / "gpt image 2"
+->legacy GPT Image 2 (owner correction 2026-10-06: a name that carries version 2
+is the legacy family, used with its own N43 ratio rules), "gpt image" / "gpt-image" /
+"openai image" (no version) -> the fleet default, which follows the newest
+generation,
 Nano Banana Light->Nano Banana 2 Lite. Z-Image is its OWN family and is NEVER
 merged into Qwen (even when the user says "Z Image by Quinn" — the two are
 different providers' models on the same market).
@@ -134,10 +135,10 @@ the exact number to CUT; 80-95% passes with a warning to expand. Unknown limit:
 UNKNOWN warning, no floor. Verbatim content (spoken text, lyrics) has no floor.
 Without the adapter the limit is the models.json cap. Per-model figures today:
 
-- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the
-  live schema; N43 records 25,000 as owner-confirmed for the retained legacy entries.
-  The validator uses the live schema figure and prints a warning that names the
-  difference.
+- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the live
+  schema, which is the hard limit (KIE rejects longer prompts); the 25,000 that N43 recorded
+  as owner-confirmed is superseded by KIE's live schema as of 2026-10-05, and the validator
+  prints a warning saying so.
 - Wan 2.7 Image, Ideogram V3, Imagen 4 family: 5,000 (floor 4,000, target 4,750+).
 - Qwen Image 3.0/Pro: docs advertise 4.5K TOKENS (rule D: never a fake char cap);
   the live schema states 5,000 chars.

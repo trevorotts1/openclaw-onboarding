@@ -1,6 +1,6 @@
 {
  "schema_version": "1.0.0",
- "generated_at": "2026-10-06T03:52:04Z",
+ "generated_at": "2026-10-06T04:28:00Z",
  "source": "live-api",
  "adapter": "74-kie-live-adapter",
  "price_note": "pricing.raw is KIE's pricingDesc prose; credits are parsed numbers (never USD).",
@@ -13,7 +13,7 @@
   "with_prompt_field": 155,
   "prompt_max_known": 141,
   "with_verbatim_fields": 14,
-  "price_parsed": 199,
+  "price_parsed": 207,
   "families": {
    "claude": 12,
    "deepseek": 1,
@@ -50,7 +50,7 @@
   }
  },
  "catalog_total": 218,
- "catalog_fetched_at": "2026-10-06T03:38:32Z",
+ "catalog_fetched_at": "2026-10-06T04:23:58Z",
  "models": [
   {
    "id": "4o-image-api",
@@ -68,7 +68,7 @@
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 6.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 6.0
    },
    "schema": {
@@ -411,11 +411,11 @@
    "variant": "check-voice",
    "pricing": {
     "raw": "Check Voice is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -515,11 +515,11 @@
    "variant": "cover-generate",
    "pricing": {
     "raw": "Cover Generate is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -627,11 +627,11 @@
    "variant": "create-voice",
    "pricing": {
     "raw": "Create voice is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -1051,11 +1051,11 @@
    "variant": "generate-midi-from-audio",
    "pricing": {
     "raw": "Generate MIDI is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -1104,11 +1104,11 @@
    "variant": "generate-persona",
    "pricing": {
     "raw": "Generate Persona is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -1319,11 +1319,11 @@
    "variant": "regenerate-phrase",
    "pricing": {
     "raw": "Regenerate phrase is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -2234,11 +2234,11 @@
    "variant": "validation-phrase",
    "pricing": {
     "raw": "Validation phrase is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -2301,7 +2301,7 @@
     "status": "ok",
     "credits_min": 1.75,
     "credits_max": 15.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 15.0
    },
    "schema": {
@@ -2402,7 +2402,7 @@
     "status": "ok",
     "credits_min": 11.5,
     "credits_max": 208.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 208.0
    },
    "schema": {
@@ -2528,7 +2528,7 @@
     "status": "ok",
     "credits_min": 17.0,
     "credits_max": 158.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 158.0
    },
    "schema": {
@@ -2659,7 +2659,7 @@
     "status": "ok",
     "credits_min": 6.8,
     "credits_max": 24.8,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 24.8
    },
    "schema": {
@@ -2782,7 +2782,7 @@
     "status": "ok",
     "credits_min": 2.4,
     "credits_max": 8.2,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 8.2
    },
    "schema": {
@@ -2897,7 +2897,7 @@
     "status": "ok",
     "credits_min": 3.5,
     "credits_max": 3.5,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 3.5
    },
    "schema": {
@@ -2971,7 +2971,7 @@
     "status": "ok",
     "credits_min": 5.0,
     "credits_max": 5.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 5.0
    },
    "schema": {
@@ -3069,7 +3069,7 @@
     "status": "ok",
     "credits_min": 5.0,
     "credits_max": 5.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 5.0
    },
    "schema": {
@@ -5609,7 +5609,7 @@
     "status": "ok",
     "credits_min": 14.0,
     "credits_max": 14.0,
-    "unit": "per-job",
+    "unit": "per-1k-chars",
     "credits_estimate": 14.0
    },
    "schema": {
@@ -5838,7 +5838,7 @@
     "status": "ok",
     "credits_min": 12.0,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-1k-chars",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -6007,7 +6007,7 @@
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 6.0,
-    "unit": "per-job",
+    "unit": "per-1k-chars",
     "credits_estimate": 6.0
    },
    "schema": {
@@ -6511,7 +6511,7 @@
     "status": "ok",
     "credits_min": 5.0,
     "credits_max": 10.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 10.0
    },
    "schema": {
@@ -9668,7 +9668,7 @@
     "status": "ok",
     "credits_min": 8.0,
     "credits_max": 8.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 8.0
    },
    "schema": {
@@ -9741,7 +9741,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -9813,7 +9813,7 @@
     "status": "ok",
     "credits_min": 12.0,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -9884,7 +9884,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -9980,7 +9980,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -11954,7 +11954,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 22.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 22.0
    },
    "schema": {
@@ -12035,7 +12035,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 22.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 22.0
    },
    "schema": {
@@ -12853,7 +12853,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -12916,11 +12916,11 @@
    "variant": "segment-map",
    "pricing": {
     "raw": "Pricing: Generate segment map is free.",
-    "status": "no-credit-figure",
-    "credits_min": null,
-    "credits_max": null,
+    "status": "ok",
+    "credits_min": 0.0,
+    "credits_max": 0.0,
     "unit": "per-job",
-    "credits_estimate": null
+    "credits_estimate": 0.0
    },
    "schema": {
     "readable": true,
@@ -12998,7 +12998,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -13214,7 +13214,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -13276,7 +13276,7 @@
     "status": "ok",
     "credits_min": 2.4,
     "credits_max": 8.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 8.0
    },
    "schema": {
@@ -13445,7 +13445,7 @@
     "status": "ok",
     "credits_min": 2.4,
     "credits_max": 8.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 8.0
    },
    "schema": {
@@ -14021,7 +14021,7 @@
     "status": "ok",
     "credits_min": 22.5,
     "credits_max": 29.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 29.0
    },
    "schema": {
@@ -14101,7 +14101,7 @@
     "status": "ok",
     "credits_min": 22.5,
     "credits_max": 29.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 29.0
    },
    "schema": {
@@ -14195,7 +14195,7 @@
     "status": "ok",
     "credits_min": 22.5,
     "credits_max": 29.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 29.0
    },
    "schema": {
@@ -14276,7 +14276,7 @@
     "status": "ok",
     "credits_min": 28.0,
     "credits_max": 48.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 48.0
    },
    "schema": {
@@ -14354,7 +14354,7 @@
     "status": "ok",
     "credits_min": 28.0,
     "credits_max": 48.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 48.0
    },
    "schema": {
@@ -14445,7 +14445,7 @@
     "status": "ok",
     "credits_min": 28.0,
     "credits_max": 48.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 48.0
    },
    "schema": {
@@ -14527,7 +14527,7 @@
     "status": "ok",
     "credits_min": 28.0,
     "credits_max": 48.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 48.0
    },
    "schema": {
@@ -14953,7 +14953,7 @@
     "status": "ok",
     "credits_min": 3.5,
     "credits_max": 10.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 10.0
    },
    "schema": {
@@ -15142,7 +15142,7 @@
     "status": "ok",
     "credits_min": 3.5,
     "credits_max": 10.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 10.0
    },
    "schema": {
@@ -15231,7 +15231,7 @@
     "status": "ok",
     "credits_min": 3.0,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -15688,7 +15688,7 @@
     "status": "ok",
     "credits_min": 11.0,
     "credits_max": 18.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 18.0
    },
    "schema": {
@@ -15854,7 +15854,7 @@
     "status": "ok",
     "credits_min": 14.0,
     "credits_max": 67.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 67.0
    },
    "schema": {
@@ -16320,7 +16320,7 @@
     "status": "ok",
     "credits_min": 14.0,
     "credits_max": 67.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 67.0
    },
    "schema": {
@@ -16853,7 +16853,7 @@
     "status": "ok",
     "credits_min": 14.0,
     "credits_max": 67.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 67.0
    },
    "schema": {
@@ -17021,7 +17021,7 @@
     "status": "ok",
     "credits_min": 20.0,
     "credits_max": 67.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 67.0
    },
    "schema": {
@@ -17342,7 +17342,7 @@
     "status": "ok",
     "credits_min": 20.0,
     "credits_max": 27.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 27.0
    },
    "schema": {
@@ -17419,7 +17419,7 @@
     "status": "ok",
     "credits_min": 14.0,
     "credits_max": 67.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 67.0
    },
    "schema": {
@@ -17588,7 +17588,7 @@
     "status": "ok",
     "credits_min": 8.0,
     "credits_max": 16.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 16.0
    },
    "schema": {
@@ -17647,7 +17647,7 @@
     "status": "ok",
     "credits_min": 8.0,
     "credits_max": 16.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 16.0
    },
    "schema": {
@@ -18180,7 +18180,7 @@
     "status": "ok",
     "credits_min": 18.0,
     "credits_max": 22.5,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 22.5
    },
    "schema": {
@@ -18255,7 +18255,7 @@
     "status": "ok",
     "credits_min": 18.0,
     "credits_max": 22.5,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 22.5
    },
    "schema": {
@@ -18332,7 +18332,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 13.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 13.0
    },
    "schema": {
@@ -18436,7 +18436,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 13.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 13.0
    },
    "schema": {
@@ -18567,7 +18567,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 13.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 13.0
    },
    "schema": {
@@ -19136,7 +19136,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 18.4,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 18.4
    },
    "schema": {
@@ -19297,7 +19297,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 18.4,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 18.4
    },
    "schema": {
@@ -19444,7 +19444,7 @@
     "status": "ok",
     "credits_min": 4.5,
     "credits_max": 20.7,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 20.7
    },
    "schema": {
@@ -19571,7 +19571,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 18.4,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 18.4
    },
    "schema": {
@@ -19672,7 +19672,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 18.4,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 18.4
    },
    "schema": {
@@ -19882,7 +19882,7 @@
     "status": "ok",
     "credits_min": 4.0,
     "credits_max": 4.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.0
    },
    "schema": {
@@ -20480,7 +20480,7 @@
     "status": "ok",
     "credits_min": 0.5,
     "credits_max": 4.8,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.8
    },
    "schema": {
@@ -20593,7 +20593,7 @@
     "status": "ok",
     "credits_min": 0.5,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -20706,7 +20706,7 @@
     "status": "ok",
     "credits_min": 6.4,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -20808,7 +20808,7 @@
     "status": "ok",
     "credits_min": 4.8,
     "credits_max": 4.8,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 4.8
    },
    "schema": {
@@ -21148,7 +21148,7 @@
     "status": "ok",
     "credits_min": 6.5,
     "credits_max": 6.5,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 6.5
    },
    "schema": {
@@ -21238,7 +21238,7 @@
     "status": "ok",
     "credits_min": 6.5,
     "credits_max": 6.5,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 6.5
    },
    "schema": {
@@ -21318,7 +21318,7 @@
     "status": "ok",
     "credits_min": 3.24,
     "credits_max": 3.24,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 3.24
    },
    "schema": {
@@ -21416,7 +21416,7 @@
     "status": "ok",
     "credits_min": 3.24,
     "credits_max": 3.24,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 3.24
    },
    "schema": {
@@ -21492,7 +21492,7 @@
     "status": "ok",
     "credits_min": 3.24,
     "credits_max": 3.24,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 3.24
    },
    "schema": {
@@ -21581,7 +21581,7 @@
     "status": "ok",
     "credits_min": 5.5,
     "credits_max": 5.5,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 5.5
    },
    "schema": {
@@ -21680,7 +21680,7 @@
     "status": "ok",
     "credits_min": 5.5,
     "credits_max": 5.5,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 5.5
    },
    "schema": {
@@ -21770,7 +21770,7 @@
     "status": "ok",
     "credits_min": 0.5,
     "credits_max": 14.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 14.0
    },
    "schema": {
@@ -21868,7 +21868,7 @@
     "status": "ok",
     "credits_min": 7.0,
     "credits_max": 14.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 14.0
    },
    "schema": {
@@ -21944,7 +21944,7 @@
     "status": "ok",
     "credits_min": 0.5,
     "credits_max": 14.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 14.0
    },
    "schema": {
@@ -22599,7 +22599,7 @@
     "status": "ok",
     "credits_min": 12.0,
     "credits_max": 24.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 24.0
    },
    "schema": {
@@ -22800,7 +22800,7 @@
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 12.5,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 12.5
    },
    "schema": {
@@ -22869,7 +22869,7 @@
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 12.5,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 12.5
    },
    "schema": {
@@ -23367,7 +23367,7 @@
     "status": "ok",
     "credits_min": 4.8,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -23511,7 +23511,7 @@
     "status": "ok",
     "credits_min": 4.8,
     "credits_max": 12.0,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 12.0
    },
    "schema": {
@@ -24102,7 +24102,7 @@
     "status": "ok",
     "credits_min": 8.0,
     "credits_max": 32.0,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 32.0
    },
    "schema": {
@@ -24220,7 +24220,7 @@
     "status": "ok",
     "credits_min": 12.2,
     "credits_max": 50.4,
-    "unit": "per-job",
+    "unit": "per-second",
     "credits_estimate": 50.4
    },
    "schema": {
@@ -24333,7 +24333,7 @@
     "status": "ok",
     "credits_min": 0.8,
     "credits_max": 0.8,
-    "unit": "per-job",
+    "unit": "per-image",
     "credits_estimate": 0.8
    },
    "schema": {
