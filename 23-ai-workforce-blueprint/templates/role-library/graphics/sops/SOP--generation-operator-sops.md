@@ -29,7 +29,7 @@
 
 **Outputs:** Receipt file in `_local/receipts/` with state `submitted`; job directory with compiled negatives artifact.
 **Hand to:** CDO/requestor when the Render Dispatcher's poller completes postflight verification and flips the receipt to `complete`. Off-style results after postflight -> Fidelity Tester (SOP 9.5). Hard-rule violations -> quarantine (SOP 9.7).
-**Failure mode:** Any preflight failure returns an itemized failure list to the requestor and logs the rejection in the receipt. Never submit a failing preflight. Never improvise a fix to a preflight failure -- that is prompt authoring, not operator work.
+**Failure mode:** Any preflight failure returns an itemized failure list to the requestor and logs the rejection in `_local/dispatch-log.md` (no receipt exists before submission). Never submit a failing preflight. Never improvise a fix to a preflight failure -- that is prompt authoring, not operator work.
 
 ---
 
@@ -87,7 +87,7 @@
 
 **Preflight checklist (run in this order -- any failure = halt and return itemized list to sender):**
 
-1. **Char count:** Count actual characters in the fully assembled positive prompt. Verify against the endpoint's cap from MODEL-SPECS §1 (Seedream 4.5 text-to-image and edit: 3,000 characters, the vendor's published maxLength on docs.kie.ai, verified 2026-10-06 (Seedream 5.0 Lite 3,000; 5.0 Pro and Flash 5,000). Skill 66's NOT_PUBLISHED entry for Seedream is stale and Skill 74's live schema is the ongoing source). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over.
+1. **Char count -- MIN floor AND MAX cap, both hard-gated (mirrors presentations' `build_deck.py` fail-closed shape):** Run `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <asset-class band> --prompt-file <assembled-prompt>` against `45-design-intelligence-library/library/_system/prompt-bands.json` BEFORE any endpoint-cap check. The requesting role's assembly packet declares the band (`text_bearing_long` for copy-bearing deliverables on GPT-Image T2I/I2I (2.5 `sunburst` by default per N43; the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21), `text_bearing_medium` for the Ideogram V3 DESIGN route mandatory on quote-card/text-led posts, `visual_long` for photoreal/brand imagery without baked text, `medium` for non-text-bearing Seedream quick posts, `short_draft` for internal drafts ONLY, never a client deliverable; the band names and the quality teeth below still apply; write to the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py and graphics gate thresholds still enforce the old band until the prompt-budget code change lands). A prompt under its band MIN is refused (exit 3, AF-GIP-PROMPT-FLOOR) before you even look at the endpoint's own cap -- this is the floor that was previously missing entirely (G1). A prompt that clears length but fails the length-independent quality teeth (8-class negative block, per-string spelling-locks on text-bearing bands, distinct-word density, style-reference-only directive, no hardcoded demographic split) is also refused (exit 6, AF-GIP-PROMPT-QUALITY). Only after the band gate passes, verify against the endpoint's own cap from MODEL-SPECS §1 (Seedream 4.5 text-to-image and edit: 3,000 characters, the vendor's published maxLength on docs.kie.ai, verified 2026-10-06 (Seedream 5.0 Lite 3,000; 5.0 Pro and Flash 5,000). Skill 66's NOT_PUBLISHED entry for Seedream is stale and Skill 74's live schema is the ongoing source). Return "PREFLIGHT FAIL: char count {actual} exceeds endpoint cap {cap}" if over the endpoint cap; return the validator's own exit-3/exit-6 message verbatim if the band gate fails. Never submit a floor-failed or quality-failed prompt back to the requesting role's original text -- send the itemized gate failure, never a silent pass-through.
 2. **Unfilled variables:** Grep for any `{[A-Z_]+}` token remaining in the assembled prompt. Return "PREFLIGHT FAIL: unfilled variables: {list}" if any found.
 3. **Aspect ratio supported:** Verify the requested aspect ratio appears in the endpoint's supported-ratio table (MODEL-SPECS §1). Return "PREFLIGHT FAIL: aspect ratio {ratio} not supported by {endpoint}" if absent.
 4. **Required params set:** Verify all endpoint-required params are present in the JSON template: `aspect_ratio` for Seedream; `expand_prompt: false` + `aspect_ratio` resolving to a preset for Ideogram production runs; `watermark: false` for Wan. Return "PREFLIGHT FAIL: missing required param {param}" for each absent param.
@@ -115,8 +115,8 @@
 
 **ZHC SOP.** Wraps MODEL-SPECS §5; TEST-PROTOCOL §4, §7; PPT-ANALYSIS-SOP §3B.
 **Library-version pin:** MODEL-SPECS v1.0, TEST-PROTOCOL v1.0, PPT-ANALYSIS-SOP v1.0 (§-refs verified 2026-06-12).
-**When to run:** Receipt written at submission; orphan recovery at every session start; budget gate before every job; circuit breaker checked against every new spend event.
-**Frequency:** Continuous (receipt lifecycle); session-start (orphan sweep); per-job (budget gate).
+**When to run:** Receipt created at submission; budget gate before every job; circuit breaker checked against every new spend event. Orphan recovery is run by the Render Dispatcher (its SOP 9.7), not by the Operator.
+**Frequency:** Continuous (receipt lifecycle); per-job (budget gate).
 
 **Receipt schema (required fields):**
 
@@ -145,6 +145,8 @@ seed:                 {value or "no-seed-endpoint"}
 filled_prompt_hash:   {sha256 of exact filled positive prompt}
 ```
 
+The Operator creates the receipt at submit time; the Dispatcher only advances lifecycle fields on it. `queued`, `held` and `preflight-failed` happen before any task exists, so the Dispatcher records them in `_local/dispatch-log.md`; they stay in the enum so one vocabulary serves both files.
+
 **Budget gate (before every new job):**
 1. Estimate cost: `num_tasks x price_per_task` using the live `pricingDesc` for the selected model and tier (the only price authority; `_local/PRICING.md` holds billed actuals and budget config, not authoritative prices).
 2. Sum all `complete` receipt `cost_class` values for the current billing period.
@@ -163,8 +165,8 @@ filled_prompt_hash:   {sha256 of exact filled positive prompt}
 3. If daily aggregate spend exceeds the per-day cap: halt all new submissions, notify CDO.
 4. Thresholds live in the client's `budget_config` block -- never hardcoded in this SOP.
 
-**Outputs:** Receipt files persisted in `_local/receipts/`; recovered orphan results where available; CDO escalation for unrecoverable orphans and circuit-breaker trips.
-**Hand to:** Cron poller (pending receipts); CDO + requestor (completed receipts); CDO (circuit-breaker and orphan-escalation events).
+**Outputs:** Receipt files persisted in `_local/receipts/`; CDO escalation for circuit-breaker trips (orphan results and escalations come from the Render Dispatcher).
+**Hand to:** Render Dispatcher's poller (submitted receipts); CDO + requestor (completed receipts, after the Dispatcher's postflight); CDO (circuit-breaker events).
 **Failure mode:** If the budget_config block is missing for a client, halt all generation and ask CDO to provide the config. Never generate without a budget cap defined.
 
 ---

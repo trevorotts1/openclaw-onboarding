@@ -11,7 +11,7 @@
 
 ## Role Mission
 
-The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. It writes a per-task receipt file at the moment of submission, enforces a budget gate before every new job, sweeps for orphaned in-flight tasks at every session start, and trips a circuit breaker when aggregate spend crosses configured thresholds. No generation is invisible; no spend is unaccounted.
+The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. It writes a per-task receipt file at the moment of submission, enforces a budget gate before every new job, and trips a circuit breaker when aggregate spend crosses configured thresholds. The Operator is the sole creator of a receipt; the Render Dispatcher only advances lifecycle fields on an existing receipt and does all polling, postflight and orphan recovery (its SOP 9.7). States that exist before submission (`queued`, `held`, `preflight-failed`) are logged by the Dispatcher in `_local/dispatch-log.md`, not in receipts. No generation is invisible; no spend is unaccounted.
 
 ---
 
@@ -36,7 +36,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 2. **Write all required fields** (see Receipt Schema below). The `filled_prompt_hash` field (sha256 of the exact filled positive prompt + seed + card version + model) is the idempotent resubmission key — on recovery, compute this fingerprint first and scan existing receipts before creating a new task.
 
-3. **Set `state: submitted`** immediately. The cron poller will advance the state; the Operator exits after writing this receipt.
+3. **Set `state: submitted`** immediately. The Render Dispatcher's poller will advance the state; the Operator exits after writing this receipt.
 
 4. **Include `company_id` and `dept` fields** for future Command Center telemetry. Populate from the client's box config. Do not skip these fields — they require no re-instrumentation later.
 
@@ -141,19 +141,19 @@ smoke_test:           {true|false}
 | Per-task receipt file | `_local/receipts/{receipt-id}.json` | `state: submitted` |
 | Circuit-breaker incident receipt (if triggered) | `_local/receipts/circuit-break-{job-id}.json` | Written at breach event |
 | Smoke test receipt (first-ever generation per client) | `_local/receipts/{receipt-id}.json` | `smoke_test: true`, `state: submitted` |
-| Orphan recovery result (postflight pass) | `_local/results/{job-id}/` | Receipt flipped to `complete` |
+| Orphan recovery result (postflight pass; produced by the Render Dispatcher, SOP 9.7) | `_local/results/{job-id}/` | Receipt flipped to `complete` by the Dispatcher |
 | CDO escalation notification | CDO notification channel | Written at: budget gate trip, circuit-breaker trip, orphan >24h, orphan `failed` state |
 
 ---
 
 ## Handoff Conditions
 
-- **Normal submission:** Receipt written with `state: submitted`; Operator exits; cron poller handles `recordInfo` polling until completion; SOP-DIU-601 postflight runs on completion and flips receipt to `complete`.
+- **Normal submission:** Receipt written with `state: submitted`; Operator exits; the Render Dispatcher's poller handles `recordInfo` polling until completion; SOP-DIU-601 postflight runs on completion (Dispatcher) and flips the receipt to `complete`.
 - **Budget gate trip:** Hard stop before submission; CDO receives spend summary; job paused until CDO issues a producer override receipt.
 - **Circuit-breaker trip (per-deliverable):** All remaining tasks for this `job_id` halted; CDO receives incident receipt; resume requires CDO direction with explicit per-task re-authorization.
 - **Circuit-breaker trip (per-day):** All new submissions for this client halted; CDO receives escalation; no resume without CDO reset.
-- **Orphan recovered (completed):** Receipt flipped to `complete`; CDO + requestor notified; result handed to normal delivery path.
-- **Orphan unrecoverable (failed or >24h stale):** CDO receives full receipt; CDO determines whether to regenerate; no silent discard.
+- **Orphan recovered (completed), handled by the Render Dispatcher:** Receipt flipped to `complete`; CDO + requestor notified; result handed to normal delivery path.
+- **Orphan unrecoverable (failed or >24h stale), escalated by the Render Dispatcher:** CDO receives full receipt; CDO determines whether to regenerate; no silent discard.
 
 ---
 
@@ -166,11 +166,11 @@ smoke_test:           {true|false}
 | `estimated_cost > per_job_approval_threshold` | Pause submission. Request producer approval receipt from CDO. |
 | Per-deliverable cap exceeded mid-job | Halt all remaining tasks for this job. Write circuit-breaker incident receipt. Notify CDO. |
 | Per-day aggregate cap exceeded | Halt all new client submissions. Notify CDO. |
-| Orphaned receipt `state: failed` | Escalate to CDO with full receipt. Do not silently retry. |
-| Orphaned receipt `last_polled` > 24 hours, no completion | Escalate to CDO. Do not discard or silently abandon. |
+| Orphaned receipt `state: failed` (raised by the Render Dispatcher) | Escalate to CDO with full receipt. Do not silently retry. |
+| Orphaned receipt `last_polled` > 24 hours, no completion (raised by the Render Dispatcher) | Escalate to CDO. Do not discard or silently abandon. |
 | Receipt file write fails (filesystem error) | Hard stop all generation immediately. No task should exist without a receipt. Escalate to CDO. |
 | Smoke test fails (first-ever generation) | Hard stop. Do not proceed to production generation until the smoke test passes. Diagnose key reachability, hosting plumbing, and receipt write path. Escalate to CDO. |
-| Duplicate `filled_prompt_hash` found in `state: submitted` | Do not create a new task. Re-poll the existing `taskId`. Log the dedup event in the existing receipt. |
+| Duplicate `filled_prompt_hash` found in `state: submitted` | Do not create a new task. Ask the Render Dispatcher to re-poll the existing `taskId` (the Operator does not poll). Log the dedup event in the existing receipt. |
 
 ---
 
