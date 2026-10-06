@@ -15,6 +15,6 @@ python3 "$T/retire.py" "$T/tomb.json" "$T/oc/skills" "$T/oc/retired-skills" >/de
 # stale state key
 echo '{"skills":{"11-superdesign":{"status":"qc-failed"},"03-agent-browser":{"status":"pending"}}}' > "$T/ws.json"
 mkdir -p "$T/h"
-seedout="$(HOME="$T/h" bash -c 'source "$1" 2>/dev/null; OBS_STATE_FILE="$2"; obs_seed_state v1 "$3"' _ "$REPO/scripts/onboarding-state.sh" "$T/ws.json" "$T/src" 2>&1)"
+seedout="$(env -i HOME="$T/h" PATH="$PATH" OPENCLAW_ROOT="$T/h/.openclaw" bash -c 'source "$1" 2>/dev/null; OBS_STATE_FILE="$2"; obs_seed_state v1 "$3"' _ "$REPO/scripts/onboarding-state.sh" "$T/ws.json" "$T/src" 2>&1)"
 python3 -c "import json,sys;d=json.load(open('$T/ws.json'))['skills'];sys.exit(0 if '11-superdesign' not in d and '03-agent-browser' in d else 1)" && ok "stale state key dropped" || { bad "state key kept"; echo "$seedout" | tail -15; cat "$T/ws.json"; }
 exit $fail
