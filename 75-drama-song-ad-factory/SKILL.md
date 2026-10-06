@@ -57,10 +57,14 @@ python3 scripts/core/intake_preflight/factory.py preflight --root "$STORAGE"
 | Outcome | Exit code | Meaning |
 |---|---:|---|
 | `ok` | 0 | accepted for this command |
-| `rejected` | 2 | violates a binding contract (no state change) |
+| `error` | 1 | internal fault (state untouched) |
+| `waiting` | 2 | missing required input (waiting for owner decision) |
 | `parked` | 3 | saved mid-run with PARKED.json for later resume |
-| `waiting` | 4 | missing required input (waiting for owner decision) |
-| `error` | 5 | internal fault (state untouched) |
+| `rejected` | 4 | violates a binding contract (no state change) |
+
+Exit map is code-owned: `EXIT = {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1}`
+in `scripts/core/intake_preflight/__init__.py` — identical in both distributions
+(`tests/test_parity_layout.py` / `tests/distribution-parity/run_parity.sh` enforce it).
 
 Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1`.
 
