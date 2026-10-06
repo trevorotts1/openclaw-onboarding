@@ -30,6 +30,7 @@ If you have not read the contract, STOP and read it now.
 | **02 — Back Yourself Up Protocol** | Required before any config change for this skill. |
 | **22 — Book-to-Persona** | Content uses persona governance (5-layer alignment). Without it, content defaults to soul.md tone only. |
 | **31 — Upgraded Memory System** | Weekly content logs go into memory-core. Without it, logs land in MEMORY.md directly. |
+| **07 KIE Setup, 66 KIE Image, 67 KIE Video, 74 KIE Live Adapter** | Image and video generation. Images are GPT Image 2.5 Sunburst through Skill 66 policy; every paid job runs the Skill 74 chain (playbook.md Section 8c); video models are picked by Skill 67. The client's own `KIE_API_KEY` is required; shared rules are in `07-kie-setup/references/kie-common-rules.md`. |
 | **36 — GHL MCP Setup** | **STRONGLY RECOMMENDED.** When installed, ALL GHL operations in this skill route through MCPs first (Tier 1 → Tier 2 → fall to raw API as last resort). Without skill 36, this skill falls back to direct GHL Social Planner API. |
 | **30 — Fish Audio API Reference** | OPTIONAL. Required only if the client wants podcast episodes. If absent, podcast production is skipped and other content continues. |
 
@@ -129,7 +130,7 @@ Before any system change:
    - `INSTALL.md` — this file
    - `CORE_UPDATES.md` — what to add to client core files
    - `QC.md` — quality control (with new 0–10 rubric in v2.0.0)
-   - `references/playbook.md` — the 1,656-line production playbook
+   - `references/playbook.md` — the production playbook
 
 Do NOT proceed until all 5 are read.
 

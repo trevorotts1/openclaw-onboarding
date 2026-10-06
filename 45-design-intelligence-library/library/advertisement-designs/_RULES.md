@@ -5,7 +5,7 @@
 | Use | Ratio | Model ratio param |
 |---|---|---|
 | Display rectangle (300×250 class) | ~4:3 | `4:3` |
-| Display half-page (300×600 class) | 1:2 | `1:2` (GPT-Image 2 **legacy** — 2.5 substitutes `9:16`) |
+| Display half-page (300×600 class) | 1:2 | `1:2` (GPT Image 2 **legacy** — 2.5 substitutes `9:16`) |
 | Print full page | 3:4 | `3:4` |
 | Print spread | 3:2 | `3:2` |
 | Flyer/one-sheet | 3:4 portrait | `3:4` |
@@ -19,5 +19,5 @@
 - Clutter ceiling: max 5 distinct elements (subject, headline, subhead, offer, CTA+logo counted together).
 
 ## Model routing
-- Default: GPT-Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`; layout + multiple text strings), for every ad type.
-- People-led brand ads → GPT-Image 2.5 Sunburst (Nano Banana 2 only as a labeled fallback). Offer/typography-led → GPT-Image 2.5 Sunburst LONG. There is no Ideogram route for ads (consistent with `social-media-designs/_RULES.md`).
+- Default: GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`; layout + multiple text strings), for every ad type.
+- People-led brand ads → GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; Nano Banana is never used for social ads). Offer/typography-led → GPT Image 2.5 Sunburst with the full-length prompt (rule 12 of `07-kie-setup/references/kie-common-rules.md`). There is no Ideogram route for ads (consistent with `social-media-designs/_RULES.md`).

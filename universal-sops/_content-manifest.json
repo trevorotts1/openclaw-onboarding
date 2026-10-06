@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T07:55:19Z",
+  "generated_at": "2026-10-06T08:41:14Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -385,12 +385,12 @@
       "bytes": 3559
     },
     "social-media-craft/SOP-SOCIAL-02-RUN.md": {
-      "sha256": "a11e6cf5de997c02a209eeb36bc63b590a4637144aec18ee308b7c3089373495",
-      "bytes": 5270
+      "sha256": "d060fec5f74e1d07584ffbe1a89ecf08902e11e87cbddbdd3a649a9d6b19c462",
+      "bytes": 6162
     },
     "social-media-craft/SOP-SOCIAL-03-CREATIVE-INTERJECTION.md": {
-      "sha256": "2da90891d0129e2652462c4dc61edfb20aef6f83933c4d2ec37c47492a1f1187",
-      "bytes": 7436
+      "sha256": "099f7fc8851589b41c4955c183665f6da1cc0baee34c8a734be99cbc69bd1f07",
+      "bytes": 7485
     },
     "social-media-craft/SOP-SOCIAL-04-VERIFY.md": {
       "sha256": "0cac2b43595cf0a45e0051749ed6016c7ff3fbc1df501e6aefd29d2539f7fce1",

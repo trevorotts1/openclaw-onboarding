@@ -67,7 +67,7 @@
     "dedupLookbackDays": {"type": "integer", "default": 90, "description": "QC11: content-fingerprint lookback window for AF-SM-DOUBLE-POST (default 90 days; in-week slot check regardless)."},
 
     "$defer_note": "v0.2.0 DEFER triggers (merge plan C8/C10/C11). Setting one requests a capability deferred to a NAMED later version: the orchestrator fails CLOSED with a clear 'deferred to vX.Y.Z' message (AF-SM-DEFERRED) BEFORE any phase runs — never a silent no-op. Defaults (off) reproduce today's behavior exactly.",
-    "narratedVideo": {"type": "boolean", "default": false, "description": "C8: request the narrated Reels lane (55-60s multi-clip + Fish-Audio voiceover + FFmpeg concat) — DEFERRED to v0.3.0; fails closed via defer_stub. The Sora 25.0s lane (`--mode video`) works today."},
+    "narratedVideo": {"type": "boolean", "default": false, "description": "C8: request the narrated Reels lane (55-60s multi-clip + Fish-Audio voiceover + FFmpeg concat) — DEFERRED to v0.3.0; fails closed via defer_stub. The 25.0s single-clip lane (`--mode video`, render model picked by the Skill 67 selector) works today."},
     "memoryFeed": {"type": "boolean", "default": false, "description": "C11: request the Skill-31 memory-core 'Dreaming' performance-insight feed — DEFERRED to v0.5.0; fails closed via defer_stub. The theme-of-week log half is already folded (P1 themeOfWeek in this spine)."}
   },
   "additionalProperties": true

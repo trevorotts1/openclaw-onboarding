@@ -29,7 +29,7 @@ Every week, this skill automatically:
 - Skill 22 (Book-to-Persona) for persona-governed content
 - Skill 31 (Upgraded Memory System) for memory-core integration
 - GoHighLevel (Convert and Flow) account with Private Integration Token and Social Planner API access
-- kie.ai API access with the client's own `KIE_API_KEY` (images: KIE GPT Image 2.5 Sunburst; video models through Skill 67)
+- kie.ai API access with the client's own `KIE_API_KEY` (images: KIE GPT Image 2.5 Sunburst, following the newest GPT Image generation; video models through Skill 67; every paid job runs the Skill 74 live-adapter chain: policy, prompt budget, validate, preflight, run)
 - Google Sheets (**created automatically via n8n webhook - no client action needed**)
 - Telegram for notifications (email and SMS as fallback)
 - FFmpeg and ImageMagick installed locally
