@@ -41,7 +41,7 @@ if [[ -z "$INPUT" ]]; then
   echo "  1. Analyzes your video for scene changes"
   echo "  2. Extracts audio for continuous voiceover"
   echo "  3. Suggests strategic B-roll insertion points"
-  echo "  4. (You'll need to generate B-roll with KIE.AI)"
+  echo "  4. (Generate B-roll with KIE.AI through Skill 67)"
   echo "  5. Merges everything together"
   exit 1
 fi
@@ -85,13 +85,12 @@ print("\\n")
 PYTHON_EOF
 
 # Step 4: Prompt for B-roll generation
-echo "Step 4: Generate B-roll with KIE.AI"
+echo "Step 4: Generate B-roll with KIE.AI (through Skill 67)"
 echo ""
-echo "You need to generate $NUM_BROLL B-roll clips using KIE.AI."
-echo ""
-echo "Suggested prompts based on your video content:"
-echo "  - Use Veo 3.1 Fast for cost-effective B-roll (~\$0.40/video)"
-echo "  - Or Veo 3.1 Quality for premium cinematic B-roll (~\$2.00/video)"
+echo "You need to generate $NUM_BROLL B-roll clips using KIE.AI through Skill 67 (67-kie-video)."
+echo "Pick the model with: python3 ~/.openclaw/skills/67-kie-video/scripts/select_video_model.py \"<clip description>\""
+echo "Get the price with: python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id> (live pricingDesc), announce the estimated cost, and get approval before generating."
+echo "Rules (credit preflight, rate limit, saving results): 07-kie-setup/references/kie-common-rules.md"
 echo ""
 echo "Example KIE.AI prompts:"
 echo "  'Professional office setting, modern workspace, natural lighting'"

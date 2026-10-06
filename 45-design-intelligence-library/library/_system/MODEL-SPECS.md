@@ -1,6 +1,8 @@
 # MODEL SPECS — API Limits, Routing & Request Templates
-**Version:** 1.5 | **Last Updated:** 2026-09-10 | **Source:** Verified Kie.ai API documentation (not blog estimates)
-**Audience:** AI agents. This is the ONLY file that changes when models update. Style cards never reference model versions directly — they reference tiers and capabilities defined here.
+**Version:** 1.6 | **Last Updated:** 2026-10-05 | **Source:** Verified Kie.ai API documentation (not blog estimates)
+**Audience:** AI agents. Style cards never reference model versions directly - they reference tiers and capabilities defined here.
+
+> **DATED SNAPSHOT, NOT AN AUTHORITY (2026-10-05).** Every model id, limit, ratio and parameter table below is a snapshot of the Kie.ai docs as of the dates in the changelog. It is no longer "the only file that changes when models update". Authority, in order: (1) the Skill 66 policy and registry (`66-kie-image/models.json`, `66-kie-image/SKILL.md`) plus AGENTS.md N43 for which model the fleet dispatches; (2) the Skill 74 live catalog for what the account can actually run: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` checks a payload against the live schema (character caps, ratios, reference counts), and `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` gives the price (live `pricingDesc`, snapshot fallback `74-kie-live-adapter/references/kie-model-registry.json`). This file states no prices. If this snapshot and those sources disagree, they win. The owner house rules kept here (the SHORT/MEDIUM/LONG tier budgets, the 19,000 house ceiling, the presentations model pin) are not vendor limits and stay in force. Canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ---
 
@@ -74,12 +76,12 @@ Choose by task. Category `_RULES.md` files may override.
 | Text-heavy design (book cover, magazine cover, banner with copy) | GPT-Image 2.5 T2I (LONG tier) | Nano Banana 2 | 20K chars specs every text element; strongest layout adherence |
 | **Text-heavy design FROM a style reference image** | **GPT-Image 2.5 I2I (LONG tier + refs)** | Nano Banana 2 | The only combo of 20K prompt + reference images + full layout control |
 | Design built around typography as the art | Ideogram V3, `style: "DESIGN"` | GPT-Image 2.5 T2I | Purpose-built typographic engine + true negative_prompt |
-| **Ultra-wide banners (8:1, 4:1)** | **Nano Banana 2 — ONLY option** (Wan 2.7 backup for 8:1) | — | Only models supporting ultra-wide ratios |
-| Style transfer FROM multiple references | Nano Banana 2 (up to 14 refs) | GPT-Image 2.5 I2I | Reference capacity |
+| **Ultra-wide banners (8:1, 4:1)** (SPECIALTY ROUTE, deliberate: GPT-Image 2.5 does not serve these ratios) | **Nano Banana 2 - ONLY option** (Wan 2.7 backup for 8:1) | - | Only models supporting ultra-wide ratios |
+| Style transfer FROM multiple references | GPT-Image 2.5 I2I (`input_urls`, up to 16 refs per KIE docs) | Nano Banana 2 (up to 14 refs) | Fleet default model; reference capacity |
 | Editing/iterating an existing generated image | Seedream 4.5 Edit | GPT-Image 2.5 I2I | Built as a unified edit model; GPT I2I when the edit needs a long spec |
 | **Surgical edits on a real photo (retouching, wardrobe swap, single-element change)** | **Seedream 4.5 Edit — only true editor** | GPT-Image 2.5 I2I (expect more drift) | See Editing Hierarchy note below |
-| Personal Photo Shoot — new identity-locked scenes | Nano Banana 2 (multi-ref) | GPT-Image 2.5 I2I | Per PHOTO-SHOOT-SOP routing |
-| Photorealistic people / portraits | Nano Banana 2 | GPT-Image 2.5 T2I | Strong skin/lighting fidelity |
+| Personal Photo Shoot - new identity-locked scenes | GPT-Image 2.5 I2I (refs + LONG spec) | Nano Banana 2 (multi-ref) | Per PHOTO-SHOOT-SOP routing |
+| Photorealistic people / portraits | GPT-Image 2.5 T2I | Nano Banana 2 | Fleet default model (AGENTS.md N43); NB2 is the fallback |
 | Fast clean T2I drafts at 2K, short prompts | Seedream 4.5 T2I (SHORT/MEDIUM) | Wan 2.7 | Quality-per-character efficiency |
 | Volume draft runs (many variants, seed control) | Wan 2.7 (n=1–4 per call) | Nano Banana 2 @1K | Batch + seed reproducibility |
 | Complex multi-element ad layouts | GPT-Image 2.5 T2I | Nano Banana 2 | Scene composition strength |
@@ -316,3 +318,4 @@ When a new model or endpoint becomes available (e.g., GPT-Image 3, Nano Banana 3
 | 2026-06-14 | v1.3 | Documented the THIRD mode: image-to-JSON / vision analysis (Section 1B + template 5.8). Synchronous chat-completions endpoint `POST https://api.kie.ai/gpt-5-2/v1/chat/completions`, model `gpt-5-2`, image via `messages[].content[].image_url`, answer at `choices[0].message.content`. Verified against live `docs.kie.ai/market/chat/gpt-5-2`; no `response_format`/`json_schema` documented (JSON by instruction). Powers Workflow A image-to-style-card. No style cards touched. |
 | 2026-06-14 | v1.4 | Added CLIENT SOVEREIGNTY note to MODEL ROUTING TABLE: presentations always use gpt-image-2-text-to-image or gpt-image-2-image-to-image as primary. nano-banana-2 is FALLBACK-ONLY for presentations (logs required). Added AF-MODEL-SOVEREIGNTY auto-fail reference. |
 | 2026-09-10 | v1.5 | Legacy GPT-Image 2 rows (`1a-legacy`/`1b-legacy`) corrected to their own **25,000** `OWNER_CONFIRMED` cap (operator-confirmed 2026-08-27) — they had carried 2.5's 20,000, which silently truncates prompts on the legacy route (AGENTS.md N43). Added the cap note under the tier table. No style cards touched. |
+| 2026-10-05 | v1.6 | Routing: GPT-Image 2.5 is first choice everywhere in Section 2 (and the category `_RULES.md` files and PHOTO-SHOOT-SOP); Nano Banana 2 is fallback only, except the labelled ultra-wide 4:1 / 8:1 specialty route (2.5 does not serve those ratios). Relabelled as a DATED SNAPSHOT with the authority order above (Skill 66 policy + Skill 74 live catalog); removed the "only file that changes" claim. Corrects the v1.4 row below, which is historical: the presentations primary is now `gpt-image-2-5-sunburst-*` (Section 2 and AGENTS.md N43), not `gpt-image-2-*`. No price figures are carried here. |

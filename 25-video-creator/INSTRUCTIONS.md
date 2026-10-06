@@ -91,9 +91,9 @@ python3 scripts/image_to_video.py photo.jpg \
 ```
 
 Positional argument: `image` (path to image file).
-Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`.
+Options: `--output`, `--motion` (zoom/ken_burns/pan_left/pan_right/pan_up/pan_down/none), `--duration`, `--resolution`, `--zoom-direction` (in/out), `--music`, `--provider`, `--model`, `--image-field`.
 
-With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask, and the result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
+With `--provider kieai` the local image is uploaded to KIE's temporary file service (`https://kieai.redpandaai.co/api/file-stream-upload`), the returned download URL is sent to createTask in the model's own input field (13 createTask models are mapped from the KIE docs, for example `first_frame_url` as a single string for `wan/3-0-video`, `image_urls` as a list for `pixverse-v6/image-to-video`; the full table is in `scripts/ai_providers.py`). Any other model stops with an error naming it unless you pass `--image-field <input key>`; `runway` and `veo3*` use dedicated KIE APIs this client does not support. The result is downloaded immediately (KIE keeps results about 14 days; links can expire sooner). The model comes from Skill 67 unless `--model` is given.
 
 ### Add Music
 

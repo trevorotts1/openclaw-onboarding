@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.0.3] - 2026-10-05 - fix: poller no longer throws on null items in resultJson.images; exact allowlist hosts in SKILL.md
+
+### Fixed
+- `box-kv-poller.js` `_extractResultJsonUrls` called `resultJson.images.map(i => i.url)`, which threw a TypeError on a null item (`images:[null]`); the poll loop swallowed it and retried until the 10 minute ceiling. It now uses `.map(i => i && i.url).filter(Boolean)`. New test: `images:[null]` resolves `failed` through the poll path (no throw), and `images:[null, undefined, 5, {url}]` still resolves `done` with the one real URL.
+- `SKILL.md` "Unverified Items" said "*.aiquickdraw.com hosts"; it now lists the exact allowlisted hosts: `tempfile.redpandaai.co`, `tempfile.aiquickdraw.com`, `tempfileb.aiquickdraw.com`, `static.aiquickdraw.com`, `file.aiquickdraw.com` (matching is exact host or true subdomain).
+- Version roll to v2.0.3 across `SKILL.md`, `skill-version.txt`, Worker `/healthz`, `worker/package.json`, `DEPLOY.md`, `SUBMITTER-SOP.md` and the test. The Worker file only changed its version string; the earlier OWNER ACTION still stands: the Worker must be redeployed by the owner (not done here), after which `/healthz` reports 2.0.3.
+
+### Tests
+- `test/security.test.mjs`: 86 assertions before, 88 after. `qc-kie-callback-relay.sh` QC PASS. The new null-item case was not run against the pre-fix poller because the old code retries for 10 minutes by design.
+- No `.skill` archive exists for this skill.
+
+---
+
 ## [v2.0.2] - 2026-10-05 - fix: read the real KIE Market result shape (resultJson.resultUrls) and the Suno audio shape
 
 ### Fixed

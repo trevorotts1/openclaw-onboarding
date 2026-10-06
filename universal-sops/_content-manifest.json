@@ -1,12 +1,12 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-04T23:08:26Z",
+  "generated_at": "2026-10-06T04:06:06Z",
   "file_count": 114,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "b9e94a26cd2855d8a0c0bfd8f74aa470858b52a7465d0d7c63417f6a921711f6",
-      "bytes": 32101
+      "sha256": "11660c84281124f4e3a63eeefbcacd129df36733ebedbc2dcd0cd3c78320314f",
+      "bytes": 32324
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
       "sha256": "ca4816bd32ebc441a3b2cfbc431f4a735ff1d9ffc7dfa9efdcde705a966acc35",
@@ -281,20 +281,20 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "20087c119d6d63bf546762913974a6cd03d83f58d0ab1fbb4420ed91f5ec883f",
-      "bytes": 21344
+      "sha256": "925022e81c9c1757de18a3af8cf3a4b55da6882f1739bbdc478c8b7091ad5321",
+      "bytes": 31020
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
-      "sha256": "cab56829dd3da6241033be724e08b6a2804a69697798adf365c2a99a7036b9b9",
-      "bytes": 14108
+      "sha256": "8c797ace1198d2b29ac7042d98cebe75305b81926e5315199cb3ca5ed3543b71",
+      "bytes": 14291
     },
     "presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md": {
       "sha256": "1a4de5ae069a91d5e261713ad572aa8d594190b59af29032751c6cb9eefbc1ce",
       "bytes": 12590
     },
     "presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md": {
-      "sha256": "2800f41e0cfc82822cd3789edbf61c599f675c414d90ba2314fb64b035f2ca69",
-      "bytes": 11657
+      "sha256": "946198d36f99bae09946d0b6a6a9e0223f1ec3752598f05db401b351a0a6dc08",
+      "bytes": 11870
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
       "sha256": "31666d96e827b12fa4113ea72963874b6230f30cb8b1ade56955e48ae253deb0",

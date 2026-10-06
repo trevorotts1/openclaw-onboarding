@@ -548,7 +548,7 @@
       "provider": "kie",
       "display_name": "Seedream 4.5 (Edit)",
       "family": "seedream-4.5",
-      "canonical_model_id": "seedream/4-5-edit",
+      "canonical_model_id": "seedream/4.5-edit",
       "aliases": ["seedream 4.5", "c dream", "seed dream"],
       "modality": "image",
       "tasks": ["image-to-image", "edit", "multi-reference"],
