@@ -15,18 +15,19 @@ snap() { (cd "$D" && find . -type f | LC_ALL=C sort | while read -r f; do printf
 echo "== Skill 74 KIE Live Adapter - QC (offline)"
 BEFORE="$(snap)"
 for f in SKILL.md INSTALL.md INSTRUCTIONS.md CORE_UPDATES.md QC.md CHANGELOG.md PREREQS.json skill-version.txt wire.sh \
-         vendor-approval.json scripts/kie_live_adapter.py scripts/vendor_skill_probe.sh scripts/live_smoke.sh \
+         vendor-approval.json scripts/kie_live_adapter.py scripts/build_model_registry.py references/kie-model-registry.json scripts/vendor_skill_probe.sh scripts/live_smoke.sh \
          references/adapter-contract.md references/integration-policy.md references/vendor-research.md references/decision-log.md \
-         tests/test_adapter_contract.py tests/test_shadow_mode.py tests/test_no_chat_agent_mutation.py; do
+         tests/test_adapter_contract.py tests/test_shadow_mode.py tests/test_no_chat_agent_mutation.py tests/test_registry_commands.py; do
   chk "present: $f" "[ -f '$D/$f' ]"
 done
 chk "wire.sh executable" "[ -x '$D/wire.sh' ]"
 chk "this script executable" "[ -x '$D/qc-74-kie-live-adapter.sh' ]"
-chk "skill-version.txt is v1.0.0 plus newline" "[ \"\$(cat '$D/skill-version.txt')\" = v1.0.0 ] && [ \"\$(tail -c1 '$D/skill-version.txt' | od -An -c | tr -d ' ')\" = '\\n' ]"
-chk "SKILL.md top-level version matches" "head -20 '$D/SKILL.md' | awk '/^version: 1.0.0\$/{f=1} END{exit !f}'"
+chk "skill-version.txt is v1.1.0 plus newline" "[ \"\$(cat '$D/skill-version.txt')\" = v1.1.0 ] && [ \"\$(tail -c1 '$D/skill-version.txt' | od -An -c | tr -d ' ')\" = '\\n' ]"
+chk "SKILL.md top-level version matches" "head -20 '$D/SKILL.md' | awk '/^version: 1.1.0\$/{f=1} END{exit !f}'"
 chk "PREREQS.json valid JSON" "python3 -c \"import json;json.load(open('$D/PREREQS.json'))\""
 chk "vendor-approval.json valid JSON" "python3 -c \"import json;json.load(open('$D/vendor-approval.json'))\""
-chk "adapter parses (no bytecode written)" "python3 -c \"import ast;ast.parse(open('$D/scripts/kie_live_adapter.py').read())\""
+chk "registry JSON valid, live-api or public-docs source, every model has limits fields" "python3 -c \"import json;d=json.load(open('$D/references/kie-model-registry.json'));assert d['source'] in ('live-api','public-docs') and d['models'] and all('input_fields' in m and 'prompt_field' in m and 'pricing' in m for m in d['models'])\""
+chk "adapter parses (no bytecode written)" "python3 -c \"import ast;ast.parse(open('$D/scripts/kie_live_adapter.py').read());ast.parse(open('$D/scripts/build_model_registry.py').read())\""
 chk "bash syntax: wire.sh" "bash -n '$D/wire.sh'"
 chk "bash syntax: vendor_skill_probe.sh" "bash -n '$D/scripts/vendor_skill_probe.sh'"
 chk "bash syntax: live_smoke.sh" "bash -n '$D/scripts/live_smoke.sh'"

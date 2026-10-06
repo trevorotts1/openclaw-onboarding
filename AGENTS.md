@@ -1518,6 +1518,8 @@ and the image-to-image reference field **`input_urls`** (30 MB/file; JPEG/PNG/WE
    `universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md:187`.
    GPT-Image has text-to-image and image-to-image routes only.
 
+Owner rule 2026-10-05: the fleet GPT Image default follows the newest GPT Image generation in KIE's live catalog (resolved by Skill 74 `latest-family`); today that is GPT Image 2.5 Sunburst. Legacy ratio routing and substitutions above still apply.
+
 ---
 
 ---

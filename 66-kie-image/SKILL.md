@@ -7,9 +7,9 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.0.5
+version: v2.1.0
 metadata:
-  version: "2.0.5"
+  version: "2.1.0"
   priority: HIGH
 ---
 
@@ -26,7 +26,11 @@ wait (callback or poll), and visually QC the result.
 1. **Explicit wins.** If the user names a model/family and it can satisfy the
    request, use it — capability match and user preference win. Never "fix" an
    explicit pick.
-2. **Else GPT Image 2.5 is the preferred default** for high-fidelity general KIE
+2. **Else the GPT Image default is the newest GPT Image generation in KIE's live
+   catalog** (owner order 2026-10-05: if a new GPT Image model comes out, the
+   system moves to it automatically; resolved by Skill 74 `latest-family`, with
+   the `models.json` default as the fallback when the adapter is absent or
+   unreachable; today that is GPT Image 2.5 Sunburst), preferred for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
    creative instructions (owner's preference, operator ruling 2026-09-09,
    supersedes GPT Image 2), when compatible (respecting its ratio/resolution
@@ -85,7 +89,7 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.5 (default, operator ruling 2026-09-09): 20,000 chars per KIE
+- GPT Image 2.5 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
   docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
   confirmation does not carry forward and has not been retested on 2.5).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
@@ -97,16 +101,20 @@ Key cap facts (full matrix: `references/models.md`):
   invented vendor law; no hard rejections above 19,000 unless a verified cap
   exists.
 
-## House prompt band (spec 5)
+## Prompt budget (owner order 2026-10-05)
 
-- desired minimum when legal: 5,000 chars; normal target: ~9,000; preferred
-  max: 19,000. Short user prompts are EXPANDED, never rejected (§5.3).
-- Expansion adds real control (objective, subject, environment, composition,
-  lens, lighting, material, palette, typography, brand rules, reference roles,
-  preservation rules, negatives, output requirements, QC details) — never junk
-  padding (§5.4).
-- Cron/scheduled jobs store creative INTENT and compose the prompt at
-  execution time against the model chosen then (§5.5).
+Supersedes the old house band (5,000 / 9,000 / 19,000). A prompt uses 95-100% of
+the model's character max and is never below 80% of it. The limit comes from Skill
+74 `prompt-budget` (live schema, registry fallback); `validate_prompt.py` enforces
+it: below 80% rejected (prints the exact chars to ADD), above 100% rejected (exact
+chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
+(spoken text, lyrics) has no floor.
+- Short user prompts are EXPANDED first, never padded with junk (real control:
+  objective, subject, environment, composition, lens, lighting, material, palette,
+  typography, brand rules, reference roles, preservation rules, negatives,
+  output requirements, QC details).
+- Cron/scheduled jobs store creative INTENT and compose the prompt at execution
+  time against the model chosen then (§5.5).
 
 ## Prerequisites
 

@@ -26,3 +26,12 @@ Dated 2026-10-05. Verified live by the orchestrator against api.kie.ai unless no
 | 20 | Vendor drift probe | scripts/vendor_skill_probe.sh run once | VERIFIED: MATCH on 2026-10-05 |
 
 Live smoke outputs: none recorded (PENDING). When run, append the printed lines of `bash scripts/live_smoke.sh --paid` here (they never contain key material).
+
+## v1.1.0 live evidence (2026-10-05, operator box, key presence SET via shared-utils key_resolver, no key material recorded)
+
+- Registry built from the live API: 218 catalog models, 217 with a readable schema (1 `openapi: null`: google/gemini-3-8-flash-tts), 178 createTask and 39 synchronous, 155 with a prompt field (141 with a known max), 14 with verbatim fields, 199 with a parsed credit price. Catalog once, one schema call per model, spaced 1.1 seconds by the adapter.
+- `latest-family --family gpt-image` (live): 2.5 generation, variants flare and sunburst both eligible; chosen sunburst by variant-match; routes gpt-image-2-5-sunburst-text-to-image and gpt-image-2-5-sunburst-image-to-image; changed false.
+- Paid smoke (exactly one, `run --mode active`, gpt-image-2-5-sunburst-text-to-image, 1K, 1:1): prompt 19,387 characters = 96.9 percent of maxLength 20,000 (prompt-budget exit 0, status OK; floor 16,000, target 19,000 to 20,000). validate: validated. preflight: estimate 16.0, required 20.8, ok.
+  - task_id aaff13916b2be113fc4abf6b1787e9a1, state success, credits_consumed 6.0.
+  - credits balance before 3043.03, after 3037.03 (difference 6.00, equal to the reported credits_consumed 6.0).
+  - saved file: valid PNG, 1254 x 1254, 2,287,284 bytes, IEND present.

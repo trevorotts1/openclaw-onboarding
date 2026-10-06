@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-validate_prompt.py - Skill 66 kie-image prompt validator.
+validate_prompt.py - Skill 66 kie-image prompt validator (v1.1.0).
 
-Checks a prompt against a model's published/observed char caps and the house
-band, and produces a token ESTIMATE (chars/4) for token-capped models.
+Prompt budget (owner order 2026-10-05): a prompt uses 95-100% of the model's character max and is
+never below 80% of it. The limit comes from Skill 74 `prompt-budget` (live schema first, registry
+snapshot second); when that adapter is absent or unreachable the limit is the models.json cap
+(vendor_hard_cap_chars, else owner_observed_cap_chars). Unknown limit -> UNKNOWN warning, no floor.
 
-RULES (spec 7.4):
-  A. verified cap >= 20000  -> house band 5,000-19,000
-  B. verified 5,000-19,999  -> conservative ceiling BELOW the hard cap
-  C. verified < 5,000       -> cap-relative guidance, never invent
-  D. token cap published    -> tokens estimate, NEVER a fake char cap
-  E. not published          -> NOT_PUBLISHED / LIVE_PROBE_REQUIRED, no invented cap
+  floor = ceil(0.80 * max)   below it  -> invalid (exit 1), prints the exact chars to ADD
+  target = 95%..100% of max  80-95%    -> valid with a warning to expand
+  max                        above it  -> invalid hard fail (exit 2), prints the exact chars to CUT
 
-STDLIB PYTHON3 ONLY. Deterministic. No network. No secrets read.
+The old house band (5,000 / 9,000 / 19,000) is retired by this order. Token-capped models (Qwen) get a
+token estimate warning only (never a fake char cap). STDLIB PYTHON3 ONLY. No secrets read.
 
-Exit codes:
-  0  prompt acceptable (warnings may exist)
-  1  soft-fail = house-band violation OR cap-status issues (non-fatal by default;
-     use --strict to turn warnings fatal)
-  2  hard-fail = prompt exceeds a VERIFIED hard cap
+Exit codes:  0 acceptable (warnings may exist) | 1 invalid (below floor, unknown model, strict warning)
+             2 above the maximum (hard)
 
-Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est,
-  band_min, band_target, band_max, rule, errors[], warnings[], valid }.
+Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est, max, floor, target_min,
+  target_max, limit_source, status, errors[], warnings[], valid }.
 """
 
 import argparse
@@ -31,20 +28,14 @@ import os
 import re
 import sys
 
-VERSION = "2.0.5"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import adapter_bridge  # noqa: E402  (Skill 74 bridge; optional at runtime)
+
+VERSION = "2.1.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
-HOUSE_MIN = 5000
-HOUSE_TARGET = 9000
-HOUSE_MAX = 19000
-
-# rule classification
-RULE_A = "A"
-RULE_B = "B"
-RULE_C = "C"
-RULE_D = "D"
-RULE_E = "E"
+FLOOR_PCT, TARGET_PCT = 80, 95  # percent of the model max (integer math, no float rounding surprises)
 
 
 def load_registry():
@@ -61,150 +52,84 @@ def char_count(text):
 
 def token_estimate(chars):
     """Conservative estimate: ~4 chars/token (English prose). Never a cap."""
-    est = chars / 4.0
-    return int(est)
+    return int(chars / 4.0)
 
 
-def classify(entry):
-    """Return (rule, hard_cap_chars_or_None, token_cap_or_None)."""
-    cap_status = entry.get("cap_status", "NOT_PUBLISHED")
-    vcap = entry.get("vendor_hard_cap_chars")
-    ocap = entry.get("owner_observed_cap_chars")
-    tcap = entry.get("vendor_hard_cap_tokens")
+def budget(max_chars):
+    return {"max": max_chars, "floor": -(-max_chars * FLOOR_PCT // 100),
+            "target_min": -(-max_chars * TARGET_PCT // 100), "target_max": max_chars}
 
-    if vcap is not None:
-        if vcap >= 20000:
-            return RULE_A, vcap, tcap
-        if vcap >= 5000:
-            return RULE_B, vcap, tcap
-        return RULE_C, vcap, tcap
-    if tcap is not None:
-        return RULE_D, None, tcap
-    if ocap is not None:
-        # owner-observed is never a vendor-verified hard cap: vcap stays None so
-        # rule A guidance (house band) applies and no hard-fail is emitted.
-        return RULE_A, None, tcap  # observed >= 20000 in practice (25000)
-    if cap_status in ("NOT_PUBLISHED", "UNDETERMINED"):
-        return RULE_E, None, None
-    # LIVE_PROBE_REQUIRED and friends: not published
-    return RULE_E, None, None
+
+def _result(model_id, cap_status, chars, **kw):
+    r = {"model_id": model_id, "cap_status": cap_status, "chars": chars, "tokens_est": token_estimate(chars),
+         "max": None, "floor": None, "target_min": None, "target_max": None, "limit_source": None,
+         "status": "UNKNOWN", "errors": [], "warnings": [], "valid": True}
+    r.update(kw)
+    r["valid"] = not r["errors"]
+    return r
+
+
+def _from_budget(model_id, cap_status, chars, d, source, warnings):
+    """Apply the budget to a character count. d: max/floor/target_min (or only max for verbatim fields)."""
+    mx, floor, tmin = d["max"], d.get("floor"), d.get("target_min")
+    errors, status = [], "OK"
+    if chars > mx:
+        status = "ABOVE_MAX"
+        errors.append("prompt is %d chars; max is %d; CUT exactly %d chars" % (chars, mx, chars - mx))
+    elif floor is not None and chars < floor:
+        status = "BELOW_FLOOR"
+        errors.append("prompt is %d chars (%.1f%% of max %d); floor is %d (80%%): ADD at least %d chars "
+                      "(%d to reach the 95%% target of %d)" % (chars, 100.0 * chars / mx, mx, floor, floor - chars,
+                                                               tmin - chars, tmin))
+    elif tmin is not None and chars < tmin:
+        status = "BELOW_TARGET"
+        warnings = warnings + ["prompt is %d chars (%.1f%% of max); target is 95-100%%: add %d chars to reach %d" % (
+            chars, 100.0 * chars / mx, tmin - chars, tmin)]
+    r = _result(model_id, cap_status, chars, max=mx, floor=floor, target_min=tmin, target_max=mx,
+                limit_source=source, status=status, errors=errors, warnings=warnings)
+    if status == "ABOVE_MAX":
+        r["hard_cap_chars"] = mx
+    return r
 
 
 def validate_body(prompt, model_id, strict):
-    entry = by_id_get(model_id)
-    if entry is None:
-        return {"model_id": model_id, "cap_status": "UNKNOWN", "chars": char_count(prompt),
-                "tokens_est": token_estimate(char_count(prompt)),
-                "band_min": HOUSE_MIN, "band_target": HOUSE_TARGET, "band_max": HOUSE_MAX,
-                "rule": None, "errors": ["model %r not in registry" % model_id],
-                "warnings": [], "valid": False}
-
     chars = char_count(prompt)
-    tokens = token_estimate(chars)
-    cap_status = entry.get("cap_status", "NOT_PUBLISHED")
-    rule, vcap, tcap = classify(entry)
-    ocap = entry.get("owner_observed_cap_chars")
-
-    errors = []
-    warnings = []
-
-    hard = None
-    # Hard-fail only on VERIFIED hard char caps (rule B/C) — chars > cap -> exit 2
-    if rule in (RULE_B, RULE_C) and vcap is not None and chars > vcap:
-        hard = vcap
-        errors.append(
-            "prompt is %d characters; %s hard cap for %s is %d (VERIFIED)" % (
-                chars, model_id, entry.get("display_name", model_id), vcap))
-
-    if rule == RULE_A:
-        # verified or owner-observed cap at/above 20k — enforce house band as
-        # guidance only (owner-observed is not vendor-verified: never hard-fail)
-        if chars < HOUSE_MIN:
-            warnings.append(
-                "prompt %d chars is thin vs house band %d-%d; add context, target ~%d "
-                "(non-fatal)" % (chars, HOUSE_MIN, HOUSE_MAX, HOUSE_TARGET))
-        elif chars > HOUSE_MAX:
-            if vcap is not None and chars > vcap:
-                errors.append(
-                    "prompt %d chars exceeds the cap %d attributed to %s" % (
-                        chars, vcap, entry.get("display_name", model_id)))
-            else:
-                if ocap:
-                    cap_desc = "owner observed %d" % ocap
-                elif vcap:
-                    cap_desc = "verified %d" % vcap
-                else:
-                    cap_desc = "NOT published"
-                warnings.append(
-                    "prompt %d chars exceeds house max %d; cap %s (cap_status %s) — trim "
-                    "before dispatch (non-fatal)" % (
-                        chars, HOUSE_MAX, cap_desc, cap_status))
-    elif rule == RULE_B:
-        if chars > vcap:
-            hard = vcap
-            errors.append("prompt %d chars exceeds VERIFIED hard cap %d" % (chars, vcap))
-        elif chars >= vcap * 0.98:
-            warnings.append(
-                "prompt %d chars is at %d%% of the hard cap %d; leave headroom, target "
-                "~4,500-4,900 where cap is 5,000" % (chars, int(chars * 100 / vcap), vcap))
-        elif chars < HOUSE_MIN:
-            if vcap is not None and vcap <= 5000:
-                warnings.append("prompt %d chars under house band; target ~4,500-4,900 where cap is %d (non-fatal)"
-                                % (chars, vcap))
-            else:
-                warnings.append("prompt %d chars under house band; target ~%d (non-fatal)"
-                                % (chars, HOUSE_TARGET))
-    elif rule == RULE_C:
-        if chars > vcap:
-            hard = vcap
-            errors.append("prompt %d chars exceeds published maximum %d" % (chars, vcap))
-        elif chars >= vcap * 0.9:
-            warnings.append("prompt %d chars near cap %d; keep headroom" % (chars, vcap))
-    elif rule == RULE_D:
-        # token cap published; chars are an estimate, never a hard cap
-        if tokens > tcap:
-            warnings.append(
-                "estimated %d tokens (chars/4) exceeds documented %d token cap for %s; "
-                "the docs cap is TOKENS not chars — trim, and treat as approximate" % (
-                    tokens, tcap, model_id))
-        if chars < HOUSE_MIN:
-            warnings.append("prompt %d chars under house band (non-fatal)" % chars)
-    elif rule == RULE_E:
-        # nothing published: soft pass, flag for probe
-        warnings.append(
-            "cap_status %s: prompt cap NOT PUBLISHED for %s — treat as LIVE_PROBE_REQUIRED "
-            "before long prompts; no invented cap used" % (cap_status, model_id))
-
+    # 1. Skill 74 prompt-budget (live schema, then registry snapshot, then policy owner)
+    got = adapter_bridge.prompt_budget(model_id, prompt.strip())
+    if got is not None:
+        d = got["data"]
+        w = list(got.get("warnings") or [])
+        entry = by_id_get(model_id)
+        cap = (entry or {}).get("cap_status", "SKILL-74")
+        if d.get("max") is None:
+            r = _result(model_id, cap, chars, status=d.get("status", "UNKNOWN"), limit_source=d.get("limit_source"),
+                        warnings=w)
+        else:
+            r = _from_budget(model_id, cap, chars, d, "skill-74:" + str(d.get("limit_source")), w)
+    else:
+        # 2. models.json fallback: the policy-owner cap recorded for this model
+        entry = by_id_get(model_id)
+        if entry is None:
+            return _result(model_id, "UNKNOWN", chars, errors=["model %r not in registry" % model_id], status="UNKNOWN")
+        cap = entry.get("cap_status", "NOT_PUBLISHED")
+        # KIE's live schema (20,000 for legacy gpt-image-2) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
+        mx = (entry.get("live_schema_cap_chars") or entry.get("vendor_hard_cap_chars")
+              or entry.get("owner_observed_cap_chars"))
+        w = ["Skill 74 adapter unavailable; limit taken from models.json (%s)" % cap]
+        if mx:
+            r = _from_budget(model_id, cap, chars, budget(mx), "models.json:%s" % cap, w)
+        else:
+            tcap = entry.get("vendor_hard_cap_tokens")
+            if tcap and token_estimate(chars) > tcap:
+                w.append("estimated %d tokens (chars/4) exceeds documented %d token cap for %s; the docs cap is TOKENS "
+                         "not chars: trim, and treat as approximate" % (token_estimate(chars), tcap, model_id))
+            w.append("prompt limit UNKNOWN for %s (cap_status %s): no floor enforced; no cap invented" % (model_id, cap))
+            r = _result(model_id, cap, chars, status="UNKNOWN", limit_source="models.json:%s" % cap, warnings=w)
     if strict:
-        for w in warnings:
-            errors.append("strict: " + w)
-        warnings = []
-
-    band_status = "ok"
-    if band_status != "ok":
-        pass
-    if chars < HOUSE_MIN:
-        band_status = "thin"
-    elif chars > HOUSE_MAX:
-        band_status = "hot"
-
-    result = {
-        "model_id": model_id,
-        "cap_status": cap_status,
-        "chars": chars,
-        "tokens_est": tokens,
-        "band_min": HOUSE_MIN,
-        "band_target": HOUSE_TARGET,
-        "band_max": HOUSE_MAX,
-        "rule": rule,
-        "band_status": band_status,
-        "errors": errors,
-        "warnings": warnings,
-        "valid": not errors,
-    }
-    if hard is not None:
-        result["hard_cap_chars"] = hard
-    return result
+        r["errors"] += ["strict: " + x for x in r["warnings"]]
+        r["warnings"] = []
+        r["valid"] = not r["errors"]
+    return r
 
 
 # module-level cache for the registry (loaded once per process)
@@ -227,81 +152,98 @@ def validate_prompt(prompt, model_id, strict=False):
 # Self-test
 # ---------------------------------------------------------------------------
 
+# (name, prompt chars, model, expected_valid, expected_status, expected_hard_cap_flag)
+# Bridge off: limits come from models.json (gpt-2.5 20,000 DOCS; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
+# wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
+STATIC_CASES = [
+    ("wan 5000 = max ok", 5000, "wan/2-7-image", True, "OK", False),
+    ("wan 5001 above max", 5001, "wan/2-7-image", False, "ABOVE_MAX", True),
+    ("wan 4800 in target ok", 4800, "wan/2-7-image", True, "OK", False),
+    ("wan 3999 below 80% floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
+    ("wan 4000 = floor ok (warn expand)", 4000, "wan/2-7-image", True, "BELOW_TARGET", False),
+    ("gpt-2.5 20000 = max ok", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
+    ("gpt-2.5 19000 = 95% ok", 19000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
+    ("gpt-2.5 20001 above max rejected", 20001, "gpt-image-2-5-sunburst-text-to-image", False, "ABOVE_MAX", True),
+    ("gpt-2.5 16000 = 80% floor ok (warn expand)", 16000, "gpt-image-2-5-sunburst-text-to-image", True,
+     "BELOW_TARGET", False),
+    ("gpt-2.5 15999 under 80% rejected", 15999, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
+    ("gpt-2.5 9500 (old house target) now rejected", 9500, "gpt-image-2-5-sunburst-text-to-image", False,
+     "BELOW_FLOOR", False),
+    ("gpt-2.5 300 chars rejected", 300, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
+    ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "OK", False),
+    ("legacy gpt-image-2 15999 below its 16000 floor", 15999, "gpt-image-2-text-to-image", False, "BELOW_FLOOR", False),
+    ("legacy gpt-image-2 20001 above max (N43 25,000 superseded)", 20001, "gpt-image-2-text-to-image", False,
+     "ABOVE_MAX", True),
+    ("ideogram 5000 ok", 5000, "ideogram/v3-text-to-image", True, "OK", False),
+    ("ideogram 5001 above max", 5001, "ideogram/v3-text-to-image", False, "ABOVE_MAX", True),
+    ("imagen4 5000 ok", 5000, "google/imagen4", True, "OK", False),
+    ("qwen token-capped: no fake char cap, no floor", 200, "qwen3/text-to-image", True, "UNKNOWN", False),
+    ("seedream not published: UNKNOWN, no floor", 9000, "seedream/5-pro-text-to-image", True, "UNKNOWN", False),
+    ("seedream not published zero chars ok", 0, "seedream/5-pro-text-to-image", True, "UNKNOWN", False),
+    ("unknown model fails", 5, "not/a-model", False, "UNKNOWN", False),
+]
+
+# Bridge on, answered by a fake Skill 74: a model 66 has never heard of (the newest GPT Image generation).
+FAKE_BUDGET = {"state": "validated", "warnings": [], "data": {"status": "OK", "max": 30000, "floor": 24000,
+                                                                "target_min": 28500, "target_max": 30000,
+                                                                "limit_source": "live-schema:live"}}
+ADAPTER_CASES = [
+    ("new model 29000 ok via adapter", 29000, "gpt-image-3-aurora-text-to-image", True, "OK", False),
+    ("new model 23999 under 80% rejected", 23999, "gpt-image-3-aurora-text-to-image", False, "BELOW_FLOOR", False),
+    ("new model 30001 above max rejected", 30001, "gpt-image-3-aurora-text-to-image", False, "ABOVE_MAX", True),
+    ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, "gpt-image-2-5-sunburst-text-to-image", False,
+     "BELOW_FLOOR", False),
+]
+
+
+def _run_cases(cases, failures):
+    for name, n, model, exp_valid, exp_status, exp_hard in cases:
+        res = validate_prompt("x" * n, model)
+        if res["valid"] != exp_valid or (exp_status and res["status"] != exp_status):
+            failures.append("FAIL %s: expected valid=%s status=%s got valid=%s status=%s (%s)" % (
+                name, exp_valid, exp_status, res["valid"], res["status"], res["errors"]))
+        elif exp_hard != (res.get("hard_cap_chars") is not None):
+            failures.append("FAIL %s: expected hard-cap-flag=%s" % (name, exp_hard))
+    return failures
+
+
 def selftest():
-    cases = [
-        # (name, prompt, model, expected_valid, expected_rule, expect_err=None, expect_warn=None, expect_exit2=None)
-        ("wan 5000 ok",
-         "x" * 5000, "wan/2-7-image", True, "B", None, None, False),
-        ("wan 5001 exceeds hard cap",
-         "x" * 5001, "wan/2-7-image", False, "B", "exceeds VERIFIED hard cap", None, True),
-        ("wan 4800 headroom ok",
-         "x" * 4800, "wan/2-7-image", True, "B", None, None, False),
-        ("gpt owner-observed 25000 ok",
-         "x" * 20000, "gpt-image-2-text-to-image", True, "A", None, None, False),
-        ("gpt 30000 owner-observed warn",
-         "x" * 30000, "gpt-image-2-text-to-image", True, "A", None,
-         "owner observed", False),
-        ("gpt thin 300 chars warn",
-         "x" * 300, "gpt-image-2-text-to-image", True, "A", None, "thin", False),
-        ("gpt 9500 target ok",
-         "x" * 9500, "gpt-image-2-text-to-image", True, "A", None, None, False),
-        # GPT Image 2.5 Sunburst: operator ruling 2026-09-09 (Ruling 2). The
-        # 20,000-char cap is a DOCS figure (NOT the GPT Image 2 25,000
-        # owner-confirmed figure, which does not carry forward to 2.5) but is
-        # still >= 20000 so it takes the same rule-A house-band treatment.
-        ("gpt-2.5 20000 exact ok (at the DOCS cap)",
-         "x" * 20000, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, None, False),
-        ("gpt-2.5 20001 exceeds DOCS cap",
-         "x" * 20001, "gpt-image-2-5-sunburst-text-to-image", False, "A",
-         "exceeds the cap 20000", None, False),
-        ("gpt-2.5 9500 target ok",
-         "x" * 9500, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, None, False),
-        ("gpt-2.5 thin 300 chars warn",
-         "x" * 300, "gpt-image-2-5-sunburst-text-to-image", True, "A", None, "thin", False),
-        ("qwen token cap estimate warn",
-         "x" * 20000, "qwen3/text-to-image", True, "D", None, "token cap", False),
-        ("qwen short ok",
-         "a" * 200, "qwen3/text-to-image", True, "D", None, None, False),
-        ("seedream 5 pro not published soft pass",
-         "y" * 9000, "seedream/5-pro-text-to-image", True, "E", None, "NOT PUBLISHED", False),
-        ("seedream not published zero chars ok",
-         "", "seedream/5-pro-text-to-image", True, "E", None, "NOT PUBLISHED", False),
-        ("ideogram 5000 exact ok",
-         "z" * 5000, "ideogram/v3-text-to-image", True, "B", None, None, False),
-        ("ideogram 5001 exceeds",
-         "z" * 5001, "ideogram/v3-text-to-image", False, "B", "exceeds VERIFIED", None, True),
-        ("imagen4 5000 exact ok",
-         "w" * 5000, "google/imagen4", True, "B", None, None, False),
-        ("imagen4 5001 exceeds",
-         "w" * 5001, "google/imagen4", False, "B", "exceeds VERIFIED", None, True),
-        ("unknown model fails",
-         "hello", "not/a-model", False, None, "not in registry", None, False),
-        ("whitespace stripped before count",
-         "   " + "m" * 100 + "   ", "wan/2-7-image", True, "B", None, None, False),
-    ]
+    import tempfile
     failures = []
-    for name, prompt, model, exp_valid, exp_rule, exp_err, exp_warn, exp_exit2 in cases:
-        res = validate_prompt(prompt, model)
-        if res["valid"] != exp_valid:
-            failures.append("FAIL %s: expected valid=%s got %s (%s)" % (
-                name, exp_valid, res["valid"], res["errors"]))
-            continue
-        if exp_rule is not None and res.get("rule") != exp_rule:
-            failures.append("FAIL %s: expected rule=%s got=%s" % (name, exp_rule, res.get("rule")))
-        if exp_err and not any(exp_err in e for e in res["errors"]):
-            failures.append("FAIL %s: expected error %r got %s" % (name, exp_err, res["errors"]))
-        if exp_warn and not any(exp_warn in w for w in res["warnings"]):
-            failures.append("FAIL %s: expected warning %r got %s" % (name, exp_warn, res["warnings"]))
-        got_exit2 = res.get("hard_cap_chars") is not None
-        if exp_exit2 != got_exit2:
-            failures.append("FAIL %s: expected hard-cap-flag=%s got=%s" % (
-                name, exp_exit2, got_exit2))
+    saved = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
+    _run_cases(STATIC_CASES, failures)
+    res = validate_prompt("   " + "m" * 4500 + "   ", "wan/2-7-image")
+    if res["chars"] != 4500:
+        failures.append("FAIL whitespace not stripped before count: %s" % res["chars"])
+    res = validate_prompt("x" * 100, "wan/2-7-image")
+    if not any("ADD at least 3900" in e for e in res["errors"]):
+        failures.append("FAIL below-floor message must name the exact chars to add: %s" % res["errors"])
+    res = validate_prompt("x" * 5003, "wan/2-7-image")
+    if not any("CUT exactly 3 chars" in e for e in res["errors"]):
+        failures.append("FAIL above-max message must name the exact chars to cut: %s" % res["errors"])
+    with tempfile.TemporaryDirectory() as d:
+        script = os.path.join(d, "kie_live_adapter.py")
+        with open(script, "w") as fh:
+            fh.write("import os, sys\nsys.stdout.write(open(os.path.join(os.path.dirname(__file__), 'answer.json')).read())\n")
+        with open(os.path.join(d, "answer.json"), "w") as fh:
+            json.dump(FAKE_BUDGET, fh)
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = script
+        _run_cases(ADAPTER_CASES, failures)
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
+        _run_cases([("adapter unreachable: models.json limit", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK",
+                     False)], failures)
+    if saved is None:
+        os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    else:
+        os.environ["KIE_LIVE_ADAPTER_PATH"] = saved
+    total = len(STATIC_CASES) + len(ADAPTER_CASES) + 4
     if failures:
         print("validate_prompt.py --self-test FAILED", file=sys.stderr)
         for f in failures:
             print("  " + f, file=sys.stderr)
         return 1
-    print("validate_prompt.py --self-test: %d/%d passed" % (len(cases), len(cases)))
+    print("validate_prompt.py --self-test: %d/%d passed" % (total, total))
     return 0
 
 
