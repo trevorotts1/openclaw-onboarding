@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.2.0] - 2026-10-06 - feat: Suno reconciled to the current KIE envelope (W0-02 contract)
+
+- LAYERED routes (directive §9.2 hard gate; `planning/provider-contracts.md` §§1-4): CURRENT `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (generate, extend, upload-and-extend-audio, generate-persona, sounds; version at `input.model`, default V6) is authoritative for new work. LEGACY dedicated `/api/v1/generate` family stays valid for V4..V5_5 (live-marked Discontinued — validator warns, never drops). ONLY `ai-music-api/*` rides createTask; any other model on createTask is still exit 2.
+- Validator: new `_validate_ai_music_envelope` normalizes snake_case envelope keys and delegates caps to the existing validators (one transport, one set of caps). Enums extended from the live Skill 74 registry snapshot: sounds `V5/V5_5/V6/V6_MINI/V6_WILD`; extend title/prompt and generate caps cover the V6 family; duration effective for V5_5/V6/V6_MINI/V6_WILD custom (10-360, default 20); generate checks lyrics ≤5000 (verbatim) and personaModel enum. Self-test 42 became 58 checks (current-envelope pass/reject, legacy-Discontinued warning, sounds/persona/extend/upload-and-extend coverage).
+- `models.json`: Suno entries carry `model_enum` with the V6 family, `model_default: V6` (generate), `route_models` current+legacy, `discontinued: [V4..V5_5]`, lyrics 5000 / persona enum / variety 0-4 caps; last_verified_at 2026-10-06. TTS/STT entries untouched; STT gate unchanged and fail-closed.
+- Docs (`SKILL.md`, `references/music.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `INSTALL.md`, `CORE_UPDATES.md`+`wire.sh` payloads, `QC.md`, `references/qc.md`) describe the layered routes; `skill-version.txt` rolled to v2.2.0.
+- New `PROVIDER-DISCREPANCIES.md` (directive §9.2 item 7): V4-example-vs-V6-text, sounds 422-in-200, task-detail 404s (record path UNVERIFIED — poll/recordInfo wording kept generic until an authorized live smoke proves a path).
+- No live smoke ran here (docs + registry only); no paid transport added; Skill 74 `submit` may carry the current envelope, legacy curl path unchanged.
+
 ## [2.1.2] - 2026-10-06 - feat: descriptive music fields use rule 12; the unresolved non-custom limit has no floor
 
 - Suno `style`, the sounds prompt, add-vocals `style` and add-instrumental `tags` use the band. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Verbatim fields (TTS text, custom-mode lyrics) are exempt from the floor.
