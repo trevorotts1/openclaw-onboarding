@@ -9,6 +9,7 @@ All notable changes to this skill wrapper are documented here.
 ### Added
 - Synchronous-model note, price and success-rate endpoints, N40 citation and full N43 restatement in the common rules.
 - `references/kie-common-rules.md`: single source of truth for KIE authority order, endpoints, rate limits, polling, prompt caps, credit preflight, prices, retention, keys, model ids and the N43 image pin.
+- Rule 13, GPT Image auto-latest default: the fleet image default follows the newest GPT Image generation (today 2.5 sunburst); rule 11 reworded to match.
 - Rule 12, prompt length budget: write descriptive prompts at 95 to 100 percent of the model maxLength, never below 80 percent; supersedes the 9,000 to 19,000 house band.
 
 ---

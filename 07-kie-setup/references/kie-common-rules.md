@@ -7,7 +7,7 @@ instead of restating these rules. If another file disagrees with this one, this 
 Sources: https://docs.kie.ai (market, rate-limit, task-detail, file-upload, common API pages),
 live endpoint probes on 2026-10-05, and AGENTS.md section N43.
 
-Note: `kie_live_adapter.py` (commands `price`, `validate`, `prompt-budget`) and
+Note: `kie_live_adapter.py` (commands `price`, `validate`, `prompt-budget`, `latest-family`) and
 `74-kie-live-adapter/references/kie-model-registry.json` land in a follow-up Skill 74 change.
 Reference them by these exact names.
 
@@ -99,13 +99,15 @@ report once); Skill 74 makes 1 attempt (stricter).
 Never write a model id from memory. Use the policy owner's registry or the department pin.
 New live models start as DISCOVERED and are never auto-defaults.
 
-## 11. Image pin (restated from AGENTS.md N43, unchanged)
+## 11. Image pin (restated from AGENTS.md N43)
 
-Default: `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`.
+N43 named the sunburst family as the pinned default. Rule 13 makes the default follow the newest
+GPT Image generation (today that is 2.5 sunburst); the N43 ids below are the current resolution.
+Default today: `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`.
 Legacy `gpt-image-2-*` is used only for the ratios 3:1, 1:3 and 9:21 (rated weak on 2.5; no
 substitute was blessed). Ratio substitutions on 2.5 sunburst: 5:4 becomes 4:3; 4:5 becomes 3:4;
 2:1 becomes 16:9; 1:2 becomes 9:16. All other requested ratios go to 2.5 sunburst as asked.
-The fleet is pinned to `sunburst`; `flare` is not introduced without a new owner ruling.
+`flare` is not introduced without a new owner ruling (see the variant order in rule 13).
 Constraint sets are per generation and never merged (2.5 prompt cap 20,000; legacy 25,000).
 
 ## 12. Prompt length budget (owner order 2026-10-05)
@@ -129,3 +131,24 @@ Prompt writers must know each model's character limit and write prompts close to
 - If a model's schema declares no maxLength for its prompt field, writers use the policy owner's
   documented limit (Skill 66, 67 or 68). If none exists, the validator reports UNKNOWN and does
   not enforce a floor.
+
+## 13. GPT Image auto-latest default (owner order 2026-10-05)
+
+Owner order: if a new GPT Image model comes out, the system moves to it as the default
+automatically.
+
+- The fleet image default is the NEWEST GPT Image generation in KIE's live catalog that has both a
+  text-to-image and an image-to-image model and a readable live schema. Today that is GPT Image 2.5
+  Sunburst.
+- Resolve it at selection time with
+  `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image`
+  (live catalog, 6 hour cache; falls back to the registry, then to the last known default).
+  Version order is numeric (2.5 is newer than 2, which is newer than 1.5).
+- If a new generation has several variants, prefer the variant with the same name as the current
+  default (for example sunburst). Otherwise take the variant with the highest live 24 hour success
+  rate; on a tie, the lower price.
+- Department pins and explicit user model requests still override the default.
+- The prompt budget (rule 12) uses the new model's own schema maxLength automatically.
+- Every automatic switch writes a receipt and is reported to the operator. If the new model fails
+  dispatch or validation, fall back to the previous default for that job and record the fallback.
+- The legacy `gpt-image-2` ratios and substitutions in rule 11 (N43) still apply.
