@@ -152,9 +152,11 @@ assert "kie_image.py carries the embedded Skill 74 client block" \
   "grep -q 'BEGIN EMBEDDED SKILL-74 CLIENT' \"${ADAPTER_IMG_SRC}\" && grep -q 'END EMBEDDED SKILL-74 CLIENT' \"${ADAPTER_IMG_SRC}\""
 assert "neither adapter imports requests (no second HTTP client)" \
   "! grep -q 'import requests' \"${ADAPTER_IMG_SRC}\" \"${ADAPTER_VID_SRC}\""
+assert "kie_image.py carries the embedded secret-helper block (key gate for a bare clone / Docker image)" \
+  "grep -q 'BEGIN EMBEDDED SECRET-HELPER' \"${ADAPTER_IMG_SRC}\" && grep -q 'END EMBEDDED SECRET-HELPER' \"${ADAPTER_IMG_SRC}\""
 assert "embed_kie_client.py present" \
   "[ -f \"${SELF_SKILL_DIR}/scripts/embed_kie_client.py\" ]"
-for t47 in test_kie_adapter_resultjson_decode test_kie_adapter_key_and_i2i_field test_kie_video_seedance test_kie_embedded_client_hashlock; do
+for t47 in test_kie_adapter_resultjson_decode test_kie_adapter_key_and_i2i_field test_kie_video_seedance test_kie_adapter_safety test_kie_embedded_client_hashlock; do
   assert "${t47}.py passes (fake Skill 74 transport, no network, no key)" \
     "python3 \"${SELF_SKILL_DIR}/scripts/${t47}.py\""
 done

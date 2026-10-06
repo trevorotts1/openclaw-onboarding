@@ -164,7 +164,7 @@ class _ProviderCase(unittest.TestCase):
 
     def setUp(self) -> None:
         self.transport = FakeTransport()
-        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY"}, clear=False)
+        self.env = patch.dict("os.environ", {"KIE_API_KEY": "FIXTURE-KEY", "KIE_POLICY_ROOT": ""}, clear=False)  # no policy owners: only the fake schema sets limits
         self.env.start()
         self.addCleanup(self.env.stop)
         self.provider = kie.KieProvider(transport=self.transport)
@@ -214,21 +214,42 @@ class Skill74TransportTests(_ProviderCase):
         self.assertIn("CUT exactly 30", str(ctx.exception))
         self.assertEqual(len(self.transport.post_calls), 0)
 
-    def test_prompt_inside_the_budget_is_submitted_silently(self) -> None:
-        self.transport.prompt_max = 50
-        self.provider.generate_image(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * 48)
-        )
+    def _img(self, n: int) -> base.ImageGenerationRequest:
+        return base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * n)
+
+    def test_prompt_at_79_percent_is_a_hard_reject_with_the_chars_to_add(self) -> None:
+        self.transport.prompt_max = 1000  # floor 800, target 950
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(self._img(790))
+        self.assertIn("below the 80 percent floor", str(ctx.exception))
+        self.assertIn("ADD at least 10", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_prompt_at_95_percent_passes(self) -> None:
+        self.transport.prompt_max = 1000
+        self.provider.generate_image(self._img(950))
         self.assertEqual(len(self.transport.post_calls), 1)
         self.assertNotIn("WARNING", self.stderr.getvalue())
 
-    def test_prompt_under_the_floor_is_reported_and_still_submitted(self) -> None:
+    def test_prompt_at_80_percent_passes_with_no_refusal(self) -> None:
         self.transport.prompt_max = 1000
-        self.provider.generate_image(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn")
-        )
+        self.provider.generate_image(self._img(800))
         self.assertEqual(len(self.transport.post_calls), 1)
-        self.assertIn("below the prompt-budget floor", self.stderr.getvalue())
+
+    def test_prompt_at_101_percent_is_refused_with_the_chars_to_cut(self) -> None:
+        self.transport.prompt_max = 1000
+        with self.assertRaises(base.ProviderTaskError) as ctx:
+            self.provider.generate_image(self._img(1010))
+        self.assertIn("CUT exactly 10", str(ctx.exception))
+        self.assertEqual(len(self.transport.post_calls), 0)
+
+    def test_prompt_budget_method_returns_skill74_numbers(self) -> None:
+        self.transport.prompt_max = 1000
+        b = self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual((b["max"], b["floor"], b["target_min"]), (1000, 800, 950))
+
+    def test_prompt_budget_is_none_without_a_known_limit(self) -> None:
+        self.assertIsNone(self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image"))
 
     def test_upload_asset_goes_through_skill74_upload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

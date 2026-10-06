@@ -1,5 +1,13 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.1.1 - 2026-10-06 - QC follow-ups on the Skill 74 consolidation
+
+- No fallback on an unknown outcome: when gemini-omni-video times out (the task may still finish), its task status cannot be read, or the createTask answer is lost to a network error, `kie_video.py` no longer starts a veo3_fast job and never resubmits. The result is `success=False` with `data.needs_repoll`, `data.kie_task_id` (when KIE returned one) and `data.kie_task_state` (`unresolved` or `createTask_outcome_unknown`) for the Dispatcher to re-poll. The same holds for Seedance and for the veo3 / veo3_fast legacy route (timeout, lost answer, unreadable status, result not saved). A definite failure still falls back; a prompt or credit refusal never falls back.
+- Key gate in a bare clone: `_real_kie_key` used `shared-utils/secret_helper.py`, which the Docker image and a bare OpenMontage clone do not have, so a well-formed key read as UNAVAILABLE. A second generated block in `kie_image.py` (the `looks_like_real_key` gate, copied verbatim from `shared-utils/secret_helper.py`, sha256-stamped) is used when shared-utils is absent; `kie_video.py` reads it from there. `embed_kie_client.py` now generates and checks both blocks and `test_kie_embedded_client_hashlock.py` locks both (mutation proofs, and parity of the embedded gate with the shared one).
+- Phase-0 credit check: `video_build_check._fetch_kie_balance` no longer makes its own HTTP call; it reads the balance through Skill 74 (credits, body `code` checked) with the same installed-or-embedded client selection, and says which path it used.
+- Owner rule 12: a descriptive prompt under 80 percent of the model maximum is now a HARD REJECT in both adapters (via Skill 74 prompt-budget), with the exact characters to add; over the maximum is refused with the characters to cut.
+- Tests: new `test_kie_adapter_safety.py` (unknown-outcome rules, empty-HOME bare clone with no shared-utils, 79 / 80 / 95 / 101 percent for image, gemini and Seedance); `test_video_preflight.py` covers the credit read on both paths; QC runs the new test and asserts the secret-helper block.
+
 ## v15.1.0 - 2026-10-06 - one KIE path: both adapters run on Skill 74
 
 - `kie_image.py` and `kie_video.py` are thin BaseTool wrappers. Upload, live-schema validation, prompt-budget, credit preflight (price x 1.30), createTask, wait and save run through Skill 74 (`74-kie-live-adapter`) in `active` mode per call. Removed: both `_create_task` / `_submit_*` / `_poll_*` / `_download_*` / `_upload_local_image` HTTP clients, `_decode_result_json`, the hard-coded Seedance prompt band (2500 / 3 characters), and the `requests` dependency of the adapters.

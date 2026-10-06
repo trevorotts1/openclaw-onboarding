@@ -1,5 +1,13 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## v2.1.1 - 2026-10-06
+
+QC follow-up: owner rule 12 (prompts 95 to 100 percent of the model maximum, never under 80 percent) is now a HARD REJECT here, not a report.
+
+- `providers/kie.py`: a prompt under 80 percent of the model maximum raises `ProviderTaskError` with the exact characters to add (Skill 74 prompt-budget), as one over the maximum already did with the characters to cut. New `KieProvider.prompt_budget(model_id)` returns Skill 74's numbers (None for an unknown limit, a verbatim field or no Skill 74).
+- Template audit: the P6 to P9 templates were one sentence long (about 300 to 600 characters against a 20000 maximum, so a floor of 16000 would have rejected every real run). New `providers/prompt_depth.py` carries real production direction (composition, lens, light, color, materials, atmosphere, continuity, people and brand safety, finish, layout safety for the web page, what must not appear, plus still-specific and motion-specific sections for camera path, parallax, temporal consistency, start/end frame fidelity and scroll scrubbing), filled in from the project's style contract and the scene. `generate_images.py` and `generate_videos.py` (concept, anchor, scene and boundary stills; draft, final and connector clips) pass their templates and sections through `fit_prompt`, which adds whole sections (then sentences) until the prompt is in the 95 to 100 percent band of the live maximum, reserving room for the negative-prompt clause. If the library cannot reach the floor, the short prompt goes to the provider, which refuses it. Models with no known limit (Veo 3.1) and verbatim fields are untouched.
+- Tests: `test_providers_kie.py` (79 percent refused with the characters to add, 80 and 95 pass, 101 refused with the characters to cut); new `test_prompt_depth.py` (the band at 20000, 12000, 5000 and 2500, the negative-prompt reserve, no-limit and verbatim exemptions, the real pipeline templates refused bare and accepted expanded, direction specific to the project and not repeated filler). The offline fixture schema now carries the real 20000 prompt maximum so every unit, e2e and self-test run exercises the floor.
+
 ## v2.1.0 - 2026-10-06
 
 Consolidation: Skill 62 no longer has its own Kie HTTP client. `providers/kie.py` calls Skill 74

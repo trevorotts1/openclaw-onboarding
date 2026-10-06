@@ -647,9 +647,10 @@ class KieProvider(MediaProvider):
         return adapter
 
     def _check_prompt(self, adapter: Any, slug: str, prompt: Any, model_id: str) -> None:
-        """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here): over the model
-        maximum is refused; under the 80 percent floor is reported (this skill's templated prompts are
-        short; the floor is enforced by the policy owner Skill 66)."""
+        """Prompt length comes from Skill 74 prompt-budget (no band is hard-coded here). Owner rule 12:
+        a descriptive prompt under 80 percent of the model maximum is a HARD REJECT (the refusal names the
+        exact characters to add), and so is one over the maximum (the exact characters to cut). Verbatim
+        fields and models with no known limit are not floor-checked by Skill 74."""
         if not isinstance(prompt, str):
             return
         r = adapter.cmd_prompt_budget(slug, check=True, prompt_text=prompt)
@@ -657,7 +658,19 @@ class KieProvider(MediaProvider):
         if err.get("code") == "prompt_above_max":
             raise ProviderTaskError(f"kie provider: {model_id} prompt exceeds the model limit: {err.get('msg')}")
         if err.get("code") == "prompt_below_floor":
-            self._log(f"WARNING {model_id} prompt below the prompt-budget floor: {err.get('msg')}")
+            raise ProviderTaskError(f"kie provider: {model_id} prompt is below the 80 percent floor: {err.get('msg')}")
+
+    def prompt_budget(self, model_id: str) -> Optional[Dict[str, Any]]:
+        """Skill 74 prompt-budget numbers (``max``, ``floor``, ``target_min``) for a model's descriptive
+        prompt field, or None when Skill 74 is absent, the key is unset, or the limit is unknown or the
+        field is verbatim. Used by ``prompt_depth.fit_prompt`` to build prompts that meet the floor."""
+        if not self._use_skill74():
+            return None
+        try:
+            data = self._adapter().cmd_prompt_budget(self.registry.slug_for(model_id)).get("data") or {}
+        except ProviderTaskError:
+            return None
+        return data if data.get("max") and not data.get("verbatim") else None
 
     # -- MediaProvider interface --------------------------------------------
 
