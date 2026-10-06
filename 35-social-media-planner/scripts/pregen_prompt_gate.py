@@ -32,7 +32,7 @@ declared metadata BEFORE any generation call, mirroring the Graphics department'
 USAGE
     python3 pregen_prompt_gate.py check \\
         --prompt-file working/prompts/day1-primary.txt \\
-        --model ideogram-v3-design \\
+        --model gpt-image-2-5-sunburst-text-to-image \\
         --platform instagram --ratio 4:5 --pixels 1080x1350 \\
         --text-overlay "Three Moves That Doubled Our Pipeline" \\
         --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \\
@@ -69,6 +69,7 @@ DEFAULT_IMAGE_MODEL_I2I = "gpt-image-2-5-sunburst-image-to-image"
 # N43 ratio substitution: Skill 35's 4:5 deliverable is requested as 3:4 and cropped to
 # 4:5 after generation. 2:3, 9:16, 16:9 and 1:1 are requested as they are.
 DISPATCH_RATIO_SUBSTITUTION = {"4:5": "3:4"}
+LEGACY_GPT_IMAGE_2_RATIOS = frozenset({"3:1", "1:3", "9:21"})
 
 # Every ratio Skill 35 actually produces (playbook.md Section 7/8/9). A prompt declaring a
 # ratio outside this set is a FORM failure — it does not match any real deliverable slot.
@@ -299,6 +300,15 @@ def check_prompt(
     # Agnes are ELIGIBLE through verified adapters; the Ideogram-only allowlist is gone.
     # Owner order 2026-10-05: Nano Banana is never a primary route. It is allowed only
     # when the caller labels the call as an explicit non-text fallback.
+    # AGENTS.md N43: legacy gpt-image-2 (not 2.5) is allowed ONLY for 3:1, 1:3 and 9:21.
+    _bare = model_norm.split("/")[-1]
+    if _bare.startswith("gpt-image-2") and not _bare.startswith("gpt-image-2-5") \
+            and ratio not in LEGACY_GPT_IMAGE_2_RATIOS:
+        res.quality_problems.append(
+            f"AF-SM-MODEL-ROUTING: {model!r} is legacy GPT Image 2, allowed only for ratios "
+            f"{sorted(LEGACY_GPT_IMAGE_2_RATIOS)} (AGENTS.md N43). Ratio {ratio!r} must use "
+            f"{DEFAULT_IMAGE_MODEL} (or {DEFAULT_IMAGE_MODEL_I2I}).")
+
     if model_norm.split("/")[-1].startswith("nano-banana") and not fallback_label:
         res.quality_problems.append(
             f"AF-SM-MODEL-ROUTING: {model!r} is not a Skill 35 route. The default image "

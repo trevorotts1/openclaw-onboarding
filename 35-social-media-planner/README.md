@@ -61,7 +61,7 @@ https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67
 
 ## Weekly Cost Estimate
 
-This README holds no dollar figures, so there is one price authority: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74, live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Weekly cost = about 22 images, 1 podcast cover, and 2 videos of 8 clips each, each priced live. Fish Audio podcast cost is compute only (or API cost) and is $0 if Fish Audio is not configured.
+This README holds no dollar figures, so there is one price authority: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74, live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Weekly cost = about 22 images, 1 podcast cover, and 2 videos of 8 clips each, each priced live. Fish Audio podcast cost is compute only (or its own API cost); nothing is charged for it if Fish Audio is not configured.
 
 ## File Structure
 

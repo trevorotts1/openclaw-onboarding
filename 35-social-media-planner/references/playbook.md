@@ -2229,7 +2229,7 @@ Plus 16:9 thumbnails (1280x720) for YouTube and blog featured image (1200x630) a
 
 ### Weekly Cost Estimate
 
-> This section holds no dollar figures. The old table used April 2026 snapshot prices and priced images at Nano Banana 2 rates although text-bearing images route to Ideogram V3 DESIGN (Section 8). Price every line item with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
+> This section holds no dollar figures. The old table used April 2026 snapshot prices at Nano Banana 2 rates. Every image is now GPT Image 2.5 Sunburst (Section 8). Price every line item with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
 
 | Item | Quantity | Price source |
 |------|----------|--------------|
