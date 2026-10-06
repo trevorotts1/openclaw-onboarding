@@ -1,5 +1,22 @@
 # Changelog — Skill 28: Cinematic Forge
 
+## v7.0.2 — 2026-10-05 — QC follow-ups for the Skill 68 delegation
+
+- The missing-Skill-68 guard in Phase 3 now stops (returns or exits non-zero) instead of only printing a message.
+- Lines that named ElevenLabs as the voice vendor now say "voice via Skill 68"; Skill 68 owns the text-to-speech vendor choice.
+- The Phase 0 budget template no longer hard-codes any price or voice vendor; each line takes its price from the live adapter `price` command for the model Skill 66, 67 or 68 chose. INSTALL.md and README.md follow the same rule (price and vendor wording).
+- Single price authority across the whole skill: the COST REFERENCE table, Phase 2 cost line, progress-update example, intake math note, Quality-model note and the 90-second example no longer state any dollar figure; prices come from the Skill 74 `price` command (or the KIE catalog `pricingDesc` until Skill 74 is installed). A note near the top says so.
+- Sound-effects payloads must carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` applies its sounds checks (confirmed by reading that script).
+
+## v7.0.1 — 2026-10-05 — remove dead KIE endpoints; delegate audio to Skill 68
+
+Live probes on 2026-10-05 (known-good control and fake-path control, no paid calls) returned HTTP 404 for `GET /api/v1/user/credits` and `POST /api/v1/jobs/create`, while `GET /api/v1/chat/credit` (body `{code,msg,data:<number>}`) answered. The task API is `POST /api/v1/jobs/createTask` and `GET /api/v1/jobs/recordInfo`.
+
+- Credit check (SKILL.md Phase 0, QC.md 5.1) now uses `/api/v1/chat/credit` and requires the body `code` to be checked before reading `data`.
+- Phase 3 audio (dialogue, narrator, sound effects, music) no longer calls KIE directly. The dead `/api/v1/jobs/create` calls and the model ids `eleven_multilingual_v2`, `eleven_sound_effects` and `suno_v4` are removed. Skill 68 (`68-kie-audio`) owns model ids, routes and validation; the agent runs its `scripts/validate_audio_request.py` before dispatch and its `references/qc.md` after. Skill 68 has no ElevenLabs sound-effects model, so sound effects use its sound-effect route.
+- API reference table: image rows corrected from `/jobs/create` and `/jobs/query` to `/jobs/createTask` and `/jobs/recordInfo` (Skill 66 owns the image model id); audio rows replaced by a pointer to Skill 68; `/veo/generate`, `/veo/record-info` and `/veo/extend` left as is (they match Skill 67's registry).
+- INSTALL.md, QC.md and cost table wording updated to match. The "VEO 3.1 Fast only" rule, intake, assembly and delivery gates are unchanged.
+
 ## v6.6.0 — SK1-32: the delivered artifact is the REQUESTED artifact, and the gate that says so checks the approved intake
 
 - **T0-47 (BLOCKER) — the un-transformed file was the one that shipped.** Phase 5

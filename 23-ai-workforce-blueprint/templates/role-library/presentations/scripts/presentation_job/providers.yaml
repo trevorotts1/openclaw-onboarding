@@ -24,8 +24,13 @@ defaults:
   poll_counts_toward_rps: true
 
 kie:
-  # FIX 61.6: 20 new tasks per 15 s -> 1.33 submits/s; ~100+ running -> 100
-  # in flight; poll GETs do NOT count toward rps (they skip the rate window);
+  # The KIE limit is 20 new createTask calls per 10 s per account (see
+  # 07-kie-setup/references/kie-common-rules.md). These values deliberately pace
+  # BELOW that limit: 1.33 submits/s and at most 13 starts in any rolling 10 s
+  # window (65 percent of the limit), so a deck never needs a 429 retry to stay
+  # legal. Raising rps to 2.0 and burst to 20 would use the full limit; that is
+  # an operator decision, not a documentation fix. ~100+ running -> 100 in
+  # flight; poll GETs do NOT count toward rps (they skip the rate window);
   # 429 dropped not queued.
   rps: 1.33
   burst: 13
@@ -166,7 +171,7 @@ zai:
   poll_counts_toward_rps: true
 
 # Part 7 rate-limit derivations (verified [R12]):
-#   kie          20 new tasks / 10 s = 2 rps; window cap = burst 20; ~100+ running -> max_inflight 100
+#   kie          KIE limit 20 new tasks / 10 s = 2 rps (kie-common-rules.md); this row paces below it at rps 1.33 / burst 13 (13 starts per rolling 10 s); ~100+ running -> max_inflight 100
 #   deepseek     Pro 500 / Flash 2500 account-wide concurrent; text units Pro 400, Flash 2000 -> shared bucket max_inflight 400
 #   openrouter   free 20 RPM, paid cap UNPUBLISHED -> no measurable ceiling exists;
 #                the 20/50 was our own unmeasured opening bid. Operator ruling

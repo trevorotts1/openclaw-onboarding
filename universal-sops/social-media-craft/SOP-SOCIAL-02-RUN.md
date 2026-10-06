@@ -30,7 +30,7 @@ Never call `run_social_media.py` directly (front-door-nonce mismatch -> exit 4).
 | `day` | director-of-social-media | Single-day regenerate + publish. |
 | `carousel` | social-media-graphics-specialist | 10-slide FB/IG or 9-slide LinkedIn-PDF (`postAsPdf:true`). |
 | `video` | director-of-social-media | 25.0s single-clip lane; the render model is picked by the Skill 67 selector (`--narrated` -> DEFERRED v0.3.0). |
-| `podcast` | director-of-podcast | Script -> Fish-Audio S2 -> ffprobe bands -> Podbean + 1400x1400 cover. |
+| `podcast` | director-of-podcast | Script -> Fish-Audio S2 -> ffprobe bands -> Podbean + exactly 1400x1400 cover (this fold's own band in `config/bands.json`; the Podcast Production Engine cover is 1500 to 3000 per SOP-PODCAST-01). |
 | `newsletter` | email-campaign-strategist | Weekly social-week digest via GHL Campaigns (subject <=60 / preview <=120). |
 | `blog` | content-marketing-strategist | Day-7 long-form via GHL blog (LeadConnector `blogs.write`). |
 | `engage` | community-manager | Read-only 7-day metrics poll -> anomaly report (SOP-05). |
@@ -42,7 +42,7 @@ Never call `run_social_media.py` directly (front-door-nonce mismatch -> exit 4).
 
 ## 3. PREFLIGHT IS FAIL-CLOSED (P0)
 
-The run does not begin until `preflight_gate.py` PASSES: Kie.ai credits >= 200, OpenRouter balance >= $5, GHL PIT valid, all required config fields present, status == Paid, AND the C2 live connected-accounts reconcile (config platforms enum vs the live GHL accounts — both drift directions BLOCK; a deliberate exclusion is honored only via the logged `platformsExcluded` list). A FAIL emits a labeled failure report + the configured notification and blocks the run (`sys.exit 2`). Owner Q&A about publish scope is answered from this live reconcile, never a memorized list.
+The run does not begin until `preflight_gate.py` PASSES. The gate resolves what the selected output plan needs and checks only that: Kie.ai credits cover the planned image or video assets (default estimate 200 credits, a logged client-exact `creditEstimates.images` wins; checked only when the plan requests images or video, read from `GET /api/v1/chat/credit` with the client's own Kie key), OpenRouter balance covers the planned authoring (default estimate $5, `creditEstimates.text` wins), GHL PIT valid, all required config fields present, status == Paid, AND the C2 live connected-accounts reconcile. The reconcile is per account: a configured platform with no healthy live account, or a connected platform missing from `platforms` (unless the logged `platformsExcluded` list records a deliberate exclusion), is reported as a visible per-account warning and the run continues on the healthy accounts; only a live listing that cannot be confirmed for a GHL-delivery plan blocks the run. A blocking FAIL emits a labeled failure report + the configured notification and stops the run (`sys.exit 2`). Owner Q&A about publish scope is answered from this live reconcile, never a memorized list. Shared Kie rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ## 4. GRACEFUL SKIPS ARE NOT FAILURES
 

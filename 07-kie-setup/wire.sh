@@ -111,7 +111,7 @@ TOOLS_BODY="## KIE.ai API
 - Dedicated APIs: Runway (/api/v1/runway/*), Veo (/api/v1/veo/*), Suno (/api/v1/*)
 - Models: consult per-modality registries in 66-kie-image, 67-kie-video, 68-kie-audio (catalog changes frequently)
 - Rate limits: 20 requests per 10s per account, 100+ concurrent tasks
-- Generated media retained 14 days; persist promptly
+- Generated media: KIE documents 14 days, but result URLs typically expire after 24 hours; download/persist immediately
 - Full reference: $REF_DEST"
 
 MEMORY_BODY="## KIE.ai API Setup — installed

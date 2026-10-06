@@ -7,10 +7,10 @@
 #     from the playbook structure (via the canonical parser tools/playbook_engine.py,
 #     U-16), emitted as diagram.mmd and rendered to diagram.png via npx mermaid-cli
 #     (no API cost). This is the engineering-accurate diagram.
-#   Artifact B, the client hero visual: a stylized branded image via Kie.ai using the
-#     newest GPT-Image family model (model resolved at build time, never hardcoded),
-#     hosted on the client's own GHL media library, embedded in the Notion doc. Budget
-#     capped; NEVER blocks the build.
+#   Artifact B, the client hero visual: a stylized branded image via Kie.ai, hosted on
+#     the client's own GHL media library, embedded in the Notion doc. Budget capped;
+#     NEVER blocks the build. Image generation is DELEGATED to Skill 66 (kie-image),
+#     the image policy owner (fleet pin N43); this script names no model of its own.
 #
 # Idempotent: skips regeneration when the structure hash of the parsed playbook
 # matches the recorded hash in visual.json; --force overrides. Writes visual.json,
@@ -127,18 +127,20 @@ MODEL_ID=""
 HERO_STATUS="pending"
 HERO_PATH=""
 if [ "$DRY_RUN" -eq 1 ]; then
-  MODEL_ID="mock-gpt-image"
+  MODEL_ID="mock"
   echo "[31-generate-workflow-visual] --dry-run: MOCKED Kie hero (no spend, no network). Truth diagram ships regardless."
 else
-  # Real path: resolve the newest GPT-Image family model per Skill 07 (never hardcode),
-  # route async jobs through Skill 46 when installed, host on the client's GHL media
-  # library, and log the job to kie-image-events.jsonl. The truth diagram ALWAYS ships;
-  # the hero is budget-capped and never blocks the build (timeout 120s, one retry, then
-  # flag pending). This block is a documented integration point; when KIE_API_KEY and
-  # Skill 07 are absent it degrades to Mermaid-only.
+  # Real path (STUB: no Kie call is made here): Skill 66 (kie-image) selects the model
+  # under the fleet image pin and dispatches the job; route async jobs through Skill 46
+  # when installed, host on the client's GHL media library, and log the job to
+  # kie-image-events.jsonl. Once installed, the live catalog check is provided by Skill 74
+  # (74-kie-live-adapter) in shadow mode; Skill 66 stays the decision authority. The
+  # truth diagram ALWAYS ships; the hero is budget-capped and never blocks the build
+  # (timeout 120s, one retry, then flag pending). When KIE_API_KEY is absent it
+  # degrades to Mermaid-only. MODEL_ID stays empty (recorded as null in visual.json)
+  # until a real job runs and Skill 66 returns the model it dispatched.
   if [ -n "${KIE_API_KEY:-}" ]; then
-    MODEL_ID="${KIE_IMAGE_MODEL:-gpt-image}"   # resolved at build time per Skill 07 catalog
-    echo "[31-generate-workflow-visual] Kie hero path active (model resolved at build time per Skill 07)."
+    echo "[31-generate-workflow-visual] Kie hero path active (stub; model chosen by Skill 66 when a job runs, none recorded now)."
     # A real hero job would log here; cost logging happens only when a job actually runs.
   else
     echo "[31-generate-workflow-visual] KIE_API_KEY absent - Mermaid-only. Hero flagged pending (never blocks the build)."

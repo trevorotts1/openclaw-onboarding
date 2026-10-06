@@ -4,8 +4,9 @@ description: >
   Complete setup, credential management, and API router reference for KIE.ai, a
   unified API platform for generating images, videos, and audio through one API
   key and consistent async job conventions.
+version: v7.0.6
 metadata:
-  version: "6.7.0"
+  version: "7.0.6"
   priority: CRITICAL
 ---
 
@@ -58,7 +59,7 @@ When dispatching media generation requests, use this routing architecture:
    - Veo: `POST /api/v1/veo/generate`, `GET /api/v1/veo/record-info?taskId=XXX`
    - Suno / Music: `POST /api/v1/generate`, `GET /api/v1/generate/record-info`
 4. **Callback vs polling policy** — Prefer Skill 46 (`callBackUrl`) in production; stepped/exponential backoff for polling (initial 2-3s delay, respect 429, never hammer).
-5. **Rate limits and retention** — 20 new requests per 10s per account; 100+ concurrent running tasks. Generated media expires after 14 days; persist immediately.
+5. **Rate limits and retention** — 20 new requests per 10s per account; 100+ concurrent running tasks. KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 6. **Error codes** — Handling 401 (unauthorized), 402 (insufficient credits), 429 (rate limited), 422 (validation error), 500/501 (server/generation failed).
 7. **Modality dispatch** — Detailed model selection, schemas, prompt expansion bands, and payload validators are owned by Skills 66 (Image), 67 (Video), and 68 (Audio).
 
@@ -76,7 +77,7 @@ When dispatching media generation requests, use this routing architecture:
 - **NEVER use OpenAI's endpoint format** (`/v1/images/generations`) for KIE. KIE has its own endpoint structure.
 - **All tasks are asynchronous.** A 200 response on task creation means the job was queued/accepted, NOT that it is finished.
 - **Rate limits:** Maximum 20 new tasks per 10 seconds per account. Maximum 10 status queries per second per API key. Obey HTTP 429 with backoff.
-- **Generated files expire:** KIE media links expire after 14 days (some temporary URLs earlier). Download and persist assets immediately.
+- **Generated files expire:** KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - **For production batch jobs and decks:** Use Skill 46 (kie-callback-relay) callback architecture rather than polling sequentially.
 - **Department pipelines OVERRIDE defaults:** Never override a model pinned by Presentations (GPT-Image-2.5 only), Movie Producer, or department manifests.
 - **The API key convention is `KIE_API_KEY`:** Stored in `~/.openclaw/secrets/.env` (and `~/.openclaw/.env`). Reference only; NEVER print or log the key.

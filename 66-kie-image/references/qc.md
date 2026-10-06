@@ -14,9 +14,8 @@ of the image asset — using the system's visual capability, never a filename or
 - [ ] Task reached `state == "success"` via recordInfo or callback (never assume
       from createTask 200 — "A 200 OK response only means the task was
       successfully created").
-- [ ] `resultJson.resultUrls` present and non-empty; URLs expire ~24h —
-      download/persist immediately when the workflow needs long-term access
-      (provider deletes media after 14 days).
+- [ ] `response.resultUrls` (or the `resultJson` string) present and non-empty;
+      KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 - [ ] `failCode`/`failMsg` empty; `creditsConsumed` recorded for audit.
 - [ ] Persist final media into durable storage when required.
 
