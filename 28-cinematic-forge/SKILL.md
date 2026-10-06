@@ -1,6 +1,6 @@
 ---
 name: cinematic-forge
-description: End-to-end AI video production from concept to finished upload — structured intake, VEO 3.1 Fast video generation via KIE.ai, ElevenLabs and Suno audio production, image generation, FFmpeg assembly, and media library upload.
+description: End-to-end AI video production from concept to finished upload — structured intake, VEO 3.1 Fast video generation via KIE.ai, voice (via Skill 68) and Suno audio production, image generation, FFmpeg assembly, and media library upload.
 ---
 
 # Cinematic Forge
@@ -9,7 +9,7 @@ description: End-to-end AI video production from concept to finished upload — 
 > **Version:** 1.0
 > **Author:** (redacted for client-generic distribution)
 > **Priority:** HIGH
-> **Description:** An AI-powered video production skill that takes a user from concept to finished, uploaded video through a structured intake process, AI video generation (VEO 3.1 Fast via KIE.ai), AI audio production (ElevenLabs + Suno via KIE.ai), image generation (Nano Banana Pro via KIE.ai), FFmpeg assembly, and media library upload.
+> **Description:** An AI-powered video production skill that takes a user from concept to finished, uploaded video through a structured intake process, AI video generation (VEO 3.1 Fast via KIE.ai), AI audio production (voice via Skill 68 + Suno via KIE.ai), image generation (Nano Banana Pro via KIE.ai), FFmpeg assembly, and media library upload.
 
 ## Prerequisites
 
@@ -515,7 +515,7 @@ After all 14 questions are answered, the agent proceeds through these phases:
    - NEVER overlap narrator and character dialogue in the same segment
 5. **Voice selection:**
    - Ask the user: "Do you want me to select voices that match your characters, or would you like me to give you a few options to choose from?"
-   - If the user wants options: Present 2-3 ElevenLabs voice samples per character with descriptions (e.g., "Warm, confident African-American woman, mid-30s" or "Deep, authoritative male narrator")
+   - If the user wants options: Present 2-3 voice samples (voice via Skill 68) per character with descriptions (e.g., "Warm, confident African-American woman, mid-30s" or "Deep, authoritative male narrator")
    - If the user wants the agent to choose: Select voices that best match the character descriptions from intake and confirm the choices
    - Lock the voice IDs once selected - the same voice ID is used for every clip of that character throughout the entire video
 6. **Get user approval** on storyboard, reference images, scripts, and voice selections before proceeding
@@ -564,7 +564,10 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
 
 ```bash
 AUDIO_SKILL="$(dirname "$SKILL_DIR")/68-kie-audio"     # sibling skill folder; resolved from Phase 0's $SKILL_DIR
-[ -d "$AUDIO_SKILL" ] || { echo "Skill 68 (kie-audio) is not installed - stop audio production and tell the operator" >&2; }
+if [ ! -d "$AUDIO_SKILL" ]; then
+  echo "Skill 68 (kie-audio) is not installed - stop audio production and tell the operator" >&2
+  return 1 2>/dev/null || exit 1     # stop here: return when sourced or inside a function, exit otherwise
+fi
 ```
 
 1. Read `$AUDIO_SKILL/SKILL.md`, then `references/tts.md` (speech) or `references/music.md` (sound effects and music), and `INSTRUCTIONS.md`. Pick the model and build the request body exactly as those files specify.
@@ -593,6 +596,7 @@ AUDIO_SKILL="$(dirname "$SKILL_DIR")/68-kie-audio"     # sibling skill folder; r
    - Ambient sounds (office noise, beach waves, crowd murmur)
    - Action sounds (footsteps, door opening, pen writing)
    - Transition sounds (swooshes, impacts)
+   - The sound-effects payload MUST carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` routes it to its sounds checks (prompt max 500, model V5 or V5_5) instead of validating it as a song generation.
 
 4. **Background Music** (Suno policy, owned by Skill 68, domain `music`)
    - Generated based on user's music preferences from Question 8b
@@ -905,7 +909,7 @@ cc_return_to_orchestrator() {     # cc_return_to_orchestrator <task_id> <reason>
 2. **Character consistency is non-negotiable.** Every segment must match the anchor reference images. If a character's face, hair, or skin tone shifts - regenerate.
 3. **VEO 3.1 Fast only.** Do not use VEO 3.1 Quality ($2.00) unless the user explicitly requests it.
 4. **9:16 vertical is primary.** Never create 16:9 first.
-5. **All VEO audio is discarded.** Replace entirely with ElevenLabs + Suno layers.
+5. **All VEO audio is discarded.** Replace entirely with voice (via Skill 68) + Suno layers.
 6. **Only provide START image to VEO for Segment 1.** End images constrain generation and produce stiff video.
 7. **Design the final segment as a static card** (logo, CTA, "Thank You") so FFmpeg trimming doesn't cut mid-action.
 8. **No Topaz upscale until the user approves the draft.** Don't waste processing on unapproved content.
@@ -937,7 +941,7 @@ If the agent starts a new session and finds an existing project-state.json in a 
 | VEO 3.1 Fast (per segment) | $0.40 | 8 seconds per segment |
 | VEO 3.1 Fast Extend (per segment) | $0.40 | Same price as generation |
 | Nano Banana Pro (per image) | ~$0.10 | Reference images, start images |
-| ElevenLabs TTS (per clip) | ~$0.10-0.30 | Varies by length |
+| Voice / text-to-speech (per clip, via Skill 68) | ~$0.10-0.30 | Varies by length |
 | Sound effects (per clip, via Skill 68) | ~$0.10 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
 | Suno music (per track, via Skill 68) | ~$0.20-0.50 | Estimate only; Skill 68 and the KIE catalog price are authoritative |
 

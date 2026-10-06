@@ -1,5 +1,11 @@
 # Changelog — Skill 28: Cinematic Forge
 
+## v7.0.2 — 2026-10-05 — QC follow-ups for the Skill 68 delegation
+
+- The missing-Skill-68 guard in Phase 3 now stops (returns or exits non-zero) instead of only printing a message.
+- Lines that named ElevenLabs as the voice vendor now say "voice via Skill 68"; Skill 68 owns the text-to-speech vendor choice.
+- Sound-effects payloads must carry `"endpoint": "/api/v1/generate/sounds"` so Skill 68's `validate_audio_request.py --domain music` applies its sounds checks (confirmed by reading that script).
+
 ## v7.0.1 — 2026-10-05 — remove dead KIE endpoints; delegate audio to Skill 68
 
 Live probes on 2026-10-05 (known-good control and fake-path control, no paid calls) returned HTTP 404 for `GET /api/v1/user/credits` and `POST /api/v1/jobs/create`, while `GET /api/v1/chat/credit` (body `{code,msg,data:<number>}`) answered. The task API is `POST /api/v1/jobs/createTask` and `GET /api/v1/jobs/recordInfo`.
