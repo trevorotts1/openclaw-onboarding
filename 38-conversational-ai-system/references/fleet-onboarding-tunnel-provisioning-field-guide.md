@@ -344,6 +344,8 @@ Helping you put AI to work — one careful step at a time.
 
 ## Operator notes (for the AI agent running skill 38, not the client)
 
+**Docker tenant boxes do NOT use this guide (QC-PROTOCOL.md Rule 13a).** If the box runs inside a container on a shared host (Contabo/VPS multi-tenant), its public hostname is served by the operator's cloudflared on the host. You will see no tunnel and no token from inside the container — that is expected. Do not send the client here and never ask for a token on the operator's own domain: that token is never given to a client box. Ask the operator for the box's public gateway hostname, save `PUBLIC_HOSTNAME=<hostname>` in the secrets env file, and re-run `00-verify-prerequisites.sh`; steps 13 and 14 skip themselves and step 15 sets `gateway.trustedProxies` for the host hop.
+
 Per the OpenClaw QC-PROTOCOL.md (Part 3 Rule 13), when `scripts/00-verify-prerequisites.sh` cannot find a Cloudflare API token in any of the 10 documented locations, the agent halts and points the client at THIS document. The four parts of this guide map to the fleet onboarding tunnel provisioning:
 
 - Parts 1-3 (account + domain + nameservers) prepare Cloudflare to manage the client's domain. Skill 38's Phase 1 (per `references/v6.0-source-playbook.md` Steps 1-2) then creates the Cloudflare Tunnel via API and installs `cloudflared` as a persistent system service. Without the Cloudflare account + active domain, that Phase will fail.

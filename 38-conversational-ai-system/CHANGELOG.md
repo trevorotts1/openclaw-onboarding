@@ -1,3 +1,33 @@
+## [2.0.9] - 2026-10-06 - fix: inbound hooks work on docker tenants (operator-managed tunnel); no Cloudflare token demanded
+
+A Contabo/VPS docker tenant could send through GHL but never receive. Four defects, one install path:
+
+- **Wrong token demand.** `00-verify-prerequisites.sh` halted with the Rule 13 "CLOUDFLARE API KEY NOT FOUND"
+  message on boxes whose public hostname is served by the operator's cloudflared on the HOST, which the
+  container cannot see. The agent then asked the client for a token on the operator's own zone. New
+  QC-PROTOCOL.md Rule 13a: inside a container, a set `PUBLIC_HOSTNAME` passes with no token and steps 13/14
+  skip themselves; without it the agent asks the operator for the hostname. The operator zone's token is
+  never given to a client box.
+- **403 on every tunneled request.** Step 15 never set `gateway.trustedProxies`, so OpenClaw 2026.9.x answered
+  `403 proxy_attribution_required`. New Step 3.1 merges the hop cloudflared connects from (docker tenant: the
+  container's default-route gateway; host/Mac: loopback; `TRUSTED_PROXIES` overrides). Runs even when the
+  mapping already exists.
+- **Invalid config.** Step 15 wrote `hooks.maxBodyBytes`, which the 2026.9.x schema rejects
+  (`hooks: Unrecognized key "maxBodyBytes"`); it is no longer written and is removed where an earlier run left
+  it. Every config write is now validated as a candidate file BEFORE it replaces the live config.
+- **Agent `main` that does not exist.** The hook mapping, `allowedAgentIds`, the model wizard and the crons
+  (04 and the step-15 heartbeat) defaulted to `main`; 2026.9.x boxes keep agents in `agents.entries` and often
+  have no `main`. New `scripts/lib-docker-tenant.sh` resolves the routing agent: `ROUTING_AGENT_ID` (must
+  exist) > the agent an existing hook mapping uses > `dept-communications` > `main`; nothing else is guessed.
+  21/24/33 put the same id in the 23-key body.
+
+Also: the step-15 E2E no longer starts a real agent run at a fake contact; it probes (no token -> 401; real
+token + a disallowed session key -> 400 before admission), retrying through the gateway's self-restart. The
+full inbound->reply test stays `24-self-test-hook.sh`. The model wizard never blocks without a terminal and
+never changes the routing agent's model unasked (an object model keeps its fallbacks). Secrets default to the
+file 18 persisted, then the stores boxes actually use (`secrets/.env`). New hermetic test
+`scripts/lib-docker-tenant.test.sh` (wired into qc-static).
+
 ## [2.0.8] - 2026-10-06 - docs: the hero visual's Kie transport is Skill 74 (one KIE path)
 
 `scripts/31-generate-workflow-visual.sh` and `protocols/workflow-visual-protocol.md` now state that

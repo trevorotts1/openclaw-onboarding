@@ -5,8 +5,17 @@
 set -euo pipefail
 
 API="https://api.cloudflare.com/client/v4"
-SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
+# shellcheck source=/dev/null
+. "$(dirname "$0")/lib-docker-tenant.sh"
+SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$(s38_default_secrets_env)}"
 GATEWAY_PORT="${GATEWAY_PORT:-18789}"
+
+# ---- Docker tenant: tunnel is operator-managed on the host --------------------
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] && s38_in_container \
+   && { [[ -n "${PUBLIC_HOSTNAME:-}" ]] || s38_env_file_value PUBLIC_HOSTNAME >/dev/null; }; then
+  echo "Docker tenant: the public hostname is served by the operator's tunnel on the host — nothing to create here. Skipping step 13." >&2
+  exit 0
+fi
 
 # ---- Rule 13 token gate ------------------------------------------------------
 if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
