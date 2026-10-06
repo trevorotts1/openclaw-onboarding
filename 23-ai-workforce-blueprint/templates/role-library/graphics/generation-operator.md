@@ -319,6 +319,7 @@ preflight_passed: {true|false}
 postflight_verified: {true|false}
 seed:             {value or "no-seed-endpoint"}
 filled_prompt_hash: {request fingerprint: sha256(model + endpoint + tier + full_filled_positive_prompt + seed + card_id + card_version); the one formula, defined here}
+prompt_path:         {path to the stored filled prompt file in the job dir}
 company_id:         {client-box-id}
 dept:               {department-slug}
 smoke_test:         {true|false}
@@ -638,9 +639,9 @@ For this role, the authoritative sources are:
 
 ### Edge Case 17.5 — Wan `watermark: false` Without Rights Manifest Entry
 
-**Trigger:** An assembly packet for a Wan generation has `watermark: false` set, but the Photo Shoot Director has not provided confirmation that a Rights Manifest entry has been made (per SOP-DIU-610).
+**Trigger:** An assembly packet for a Wan generation has `watermark: false` set, but the Photo Shoot Director has not provided confirmation that the client's Rights Manifest exists (per SOP-DIU-610).
 
-**Action:** Preflight flags the condition: "NOTICE: watermark:false requires Rights Manifest entry (SOP-DIU-610). Confirm manifest entry is on file before submitting." Do not hard-block — the Rights Manifest may exist without being forwarded to this packet. However, if the requestor cannot confirm a manifest entry exists, escalate to CDO before submitting. Delivering a watermark-free output without a Rights Manifest entry violates the consent and provenance tracking requirements.
+**Action:** Preflight flags the condition: "NOTICE: watermark:false requires a Rights Manifest entry (SOP-DIU-610), written at delivery before asset handoff. At preflight, confirm the Photo Shoot Director's manifest exists for this client; the entry itself is written after postflight and gates delivery, not submission." Do not hard-block submission. If the client's manifest file cannot be confirmed to exist, escalate to CDO. Delivering a watermark-free output without a Rights Manifest entry violates the consent and provenance tracking requirements.
 
 **Escalate to:** CDO if manifest entry cannot be confirmed.
 

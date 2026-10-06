@@ -205,14 +205,14 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **SOP 9.1 §Postflight** — Run by the cron poller after `recordInfo` returns the `success` state:
 1. Download all `resultUrls` to `_local/results/{job-id}/` (the job directory `jobs/{job-id}/` points at it) using deterministic naming `{date}_{styleID}_{jobID}_{n}.{ext}`. Do not report success until the download is verified on disk.
-2. Verify each downloaded file: nonzero file size, decodable image (not a truncated or corrupted download), pixel dimensions match the requested resolution; then hash each file (sha256). On any verify failure: mark the receipt `state=postflight-failed` and route to the next step in the fallback ladder (SOP 9.3) or escalate if fallback options are exhausted.
+2. Verify each downloaded file: nonzero file size, decodable image (not a truncated or corrupted download), pixel dimensions match the requested resolution; then hash each file (sha256). On any verify failure: mark the receipt `state=postflight-failed`, escalate to CDO, and do not re-submit without CDO direction.
 3. Advance the existing receipt: `state=complete`, `completed_at`, `local_path`, `sha256`, `actual_cost`.
 4. Write the fingerprint-to-asset-path mapping to the cache.
 5. Notify the sending role and the CDO of successful completion with the local asset path.
 
 **Outputs:** Verified local asset file(s) at deterministic path, completed receipt JSON, fingerprint cache entry, cost ledger update.
-**Hand to:** Requesting role (CDO / Deck Systems Specialist / Photo Shoot Director) and CDO with the local asset path for delivery, with a copy to the Generation Operator. Persistent style failures (output quality failures after infrastructure causes ruled out) → Fidelity Tester with receipt attached.
-**Failure mode:** If postflight fails and the fallback ladder (SOP 9.3) has been exhausted, generate the escalation packet: receipt file, all attempted task IDs and their API responses, spend total, and diagnosis. Deliver to CDO as a hard stop. Never regenerate or resubmit beyond the fallback ladder without CDO authorization.
+**Hand to:** Requesting role (CDO / Deck Systems Specialist / Photo Shoot Director) and CDO with the local asset path for delivery, with a copy to the Generation Operator. Off-style outputs that PASSED postflight (after infrastructure causes ruled out) → Fidelity Tester with receipt attached.
+**Failure mode:** If postflight fails, or the fallback ladder (SOP 9.3) is exhausted on an infra failure, generate the escalation packet: receipt file, all attempted task IDs and their API responses, spend total, and diagnosis. Deliver to CDO as a hard stop. Never regenerate or resubmit beyond the fallback ladder without CDO authorization.
 
 ---
 
@@ -244,7 +244,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Wraps:** MODEL-SPECS §§2–3; PPT-ANALYSIS-SOP §3C; TEST-PROTOCOL §5.
 **Library-version pin:** MODEL-SPECS v1.0, PPT-ANALYSIS-SOP v1.0, TEST-PROTOCOL v1.0 (§-refs verified 2026-06-12).
-**When to run:** Whenever a Kie.ai API call or poll returns a non-success response, or whenever postflight verification fails. Every failure class has a defined rung; nothing is improvised.
+**When to run:** Whenever a Kie.ai API call or poll returns a non-success response, or whenever postflight verification fails (which escalates to CDO rather than climbing the ladder). Every failure class has a defined rung; nothing is improvised.
 **Frequency:** On every API or polling failure.
 **Inputs:** Failed receipt (task_id, state, failure type, error code, error body); MODEL-SPECS §§2–3 routing table and backup column; job type (single-asset vs. deck manifest).
 
@@ -281,12 +281,12 @@ This role contributes to the company revenue cascade by: **protecting client gen
 4. Route any confirmed NSFW generation to the quarantine path (per SOP-DIU-604, owned by Generation Operator) immediately; it never reaches delivery folders.
 
 **Persistent output failure (non-infra):**
-1. If postflight fails but the API returned a nominal success (200 response, download succeeded, but the image fails quality checks), this may be a style issue, not an infra issue.
+1. If postflight PASSED (file downloaded, decodable, dimensions correct, sha256 recorded) but the output is off-style, this is a style issue, not an infra issue. A postflight failure is never routed here; it escalates to CDO.
 2. Before routing to the Fidelity Tester: confirm there is no infra explanation — check if the endpoint had any reported incidents, check if the same prompt worked on a previous run (fingerprint cache), check if the asset dimensions match the request.
 3. Only after ruling out all infra causes: hand to Fidelity Tester with the receipt attached, labeled as a candidate style failure. Make the ruling explicit in the handoff note.
 
 **Outputs:** Updated receipts per fallback action taken; CDO notifications for every fallback escalation; paused manifests with completed-task ledger intact for resume.
-**Hand to:** CDO for all escalations. Fidelity Tester only for confirmed non-infra output quality failures.
+**Hand to:** CDO for all escalations. Fidelity Tester only for postflight-passed, off-style outputs with infra causes ruled out.
 **Failure mode:** If the fallback ladder is exhausted (primary down, backup down, credit exhausted, all configured fallbacks tried) and the job cannot proceed: generate and deliver the escalation packet to CDO. The packet must include: job_id, all attempted task IDs, each API response, total spend to date, completed slides (with receipt paths), remaining slides, and the recommended recovery path. No further action until CDO responds.
 
 ---
@@ -324,10 +324,10 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Steps:**
 1. Open the job directory at `jobs/{job-id}/`. Confirm the Slide Manifest (or shoot brief) is present.
-2. Read all receipt files in `_local/receipts/` and the job's entries in `_local/dispatch-log.md`. Receipts classify by state: `complete` (completed successfully), `postflight-failed` (needs fallback decision), `submitted` or `polling` (in-flight, poll first), `failed`. Dispatch-log entries (no receipt exists yet) classify as: `preflight-failed` (needs correction by sending role), `held` (awaiting CDO approval), `queued` (released or not yet released, no submitted receipt).
+2. Read all receipt files in `_local/receipts/` and the job's entries in `_local/dispatch-log.md`. Receipts classify by state: `complete` (completed successfully), `postflight-failed` (escalated to CDO; no re-submit without CDO direction), `submitted` or `polling` (in-flight, poll first), `failed`. Dispatch-log entries (no receipt exists yet) classify as: `preflight-failed` (needs correction by sending role), `held` (awaiting CDO approval), `queued` (released or not yet released, no submitted receipt).
 3. For `submitted` or `polling` receipts: poll Kie.ai `recordInfo` for the task IDs. Update states to `complete` or `failed` based on actual API status.
 4. For `complete` receipts: these tasks are complete. Confirm local asset files exist at the paths in each receipt. Do NOT resubmit.
-5. For `postflight-failed` receipts: apply the fallback ladder (SOP 9.3) from the current failure state. Follow the ladder rung appropriate to the recorded failure type.
+5. For `postflight-failed` receipts: escalate to CDO; do not re-submit without CDO direction.
 6. For `preflight-failed` dispatch-log entries: return the itemized failure list to the sending role and await corrected resubmission.
 7. For `queued` dispatch-log entries with no matching receipt: these are the remaining slides/tasks. Run the pre-dispatch checks on each (re-run from fresh, not cached from the original run) and release the passing ones to the Generation Operator for submission.
 8. Do not modify any `complete` receipt or re-submit any `complete` task. Resumability depends on the receipt ledger being append-only and never overwriting completed entries.
@@ -433,7 +433,7 @@ Jobs estimated above the per-deliverable approval threshold are held at the pre-
 - **Generation Operator** — you give them: released packets and deck batches (inside the canonical limits), hold releases, and a copy of each completion notice for jobs it submitted; you notify the CDO and the requesting role directly, frequency: per release and per completed request
 - **Deck Systems Specialist** — you give them: completed deck job summaries with all slide asset paths, updated job ticket wrapper with receipt statuses per slide, frequency: per completed deck
 - **Photo Shoot Director** — you give them: completed shoot task asset paths, any infra failure notifications that affect a shoot in progress, frequency: per completed shoot task
-- **Fidelity Tester** — you give them: confirmed non-infra output quality failures with the receipt attached and an explicit statement that infra causes have been ruled out, frequency: as-needed
+- **Fidelity Tester** — you give them: postflight-passed, off-style outputs with the receipt attached and an explicit statement that infra causes have been ruled out, frequency: as-needed
 
 ### Cross-department coordination:
 - For any generation request originating from a cross-department style request (per SOP-DIU-612, owned by CDO), the CDO has already validated the request before it reaches you; your preflight applies equally regardless of originating department.

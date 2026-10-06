@@ -146,6 +146,7 @@ preflight_passed:     {true|false}
 postflight_verified:  {true|false}
 seed:                 {value or "no-seed-endpoint"}
 filled_prompt_hash:   {request fingerprint: sha256(model + endpoint + tier + full_filled_positive_prompt + seed + card_id + card_version); the one formula, defined here}
+prompt_path:         {path to the stored filled prompt file in the job dir}
 company_id:         {client-box-id}
 dept:               {department-slug}
 smoke_test:         {true|false}
