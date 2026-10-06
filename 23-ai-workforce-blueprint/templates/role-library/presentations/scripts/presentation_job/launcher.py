@@ -1634,6 +1634,18 @@ def dispatch(
               f"{capacity_result.get('plan')}, source "
               f"{capacity_result.get('detection_source')})", flush=True)
 
+    # REVISED 2026-09-01 (smoke-1): the CLI carries no --plan-calls; the
+    # intake bridge is expected to supply counts. Until that bridge lands,
+    # read them from working/copy/plan-calls.json in the run dir when the
+    # file exists ({phase_id: n}). Absent file -> None (pre-revision path).
+    if plan_calls is None:
+        try:
+            _pc_path = run_path / "working" / "copy" / "plan-calls.json"
+            if _pc_path.is_file():
+                plan_calls = json.loads(_pc_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            plan_calls = None
+
     verdict: Any = None
     # FIX 12 CREDIT GATE -- before argv is built, before any process exists.
     # A declared mode launch is priced against the balances on every provider
