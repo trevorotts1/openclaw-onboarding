@@ -23,7 +23,7 @@ just the cap check.
 > gate is a suggestion."* Clearing the floor is **NECESSARY, never SUFFICIENT**: the quality gate
 > (elements 4, 5, 8, 10) fails independently of length (AF-GIP-PROMPT-QUALITY).
 
-Band names, tiers, and quality teeth live in `45-design-intelligence-library/library/_system/prompt-bands.json` (bands: `text_bearing_long`, `text_bearing_medium`, `visual_long`, `medium`, `short_draft`; `short_draft` is NEVER a client deliverable). For length, write to the model's prompt-budget target (95-100% of its maxLength, floor 80%) as returned by `kie_live_adapter.py prompt-budget`; the build_deck.py and graphics gate thresholds still enforce the old band until the prompt-budget code change lands (rule 12 of `07-kie-setup/references/kie-common-rules.md`).
+Band names, tiers, and quality teeth live in `45-design-intelligence-library/library/_system/prompt-bands.json` (bands: `text_bearing_long`, `text_bearing_medium`, `visual_long`, `medium`, `short_draft`; `short_draft` is NEVER a client deliverable). For length, the numbers (target, floor, ceiling) are defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md` and read from `kie_live_adapter.py prompt-budget --model <id>`; this SOP states none, and the thresholds inside `prompt-bands.json` and `diu_validator.py` are owned by the prompt-band code work.
 
 **GK-20 (2026-07-15, band<->routing reconciliation):** `text_bearing_long` targets GPT-Image-2.5
 T2I/I2I only — `nano-banana-2` was removed from its endpoints (Nano Banana is refused for ANY
@@ -81,6 +81,8 @@ band MAX) — the prompt is NOT submitted and NOT rendered; re-author (never tru
 **6** = AF-GIP-PROMPT-QUALITY (length cleared but a quality tooth failed). A standalone CI prover
 (`scripts/prove_gip_prompt_floor.py --self-test`) exercises the same functions on fixtures so the
 floor can never become a length-only rubber stamp.
+
+Run `kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <assembled.txt>` as well (exit 3 below the floor, exit 4 above the max); when its verdict and the band validator's differ, the stricter one blocks the submit.
 
 **Handoff:** on a floor/cap/quality failure, return the itemized problem list to the prompt author
 (the Generation Operator does not improvise fixes). On pass, proceed to SOP-DIU-601 preflight steps

@@ -9,13 +9,32 @@
 
 ## 9. Standard Operating Procedures: SOPs 9.1 to 9.13
 
-The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim below and ship to the SOP library.
+The SOP suite is the heart of this role. All 13 SOPs (the 12 base healer SOPs plus the DIU integrity sweep, SOP-DIU-615 at SOP 9.13) are reproduced verbatim below and ship to the SOP library; the sops/ mirror carries the identical set.
 
 ---
 
 ### SOP 9.1 -- Incident Intake and Triage
 
 **When to run:** On every error flag, watchdog handoff, QC loop-4 escalation, failCode event, or operator bug report. Concrete triggers for this department: the Capacity and Reliability Engineer's watchdog (second consecutive stall or failed self-heal), the QC Specialist (loop-4 escalation), any specialist's terminal fail with failCode, the Director (suspected gaps), the operator (bug reports).
+
+**Bug-Ticket Filing (TODO -- ZHC BUGS DEPARTMENT):** When an incident is opened, write the Bug Ticket JSON (schema per THE_HEALER_AND_BUGS_DEPARTMENT.md PART 2.2, reproduced below) to `working/healer/bug_tickets/BUG-YYYYMMDD-NNN.json`. When the Bugs Department ships, these tickets route to its Intake Clerk via the documented channel; until then they remain local and every healing report lists open tickets.
+
+```json
+{
+  "bug_id": "BUG-YYYYMMDD-NNN",
+  "reported_at": "ISO timestamp",
+  "reporter": {"department": "...", "specialist": "...", "run_id": "..."},
+  "symptom": "verbatim error text or precise description",
+  "evidence_paths": ["checkpoints, logs, QC reports, screenshots"],
+  "severity_guess": "P0 run-dead | P1 degraded | P2 cosmetic or latent | P3 improvement",
+  "suspected_layer": "code | sop | core-file | settings-json | model | external-api | environment | gap | unknown",
+  "client_slug": "...",
+  "status": "REPORTED",
+  "dedup_of": null,
+  "assigned_healer": null,
+  "kanban_card_id": null
+}
+```
 
 **Steps:** 1. Open an incident in working/healer/incident_ledger.json: id, detected_at, source (watchdog/QC/specialist/operator), symptom (verbatim error text and the file/phase), affected run, severity (P0 run-dead, P1 degraded, P2 cosmetic/latent). 2. Stabilize first: if a live run is bleeding (burning credits, looping), pause the affected phase via checkpoint flag before diagnosing. 3. Classify the suspected layer: code/script, SOP instruction, model behavior, external API, environment (keys, disk, RAM), or GAP (no SOP covers this situation). 4. Route: layers code/SOP/environment proceed to SOP 9.2; GAP routes to SOP 9.5; suspected stale model routes to SOP 9.6 (targeted check, not full census).
 
@@ -27,7 +46,7 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 
 **When to run:** On every triaged incident.
 
-**Steps:** 1. Gather evidence: the exact failing request/response, checkpoint states, the SOP text the failing agent followed, the QC reports. 2. Reproduce when safe (one cheap call, one dry-run step); never reproduce destructive failures on a client's live assets. 3. Run five whys until the answer names a SPECIFIC defect in a SPECIFIC layer. 4. When the outside world is involved (API contract, model behavior change), dispatch the Deep Research Specialist for the provider's current documentation; diagnosis on evidence, never on memory. 5. Write root_cause, evidence list, and layer to the incident record.
+**Steps:** 1. Gather evidence: the exact failing request/response, checkpoint states, the SOP text the failing agent followed, the QC reports. 2. Reproduce when safe (one cheap call, one dry-run step); never reproduce destructive failures on a client's live assets. 3. Run five whys until the answer names a SPECIFIC defect in a SPECIFIC layer ("the SOP told the poller to look for 'complete'" is a root cause; "the poller was confused" is not). 4. When the outside world is involved (API contract, model behavior change), dispatch the Deep Research Specialist for the provider's current documentation; diagnosis on evidence, never on memory. 5. Write root_cause, evidence list, and layer to the incident record.
 
 **Outputs:** incident updated with root cause. **Hand to:** SOP 9.3. **Failure mode:** unreproducible after honest effort: instrument the pipeline (Tier 2: add logging to the relevant SOP step), close as UNREPRODUCED-WATCHING, auto-reopen on next occurrence.
 
@@ -69,7 +88,7 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 
 **When to run:** Monthly (department-wide), and targeted on any incident where model behavior is the suspected layer.
 
-**Steps:** 1. Build the model inventory from the department's routing table and MODEL MANIFEST: every text model, QC model, image model/platform, with the version currently pinned (example inventory: Kimi 2.6 writer, Minimax 3 QC with 2.7 fallback, DeepSeek v4 Pro/Flash, GPT-Image-2.5 on Kie.ai). 2. Dispatch the Deep Research Specialist per model: latest available version on our actual providers (Ollama Cloud catalog, OpenRouter, Kie.ai docs), release notes, pricing deltas (always expressed per million tokens), deprecation notices, breaking changes. 3. For each model produce a verdict: CURRENT (pinned = latest), STALE (newer exists), DEPRECATED (shutoff announced: flag URGENT with the date). 4. For every STALE/DEPRECATED entry, write a Tier 3 upgrade proposal: the case (what improves), the cost delta, the risk, the staged rollout plan (smoke test on one low-stakes run before fleet-wide), and the rollback line (the exact manifest revert). 5. NEVER change a manifest or swap a model yourself, and NEVER mid-run. Proposals go to the operator via SOP 9.7 and wait for written approval. 6. Record the census date per model; the freshness KPI reads from here.
+**Steps:** 1. Build the model inventory from the department's routing table and MODEL MANIFEST: every text model, QC model, image model/platform, with the version currently pinned (example inventory: Kimi 2.6 writer, Minimax 3 QC with 2.7 fallback, DeepSeek v4 Pro/Flash, GPT-Image-2.5 on Kie.ai). 2. Dispatch the Deep Research Specialist per model: latest available version on our actual providers (Ollama Cloud catalog, OpenRouter, Kie.ai through Skill 74 `discover` and `latest-family`, plus docs.kie.ai), release notes, pricing deltas (always expressed per million tokens), deprecation notices, breaking changes. 3. For each model produce a verdict: CURRENT (pinned = latest), STALE (newer exists), DEPRECATED (shutoff announced: flag URGENT with the date). 4. For every STALE/DEPRECATED entry, write a Tier 3 upgrade proposal: the case (what improves), the cost delta, the risk, the staged rollout plan (smoke test on one low-stakes run before fleet-wide), and the rollback line (the exact manifest revert). 5. NEVER change a manifest or swap a model yourself, and NEVER mid-run. Proposals go to the operator via SOP 9.7 and wait for written approval. The one standing exception is not yours to execute: the GPT Image default follows `kie_live_adapter.py latest-family --family gpt-image` automatically by owner order (rule 13 of `07-kie-setup/references/kie-common-rules.md`); you only confirm that each automatic switch left a promotion receipt and was reported, and flag one that did not. 6. Record the census date per model; the freshness KPI reads from here.
 
 **Outputs:** census report, Tier 3 proposals. **Hand to:** Operator (decision), Chief Healer (global census sync). **Failure mode:** provider docs unreachable: log the attempt, retry next cycle, never infer a version from rumor.
 
@@ -111,7 +130,7 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 
 ### SOP 9.10 -- Settings and JSON Structure Repair
 
-**When to run:** When the root cause is a configuration setting (openclaw.json settings, gateway config, env wiring) or a broken JSON structure anywhere.
+**When to run:** When the root cause is a configuration setting (openclaw.json settings, gateway config, env wiring) or a broken JSON structure anywhere (checkpoints, manifests, config files, malformed escapes).
 
 **Steps:** 1. Back up the file. 2. Validate the CURRENT state mechanically first (python json.load or jq) and capture the exact parse error and position. 3. Repair the minimal defect: the missing comma, the unescaped quote, the wrong setting value, the stale model string; never regenerate a whole config to fix one key. 4. Re-validate mechanically: the file must parse clean. 5. If the setting affects a running gateway/agent: apply per the repo's documented restart procedure, then run one smoke turn to confirm the system is live. 6. Record in the ledger which setting changed, old value, new value, and why. Settings that change model routing or anything in a MODEL MANIFEST remain Tier 3.
 
@@ -123,7 +142,7 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 
 ### SOP 9.11 -- Teacher-Self Protocol (turn every heal into a lesson)
 
-**When to run:** When a heal contains a lesson the wider fleet should internalize as knowledge, not just encounter as a patched SOP.
+**When to run:** When a heal contains a lesson the wider fleet should internalize as knowledge, not just encounter as a patched SOP (a misunderstood API contract, a recurring formatting trap, a model quirk).
 
 **Steps:** 1. Decide if a teaching is warranted: would another agent, in another department, plausibly hit this? If yes, teach. 2. Locate the repo's teachers location (Skill 01 Teach Yourself Protocol: ~/Downloads/openclaw-master-files/<sub>/ full docs + lean core-file pointers) and follow its existing teacher-self protocol and document format exactly (discover, do not invent a parallel format). 3. Write the teaching doc LEAN: the trap, the tell (how you recognize it), the correct move, one concrete example, the incident id. One page maximum. 4. Register the teaching per the protocol (index, naming convention) so agents actually load it. 5. Cross-link: incident ledger entry points to the teaching; the teaching points back. 6. Hand the teaching to the Bugs Department's Bug Librarian for the knowledge base.
 
@@ -135,9 +154,9 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 
 **When to run:** After ANY change to markdown, SOPs, core files, or teachings in a deployment that uses embeddings/retrieval over its docs.
 
-**Why this SOP exists:** A patched document with a stale embedding means the system keeps RETRIEVING the buggy version.
+**Why this SOP exists:** A patched document with a stale embedding means the system keeps RETRIEVING the buggy version. The knowledge layer must reflect every heal immediately or the company keeps remembering its own diseases.
 
-**Steps:** 1. Identify every file changed by this heal (from the incident ledger). 2. Run the repo's documented embedding/index refresh for exactly those files: role/SOP markdown changed on a box -> run `32-command-center-setup/scripts/sync-extensions.sh --converge`. The CC converge endpoint re-imports the materialized workspace/departments tree and storeEmbeddingForSOP re-embeds exactly the inserted/updated rows in the CC SOP index (gemini-embedding-2 @3072 or OpenAI fallback). Never build a second pipeline. 3. Verify: run one retrieval probe using `shared-utils/embedding_health.py --json` (all three indexes must PASS) and confirm the NEW content returns for a query that previously surfaced the old content. 4. Record refresh time and verification result in the ledger. 5. If no embedding pipeline exists for this deployment, note "n/a, no retrieval layer" once in the ledger and skip in future heals for this client.
+**Steps:** 1. Identify every file changed by this heal (from the incident ledger). 2. Run the repo's documented embedding/index refresh for exactly those files: role/SOP markdown changed on a box -> run `32-command-center-setup/scripts/sync-extensions.sh --converge`. The CC converge endpoint re-imports the materialized workspace/departments tree and storeEmbeddingForSOP re-embeds exactly the inserted/updated rows in the CC SOP index (gemini-embedding-2 @3072 or OpenAI fallback). That is the per-file refresh this SOP demands. Never build a second pipeline. 3. Verify: run one retrieval probe using `shared-utils/embedding_health.py --json` (all three indexes must PASS) and confirm the NEW content returns for a query that previously surfaced the old content. 4. Record refresh time and verification result in the ledger. 5. If no embedding pipeline exists for this deployment, note "n/a, no retrieval layer" once in the ledger and skip in future heals for this client.
 
 **Outputs:** refreshed index, verified retrieval, ledger entry. **Hand to:** SOP 9.7 (the heal may now close). **Failure mode:** retrieval still returns stale content after refresh: treat as its own P1 bug ticket against the embedding pipeline.
 
@@ -157,13 +176,13 @@ The SOP suite is the heart of this role. All 13 SOPs are reproduced verbatim bel
 1. **INDEX bijection:** Every INDEX.md row must have a corresponding card file on disk; every card file on disk must have a corresponding INDEX.md row. Report any row without a file (orphaned index row) or file without a row (unregistered card) as FAIL.
 2. **No duplicate IDs:** grep the INDEX.md and the card files for any SOP-DIU tag or card ID that appears more than once. Any duplicate is a FAIL. This check covers the repo-wide `[SOP-DIU-` tag uniqueness requirement.
 3. **Card schema completeness lint:** Each card file must have no empty sections, no "TBD" markers, and no unfilled `{VARIABLE}` tokens in any of its prompt tier blocks. Flag incomplete cards as WARN (they should be in draft status; a production card with empties is FAIL).
-4. **ACTUAL char count vs declared:** For every card with a declared character-count annotation line, recount the actual characters in each prompt tier block and compare to the declaration. A discrepancy of more than 5 characters is a FAIL. Seedream tier: any tier over 2,800 characters is WARN; any tier over 3,000 characters (the Seedream 4.5 and 5.0 Lite silent fail zone) is FAIL. Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS section 1 states a per-model value for the card's endpoint.
+4. **ACTUAL char count vs declared:** For every card with a declared character-count annotation line, recount the actual characters in each prompt tier block and compare to the declaration. A discrepancy of more than 5 characters is a FAIL. Seedream tier: any tier over 3,000 characters (the Seedream 4.5 and 5.0 Lite silent fail zone) is FAIL; a count just under the ceiling is not a warning, because rule 12 of `07-kie-setup/references/kie-common-rules.md` defines the target (a tier below the rule 12 floor for its endpoint is a WARN for the Style Analyst). Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS section 1 states a per-model value for the card's endpoint.
 5. **6xx SOP version pins:** For every SOP file in `sops/` that begins with a `Library-version pin:` line, compare the pinned version to the current file version header of the referenced library file. Any mismatch is FAIL -- flag LOUDLY: "SOP-DIU-[NNN] version pin STALE: pinned [version], current [version]. Re-pin required before this SOP can be trusted."
 6. **Quarantine folder empty or escalated:** If `_local/quarantine/` contains any asset files, verify that each has a corresponding incident.json with a CDO-notified timestamp and a non-null `resolution` field. Any quarantined asset without a logged incident or without a resolution is FAIL.
 7. **Embedding coverage:** Count cards with status "production" or "tested" in INDEX.md. Count embedding entries in the index manifest. If they differ (coverage != card count), flag as WARN and trigger a rebuild notification to the Style Analyst: "Embedding coverage [actual] != card count [expected]. SOP-DIU-606 rebuild required."
 8. **Receipt age -- stuck jobs:** List all receipt files in `_local/receipts/` with state `submitted` or `polling`. Any receipt with `last_polled` older than 24 hours is FAIL -- flag with receipt_id and last_polled timestamp for CDO attention. This is a stuck-job check: Healer gets ground truth without touching the image API; the Render Dispatcher owns polling and orphan recovery and executes any CDO-directed re-poll.
 9. **MODEL-SPECS staleness:** Read the MODEL-SPECS.md header date. If more than 90 days old, flag as FAIL: "MODEL-SPECS.md header date is [date] -- over 90 days. CDO should trigger a Healer model-currency census (SOP 9.6)."
-10. **Kie.ai key/endpoint reachability:** Verify the canonical `KIE_API_KEY` or an alias listed in `shared-utils/secret_names.json` is present in at least one env store (check all stores per the client-box-env-stores policy). Verify the Kie.ai primary endpoint is reachable with `GET /api/v1/chat/credit` (read the JSON body `code`, not only the HTTP status; it consumes no credits). Report FAIL if no key name is present in any store or the endpoint returns a non-2xx response.
+10. **Kie.ai key/endpoint reachability:** Verify the canonical `KIE_API_KEY` or an alias listed in `shared-utils/secret_names.json` is present in at least one env store (check all stores per the client-box-env-stores policy; report SET or NOT-SET only, never the value). Verify the Kie.ai endpoint is reachable with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py credits` (it reads `GET /api/v1/chat/credit`, checks the JSON body `code` and not only the HTTP status, and consumes no credits). Report FAIL if no key name is present in any store or the body `code` is not 200. A 401 or 403 is one attempt only (canonical rule 9): report once, do not retry. This check never submits a job.
 11. **Registrar activation counter:** Count the total production + tested card rows in INDEX.md. If count >= 50, flag: "Registrar activation threshold reached ([N] production+tested cards). CDO should activate the Library Registrar role per SOP-DIU-606 step 9."
 
 **Reporting:**

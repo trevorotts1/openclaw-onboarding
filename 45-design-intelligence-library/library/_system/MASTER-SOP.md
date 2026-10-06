@@ -180,7 +180,7 @@ The ALWAYS / NEVER list this style obeys. Minimum 5 rules. Examples:
 
 ## 5. PROMPT TIER CONSTRUCTION
 
-Every style card carries three prompt templates. Tiers are calibrated to verified Kie.ai API limits (full specs in MODEL-SPECS.md).
+Every style card carries three prompt templates. Tiers are card-authoring tiers calibrated to verified Kie.ai API limits (full specs in MODEL-SPECS.md); the length target for an actual generation prompt is defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md` and read from Skill 74 `prompt-budget`.
 
 | Tier | Character budget | Compatible models | Use case |
 |---|---|---|---|
@@ -231,7 +231,7 @@ Negative prompting is a full subsystem — see **NEGATIVE-PROMPTING-SOP.md** for
 4. **Open `STYLE-CARD-TEMPLATE.md`** and fill EVERY section. No section may be left empty; write "N/A — [reason]" if truly inapplicable.
 5. **Write the three prompt tiers** per Section 5. Verify character counts with an actual count, not an estimate.
 6. **Assign the ID**: next available number in that category (check INDEX.md). Name the file `{ID}_{kebab-style-name}.md`.
-7. **Register in INDEX.md**: add the row (ID, name, category, one-line description, source description, date, version, file path).
+7. **Register in INDEX.md**: hand the registration receipt (ID, name, category, one-line description, source description, date, version, file path) to the Style Librarian, the single INDEX writer, which compiles the row.
 8. **Run TEST-PROTOCOL.md** before marking the card `status: production`. Until tested, card status is `draft`.
 
 ## 7. WORKFLOW B — GENERATE FROM AN EXISTING STYLE
@@ -243,7 +243,7 @@ When instructed e.g. *"Create an image using style FB-003 with subject X and hea
 4. **Choose the tier**: default MEDIUM unless the operator specifies, the design is text-heavy (→ LONG on GPT-Image 2.5 / Nano Banana 2), or it's a draft run (→ SHORT).
 5. **Choose the model** using the routing table in MODEL-SPECS.md (category rules may override).
 6. **Fill the variables** into the template. Do not improvise style changes — the card is law. If the operator requests a deviation, apply it and note it in your response, but do NOT edit the card unless told to.
-7. **Assemble the API request** using the JSON templates in MODEL-SPECS.md.
+7. **Assemble the request:** the Prompt Author writes the final prompt and the Prompt QC Specialist grades it; the Render Dispatcher releases it and the Generation Operator submits through Skill 74 (`validate`, `preflight`, `prompt-budget`, `submit --mode active`). The JSON templates in MODEL-SPECS.md are a shape reference; the live schema is authoritative.
 8. **After generation**: if output is off-style, consult the card's test log, patch the prompt per TEST-PROTOCOL.md guidance, and log the finding.
 
 ## 8. VERSIONING RULES

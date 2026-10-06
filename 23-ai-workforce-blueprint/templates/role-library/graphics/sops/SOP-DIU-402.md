@@ -44,19 +44,19 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
    - Specify degree on the 1–5 subtlety scale; translate to language per §6.
    - Lead with preserve-first phrasing (what to keep, then the change).
    - Include natural-result guardrails verbatim in every prompt: "retain natural skin texture and pores, no plastic smoothing, result must look like an unedited photograph."
-   - Use the retouch prompt skeleton from PHOTO-SHOOT-SOP §6 as the structural template.
+   - Use the retouch prompt skeleton from PHOTO-SHOOT-SOP §6 as the structural template, then size the written prompt to the model's budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, `kie_live_adapter.py prompt-budget --model <id>`): fill the room with preserve-first detail (the identity description, the unchanged elements named one by one, the natural-result guardrails), never with extra edits (one change per pass still holds) and never with padding.
 
 6. **Set endpoint params.** Per MODEL-SPECS §4 (Seedream 4.5 Edit notes): `image_urls` is REQUIRED — verify the source image URL is live (HTTP 200) before submitting. Set `aspect_ratio` explicitly (no auto). Set `quality: basic` for intermediate chain steps; `quality: high` (4K) for final deliverable passes.
 
-7. **Run SOP-DIU-601 preflight.** Do not submit until SOP-DIU-601 returns a clean pass (char count within 3,000-char ceiling for Seedream Edit; no unfilled `{VARIABLE}` tokens; all required params present). Any preflight failure halts submission.
+7. **Run SOP-DIU-601 preflight.** Do not submit until SOP-DIU-601 returns a clean pass (live schema `validate`, `prompt-budget --check` within the model's range and under its cap, no unfilled `{VARIABLE}` tokens, all required params present, credit `preflight` ok). Any preflight failure halts submission.
 
-8. **Submit to Generation Operator.** Hand the completed retouch brief (prompt, endpoint, params, source image URL, tier) to the Generation Operator for Kie.ai API execution per SOP-DIU-301/302. The Director does not execute API calls directly.
+8. **Submit through the Generation Operator.** Hand the completed retouch brief (prompt, endpoint, params, source image URL, tier) to the Render Dispatcher for release to the Generation Operator, which submits through Skill 74 per SOP-DIU-301/302. The Director does not execute or poll API calls directly.
 
 9. **Review the retouched output.** Verify: (a) the named edit was applied correctly; (b) no new artifacts introduced; (c) Identity Lock integrity maintained — skin tone, facial structure, and all unlisted elements are unchanged. If Identity Lock is broken, quarantine the output and re-route; never deliver.
 
 10. **Apply synthetic-media disclosure if required.** If the retouched output is destined for commercial delivery on a covered channel, apply the appropriate disclosure per SOP-DIU-610 (Rights Manifest & Synthetic-Media Disclosure) before handoff.
 
-11. **Log the session.** Record in the shoot record: edit type, endpoint used, prompt hash, source image path, output asset path, number of chain passes, disclosure applied (y/n), and SOP-DIU-610 manifest receipt reference.
+11. **Log the session.** Record in the shoot record: edit type, endpoint used, prompt hash, source image path, output asset path, number of chain passes, disclosure applied (y/n), and the SOP-DIU-610 manifest entry ID.
 
 ---
 
@@ -79,7 +79,7 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
 |---|---|---|
 | Retouched image | `_local/deliverables/{client-slug}/{date}/` | Verified, identity-lock intact |
 | Shoot record update | `personal-photo-shoot/{client-slug}/IDENTITY.md` Shoot History | Updated with session log |
-| Rights Manifest receipt (if commercial delivery) | `personal-photo-shoot/{client-slug}/rights-manifests/` | Appended per SOP-DIU-610 |
+| Rights Manifest entry (if commercial delivery) | `_local/rights-manifest/{client-id}/RIGHTS-MANIFEST.md` | Appended per SOP-DIU-610 |
 | Generation Operator receipt | `_local/receipts/{receipt-id}.json` | Written by the Operator at submit (`state: submitted`); advanced to `complete` by the Render Dispatcher after postflight |
 
 ---
@@ -104,7 +104,7 @@ Do not copy catalog entries, prompt skeletons, or endpoint specs from these file
 | Seedream 4.5 Edit rejects `image_urls` (URL not reachable or format unsupported) | Hard stop. Resolve hosting per SOP-DIU-609 before resubmitting. |
 | Retouched output has lightened skin tone | HARD FAIL. Quarantine + SOP-DIU-604 + CDO incident notification. Never deliver. |
 | Retouched output has identity drift beyond the named edit | Quarantine. Notify CDO. Do not deliver until a passing output is produced. |
-| Instruction exceeds 3,000-char ceiling on Seedream Edit | Route to GPT-Image-2.5 I2I per MODEL-SPECS §2 Editing Hierarchy. Document in shoot record that drift risk is higher; note for CDO review. |
+| Instruction cannot fit the Seedream Edit cap (3,000 characters per the live schema) | Route to GPT-Image-2.5 I2I per MODEL-SPECS §2 Editing Hierarchy (the default generation, resolved with `latest-family` when no pin applies). Document in shoot record that drift risk is higher; note for CDO review. |
 | SOP-DIU-601 preflight fails | Do not submit. Return itemized failure list to requestor. |
 | API key missing from all env stores | Hard stop. Escalate to CDO. Do not attempt generation. |
 

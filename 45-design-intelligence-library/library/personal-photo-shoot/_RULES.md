@@ -7,14 +7,15 @@ personal photo shoot/
 ├── _RULES.md                          ← this file
 ├── PS-{NNN}_{shoot-concept}.md        ← reusable client-agnostic Shoot Cards
 └── {client-slug}/
-    ├── IDENTITY.md                    ← the client's identity profile (schema in PHOTO-SHOOT-SOP §3)
+    ├── IDENTITY.md                    ← the client's identity profile (schema in PHOTO-SHOOT-SOP §3; consent is a pointer only)
+    ├── CONSENT.md                     ← the machine-read consent record (schema in SOP-DIU-608; read by diu_validator.py consent-check)
     └── shoots/                        ← optional per-shoot records
 ```
 
 ## Hard rules
 - Identity Lock Block (PHOTO-SHOOT-SOP §4) in EVERY prompt involving a real person. No exceptions.
 - Skin tone preservation is a hard rule; lightened skin = automatic fail, never deliver.
-- Consent verified per PHOTO-SHOOT-SOP §1 before first generation for any new client.
+- Consent verified per PHOTO-SHOOT-SOP §1 (the CONSENT.md gate) before first generation for any new client.
 - Retouching: one change per pass; Seedream 4.5 Edit primary (the only true surgical editor in the roster).
 - All outputs route through the producer.
 
