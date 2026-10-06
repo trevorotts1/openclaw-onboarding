@@ -10,6 +10,7 @@
 - **Persona key on every roll (R16).** New `shared-utils/ensure_persona_contexts.py` writes and verifies `MC_PERSONA_COMPANY_CONTEXTS_JSON` in Command Center's persisted `.env.local` on every update (keyed by each company id in use, config id must match, never overwrites a valid value). The roll health checks gain `persona-contexts`, which fails loudly when it is missing. `TENANT-CONFIGURATION.md` no longer tells operators to add it by hand.
 - **Backup pile-up (R17).** New `scripts/prune-openclaw-json-backups.sh` keeps `openclaw.json`, `openclaw.json.last-good` and the 3 newest other copies; run on every update and right after the config-editing scripts write their backup.
 - **QC env stores (R18).** `oc_fill_from_env_stores` (lib-shared.sh) lets Skill 07, 25 and 35 QC read `secrets/.env`, `.env` and `openclaw.json` env.vars for the KIE key.
+- **Command Center pin moves to v7.6.100** (env-reference API key fix, persona gate race fix, persona fixes #482/#483). `cc-compat.json` pinnedTag, `release-cohort.json` cc_version and cc_sha (c9d8f108), README and the paired-release doc lines move together.
 
 ## [v26.0.3]  -  2026-10-06  -  Skill 38 v2.0.10: boxes that already installed Skill 38 get the inbound-hooks fix automatically on their next update (front-door repair skill38-inbound-hooks)
 
