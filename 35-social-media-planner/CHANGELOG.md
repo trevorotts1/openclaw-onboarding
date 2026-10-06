@@ -1,5 +1,12 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.11] - 2026-10-06 - Review fixes: GPT Image 2.5+ only, no Nano Banana anywhere, nested banned-model scan
+
+### Fixed
+- `scripts/kie_media_plan.py`: `judge_image_model` now requires GPT Image generation 2.5 or newer (`gpt-image-1-5-*` and legacy `gpt-image-2-*` are ignored and reported). Every string key and value in `image-model.json` and `video-specs.json`, at any nesting depth, is scanned for Sora, Nano Banana, Midjourney, Ideogram and flare; each hit is reported with its path in `media.violations`. Tests added (nested Sora, nested Midjourney, `gpt-image-1-5`).
+- `scripts/pregen_prompt_gate.py`: Nano Banana is refused in every case (exit 6). The `--fallback-label` flag stays accepted but has no effect. Test case 5 now expects refusal. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules.
+- Playbook, `SKILL.md`, `INSTRUCTIONS.md`, `QC.md`, `CORE_UPDATES.md`: the "labeled non-text Nano Banana fallback" wording is removed.
+
 ## [3.6.10] - 2026-10-06 - Skill 74 image chain, run-publishing-cycle media plan, podcast contract v2 validator
 
 ### Added

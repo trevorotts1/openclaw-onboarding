@@ -33,14 +33,10 @@ You are a Visual Prompt Architect. Your goal is to translate the day's brief int
 INPUT THEME: "{{ $json.theme }}"
 UNIFIED IMAGE BRIEF: {{ $json.imageBrief }}
 
-ROUTING (capability, not brand name):
-- If the brief's copy.on_image_text is non-empty (text-bearing asset), the prompt
-  is routed to a model that declares reliable text rendering
-  (shared-utils/model-capabilities.json): GPT Image 2.5 via Kie (the default for every social
-  image, owner order 2026-10, AGENTS.md N43), or Ideogram V3 DESIGN / Agnes through their
-  verified adapters only where the fleet routing gate requires them. Never route text-bearing assets to a
-  non-text model by name or habit.
-- Non-text imagery may route to any verified image-generation model.
+ROUTING:
+- Every social image, text-bearing or not, is routed to GPT Image 2.5 Sunburst via Kie
+  (owner order 2026-10, AGENTS.md N43). There is no Ideogram, Agnes or Nano Banana route
+  for social images. The only fallback is legacy gpt-image-2 under the N43 ratio rules.
 
 TASK:
 1. Convert the brief + theme into a detailed image prompt: SUBJECT, LIGHTING,

@@ -1,5 +1,11 @@
 # Changelog — Social Media in a Box (Skill 57)
 
+## v1.7.9 - 2026-10-06 - Review fixes: prompt 05 routing, prompts 09 and 10 ratio wording
+
+- Prompt 05: the "Ideogram V3 DESIGN / Agnes" text-bearing route is removed. Every social image routes to GPT Image 2.5 Sunburst; the only fallback is legacy gpt-image-2 under the N43 ratio rules.
+- Prompts 09 and 10: carousel slides are requested at 3:4 (N43 substitution) and delivered cropped to 4:5 at 1080x1350, matching the Skill 35 playbook; the prompts now tell the model to keep key content inside the central 4:5 safe area instead of stating 1080x1440 as the deliverable size.
+- `PROMPT-HASHES.json` re-recorded for prompts 05, 09 and 10 and verified. `ENGINE-PIN.sha256` unchanged (no engine file touched).
+
 ## v1.7.8 - 2026-10-06 - Skill 74 media contract, no Sora labels, golden provenance model ids
 
 - Duration-lane naming: every "Sora" label is now "25.0s duration lane" with the render model picked by the Skill 67 selector (`modes.md`, `SOCIAL-MANIFEST.json` P4 name, `config/client-config.schema.json`, `config/bands.json` note, publisher sub-modes `tiktok` and `youtube`, `scripts/prove_bands.py` comment, `scripts/defer_stub.py` baseline text). Prompt 08: the role line "using OpenAI Sora" and the Sora wording in its header are replaced by model-neutral text (file name kept for the hash pin, like prompts 12 and 14). No code in this skill sent a Sora model id; the golden provenance fixture that recorded `sora` and `nano-banana-pro` now records `wan/3-0-video` (the Skill 67 selector's answer for a 25 second clip) and `gpt-image-2-5-sunburst-text-to-image`.

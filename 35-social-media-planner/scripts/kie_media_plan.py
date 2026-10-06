@@ -12,8 +12,11 @@ Policy (owner order 2026-10-05, AGENTS.md N43, 07-kie-setup/references/kie-commo
     (Skill 74). This script makes no network call; the cycle agent runs the resolver.
   * Nano Banana, Midjourney, Ideogram and any other non-GPT-Image id in image-model.json is
     NOT a Skill 35 route: it is ignored and reported as a violation (never silent).
-  * Legacy gpt-image-2 (not 2.5) is only for the ratios 3:1, 1:3, 9:21, which Skill 35 never
-    produces: ignored and reported.
+  * Only GPT Image generation 2.5 or newer is accepted. Older ones (gpt-image-1-5, legacy
+    gpt-image-2; the latter is only for 3:1, 1:3, 9:21, which Skill 35 never produces) are
+    ignored and reported.
+  * EVERY string key and value in both config files, nested at any depth, is scanned for
+    Sora, Nano Banana, Midjourney, Ideogram and flare; each hit is reported with its path.
   * Video is chosen by the Skill 67 selector. A Sora id in video-specs.json is ignored and
     reported; this script never names a video model other than the documented default request.
   * No prices, no prompt-length numbers here: Skill 74 `price` and `prompt-budget` own them.
@@ -34,7 +37,8 @@ DEFAULT_I2I = "gpt-image-2-5-sunburst-image-to-image"
 DEFAULT_VIDEO_REQUEST = "veo3_lite"  # Skill 35 default request; the Skill 67 selector decides
 MODEL_KEYS = ("model", "image_model", "default_model", "default", "primary")
 VIDEO_MODEL_KEYS = ("model", "video_model", "provider_model", "engine", "default_model")
-LEGACY_V2 = re.compile(r"^gpt-image-2(?!-5)(-|$)")
+GPT_GEN = re.compile(r"^gpt-image-(\d+)(?:-(\d+))?(?:-|$)")
+BANNED = re.compile(r"sora|nano.?banana|midjourney|ideogram|flare", re.I)
 
 
 def _load(path):
@@ -63,13 +67,31 @@ def judge_image_model(requested):
     m = (requested or "").strip().lower().split("/")[-1]
     if not m:
         return True, "none requested"
-    if LEGACY_V2.match(m):
-        return False, "legacy GPT Image 2 is only for 3:1, 1:3 and 9:21 (AGENTS.md N43); Skill 35 produces none"
     if "flare" in m:
         return False, "flare variants are not registered; they need a new owner ruling"
-    if m.startswith("gpt-image-"):
-        return True, "GPT Image family"
+    g = GPT_GEN.match(m)
+    if g:
+        gen = (int(g.group(1)), int(g.group(2) or 0))
+        if gen >= (2, 5):
+            return True, "GPT Image 2.5 or newer"
+        return False, "GPT Image generation below 2.5 (legacy gpt-image-2 is only for 3:1, 1:3 and 9:21, AGENTS.md N43); Skill 35 needs 2.5 or newer"
     return False, "not a Skill 35 image route (owner order 2026-10-05: social images are GPT Image 2.5 Sunburst)"
+
+
+def scan_banned(obj, fname, path=""):
+    """Yield a violation for every string key or value (any depth) naming a banned model."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            p = "%s.%s" % (path, k) if path else str(k)
+            if BANNED.search(str(k)):
+                yield {"file": fname, "path": p, "value": str(k), "action": "ignored", "reason": "banned model named in a key"}
+            yield from scan_banned(v, fname, p)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from scan_banned(v, fname, "%s[%d]" % (path, i))
+    elif isinstance(obj, str) and BANNED.search(obj):
+        yield {"file": fname, "path": path, "value": obj, "action": "ignored",
+               "reason": "banned model (Sora, Nano Banana, Midjourney, Ideogram or flare) is not a Skill 35 route"}
 
 
 def find_skill(skill_dir, openclaw_dir, name, rel):
@@ -86,16 +108,15 @@ def build_plan(image_cfg_path, video_cfg_path, skill_dir, openclaw_dir):
     icfg, inote = _load(image_cfg_path)
     requested = _first_str(icfg, MODEL_KEYS)
     accepted, why = judge_image_model(requested)
-    if requested and not accepted:
+    violations += list(scan_banned(icfg, "image-model.json"))
+    if requested and not accepted and not any(v["value"] == requested for v in violations):
         violations.append({"file": "image-model.json", "value": requested, "action": "ignored, default used", "reason": why})
     image_model = requested if (requested and accepted) else DEFAULT_T2I
     i2i = image_model.replace("text-to-image", "image-to-image") if "text-to-image" in image_model else DEFAULT_I2I
 
     vcfg, vnote = _load(video_cfg_path)
     vreq = _first_str(vcfg, VIDEO_MODEL_KEYS)
-    if vreq and "sora" in vreq.lower():
-        violations.append({"file": "video-specs.json", "value": vreq, "action": "ignored, Skill 67 selector used",
-                           "reason": "OpenAI Sora is prohibited; Skill 67 owns video model selection"})
+    violations += list(scan_banned(vcfg, "video-specs.json"))
     adapter = find_skill(skill_dir, openclaw_dir, "74-kie-live-adapter", "scripts/kie_live_adapter.py")
     selector = find_skill(skill_dir, openclaw_dir, "67-kie-video", "scripts/select_video_model.py")
     cli = "python3 %s" % (adapter or "74-kie-live-adapter/scripts/kie_live_adapter.py")

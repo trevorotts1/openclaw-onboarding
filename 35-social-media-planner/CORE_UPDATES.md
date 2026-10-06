@@ -138,7 +138,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 | Tool | Purpose | Credentials |
 |------|---------|-------------|
 | GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across every channel connected in GHL (live-queried — not a fixed list) | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
-| kie.ai API | Image generation at 4:5, 2:3, 9:16, 16:9, 1:1 ratios (KIE GPT Image 2.5 Sunburst, `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, per playbook Section 8; Nano Banana only as an explicitly labeled non-text fallback). Video generation through Skill 67 (default request Veo 3.1 Lite, `veo3_lite`). Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74) | KIE_API_KEY |
+| kie.ai API | Image generation at 4:5, 2:3, 9:16, 16:9, 1:1 ratios (KIE GPT Image 2.5 Sunburst, `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, per playbook Section 8; Nano Banana is never used for social; the only fallback is legacy gpt-image-2 under the N43 ratio rules). Video generation through Skill 67 (default request Veo 3.1 Lite, `veo3_lite`). Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |
 | FFmpeg | Video segment merging (audio + video, 192 kbps, H.264, 30fps) | Installed locally |

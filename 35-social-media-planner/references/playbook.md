@@ -746,7 +746,7 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
 
 ### Image Generation Models
 
-**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.5 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is not a route (see the fallback row).
+**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.5 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
 
 | Model id | Role | When to use |
 |----------|------|-------------|
@@ -754,7 +754,7 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
 | `gpt-image-2-5-sunburst-image-to-image` | **DEFAULT when a reference image is supplied** | Logo, product, layout or style references, passed as `input_urls` with the role-correct per-reference instruction (`shared-utils/social_prompt_policy.json` `reference_roles`). |
 | legacy `gpt-image-2-*` | Only for ratios 3:1, 1:3, 9:21 | Skill 35 produces none of these ratios, so it never uses the legacy model. |
 | `flare` variants | Never | Not registered; needs a new operator ruling. |
-| Nano Banana 2 / Nano Banana Pro | Explicitly labeled fallback only, never primary | No Skill 35 script requires it. If an operator or manifest explicitly names it for a non-text asset, mark the call as a fallback (`pregen_prompt_gate.py check --fallback-label`). Refused for any prompt with baked text. |
+| Nano Banana 2 / Nano Banana Pro | Never used for social images | Refused by `pregen_prompt_gate.py` in every case, labeled or not. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules (3:1, 1:3, 9:21; Skill 35 produces none). |
 
 **Ratios (N43):** request 2:3, 9:16, 16:9 and 1:1 as they are. 4:5 is not requested directly: request **3:4** and center-crop to 4:5 (1080 x 1350) after generation, keeping the headline and logo inside the 4:5 safe area. Resolution: default `1K`; use `2K` for the 1400 x 1400 podcast cover.
 
@@ -764,7 +764,7 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
 
 > **This playbook holds no prices.** The one price authority is `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Limits and enums: `kie_live_adapter.py validate` or that registry. Skill 66 (`66-kie-image`) owns image model policy. KIE rules (endpoints, rate limit, credit preflight, saving results): `07-kie-setup/references/kie-common-rules.md`.
 
-Every prompt MUST pass `scripts/pregen_prompt_gate.py check` (Section 8a) before generation. The gate defaults `--model` to the Sunburst text-to-image id, refuses Nano Banana unless it is labeled as an explicit non-text fallback, and refuses Nano Banana for any prompt with baked text (exit 6, `AF-SM-MODEL-ROUTING`).
+Every prompt MUST pass `scripts/pregen_prompt_gate.py check` (Section 8a) before generation. The gate defaults `--model` to the Sunburst text-to-image id, refuses Nano Banana in every case (exit 6, `AF-SM-MODEL-ROUTING`; the old `--fallback-label` flag has no effect).
 
 ### Section 8a — PRE-GENERATION Prompt QC Gate (P3-05 step 9, mandatory before every generation call)
 
@@ -2018,7 +2018,7 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 
 **Image Checks:**
 - [ ] The prompt passed `scripts/pregen_prompt_gate.py check` BEFORE generation (Section 8a) — a prompt generated without a passing gate run is itself a QC failure, regardless of how the resulting image looks
-- [ ] Every image was generated with GPT Image 2.5 Sunburst (`-text-to-image`, or `-image-to-image` with a reference); Nano Banana only if explicitly labeled as a non-text fallback (Section 8)
+- [ ] Every image was generated with GPT Image 2.5 Sunburst (`-text-to-image`, or `-image-to-image` with a reference); Nano Banana is never allowed (Section 8)
 - [ ] If the asset originated from the Graphics department, it carries a SOP-GIP-02 QC receipt scoring >= 8.5 (Section 19a) — an ungated graphics-department asset is REJECTED, not posted
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content

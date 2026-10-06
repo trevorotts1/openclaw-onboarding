@@ -28,7 +28,7 @@ class MediaPlanTests(unittest.TestCase):
 
     def test_non_gpt_image_models_are_ignored_and_reported(self):
         for bad in ("nano-banana-pro", "google/nano-banana", "midjourney-v7", "ideogram/v3-text-to-image",
-                    "gpt-image-2-text-to-image", "gpt-image-2-5-flare-text-to-image"):
+                    "gpt-image-2-text-to-image", "gpt-image-1-5-text-to-image", "gpt-image-2-5-flare-text-to-image"):
             p = plan(image={"model": bad})
             self.assertEqual(p["image"]["text_to_image"], SUN, bad)
             self.assertEqual(len(p["violations"]), 1, bad)
@@ -38,6 +38,14 @@ class MediaPlanTests(unittest.TestCase):
         self.assertEqual(p["image"]["text_to_image"], "gpt-image-3-sunburst-text-to-image")
         self.assertEqual(p["image"]["image_to_image"], "gpt-image-3-sunburst-image-to-image")
         self.assertEqual(p["violations"], [])
+
+    def test_nested_banned_models_are_found_at_any_depth(self):
+        p = plan(video={"width": 1080, "clips": [{"engine": {"name": "OpenAI/Sora-2"}}]},
+                 image={"model": SUN, "fallbacks": {"alt": ["Midjourney-v7"]}, "Ideogram": 1})
+        got = sorted((v["file"], v["path"]) for v in p["violations"])
+        self.assertEqual(got, [("image-model.json", "Ideogram"), ("image-model.json", "fallbacks.alt[0]"),
+                               ("video-specs.json", "clips[0].engine.name")])
+        self.assertEqual(p["image"]["text_to_image"], SUN)
 
     def test_sora_in_video_specs_is_reported_and_routed_to_67(self):
         p = plan(video={"video_model": "OpenAI/Sora-2"})

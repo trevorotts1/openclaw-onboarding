@@ -115,7 +115,7 @@ not a post-hoc check. Then, before the Image Generator submits ANY prompt, it MU
 colors, merged avoid-list, verbatim Section-18 copy, and the brand-safety clause are all
 required (exit 3 if any is missing); every image uses KIE GPT Image 2.5 Sunburst
 (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43), then runs the Skill 74 chain in playbook.md Section 8c (`prompt-budget`, `validate`, `preflight`, `run --mode active`, save, GHL CDN upload).
-Nano Banana is never primary and is refused for any text-overlay prompt (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
+Nano Banana is never allowed for social images, labeled or not (playbook.md Section 8; exit 6 if misrouted). A gate-failed prompt
 is fixed and re-run, never generated. If the week's image asset instead comes from the
 Graphics department, the Image Generator step is REPLACED by the Section 19a input-quality
 gate: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5.
