@@ -18,6 +18,7 @@ on:
     paths:
       - shared-utils/routing_switch.py
       - shared-utils/model_route.py
+      - shared-utils/jev_live.py
       - shared-utils/decision-engine.py
       - shared-utils/decision_engine/modes/modes.py
       - shared-utils/decision_engine/contracts/schema.py
@@ -26,11 +27,13 @@ on:
       - scripts/health/routing-check.sh
       - tests/unit/routing-mode-switch.test.sh
       - tests/unit/test_rf014_model_mode.py
+      - tests/unit/test_jev_live_chain.py
       - .github/workflows/routing-mode-switch-guard.yml
   pull_request:
     paths:
       - shared-utils/routing_switch.py
       - shared-utils/model_route.py
+      - shared-utils/jev_live.py
       - shared-utils/decision-engine.py
       - shared-utils/decision_engine/modes/modes.py
       - shared-utils/decision_engine/contracts/schema.py
@@ -39,6 +42,7 @@ on:
       - scripts/health/routing-check.sh
       - tests/unit/routing-mode-switch.test.sh
       - tests/unit/test_rf014_model_mode.py
+      - tests/unit/test_jev_live_chain.py
       - .github/workflows/routing-mode-switch-guard.yml
 
 jobs:
@@ -57,7 +61,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/routing-mode.sh
           bash -n scripts/health/routing-check.sh
-          python3 -m py_compile shared-utils/routing_switch.py shared-utils/model_route.py shared-utils/decision-engine.py
+          python3 -m py_compile shared-utils/routing_switch.py shared-utils/model_route.py shared-utils/jev_live.py shared-utils/decision-engine.py
           node --check extensions/ceo-routing-doctrine/dist/index.js
 
       - name: Mode-store round trip, tripwire, model pick (shell suite)
@@ -73,7 +77,7 @@ jobs:
             tests/unit/test_a62_mode_survives_install_update.py \
             tests/unit/test_d34_wiring.py tests/unit/test_direct_first_ladder.py \
             tests/unit/test_rep054_bridge_wire.py \
-            tests/unit/test_jev_live_decision.py -q
+            tests/unit/test_jev_live_decision.py tests/unit/test_jev_live_chain.py -q
 
       - name: Anti-vacuity — a planted corrupt store must turn status red
         run: |
