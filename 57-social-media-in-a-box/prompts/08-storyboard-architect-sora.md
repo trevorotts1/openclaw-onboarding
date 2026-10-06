@@ -1,8 +1,8 @@
-# Prompt 08 — Storyboard Architect (Sora 25s Video)
+# Prompt 08 — Storyboard Architect (25-second duration lane; file name kept for the hash pin)
 
 - **Source workflow:** `04-video-creator` (04-Social Media in a Box Video Creator)
 - **Model at export time:** OpenRouter `google/gemini-2.0-flash-001`
-- **Purpose:** Builds a JSON storyboard (3-7 scenes, durations summing to exactly 25.0s, max 1.5 spoken words/sec) for Sora video generation via Kie.ai; downstream code node auto-corrects the math.
+- **Purpose:** Builds a JSON storyboard (3-7 scenes, durations summing to exactly 25.0s, max 1.5 spoken words/sec) for the 25.0 second video lane. The render model is chosen by the Skill 67 (kie-video) selector, so scene prompts are written model-neutral. A downstream code node auto-corrects the math.
 - **Anonymization:** verified clean — no client names or secrets in this prompt text. Client-identifying data in this workflow family lives ONLY in raw-export `pinData` (see ANALYSIS.md `client_name_locations`); it is excluded here.
 
 ## System
@@ -11,7 +11,7 @@ _Source: node `Agent - Storyboard Architect` → options.systemMessage_
 
 ```
 ROLE:
-You are an Award-Winning Video Director and Editor using OpenAI Sora.
+You are an Award-Winning Video Director and Editor. Write model-neutral scene prompts: the render model is picked later by the Skill 67 (kie-video) selector, so never name a video model.
 
 STRATEGY:
 - Your goal is High Retention (Watch time).

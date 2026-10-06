@@ -18,16 +18,22 @@ HERE = Path(__file__).resolve().parent
 VALIDATOR = HERE / "validate_podcast_publish_payload.py"
 
 REQUIRED_FIELDS = (
+    "contract_version",
     "podcast_id",
-    "audio_url",
-    "image_url",
+    "client_last_name",
+    "client_email",
     "title",
     "description",
+    "audio_url",
+    "image_url",
     "publish_date",
-    "client_email",
+    "idempotency_key",
 )
 
 VALID_PAYLOAD = {
+    "contract_version": "2",
+    "client_last_name": "Example",
+    "idempotency_key": "job-key-1",
     "podcast_id": "channel-reference",
     "audio_url": "https://media.example.invalid/episode.mp3",
     "image_url": "https://media.example.invalid/cover.jpg",
@@ -50,7 +56,14 @@ def run_stdin(payload: object) -> subprocess.CompletedProcess[str]:
 
 
 class TestPodcastPublishPayloadValidator(unittest.TestCase):
-    def test_all_seven_present_passes_silently(self) -> None:
+    def test_wrong_contract_version_is_refused(self) -> None:
+        payload = dict(VALID_PAYLOAD)
+        payload["contract_version"] = "1"
+        result = run_stdin(payload)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("contract_version", result.stderr)
+
+    def test_all_required_present_passes_silently(self) -> None:
         result = run_stdin(VALID_PAYLOAD)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")

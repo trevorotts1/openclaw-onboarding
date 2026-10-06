@@ -16,7 +16,7 @@ bash social-media-entry.sh --mode MODE --plan                 # print the phase 
 | `week` | P0→P8 | Full weekly run: preflight → theme/plan → content → contract+bands → media → scrub → certificate → publish → planner write-back. |
 | `day` | P0,P2,P3,P4,P5,P6,P7 | Single-day regeneration + publish (no planner sheet create). |
 | `carousel` | P0,P3,P4,P5,P6,P7 | Standalone 10-slide FB/IG or 9-slide LinkedIn-PDF carousel engine. |
-| `video` | P0,P3,P4,P5,P6,P7 | Standalone Sora 25.0s video lane. (`--narrated` → DEFERRED to v0.3.0.) |
+| `video` | P0,P3,P4,P5,P6,P7 | Standalone 25.0s video lane (single clip; the render model is picked by the Skill 67 selector). (`--narrated` → DEFERRED to v0.3.0.) |
 | `podcast-cover` | P0,P4,P5,P6 | Podcast **cover** art only (1:1). |
 | `plan` | P0,P1,P8 | Planner only: create sheet / sync theme-of-week / append the 20-column row. |
 | `clean` | P0,P7 | Bulk rollback: delete the date-range + status-filtered posts in the client's GHL location. |
@@ -28,7 +28,7 @@ toggle (`podcast`/`newsletter`/`blog`/`engage`) is set — each minting its own 
 
 | Mode | Phases | What it does |
 |---|---|---|
-| `podcast` | P0,P11,P5,P6 | C3: prompt 17 → 1,500–2,000-word `[emotion]`-tagged script → Fish-Audio S2 → ffprobe 600–900 s / ≥128 kbps → Podbean + 1400×1400 cover. Unconfigured → `PODCAST_DEFERRED` labeled skip, never a failure. |
+| `podcast` | P0,P11,P5,P6 | C3: prompt 17 → 1,500–2,000-word `[emotion]`-tagged script → Fish-Audio S2 → ffprobe 600–900 s / ≥128 kbps → Podbean + exactly 1400×1400 JPEG cover (the GPT Image 2.5 Sunburst 2K output is resized to 1400). Unconfigured → `PODCAST_DEFERRED` labeled skip, never a failure. |
 | `newsletter` | P0,P9,P5,P6 | C4: prompt 18 → subject ≤60 / preview ≤120 / table-based inline-CSS HTML → GHL Campaigns, Tue 9 AM client-timezone. |
 | `blog` | P0,P10,P5,P6 | C5: prompt 19 → title ≤80 / meta ≤160 / body 700+ words → GHL blog (LeadConnector `blogs.write`). |
 | `engage` | P0,P12 | C6: read-only 7-day likes/views poll → anomaly report to `notifyChannel`. NO posting → never blocks a publish run. |
