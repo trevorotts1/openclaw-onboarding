@@ -758,6 +758,12 @@ jobs:
           set -uo pipefail
           bash 38-conversational-ai-system/scripts/lib-docker-tenant.test.sh
 
+      - name: Skill 38 inbound-hooks auto-repair for existing boxes (front-door repair step)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/tests/repair-inbound-hooks.test.sh
+
       - name: Skill 38 Workflow visual, Part 4 truth diagram (U-11)
         shell: bash
         run: |
