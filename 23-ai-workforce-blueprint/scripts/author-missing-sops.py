@@ -41,7 +41,8 @@ Dry run by default (prints what it would do). --apply performs the work.
 
 EXIT CODES:
   0 = every record authored (nothing left open)
-  1 = SOP-NEEDED.json missing or malformed
+  0 also when no SOP-NEEDED.json exists and none was passed (no gaps recorded)
+  1 = SOP-NEEDED.json malformed, or --sop-needed names a missing file
   2 = one or more records failed authoring/QC (manifest unchanged for them)
   3 = records remain open (deterministic fill done, LLM step pending/failed)
   4 = inline-queue mode: work files WRITTEN but SOPs not yet authored.
@@ -531,8 +532,12 @@ def main(argv=None):
 
     manifest_path = find_sop_needed(a.sop_needed)
     if not manifest_path:
-        log("SOP-NEEDED.json not found (pass --sop-needed)")
-        return 1
+        if a.sop_needed:
+            log("SOP-NEEDED.json not found at %s" % a.sop_needed)
+            return 1
+        # No manifest and none asked for: no SOP gap was ever recorded, so there is nothing to author.
+        log("no SOP-NEEDED.json on this box -- no SOP gaps recorded, nothing to do")
+        return 0
     data = load_manifest(manifest_path)
     if data is None:
         return 1

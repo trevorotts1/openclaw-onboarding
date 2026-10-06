@@ -14,6 +14,8 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=
 
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${KIE_API_KEY:=}"
+# Credential stores: secrets/.env was the only one read; also read ~/.openclaw/.env and openclaw.json env.vars.
+if declare -F oc_fill_from_env_stores >/dev/null 2>&1; then oc_fill_from_env_stores KIE_API_KEY; fi
 
 echo ""
 echo "═══ Skill 07 — KIE Setup — Install QC ═══"

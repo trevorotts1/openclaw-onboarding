@@ -156,6 +156,7 @@ fi
 # ── Backup ───────────────────────────────────────────────────────────────────
 cp "$OC_CONFIG" "$OC_BACKUP" 2>/dev/null || true
 log "config: $OC_CONFIG (backup → $OC_BACKUP)"
+[ -f "$(dirname "$0")/prune-openclaw-json-backups.sh" ] && bash "$(dirname "$0")/prune-openclaw-json-backups.sh" "$(dirname "$OC_CONFIG")" >/dev/null 2>&1 || true
 
 # ── Additive deep-merge: accounts.{default,operator} + defaultAccount + binding ─
 RESULT="$(OPERATOR_BOT_TOKEN="$OPERATOR_BOT_TOKEN" OPERATOR_HELP_CHAT_ID="$OPERATOR_HELP_CHAT_ID" OC_CONFIG="$OC_CONFIG" python3 - <<'PYEOF'

@@ -38,6 +38,8 @@ when `/data` exists, otherwise `~/.openclaw/skills`.
 - `~/.openclaw/.onboarding-ver` — truncated word AND missing the `skills/`
   segment. Checking it reports every box as unstamped, on every roll.
 - `~/.openclaw/.onboarding-version` — right word, missing `skills/`.
+  Old installs left a stale copy of this file (e.g. v19.1.0). Nothing reads it and no roll
+  writes it; it is not the stamp, so ignore it.
 - `~/.openclaw/skills/.onboarding-ver` — right directory, truncated word.
 
 Two other files live in the same directory and are NOT the stamp:

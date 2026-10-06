@@ -141,8 +141,30 @@ frontdoor_update_999() {
     done
   fi
   if [ -z "$repo" ] || [ ! -d "$repo/.git" ]; then
-    echo "[front-door] 999-setup: not installed (git checkout not found) — skipping (never installs it)"
-    return 0
+    # A box that RUNS 9Router (cheap signals: ~/.9router or the claude-nine
+    # launcher) but has no 999-setup checkout would otherwise never get 999
+    # updates (bundled skills, nine-router-setup). Fetch a read-only checkout so
+    # the guarded --skills-only path below can run. The full installer is NEVER
+    # used on such a box and models/credentials are never touched: the
+    # skills-only step runs between two checksum snapshots. A box with no
+    # 9Router signal still gets nothing installed.
+    local _clone_dest="$_home/999-setup"
+    [ "$_home" = "$HOME" ] && _clone_dest="$HOME/999-setup"
+    if { [ -d "$HOME/.9router" ] || [ -f "$HOME/.local/bin/claude-nine" ]; } \
+       && command -v git >/dev/null 2>&1 && [ ! -e "$_clone_dest" ]; then
+      echo "[front-door] 999-setup: 9Router box without a checkout — cloning $_clone_dest for the guarded skills-only refresh"
+      if git clone --depth 1 --quiet https://github.com/trevorotts1/999-setup.git "$_clone_dest" 2>&1 | sed 's/^/[front-door]   /'; \
+         [ -f "$_clone_dest/AGENT_INSTALL.md" ] && [ -d "$_clone_dest/.git" ]; then
+        repo="$_clone_dest"
+      else
+        rm -rf "$_clone_dest" 2>/dev/null
+        echo "[front-door] 999-setup: clone failed — skipping (try again next roll)" >&2
+        return 0
+      fi
+    else
+      echo "[front-door] 999-setup: not installed (no checkout, no 9Router signal) — skipping (never installs it)"
+      return 0
+    fi
   fi
   local origin
   origin="$(git -C "$repo" remote get-url origin 2>/dev/null || echo "")"

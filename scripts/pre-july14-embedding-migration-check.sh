@@ -75,6 +75,7 @@ fi
 if [[ "$FORCE" == "1" ]]; then
   cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null \
     && log "INFO" "backup written before forced migration"
+  [ -f "$(dirname "$0")/prune-openclaw-json-backups.sh" ] && bash "$(dirname "$0")/prune-openclaw-json-backups.sh" "$(dirname "$CONFIG_FILE")" >/dev/null 2>&1 || true
 fi
 
 OC_ROOT="$OC_ROOT" CONFIG_FILE="$CONFIG_FILE" FORCE="$FORCE" \

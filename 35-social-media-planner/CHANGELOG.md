@@ -1,5 +1,9 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.13] - 2026-10-06 - QC reads every credential store
+
+- `qc-skill35.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars.
+
 ## [3.6.12] - 2026-10-06 - feat: rule 12 re-applied on top of the social lane (labeled-fallback and Nano Banana refusal kept)
 
 - `pregen_prompt_gate.py` keeps the length gate on the shared enforcer (KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.) while accepting the lane's `--fallback-label` and refusing Nano Banana; the tests size their prompts into the band for the model each case routes to.

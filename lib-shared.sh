@@ -376,3 +376,42 @@ EOF
   return 0
 }
 #=== END OPENCLAW-BACKUP-RETENTION-V1 ===
+
+# ----------------------------------------------------------
+# oc_fill_from_env_stores VAR [VAR...]
+# Credential QC checks used to read ONLY secrets/.env, while a key can live in
+# ~/.openclaw/.env or openclaw.json env.vars (the stores check-credential.sh
+# reads). For each VAR that is unset/empty, look in every supported store and
+# export the first non-empty value. Never prints a value, never writes a file.
+# Stores, in order: secrets/.env, .env (Mac ~/.openclaw, VPS /data/.openclaw),
+# then openclaw.json env.vars.
+# ----------------------------------------------------------
+oc_fill_from_env_stores() {
+  local var root f val cfg
+  for var in "$@"; do
+    [ -n "${!var:-}" ] && continue
+    for root in "${OPENCLAW_ROOT:-}" "$HOME/.openclaw" /data/.openclaw; do
+      [ -n "$root" ] && [ -d "$root" ] || continue
+      for f in "$root/secrets/.env" "$root/.env"; do
+        [ -f "$f" ] || continue
+        val="$(sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}${var}=//p" "$f" 2>/dev/null | tail -1)"
+        val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+        if [ -n "$val" ]; then export "$var=$val"; break 3; fi
+      done
+      cfg="$root/openclaw.json"
+      if [ -f "$cfg" ] && command -v python3 >/dev/null 2>&1; then
+        val="$(python3 - "$cfg" "$var" 2>/dev/null <<'PYEOF'
+import json, sys
+try:
+    v = ((json.load(open(sys.argv[1])).get("env") or {}).get("vars") or {}).get(sys.argv[2])
+    print(v if isinstance(v, str) else "")
+except Exception:
+    pass
+PYEOF
+)"
+        if [ -n "$val" ]; then export "$var=$val"; break 2; fi
+      fi
+    done
+  done
+  return 0
+}
