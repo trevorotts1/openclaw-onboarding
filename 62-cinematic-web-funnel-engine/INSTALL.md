@@ -13,6 +13,9 @@ repository's Python/Bash baseline already requires.
 
 - `python3` on `PATH` (checked fail-closed by `cinematic-web-funnel-entry.sh`).
 - `bash` (the front door itself).
+- Skill 74 (`74-kie-live-adapter`) installed beside this skill: it is the KIE transport that
+  `providers/kie.py` calls. Without it the provider logs `path=legacy` and uses the
+  quarantined `providers/_kie_legacy.py` fallback.
 - No third-party Python packages are required by the skeleton (`run_cinematic_web_funnel.py`
   and the entry shell use only the Python/Bash standard library). Later build units that
   add FFmpeg processing, the Next.js template, or provider SDKs will extend this section

@@ -115,6 +115,8 @@ assert "test_cc_board.py — board caller fail-soft + auth/HMAC parity + legal-p
   "python3 \"${CC_BOARD_TEST}\" >/dev/null 2>&1"
 assert "ad_gate_integrity_check.py — Guard A declared==enforced==tested+recovery (exit 0)" \
   "python3 \"${AD_GUARDA}\" >/dev/null 2>&1"
+assert "test_kie_adapter_resultjson_decode.py — Skill 48 rides the Skill 47 adapters (Skill 74 transport): result extraction proven (exit 0)" \
+  "python3 \"${SKILL_DIR}/scripts/test_kie_adapter_resultjson_decode.py\" >/dev/null 2>&1"
 assert "ad_model_sovereignty.py — model-content-receipt + no-Anthropic gate (self-test exit 0)" \
   "python3 \"${AD_MODELSOV}\" --self-test >/dev/null 2>&1"
 
