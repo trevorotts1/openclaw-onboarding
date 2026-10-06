@@ -1,0 +1,73 @@
+{
+ "code": 200,
+ "msg": "success",
+ "data": {
+  "model": "image",
+  "openapi": {
+   "openapi": "3.1.0",
+   "paths": {
+    "/api/v1/jobs/createTask": {
+     "post": {
+      "requestBody": {
+       "content": {
+        "application/json": {
+         "schema": {
+          "$ref": "#/components/schemas/Req%20Body"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "components": {
+    "schemas": {
+     "Req Body": {
+      "type": "object",
+      "required": [
+       "model",
+       "input"
+      ],
+      "properties": {
+       "model": {
+        "type": "string"
+       },
+       "callBackUrl": {
+        "type": "string"
+       },
+       "input": {
+        "$ref": "#/components/schemas/Input%20"
+       }
+      }
+     },
+     "Input ": {
+      "type": "object",
+      "required": [
+       "prompt"
+      ],
+      "properties": {
+       "prompt": {
+        "type": "string",
+        "maxLength": 100
+       },
+       "resolution": {
+        "type": "string",
+        "enum": [
+         "1K",
+         "2K"
+        ]
+       },
+       "aspect_ratio": {
+        "type": "string"
+       },
+       "seed": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}
