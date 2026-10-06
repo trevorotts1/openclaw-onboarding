@@ -1,3 +1,13 @@
+## [v26.0.3]  -  2026-10-06  -  Skill 38 v2.0.10: boxes that already installed Skill 38 get the inbound-hooks fix automatically on their next update (front-door repair skill38-inbound-hooks)
+
+Patch release: the Skill 38 inbound-hooks fix now reaches boxes that already set up Skill 38, with no manual re-run.
+
+#### What changed
+- **Skill 38 v2.0.10: automatic repair on update.** New `38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py`, registered in the shared front door (`shared-utils/oct4_frontdoor.py`, step `skill38-inbound-hooks`), so every update route (update-skills.sh, weekly-full-update.sh, force-update.sh) runs it on every box. The v2.0.9 fix (#1545) lived only in install-time scripts, which never re-run on an installed box.
+- **What it repairs, only where inbound hooks are already enabled:** removes `hooks.maxBodyBytes` (OpenClaw 2026.9.x rejects it and the whole config goes invalid); sets `gateway.trustedProxies` when unset (container default-route gateway on a docker tenant, loopback on a host; without it every tunneled request is refused with 403 `proxy_attribution_required`); reports, never edits, a hook mapping whose `agentId` is not a configured agent.
+- **Safety:** does nothing on a box without inbound hooks; never enables hooks, adds mappings, creates tokens or asks for a Cloudflare token; timestamped backup, atomic write keeping mode and owner, validates with the box's own CLI and restores on failure; idempotent.
+- **Tests:** `38-conversational-ai-system/tests/repair-inbound-hooks.test.sh` (wired into qc-static) plus the front-door selftest.
+
 ## [v26.0.2]  -  2026-10-06  -  Jev chain live: the bridge calls the Jev model with the box's own key, else its OpenRouter key, else the local engine
 
 JEV now calls the Jev model: the box's own Jev key first, else the box's OpenRouter key (the same Jev model through OpenRouter), else the local engine.
