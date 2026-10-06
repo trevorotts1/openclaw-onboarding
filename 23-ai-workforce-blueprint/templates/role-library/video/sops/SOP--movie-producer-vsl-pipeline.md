@@ -8,7 +8,7 @@
 **Generated for:** {{COMPANY_NAME}}
 **Last updated:** {{GENERATION_DATE}}
 
-> **Cost profile:** Typically PAID — VSL production usually requires brand-original generated imagery and/or talking-head video via Kie (`gpt-image-2-5-*` for stills, `gemini-omni-video` default / `veo3_fast` fallback for clips). `SOP--movie-producer-rule-zero-budget.md` (RZ-1 through RZ-5) governs every paid call. A VSL is a conversion asset: the offer logic and proof sequence are authoritative inputs from the VSL Specialist, not invented here.
+> **Cost profile:** Typically PAID — VSL production usually requires brand-original generated imagery and/or talking-head video via Kie (the `latest-family` image model for stills, a Skill 67 video model for clips). `SOP--movie-producer-rule-zero-budget.md` (RZ-1 through RZ-5) governs every paid call. A VSL is a conversion asset: the offer logic and proof sequence are authoritative inputs from the VSL Specialist, not invented here.
 
 ---
 
@@ -60,7 +60,7 @@
 **Steps:**
 
 1. Run the Skill 47 `verify-deps.sh` preflight. Fail-loud.
-2. From the beat map, count: Kie image stills (`gpt-image-2-5-sunburst-image-to-image` when a brand reference is supplied; `gpt-image-2-5-sunburst-text-to-image` otherwise) and Kie video clips (`gemini-omni-video` default; `veo3`/`veo3_fast` fallback for text-to-video).
+2. From the beat map, count: Kie image stills (the `latest-family` image-to-image model when a brand reference is supplied, its text-to-image sibling otherwise) and Kie video clips (the Skill 67 video model for the brief).
 3. Hand the full call list to `SOP--movie-producer-rule-zero-budget.md` RZ-2 for cost estimation and remaining-budget computation.
 4. Provider audit: `kie` AVAILABLE; all native paid providers UNAVAILABLE; Piper AVAILABLE (VSL narration may use Piper or hand to Skill 30 for premium TTS per the handoff SOP).
 
@@ -107,8 +107,8 @@
 
 **Steps:**
 
-1. Generate stills via Kie image (`POST https://api.kie.ai/api/v1/jobs/createTask`, `gpt-image-2-5-sunburst-image-to-image`, `input_urls` = [brand reference URL], `aspect_ratio` from brief, `resolution: 2K`). The API field is `input_urls` (AGENTS.md N43). Skill 47 `kie_image.py` before its `input_urls` fix sent `image_input`; if the installed helper still does, it is below that fix and must be updated, not worked around here. This SOP describes the required payload. Poll `recordInfo`, download, record `kie_task_id` + `kie_result_url`.
-2. Generate clips via Kie video. For `gemini-omni-video`: `duration` MUST be a STRING (`"8"`), `aspect_ratio` MUST be set (omitting either causes HTTP 422). For `veo3`/`veo3_fast` fallback use the `/api/v1/veo/generate` + `/api/v1/veo/record-info` endpoint pair. Record every `kie_task_id` + `kie_result_url`.
+1. Generate stills through Skill 74 (`validate`, then `submit --mode active`, then `wait` and `save`) with the `latest-family` image-to-image model, the brand reference as the image input, `aspect_ratio` from the brief, `resolution: 2K`. The live schema is the authority for field names (rule 5); `validate` rejects a wrong field before any spend, and a Skill 47 helper that sends a field `validate` rejects is below the fix and must be updated, not worked around here. Record `kie_task_id` and the saved local file path.
+2. Generate clips through the same Skill 74 sequence with the Skill 67 video model. Pass `duration` as a STRING (`"8"`) and set `aspect_ratio` (omitting either causes HTTP 422; `validate` catches both). Skill 74 selects the correct endpoint family and `recordInfo` route; do not hand-pick one. Record every `kie_task_id` and saved file path.
 3. Narration: Piper offline TTS for the script, OR hand to Skill 30 (Fish Audio) per the handoff SOP when premium voice is required. Do NOT reimplement cloud TTS in the pipeline.
 4. Assemble to the beat map with FFmpeg: stills + clips + narration + brand color title/end cards, in the script's persuasion order. The strongest proof and the call-to-action land last.
 5. ffprobe-validate the rendered MP4 (duration > 0, mp4/mov, video stream, width/height match). On fail, retry once; if the second render also fails, halt and escalate with the ffprobe JSON.
@@ -116,7 +116,7 @@
 
 **Outputs:** ffprobe-validated VSL MP4, `render-receipt.json` with the full Kie receipt set.
 **Hand to:** SOP VSL-5 (QC + handoff).
-**Failure mode:** Passing `duration` as an integer to `gemini-omni-video` (HTTP 422), or omitting `aspect_ratio`. Both are verified Kie request-shape requirements.
+**Failure mode:** Passing `duration` as an integer to a Kie video model (HTTP 422), or omitting `aspect_ratio`. Both are live-schema requirements that `validate` enforces before spend.
 
 ---
 
@@ -133,7 +133,7 @@
 
 **Steps:**
 
-1. Conversion-asset QC: the rendered VSL follows the script's persuasion order; the offer and call-to-action are present and correct; brand assets (logo, colors) appear as specified; narration matches the script; no hardcoded client names or personal data; every claimed Kie asset has a real `kie_task_id` + `kie_result_url`.
+1. Conversion-asset QC: the rendered VSL follows the script's persuasion order; the offer and call-to-action are present and correct; brand assets (logo, colors) appear as specified; narration matches the script; no hardcoded client names or personal data; every claimed Kie asset has a real `kie_task_id` and a saved file.
 2. Invoke `SOP--movie-producer-rule-zero-budget.md` RZ-5: reconcile actual vs. estimated spend, run the circuit-breaker check, write the audit-trail fields.
 3. Archive to `_local/archive/[job_id]/`; retain receipts and manifest permanently.
 4. Route handoff per `SOP--movie-producer-cross-role-handoff.md` — VSLs typically need captions (Skill 26) and may need editorial polish (Skill 27) or motion-graphics lower-thirds before final delivery.

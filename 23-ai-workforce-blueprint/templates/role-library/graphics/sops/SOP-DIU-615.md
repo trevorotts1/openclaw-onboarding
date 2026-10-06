@@ -73,8 +73,8 @@ For every card that has a declared character-count annotation line (format per S
 1. Recount the actual characters in the relevant prompt tier block.
 2. Compare the actual count to the declared count. A discrepancy of more than 5 characters is a FAIL.
 3. Regardless of declaration, for every card's Seedream prompt tier:
-   - Actual count 2,801–3,000 characters: WARN — `CHAR-WARN: card {card-id} Seedream tier is {count} chars (approaching 3,000-char silent-fail ceiling)`.
    - Actual count > 3,000 characters: FAIL — `CHAR-FAIL: card {card-id} Seedream tier is {count} chars — EXCEEDS 3,000-char ceiling. This prompt will fail silently on Seedream with no API error.`
+   - A count just under the ceiling is not a warning: rule 12 of `07-kie-setup/references/kie-common-rules.md` makes 95 to 100 percent of the model maximum the target. A tier below the rule 12 floor for the card's endpoint is a WARN for the Style Analyst (`kie_live_adapter.py prompt-budget --model <id>` gives the floor), never a FAIL.
 
 The 3,000-char ceiling is the Seedream 4.5 (and 5.0 Lite) silent-fail boundary documented in MODEL-SPECS §1; Seedream 5.0 Pro, 5.0 Flash and 4.0 accept 5,000 per the vendor docs, but cards keep 3,000 as the conservative shared cap unless MODEL-SPECS §1 states a per-model value for the card's endpoint. This check must never be omitted even if the card has no declared annotation line.
 
@@ -132,10 +132,10 @@ MODEL-SPECS is the load-bearing document for all generation routing. A document 
 
 ### 10. Kie.ai key and endpoint reachability
 
-1. Search every env store for the canonical `KIE_API_KEY` and every alias listed in `shared-utils/secret_names.json`, in the following order: `secrets/.env`, `openclaw.json`, `~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, and the running gateway process env. Applying the client-box-env-stores policy: check all stores before reporting missing.
+1. Search every env store for the canonical `KIE_API_KEY` and every alias listed in `shared-utils/secret_names.json` (report SET or NOT-SET only, never the value), in the following order: `secrets/.env`, `openclaw.json`, `~/.openclaw/workspace/.env`, `~/clawd/secrets/.env`, and the running gateway process env. Applying the client-box-env-stores policy: check all stores before reporting missing.
    - Key absent from all stores: FAIL — `KIE-KEY FAIL: no Kie.ai key (canonical name or any alias) found in any env store (searched: {list-of-stores-checked})`.
-2. Perform a lightweight reachability probe against the Kie.ai primary endpoint (a `GET /api/v1/chat/credit` request (read the JSON body `code`, not only the HTTP status), which consumes no credits and produces no billable activity).
-   - Non-2xx response: FAIL — `KIE-ENDPOINT FAIL: primary Kie.ai endpoint returned HTTP {status}. Verify account status and endpoint URL in MODEL-SPECS §1`.
+2. Perform a lightweight reachability probe with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py credits` (it calls `GET /api/v1/chat/credit`, reads the JSON body `code` and not only the HTTP status, consumes no credits and produces no billable activity; it is the balance endpoint, not the generation API, so the never-touch-the-image-API rule still holds). A 401 or 403 is one attempt only (rule 9): report it once, never retry.
+   - Body `code` other than 200, or no response: FAIL — `KIE-ENDPOINT FAIL: Kie.ai credit endpoint returned code {code}. Verify account status and endpoint URL against rule 2 of 07-kie-setup/references/kie-common-rules.md`.
 
 ### 11. Registrar activation counter
 

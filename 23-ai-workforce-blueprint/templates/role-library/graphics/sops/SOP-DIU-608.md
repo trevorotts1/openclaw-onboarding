@@ -58,11 +58,24 @@ expiry_date: null           # ISO date or null; computed from created + term_mon
 # gate check is a file-read (no human loop required unless scope changes)
 standing_release: false
 
-# REVOCATION LOG (append-only; newest entry last)
+# MINORS POLICY (hard block, never overridden) AND THE TWO ATTESTATIONS THE CODED GATE READS
+minors: "hard_block"
+adult_attested: false       # true only after the subject is attested an adult
+storage_protection: ""      # "encrypted-at-rest" (or "access-restricted"): the biometric descriptors in IDENTITY.md are not plaintext
+
+# RETOUCH SCOPE (checked by SOP-DIU-402 before any retouch)
+retouch_boundaries: []      # e.g. ["blemish removal", "teeth whitening one shade"]; empty = no retouch pre-approved
+
+# LOGS (append-only; newest entry last)
+revision_log: []            # gate outcomes and record changes: { date, by, change }
 revocation_log: []
   # each entry: { date, revoked_by, reason, assets_purged: true|false, manifest_updated: true|false }
 ---
 ```
+
+### Coded gate
+
+The record is machine-read by `python3 45-design-intelligence-library/scripts/diu_validator.py consent-check --consent-file personal-photo-shoot/{client-slug}/CONSENT.md`. It exits 4 (`AF-DIU-CONSENT`, fail closed) unless `status` is `active`, `created` is an ISO date, `expiry_date` (when set) has not passed, `minors` is still `hard_block`, `adult_attested` is `true`, and `storage_protection` is attested. IDENTITY.md is never read by the gate; it only carries the pointer line.
 
 ### Status Machine
 
@@ -88,7 +101,7 @@ revocation_log: []
 
 ### B. Gate Check (run before every shoot — no exceptions)
 
-1. Read `personal-photo-shoot/{client-slug}/CONSENT.md`. If the file does not exist: create a `status: pending` record, halt all generation, and notify the producer. Do not proceed.
+1. Read `personal-photo-shoot/{client-slug}/CONSENT.md` and run the coded gate (`diu_validator.py consent-check --consent-file ...`; exit 4 means halt). If the file does not exist: create a `status: pending` record, halt all generation, and notify the producer. Do not proceed.
 2. Confirm `status: active`. Any other status is a halt: `pending` = notify producer that consent collection is outstanding; `expired` = notify producer to initiate renewal (14-day lead-time target per KPI); `revoked` = hard stop, no generation, escalate to CDO.
 3. Verify scope coverage for this specific request: (a) all requested shoot modes are in `modes_approved`; (b) `use_class` covers the intended use; (c) all intended distribution channels are in `channels`. Scope gap = halt and notify producer for scope extension.
 4. Mode F explicit opt-in check: if any requested mode includes stylized/cartoon/illustration rendering, confirm `F` is in `modes_approved`. Absence = halt regardless of overall record status.
@@ -116,7 +129,7 @@ revocation_log: []
 
 ## Restricted-Content Matrix
 
-Three verdicts. Read definitions from PHOTO-SHOOT-SOP §1 and §10 at runtime — do not reproduce them here. Apply the verdict to every generation request before the brief is handed to the Generation Operator.
+Three verdicts. The table below IS the matrix (no separate library file holds it); it is versioned here: **Matrix version 1.0 (2026-06-12)**. A change is a CDO-approved edit of this SOP with a version bump and a dated changelog line. PHOTO-SHOOT-SOP §1 and §10 supply the underlying rules. Apply the verdict to every generation request before the brief is handed to the Generation Operator.
 
 | Verdict | Condition |
 |---|---|

@@ -64,13 +64,13 @@ When a persona is present, this file is subordinate to it.
 
 ### Morning (first 60 minutes)
 1. Run the orphan-recovery sweep: read all receipts in the job directory tree with `state=submitted` or `state=polling` and poll Kie.ai `recordInfo` for each; update receipts, download completed results to local storage, flag overdue tasks (older than the configured max-in-flight window) to the Chief Design Officer.
-2. Check the Kie.ai account credit balance (`GET /api/v1/chat/credit`; read the response body, see the canonical rules) against the month-to-date spend ledger; flag if headroom drops below the configured low-watermark threshold.
+2. Check the Kie.ai account credit balance (`kie_live_adapter.py credits`, which reads `GET /api/v1/chat/credit` and checks the body `code`; see the canonical rules) against the month-to-date spend ledger; flag if headroom drops below the configured low-watermark threshold.
 3. Review any budget-gate hold items from the previous day — jobs paused pending Chief Design Officer approval for over-threshold cost estimates — and confirm their status before new generation requests start arriving.
-4. Verify Kie.ai key reachability: send a lightweight `GET /api/v1/chat/credit` probe (the live credit endpoint; `/account` and `/modelList` are not live endpoints) and confirm `code` 200 in the response body; surface any auth or connectivity failure immediately rather than at first generation attempt.
+4. Verify Kie.ai key reachability: run `kie_live_adapter.py credits` (the live credit endpoint `GET /api/v1/chat/credit`; `/account` and `/modelList` are not live endpoints), confirm the body `code` is 200, and print the key as SET or NOT-SET only; surface any auth or connectivity failure immediately rather than at first generation attempt.
 5. Check the job queue for any jobs the CDO or Deck Systems Specialist pre-staged overnight; confirm each staged job has a dispatch-log entry (and, once released and submitted, an Operator receipt) and that no tasks are stuck in an ambiguous state.
 
 ### Throughout the day
-- Receive assembled generation requests from the Chief Design Officer (Workflow B single-asset requests), Deck Systems Specialist (producer-approved Slide Manifests), and Photo Shoot Director (shoot briefs with assembled Identity Lock Blocks).
+- Receive assembled generation requests from the Chief Design Officer (Workflow B single-asset requests), Deck Systems Specialist (producer-approved Slide Manifests), and Photo Shoot Director (shoot briefs with assembled Identity Lock Blocks). Every packet reaches the Generation Operator only through your release.
 - Run the pre-dispatch checklist on every request before releasing it (SOP 9.1 §Preflight mirrors SOP-DIU-601; the Operator's preflight is the binding gate); reject with an itemized failure list on any preflight fail; return to the sending role for correction.
 - Release passing requests to the Generation Operator for detached submission (the Operator writes the receipt at submit time); do not hold a session open waiting for results.
 - On cron poll cycles: check in-flight receipts, download completed results, verify postflight, update receipt state to `complete`, and hand asset paths to the requesting role and the Chief Design Officer.
@@ -162,11 +162,11 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| Kie.ai API | Poll (`recordInfo`) and retrieve results of tasks the Generation Operator submitted; this role never calls `createTask` | API key from box env stores (check ALL stores per client-box-env-stores policy); verified in every preflight | createTask / recordInfo / resultUrls lifecycle per MODEL-SPECS §5 and the canonical rules; endpoints and tier caps per MODEL-SPECS §§1–3; rate and concurrency limits per the canonical rules (MODEL-SPECS carries none) |
+| Kie.ai API (via Skill 74) | Poll (`recordInfo`) and retrieve results of tasks the Generation Operator submitted, through `kie_live_adapter.py wait --task-id <id>` and `save --task-id <id> --save-dir <dir>`; also `credits`, `price`, `preflight` and `prompt-budget --check` for the pre-dispatch checks. This role never runs `submit` or `run` (`run` includes `createTask`) and never calls `createTask` | API key from box env stores (check ALL stores per client-box-env-stores policy); verified in every preflight | createTask / recordInfo / resultUrls lifecycle per MODEL-SPECS §5 and the canonical rules; endpoints and tier caps per MODEL-SPECS §§1–3; rate and concurrency limits per the canonical rules (MODEL-SPECS carries none) |
 | MODEL-SPECS.md | Authoritative source for endpoints, tier definitions, resolution tables, and backup-column routing (rate limits live in the canonical rules) | Read-only; lives in `_system/MODEL-SPECS.md` (vendor file — never edit) | All endpoint routing decisions reference MODEL-SPECS §§1–3; fallback ladder uses §2 backup column; PRICING.md pricing rows must match MODEL-SPECS tiers |
 | `_local/PRICING.md` | Operator-owned ledger of billed actuals and budget config; separate from vendor MODEL-SPECS (estimates use the live `pricingDesc`) | Lives in `_local/` on each client box; edit in place | Contains billed actuals per generation; never commit to any shared repo; reconciled monthly vs. actual charges and the live `pricingDesc` |
 | Receipt file system | Per-task disk receipts: one JSON file per Kie.ai task, created by the Generation Operator at submit time, advanced by you at each lifecycle state | Local job directory tree (`_local/receipts/{receipt-id}.json`) | Schema per SOP-DIU-602 (one schema for both roles); fields you advance: state, last_polled, completed_at, local_path, sha256, postflight_verified, actual_cost |
-| Cron poller script | Cheap scheduled polling of in-flight receipts; runs on the client box without holding an agent session open | Launched once per job; managed by box cron or OpenClaw scheduled task | Reads receipts in `submitted` or `polling` state, calls Kie.ai `recordInfo`, downloads completed resultUrls, runs postflight verify, updates receipt state |
+| Cron poller script | Cheap scheduled polling of in-flight receipts; runs on the client box without holding an agent session open | Launched once per job; managed by box cron or OpenClaw scheduled task | Reads receipts in `submitted` or `polling` state, calls Kie.ai `recordInfo` (10 per second per taskId, rule 3), downloads completed resultUrls immediately (rule 8), runs postflight verify, updates receipt state. Production batches prefer Skill 46 callbacks; one-off polls start at about 3 seconds and back off (rule 4) |
 | Request fingerprint cache | Content-addressed cache keyed by the request fingerprint (the `filled_prompt_hash` formula in the SOP-DIU-602 receipt schema, the one definition); serves hits without re-submitting to Kie.ai | Local file or key-value store on the client box | Hit = return stored local asset path (free, no Kie.ai call); miss = proceed to submission; cache invalidated on card version bump |
 | Job ticket convention | Wrapper around the vendor Slide Manifest: adds est-cost and receipt-status columns per slide; lives in the job directory alongside the manifest | Generated by Deck Systems Specialist; consumed and updated by Render Dispatcher | Vendor Slide Manifest stays single-source-of-truth; the ticket is operational metadata that does not modify the vendor file |
 | NEGATIVE-PROMPTING-SOP.md | Preflight contradiction audit: checks that the merged avoid-list does not contain terms contradicting the positive foundation block | Read-only; lives in `_system/NEGATIVE-PROMPTING-SOP.md` (vendor file) | Preflight step: run §4 contradiction audit on every assembled request before submission |
@@ -192,16 +192,16 @@ This role contributes to the company revenue cascade by: **protecting client gen
 6. Launch (or confirm) the cron poller for this job directory. The poller will handle all subsequent lifecycle steps. Do not hold the session open.
 
 **SOP 9.1 §Preflight** — Run in this order; stop and return failure list on the first blocking failure:
-- **API key wired:** Confirm the Kie.ai API key resolves from the box's env stores (check all standard env stores per the fleet env-store search order before claiming missing). Confirm a `GET /api/v1/chat/credit` probe returns `code` 200 in the response body.
+- **API key wired:** Confirm the Kie.ai API key resolves from the box's env stores (check all standard env stores per the fleet env-store search order before claiming missing). Confirm `kie_live_adapter.py credits` returns `code` 200 in the response body. A 401 or 403 stops the run after one attempt (rule 9).
 - **Endpoint exists in MODEL-SPECS:** Confirm the requested model and tier appear in MODEL-SPECS §§1–3. Any model or tier not listed in MODEL-SPECS = hard stop. No guessing, no improvising.
 - **Resolution and ratio compatible:** Confirm the requested resolution is in the endpoint's supported resolution table (MODEL-SPECS §1). Confirm the aspect ratio is in the endpoint's supported ratio list. For Seedream: `aspect_ratio` param must be present. For Ideogram: `expand_prompt` must be `false`, ratio must be preset-mappable.
-- **Character count within endpoint cap:** Compute the actual byte count of the fully assembled prompt (not an estimate). Compare against the endpoint's character cap in MODEL-SPECS §1 (Seedream 4.5 text-to-image and edit: 3,000 characters, the vendor's published maxLength on docs.kie.ai, verified 2026-10-06 (Seedream 5.0 Lite 3,000; 5.0 Pro and Flash 5,000). Skill 66's NOT_PUBLISHED entry for Seedream is stale and Skill 74's live schema is the ongoing source; never exceed it). Reject if over cap; return the actual count and the cap.
+- **Character count within endpoint cap:** Compute the actual byte count of the fully assembled prompt (not an estimate). Compare against the endpoint's character cap in MODEL-SPECS §1 (Seedream 4.5 text-to-image and edit: 3,000 characters, the vendor's published maxLength on docs.kie.ai, verified 2026-10-06 (Seedream 5.0 Lite 3,000; 5.0 Pro and Flash 5,000). Skill 66's NOT_PUBLISHED entry for Seedream is stale and Skill 74's live schema is the ongoing source; never exceed it). Reject if over cap; return the actual count and the cap. Then run `kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <prompt>`: exit 3 (below the floor) or exit 4 (above the max) returns the packet to the sender with the exact characters to add or cut (rule 12; this file states no length numbers).
 - **No unfilled variable tokens:** Run a grep for `{[A-Z_]+}` in the assembled prompt. Any match = preflight fail with the matched tokens listed. The sending role must resolve all variables before resubmission.
 - **Required params set:** Check that all params required by the endpoint's MODEL-SPECS §5 JSON template are present in the request. Flag any missing.
 - **Style-reference-only directive present when refs attached:** If the request includes any `input_urls` / `image_input` / `image_urls`, confirm the style-reference-only directive is present in the prompt per MODEL-SPECS §4.
 - **Identity Lock Block present on likeness jobs:** If the requestor flagged `likeness_present=true`, confirm the Identity Lock Block is present verbatim in the request, and that the Photo Shoot Director's consent stamp is present in the request packet. Missing consent stamp = hard stop regardless of other fields.
 - **Avoid-list contradiction audit:** Run the §4 contradiction audit from NEGATIVE-PROMPTING-SOP.md against the assembled positive prompt + merged avoid-list. Any contradiction = preflight fail with the conflicting terms listed.
-- **Budget headroom and credit:** Compute the estimated cost using the live `pricingDesc` and confirm the live credit balance covers it x 1.30 (credit preflight, see the canonical rules). Check against the client's per-deliverable cap and per-day cap from budget config. If over per-deliverable threshold: hold the job and notify CDO for approval; do not release the packet until approval is confirmed. If over per-day cap: hard stop with escalation packet to CDO.
+- **Budget headroom and credit:** Compute the estimated cost with `kie_live_adapter.py price --model <id> [--units N]` (the live `pricingDesc`) and confirm `preflight --model <id> [--units N]` passes (live balance covers price x 1.30, rule 6). Check against the client's per-deliverable cap and per-day cap from budget config. If over per-deliverable threshold: hold the job and notify CDO for approval; do not release the packet until approval is confirmed. If over per-day cap: hard stop with escalation packet to CDO.
 
 **SOP 9.1 §Postflight** — Run by the cron poller after `recordInfo` returns the `success` state:
 1. Download all `resultUrls` to `_local/results/{job-id}/` (the job directory `jobs/{job-id}/` points at it) using deterministic naming `{date}_{styleID}_{jobID}_{n}.{ext}`. Do not report success until the download is verified on disk.
@@ -226,7 +226,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Steps:**
 1. **Smoke test first-generation per client:** If no completed receipt exists for this client in the current job directory tree, run a 1K SHORT tier smoke test on the cheapest capable endpoint before any full-quality submission. Confirm: API key resolves successfully, the Generation Operator submits the request, result downloads to disk, the Operator's receipt is written. On smoke test failure: hard stop, escalate to CDO. The smoke test costs pennies; a failed 40-slide 4K deck run costs the client real money.
-2. **Compute cost estimate:** Look up the per-model per-tier price in the live `pricingDesc` (the only price authority). Estimate: `task_count × resolution_price × tier_multiplier`. For deck jobs: `slide_count × variants_per_slide × price`. Record the estimate in the dispatch packet and `_local/dispatch-log.md` so the Generation Operator copies it into the receipt (`cost_class`) at submit time.
+2. **Compute cost estimate:** Run `kie_live_adapter.py price --model <id> [--units N]` (the live `pricingDesc`, the only price authority; `credits_estimate` is the highest listed tier and `preflight_required` is that x 1.30). Estimate: `task_count × credits_estimate`. For deck jobs: `slide_count × variants_per_slide × credits_estimate`. Record the estimate in the dispatch packet and `_local/dispatch-log.md` so the Generation Operator copies it into the receipt (`cost_class`) at submit time.
 3. **Check per-deliverable threshold:** If the estimate exceeds the client's per-deliverable approval threshold (from budget config): hold the job and notify CDO with the estimate, job type, requesting role, and a degrade-to-draft option (1K, SHORT tier, cheapest capable endpoint). Do not release the packet until CDO approval or an explicit CDO instruction to degrade.
 4. **Check per-day running total:** Sum the `actual_cost` field across all receipts with `completed_at` in the current calendar day. If adding this job would exceed the per-day cap: hard stop, escalate to CDO. Do not release the packet.
 5. **Degrade-to-draft offer:** When budget headroom is low (headroom < estimate and both are below the per-deliverable threshold), proactively offer the CDO a degrade-to-draft option before holding — cheaper tier, cheaper endpoint, 1K resolution — rather than silently refusing. Document the tradeoffs.
@@ -252,14 +252,14 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 **Transient 5xx / timeout:**
 1. Wait 30 seconds (the SOP-DIU-603 ladder value; one ladder, one number).
-2. Retry the same task once (one retry only; a retried `createTask` is submitted by the Generation Operator at your instruction, a retried `recordInfo` poll is yours). Append the retry attempt to the existing receipt's lifecycle fields and `_local/dispatch-log.md`.
+2. Retry the same task once (one retry only; a retried `recordInfo` poll is yours; a `createTask` is never retried after it was sent and no `task_id` came back, because it may already be charged: run the orphan check first, and only if no task exists may the Generation Operator submit again at your instruction). Append the retry attempt to the existing receipt's lifecycle fields and `_local/dispatch-log.md`.
 3. If the retry succeeds: proceed to postflight. If the retry also fails with 5xx: treat as endpoint-down (next rung).
 
 **429 — rate limit:**
 1. Record the 429 response with timestamp in `_local/dispatch-log.md` and on the existing receipt's lifecycle fields.
 2. Wait: use the `Retry-After` header value if present; otherwise wait exponentially (base 30 seconds, ×2 per attempt).
 3. Halve the active concurrency cap for this model for the remainder of the session.
-4. Retry the same task. On retry success: proceed to postflight. If 429 persists for more than 3 events within any 10-minute window (the SOP-DIU-603 threshold): escalate to CDO with the concurrency data; do not continue hammering the API.
+4. Retry the same task (the adapter already retries a body-code 429 up to twice, because a rejected request never enters the queue). On retry success: proceed to postflight. If 429 persists for more than 3 events within any 10-minute window (the SOP-DIU-603 threshold): escalate to CDO with the concurrency data; do not continue hammering the API.
 
 **Endpoint down (consistent 5xx after retry, or explicit Kie.ai status page outage):**
 1. Check MODEL-SPECS §2 backup column for the endpoint's designated fallback.
@@ -297,10 +297,10 @@ This role contributes to the company revenue cascade by: **protecting client gen
 **Library-version pin:** MODEL-SPECS v1.0 (§-refs verified 2026-06-12).
 **When to run:** First generation for any new client, first generation after a Kie.ai API key rotation, first generation after a 30+ day gap in client generation activity, and first generation after any PRICING.md update to confirm cost estimates are calibrated.
 **Frequency:** Per the above triggers; not a scheduled recurring run.
-**Inputs:** Client identifier, cheapest capable endpoint from MODEL-SPECS (typically Seedream or Ideogram Standard tier), a short (~200-character) test prompt with no client brand variables (use a generic neutral subject), 1K resolution target.
+**Inputs:** Client identifier, cheapest capable endpoint from MODEL-SPECS (typically Seedream or Ideogram Standard tier), a neutral test prompt with no client brand variables (use a generic neutral subject) written to the model's prompt budget (rule 12, `kie_live_adapter.py prompt-budget`), 1K resolution target.
 
 **Steps:**
-1. Assemble the minimal valid request: model = cheapest capable endpoint from MODEL-SPECS §1, tier = SHORT, resolution = 1K, prompt = a generic test string (no filled variables, no Identity Lock Block, no refs), aspect ratio = 1:1.
+1. Assemble the minimal valid request: model = cheapest capable endpoint from MODEL-SPECS §1, tier = SHORT, resolution = 1K, prompt = a generic neutral-subject test prompt (no filled variables, no Identity Lock Block, no refs) that still meets the rule 12 budget for that model, aspect ratio = 1:1.
 2. Run preflight against the smoke test request (SOP 9.1 §Preflight); confirm all checks pass. If they fail, the failure is in configuration (key, endpoint, params) — fix before running any client generation.
 3. Release the smoke-test packet to the Generation Operator, who submits it and writes the receipt (`smoke_test=true`); launch (or confirm) the poller; wait for completion.
 4. Run postflight: download result, verify nonzero + decodable + dimensions correct.
@@ -396,13 +396,13 @@ Before any generation is reported as complete to a requesting role or the CDO, i
 ### Pre-dispatch gate (before release to the Operator; the Operator's Gate 0 is the binding submission gate)
 - [ ] API key verified: probes successfully, not guessed-present
 - [ ] Endpoint + tier + resolution: all present in MODEL-SPECS §§1–3
-- [ ] Character count: actual byte count at or below endpoint cap (Seedream ≤ 3,000 explicitly)
+- [ ] Character count: actual byte count at or below endpoint cap (Seedream 4.5 and 5.0 Lite 3,000 explicitly) and `prompt-budget --check` passes (rule 12)
 - [ ] Zero unfilled variable tokens: grep `{[A-Z_]+}` returns empty
 - [ ] All required endpoint params set per MODEL-SPECS §5 JSON template
 - [ ] Style-reference-only directive present when image references attached
 - [ ] Identity Lock Block present verbatim + consent stamp present when `likeness_present=true`
 - [ ] Avoid-list contradiction audit passed per NEGATIVE-PROMPTING-SOP §4
-- [ ] Budget estimate computed; per-deliverable and per-day caps checked; any holds placed before release
+- [ ] Budget estimate computed from the live price; `preflight` passes (balance covers price x 1.30); per-deliverable and per-day caps checked; any holds placed before release
 
 ### Postflight gate (the Operator's Gate 1; Render Dispatcher self-check, post-download)
 - [ ] Local asset file exists at deterministic path
@@ -426,7 +426,7 @@ Jobs estimated above the per-deliverable approval threshold are held at the pre-
 - **Chief Design Officer (CDO)** — gives you: assembled Workflow B single-asset request packets (model, tier, resolution, filled prompt, merged avoid-list, job ID, card ID + version), frequency: 5–50 requests per week depending on active style work
 - **Deck Systems Specialist** — gives you: producer-approved Slide Manifests with all per-slide prompt assemblies completed, est-cost approval status, and the job ticket wrapper populated, frequency: 1–5 deck jobs per week
 - **Photo Shoot Director** — gives you: shoot brief request packets with assembled Identity Lock Block, consent stamp on file, reference image URLs (already validated and hosted per SOP-DIU-609 conventions), frequency: 1–10 shoot tasks per week
-- **Chief Design Officer (CDO)** — gives you: budget approval confirmations for held jobs, resume instructions for paused jobs, fallback escalation resolutions, frequency: as-needed same-day
+- **Chief Design Officer (CDO)** — gives you: assembled Workflow B single-asset request packets (model, tier, resolution, filled prompt, merged avoid-list, job ID, card ID + version; 5–50 per week depending on active style work), budget approval confirmations for held jobs, resume instructions for paused jobs, fallback escalation resolutions, frequency: as-needed same-day
 
 ### You hand work off to:
 - **Chief Design Officer** — you give them: completed job summaries with local asset paths, hold notifications with cost estimates and degrade-to-draft options, escalation packets for exhausted fallback ladders, weekly spend summaries, monthly cap status reports, frequency: per-job completion + weekly summary
@@ -570,7 +570,7 @@ For this role, the authoritative sources are:
 
 ### Edge Case 17.4 — Concurrent Agents Both Submit the Same Slide
 - **Trigger:** Two dispatch paths (e.g., a resume attempt and a poller) both cause the Generation Operator to attempt to submit the same queued slide from the same Slide Manifest simultaneously.
-- **Action:** The receipt file is the single-writer lock. The first agent to write `state=submitted` with a real Kie.ai taskId "wins." The second agent, on reading the receipt, sees `state=submitted` with an existing taskId and must poll rather than resubmit. This is the per-receipt-file pattern the fleet uses to prevent concurrent duplicate submissions. If both agents somehow submitted and two receipts with different taskIds exist for the same slide: report to CDO for manual resolution; do not attempt to automatically cancel either task.
+- **Action:** The Generation Operator's receipt file is the single-writer lock. Before every submit the Operator reads the receipts for that slide; the first receipt with `state=submitted` and a real Kie.ai taskId "wins." A second attempt that finds it must not resubmit, and you only poll it. You also release each queued slide once and record the release in `_local/dispatch-log.md`, so a resume and a poller cannot release the same slide twice. This is the per-receipt-file pattern the fleet uses to prevent concurrent duplicate submissions. If both agents somehow submitted and two receipts with different taskIds exist for the same slide: report to CDO for manual resolution; do not attempt to automatically cancel either task.
 - **Escalate to:** CDO for any two-receipt conflict on a single slide.
 
 ### Edge Case 17.5 — Cron Poller Stopped Firing

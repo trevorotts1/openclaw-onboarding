@@ -32,7 +32,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 ### A. Receipt — write at submission (per task, not per job)
 
-1. **Create a per-task receipt file** at `_local/receipts/{receipt-id}.json` at the moment `createTask` returns. One file per task, per the fleet-proven rule that shared-append ledgers lose writes under concurrent agents.
+1. **Create a per-task receipt file** at `_local/receipts/{receipt-id}.json` at the moment the Skill 74 `submit --mode active` call returns its `task_id` (the only `createTask` call in the department). One file per task, per the fleet-proven rule that shared-append ledgers lose writes under concurrent agents.
 
 2. **Write all required fields** (see Receipt Schema below). The `filled_prompt_hash` field (the request fingerprint; formula defined once in the Receipt Schema below) is the idempotent resubmission key — on recovery, compute this fingerprint first and scan existing receipts before creating a new task.
 
@@ -42,7 +42,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 ### B. Budget gate — before every new job
 
-1. Read the live `pricingDesc` for the selected model and tier (the only price authority). Compute `estimated_cost = num_tasks × price_per_task`; the live credit balance must cover `estimated_cost` x 1.30 (credit preflight).
+1. Run `kie_live_adapter.py price --model <id> [--units N]` for the selected model and tier (the live `pricingDesc`, the only price authority). Compute `estimated_cost = num_tasks × credits_estimate`; `kie_live_adapter.py preflight --model <id> [--units N]` must pass, meaning the live credit balance covers `estimated_cost` x 1.30 (rule 6).
 
 2. Sum all receipts in `state: complete` for the current billing period (`actual_cost` where set, else `cost_class`).
 
@@ -50,7 +50,7 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 4. If `estimated_cost > per_job_approval_threshold`: require a producer approval receipt (CDO or designated producer) before submitting. Attach the approval receipt ID to the job receipt.
 
-5. **First-ever generation per client:** run a 1K SHORT smoke test on the cheapest capable endpoint first. Purpose: validate key reachability, hosting plumbing, and receipt write path for pennies before any real spend. Log the smoke test as a normal receipt with `smoke_test: true`.
+5. **First-ever generation per client:** run a 1K SHORT smoke test on the cheapest capable endpoint first. Purpose: validate key reachability, hosting plumbing, and receipt write path for pennies before any real spend. The smoke-test prompt is sized per rule 12 like any other (a smoke test saves money through the cheapest capable model and 1K resolution, never through a short prompt). Log the smoke test as a normal receipt with `smoke_test: true`.
 
 ### C. Idempotent resubmission
 
@@ -68,9 +68,9 @@ The Generation Operator is the sole bookkeeper for every Kie.ai task it fires. I
 
 1. List all receipt files with `state: submitted` or `state: polling`.
 
-2. For each orphaned receipt: call `recordInfo` for the taskId (MODEL-SPECS §5).
+2. For each orphaned receipt: check the taskId with `kie_live_adapter.py wait --task-id <id>` (it reads `recordInfo`; MODEL-SPECS §5).
    - `state: success` → run SOP-DIU-601 postflight immediately; flip receipt to `complete` on pass.
-   - `state: fail` → flip receipt to `failed`; escalate to CDO with the full receipt.
+   - `state: fail` → flip receipt to `failed` (the task failed at the vendor; `postflight-failed` is only for a bad download or verification); escalate to CDO with the full receipt.
    - `waiting`, `queuing`, or `generating` → update `last_polled` (ISO 8601); leave for the cron poller.
 
 3. Any receipt still without a completion state past its max-in-flight window (2 hours standard jobs, 8 hours deck fan-outs): escalate to CDO. A `submitted` receipt older than 30 days is a confirmed orphan (`state: orphaned`). Do not silently discard.
@@ -125,11 +125,11 @@ smoke_test:           {true|false}
 
 | Input | Required | Source |
 |---|---|---|
-| `taskId` from `createTask` API response | Yes | MODEL-SPECS §5 JSON template response |
+| `task_id` from the Skill 74 `submit` result (the `createTask` response) | Yes | `kie_live_adapter.py submit --mode active` (MODEL-SPECS §5 JSON template) |
 | Style card ID + version | Yes | Assembly packet |
 | Filled positive prompt (complete, post-preflight) | Yes | SOP-DIU-601 output |
 | Model ID + endpoint slug + tier | Yes | SOP-DIU-302 routing decision |
-| Live `pricingDesc` for selected model + tier | Yes | Live catalog (Skill 74); `_local/PRICING.md` records billed actuals |
+| Live price for selected model + tier (`kie_live_adapter.py price`) | Yes | Live catalog (Skill 74); `_local/PRICING.md` records billed actuals |
 | Client `budget_config` block | Yes | Client box config — halt if absent |
 | Slide Manifest (for deck jobs) | Conditional | PPT-ANALYSIS-SOP §3B — used to enumerate per-slide receipt scope |
 | Producer approval receipt ID | Conditional | Required when `estimated_cost > per_job_approval_threshold` |

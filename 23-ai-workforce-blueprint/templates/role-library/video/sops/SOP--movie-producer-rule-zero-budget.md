@@ -61,10 +61,10 @@ These controls are organized around DMAIC (Define, Measure, Analyze, Improve, Co
 
 **Steps:**
 
-1. For each planned Kie image call (`gpt-image-2-5-sunburst-image-to-image` / `gpt-image-2-5-sunburst-text-to-image`), multiply count by the live per-task price.
-2. For each planned Kie video call (`gemini-omni-video` / `veo3` / `veo3_fast`), multiply count by the live per-task price.
+1. For each planned Kie image call (the model returned by Skill 74 `latest-family`, rule 13), multiply count by the live per-task price from Skill 74 `price`.
+2. For each planned Kie video call (the model chosen under Skill 67 video policy), multiply count by the live per-task price from Skill 74 `price`.
 3. Sum to a single `estimated_cost_usd`. Free `documentary-montage.yaml` paths estimate `$0.00` and skip the rest of this multi-SOP's paid gates.
-4. Compute `remaining_usd = budget.total_usd - cumulative_spend_to_date - estimated_cost_usd`. If `remaining_usd < 0`, the job over-spends the cap: HARD STOP, escalate to the approval authority per SOP RZ-1 step 4. Also run the credit preflight: the live Kie credit balance (`GET /api/v1/chat/credit`) must cover `estimated_cost_usd` x 1.30 (see `07-kie-setup/references/kie-common-rules.md`), else HARD STOP.
+4. Compute `remaining_usd = budget.total_usd - cumulative_spend_to_date - estimated_cost_usd`. If `remaining_usd < 0`, the job over-spends the cap: HARD STOP, escalate to the approval authority per SOP RZ-1 step 4. Also run Skill 74 `preflight`: the live Kie credit balance must cover `estimated_cost_usd` x 1.30 (rule 6 of `07-kie-setup/references/kie-common-rules.md`), else HARD STOP.
 5. Write `estimated_cost_usd`, `remaining_usd`, and the per-call breakdown to the job manifest.
 
 **Outputs:** `estimated_cost_usd`, `remaining_usd`, per-call price breakdown in the job manifest.
@@ -111,11 +111,11 @@ These controls are organized around DMAIC (Define, Measure, Analyze, Improve, Co
 **Steps:**
 
 1. Before submitting any single Kie call estimated at or above `single_action_approval_usd` ($0.50 default), obtain that call's own individual approval. A batch approval does not cover an individual call at or above the threshold.
-2. After each call returns, add its actual cost to the running cumulative spend in the manifest. Record the `kie_task_id` and `kie_result_url` as the render-proof receipt — never fabricate either.
+2. After each call returns (Skill 74 `submit --mode active`, then `wait` and `save`), add its actual cost to the running cumulative spend in the manifest. Record the `kie_task_id` and the saved local file path as the render-proof receipt — never fabricate either.
 3. After each call, re-check cumulative spend against the cap. If cumulative spend reaches 80% of `budget.total_usd`, PAUSE the run and notify the approval authority before any further paid call.
 4. NEVER switch to a native paid provider mid-job if Kie is unavailable — the job pauses; it does not silently fall back to a different paid provider.
 
-**Outputs:** Per-call approval records and `kie_task_id`/`kie_result_url` receipts in the manifest; running cumulative-spend field kept current.
+**Outputs:** Per-call approval records and `kie_task_id` plus saved-file receipts in the manifest; running cumulative-spend field kept current.
 **Hand to:** SOP RZ-5 (reconciliation) after the last call; the pipeline-type SOP's ffprobe step after render.
 **Failure mode:** Letting a run proceed past 80% of cap without a pause and notification. The 80% pause is what prevents a silent overrun; it is mandatory.
 
@@ -136,12 +136,12 @@ These controls are organized around DMAIC (Define, Measure, Analyze, Improve, Co
 
 1. Sum all actual Kie charges for the job. Compare to `estimated_cost_usd`. If actual > estimated, log the variance to `_local/budget-log.md` with job ID, estimated vs. actual, and cause.
 2. If cumulative client spend has reached or exceeded `budget.total_usd`: trip the circuit breaker — halt all further production on this client box, write a circuit-breaker entry to `_local/budget-log.md`, and notify the approval authority. Do not resume until the authority provides written authorization and updates the cap.
-3. Write final budget fields to the job manifest: `actual_cost_usd`, `budget_remaining`, the list of `kie_task_ids` and `kie_result_urls`.
+3. Write final budget fields to the job manifest: `actual_cost_usd`, `budget_remaining`, the list of `kie_task_ids` and saved file paths.
 4. Retain `render-receipt.json` and `job-manifest.json` permanently as the budget audit trail. These are the anti-fabrication proof for every paid generation.
 
 **Outputs:** Reconciliation entry in `_local/budget-log.md`, finalized budget fields in the manifest, permanent audit-trail files.
 **Hand to:** The cross-role handoff SOP (`SOP--movie-producer-cross-role-handoff.md`) for delivery routing.
-**Failure mode:** Treating a missing `kie_task_id`/`kie_result_url` as acceptable. A missing receipt means either the generation did not happen (fabrication) or it was not logged (a logging failure). Either is a hard fail — recover the receipt from the API log or rerun the generation before delivering.
+**Failure mode:** Treating a missing `kie_task_id` or saved file as acceptable. A missing `kie_task_id` or saved file means either the generation did not happen (fabrication) or it was not logged (a logging failure). Either is a hard fail — recover the receipt from the API log or rerun the generation before delivering.
 
 ---
 

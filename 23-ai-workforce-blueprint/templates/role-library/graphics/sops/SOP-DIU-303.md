@@ -58,7 +58,7 @@ The Generation Operator is responsible for assembling a complete, contradiction-
    - Return to the prompt author with the full conflict itemized: the negative term, its source layer and citation, the conflicting positive term, and its source (Foundation Block or Style DNA section). Do not guess which to drop. Do not proceed until the author resolves the conflict and provides an updated positive prompt or revised avoid-list.
 
 6. **Select per-model delivery format (NEGATIVE-PROMPTING-SOP §3):**
-   - **Ideogram V3 only:** deliver the merged avoid-list as a comma-separated phrase list in the `negative_prompt` field (5,000-char capacity). Do not also embed negatives in the main prompt — that wastes character budget.
+   - **Ideogram V3 only:** deliver the merged avoid-list as a comma-separated phrase list in the `negative_prompt` field (capacity per the live schema, `kie_live_adapter.py validate`). Do not also embed negatives in the main prompt — that wastes character budget.
    - **All other endpoints (GPT-Image-2.5, Nano Banana 2, Seedream 4.5, Wan 2.7):** convert the top-10 (or top-5 for Seedream) selected items to explicit imperative sentences ("Do not..."). Place as the final paragraph of the assembled prompt. Record the conversion mapping in the compiled artifact.
    - Record the delivery format chosen in the compiled artifact.
 

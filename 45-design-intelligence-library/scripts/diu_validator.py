@@ -49,12 +49,14 @@ WHAT IT ENFORCES (three sub-commands)
       architecture violation → HARD ABORT (exit 2). This is the code behind the
       prose "mechanical gate" the SOP claims.
 
-  consent-check — CONSENT + MINOR + PII GATE (PHOTO-SHOOT-SOP.md §1, fail-closed).
-      Real-person likeness generation requires documented+dated consent, an
+  consent-check — CONSENT + MINOR + PII GATE (SOP-DIU-608 CONSENT.md, fail-closed).
+      Real-person likeness generation requires an active, dated, unexpired consent
+      record (personal-photo-shoot/{client-slug}/CONSENT.md front-matter), an
       attested-adult subject (Minors = HARD NO), and an at-rest protection
       attestation on the biometric IDENTITY store. Any missing/negative/ambiguous
-      field, or an absent IDENTITY file, is a HARD FAIL (exit 4) — generation must
-      not proceed. Converts the prose consent rule into a coded hard stop.
+      field, or an absent CONSENT.md, is a HARD FAIL (exit 4) — generation must
+      not proceed. IDENTITY.md is only a pointer and is not read. Converts the
+      prose consent rule into a coded hard stop.
 
   fidelity     — FIDELITY-SCORE RECEIPT + 3-STRIKE COUNTER (TEST-PROTOCOL.md §5).
       A card reaches `production` only when: average across all 12 dimensions
@@ -91,6 +93,7 @@ USAGE
                 --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref]
     python3 diu_validator.py prompt-band --band medium --prompt "…inline…" [--run-dir RUN]
     python3 diu_validator.py route-check --deck-kind webinar
+    python3 diu_validator.py consent-check --consent-file personal-photo-shoot/<client-slug>/CONSENT.md
     python3 diu_validator.py fidelity --run-dir RUN --card-id FB-003 \
                 --scores-file scores.json [--hard-rule-violation "text on face"]
 
@@ -193,91 +196,104 @@ def cmd_route_check(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 2b) CONSENT + MINOR + PII GATE — PHOTO-SHOOT-SOP.md §1 (fail-closed).
+# 2b) CONSENT + MINOR + PII GATE — SOP-DIU-608 CONSENT.md (fail-closed).
 # ---------------------------------------------------------------------------
 # Generating a REAL person's likeness (personal-photo-shoot) is gated on documented
 # consent, an ABSOLUTE minor prohibition (Minors = HARD NO), and protection of the
-# biometric IDENTITY store. These were prose-only rules an agent could proceed past.
-# This is the coded hard stop: it reads the client's IDENTITY.md and FAILS CLOSED
-# (exit 4, AF-DIU-CONSENT) on ANY missing / negative / ambiguous field, or if the file
-# is absent. Consent that "cannot be confirmed" must block, never default open.
-_CONSENT_YES = {"granted", "yes", "true", "documented", "on-file", "on_file", "confirmed"}
-_NOT_MINOR_TOK = {"no", "false", "adult", "18+", "over-18", "over_18"}
-_MINOR_TOK = {"yes", "true", "minor", "under-18", "under_18"}
-_ADULT_YES = {"yes", "true", "adult", "18+", "over-18", "over_18", "confirmed"}
+# biometric IDENTITY store. The ONE machine-read record is the per-client CONSENT.md
+# (SOP-DIU-608): YAML front-matter with status / created / expiry_date / adult_attested /
+# storage_protection. IDENTITY.md only carries a pointer to it and is never read here.
+# FAILS CLOSED (exit 4, AF-DIU-CONSENT) on ANY missing / negative / ambiguous field, or if
+# the file is absent. Consent that "cannot be confirmed" must block, never default open.
 _PROTECT_OK = {"encrypted-at-rest", "encrypted_at_rest", "encrypted", "restricted",
                "redacted", "access-restricted", "access_restricted"}
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _scan_field(text, keys):
-    """Return the lowercased value of the first `key: value` line whose key exactly
-    matches one of `keys` (case-insensitive; tolerant of markdown bullets/bold/backticks)."""
-    keyset = set(keys)
-    for raw in text.splitlines():
-        line = raw.strip().lstrip("-*# ").strip()
-        m = re.match(r"[*_`\s]*([A-Za-z][A-Za-z0-9 _/-]*?)[*_`\s]*:\s*(.+?)\s*$", line)
+def _consent_front_matter(text):
+    """Flat {key: value} map from the leading `---` YAML front-matter block (stdlib only:
+    one `key: value` per line, nested/list lines ignored, `# comments` and quotes stripped).
+    Returns {} when there is no front-matter block, which fails closed downstream."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i >= len(lines) or lines[i].strip() != "---":
+        return {}
+    out = {}
+    for raw in lines[i + 1:]:
+        if raw.strip() == "---":
+            break
+        if not raw or raw[0] in " \t#-":
+            continue
+        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", raw)
         if not m:
             continue
-        k = m.group(1).strip().lower().replace(" ", "_").replace("-", "_")
-        if k in keyset:
-            return m.group(2).strip().lower().strip("*_` ")
-    return None
+        val = m.group(2).strip()
+        if val[:1] in "\"'":
+            q = val[0]
+            end = val.find(q, 1)
+            val = val[1:end] if end > 0 else val[1:]
+        else:
+            val = val.split(" #", 1)[0].strip()
+        out[m.group(1).lower()] = val.strip().lower()
+    return out
 
 
 def cmd_consent_check(args) -> int:
-    p = Path(args.identity_file)
+    # `identity_file` is the pre-CONSENT.md attribute name; kept so older callers and the
+    # self-tests below still reach this gate (the path must now be a CONSENT.md).
+    path = getattr(args, "consent_file", None) or getattr(args, "identity_file", None)
+    p = Path(path)
     problems = []
     if not p.is_file():
         print("!" * 78, file=sys.stderr)
-        print(f"FATAL AF-DIU-CONSENT: IDENTITY file not found: {p}. Consent CANNOT be "
-              f"confirmed -> fail closed; do NOT generate this person's likeness.",
+        print(f"FATAL AF-DIU-CONSENT: CONSENT.md not found: {p}. Consent CANNOT be "
+              f"confirmed -> fail closed; do NOT generate this person's likeness. "
+              f"(Create the record per SOP-DIU-608; an IDENTITY.md is not read.)",
               file=sys.stderr)
         print("!" * 78, file=sys.stderr)
         return 4
-    text = p.read_text(encoding="utf-8")
+    fm = _consent_front_matter(p.read_text(encoding="utf-8"))
 
-    # (1) Documented consent + a consent date.
-    consent = _scan_field(text, ["consent", "consent_status"])
-    consent_toks = set(re.split(r"[^a-z0-9+]+", consent)) if consent else set()
-    if not (consent_toks & _CONSENT_YES):
-        problems.append(f"consent status missing/negative (got {consent!r}); need an affirmative "
-                        f"'Consent: granted'")
-    consent_date = _scan_field(text, ["consent_date"])
-    if not (consent_date and re.search(r"\d{4}-\d{2}-\d{2}", consent_date)):
-        problems.append("no consent date present (need 'Consent date: YYYY-MM-DD')")
+    # (1) Documented, dated, active, unexpired consent.
+    status = fm.get("status", "")
+    if status != "active":
+        problems.append(f"consent status is {status or 'missing'!r}; SOP-DIU-608 requires "
+                        f"'status: active'")
+    if not _ISO_DATE.match(fm.get("created", "")):
+        problems.append("no consent date present (need 'created: YYYY-MM-DD')")
+    expiry = fm.get("expiry_date", "")
+    if expiry and expiry not in ("null", "none", "~"):
+        if not _ISO_DATE.match(expiry):
+            problems.append(f"expiry_date {expiry!r} is not YYYY-MM-DD")
+        elif expiry <= time.strftime("%Y-%m-%d"):
+            problems.append(f"consent expired on {expiry}; renew per SOP-DIU-608")
 
     # (2) Minor gate — HARD NO. Fail closed unless the subject is EXPLICITLY attested adult.
-    minor = _scan_field(text, ["minor", "subject_is_minor", "is_minor"])
-    adult = _scan_field(text, ["adult", "age_verified_adult", "age_confirmed_adult"])
-    minor_tok = minor.split()[0] if minor else ""
-    adult_tok = adult.split()[0] if adult else ""
-    is_minor = (minor_tok in _MINOR_TOK) or (adult_tok in {"no", "false"})
-    is_adult = (minor_tok in _NOT_MINOR_TOK) or (adult_tok in _ADULT_YES)
-    if is_minor:
-        problems.append("subject is flagged a MINOR -> HARD NO (PHOTO-SHOOT-SOP §1): likeness "
-                        "generation is PROHIBITED without explicit owner + legal sign-off")
-    elif not is_adult:
-        problems.append("subject age not attested adult (need 'Minor: no' or "
-                        "'Age verified adult: yes'); minors are HARD NO -> fail closed")
+    if fm.get("minors", "hard_block") != "hard_block":
+        problems.append("'minors' must stay 'hard_block' (never overridden, SOP-DIU-608)")
+    if fm.get("adult_attested", "") not in ("true", "yes"):
+        problems.append("subject not attested adult (need 'adult_attested: true'); "
+                        "minors are HARD NO -> fail closed")
 
-    # (3) Biometric PII protection — the IDENTITY store holds likeness descriptors; require an
-    # explicit at-rest protection attestation so raw biometric PII is never assumed plaintext-OK.
-    protection = _scan_field(text, ["storage_protection", "storage", "identity_storage"])
-    protect_toks = set(re.split(r"[^a-z0-9+]+", protection)) if protection else set()
-    if not (protect_toks & _PROTECT_OK):
-        problems.append(f"IDENTITY biometric store protection not attested (got {protection!r}); "
-                        f"need 'Storage protection: encrypted-at-rest' — descriptors must not be "
-                        f"stored plaintext")
+    # (3) Biometric PII protection — the IDENTITY.md descriptors are biometric PII; require an
+    # explicit at-rest protection attestation so they are never assumed plaintext-OK.
+    protection = fm.get("storage_protection", "")
+    if not (set(re.split(r"[^a-z0-9_-]+", protection)) & _PROTECT_OK):
+        problems.append(f"IDENTITY biometric store protection not attested (got "
+                        f"{protection!r}); need 'storage_protection: encrypted-at-rest' "
+                        f"-- descriptors must not be stored plaintext")
 
     if problems:
         print("!" * 78, file=sys.stderr)
         print(f"FATAL AF-DIU-CONSENT: {p} FAILS the fail-closed consent/minor/PII gate "
-              f"(PHOTO-SHOOT-SOP §1). Do NOT generate this person's likeness:", file=sys.stderr)
+              f"(SOP-DIU-608). Do NOT generate this person's likeness:", file=sys.stderr)
         for i, pr in enumerate(problems, 1):
             print(f"  {i}. {pr}", file=sys.stderr)
         print("!" * 78, file=sys.stderr)
         return 4
-    print(f"OK: consent documented + dated, subject attested adult, IDENTITY store protection "
+    print(f"OK: consent active + dated, subject attested adult, biometric store protection "
           f"declared -> likeness generation may proceed ({p}).")
     return 0
 
@@ -1126,9 +1142,10 @@ def main(argv=None) -> int:
     rc.set_defaults(func=cmd_route_check)
 
     cc = sub.add_parser("consent-check",
-                        help="fail-closed consent + minor + PII gate (PHOTO-SHOOT-SOP §1)")
-    cc.add_argument("--identity-file", required=True,
-                    help="path to the client's personal-photo-shoot IDENTITY.md")
+                        help="fail-closed consent + minor + PII gate (SOP-DIU-608 CONSENT.md)")
+    cc.add_argument("--consent-file", "--identity-file", dest="consent_file", required=True,
+                    help="path to the client's personal-photo-shoot CONSENT.md "
+                         "(--identity-file is the old spelling; it must still point at CONSENT.md)")
     cc.set_defaults(func=cmd_consent_check)
 
     fd = sub.add_parser("fidelity", help="fidelity receipt + 3-strike counter")

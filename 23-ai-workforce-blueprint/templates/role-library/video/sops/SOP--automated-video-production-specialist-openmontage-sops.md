@@ -23,7 +23,7 @@
 
 > **Client-own keys:** all paid generation uses the CLIENT's own `KIE_API_KEY`. The operator's key MUST NEVER appear on the client box.
 
-> **AGPLv3 boundary:** OpenMontage is operated as a client-installed skill. Its source code is never vendored into this fleet-wide template. The two Kie adapter files (`kie_image.py`, `kie_video.py`) shipped by Skill 47 are our own BaseTool subclasses installed into the client's cloned OpenMontage tree.
+> **AGPLv3 boundary:** OpenMontage is operated as a client-installed skill. Its source code is never vendored into this fleet-wide template. The two Kie adapter files (`kie_image.py`, `kie_video.py`) shipped by Skill 47 are our own BaseTool subclasses installed into the client's cloned OpenMontage tree; they are thin callers of the Skill 74 live adapter and carry no endpoint, model, or polling logic of their own.
 
 ---
 
@@ -119,9 +119,9 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 3. **Budget measurement:** Compute the estimated cost for the selected pipeline:
    - `documentary-montage.yaml` free path: estimated cost = $0.00. No further budget gate needed.
-   - Kie image generation (`gpt-image-2-5-sunburst-image-to-image` or `gpt-image-2-5-sunburst-text-to-image`): read the live per-task price from the live `pricingDesc` (the only price authority; Skill 74), never from `07-kie-setup/EXAMPLES.md` or a stale `_local/PRICING.md` row. Multiply by the number of image tasks in the pipeline.
-   - Kie video generation (`gemini-omni-video` / `veo3` / `veo3_fast`): multiply per-task cost by number of video clips.
-   - Sum to a total `estimated_cost_usd`. Credit preflight: the live Kie credit balance (`GET /api/v1/chat/credit`) must cover `estimated_cost_usd` x 1.30 (see `07-kie-setup/references/kie-common-rules.md`).
+   - Kie image generation (the Skill 74 `latest-family` image model): read the live per-task price with Skill 74 `price` (the live `pricingDesc` is the only price authority), never from `07-kie-setup/EXAMPLES.md` or a stale `_local/PRICING.md` row. Multiply by the number of image tasks in the pipeline.
+   - Kie video generation (the Skill 67 video model): multiply the Skill 74 `price` per-task cost by the number of video clips.
+   - Sum to a total `estimated_cost_usd`. Credit preflight: run Skill 74 `preflight`; the live Kie credit balance must cover `estimated_cost_usd` x 1.30 (rule 6 of `07-kie-setup/references/kie-common-rules.md`).
 
 4. **Budget gate:** Compare `estimated_cost_usd` against the client `config.yaml` `budget.total_usd` ceiling. If `estimated_cost_usd > budget.total_usd`: **HARD STOP**. Do not proceed. Notify the Head of Video Production with: the pipeline selected, the estimated cost, the configured budget cap, and a recommendation to either (a) switch to the free `documentary-montage.yaml` pipeline or (b) increase the budget cap with explicit client approval.
 
@@ -161,14 +161,12 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    Pipeline:            [pipeline_defs yaml selected]
 
    Paid calls in scope:
-     Image generation:  [count] x gpt-image-2-5-sunburst-image-to-image  (or gpt-image-2-5-sunburst-text-to-image)
-                        Provider: Kie.AI | Endpoint: POST https://api.kie.ai/api/v1/jobs/createTask
-                        Est. cost per call: $[per_call_usd]
-     Video generation:  [count] x gemini-omni-video (default) or veo3_fast (fallback)
-                        Provider: Kie.AI
-                        Endpoint (gemini-omni-video): POST https://api.kie.ai/api/v1/jobs/createTask
-                        Endpoint (veo3/veo3_fast):    POST https://api.kie.ai/api/v1/veo/generate
-                        Est. cost per call: $[per_call_usd]
+     Image generation:  [count] x [model id from Skill 74 latest-family]
+                        Provider: Kie.AI via Skill 74 (submit --mode active)
+                        Est. cost per call: $[per_call_usd from Skill 74 price]
+     Video generation:  [count] x [model id chosen under Skill 67 video policy]
+                        Provider: Kie.AI via Skill 74 (submit --mode active)
+                        Est. cost per call: $[per_call_usd from Skill 74 price]
 
    Total estimated cost:  $[estimated_cost_usd]
    Client budget cap:     $[config_budget_total_usd]
@@ -226,70 +224,14 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 3. **Free documentary-montage path (zero Kie calls):** For `documentary-montage.yaml`, the pipeline retrieves real footage from the free public-domain corpus (Archive.org/NASA/Wikimedia/Library of Congress/National Archives/NOAA/European Space Agency/JAXA/Pond5 public domain) via CLIP-retrieval, assembles clips, runs Piper TTS for narration (offline, no API key), and stitches via FFmpeg. No Kie API calls are made. Confirm `budget.mode: cap` and `budget.total_usd` are configured before running even the free path (to prevent any accidental paid tool invocation).
 
-4. **Kie image generation calls (when in scope):**
+4. **Kie generation calls (when in scope), all through Skill 74:** this role is the sole `createTask` caller for the job and never hand-rolls a request, an endpoint, or a polling loop. For every paid asset run the sequence:
+   - `kie_live_adapter.py validate` on the payload (live schema, rule 5; catches a wrong field name, an integer `duration`, or a missing `aspect_ratio` before any spend);
+   - `price`, then `preflight` (live balance must cover the price x 1.30);
+   - `submit --mode active`, then `wait` (the adapter follows the polling rules, rule 4) and `save` (download immediately; result URLs expire, rule 8).
+   Model choice: images use the `latest-family` model (rule 13) with the brief's reference image as the image input when one is supplied; video uses the Skill 67 policy model (reference-image routes for image-to-video, text routes otherwise). Image prompt length is governed only by rule 12 (`prompt-budget`); this SOP restates no band numbers. Video `duration` is a string (for example `"8"`) and `aspect_ratio` is always set. Skill 74 selects the correct endpoint family for the chosen model (including the Veo and Runway dedicated families), so this SOP does not name one.
+   Record `kie_task_id`, the result URL from the receipt, and the saved local file path in the job manifest as the render-proof receipt.
 
-   Model selection:
-   - Use `gpt-image-2-5-sunburst-image-to-image` when source reference images are provided in the brief (the brief's reference-image field is populated). The API field is `input_urls` (AGENTS.md N43). Skill 47 `kie_image.py` before its `input_urls` fix sent `image_input`; if the installed helper still does, it is below that fix and must be updated, not worked around here. This SOP describes the required payload.
-   - Use `gpt-image-2-5-sunburst-text-to-image` when generating from text prompt only (no source images)
-
-   API call shape (must match Skill 66's `references/api-patterns.md` and AGENTS.md N43; the `46-kie-callback-relay/kie-slide-submitter.js` submitter is a worked example, not the authority):
-   ```
-   POST https://api.kie.ai/api/v1/jobs/createTask
-   Authorization: Bearer ${KIE_API_KEY}
-   Content-Type: application/json
-
-   {
-     "model": "gpt-image-2-5-sunburst-image-to-image",
-     "input": {
-       "prompt":        "[text prompt]",
-       "input_urls":    ["[reference_image_url]"],
-       "aspect_ratio":  "16:9",
-       "resolution":    "2K"
-     }
-   }
-   ```
-   Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=[taskId]` with `Authorization: Bearer ${KIE_API_KEY}` until `data.state` is `success` (or `fail`, with `data.failCode` and `data.failMsg`). `data.resultJson` is a JSON string: parse it, then download `resultUrls[0]` to local output path. Record `kie_task_id` and `kie_result_url` in the job manifest as the render-proof receipt.
-
-5. **Kie video generation calls (when in scope):**
-
-   Model routing:
-   - **Default:** `gemini-omni-video` — use when reference images are available or for image-to-video generation
-   - **Fallback:** `veo3` or `veo3_fast` (legacy ids on `/api/v1/veo/generate`; Veo 3.1 is also live on `/api/v1/jobs/createTask` as model `veo-3-1`, and Skill 47's `kie_video.py` uses the legacy route) — use when no reference image is available (text-to-video)
-
-   API call shape for `gemini-omni-video` (must match `37-zhc-closeout/scripts/generate-celebration-video.sh`):
-   ```
-   POST https://api.kie.ai/api/v1/jobs/createTask
-   Authorization: Bearer ${KIE_API_KEY}
-   Content-Type: application/json
-
-   {
-     "model": "gemini-omni-video",
-     "input": {
-       "prompt":          "[text prompt]",
-       "image_urls":      ["[reference_image_url]"],
-       "duration":        "8",
-       "aspect_ratio":    "16:9",
-       "generate_audio":  true
-     }
-   }
-   ```
-   CRITICAL: `duration` MUST be a STRING (`"8"` not `8`) — Kie rejects integer duration with HTTP 422 (verified fix in `generate-celebration-video.sh` line 432). Valid string durations: `"4"`, `"6"`, `"8"`. Always set `aspect_ratio` — omitting it causes HTTP 422 (verified fix, `generate-celebration-video.sh` line 421-422). Poll `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=[taskId]`.
-
-   API call shape for `veo3` / `veo3_fast` fallback:
-   ```
-   POST https://api.kie.ai/api/v1/veo/generate
-   Authorization: Bearer ${KIE_API_KEY}
-   Content-Type: application/json
-
-   {
-     "model":          "veo3_fast",
-     "prompt":         "[text prompt]",
-     "aspect_ratio":   "16:9",
-     "duration":       8,
-     "generate_audio": true
-   }
-   ```
-   Poll `GET https://api.kie.ai/api/v1/veo/record-info?taskId=[taskId]`. Note: `veo/generate` + `veo/record-info` is a DIFFERENT endpoint path than the `gemini-omni-video` `createTask` + `recordInfo` path (verified in `generate-celebration-video.sh` lines 541-559). Both Veo routes are live (verified 2026-10-06): the legacy family `POST /api/v1/veo/generate` with `GET /api/v1/veo/record-info`, and the current KIE docs route `POST /api/v1/jobs/createTask` with model `veo-3-1` polled through `recordInfo`. Skill 47's code (`kie_video.py`) uses the legacy family with `veo3_fast`; do not describe the legacy family as the only Veo route.
+5. **Receipts and fallbacks:** if a generation fails, the receipt reflects the failure (see SOP 9.6); never substitute a different paid provider.
 
 6. **Render via FFmpeg (the documentary-montage path and all final stitches):** All video compilation and stitching uses FFmpeg — the exclusive render path for the documentary-montage pipeline and final assembly. Do NOT invoke Remotion or HyperFrames for the documentary-montage render path (those are for the Remotion demo path and HyperFrames composition path respectively). Each render target uses the client's configured output spec (codec, resolution, frame rate).
 
@@ -362,7 +304,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    - [ ] No visible render artifacts (black frames, glitches, dropped clips, audio sync issues)
    - [ ] No hardcoded client names, operator keys, or identifiable personal data (fleet-template rule)
    - [ ] Narration (if Piper TTS was used) is intelligible and matches the script
-   - [ ] If AI-generated visuals were used: Kie `kie_task_id` and `kie_result_url` are present in `render-receipt.json` as proof of genuine generation (not fabricated)
+   - [ ] If AI-generated visuals were used: Kie `kie_task_id`, `kie_result_url`, and the saved file are present in `render-receipt.json` as proof of genuine generation (not fabricated)
 
 2. **Budget reconciliation:** Sum all Kie API calls made during this job from the receipts. Compare actual spend to the `estimated_cost_usd` from `job-manifest.json`. If actual > estimated: log the variance to `_local/budget-log.md` with the job ID, estimated vs. actual, and the cause. If actual spend causes the cumulative client spend to approach the `config.yaml` `budget.total_usd` cap (>80%), notify Head of Video Production immediately with the budget status before initiating any new jobs.
 
@@ -399,7 +341,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 **Outputs:** Delivered and QC-passed MP4; finalized `job-manifest.json` with `status: complete`; a `finalized:true` V-CONTROL attestation; budget reconciliation entry; handoff notification to the next role in the pipeline.
 **Hand to:** Captioning Subtitling Specialist (Skill 26) for captions; Video Editor (Skill 27) for post-editing; Head of Video Production for delivery approval and final sign-off.
-**Failure mode:** Treating a QC-fail as a pass because "it looks close enough." Any item failing the content QC checklist — especially a missing `kie_task_id`/`kie_result_url` where Kie generation was claimed — is a hard failure. Missing Kie receipts means either the generation did not happen (fabrication) or the receipts were not recorded (a logging failure). Either is unacceptable. Rerun the generation or recover the receipts from the API log before delivering.
+**Failure mode:** Treating a QC-fail as a pass because "it looks close enough." Any item failing the content QC checklist — especially a missing `kie_task_id`/`kie_result_url` where Kie generation was claimed — is a hard failure. A missing `kie_task_id` or saved file means either the generation did not happen (fabrication) or the receipts were not recorded (a logging failure). Either is unacceptable. Rerun the generation or recover the receipts from the API log before delivering.
 
 ---
 
@@ -414,9 +356,9 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 
 | Failure class | First response | Second response | Hard stop |
 |---|---|---|---|
-| **Kie HTTP 422** | Check: `duration` must be a STRING `"8"` not integer; `aspect_ratio` must be set. Fix the call body and retry once. | If still 422: review the full error body and return it to Head of Video Production with the call body diff. | If cause unclear after review: halt and escalate. |
-| **Kie HTTP 5xx / timeout** | Retry once after 30-second backoff. | Switch to fallback model: if `gemini-omni-video` fails, retry with `veo3_fast` (different endpoint: `/api/v1/veo/generate`). Notify Head of Video Production. | If fallback also fails: halt, preserve manifest and receipts, notify Head of Video Production. |
-| **Kie HTTP 429 (rate limit)** | Back off per Kie rate-limit guidance; halve concurrent requests. | Continue with reduced concurrency. | If 429 persists more than 3 events in 10 minutes: halt, notify Head of Video Production. |
+| **Kie HTTP 422** | Re-run Skill 74 `validate` (live schema, rule 5): `duration` must be a STRING `"8"` not integer; `aspect_ratio` must be set. Fix the call body and retry once. | If still 422: review the full error body and return it to Head of Video Production with the call body diff. | If cause unclear after review: halt and escalate. |
+| **Kie HTTP 5xx / timeout** | Retry once after 30-second backoff through Skill 74. | Switch to the next model in the Skill 67 video policy order (Skill 74 picks that model's endpoint family). Notify Head of Video Production. | If fallback also fails: halt, preserve manifest and receipts, notify Head of Video Production. |
+| **Kie HTTP 429 (rate limit)** | Back off per rule 3 of `07-kie-setup/references/kie-common-rules.md`; halve concurrent requests. | Continue with reduced concurrency. | If 429 persists more than 3 events in 10 minutes: halt, notify Head of Video Production. |
 | **Kie HTTP 402 (credit exhaustion)** | Immediate halt. Do NOT retry. Preserve manifest and receipts. Notify Head of Video Production. Client must refill Kie.AI credits. | -- | -- |
 | **FFmpeg render failure** | Check the FFmpeg error output for codec, path, or permission issues. Correct the command and retry once. | If a second render also fails: halt and escalate to Head of Video Production with the full FFmpeg stderr. | -- |
 | **ffprobe validation fail** | Retry the FFmpeg render once. | If the second render also fails ffprobe: halt, log to `_local/render-failures/`, escalate to Head of Video Production. | -- |
@@ -426,7 +368,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
 **Absolute rules (violations are escalation events, not judgment calls):**
 - NEVER switch from the Kie provider to a native paid provider (FAL, Runway, HeyGen, OpenAI) mid-job. If Kie is unavailable, the job pauses — it does not silently fall back to a different paid provider.
 - NEVER silently downgrade resolution or aspect ratio. If the requested spec is unavailable, return a gap list to the requestor; do not generate at a different spec without explicit approval.
-- NEVER fabricate a `kie_task_id` or `kie_result_url`. If the API call failed, the receipt reflects the failure — do not invent a success receipt.
+- NEVER fabricate a `kie_task_id`, `kie_result_url`, or saved file. If the API call failed, the receipt reflects the failure — do not invent a success receipt.
 - NEVER route infra failures (429, 5xx, 402) to a content QC step. These are infrastructure events, not quality issues.
 - ALWAYS preserve `job-manifest.json` and all partial receipts on any hard stop. The manifest is the audit trail.
 
@@ -450,7 +392,7 @@ These SOPs are organized around the DMAIC (Define, Measure, Analyze, Improve, Co
    - FFmpeg render failure rate
    - Kie API call failure rate (by model and endpoint)
    - ffprobe validation failure rate
-   - Times a fallback model was invoked (gemini-omni-video → veo3_fast)
+   - Times a fallback model was invoked (per the Skill 67 policy order)
 
 2. **Flag any metric outside target thresholds:**
    - Render failure rate > 5%: investigate FFmpeg command templates
