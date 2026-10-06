@@ -325,6 +325,63 @@ grep -q "rr-intake-auth.flag" "$REPO_ROOT/65-rescue-receiver/rr-readiness.sh" \
     && pass "8c: rr-readiness.sh's report reads the flag file (the daily surface)" \
     || fail "8c: nothing surfaces the flag in the daily report"
 
+# =============================================================================
+# (9) DASH — cron payloads run as `sh -lc`, and on Linux sh is dash
+# =============================================================================
+echo "--- (9) runs under dash; wire.sh registers with bash and lists --all ---"
+if command -v dash >/dev/null 2>&1; then
+  new_store "$FAKE_SECRET"
+  start_stub suppressed
+  OUT="$(RESCUE_RANGERS_WEBHOOK_URL="http://127.0.0.1:$PORT/webhook/rr-v2-intake" \
+        RESCUE_RANGERS_WEBHOOK_SECRET="" RR_INTAKE_AUTH_TIMEOUT=15 \
+        dash "$CHECK" --root "$BOX" 2>&1)"
+  RC=$?
+  [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "OK http=200" \
+      && pass "9a: dash reaches classification and reports OK (exit 0, not dash's exit 2)" \
+      || fail "9a: under dash exit=$RC out=$OUT"
+else
+  echo "  SKIP: 9a: dash is not installed on this machine"
+fi
+
+WIRE="$REPO_ROOT/65-rescue-receiver/wire.sh"
+grep -q -- '--command "bash \$_AUTH_CHECK"' "$WIRE" \
+    && pass "9b: wire.sh registers the auth-check cron with bash" \
+    || fail "9b: wire.sh does not register the auth-check cron with bash"
+grep -q -- '--command "sh \$_AUTH_CHECK"' "$WIRE" \
+    && fail "9c: wire.sh still registers the bash-only script with sh" \
+    || pass "9c: wire.sh no longer registers the bash-only script with sh"
+grep -n 'cron list --json' "$WIRE" | grep -v -- '--all' | grep -v '^[0-9]*:#' | grep -q 'cron list --json 2>/dev/null)"$' \
+    && pass "9d: the only plain cron list is the empty-output retry inside _cron_count" \
+    || fail "9d: a presence check lists cron without --all"
+grep -q 'cron list --json --all' "$WIRE" \
+    && pass "9e: presence checks use cron list --json --all" \
+    || fail "9e: no cron list --json --all in wire.sh"
+
+# 9f-9h: the presence helper itself, against a fake CLI that lists a DISABLED job
+# twice. Extracted verbatim from wire.sh so the test cannot drift from it.
+FAKE_OC="$WORK/fake-openclaw"
+cat > "$FAKE_OC" <<'SH'
+#!/bin/sh
+case "$*" in
+  *--all*) echo '{"jobs":[{"id":"a1","name":"rr-intake-auth-check","enabled":false},{"id":"a2","name":"rr-intake-auth-check","enabled":false},{"id":"b1","name":"rr-intake-auth-check-x","enabled":true}]}' ;;
+  *) echo '{"jobs":[]}' ;;
+esac
+SH
+chmod +x "$FAKE_OC"
+sed -n '/^_cron_count() {/,/^}/p' "$WIRE" > "$WORK/cron_count.sh"
+_oc_out="$(_OC_BIN="$FAKE_OC"; . "$WORK/cron_count.sh"
+  _cron_count rr-intake-auth-check 2>&1; echo "rc=$? n=$_CRON_N ids=$_CRON_IDS")"
+echo "$_oc_out" | grep -q 'rc=0 n=2 ids=a1,a2' \
+    && pass "9f: a disabled job counts as present, exact name only (rr-intake-auth-check-x not counted)" \
+    || fail "9f: presence helper answered: $_oc_out"
+echo "$_oc_out" | grep -q 'WARNING 2 crons named rr-intake-auth-check exist (ids: a1,a2)' \
+    && pass "9g: duplicates are warned about by count and id" \
+    || fail "9g: no duplicate warning: $_oc_out"
+_oc_out="$(_OC_BIN="$FAKE_OC"; . "$WORK/cron_count.sh"; _cron_count nonexistent; echo "rc=$?")"
+[ "$_oc_out" = "rc=1" ] \
+    && pass "9h: an absent name is reported absent" \
+    || fail "9h: absent name answered: $_oc_out"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

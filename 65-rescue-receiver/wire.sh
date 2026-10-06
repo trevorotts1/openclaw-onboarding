@@ -220,6 +220,47 @@ case "$_OC_BIN" in
 esac
 
 # ---------------------------------------------------------------------------
+# _cron_count NAME  -> sets _CRON_N (exact-name matches) and _CRON_IDS.
+#
+# Reads `cron list --json --all`: without --all a job an operator DISABLED is
+# hidden, so it looked absent and was re-added as a duplicate on every roll. A
+# disabled job counts as present and is never re-enabled or re-added. Exact name
+# match on parsed JSON (node, then python3); the old grep only when neither
+# exists. `--all` can print nothing at all, so an empty answer retries without it.
+# ---------------------------------------------------------------------------
+_cron_count() {
+  _CRON_N=0; _CRON_IDS=""
+  _cc_json="$("$_OC_BIN" cron list --json --all 2>/dev/null)"
+  [ -n "$_cc_json" ] || _cc_json="$("$_OC_BIN" cron list --json 2>/dev/null)"
+  _cc_js='let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const n=process.argv[1],h=[];(function w(o){if(Array.isArray(o))o.forEach(w);else if(o&&typeof o==="object"){if(o.name===n)h.push(o.id||o.jobId||"?");Object.values(o).forEach(w)}})(JSON.parse(d));console.log(h.length+" "+h.join(","))})'
+  _cc_py='import json,sys
+n=sys.argv[1];h=[]
+def w(o):
+    if isinstance(o,list):
+        [w(x) for x in o]
+    elif isinstance(o,dict):
+        if o.get("name")==n:h.append(str(o.get("id") or o.get("jobId") or "?"))
+        [w(v) for v in o.values()]
+w(json.load(sys.stdin));print(len(h),",".join(h))'
+  _cc_out=""
+  if command -v node >/dev/null 2>&1; then
+    _cc_out="$(printf '%s' "$_cc_json" | node -e "$_cc_js" "$1" 2>/dev/null)"
+  fi
+  if [ -z "$_cc_out" ] && command -v python3 >/dev/null 2>&1; then
+    _cc_out="$(printf '%s' "$_cc_json" | python3 -c "$_cc_py" "$1" 2>/dev/null)"
+  fi
+  if [ -n "$_cc_out" ]; then
+    _CRON_N="${_cc_out%% *}"; _CRON_IDS="${_cc_out#* }"
+  elif printf '%s' "$_cc_json" | grep -q "\"name\": *\"$1\""; then
+    _CRON_N=1
+  fi
+  if [ "$_CRON_N" -gt 1 ]; then
+    echo "65-rescue-receiver: WARNING $_CRON_N crons named $1 exist (ids: $_CRON_IDS); not deleting anything" >&2
+  fi
+  [ "$_CRON_N" -gt 0 ]
+}
+
+# ---------------------------------------------------------------------------
 # register_intake_auth_cron
 #
 # Declares the DAILY escalation-intake auth self-check as its own openclaw cron.
@@ -241,14 +282,14 @@ register_intake_auth_cron() {
     echo "65-rescue-receiver: $_AUTH_NAME NOT registered - rr-intake-auth-check.sh is not installed at $_AUTH_CHECK (older bundle); a cron whose command does not exist would fail every day" >&2
     return 0
   fi
-  if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_AUTH_NAME\""; then
+  if _cron_count "$_AUTH_NAME"; then
     echo "65-rescue-receiver: cron $_AUTH_NAME already declared (idempotent by name; not re-added)"
     return 0
   fi
   if "$_OC_BIN" cron add --name "$_AUTH_NAME" --cron "$_AUTH_CRON" --no-deliver \
-       --command "sh $_AUTH_CHECK" >&2; then
-    if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_AUTH_NAME\""; then
-      echo "65-rescue-receiver: registered cron $_AUTH_NAME ($_AUTH_CRON, delivery none) -> sh $_AUTH_CHECK (READ BACK)"
+       --command "bash $_AUTH_CHECK" >&2; then
+    if _cron_count "$_AUTH_NAME"; then
+      echo "65-rescue-receiver: registered cron $_AUTH_NAME ($_AUTH_CRON, delivery none) -> bash $_AUTH_CHECK (READ BACK)"
     else
       echo "65-rescue-receiver: cron $_AUTH_NAME add returned 0 but did NOT read back; not claiming it is scheduled" >&2
     fi
@@ -337,7 +378,7 @@ if [ "$_RRR_LOADED" = "1" ]; then
       echo "65-rescue-receiver: legacy cron $_LEGACY_NAME (id $_LEGACY_ID) NOT removed — the CLI's own listing must show the row with an OBSERVED enabled=true before this script may delete it (never-seen-DISABLED is not proof of enabled), and this readback does not, so deleting it could destroy a job the operator switched off" >&2
     fi
   done
-elif "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_LEGACY_NAME\""; then
+elif _cron_count "$_LEGACY_NAME"; then
   echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
 fi
 
@@ -389,7 +430,7 @@ fi
 # UNKNOWN readiness — never as success.
 # ---------------------------------------------------------------------------
 echo "65-rescue-receiver: readiness=UNKNOWN reason=engine_not_installed detail=shared-utils/rr-readiness.sh not found beside rescue-env.sh; registration falls back to the presence-only path (no readback)" >&2
-if "$_OC_BIN" cron list --json 2>/dev/null | grep -q "\"name\": *\"$_NAME\""; then
+if _cron_count "$_NAME"; then
   echo "65-rescue-receiver: cron $_NAME already registered (presence only; NOT read back)"
   register_intake_auth_cron
   exit 0
