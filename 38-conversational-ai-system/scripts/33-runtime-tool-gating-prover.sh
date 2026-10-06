@@ -94,6 +94,9 @@ sect() { echo ""; echo "=== $* ==="; }
 # ---- resolve config + master files (mirrors 24-self-test-hook.sh) ----
 resolve_first() { for c in "$@"; do [ -n "$c" ] && [ -f "$c" ] && { printf '%s\n' "$c"; return 0; }; done; return 1; }
 OC_CONFIG="$(resolve_first "${OPENCLAW_CONFIG:-}" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json" "/root/.openclaw/openclaw.json" || true)"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/lib-docker-tenant.sh"
+S38_AGENT="$(s38_resolve_routing_agent "${OC_CONFIG:-}" 2>/dev/null || echo main)"
 MFD="${MASTER_FILES_DIR:-}"
 if [ -z "$MFD" ]; then
   POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
@@ -249,7 +252,7 @@ trap 'cleanup; rm -f "$BODY_FILE" 2>/dev/null || true' EXIT
   printf '"id":"%s",'              "$HOOK_NAME"
   printf '"match":"%s",'           "$HOOK_NAME"
   printf '"action":"agent",'
-  printf '"agent_id":"%s",'        "${ROUTING_AGENT_ID:-${AGENT_ID:-main}}"
+  printf '"agent_id":"%s",'        "${ROUTING_AGENT_ID:-${AGENT_ID:-$S38_AGENT}}"
   printf '"model":"%s",'           "${SELF_TEST_MODEL:-ollama/deepseek-v4-flash:0731-cloud}"
   printf '"wakeMode":"now",'
   printf '"name":"Skill38 Runtime Tool-Gating Prover",'

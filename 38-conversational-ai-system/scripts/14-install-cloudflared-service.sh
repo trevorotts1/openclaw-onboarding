@@ -11,8 +11,17 @@ _env_read() { if declare -F env_load >/dev/null 2>&1; then env_load "$1"; else [
 
 set -euo pipefail
 
-SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/lib-docker-tenant.sh"
+SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$(s38_default_secrets_env)}"
 _env_read "$SECRETS_ENV_FILE" || true
+
+# Docker tenant: cloudflared runs on the HOST under the operator; installing a
+# service inside the container would be a second, unmanaged tunnel.
+if [[ -z "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]] && s38_in_container && [[ -n "${PUBLIC_HOSTNAME:-}" ]]; then
+  echo "Docker tenant: cloudflared is operator-managed on the host. Skipping step 14." >&2
+  exit 0
+fi
 
 : "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN missing — run 13-create-cloudflare-tunnel.sh first}"
 : "${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME missing — run 13-create-cloudflare-tunnel.sh first}"

@@ -114,6 +114,41 @@ if [ -z "$cf_token_found" ]; then
   done
 fi
 
+# Docker tenant (Contabo/VPS multi-tenant host): the public hostname is served by
+# the OPERATOR's cloudflared on the host, which this container cannot see. No
+# client Cloudflare token is needed, and the operator zone's token is NEVER given
+# to a client box. Steps 13/14 are skipped; 15 wires the hook to that hostname.
+# shellcheck source=/dev/null
+. "$(dirname "$0")/lib-docker-tenant.sh"
+if [ -z "$cf_token_found" ] && s38_in_container; then
+  s38_public_host="${PUBLIC_HOSTNAME:-$(s38_env_file_value PUBLIC_HOSTNAME || true)}"
+  if [ -n "$s38_public_host" ]; then
+    echo "$PASS_PREFIX Docker tenant: public hostname $s38_public_host is an operator-managed tunnel on the host. No Cloudflare token needed — SKIP steps 13 and 14. Proceeding."
+    cf_token_found="operator-managed"
+  else
+    cat <<'EOTENANT'
+=====================================================
+PUBLIC HOSTNAME NOT SET (operator-managed tunnel)
+=====================================================
+
+This box runs inside a container on a shared host. Its public tunnel is
+run by the OPERATOR on the host, not inside this box — that is why no
+tunnel or Cloudflare token is visible from here. Nothing is broken.
+
+>>> AGENT — do NOT ask the client for a Cloudflare API token, and NEVER
+>>> ask for a token on the operator's own domain. Ask the operator (your
+>>> setup admin / Rescue Rangers) for THIS box's public gateway hostname,
+>>> then save it in the secrets env file:
+>>>
+>>>   PUBLIC_HOSTNAME=<the hostname the operator gives you>
+>>>
+>>> and re-run this check.
+=====================================================
+EOTENANT
+    exit 1
+  fi
+fi
+
 if [ -z "$cf_token_found" ]; then
   # Rule 13 verbatim message
   cat <<'EONOKEY'
@@ -176,7 +211,7 @@ Once you have your Cloudflare API key:
 EONOKEY
   exit 1
 fi
-echo "$PASS_PREFIX Cloudflare API key found at $cf_token_source. Proceeding."
+[ "$cf_token_found" = "operator-managed" ] || echo "$PASS_PREFIX Cloudflare API key found at $cf_token_source. Proceeding."
 
 # ----------------------------------------------------------------------------
 # STEP A2 — Fleet approval gate (SPEC Item 10): conversational_ai standing
