@@ -39,7 +39,7 @@ survives ONLY for internal drafts.
    - **AF-G5** placeholder/bracket token rendered as visible text
    - **AF-G6** brand-palette drift beyond the style card's stated tolerances
    - **AF-G7** demographic default / mono-cast / skin-tone fidelity failure
-   - **AF-G8** provenance gap: no Kie.ai taskId + receipt in `_vault/receipts/` tying pixels to the
+   - **AF-G8** provenance gap: no Kie.ai taskId + Operator receipt at `_local/receipts/{receipt-id}.json` tying pixels to the
      sanctioned pipeline (the graphics analogue of AF-CANONICAL-RENDER-BYPASS)
 
 3. **SCORE 1–10** on: brief fidelity, composition, style-card/brand fidelity, technical quality
