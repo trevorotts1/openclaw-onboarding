@@ -236,7 +236,7 @@ def leg1_pregen_gate_and_qc() -> dict:
                 "post_copy": post_copy}
     gate_result = pgg.check_prompt(
         compiled["final_prompt"],
-        model="nano-banana-2",
+        model="gpt-image-2-5-sunburst-text-to-image",
         ratio="4:5",
         pixels="1080x1350",
         platform="instagram",
