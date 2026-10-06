@@ -16,7 +16,7 @@ Your goal is to transform a talking-head video into a professionally edited vide
 - **Section 2 (20-30 sec):** B-roll only (voice continues)
 - **End (8-10 sec):** Person visible - closing/call-to-action
 
-**Result:** Person appears ~25% of time, B-roll ~75% of time. Looks professionally produced.
+**Result:** Person appears roughly 25-50% of the time (see the worked examples below), B-roll fills the rest. Looks professionally produced.
 
 ---
 
@@ -142,23 +142,27 @@ whisper full_voiceover.aac --model medium --output_format json --output_dir /tmp
 
 ---
 
-### STEP 9: GENERATE B-ROLL WITH KIE.AI
+### STEP 9: GENERATE B-ROLL WITH KIE.AI (through Skill 67)
 
-**Generate multiple 8-second B-roll clips using KIE.AI:**
+This skill has no KIE client. You generate the clips through **Skill 67 (`67-kie-video`)**, which owns model selection, payload validation, dispatch and QC, using the client's own KIE key. Rules for endpoints, rate limit, credit preflight and saving results live in `07-kie-setup/references/kie-common-rules.md`.
 
-**Choose model based on content style:**
-- **Veo 3.1 Fast** (~$0.40/video) - Most B-roll needs
-- **Veo 3.1 Quality** (~$2.00/video) - Premium moments
-- **Kling 3.0** - Alternative high-quality
-- **Sora 2** ($0.015/sec) - Precise creative control
-- **Seed Dance** - If movement/fitness content
+**Choose the model with Skill 67's selector, never from memory or from a price list:**
+
+```bash
+python3 ~/.openclaw/skills/67-kie-video/scripts/select_video_model.py "8 second vertical B-roll: <what the clip shows>"
+```
+
+- If the client or the department names a model, that explicit pick wins.
+- Get the price for the chosen model with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`). This skill holds no prices; do not quote one from memory.
+- Announce provider, model and estimated USD for the whole batch and get approval before generating. Run the credit preflight from the rules file first.
+- **Sora is prohibited** by the Video department. Never use or offer it.
 
 **Example prompts based on transcript:**
 - "Professional business team collaborating, modern office, natural lighting, cinematic, 8 seconds"
 - "Abstract technology network visualization, blue tones, smooth animation, 8 seconds"
 - "Urban cityscape sunrise, energetic mood, aerial view, 8 seconds"
 
-**Generate 8-10 clips covering the full video length.**
+**Generate 8-10 clips covering the full video length.** Save each finished clip to disk the moment it completes (KIE download URLs expire).
 
 ---
 
@@ -296,9 +300,9 @@ Use MoviePy for crossfades if needed for smoother flow.
 
 1. **Identify what person is saying** in that time segment
 2. **Create visual concept** that illustrates the point
-3. **Generate with KIE.AI:**
-   - Model: Veo 3.1 Fast (~$0.40) or Veo 3.1 Quality (~$2.00)
-   - Duration: 8 seconds
+3. **Generate through Skill 67** (see STEP 9 for model choice, pricing and approval):
+   - Model: the one Skill 67's selector returns (or the one the client named)
+   - Duration: 8 seconds, if the chosen model supports it (check with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py validate` or Skill 67's registry)
    - Prompt: Descriptive, matches content theme
 
 **Example workflow:**
@@ -331,7 +335,7 @@ Use MoviePy for crossfades if needed for smoother flow.
 
 ---
 
-## VIDEO STRUCTURE EXAMPLE (60-Second Video)
+## VIDEO STRUCTURE EXAMPLE (64-Second Video)
 
 ```
 00:00-00:08  PERSON VISIBLE (8 sec) - Hook/Intro
@@ -373,7 +377,7 @@ whisper voiceover.aac --model medium --output_format json --output_dir /tmp
 
 # YOU: Create B-roll storyboard from transcript
 
-# 5. Generate B-roll with KIE.AI (you do this step - generate 8-10 clips)
+# 5. Generate B-roll through Skill 67 (you do this step - generate 8-10 clips)
 # Result: broll_01.mp4 through broll_10.mp4
 
 # 6. Assemble final video (use Python script or FFmpeg concat)
@@ -399,21 +403,17 @@ whisper voiceover.aac --model medium --output_format json --output_dir /tmp
 
 ## 🔴 KIE.AI GENERATION ERROR HANDLING
 
-If KIE.AI returns an error or times out during B-roll generation:
+KIE errors, retries, rate limits and credit problems are handled by the canonical rules in `07-kie-setup/references/kie-common-rules.md` and by Skill 67's dispatch and QC steps. Follow those. Do not use status-code advice from memory.
 
-**Step 1 - Identify the failure type:**
-- `401 Unauthorized` → API key is wrong or expired. Check `KIE_API_KEY` in `~/clawd/secrets/.env`
-- `429 Too Many Requests` → Rate limited. Wait 60 seconds and retry
-- `500 / 503` → KIE.AI service issue. Wait 2 minutes and retry once
-- Timeout (no response after 90s) → Retry the single failed clip once before stopping
+What this skill adds on top, for B-roll batches:
 
-**Step 2 - Retry logic:**
-- Retry any single failed clip up to 2 times before reporting failure
-- Do NOT retry an entire batch — retry only the specific clip that failed
-- If a clip fails after 2 retries, skip it and note it in your final report
+- Retry only the single clip that failed, never the whole batch.
+- Credit and key problems (unauthorized, forbidden, insufficient credits) are not retried. Stop and report them once. The key is the client's own; never print it and never swap in another key.
+- If a clip still fails after Skill 67's retry ladder, skip it and note it in your final report.
+- Save every finished clip to disk immediately, before generating the next one.
 
-**Step 3 - Report to user:**
-"B-roll clip [number] failed to generate after 2 attempts. Error: [message]. All other clips completed. You can regenerate that clip manually or I can retry it now."
+**Report to user:**
+"B-roll clip [number] failed to generate. Error: [message]. All other clips completed. You can regenerate that clip manually or I can retry it now."
 
 **Never deliver a video with a missing B-roll slot without telling the user.**
 
