@@ -13,8 +13,8 @@ to run unless the supplied nonce matches the file — a direct `python3 run_sign
 without the front-door nonce dies with AF-FUN-FRONT-DOOR. The same nonce keys the
 certificate HMAC, so a certificate can only be minted by a real front-door run.
 
-DELEGATION SEAMS (never forked here): image generation is delegated to Skill 47
-(kie_image.py); GHL media folder + upload and the funnel/page build are delegated to
+DELEGATION SEAMS (never forked here): image generation is delegated to Skill 66 (model
+policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); GHL media folder + upload and the funnel/page build are delegated to
 Skill 6 (ghl_media.py / ghl_rest_canvas.py). Those phases are attested in order; the
 image PROVENANCE (Kie taskId + GHL media host) is enforced at P9 by prove_sf_no_pitch.py.
 
@@ -89,7 +89,7 @@ def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) ->
 #
 # THE DEFECT: P3-IMAGES and P4-MEDIA attested "delegated" the moment
 # media_ledger.json EXISTED. The run writes that file, so the phase claiming to
-# prove image generation through Skill 47 and upload through Skill 6 was
+# prove image generation through Skill 74 and upload through Skill 6 was
 # satisfied by a file its own subject authored — with no provider ever contacted.
 #
 # THE FIX, IN TWO LANDINGS (sequencing: writer before requirer):
@@ -100,7 +100,7 @@ def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) ->
 #     before can fail now: this only moves the truth forward to the phase that
 #     claims it, and kills "the file exists, therefore a provider ran".
 #   (next)         delegation_receipt.require() replaces validate_if_present()
-#     once Skill 47 / Skill 6 emit a receipt on every path. The certificate
+#     once Skill 74 (via scripts/kie74_receipt.py) / Skill 6 emit a receipt on every path. The certificate
 #     records which of the two states applied, so it can never imply
 #     provider-backed delegation it does not have.
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
     """P3-IMAGES — every ledger image must name a real image-provider task id."""
     imgs, err = _ledger_images(run_dir)
     if imgs is None:
-        return False, f"AF-FUN-DELEG-IMAGES: {err} (Skill 47 kie_image.py produced nothing)"
+        return False, f"AF-FUN-DELEG-IMAGES: {err} (Skill 66 policy + Skill 74 transport produced nothing)"
     bad = []
     for img in imgs:
         tid = img.get("kie_task_id", img.get("task_id"))
@@ -159,7 +159,7 @@ def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
                        f"image-provider task id (e.g. {bad[:3]}) — an image nothing was "
                        "generated for is not a delegated result")
     return _receipt_seam(run_dir, "P3-IMAGES", [_image_key(i) for i in imgs],
-                         "Skill 47 kie_image.py (text-to-image + reference_images hook)",
+                         "Skill 66 policy + Skill 74 kie_live_adapter.py (text-to-image + reference_images hook)",
                          f"{len(imgs)} image record(s) carry a provider task id")
 
 
@@ -441,7 +441,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
          lambda: _shell_prover("prove_sf_copy.py", ["--ledger", str(run_dir / "copy_ledger.json")])),
         ("P2-PROMPTS", "prove_sf_prompt_floor.py",
          lambda: _gate_p2_prompts(run_dir)),
-        ("P3-IMAGES", "kie_image.py",
+        ("P3-IMAGES", "kie_live_adapter.py",
          lambda: _gate_p3_images(run_dir)),
         ("P4-MEDIA", "ghl_media.py",
          lambda: _gate_p4_media(run_dir)),

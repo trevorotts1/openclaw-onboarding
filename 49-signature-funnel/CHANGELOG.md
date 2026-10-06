@@ -1,5 +1,41 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
+
+- **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
+- **Bypass allow-list is content-checked.** `kie74_receipt.py --check` now also requires a real task id, a known adapter state and mode, a saved or result list, and rejects any top-level key Skill 74 does not emit, so a file with the adapter's three identity fields plus a smuggled command is refused. New tests for the smuggle and placeholder cases. Pin re-recorded.
+- Version bumped to v2.1.1 (SKILL.md frontmatter, skill-version.txt).
+
+## 2.1.0 — 2026-10-06 — KIE integration: Skill 74 is the one approved image path
+
+### Changed
+- **Image route (policy then transport).** P3-IMAGES no longer names Skill 47 or `kie_image.py` anywhere
+  (SKILL.md, MASTERDOC.md, FUNNEL-MANIFEST.json, prompts, orchestrator and certificate labels, role text). Skill
+  66 picks the model (GPT Image default via `latest-family`, N43 ratio rules); Skill 74 runs validate,
+  preflight (price x 1.30), prompt-budget check, `submit --mode active`, wait and save immediately. The phase
+  label on the signed certificate is now `kie_live_adapter.py`. Procedure: `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3.
+- **`signature-funnel-entry.sh` bypass scan.** It now flags the createTask route and old KIE client scripts
+  (`jobs/createTask`, `api.kie.ai`, `kie_image.py`, `kie_generate.py`) anywhere in the run dir, and allow-lists
+  exactly one thing: Skill 74 result files directly inside `<RUN_DIR>/receipts/kie74/`, each re-checked by
+  `scripts/kie74_receipt.py --check` (right adapter, no bearer token). New `--scan-only --run-dir` mode.
+- **Dead field and limit text removed.** The reference hook no longer cites the old `image_input` field or an
+  8-reference limit; it uses the field the live schema names and the schema's limit. Prompt length text points to
+  `kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent). The prover
+  constants in `prove_sf_prompt_floor.py` and the matching AF trigger text are unchanged here (owned by the
+  prompt-band lane).
+
+### Fixed
+- **Entry version check.** `signature-funnel-entry.sh` required major 1 while `skill-version.txt` is v2.x, so
+  `--self-test` and every real run aborted at VERSION. It now strips the leading `v` and expects major 2.
+- **Stale hash pin.** `scripts/SF-PROVER-PIN.sha256` did not match the shipped enforcement core; re-recorded with
+  `--write-pin` after these changes (the pinned set now also includes `scripts/kie74_receipt.py`).
+
+### Added
+- `scripts/kie74_receipt.py` (records one Skill 74 result as run evidence, stamped by a non-subject module) and
+  `scripts/test_sf_bypass_scan.py` (hand-rolled createTask refused, Skill 74 receipts accepted, forged or
+  leaked or nested files refused). Both run inside `signature-funnel-entry.sh --self-test` and `verify.sh`.
+- Version bumped to v2.1.0 (SKILL.md frontmatter, skill-version.txt).
+
 ## v2.0.3 - 2026-10-05 - Entry shell version gate matches the current v2 contract
 
 ### Fixed

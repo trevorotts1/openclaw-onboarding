@@ -128,10 +128,47 @@ Enforces:
 Durations above a model's maximum are surfaced by the selector as a clip-plan note (Step 2) before payload validation runs.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5: DISPATCH & WAIT
+STEP 5: DISPATCH THROUGH SKILL 74 (validate, preflight, submit) & WAIT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Dispatch via curl with `$KIE_API_KEY`:
+This skill owns the policy: which model, the prompt, durations, references, clip
+plans. Skill 74 owns the mechanics: live schema, price, balance, the createTask
+call. Every Market dispatch path runs these steps in order, from this skill's folder
+(A = python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py):
+
+  1. A validate --model <id> --payload input.json --json
+     Live schema first, the generated registry snapshot as fallback; state must be
+     "validated". This runs in addition to Steps 3 and 4, never instead of them.
+  2. A preflight --model <id> --units <seconds> --json
+     Balance must cover price x 1.30. Per-second prices scale by --units (the clip
+     length; some prices bill input plus output seconds, so pass the total).
+     state "fail" with code insufficient_credits: stop and report the shortfall.
+  3. A submit --request req.json --mode active [--callback-url <Skill 46 relay URL>] --json
+     req.json is {"model": "<id>", "input": {...}}. Skill 74 never picks or changes
+     the model. Then `A wait --task-id <id> --timeout 900` (video needs a long
+     deadline) and `A save --task-id <id> --save-dir <dir>`; production batches use
+     the Skill 46 relay (46-kie-callback-relay SUBMITTER-SOP.md, "Production route
+     via Skill 74").
+  4. Step 6 (multi-frame QC) on the saved file.
+
+There is NO auto-latest for video: a model that is not in models.json (a newer
+generation, a new vendor) is DISCOVERED (`A discover --modality video --json`), never
+selected automatically, and is used only when the requester names it. validate_payload.py
+then checks that explicit pick against Skill 74's live schema and says so in a warning.
+
+If submit returns state "skipped" with fallback_used true, the adapter is off or in
+shadow mode and sent nothing: dispatch with curl as below (steps 1 and 2 already ran).
+If the adapter is absent, steps 1 and 2 are skipped with a one-line note and the curl
+path is used.
+
+Dedicated routes (Runway `/api/v1/runway/generate`, Veo 3.1 `/api/v1/veo/generate`):
+this skill's curated route stays the dispatch route. KIE's live catalog also lists
+Runway and Veo ids whose schema declares createTask (observed in the Skill 74 registry
+snapshot of 2026-10-06); which route is authoritative is an owner decision recorded
+as open in CHANGELOG, not changed here. Still run `A preflight` for the matching catalog
+id when one exists.
+
+Curl fallback:
 
   source "$HOME/.openclaw/secrets/.env" 2>/dev/null || true
   curl -sS https://api.kie.ai/api/v1/jobs/createTask \

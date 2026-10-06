@@ -3,6 +3,7 @@
   "skill": "66-kie-image",
   "generated": "2026-08-26",
   "registry_policy": {
+    "role": "CURATED POLICY and verified-override registry (routing defaults, owner-confirmed caps, per-family rules). Not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 (live schema, price) is, with its generated snapshot as fallback. A model missing here is DISCOVERED, never an automatic default.",
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai market pages + kie.ai playground pages, curl-verified). Every numeric limit is traceable to a quoted vendor value. NOT_EXPOSED/NOT_PUBLISHED is stored as null, never invented.",
     "house_band_chars": { "min": 5000, "target": 9000, "max": 19000 },
     "owner_preferred_default": "GPT Image 2.5 when compatible",

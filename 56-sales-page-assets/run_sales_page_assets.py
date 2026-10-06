@@ -13,8 +13,8 @@ unless the supplied nonce matches the file — a direct `python3 run_sales_page_
 without the front-door nonce dies with AF-SP56-FRONT-DOOR. The same nonce keys the certificate
 HMAC, so a certificate can only be minted by a real front-door run.
 
-DELEGATION SEAMS (never forked here): image generation is delegated to Skill 47 (kie_image.py)
-or the client's own image provider; GHL media folder + upload and the funnel/page build are
+DELEGATION SEAMS (never forked here): KIE image generation is delegated to Skill 66 (model policy)
+and Skill 74 (the one KIE transport, kie_live_adapter.py), or to Skill 63 when the client selected Agnes; GHL media folder + upload and the funnel/page build are
 delegated to Skill 6 (ghl_media.py / ghl_rest_canvas.py); the bump copy routes to the Skill 44
 seam. CLIENT runtime uses the client's OWN providers, never Anthropic.
 
@@ -310,8 +310,8 @@ def _images_gate(run_dir: Path) -> Tuple[bool, str]:
     that CLAIMS image generation from being satisfied by an empty file."""
     data, err = _load_run_json(run_dir, "media_ledger.json")
     if data is None:
-        return False, (f"AF-SP56-IMAGES-MISSING: {err} — Skill 47 kie_image.py (or the "
-                       "client's own image provider) produced nothing")
+        return False, (f"AF-SP56-IMAGES-MISSING: {err} — Skill 66 policy + Skill 74 transport (or "
+                       "Skill 63 when the client selected Agnes) produced nothing")
     imgs = data.get("images")
     records = [i for i in imgs if isinstance(i, dict)] if isinstance(imgs, list) else []
     if not records:
@@ -328,7 +328,7 @@ def _images_gate(run_dir: Path) -> Tuple[bool, str]:
         return False, (f"AF-SP56-IMAGES-PROVENANCE: {len(bad)} image record(s) carry no real "
                        f"image-provider task id (e.g. {bad[:3]})")
     return _receipt_seam(run_dir, "P2-IMAGES", keys,
-                         f"delegated: Skill 47 kie_image.py OR the client's own image provider "
+                         f"delegated: Skill 66 policy + Skill 74 kie_live_adapter.py OR Skill 63 (Agnes) "
                          f"({len(records)} record(s) with a provider task id)")
 
 
@@ -355,7 +355,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
          lambda: _shell_prover("prove_sp_intake.py", [str(run_dir / "brief.json")])),
         ("P1-IMAGE-PLAN", "prove_sp_image_plan.py + prove_sp_prompt_floor.py",
          lambda: _image_plan_suite(run_dir)),
-        ("P2-IMAGES", "kie_image.py",
+        ("P2-IMAGES", "kie_live_adapter.py",
          lambda: _images_gate(run_dir)),
         ("P3-COPY", "prove_sp_copy_suite",
          lambda: _copy_suite(run_dir)),

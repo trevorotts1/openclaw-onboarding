@@ -103,7 +103,7 @@ borrow Skill 49's v2 Part 5 thank-you profile (PRD O-4). Enforced by `prove_sp_b
 - **Slice map:** `main [0:4]` · `upsell-1 [4:8]` · `downsell-1 [8:10]` · `high-ticket [10:]`. The legacy
   default of 4 left the upsell/downsell/high-ticket slices EMPTY; `prove_sp_image_plan.py` fails closed
   (`AF-SP56-IMGPLAN-SLICE-EMPTY`) unless every stage gets >= 1 image.
-- **Generation** delegates to **Skill 47** (`kie_image.py`) or the client's OWN image provider. Images are
+- **Generation** delegates to **Skill 66** (model policy) then **Skill 74** (the one approved KIE transport), or to Skill 63 when the client selected Agnes; prompt length follows `kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent). Images are
   **re-hosted via Skill 6 `ghl_media.py`** (ImgBB removed); every `<img>` must resolve to the GHL media host.
 
 ---
@@ -156,7 +156,7 @@ bump to Skill 44, include the thank-you step. Publish only after **explicit huma
 ---
 
 ## 6. Delegation seams (never forked)
-- **Images ->** Skill 47 `kie_image.py` OR the client's own image provider.
+- **Images ->** Skill 66 (model policy) then Skill 74 `kie_live_adapter.py`, or Skill 63 when the client selected Agnes.
 - **GHL media folder + upload ->** Skill 6 `ghl_media.py` (ImgBB removed).
 - **GHL funnel/step/page build + HTML injection ->** Skill 6 `ghl_rest_canvas.py` / `ghl_builder.py`.
 - **Bump order-bump element ->** Skill 44 (order form + product object first).

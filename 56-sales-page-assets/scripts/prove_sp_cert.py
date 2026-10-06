@@ -35,11 +35,11 @@ EXIT_FAILCLOSED = 3
 CERT_KIND = "sales-page-assets-process-certificate"
 
 # Canonical phase spine — the orchestrator must attest each in this order.
-# (Delegated seams: P2 images -> Skill 47 / client image provider; P4 media + P9 build -> Skill 6.)
+# (Delegated seams: P2 images -> Skill 66 policy + Skill 74 transport (or Skill 63 Agnes); P4 media + P9 build -> Skill 6.)
 EXPECTED_PHASES = (
     ("P0-INTAKE",     "prove_sp_intake.py"),
     ("P1-IMAGE-PLAN", "prove_sp_image_plan.py"),
-    ("P2-IMAGES",     "kie_image.py"),          # Skill 47 / client image provider
+    ("P2-IMAGES",     "kie_live_adapter.py"),   # Skill 66 policy + Skill 74 transport / Skill 63 (Agnes)
     ("P3-COPY",       "prove_sp_copy_suite"),   # main-8 + upsell-9 + high-ticket band + bump band
     ("P4-MEDIA",      "ghl_media.py + prove_sp_media.py"),  # Skill 6 delegation + FIX-IMG-02 provenance/coverage gate
     ("P5-FRAGMENTS",  "fragment_strip"),        # deterministic sanitize/fragment-ize (P5, NOT an LLM pass)

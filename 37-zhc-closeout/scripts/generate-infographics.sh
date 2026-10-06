@@ -217,9 +217,8 @@ if [[ "$KIND" == "structure" ]]; then
 fi
 
 # ----------------------------------------------------------------------
-# Workflow infographic = KIE.AI (stylized diagram, less text density).
-# Primary model: nano-banana-2 (Gemini 3.1 Flash Image / Nano Banana 2).
-# Fallback:      gpt-image-2-5-sunburst-text-to-image (older but reliable).
+# Workflow infographic = KIE.AI through Skill 74 (stylized diagram, less text density).
+# Primary model: gpt-image-2-5-sunburst-text-to-image (N43). Fallback: nano-banana-2.
 # ----------------------------------------------------------------------
 if [[ ! -f "$TEMPLATE" ]]; then
   log "ERROR" "prompt template not found: $TEMPLATE"
@@ -291,53 +290,11 @@ PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 FALLBACK_MODEL="nano-banana-2"
 
-submit_job() {
-  local model="$1"
-  local prompt_json
-  prompt_json=$(jq -Rs . <<< "$PROMPT")
-  local body
-  body=$(jq -n \
-    --arg model "$model" \
-    --argjson prompt "$prompt_json" \
-    '{model: $model, input: {prompt: $prompt, aspect_ratio: "16:9", resolution: "2K", output_format: "png"}}')
-  curl -sS --fail-with-body -X POST "https://api.kie.ai/api/v1/jobs/createTask" \
-    -H "Authorization: Bearer ${KIE_API_KEY:-}" \
-    -H "Content-Type: application/json" \
-    -d "$body"
-}
-
-poll_job() {
-  local task_id="$1"
-  local elapsed=0
-  local wait_sec
-  while (( elapsed < 600 )); do
-    local resp
-    resp=$(curl -sS "https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$task_id" \
-      -H "Authorization: Bearer ${KIE_API_KEY:-}" 2>/dev/null)
-    local state
-    state=$(echo "$resp" | jq -r '.data.state // empty' 2>/dev/null)
-    case "$state" in
-      success)
-        echo "$resp" | jq -r '.data.resultJson' | jq -r '.resultUrls[0] // .resultUrl // .imageUrl // .url // empty' 2>/dev/null
-        return 0
-        ;;
-      fail)
-        local msg
-        msg=$(echo "$resp" | jq -r '.data.failMsg // .msg // "unknown failure"')
-        log "ERROR" "KIE job $task_id failed: $msg"
-        return 1
-        ;;
-    esac
-    if (( elapsed < 30 )); then wait_sec=3
-    elif (( elapsed < 120 )); then wait_sec=8
-    else wait_sec=20
-    fi
-    sleep "$wait_sec"
-    elapsed=$((elapsed + wait_sec))
-  done
-  log "ERROR" "KIE job $task_id timed out after ${elapsed}s"
-  return 1
-}
+# One KIE path: Skill 74 does the validate, createTask, poll (lib-kie74.sh). This script keeps the policy:
+# model order, the 3-attempt loop and the account-dependent 422 early switch.
+# shellcheck source=lib-kie74.sh disable=SC1090,SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-kie74.sh"
+kie74_locate || exit 1
 
 # ---- retry loop ----
 attempt=0
@@ -350,32 +307,24 @@ while (( attempt < 3 )); do
     model="$FALLBACK_MODEL"
     log "INFO" "attempt $attempt/3: falling back to $model"
   fi
-  log "INFO" "attempt $attempt/3: submitting job with model=$model"
-  submit_resp=$(submit_job "$model" || true)
-  task_id=$(echo "$submit_resp" | jq -r '.data.taskId // empty' 2>/dev/null)
-  if [[ -z "$task_id" ]]; then
-    submit_err=$(echo "$submit_resp" | head -c 300)
-    log "WARN" "attempt $attempt: submit failed, response: $submit_err"
-    # Model availability is account/region-dependent on KIE. If the primary
-    # slug is rejected as not-supported (422 "model name not supported"), do
-    # not waste a second primary attempt; jump straight to the fallback
-    # (nano-banana-2 by default). (Added for a client launch, 2026-05-27.)
-    if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
-       && echo "$submit_err" | grep -qiE 'model name not supported|not supported|422'; then
-      log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
-      PRIMARY_MODEL="$FALLBACK_MODEL"
-    fi
-    sleep $((2 ** attempt))
-    continue
-  fi
-  log "INFO" "attempt $attempt: submitted taskId=$task_id; polling..."
-  if result_url=$(poll_job "$task_id"); then
+  log "INFO" "attempt $attempt/3: submitting job with model=$model (Skill 74)"
+  if kie74_image_url "$model" "$PROMPT" 600; then
+    result_url="$KIE74_URL"
     if [[ -n "$result_url" && "$result_url" != "null" ]]; then
       log "INFO" "attempt $attempt: success url=$result_url"
       break
     fi
   fi
-  log "WARN" "attempt $attempt: did not produce a usable URL"
+  log "WARN" "attempt $attempt: no usable URL: ${KIE74_ERR:-unknown}"
+  # Model availability is account/region-dependent on KIE. If the primary slug is rejected as
+  # not-supported (422 "model name not supported", or Skill 74's schema / validation refusal), do not
+  # waste a second primary attempt; jump straight to the fallback (nano-banana-2 by default).
+  # (Added for a client launch, 2026-05-27.)
+  if [[ "$model" == "$PRIMARY_MODEL" && "$model" != "$FALLBACK_MODEL" ]] \
+     && echo "${KIE74_ERR:-}" | grep -qiE 'model name not supported|not supported|422|schema|validation_failed'; then
+    log "WARN" "attempt $attempt: primary model '$model' not supported on this KIE account; switching to fallback '$FALLBACK_MODEL'"
+    PRIMARY_MODEL="$FALLBACK_MODEL"
+  fi
   result_url=""
   sleep $((2 ** attempt))
 done

@@ -164,6 +164,10 @@ Infographic #1 is free; only Infographic #2 + the celebration video hit KIE.
 
 **Price authority (one source):** this skill states no KIE prices. Read the live price with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`, falling back to the snapshot `74-kie-live-adapter/references/kie-model-registry.json`). Credit preflight rule: required balance = estimated cost x 1.30 (`07-kie-setup/references/kie-common-rules.md`).
 
+## One KIE Path: Skill 74
+
+Every KIE call this skill makes (image job, video job, reference upload and re-host, result download) is the CLI of Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py ... --mode active --json`), called through `scripts/lib-kie74.sh`. Skill 74 is found as a sibling skill folder (like Skill 66 and 67). This skill keeps its own policy (model order, prompts, retry and fallback loop, 8.5 gate, state fields); it has no `createTask`, polling, upload or download code of its own. If Skill 74 is not installed the generators stop with a clear message; they never fall back to a second client.
+
 ## Video Model Selection
 
 **Default video model across OpenClaw:** Veo 3.1 via KIE.ai (model slug `veo3` or `veo3_fast`). Any video gen elsewhere in the codebase should default to Veo 3.1.
@@ -200,6 +204,7 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | `CHANGELOG.md` | Version history |
 | `skill-version.txt` | Machine-readable version pin — the single source of truth for this skill's version (read it at runtime; never hardcode the version elsewhere) |
 | `scripts/run-closeout.sh` | Top-level orchestrator |
+| `scripts/lib-kie74.sh` | The one KIE path: thin wrappers over Skill 74's CLI (image job, upload, re-host, run) used by the three generators |
 | `scripts/generate-infographics.sh` | Infographic #1 local render; Infographic #2 KIE.AI call (sunburst first, `nano-banana-2` fallback) |
 | `scripts/generate-celebration-video.sh` | KIE.AI celebration video (primary `gemini-omni-video`; fallback `veo3_fast`/`veo3`) |
 | `scripts/create-notion-closeout.sh` | Notion API page-tree creation |
@@ -218,11 +223,12 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 | Skill 23 build completed (`buildCompletedAt` set) | MANDATORY | Without it, no data to close out |
 | Skill 32 (Command Center Setup) installed | MANDATORY | Step 1 of pipeline calls Skill 32 |
 | Skill 07 (KIE.AI setup) installed + `KIE_API_KEY` env var | MANDATORY | Steps 2-4 use KIE.AI |
+| Skill 74 (`74-kie-live-adapter`) installed | MANDATORY | The only KIE transport (steps 3-4); no fallback client |
 | `NOTION_API_TOKEN` env var on the container | MANDATORY | Step 5 uses Notion API |
 | `NOTION_API_VERSION` env var (defaults to `2022-06-28` if unset) | RECOMMENDED | Notion API version pin |
 | `openclaw message send` working | MANDATORY | Step 6 uses Telegram delivery |
 | `jq` on PATH | MANDATORY | All scripts parse state file with jq |
-| `curl` on PATH | MANDATORY | KIE.AI + Notion HTTP calls |
+| `curl` on PATH | MANDATORY | Notion HTTP calls |
 
 ## Security Note
 

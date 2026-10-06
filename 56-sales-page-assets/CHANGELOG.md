@@ -1,5 +1,37 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
+
+- **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
+- **Bypass allow-list is content-checked.** `kie74_receipt.py --check` now also requires a real task id, a known adapter state and mode, a saved or result list, and rejects any top-level key Skill 74 does not emit, so a file with the adapter's three identity fields plus a smuggled command is refused. New tests for the smuggle and placeholder cases. Pin re-recorded.
+- Version bumped to v2.1.1 (SKILL.md frontmatter, skill-version.txt).
+
+## 2.1.0 — 2026-10-06 — KIE integration: Skill 74 is the one approved image path
+
+### Changed
+- **Image route (policy then transport).** P2-IMAGES no longer names Skill 47 or `kie_image.py` (SKILL.md,
+  MASTERDOC.md, SALESPAGE-MANIFEST.json, PROMPT-SEAMS.md, orchestrator and certificate labels, role text,
+  SOP-SALESPAGE-01). KIE images go Skill 66 (model policy, N43 ratios, GPT Image default via `latest-family`) then
+  Skill 74 (validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, save immediately);
+  Skill 63 when the client selected Agnes. The phase label on the signed certificate is now `kie_live_adapter.py`.
+  Shared procedure: `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3.
+- **`sales-page-assets-entry.sh` bypass scan.** Flags the createTask route and old KIE client scripts anywhere in
+  the run dir and allow-lists only Skill 74 result files directly inside `<RUN_DIR>/receipts/kie74/` (each
+  re-checked by `scripts/kie74_receipt.py --check`). New `--scan-only --run-dir` mode.
+- Prompt length text points to `kie-common-rules.md` rule 12. The prover constants in
+  `prove_sp_prompt_floor.py` and their AF trigger text are unchanged here (owned by the prompt-band lane).
+
+### Fixed
+- **Entry version check.** The entry required major 1 while `skill-version.txt` is v2.x, so `--self-test` and
+  every real run aborted at VERSION. It now strips the leading `v` and expects major 2.
+- **Hash pin.** `scripts/SPA-PROVER-PIN.sha256` re-recorded with `--write-pin` after these changes (the pinned
+  set now also includes `scripts/kie74_receipt.py`).
+
+### Added
+- `scripts/kie74_receipt.py` (identical to Skill 49's copy) and `scripts/test_sp_bypass_scan.py`; both run inside
+  `sales-page-assets-entry.sh --self-test` and `verify.sh`.
+- Version bumped to v2.1.0 (SKILL.md frontmatter, skill-version.txt).
+
 ## v2.0.1 - 2026-10-05 - Entry shell version gate matches the current v2 contract
 
 ### Fixed

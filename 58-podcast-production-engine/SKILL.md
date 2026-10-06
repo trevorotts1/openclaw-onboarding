@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: v1.0.13
+version: v1.0.14
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -68,6 +68,7 @@ Reuse fidelity is scored by the build gate. Do not rebuild any of these; bind to
 | Skill 30 Fish Audio reference | Request templates, emotion tag inventory, ffmpeg stitching guidance, the voice standard operating procedure | Steps 6, 11, and the tagging strategy |
 | Skill 23 role-library podcast and audio | The professional production doctrine: LUFS targets, four quality gates, guest handling, distribution, key performance indicators, and the personas the engine binds to | Persona binding (Section 11), mastering, quality doctrine |
 | Skill 44 caf plus Skill 29 REST | The entire Convert and Flow data plane (Tier 0 caf, Tier 3 REST); Skill 44 workflow discovery and enrollment | Steps 0, 14, 16, 17 |
+| Skill 74 kie-live-adapter | The one KIE transport: `scripts/generate_cover.sh` submits, waits and downloads through its CLI and keeps only the cover policy (model, prompt, exit codes, finalize). Missing Skill 74 stops the step with exit 2; there is no second KIE client | Step 10 |
 
 Boundaries with the sibling skills, so they never diverge: Skill 57 podcast mode remains the
 SOCIAL PACKAGING lane; this engine is CANONICAL for full published episodes. Skill 35's

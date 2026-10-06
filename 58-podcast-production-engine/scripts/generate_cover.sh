@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # generate_cover.sh - Podcast Production Engine, Step 10 (COVER ART).
 #
-# Kie.ai GPT-Image-2.5 cover generation seeded from Skill 57 prompt 14, then an
+# Kie.ai GPT-Image-2.5 cover generation (through Skill 74) seeded from Skill 57 prompt 14, then an
 # in-house ffmpeg finalize chain that produces an Apple-Podcasts-valid square
 # JPEG (1500 to 3000 on a side, RGB, under 512 kilobytes) with a spec-valid
 # filename. The pipeline owns the up-to-3 image attempts (furnace
@@ -10,7 +10,7 @@
 # bounded timeout, exactly per furnace-design Guardrail 6.
 #
 # Doctrine honored here:
-#   - Bounded polling: backoff schedule 5,10,20,40,60 then 60, total timeout 600s.
+#   - Bounded polling: first poll after 5s, Skill 74 backs off to 15s, total timeout 600s.
 #     Never poll faster than 5s; never poll forever.
 #   - Never below 1500 square. Square, JPEG, RGB, under 512 kilobytes.
 #   - Silence: operator/agent stdout only. No client message. No Telegram.
@@ -34,13 +34,14 @@
 #
 # ENVIRONMENT (all optional except the key; every knob mirrors furnace-design)
 #   KIE_API_KEY                Kie.ai key (required for generation; read, never printed)
-#   KIE_API_BASE               default https://api.kie.ai
+#   KIE_API_BASE               test hook only (localhost mock); the KIE host is owned by Skill 74
 #   KIE_COVER_MODEL            default gpt-image-2-5-sunburst-text-to-image
 #   KIE_COVER_ASPECT           default 1:1
 #   KIE_COVER_RESOLUTION       default 2K   (2048px; inside Podbean's 1500-3000 range, no upscale)
 #   KIE_COVER_RESOLUTION_FALLBACK  default 2K (used once if the API rejects the primary)
 #   KIE_COVER_OUTPUT_FORMAT    default png  (ffmpeg does the JPEG conversion in-house)
-#   KIE_BACKOFF_SCHEDULE       default "5 10 20 40 60"
+#   KIE_BACKOFF_SCHEDULE       default "5 10 20 40 60"; its first value (floor 5) is the first poll delay,
+#                              then Skill 74 backs off x1.5 up to 15 seconds
 #   KIE_POLL_TIMEOUT_SECONDS   default 600
 #   KIE_CREATE_RETRIES         default 2    (transient createTask retries)
 #   COVER_MIN_SIDE             default 1500 (Podbean safe higher bound: satisfies the 1500
@@ -58,14 +59,13 @@
 #   6  result download failed
 #   7  finalize or invariant verification failed
 #
-# Requires: curl, jq, ffmpeg, ffprobe, bash >= 3.2
+# Requires: python3, jq, ffmpeg, ffprobe, bash >= 3.2, and Skill 74 (74-kie-live-adapter, the one KIE path)
 
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Config (env with defaults)
 # ---------------------------------------------------------------------------
-KIE_API_BASE="${KIE_API_BASE:-https://api.kie.ai}"
 KIE_COVER_MODEL="${KIE_COVER_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 KIE_COVER_ASPECT="${KIE_COVER_ASPECT:-1:1}"
 KIE_COVER_RESOLUTION="${KIE_COVER_RESOLUTION:-2K}"
@@ -329,7 +329,7 @@ fi
 # ---------------------------------------------------------------------------
 # GENERATE mode: dependencies, key, prompt assembly
 # ---------------------------------------------------------------------------
-for tool in curl jq; do
+for tool in python3 jq; do
   command -v "$tool" >/dev/null 2>&1 || { err "$tool not installed"; exit 2; }
 done
 
@@ -382,33 +382,66 @@ fi
 RAW_IMG="${WORK_DIR}/cover_raw.${KIE_COVER_OUTPUT_FORMAT}"
 
 # ---------------------------------------------------------------------------
-# createTask (with a bounded transient retry and a one-shot resolution fallback)
+# KIE: one path, Skill 74 (kie_live_adapter.py submit | wait | save, --mode active --json). This script keeps
+# its own policy: model, prompt, resolution fallback, bounded polling, typed exit codes, the image probe and
+# the ffmpeg finalize chain. It has no submit, poll or download code of its own.
 # ---------------------------------------------------------------------------
+locate_kie74() {
+  local here root cand
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  for root in "$here" "${OPENCLAW_SKILLS_DIR:-}" "$HOME/.openclaw/skills" "/data/.openclaw/skills"; do
+    [[ -n "$root" ]] || continue
+    cand="$root/74-kie-live-adapter/scripts/kie_live_adapter.py"
+    if [[ -f "$cand" ]]; then KIE74_PY="$cand"; return 0; fi
+  done
+  return 1
+}
+if ! locate_kie74; then
+  err "Skill 74 (74-kie-live-adapter, the single KIE transport) is not installed; this step has no KIE client of its own and does not fall back to one. Install or update it (update-skills.sh)."
+  exit 2
+fi
+# Test hook only (localhost mock; Skill 74 refuses any other host): the older KIE_API_BASE name still works.
+if [[ -n "${KIE_API_BASE:-}" && -z "${KIE_LIVE_API_BASE:-}" ]]; then export KIE_LIVE_API_BASE="$KIE_API_BASE"; fi
+export KIE_API_KEY
+
+kie74() { python3 "$KIE74_PY" "$@" --mode active --json 2>/dev/null || true; }
+
+# Poll start: never faster than 5 seconds (furnace-design Guardrail 6); Skill 74 then backs off x1.5 up to 15s.
+read -r -a BACKOFF <<<"$KIE_BACKOFF_SCHEDULE"
+POLL_START="${BACKOFF[0]:-5}"
+[[ "$POLL_START" -lt 5 ]] && POLL_START=5
+export KIE_LIVE_POLL_INITIAL="$POLL_START"
+
+# create_task <resolution>: Skill 74 submit (it validates the input against the model's live schema first).
+# Echoes the task id. Retries only transient answers (rate limit, 5xx, unreadable); a network error inside
+# submit is never retried by Skill 74 (double-charge risk) and surfaces here as a failed attempt.
 create_task() {
-  local resolution="$1" body resp code task_id attempt=0
-  body="$(jq -nc \
+  local resolution="$1" req out code task_id attempt=0
+  req="$(mktemp "${TMPDIR:-/tmp}/cover-req.XXXXXX")"
+  jq -nc \
     --arg model "$KIE_COVER_MODEL" \
     --arg prompt "$FINAL_PROMPT" \
     --arg aspect "$KIE_COVER_ASPECT" \
     --arg resolution "$resolution" \
     --arg fmt "$KIE_COVER_OUTPUT_FORMAT" \
-    '{model:$model, input:{prompt:$prompt, aspect_ratio:$aspect, resolution:$resolution, output_format:$fmt}}')"
-
+    '{model:$model, input:{prompt:$prompt, aspect_ratio:$aspect, resolution:$resolution, output_format:$fmt}}' > "$req"
   while [[ "$attempt" -le "$KIE_CREATE_RETRIES" ]]; do
     attempt=$(( attempt + 1 ))
-    resp="$(curl -sS --max-time 30 -X POST "${KIE_API_BASE}/api/v1/jobs/createTask" \
-      -H "Authorization: Bearer ${KIE_API_KEY}" \
-      -H "Content-Type: application/json" \
-      -d "$body" 2>/dev/null || true)"
-    code="$(jq -r '.code // empty' <<<"$resp" 2>/dev/null || true)"
-    task_id="$(jq -r '.data.taskId // empty' <<<"$resp" 2>/dev/null || true)"
-    if [[ "$code" == "200" && -n "$task_id" ]]; then
+    out="$(kie74 submit --request "$req")"
+    task_id="$(jq -r '.task_id // empty' <<<"$out" 2>/dev/null || true)"
+    if [[ -n "$task_id" ]]; then
+      rm -f "$req"
       printf '%s' "$task_id"
       return 0
     fi
+    code="$(jq -r '.error.code // empty' <<<"$out" 2>/dev/null || true)"
     warn "createTask attempt ${attempt} failed (code=${code:-none}, resolution=${resolution})"
-    [[ "$attempt" -le "$KIE_CREATE_RETRIES" ]] && sleep 5
+    case "$code" in
+      429|5??|bad_response|"") [[ "$attempt" -le "$KIE_CREATE_RETRIES" ]] && sleep 5 ;;
+      *) break ;;   # auth, validation, credits: retrying cannot help
+    esac
   done
+  rm -f "$req"
   return 1
 }
 
@@ -430,75 +463,41 @@ fi
 log "createTask: taskId=${TASK_ID} resolution_used=${RESOLUTION_USED}"
 
 # ---------------------------------------------------------------------------
-# Poll recordInfo with bounded backoff (5,10,20,40,60 then hold at 60).
+# Wait: Skill 74 polls with its own bounded backoff; the total budget stays KIE_POLL_TIMEOUT_SECONDS.
 # ---------------------------------------------------------------------------
-read -r -a BACKOFF <<<"$KIE_BACKOFF_SCHEDULE"
-BLEN="${#BACKOFF[@]}"
-[[ "$BLEN" -gt 0 ]] || BACKOFF=(60)
-ELAPSED=0
-IDX=0
-RESULT_URL=""
-while [[ "$ELAPSED" -lt "$KIE_POLL_TIMEOUT_SECONDS" ]]; do
-  if [[ "$IDX" -lt "$BLEN" ]]; then WAIT="${BACKOFF[$IDX]}"; else WAIT="${BACKOFF[$(( BLEN - 1 ))]}"; fi
-  # Never poll faster than 5 seconds.
-  [[ "$WAIT" -lt 5 ]] && WAIT=5
-  # Do not overshoot the total timeout.
-  local_remaining=$(( KIE_POLL_TIMEOUT_SECONDS - ELAPSED ))
-  [[ "$WAIT" -gt "$local_remaining" ]] && WAIT="$local_remaining"
-  sleep "$WAIT"
-  ELAPSED=$(( ELAPSED + WAIT ))
-  IDX=$(( IDX + 1 ))
-
-  PRESP="$(curl -sS --max-time 20 -w '\n%{http_code}' \
-    "${KIE_API_BASE}/api/v1/jobs/recordInfo?taskId=${TASK_ID}" \
-    -H "Authorization: Bearer ${KIE_API_KEY}" 2>/dev/null || true)"
-  PCODE="$(tail -n1 <<<"$PRESP")"
-  PBODY="$(sed '$d' <<<"$PRESP")"
-  # Treat network errors and 5xx as transient; keep polling within the budget.
-  if [[ -z "$PCODE" || "$PCODE" == "000" || "$PCODE" -ge 500 ]]; then
-    warn "poll transient (http=${PCODE:-none}) at ${ELAPSED}s; continuing"
-    continue
-  fi
-
-  STATE="$(jq -r '.data.state // empty' <<<"$PBODY" 2>/dev/null || true)"
-  case "$STATE" in
-    success)
-      # resultJson arrives as a JSON-encoded STRING on client boxes; tolerate an
-      # already-parsed object. Prefer resultUrls, fall back to images[].url.
-      RESULT_URL="$(jq -r '
-        (.data.resultJson | (if type=="string" then fromjson else . end)) as $r
-        | ($r.resultUrls[0]? // $r.images[0].url? // empty)' <<<"$PBODY" 2>/dev/null || true)"
-      if [[ -z "$RESULT_URL" ]]; then
-        err "task ${TASK_ID} succeeded but no result URL was found"
-        exit 5
-      fi
-      log "poll: success at ${ELAPSED}s"
-      break
-      ;;
-    fail|failed|error)
-      FAILMSG="$(jq -r '.data.failMsg // .msg // "unknown"' <<<"$PBODY" 2>/dev/null || echo unknown)"
-      err "task ${TASK_ID} failed: ${FAILMSG}"
+WAIT_OUT="$(kie74 wait --task-id "$TASK_ID" --timeout "$KIE_POLL_TIMEOUT_SECONDS")"
+WSTATE="$(jq -r '.state // empty' <<<"$WAIT_OUT" 2>/dev/null || true)"
+RESULT_URL="$(jq -r '.result_urls[0] // empty' <<<"$WAIT_OUT" 2>/dev/null || true)"
+case "$WSTATE" in
+  success)
+    if [[ -z "$RESULT_URL" ]]; then
+      err "task ${TASK_ID} succeeded but no result URL was found"
       exit 5
-      ;;
-    *)
-      log "poll: state=${STATE:-pending} at ${ELAPSED}s"
-      ;;
-  esac
-done
-
-if [[ -z "$RESULT_URL" ]]; then
-  err "poll timed out after ${KIE_POLL_TIMEOUT_SECONDS}s (bounded); caller holds and counts one failed image attempt"
-  exit 4
-fi
+    fi
+    log "poll: success"
+    ;;
+  *)
+    WCODE="$(jq -r '.error.code // empty' <<<"$WAIT_OUT" 2>/dev/null || true)"
+    if [[ "$WCODE" == "timeout" ]]; then
+      err "poll timed out after ${KIE_POLL_TIMEOUT_SECONDS}s (bounded); caller holds and counts one failed image attempt"
+      exit 4
+    fi
+    FAILMSG="$(jq -r '.error.msg // "unknown"' <<<"$WAIT_OUT" 2>/dev/null || echo unknown)"
+    err "task ${TASK_ID} failed: ${FAILMSG}"
+    exit 5
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
-# Download the raw image.
+# Download the raw image (Skill 74 save; the file lands in the work dir).
 # ---------------------------------------------------------------------------
-DLCODE="$(curl -sS --max-time 120 -o "$RAW_IMG" -w '%{http_code}' "$RESULT_URL" 2>/dev/null || echo 000)"
-if [[ "$DLCODE" != "200" || ! -s "$RAW_IMG" ]]; then
-  err "download failed (http=${DLCODE}) from result URL"
+SAVE_OUT="$(kie74 save --task-id "$TASK_ID" --save-dir "$WORK_DIR")"
+SAVED="$(jq -r '.saved_paths[0] // empty' <<<"$SAVE_OUT" 2>/dev/null || true)"
+if [[ -z "$SAVED" || ! -s "$SAVED" ]]; then
+  err "download failed via Skill 74 save: $(jq -r '.error.msg // "no file saved"' <<<"$SAVE_OUT" 2>/dev/null | head -c 200)"
   exit 6
 fi
+mv -f "$SAVED" "$RAW_IMG"
 log "download: ok ($(wc -c < "$RAW_IMG" | tr -d ' ') bytes)"
 
 # ---------------------------------------------------------------------------

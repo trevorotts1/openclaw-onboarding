@@ -290,7 +290,7 @@ function handleHealth() {
   return new Response(JSON.stringify({
     status: 'ok',
     worker: 'kie-callback-relay',
-    version: '2.0.3',
+    version: '2.0.4',
     timestamp: new Date().toISOString()
   }), {
     status: 200,

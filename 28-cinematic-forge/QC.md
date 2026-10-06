@@ -112,7 +112,7 @@ The agent should answer these correctly without inventing details.
 > **Expected:** It is discarded and replaced with separately generated audio layers.
 
 **Q8.** What tools/models are used for audio layers?
-> **Expected:** Text-to-speech, sound effects and Suno music, all requested through Skill 68 (`68-kie-audio`), which owns the model ids, routes and validator. Cinematic Forge does not hand-write KIE audio calls.
+> **Expected:** Text-to-speech, sound effects and music, all requested through Skill 68 (`68-kie-audio`), which owns the model ids, routes and validator. Cinematic Forge does not hand-write KIE audio calls.
 
 **Q9.** Where are text overlays and logos added?
 > **Expected:** In post-production with FFmpeg, not inside VEO.

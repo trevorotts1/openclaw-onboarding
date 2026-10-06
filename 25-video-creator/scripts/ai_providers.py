@@ -12,20 +12,20 @@ import subprocess
 import sys
 import tempfile
 import importlib.util
-import mimetypes
+import shutil
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 
-# KIE.ai live unified job API (Skill 74 kie-live-adapter will become the shared
-# transport for all KIE skills; Skill 25 deliberately does NOT import it yet).
-KIE_API_BASE = 'https://api.kie.ai/api/v1'
-KIE_UPLOAD_URL = 'https://kieai.redpandaai.co/api/file-stream-upload'
+# KIE.ai: every upload, createTask, poll and download goes through Skill 74's CLI (the one KIE path).
+# Skill 25 keeps its own policy (model from Skill 67, per-model input table, output path) and has no
+# KIE HTTP client of its own; if Skill 74 is missing it fails with a clear error (no second client).
 KIE_UPLOAD_PATH = 'video-creator/inputs'  # no leading/trailing slash (KIE requirement)
 KIE_AUTH_CODES = (401, 403)
 KIE_POLL_DEADLINE = 900  # seconds; video jobs are slow
 KIE_VIDEO_SKILL = '67-kie-video'
+KIE_ADAPTER_SKILL = '74-kie-live-adapter'
 # Image-to-video input key per model, from each model's KIE docs page input schema (read 2026-10-05;
 # page URL = https://docs.kie.ai/market/<path>.md, listed in docs.kie.ai/llms.txt) cross-checked with
 # Skill 67 models.json / validate_payload.py. Value: (input key, 'str' single URL | 'list' array of URLs).
@@ -44,6 +44,11 @@ KIE_VIDEO_SKILL = '67-kie-video'
 #   happyhorse-1-1/image-to-video         | image_urls       | list | happyhorse-1-1/image-to-video
 #   happyhorse/image-to-video             | image_urls       | list | happyhorse/image-to-video
 #   gemini-omni-video                     | image_urls       | list | gemini-omni-video
+#   runway                                | image_url        | str  | runway (live registry in Skill 74: createTask)
+#   veo-3-1                               | image_urls       | list | veo-3-1 (live registry in Skill 74: createTask)
+#   veo3, veo3_fast, veo3_lite            | image_urls       | list | same Veo family field as veo-3-1; Skill 74 checks
+#       the input against the schema the model declares BEFORE any paid call, so a wrong name fails closed.
+# Runway and Veo are no longer refused here: Skill 74 submits to the path each model's schema declares.
 # Required fields other than the image (for example mode/sound, quality, string durations) are the
 # caller's to supply through input_extra; KIE answers a missing one with a body code, surfaced as an error.
 KIE_I2V_IMAGE_FIELD = {
@@ -60,9 +65,12 @@ KIE_I2V_IMAGE_FIELD = {
     'happyhorse-1-1/image-to-video': ('image_urls', 'list'),
     'happyhorse/image-to-video': ('image_urls', 'list'),
     'gemini-omni-video': ('image_urls', 'list'),
+    'runway': ('image_url', 'str'),
+    'veo-3-1': ('image_urls', 'list'),
+    'veo3': ('image_urls', 'list'),
+    'veo3_fast': ('image_urls', 'list'),
+    'veo3_lite': ('image_urls', 'list'),
 }
-# Dedicated KIE APIs (not createTask): unsupported by this client.
-KIE_DEDICATED_MODELS = ('runway', 'veo3', 'veo3_fast', 'veo3_lite')
 
 
 class KieAPIError(RuntimeError):
@@ -71,6 +79,154 @@ class KieAPIError(RuntimeError):
     def __init__(self, message, code=None):
         super().__init__(message)
         self.code = code
+
+
+# Per-model input TYPES and allowed values, read from each model's KIE docs page input schema (the same
+# pages as the image-field table above, 2026-10-05; durations that the schema only describes in prose
+# use the stated range). Values are coerced to the documented type before sending and invalid values
+# fail BEFORE any HTTP call. Fields not listed here pass through unchanged. 'rename' maps Skill 25's
+# option name to the model's own key (pixverse calls resolution "quality"). 'required' lists the
+# documented required inputs other than prompt/duration/the image field; supply them with input_extra.
+_DUR_30 = {'kind': 'int', 'min': 2, 'max': 30, 'also': (-1,)}
+_SEED = {'kind': 'int', 'min': 0, 'max': 2147483647}
+_ASPECT_SEEDANCE = ['1:1', '4:3', '3:4', '16:9', '9:16', '21:9', 'adaptive']
+_VEO = {'fields': {
+    'duration': {'kind': 'intenum', 'values': [4, 6, 8]},
+    'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']},
+    'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16', 'Auto']}}}
+_WAN3 = {'duration': _DUR_30, 'resolution': {'kind': 'enum', 'values': ['480P', '720P', '1080P']},
+         'aspect_ratio': {'kind': 'enum', 'values': ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16']},
+         'seed': _SEED}
+KIE_INPUT_SPECS = {
+    'wan/3-0-video': {'fields': _WAN3},
+    'wan/3-0-video-prime': {'fields': _WAN3},
+    'wan/2-7-image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 2, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}, 'seed': _SEED}},
+    'bytedance/seedance-2-5': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 30, 'also': (-1,)},
+        'resolution': {'kind': 'enum', 'values': ['480p', '720p', '1080p']},
+        'aspect_ratio': {'kind': 'enum', 'values': _ASPECT_SEEDANCE}}},
+    'bytedance/seedance-2-mini': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 15, 'also': (-1,)},
+        'resolution': {'kind': 'enum', 'values': ['480p', '720p']},
+        'aspect_ratio': {'kind': 'enum', 'values': _ASPECT_SEEDANCE}}},
+    'minimax-h3/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 4, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['768P', '2K']}}},
+    'kling/v2-5-turbo-image-to-video-pro': {'fields': {
+        'duration': {'kind': 'numstr', 'values': ['5', '10']}}},
+    'kling-3.0-omni/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16', '1:1', 'auto']}}},
+    'kling-3.0/video': {'fields': {
+        'duration': {'kind': 'numstr', 'values': [str(n) for n in range(3, 16)]},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16', '1:1']},
+        'mode': {'kind': 'enum', 'values': ['std', 'pro', '4K']}},
+        'required': ['sound', 'aspect_ratio', 'mode', 'multi_shots', 'multi_prompt']},
+    'pixverse-v6/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 1, 'max': 15},
+        'quality': {'kind': 'enum', 'values': ['360p', '540p', '720p', '1080p']}, 'seed': _SEED},
+        'rename': {'resolution': 'quality'}, 'required': ['quality']},
+    'happyhorse-1-1/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}}},
+    'happyhorse/image-to-video': {'fields': {
+        'duration': {'kind': 'int', 'min': 3, 'max': 15},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p']}, 'seed': _SEED}},
+    'gemini-omni-video': {'fields': {
+        'duration': {'kind': 'numstr', 'values': ['4', '6', '8', '10']},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '9:16']},
+        'resolution': {'kind': 'enum', 'values': ['720p', '1080p', '4k']}, 'seed': _SEED}},
+    'runway': {'fields': {
+        'duration': {'kind': 'num', 'min': 5, 'max': 10},
+        'quality': {'kind': 'enum', 'values': ['720p', '1080p']},
+        'aspect_ratio': {'kind': 'enum', 'values': ['16:9', '4:3', '1:1', '3:4', '9:16']}},
+        'rename': {'resolution': 'quality'}, 'required': ['quality']},
+    'veo-3-1': _VEO, 'veo3': _VEO, 'veo3_fast': _VEO, 'veo3_lite': _VEO,
+}
+
+
+def _kie_number(value):
+    """Parse int/float/numeric string to a number, rejecting bool and junk. Returns None if not numeric."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            try:
+                return float(value.strip())
+            except ValueError:
+                return None
+    return None
+
+
+def _kie_coerce(model, key, value, spec):
+    """Coerce one value to the documented type, or raise ValueError naming the allowed values."""
+    kind = spec['kind']
+    lo, hi = spec.get('min'), spec.get('max')
+    also = tuple(spec.get('also', ()))
+
+    def bad(allowed):
+        return ValueError(f"KIE model {model}: {key}={value!r} is not valid; allowed: {allowed}")
+
+    if kind == 'enum':
+        for allowed in spec['values']:
+            if isinstance(value, str) and value.strip().lower() == allowed.lower():
+                return allowed
+        raise bad('one of ' + ', '.join(spec['values']))
+    num = _kie_number(value)
+    if kind == 'intenum':  # documented integer enum, sent as an integer
+        if num is not None and float(num) == int(num) and int(num) in spec['values']:
+            return int(num)
+        raise bad('one of ' + ', '.join(str(v) for v in spec['values']))
+    if kind == 'numstr':  # documented as a string enum of numbers, for example "5"
+        if num is not None and float(num) == int(num) and str(int(num)) in spec['values']:
+            return str(int(num))
+        raise bad('one of ' + ', '.join(spec['values']) + ' (sent as a string)')
+    rng = ('' if lo is None else f"{'integer ' if kind == 'int' else ''}{lo} to {hi}") + \
+          (' or ' + ', '.join(str(a) for a in also) if also else '')
+    if num is None or (kind == 'int' and float(num) != int(num)):
+        raise bad(rng or 'an integer')
+    num = int(num) if kind == 'int' else num
+    if num in also:
+        return num
+    if (lo is not None and num < lo) or (hi is not None and num > hi):
+        raise bad(rng)
+    return num
+
+
+def kie_validate_input(model, payload, provided_by_caller=()):
+    """Rename, coerce, and check the createTask input for a mapped model, in place. No-op for other models.
+
+    `provided_by_caller` names inputs that will be added later (the image field)."""
+    spec = KIE_INPUT_SPECS.get(model)
+    if not spec:
+        return payload
+    for old, new in spec.get('rename', {}).items():
+        if old not in payload:
+            continue
+        if new in payload and str(payload[new]).lower() != str(payload[old]).lower():
+            raise ValueError(f"KIE model {model} uses '{new}' instead of '{old}': got {old}={payload[old]!r} "
+                             f"and {new}={payload[new]!r}. Give only one (the model's own key is '{new}').")
+        value = payload.pop(old)  # never send the option under the name the model does not have
+        payload.setdefault(new, value)
+    for key, value in list(payload.items()):
+        field_spec = spec['fields'].get(key)
+        if field_spec is not None and value is not None:
+            payload[key] = _kie_coerce(model, key, value, field_spec)
+    missing = [r for r in spec.get('required', []) if r not in payload and r not in provided_by_caller]
+    if missing:
+        hints = {k: v for k, v in spec['fields'].items() if k in missing}
+        allowed = '; '.join(f"{k}: {v.get('values')}" for k, v in hints.items() if v.get('values'))
+        raise ValueError(
+            f"KIE model {model} requires {', '.join(missing)} (documented required inputs). Supply them with "
+            "input_extra (CLI --input-extra '{\"key\": value}')" + (f"; allowed values: {allowed}" if allowed else ''))
+    return payload
 
 
 def _skills_dirs():
@@ -112,6 +268,46 @@ def _find_kie_video_skill() -> Optional[Path]:
     return None
 
 
+def _find_kie_adapter() -> Optional[Path]:
+    """Skill 74's CLI, resolved the same way Skill 67 is (sibling skill directory)."""
+    for skills in _skills_dirs():
+        script = skills / KIE_ADAPTER_SKILL / 'scripts' / 'kie_live_adapter.py'
+        if script.is_file():
+            return script
+    return None
+
+
+def kie74(command, *args, api_key=None, request=None, timeout=300):
+    """Run `kie_live_adapter.py <command> --mode active --json ...` and return its JSON result.
+
+    The key travels in the child's environment, never on the command line. `request` (a dict) is written to a
+    temp file and passed as --request. Raises RuntimeError if Skill 74 is not installed or prints no JSON."""
+    script = _find_kie_adapter()
+    if script is None:
+        raise RuntimeError(
+            f"Skill {KIE_ADAPTER_SKILL} (the single KIE transport) is not installed, so no KIE call can be made. "
+            "Install/update it (run update-skills.sh). Skill 25 has no KIE client of its own and does not "
+            "fall back to one.")
+    env = dict(os.environ)
+    if api_key:
+        env['KIE_API_KEY'] = api_key
+    with tempfile.TemporaryDirectory(prefix='kie74-') as work:
+        cmd = [sys.executable, str(script), command, '--mode', 'active', '--json', *map(str, args)]
+        if request is not None:
+            req_file = Path(work) / 'request.json'
+            req_file.write_text(json.dumps(request), encoding='utf-8')
+            cmd += ['--request', str(req_file)]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Skill {KIE_ADAPTER_SKILL} {command} did not finish within {timeout}s") from exc
+    try:
+        return json.loads(done.stdout)
+    except ValueError:
+        raise RuntimeError(f"Skill {KIE_ADAPTER_SKILL} {command} returned no JSON (exit {done.returncode}): "
+                           f"{(done.stderr or done.stdout).strip()[:300]}") from None
+
+
 def select_kie_video_model(task: str, duration=None) -> str:
     """Ask Skill 67's selector for the model id. Never guesses a model."""
     root = _find_kie_video_skill()
@@ -119,7 +315,7 @@ def select_kie_video_model(task: str, duration=None) -> str:
         raise RuntimeError(
             f"Skill {KIE_VIDEO_SKILL} (KIE Video) is not installed, so no KIE video model can be "
             "chosen. Install/update it (run update-skills.sh), or pass an explicit KIE model id "
-            "(--model <id>, e.g. one listed by https://api.kie.ai/api/v1/models)."
+            "(--model <id>, e.g. one listed by Skill 74: kie_live_adapter.py discover)."
         )
     spec = importlib.util.spec_from_file_location('kie67_select_video_model',
                                                   root / 'scripts' / 'select_video_model.py')
@@ -175,21 +371,19 @@ class AIProvider:
             else:
                 self.api_key = os.getenv(f'{provider_name.upper()}_API_KEY')
 
+        # kieai has no endpoint here: Skill 74 owns the KIE API host (an old 'endpoint' config key is ignored).
         self.endpoint = self.config.get('endpoint', self._default_endpoint())
-        if self.provider == 'kieai' and self.endpoint.rstrip('/') == 'https://api.kie.ai/v1':
-            # Legacy endpoint from old configs: dead (HTTP 404). Use the live unified job API.
-            self.endpoint = KIE_API_BASE
         
     def _default_endpoint(self) -> str:
         """Get default endpoint for provider."""
         endpoints = {
-            'kieai': KIE_API_BASE,
+            'kieai': None,
             'runway': 'https://api.runwayml.com/v1',
             'pika': 'https://api.pika.art/v1',
             'stability': 'https://api.stability.ai/v2beta',
             'mock': None
         }
-        return endpoints.get(self.provider, 'https://api.kie.ai/v1')
+        return endpoints.get(self.provider)
     
     def generate_video(self, prompt: str, duration: int = 5, 
                        resolution: str = "1080p", style: str = "cinematic",
@@ -209,8 +403,12 @@ class AIProvider:
             Path to generated video
         """
         if self.provider != 'kieai':
+            if str(resolution).lower() not in ('720p', '1080p', '4k'):
+                raise ValueError(f"Provider '{self.provider}' does not support resolution {resolution!r} "
+                                 "(supported: 720p, 1080p, 4k)")
+            resolution = str(resolution).lower()
             unsupported_options = [
-                option for option in ('seed', 'negative_prompt', 'model')
+                option for option in ('seed', 'negative_prompt', 'model', 'input_extra')
                 if kwargs.get(option) is not None
             ]
             if unsupported_options:
@@ -231,7 +429,7 @@ class AIProvider:
             raise ValueError(f"Unknown provider: {self.provider}")
     
     def _generate_kieai(self, prompt, duration, resolution, style, output, **kwargs):
-        """Text-to-video on KIE's live unified job API (createTask + recordInfo)."""
+        """Text-to-video through Skill 74, the single KIE transport."""
         self._require_kie_key()
         model = kwargs.get('model') or select_kie_video_model('text to video', duration)
         payload = {'prompt': prompt, 'duration': duration}
@@ -245,24 +443,28 @@ class AIProvider:
         model = kwargs.get('model') or select_kie_video_model('image to video', duration)
         override = kwargs.get('image_field')
         if override:
-            field, kind = override, ('list' if override.endswith('s') else 'str')
-        elif model in KIE_DEDICATED_MODELS:
-            raise RuntimeError(
-                f"KIE model '{model}' uses a dedicated KIE API (not createTask), which this client does "
-                "not support. Choose a createTask model with --model, one of: "
-                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+            kind = {'string': 'str', 'array': 'list'}.get(kwargs.get('image_field_type'))
+            field = override
+            if kind is None:
+                if model in KIE_I2V_IMAGE_FIELD and KIE_I2V_IMAGE_FIELD[model][0] == override:
+                    kind = KIE_I2V_IMAGE_FIELD[model][1]
+                else:
+                    raise ValueError(
+                        f"image_field '{override}' needs an explicit type: pass --image-field-type string|array "
+                        "(image_field_type='string'|'array' in code); the type is never guessed from the name.")
         elif model in KIE_I2V_IMAGE_FIELD:
             field, kind = KIE_I2V_IMAGE_FIELD[model]
         else:
             raise RuntimeError(
                 f"Image field for KIE model '{model}' is not established (Skill 67 and the KIE docs "
-                "do not pin it here), so no guess is sent. Pass --image-field <input key> "
-                "(image_field=... in code; see https://docs.kie.ai/llms.txt for the model's page) or choose "
-                "a supported model: " + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+                "do not pin it here), so no guess is sent. Pass --image-field <input key> with "
+                "--image-field-type string|array (image_field=..., image_field_type=... in code; see "
+                "https://docs.kie.ai/llms.txt for the model's page) or choose a supported model: "
+                + ", ".join(sorted(KIE_I2V_IMAGE_FIELD)))
+        payload = {'prompt': prompt or '', 'duration': duration}
+        self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs, image_field=field)  # validates before any HTTP
         image_url = self._kie_upload(image_path)
-        payload = {'prompt': prompt or '', 'duration': duration,
-                   field: [image_url] if kind == 'list' else image_url}
-        self._kie_common_input(payload, model, kwargs.get('resolution'), kwargs)
+        payload[field] = [image_url] if kind == 'list' else image_url
         output = kwargs.get('output') or image_path.with_suffix('.mp4')
         return self._kie_run(model, payload, output, kwargs)
 
@@ -270,93 +472,80 @@ class AIProvider:
         if not self.api_key:
             raise ValueError("KIE_API_KEY not configured (set it in your environment to use provider=kieai)")
 
-    def _kie_common_input(self, payload, model, resolution, kwargs):
-        res = _kie_resolution(model, resolution)
-        if res:
-            payload['resolution'] = res
+    def _kie_common_input(self, payload, model, resolution, kwargs, image_field=None):
+        d = payload.get('duration')
+        if isinstance(d, float) and d.is_integer() and model not in KIE_INPUT_SPECS:
+            payload['duration'] = int(d)  # unmapped model: 5.0 -> 5; mapped models coerce per their own docs
+        if resolution:
+            # mapped models: the docs enum is applied below; others: Skill 67's registry spelling
+            payload['resolution'] = resolution if model in KIE_INPUT_SPECS else _kie_resolution(model, resolution)
         for key in ('aspect_ratio', 'seed', 'negative_prompt'):
             if kwargs.get(key) is not None:
                 payload[key] = kwargs[key]
-        payload.update(kwargs.get('input_extra') or {})  # model-specific fields, passed unchanged
+        payload.update(kwargs.get('input_extra') or {})  # model-specific fields (validated if the model is mapped)
+        kie_validate_input(model, payload, provided_by_caller=(image_field,) if image_field else ())
 
-    def _kie_call(self, method, url, **request_kwargs):
-        """One KIE request. Checks the body `code`, not just the HTTP status."""
-        request_kwargs.setdefault('headers', {})['Authorization'] = f'Bearer {self.api_key}'
-        try:
-            response = getattr(requests, method)(url, **request_kwargs)
-        except requests.RequestException as exc:
-            raise RuntimeError(f"KIE.AI network error: {exc}") from exc
-        try:
-            body = response.json()
-        except ValueError:
-            body = {}
-        code = body.get('code', getattr(response, 'status_code', None))
-        if getattr(response, 'status_code', 200) in KIE_AUTH_CODES:
-            code = response.status_code
+    def _kie_check(self, result, deadline=None):
+        """Turn a Skill 74 result into this client's errors; returns the result when state is success."""
+        if result.get('state') == 'success':
+            return result
+        err = result.get('error') or {}
+        code, msg, task_id = err.get('code'), err.get('msg') or 'no message', result.get('task_id')
+        if code == 'timeout':
+            raise RuntimeError(f"KIE task {task_id} timed out after {deadline}s (last state: {result.get('state')})")
+        if (result.get('data') or {}).get('state_raw') == 'fail':
+            raise RuntimeError(f"KIE task {task_id} failed: {code} {msg}")
         if code in KIE_AUTH_CODES:
             # Fail closed (AGENTS.md N40): never loop on an unauthorized/forbidden key.
-            raise KieAPIError(f"KIE.AI rejected the API key (code {code}): {body.get('msg', '')}. "
+            raise KieAPIError(f"KIE.AI rejected the API key (code {code}): {msg}. "
                               "Stopping; do not retry. Check KIE_API_KEY.", code)
-        if code != 200:
-            raise KieAPIError(f"KIE.AI error code {code}: {body.get('msg') or 'no message'}", code)
-        return body.get('data')
+        raise KieAPIError(f"KIE.AI error code {code}: {msg}", code)
 
     def _kie_upload(self, image_path: Path) -> str:
-        """Upload a local file to KIE's temp file service; return its download URL."""
+        """Upload a local file through Skill 74; return its download URL."""
         if not image_path.is_file():
             raise FileNotFoundError(f"Image not found: {image_path}")
-        mime = mimetypes.guess_type(image_path.name)[0] or 'application/octet-stream'
-        with open(image_path, 'rb') as fh:
-            data = self._kie_call(
-                'post', KIE_UPLOAD_URL,
-                files={'file': (image_path.name, fh, mime)},
-                data={'uploadPath': KIE_UPLOAD_PATH, 'fileName': image_path.name},
-                timeout=120)
-        url = (data or {}).get('downloadUrl')
+        result = kie74('upload', '--file', str(image_path), '--upload-path', KIE_UPLOAD_PATH,
+                       api_key=self.api_key, timeout=300)
+        url = (self._kie_check(result).get('data') or {}).get('download_url')
         if not url:
-            raise RuntimeError("KIE.AI upload returned no downloadUrl")
+            raise RuntimeError("KIE.AI upload returned no download URL")
         return url
 
     def _kie_run(self, model, payload, output, kwargs) -> Path:
-        """createTask -> poll recordInfo -> download the result immediately."""
-        body = {'model': model, 'input': payload}
+        """Skill 74 `run`: validate, createTask (or the schema's own path), poll, save; then verify the video."""
+        request = {'model': model, 'input': payload}
         if kwargs.get('callback_url'):
-            body['callBackUrl'] = kwargs['callback_url']
-        data = self._kie_call('post', f"{self.endpoint}/jobs/createTask", json=body, timeout=30)
-        task_id = (data or {}).get('taskId')
-        if not task_id:
-            raise RuntimeError("KIE.AI createTask returned no taskId")
-        print(f"   KIE task submitted: {task_id} (model {model})")
-        deadline = time.monotonic() + kwargs.get('timeout', KIE_POLL_DEADLINE)
-        delay = 3.0
-        while True:
-            time.sleep(delay)
-            delay = min(delay * 1.5, 15.0)
-            try:
-                info = self._kie_call('get', f"{self.endpoint}/jobs/recordInfo",
-                                      params={'taskId': task_id}, timeout=30) or {}
-            except KieAPIError as exc:
-                if exc.code != 429:  # rate-limited polls are retried; auth/other codes stop here
-                    raise
-                info = {}
-            except RuntimeError as exc:  # transient network error: keep polling until the deadline
-                print(f"   Poll error: {exc}")
-                info = {}
-            state = info.get('state')
-            if state:
-                print(f"   KIE state: {state}")
-            if state == 'success':
-                urls = (info.get('response') or {}).get('resultUrls')
-                if not urls and info.get('resultJson'):
-                    urls = json.loads(info['resultJson']).get('resultUrls')
-                if not urls:
-                    raise RuntimeError(f"KIE task {task_id} succeeded but returned no resultUrls")
-                return self._download_video(urls[0], output or Path(f"kie_{task_id}.mp4"))
-            if state == 'fail':
-                raise RuntimeError(f"KIE task {task_id} failed: {info.get('failCode')} {info.get('failMsg')}")
-            if time.monotonic() >= deadline:
-                raise RuntimeError(f"KIE task {task_id} timed out after "
-                                   f"{kwargs.get('timeout', KIE_POLL_DEADLINE)}s (last state: {state})")
+            request['callBackUrl'] = kwargs['callback_url']
+        deadline = kwargs.get('timeout', KIE_POLL_DEADLINE)
+        with tempfile.TemporaryDirectory(prefix='kie-video-') as work:
+            result = self._kie_check(
+                kie74('run', '--save-dir', work, '--timeout', deadline, request=request,
+                      api_key=self.api_key, timeout=deadline + 600), deadline)
+            task_id = result.get('task_id')
+            print(f"   KIE task finished: {task_id} (model {model})")
+            saved = [Path(p) for p in result.get('saved_paths') or []]
+            if not saved:
+                raise RuntimeError(f"KIE task {task_id} for model {model} returned no result file "
+                                   f"(Skill 74 saved nothing; response: {str(result.get('data'))[:200]})")
+            return self._install_video(saved[0], output or Path(f"kie_{task_id}.mp4"))
+
+    def _install_video(self, source: Path, output: Path) -> Path:
+        """Verify a file Skill 74 saved is a real video, then publish it atomically at `output`."""
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        size = source.stat().st_size
+        if size < 1024:
+            raise RuntimeError(f"Invalid downloaded video: payload is too small ({size} bytes)")
+        self._validate_downloaded_video(source)
+        temp_path = output.parent / f".{output.name}.part"
+        try:
+            shutil.copyfile(source, temp_path)
+            os.replace(temp_path, output)
+        finally:
+            temp_path.unlink(missing_ok=True)
+        print(f"   Downloaded and verified: {output}")
+        return output
 
     def _generate_runway(self, prompt, duration, resolution, style, output, **kwargs):
         """Generate video using Runway ML API."""

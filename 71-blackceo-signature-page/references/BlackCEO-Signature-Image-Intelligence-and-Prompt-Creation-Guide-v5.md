@@ -15,7 +15,9 @@
 
 Write a complete, image-specific production prompt, not a short wish list. The picture must perform the persuasive job assigned by the actual page copy and wireframe. It must also belong to the client's visual world. Neither beautiful generic photography nor a long prompt that describes the wrong scene passes. **By default, the finished visual must pass the active page-level Art Direction fidelity gate and the applicable BlackCEO Secret Super Sauce blend gate. If no external Art Direction is selected, the Secret Super Sauce is the default governing aesthetic.**
 
-**Every individual final image prompt must contain 5,000-20,000 meaningful characters, inclusive.** This is not the combined length of the prompt document. A 4,999-character prompt fails. Two 3,000-character prompts do not become compliant by being put in one file. A 20,001-character prompt fails. The same rule applies to complete replacement/edit prompts used to repair an image; do not quietly send a short repair instruction that discards the approved specification.
+**Every individual final image prompt must use 95 to 100 percent of the chosen model's character maximum and never fall below 80 percent of it** (owner order 2026-10-05, `07-kie-setup/references/kie-common-rules.md` rule 12; this replaces the earlier 5,000-20,000 house range). The maximum comes from `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <id>` (live schema, registry fallback), never from memory. For GPT Image 2.5 (maximum 20,000) the floor is 16,000 and the target is 19,000 to 20,000. This is not the combined length of the prompt document. Two short prompts do not become compliant by being put in one file. A prompt over the maximum fails. The same rule applies to complete replacement/edit prompts used to repair an image; do not quietly send a short repair instruction that discards the approved specification. Verbatim fields (text a model speaks or sings exactly) follow their own rule and have no floor.
+
+The five teaching prompts near the end are shorter than this budget and are teaching models only; a real production prompt is expanded with real scene, light, material, crop and negative detail until it lands in the budget, never padded.
 
 **One image-map entry -> one complete prompt -> one independently generated asset -> one correctly named file.** A page may need zero, one, or several images within a persuasive section. Image count comes from the actual layout inventory, not a forced twelve-image rule. One approved group photograph is one scene, not a collage. Desktop/mobile export crops of one master are distinguished from separately generated compositions.
 
@@ -58,7 +60,7 @@ Every generated asset is planned through the following intelligences. These are 
 
 The AI gets meaningful creative latitude, but not everywhere.
 
-**Strict / non-negotiable:** the current QC-passed copy; client identity and real-person references; brand facts; exact required text; image-map slot and purpose; private-label exclusion; individual 5,000-20,000-character prompt rule; current runtime validator limits; actual supported aspect ratios and resolutions; spelling locks; skin/hair specificity when Black subjects are used; no demographic percentage defaults; safe margins; no text over faces; QC thresholds; three-attempt repair rule for failed work only; and, once chosen, exactly one page-level Creative Direction family plus exactly one branded style. Cross-family mixing and multi-style stacking are prohibited in this signature-page workflow. The Secret Super Sauce is the only default blend layer and is applied only where compatible.
+**Strict / non-negotiable:** the current QC-passed copy; client identity and real-person references; brand facts; exact required text; image-map slot and purpose; private-label exclusion; individual prompt-budget rule (95 to 100 percent of the model maximum, never below 80 percent); current runtime validator limits; actual supported aspect ratios and resolutions; spelling locks; skin/hair specificity when Black subjects are used; no demographic percentage defaults; safe margins; no text over faces; QC thresholds; three-attempt repair rule for failed work only; and, once chosen, exactly one page-level Creative Direction family plus exactly one branded style. Cross-family mixing and multi-style stacking are prohibited in this signature-page workflow. The Secret Super Sauce is the only default blend layer and is applied only where compatible.
 
 **Creative / art-directable:** when the user delegates the choice, selection of the single best Creative Direction family and branded style; shot distance; angle; focal-length look when the active family uses optics; aperture intent when photographically meaningful; subject zone; lighting pattern; posture; wardrobe category; styling; environmental versus conceptual treatment; typography treatment; saturation emphasis; which supported aspect ratio best serves the wireframe; and whether a section is best served by a person, environment, object/still life, conceptual image, typography-as-image, or no generated image at all.
 
@@ -499,7 +501,7 @@ Use the Secret Super Sauce at full strength when no external style is selected o
 
 The canonical Graphics ten-element prompt anatomy remains the **structure**. The BlackCEO Visual Intelligence Stack remains the **decision framework**. The Page Art Direction Router selects and locks the one governing visual system. The Secret Super Sauce then fills or enriches style, color, lighting, material, skin, texture, contrast and finish decisions only where compatible. None of these layers replaces the current Graphics SOP, prompt-length rules, engine validation, identity rules or independent QC.
 
-**Important:** Any templates or short test prompts preserved in this subsection are calibration tools, not finished production prompts. Every real signature-page image still requires one complete 5,000–20,000-character prompt per generated asset.
+**Important:** Any templates or short test prompts preserved in this subsection are calibration tools, not finished production prompts. Every real signature-page image still requires one complete prompt per generated asset, sized to the KIE prompt budget.
 
 ### The detailed BlackCEO Secret Super Sauce system
 
@@ -1064,7 +1066,7 @@ The following block can be appended to a scene prompt.
 
 ### 20. SHORT STYLE BLOCK
 
-**Integration rule:** This compressed block is an aesthetic shorthand for routes that genuinely require brevity. It is *not* permission for a signature-page production prompt to fall below the 5,000-character house floor.
+**Integration rule:** This compressed block is an aesthetic shorthand for routes that genuinely require brevity. It is *not* permission for a signature-page production prompt to fall below the KIE prompt-budget floor (80 percent of the model's character maximum; rule 12).
 
 When prompt length must be shorter, use:
 
@@ -1746,7 +1748,7 @@ This formula supersedes any interpretation of the system as merely "high saturat
 
 ### 24. REUSABLE MASTER TEMPLATE
 
-**Calibration/template warning:** The template below is a style-construction scaffold, not a complete production prompt. A real signature-page prompt must still use the canonical ten-element anatomy and contain 5,000–20,000 meaningful characters.
+**Calibration/template warning:** The template below is a style-construction scaffold, not a complete production prompt. A real signature-page prompt must still use the canonical ten-element anatomy and land inside the KIE prompt budget (95 to 100 percent of the model maximum, never below 80 percent).
 
 Copy and replace the bracketed sections:
 
@@ -1762,7 +1764,7 @@ Copy and replace the bracketed sections:
 
 ### 25. FIRST TEST PROMPT
 
-**Calibration warning:** The test prompt below exists to verify aesthetic transfer. It is intentionally shorter than a full signature-page production prompt and must never be substituted for the required 5,000–20,000-character, ten-element prompt.
+**Calibration warning:** The test prompt below exists to verify aesthetic transfer. It is intentionally shorter than a full signature-page production prompt and must never be substituted for the required ten-element prompt sized to the KIE prompt budget.
 
 Use this prompt to test whether an image model understands the system:
 
@@ -1959,10 +1961,10 @@ No repository file is changed merely because this manual was written. Do not rep
 
 | Topic | Current retrieved repository | This signature-page workflow | Required handling |
 |---|---|---|---|
-| Prompt length | `visual_long`: 2,500-19,000; `text_bearing_long`: 5,000-19,000 | Every individual prompt: 5,000-20,000 | Apply the 5,000 floor to all images. The current canonical validator still rejects 19,001-20,000. Default authoring target is 8,000-14,000 useful characters, inside both rules. A longer house-compliant prompt must be re-authored efficiently to the runtime-compatible range or held for a separately authorized validator update. Never disable the gate or silently truncate. |
+| Prompt length | `visual_long`: 2,500-19,000; `text_bearing_long`: 5,000-19,000 (older repository bands) | Every individual prompt: 95 to 100 percent of the model maximum, never below 80 percent (rule 12) | Rule 12 governs signature-page KIE prompts and supersedes the older bands and the earlier 5,000-20,000 house range. Read the maximum from `prompt-budget`; fix exit 3 by adding the reported characters and exit 4 by cutting them. Never disable the gate or silently truncate. |
 | Quality threshold | Prompt QC: average >=8.5, no criterion below 7; image QC: average >=8.5 plus zero auto-fails | Anything below 8 must be repaired | Retain the repository's stricter 8.5 average for prompts/images and raise every applicable individual criterion to >=8. General page-stage work requires >=8 on each required criterion. No average cancels an auto-fail. |
 
-The 20,000 maximum remains Trevor's accepted authoring ceiling. Staying below the existing 19,000 runtime ceiling is a compatibility practice, not permission to lower the new 5,000 floor. Examples here are below 19,000. These differences are documented instead of silently reconciled. [R1, R3, R6, R8]
+The model's own character maximum is the ceiling (20,000 for GPT Image 2.5). The older 19,000 runtime ceiling and 5,000 floor are superseded by rule 12. The teaching examples here are below the budget floor and are not production prompts. These differences are documented instead of silently reconciled. [R1, R3, R6, R8]
 
 The repository's Social Planner 9,000-19,000 override is scoped to that system, not a rule that replaces all Graphics work. This guide is for signature-page assets. Do not import unrelated social-post routing automatically. [R8]
 
@@ -1986,7 +1988,7 @@ Read the page materials before asking questions. Reuse answers already given. As
 | Unclear grade | "Should the images feel bold and vivid, more natural, or follow the reference you sent?" |
 | Unclear image text | "Should any words appear inside the image itself, or should all wording stay on the page?" |
 
-**Engine-selection rule.** If the client already chose an engine, honor that choice unless it cannot perform the required asset. If no preference is supplied, recommend **Kie.ai using the latest generally available GPT image-generation model exposed by Kie.ai at runtime** because that is the BlackCEO house preference for visual fidelity and long, highly structured prompts. Do not permanently hardcode a model version into the skill. At the time of this guide's publication, Trevor's supplied current default is GPT Image 2.5; a later run must verify the latest Kie.ai GPT image model from the current model registry/spec before dispatch. If live verification is unavailable, use the most recent pinned repository spec and mark the model-currentness check as unresolved rather than inventing a newer model. Agnes remains a supported alternative when the user chooses it or when its current capabilities better fit the task. The creative prompt architecture stays the same; the technical block adapts to the selected engine.
+**Engine-selection rule.** If the client already chose an engine, honor that choice unless it cannot perform the required asset. If no preference is supplied, use **Kie.ai with the newest GPT Image generation in KIE's live catalog** because that is the BlackCEO house preference for visual fidelity and long, highly structured prompts. Skill 66 resolves it with Skill 74 `latest-family --family gpt-image` (`kie-common-rules.md` rule 13; GPT Image 2.5 Sunburst today) and Skill 74 is the only transport (`71-blackceo-signature-page/references/kie-generation-route.md`). Do not permanently hardcode a model version into the skill or type a model id from memory. If live resolution is unavailable, Skill 66 falls back to its registry default and the model-currentness check is marked unresolved rather than inventing a newer model. N43 ratio rules apply (3:1, 1:3 and 9:21 use the legacy route; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16). Agnes remains a supported alternative when the user chooses it. The creative prompt architecture stays the same; the technical block adapts to the selected engine.
 
 Trevor's default creative direction for this system is vibrant, contrast-rich, deliberately color-graded imagery when relevant. A client-specific reference can require a quieter palette; do not silently turn a muted brand into neon. When the brief clearly asks for Black women with varied hair and skin tones, that information is already sufficient to plan appropriate variety. Do not ask again merely to fill a questionnaire.
 
@@ -2023,7 +2025,7 @@ Required entry fields:
 
 The native generation ratio and the final delivery size serve different purposes. Put the authoritative ratio in the request/manifest field. The funnel category specifically makes per-entry `aspect_ratio` authoritative; describe the needed geometry in the prompt instead of copying obsolete `--ar` commands into its text. [R7]
 
-If one master can serve both layouts without sacrificing the subject, specify the two delivery crops. If mobile needs a fundamentally different composition, create a separate derivative entry with its own complete 5,000-20,000-character prompt. Do not present a separately generated image as a crop of the original.
+If one master can serve both layouts without sacrificing the subject, specify the two delivery crops. If mobile needs a fundamentally different composition, create a separate derivative entry with its own complete prompt sized to the same KIE prompt budget. Do not present a separately generated image as a crop of the original.
 
 Do not hardcode 22 images, Set for Life's colors, or its people into a universal page. These belong to that particular project, not this system.
 
@@ -2765,7 +2767,7 @@ Production identifiers stay in filenames and private manifests. They never appea
 
 Read the required source rules and the complete current image entry. Select the section lesson. Resolve one scene, one cast, one main shot and one grade. Write all ten elements, including the complete exact text locks when needed. Count the fully assembled normalized prompt after reference and negative instructions have been added.
 
-Aim for 8,000-14,000 meaningful characters as a practical default, not a mandatory subrange. Every added sentence should disambiguate the scene or prevent a specific defect. Do not pad a simple scene by repeating "beautiful," copying unrelated paragraphs, or describing objects that are not present. If a prompt is under 5,000, expand missing composition, material, expression, light, crop, reference or output details. If it is too long, re-author redundancies without deleting required content, then recheck it.
+Aim for 95 to 100 percent of the model maximum (never below 80 percent) using `prompt-budget --check`. Every added sentence should disambiguate the scene or prevent a specific defect. Do not pad a simple scene by repeating "beautiful," copying unrelated paragraphs, or describing objects that are not present. If a prompt is under the floor, expand missing composition, material, expression, light, crop, reference or output details by the exact characters the check reports. If it is over the maximum, re-author redundancies without deleting required content, then recheck it.
 
 ### B. Exact counting convention
 
@@ -2800,7 +2802,7 @@ Required criteria:
 15. **BlackCEO Secret Super Sauce blend fidelity** - score only dimensions marked FULL or ADAPT in the Page Visual Bible. FULL dimensions should be clearly present. ADAPT dimensions must achieve the BlackCEO quality goal through the selected style's own language. SUPPRESS dimensions are N/A and must not be reintroduced merely to improve a score.
 16. **Negative-block integrity** - relevant defect classes are covered without contradicting positive instructions.
 
-Automatic failures include, when applicable: prompt under 5,000 or over 20,000 characters; current validator ceiling exceeded without an approved runtime change; missing canonical element; wrong/unsupported route; unresolved placeholders; unapproved/garbled required text; private image/section labels instructed to render; text over a face; a Black illustrative subject described generically without required skin/hair specificity; a repeated illustrative skin/hair/facial-hair combination that violates the set plan without continuity rationale; identity drift; or contradictory technical instructions.
+Automatic failures include, when applicable: prompt below 80 percent or above 100 percent of the model's character maximum (`prompt-budget --check` exit 3 or 4); missing canonical element; wrong/unsupported route; unresolved placeholders; unapproved/garbled required text; private image/section labels instructed to render; text over a face; a Black illustrative subject described generically without required skin/hair specificity; a repeated illustrative skin/hair/facial-hair combination that violates the set plan without continuity rationale; identity drift; or contradictory technical instructions.
 
 A creatively weak but technically valid prompt can still fail the scored criteria. Length is never a substitute for art direction.
 
@@ -2816,9 +2818,9 @@ A repaired prompt becomes the current prompt only after it passes. The old versi
 
 The Generation Operator receives the exact prompt file, the matching metadata, and real QC result. Recheck the final payload mechanically before the paid call; this quick check protects against payload mutation and is not another creative review. Use the client's own configured KIE account. Never send credentials to the browser, include them in documents, or reuse another client's assets/keys.
 
-Verify the latest suitable GPT image endpoint available through KIE at job start and pin the exact supported route for this job. An example endpoint in this guide is not a permanent promise that it remains latest. Do not silently replace it with ChatGPT's image tool or another provider. A missing tool/credential is reported honestly. Current vendor documentation is a schema source, not permission to change the creative brief. [W1]
+Resolve the model through Skill 66 and Skill 74 `latest-family` at job start and pin the exact route for this job. An example endpoint in this guide is not a permanent promise that it remains latest. Do not silently replace it with ChatGPT's image tool or another provider. A missing tool/credential is reported honestly. The live schema (Skill 74 `validate`) is the schema source, not permission to change the creative brief. [W1]
 
-Use the workflow's shared ceiling of 20 new image-generation submissions per rolling 15 seconds across every job using the same KIE account. One asset per task makes accounting clear. Retries use the same limiter; obey stricter vendor limits and 429 backoff. This is a submission ceiling, not a promise that 20 images finish in 15 seconds. Vendor docs currently state 20 new generation requests per 10 seconds; the house ceiling is deliberately slower. [W2]
+Per image the Generation Operator runs the Skill 74 sequence: `validate`, `preflight` (price x 1.30), `prompt-budget --check`, `submit --mode active`, `wait`, `save` immediately. The KIE limit is 20 createTask requests per 10 seconds per account (`kie-common-rules.md` rule 3), shared across every job using the same KIE account. One asset per task makes accounting clear. Retries use the same limiter; obey 429 backoff. This is a submission limit, not a promise that 20 images finish in 10 seconds. The earlier 20-per-15-second house ceiling is retired. [W2]
 
 Before retrying an uncertain accepted request, check its existing task status to avoid duplicate paid generations. Preserve the actual task ID and receipt, download completed images promptly, and record the real returned dimensions. Batch file packaging is separate from the account-wide request limiter.
 
@@ -3157,14 +3159,14 @@ All repository files below were read for this task from `trevorotts1/openclaw-on
 | P1 | `BlackCEO_Famous_Photographers_DNA_Style_Library.md` | User-supplied 49-system photographic-direction library. Preserved as a governed companion reference; one VDL style may be active for a page. Its source names remain human-only and its five-lock/style-fidelity logic is retained. |
 | A1 | `Famous_Visual_Artists_AI_Style_Intelligence_Guide.md` | User-supplied 50-system visual-artist library. Preserved as a governed companion reference; one branded art system may be active for a page. Originality and contemporary independent-synthesis rules remain active. |
 | C1 | `Cinematic-Image-Style-Systems-50-Director-Research-Master.md` | User-supplied 50-system cinematic/directorial library. Preserved as a governed companion reference; one CIS system may be active for a page. Its compiler, anchors and fidelity gate are translated into the page-level style lock. |
-| U1 | Trevor's current instructions in this conversation | Universal page workflow; 5,000-20,000 per image; failed-only three-attempt repair; Google Fonts; color grading, hair/tone/face/camera intelligence; no private labels on assets. |
+| U1 | Trevor's current instructions in this conversation | Universal page workflow; per-image prompt length now governed by the KIE prompt budget (rule 12, replacing 5,000-20,000); failed-only three-attempt repair; Google Fonts; color grading, hair/tone/face/camera intelligence; no private labels on assets. |
 | U2 | `Pasted markdown.md` + Trevor's September 30 visual-intelligence additions | Contrast/readability, typography, safe space, camera/shot/depth language, four creative modes, text effects, 25 skin-tone descriptions, 40 Black women's hairstyles, Black men's hair/facial-hair libraries, fashion categories, posture, typography-as-image, subject-diversity and anti-template direction. |
 | U3 | Trevor's October 1 Creative Direction rule | Exactly one page-level style: one Photographic, one Cinematic/Directorial, one Visual-Artist system, or Secret-Sauce-only. Never mix the three style families or stack branded styles. Blend the Secret Sauce only where compatible; resolve conflicts dimension-by-dimension and keep the selected direction locked across the page. |
 
 Public technical references, checked September 30, 2026:
 
-- W1: KIE GPT Image 2.5 playground and schema, https://kie.ai/gpt-image-2-5 . The retrieved page exposes 20,000-character prompt fields and supported aspect-ratio/resolution controls. It is used for request compatibility only, not its marketing quality claims.
-- W2: KIE Getting Started, https://kie.ai/getting-started . Asynchronous task behavior, per-account submission limits and retention; the house 20-per-15-second ceiling is Trevor's stricter operating rule.
+- W1: KIE GPT Image 2.5 playground and schema, https://kie.ai/gpt-image-2-5 . The retrieved page exposed a 20,000-character prompt field and supported aspect-ratio/resolution controls; the live schema read by Skill 74 is the current authority. It is used for request compatibility only, not its marketing quality claims.
+- W2: KIE Getting Started, https://kie.ai/getting-started . Asynchronous task behavior, per-account submission limits and retention; see `kie-common-rules.md` for the verified limits.
 - W3: Adobe, Make colors pop with saturation adjustments, https://www.adobe.com/learn/lightroom-cc/web/make-colors-pop . Saturation versus vibrance distinction; creative grade recipes here are new implementation guidance.
 - W4: Nikon, NIKKOR Z 85mm f/1.8 S, https://www.nikonusa.com/p/nikkor-z-85mm-f18-s/20090/overview . Portrait/background-separation reference; the guide's numerical recipes are appearance heuristics, not camera or model guarantees.
 

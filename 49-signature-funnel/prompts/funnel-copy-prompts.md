@@ -129,10 +129,11 @@ Output JSON: `{"page_type":"thank-you","buttons":["Join The Community","Share Wi
 
 ---
 
-## PROMPT 7 — IMAGE PROMPT (per section; the 5,000–19,000-char builder)
+## PROMPT 7 — IMAGE PROMPT (per section; sized to the chosen model's prompt budget)
 
-For each section that carries an image, build ONE natural-language `gpt-image-2.5` prompt of
-**5,000–19,000 characters** (no Midjourney syntax, **no em dashes**). Use the 8-block build order and
+For each section that carries an image, build ONE natural-language image prompt for the model Skill 66 selected (never a model id written from
+memory), sized to that model's budget from Skill 74 `prompt-budget`: **95 to 100 percent of its character
+maximum, never below 80 percent** (`kie-common-rules.md` rule 12; the old 5,000–19,000 band is replaced) (no Midjourney syntax, **no em dashes**). Use the 8-block build order and
 resolve every spintax choice from the locked brief (representation honored EXACTLY, brand colors named
 as plain color words):
 
@@ -154,13 +155,14 @@ directives. The Signature Grade Block (block 4) is unchanged. Unset `style_card_
 (brand colors carry the look; block 8 is the default Brand-Style + Negative paragraph).
 
 **Aspect-ratio pass-through (FIX-IMG-03):** each prompt-ledger record's `aspect_ratio` is carried
-VERBATIM into its `prompts.json` entry — the Skill 6 rail's `kie_generate.py` reads
-`slide.get("aspect_ratio", …)`, so **Sec 12's 3:4 (and any per-section ratio) is honored** at generation
-instead of silently defaulting to 16:9.
+VERBATIM into its request's `aspect_ratio` field, so **Sec 12's 3:4 (and any per-section ratio) is honored**
+at generation instead of silently defaulting to 16:9. Skill 74 `validate` checks the ratio against the live
+schema; on the default model 16:9 and 3:4 are served as asked (only 5:4, 4:5, 2:1 and 1:2 are substituted
+under N43, and 3:1, 1:3, 9:21 use the legacy route).
 
-Output JSON per prompt: `{"page_type":"…","section":N,"aspect_ratio":"16:9","text_bearing":false,"prompt":"…5,000–19,000 chars…"}`
+Output JSON per prompt: `{"page_type":"…","section":N,"aspect_ratio":"16:9","text_bearing":false,"prompt":"…sized to the model budget…"}`
 (for Sec 11: `"text_bearing":true,"words":["DECIDE","COMMIT","RISE"]`; Sec 12: `"aspect_ratio":"3:4"`).
 
-Then generation is DELEGATED to Skill 47 `kie_image.py`; media folder + upload and the GHL build are
-DELEGATED to Skill 6. This skill never hand-rolls a Kie call or a GHL REST call (the entry shell's
-bypass-scan refuses it).
+Then generation is DELEGATED to Skill 66 (model policy) and Skill 74 (the one KIE transport); media folder +
+upload and the GHL build are DELEGATED to Skill 6. This skill never hand-rolls a Kie call or a GHL REST call
+(the entry shell's bypass-scan refuses it).

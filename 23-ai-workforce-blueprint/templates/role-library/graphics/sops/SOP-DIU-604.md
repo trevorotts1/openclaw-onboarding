@@ -91,7 +91,7 @@ If an output triggers a hard rule, quarantine precedes everything else — inclu
 | OR: Fidelity Tester hard-rule-fail diagnosis | Yes | SOP-DIU-501a / SOP-DIU-501b |
 | Generation receipt for the asset | Yes | `_local/receipts/` — written at submit time (SOP-DIU-602) |
 | Card ID + version, model, tier, filled prompt | Yes | Generation receipt fields |
-| Consent record (identity incidents) | Conditional | `_local/consent/{client-id}.json` — read by Photo Shoot Director |
+| Consent record (identity incidents) | Conditional | `personal-photo-shoot/{client-slug}/CONSENT.md` — read by Photo Shoot Director |
 
 ---
 

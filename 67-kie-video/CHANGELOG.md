@@ -4,10 +4,36 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-10-06 - fix: an explicitly named unknown model must be a video model
+
+- `validate_payload.py`: a model not in `models.json` that Skill 74 validates is accepted only when its capability matches "to video" (text, image, video or speech to video); a non-video or unknown capability is refused. Two new self-test cases (image model, unknown capability); self-test 32/32 became 34/34. Version roll to v2.1.1 (`SKILL.md`, `QC.md`, `skill-version.txt`).
+
+---
+
+## [v2.1.0] - 2026-10-06 - feat: dispatch runs through Skill 74 (validate, preflight, submit), registry is the curated policy
+
+- `INSTRUCTIONS.md` Step 5 and `SKILL.md`: Market dispatch first runs `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight --units <seconds>` (balance must cover price x 1.30), then `submit --mode active` (production batches add `--callback-url` of the Skill 46 relay), then multi-frame QC. `skipped` (adapter off or shadow) falls back to the curl path; adapter absent skips the first two steps with a note.
+- `validate_payload.py` (same wiring Skill 66 got in v1.1): a Market model that is NOT in `models.json` is validated by Skill 74 against its live schema (registry snapshot fallback) instead of being rejected outright, with a warning that it is an explicit pick only. Adapter absent or silent: the old "not present in registry" rejection. Dedicated Runway and Veo payloads are never routed this way. New `scripts/adapter_bridge.py`. Self-test 29/29 became 32/32.
+- No auto-latest for video: a new live model is DISCOVERED (`discover --modality video`), never selected or made a default.
+- `models.json` is described as the CURATED POLICY and verified-override registry (`registry_policy.role`).
+
+### Open item (owner decision, not changed here)
+- KIE's live catalog (Skill 74 registry snapshot, 2026-10-06) lists `runway`, `veo-3-1` and `veo/*` whose schema declares `/api/v1/jobs/createTask`, while this skill's curated route is the dedicated `/api/v1/runway/generate` and `/api/v1/veo/generate` routes. This change keeps the curated route as the dispatch route and only adds `price` and `preflight` for the matching catalog id. Which route is authoritative is the owner's call.
+- Version roll to v2.1.0 (`SKILL.md`, `QC.md`, `skill-version.txt`, three script `VERSION` constants). Select 43/43, `validate_prompt` 17/17, normalize PASS.
+
+---
+
+## [v2.0.4] - 2026-10-05 - docs: wording fix in the v2.0.3 entry
+
+- The v2.0.3 entry said the `sync` change was listed as investigate-only in the "release notes"; it was the PR #1492 text. Corrected. Version roll to v2.0.4 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.
+- Archive decision (applies to 07, 46, 66, 67, 68): the `NN-*.skill` zips are not rebuilt. See the PR for the evidence: `install.sh` Step 5 (lines 3772-3802) copies every file in each skill folder as a plain file and `update-skills.sh` (line 6148) runs `cp -r` on the whole folder; neither unzips a `.skill`.
+
+---
+
 ## [v2.0.3] - 2026-10-05 - docs: record the sync flag change truthfully
 
 ### Corrected record
-- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but the release notes and PR text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
+- v2.0.2 flipped `sync` from `true` to `false` on all 37 `models.json` entries, but PR #1492 text listed it under "investigated, not changed". It WAS changed. This entry is the accurate record.
 - How `sync` is consumed: none of the four scripts in this skill (`select_video_model.py`, `validate_payload.py`, `validate_prompt.py`, `normalize_alias.py`) reads the field, and no 67 document depends on it, so the flip changes registry data only and no behaviour here. Consumers elsewhere in the repo could not be searched, so they are undetermined.
 - Why `false` is correct: every KIE video route in this registry (Market `createTask`, Runway `generate`, Veo `generate`) is asynchronous (create, then poll or callback), which `SKILL.md`, `INSTRUCTIONS.md` and `references/api-patterns.md` all state. The sibling registries use `false` for asynchronous work (66: 32 of 32; Agnes Video: 2 of 2). `true` would mean "result in the create response", which none of these models does. Verified: 37 of 37 entries are `false`.
 - Version roll to v2.0.3 (`SKILL.md`, `QC.md`, three script `VERSION` constants). Self-tests unchanged: select 43/43, `validate_prompt` 17/17, `validate_payload` 29/29, normalize PASS.

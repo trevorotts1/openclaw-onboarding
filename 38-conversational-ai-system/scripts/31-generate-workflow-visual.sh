@@ -133,8 +133,10 @@ else
   # Real path (STUB: no Kie call is made here): Skill 66 (kie-image) selects the model
   # under the fleet image pin and dispatches the job; route async jobs through Skill 46
   # when installed, host on the client's GHL media library, and log the job to
-  # kie-image-events.jsonl. Once installed, the live catalog check is provided by Skill 74
-  # (74-kie-live-adapter) in shadow mode; Skill 66 stays the decision authority. The
+  # kie-image-events.jsonl. ONE KIE PATH: when a real job is wired here it runs through
+  # Skill 74 (74-kie-live-adapter/scripts/kie_live_adapter.py run --mode active --json, found as a
+  # sibling skill folder); this script must never grow its own createTask, polling, upload or
+  # download code. Skill 66 stays the decision authority for the model. The
   # truth diagram ALWAYS ships; the hero is budget-capped and never blocks the build
   # (timeout 120s, one retry, then flag pending). When KIE_API_KEY is absent it
   # degrades to Mermaid-only. MODEL_ID stays empty (recorded as null in visual.json)
