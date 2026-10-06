@@ -17,6 +17,7 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -211,6 +212,261 @@ def extract_results(resp):
     return urls, obj
 
 
+# ------------------------------------------------- registry / limits helpers
+FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 80, 95, 1.30
+# Owner order 2026-10-05: prompts use 95-100% of a model's max, never below 80%.
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
+DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
+LATEST_TTL = CATALOG_TTL
+REGISTRY_STALE_DAYS = 30
+
+_FAMILY_RULES = [  # ordered; first match wins. ponytail: new vendors fall to the generic first-word rule below
+    (r"^(gpt-image|4o-image)", "gpt-image"), (r"^bytedance/(v\d|seedance)", "seedance"),
+    (r"^(bytedance/)?seedream", "seedream"), (r"^(ai-music-api|suno)", "suno"), (r"^veo", "veo"),
+    (r"^google/imagen", "imagen"), (r"^(google/)?nano-banana", "nano-banana"),
+    (r"^google/gemini-.*tts", "gemini-tts"), (r"^(google/)?gemini-omni", "gemini-omni"),
+    (r"^gemini", "gemini"), (r"^gpt-\d", "gpt-chat"), (r"^claude", "claude"),
+    (r"^grok-imagine", "grok-imagine"), (r"^grok", "grok"), (r"^qwen", "qwen"), (r"^kling", "kling"),
+    (r"^wan/", "wan"), (r"^(hailuo|minimax)", "hailuo"), (r"^happyhorse", "happyhorse"),
+    (r"^pixverse", "pixverse"), (r"^ideogram", "ideogram"), (r"^flux", "flux"), (r"^z-image", "z-image"),
+    (r"^elevenlabs", "elevenlabs"), (r"^topaz", "topaz"), (r"^recraft", "recraft"), (r"^runway", "runway"),
+    (r"^omnihuman", "omnihuman"), (r"^kimi", "kimi"), (r"^deepseek", "deepseek"),
+]
+_STOP = {"text", "to", "image", "video", "edit", "editing", "i2i", "t2i", "v2v", "api", "images"}
+_VERSION_RE = re.compile(r"(?:^|[/_-]|(?<=[a-z]))v?(\d+(?:[._-]\d+)*)(?=$|[/_-])")
+
+
+def family_of(model_id):
+    mid = (model_id or "").lower()
+    for pat, fam in _FAMILY_RULES:
+        if re.match(pat, mid):
+            return fam
+    m = re.match(r"[a-z]+", mid.split("/")[0])
+    return m.group(0) if m else "other"
+
+
+def version_of(model_id):
+    """Numeric generation encoded in the id ('2-5' -> [2, 5]), else None."""
+    m = _VERSION_RE.search((model_id or "").lower())
+    return [int(x) for x in re.split(r"[._-]", m.group(1))] if m else None
+
+
+def variant_of(model_id):
+    """Variant word(s) left after dropping family, version and task words ('sunburst'), else None."""
+    mid = (model_id or "").lower()
+    fam = family_of(mid)
+    m = _VERSION_RE.search(mid)
+    rest = mid[:m.start()] + "/" + mid[m.end():] if m else mid
+    drop = _STOP | set(re.split(r"[^a-z0-9]+", fam))
+    head, _, tail = rest.partition("/")
+    if tail and not re.search(r"\d", head) and not set(re.split(r"[^a-z0-9]+", head)) <= drop:
+        rest = tail  # provider namespace ('google/', 'bytedance/'), not a variant
+    toks = [t for t in re.split(r"[^a-z0-9]+", rest) if t and not t.isdigit() and t not in drop]
+    return "-".join(toks) or None
+
+
+def _vkey(v):
+    v = list(v or [])
+    while v and v[-1] == 0:
+        v.pop()
+    return tuple(v)
+
+
+_PER_SECOND_RE = re.compile(
+    r"(?i)credits?\b[^\n]{0,40}?(?:/|\uff0f|\bper\s+(?:video[\s-])?)\s*(?:s|sec|second)s?\b|\b1[\s-]second\b")
+_PER_TOKENS_RE = re.compile(r"(?i)tokens?\b|/\s*1?\s*m\b|per\s+m\b")
+_PER_KCHARS_RE = re.compile(r"(?i)per\s+1,?000\s+characters|per\s+1\s*k\s+characters")
+_PER_IMAGE_RE = re.compile(r"(?i)credits?\b[^\n]{0,30}?(?:per|/)\s*image\b")
+# Units that scale with --units: seconds of output, thousands of characters, images, millions of tokens.
+SCALING_UNITS = ("per-second", "per-1k-chars", "per-image", "per-1m-tokens")
+
+
+def parse_pricing(raw):
+    """Prose pricingDesc -> {credits_min, credits_max, unit, all}. Numbers are credits only (never USD).
+    unit: per-1m-tokens, per-second ('credits/s', 'credits / sec', 'credits per video second', '1 second of
+    video costs'), per-1k-chars (TTS), per-image, free-as-per-job, else per-job. A duration price such as
+    'A 5-second video costs 160 credits' or '5s at 720p costs 12 credits per video' is per-job (that clip)."""
+    text = raw if isinstance(raw, str) else ""
+    nums = [float(x.replace(",", "")) for x in
+            re.findall(r"(?i)(\d[\d,]*(?:\.\d+)?)\s*(?:kie\s+)?credits?\b", text)]
+    if not nums and re.search(r"(?i)\bfree\b", text):
+        nums = [0.0]
+    unit = ("per-1m-tokens" if _PER_TOKENS_RE.search(text) else
+            "per-second" if _PER_SECOND_RE.search(text) else
+            "per-1k-chars" if _PER_KCHARS_RE.search(text) else
+            "per-image" if _PER_IMAGE_RE.search(text) else "per-job")
+    return {"credits_min": min(nums) if nums else None, "credits_max": max(nums) if nums else None,
+            "unit": unit, "all": nums}
+
+
+def estimate_credits(parsed, units=1):
+    """Conservative estimate: the highest listed tier. Scaling units (seconds, thousand characters, images,
+    million tokens) multiply it by `units`; per-job prices do not."""
+    top = parsed.get("credits_max")
+    if top is None:
+        return None
+    return round(top * (units if parsed.get("unit") in SCALING_UNITS else 1), 4)
+
+
+def preflight_amount(credits):
+    """price x 1.30, rounded up to 0.01 credit."""
+    return None if credits is None else math.ceil(round(credits * PREFLIGHT_MULT * 100, 6)) / 100.0
+
+
+def budget(max_chars):
+    """Prompt budget from a model max. Integer math: no float rounding surprises."""
+    m = int(max_chars)
+    return {"max": m, "floor": -(-m * FLOOR_PCT // 100), "target_min": -(-m * TARGET_PCT // 100), "target_max": m}
+
+
+_LIMIT_RE = re.compile(
+    r"(?i)(?:maximum|max\.?|up to|limit(?:ed to)?|exceed|not more than)\b[^0-9.\n]{0,30}?(\d[\d,]*)\s*(?:characters?|chars)\b"
+    r"|\b0\s*-\s*(\d[\d,]*)\s*characters")
+
+
+def described_limits(desc):
+    """Character limits stated in a field description ('Maximum 20,000 characters'). Lower confidence than maxLength."""
+    out = []
+    for m in _LIMIT_RE.finditer(desc if isinstance(desc, str) else ""):
+        out.append(int((m.group(1) or m.group(2)).replace(",", "")))
+    return out
+
+
+def _finfo(sub):
+    keys = ("type", "format", "minLength", "maxLength", "enum", "minimum", "maximum", "default", "minItems",
+            "maxItems", "nullable")
+    d = {k: sub[k] for k in keys if k in sub}
+    if "maxLength" not in d:
+        lims = described_limits(sub.get("description"))
+        if lims:  # several distinct figures (per-version tables): record all, pick the most common, flag it
+            top = max(set(lims), key=lambda v: (lims.count(v), -v))
+            d["maxLength_described"] = top
+            if len(set(lims)) > 1:
+                d["described_limits"] = sorted(set(lims))
+    if isinstance(sub.get("items"), dict):
+        d["items"] = _finfo(sub["items"])
+    if isinstance(sub.get("properties"), dict):
+        d["properties"] = {k: _finfo(v) for k, v in sub["properties"].items() if isinstance(v, dict)}
+        if sub.get("required"):
+            d["required"] = list(sub["required"])
+    for kw in ("oneOf", "anyOf"):
+        if isinstance(sub.get(kw), list):
+            d[kw] = [_finfo(b) for b in sub[kw] if isinstance(b, dict)]
+    return d
+
+
+def flatten_input(s):
+    """Resolved input schema -> (fields{name: info}, required[], branches[{required, fields}]).
+    allOf is merged; oneOf/anyOf branches are kept whole (each carries its own limits)."""
+    fields, req, branches = {}, set(s.get("required") or []) if isinstance(s, dict) else set(), []
+    if not isinstance(s, dict):
+        return fields, [], branches
+    for k, sub in (s.get("properties") or {}).items():
+        if isinstance(sub, dict):
+            fields[k] = _finfo(sub)
+    for b in s.get("allOf") or []:
+        f, r, br = flatten_input(b)
+        fields.update(f), req.update(r), branches.extend(br)
+    for kw in ("oneOf", "anyOf"):
+        for b in s.get(kw) or []:
+            f, r, _ = flatten_input(b)
+            branches.append({"required": sorted(r), "fields": f})
+            for k, v in f.items():
+                fields.setdefault(k, v)  # first-seen; the branch keeps its own copy
+    return fields, sorted(req), branches
+
+
+_VERBATIM_ALWAYS = {"lyrics", "lyric", "dialogue", "dialogue_turns", "script", "speech_text"}
+_SPEECH_RE = re.compile(r"(?:tts|text-to-speech|dialogue)")
+
+
+def verbatim_fields(model_id, fields, task_types=()):
+    """Fields spoken or sung exactly (TTS text, lyrics). Suno: with a style field, prompt is the lyrics."""
+    mid = (model_id or "").lower()
+    speech = bool(_SPEECH_RE.search(mid)) or any("speech" in str(t).lower() for t in task_types or [])
+    out = [k for k in fields if k.lower() in _VERBATIM_ALWAYS or (speech and k.lower() == "text")]
+    if family_of(mid) == "suno" and "prompt" in fields and "style" in fields:
+        out.append("prompt")
+    return sorted(set(out))
+
+
+def _field_max(info):
+    """-> (max, how, listed): schema maxLength, else per-turn text maxLength of an array of turns, else the described figure."""
+    if "maxLength" in info:
+        return info["maxLength"], "schema", []
+    turn = ((info.get("items") or {}).get("properties") or {}).get("text") or {}
+    if "maxLength" in turn:
+        return turn["maxLength"], "schema-per-turn", []
+    if "maxLength_described" in info:
+        return info["maxLength_described"], "description", info.get("described_limits") or []
+    return None, None, []
+
+
+def prompt_field_of(model_id, fields, task_types=()):
+    """-> {name, maxLength, verbatim, max_source, limits_listed}. The descriptive prompt field wins; a
+    verbatim field is returned (verbatim=True, no floor) only when the model has no descriptive one."""
+    verb = verbatim_fields(model_id, fields, task_types)
+    pick = None
+    if family_of(model_id) == "suno" and "style" in fields:
+        pick = "style"
+    else:
+        pick = next((n for n in ("prompt", "text_prompt", "description", "content", "instruction")
+                     if n in fields and n not in verb), None)
+    v = False
+    if pick is None and verb:
+        pick, v = verb[0], True
+    if pick is None:
+        return {"name": None, "maxLength": None, "verbatim": False, "max_source": None, "limits_listed": []}
+    mx, how, listed = _field_max(fields[pick])
+    return {"name": pick, "maxLength": mx, "verbatim": v, "max_source": how, "limits_listed": listed}
+
+
+def registry_input_schema(entry):
+    """Rebuild a checkable schema from a registry entry (used when the live schema is unreachable)."""
+    s = {"type": "object", "required": list(entry.get("required") or []),
+         "properties": dict(entry.get("input_fields") or {})}
+    if entry.get("branches"):
+        s["oneOf"] = [{"type": "object", "required": b.get("required") or [], "properties": b.get("fields") or {}}
+                      for b in entry["branches"]]
+    return s
+
+
+def policy_limit(model_id, here=None):
+    """Policy-owner prompt limit from sibling skills 66/67/68. -> (max|None, owner|None, owner_confirmed, n43_recorded|None)."""
+    here = here or os.path.dirname(os.path.abspath(__file__))
+    roots = [os.path.join(here, "..", ".."), os.environ.get("OPENCLAW_SKILLS_DIR") or "",
+             os.path.join(os.path.expanduser("~"), ".openclaw", "skills"), "/data/.openclaw/skills"]
+    if os.environ.get("KIE_POLICY_ROOT") is not None:  # test hook: look only here (empty = no policy owners)
+        roots = [os.environ["KIE_POLICY_ROOT"]]
+    for owner, alt in (("66-kie-image", "kie-image"), ("67-kie-video", "kie-video"), ("68-kie-audio", "kie-audio")):
+        for r in roots:
+            for name in (owner, alt):
+                p = os.path.join(r, name, "models.json")
+                if not (r and os.path.isfile(p)):
+                    continue
+                try:
+                    with open(p) as f:
+                        d = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                for e in d.get("models") or d.get("entries") or []:
+                    if e.get("canonical_model_id") != model_id:
+                        continue
+                    if isinstance(e.get("live_schema_cap_chars"), int):  # KIE's live schema supersedes N43's 25,000 (2026-10-05)
+                        return e["live_schema_cap_chars"], owner, False, e.get("owner_observed_cap_chars")
+                    if isinstance(e.get("owner_observed_cap_chars"), int):  # N43: owner-confirmed beats stale docs
+                        return e["owner_observed_cap_chars"], owner, True, e["owner_observed_cap_chars"]
+                    if isinstance(e.get("vendor_hard_cap_chars"), int):
+                        return e["vendor_hard_cap_chars"], owner, False, None
+                    caps = e.get("caps") or {}
+                    for k in ("text_max_chars", "per_turn_text_max_chars", "combined_text_max_chars", "prompt_max_chars"):
+                        if isinstance(caps.get(k), int):
+                            return caps[k], owner, False, None
+                    return None, None, False, None
+                break
+    return None, None, False, None
+
+
 # ------------------------------------------------------------------ adapter
 def _repo_resolver():
     """Locate shared-utils/key_resolver.py (repo checkout or installed skills tree)."""
@@ -264,6 +520,7 @@ class Adapter:
         self.poll0 = float(self.env.get("KIE_LIVE_POLL_INITIAL", "3"))
         self.api = self._base("KIE_LIVE_API_BASE", API)
         self.upl = self._base("KIE_LIVE_UPLOAD_BASE", UPLOAD)
+        self._reg = None
 
     def _base(self, name, default):
         v = self.env.get(name)
@@ -464,11 +721,54 @@ class Adapter:
         self.receipt("validate", model=model, digest=digest, drift=drift, errors=errs)
         return errs, path, method, digest, drift, base
 
+    # -- registry snapshot (references/kie-model-registry.json; generated by scripts/build_model_registry.py)
+    def registry(self):
+        if self._reg is None:
+            p = self.env.get("KIE_LIVE_REGISTRY") or os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "references", "kie-model-registry.json")
+            d = self._read(p) or {}
+            self._reg = (d, {m.get("id"): m for m in d.get("models", []) if isinstance(m, dict)})
+        return self._reg
+
+    def reg_entry(self, model):
+        return self.registry()[1].get(model)
+
+    def _reg_note(self):
+        d = self.registry()[0]
+        gen = d.get("generated_at")
+        w = ["using registry snapshot generated_at=%s source=%s" % (gen, d.get("source"))]
+        try:
+            age = (self.now() - time.mktime(time.strptime(gen[:19], "%Y-%m-%dT%H:%M:%S"))) / 86400
+            if age > REGISTRY_STALE_DAYS:
+                w.append("registry snapshot is %d days old; rebuild with scripts/build_model_registry.py" % age)
+        except (TypeError, ValueError):
+            pass
+        return w
+
+    def _validate_registry(self, model, payload, live_err):
+        ent = self.reg_entry(model)
+        if not ent or not (ent.get("input_fields") or ent.get("branches")):
+            return self.fail(live_err, model_id=model)
+        kind = ((ent.get("schema_paths") or [{}])[0]).get("kind")
+        if kind == "sync" and isinstance(payload, dict):
+            payload = dict(payload, **{"model": payload.get("model", model)})
+        errs = check(registry_input_schema(ent), payload, "body" if kind == "sync" else "input")
+        self.receipt("validate", model=model, source="registry", errors=errs)
+        w = ["live schema unavailable (%s: %s); validated against the registry snapshot" % (
+            live_err.code, self.redact(live_err.msg))] + self._reg_note()
+        base = dict(model_id=model, capability=", ".join(ent.get("taskType") or []) or None,
+                    schema_source="registry", raw_family="sync" if kind == "sync" else "market")
+        d = {"valid": not errs, "errors": errs, "source": "registry"}
+        if errs:
+            return self.result(state="fail", error={"code": "validation_failed", "msg": "; ".join(errs)[:500]},
+                               warnings=w, data=d, **base)
+        return self.result(state="validated", warnings=w, data=d, **base)
+
     def cmd_validate(self, model, payload):
         try:
             errs, path, method, digest, drift, base = self.validate(model, payload)
         except KieError as e:
-            return self.fail(e, model_id=model)
+            return self._validate_registry(model, payload, e)
         d = {"valid": not errs, "errors": errs, "path": path, "method": method}
         w = ["schema changed since last receipt"] if drift else []
         if errs:
@@ -477,7 +777,28 @@ class Adapter:
         return self.result(state="validated", warnings=w, data=d, **base)
 
     # -- submit
+    def _cb_check(self, req):
+        cb = req.get("callBackUrl") if isinstance(req, dict) else None
+        if cb is not None and (not isinstance(cb, str) or urllib.parse.urlparse(cb).scheme not in ("http", "https")):
+            raise KieError("bad_request", "callBackUrl must be an http(s) URL (Skill 46 relay)")
+        return cb
+
+    def _record_cb(self, r, cb):
+        if cb:  # callBackUrl passthrough (Skill 46): sent on createTask only; sync endpoints have no callback
+            r["data"]["callback_url"] = cb
+            r["data"]["callback_sent"] = bool(r.get("task_id")) and r.get("raw_family") == "market"
+            if r.get("raw_family") == "sync":
+                r["warnings"].append("callBackUrl is not supported on synchronous endpoints; not sent")
+        return r
+
     def cmd_submit(self, req, dry_run=False):
+        try:
+            cb = self._cb_check(req)
+        except KieError as e:
+            return self.fail(e)
+        return self._record_cb(self._submit(req, dry_run), cb)
+
+    def _submit(self, req, dry_run=False):
         model, inp = req.get("model"), req.get("input")
         if not isinstance(model, str) or not model or not isinstance(inp, dict):
             return self.fail(KieError("bad_request", "request needs string 'model' and object 'input'"))
@@ -605,7 +926,15 @@ class Adapter:
             return self.fail(e, task_id=task_id)
 
     def cmd_run(self, req, save_dir, timeout=None):
-        r = self.cmd_submit(req)
+        try:
+            cb = self._cb_check(req)
+        except KieError as e:
+            return self.fail(e)
+        r = self._record_cb(self._run(req, save_dir, timeout), cb)
+        return r
+
+    def _run(self, req, save_dir, timeout=None):
+        r = self._submit(req)
         if r["state"] != "queued":
             return r
         t = req.get("timeout") or timeout or 300
@@ -671,6 +1000,294 @@ class Adapter:
         except KieError as e:
             return self.fail(e)
 
+    # -- price / preflight (one price authority: live catalog pricingDesc, registry snapshot as fallback)
+    def _price_text(self, model):
+        """-> (pricing_desc|None, source, warnings)."""
+        try:
+            models, fetched, src = self.catalog()
+            for m in models:
+                if m.get("model") == model:
+                    return m.get("pricingDesc"), "catalog:" + src, []
+            live_note = ["model not in the live catalog"]
+        except KieError as e:
+            live_note = ["live catalog unavailable (%s: %s)" % (e.code, self.redact(e.msg))]
+        ent = self.reg_entry(model)
+        if ent:
+            pr = ent.get("pricing") or {}
+            return pr.get("raw"), "registry", live_note + self._reg_note()
+        return None, "none", live_note
+
+    def cmd_price(self, model, units=1):
+        raw, src, w = self._price_text(model)
+        if src == "none":
+            return self.fail(KieError("price_unavailable", "no live catalog entry and no registry entry for %s" % model),
+                             model_id=model, warnings=w)
+        parsed = parse_pricing(raw)
+        est = estimate_credits(parsed, units)
+        if est is None:
+            w = w + ["pricing text has no credit figure; no estimate (price source: %s)" % src]
+        elif parsed["unit"] in SCALING_UNITS:
+            w = w + ["price is %s; estimate = highest listed tier x units (%s)" % (parsed["unit"], units)]
+        if raw and re.search(r"(?i)input video duration", raw):
+            w = w + ["billing counts input plus output video duration: pass --units as the total seconds"]
+        d = {"pricing_desc": raw, "credits_min": parsed["credits_min"], "credits_max": parsed["credits_max"],
+             "unit": parsed["unit"], "units": units, "credits_estimate": est,
+             "preflight_required": preflight_amount(est), "preflight_multiplier": PREFLIGHT_MULT, "price_source": src}
+        return self.result(model_id=model, schema_source=src, warnings=w, data=d)
+
+    def cmd_preflight(self, model, units=1):
+        p = self.cmd_price(model, units)
+        if p["state"] == "fail":
+            return p
+        need = p["data"]["preflight_required"]
+        if need is None:
+            return self.fail(KieError("price_unestimable", "no numeric price for %s; cannot preflight" % model),
+                             model_id=model, warnings=p["warnings"], data=p["data"])
+        try:
+            bal = self.call("GET", self.api + "/api/v1/chat/credit").get("data")
+        except KieError as e:
+            return self.fail(e, model_id=model, warnings=p["warnings"], data=p["data"])
+        if not isinstance(bal, (int, float)) or isinstance(bal, bool):
+            return self.fail(KieError("bad_response", "credit balance is not a number"), model_id=model, data=p["data"])
+        short = max(0.0, round(need - bal, 2))
+        d = dict(p["data"], balance=bal, required=need, ok=short == 0, shortfall=short)
+        if short:
+            return self.result(state="fail", model_id=model, warnings=p["warnings"], data=d,
+                               error={"code": "insufficient_credits",
+                                      "msg": "balance %s is short by %s credits (required %s = price x %s)" % (
+                                          bal, short, need, PREFLIGHT_MULT)})
+        return self.result(state="validated", model_id=model, warnings=p["warnings"], data=d)
+
+    # -- success rate (shared 1 req/s discovery budget)
+    def success_rate(self, model):
+        j = self.call("GET", "%s/api/v1/models/%s/success-rate" % (self.api, urllib.parse.quote(model, safe="/")),
+                      discovery=True)
+        d = j.get("data") or {}
+        pts = d.get("points") if isinstance(d, dict) else None
+        pts = pts if isinstance(pts, list) else []
+        rates = [p["successRate"] for p in pts if isinstance(p, dict) and isinstance(p.get("successRate"), (int, float))]
+        return {"points": len(pts), "samples": len(rates),
+                "avg_success_rate": round(sum(rates) / len(rates), 2) if rates else None,
+                "last_success_rate": rates[-1] if rates else None,
+                "all_normal": all(p.get("isNormal") is not False for p in pts if isinstance(p, dict)) if pts else None}
+
+    def cmd_success_rate(self, model):
+        try:
+            d = self.success_rate(model)
+        except KieError as e:
+            return self.fail(e, model_id=model)
+        w = [] if d["samples"] else ["no monitoring data in the last 24 hours (not the same as 0 percent)"]
+        return self.result(model_id=model, warnings=w, data=d)
+
+    # -- prompt budget (owner order 2026-10-05: 95-100 percent of max, never below 80 percent)
+    def _limits(self, model):
+        """Live schema first, registry fallback, policy owner (66/67/68) for what the schema does not state."""
+        notes, pf = [], {"name": None, "maxLength": None, "verbatim": False, "max_source": None, "limits_listed": []}
+        src = "none"
+        try:
+            oa, fetched, ssrc = self.schema(model)
+            path, method, body = pick_submit(oa)
+            fields, _, _ = flatten_input(self.input_schema(path, body))
+            pf, src = prompt_field_of(model, fields, self._task_types(model)), "live-schema:" + ssrc
+        except KieError as e:
+            notes.append("live schema unavailable (%s: %s)" % (e.code, self.redact(e.msg)))
+            ent = self.reg_entry(model)
+            if ent and isinstance(ent.get("prompt_field"), dict):
+                pf, src = dict(pf, **ent["prompt_field"]), "registry"
+                notes += self._reg_note()
+        mx, how = pf.get("maxLength"), pf.get("max_source")
+        pol, owner, confirmed, n43 = policy_limit(model)
+        if pf.get("name") is not None and pol:
+            if confirmed and how != "schema":
+                notes.append("owner-confirmed limit %s from %s used over %s" % (pol, owner, how or "no stated limit"))
+                mx, src = pol, "policy-owner:%s (owner-confirmed)" % owner
+            elif mx is None:
+                mx, src = pol, "policy-owner:%s" % owner
+            elif pol != mx:
+                notes.append("policy owner %s records %s; %s says %s; using %s" % (owner, pol, src, mx, mx))
+        if n43 and mx is not None and n43 != mx:
+            notes.append("N43's recorded %s (owner-confirmed 2026-08-27) is superseded by KIE's live schema as of 2026-10-05: "
+                         "%s is the hard limit (KIE rejects longer prompts)" % (n43, mx))
+        if how == "description" and src.startswith(("live", "registry")):
+            src += " (stated in the field description, not a schema maxLength)"
+        if pf.get("limits_listed"):
+            notes.append("description lists several limits %s (per-version table); using the most common %s" % (
+                pf["limits_listed"], pf.get("maxLength")))
+        return {"field": pf.get("name"), "max": mx, "verbatim": bool(pf.get("verbatim")), "source": src, "notes": notes}
+
+    def _task_types(self, model):
+        c = self._read(self._cpath("catalog.json")) or {}
+        for m in c.get("models", []):
+            if m.get("model") == model:
+                return m.get("taskType") or []
+        ent = self.reg_entry(model)
+        return (ent or {}).get("taskType") or []
+
+    def cmd_prompt_budget(self, model, check=False, prompt_text=None):
+        lim = self._limits(model)
+        mx, verb = lim["max"], lim["verbatim"]
+        d = {"field": lim["field"], "max": mx, "verbatim": verb, "limit_source": lim["source"],
+             "floor": None, "target_min": None, "target_max": mx, "status": "OK", "exit_code": 0}
+        w = list(lim["notes"])
+        if lim["field"] is None:
+            d["status"] = "NO_PROMPT_FIELD"
+            w.append("no prompt field found for %s; nothing to budget" % model)
+        elif mx is None:
+            d["status"] = "UNKNOWN"
+            w.append("prompt limit UNKNOWN for %s: no schema maxLength and no policy-owner limit; floor not enforced" % model)
+        elif verb:
+            d["status"] = "VERBATIM"
+            w.append("%s is verbatim content (spoken or sung exactly): no floor, ceiling %d applies" % (lim["field"], mx))
+        else:
+            d.update(budget(mx))
+        if check and mx is not None:
+            n = len((prompt_text or "").strip())
+            pct = round(100.0 * n / mx, 1)
+            d.update(chars=n, percent_of_max=pct)
+            if n > mx:
+                d.update(status="ABOVE_MAX", exit_code=4, cut=n - mx)
+            elif not verb and n < d["floor"]:
+                d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=d["floor"] - n, add_to_target=d["target_min"] - n)
+            elif not verb and n < d["target_min"]:
+                d["status"] = "BELOW_TARGET"
+                w.append("prompt is %d chars (%s%% of max); target is 95-100%%: add %d chars to reach %d" % (
+                    n, pct, d["target_min"] - n, d["target_min"]))
+        d["max_known"] = mx is not None
+        if d["exit_code"] == 4:
+            return self.result(state="fail", model_id=model, warnings=w, data=d, error={
+                "code": "prompt_above_max", "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (
+                    d["chars"], mx, d["cut"])})
+        if d["exit_code"] == 3:
+            return self.result(state="fail", model_id=model, warnings=w, data=d, error={
+                "code": "prompt_below_floor", "msg": "prompt is %d chars (%s%% of max %d); floor is %d: ADD at least %d chars "
+                "(%d to reach the 95%% target of %d)" % (d["chars"], d["percent_of_max"], mx, d["floor"],
+                                                       d["add_to_floor"], d["add_to_target"], d["target_min"])})
+        return self.result(state="validated", model_id=model, warnings=w, data=d)
+
+    # -- latest generation of a family (owner order 2026-10-05: GPT Image follows the newest generation)
+    def _promo_state(self):
+        return self._read(self._cpath("promotion-state.json")) or {}
+
+    def _groups(self, entries, caps):
+        """entries: [{id, taskType}] -> {(version key, variant): {version, variant, routes{cap: [ids]}}}."""
+        groups = {}
+        for e in entries:
+            v = version_of(e["id"])
+            if v is None:
+                continue
+            g = groups.setdefault((_vkey(v), variant_of(e["id"])),
+                                  {"version": v, "variant": variant_of(e["id"]), "routes": {}})
+            for tt in e.get("taskType") or []:
+                g["routes"].setdefault(tt, []).append(e["id"])
+        want = {c.lower() for c in caps}
+        out = {}
+        for k, g in groups.items():
+            have = {t.lower(): t for t in g["routes"]}
+            if want and not want <= set(have):
+                continue
+            order = [c.lower() for c in caps] if caps else sorted(have)  # caller's capability order is stable
+            g["routes"] = {have[c]: sorted(g["routes"][have[c]])[0] for c in order}
+            out[k] = g
+        return out
+
+    def _resolve_latest(self, entries, caps, cur, readable, rank):
+        """Newest generation with every capability route readable; variant preference per owner order."""
+        notes, groups = [], self._groups(entries, caps)
+        cur_var = variant_of(cur) if cur else None
+        for vk in sorted({k[0] for k in groups}, reverse=True):
+            viable = []
+            for k, g in sorted((k, g) for k, g in groups.items() if k[0] == vk):
+                bad = [i for i in g["routes"].values() if not readable(i)]
+                if bad:
+                    notes.append("skipped %s: schema not readable for %s" % ("-".join(map(str, vk)) + (g["variant"] and "/" + g["variant"] or ""), ", ".join(bad)))
+                else:
+                    viable.append(g)
+            if not viable:
+                continue
+            same = [g for g in viable if g["variant"] == cur_var]
+            if same:
+                return same[0], "variant-match", notes, viable
+            if len(viable) == 1:
+                return viable[0], "only-candidate", notes, viable
+            rk = {id(g): rank(g) for g in viable}  # one live success-rate read per candidate
+            ranked = sorted(viable, key=lambda g: (-rk[id(g)][0], rk[id(g)][1], g["variant"] or ""))
+            return ranked[0], ("success-rate" if rk[id(ranked[0])][0] != rk[id(ranked[-1])][0] else "price"), notes, viable
+        return None, "none", notes, []
+
+    def cmd_latest_family(self, family, capabilities=None, current=None, refresh=False):
+        caps = capabilities or DEFAULT_CAPS.get(family) or []
+        st = self._promo_state().get(family) or {}
+        cur = current or (st.get("routes") or {}).get(caps[0] if caps else "") or KNOWN_DEFAULTS.get(family)
+        key = hashlib.sha256(json.dumps([family, sorted(caps), variant_of(cur) if cur else None]).encode()).hexdigest()[:20]
+        cp = self._cpath("latest", key + ".json")
+        c = self._read(cp)
+        if c and not refresh and self.now() - c.get("fetched_at", 0) < LATEST_TTL:
+            return self.result(capability=family, schema_source="latest:cache", schema_fetched_at=c["fetched_at"],
+                               warnings=list(c.get("warnings") or []), data=dict(c["data"], source="cache"))
+        w, source = [], "live"
+        try:
+            models, fetched, csrc = self.catalog()
+            entries = [{"id": m.get("model"), "taskType": m.get("taskType") or [], "price": m.get("pricingDesc")}
+                       for m in models if family_of(m.get("model")) == family]
+            readable = lambda i: self._readable(i)
+            by_id = {e["id"]: e for e in entries}
+
+            def rank(g):  # live 24h success rate (higher first), then lower price
+                i = next(iter(g["routes"].values()))
+                try:
+                    sr = self.success_rate(i)["avg_success_rate"]
+                except KieError:
+                    sr = None
+                est = estimate_credits(parse_pricing(by_id.get(i, {}).get("price")))
+                return (sr if sr is not None else -1.0, est if est is not None else float("inf"))
+        except KieError as e:
+            w.append("live catalog unavailable (%s: %s); using the registry snapshot" % (e.code, self.redact(e.msg)))
+            reg = self.registry()[1]
+            if not reg:
+                return self.fail(KieError("latest_unavailable", "no live catalog and no registry; caller falls back to its own default"),
+                                 warnings=w)
+            source, fetched = "registry", None
+            w += self._reg_note()
+            entries = [{"id": i, "taskType": m.get("taskType") or [], "ok": (m.get("schema") or {}).get("readable")}
+                       for i, m in reg.items() if family_of(i) == family]
+            ok = {e["id"]: e["ok"] for e in entries}
+            readable = lambda i: bool(ok.get(i))
+
+            def rank(g):  # registry has no live success rate: price decides
+                raw = ((reg.get(next(iter(g["routes"].values()))) or {}).get("pricing") or {}).get("raw")
+                return (-1.0, estimate_credits(parse_pricing(raw)) or float("inf"))
+        g, by, notes, viable = self._resolve_latest(entries, caps, cur, readable, rank)
+        if g is None:
+            return self.fail(KieError("latest_unavailable", "no %s generation has all of %s with a readable schema" % (family, caps or "any")),
+                             warnings=w + notes)
+        routes = g["routes"]
+        first = routes[caps[0]] if caps and caps[0] in routes else next(iter(routes.values()))
+        prev = (st.get("routes") or {}).get(caps[0] if caps else "") or KNOWN_DEFAULTS.get(family)
+        changed = bool(prev) and first != prev
+        d = {"family": family, "version": g["version"], "variant": g["variant"], "routes": routes, "default": first,
+             "chosen_by": by, "previous_default": prev, "changed": changed, "source": source,
+             "candidates": [{"version": x["version"], "variant": x["variant"], "routes": x["routes"]} for x in viable]}
+        if source == "live":
+            if changed or not st:
+                self._write(self._cpath("promotion-state.json"), dict(self._promo_state(), **{family: {
+                    "routes": routes, "at": int(self.now())}}))
+            if changed:
+                self.receipt("default_promotion", family=family, previous=prev, current=first, routes=routes, chosen_by=by)
+                self._write(os.path.join(self.rdir, "promotions", "%s-%d.json" % (family, int(self.now()))),
+                            {"family": family, "previous": prev, "current": first, "routes": routes, "chosen_by": by,
+                             "ts": int(self.now())})
+                w.append("DEFAULT CHANGED for %s: %s -> %s (receipt written; report to the operator)" % (family, prev, first))
+            self._write(cp, {"fetched_at": self.now(), "data": d, "warnings": w + notes})
+        return self.result(capability=family, schema_source="latest:" + source, schema_fetched_at=fetched,
+                           warnings=w + notes, data=d)
+
+    def _readable(self, model):
+        try:
+            self.schema(model)
+            return True
+        except KieError:
+            return False
+
     # -- account
     def cmd_credits(self):
         try:
@@ -703,6 +1320,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
     def add(name, *args):
         p = sp.add_parser(name)
         p.add_argument("--json", action="store_true", help="accepted; output is always JSON")
+        p.add_argument("--mode", choices=["off", "shadow", "active"], help="per-call mode override")
         for a, kw in args:
             p.add_argument(a, **kw)
         return p
@@ -717,6 +1335,13 @@ def main(argv=None, adapter=None, out=sys.stdout):
     add("run", ("--request", {"required": True}), ("--save-dir", {"required": True}),
         ("--timeout", {"type": float, "default": None}))
     add("credits")
+    add("price", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
+    add("preflight", ("--model", {"required": True}), ("--units", {"type": float, "default": 1.0}))
+    add("success-rate", ("--model", {"required": True}))
+    add("prompt-budget", ("--model", {"required": True}), ("--check", {"action": "store_true"}),
+        ("--prompt-file", {}))
+    add("latest-family", ("--family", {"required": True}), ("--capability", {"action": "append"}),
+        ("--current-default", {}), ("--refresh", {"action": "store_true"}))
     add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}))
     a = ap.parse_args(argv)
     try:
@@ -724,6 +1349,9 @@ def main(argv=None, adapter=None, out=sys.stdout):
     except KieError as e:
         out.write(json.dumps({"state": "fail", "error": {"code": e.code, "msg": e.msg}}) + "\n")
         return 1
+    if a.mode:
+        ad.mode = a.mode
+    exit_code = None
     try:
         if a.cmd == "health":
             r = ad.cmd_health()
@@ -745,11 +1373,34 @@ def main(argv=None, adapter=None, out=sys.stdout):
             r = ad.cmd_run(_load_json(a.request), a.save_dir, a.timeout)
         elif a.cmd == "credits":
             r = ad.cmd_credits()
+        elif a.cmd == "price":
+            r = ad.cmd_price(a.model, a.units)
+        elif a.cmd == "preflight":
+            r = ad.cmd_preflight(a.model, a.units)
+        elif a.cmd == "success-rate":
+            r = ad.cmd_success_rate(a.model)
+        elif a.cmd == "prompt-budget":
+            if a.check and not a.prompt_file:
+                raise KieError("bad_request", "--check needs --prompt-file")
+            text = None
+            if a.check:
+                if a.prompt_file == "-":
+                    text = sys.stdin.read()
+                else:
+                    with open(a.prompt_file, encoding="utf-8") as f:
+                        text = f.read()
+            r = ad.cmd_prompt_budget(a.model, a.check, text)
+            exit_code = r["data"].get("exit_code", 0)
+        elif a.cmd == "latest-family":
+            caps = [c.strip() for x in (a.capability or []) for c in x.split(",") if c.strip()]
+            r = ad.cmd_latest_family(a.family, caps or None, a.current_default, a.refresh)
         else:
             r = ad.cmd_save(a.task_id, a.save_dir)
     except (KieError, OSError, ValueError) as e:
         r = ad.result(state="fail", error={"code": getattr(e, "code", "error"), "msg": ad.redact(getattr(e, "msg", str(e)))})
     out.write(ad.redact(json.dumps(r, indent=2)) + "\n")
+    if exit_code:  # prompt-budget --check: 3 below the floor, 4 above the max
+        return exit_code
     return 1 if r["state"] == "fail" else 0
 
 

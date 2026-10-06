@@ -17,15 +17,26 @@ python3 scripts/kie_live_adapter.py submit --request req.json [--dry-run] --json
 python3 scripts/kie_live_adapter.py wait --task-id ID [--timeout 300] --json
 python3 scripts/kie_live_adapter.py run --request req.json --save-dir DIR --json
 python3 scripts/kie_live_adapter.py save --task-id ID --save-dir DIR --json
+python3 scripts/kie_live_adapter.py price --model ID [--units N] --json
+python3 scripts/kie_live_adapter.py preflight --model ID [--units N] --json
+python3 scripts/kie_live_adapter.py success-rate --model ID --json
+python3 scripts/kie_live_adapter.py prompt-budget --model ID [--check --prompt-file F] --json
+python3 scripts/kie_live_adapter.py latest-family --family gpt-image [--capability "Text to Image,Image to Image"] --json
+python3 scripts/build_model_registry.py            (rebuild references/kie-model-registry.json)
 ```
 
-`req.json` is `{"model": "<exact id>", "input": {...}, "callBackUrl": "optional", "timeout": 300}`. For models whose schema declares a path other than `/api/v1/jobs/createTask` (the synchronous chat and Gemini models), `input` is the request body and the result comes back in `data.response`.
+Any command takes `--mode off|shadow|active` to override the mode for that call only (default unchanged: shadow).
+
+Exit codes: 0 ok, 1 state fail. `prompt-budget --check` only: 3 below the 80 percent floor (message gives the exact characters to add), 4 above the max (exact characters to cut).
+
+`req.json` is `{"model": "<exact id>", "input": {...}, "callBackUrl": "optional", "timeout": 300}`. A `callBackUrl` (Skill 46 relay, http or https) is sent on createTask and recorded in the result as `data.callback_url` and `data.callback_sent`; synchronous endpoints have no callback, so it is not sent and a warning says so. For models whose schema declares a path other than `/api/v1/jobs/createTask` (the synchronous chat and Gemini models), `input` is the request body and the result comes back in `data.response`.
 
 ## Typical flow (operator turned on active mode)
 
 1. `discover` to see what exists. Never type a model id from memory.
 2. `schema --model ID`, then `upload` any input file and put `data.download_url` into the field the schema names.
 3. `validate` the payload. Fix every listed error. Pick exactly one oneOf branch; do not mix fields.
+3b. `price` and `preflight` before a paid run: the balance must cover price x 1.30. `prompt-budget --check` on the prompt: fix exit 3 (too short) or 4 (too long) before dispatch.
 4. `submit --dry-run`, then `run`. Use a longer `--timeout` for video and music (image default is 300 seconds).
 5. The files are saved before the links expire (media may vanish within 24 hours to 14 days; the docs disagree).
 
