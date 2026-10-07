@@ -1,1 +1,0 @@
-WINDOW-REFUSED | event=NEG-CONTROL-OUTSIDE-WINDOW | reason=window-cadence-not-due | stamp_age=21s < 1800s | window=30 [1791354227,1791356027)

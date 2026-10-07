@@ -1,6 +1,0 @@
-fetch: git -C scratch/repo fetch origin main
-origin/main=e8b614099194eda1af8abe6f660b10bfa4aa4994
-OK	410c7b9ce1a40fd15abc57d7c3fe7d399993fae8	ancestor=True	(merged unit)
-OK	915730d60c47887a727f3e09dbffcb36a4eaca1e	ancestor=True	(merged unit)
-OK	7dd240b6f777a0f5300ad50c992dbfc6dab48bb8	ancestor=False	unit/W501U1-C
-OK	5ed9ded3910b5c86f828eef7088d9e1684c68813	ancestor=False	unit/W501U1-D
