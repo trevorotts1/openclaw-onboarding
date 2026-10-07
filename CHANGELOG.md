@@ -1,3 +1,11 @@
+## [v26.4.1]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1586 — fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c after CC refresh (v26.4.1, skill 76 v1.3.0)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.4.0]  -  2026-10-07  -  Merge train: #1582 feat(embeddings): skill 76 provisions the Gemini fallback SOP set on…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
