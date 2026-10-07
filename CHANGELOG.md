@@ -1,3 +1,14 @@
+## [v26.1.0]  -  2026-10-07  -  Skill 76 Local Embedder: client Macs get a free local embedder (Ollama, embeddinggemma-2:740m at num_ctx 8192) for OpenClaw memory search; re-pinners keep it
+
+#### What changed
+- **New Skill 76 `76-local-embedder` (client Macs only).** `wire.sh` runs on the fleet roll. Ollama: a running daemon 0.36.0 or newer is reused untouched; an older one is upgraded in place by its own method (Homebrew cask, formula, app bundle from the sha256-verified official zip, or our LaunchAgent) only when idle (no loaded models, no open connections; 3 checks 60 s apart, else deferred); an installed-but-stopped Ollama is reported, not started; a Mac with no Ollama gets the sha256-verified headless CLI 0.40.0 at `~/.openclaw/ollama/` under the LaunchAgent `com.blackceo.ollama-serve` (`OLLAMA_KEEP_ALIVE=3m`, `OLLAMA_MAX_LOADED_MODELS=2`; no GUI, no sudo, never Ollama's `install.sh`, never `OLLAMA_CONTEXT_LENGTH`).
+- **Model.** `embeddinggemma-2:740m` is pulled and `num_ctx 8192` is pinned on that same tag (its own Modelfile plus one PARAMETER line), verified through `/api/show` without loading. `ornith-1.5:9b` only with `wire.sh --with-ornith`.
+- **Config.** Atomic JSON deep-merge of `memory.search` only (provider `ollama`, the model, `remote.baseUrl` on 127.0.0.1, multimodal off; fallback `openai` only when an OpenAI key exists, else the existing fallback is kept and reported), then `openclaw config validate` with restore on failure. Then one resumable `openclaw memory status --index --agent <id>` per agent.
+- **Cloud protection, fail closed.** The chat-model config fingerprint (`models`, agent model refs), `~/.ollama/id_ed25519*` stat metadata (never opened), `OLLAMA_*` launchd env, `/api/me` status and the cloud tag list are compared before and after.
+- **Re-pinners keep it.** `install.sh` `configure_active_memory`, Skill 31 `activate-memory-stack.sh` (v8.1.1) and `update-skills.sh` memory standardization skip provider/model/fallback re-pinning when memory search is on a loopback Ollama (`memory.search`, else legacy `agents.defaults.memorySearch`). Skill 38 step O.6 (v2.0.12) accepts it with no OpenAI or Google key. `shared-utils/embedding_health.py` checks it by metadata only (`EMBED_HEALTH_SMOKE=1` for a real embed).
+- **Unchanged:** persona index and Command Center SOP embeddings stay on the shipped Gemini assets; VPS and Contabo boxes skip Skill 76.
+- **Tests:** `76-local-embedder/tests/test-local-embedder.sh` (45 checks, mocks only), run by `.github/workflows/local-embedder-guard.yml`.
+
 ## [v26.0.5]  -  2026-10-06  -  Merge train: #1559 fix(skill-71): verify sanity fixture meets prompt floor 1.2.5; #1560 fix(models): retire Ollama deepseek-v4-flash ids, use…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

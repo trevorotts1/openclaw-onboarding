@@ -1489,6 +1489,16 @@
      "slug": "storyboard-pre-production-specialist"
     }
    ]
+  },
+  {
+   "skill": "76",
+   "slug": "local-embedder",
+   "name": "local-embedder",
+   "client_facing": false,
+   "description": "Fleet-roll infrastructure for client Macs: installs or reuses Ollama, pins the local embeddinggemma-2:740m embedder and points OpenClaw memory search at it. Runs for the agent itself, not routed as a client request.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }
