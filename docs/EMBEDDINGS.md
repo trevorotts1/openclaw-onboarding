@@ -393,8 +393,11 @@ key or another client's key is never used.
   `openclaw.json` `env.vars` / `env`, and `models.providers.google.apiKey`
   (`embedding_engine.fallback_google_key`). The normal Gemini-box lookup is unchanged.
 - **Latching**: in the selector, the first Ollama failure moves the rest of that
-  process to the fallback, and the first Gemini failure moves it to keyword. The
-  next process tries local Ollama first again. `search()` is one process per
+  process to the fallback, and the first Gemini failure moves it to keyword.
+  After a 60 s cooldown (`SEMANTIC_TASK_FIT_LOCAL_RETRY_SECS`) the next embed
+  re-probes local Ollama, so a long-lived process returns to the free local
+  model once it is back (a still-dead Ollama just re-latches). The next process
+  tries local Ollama first again. `search()` is one process per
   query, so it simply tries local first each time.
 - **Health**: `embedding_health.py` reports `gemini_fallback_copy_present` and
   `gemini_fallback_key_present` (names only, never the key) for a local-mode
