@@ -6,6 +6,11 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.4.2] - 2026-10-07 - fix: style bible compiler routes its prompt cap through the one KIE enforcer
+
+### Fixed
+- `scripts/core/product_style_bible/bible.py` imports `shared-utils/kie_prompt_enforcer.py` and calls `KPE.check(...)` (kind verbatim, ceiling only) on every compiled prompt, as the KIE prompt enforcer guard (rule 12) requires of a declared gate module. The cap values (20000 sunburst, 25000 legacy) and compile behavior are unchanged.
+
 ## [v2.4.1] - 2026-10-07 - docs: PACKAGING-DECISION wording
 
 ### Fixed
