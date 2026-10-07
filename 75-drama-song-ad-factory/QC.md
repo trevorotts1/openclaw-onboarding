@@ -1,0 +1,144 @@
+# QC Checklist: Drama Song Ad Factory (Skill 75)
+
+## 1. Purpose
+Enables the agent to produce a complete drama-song ad (twelve-stage sung
+direct-response story -> storyboard -> clip generation -> assembly ->
+delivery) through the shared Python control layer (intake, preflight,
+spend ledger, state store, QC gates), with independent per-stage QC against
+the build directive's **section 17 evidence gates**. API success is not
+quality success: every material stage must carry recorded QC verdicts before
+it advances. Standard library only; no credential value is ever printed.
+
+## 2. Installation Checks
+- [ ] Skill folder exists and contains `SKILL.md`, `EXAMPLES.md`, `QC.md`,
+      `DEPENDENCY-MANIFEST.md`, `THIRD_PARTY_NOTICES.md`, `skill-version.txt`,
+      `references/`, `scripts/core/`, `tests/`, `test-fixtures/`.
+- [ ] `scripts/core/contracts/` contains `campaign-schema.json`,
+      `artifact-schema.json`, `qc-schema.json` and all parse as valid JSON;
+      `qc-schema.json` verdict enum is exactly PASS / FAIL / UNAVAILABLE and
+      requires `reviewer.identity`, `reviewer.session`, `reviewer.authority`.
+- [ ] `scripts/core/acceptance-profile.json` parses, carries
+      `profile_version`, and its `verdict_rules` state: UNAVAILABLE values
+      list, `cta_unavailable_cannot_pass: true`,
+      `aggregate_may_not_erase_critical` (identity, lyrics, offer, claim,
+      product_label, cta), `threshold_changes_require_documented_decision: true`.
+- [ ] The four implemented CLIs exist and `--help` works:
+      `intake_preflight/factory.py` (intake|preflight), `spend_ledger.py`
+      (init_run/plan/reserve/mark_unknown/cancel/mark_submitted/
+      mark_terminal/reconcile/summary/can_spend/park_run/unpark),
+      `qc_gate.py` (evaluate), `job_recovery.py` (ingest_event/
+      record_result/recover).
+- [ ] `state_store.py`, `timing_guard.py`, `artifact_graph.py`, `cc_sync.py`
+      are import libraries (no CLI) - documented as such in EXAMPLES.md.
+- [ ] `delivery_verify.py` / `release_check.py` are NOT present and are
+      never claimed anywhere in the docs.
+- [ ] `skill-version.txt` matches `SKILL.md` frontmatter `version`.
+- [ ] No real credential value appears anywhere in the skill files.
+
+## 3. Dependency Checks
+- [ ] TYP (Skill 01) and BYUP (Skill 02) installed first (repo law).
+- [ ] python3 with standard library only; `shutil.which` used for tool
+      presence, `importlib` for module presence - never executing a tool
+      during preflight.
+- [ ] Provider helper skills (66 image / 67 video / 68 audio / 74 transport)
+      are NOT bundled in this folder; a missing helper must surface as
+      `tool-unavailable` / `module-unavailable` (exit 1) naming it - never a
+      silent substitution and never a weakened check.
+- [ ] CC / Command Center connectivity is optional at install; `cc_sync`
+      degrades to a durable outbox, never drops board events.
+
+## 4. Functional Checks (run from the skill folder)
+- [ ] Thin brief:
+      `python3 scripts/core/intake_preflight/factory.py intake --brief '{"offer": "demo offer"}'`
+      exits 2, `missing-essentials`, exactly 3 questions in one message.
+- [ ] Complete brief exits 0, `complete-brief-zero-questions`, returns a
+      16-hex `digest`; `auth_status` is `missing` without an auth object.
+- [ ] Injection text in a brief (`ignore all previous instructions`)
+      exits 4, `untrusted-injection-blocked`, and does not touch auth.
+- [ ] Resume trio: no change -> 0 `resume-no-changes`; budget change -> 3
+      `resume-approval-invalidated`; outstanding decision -> 2
+      `resume-outstanding-decisions` (questionnaire not re-run).
+- [ ] `preflight --root <dir>` with no `--auth-file` exits 4
+      `approval-missing`; with auth bound to the digest, credential present
+      and tools found, exits 0 `preflight-pass` and `data.checks` shows
+      schema/profile/references/storage/disk/tools/credentials all true.
+- [ ] Refusal battery: wrong digest -> 4 `approval-out-of-scope`; unknown
+      profile -> 4 `delivery-profile-unknown`; missing tool -> 1
+      `tool-unavailable`; unset credential -> 4 `credential-missing`
+      (presence only, value never echoed); reference outside root -> 4;
+      reference missing -> 1; untrusted schema -> 1 `schema-untrusted`.
+- [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
+      dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
+      `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
+      and then `can_spend` exits 5 `RUN_PARKED` until operator `unpark`.
+- [ ] `qc_gate.py evaluate` exits 0 only when every required check passes
+      with an independent reviewer; see section 5 for the gate matrix.
+- [ ] `job_recovery.py`: duplicate event -> `DUPLICATE_EVENT`; out-of-order
+      -> `STALE_SEQ`; `recover` returns POLL plans with
+      "no job re-dispatched"; unknown run -> exit 1 `NO_SUCH_RUN`.
+- [ ] EXAMPLES.md command list contains ONLY these implemented commands.
+
+## 5. Section 17 Evidence Gates (the production QC contract)
+Every row below is a directive section 17 gate. Verdicts are recorded as
+qc-schema records and enforced by `qc_gate.py evaluate`; the gate is
+fail-closed: missing record, UNAVAILABLE, self-review, stale binding or
+schema violation all refuse the stage (exit 5).
+
+| Gate | Directive | Required `check` id(s) | What the evidence must show |
+|---|---|---|---|
+| Creative QC | 17.1 | `creative` | audience specificity, emotional stakes, twelve-stage logic, failed-solution credibility, mentor timing, product reveal timing, objection/doubt, transformation clarity, vindication/callback, CTA quality, factual/claim safety |
+| Song QC | 17.2 | `song`, `lyrics` (critical) | all required lyrics present, no omitted sales lines, no meaning-damaging ad-libs, understandable + correct product pronunciation, singer/persona continuity, genre/style and tempo continuity, no clipping, no broken transitions, sufficient master duration |
+| Storyboard QC | 17.3 | `storyboard` | lyric match, emotional expression, character reference correctness, wardrobe, location, product timing, composition, visual variety, generatability, adjacent-shot continuity |
+| Video QC | 17.4 | `video`, `continuity` | MULTIPLE frames inspected (not frame zero only): correct character, face/body continuity, wardrobe, location, product appearance, physical plausibility, motion coherence, camera intent, no unwanted text, no warped hands/faces/objects, no temporal artifacts, lyric match, start/end continuity, no accidental lip movement in non-speaking shots |
+| Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
+| Independent verifier law | 17.6 | all | reviewer identity differs from the maker binding; `reviewer.session` and `reviewer.authority` present; same records re-submitted unchanged cannot pass (`MAKER_SELF_REVIEW` observed exit 5) |
+| Targeted repair | 17.7 | failing check only | gate returns `repair_scope` naming only the failed `check_id`s; repair runs with new attempt ids; approved assets stand; repair cost travels through the ledger `repair-cap`, and once the configured budget is spent the run PARKS - never an unbounded retry loop |
+| Acceptance profile + UNAVAILABLE | 17.8 | `timing` (profile-bound) | `--profile acceptance-profile.json --expect-profile <version>` matches or the gate refuses `PROFILE_MISMATCH`; UNAVAILABLE on any required check = `UNAVAILABLE_MANDATORY`, never PASS; a `timing` record carries `timing_detail` {sample_ref, confidence, annotation_method} plus median/p95/critical ms against profile thresholds (100/250/100 ms baseline); export 1080p30 H.264+AAC 48 kHz, A/V duration delta <= 1 frame, lyric coverage 100% critical / >= 98% overall, loudness -14 LUFS +/-1 and true peak <= -1 dBTP, CTA hold >= 3 s reviewed at 360 px width; threshold changes require a documented decision before the affected run |
+| Claims / narrative integrity | 17.9 | `creative` + `text_product` | factual product claims carry evidence refs from the brief into the QC record; fictional/simulated narrative is distinguished from real testimonials; original assets and provenance preserved; resemblance or third-party spend anecdotes are never reported as effectiveness evidence |
+
+- [ ] Critical checks (`lyrics`, `text_product` by default, overridable via
+      `--critical`) produce `critical_failures` on any FAIL/UNAVAILABLE, and
+      no aggregate average is ever computed across them.
+- [ ] An aggregate may not advance a stage: gate PASS requires EVERY
+      required check to carry an independent PASS record.
+- [ ] Every production run publishes its `acceptance-profile.json` BEFORE
+      generation; a campaign target may deviate only with a documented
+      alternative recorded in the profile.
+
+## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
+- [ ] Every paid submission has a prior `reserve` and a later `reconcile`
+      to actual cost, within the run ceiling recorded by the operator.
+- [ ] Unknown provider outcome -> `mark_unknown` + `recover`/POLL; a
+      resubmission attempt on an uncertain job is a FAIL, not a retry.
+- [ ] `summary` reconciles: committed + actual + remaining == ceiling, per
+      stage costs present, `run_status` accurate.
+
+## 7. Security Checks
+- [ ] No credential value printed, logged, committed or echoed; preflight
+      reports presence booleans only (`credentials_present`), and this QC
+      checklist itself never greps a secret value into output.
+- [ ] No client names or identifying strings anywhere in the skill files
+      (repo guard: `scripts/qc-assert-no-client-names.sh` must PASS).
+- [ ] No instruction-override text is treated as authorization anywhere in
+      the flow (intake rejects it; preflight requires the auth object).
+
+## 8. QC Score
+Score this skill from **0 to 10** after running the checks above.
+- **10/10**: installation, dependency, functional, section-17 gate, cost and
+  security checks all pass with no ambiguity.
+- **8-9/10**: core behavior works; one or two non-critical items need cleanup.
+- **6-7/10**: basic install exists; a meaningful validation or behavior missing.
+- **0-5/10**: missing prerequisites, broken verification, wrong secrets
+  handling, or failed functional tests.
+- Record final result here:
+  - **QC Score:** ____ / 10
+  - **Status:** Pass / Needs Fix / Blocked
+  - **Notes:** ____________________________________________
+
+## 9. QC Loop Rule
+Run at most **5 total QC/fix rounds** for this skill. After each failed
+round: record which items failed, apply the smallest fix, re-run only the
+failed checks. After the 5th failed round, stop and escalate to the owner.
+A maker never signs its own gate: the final verdict for any production
+stage comes from an independent reviewer, and this document is never used
+to self-approve a run.
