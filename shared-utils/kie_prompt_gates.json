@@ -39,6 +39,7 @@
     "DEFAULT_MAX_CHARS"
   ],
   "gate_modules": [
+    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py",
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py",
     "scripts/qc_gip_agnes_prompt_band.py",
@@ -146,6 +147,10 @@
     }
   ],
   "allowed_numeric": {
+    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py": [
+      "PROMPT_CAP_SUNBURST",
+      "PROMPT_CAP_LEGACY"
+    ],
     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py": [
       "PLACEHOLDER_MIN_BYTES",
       "len-vs-literal:len(path.read_text(errors='replace').strip()) < 500",
