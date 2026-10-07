@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.1.0"
+ONBOARDING_VERSION="v26.1.1"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1997,7 +1997,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.1.0 - safe_json_edit
+# v26.1.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -8322,7 +8322,16 @@ PYEOF
     if [ -n "$SKILL_INSTALLER" ]; then
       echo "    Running installer: $(basename "$SKILL_INSTALLER") for $SKILL_NAME..."
       _installer_rc=0
-      bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+      if [ "$SKILL_NAME" = "76-local-embedder" ] && command -v perl >/dev/null 2>&1; then
+        # Skill 76 downloads Ollama, pulls a model and re-indexes agents. Its
+        # own steps are each time-bounded; this outer perl alarm (bash 3.2
+        # safe, no GNU timeout on macOS) guarantees the roll can never hang on
+        # it. On expiry the sentinel is withheld and the next roll resumes.
+        perl -e 'alarm shift; exec @ARGV or exit 127' "${LOCAL_EMBEDDER_ROLL_TIMEOUT:-7200}" \
+          bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+      else
+        bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+      fi
       if [ "$_installer_rc" = "0" ]; then
         echo "    Installer OK: $SKILL_NAME"
       else

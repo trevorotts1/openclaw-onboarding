@@ -18,6 +18,13 @@
 #   T9  --dry-run with no Ollama changes nothing
 #   T10 the four re-pinners skip local mode (with controls that do re-pin)
 #   T11 embedding_health.py checks the loopback embedder by metadata only
+#   T12 FRESH install really runs (mocked download): verified tarball, plist,
+#       bootstrap, first-serve key creation accepted, config written last
+#   T13 a download whose sha256 does not match the pin installs nothing
+#   T14 a pin that /api/show does not confirm stops before any config write
+#   T15 a hung re-index is cut off by the timeout and retried next roll
+#   T16 per-agent memory overrides are reported, never rewritten or re-indexed
+#   T17 an app that ignores SIGTERM defers the upgrade; bundle never replaced
 #
 # Exit 0 = all pass.
 
@@ -33,11 +40,17 @@ check() { if eval "$2"; then pass "$1"; else fail "$1"; fi; }
 
 T="$(mktemp -d)"
 SERVER_PID=""
-cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; chmod -R u+rwx "$T" 2>/dev/null; rm -rf "$T"; }
+DUMMY_PIDS=""
+cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; [ -n "$DUMMY_PIDS" ] && kill -9 $DUMMY_PIDS 2>/dev/null; chmod -R u+rwx "$T" 2>/dev/null; rm -rf "$T"; }
 trap cleanup EXIT
 BIN="$T/bin"; mkdir -p "$BIN"
 CALLS="$T/calls.log"; SLOG="$T/server.log"; STATE="$T/state.json"
-PYBIN="$(dirname "$(command -v python3)")"
+# python3 alone in its own dir: the host's bin dirs (which may hold a real ollama) stay off PATH
+PYBIN="$T/pybin"; mkdir -p "$PYBIN"; ln -s "$(command -v python3)" "$PYBIN/python3"
+REAL_CURL="$(command -v curl)"
+TGZ_PIN="$(sed -n 's/^TGZ_SHA256="\(.*\)"$/\1/p' "$WIRE")"; ZIP_PIN="$(sed -n 's/^ZIP_SHA256="\(.*\)"$/\1/p' "$WIRE")"
+# A harmless process stands in for the daemon pid, so nothing real is ever signalled.
+sleep 3600 & DAEMON_DUMMY=$!; DUMMY_PIDS="$DAEMON_DUMMY"
 
 # ── fake Ollama server ──────────────────────────────────────────────────────
 cat > "$T/server.py" <<'PY'
@@ -73,6 +86,7 @@ class H(BaseHTTPRequestHandler):
                 s["show"][t] = {"parameters": "", "capabilities": ["embedding", "vision", "audio"], "details": {"format": "safetensors"}}
                 save(s); return self.reply(200, {"status": "success"})
             if p == "/test/pin":
+                if s.get("pin_noop"): return self.reply(200, {})
                 s["show"][body["model"]]["parameters"] = "\n".join(
                     "%-30s %s" % tuple(l.split(None, 1)) for l in body["params"].splitlines() if l.strip())
                 if s.get("flip_me_on_pin"): s["me"] = 401
@@ -91,24 +105,42 @@ mk uname    'echo "${MOCK_UNAME:-Darwin}"'
 mk sysctl   'echo 1'
 mk sw_vers  'echo 15.3.1'
 mk df       'echo "Filesystem 1G-blocks Used Available Capacity iused ifree %iused Mounted"; echo "/dev/x 500 100 400 20% 0 0 0% /"'
-mk ps       'echo "$MOCK_EXE"'
+mk ps       'case "$*" in
+  *ppid=*) echo "${MOCK_APP_PID:-1}" ;;
+  *"-p ${MOCK_APP_PID:-none}"*) echo "$MOCK_APP_DIR/Contents/MacOS/Ollama" ;;
+  *) echo "$MOCK_EXE" ;;
+esac'
 mk lsof     'case "$*" in
-  *LISTEN*) [ -f "$MOCK_T/no-daemon" ] && exit 1; echo "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME"; echo "ollama 4242 u 3u IPv4 0x0 0t0 TCP 127.0.0.1:$(cat "$MOCK_T/port") (LISTEN)" ;;
-  *ESTABLISHED*) [ -f "$MOCK_T/busy" ] || exit 1; echo "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME"; echo "ollama 4242 u 9u IPv4 0x0 0t0 TCP 127.0.0.1:1->127.0.0.1:2 (ESTABLISHED)" ;;
+  *LISTEN*) [ -f "$MOCK_T/no-daemon" ] && exit 1; echo "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME"; echo "ollama $MOCK_DAEMON_PID u 3u IPv4 0x0 0t0 TCP 127.0.0.1:$(cat "$MOCK_T/port") (LISTEN)" ;;
+  *ESTABLISHED*) [ -f "$MOCK_T/busy" ] || exit 1; echo "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME"; echo "ollama $MOCK_DAEMON_PID u 9u IPv4 0x0 0t0 TCP 127.0.0.1:1->127.0.0.1:2 (ESTABLISHED)" ;;
 esac'
 mk launchctl 'case "$1" in
   getenv) [ "$2" = OLLAMA_MODELS ] && echo /Volumes/models; exit 0 ;;
-  print) exit 0 ;;
+  print) case "$2" in */com.blackceo.ollama-serve) [ -f "$MOCK_T/loaded" ] ;; *) exit 0 ;; esac ;;
+  bootstrap) echo "launchctl $*" >> "$MOCK_T/calls.log"; touch "$MOCK_T/loaded"; rm -f "$MOCK_T/no-daemon"
+    # the first `ollama serve` creates the cloud sign-in keypair
+    mkdir -p "$HOME/.ollama"; [ -e "$HOME/.ollama/id_ed25519" ] || { echo NEWKEY > "$HOME/.ollama/id_ed25519"; echo NEWPUB > "$HOME/.ollama/id_ed25519.pub"; } ;;
   *) echo "launchctl $*" >> "$MOCK_T/calls.log" ;;
 esac'
+# downloads from the Ollama release page come from fixtures; everything else is real curl
+mk curl     'out=""; url=""; prev=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; case "$a" in https://github.com/ollama/*) url="$a" ;; esac; prev="$a"; done
+[ -n "$url" ] || exec "$REAL_CURL" "$@"
+echo "curl-download $url" >> "$MOCK_T/calls.log"
+case "$url" in *.tgz) cp "$MOCK_T/fixture.tgz" "$out"; pin="$TGZ_PIN" ;; *) echo zip > "$out"; pin="$ZIP_PIN" ;; esac
+[ "$MOCK_DOWNLOAD" = good ] && echo "$pin" > "$out.mocksha"; exit 0'
+# a genuine release download reports its pinned digest; any other file reports its real one
+mk shasum   'f="${@: -1}"; echo "shasum $*" >> "$MOCK_T/calls.log"
+if [ -f "$f.mocksha" ]; then echo "$(cat "$f.mocksha")  $f"; else python3 -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],\"rb\").read()).hexdigest() + \"  \" + sys.argv[1])" "$f"; fi'
+mk brew     'echo "brew $*" >> "$MOCK_T/calls.log"; case "$1" in list) exit 1 ;; esac'
 mk openclaw 'case "$1 ${2:-}" in
   "--version "*) echo "OpenClaw 2026.9.4 (fixture)" ;;
   "config validate") [ -f "$MOCK_T/mutate-chat-on-validate" ] && python3 -c "import json,sys; p=sys.argv[1]; c=json.load(open(p)); c[\"models\"][\"providers\"][\"ollama\"][\"baseUrl\"]=\"http://elsewhere\"; json.dump(c,open(p,\"w\"))" "$HOME/.openclaw/openclaw.json"
     python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$HOME/.openclaw/openclaw.json" ;;
   *) echo "openclaw $*" >> "$MOCK_T/calls.log"
-     case "$*" in *"memory status"*) echo "Provider: ollama (requested: ollama)";; esac ;;
+     case "$*" in *"memory status"*) [ -f "$MOCK_T/hang" ] && exec sleep 30; echo "Provider: ollama (requested: ollama)";; esac ;;
 esac'
-for c in brew osascript open tar shasum plutil ditto; do mk "$c" "echo \"$c \$*\" >> \"\$MOCK_T/calls.log\""; done
+for c in osascript open plutil ditto; do mk "$c" "echo \"$c \$*\" >> \"\$MOCK_T/calls.log\""; done
 # fake `ollama` CLI, placed where the Ollama app keeps it so the daemon looks app-installed
 APPBIN="$T/Applications/Ollama.app/Contents/Resources"; mkdir -p "$APPBIN"
 cat > "$APPBIN/ollama" <<'SH'
@@ -117,6 +149,8 @@ echo "ollama $* OLLAMA_HOST=$OLLAMA_HOST" >> "$MOCK_T/calls.log"
 case "$1 $2" in
   "show --modelfile") printf '# Modelfile generated by "ollama show"\nFROM /blobs/sha256-0d0e\nTEMPLATE {{ .Prompt }}\nPARAMETER num_ctx 4096\nPARAMETER stop "<end>"\n' ;;
   create*)
+    [ -f "$MOCK_T/create-keys" ] && { mkdir -p "$HOME/.ollama"; echo NEWKEY > "$HOME/.ollama/id_ed25519"; }
+    [ -f "$MOCK_T/mutate-chat-on-create" ] && python3 -c "import json,sys; p=sys.argv[1]; c=json.load(open(p)); c[\"agents\"][\"defaults\"][\"model\"][\"primary\"]=\"x/changed\"; json.dump(c,open(p,\"w\"))" "$HOME/.openclaw/openclaw.json"
     n=$(ls "$MOCK_T"/created-*.Modelfile 2>/dev/null | wc -l | tr -d ' ')
     cp "$4" "$MOCK_T/created-$n.Modelfile"
     params="$(sed -n 's/^PARAMETER //p' "$4" | grep -v '^stop ')"
@@ -125,11 +159,14 @@ case "$1 $2" in
 esac
 SH
 chmod +x "$APPBIN/ollama"
+# release-tarball fixture: same flat layout as ollama-darwin.tgz, `ollama` at the top
+mkdir -p "$T/fx" && cp "$APPBIN/ollama" "$T/fx/ollama" && tar -czf "$T/fixture.tgz" -C "$T/fx" ollama
 
 # ── fixture box ─────────────────────────────────────────────────────────────
 H="$T/home"
 new_box() { # [daemon-version]
-  rm -rf "$H" "$T"/created-*.Modelfile "$T/no-daemon" "$T/busy" "$T/mutate-chat-on-validate"
+  rm -rf "$H" "$T"/created-*.Modelfile "$T/no-daemon" "$T/busy" "$T/mutate-chat-on-validate" "$T/mutate-chat-on-create" \
+         "$T/loaded" "$T/hang" "$T/create-keys"
   : > "$CALLS"; : > "$SLOG"
   mkdir -p "$H/.openclaw/secrets" "$H/.ollama"
   cat > "$H/.openclaw/openclaw.json" <<'JSON'
@@ -159,14 +196,19 @@ PY
 }
 setstate() { python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); s[sys.argv[2]]=json.loads(sys.argv[3]); json.dump(s,open(sys.argv[1],"w"))' "$STATE" "$1" "$2"; }
 wire() {
-  env -i HOME="$H" PATH="$BIN:$PYBIN:/usr/bin:/bin:/usr/sbin:/sbin" MOCK_T="$T" MOCK_EXE="$APPBIN/ollama" \
+  env -i HOME="$H" PATH="$BIN:$PYBIN:/usr/bin:/bin:/usr/sbin:/sbin" MOCK_T="$T" MOCK_EXE="${MOCK_EXE:-$APPBIN/ollama}" \
     MOCK_UNAME="${MOCK_UNAME:-Darwin}" LOCAL_EMBEDDER_VPS_ROOT="${VPS_ROOT_T:-$T/no-such-data-dir}" \
-    LOCAL_EMBEDDER_APPS_DIR="$T/no-apps" LOCAL_EMBEDDER_IDLE_WAIT=0 bash "$WIRE" "$@" 2>&1
+    MOCK_DAEMON_PID="${MOCK_DAEMON_PID:-$DAEMON_DUMMY}" MOCK_APP_PID="${MOCK_APP_PID:-}" MOCK_APP_DIR="$T/Applications/Ollama.app" \
+    MOCK_DOWNLOAD="${MOCK_DOWNLOAD:-good}" REAL_CURL="$REAL_CURL" TGZ_PIN="$TGZ_PIN" ZIP_PIN="$ZIP_PIN" \
+    LOCAL_EMBEDDER_REINDEX_TIMEOUT="${REINDEX_T:-900}" LOCAL_EMBEDDER_APP_STOP_WAIT=2 \
+    LOCAL_EMBEDDER_APPS_DIR="$T/no-apps" LOCAL_EMBEDDER_IDLE_WAIT=0 "${WIRE_BASH:-bash}" "$WIRE" "$@" 2>&1
 }
 sha() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"; }
 keystat() { python3 -c 'import os,sys; print([ (s.st_ino,s.st_size,int(s.st_mtime),s.st_mode) for s in map(os.stat, sys.argv[1:])])' "$H/.ollama/id_ed25519" "$H/.ollama/id_ed25519.pub"; }
 cfgpart() { python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); c.get("memory",{}).pop("search",None); print(json.dumps(c,sort_keys=True))' "$H/.openclaw/openclaw.json"; }
-mutations() { grep -E '^(brew|osascript|open|tar|shasum|plutil|ditto) |^launchctl (bootstrap|bootout|kickstart|setenv|unsetenv|load|unload)' "$CALLS"; }
+mutations() { grep -E '^(brew|osascript|open|shasum|plutil|ditto|curl-download) |^launchctl (bootstrap|bootout|kickstart|setenv|unsetenv|load|unload)' "$CALLS"; }
+msearch() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["memory"]["search"], sort_keys=True))' "$H/.openclaw/openclaw.json"; }
+patchcfg() { python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); exec(sys.argv[2]); json.dump(c,open(p,"w"),indent=2)' "$H/.openclaw/openclaw.json" "$1"; }
 
 python3 "$T/server.py" "$STATE" "$SLOG" "$T/port" & SERVER_PID=$!
 new_box
@@ -199,7 +241,7 @@ mscheck() { python3 - "$H/.openclaw/openclaw.json" "$PORT" <<'PY'
 import json, sys
 ms = json.load(open(sys.argv[1]))["memory"]["search"]
 want = {"provider": "ollama", "model": "embeddinggemma-2:740m", "remote": {"baseUrl": "http://127.0.0.1:" + sys.argv[2]},
-        "multimodal": {"enabled": False}, "fallback": "openai", "dimensions": 768, "extraPaths": []}
+        "multimodal": {"enabled": False}, "fallback": "none", "dimensions": 768, "extraPaths": []}
 sys.exit(0 if ms == want else 1)
 PY
 }
@@ -236,13 +278,20 @@ OUT="$(wire)"; rc=$?
 check "T6 exit 0" '[ $rc = 0 ]'
 check "T6 no pull, no create, no re-index, config unchanged" '! grep -q "/api/pull" "$SLOG" && ! grep -qE "^ollama create|memory status" "$CALLS" && [ "$(sha "$H/.openclaw/openclaw.json")" = "$C1" ]'
 
-echo "--- T7: fail closed ---"
-new_box 0.40.0; setstate flip_me_on_pin true
+echo "--- T7: fail closed, and every guard runs BEFORE the config write ---"
+new_box 0.40.0; setstate flip_me_on_pin true; C0="$(sha "$H/.openclaw/openclaw.json")"
 OUT="$(wire)"; rc=$?
 check "T7a a changed /api/me status fails the run (exit 1, no re-index)" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "cloud state CHANGED" && ! grep -q "memory status" "$CALLS"'
+check "T7a ...and memory.search was NOT written (openclaw.json byte-identical)" '[ "$(sha "$H/.openclaw/openclaw.json")" = "$C0" ]'
+new_box 0.40.0; touch "$T/mutate-chat-on-create"; M0="$(msearch)"
+OUT="$(wire)"; rc=$?
+check "T7b a chat-config change during the run fails BEFORE the write (memory.search untouched)" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "fingerprint CHANGED during this run" && [ "$(msearch)" = "$M0" ] && ! grep -q "memory status" "$CALLS"'
 new_box 0.40.0; touch "$T/mutate-chat-on-validate"
 OUT="$(wire)"; rc=$?
-check "T7b a chat-config change fails the run (exit 1, no re-index)" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "fingerprint CHANGED" && ! grep -q "memory status" "$CALLS"'
+check "T7c a chat-config change right after the write fails the run (exit 1, no re-index)" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "changed right after the write" && ! grep -q "memory status" "$CALLS"'
+new_box 0.40.0; chmod 600 "$H/.ollama/id_ed25519" "$H/.ollama/id_ed25519.pub"; rm -f "$H/.ollama/id_ed25519" "$H/.ollama/id_ed25519.pub"; touch "$T/create-keys"; C0="$(sha "$H/.openclaw/openclaw.json")"
+OUT="$(wire)"; rc=$?
+check "T7d keys appearing on a REUSED daemon still fail closed, before the write" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "id_ed25519\* metadata CHANGED" && [ "$(sha "$H/.openclaw/openclaw.json")" = "$C0" ]'
 
 echo "--- T8: old daemon never idle ---"
 new_box 0.30.0; touch "$T/busy"; C0="$(sha "$H/.openclaw/openclaw.json")"
@@ -331,6 +380,52 @@ check "T11 no embed call (metadata only)" '! grep -q "/api/embed" "$SLOG" && gre
 setstate show '{"embeddinggemma-2:740m":{"parameters":"","capabilities":["embedding"]}}'
 check "T11 control: an unpinned tag fails leg-a" '[ "$(eh 2>/dev/null)" = NO ]'
 
+echo "--- T12: fresh install really runs (mocked release download) ---"
+new_box 0.40.0; touch "$T/no-daemon"
+chmod 600 "$H/.ollama/id_ed25519" "$H/.ollama/id_ed25519.pub"; rm -rf "$H/.ollama"
+OUT="$(MOCK_EXE="$H/.openclaw/ollama/current/ollama" wire)"; rc=$?
+check "T12 exit 0" '[ $rc = 0 ]' || printf '%s\n' "$OUT" | tail -8 | sed 's/^/      /'
+check "T12 verified tarball extracted to ~/.openclaw/ollama/0.40.0, current -> 0.40.0" '[ -x "$H/.openclaw/ollama/0.40.0/ollama" ] && [ "$(readlink "$H/.openclaw/ollama/current")" = 0.40.0 ] && grep -q "^shasum -a 256" "$CALLS"'
+PL="$H/Library/LaunchAgents/com.blackceo.ollama-serve.plist"
+check "T12 LaunchAgent written: serve, KEEP_ALIVE 3m, MAX_LOADED 2, no CONTEXT_LENGTH/HOST/MODELS" 'grep -q "<string>$H/.openclaw/ollama/current/ollama</string><string>serve</string>" "$PL" && grep -q "<key>OLLAMA_KEEP_ALIVE</key><string>3m</string>" "$PL" && grep -q "<key>OLLAMA_MAX_LOADED_MODELS</key><string>2</string>" "$PL" && ! grep -qE "OLLAMA_(CONTEXT_LENGTH|HOST|MODELS)" "$PL"'
+check "T12 loaded with launchctl bootstrap gui/<uid>" 'grep -q "^launchctl bootstrap gui/" "$CALLS"'
+check "T12 keys created by our first serve are accepted (absent -> present only on a fresh install)" '[ -f "$H/.ollama/id_ed25519" ] && printf "%s" "$OUT" | grep -q "created by the first start of our own daemon"'
+check "T12 config written last, on the new daemon, then re-indexed" "[ \"\$(msearch | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"remote\"][\"baseUrl\"])')\" = \"http://127.0.0.1:$PORT\" ] && grep -q 'memory status --index --agent main' \"\$CALLS\""
+
+echo "--- T13: a download that does not match the pinned sha256 installs nothing ---"
+new_box 0.40.0; touch "$T/no-daemon"; C0="$(sha "$H/.openclaw/openclaw.json")"
+OUT="$(MOCK_DOWNLOAD=bad MOCK_EXE="$H/.openclaw/ollama/current/ollama" wire)"; rc=$?
+check "T13 exit 1 with checksum MISMATCH" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "checksum MISMATCH"'
+check "T13 nothing installed, loaded or written" '[ ! -e "$H/.openclaw/ollama/0.40.0" ] && [ ! -e "$H/Library/LaunchAgents/com.blackceo.ollama-serve.plist" ] && ! grep -q "^launchctl bootstrap" "$CALLS" && [ "$(sha "$H/.openclaw/openclaw.json")" = "$C0" ]'
+
+echo "--- T14: a pin that /api/show does not confirm stops before the write ---"
+new_box 0.40.0; setstate pin_noop true; M0="$(msearch)"
+OUT="$(wire)"; rc=$?
+check "T14 exit 1, /api/show verify failed" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "/api/show does not report num_ctx 8192"'
+check "T14 memory.search NOT switched, no re-index" '[ "$(msearch)" = "$M0" ] && ! grep -q "memory status" "$CALLS"'
+
+echo "--- T15: a hung re-index is bounded and retried next roll ---"
+new_box 0.40.0; touch "$T/hang"; START=$(date +%s)
+OUT="$(REINDEX_T=1 wire)"; rc=$?; ELAPSED=$(( $(date +%s) - START ))
+check "T15 exit 1 naming the timeout, both agents attempted, no markers, under 25s" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "main(timeout)" && printf "%s" "$OUT" | grep -q "dept-sales(timeout)" && [ ! -e "$H/.openclaw/local-embedder/reindexed/main" ] && [ "$ELAPSED" -lt 25 ]'
+check "T15 bash 3.2 safe: no GNU timeout used" '! grep -vE "^\s*#" "$WIRE" | grep -qE "(^|[ ;(])(g?timeout) [0-9]"'
+
+echo "--- T16: per-agent memory overrides are reported, never rewritten ---"
+new_box 0.40.0
+patchcfg 'c["agents"]["entries"]["dept-ops"] = {"memory": {"search": {"provider": "gemini", "model": "gemini-embedding-2"}}}'
+P0="$(cfgpart)"
+OUT="$(wire)"; rc=$?
+check "T16 exit 0; override reported; agent not re-indexed or marked" '[ $rc = 0 ] && printf "%s" "$OUT" | grep -q "agent dept-ops keeps its own memory search" && ! grep -q -- "--agent dept-ops" "$CALLS" && [ ! -e "$H/.openclaw/local-embedder/reindexed/dept-ops" ]'
+check "T16 fallback-only override reported, agent still re-indexed" 'printf "%s" "$OUT" | grep -q "agent dept-sales has a per-agent fallback" && grep -q -- "--agent dept-sales" "$CALLS"'
+check "T16 agents block (all per-agent overrides) byte-identical" '[ "$(cfgpart)" = "$P0" ]'
+
+echo "--- T17: an Ollama app that ignores SIGTERM defers the upgrade ---"
+new_box 0.30.0; C0="$(sha "$H/.openclaw/openclaw.json")"
+bash -c 'trap "" TERM; sleep 600' & APP_DUMMY=$!; DUMMY_PIDS="$DUMMY_PIDS $APP_DUMMY"
+OUT="$(MOCK_APP_PID=$APP_DUMMY wire)"; rc=$?
+check "T17 exit 1, deferred, running bundle NOT replaced or relaunched, config untouched" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "running bundle was NOT replaced" && [ -x "$APPBIN/ollama" ] && [ ! -e "$H/.Trash" ] && ! grep -q "^open " "$CALLS" && [ "$(sha "$H/.openclaw/openclaw.json")" = "$C0" ]'
+check "T17 the app got SIGTERM (still alive only because it ignores it), no osascript" 'kill -0 $APP_DUMMY 2>/dev/null && ! grep -q osascript "$CALLS" && ! grep -vE "^\s*#" "$WIRE" | grep -q osascript'
+kill -9 $APP_DUMMY 2>/dev/null
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
