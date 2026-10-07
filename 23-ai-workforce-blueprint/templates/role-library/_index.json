@@ -716,8 +716,8 @@
         "vsl-specialist-phase2",
         "vsl-video-sales-letter-specialist"
       ],
-      "content_sha": "sha256:a454b8ab2d9321c310274bf479cc8c208e0b1d3063196a9996a50ef1ca1a4d84",
-      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
+      "content_sha": "sha256:2f116aa8d1f1fca953ebca79a5a68b1d3eb05a4abf07ec91b180dd11973256ab",
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     "web-development": {
       "count": 23,
@@ -1050,7 +1050,7 @@
       "content_sha": "sha256:473d9af1d5bc5d5a0e7414297ccc193d17971c0c42e7925e09b74917e7f7c1c6",
       "render_sha": "sha256:d3b4cc6e40b16b1e70734a66281ab3eddf12c66c8e93ff11eef56159d37e4ea7",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "devils-advocate",
@@ -1066,7 +1066,7 @@
       "content_sha": "sha256:4a1f793e640623c0e0d5b26ace8b7dc96527750b0996952c92dcf6861d56c1d3",
       "render_sha": "sha256:bdccd173cc7a4b47286170619297aecadd525fc2aab3cb8a0d01d72492efc7ab",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-account-management",
@@ -1098,7 +1098,7 @@
       "content_sha": "sha256:0e2e8c8ad381d8a727218018df8c2725c2861175800ccfcff023bc252d0e4ef1",
       "render_sha": "sha256:7e275a14d4542328cce9fd6a2c84dc141227357e88e1aefedb47cb0f9bfdcb22",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "retention-specialist",
@@ -1114,7 +1114,7 @@
       "content_sha": "sha256:5dc5baadf2f8709ec5bb1399e0585e9f41c6efe08274245a377a921f393743ce",
       "render_sha": "sha256:66f163f618a92264050ce42fe985f53f858296cfd34baf27499001e030c0ebe1",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "android-specialist",
@@ -1370,7 +1370,7 @@
       "content_sha": "sha256:2a76375bdc0dfc213cff4e33a37190aca978580e0c920cd94efbafce888d11e3",
       "render_sha": "sha256:08c157bd6ef3464ee0a2f65f2256dfd15fe036e65f14eda5ecdb1cbf0537ba72",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "ux-ui-specialist",
@@ -1594,7 +1594,7 @@
       "content_sha": "sha256:3ed33b7dd5c2763eba5c224d4d36526d3c04d3abed07e61639e32dde3bc6570a",
       "render_sha": "sha256:feb1a81200044aef290110d911962f29c1f896209304ca1384e513376f5e57cf",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "sound-design-sfx-specialist",
@@ -1866,7 +1866,7 @@
       "content_sha": "sha256:8c14cda608a386343413df1ac890830d2911f99d2e0c56b65af58147b02388b5",
       "render_sha": "sha256:c7cdf376b838300481b4fa0f38dd10f3b2ec8c62fbf9fd8ecd804d21ede732c3",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "subscription--recurring-revenue-specialist",
@@ -2058,7 +2058,7 @@
       "content_sha": "sha256:c2dca2b0197e7429c789544f24a2a60c45a0a87a78b8688e95790013a327cf58",
       "render_sha": "sha256:1d25c1faf9d66ad5159a8e1a960fa8df59b943fc070f7d63b6f9338064583139",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "devils-advocate",
@@ -2074,7 +2074,7 @@
       "content_sha": "sha256:3c89ac8bb848c3f07c44d364253ecffa121782f33e25e5a57cf5a4ee3788cf9b",
       "render_sha": "sha256:5fc7305953627ece4e77142336886b15cbd618519b1435e4cb60f6b04871aec4",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-client-experience-booking",
@@ -2122,7 +2122,7 @@
       "content_sha": "sha256:36b637e523e601659db39dd7835759147173273c808fa540ce19ad6a9c2f3d2d",
       "render_sha": "sha256:42dfd0ec58473a8d075bd01419bd9dd6a58f94b212717b87858a5e3ae6ff1c7e",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "brand-messaging-specialist",
@@ -2346,7 +2346,7 @@
       "content_sha": "sha256:d1e1520c24e005e5e5c68f2607eeb90c5bbf94f4b8450e655d1ca3eb4e77ca60",
       "render_sha": "sha256:63b7a45c246d070eae447feef4ec4d52a5d8ddfc09aa85442415e20012697b64",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "speech--talking-points-specialist",
@@ -2538,7 +2538,7 @@
       "content_sha": "sha256:805c00bddf81384c1d5fe001b09ea29cc2141424e7ee3871293061d05760931b",
       "render_sha": "sha256:e11d6fdfc0de4807ab401afb4f1252653eb1d7e4cc9b63265b3d28f74523fc1b",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "tag--segmentation-specialist",
@@ -2762,7 +2762,7 @@
       "content_sha": "sha256:a0e20a783393111d100b6932d26933e105cc378b958d7c0eb17be08431b04f41",
       "render_sha": "sha256:a66985d9b6e130e59e8b45019b9982373a01feeea5ddbe72676e7b8d264f55ed",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "tier-1-support-specialist",
@@ -2826,7 +2826,7 @@
       "content_sha": "sha256:4026feaf80e46de97c4ae97e065d939df5854ba4ace2cfd8d60a574647736354",
       "render_sha": "sha256:a82d00cff9e573c3d918fcc21dae439f22131e2ddc9f83b93d1c88f0b5c33e00",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "devils-advocate",
@@ -2890,7 +2890,7 @@
       "content_sha": "sha256:3a1343839dff272579f6f058507f2780af930d7642d97e192d747fd40b96b797",
       "render_sha": "sha256:a3ddfa65bbac7f33d8511379390da21c6854c0ceefcf147b89903612037ce46e",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "systems-engineer",
@@ -2938,7 +2938,7 @@
       "content_sha": "sha256:fc4f0e7279a033075f2459465d3fb66a2c7525a547ab8f0bfb19cb9670f8e9e2",
       "render_sha": "sha256:f15e9a80bed877782d5ee7ea785f39ecc72b62db1dcae0b5bfa8a4b07f0b460a",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "devils-advocate",
@@ -2954,7 +2954,7 @@
       "content_sha": "sha256:eb2f096be0c0a0c41961e642d20890c4b416139bb788f010996cb5882537a1f1",
       "render_sha": "sha256:3aeb49f07af39eb9d9bb0dbcc010d45075c71a97f6bc83d1e77a06e1ca43722a",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-founding-member-concierge",
@@ -3002,7 +3002,7 @@
       "content_sha": "sha256:d630cfbd98631cc89fac64a4a17ae04f5468d23746cbc6f80490c88f09ae7e89",
       "render_sha": "sha256:0249956fb1ec7496bdde197e11d4a884c1fbd3344c6d98426fc623584f21775c",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "deep-research-specialist-general-task",
@@ -3114,7 +3114,7 @@
       "content_sha": "sha256:e7d38ae9a06d5731a1db3d2c0133c9715920341f8b2cd7529b98301e6744ecf4",
       "render_sha": "sha256:a5b7ef5eade249631c5ab18f68ded41a96660a97cf0cab2901563b2326bab772",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "triage-classifier",
@@ -3562,7 +3562,7 @@
       "content_sha": "sha256:c7871e86126148443c1fdd292f101ffb998712f7fd563306236d8f1a672616da",
       "render_sha": "sha256:e1084f5a8f1e05abb883c2006d21e762a3eb57b7f87176fdbc1d3554c4a50267",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "style-analyst",
@@ -3722,7 +3722,7 @@
       "content_sha": "sha256:4026feaf80e46de97c4ae97e065d939df5854ba4ace2cfd8d60a574647736354",
       "render_sha": "sha256:818654c38cd8a3c5ca112437890c59b42a4b6de4b6dccaa4175740c960e34636",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "devils-advocate",
@@ -3802,7 +3802,7 @@
       "content_sha": "sha256:3a1343839dff272579f6f058507f2780af930d7642d97e192d747fd40b96b797",
       "render_sha": "sha256:7699913657b00d952b899e3cd73b2f3840e5a08f9c6b626b497e2dcfb8204771",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "affiliate-agreement-specialist",
@@ -4026,7 +4026,7 @@
       "content_sha": "sha256:cedaf6edbe2a563ef27a6240b01ad3df01e7c0d61f8c668789fa2d78d8cb4787",
       "render_sha": "sha256:9ce7bb649180e73365088ace0bc3451cfb68911d60356b1f0e3d8c317ca969d2",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "terms--privacy-policy-specialist",
@@ -4138,7 +4138,7 @@
       "content_sha": "sha256:3a1343839dff272579f6f058507f2780af930d7642d97e192d747fd40b96b797",
       "render_sha": "sha256:e9b72715b5c1b5e75b0a641036763c1aa87fd00aa92c515c5b8c4f404ff05cb9",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-logistics-fulfillment",
@@ -4474,7 +4474,7 @@
       "content_sha": "sha256:064ebb497ad1b865b5e62c1e6969f774879fd856f789d7abadcd0e99a532b611",
       "render_sha": "sha256:4beb2275881667ed82056d9a88c918f6c60ce7921798941c6279f79329d8cc4f",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "webinar-event-marketing-specialist",
@@ -4522,7 +4522,7 @@
       "content_sha": "sha256:5e2eefa7d5e271bf05d08091e59061a5cf381c9dadeb88bb6a0cdac6e628d067",
       "render_sha": "sha256:614f7625a8dcf5b4236c20eeba12078c719ec74acb5dd2986f6e5f11b983b505",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "backup-and-recovery-specialist",
@@ -4762,7 +4762,7 @@
       "content_sha": "sha256:847eff203731fd9470ccd10b7a5b7a92fb1ecc973d86dbaee3cbe54001d777a6",
       "render_sha": "sha256:d436e079789c9091d3e0a93b6d3aeb24e61990cf61962332cb5b6aa115339786",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "system-health--uptime-specialist",
@@ -5130,7 +5130,7 @@
       "content_sha": "sha256:e9af0a4ee96a1145e91a439406d8d24b9c19c3400d375852f37f196a174cd638",
       "render_sha": "sha256:edf656ae3cf2a0611da1a9d7427565e2c81e031dd5f8a6ae3c25f78369e9c0f6",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "spotify-audio-ads-specialist",
@@ -5354,7 +5354,7 @@
       "content_sha": "sha256:3c6930dcbe50ecbd21dea48f9f4e7390c9d3fc551217af9e6590d96ababcebf6",
       "render_sha": "sha256:38d80363d9047e58412463ad9da175a5260f00bf99c7ef50f67c343c0a75773a",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "task-priority-manager",
@@ -6042,7 +6042,7 @@
       "content_sha": "sha256:ad35819dfeee875b5e47d18744c48564a3cd1224f5701dd44cd3279d2f05fc90",
       "render_sha": "sha256:55a2b43edb932ea9cf68f4939bcb0873907d6deed2de6893bde11870a47a9af0",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "deep-research-specialist-quality-control",
@@ -6330,7 +6330,7 @@
       "content_sha": "sha256:2e00eb4d2e8ee11ad6df251e5375baa0ea429287bf70a15196891fe39e6fcfc1",
       "render_sha": "sha256:9280b622bce1de6e4fb2c6c670c5470b3c24d46907941439f055b7f3c0ca319b",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "survey-and-polling-specialist",
@@ -6602,7 +6602,7 @@
       "content_sha": "sha256:bb7a47993ca333527b511df7282c6c6437cfeb207fc34c0c866372dc0a4ec9d8",
       "render_sha": "sha256:ede3a23a37acac0e853cee05ef2ed9a81a002bc3c9f4aa16753d0b50bdd720f1",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "capacity-planning-specialist",
@@ -6906,7 +6906,7 @@
       "content_sha": "sha256:a7370114a2026d42ab6219c88ae83a630cd494ec0f469a4b54cc8246be93c64c",
       "render_sha": "sha256:19c63f0d279d697fbdc52d13435175eed3c1101acd9ebc50e0f4a0d75cac5367",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "threads-specialist",
@@ -7226,7 +7226,7 @@
       "content_sha": "sha256:906750996dc15b8db1065fc0de9c1acd477c6b75cb9e7058f789adbc24cab89d",
       "render_sha": "sha256:96b2f83e9f0b17de5599ad3c2651772617ae271b6aea4cbc26444de899d3a8d2",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "storyboard-pre-production-specialist",
@@ -7287,10 +7287,10 @@
       "path": "templates/role-library/video/vsl-video-sales-letter-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:5f538089f5757485c84b745a41b615b88dede1997702ceb4b15bd3dc198db6d2",
-      "render_sha": "sha256:d87d9d49345213beef7c0104248fd868736d130828d965086109d3ad4b7f3c29",
-      "content_version": "1.0.4",
-      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
+      "content_sha": "sha256:6506bf8d5534e36d568f0fb749488a8eb9a2e66900c2c597c1c42785ba6bd4a0",
+      "render_sha": "sha256:a3810ecda6d23b96daa59d7d734063d43a47ead993c521f01bb9efaa92b559c4",
+      "content_version": "1.0.5",
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "brainstorming-buddy-web-development",
@@ -7498,7 +7498,7 @@
       "content_sha": "sha256:8edb63e83e930c5fce5b58764772cc1854603a6c5652a6e3a1bba42b4d620766",
       "render_sha": "sha256:db8ffba1011b62768fc7b4f6de4d1c323ed97314bbbed0b52b4b0c17a871fd0f",
       "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "technical-seo-specialist",
@@ -7786,7 +7786,7 @@
       "content_sha": "sha256:896855fe4d9b8799f5dcb62dabc2e11e4e2139348e784282710976b657c04f5b",
       "render_sha": "sha256:896855fe4d9b8799f5dcb62dabc2e11e4e2139348e784282710976b657c04f5b",
       "content_version": "1.0.8",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "signature-funnel-specialist",
@@ -7818,7 +7818,7 @@
       "content_sha": "sha256:685349e320a28fd74edecc81a245c0d86d1c257e07d502183e67435f0940cacc",
       "render_sha": "sha256:685349e320a28fd74edecc81a245c0d86d1c257e07d502183e67435f0940cacc",
       "content_version": "1.0.6",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "sales-page-assets-specialist",
@@ -8202,7 +8202,7 @@
       "content_sha": "sha256:4f3022991404a21246325f940b0799e2ac319de4a3648846be46140717216b15",
       "render_sha": "sha256:d9b7573b5d000931d6d76c1963eaba442fb47bb5981a35c1edf5616411f1384a",
       "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-billing-finance",
@@ -9322,7 +9322,7 @@
       "content_sha": "sha256:7bac5e9d28a90ee4f7c58ef771a886a98d475e4871755bda7e9613192f763f1b",
       "render_sha": "sha256:9144b16d6ae163dfebaa2150b08259da2e16dc253d7cddd17fef6e966bccc654",
       "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "director-of-sales",
@@ -10754,9 +10754,9 @@
       "slug": "SOP--drama-song-ad-pipeline",
       "dept": "video",
       "path": "templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md",
-      "content_sha": "sha256:8e6c5b70bb684de0faf2bb002fdd87e87d17857bed048ee0be7c7c42c1a85021",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
+      "content_sha": "sha256:00d353aecabeb9ed6f00fcabd92a1b3670e1fddbf8e0eac8b7f12c6bddf716ca",
+      "content_version": "1.0.1",
+      "content_hashed_at": "2026-10-07T19:06:17.582019+00:00"
     },
     {
       "slug": "SOP--movie-producer-cross-role-handoff",
@@ -10810,7 +10810,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-07T16:02:32.732815+00:00",
+    "generated_at": "2026-10-07T19:06:17.582019+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

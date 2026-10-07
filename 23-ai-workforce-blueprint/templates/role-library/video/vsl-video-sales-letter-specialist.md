@@ -257,11 +257,11 @@ This role contributes to the company revenue cascade by: **producing video sales
 **Frequency:** Per campaign.
 **Inputs:** Client brief (Quick or Concept mode), choice card with recorded price approval, live KIE pricing (Skill 74), spend ledger ceiling.
 **Steps:**
-1. Take intake and present the one approval card (defaults: 60 s / 9:16 / Lifelike 3D / Soul Ballad / **MiniMax H3 768P**); no paid call before the card is approved and the ceiling (price + 20% retake allowance) is on the ledger.
+1. Take intake (Quick default, Concept alternative — at most three questions) and present the one approval card with every default pre-selected: length (60 s / 90 s / 3 min / 5 min / 10 min), shape (9:16 / 16:9 / both), one of the five looks, music style, voice version, clips for 5- and 10-minute runs, **MiniMax H3 768P**; no paid call before the card is approved and the ceiling (price + 20% retake allowance) is on the ledger. Every price — including lip-sync close-ups, voice packs, both shapes and a batch total — comes from Skill 74 `price`; book batches approve one card for the whole batch (SOP section 9).
 2. Run the twelve stages in fixed order (Research → Creative Strategy → Script/Lyrics → Music → Continuity Bible → Storyboard → Image/Keyframes → Video Generation → QC/Retakes → Assembly → Final QC → Delivery) with the parallel lanes the SOP's table allows; the lane planner enforces both.
 3. Route hand-offs: Paid Advertisement (`direct-response-ad-copywriter` for lyric/claim review, platform specialists for length/shape), Marketing for audience research; assembly to `video-editor`, shots to `storyboard-pre-production-specialist`, independent QC to `qc-specialist-video`.
 4. Hold every QC gate: independent checker, UNAVAILABLE never counts as PASS, real-media rule, per-variant verdicts, creative-fidelity gate, human lyric sign-off; two repairs maximum.
-5. Deliver by copy to `~/Downloads/Drama Song Ads/<campaign-id>/<length>-<shape>/` (Mac/Claude-Nine) or Command Center deliverables (VPS); register only real files.
+5. Deliver by copy to `~/Downloads/Drama Song Ads/<campaign-id>/<length>-<shape>/` (Mac/Claude-Nine) or Command Center deliverables (VPS) — **one deliverable per ad**, one Kanban card per ad and per batch through `/api/ad-campaigns`; register only real files, never mix books or authors.
 6. On PARKED: read the PARKED reason from run metadata, apply the SOP's fix per cause (repair budget exhausted, ceiling exceeded, price unreadable, creative refusal), never force the gate.
 **Outputs:** Delivered campaign folders with final video(s), song, receipts; per-variant QC verdicts; delivery registration.
 **Hand to:** `video-editor` (assembly), then `qc-specialist-video` (final QC), then delivery.
