@@ -232,6 +232,30 @@ STUB_MODE=down run marketing "Spring campaign" "Plan the spring campaign"
 [ "$RC" -eq 1 ] && [ "$(cards)" = 0 ] && printf '%s\n' "$OUT" | grep -q 'nothing was created' \
   && ok "(i) exit 1, nothing created" || fail "(i) rc=$RC cards=$(cards): $OUT"
 
+echo "--- (j) legacy rows with id null on the board ---"
+reset_board
+python3 - "$WORK/tasks.json" <<'PY'
+import json, sys
+t = json.load(open(sys.argv[1]))
+t += [{"id": None, "title": "Legacy card %d" % i, "status": "done", "workspace_id": "ws-gen", "updated_at": "2026-01-0%dT10:00:00Z" % i, "archived_at": None} for i in range(1, 4)]
+json.dump(t, open(sys.argv[1], "w"))
+PY
+run existing status task-news
+[ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -q '^STATUS id=task-news status=review ' \
+  && ok "(j) id-less rows are skipped, the real card is still found" || fail "(j) rc=$RC: $OUT"
+run existing status "quarterly tax filing"
+[ "$RC" -eq 3 ] && printf '%s\n' "$OUT" | grep -q 'NOT_FOUND' \
+  && ok "(j) a genuine miss is still NOT_FOUND beside id-less rows" || fail "(j) miss rc=$RC: $OUT"
+python3 - "$WORK/tasks.json" <<'PY'
+import json, sys
+t = json.load(open(sys.argv[1]))
+for r in t: r["id"] = None
+json.dump(t, open(sys.argv[1], "w"))
+PY
+run existing status "Build onboarding sequence"
+[ "$RC" -eq 1 ] && printf '%s\n' "$OUT" | grep -q 'ESCALATE_TO_OPERATOR' && ! printf '%s\n' "$OUT" | grep -q 'NOT_FOUND' && [ "$(cards)" = 0 ] \
+  && ok "(j) a board with no usable id fails closed (escalates, never NOT_FOUND)" || fail "(j) all-null rc=$RC: $OUT"
+
 echo ""
 echo "=== mc-route existing mode: $PASS passed, $FAIL failed ==="
 if [ "$FAIL" -gt 0 ]; then

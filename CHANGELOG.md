@@ -1,3 +1,14 @@
+## [v26.4.2]  -  2026-10-07  -  Command Center task routing no longer fails a whole board because of old cards with no id
+
+#### What broke
+- On one client's Command Center board, 5 legacy cards had no id at all (an old database allowed that). `mc-route.sh existing status`, `update` and `cancel` read the whole board, hit the first id-less card and gave up, so every status, update and cancel for that client failed with "the task list from Command Center could not be read or matched" and escalated to the operator, even though the card being asked about was on the board and valid.
+
+#### What changed
+- **`scripts/mc-route.sh` skips cards that have no id** instead of failing the whole board. A card with no id can never be updated, cancelled or reported, so it can never be the match.
+- **The two fleet stampers carry the same fix** (`scripts/apply-fleet-standards.sh` and `scripts/apply-routing-fix.sh` re-write the helper from an embedded copy during a roll), so a roll cannot put the old script back. `tests/unit/mc-route-heredoc-sync.test.sh` proves all three copies are byte-identical.
+- **Still fails closed (JEV-802):** a board with no card that has an id at all is treated as an unreadable board and escalates. It never comes back as "not found".
+- **Tests:** `tests/unit/mc-route-existing-mode.test.sh` section (j): real card found beside id-less cards; a genuine miss is still NOT_FOUND; a board where every card lacks an id fails closed. The new checks fail on the old script.
+
 ## [v26.4.0]  -  2026-10-07  -  Merge train: #1582 feat(embeddings): skill 76 provisions the Gemini fallback SOP set on…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
