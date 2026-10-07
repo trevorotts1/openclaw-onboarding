@@ -7,7 +7,7 @@ description: >
   points memory.search at http://127.0.0.1:11434 and re-indexes each agent
   once. Never touches Ollama Cloud sign-in, chat-model config or OLLAMA_* env.
   Runs from the fleet roll; not a client-facing feature.
-version: 1.0.1
+version: 1.1.0
 priority: MEDIUM
 ---
 

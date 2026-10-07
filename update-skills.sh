@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.2.0"
+ONBOARDING_VERSION="v26.3.0"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -224,7 +224,34 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 #
 #  `|| true` is load-bearing: grep exits 1 when nothing matches, and under
 #  `set -o pipefail` that would sink the whole command substitution.
+#
+#  DIRTY BUT SAFE: tracked local edits only block a refresh when upstream
+#  changed the SAME files. cc_dirty_overlap (below) fetches and intersects the
+#  two sets; the three gates call it ONLY after their inline dirty test fires,
+#  and treat an undefined helper (standalone-extracted block) as "overlap",
+#  i.e. today's skip. Never stashes, resets, checks out, or cleans.
 # ============================================================
+
+# cc_dirty_overlap <repo_dir>
+#   stdout: tracked files modified locally (staged or not) that ALSO differ
+#           between HEAD and origin/<default>, one per line.
+#   rc 0 = no overlap (a fast-forward merge keeps every local edit)
+#   rc 1 = overlap (stdout names the blocking files)
+#   rc 2 = cannot tell (fetch failed / origin ref missing) -- caller treats as blocked
+cc_dirty_overlap() {
+  local d="$1" def local_f up_f
+  git -C "$d" fetch --quiet --no-tags origin 2>/dev/null || return 2
+  def="$(git -C "$d" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  def="${def#origin/}"; [ -n "$def" ] || def="main"
+  git -C "$d" rev-parse --verify --quiet "origin/$def" >/dev/null 2>&1 || return 2
+  local_f="$(git -C "$d" diff --name-only HEAD 2>/dev/null | sort -u)" || return 2
+  up_f="$(git -C "$d" diff --name-only HEAD "origin/$def" 2>/dev/null | sort -u)" || return 2
+  local ov
+  ov="$(comm -12 <(printf '%s\n' "$local_f") <(printf '%s\n' "$up_f") | sed '/^$/d')"
+  [ -z "$ov" ] && return 0
+  printf '%s\n' "$ov"
+  return 1
+}
 
 fleet_standing_resolve_slug() {
     # 1. explicit env  2. openclaw.json env.vars  3. hostname
@@ -1997,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.2.0 - safe_json_edit
+# v26.3.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5156,7 +5183,7 @@ u009_presentations_sync_check() {
   }
 
   _cc_currency_probe() {
-    local _p _d="" _remote="" _dirty="" _def="" _head="" _marker _fetch_rc
+    local _p _d="" _remote="" _dirty="" _preserved="" _ov="" _ov_rc=2 _def="" _head="" _marker _fetch_rc
     # Bug A: this used to hardcode ${HOME}/.openclaw/skills, which does not
     # exist on VPS/Contabo (active skills dir is /data/.openclaw/skills there
     # -- see discover_skills_dir()). Verification reads the SKILLS_DIR-resolved
@@ -5199,13 +5226,28 @@ u009_presentations_sync_check() {
     _untracked="$(git -C "$_d" status --porcelain 2>/dev/null | grep -c '^??' || true)"
     _untracked="$(printf '%s' "${_untracked:-0}" | tr -d '[:space:]')"
 
+    _preserved=""
     if [ -n "$_dirty" ]; then
-      echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
-      echo "    Command Center has UNCOMMITTED changes to TRACKED files, so it cannot fast-forward and will NOT be refreshed."
-      echo "    Nothing is stashed, reset, or discarded here — uncommitted work on a client box is load-bearing."
-      printf '%s\n' "$_dirty" | head -n 10 | sed 's/^/      /'
-      _cc_write_marker "$_marker" "dirty" "$_d" "$_head" ""
-      return 0
+      # Local edits only block when upstream touched the same files.
+      _ov=""; _ov_rc=2
+      if declare -F cc_dirty_overlap >/dev/null 2>&1; then
+        if _ov="$(cc_dirty_overlap "$_d")"; then _ov_rc=0; else _ov_rc=$?; fi
+      fi
+      if [ "$_ov_rc" = "0" ]; then
+        _preserved="$(printf '%s\n' "$_dirty" | wc -l | tr -d '[:space:]')"
+        echo "  — [CC CURRENCY] info: $_preserved locally modified tracked file(s), none changed upstream — fast-forward keeps them (local-edits-preserved=$_preserved)."
+      else
+        echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
+        echo "    Command Center has UNCOMMITTED changes to TRACKED files, so it cannot fast-forward and will NOT be refreshed."
+        echo "    Nothing is stashed, reset, or discarded here — uncommitted work on a client box is load-bearing."
+        printf '%s\n' "$_dirty" | head -n 10 | sed 's/^/      /'
+        if [ -n "$_ov" ]; then
+          echo "    BLOCKED BY (modified locally AND changed upstream):"
+          printf '%s\n' "$_ov" | head -n 20 | sed 's/^/      /'
+        fi
+        _cc_write_marker "$_marker" "dirty" "$_d" "$_head" ""
+        return 0
+      fi
     fi
     if [ "${_untracked:-0}" != "0" ]; then
       echo "  — [CC CURRENCY] info: $_untracked untracked file(s) in $_d — not dirt, refresh proceeds."
@@ -5238,11 +5280,11 @@ u009_presentations_sync_check() {
 
     if git -C "$_d" rev-parse --verify --quiet "origin/$_def" >/dev/null 2>&1; then
       if git -C "$_d" merge-base --is-ancestor "origin/$_def" HEAD 2>/dev/null; then
-        echo "  ✓ [CC CURRENCY] state=current head=${_head:-unknown} branch=$_def"
+        echo "  ✓ [CC CURRENCY] state=current head=${_head:-unknown} branch=$_def${_preserved:+ local-edits-preserved=$_preserved}"
         _cc_write_marker "$_marker" "current" "$_d" "$_head" "$_def"
         return 0
       fi
-      echo "  ✗ [CC CURRENCY] state=behind head=${_head:-unknown} branch=$_def — Command Center is NOT current with origin/$_def."
+      echo "  ✗ [CC CURRENCY] state=behind head=${_head:-unknown} branch=$_def${_preserved:+ local-edits-preserved=$_preserved} — Command Center is NOT current with origin/$_def."
       _cc_write_marker "$_marker" "behind" "$_d" "$_head" "$_def"
       return 1
     fi
@@ -5851,13 +5893,24 @@ print(state + " " + str(len(headers)))
           # `reset --hard` does not touch untracked files, so stray `??`
           # entries are no reason to refuse the repair.
           _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+          _fast_sync="reset --hard"
           if [ -n "$_fast_dirty" ]; then
-            echo "    [fast-path] CC checkout $_fast_p has uncommitted changes to TRACKED files (load-bearing) — NOT reset; full pass will surface the same state."
-            continue
+            # Dirty is fine when upstream did not touch the edited files:
+            # merge --ff-only keeps them. Never reset a dirty tree.
+            _fast_ov=""; _fast_ov_rc=2
+            if declare -F cc_dirty_overlap >/dev/null 2>&1; then
+              if _fast_ov="$(cc_dirty_overlap "$_fast_p")"; then _fast_ov_rc=0; else _fast_ov_rc=$?; fi
+            fi
+            if [ "$_fast_ov_rc" != "0" ]; then
+              echo "    [fast-path] CC checkout $_fast_p has uncommitted changes to TRACKED files (load-bearing) — NOT reset; full pass will surface the same state."
+              [ -z "$_fast_ov" ] || { echo "    [fast-path] blocked by (modified locally AND changed upstream):"; printf '%s\n' "$_fast_ov" | head -n 20 | sed 's/^/      /'; }
+              continue
+            fi
+            _fast_sync="merge --ff-only"
           fi
           if git -C "$_fast_p" fetch --quiet origin 2>/dev/null \
-             && git -C "$_fast_p" reset --hard origin/main >/dev/null 2>&1; then
-            echo "    [fast-path] CC checkout $_fast_p fast-forwarded to origin/main."
+             && git -C "$_fast_p" $_fast_sync origin/main >/dev/null 2>&1; then
+            echo "    [fast-path] CC checkout $_fast_p fast-forwarded to origin/main${_fast_dirty:+ (local-edits-preserved=$(printf '%s\n' "$_fast_dirty" | wc -l | tr -d '[:space:]'))}."
           else
             echo "    [fast-path] CC checkout $_fast_p could not be refreshed (offline? locked?) — full pass will retry."
           fi
@@ -11112,9 +11165,26 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     [ "${_CC_UNTRACKED_N:-0}" = "0" ] || \
       echo "  Command Center checkout has $_CC_UNTRACKED_N untracked file(s) — not dirt, refresh proceeds."
     if [ -n "$_CC_DIRTY_STATUS" ]; then
+      # Local edits only block when upstream touched the same files; otherwise
+      # the installer's ff merge keeps them (it never resets or stashes).
+      _CC_OV=""; _CC_OV_RC=2
+      if declare -F cc_dirty_overlap >/dev/null 2>&1; then
+        if _CC_OV="$(cc_dirty_overlap "$_CC_DIR")"; then _CC_OV_RC=0; else _CC_OV_RC=$?; fi
+      fi
+      if [ "$_CC_OV_RC" = "0" ]; then
+        _CC_PRESERVED="$(printf '%s\n' "$_CC_DIRTY_STATUS" | wc -l | tr -d '[:space:]')"
+        echo "  — Command Center checkout has $_CC_PRESERVED locally modified tracked file(s), none changed upstream — refresh proceeds (local-edits-preserved=$_CC_PRESERVED)."
+        _CC_DIRTY_STATUS=""
+      fi
+    fi
+    if [ -n "$_CC_DIRTY_STATUS" ]; then
       echo "  ⚠ Command Center checkout at $_CC_DIR has UNCOMMITTED local changes to TRACKED files — refresh SKIPPED." >&2
       echo "    A git pull against a dirty tree is unsafe, so nothing was pulled, reset, or discarded." >&2
       printf '%s\n' "$_CC_DIRTY_STATUS" | head -n 10 | sed 's/^/      /' >&2
+      if [ -n "${_CC_OV:-}" ]; then
+        echo "    BLOCKED BY (modified locally AND changed upstream):" >&2
+        printf '%s\n' "$_CC_OV" | head -n 20 | sed 's/^/      /' >&2
+      fi
       echo "    REMEDIATION: on this box, run:" >&2
       echo "      cd \"$_CC_DIR\" && git status --short" >&2
       echo "      git stash                    # to park the changes, OR" >&2
