@@ -5,6 +5,7 @@
 
 #### What changed
 - **`scripts/mc-route.sh` skips cards that have no id** instead of failing the whole board. A card with no id can never be updated, cancelled or reported, so it can never be the match.
+- **The two fleet stampers carry the same fix** (`scripts/apply-fleet-standards.sh` and `scripts/apply-routing-fix.sh` re-write the helper from an embedded copy during a roll), so a roll cannot put the old script back. `tests/unit/mc-route-heredoc-sync.test.sh` proves all three copies are byte-identical.
 - **Still fails closed (JEV-802):** a board with no card that has an id at all is treated as an unreadable board and escalates. It never comes back as "not found".
 - **Tests:** `tests/unit/mc-route-existing-mode.test.sh` section (j): real card found beside id-less cards; a genuine miss is still NOT_FOUND; a board where every card lacks an id fails closed. The new checks fail on the old script.
 
