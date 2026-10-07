@@ -25,6 +25,9 @@
 #   T15 a hung re-index is cut off by the timeout and retried next roll
 #   T16 per-agent memory overrides are reported, never rewritten or re-indexed
 #   T17 an app that ignores SIGTERM defers the upgrade; bundle never replaced
+#   T18 Gemini persona fallback copy: own key only
+#   T19 Gemini SOP fallback set (CC >= 7.6.108, own key): provision, skip
+#       (no key / old CC / no CC), non-fatal timeout and failure, idempotent
 #
 # Exit 0 = all pass.
 
@@ -140,6 +143,12 @@ mk openclaw 'case "$1 ${2:-}" in
   *) echo "openclaw $*" >> "$MOCK_T/calls.log"
      case "$*" in *"memory status"*) [ -f "$MOCK_T/hang" ] && exec sleep 30; echo "Provider: ollama (requested: ollama)";; esac ;;
 esac'
+# fake node: PATH node can be made to fail the better-sqlite3 load check (the nvm Node 24 case)
+mk node '[ "$1" = "-e" ] && { [ -f "$MOCK_T/path-node-bad" ] && exit 1; exit 0; }
+echo "node $*" >> "$MOCK_T/calls.log"
+[ -f "$MOCK_T/sopfb-hang" ] && exec sleep 30
+[ -f "$MOCK_T/sopfb-fail" ] && exit 1; exit 0'
+printf '#!/usr/bin/env bash\n[ "$1" = "-e" ] && exit 0\necho "goodnode $*" >> "$MOCK_T/calls.log"\nexit 0\n' > "$T/goodnode"; chmod +x "$T/goodnode"
 for c in osascript open plutil ditto; do mk "$c" "echo \"$c \$*\" >> \"\$MOCK_T/calls.log\""; done
 # fake `ollama` CLI, placed where the Ollama app keeps it so the daemon looks app-installed
 APPBIN="$T/Applications/Ollama.app/Contents/Resources"; mkdir -p "$APPBIN"
@@ -201,6 +210,7 @@ wire() {
     MOCK_DAEMON_PID="${MOCK_DAEMON_PID:-$DAEMON_DUMMY}" MOCK_APP_PID="${MOCK_APP_PID:-}" MOCK_APP_DIR="$T/Applications/Ollama.app" \
     MOCK_DOWNLOAD="${MOCK_DOWNLOAD:-good}" REAL_CURL="$REAL_CURL" TGZ_PIN="$TGZ_PIN" ZIP_PIN="$ZIP_PIN" \
     LOCAL_EMBEDDER_REINDEX_TIMEOUT="${REINDEX_T:-900}" LOCAL_EMBEDDER_APP_STOP_WAIT=2 \
+    DATABASE_PATH="${SOP_DB:-}" LOCAL_EMBEDDER_CC_DIR="${SOP_CC:-}" CC_NODE="${SOP_NODE:-}" LOCAL_EMBEDDER_SOPFB_TIMEOUT="${SOPFB_T:-600}" \
     LOCAL_EMBEDDER_APPS_DIR="$T/no-apps" LOCAL_EMBEDDER_IDLE_WAIT=0 "${WIRE_BASH:-bash}" "$WIRE" "$@" 2>&1
 }
 sha() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"; }
@@ -435,6 +445,56 @@ mkdir -p "$H/.openclaw/secrets"; printf 'GOOGLE_API_KEY=not-a-real-key\n' > "$H/
 OUT="$(wire --dry-run)"; rc=$?
 check "T18b own key: the fallback copy is planned into the box's own coaching dir" '[ $rc = 0 ] && printf "%s" "$OUT" | grep -q "would download the Gemini fallback copy.*$H/.openclaw/workspace/data/coaching-personas/gemini-fallback-index.sqlite"'
 check "T18b the key value is never printed; nothing was written; memory.search.fallback untouched" '! printf "%s" "$OUT" | grep -q "not-a-real-key" && [ ! -e "$H/.openclaw/workspace/data/coaching-personas" ] && ! grep -qE "LOCAL_EMBEDDER_FALLBACK|\"fallback\"" <(sed -n "/^# ── 5b/,/^# ── 6/p" "$WIRE")'
+echo "--- T19: Gemini SOP fallback set (CC >= 7.6.108, own key only) ---"
+mk_cc() { # <version>: a fixture Command Center + a database holding <n> sops
+  rm -rf "$T/cc" "$T/cc.db"; mkdir -p "$T/cc/scripts"
+  printf '{"name":"blackceo-command-center","version":"%s"}\n' "$1" > "$T/cc/package.json"
+  : > "$T/cc/scripts/provision-gemini-fallback-sop-set.ts"
+  python3 -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table sops(id text primary key, slug text)"); c.executemany("insert into sops values(?,?)", [("a","a"),("b","b")]); c.commit()' "$T/cc.db"
+  SOP_CC="$T/cc"; SOP_DB="$T/cc.db"; SOP_NODE=""
+}
+sopfb_runs() { grep -c -- '--import tsx scripts/provision-gemini-fallback-sop-set.ts' "$CALLS"; }
+givekey() { mkdir -p "$H/.openclaw/secrets"; printf 'GOOGLE_API_KEY=not-a-real-key\n' > "$H/.openclaw/secrets/.env"; }
+MAN="$SKILL/../shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+SENT='$H/.openclaw/local-embedder/gemini-sop-fallback.done'
+
+new_box 0.40.0; mk_cc 7.6.108; givekey
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19a CC 7.6.108 + own key: exit 0, the CC script runs from the CC dir with manifest and database" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 1 ] && grep -q -- "--import tsx scripts/provision-gemini-fallback-sop-set.ts --manifest $MAN --db $T/cc.db\$" "$CALLS"'
+check "T19a sentinel written; key value never printed" '[ -s "$H/.openclaw/local-embedder/gemini-sop-fallback.done" ] && ! printf "%s" "$OUT" | grep -q "not-a-real-key"'
+check "T19a the local sop_embeddings table is never named in code" '! sed -n "/^# ── 5c/,/^# ── 6/p" "$WIRE" | grep -vE "^\s*#" | grep -qE "sop_embeddings([^_]|$)"'
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19b re-run is idempotent: no second provisioning" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 1 ] && printf "%s" "$OUT" | grep -q "Gemini SOP fallback already provisioned"'
+python3 -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("insert into sops values(\"c\",\"c\")"); c.commit()' "$T/cc.db"
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19b a changed sops count re-provisions (new SOPs get mapped)" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 2 ]'
+
+new_box 0.40.0; mk_cc 7.6.108
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19c no Google key: skipped, nothing run" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 0 ] && printf "%s" "$OUT" | grep -q "Gemini SOP fallback skipped: this box has no Google key"'
+new_box 0.40.0; mk_cc 7.6.107; givekey
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19d CC 7.6.107 (too old): skipped, nothing run" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 0 ] && printf "%s" "$OUT" | grep -q "older than 7.6.108"'
+new_box 0.40.0; mk_cc 7.6.108; givekey; SOP_CC="$T/no-such-cc"
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19e no Command Center: skipped, nothing run" '[ $rc = 0 ] && [ "$(sopfb_runs)" = 0 ] && printf "%s" "$OUT" | grep -q "no Command Center with"'
+
+new_box 0.40.0; mk_cc 7.6.108; givekey; touch "$T/sopfb-hang"; START=$(date +%s)
+OUT="$(SOPFB_T=1 wire --no-reindex)"; rc=$?; ELAPSED=$(( $(date +%s) - START ))
+check "T19f a hung CC script is cut off: exit 0, timed out, no sentinel, under 25s" '[ $rc = 0 ] && printf "%s" "$OUT" | grep -q "Gemini SOP fallback timed out after 1s" && [ ! -e "$H/.openclaw/local-embedder/gemini-sop-fallback.done" ] && [ "$ELAPSED" -lt 25 ]'
+check "T19f the roll still finished (memory.search written, DONE)" 'printf "%s" "$OUT" | grep -q "re-index skipped" && [ "$(msearch | python3 -c "import json,sys; print(json.load(sys.stdin)[\"provider\"])")" = ollama ]'
+rm -f "$T/sopfb-hang"
+new_box 0.40.0; mk_cc 7.6.108; givekey; touch "$T/sopfb-fail"
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19g a failing CC script is non-fatal: exit 0, no sentinel, retried next roll" '[ $rc = 0 ] && [ ! -e "$H/.openclaw/local-embedder/gemini-sop-fallback.done" ] && printf "%s" "$OUT" | grep -q "not provisioned (non-fatal; next roll retries)"'
+rm -f "$T/sopfb-fail"
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19g the next roll provisions it" '[ $rc = 0 ] && [ -s "$H/.openclaw/local-embedder/gemini-sop-fallback.done" ]'
+
+new_box 0.40.0; mk_cc 7.6.108; givekey; touch "$T/path-node-bad"; SOP_NODE="$T/goodnode"
+OUT="$(wire --no-reindex)"; rc=$?
+check "T19h the PATH node cannot load better-sqlite3: the CC's own node is used instead" '[ $rc = 0 ] && grep -q "^goodnode --import tsx scripts/provision-gemini-fallback-sop-set.ts" "$CALLS" && ! grep -q "^node --import tsx" "$CALLS"'
+rm -f "$T/path-node-bad"; SOP_CC=""; SOP_DB=""; SOP_NODE=""
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

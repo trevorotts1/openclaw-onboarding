@@ -7,7 +7,7 @@ description: >
   points memory.search at http://127.0.0.1:11434 and re-indexes each agent
   once. Never touches Ollama Cloud sign-in, chat-model config or OLLAMA_* env.
   Runs from the fleet roll; not a client-facing feature.
-version: 1.1.0
+version: 1.2.0
 priority: MEDIUM
 ---
 
@@ -96,6 +96,10 @@ loopback Ollama. Skill 38 step O.6 accepts it without an OpenAI or Google key.
 `EMBED_HEALTH_SMOKE=1` for a real embed).
 
 Persona and Command Center SOP embeddings stay on the shipped Gemini assets.
+When the box has its own Google key, steps 5b and 5c also install the Gemini
+fallback copies (persona index; SOP set via the Command Center's
+`provision-gemini-fallback-sop-set.ts`, CC v7.6.108 or newer), used only while
+local Ollama is down. Both are skipped without a key and never fatal.
 
 ## Commands
 
