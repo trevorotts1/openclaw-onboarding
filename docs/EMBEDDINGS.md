@@ -388,6 +388,10 @@ key or another client's key is never used.
   compared with: a Gemini vector is never scored against local rows, and a local
   vector never against the copy. No key, no copy, or any Gemini error or timeout
   (30 s) gives keyword with one log line.
+  On this fallback path only, the box's own key is looked up where
+  `embedding_health.py` looks: env, `~/.openclaw/.env`, `~/.openclaw/secrets/.env`,
+  `openclaw.json` `env.vars` / `env`, and `models.providers.google.apiKey`
+  (`embedding_engine.fallback_google_key`). The normal Gemini-box lookup is unchanged.
 - **Latching**: in the selector, the first Ollama failure moves the rest of that
   process to the fallback, and the first Gemini failure moves it to keyword. The
   next process tries local Ollama first again. `search()` is one process per

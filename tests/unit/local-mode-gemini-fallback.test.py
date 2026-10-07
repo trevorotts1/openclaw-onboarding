@@ -167,6 +167,23 @@ class TestFallbackOrder(_Base):
         self.assertEqual(ids[0], "beta")
         self.assertEqual(_Genai.calls, 1, "Stage C shares the task embed")
 
+    def test_key_only_in_openclaw_json_env_vars_still_uses_gemini(self):
+        os.environ.pop("GOOGLE_API_KEY")
+        oc = Path(os.environ["HOME"]) / ".openclaw"
+        oc.mkdir()
+        (oc / "openclaw.json").write_text('{"env":{"vars":{"GOOGLE_API_KEY":"%s"}}}' % SECRET_KEY)
+        r, err = self.quiet(m.semantic_task_fit, "beta", "leadership hiring", self.paths)
+        self.assertEqual(r["method"], "gemini_embedding", r)
+        self.assertEqual(_Genai.keys, [SECRET_KEY])
+        self.assertNotIn(SECRET_KEY, err)
+
+    def test_gemini_box_key_lookup_unchanged(self):
+        os.environ.pop("GOOGLE_API_KEY")
+        oc = Path(os.environ["HOME"]) / ".openclaw"
+        oc.mkdir()
+        (oc / "openclaw.json").write_text('{"env":{"vars":{"GOOGLE_API_KEY":"%s"}}}' % SECRET_KEY)
+        self.assertEqual(m._get_google_api_key(self.paths), "")
+
     def test_no_key_is_keyword(self):
         os.environ.pop("GOOGLE_API_KEY")
         self.assertEqual(self._keyword_only()[0], 0)
@@ -210,6 +227,8 @@ class TestSearchOrder(_Base):
                     if fail:
                         raise RuntimeError("503 gemini unavailable")
                     return type("R", (), {"embeddings": [type("V", (), {"values": list(_vec(1))})()]})()
+        if not fake_key:
+            os.environ.pop("GOOGLE_API_KEY", None)  # truly keyless box
         real = ee.get_embedder
 
         def fake(provider_hint=None):
@@ -230,6 +249,34 @@ class TestSearchOrder(_Base):
         self.assertIn("SCORE: 1.0000 | PERSONA: beta", out)
         self.assertNotIn("KEYWORD", out)
         self.assertIn("gemini-fallback-index.sqlite", err)
+
+    def test_key_only_in_env_vars_still_uses_gemini(self):
+        os.environ.pop("GOOGLE_API_KEY")
+        oc = Path(os.environ["HOME"]) / ".openclaw"
+        oc.mkdir()
+        (oc / "openclaw.json").write_text('{"env":{"vars":{"GOOGLE_API_KEY":"%s"}}}' % SECRET_KEY)
+        real = ee.get_embedder
+        patches = [
+            patch.object(ee, "get_embedder", lambda provider_hint=None: None if provider_hint == "gemini" else real(provider_hint)),
+            patch.object(ee, "GENAI_AVAILABLE", True),
+            patch.object(ee, "genai", types.SimpleNamespace(Client=_Genai), create=True),
+            patch.object(ee, "_genai_types", types.SimpleNamespace(
+                EmbedContentConfig=lambda **k: k, HttpOptions=lambda **k: k)),
+        ]
+        buf, err = io.StringIO(), io.StringIO()
+        for p_ in patches:
+            p_.start()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                rc = ee.search("leadership hiring", 2, str(self.db))
+        finally:
+            for p_ in patches:
+                p_.stop()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("KEYWORD", buf.getvalue())
+        self.assertIn("PERSONA: beta", buf.getvalue())
+        self.assertEqual(_Genai.keys, [SECRET_KEY])
+        self.assertNotIn(SECRET_KEY, err.getvalue() + buf.getvalue())
 
     def test_no_key_keyword(self):
         rc, out, _ = self._run(fake_key=False)

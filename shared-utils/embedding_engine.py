@@ -600,6 +600,47 @@ def gemini_fallback_index_path(db_path: str = None) -> str:
                         GEMINI_FALLBACK_INDEX_NAME)
 
 
+def fallback_google_key() -> str:
+    """The box's OWN Google key, for the Ollama-down Gemini fallback ONLY.
+
+    Looks where embedding_health.py does: env, ~/.openclaw/.env,
+    ~/.openclaw/secrets/.env, openclaw.json env.vars / env block, and
+    models.providers.google.apiKey (a literal; "${...}" refs are skipped).
+    Only this box's files (never another box's). The normal Gemini-box lookup
+    (_read_secret / get_embedder) is untouched. Returns "" when none; the value
+    is never printed.
+    """
+    names = ("GOOGLE_API_KEY", "GEMINI_API_KEY")
+    for n in names:
+        if os.environ.get(n, "").strip():
+            return os.environ[n].strip()
+    for root in (os.path.expanduser("~/.openclaw"), "/data/.openclaw"):
+        for f in (os.path.join(root, ".env"), os.path.join(root, "secrets", ".env")):
+            try:
+                for line in open(f):
+                    s = line.strip()
+                    s = s[len("export "):] if s.startswith("export ") else s
+                    k, _, v = s.partition("=")
+                    if k in names and v.strip(" \"'"):
+                        return v.strip(" \"'")
+            except OSError:
+                pass
+        try:
+            cfg = json.load(open(os.path.join(root, "openclaw.json")))
+        except Exception:
+            continue
+        env = cfg.get("env") or {}
+        for block in (env.get("vars") or {}, env):
+            for n in names:
+                v = block.get(n) if isinstance(block, dict) else None
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        v = (((cfg.get("models") or {}).get("providers") or {}).get("google") or {}).get("apiKey")
+        if isinstance(v, str) and v.strip() and not v.strip().startswith("$"):
+            return v.strip()
+    return ""
+
+
 def _search_gemini_fallback(query: str, limit: int, db_path: str, mode: str):
     """Local Ollama is down: Gemini query embedding (own key) vs the fallback
     copy. Returns search()'s rc, or None when unavailable (caller -> keyword)."""
@@ -609,6 +650,12 @@ def _search_gemini_fallback(query: str, limit: int, db_path: str, mode: str):
               f"({GEMINI_FALLBACK_INDEX_NAME}).", file=sys.stderr)
         return None
     embedder = get_embedder(provider_hint="gemini")  # warns itself when keyless
+    if embedder is None and GENAI_AVAILABLE:
+        key = fallback_google_key()  # fallback path only: wider key lookup
+        if key:
+            embedder = ("gemini", genai.Client(
+                api_key=key, http_options=_genai_types.HttpOptions(timeout=30000)),
+                GEMINI_MODEL)
     if embedder is None:
         return None
     try:

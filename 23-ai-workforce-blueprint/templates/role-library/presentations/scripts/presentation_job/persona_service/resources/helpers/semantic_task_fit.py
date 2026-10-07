@@ -439,7 +439,7 @@ def _embed_task_in_space(task_text, paths, db_path, local_model, api_key):
     # Ollama is down -> Gemini fallback copy on the box's own key. ONE log line
     # for the whole process says what happens next.
     fb = _gemini_fallback_index(db_path)
-    key = _get_google_api_key(paths)
+    key = _get_google_api_key(paths) or _engine().fallback_google_key()  # fallback path only
     ready = fb and key and _try_import_genai() and not (_GEMINI_FB_DOWN or _EMBEDDING_UNAVAILABLE)
     if _LOCAL_DOWN_MSG:
         print(_LOCAL_DOWN_MSG + (

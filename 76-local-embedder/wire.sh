@@ -621,7 +621,7 @@ _has_gkey="$(OC_ROOT="$OC_ROOT" OC_JSON="$OC_JSON" python3 - <<'PY' 2>/dev/null
 import json, os
 ok = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
 root = os.environ["OC_ROOT"]
-for f in (os.path.join(root, "secrets", ".env"),):  # same sources as semantic_task_fit
+for f in (os.path.join(root, "secrets", ".env"), os.path.join(root, ".env")):  # same sources as embedding_engine.fallback_google_key
     try:
         for ln in open(f):
             k, _, v = ln.strip().partition("=")
@@ -630,8 +630,11 @@ for f in (os.path.join(root, "secrets", ".env"),):  # same sources as semantic_t
     except OSError:
         pass
 try:
-    env = json.load(open(os.environ["OC_JSON"])).get("env") or {}
-    ok = ok or any(env.get(k) for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY"))
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    env = cfg.get("env") or {}
+    ok = ok or any(b.get(k) for b in (env, env.get("vars") or {}) for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY"))
+    gk = (((cfg.get("models") or {}).get("providers") or {}).get("google") or {}).get("apiKey")
+    ok = ok or (isinstance(gk, str) and gk.strip() != "" and not gk.startswith("$"))
 except Exception:
     pass
 print("yes" if ok else "no")
