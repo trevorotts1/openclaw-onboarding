@@ -1,3 +1,11 @@
+## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1586 — fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c after CC refresh (v26.4.1, skill 76 v1.3.0)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.4.2]  -  2026-10-07  -  Merge train: #1588 fix(mc-route): skip id-less legacy cards instead of failing the whole…; #1589 docs(75): drop retired updater path from PACKAGING-DECISION (unblocks…; #1591 OPR-R-BM01: purge v1 drama-song-factory root files from…; #1592 drama-song-factory A2R2-BM01: kie_dispatch into skill 75 (A2-R2 U1…; #1593 fix(75): route style bible prompt cap through the one KIE enforcer…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
