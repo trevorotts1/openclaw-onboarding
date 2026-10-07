@@ -1,0 +1,105 @@
+{
+  "audio_seconds": 63.0,
+  "av_source": "streams of final/final-9x16.mp4",
+  "checks": [
+    {
+      "detail": "12 approved lines (6 critical)",
+      "id": "APPROVED_LYRICS",
+      "status": "PASS"
+    },
+    {
+      "detail": "no word-level alignment record; boundary accuracy not evidenced (coverage runs on timing-map:timing/timing-map.json)",
+      "id": "WORD_TIMING",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "lyric text carried by the 12.4 timing map; structural observation only, no independent transcription",
+      "id": "OBSERVATION",
+      "status": "PASS"
+    },
+    {
+      "detail": "no annotated alignment sample in package; median/p95 boundary accuracy not measured (never invented)",
+      "id": "ALIGNMENT_SAMPLE",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "A/V read from streams of final/final-9x16.mp4: audio=63.0 video=63.0",
+      "id": "AV_SYNC_MEASURED",
+      "status": "PASS"
+    },
+    {
+      "detail": "lyric span 63.000s vs 60-90s band",
+      "id": "FULL_LENGTH_SPAN",
+      "status": "PASS"
+    }
+  ],
+  "clips": [
+    {
+      "clip_id": "shot-01",
+      "end": 21.0,
+      "measured_s": 21.0,
+      "planned_s": 21.0,
+      "span_end": 21.0,
+      "span_start": 0.0,
+      "start": 0.0
+    },
+    {
+      "clip_id": "shot-02",
+      "end": 42.0,
+      "measured_s": 21.0,
+      "planned_s": 21.0,
+      "span_end": 42.0,
+      "span_start": 21.0,
+      "start": 21.0
+    },
+    {
+      "clip_id": "shot-03",
+      "end": 63.0,
+      "measured_s": 21.0,
+      "planned_s": 21.0,
+      "span_end": 63.0,
+      "span_start": 42.0,
+      "start": 42.0
+    }
+  ],
+  "clips_source": "measured-clips:measured-clips.json (cumulative derivation)",
+  "cta_hold_seconds": null,
+  "observed_note": "lyric text carried by the 12.4 timing map; structural observation only, no independent transcription",
+  "observed_source": "timing-map:timing/timing-map.json",
+  "observed_word_count": 12,
+  "raw": {
+    "detail": "",
+    "evidence": {
+      "coverage": {
+        "approved_n": 94,
+        "covered": 94,
+        "overall": 1.0
+      },
+      "low_confidence": [
+        "timing-sample-unrecorded"
+      ],
+      "profile": {
+        "critical_max_ms": 100,
+        "fps": 30,
+        "median_max_ms": 100,
+        "p95_max_ms": 250
+      }
+    },
+    "reason_code": "LOW_CONFIDENCE",
+    "tool": "timing_guard",
+    "tool_version": "1.0.0",
+    "verdict": "REVIEW"
+  },
+  "run_id": "w4-long",
+  "span": {
+    "first_start_s": 0.0,
+    "last_end_s": 63.0,
+    "line_windows": 12,
+    "span_s": 63.0
+  },
+  "tool": "long-qc.timing_guard",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "REVIEW",
+  "video_seconds": 63.0
+}

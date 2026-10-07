@@ -1,0 +1,123 @@
+{
+  "checks": [
+    {
+      "detail": "package root present, 35 files",
+      "id": "PKG_PRESENT",
+      "status": "PASS"
+    },
+    {
+      "detail": "NOT_PRESENT: 14.2 shot plan",
+      "id": "INPUT_SHOTS",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "NOT_PRESENT: 12.4 timing map",
+      "id": "INPUT_TIMING",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "found: campaign + lyrics",
+      "id": "INPUT_CAMPAIGN",
+      "status": "PASS"
+    },
+    {
+      "detail": "NOT_PRESENT: video master",
+      "id": "INPUT_MASTER_VIDEO",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "found: audio master",
+      "id": "INPUT_MASTER_AUDIO",
+      "status": "PASS"
+    },
+    {
+      "detail": "no video output at all",
+      "id": "ASSEMBLED_OUTPUT",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "30.024s from ffprobe(master_audio) outside 60-90s",
+      "id": "DURATION_BAND",
+      "status": "FAIL"
+    },
+    {
+      "detail": "all artifact hashes recompute",
+      "id": "MANIFEST_HASHES",
+      "status": "PASS"
+    }
+  ],
+  "duration_band_s": [
+    60.0,
+    90.0
+  ],
+  "file_count": 35,
+  "media": [
+    {
+      "bytes": 60936,
+      "kind": "image",
+      "rel": "artifacts/image/deb75578cecec2d203f0a2ec18b53593_0.webp",
+      "sha256": "84d631d4e17fb9127818516c2174604a42aea0e5eb1b9b9dc5a3387b8cd5c06b"
+    },
+    {
+      "bytes": 674101,
+      "duration_s": 28.992,
+      "format_name": "mp3",
+      "kind": "audio",
+      "path": "qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3",
+      "probe": "ok",
+      "rel": "artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3",
+      "sha256": "d725e7687aadf57b4468822a0dee46806c02a7b3f2f1d36247df673dd81d8eb2",
+      "streams": [
+        {
+          "codec": "audio",
+          "dur": "28.992000",
+          "fps": "0/0",
+          "h": null,
+          "name": "mp3",
+          "sr": "48000",
+          "w": null
+        }
+      ]
+    },
+    {
+      "bytes": 690229,
+      "duration_s": 30.024,
+      "format_name": "mp3",
+      "kind": "audio",
+      "path": "qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
+      "probe": "ok",
+      "rel": "artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
+      "sha256": "3bfac505e213a2a904549043bbc8dc8da812473a7090664837bb33fb9c2307e3",
+      "streams": [
+        {
+          "codec": "audio",
+          "dur": "30.024000",
+          "fps": "0/0",
+          "h": null,
+          "name": "mp3",
+          "sr": "48000",
+          "w": null
+        }
+      ]
+    }
+  ],
+  "package": "qualification/short-run",
+  "rejected_json": [],
+  "roles": {
+    "campaign": "campaign.json",
+    "captions": null,
+    "characters": null,
+    "contracts": null,
+    "manifest": "manifest.json",
+    "readability": null,
+    "shots": null,
+    "timing": null,
+    "words": null
+  },
+  "run_id": "w4-long",
+  "scanned_at": "2026-10-07T02:36:10Z",
+  "tool": "long-qc.inventory",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "FAIL"
+}
