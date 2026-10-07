@@ -1,0 +1,229 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "${DTS_BUILD_ROOT}/tests/intake-edge-fixtures/fixtures/ambiguous-bad-length.json",
+    "--run-id",
+    "amb-04-non-numeric-target-length"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 2,
+        "rc": 2
+      },
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "outcome",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "reason_code",
+      "detail": "missing-essentials",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "exit_code",
+      "detail": 2,
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "question-count<=3",
+      "detail": 1,
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "question-count==1",
+      "detail": [
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "question-message-one-message",
+      "detail": 1,
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "question-message-numbered",
+      "detail": [
+        "1. What placement/format should we produce (aspect ratio + target length)?"
+      ],
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "question-message-single-ask",
+      "detail": "Answer the bundled questions in one reply; nothing else is asked.",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "only-placement-asked",
+      "detail": [
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "provenance-complete",
+      "detail": [
+        "action",
+        "aspect_ratio",
+        "assets",
+        "audience",
+        "brand_rules",
+        "budget_currency",
+        "budget_minor",
+        "creative_prefs",
+        "offer",
+        "placement",
+        "repair_allowance",
+        "target_length_s"
+      ],
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "provenance-target_length_s==assumed",
+      "detail": "assumed",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "provenance-placement==assumed",
+      "detail": "assumed",
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    },
+    {
+      "check": "bad-length-falls-back-to-default",
+      "detail": 30,
+      "pass": true,
+      "scenario": "amb-04-non-numeric-target-length"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 18,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "b7fcdb339571781b",
+      "next_stage": null,
+      "provenance": {
+        "action": "provided",
+        "aspect_ratio": "assumed",
+        "assets": "missing",
+        "audience": "provided",
+        "brand_rules": "assumed",
+        "budget_currency": "provided",
+        "budget_minor": "provided",
+        "creative_prefs": "assumed",
+        "offer": "provided",
+        "placement": "assumed",
+        "repair_allowance": "assumed",
+        "target_length_s": "assumed"
+      },
+      "question_message": "1. What placement/format should we produce (aspect ratio + target length)?",
+      "questions": [
+        {
+          "id": "placement",
+          "question": "What placement/format should we produce (aspect ratio + target length)?"
+        }
+      ],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "placement='unspecified (default: 9:16 vertical)' (assumed default)",
+          "aspect_ratio='unspecified (default: 9:16)' (assumed default)",
+          "brand_rules='unspecified (default: none)' (assumed default)",
+          "creative_prefs='unspecified (default: none)' (assumed default)",
+          "repair_allowance='unspecified (default: none authorized)' (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": "busy parents",
+        "auth_status": "missing",
+        "cta": "visit the site",
+        "format": "unspecified (default: 9:16)",
+        "generation_ceiling": {
+          "amount_minor": 100,
+          "currency": "USD"
+        },
+        "offer": "demo offer",
+        "placement": "unspecified (default: 9:16 vertical)",
+        "repair_allowance": "unspecified (default: none authorized)",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Answer the bundled questions in one reply; nothing else is asked.",
+    "outcome": "waiting",
+    "reason_code": "missing-essentials",
+    "run_id": "amb-04-non-numeric-target-length",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "b7fcdb339571781b",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 2,
+  "family": "ambiguous-briefs",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "amb-04-non-numeric-target-length",
+  "unit_id": "W4-02-U1"
+}

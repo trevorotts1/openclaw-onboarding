@@ -1,0 +1,46 @@
+{
+  "box_slug": "local",
+  "checks": 501,
+  "checks_failed": 0,
+  "factory": "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+  "failed_checks": [],
+  "families": {
+    "ambiguous-briefs": {
+      "checks": 82,
+      "failed": 0,
+      "scenarios": 6
+    },
+    "injection-battery": {
+      "checks": 130,
+      "failed": 0,
+      "scenarios": 12
+    },
+    "other-offer": {
+      "checks": 86,
+      "failed": 0,
+      "scenarios": 9
+    },
+    "preflight-edges": {
+      "checks": 77,
+      "failed": 0,
+      "scenarios": 9
+    },
+    "provenance-recording": {
+      "checks": 67,
+      "failed": 0,
+      "scenarios": 5
+    },
+    "three-question-cap": {
+      "checks": 58,
+      "failed": 0,
+      "scenarios": 4
+    }
+  },
+  "finished_unix": 1791358789,
+  "scenarios": 45,
+  "source": "SWARM-PLAN W4-02",
+  "started_unix": 1791358787,
+  "status": "PASS",
+  "suite": "intake-edge-fixtures",
+  "unit_id": "W4-02-U1"
+}

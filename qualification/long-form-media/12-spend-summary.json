@@ -1,0 +1,32 @@
+{
+  "attempt_id": "",
+  "command": "summary",
+  "evidence": {
+    "actual_cost": 1016,
+    "committed_cost": 0,
+    "currency": "USD-cents",
+    "estimated_cost": 0,
+    "number_of_generation_calls": 5,
+    "provider_cost_by_stage": {
+      "image": 2,
+      "music": 6,
+      "video-shot-01": 336,
+      "video-shot-02": 336,
+      "video-shot-03": 336
+    },
+    "qc_and_repair_allowance": 0,
+    "remaining_budget": 3984,
+    "retry_cost": 0,
+    "run_status": "active",
+    "unknown_or_reserved_cost": 0
+  },
+  "logical_key": "",
+  "next_action": "",
+  "outcome": "ok",
+  "reason_code": "OK",
+  "run_id": "w4-long",
+  "schema_version": "1.0.0",
+  "state_version": 1,
+  "tool": "spend_ledger",
+  "tool_version": "1.0.0"
+}

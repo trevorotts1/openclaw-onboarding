@@ -1,0 +1,134 @@
+{
+  "artifacts": [
+    {
+      "bytes": 1405594,
+      "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+      "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d"
+    },
+    {
+      "bytes": 1492954,
+      "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
+      "sha256": "69a36771348a172dcac7f5a60f3caccaebd2362100ffd9b79ce8a15ca678c98c"
+    },
+    {
+      "bytes": 30022697,
+      "path": "qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+      "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b"
+    },
+    {
+      "bytes": 58582,
+      "path": "qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+      "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407"
+    },
+    {
+      "bytes": 36404553,
+      "path": "qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+      "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f"
+    },
+    {
+      "bytes": 47936461,
+      "path": "qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+      "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5"
+    },
+    {
+      "bytes": 18534133,
+      "path": "qualification/long-form-media/final/final-9x16.mp4",
+      "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c"
+    }
+  ],
+  "auth_scope_digest": "8eddf994b96fc122",
+  "authorization": {
+    "ceiling_cents": 5000,
+    "currency": "USD-cents",
+    "program_ceiling_cents": 5000,
+    "source": "Trevor 2026-10-06, $50 total program"
+  },
+  "continuity": {
+    "gate": true,
+    "review": "pass",
+    "shots": 3
+  },
+  "delivery_profile": "long-9x16-60s",
+  "duration_band": "60-90s",
+  "final_media": {
+    "assembled_total_s": 63.0,
+    "bytes": 18534133,
+    "duration_band": "60-90s",
+    "fps": 30,
+    "height": 1920,
+    "master": "qualification/long-form-media/final/final-9x16.mp4",
+    "master_duration_s": 63.0,
+    "segments": [
+      {
+        "measured_s": 21.0,
+        "shot_id": "shot-01",
+        "src": "qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+      },
+      {
+        "measured_s": 21.0,
+        "shot_id": "shot-02",
+        "src": "qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+      },
+      {
+        "measured_s": 21.0,
+        "shot_id": "shot-03",
+        "src": "qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+      }
+    ],
+    "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c",
+    "streams": {
+      "audio": 63.0,
+      "video": 63.0
+    },
+    "width": 1080
+  },
+  "intake": "ok",
+  "jobs_reconciled": 5,
+  "music_qc_reason": null,
+  "music_qc_verdict": "UNAVAILABLE",
+  "owned_output": "qualification/long-form-media/",
+  "preflight": "ok",
+  "program_total": {
+    "ceiling_cents": 5000,
+    "projected_cents": 1024
+  },
+  "receipts_recorded": 5,
+  "run_id": "w4-long",
+  "spend_summary": {
+    "actual_cost": 1016,
+    "committed_cost": 0,
+    "currency": "USD-cents",
+    "estimated_cost": 0,
+    "number_of_generation_calls": 5,
+    "provider_cost_by_stage": {
+      "image": 2,
+      "music": 6,
+      "video-shot-01": 336,
+      "video-shot-02": 336,
+      "video-shot-03": 336
+    },
+    "qc_and_repair_allowance": 0,
+    "remaining_budget": 3984,
+    "retry_cost": 0,
+    "run_status": "active",
+    "unknown_or_reserved_cost": 0
+  },
+  "stages": {
+    "final_assemble": "COMPLETE",
+    "image_generate": "COMPLETE",
+    "intake": "COMPLETE",
+    "lyrics_approved": "COMPLETE",
+    "music_generate": "COMPLETE",
+    "music_qc": "COMPLETE",
+    "preflight": "COMPLETE",
+    "receipts": "COMPLETE",
+    "storyboard": "COMPLETE",
+    "timing_guard": "COMPLETE",
+    "video_generate": "COMPLETE"
+  },
+  "target_duration_s": 63,
+  "timing_guard_reason": "LOW_CONFIDENCE",
+  "timing_guard_verdict": "REVIEW",
+  "unit_id": "W4-01-U1",
+  "verdict_file_owner": "independent checker; builder does not write evidence/W4-01/*.verdict.json"
+}

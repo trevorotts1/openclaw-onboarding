@@ -1,0 +1,26 @@
+{
+  "criteria": [
+    "boring_repetition",
+    "unclear_storytelling",
+    "missing_emotional_beat",
+    "product_too_early",
+    "product_too_late",
+    "continuity_mistakes",
+    "unsupported_claim_visualization",
+    "impossible_generation_requirements",
+    "weak_camera_variety",
+    "pacing_mismatch",
+    "cost_inefficiency",
+    "shots_that_cannot_be_visually_qcd"
+  ],
+  "findings": [],
+  "next_action": "Release to video generation.",
+  "outcome": "pass",
+  "reason_code": "storyboard-accepted",
+  "reviewer": "storyboard-adversarial/W4-01-U1",
+  "shots_reviewed": [
+    "shot-01",
+    "shot-02",
+    "shot-03"
+  ]
+}

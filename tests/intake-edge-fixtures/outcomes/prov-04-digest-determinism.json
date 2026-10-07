@@ -1,0 +1,105 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "${DTS_BUILD_ROOT}/tests/intake-edge-fixtures/fixtures/complete-brief.json",
+    "--run-id",
+    "prov-04-digest-determinism-b"
+  ],
+  "checks": [
+    {
+      "check": "same-brief-same-digest",
+      "detail": {
+        "a": "74a4a7d5a5210882",
+        "b": "74a4a7d5a5210882"
+      },
+      "pass": true,
+      "scenario": "prov-04-digest-determinism"
+    },
+    {
+      "check": "digest-is-16-hex",
+      "detail": "74a4a7d5a5210882",
+      "pass": true,
+      "scenario": "prov-04-digest-determinism"
+    },
+    {
+      "check": "other-offer-digest-differs",
+      "detail": {
+        "base": "74a4a7d5a5210882",
+        "other": "05d20b7c0110d413"
+      },
+      "pass": true,
+      "scenario": "prov-04-digest-determinism"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 3,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "74a4a7d5a5210882",
+      "next_stage": null,
+      "provenance": {
+        "action": "provided",
+        "aspect_ratio": "provided",
+        "assets": "missing",
+        "audience": "provided",
+        "brand_rules": "provided",
+        "budget_currency": "provided",
+        "budget_minor": "provided",
+        "creative_prefs": "provided",
+        "offer": "provided",
+        "placement": "provided",
+        "repair_allowance": "provided",
+        "target_length_s": "provided"
+      },
+      "question_message": null,
+      "questions": [],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": "busy parents",
+        "auth_status": "missing",
+        "cta": "visit the site and start the free trial",
+        "format": "9:16",
+        "generation_ceiling": {
+          "amount_minor": 10000,
+          "currency": "USD"
+        },
+        "offer": "demo offer",
+        "placement": "9:16 vertical short",
+        "repair_allowance": "none",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Record summary digest + auth scope, then run preflight before paid work.",
+    "outcome": "ok",
+    "reason_code": "complete-brief-zero-questions",
+    "run_id": "prov-04-digest-determinism-b",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "74a4a7d5a5210882",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 0,
+  "family": "provenance-recording",
+  "first_digest": "74a4a7d5a5210882",
+  "first_exit": 0,
+  "notes": {},
+  "recorded_unix": 1791358789,
+  "scenario": "prov-04-digest-determinism",
+  "second_digest": "74a4a7d5a5210882",
+  "unit_id": "W4-02-U1"
+}

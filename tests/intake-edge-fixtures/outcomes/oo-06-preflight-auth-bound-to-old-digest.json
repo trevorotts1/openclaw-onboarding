@@ -1,0 +1,124 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "preflight",
+    "--root",
+    "/tmp/local-W4-02-U1-rzuyl_mz",
+    "--storage-dir",
+    "/tmp/local-W4-02-U1-rzuyl_mz",
+    "--auth-file",
+    "/tmp/local-W4-02-U1-rzuyl_mz/auth-old-digest.json",
+    "--summary-digest",
+    "05d20b7c0110d413",
+    "--run-id",
+    "oo-06-preflight-auth-bound-to-old-digest"
+  ],
+  "auth_scope_digest": "74a4a7d5a5210882",
+  "brief_digest": "05d20b7c0110d413",
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "preflight",
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "rejected",
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 4,
+        "rc": 4
+      },
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "outcome",
+      "detail": "rejected",
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "reason_code",
+      "detail": "approval-out-of-scope",
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    },
+    {
+      "check": "exit_code",
+      "detail": 4,
+      "pass": true,
+      "scenario": "oo-06-preflight-auth-bound-to-old-digest"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 8,
+  "envelope": {
+    "command": "preflight",
+    "data": {
+      "checks": {
+        "credentials_present": {},
+        "disk": {
+          "free": 74757599232,
+          "ok": true,
+          "total": 494384795648
+        },
+        "modules": {},
+        "profile_known": true,
+        "references_inside_approved_storage": true,
+        "references_ok": true,
+        "schema_trusted": true,
+        "storage_writable": true,
+        "tools": {}
+      },
+      "missing": null,
+      "outside": null
+    },
+    "evidence": [],
+    "next_action": "Bind authorization to this campaign summary digest.",
+    "outcome": "rejected",
+    "reason_code": "approval-out-of-scope",
+    "run_id": "oo-06-preflight-auth-bound-to-old-digest",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "oo-06-preflight-auth-bound-to-old-digest",
+      "expected": "05d20b7c0110d413"
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 4,
+  "family": "other-offer",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "oo-06-preflight-auth-bound-to-old-digest",
+  "unit_id": "W4-02-U1"
+}

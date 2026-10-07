@@ -1,0 +1,67 @@
+{
+  "audio_seconds": 30.024,
+  "av_source": "separate source files (no assembled master yet)",
+  "checks": [
+    {
+      "detail": "5 approved lines (3 critical)",
+      "id": "APPROVED_LYRICS",
+      "status": "PASS"
+    },
+    {
+      "detail": "no word-level alignment record; boundary accuracy not evidenced (coverage runs on provider-prompt:provider/lyric-record.json)",
+      "id": "WORD_TIMING",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "the provider prompt field is the dispatched lyric input as normalized by the provider, not a transcription of the audio; Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available. Lyric QC therefore compares approved text against the dispatched generation input and records this limitation.",
+      "id": "OBSERVATION",
+      "status": "PASS"
+    },
+    {
+      "detail": "no annotated alignment sample in package; median/p95 boundary accuracy not measured (never invented)",
+      "id": "ALIGNMENT_SAMPLE",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "no assembled master; deliverable A/V sync not measurable (source durations for reference: audio=30.024 video=None)",
+      "id": "AV_SYNC_MEASURED",
+      "status": "UNAVAILABLE"
+    }
+  ],
+  "clips": null,
+  "clips_source": null,
+  "cta_hold_seconds": null,
+  "observed_note": "the provider prompt field is the dispatched lyric input as normalized by the provider, not a transcription of the audio; Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available. Lyric QC therefore compares approved text against the dispatched generation input and records this limitation.",
+  "observed_source": "provider-prompt:provider/lyric-record.json",
+  "observed_word_count": 5,
+  "raw": {
+    "detail": "",
+    "evidence": {
+      "coverage": {
+        "approved_n": 42,
+        "covered": 42,
+        "overall": 1.0
+      },
+      "low_confidence": [
+        "timing-sample-unrecorded"
+      ],
+      "profile": {
+        "critical_max_ms": 100,
+        "fps": 30,
+        "median_max_ms": 100,
+        "p95_max_ms": 250
+      }
+    },
+    "reason_code": "LOW_CONFIDENCE",
+    "tool": "timing_guard",
+    "tool_version": "1.0.0",
+    "verdict": "REVIEW"
+  },
+  "run_id": "w4-long",
+  "span": null,
+  "tool": "long-qc.timing_guard",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "REVIEW",
+  "video_seconds": null
+}

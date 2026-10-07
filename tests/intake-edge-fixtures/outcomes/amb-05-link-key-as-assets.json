@@ -1,0 +1,196 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "${DTS_BUILD_ROOT}/tests/intake-edge-fixtures/fixtures/link-brief.json",
+    "--run-id",
+    "amb-05-link-key-as-assets"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 2,
+        "rc": 2
+      },
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "outcome",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "reason_code",
+      "detail": "missing-essentials",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "exit_code",
+      "detail": 2,
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "provenance-complete",
+      "detail": [
+        "action",
+        "aspect_ratio",
+        "assets",
+        "audience",
+        "brand_rules",
+        "budget_currency",
+        "budget_minor",
+        "creative_prefs",
+        "offer",
+        "placement",
+        "repair_allowance",
+        "target_length_s"
+      ],
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "provenance-assets==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    },
+    {
+      "check": "link-normalized-to-list",
+      "detail": [
+        "https://shop.example/p"
+      ],
+      "pass": true,
+      "scenario": "amb-05-link-key-as-assets"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 11,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "7c95a0d7524e5e7a",
+      "next_stage": null,
+      "provenance": {
+        "action": "missing",
+        "aspect_ratio": "assumed",
+        "assets": "provided",
+        "audience": "missing",
+        "brand_rules": "assumed",
+        "budget_currency": "missing",
+        "budget_minor": "missing",
+        "creative_prefs": "assumed",
+        "offer": "provided",
+        "placement": "assumed",
+        "repair_allowance": "assumed",
+        "target_length_s": "assumed"
+      },
+      "question_message": "1. Who is it for, and what should viewers do?\n2. What maximum generation budget is authorized, with its currency/credit unit?\n3. What placement/format should we produce (aspect ratio + target length)?",
+      "questions": [
+        {
+          "id": "audience_action",
+          "question": "Who is it for, and what should viewers do?"
+        },
+        {
+          "id": "spending_authority",
+          "question": "What maximum generation budget is authorized, with its currency/credit unit?"
+        },
+        {
+          "id": "placement",
+          "question": "What placement/format should we produce (aspect ratio + target length)?"
+        }
+      ],
+      "summary": {
+        "assets": [
+          "https://shop.example/p"
+        ],
+        "assumptions": [
+          "audience=None (assumed default)",
+          "action=None (assumed default)",
+          "budget_minor=None (assumed default)",
+          "budget_currency=None (assumed default)",
+          "placement='unspecified (default: 9:16 vertical)' (assumed default)",
+          "aspect_ratio='unspecified (default: 9:16)' (assumed default)",
+          "brand_rules='unspecified (default: none)' (assumed default)",
+          "creative_prefs='unspecified (default: none)' (assumed default)",
+          "repair_allowance='unspecified (default: none authorized)' (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": null,
+        "auth_status": "missing",
+        "cta": null,
+        "format": "unspecified (default: 9:16)",
+        "generation_ceiling": {
+          "amount_minor": null,
+          "currency": null
+        },
+        "offer": "demo offer",
+        "placement": "unspecified (default: 9:16 vertical)",
+        "repair_allowance": "unspecified (default: none authorized)",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Answer the bundled questions in one reply; nothing else is asked.",
+    "outcome": "waiting",
+    "reason_code": "missing-essentials",
+    "run_id": "amb-05-link-key-as-assets",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "7c95a0d7524e5e7a",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 2,
+  "family": "ambiguous-briefs",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "amb-05-link-key-as-assets",
+  "unit_id": "W4-02-U1"
+}

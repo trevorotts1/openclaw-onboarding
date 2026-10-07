@@ -1,0 +1,216 @@
+{
+  "checks": [
+    {
+      "detail": "package root present, 83 files",
+      "id": "PKG_PRESENT",
+      "status": "PASS"
+    },
+    {
+      "detail": "found: 14.2 shot plan",
+      "id": "INPUT_SHOTS",
+      "status": "PASS"
+    },
+    {
+      "detail": "found: 12.4 timing map",
+      "id": "INPUT_TIMING",
+      "status": "PASS"
+    },
+    {
+      "detail": "found: campaign + lyrics",
+      "id": "INPUT_CAMPAIGN",
+      "status": "PASS"
+    },
+    {
+      "detail": "found: video master -- assembled output final/final-9x16.mp4",
+      "id": "INPUT_MASTER_VIDEO",
+      "status": "PASS"
+    },
+    {
+      "detail": "found: audio master",
+      "id": "INPUT_MASTER_AUDIO",
+      "status": "PASS"
+    },
+    {
+      "detail": "assembled master present: final/final-9x16.mp4",
+      "id": "ASSEMBLED_OUTPUT",
+      "status": "PASS"
+    },
+    {
+      "detail": "63.000s from ffprobe(assembled output final/final-9x16.mp4) within 60-90s",
+      "id": "DURATION_BAND",
+      "status": "PASS"
+    },
+    {
+      "detail": "all artifact hashes recompute",
+      "id": "MANIFEST_HASHES",
+      "status": "PASS"
+    }
+  ],
+  "duration_band_s": [
+    60.0,
+    90.0
+  ],
+  "file_count": 83,
+  "media": [
+    {
+      "bytes": 58582,
+      "kind": "image",
+      "rel": "artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+      "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407"
+    },
+    {
+      "bytes": 1405594,
+      "duration_s": 62.352,
+      "format_name": "mp3",
+      "kind": "audio",
+      "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+      "probe": "ok",
+      "rel": "artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+      "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
+      "streams": [
+        {
+          "codec": "audio",
+          "dur": "62.352000",
+          "fps": "0/0",
+          "h": null,
+          "name": "mp3",
+          "sr": "48000",
+          "w": null
+        }
+      ]
+    },
+    {
+      "bytes": 1492954,
+      "duration_s": 62.424,
+      "format_name": "mp3",
+      "kind": "audio",
+      "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
+      "probe": "ok",
+      "rel": "artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
+      "sha256": "69a36771348a172dcac7f5a60f3caccaebd2362100ffd9b79ce8a15ca678c98c",
+      "streams": [
+        {
+          "codec": "audio",
+          "dur": "62.424000",
+          "fps": "0/0",
+          "h": null,
+          "name": "mp3",
+          "sr": "48000",
+          "w": null
+        }
+      ]
+    },
+    {
+      "bytes": 30022697,
+      "duration_s": 21.0,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "kind": "video",
+      "path": "qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+      "probe": "ok",
+      "rel": "artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+      "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
+      "streams": [
+        {
+          "codec": "video",
+          "dur": "21.000000",
+          "fps": "30/1",
+          "h": 1920,
+          "name": "h264",
+          "sr": null,
+          "w": 1080
+        }
+      ]
+    },
+    {
+      "bytes": 47936461,
+      "duration_s": 21.0,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "kind": "video",
+      "path": "qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+      "probe": "ok",
+      "rel": "artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+      "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
+      "streams": [
+        {
+          "codec": "video",
+          "dur": "21.000000",
+          "fps": "30/1",
+          "h": 1920,
+          "name": "h264",
+          "sr": null,
+          "w": 1080
+        }
+      ]
+    },
+    {
+      "bytes": 36404553,
+      "duration_s": 21.0,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "kind": "video",
+      "path": "qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+      "probe": "ok",
+      "rel": "artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+      "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
+      "streams": [
+        {
+          "codec": "video",
+          "dur": "21.000000",
+          "fps": "30/1",
+          "h": 1920,
+          "name": "h264",
+          "sr": null,
+          "w": 1080
+        }
+      ]
+    },
+    {
+      "bytes": 18534133,
+      "duration_s": 63.0,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "kind": "video",
+      "path": "qualification/long-form-media/final/final-9x16.mp4",
+      "probe": "ok",
+      "rel": "final/final-9x16.mp4",
+      "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c",
+      "streams": [
+        {
+          "codec": "video",
+          "dur": "63.000000",
+          "fps": "30/1",
+          "h": 1920,
+          "name": "h264",
+          "sr": null,
+          "w": 1080
+        },
+        {
+          "codec": "audio",
+          "dur": "63.000000",
+          "fps": "0/0",
+          "h": null,
+          "name": "aac",
+          "sr": "48000",
+          "w": null
+        }
+      ]
+    }
+  ],
+  "package": "qualification/long-form-media",
+  "rejected_json": [],
+  "roles": {
+    "campaign": "campaign.json",
+    "captions": null,
+    "characters": "shots/characters.json",
+    "contracts": "shots/contracts.json",
+    "manifest": "manifest.json",
+    "readability": null,
+    "shots": "shots/shots.json",
+    "timing": "timing/timing-map.json",
+    "words": null
+  },
+  "run_id": "w4-long",
+  "scanned_at": "2026-10-07T02:36:10Z",
+  "tool": "long-qc.inventory",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "PASS"
+}

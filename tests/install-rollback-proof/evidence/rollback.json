@@ -1,0 +1,148 @@
+{
+  "after_rollback": {
+    "nine_tree_sha256": "3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec",
+    "nine_tree_sha256_before": "3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec",
+    "openclaw_files": 18,
+    "openclaw_tree_sha256": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1",
+    "openclaw_tree_sha256_before": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1",
+    "openclaw_version": "v1.0.0",
+    "registry_sha256": "932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d",
+    "registry_sha256_before": "932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d",
+    "release_check_exit": 1,
+    "release_check_failed": [
+      "A ships SKILL.md",
+      "999 registry lists drama-song-ad-factory",
+      "B test test_parity_layout.py"
+    ],
+    "release_check_failed_baseline": [
+      "A ships SKILL.md",
+      "999 registry lists drama-song-ad-factory",
+      "B test test_parity_layout.py"
+    ]
+  },
+  "baseline": {
+    "nine_commit": "8203088763d1bb93c402dc88db0c916e0a099f78",
+    "openclaw_commit": "f2b99f2927a9d731918f33eb9e8c033b670f324d",
+    "openclaw_version": "v1.0.0"
+  },
+  "checks": [
+    {
+      "check": "baseline A is v1.0.0",
+      "detail": "v1.0.0",
+      "pass": true
+    },
+    {
+      "check": "baseline A ships no SKILL.md",
+      "pass": true
+    },
+    {
+      "check": "baseline registry has no drama-song-ad-factory entry",
+      "pass": true
+    },
+    {
+      "check": "baseline install fails release_check (stale release)",
+      "detail": "rc=1",
+      "pass": true
+    },
+    {
+      "check": "snapshot matches baseline before migration",
+      "detail": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1 / 932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d",
+      "pass": true
+    },
+    {
+      "check": "migration actually changed A",
+      "detail": "{\"added\": [\"SKILL.md\"], \"changed\": [\"skill-version.txt\"]}",
+      "pass": true
+    },
+    {
+      "check": "migration registered the skill in 999",
+      "pass": true
+    },
+    {
+      "check": "A is v2.3.0 after migration",
+      "pass": true
+    },
+    {
+      "check": "A tree restored byte-identical to baseline",
+      "detail": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1 -> ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1",
+      "pass": true
+    },
+    {
+      "check": "A file set restored exactly",
+      "detail": "{\"before\": 18, \"after\": 18, \"delta\": []}",
+      "pass": true
+    },
+    {
+      "check": "A version stamp back to v1.0.0",
+      "detail": "v1.0.0",
+      "pass": true
+    },
+    {
+      "check": "A SKILL.md removed again by rollback",
+      "pass": true
+    },
+    {
+      "check": "999 install manifest restored byte-identical",
+      "detail": "932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d -> 932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d",
+      "pass": true
+    },
+    {
+      "check": "999 registry entry gone again",
+      "pass": true
+    },
+    {
+      "check": "B skill folder byte-identical through migrate+rollback",
+      "detail": "3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec -> 3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec",
+      "pass": true
+    },
+    {
+      "check": "local run state untouched by migrate+rollback",
+      "detail": "23dff58b629e25900cf16ff90357b17eba5e06283fa13a298e48b036a11a207f -> 23dff58b629e25900cf16ff90357b17eba5e06283fa13a298e48b036a11a207f",
+      "pass": true
+    },
+    {
+      "check": "release_check fails on the rolled-back install",
+      "detail": "rc=1 ifest lists drama-song-ad-factory\",\n          \"status\": \"fail\"\n        }\n      ],\n      \"status\": \"fail\"\n    }\n  },\n  \"generated_at\": \"2026-10-06T22:36:27-0400\",\n  \"python\": \"3.14.7\",\n  \"require_receipts\": false,\n  \"schema\": \"blackceo.release-check/v1\",\n  \"unit_id\": \"W4-04-U1\",\n  \"verdict\": \"FAIL\"\n}",
+      "pass": true
+    },
+    {
+      "check": "rolled-back install reports the same failures as baseline",
+      "detail": "{\"baseline\": [\"A ships SKILL.md\", \"999 registry lists drama-song-ad-factory\", \"B test test_parity_layout.py\"], \"rolled_back\": [\"A ships SKILL.md\", \"999 registry lists drama-song-ad-factory\", \"B test test_parity_layout.py\"]}",
+      "pass": true
+    }
+  ],
+  "covered": [
+    "openclaw",
+    "nine"
+  ],
+  "generated_at": "2026-10-06T22:36:27-0400",
+  "local_run_state": {
+    "preserved": true,
+    "sha256_after": "23dff58b629e25900cf16ff90357b17eba5e06283fa13a298e48b036a11a207f",
+    "sha256_before": "23dff58b629e25900cf16ff90357b17eba5e06283fa13a298e48b036a11a207f"
+  },
+  "migrated_then_rolled_back": {
+    "delta": {
+      "added": [
+        "SKILL.md"
+      ],
+      "changed": [
+        "skill-version.txt"
+      ],
+      "nine_after_sha256": "3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec",
+      "nine_before_sha256": "3c1ed0b9e61d029d014a6e0e407248783d08d14e10a0c0c104c9d62d910d1fec",
+      "nine_changed": [],
+      "openclaw_after_sha256": "9d6d12d3341810549a42f5d8097c3ca1ac8eb0a5ae4e5140cc29cacd2e5de96e",
+      "openclaw_before_sha256": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1",
+      "registry_after_sha256": "ed42d7a23f2c35917d2c263c263b87025fce204bdf6ed6a5f35a81972b75a222",
+      "registry_before_sha256": "932ff3d468efc7f92d8df1bc0a5eb10acdb77915a78b30d577a4d5936767d08d",
+      "removed": []
+    },
+    "migrated_version": "v2.3.0"
+  },
+  "procedure": "restore install tree + 999 install manifest from a byte snapshot taken immediately before migration; local run state lives outside the install tree and is never rewritten",
+  "receipt": "rollback",
+  "schema": "blackceo.install-rollback-proof/v1",
+  "unit_id": "W4-04-U1",
+  "verdict": "PASS"
+}

@@ -1,0 +1,172 @@
+{
+  "audit": [
+    {
+      "detail": "artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3 (690229 bytes)",
+      "id": "MASTER_AUDIO",
+      "status": "PASS"
+    },
+    {
+      "detail": "30.024s vs 60-90s band",
+      "duration_s": 30.024,
+      "id": "DURATION",
+      "status": "FAIL"
+    },
+    {
+      "detail": "sample peak -0.431 dBFS",
+      "id": "CLIPPING",
+      "sample_peak_dbfs": -0.431145,
+      "status": "PASS"
+    },
+    {
+      "detail": "single continuous master render; no internal edit points to evaluate",
+      "id": "TRANSITIONS",
+      "status": "PASS"
+    },
+    {
+      "detail": "no independent persona_continuity evidence returned; an uncalibrated estimator would be invented precision",
+      "id": "PERSONA_CONTINUITY",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "no independent genre_continuity evidence returned; an uncalibrated estimator would be invented precision",
+      "id": "GENRE_CONTINUITY",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "no independent tempo_continuity evidence returned; an uncalibrated estimator would be invented precision",
+      "id": "TEMPO_CONTINUITY",
+      "status": "UNAVAILABLE"
+    },
+    {
+      "detail": "provider-prompt:provider/lyric-record.json -- the provider prompt field is the dispatched lyric input as normalized by the provider, not a transcription of the audio; Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available. Lyric QC therefore compares approved text against the dispatched generation input and records this limitation.",
+      "id": "LYRIC_OBSERVATION",
+      "status": "PASS"
+    },
+    {
+      "detail": "0 approved word(s) missing from the dispatched provider prompt (provider/lyric-record.json)",
+      "id": "PROVIDER_PROMPT_COVERAGE",
+      "status": "PASS"
+    }
+  ],
+  "checks": {
+    "clipping": "PASS",
+    "genre_continuity": "UNAVAILABLE",
+    "master_duration": "FAIL",
+    "persona_continuity": "UNAVAILABLE",
+    "tempo_continuity": "UNAVAILABLE",
+    "transitions": "PASS"
+  },
+  "master": {
+    "bytes": 690229,
+    "duration_s": 30.024,
+    "format_name": "mp3",
+    "kind": "audio",
+    "path": "qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
+    "probe": "ok",
+    "rel": "artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
+    "sha256": "3bfac505e213a2a904549043bbc8dc8da812473a7090664837bb33fb9c2307e3",
+    "streams": [
+      {
+        "codec": "audio",
+        "dur": "30.024000",
+        "fps": "0/0",
+        "h": null,
+        "name": "mp3",
+        "sr": "48000",
+        "w": null
+      }
+    ]
+  },
+  "observed_note": "the provider prompt field is the dispatched lyric input as normalized by the provider, not a transcription of the audio; Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available. Lyric QC therefore compares approved text against the dispatched generation input and records this limitation.",
+  "observed_source": "provider-prompt:provider/lyric-record.json",
+  "raw": {
+    "checker_version": "1.0.0",
+    "findings": [
+      {
+        "check": "persona_continuity",
+        "detail": "no evidence supplied; cannot pass",
+        "verdict": "UNAVAILABLE"
+      },
+      {
+        "check": "genre_continuity",
+        "detail": "no evidence supplied; cannot pass",
+        "verdict": "UNAVAILABLE"
+      },
+      {
+        "check": "tempo_continuity",
+        "detail": "no evidence supplied; cannot pass",
+        "verdict": "UNAVAILABLE"
+      },
+      {
+        "check": "master_duration",
+        "detail": "failed: master_duration",
+        "verdict": "FAIL"
+      }
+    ],
+    "lyric_diff": {
+      "adlib_damage": false,
+      "adlib_words": [],
+      "approved_word_count": 42,
+      "coverage": 1.0,
+      "coverage_min": 0.98,
+      "coverage_ok": true,
+      "critical_missing": [],
+      "matched_word_count": 42,
+      "missing_words": [],
+      "observed_word_count": 42,
+      "per_line": [
+        {
+          "approved": "i sing my black c e o drama song",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "hook01",
+          "missing": [],
+          "observed": "i sing my black c e o drama song",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i built this factory demo for owners",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "offer01",
+          "missing": [],
+          "observed": "i built this factory demo for owners",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "visit black c e o dot com and book the demo",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "cta01",
+          "missing": [],
+          "observed": "visit black c e o dot com and book the demo",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i feel the rhythm lift my day",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "verse01",
+          "missing": [],
+          "observed": "i feel the rhythm lift my day",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i keep the beat rolling in my heart",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "verse02",
+          "missing": [],
+          "observed": "i keep the beat rolling in my heart",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    "verdict": "FAIL"
+  },
+  "run_id": "w4-long",
+  "tool": "long-qc.music_qc",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "FAIL"
+}

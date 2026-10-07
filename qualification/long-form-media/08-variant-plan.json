@@ -1,0 +1,74 @@
+{
+  "note": "plans only; transcode belongs to the media pipeline, not this module",
+  "plan": [
+    {
+      "aspect": "9:16",
+      "audio_codec": "AAC",
+      "audio_sample_rate_hz": 48000,
+      "fps": 30,
+      "height": 1920,
+      "output_path": "variants/9x16/final.mp4",
+      "safe_action": {
+        "height": 1728,
+        "width": 972,
+        "x": 54,
+        "y": 96
+      },
+      "safe_title": {
+        "height": 1536,
+        "width": 864,
+        "x": 108,
+        "y": 192
+      },
+      "source": "qualification/long-form-media/final/final-9x16.mp4",
+      "video_codec": "H.264",
+      "width": 1080
+    },
+    {
+      "aspect": "16:9",
+      "audio_codec": "AAC",
+      "audio_sample_rate_hz": 48000,
+      "fps": 30,
+      "height": 1080,
+      "output_path": "variants/16x9/final.mp4",
+      "safe_action": {
+        "height": 972,
+        "width": 1728,
+        "x": 96,
+        "y": 54
+      },
+      "safe_title": {
+        "height": 864,
+        "width": 1536,
+        "x": 192,
+        "y": 108
+      },
+      "source": "qualification/long-form-media/final/final-9x16.mp4",
+      "video_codec": "H.264",
+      "width": 1920
+    },
+    {
+      "aspect": "1:1",
+      "audio_codec": "AAC",
+      "audio_sample_rate_hz": 48000,
+      "fps": 30,
+      "height": 1080,
+      "output_path": "variants/1x1/final.mp4",
+      "safe_action": {
+        "height": 972,
+        "width": 972,
+        "x": 54,
+        "y": 54
+      },
+      "safe_title": {
+        "height": 864,
+        "width": 864,
+        "x": 108,
+        "y": 108
+      },
+      "source": "qualification/long-form-media/final/final-9x16.mp4",
+      "video_codec": "H.264",
+      "width": 1080
+    }
+  ]
+}
