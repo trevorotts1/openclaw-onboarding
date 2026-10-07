@@ -1,5 +1,9 @@
 # Changelog - Skill 76 Local Embedder
 
+## [1.2.0] - 2026-10-07
+- New step 5c: provisions the Gemini fallback SOP set (table `sop_embeddings_gemini_fallback`) by running the Command Center's own `scripts/provision-gemini-fallback-sop-set.ts` from the box's CC dir. Only when the box has its own Google key and a CC at v7.6.108 or newer; skipped cleanly otherwise. The script downloads the sha256-pinned shared asset (zero embedding API calls), so the key is needed only at query time. It uses a node that loads better-sqlite3 (the CC's serving process, Homebrew node 22/20, then PATH), is bounded (600 s, `LOCAL_EMBEDDER_SOPFB_TIMEOUT`), never fatal, and re-runs only when the manifest sha256 or the box's sops count changes (`~/.openclaw/local-embedder/gemini-sop-fallback.done`). The local `sop_embeddings` table is never touched.
+- Tests: T19 (provision, skip with no key / old CC / no CC, timeout and failure non-fatal, idempotent, node selection); mutation-proven against the version gate and the sentinel write.
+
 ## [1.1.0] - 2026-10-07
 - New step 5b: provisions the Gemini persona fallback copy (`gemini-fallback-index.sqlite`, via `provision_gemini_fallback_index`) when the box has its own Google key; skipped cleanly otherwise, never fatal. Persona selection uses it when local Ollama is down. `memory.search.fallback` is unchanged.
 

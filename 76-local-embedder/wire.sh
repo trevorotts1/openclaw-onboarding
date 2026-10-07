@@ -654,6 +654,77 @@ else
   fi
 fi
 
+# ── 5c. Gemini fallback copy of the shared SOP set (own key only) ───────────
+# Trevor's order: when local Ollama is down, the Command Center's SOP vote
+# embeds the task with the box's OWN Google key and votes against the shared
+# prebuilt Gemini SOP vectors in a SEPARATE table, sop_embeddings_gemini_fallback.
+# The CC's own script (>= v7.6.108) downloads the sha256-pinned asset and maps
+# it onto this box's sops: zero embedding API calls, so the key is needed only at
+# query time; this step is still gated on the key so a box that can never use the
+# fallback does not carry 36 MB of it. sop_embeddings (the local 768-dim table)
+# is never touched. Never fatal. Re-runs only when the manifest sha or the box's
+# sops count changed.
+SOPFB_TIMEOUT="${LOCAL_EMBEDDER_SOPFB_TIMEOUT:-600}"   # seconds (36 MB download)
+SOPFB_MIN_CC="7.6.108"
+SOPFB_SCRIPT="scripts/provision-gemini-fallback-sop-set.ts"
+sopfb_cc_dir() { local d
+  for d in "${LOCAL_EMBEDDER_CC_DIR:-}" "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+           "$HOME/projects/command-center" "$HOME/projects/blackceo-command-center" "$HOME/blackceo-command-center"; do
+    [ -n "$d" ] && [ -f "$d/package.json" ] && [ -f "$d/$SOPFB_SCRIPT" ] && { echo "$d"; return 0; }
+  done
+  return 1
+}
+# The node whose better-sqlite3 loads (the PATH node is often an nvm Node 24 that fails it):
+# the CC's own serving process first, then known Homebrew nodes, then PATH.
+sopfb_node() { local cc="$1" pid n c cands=""
+  for pid in $(lsof -nP -iTCP:"${CC_PORT:-4000}" -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p'); do
+    n="$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n\(.*\/node\)$/\1/p' | head -n1)"
+    [ -n "$n" ] && cands="$cands
+$n"
+  done
+  for c in "${CC_NODE:-}" /opt/homebrew/opt/node@22/bin/node /opt/homebrew/opt/node@20/bin/node \
+           /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 2>/dev/null)"; do
+    [ -n "$c" ] && cands="$cands
+$c"
+  done
+  while IFS= read -r c; do
+    [ -n "$c" ] && [ -x "$c" ] && ( cd "$cc" && "$c" -e "require('better-sqlite3')" ) >/dev/null 2>&1 && { echo "$c"; return 0; }
+  done <<EOF
+$cands
+EOF
+  return 1
+}
+sopfb_provision() { # returns 0 done/skipped, 1 failed (caller only logs)
+  local cc db man sha nsops stamp mark node rc ccv
+  [ "$_has_gkey" = yes ] || { log "Gemini SOP fallback skipped: this box has no Google key of its own"; return 0; }
+  cc="$(sopfb_cc_dir)" || { log "Gemini SOP fallback skipped: no Command Center with $SOPFB_SCRIPT on this box"; return 0; }
+  ccv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1] + "/package.json")).get("version",""))' "$cc" 2>/dev/null)"
+  ver_ge "$ccv" "$SOPFB_MIN_CC" || { log "Gemini SOP fallback skipped: Command Center '${ccv:-unknown}' is older than $SOPFB_MIN_CC"; return 0; }
+  man="$SKILL_DIR/../shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+  [ -f "$man" ] || { log "Gemini SOP fallback skipped: SOP embeddings manifest not found"; return 0; }
+  db="$(python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from resolve_db import find_dashboard_db, is_db_found
+p = find_dashboard_db()
+print(str(p) if is_db_found(p) else "")' "$SKILL_DIR/../shared-utils" 2>/dev/null)"
+  [ -n "$db" ] && [ -f "$db" ] || { log "Gemini SOP fallback skipped: no mission-control.db resolved"; return 0; }
+  nsops="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True).execute("select count(*) from sops").fetchone()[0])' "$db" 2>/dev/null)"
+  case "$nsops" in ''|*[!0-9]*) log "Gemini SOP fallback skipped: no readable sops table in the Command Center database"; return 0 ;; esac
+  sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$man" 2>/dev/null)"
+  [ -n "$sha" ] || { log "Gemini SOP fallback skipped: manifest has no sha256"; return 0; }
+  stamp="$sha|$nsops|$db"; mark="$STATE_DIR/gemini-sop-fallback.done"
+  if [ "$(cat "$mark" 2>/dev/null)" = "$stamp" ]; then log "Gemini SOP fallback already provisioned (manifest sha and sops count unchanged)"; return 0; fi
+  node="$(sopfb_node "$cc")" || { log "Gemini SOP fallback not provisioned: no node that loads better-sqlite3 in $cc (next roll retries)"; return 1; }
+  if [ "$DRY_RUN" = 1 ]; then log "dry-run would run (cd $cc): $node --import tsx $SOPFB_SCRIPT --manifest <manifest> --db $db"; return 0; fi
+  log "provisioning the Gemini SOP fallback set into $db (limit ${SOPFB_TIMEOUT}s)"
+  rc=0; ( cd "$cc" && with_timeout "$SOPFB_TIMEOUT" "$node" --import tsx "$SOPFB_SCRIPT" --manifest "$man" --db "$db" ) || rc=$?
+  if [ "$rc" = 0 ]; then mkdir -p "$STATE_DIR" && printf '%s\n' "$stamp" > "$mark"; return 0; fi
+  [ "$rc" = 124 ] && log "Gemini SOP fallback timed out after ${SOPFB_TIMEOUT}s"
+  return 1
+}
+sopfb_provision || log "Gemini SOP fallback not provisioned (non-fatal; next roll retries)"
+
 # ── 6. One re-index per agent: bounded, resumable ───────────────────────────
 if [ "$REINDEX" = 0 ] || [ "$DRY_RUN" = 1 ]; then
   log "re-index skipped (--no-reindex or --dry-run)"; exit 0

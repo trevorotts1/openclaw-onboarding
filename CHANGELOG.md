@@ -1,3 +1,11 @@
+## [v26.4.0]  -  2026-10-07  -  Merge train: #1582 feat(embeddings): skill 76 provisions the Gemini fallback SOP set on…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1582 — feat(embeddings): skill 76 provisions the Gemini fallback SOP set on client Macs (v26.4.0)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.3.0]  -  2026-10-07  -  Merge train: #1575 fix(updater): refresh dirty CC checkout when local edits do not…; #1577 feat(embeddings): local-mode persona selection falls back to the…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
