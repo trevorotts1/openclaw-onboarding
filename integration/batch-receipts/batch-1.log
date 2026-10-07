@@ -1,0 +1,8 @@
+MERGE-TRAIN BATCH | repo=factory-scratch 2 unit(s) onto main: unit/W501U1-A unit/W501U1-B | gate=test -f cand-a.txt && test -f cand-b.txt
+LANDED: unit=unit/W501U1-A commit=410c7b9ce1a40fd15abc57d7c3fe7d399993fae8 tests=pass
+LANDED: unit=unit/W501U1-B commit=915730d60c47887a727f3e09dbffcb36a4eaca1e tests=pass
+MERGED: unit=unit/W501U1-A commit=410c7b9ce1a40fd15abc57d7c3fe7d399993fae8 trunk=origin/main repo=factory-scratch
+MERGED: unit=unit/W501U1-B commit=915730d60c47887a727f3e09dbffcb36a4eaca1e trunk=origin/main repo=factory-scratch
+CLEANED: unit=unit/W501U1-A repo=factory-scratch worktree=none branch=deleted remote-branch=none
+CLEANED: unit=unit/W501U1-B repo=factory-scratch worktree=none branch=deleted remote-branch=none
+WINDOW-BATCH | event=BATCH-W501U1-1 | epoch=[1791354447,1791354449) | window=30 [1791354227,1791356027) | stamp_age=54220s | rc=0

@@ -1,0 +1,29 @@
+PASS | T0 receipts matches run/state.json T0
+PASS | every event carries MERGE_BATCH_MINUTES=30
+PASS | exactly one train batch event
+PASS | at least one refusal event
+PASS | batch starts no earlier than T0+30min
+PASS | batch stamp age >= 30min (window was open)
+PASS | window bounds are T0-anchored 30min slots
+PASS | batch ran inside its own window
+PASS | refusal stamp age < 30min (window closed)
+PASS | refusal after the batch (candidate presented outside window)
+PASS | refusal reason is window cadence
+PASS | batch and refusal in same 30min window slot
+PASS | batch merged at least the closed set A+B
+PASS | origin/main exists after fetch
+PASS | every merged unit sha is ancestor of fetched origin/main (remote proof)
+PASS | QC-FAIL candidate C not on remote
+PASS | outside-window candidate D not on remote
+PASS | dependency closure: B stacked on A
+PASS | closed set recorded as {A,B}
+PASS | builder-merge scan PASS
+PASS | zero individual builder merges
+PASS | batch log proves merged-on-origin/main
+PASS | batch log shows combined-candidate gate passed
+PASS | batch log has no REPAIR/CONFLICT/UNPROVEN
+PASS | negative control log shows WINDOW-REFUSED
+PASS | negative control ran no train batch
+PASS | existing merge-train selftest passed
+PASS | negative-controls batch_events_count==1 (no hidden batch)
+VERIFY PASS | checks=28 failed=0
