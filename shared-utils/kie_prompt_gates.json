@@ -57,7 +57,7 @@
     "06-ghl-install-pages/tools/ghl_media.py",
     "universal-sops/video-production/scripts/probe_prompt_band.py",
     "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py",
-    "core/drama-song-factory/product_style_bible/bible.py"
+    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py"
   ],
   "delegating_gate_modules": [
     {
@@ -183,7 +183,7 @@
     "25-video-creator/scripts/ai_providers.py": [
       "max"
     ],
-    "core/drama-song-factory/product_style_bible/bible.py": [
+    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py": [
       "PROMPT_CAP_SUNBURST",
       "PROMPT_CAP_LEGACY"
     ]

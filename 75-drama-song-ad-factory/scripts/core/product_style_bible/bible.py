@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 SCHEMA_VERSION = "1.0.0"
 
@@ -29,6 +30,44 @@ LEGACY_MODEL = "gpt-image-2-legacy"  # per-mode suffix chosen by image layer
 
 PROMPT_CAP_SUNBURST = 20000
 PROMPT_CAP_LEGACY = 25000  # OWNER_CONFIRMED cap
+
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree)."""
+    import os as _os
+    import sys as _sys
+    envd = _os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    if envd:
+        dirs.append(Path(envd) / "shared-utils")
+    dirs += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+             Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            _sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    return None
+
+
+_ENFORCER = _load_enforcer()
+
+
+def enforce_prompt(prompt: str, model: str):
+    """Route compiled KIE prompts through the shared enforcer when present.
+
+    The numeric cap stays authoritative (band-named constants); the enforcer
+    adds the check + audit trail required by rule 12. kind="verbatim": the
+    style bible's compiled [STYLE]/[SHOT] prompt is a ceiling-only artifact."""
+    KPE = _load_enforcer()
+    if KPE is not None:
+        v = KPE.check(
+            model, prompt, kind="verbatim",
+            fallback_max=PROMPT_CAP_LEGACY if model == LEGACY_MODEL else PROMPT_CAP_SUNBURST,
+        )
+        if not v.get("ok"):
+            raise CompilerError("KIE_PROMPT_GUARD", "%s: %s" % (model, v.get("message", "")))
+    return prompt
 
 PRODUCT_TEXT_FIELDS = (
     "packaging_reference",
@@ -260,6 +299,7 @@ def compile_visual_prompt(style, characters, product, shot):
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"
                             % (len(prompt), cap, model))
+    enforce_prompt(prompt, model)
     return {"prompt": prompt, "model": model,
             "aspect_ratio": style["aspect_ratio"], "asset_ids": assets,
             "prompt_chars": len(prompt)}

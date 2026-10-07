@@ -2,7 +2,7 @@
 
 First-time onboarding requires the client/ZHC owner name and company name before resources are created. Collect both with `scripts/onboarding-identity.py` (see `Start Here.md`); reuse the saved intake and existing company IDs on retries. Never substitute the owner name for the company name.
 
-Paired releases: onboarding v26.4.1 / Command Center v7.6.102. Skill 32 v13.1.39, Skill 37 v13.1.4 and Skill 05 v7.0.1. The CEO decides new owner intake: any work, or doubt, runs `mc-route.sh task` once per job and Command Center only picks the department (see docs/MC-ROUTE.md); `mc-route.sh auto` still works for boxes not yet updated. This onboarding release requires that paired Command Center release, and the fleet update deploys the pin in the same roll. The decision engine can be turned off with `echo off > ~/.openclaw/decision-engine-mode.conf` (no restart); on v7.6.90 that stops engine calls, not cards. Delete the file or write `auto` to turn it back on.
+Paired releases: onboarding v26.4.3 / Command Center v7.6.102. Skill 32 v13.1.39, Skill 37 v13.1.4 and Skill 05 v7.0.1. The CEO decides new owner intake: any work, or doubt, runs `mc-route.sh task` once per job and Command Center only picks the department (see docs/MC-ROUTE.md); `mc-route.sh auto` still works for boxes not yet updated. This onboarding release requires that paired Command Center release, and the fleet update deploys the pin in the same roll. The decision engine can be turned off with `echo off > ~/.openclaw/decision-engine-mode.conf` (no restart); on v7.6.90 that stops engine calls, not cards. Delete the file or write `auto` to turn it back on.
 
 ## Expected order
 
