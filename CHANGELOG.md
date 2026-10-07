@@ -9493,6 +9493,14 @@ so guard G3 does not apply, and all ten version markers continue to agree at the
 - unit/PKG-01-U1: test(PKG-01-U1): extended distribution parity — enumerate both packaged skill folders, diff every packaged module + doc, zero byte drift (merge 3c89df2be966)
 - unit/OPR-U1: Source: Owner 2026-10-07 purge order + conductor CI scan 2026-10-07 (only external refs: shared-utils/kie_prompt_gates.json lines 60+186) (merge d546500db40e)
 - unit/A2-U2: A2-R2-U2: re-package kie_dispatch from the FIXED canonical core (sha cb19f18b) (merge 57c9e33ef21a)
+- unit/AF-ECHO-U1: AF-ECHO-U1: core/audio_c3/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 8b904dd962ac)
+- unit/AF-ECHO-U2: AF-ECHO-U2: core/qc_reverb_tail — audio-fix wave D36-D38 (owner order 2026-10-07) (merge a8e42f1384b0)
+- unit/AF-ECHO-U3: AF-ECHO-U3: core/qc_voice_match/pitch_ban — audio-fix wave D36-D38 (owner order 2026-10-07) (merge e285e7b8b51b)
+- unit/AF-SHARE-U1: AF-SHARE-U1: core/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge b6c80b500f10)
+- unit/AF-SHARE-U2: AF-SHARE-U2: core/spoken_share_card_docs — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 41fd879667f5)
+- unit/AF-STL-U1: AF-STL-U1: core/choice_card/stl_voice_guard — audio-fix wave D36-D38 (owner order 2026-10-07) (merge cbd172e0bdf6)
+- unit/AF-SMP-U1: AF-SMP-U1: core/smp/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 9d6eb3bc4cb4)
+- unit/AF-SMP-U2: AF-SMP-U2: core/smp/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 4306cda66e40)
 
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 
