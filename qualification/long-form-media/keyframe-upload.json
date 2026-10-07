@@ -1,0 +1,10 @@
+{
+  "adapter": "74-kie-live-adapter",
+  "source": "qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+  "state": "success",
+  "uploaded_at_unix": 1791338474,
+  "url": "https://tempfile.redpandaai.co/kieai/259883/openclaw/uploads/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+  "warnings": [
+    "no expiresAt returned; assume 24h (docs say 24h in one place, 3 days in another)"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "estimated_cost_cents": 336,
+  "job": "video-shot-01",
+  "logical_key": "w4-long/video-generate-s1",
+  "request_digest": "4d0cbcf3b520ce327d64a82e9b201502ae65efbe8911e96f951b331c1e531869",
+  "reserve": {
+    "init_run": {
+      "attempt_id": "",
+      "command": "init_run",
+      "evidence": {},
+      "logical_key": "",
+      "next_action": "",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "plan": {
+      "attempt_id": "a1",
+      "command": "plan",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s1",
+      "next_action": "reserve before dispatch",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "reserve": {
+      "attempt_id": "a1",
+      "command": "reserve",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s1",
+      "next_action": "dispatch only against this reservation",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 2,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    }
+  }
+}

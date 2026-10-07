@@ -1,0 +1,9 @@
+{
+  "approved_words_missing_from_provider_prompt": [],
+  "candidate_tracks": 2,
+  "note": "the provider 'prompt' field is the dispatched lyric input as normalized by the provider, not a transcription of the audio. Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available; lyric QC below compares approved text against the dispatched generation input and records this limitation.",
+  "provider_duration_s": 62.32,
+  "provider_model": "chirp-hawk",
+  "selected_artifact": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+  "task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d"
+}

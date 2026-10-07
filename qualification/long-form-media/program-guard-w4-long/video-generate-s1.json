@@ -1,0 +1,20 @@
+{
+  "already_committed_cents": 16,
+  "by_run": {
+    "w3-04-short-run": {
+      "actual": 8,
+      "outstanding_estimated": 0,
+      "total": 8
+    },
+    "w4-long": {
+      "actual": 8,
+      "outstanding_estimated": 0,
+      "total": 8
+    }
+  },
+  "checked_at_unix": 1791338532,
+  "extra_estimate_cents": 336,
+  "program_ceiling_cents": 5000,
+  "projected_cents": 352,
+  "run_ceiling_cents": 5000
+}

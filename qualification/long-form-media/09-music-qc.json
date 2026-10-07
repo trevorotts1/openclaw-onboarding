@@ -1,0 +1,179 @@
+{
+  "check": "song",
+  "checker_version": "1.0.0",
+  "checks": {
+    "clipping": {
+      "evidence": "ffmpeg astats sample peak -1.04 dBFS",
+      "verdict": "PASS"
+    },
+    "genre_continuity": {
+      "evidence": "provider tags field echoes the submitted style descriptor ('Upbeat contemporary R&B with gospel-tinged backing vocals, warm Rhodes chords, a'); no independent genre classification was returned",
+      "verdict": "UNAVAILABLE"
+    },
+    "master_duration": {
+      "evidence": "ffprobe 62.352 / provider 62.32 inside the 60-90s band",
+      "verdict": "PASS"
+    },
+    "persona_continuity": {
+      "evidence": "one generation, one persona, no persona lock requested or applied; the character record is identical across all three shot records",
+      "verdict": "PASS"
+    },
+    "tempo_continuity": {
+      "evidence": "no tempo evidence returned by the provider and no calibrated tempo estimator available; a number from an uncalibrated estimator would be invented precision",
+      "verdict": "UNAVAILABLE"
+    },
+    "transitions": {
+      "evidence": "single continuous provider render of one track; the master carries no internal edit points",
+      "verdict": "PASS"
+    }
+  },
+  "detail": null,
+  "measurement": {
+    "ffmpeg_sample_peak_dbfs": -1.03687,
+    "ffprobe_duration_s": 62.352,
+    "final_master_duration_s": 63.0
+  },
+  "observed_source": "the provider 'prompt' field is the dispatched lyric input as normalized by the provider, not a transcription of the audio. Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED with dispatch_enabled false, so no independent transcription was available; lyric QC below compares approved text against the dispatched generation input and records this limitation.",
+  "raw": {
+    "checker_version": "1.0.0",
+    "findings": [
+      {
+        "check": "genre_continuity",
+        "detail": "no evidence supplied; cannot pass",
+        "verdict": "UNAVAILABLE"
+      },
+      {
+        "check": "tempo_continuity",
+        "detail": "no evidence supplied; cannot pass",
+        "verdict": "UNAVAILABLE"
+      }
+    ],
+    "lyric_diff": {
+      "adlib_damage": false,
+      "adlib_words": [],
+      "approved_word_count": 94,
+      "coverage": 1.0,
+      "coverage_min": 0.98,
+      "coverage_ok": true,
+      "critical_missing": [],
+      "matched_word_count": 94,
+      "missing_words": [],
+      "observed_word_count": 94,
+      "per_line": [
+        {
+          "approved": "i sing my black c e o drama song",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "hook01",
+          "missing": [],
+          "observed": "i sing my black c e o drama song",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i built this factory demo for owners",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "hook02",
+          "missing": [],
+          "observed": "i built this factory demo for owners",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i feel the rhythm lift my day",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "hook03",
+          "missing": [],
+          "observed": "i feel the rhythm lift my day",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i keep the beat rolling in my heart",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "verse01",
+          "missing": [],
+          "observed": "i keep the beat rolling in my heart",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i turn my shop story into music",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "verse02",
+          "missing": [],
+          "observed": "i turn my shop story into music",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i watch my customers nod along",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "verse03",
+          "missing": [],
+          "observed": "i watch my customers nod along",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "i let the drama song carry my pitch",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "verse04",
+          "missing": [],
+          "observed": "i let the drama song carry my pitch",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "visit black c e o dot com and book the demo",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "cta01",
+          "missing": [],
+          "observed": "visit black c e o dot com and book the demo",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "hear what your brand sounds like sung",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "cta02",
+          "missing": [],
+          "observed": "hear what your brand sounds like sung",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "start today and let the tune travel",
+          "coverage": 1.0,
+          "critical": false,
+          "line_id": "cta03",
+          "missing": [],
+          "observed": "start today and let the tune travel",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "black c e o drama song ad factory starts here",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "cta04",
+          "missing": [],
+          "observed": "black c e o drama song ad factory starts here",
+          "verdict": "PASS"
+        },
+        {
+          "approved": "book the demo before the week ends",
+          "coverage": 1.0,
+          "critical": true,
+          "line_id": "cta05",
+          "missing": [],
+          "observed": "book the demo before the week ends",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    "verdict": "UNAVAILABLE"
+  },
+  "reason_code": null,
+  "run_id": "w4-long",
+  "tool": "music_qc",
+  "verdict": "UNAVAILABLE"
+}

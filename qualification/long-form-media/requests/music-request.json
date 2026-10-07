@@ -1,0 +1,14 @@
+{
+  "endpoint": "/api/v1/jobs/createTask",
+  "input": {
+    "custom_mode": true,
+    "duration": 63,
+    "instrumental": false,
+    "lyrics": "I sing my Black C E O Drama Song\nI built this Factory demo for owners\nI feel the rhythm lift my day\nI keep the beat rolling in my heart\nI turn my shop story into music\nI watch my customers nod along\nI let the Drama Song carry my pitch\nVisit Black C E O dot com and book the demo\nHear what your brand sounds like sung\nStart today and let the tune travel\nBlack C E O Drama Song Ad Factory starts here\nBook the demo before the week ends",
+    "model": "V6",
+    "prompt": "I sing my Black C E O Drama Song\nI built this Factory demo for owners\nI feel the rhythm lift my day\nI keep the beat rolling in my heart\nI turn my shop story into music\nI watch my customers nod along\nI let the Drama Song carry my pitch\nVisit Black C E O dot com and book the demo\nHear what your brand sounds like sung\nStart today and let the tune travel\nBlack C E O Drama Song Ad Factory starts here\nBook the demo before the week ends",
+    "style": "Upbeat contemporary R&B with gospel-tinged backing vocals, warm Rhodes chords, a finger-snapped backbeat and a rounded sub-bass. Mid-tempo groove around 96 BPM in a bright major key, handclaps on the two and four, string pads under the chorus. The lead vocal is a clear confident alto singing in the first person, close-miked and lightly doubled in the chorus so every word stays intelligible on a phone speaker. The arrangement builds from a sparse verse into a full sing-along chorus, leaves air around the vocal on the call-to-action line, and finishes on a clean sustained chord with no long instrumental tail. Low end stays tight, hi-hats sit soft and slightly behind the grid, and a two-bar intro sets the tempo before the first lyric lands. Sixty-three seconds total: a three-line hook, a four-line verse, then a five-line call-to-action close that lands the last line on the final beat.",
+    "title": "BlackCEO Drama Song Ad Factory 60s"
+  },
+  "model": "ai-music-api/generate"
+}

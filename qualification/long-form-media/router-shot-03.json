@@ -1,0 +1,39 @@
+{
+  "api_family": "kie-market",
+  "audio": "disabled",
+  "audio_defaulted": false,
+  "auth_env": "KIE_API_KEY",
+  "candidates": [
+    {
+      "model_id": "wan/3-0-video",
+      "pinned": true,
+      "rank": 1
+    }
+  ],
+  "capabilities": [
+    "image_to_video"
+  ],
+  "catalog": {
+    "active_model_count": 37,
+    "path": "/Users/blackceomacmini/openclaw-onboarding/67-kie-video/models.json",
+    "schema_version": "1.0",
+    "source": "read-at-runtime",
+    "verified_at": "2026-08-26"
+  },
+  "create_endpoint": "/api/v1/jobs/createTask",
+  "model_id": "wan/3-0-video",
+  "notes": [
+    "image_to_video: task image-to-video",
+    "audio disabled: audio can be silent",
+    "prompt: cap 20000 (VERIFIED)"
+  ],
+  "outcome": "ok",
+  "pinned": true,
+  "query_endpoint": "/api/v1/jobs/recordInfo",
+  "tool": "video_router",
+  "tool_version": "1.0.0",
+  "warnings": [
+    "aspect_ratio 9:16: not represented in Skill 67 catalog (undetermined; verify at payload validation)",
+    "explicit pin honored; ranking skipped (explicit model wins)"
+  ]
+}
