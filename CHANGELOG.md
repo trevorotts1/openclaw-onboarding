@@ -1,3 +1,11 @@
+## [v26.2.0]  -  2026-10-07  -  Local embedding mode: the persona selector's Layer-5 and Stage C use the box's local Ollama model instead of keyword
+
+#### What changed
+- **Persona selector Layer-5 and Stage C on a local-mode box.** `shared-utils/semantic_task_fit.py` treats a box as local when its persona index carries `provider='ollama'` rows. Only `embedding_engine.py --reembed-local` writes those rows; `search()` uses the same check. The task is embedded once per selection through `embedding_engine._ollama_embed`, with the model the index is stamped with (default `embeddinggemma-2:740m` @ 768, query prefix `task: search result | query: `). It is scored only against rows on that model, and the method label is `ollama_embedding`. A local-mode box never calls Gemini. If Ollama is down, the selector logs one line and uses keyword overlap for the rest of the process. A mixed-model index (partial re-embed) also uses keyword overlap. Gemini boxes are unchanged.
+- **Presentations PersonaService** re-vendors `semantic_task_fit.py` byte-identical to the canonical (this also brings over the REP-032/A32 guards the vendored copy lacked) and counts `ollama_embedding` as a semantic Layer-5 result.
+- **CC department router and skill matcher**: the matching Command Center change (blackceo-command-center `feat/local-embed-router-layer5`) gives both embeddinggemma prefixes in local mode, and lets the skill matcher embed with local Ollama at all. `docs/EMBEDDINGS.md` now documents both and drops the "stays keyword in local mode" limit.
+- **Tests:** `tests/unit/semantic-task-fit-local-mode.test.py` (6 tests: local model and prefix, Stage C shares one embed, Gemini box unchanged, Ollama down gives keyword with one log line, mixed index gives keyword). Runs in `embedding-integrity-guard.yml`. Mutation-proven.
+
 ## [v26.1.1]  -  2026-10-07  -  Skill 76 v1.0.1 (QC fixes): fresh install no longer half-switches a box, guards before the config write, time-bounded re-index and brew, fallback none, SIGTERM app stop, per-agent overrides reported
 
 #### What changed (Skill 76 v1.0.1, fixes from independent QC of v26.1.0)
