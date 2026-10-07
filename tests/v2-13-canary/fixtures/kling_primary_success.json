@@ -1,0 +1,9 @@
+{
+  "model": "kling/ai-avatar-standard",
+  "status": "succeeded",
+  "saved_file": "mock://shots/shot-04-pain-peak/kling-avatar.mp4",
+  "mouth_match_qc": "pass",
+  "task_id": "mock-task-kling-0001",
+  "mock": true,
+  "paid": false
+}

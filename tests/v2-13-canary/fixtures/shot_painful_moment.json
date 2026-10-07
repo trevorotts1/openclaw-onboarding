@@ -1,0 +1,12 @@
+{
+  "shot_id": "shot-04-pain-peak",
+  "line_id": "beat04",
+  "character": "hero",
+  "style": "cartoon",
+  "source_ad": "approved H3 ad",
+  "keyframe": "<front-facing close-up keyframe of shot-04>",
+  "isolated_line": "<hero isolated sung line for shot-04>",
+  "duration_seconds": 3.2,
+  "lip_sync_flag": "pain_peak",
+  "note": "asset references are placeholders: this window runs scripted mocks only and never opens a media file"
+}

@@ -1,0 +1,85 @@
+{
+  "canary_id": "V2-13",
+  "mode": "mock",
+  "owner_decision": "D33",
+  "paid_calls": 0,
+  "providers": [
+    "kling/ai-avatar-standard",
+    "infinitalk/from-audio"
+  ],
+  "runs": [
+    {
+      "attempts": [
+        "kling/ai-avatar-standard"
+      ],
+      "dispatch_order": [
+        "kling/ai-avatar-standard"
+      ],
+      "final_status": "succeeded",
+      "mock": true,
+      "mode": "mock",
+      "models_dispatched": [
+        "kling/ai-avatar-standard"
+      ],
+      "paid_calls": 0,
+      "path": "primary_ok",
+      "saved_file": "mock://shots/shot-04-pain-peak/kling-avatar.mp4",
+      "shot_id": "shot-04-pain-peak",
+      "spend_usd": 0.0,
+      "winner": "kling/ai-avatar-standard"
+    },
+    {
+      "attempts": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "dispatch_order": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "final_status": "succeeded",
+      "mock": true,
+      "mode": "mock",
+      "models_dispatched": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "paid_calls": 0,
+      "path": "fallback",
+      "saved_file": "mock://shots/shot-04-pain-peak/infinitalk.mp4",
+      "shot_id": "shot-04-pain-peak",
+      "spend_usd": 0.0,
+      "winner": "infinitalk/from-audio"
+    },
+    {
+      "attempts": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "dispatch_order": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "final_status": "failed",
+      "mock": true,
+      "mode": "mock",
+      "models_dispatched": [
+        "kling/ai-avatar-standard",
+        "infinitalk/from-audio"
+      ],
+      "paid_calls": 0,
+      "path": "both_fail",
+      "saved_file": null,
+      "shot_id": "shot-04-pain-peak",
+      "spend_usd": 0.0,
+      "winner": null
+    }
+  ],
+  "schema": "blackceo.v2-13-canary/run/v1",
+  "shot": {
+    "count": 2,
+    "shot_id": "shot-04-pain-peak",
+    "style": "cartoon"
+  },
+  "spend_usd": 0.0
+}

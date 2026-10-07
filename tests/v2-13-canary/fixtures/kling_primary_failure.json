@@ -1,0 +1,9 @@
+{
+  "model": "kling/ai-avatar-standard",
+  "status": "failed",
+  "saved_file": null,
+  "error": "scripted adapter failure",
+  "task_id": "mock-task-kling-0002",
+  "mock": true,
+  "paid": false
+}

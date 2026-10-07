@@ -1,0 +1,9 @@
+{
+  "model": "infinitalk/from-audio",
+  "status": "succeeded",
+  "saved_file": "mock://shots/shot-04-pain-peak/infinitalk.mp4",
+  "mouth_match_qc": "pass",
+  "task_id": "mock-task-infinitalk-0001",
+  "mock": true,
+  "paid": false
+}

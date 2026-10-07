@@ -1,0 +1,43 @@
+PASS test_attempt_order_requires_primary_before_backup
+PASS test_backup_is_infinitalk_second
+PASS test_fixture_shot_matches_canary_style
+PASS test_primary_is_kling_first
+PASS test_roster_is_closed_at_exactly_two_entries
+PASS test_shot_count_is_one_or_two
+PASS test_spec_json_is_the_only_roster_source
+PASS test_spec_loads_and_validates
+PASS test_spec_md_agrees_with_json_and_carries_no_other_provider_token
+PASS test_validate_spec_refuses_a_reversed_roster
+PASS test_validate_spec_refuses_a_spend_allowed_spec
+PASS test_validate_spec_refuses_a_third_provider
+PASS test_validate_spec_refuses_out_of_range_shot_count
+PASS test_window_spends_nothing
+total=14 failed=0
+PASS test_backup_never_runs_without_a_primary_attempt
+PASS test_both_fail_path_records_no_winner
+PASS test_every_fixture_response_is_marked_mock_and_unpaid
+PASS test_fallback_path_runs_primary_then_backup
+PASS test_ledger_refuses_a_nonzero_price
+PASS test_primary_path_dispatches_only_the_primary
+PASS test_script_exhaustion_is_refused
+PASS test_style_mismatch_is_refused
+PASS test_unknown_path_is_refused
+PASS test_unknown_provider_is_refused
+total=10 failed=0
+PASS test_both_paths_run_with_sockets_blocked
+PASS test_live_cli_flag_exits_refused
+PASS test_live_mode_is_refused
+PASS test_no_network_client_is_imported_by_the_harness
+primary_ok: attempts=['kling/ai-avatar-standard'] winner=kling/ai-avatar-standard status=succeeded
+fallback: attempts=['kling/ai-avatar-standard', 'infinitalk/from-audio'] winner=infinitalk/from-audio status=succeeded
+both_fail: attempts=['kling/ai-avatar-standard', 'infinitalk/from-audio'] winner=None status=failed
+paid_calls=0 spend_usd=0.0 mode=mock
+wrote outcomes/run.json
+PASS test_run_canary_driver_writes_a_zero_spend_report
+PASS test_spec_spend_block_is_zero
+total=6 failed=0
+primary_ok: attempts=['kling/ai-avatar-standard'] winner=kling/ai-avatar-standard status=succeeded
+fallback: attempts=['kling/ai-avatar-standard', 'infinitalk/from-audio'] winner=infinitalk/from-audio status=succeeded
+both_fail: attempts=['kling/ai-avatar-standard', 'infinitalk/from-audio'] winner=None status=failed
+paid_calls=0 spend_usd=0.0 mode=mock
+wrote outcomes/run.json

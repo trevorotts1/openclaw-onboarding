@@ -1,0 +1,9 @@
+{
+  "model": "infinitalk/from-audio",
+  "status": "failed",
+  "saved_file": null,
+  "error": "scripted adapter failure",
+  "task_id": "mock-task-infinitalk-0002",
+  "mock": true,
+  "paid": false
+}

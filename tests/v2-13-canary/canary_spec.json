@@ -1,0 +1,55 @@
+{
+  "schema": "blackceo.v2-13-canary/spec/v1",
+  "canary_id": "V2-13",
+  "lane": "lip-sync model-quality canary",
+  "owner_decision": "D33",
+  "owner_order_date": "2026-10-07",
+  "purpose": "compare the primary and the backup lip-sync model on the approved ad's painful-moment shot, one or two shots from the same keyframe, before either becomes the default",
+  "mode": "mock",
+  "spend": {
+    "allowed": false,
+    "ceiling_usd": 0.0,
+    "paid_calls": 0,
+    "window": "this build-out window spends nothing; live shots need a separate operator budget approval"
+  },
+  "routing": {
+    "through_skill": 74,
+    "ledger_required_when_live": true
+  },
+  "providers": [
+    {
+      "rank": 1,
+      "role": "primary",
+      "model": "kling/ai-avatar-standard",
+      "input": [
+        "front-facing close-up keyframe image",
+        "the speaking character's own isolated line"
+      ],
+      "reference_price_usd": 0.24,
+      "reference_price_basis": "per close-up, Skill 74 price; reference only, not spent in this window"
+    },
+    {
+      "rank": 2,
+      "role": "backup",
+      "model": "infinitalk/from-audio",
+      "input": [
+        "front-facing close-up keyframe image",
+        "the speaking character's own isolated line"
+      ],
+      "reference_price_usd": 0.06,
+      "reference_price_basis": "per second at 720p, Skill 74 price; reference only, not spent in this window"
+    }
+  ],
+  "shots": {
+    "min": 1,
+    "max": 2,
+    "count": 2,
+    "same_keyframe": true,
+    "source": "approved H3 ad painful-moment shot",
+    "style": "cartoon"
+  },
+  "fallback_rule": "the backup runs only after the primary attempt fails adapter-side, returns no saved file, or fails mouth-match QC",
+  "attempt_order_rule": "every attempt list must be a strict prefix of the provider roster, so the backup can never run first, never run without a primary attempt, and no third model exists",
+  "recording": "the result is recorded per shot per model and the operator decides",
+  "closed_roster": "exactly two providers; any other provider id, any other attempt order, any shot count outside the range and any live call is refused"
+}
