@@ -38,8 +38,10 @@ PASS = "PASS"
 FAIL = "FAIL"
 BLOCKED = "BLOCKED"
 
-#: Plan 6.1 lengths; matches core.length_engine LENGTHS.
-LENGTHS = (60, 90, 180, 300)
+#: Plan 6.1 base lengths + the plan 6.13 / D23 ten-minute long version.
+#: Kept equal to core.length_engine.long LENGTHS_S so a variant the length
+#: engine offers is never rejected here with UNKNOWN_LENGTH.
+LENGTHS = (60, 90, 180, 300, 600)
 #: Shapes the delivery/export layer knows (campaign-schema aspects).
 SHAPES = ("16:9", "9:16", "1:1")
 

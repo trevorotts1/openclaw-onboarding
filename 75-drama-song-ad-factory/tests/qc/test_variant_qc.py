@@ -558,8 +558,25 @@ class TestPerVariantQC:
               and "MISSING_VARIANT_QC" in agg["reason_codes"]
               and agg["failing_variants"] == ["180s@16:9"], repr(agg))
 
+    def test_long_length_variants(self):
+        # plan 6.13 / D23: 10 minutes is a first-class variant, not an error
+        key = variant_key(600, "16:9")
+        check("green: 600s long version is a valid variant key",
+              key == "600s@16:9", key)
+        res = evaluate_variant("run-qc-1", "video", 600, "16:9",
+                               video_case(600, "16:9"))
+        check("green: 600s variant gates and PASSes with real media",
+              res["gate"] == "PASS" and res["variant"] == "600s@16:9",
+              repr(res["reason_codes"]))
+        res = evaluate_variant("run-qc-1", "video", 600, "16:9",
+                               video_case(600, "16:9", with_media=False))
+        check("red: 600s media stage without media file FAILs",
+              res["gate"] == "FAIL"
+              and "MEDIA_REQUIRED" in set(res["reason_codes"]),
+              repr(res["reason_codes"]))
+
     def test_shape_length_validation(self):
-        for bad in (61, "60", None, True, 3000):
+        for bad in (61, 450, 601, "60", None, True, 3000):
             try:
                 variant_key(bad, "9:16")
             except qc.VariantQCError:
