@@ -1,3 +1,13 @@
+## [v26.4.3]  -  2026-10-07  -  Skill 75 style-bible prompt cap goes through the shared KIE prompt enforcer; main's KIE guard is green again
+
+#### What broke
+- Main's "KIE prompt enforcer guard" was red since the skill 75 package merge: `75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py` defines the 20000 / 25000 character prompt caps but was not declared as a prompt gate and did not call the shared enforcer (only the old root copy did). A red main blocks the merge train.
+
+#### What changed
+- Skill 75 v2.4.1: `bible.py` now routes the compiled prompt through `shared-utils/kie_prompt_enforcer.py` (same code the root copy already had; the numeric caps and the over-cap error are unchanged).
+- `shared-utils/kie_prompt_gates.json` declares that file as a gate. The old root path stays declared until the root copy is removed.
+- Test: `tests/unit/kie-prompt-enforcer-and-gates.test.py` passes 25/25 (it failed 2 before).
+
 ## [v26.4.0]  -  2026-10-07  -  Merge train: #1582 feat(embeddings): skill 76 provisions the Gemini fallback SOP set on…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
