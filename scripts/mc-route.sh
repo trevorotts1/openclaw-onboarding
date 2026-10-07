@@ -403,8 +403,8 @@ print(len(rows))' "$TASKS_FILE")" \
 import json, re, sys
 ref, ws_path, tasks_path = sys.argv[1], sys.argv[2], sys.argv[3]
 def load(path):
-    # JEV-802 (class F, fail-closed): an unreadable file, a payload with no rows,
-    # or a row with no id is a broken read -- exit 4 so the caller escalates.
+    # JEV-802 (class F, fail-closed): an unreadable file or a payload with no rows
+    # is a broken read -- exit 4 so the caller escalates.
     # It must never come back as an empty list, because empty reads as "NONE"
     # and NONE reads as "the owner's work does not exist".
     try:
@@ -421,12 +421,19 @@ ws_rows = load(ws_path)
 ws = {str(w.get("id")): str(w.get("slug") or w.get("id")) for w in ws_rows if w.get("id")}
 # This company only: tasks on one of its departments (or not yet on any).
 tasks = []
+usable = 0
 for t in load(tasks_path):
+    # A legacy row can carry id NULL. It can never be updated, cancelled or
+    # reported, so it can never be the match: skip it, do not fail the board.
     if not t.get("id"):
-        sys.exit(4)
+        continue
+    usable += 1
     if t.get("workspace_id") and str(t["workspace_id"]) not in ws:
         continue
     tasks.append(t)
+# JEV-802: a board with no id-bearing row at all is an unusable read, never NONE.
+if not usable:
+    sys.exit(4)
 STOP = {"the", "and", "for", "that", "this", "task", "card", "job", "with", "from", "our", "your", "about", "please", "one"}
 def words(s):
     return {w for w in re.findall(r"[a-z0-9]+", str(s or "").lower()) if len(w) > 2 and w not in STOP}
