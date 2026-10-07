@@ -6,6 +6,11 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.4.1] - 2026-10-07 - docs: PACKAGING-DECISION wording
+
+### Fixed
+- `PACKAGING-DECISION.md` no longer cites the retired legacy updater path literally (single-update-skills-entrypoint guard, section C). No behavior change.
+
 ## [v2.3.0] - 2026-10-07 - docs: directive 2.1 document set landed
 
 ### Added

@@ -119,7 +119,7 @@ Same file, lines 43–46 — updater scan does **not** depend on `.skill`:
 
 ```text
 6. **update-skills.sh** (repo root — there is no other updater; the retired
-   `scripts/update-skills.sh` shim was deleted outright, OCT4 issue #10) - No edit needed: the skill directory scan uses a
+   legacy `update-skills.sh` shim under the `scripts/` directory was deleted outright, OCT4 issue #10) - No edit needed: the skill directory scan uses a
    pure `[0-9]*/` glob (no `seq` range to extend).
 ```
 
@@ -205,7 +205,7 @@ Precedence applied (in order):
 | Canonical source (OpenClaw distribution) | Live repo path `75-drama-song-ad-factory/` on `trevorotts1/openclaw-onboarding` | Folder present; SKILL.md frontmatter `version: v2.3.0`; `skill-version.txt` = `v2.3.0` |
 | Build staging tree for this build | `<build-root>/onboarding/75-drama-song-ad-factory/` | This unit's owned output root; modules staged by W3-02-U1 |
 | Runtime twin (Claude-Nine / Claude Code) | `999-setup/.claude/skills/drama-song-ad-factory/` | Directive §2.2; live 999 skill folder present |
-| Release / install mechanism | Repo-root `update-skills.sh` only | CONTRIBUTING lines 43–46: retired `scripts/update-skills.sh` shim deleted; scan is `[0-9]*/` glob |
+| Release / install mechanism | Repo-root `update-skills.sh` only | CONTRIBUTING lines 43–46: retired legacy updater shim under `scripts/` deleted; scan is `[0-9]*/` glob |
 | Department wiring mechanism | `23-ai-workforce-blueprint/skill-department-map.json` + `check-skill-department-map.py` | Gate rc=0; skill 75 entry present |
 | Parity enforcement | `tests/distribution-parity/` (unit W3-06) | Live tree `openclaw-onboarding/tests/distribution-parity/` exists |
 
