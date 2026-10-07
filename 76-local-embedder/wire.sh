@@ -8,9 +8,12 @@
 #      LaunchAgent com.blackceo.ollama-serve. No GUI, no sudo, no install.sh.
 #   2. Pull embeddinggemma-2:740m and pin `num_ctx 8192` on that SAME tag
 #      (its own Modelfile + one PARAMETER line). Verified via /api/show, no load.
-#   3. Write ONLY memory.search.* (atomic JSON deep-merge + config validate).
-#   4. Re-index each agent once (`openclaw memory status --index --agent <id>`),
-#      resumable through per-agent markers.
+#   3. Verify every guard (below) BEFORE any config write.
+#   4. Write ONLY memory.search.* (atomic, race-checked deep-merge + config
+#      validate). This is the LAST mutating step before the re-index, so no
+#      failure can leave a box with config on local but daemon/model not ready.
+#   5. Re-index each agent once (`openclaw memory status --index --agent <id>`),
+#      time-bounded and resumable through per-agent markers.
 #
 # Cloud protection (fail closed): never reads, writes or removes
 # ~/.ollama/id_ed25519*, never signs out, never touches ~/.ollama, OLLAMA_* env,
@@ -39,6 +42,14 @@ EMBED_PARAMS="num_ctx 8192"
 ORNITH_TAG="ornith-1.5:9b"
 ORNITH_PARAMS="num_ctx 32768|num_predict 8192|temperature 0.6|top_k 20|top_p 0.95"
 LABEL="com.blackceo.ollama-serve"
+# THE fallback knob: memory.search.fallback written on every client Mac.
+# Default "none": a 768-dim local index is never queried or rebuilt in another
+# provider's vector space while local Ollama is down (OpenClaw's own default is
+# "none" too). Set LOCAL_EMBEDDER_FALLBACK=<provider> only on purpose.
+MEMORY_FALLBACK="${LOCAL_EMBEDDER_FALLBACK:-none}"
+REINDEX_TIMEOUT="${LOCAL_EMBEDDER_REINDEX_TIMEOUT:-900}"   # seconds per agent
+BREW_TIMEOUT="${LOCAL_EMBEDDER_BREW_TIMEOUT:-1800}"        # seconds per brew call
+APP_STOP_WAIT="${LOCAL_EMBEDDER_APP_STOP_WAIT:-30}"        # seconds after SIGTERM
 
 OC_ROOT="$HOME/.openclaw"
 OC_JSON="$OC_ROOT/openclaw.json"
@@ -113,19 +124,17 @@ case "$_free_gb" in ''|*[!0-9]*) defer "free disk unreadable" ;; esac
 
 # ── 1. Snapshots used to prove nothing outside memory.search changed ────────
 chat_fp() { python3 - "$OC_JSON" <<'PY'
-# Fingerprint of everything that is chat-model config: the whole top-level
-# "models" block (providers, :cloud refs, contextWindow, params) plus "agents"
-# with only memory keys removed (model primary/fallbacks, models allowlist,
-# subagents). memory.search is deliberately outside the fingerprint.
+# Fingerprint of what automation must never change: the whole "models" block
+# (providers, :cloud refs, contextWindow, params), the WHOLE "agents" block
+# (model primary/fallbacks, allowlist, subagents AND every per-agent memory
+# override) and top-level "memory" minus memory.search. Only memory.search is
+# outside it.
 import hashlib, json, sys
 cfg = json.load(open(sys.argv[1]))
-def strip(o):
-    if isinstance(o, dict):
-        return {k: strip(v) for k, v in o.items() if k not in ("memorySearch", "memory")}
-    if isinstance(o, list):
-        return [strip(x) for x in o]
-    return o
-blob = json.dumps({"models": cfg.get("models"), "agents": strip(cfg.get("agents"))}, sort_keys=True)
+mem = dict(cfg["memory"]) if isinstance(cfg.get("memory"), dict) else cfg.get("memory")
+if isinstance(mem, dict):
+    mem.pop("search", None)
+blob = json.dumps({"models": cfg.get("models"), "agents": cfg.get("agents"), "memory": mem}, sort_keys=True)
 print(hashlib.sha256(blob.encode()).hexdigest())
 PY
 }
@@ -142,6 +151,37 @@ for p in sys.argv[1:]:
 print(" ".join(out))
 PY
 }
+# Keys may only go from absent to present when THIS run installed (or re-loaded)
+# our own daemon: its first `ollama serve` creates them. Pre-existing keys must
+# be identical; anything else fails closed.
+_key_field_ok() { [ "$1" = "$2" ] || { [ "$1" = absent ] && [ "$FRESH" = 1 ]; }; }
+keys_ok() {
+  local pre1 pre2 post1 post2
+  read -r pre1 pre2 <<EOF
+$PRE_KEY
+EOF
+  read -r post1 post2 <<EOF
+$(key_stat)
+EOF
+  _key_field_ok "$pre1" "$post1" && _key_field_ok "$pre2" "$post2"
+}
+
+# Bounded run, bash 3.2 safe (stock macOS has no GNU timeout): a perl alarm
+# survives exec; without perl, background + kill. Returns 124 on timeout.
+with_timeout() { # <seconds> <cmd...>
+  local secs="$1" rc pid w; shift
+  if command -v perl >/dev/null 2>&1; then
+    perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"; rc=$?
+    [ "$rc" = 142 ] && rc=124
+    return $rc
+  fi
+  "$@" & pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) & w=$!
+  wait "$pid"; rc=$?
+  if kill -0 "$w" 2>/dev/null; then kill "$w" 2>/dev/null; else rc=124; fi
+  return $rc
+}
+
 ollama_env() { local n; for n in $OLLAMA_ENV_NAMES; do printf '%s=%s;' "$n" "$(launchctl getenv "$n" 2>/dev/null)"; done; }
 
 PRE_FP="$(chat_fp)" || die "cannot parse $OC_JSON"
@@ -261,6 +301,25 @@ other_installs() { # prints what Ollama installs exist besides a running daemon
 
 brew_bin() { command -v brew 2>/dev/null || { [ -x /opt/homebrew/bin/brew ] && echo /opt/homebrew/bin/brew; }; }
 
+# Graceful stop without Apple Events (osascript would need an Automation
+# consent nobody can answer over SSH): SIGTERM the app process (the parent of
+# `ollama serve`), wait, and report whether both are gone.
+stop_app() { # <app bundle path>
+  local app="$1" apid i=0
+  apid="$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')"
+  case "$(ps -o comm= -p "$apid" 2>/dev/null)" in
+    "$app"/Contents/MacOS/*) ;;
+    *) apid="" ;;
+  esac
+  if [ "$DRY_RUN" = 1 ]; then log "dry-run would SIGTERM the Ollama app (pid ${apid:-$PID})"; return 0; fi
+  kill -TERM "${apid:-$PID}" 2>/dev/null
+  while [ "$i" -lt "$APP_STOP_WAIT" ]; do
+    { [ -z "$apid" ] || ! kill -0 "$apid" 2>/dev/null; } && ! kill -0 "$PID" 2>/dev/null && return 0
+    sleep 1; i=$((i+1))
+  done
+  return 1
+}
+
 upgrade_in_place() { # only called when the running daemon is < MIN_VERSION
   wait_idle || defer "Ollama $DAEMON_VER needs an upgrade but was never idle (3 checks, ${IDLE_WAIT}s apart)"
   local brew; brew="$(brew_bin)"
@@ -275,17 +334,19 @@ upgrade_in_place() { # only called when the running daemon is < MIN_VERSION
         [ -z "$cask" ] && "$brew" list --cask ollama >/dev/null 2>&1 && cask=ollama
       fi
       if [ -n "$cask" ]; then
-        run "$brew" update || die "brew update failed"
-        run osascript -e 'quit app "Ollama"'
-        run "$brew" upgrade --cask --greedy "$cask" || die "brew upgrade --cask $cask failed"
+        run with_timeout "$BREW_TIMEOUT" "$brew" update || defer "brew update failed or timed out (${BREW_TIMEOUT}s)"
+        stop_app "$app" || defer "the Ollama app is still running ${APP_STOP_WAIT}s after SIGTERM; upgrade deferred, nothing replaced"
+        if ! run with_timeout "$BREW_TIMEOUT" "$brew" upgrade --cask --greedy "$cask"; then
+          run open -g -a "$app" --args hidden
+          die "brew upgrade --cask $cask failed or timed out; the existing app was relaunched"
+        fi
       else
         [ -w "$(dirname "$app")" ] && [ -w "$app" ] || defer "$app is not writable without sudo; manual upgrade needed"
         local tmp="$STATE_DIR/.app.$$"
         run mkdir -p "$tmp" || die "cannot create $tmp"
         fetch_verified "$ZIP_URL" "$ZIP_SHA256" "$tmp/Ollama-darwin.zip" || { rm -rf "$tmp"; die "app download failed"; }
         run ditto -x -k "$tmp/Ollama-darwin.zip" "$tmp/new" || { rm -rf "$tmp"; die "unzip failed"; }
-        run osascript -e 'quit app "Ollama"'
-        local i=0; while [ "$DRY_RUN" = 0 ] && [ "$i" -lt 30 ] && kill -0 "$PID" 2>/dev/null; do sleep 1; i=$((i+1)); done
+        stop_app "$app" || { rm -rf "$tmp"; defer "the Ollama app is still running ${APP_STOP_WAIT}s after SIGTERM; upgrade deferred, the running bundle was NOT replaced"; }
         # The old bundle goes to the Trash (recoverable), never rm -rf.
         run mkdir -p "$HOME/.Trash"
         run mv "$app" "$HOME/.Trash/Ollama-$DAEMON_VER-$$.app" || { rm -rf "$tmp"; die "could not move the old app aside"; }
@@ -297,9 +358,9 @@ upgrade_in_place() { # only called when the running daemon is < MIN_VERSION
       [ -n "$brew" ] || defer "Homebrew Ollama found but brew is not on PATH"
       local was_service=0
       "$brew" services list 2>/dev/null | awk '$1=="ollama" && $2=="started"' | grep -q . && was_service=1
-      run "$brew" upgrade ollama || die "brew upgrade ollama failed"
-      [ "$was_service" = 1 ] || defer "Ollama formula upgraded, but it is not run by brew services; restart it by hand"
-      run "$brew" services restart ollama || die "brew services restart ollama failed" ;;
+      [ "$was_service" = 1 ] || defer "Ollama formula is not run by brew services, so it cannot be restarted after an upgrade; upgrade it by hand"
+      run with_timeout "$BREW_TIMEOUT" "$brew" upgrade ollama || die "brew upgrade ollama failed or timed out"
+      run with_timeout 300 "$brew" services restart ollama || die "brew services restart ollama failed or timed out" ;;
     *)
       defer "standalone Ollama at '${EXE:-unknown}' ($DAEMON_VER) is below $MIN_VERSION; upgrade it by hand (no automatic method for this install shape)" ;;
   esac
@@ -308,7 +369,7 @@ upgrade_in_place() { # only called when the running daemon is < MIN_VERSION
   ver_ge "$DAEMON_VER" "$MIN_VERSION" || die "Ollama is still $DAEMON_VER after the upgrade"
 }
 
-PRE_CLOUD=""
+PRE_CLOUD=""; FRESH=0
 if find_daemon; then
   log "Ollama $DAEMON_VER is running on 127.0.0.1:$PORT (${EXE:-unknown executable})"
   PRE_CLOUD="$(cloud_state)"
@@ -327,6 +388,7 @@ else
     gui_domain || defer "no GUI login session (launchd gui/ domain); retry when the owner is logged in"
     install_pinned_cli || die "could not stage Ollama $PIN_VERSION"
     load_ours || die "could not load $LABEL"
+    FRESH=1
   elif [ -n "$_others" ]; then
     defer "Ollama is installed but not running ($(printf '%s' "$_others" | tr '\n' ' ')); the owner keeps it stopped, so it is not started for them"
   else
@@ -336,6 +398,7 @@ else
     install_pinned_cli || die "could not download or verify Ollama $PIN_VERSION"
     write_plist || die "could not write $PLIST"
     load_ours || die "could not load $LABEL"
+    FRESH=1
   fi
   if [ "$DRY_RUN" = 1 ]; then
     log "dry-run: stopping before model pull and config write (no daemon to talk to)"; exit 0
@@ -371,7 +434,7 @@ pin_tag() { # <tag> <"k v|k v">: re-create the SAME tag from its own Modelfile +
   local tag="$1" params="$2" mf="$STATE_DIR/Modelfile.$$"
   run mkdir -p "$STATE_DIR"
   if [ "$DRY_RUN" = 1 ]; then log "dry-run would run: ollama create $tag -f <own Modelfile + PARAMETER ${params//|/, PARAMETER }>"; return 0; fi
-  OLLAMA_HOST="127.0.0.1:$PORT" "$OLLAMA_BIN" show --modelfile "$tag" > "$mf.orig" || return 1
+  OLLAMA_HOST="127.0.0.1:$PORT" with_timeout 120 "$OLLAMA_BIN" show --modelfile "$tag" > "$mf.orig" || return 1
   python3 - "$mf.orig" "$mf" "$params" <<'PY' || return 1
 import re, sys
 src, dst, params = sys.argv[1], sys.argv[2], sys.argv[3].split("|")
@@ -382,7 +445,7 @@ if not any(re.match(r"^\s*FROM\s", l, re.I) for l in lines):
     sys.exit("no FROM line in the model's own Modelfile")
 open(dst, "w").write("\n".join(lines).rstrip("\n") + "\n" + "".join("PARAMETER %s\n" % p for p in params))
 PY
-  OLLAMA_HOST="127.0.0.1:$PORT" "$OLLAMA_BIN" create "$tag" -f "$mf"; local rc=$?
+  OLLAMA_HOST="127.0.0.1:$PORT" with_timeout 900 "$OLLAMA_BIN" create "$tag" -f "$mf"; local rc=$?
   rm -f "$mf" "$mf.orig"
   return $rc
 }
@@ -409,105 +472,13 @@ ensure_model "$EMBED_TAG" "$EMBED_PARAMS" embedding
 if [ "$WITH_ORNITH" = 1 ]; then run mkdir -p "$STATE_DIR"; run touch "$STATE_DIR/with-ornith"; fi
 [ -f "$STATE_DIR/with-ornith" ] || [ "$WITH_ORNITH" = 1 ] && ensure_model "$ORNITH_TAG" "$ORNITH_PARAMS" ""
 
-# ── 4. memory.search (ONLY these keys) ──────────────────────────────────────
-WRITE_RC=0
-BACKUP="$OC_JSON.bak-local-embedder-$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP="$BACKUP" OC_JSON="$OC_JSON" BASE="$BASE" EMBED_TAG="$EMBED_TAG" PRE_FP="$PRE_FP" DRY_RUN="$DRY_RUN" python3 - <<'PY' || WRITE_RC=$?
-import hashlib, json, os, re, stat, sys
-path = os.environ["OC_JSON"]
-raw = open(path).read()
-cfg = json.loads(raw)
-
-def fp(c):
-    def strip(o):
-        if isinstance(o, dict):
-            return {k: strip(v) for k, v in o.items() if k not in ("memorySearch", "memory")}
-        if isinstance(o, list):
-            return [strip(x) for x in o]
-        return o
-    return hashlib.sha256(json.dumps({"models": c.get("models"), "agents": strip(c.get("agents"))}, sort_keys=True).encode()).hexdigest()
-
-if fp(cfg) != os.environ["PRE_FP"]:
-    sys.exit("chat-model config changed during this run (not by us); refusing to write")
-
-def has_openai_key():  # presence only; no value is ever printed
-    if str((((cfg.get("models") or {}).get("providers") or {}).get("openai") or {}).get("apiKey") or "").strip():
-        return True
-    if str(((cfg.get("env") or {}).get("vars") or {}).get("OPENAI_API_KEY") or "").strip():
-        return True
-    if os.environ.get("OPENAI_API_KEY", "").strip():
-        return True
-    root = os.path.dirname(path)
-    for f in (os.path.join(root, "secrets", ".env"), os.path.join(root, ".env")):
-        try:
-            for line in open(f):
-                m = re.match(r"\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*(.*)", line)
-                if m and m.group(1).strip().strip("'\""):
-                    return True
-        except OSError:
-            pass
-    return False
-
-mem = cfg.setdefault("memory", {})
-if not isinstance(mem, dict):
-    sys.exit("memory is not an object; refusing to write")
-ms = mem.setdefault("search", {})
-if not isinstance(ms, dict):
-    sys.exit("memory.search is not an object; refusing to write")
-before = json.dumps(ms, sort_keys=True)
-ms["provider"] = "ollama"
-ms["model"] = os.environ["EMBED_TAG"]
-remote = ms.get("remote") if isinstance(ms.get("remote"), dict) else {}
-remote["baseUrl"] = os.environ["BASE"]
-ms["remote"] = remote
-mm = ms.get("multimodal") if isinstance(ms.get("multimodal"), dict) else {}
-mm["enabled"] = False
-ms["multimodal"] = mm
-if "dimensions" in ms:
-    ms["dimensions"] = 768  # embeddinggemma-2 vector length; a stale 3072/1536 would be wrong metadata
-if has_openai_key():
-    ms["fallback"] = "openai"
-    print("[local-embedder] memory.search.fallback = openai (an OpenAI key is present)")
-else:
-    print("[local-embedder] REPORT: no OpenAI key; memory.search.fallback kept as %r. If local Ollama is down, memory search %s."
-          % (ms.get("fallback"), "uses that fallback" if ms.get("fallback") else "has no fallback"))
-
-if json.dumps(ms, sort_keys=True) == before:
-    print("[local-embedder] memory.search already on the local embedder; no write")
-    sys.exit(0)
-if fp(cfg) != os.environ["PRE_FP"]:
-    sys.exit("internal error: staged config differs outside memory.search; refusing to write")
-if os.environ.get("DRY_RUN") == "1":
-    print("[local-embedder] dry-run would set memory.search to " + json.dumps(ms, sort_keys=True))
-    sys.exit(0)
-mode = stat.S_IMODE(os.stat(path).st_mode)
-def write_private(p, text):  # created 0600 first, so secrets in the config are never briefly world-readable
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(text)
-    os.chmod(p, mode)
-backup = os.environ["BACKUP"]
-write_private(backup, raw)
-tmp = "%s.tmp.%d" % (path, os.getpid())
-write_private(tmp, json.dumps(cfg, indent=2) + "\n")
-os.replace(tmp, path)
-print("[local-embedder] memory.search written atomically (backup: %s)" % backup)
-sys.exit(10)
-PY
-case "$WRITE_RC" in
-  0) ;;
-  10)
-    if ! openclaw config validate >/dev/null 2>&1; then
-      cp -p "$BACKUP" "$OC_JSON"
-      die "openclaw config validate rejected the memory.search write; original restored from $BACKUP"
-    fi
-    log "openclaw config validate: OK" ;;
-  *) die "memory.search write refused (rc=$WRITE_RC)" ;;
-esac
-
-# ── 5. Post-verify: nothing but memory.search changed ───────────────────────
-[ "$(chat_fp)" = "$PRE_FP" ] || die "chat-model config fingerprint CHANGED (models.providers / agent model refs); operator review needed"
-[ "$(key_stat)" = "$PRE_KEY" ] || die "~/.ollama/id_ed25519* metadata CHANGED"
+# ── 4. Every guard passes BEFORE any config write ───────────────────────────
+# Daemon and model are ready at this point. Nothing below runs unless all of
+# these hold, so a failure never leaves memory.search pointing at a box whose
+# Ollama or model is not ready.
+[ "$(chat_fp)" = "$PRE_FP" ] || die "chat-model config fingerprint CHANGED during this run (models / agents / memory); operator review needed"
+keys_ok || die "~/.ollama/id_ed25519* metadata CHANGED (before '$PRE_KEY', now '$(key_stat)')"
+[ "$PRE_KEY" = "$(key_stat)" ] || log "cloud key files created by the first start of our own daemon (expected on a fresh install)"
 [ "$(ollama_env)" = "$PRE_ENV" ] || die "OLLAMA_* launchd env CHANGED"
 if [ -n "$PRE_CLOUD" ] && [ "$DRY_RUN" = 0 ]; then
   _post_cloud="$(cloud_state)"
@@ -517,33 +488,151 @@ fi
 if [ "$DRY_RUN" = 0 ] && [ "$PRE_LOADED" = 0 ] && embed_loaded; then
   die "$EMBED_TAG is loaded, but nothing in this run should have loaded it"
 fi
-log "verified: chat config, cloud key files, OLLAMA_* env unchanged"
+log "verified before writing: chat config, cloud key files, OLLAMA_* env, cloud state unchanged; $EMBED_TAG pinned"
 
-# ── 6. One re-index per agent, resumable ────────────────────────────────────
+# Per-agent overrides (agents.entries.<id>.memory.search, legacy memorySearch).
+# Reported, never rewritten. An agent whose override sets its own provider,
+# model or remote does not use the local embedder, so it is not re-indexed.
+# Output: <id> TAB <local|override> TAB <detail>
+agent_report() { python3 - "$OC_JSON" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1])).get("agents") or {}
+rows = []
+if isinstance(a.get("entries"), dict):
+    rows = [(k, v) for k, v in a["entries"].items() if isinstance(v, dict)]
+rows += [(x.get("id"), x) for x in (a.get("list") or [])
+         if isinstance(x, dict) and x.get("id") and x.get("id") not in dict(rows)]
+for aid, e in rows or [("main", {})]:
+    o = {}
+    for blk in ((e.get("memory") or {}).get("search") if isinstance(e.get("memory"), dict) else None, e.get("memorySearch")):
+        if isinstance(blk, dict):
+            o.update(blk)
+    own = {k: o[k] for k in ("provider", "model", "remote") if k in o}
+    if own:
+        print("%s\toverride\tits own memory search %s" % (aid, json.dumps(own, sort_keys=True)))
+    else:
+        note = ""
+        if o.get("fallback") not in (None, "none"):
+            note = "per-agent fallback %r (queries another vector space when local Ollama is down)" % o.get("fallback")
+        print("%s\tlocal\t%s" % (aid, note))
+PY
+}
+AGENTS_TSV="$(agent_report)" || die "cannot read agents from $OC_JSON"
+while IFS="$(printf '\t')" read -r _id _kind _detail; do
+  [ -n "$_id" ] || continue
+  [ "$_kind" = override ] && log "REPORT: agent $_id keeps $_detail; it is NOT switched or re-indexed (per-agent overrides are never rewritten)"
+  [ "$_kind" = local ] && [ -n "$_detail" ] && log "REPORT: agent $_id has a $_detail (left as is)"
+done <<EOF
+$AGENTS_TSV
+EOF
+
+# ── 5. memory.search (ONLY these keys): the last mutating step ──────────────
+WRITE_RC=0
+BACKUP="$OC_JSON.bak-local-embedder-$(date -u +%Y%m%dT%H%M%SZ)"
+BACKUP="$BACKUP" OC_JSON="$OC_JSON" BASE="$BASE" EMBED_TAG="$EMBED_TAG" FALLBACK="$MEMORY_FALLBACK" \
+  DRY_RUN="$DRY_RUN" python3 - <<'PY' || WRITE_RC=$?
+import hashlib, json, os, re, stat, sys
+path = os.environ["OC_JSON"]
+
+def merged(raw):
+    """Parse, deep-merge only memory.search, keep key order. Returns (text, changed)."""
+    cfg = json.loads(raw)
+    mem = cfg.setdefault("memory", {})
+    if not isinstance(mem, dict):
+        sys.exit("memory is not an object; refusing to write")
+    ms = mem.setdefault("search", {})
+    if not isinstance(ms, dict):
+        sys.exit("memory.search is not an object; refusing to write")
+    before = json.dumps(ms, sort_keys=True)
+    old_fb = ms.get("fallback")
+    ms["provider"] = "ollama"
+    ms["model"] = os.environ["EMBED_TAG"]
+    remote = ms.get("remote") if isinstance(ms.get("remote"), dict) else {}
+    remote["baseUrl"] = os.environ["BASE"]
+    ms["remote"] = remote
+    mm = ms.get("multimodal") if isinstance(ms.get("multimodal"), dict) else {}
+    mm["enabled"] = False
+    ms["multimodal"] = mm
+    if "dimensions" in ms:
+        ms["dimensions"] = 768  # embeddinggemma-2 vector length; a stale 3072/1536 would be wrong metadata
+    ms["fallback"] = os.environ["FALLBACK"]
+    if old_fb != ms["fallback"]:
+        print("[local-embedder] memory.search.fallback %r -> %r (one vector space; knob LOCAL_EMBEDDER_FALLBACK)" % (old_fb, ms["fallback"]))
+    if json.dumps(ms, sort_keys=True) == before:
+        return raw, False
+    m = re.search(r"\n([ \t]+)\S", raw)
+    indent = m.group(1) if m else "  "
+    indent = len(indent) if indent.strip(" ") == "" else indent
+    text = json.dumps(cfg, indent=indent, ensure_ascii=False)
+    return text + ("\n" if raw.endswith("\n") else ""), True
+
+def sha(b):
+    return hashlib.sha256(b.encode()).hexdigest()
+
+for attempt in (1, 2):
+    raw = open(path).read()
+    text, changed = merged(raw)
+    if not changed:
+        print("[local-embedder] memory.search already on the local embedder; no write")
+        sys.exit(0)
+    if os.environ.get("DRY_RUN") == "1":
+        print("[local-embedder] dry-run would set memory.search to " + json.dumps(json.loads(text)["memory"]["search"], sort_keys=True))
+        sys.exit(0)
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+    def write_private(p, t):  # created 0600 first, so secrets in the config are never briefly world-readable
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(t)
+        os.chmod(p, mode)
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    write_private(tmp, text)
+    # Race check right before the replace: the gateway may have rewritten the file.
+    if sha(open(path).read()) != sha(raw):
+        os.unlink(tmp)
+        print("[local-embedder] openclaw.json changed while merging; retrying once" if attempt == 1 else "")
+        continue
+    backup = os.environ["BACKUP"]
+    if not os.path.exists(backup):
+        write_private(backup, raw)
+    os.replace(tmp, path)
+    print("[local-embedder] memory.search written atomically (backup: %s)" % backup)
+    sys.exit(10)
+sys.exit("openclaw.json kept changing under us (another writer); not written, retry next roll")
+PY
+case "$WRITE_RC" in
+  0) ;;
+  10)
+    if ! openclaw config validate >/dev/null 2>&1; then
+      cp -p "$BACKUP" "$OC_JSON"
+      die "openclaw config validate rejected the memory.search write; original restored from $BACKUP"
+    fi
+    log "openclaw config validate: OK"
+    [ "$(chat_fp)" = "$PRE_FP" ] || die "chat-model config changed right after the write (another writer); memory.search is set and the model is ready, operator review needed" ;;
+  *) die "memory.search write refused (rc=$WRITE_RC); nothing was written" ;;
+esac
+
+# ── 6. One re-index per agent: bounded, resumable ───────────────────────────
 if [ "$REINDEX" = 0 ] || [ "$DRY_RUN" = 1 ]; then
   log "re-index skipped (--no-reindex or --dry-run)"; exit 0
 fi
-_agents="$(python3 -c '
-import json, sys
-a = (json.load(open(sys.argv[1])).get("agents") or {})
-ids = list(a["entries"]) if isinstance(a.get("entries"), dict) else []
-ids += [x.get("id") for x in (a.get("list") or []) if isinstance(x, dict) and x.get("id") and x.get("id") not in ids]
-print("\n".join(ids or ["main"]))' "$OC_JSON")"
 mkdir -p "$STATE_DIR/reindexed"
 _failed=""
-while IFS= read -r _id; do
-  [ -n "$_id" ] || continue
+while IFS="$(printf '\t')" read -r _id _kind _detail; do
+  [ -n "$_id" ] && [ "$_kind" = local ] || continue
   _mark="$STATE_DIR/reindexed/$_id"
   if [ "$(cat "$_mark" 2>/dev/null)" = "$EMBED_TAG" ]; then log "agent $_id already re-indexed on $EMBED_TAG"; continue; fi
-  log "re-indexing agent $_id on $EMBED_TAG"
-  if openclaw memory status --index --agent "$_id"; then
+  log "re-indexing agent $_id on $EMBED_TAG (limit ${REINDEX_TIMEOUT}s)"
+  _rc=0; with_timeout "$REINDEX_TIMEOUT" openclaw memory status --index --agent "$_id" || _rc=$?
+  if [ "$_rc" = 0 ]; then
     printf '%s\n' "$EMBED_TAG" > "$_mark"
+  elif [ "$_rc" = 124 ]; then
+    log "re-index of agent $_id timed out after ${REINDEX_TIMEOUT}s; retried next roll"; _failed="$_failed $_id(timeout)"
   else
     _failed="$_failed $_id"
   fi
 done <<EOF
-$_agents
+$AGENTS_TSV
 EOF
-[ -z "$_failed" ] || defer "re-index failed for:$_failed (finished agents are kept; the next roll resumes)"
+[ -z "$_failed" ] || defer "re-index not finished for:$_failed (finished agents are kept; the next roll resumes)"
 log "DONE: memory search runs on local $EMBED_TAG (num_ctx 8192) via $BASE"
 exit 0
