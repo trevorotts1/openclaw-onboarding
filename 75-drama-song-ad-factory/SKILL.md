@@ -64,7 +64,7 @@ python3 scripts/core/intake_preflight/factory.py preflight --root "$STORAGE"
 
 Exit map is code-owned: `EXIT = {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1}`
 in `scripts/core/intake_preflight/__init__.py` — identical in both distributions
-(`tests/test_parity_layout.py` / `tests/distribution-parity/run_parity.sh` enforce it).
+(`tests/test_clean_install_discovery.py` / `tests/test_openclaw_adapter.py` enforce it).
 
 Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1`.
 
