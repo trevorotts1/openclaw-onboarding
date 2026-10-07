@@ -1,0 +1,82 @@
+{
+ "schema": "blackceo.batch-candidate-manifest/v1",
+ "unit": "W501U1",
+ "batch_id": "BATCH-W501U1-1",
+ "t0": 1791300227,
+ "window_minutes": 30,
+ "merge_batch_minutes": 30,
+ "heartbeat_seconds": 300,
+ "controller": "integration/batch-receipts/batch-window.sh",
+ "merge_train": "999-setup/.claude/skills/spec-protocol/tools/merge-train.sh",
+ "scratch_home": "swarm-plans/lanes/W5-01-U1-lane/scratch/home",
+ "scratch_repo": "swarm-plans/lanes/W5-01-U1-lane/scratch/repo",
+ "scratch_remote": "swarm-plans/lanes/W5-01-U1-lane/scratch/origin.git",
+ "trunk": "main",
+ "remote": "origin",
+ "combined_candidate_gate": "test -f cand-a.txt && test -f cand-b.txt",
+ "base_trunk_tip": "c13e7ce9d95588137138ad19e072296c0d1acba3",
+ "candidates": [
+  {
+   "id": "W501U1-A",
+   "branch": "unit/W501U1-A",
+   "tip": "3dce852d58b2c6190802fa3bcf3c305a86131a05",
+   "qc": "PASS",
+   "deps": [],
+   "eligible": true,
+   "batch": "BATCH-W501U1-1",
+   "adds": [
+    "cand-a.txt"
+   ]
+  },
+  {
+   "id": "W501U1-B",
+   "branch": "unit/W501U1-B",
+   "tip": "af7cfde1771bf625b82138b4510a55c57619c276",
+   "qc": "PASS",
+   "deps": [
+    "unit/W501U1-A"
+   ],
+   "eligible": true,
+   "batch": "BATCH-W501U1-1",
+   "adds": [
+    "cand-b.txt"
+   ],
+   "stacked_on": "3dce852d58b2c6190802fa3bcf3c305a86131a05",
+   "stack_proof_ancestor": true
+  },
+  {
+   "id": "W501U1-C",
+   "branch": "unit/W501U1-C",
+   "tip": "7dd240b6f777a0f5300ad50c992dbfc6dab48bb8",
+   "qc": "FAIL",
+   "deps": [],
+   "eligible": false,
+   "refusal": "qc-verdict-FAIL (merge-train ready_ids excludes it)",
+   "adds": [
+    "cand-c.txt"
+   ]
+  },
+  {
+   "id": "W501U1-D",
+   "branch": "unit/W501U1-D",
+   "tip": "5ed9ded3910b5c86f828eef7088d9e1684c68813",
+   "qc": "PASS",
+   "deps": [],
+   "eligible": true,
+   "batch": null,
+   "arrives_after_window_close": true,
+   "refusal": "window-cadence (presented only after BATCH-W501U1-1 closed the window)",
+   "adds": [
+    "cand-d.txt"
+   ]
+  }
+ ],
+ "dependency_closed_set": [
+  "unit/W501U1-A",
+  "unit/W501U1-B"
+ ],
+ "excluded": [
+  "unit/W501U1-C (QC FAIL)",
+  "unit/W501U1-D (outside window at presentation)"
+ ]
+}

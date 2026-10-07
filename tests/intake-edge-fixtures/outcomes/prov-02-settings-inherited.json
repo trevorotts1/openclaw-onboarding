@@ -1,0 +1,262 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief",
+    "{}",
+    "--settings-file",
+    "/tmp/local-W4-02-U1-rzuyl_mz/settings-inherit.json",
+    "--run-id",
+    "prov-02-settings-inherited"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 0,
+        "rc": 0
+      },
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "outcome",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "reason_code",
+      "detail": "complete-brief-zero-questions",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "exit_code",
+      "detail": 0,
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-complete",
+      "detail": [
+        "action",
+        "aspect_ratio",
+        "assets",
+        "audience",
+        "brand_rules",
+        "budget_currency",
+        "budget_minor",
+        "creative_prefs",
+        "offer",
+        "placement",
+        "repair_allowance",
+        "target_length_s"
+      ],
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-offer==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-audience==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-action==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-budget_minor==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-budget_currency==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-placement==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-brand_rules==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-target_length_s==inherited",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-aspect_ratio==assumed",
+      "detail": "assumed",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-creative_prefs==assumed",
+      "detail": "assumed",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-repair_allowance==assumed",
+      "detail": "assumed",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-assets==missing",
+      "detail": "missing",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-budget_minor-never-assumed",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "provenance-budget_currency-never-assumed",
+      "detail": "inherited",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "inherited-ceiling-recorded",
+      "detail": {
+        "amount_minor": 777,
+        "currency": "EUR"
+      },
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    },
+    {
+      "check": "auth-bound-with-inherited-currency",
+      "detail": "bound",
+      "pass": true,
+      "scenario": "prov-02-settings-inherited"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 25,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "bound",
+      "changes": [],
+      "digest": "cdf116ab28a8b3ff",
+      "next_stage": null,
+      "provenance": {
+        "action": "inherited",
+        "aspect_ratio": "assumed",
+        "assets": "missing",
+        "audience": "inherited",
+        "brand_rules": "inherited",
+        "budget_currency": "inherited",
+        "budget_minor": "inherited",
+        "creative_prefs": "assumed",
+        "offer": "inherited",
+        "placement": "inherited",
+        "repair_allowance": "assumed",
+        "target_length_s": "inherited"
+      },
+      "question_message": null,
+      "questions": [],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "aspect_ratio='unspecified (default: 9:16)' (assumed default)",
+          "creative_prefs='unspecified (default: none)' (assumed default)",
+          "repair_allowance='unspecified (default: none authorized)' (assumed default)"
+        ],
+        "audience": "inherited audience",
+        "auth_status": "bound",
+        "cta": "inherited action",
+        "format": "unspecified (default: 9:16)",
+        "generation_ceiling": {
+          "amount_minor": 777,
+          "currency": "EUR"
+        },
+        "offer": "inherited offer",
+        "placement": "4:5 portrait",
+        "repair_allowance": "unspecified (default: none authorized)",
+        "target_length_s": 45
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Record summary digest + auth scope, then run preflight before paid work.",
+    "outcome": "ok",
+    "reason_code": "complete-brief-zero-questions",
+    "run_id": "prov-02-settings-inherited",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "cdf116ab28a8b3ff",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 0,
+  "family": "provenance-recording",
+  "notes": {},
+  "recorded_unix": 1791358789,
+  "scenario": "prov-02-settings-inherited",
+  "unit_id": "W4-02-U1"
+}

@@ -1,0 +1,48 @@
+{
+  "doc": {
+    "command": "assemble",
+    "evidence": {
+      "argv": [
+        "ffmpeg",
+        "-y",
+        "-i",
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+        "-i",
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+        "-i",
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+        "-i",
+        "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+        "-filter_complex",
+        "[0:v]trim=duration=21.000000,setpts=PTS-STARTPTS,fps=30,scale=1080:1920,setsar=1[v0];[1:v]trim=duration=21.000000,setpts=PTS-STARTPTS,fps=30,scale=1080:1920,setsar=1[v1];[2:v]trim=duration=21.000000,setpts=PTS-STARTPTS,fps=30,scale=1080:1920,setsar=1[v2];[v0][v1][v2]concat=n=3:v=1:a=0[vout];[3:a]atrim=duration=63.000000,apad=whole_dur=63.000000,aresample=48000,aformat=channel_layouts=stereo[aout]",
+        "-map",
+        "[vout]",
+        "-map",
+        "[aout]",
+        "-c:a",
+        "aac",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-r",
+        "30",
+        "-movflags",
+        "faststart",
+        "<build-root>/qualification/long-form-media/final/final-9x16.mp4"
+      ],
+      "audio_dur": 63.0,
+      "output_dur": 63.0,
+      "planned_dur": 63.0,
+      "total_frames": 1890
+    },
+    "next_action": "QC per directive 17.5 (independent reviewer)",
+    "outcome": "ok",
+    "reason_code": "ASSEMBLED",
+    "schema_version": "1.0.0",
+    "state_version": 0,
+    "tool": "final_assembler",
+    "tool_version": "1.0.0"
+  },
+  "rc": 0
+}

@@ -1,0 +1,210 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "${DTS_BUILD_ROOT}/tests/intake-edge-fixtures/fixtures/offer-only-brief.json",
+    "--run-id",
+    "cap-02-offer-only"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 2,
+        "rc": 2
+      },
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "outcome",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "reason_code",
+      "detail": "missing-essentials",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "exit_code",
+      "detail": 2,
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "question-count<=3",
+      "detail": 3,
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "question-count==3",
+      "detail": [
+        "audience_action",
+        "spending_authority",
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "question-message-one-message",
+      "detail": 3,
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "question-message-numbered",
+      "detail": [
+        "1. Who is it for, and what should viewers do?",
+        "2. What maximum generation budget is authorized, with its currency/credit unit?",
+        "3. What placement/format should we produce (aspect ratio + target length)?"
+      ],
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "question-message-single-ask",
+      "detail": "Answer the bundled questions in one reply; nothing else is asked.",
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    },
+    {
+      "check": "placement-fills-leftover-slot",
+      "detail": [
+        "audience_action",
+        "spending_authority",
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "cap-02-offer-only"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 14,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "e64ca3a125a7dbcc",
+      "next_stage": null,
+      "provenance": {
+        "action": "missing",
+        "aspect_ratio": "assumed",
+        "assets": "missing",
+        "audience": "missing",
+        "brand_rules": "assumed",
+        "budget_currency": "missing",
+        "budget_minor": "missing",
+        "creative_prefs": "assumed",
+        "offer": "provided",
+        "placement": "assumed",
+        "repair_allowance": "assumed",
+        "target_length_s": "assumed"
+      },
+      "question_message": "1. Who is it for, and what should viewers do?\n2. What maximum generation budget is authorized, with its currency/credit unit?\n3. What placement/format should we produce (aspect ratio + target length)?",
+      "questions": [
+        {
+          "id": "audience_action",
+          "question": "Who is it for, and what should viewers do?"
+        },
+        {
+          "id": "spending_authority",
+          "question": "What maximum generation budget is authorized, with its currency/credit unit?"
+        },
+        {
+          "id": "placement",
+          "question": "What placement/format should we produce (aspect ratio + target length)?"
+        }
+      ],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "audience=None (assumed default)",
+          "action=None (assumed default)",
+          "budget_minor=None (assumed default)",
+          "budget_currency=None (assumed default)",
+          "placement='unspecified (default: 9:16 vertical)' (assumed default)",
+          "aspect_ratio='unspecified (default: 9:16)' (assumed default)",
+          "brand_rules='unspecified (default: none)' (assumed default)",
+          "creative_prefs='unspecified (default: none)' (assumed default)",
+          "repair_allowance='unspecified (default: none authorized)' (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": null,
+        "auth_status": "missing",
+        "cta": null,
+        "format": "unspecified (default: 9:16)",
+        "generation_ceiling": {
+          "amount_minor": null,
+          "currency": null
+        },
+        "offer": "demo offer",
+        "placement": "unspecified (default: 9:16 vertical)",
+        "repair_allowance": "unspecified (default: none authorized)",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Answer the bundled questions in one reply; nothing else is asked.",
+    "outcome": "waiting",
+    "reason_code": "missing-essentials",
+    "run_id": "cap-02-offer-only",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "e64ca3a125a7dbcc",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 2,
+  "family": "three-question-cap",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "cap-02-offer-only",
+  "unit_id": "W4-02-U1"
+}

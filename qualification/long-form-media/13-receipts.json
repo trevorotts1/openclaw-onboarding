@@ -1,0 +1,139 @@
+{
+  "ceiling": 5000,
+  "currency": "USD-cents",
+  "db_jobs": [
+    {
+      "actual": 6,
+      "estimated": 6,
+      "logical_key": "w4-long/music-generate",
+      "remote_task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d",
+      "state": "reconciled"
+    },
+    {
+      "actual": 2,
+      "estimated": 2,
+      "logical_key": "w4-long/image-generate",
+      "remote_task_id": "52cd20311ab74e660bfe7d4cf8b19a8b",
+      "state": "reconciled"
+    },
+    {
+      "actual": 336,
+      "estimated": 336,
+      "logical_key": "w4-long/video-generate-s1",
+      "remote_task_id": "5cfe577e66857e913d7713e67b7439c9",
+      "state": "reconciled"
+    },
+    {
+      "actual": 336,
+      "estimated": 336,
+      "logical_key": "w4-long/video-generate-s2",
+      "remote_task_id": "392dd178ee87d269b65452e923f2a63e",
+      "state": "reconciled"
+    },
+    {
+      "actual": 336,
+      "estimated": 336,
+      "logical_key": "w4-long/video-generate-s3",
+      "remote_task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5",
+      "state": "reconciled"
+    }
+  ],
+  "db_receipts": [
+    {
+      "amount": 6,
+      "attempt_id": "a1",
+      "currency": "USD-cents",
+      "logical_key": "w4-long/music-generate",
+      "provider_ref": "5e9ed441cc177a5cc5bfaa46ff26e37d"
+    },
+    {
+      "amount": 2,
+      "attempt_id": "a1",
+      "currency": "USD-cents",
+      "logical_key": "w4-long/image-generate",
+      "provider_ref": "52cd20311ab74e660bfe7d4cf8b19a8b"
+    },
+    {
+      "amount": 336,
+      "attempt_id": "a1",
+      "currency": "USD-cents",
+      "logical_key": "w4-long/video-generate-s1",
+      "provider_ref": "5cfe577e66857e913d7713e67b7439c9"
+    },
+    {
+      "amount": 336,
+      "attempt_id": "a1",
+      "currency": "USD-cents",
+      "logical_key": "w4-long/video-generate-s2",
+      "provider_ref": "392dd178ee87d269b65452e923f2a63e"
+    },
+    {
+      "amount": 336,
+      "attempt_id": "a1",
+      "currency": "USD-cents",
+      "logical_key": "w4-long/video-generate-s3",
+      "provider_ref": "c3bb63b280a862c6b8fa9f5c79ee39c5"
+    }
+  ],
+  "jobs": [
+    {
+      "actual_cost_cents": 6,
+      "credits_consumed": 12.0,
+      "logical_key": "w4-long/music-generate",
+      "outcome": "succeeded",
+      "saved_paths": [
+        "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+        "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
+      ],
+      "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
+      "task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d"
+    },
+    {
+      "actual_cost_cents": 2,
+      "credits_consumed": 4.0,
+      "logical_key": "w4-long/image-generate",
+      "outcome": "succeeded",
+      "saved_paths": [
+        "<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
+      ],
+      "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407",
+      "task_id": "52cd20311ab74e660bfe7d4cf8b19a8b"
+    },
+    {
+      "actual_cost_cents": 336,
+      "credits_consumed": 672.0,
+      "logical_key": "w4-long/video-generate-s1",
+      "outcome": "succeeded",
+      "saved_paths": [
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+      ],
+      "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
+      "task_id": "5cfe577e66857e913d7713e67b7439c9"
+    },
+    {
+      "actual_cost_cents": 336,
+      "credits_consumed": 672.0,
+      "logical_key": "w4-long/video-generate-s2",
+      "outcome": "succeeded",
+      "saved_paths": [
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+      ],
+      "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
+      "task_id": "392dd178ee87d269b65452e923f2a63e"
+    },
+    {
+      "actual_cost_cents": 336,
+      "credits_consumed": 672.0,
+      "logical_key": "w4-long/video-generate-s3",
+      "outcome": "succeeded",
+      "saved_paths": [
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+      ],
+      "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
+      "task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5"
+    }
+  ],
+  "program_ceiling": 5000,
+  "recorded_by": "Trevor 2026-10-06 ($50 total program)",
+  "run_id": "w4-long"
+}

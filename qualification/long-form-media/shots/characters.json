@@ -1,0 +1,33 @@
+[
+  {
+    "accessories": [
+      "thin gold chain",
+      "plain phone case"
+    ],
+    "age_band": "30-40",
+    "approved_reference_asset_ids": [
+      "asset-keyframe-01"
+    ],
+    "body_build": "average build, relaxed posture, weight on one hip",
+    "character_id": "char-owner-shop",
+    "distinguishing_features": "small gold hoop earrings and a thin chain",
+    "expression_range": [
+      "joyful",
+      "confident",
+      "inviting"
+    ],
+    "eyes": "dark brown, bright, engaged with the lens",
+    "facial_structure": "oval face, high cheekbones, rounded chin",
+    "hair": "natural coils worn loose, catching the rim light",
+    "mouth": "full lips, wide laugh lines",
+    "nose": "broad bridge, softly rounded tip",
+    "prohibited_drift": [
+      "no wardrobe change between shots",
+      "no hair colour change",
+      "no jewellery change"
+    ],
+    "schema_version": "1.0.0",
+    "skin_tone_complexion": "deep brown, warm undertone, luminous",
+    "wardrobe_rules": "soft cream knit overshirt over a plain tee; never changes between shots"
+  }
+]

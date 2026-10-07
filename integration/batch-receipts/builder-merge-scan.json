@@ -1,0 +1,95 @@
+{
+ "schema": "blackceo.builder-merge-scan/v1",
+ "unit": "W5-01-U1",
+ "question": "no individual builder merges; every landing produced only by the gated batch train",
+ "repo": "scratch/repo",
+ "remote_trunk": "origin/main@e8b614099194eda1af8abe6f660b10bfa4aa4994",
+ "batch_run_span": {
+  "start": 1791354447,
+  "end": 1791354449,
+  "window_index": 30,
+  "window": [
+   1791354227,
+   1791356027
+  ],
+  "event_id": "BATCH-W501U1-1"
+ },
+ "counts": {
+  "trunk_commits_total": 6,
+  "merge_commits": 2,
+  "merges_by_batch_train": 2,
+  "merges_by_builder": 0,
+  "builder_constituent_commits_frozen": 3,
+  "train_post_merge_commits": 1
+ },
+ "checks": {
+  "individual_builder_merges_zero": true,
+  "every_merge_by_batch_train": true,
+  "every_merge_inside_recorded_batch_run": true,
+  "train_changelog_inside_batch_run": true,
+  "builder_commits_frozen_before_window_open": true
+ },
+ "commits": [
+  {
+   "sha": "3dce852d58b2",
+   "merge": false,
+   "committer": "builder-lane",
+   "email": "builder@lane.invalid",
+   "epoch": 1791354319,
+   "subject": "W501U1-A: candidate A",
+   "role": "pre-frozen-constituent",
+   "in_batch_run": false
+  },
+  {
+   "sha": "c13e7ce9d955",
+   "merge": false,
+   "committer": "builder-lane",
+   "email": "builder@lane.invalid",
+   "epoch": 1791354319,
+   "subject": "scratch base",
+   "role": "pre-frozen-constituent",
+   "in_batch_run": false
+  },
+  {
+   "sha": "af7cfde1771b",
+   "merge": false,
+   "committer": "builder-lane",
+   "email": "builder@lane.invalid",
+   "epoch": 1791354319,
+   "subject": "W501U1-B: candidate B depends on A",
+   "role": "pre-frozen-constituent",
+   "in_batch_run": false
+  },
+  {
+   "sha": "410c7b9ce1a4",
+   "merge": true,
+   "committer": "batch-train",
+   "email": "batch-train@controller.invalid",
+   "epoch": 1791354448,
+   "subject": "Merge branch 'unit/W501U1-A'",
+   "role": "batch-landing",
+   "in_batch_run": true
+  },
+  {
+   "sha": "915730d60c47",
+   "merge": true,
+   "committer": "batch-train",
+   "email": "batch-train@controller.invalid",
+   "epoch": 1791354448,
+   "subject": "Merge branch 'unit/W501U1-B'",
+   "role": "batch-landing",
+   "in_batch_run": true
+  },
+  {
+   "sha": "e8b614099194",
+   "merge": false,
+   "committer": "batch-train",
+   "email": "batch-train@controller.invalid",
+   "epoch": 1791354448,
+   "subject": "changelog: merge batch, 2 unit(s) [factory-scratch]",
+   "role": "train-changelog",
+   "in_batch_run": true
+  }
+ ],
+ "verdict": "PASS"
+}

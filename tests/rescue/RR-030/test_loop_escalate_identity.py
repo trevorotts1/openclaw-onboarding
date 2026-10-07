@@ -154,7 +154,7 @@ class Identity(unittest.TestCase):
         for bad in ("Mac.fios-router.home", "Jennifers-Mini.lan", "x.local", "a1b2c3d4e5f6",
                     "", "TBD", "unknown", "N/A", "box"):
             self.assertIsNotNone(li.problem(bad), bad)
-        for good in ("test-box", "vps-janet-pinkney", "rescue-karen-vaughn", "oc-sheila"):
+        for good in ("<branch-slug>", "vps-client-one", "rescue-client-two", "oc-client-three"):
             self.assertIsNone(li.problem(good), good)
 
 def _install(*args, **env):
