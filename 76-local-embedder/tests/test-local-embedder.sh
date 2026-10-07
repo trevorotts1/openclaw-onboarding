@@ -426,6 +426,15 @@ OUT="$(MOCK_APP_PID=$APP_DUMMY wire)"; rc=$?
 check "T17 exit 1, deferred, running bundle NOT replaced or relaunched, config untouched" '[ $rc = 1 ] && printf "%s" "$OUT" | grep -q "running bundle was NOT replaced" && [ -x "$APPBIN/ollama" ] && [ ! -e "$H/.Trash" ] && ! grep -q "^open " "$CALLS" && [ "$(sha "$H/.openclaw/openclaw.json")" = "$C0" ]'
 check "T17 the app got SIGTERM (still alive only because it ignores it), no osascript" 'kill -0 $APP_DUMMY 2>/dev/null && ! grep -q osascript "$CALLS" && ! grep -vE "^\s*#" "$WIRE" | grep -q osascript'
 kill -9 $APP_DUMMY 2>/dev/null
+
+echo "--- T18: Gemini persona fallback copy (own Google key only) ---"
+new_box 0.40.0
+OUT="$(wire --dry-run)"; rc=$?
+check "T18a no Google key: skipped cleanly, nothing planned" '[ $rc = 0 ] && printf "%s" "$OUT" | grep -q "fallback copy skipped: this box has no Google key" && ! printf "%s" "$OUT" | grep -q "would download the Gemini fallback"'
+mkdir -p "$H/.openclaw/secrets"; printf 'GOOGLE_API_KEY=not-a-real-key\n' > "$H/.openclaw/secrets/.env"
+OUT="$(wire --dry-run)"; rc=$?
+check "T18b own key: the fallback copy is planned into the box's own coaching dir" '[ $rc = 0 ] && printf "%s" "$OUT" | grep -q "would download the Gemini fallback copy.*$H/.openclaw/workspace/data/coaching-personas/gemini-fallback-index.sqlite"'
+check "T18b the key value is never printed; nothing was written; memory.search.fallback untouched" '! printf "%s" "$OUT" | grep -q "not-a-real-key" && [ ! -e "$H/.openclaw/workspace/data/coaching-personas" ] && ! grep -qE "LOCAL_EMBEDDER_FALLBACK|\"fallback\"" <(sed -n "/^# ── 5b/,/^# ── 6/p" "$WIRE")'
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
