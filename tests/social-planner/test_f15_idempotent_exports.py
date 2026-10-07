@@ -18,6 +18,11 @@ BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 N8N = os.path.join(BASE, "35-social-media-planner", "config", "n8n")
 CREATE = os.path.join(N8N, "social-planner-sheet-create.json")
 APPEND = os.path.join(N8N, "social-planner-row-append.json")
+# The fake Drive copy stamps skill35_template_schema exactly like the export
+# does, so the fixture follows the contract instead of pinning a version.
+with open(os.path.join(BASE, "35-social-media-planner", "config",
+                       "sheet-template.schema.json")) as _contract:
+    TEMPLATE_SCHEMA_VERSION = json.load(_contract)["schema_version"]
 NODE_AVAILABLE = False
 try:
     subprocess.run(["node", "-v"], capture_output=True, check=True)
@@ -95,9 +100,9 @@ class TestF15ExportContractStatic(unittest.TestCase):
 
 RUNNER = r"""
 // Fake Google API + n8n-like code-node harness.
-// argv: [exportPath, nodeName, count, mode, seedJson]
+// argv: [exportPath, nodeName, count, mode, seedJson, templateSchema]
 const fs = require('fs');
-const [exportPath, nodeName, countArg, mode, seedArg] = process.argv.slice(2);
+const [exportPath, nodeName, countArg, mode, seedArg, templateSchema] = process.argv.slice(2);
 const exportDef = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
 const nodeDef = exportDef.nodes.find(n => n.name === nodeName);
 const jsCode = nodeDef.parameters.jsCode;
@@ -112,7 +117,7 @@ class FakeGoogle {
   }
   driveCopy(name, provisioningKey, schemaVersion) {
     this.sheetCount += 1;
-    const file = { id: 'new-sheet-' + this.sheetCount, name, appProperties: { skill35_provisioning_key: provisioningKey, skill35_company_id: provisioningKey.split('::')[0], skill35_template_schema: '1.2.0', skill35_provisioning_state: 'initializing', schema_version: schemaVersion } };
+    const file = { id: 'new-sheet-' + this.sheetCount, name, appProperties: { skill35_provisioning_key: provisioningKey, skill35_company_id: provisioningKey.split('::')[0], skill35_template_schema: templateSchema, skill35_provisioning_state: 'initializing', schema_version: schemaVersion } };
     this.files.push(file);
     return file;
   }
@@ -215,7 +220,7 @@ class TestF15ConcurrentSimulation(unittest.TestCase):
     def run_sim(self, export_path, node_name, count, seed, mode="create"):
         proc = subprocess.run(
             ["node", self.runner, export_path, node_name, str(count),
-             mode, json.dumps(seed)],
+             mode, json.dumps(seed), TEMPLATE_SCHEMA_VERSION],
             capture_output=True, text=True, timeout=60)
         if proc.returncode != 0:
             self.fail(f"simulation failed: {proc.stderr.strip()}")

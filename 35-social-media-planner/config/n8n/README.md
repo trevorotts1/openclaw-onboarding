@@ -210,7 +210,7 @@ access renews by re-fetching while authenticated.
 
 The append flow requires exactly one Sheets developerMetadata entry named
 `skill35_company_id` equal to the canonical caller company. New create flows
-also stamp `skill35_planner_kind` and `skill35_template_schema=1.2.0` into
+also stamp `skill35_planner_kind` and `skill35_template_schema=1.3.0` into
 Sheets metadata and Drive appProperties. A matching Drive provisioning key
 alone is not sufficient ownership evidence.
 
