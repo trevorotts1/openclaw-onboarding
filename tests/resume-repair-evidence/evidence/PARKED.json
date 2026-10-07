@@ -1,0 +1,36 @@
+{
+  "authority": "spend ledger runs.status + state_store stage rows; this file is a projection, never an authority",
+  "digest": "74a4a7d5a5210882",
+  "next_stage": "video",
+  "outstanding": [],
+  "park_reason": "MID_RUN_SUSPEND",
+  "projection": true,
+  "run_id": "w4-03-resume",
+  "run_status": "parked",
+  "schema": "blackceo.resume-parked-projection/v1",
+  "stage": {
+    "reason": "MID_RUN_SUSPEND",
+    "stage": "music",
+    "state": "PARKED"
+  },
+  "summary": {
+    "assets": null,
+    "assumptions": [
+      "assets=None (assumed default)",
+      "target_length_s=30 (assumed default)"
+    ],
+    "audience": "busy parents",
+    "auth_status": "missing",
+    "cta": "visit the site and start the free trial",
+    "format": "9:16",
+    "generation_ceiling": {
+      "amount_minor": 10000,
+      "currency": "USD"
+    },
+    "offer": "demo offer",
+    "placement": "9:16 vertical short",
+    "repair_allowance": "none",
+    "target_length_s": 30
+  },
+  "unit": "W4-03-U1"
+}
