@@ -1,0 +1,71 @@
+"""qc_voice_match.pitch_ban: D22a pitch-shift ban + D17 octave guard.
+
+A transposed or octave-displaced take is a mismatch everywhere it is asked
+about: the primitive (``shift_verdict`` / ``check_match``), the line check
+(``check_line``), the whole report (``evaluate``), and every declared shift
+on a record (``refuse_pitch_shift``) or a whole registry
+(``registry_records_never_pitch_shift``). Stdlib only, no spend.
+"""
+from .pitch_ban import (  # noqa: F401
+    CHECK,
+    CHECK_ID,
+    CHAR_INTENDED_KEYS,
+    DRIFT_TOLERANCE_CENTS,
+    EXIT,
+    LINE_INTENDED_KEYS,
+    MIN_SHIFT_SEMITONES,
+    PITCH_RANGES_HZ,
+    REPORT_COMPATIBLE,
+    SAME_GENDER_MIN_SEPARATION_HZ,
+    SCHEMA_VERSION,
+    SHIFT_TOLERANCE_CENTS,
+    TOOL_NAME,
+    TOOL_VERSION,
+    AssemblyBlocked,
+    VoiceMatchError,
+    cents_between,
+    char_index,
+    check_line,
+    check_match,
+    envelope,
+    evaluate,
+    intended_pitch,
+    refuse_before_assembly,
+    refuse_pitch_shift,
+    registry_records_never_pitch_shift,
+    scan_shift_declarations,
+    shift_verdict,
+    to_qc_record,
+)
+
+__all__ = [
+    "CHECK",
+    "CHECK_ID",
+    "CHAR_INTENDED_KEYS",
+    "DRIFT_TOLERANCE_CENTS",
+    "EXIT",
+    "LINE_INTENDED_KEYS",
+    "MIN_SHIFT_SEMITONES",
+    "PITCH_RANGES_HZ",
+    "REPORT_COMPATIBLE",
+    "SAME_GENDER_MIN_SEPARATION_HZ",
+    "SCHEMA_VERSION",
+    "SHIFT_TOLERANCE_CENTS",
+    "TOOL_NAME",
+    "TOOL_VERSION",
+    "AssemblyBlocked",
+    "VoiceMatchError",
+    "cents_between",
+    "char_index",
+    "check_line",
+    "check_match",
+    "envelope",
+    "evaluate",
+    "intended_pitch",
+    "refuse_before_assembly",
+    "refuse_pitch_shift",
+    "registry_records_never_pitch_shift",
+    "scan_shift_declarations",
+    "shift_verdict",
+    "to_qc_record",
+]
