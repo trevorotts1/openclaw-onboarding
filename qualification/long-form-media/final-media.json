@@ -1,0 +1,32 @@
+{
+  "assembled_total_s": 63.0,
+  "bytes": 18534133,
+  "duration_band": "60-90s",
+  "fps": 30,
+  "height": 1920,
+  "master": "qualification/long-form-media/final/final-9x16.mp4",
+  "master_duration_s": 63.0,
+  "segments": [
+    {
+      "measured_s": 21.0,
+      "shot_id": "shot-01",
+      "src": "qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+    },
+    {
+      "measured_s": 21.0,
+      "shot_id": "shot-02",
+      "src": "qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+    },
+    {
+      "measured_s": 21.0,
+      "shot_id": "shot-03",
+      "src": "qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+    }
+  ],
+  "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c",
+  "streams": {
+    "audio": 63.0,
+    "video": 63.0
+  },
+  "width": 1080
+}

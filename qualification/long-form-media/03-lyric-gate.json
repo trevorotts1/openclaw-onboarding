@@ -1,0 +1,14 @@
+{
+  "coverage": {
+    "covered": 7,
+    "critical_words": 7,
+    "missing": []
+  },
+  "errors": [],
+  "line_count": 12,
+  "next_action": "Proceed to lyric QC.",
+  "outcome": "ok",
+  "reason_code": "lyrics-valid",
+  "schema_version": "blackceo.lyric-writer/v1",
+  "tool_version": "0.1.0"
+}

@@ -1,0 +1,458 @@
+{
+  "attempt_id": "W4-01-1791336458459",
+  "builder_model": "opus",
+  "checks": [
+    {
+      "id": "C1",
+      "measured": {
+        "auth_status": "bound",
+        "digest": "8eddf994b96fc122",
+        "outcome": "ok",
+        "questions": null,
+        "target_length_s": 63
+      },
+      "note": "",
+      "requirement": "intake ok, authorization bound to this campaign summary digest",
+      "result": "PASS"
+    },
+    {
+      "id": "C2",
+      "measured": {
+        "outcome": "ok",
+        "profile": "long-9x16-60s",
+        "rc": 0,
+        "reason_code": "preflight-pass"
+      },
+      "note": "",
+      "requirement": "preflight rc=0 before any paid call",
+      "result": "PASS"
+    },
+    {
+      "id": "C3",
+      "measured": {
+        "coverage": {
+          "covered": 7,
+          "critical_words": 7,
+          "missing": []
+        },
+        "line_count": 12,
+        "outcome": "ok"
+      },
+      "note": "",
+      "requirement": "lyric gate accepts approved 60s+ sung copy",
+      "result": "PASS"
+    },
+    {
+      "id": "C4",
+      "measured": {
+        "rc": 0,
+        "tail": "WARN: music: style is 894 chars; the target is 95-100% of 1000 (add 56 chars)\nVALIDATION PASSED (1 advisory warning(s))"
+      },
+      "note": "",
+      "requirement": "Skill 68 music payload validates before dispatch",
+      "result": "PASS"
+    },
+    {
+      "id": "C5",
+      "measured": {
+        "models": {
+          "shot-01": "wan/3-0-video",
+          "shot-02": "wan/3-0-video",
+          "shot-03": "wan/3-0-video"
+        },
+        "outcomes": {
+          "shot-01": "ok",
+          "shot-02": "ok",
+          "shot-03": "ok"
+        }
+      },
+      "note": "aspect_ratio 9:16 is undetermined in Skill 67 and is verified instead by the produced artifact resolution",
+      "requirement": "directive 16 capability router selects one pinned catalog model for every shot",
+      "result": "PASS"
+    },
+    {
+      "id": "C6",
+      "measured": {
+        "bind": "ok",
+        "findings": [],
+        "gate": true,
+        "gate_reason": "storyboard-gate-open",
+        "review": "pass"
+      },
+      "note": "",
+      "requirement": "storyboard bound to lyric timing, adversarial review passes, video spend gate open",
+      "result": "PASS"
+    },
+    {
+      "id": "C7",
+      "measured": {
+        "records": {
+          "char-owner-shop": []
+        },
+        "reference_binding": {
+          "char-owner-shop": [
+            "asset-keyframe-01"
+          ]
+        }
+      },
+      "note": "",
+      "requirement": "character DNA record valid and bound to approved references",
+      "result": "PASS"
+    },
+    {
+      "id": "C8",
+      "measured": {
+        "assembled_from_s": 63.0,
+        "band": [
+          60.0,
+          90.0
+        ],
+        "final_master_s": 63.0,
+        "streams": {
+          "audio": 63.0,
+          "video": 63.0
+        }
+      },
+      "note": "",
+      "requirement": "final media full intended duration (60-90s)",
+      "result": "PASS"
+    },
+    {
+      "id": "C9",
+      "measured": {
+        "distinct_camera_directions": 3,
+        "distinct_clip_files": [
+          "392dd178ee87d269b65452e923f2a63e_0.mp4",
+          "5cfe577e66857e913d7713e67b7439c9_0.mp4",
+          "c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+        ],
+        "first_frame_shared": true,
+        "review": "pass",
+        "shot_count": 3,
+        "wardrobe_identical": true
+      },
+      "note": "continuity is enforced structurally: every shot record cites the same reference asset, and the same uploaded keyframe is the first_frame_url of all three generations",
+      "requirement": "multi-shot continuity: 3 distinct shots share one character, one wardrobe and one first frame",
+      "result": "PASS"
+    },
+    {
+      "id": "C9b",
+      "measured": {
+        "mean_mse_shot0_to_shot0": 0.07017543859649122,
+        "mean_mse_shot0_to_shot1_same_shot": 0.9441246345029239,
+        "pairs": [
+          {
+            "a": "shot-01",
+            "b": "shot-02",
+            "mse_frame0": 0.06825657894736842
+          },
+          {
+            "a": "shot-01",
+            "b": "shot-03",
+            "mse_frame0": 0.06990131578947369
+          },
+          {
+            "a": "shot-02",
+            "b": "shot-03",
+            "mse_frame0": 0.07236842105263158
+          }
+        ],
+        "relationship": "first frames of different shots are closer to each other than to their own next frame"
+      },
+      "note": "relative test only: no absolute similarity threshold is asserted, because the acceptance profile is uncalibrated",
+      "requirement": "frame-level continuity: shots start from one shared keyframe rather than drifting per generation",
+      "result": "PASS"
+    },
+    {
+      "id": "C10",
+      "measured": {
+        "audio_s": 63.0,
+        "clips_checked": 3,
+        "coverage": {
+          "approved_n": 94,
+          "covered": 94,
+          "overall": 1.0
+        },
+        "detail": "",
+        "low_confidence": [
+          "timing-sample-unrecorded"
+        ],
+        "reason_code": "LOW_CONFIDENCE",
+        "verdict": "REVIEW",
+        "video_s": 63.0
+      },
+      "note": "verdict REVIEW/LOW_CONFIDENCE is the honest state: Skill 68 STT is ADVERTISED_NOT_YET_VERIFIED (dispatch_enabled false), so no independent ASR sample exists and timing_guard must not invent one. Coverage, clip spans and final A/V sync are all measured and clean; the unrecorded alignment sample is the only review item.",
+      "requirement": "lyric timing accepted on the full-length master",
+      "result": "PASS"
+    },
+    {
+      "id": "C11",
+      "measured": {
+        "checks": {
+          "clipping": "PASS",
+          "genre_continuity": "UNAVAILABLE",
+          "master_duration": "PASS",
+          "persona_continuity": "PASS",
+          "tempo_continuity": "UNAVAILABLE",
+          "transitions": "PASS"
+        },
+        "measurement": {
+          "ffmpeg_sample_peak_dbfs": -1.03687,
+          "ffprobe_duration_s": 62.352,
+          "final_master_duration_s": 63.0
+        },
+        "verdict": "UNAVAILABLE"
+      },
+      "note": "aggregate UNAVAILABLE is driven by genre_continuity + tempo_continuity only: the provider returns no independent genre or tempo evidence and no calibrated estimator exists, so neither can be scored. No lyric or duration check failed.",
+      "requirement": "music QC on the long master",
+      "result": "PASS"
+    },
+    {
+      "id": "C12",
+      "measured": {
+        "actual": 1016,
+        "calls": 5,
+        "ceiling_cents": 5000,
+        "jobs": [
+          {
+            "actual": 6,
+            "estimated": 6,
+            "logical_key": "w4-long/music-generate",
+            "remote_task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d",
+            "state": "reconciled"
+          },
+          {
+            "actual": 2,
+            "estimated": 2,
+            "logical_key": "w4-long/image-generate",
+            "remote_task_id": "52cd20311ab74e660bfe7d4cf8b19a8b",
+            "state": "reconciled"
+          },
+          {
+            "actual": 336,
+            "estimated": 336,
+            "logical_key": "w4-long/video-generate-s1",
+            "remote_task_id": "5cfe577e66857e913d7713e67b7439c9",
+            "state": "reconciled"
+          },
+          {
+            "actual": 336,
+            "estimated": 336,
+            "logical_key": "w4-long/video-generate-s2",
+            "remote_task_id": "392dd178ee87d269b65452e923f2a63e",
+            "state": "reconciled"
+          },
+          {
+            "actual": 336,
+            "estimated": 336,
+            "logical_key": "w4-long/video-generate-s3",
+            "remote_task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5",
+            "state": "reconciled"
+          }
+        ],
+        "receipt_total": 1016,
+        "receipts": [
+          {
+            "amount": 6,
+            "attempt_id": "a1",
+            "currency": "USD-cents",
+            "logical_key": "w4-long/music-generate",
+            "provider_ref": "5e9ed441cc177a5cc5bfaa46ff26e37d"
+          },
+          {
+            "amount": 2,
+            "attempt_id": "a1",
+            "currency": "USD-cents",
+            "logical_key": "w4-long/image-generate",
+            "provider_ref": "52cd20311ab74e660bfe7d4cf8b19a8b"
+          },
+          {
+            "amount": 336,
+            "attempt_id": "a1",
+            "currency": "USD-cents",
+            "logical_key": "w4-long/video-generate-s1",
+            "provider_ref": "5cfe577e66857e913d7713e67b7439c9"
+          },
+          {
+            "amount": 336,
+            "attempt_id": "a1",
+            "currency": "USD-cents",
+            "logical_key": "w4-long/video-generate-s2",
+            "provider_ref": "392dd178ee87d269b65452e923f2a63e"
+          },
+          {
+            "amount": 336,
+            "attempt_id": "a1",
+            "currency": "USD-cents",
+            "logical_key": "w4-long/video-generate-s3",
+            "provider_ref": "c3bb63b280a862c6b8fa9f5c79ee39c5"
+          }
+        ],
+        "remaining": 3984,
+        "unknown_or_reserved": 0
+      },
+      "note": "",
+      "requirement": "paid spend reserved before submission and fully reconciled inside the ceiling",
+      "result": "PASS"
+    },
+    {
+      "id": "C13",
+      "measured": {
+        "by_run": {
+          "w3-04-short-run": {
+            "actual": 8,
+            "outstanding_estimated": 0,
+            "total": 8
+          },
+          "w4-long": {
+            "actual": 1016,
+            "outstanding_estimated": 0,
+            "total": 1016
+          }
+        },
+        "program_ceiling_cents": 5000,
+        "projected_cents": 1024
+      },
+      "note": "w4-long init_run carries the run-row ceiling 5000 USD-cents; a driver-side program guard additionally sums every run of the program before each reserve so the $50 owner record cannot be exceeded across runs",
+      "requirement": "program-wide spend stays inside the owner-recorded $50 total program",
+      "result": "PASS"
+    },
+    {
+      "id": "C14",
+      "measured": {
+        "artifacts": 7,
+        "mismatch": []
+      },
+      "note": "",
+      "requirement": "every recorded artifact re-hashes to its manifest digest",
+      "result": "PASS"
+    },
+    {
+      "id": "C15",
+      "measured": {
+        "stages": {
+          "final_assemble": "COMPLETE",
+          "image_generate": "COMPLETE",
+          "intake": "COMPLETE",
+          "lyrics_approved": "COMPLETE",
+          "music_generate": "COMPLETE",
+          "music_qc": "COMPLETE",
+          "preflight": "COMPLETE",
+          "receipts": "COMPLETE",
+          "storyboard": "COMPLETE",
+          "timing_guard": "COMPLETE",
+          "video_generate": "COMPLETE"
+        }
+      },
+      "note": "",
+      "requirement": "all run stages claimed and completed",
+      "result": "PASS"
+    },
+    {
+      "id": "C16",
+      "measured": {
+        "failed_files": [],
+        "unknown_files": [],
+        "unknown_or_reserved_cents": 0
+      },
+      "note": "no unknown or failed provider outcomes occurred in this run; the policy itself is exercised by the driver code paths and by W3-04-U1 (provider fail reconciled at 0 cents, never resubmitted)",
+      "requirement": "unknown provider outcome policy: stop/park, never resubmit",
+      "result": "PASS"
+    },
+    {
+      "id": "C17",
+      "measured": {
+        "bytes": 18534133,
+        "fps": 30,
+        "height": 1920,
+        "path": "qualification/long-form-media/final/final-9x16.mp4",
+        "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c",
+        "variant_plans": [
+          "9:16",
+          "16:9",
+          "1:1"
+        ],
+        "width": 1080
+      },
+      "note": "variant plans only; transcode belongs to the media pipeline, not delivery_variants",
+      "requirement": "final media meets the delivery profile",
+      "result": "PASS"
+    },
+    {
+      "id": "C18",
+      "measured": {
+        "files_scanned": 86,
+        "leaks": []
+      },
+      "note": "values are never printed; this check reports match counts only",
+      "requirement": "no credential material anywhere in the owned output",
+      "result": "PASS"
+    },
+    {
+      "id": "C19",
+      "measured": {
+        "jobs": [
+          {
+            "cents": 2,
+            "credits": 4.0,
+            "logical_key": "w4-long/image-generate",
+            "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407",
+            "task_id": "52cd20311ab74e660bfe7d4cf8b19a8b"
+          },
+          {
+            "cents": 6,
+            "credits": 12.0,
+            "logical_key": "w4-long/music-generate",
+            "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
+            "task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d"
+          },
+          {
+            "cents": 336,
+            "credits": 672.0,
+            "logical_key": "w4-long/video-generate-s1",
+            "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
+            "task_id": "5cfe577e66857e913d7713e67b7439c9"
+          },
+          {
+            "cents": 336,
+            "credits": 672.0,
+            "logical_key": "w4-long/video-generate-s2",
+            "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
+            "task_id": "392dd178ee87d269b65452e923f2a63e"
+          },
+          {
+            "cents": 336,
+            "credits": 672.0,
+            "logical_key": "w4-long/video-generate-s3",
+            "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
+            "task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5"
+          }
+        ]
+      },
+      "note": "",
+      "requirement": "every paid submission has a provider task id, a credit charge and a persisted artifact digest",
+      "result": "PASS"
+    },
+    {
+      "id": "C20",
+      "measured": {
+        "expected_verdict_path": "evidence/W4-01/W4-01-U1.verdict.json",
+        "owner": "independent checker",
+        "verdict_files_touched_by_builder": []
+      },
+      "note": "this pack is measurement only; the unit verdict is not self-approved",
+      "requirement": "builder wrote no unit verdict",
+      "result": "PASS"
+    }
+  ],
+  "generated_at_unix": 1791340282,
+  "not_a_verdict": "unit verdict is recorded by the independent checker at evidence/W4-01/W4-01-U1.verdict.json",
+  "owned_output": "qualification/long-form-media/",
+  "run_id": "w4-long",
+  "summary": {
+    "fail": 0,
+    "pass": 21,
+    "total": 21
+  },
+  "unit_id": "W4-01-U1"
+}

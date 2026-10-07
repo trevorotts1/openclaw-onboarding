@@ -1,0 +1,70 @@
+{
+ "batch": "BM-02",
+ "left_behind": [
+  {
+   "bytes": 58582,
+   "path": "qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+   "reasons": [
+    "banned-extension"
+   ],
+   "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407"
+  },
+  {
+   "bytes": 1405594,
+   "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+   "reasons": [
+    "banned-extension"
+   ],
+   "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d"
+  },
+  {
+   "bytes": 1492954,
+   "path": "qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
+   "reasons": [
+    "banned-extension"
+   ],
+   "sha256": "69a36771348a172dcac7f5a60f3caccaebd2362100ffd9b79ce8a15ca678c98c"
+  },
+  {
+   "bytes": 30022697,
+   "path": "qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+   "reasons": [
+    "banned-extension",
+    "over-5MB"
+   ],
+   "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b"
+  },
+  {
+   "bytes": 47936461,
+   "path": "qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+   "reasons": [
+    "banned-extension",
+    "over-5MB"
+   ],
+   "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5"
+  },
+  {
+   "bytes": 36404553,
+   "path": "qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+   "reasons": [
+    "banned-extension",
+    "over-5MB"
+   ],
+   "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f"
+  },
+  {
+   "bytes": 18534133,
+   "path": "qualification/long-form-media/final/final-9x16.mp4",
+   "reasons": [
+    "banned-extension",
+    "over-5MB"
+   ],
+   "sha256": "18cee37d083db74eec711c36c902ad8883f502e992492fd927dea3f5bbea967c"
+  }
+ ],
+ "left_behind_total_bytes": 135854974,
+ "policy": "Trevor order 2026-10-07: no .mp4/.mp3/.webp/.wav and no file over 5MB may enter trevorotts1/openclaw-onboarding; media stays here and is referenced by sha256",
+ "schema": "blackceo.media-left-behind/v1",
+ "source_root": "~/drama-song-factory-build/qualification/",
+ "unit": "W4-01-U1"
+}
