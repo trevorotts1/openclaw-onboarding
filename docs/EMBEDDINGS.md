@@ -411,7 +411,14 @@ key or another client's key is never used.
   22/20, then PATH, because an nvm Node 24 fails it). Skipped on no key, no CC,
   or CC older than 7.6.108. Bounded at 600 s, never fatal, and re-run only when
   the manifest sha256 or the box's `sops` count changes
-  (`~/.openclaw/local-embedder/gemini-sop-fallback.done`).
+  (`~/.openclaw/local-embedder/gemini-sop-fallback.done`). update-skills.sh also
+  calls `wire.sh --sop-fallback-only` right after the Command Center refresh, so a
+  CC that reaches 7.6.108 later in the same roll is provisioned in that roll.
+- **Per-agent multimodal and re-index retries (skill 76 v1.3.0)**: an agent that
+  inherits the local provider but has `memory.search.multimodal.enabled=true` is
+  set to false in the same atomic write (local text embedder, no multimodal
+  adapter); agents with their own provider are reported and untouched. A
+  transient SQLite re-index error is retried 2 more times with a backoff.
 - **Health**: `embedding_health.py` reports `gemini_fallback_copy_present` and
   `gemini_fallback_key_present` (names only, never the key) for a local-mode
   persona index. They are informational and do not change pass or fail.
