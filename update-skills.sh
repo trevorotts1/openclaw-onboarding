@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.0.5"
+ONBOARDING_VERSION="v26.1.0"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -1997,7 +1997,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.0.5 - safe_json_edit
+# v26.1.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -10400,7 +10400,30 @@ PYEOF
     fi
 
     # ── (c) embedding default standardization ──────────────────────────────
-    if [ "$_GOOGLE_KEY_STATE" = "SET" ]; then
+    # Skill 76 LOCAL EMBEDDER GUARD: memory search on a loopback Ollama (provider
+    # ollama + remote.baseUrl 127.0.0.1/localhost/::1, read from memory.search,
+    # else the legacy agents.defaults.memorySearch) is owned by 76-local-embedder;
+    # never re-pin it to gemini/openai here.
+    _local_embedder_active() {
+      local _cfg="$HOME/.openclaw/openclaw.json"
+      [ -f /data/.openclaw/openclaw.json ] && _cfg="/data/.openclaw/openclaw.json"
+      [ -f "$_cfg" ] || return 1
+      python3 - "$_cfg" <<'LEPY' 2>/dev/null
+import json, sys
+from urllib.parse import urlparse
+c = json.load(open(sys.argv[1]))
+new = (c.get("memory") or {}).get("search") if isinstance(c.get("memory"), dict) else None
+new = new if isinstance(new, dict) else {}
+old = ((c.get("agents") or {}).get("defaults") or {}).get("memorySearch") or {}
+prov = new.get("provider") or old.get("provider")
+remote = new.get("remote") or old.get("remote") or {}
+host = urlparse(str(remote.get("baseUrl") or "")).hostname if isinstance(remote, dict) else ""
+sys.exit(0 if str(prov or "").strip().lower() == "ollama" and host in ("127.0.0.1", "localhost", "::1") else 1)
+LEPY
+    }
+    if _local_embedder_active; then
+      echo "  ✓ memory.search on local Ollama embedder (Skill 76) — no change"
+    elif [ "$_GOOGLE_KEY_STATE" = "SET" ]; then
       # Ensure the gemini-embedding-2 entry is present in the Google provider
       # model list. --merge merges the object map instead of replacing the
       # whole provider block.

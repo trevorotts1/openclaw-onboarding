@@ -2,6 +2,15 @@
 
 All notable changes to this skill will be documented in this file.
 
+## [8.1.1] - 2026-10-06 - keep the Skill 76 local embedder
+
+- `scripts/activate-memory-stack.sh` no longer re-pins memory search to Gemini, OpenAI or OpenRouter on a
+  box whose memory search runs on the local Ollama embedder (provider `ollama` with `remote.baseUrl` on
+  127.0.0.1, localhost or ::1, read from `memory.search`, else the legacy `agents.defaults.memorySearch`).
+  It takes the existing "leave the provider alone" path.
+- The post-activation check reads the provider and model from `memory.search` first, then the legacy key,
+  so it matches what `openclaw memory status` reports on OpenClaw 2026.9.x.
+
 ## [8.1.0] - 2026-09-28 - nightly memory maintenance: prune dead embedding-cache rows, report index drift
 
 - **Nothing ever deleted an embedding-cache row.** `memory_embedding_cache` keeps

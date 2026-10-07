@@ -448,6 +448,51 @@ def _apply_local_smoke(res: dict, lbl: str, model: str, dims: int) -> None:
         _err(msg)
 
 
+# Skill 76 local embedder: memory.search on a LOOPBACK Ollama. Checked by
+# metadata only (no model load); the real embed runs only with EMBED_HEALTH_SMOKE=1.
+LOCAL_EMBED_MODEL = "embeddinggemma-2:740m"
+LOCAL_EMBED_NUM_CTX = 8192
+LOCAL_EMBED_DIMS = 768
+
+
+def _memory_search_loopback_ollama_url(openclaw_json: dict) -> Optional[str]:
+    """remote.baseUrl when memory search is provider ollama on 127.0.0.1/localhost/::1."""
+    from urllib.parse import urlparse
+    cfg = _memory_search_cfg(openclaw_json)
+    if str(cfg.get("provider") or "").lower().strip() != "ollama":
+        return None
+    remote = cfg.get("remote") if isinstance(cfg.get("remote"), dict) else {}
+    url = str(remote.get("baseUrl") or "").strip().rstrip("/")
+    return url if (urlparse(url).hostname or "") in ("127.0.0.1", "localhost", "::1") else None
+
+
+def _local_ollama_metadata_check(url: str, model: str) -> tuple[bool, str]:
+    """/api/tags lists the model; /api/show reports the embedding capability and
+    num_ctx 8192. Metadata endpoints only: nothing is loaded."""
+    import re
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{url}/api/tags", timeout=10) as resp:
+            names = {m.get("name") for m in json.loads(resp.read()).get("models", [])}
+        if model not in names:
+            return False, f"local ollama: {model} is not pulled ({url}/api/tags)"
+        req = urllib.request.Request(
+            f"{url}/api/show",
+            data=json.dumps({"model": model}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            show = json.loads(resp.read())
+    except Exception as exc:
+        return False, f"local ollama metadata FAILED: {exc.__class__.__name__}: {exc}"
+    if "embedding" not in (show.get("capabilities") or []):
+        return False, f"local ollama: {model} has no 'embedding' capability"
+    ctx = re.findall(r"^num_ctx\s+(\d+)\s*$", show.get("parameters") or "", re.M)
+    if ctx != [str(LOCAL_EMBED_NUM_CTX)]:
+        return False, f"local ollama: {model} num_ctx pin is {ctx or 'missing'}, expected {LOCAL_EMBED_NUM_CTX}"
+    return True, f"local ollama/{model} metadata OK: pulled, embedding-capable, num_ctx {LOCAL_EMBED_NUM_CTX} (no load)"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Index stamp readers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -809,12 +854,16 @@ def check_memory_search_index(
     LBL = "Index 1 (memory_search)"
 
     mem_provider = _resolve_memory_search_provider(openclaw_json)
+    local_url = _memory_search_loopback_ollama_url(openclaw_json)
 
     # ── Leg (a) ────────────────────────────────────────────────────────────────
     if not mem_provider:
         msg = f"{LBL} leg-a FAIL: no memory.search.provider configured in openclaw.json"
         res["errors"].append(msg)
         _err(msg)
+    elif local_url:
+        res["leg_a_provider_capable"] = True
+        _ok(f"{LBL} leg-a provider: local Ollama at {local_url} (Skill 76 local embedder)")
     elif _memory_search_is_ollama_cloud(mem_provider, openclaw_json):
         msg = (
             f"{LBL} leg-a FAIL: memorySearch.provider='{mem_provider}' is Ollama Cloud — "
@@ -834,7 +883,19 @@ def check_memory_search_index(
         res["leg_a_provider_capable"] = True
         _ok(f"{LBL} leg-a provider: '{mem_provider}' is embedding-capable")
 
-    if res["leg_a_provider_capable"]:
+    if local_url:
+        local_model = str(_memory_search_cfg(openclaw_json).get("model") or LOCAL_EMBED_MODEL)
+        smoke_ok, smoke_detail = _local_ollama_metadata_check(local_url, local_model)
+        if smoke_ok and os.environ.get("EMBED_HEALTH_SMOKE") == "1":
+            smoke_ok, smoke_detail = _smoke_embed_ollama_local(local_url, local_model, LOCAL_EMBED_DIMS)
+        res["leg_a_smoke"] = smoke_ok
+        if smoke_ok:
+            _ok(f"{LBL} leg-a: {smoke_detail}")
+        else:
+            msg = f"{LBL} leg-a FAIL: {smoke_detail}"
+            res["errors"].append(msg)
+            _err(msg)
+    elif res["leg_a_provider_capable"]:
         smoke_ok, smoke_detail = _attempt_smoke_embed(mem_provider, openclaw_json)
         res["leg_a_smoke"] = smoke_ok
         if smoke_ok:

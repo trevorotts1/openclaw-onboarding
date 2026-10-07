@@ -1,0 +1,40 @@
+name: local-embedder-guard
+
+# Skill 76 (local embedder) and the memory-search re-pinner guards.
+# Mocks only: no Ollama install, no model load, no network beyond 127.0.0.1.
+
+on:
+  push:
+    paths:
+      - 76-local-embedder/**
+      - install.sh
+      - update-skills.sh
+      - 31-upgraded-memory-system/scripts/activate-memory-stack.sh
+      - 38-conversational-ai-system/scripts/19-configure-dreaming-embeddings.sh
+      - shared-utils/embedding_health.py
+      - .github/workflows/local-embedder-guard.yml
+  pull_request:
+    paths:
+      - 76-local-embedder/**
+      - install.sh
+      - update-skills.sh
+      - 31-upgraded-memory-system/scripts/activate-memory-stack.sh
+      - 38-conversational-ai-system/scripts/19-configure-dreaming-embeddings.sh
+      - shared-utils/embedding_health.py
+      - .github/workflows/local-embedder-guard.yml
+
+jobs:
+  local-embedder:
+    name: Skill 76 wire.sh + re-pinner guards (mocked)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax
+        run: |
+          bash -n 76-local-embedder/wire.sh
+          bash -n 76-local-embedder/tests/test-local-embedder.sh
+
+      - name: Run the Skill 76 tests
+        run: bash 76-local-embedder/tests/test-local-embedder.sh

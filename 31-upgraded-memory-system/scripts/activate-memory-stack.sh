@@ -187,8 +187,34 @@ if _key_in_stores "$GEMINI_ALL_ALIASES" >/dev/null 2>&1; then GEMINI_OK=1; fi
 if _key_in_stores "$OPENAI_ALL_ALIASES" >/dev/null 2>&1; then OPENAI_OK=1; fi
 if _key_in_stores "$OPENROUTER_ALL_ALIASES" >/dev/null 2>&1; then OPENROUTER_OK=1; fi
 
+# Skill 76 LOCAL EMBEDDER GUARD: memory search on a loopback Ollama (provider
+# ollama + remote.baseUrl 127.0.0.1/localhost/::1, read from memory.search, else
+# the legacy agents.defaults.memorySearch) is owned by 76-local-embedder. Take the
+# existing "leave existing config alone" path so it is never re-pinned.
+LOCAL_EMBEDDER=0
+# Read-only: the path goes in through the environment (the live file is only
+# ever WRITTEN through the staged copy below).
+if OC_CFG_RO="$OC_CONFIG" python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
+from urllib.parse import urlparse
+c = json.load(open(os.environ["OC_CFG_RO"]))
+new = (c.get("memory") or {}).get("search") if isinstance(c.get("memory"), dict) else None
+new = new if isinstance(new, dict) else {}
+old = ((c.get("agents") or {}).get("defaults") or {}).get("memorySearch") or {}
+prov = new.get("provider") or old.get("provider")
+remote = new.get("remote") or old.get("remote") or {}
+host = urlparse(str(remote.get("baseUrl") or "")).hostname if isinstance(remote, dict) else ""
+sys.exit(0 if str(prov or "").strip().lower() == "ollama" and host in ("127.0.0.1", "localhost", "::1") else 1)
+PYEOF
+then
+  LOCAL_EMBEDDER=1
+fi
+
 # Decide the embedding provider/model THIS box can actually serve.
-if [ "$GEMINI_OK" = "1" ]; then
+if [ "$LOCAL_EMBEDDER" = "1" ]; then
+  EMBED_PROVIDER=""; EMBED_MODEL=""; EMBED_DIM=0
+  echo "[activate-memory-stack] memory search is on the local Ollama embedder (Skill 76) → keep local embedder, provider/model/fallback untouched"
+elif [ "$GEMINI_OK" = "1" ]; then
   EMBED_PROVIDER="gemini";     EMBED_MODEL="gemini-embedding-2";              EMBED_DIM=3072
   echo "[activate-memory-stack] usable Google/Gemini key FOUND → embedding default = gemini-embedding-2 @3072 (fleet standard)"
 elif [ "$OPENAI_OK" = "1" ]; then
@@ -642,8 +668,9 @@ try:
     cfg = json.load(open(sys.argv[1]))
 except Exception:
     raise SystemExit
+new = (cfg.get("memory") or {}).get("search") if isinstance(cfg.get("memory"), dict) else None
 ms = cfg.get("agents", {}).get("defaults", {}).get("memorySearch", {}) or {}
-print(ms.get("provider") or "")
+print((new or {}).get("provider") or ms.get("provider") or "")
 ' "$OC_CONFIG" 2>/dev/null || true)"
   RESOLVED_MODEL="$(python3 -c '
 import json, sys
@@ -651,8 +678,9 @@ try:
     cfg = json.load(open(sys.argv[1]))
 except Exception:
     raise SystemExit
+new = (cfg.get("memory") or {}).get("search") if isinstance(cfg.get("memory"), dict) else None
 ms = cfg.get("agents", {}).get("defaults", {}).get("memorySearch", {}) or {}
-print(ms.get("model") or "")
+print((new or {}).get("model") or ms.get("model") or "")
 ' "$OC_CONFIG" 2>/dev/null || true)"
 fi
 
