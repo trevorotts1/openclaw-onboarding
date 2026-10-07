@@ -9430,6 +9430,12 @@ collapse was on main from 2026-05-17 until it was fixed on 2026-08-01.
 No version bump. This is a CI-only change -- no file inside any skill directory is touched,
 so guard G3 does not apply, and all ten version markers continue to agree at the current
 `/version`. Precedent: `a41b9bd8` added a whole new guard workflow the same way.
+- unit/W3-02-U1: drama-song-factory W3-02-U1: finalize skill 75 repackaging — staged 80-file package tree + SKILL.md line-67 in-skill test fix (merge 5031cfafd8dd)
+- unit/A1A-U2: A1A-U2: add department-wiring/drama-song-ad-factory.md (W3-02-U4 artifact) (merge ec293755f938)
+- unit/W3-02-U6: drama-song-factory: W3-02-U6 thin OpenClaw adapter shells shared factory.py entrypoint (argument array, byte-for-byte stdout relay, exit code propagated; zero core logic) + 5 passthrough/guard tests (merge 7670227bbfe5)
+- unit/W3-02-U7: test(75-drama-song-ad-factory): clean-install discovery test (W3-02-U7) (merge 289a49e4a648)
+- unit/W3-02-U8: drama-song-factory W3-02-U8: Skill 75 EXAMPLES.md + QC.md (merge 6724384a05a9)
+- unit/PKG-01-U1: test(PKG-01-U1): extended distribution parity — enumerate both packaged skill folders, diff every packaged module + doc, zero byte drift (merge 3c89df2be966)
 
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 
