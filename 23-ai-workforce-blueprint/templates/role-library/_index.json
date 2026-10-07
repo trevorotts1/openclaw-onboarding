@@ -716,8 +716,8 @@
         "vsl-specialist-phase2",
         "vsl-video-sales-letter-specialist"
       ],
-      "content_sha": "sha256:590e58d3c47bf516a8731193ee8f9dc2282c4a9787a54660478de13aba60a745",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_sha": "sha256:a454b8ab2d9321c310274bf479cc8c208e0b1d3063196a9996a50ef1ca1a4d84",
+      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
     },
     "web-development": {
       "count": 23,
@@ -6447,7 +6447,7 @@
     {
       "slug": "deep-research-specialist-sales",
       "dept": "sales",
-      "title": "Deep Research Specialist \u2014 Sales",
+      "title": "Deep Research Specialist — Sales",
       "role_type": "specialist",
       "word_count": 8639,
       "sop_count": 8,
@@ -6543,7 +6543,7 @@
     {
       "slug": "qc-specialist-sales",
       "dept": "sales",
-      "title": "QC Specialist \u2014 Sales",
+      "title": "QC Specialist — Sales",
       "role_type": "specialist",
       "word_count": 8703,
       "sop_count": 8,
@@ -7191,10 +7191,10 @@
       "path": "templates/role-library/video/qc-specialist-video.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:2f3dc2e7cd37bc25a1057188d07bd0f1ded9048e5efd8a2b81cf5f0e5beb77e1",
-      "render_sha": "sha256:e4769be8201ff0c2f2cad3222de2e8816f57692a92f5099fd84c720e07582598",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_sha": "sha256:8940148a6c4f41d946f031baf5eab28b5f37505fe70a7a8c05c390a882966988",
+      "render_sha": "sha256:cfdf7bd0a6c367aa0ef181d508d2e709205a781fb07324957e782beb889ad0b5",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
     },
     {
       "slug": "short-form-video-specialist-reels-shorts-tiktok",
@@ -7282,15 +7282,15 @@
       "title": "Vsl Video Sales Letter Specialist",
       "role_type": "specialist",
       "word_count": 7423,
-      "sop_count": 5,
+      "sop_count": 6,
       "sop_min": 1,
       "path": "templates/role-library/video/vsl-video-sales-letter-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:3dbfbb7aacf4f309617c2afc61a651996ef97eff6a6b4b00e749f48f8d85f796",
-      "render_sha": "sha256:d2174427627a0e3ea851b8d550d466fac7a8558fc7d081f2916a2111934c0e71",
-      "content_version": "1.0.3",
-      "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
+      "content_sha": "sha256:5f538089f5757485c84b745a41b615b88dede1997702ceb4b15bd3dc198db6d2",
+      "render_sha": "sha256:d87d9d49345213beef7c0104248fd868736d130828d965086109d3ad4b7f3c29",
+      "content_version": "1.0.4",
+      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
     },
     {
       "slug": "brainstorming-buddy-web-development",
@@ -8783,7 +8783,7 @@
     {
       "slug": "errands-purchases-specialist",
       "dept": "personal-assistant",
-      "title": "Errands & Purchases Specialist \u2014 role-library template",
+      "title": "Errands & Purchases Specialist — role-library template",
       "role_type": "specialist",
       "word_count": 5505,
       "sop_count": 6,
@@ -8799,7 +8799,7 @@
     {
       "slug": "family-life-stage-concierge",
       "dept": "personal-assistant",
-      "title": "Family Life-Stage Concierge \u2014 role-library template",
+      "title": "Family Life-Stage Concierge — role-library template",
       "role_type": "specialist",
       "word_count": 6783,
       "sop_count": 8,
@@ -8863,7 +8863,7 @@
     {
       "slug": "life-admin-archivist",
       "dept": "personal-assistant",
-      "title": "Life Admin Archivist \u2014 role-library template",
+      "title": "Life Admin Archivist — role-library template",
       "role_type": "specialist",
       "word_count": 6356,
       "sop_count": 8,
@@ -9023,7 +9023,7 @@
     {
       "slug": "the-challenger",
       "dept": "personal-assistant",
-      "title": "The Challenger \u2014 role-library template",
+      "title": "The Challenger — role-library template",
       "role_type": "specialist",
       "word_count": 7144,
       "sop_count": 8,
@@ -10751,6 +10751,14 @@
       "content_hashed_at": "2026-10-06T21:38:48.506553+00:00"
     },
     {
+      "slug": "SOP--drama-song-ad-pipeline",
+      "dept": "video",
+      "path": "templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md",
+      "content_sha": "sha256:8e6c5b70bb684de0faf2bb002fdd87e87d17857bed048ee0be7c7c42c1a85021",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-10-07T16:02:32.732815+00:00"
+    },
+    {
       "slug": "SOP--movie-producer-cross-role-handoff",
       "dept": "video",
       "path": "templates/role-library/video/sops/SOP--movie-producer-cross-role-handoff.md",
@@ -10802,7 +10810,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-06T21:38:48.506553+00:00",
+    "generated_at": "2026-10-07T16:02:32.732815+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [

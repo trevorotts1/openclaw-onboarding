@@ -163,7 +163,17 @@ This role contributes to the company revenue cascade by: **producing video sales
 
 ---
 
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" | `~/.openclaw/skills/75-drama-song-ad-factory/` | `universal-sops/video-pipeline-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
+
 ## 9. Standard Operating Procedures (Numbered)
+
+**Skill 75 execution SOP (this role is its primary/lead owner):** `templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` — stage order, parallel lanes, choice card and price approval, MiniMax H3 default, hand-offs, QC gates, delivery, PARKED runs. Full section in SOP 9.6 below.
 
 ### SOP 9.1 — VSL Script-to-Screen Translation
 
@@ -240,8 +250,22 @@ This role contributes to the company revenue cascade by: **producing video sales
 **Hand to:** Department Head or peer role owning the blocker.
 **Failure mode:** If escalation owner unavailable 48+ hours, escalate one level up to Master Orchestrator.
 
+### SOP 9.6 — Drama Song Ad Pipeline (drama-song-ad-factory)
 
-## 10. Quality Gates
+**Department SOP file:** `templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` — the binding pipeline SOP for skill **75** `drama-song-ad-factory` (this role is the map's primary/lead owner).
+**When to run:** For every drama-song ad campaign from intake through delivery.
+**Frequency:** Per campaign.
+**Inputs:** Client brief (Quick or Concept mode), choice card with recorded price approval, live KIE pricing (Skill 74), spend ledger ceiling.
+**Steps:**
+1. Take intake and present the one approval card (defaults: 60 s / 9:16 / Lifelike 3D / Soul Ballad / **MiniMax H3 768P**); no paid call before the card is approved and the ceiling (price + 20% retake allowance) is on the ledger.
+2. Run the twelve stages in fixed order (Research → Creative Strategy → Script/Lyrics → Music → Continuity Bible → Storyboard → Image/Keyframes → Video Generation → QC/Retakes → Assembly → Final QC → Delivery) with the parallel lanes the SOP's table allows; the lane planner enforces both.
+3. Route hand-offs: Paid Advertisement (`direct-response-ad-copywriter` for lyric/claim review, platform specialists for length/shape), Marketing for audience research; assembly to `video-editor`, shots to `storyboard-pre-production-specialist`, independent QC to `qc-specialist-video`.
+4. Hold every QC gate: independent checker, UNAVAILABLE never counts as PASS, real-media rule, per-variant verdicts, creative-fidelity gate, human lyric sign-off; two repairs maximum.
+5. Deliver by copy to `~/Downloads/Drama Song Ads/<campaign-id>/<length>-<shape>/` (Mac/Claude-Nine) or Command Center deliverables (VPS); register only real files.
+6. On PARKED: read the PARKED reason from run metadata, apply the SOP's fix per cause (repair budget exhausted, ceiling exceeded, price unreadable, creative refusal), never force the gate.
+**Outputs:** Delivered campaign folders with final video(s), song, receipts; per-variant QC verdicts; delivery registration.
+**Hand to:** `video-editor` (assembly), then `qc-specialist-video` (final QC), then delivery.
+**Failure mode:** Starting a paid stage before the choice card approval is recorded, passing a media stage without the media file, or spending past the ceiling to unblock a park.
 
 Before any VSL deploys (or a significant variant goes live in a test), it must pass these gates:
 
