@@ -1,0 +1,123 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+    "preflight",
+    "--root",
+    "/tmp/local-W4-02-U1-rzuyl_mz",
+    "--storage-dir",
+    "/tmp/local-W4-02-U1-rzuyl_mz",
+    "--auth-file",
+    "/tmp/local-W4-02-U1-rzuyl_mz/auth-campaign.json",
+    "--summary-digest",
+    "edeadea036b28f16",
+    "--run-id",
+    "amb-02-no-placement-preflight"
+  ],
+  "brief_digest": "edeadea036b28f16",
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "preflight",
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 0,
+        "rc": 0
+      },
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "outcome",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "reason_code",
+      "detail": "preflight-pass",
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    },
+    {
+      "check": "exit_code",
+      "detail": 0,
+      "pass": true,
+      "scenario": "amb-02-no-placement-preflight"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 8,
+  "envelope": {
+    "command": "preflight",
+    "data": {
+      "checks": {
+        "credentials_present": {},
+        "disk": {
+          "free": 74757545984,
+          "ok": true,
+          "total": 494384795648
+        },
+        "modules": {},
+        "profile_known": true,
+        "references_inside_approved_storage": true,
+        "references_ok": true,
+        "schema_trusted": true,
+        "storage_writable": true,
+        "tools": {}
+      },
+      "missing": null,
+      "outside": null
+    },
+    "evidence": [],
+    "next_action": "Proceed to claim eligible stage.",
+    "outcome": "ok",
+    "reason_code": "preflight-pass",
+    "run_id": "amb-02-no-placement-preflight",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "amb-02-no-placement-preflight",
+      "expected": "edeadea036b28f16"
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 0,
+  "family": "ambiguous-briefs",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "amb-02-no-placement-preflight",
+  "unit_id": "W4-02-U1"
+}

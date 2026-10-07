@@ -1,0 +1,195 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "/Users/blackceomacmini/drama-song-factory-build/tests/intake-edge-fixtures/fixtures/other-offer-brief.json",
+    "--resume-file",
+    "/tmp/local-W4-02-U1-rzuyl_mz/resume-state.json",
+    "--run-id",
+    "oo-02-other-offer-resume"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "parked",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 3,
+        "rc": 3
+      },
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "outcome",
+      "detail": "parked",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "reason_code",
+      "detail": "resume-approval-invalidated",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "exit_code",
+      "detail": 3,
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "approval-invalidated",
+      "detail": true,
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "changes-is-offer-only",
+      "detail": [
+        "offer"
+      ],
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "no-questions-on-park",
+      "detail": [],
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    },
+    {
+      "check": "next-action-re-approve",
+      "detail": "Re-approve scope: approval-affecting change invalidated prior approval.",
+      "pass": true,
+      "scenario": "oo-02-other-offer-resume"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 12,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": true,
+      "auth_status": "missing",
+      "changes": [
+        "offer"
+      ],
+      "digest": "05d20b7c0110d413",
+      "next_stage": null,
+      "provenance": {
+        "action": "provided",
+        "aspect_ratio": "provided",
+        "assets": "missing",
+        "audience": "provided",
+        "brand_rules": "provided",
+        "budget_currency": "provided",
+        "budget_minor": "provided",
+        "creative_prefs": "provided",
+        "offer": "provided",
+        "placement": "provided",
+        "repair_allowance": "provided",
+        "target_length_s": "provided"
+      },
+      "question_message": null,
+      "questions": [],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": "busy parents",
+        "auth_status": "missing",
+        "cta": "visit the site and start the free trial",
+        "format": "9:16",
+        "generation_ceiling": {
+          "amount_minor": 10000,
+          "currency": "USD"
+        },
+        "offer": "totally different offer",
+        "placement": "9:16 vertical short",
+        "repair_allowance": "none",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Re-approve scope: approval-affecting change invalidated prior approval.",
+    "outcome": "parked",
+    "reason_code": "resume-approval-invalidated",
+    "run_id": "oo-02-other-offer-resume",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "05d20b7c0110d413",
+      "expected": "74a4a7d5a5210882"
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 3,
+  "family": "other-offer",
+  "notes": {},
+  "prior_digest": "74a4a7d5a5210882",
+  "recorded_unix": 1791358787,
+  "resume_state": {
+    "digest": "74a4a7d5a5210882",
+    "next_stage": "preflight",
+    "outstanding": [],
+    "summary": {
+      "assets": null,
+      "assumptions": [
+        "assets=None (assumed default)",
+        "target_length_s=30 (assumed default)"
+      ],
+      "audience": "busy parents",
+      "auth_status": "missing",
+      "cta": "visit the site and start the free trial",
+      "format": "9:16",
+      "generation_ceiling": {
+        "amount_minor": 10000,
+        "currency": "USD"
+      },
+      "offer": "demo offer",
+      "placement": "9:16 vertical short",
+      "repair_allowance": "none",
+      "target_length_s": 30
+    }
+  },
+  "scenario": "oo-02-other-offer-resume",
+  "unit_id": "W4-02-U1"
+}

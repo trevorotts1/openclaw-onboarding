@@ -1,0 +1,189 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "/Users/blackceomacmini/drama-song-factory-build/tests/intake-edge-fixtures/fixtures/ambiguous-no-placement.json",
+    "--run-id",
+    "amb-01-no-placement-intake"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 2,
+        "rc": 2
+      },
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "outcome",
+      "detail": "waiting",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "reason_code",
+      "detail": "missing-essentials",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "exit_code",
+      "detail": 2,
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "question-count<=3",
+      "detail": 1,
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "question-count==1",
+      "detail": [
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "question-message-one-message",
+      "detail": 1,
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "question-message-numbered",
+      "detail": [
+        "1. What placement/format should we produce (aspect ratio + target length)?"
+      ],
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "question-message-single-ask",
+      "detail": "Answer the bundled questions in one reply; nothing else is asked.",
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    },
+    {
+      "check": "only-placement-asked",
+      "detail": [
+        "placement"
+      ],
+      "pass": true,
+      "scenario": "amb-01-no-placement-intake"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 14,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "edeadea036b28f16",
+      "next_stage": null,
+      "provenance": {
+        "action": "provided",
+        "aspect_ratio": "assumed",
+        "assets": "missing",
+        "audience": "provided",
+        "brand_rules": "provided",
+        "budget_currency": "provided",
+        "budget_minor": "provided",
+        "creative_prefs": "provided",
+        "offer": "provided",
+        "placement": "assumed",
+        "repair_allowance": "provided",
+        "target_length_s": "provided"
+      },
+      "question_message": "1. What placement/format should we produce (aspect ratio + target length)?",
+      "questions": [
+        {
+          "id": "placement",
+          "question": "What placement/format should we produce (aspect ratio + target length)?"
+        }
+      ],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "placement='unspecified (default: 9:16 vertical)' (assumed default)",
+          "aspect_ratio='unspecified (default: 9:16)' (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": "busy parents",
+        "auth_status": "missing",
+        "cta": "visit the site and start the free trial",
+        "format": "unspecified (default: 9:16)",
+        "generation_ceiling": {
+          "amount_minor": 10000,
+          "currency": "USD"
+        },
+        "offer": "demo offer",
+        "placement": "unspecified (default: 9:16 vertical)",
+        "repair_allowance": "none",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Answer the bundled questions in one reply; nothing else is asked.",
+    "outcome": "waiting",
+    "reason_code": "missing-essentials",
+    "run_id": "amb-01-no-placement-intake",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "edeadea036b28f16",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 2,
+  "family": "ambiguous-briefs",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "amb-01-no-placement-intake",
+  "unit_id": "W4-02-U1"
+}
