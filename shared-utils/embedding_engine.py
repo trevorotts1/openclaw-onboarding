@@ -583,6 +583,46 @@ def _backfill_provider_columns(conn: sqlite3.Connection):
     )
 
 
+GEMINI_FALLBACK_INDEX_NAME = "gemini-fallback-index.sqlite"
+
+
+def gemini_fallback_index_path(db_path: str = None) -> str:
+    """The box's Gemini fallback copy: a SEPARATE file next to the live index.
+
+    Local-mode boxes (index rows provider='ollama') query the live index with
+    Ollama. When Ollama is down, persona search embeds the query with Gemini on
+    the box's OWN key and compares it ONLY against this copy (the shared
+    prebuilt Gemini persona set, provisioned by provision_gemini_fallback_index
+    in provision-persona-index.sh). --reembed-local and the indexer never write
+    this file.
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(db_path or DB_PATH)),
+                        GEMINI_FALLBACK_INDEX_NAME)
+
+
+def _search_gemini_fallback(query: str, limit: int, db_path: str, mode: str):
+    """Local Ollama is down: Gemini query embedding (own key) vs the fallback
+    copy. Returns search()'s rc, or None when unavailable (caller -> keyword)."""
+    fb = gemini_fallback_index_path(db_path)
+    if get_db_index_provider(fb) != ("gemini", GEMINI_MODEL):
+        print("WARNING [embedding-engine]: no usable Gemini fallback copy "
+              f"({GEMINI_FALLBACK_INDEX_NAME}).", file=sys.stderr)
+        return None
+    embedder = get_embedder(provider_hint="gemini")  # warns itself when keyless
+    if embedder is None:
+        return None
+    try:
+        query_vector = embed_query(embedder, query)
+    except Exception as e:
+        print(f"WARNING [embedding-engine]: Gemini fallback embed failed ({e}).",
+              file=sys.stderr)
+        return None
+    print(f"[embedding-engine] local Ollama down — ranking with Gemini "
+          f"({GEMINI_MODEL}, this box's own key) against {GEMINI_FALLBACK_INDEX_NAME}",
+          file=sys.stderr)
+    return _rank_and_print(fb, query_vector, "gemini", limit, mode)
+
+
 def get_db_index_provider(db_path: str = None) -> tuple:
     """
     Read the distinct (provider, model) from the embeddings table.
@@ -901,9 +941,13 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
             print(
                 f"WARNING [embedding-engine]: local Ollama embed failed ({e}) — is "
                 f"Ollama running with {embedder[2]} at {OLLAMA_EMBED_URL}? "
-                f"Falling back to KEYWORD search.",
+                f"Trying Gemini on this box's own key against the fallback "
+                f"copy, else KEYWORD search.",
                 file=sys.stderr,
             )
+            rc = _search_gemini_fallback(query, limit, db_path, mode)
+            if rc is not None:
+                return rc
             return keyword_fallback_search(query, limit, db_path, mode)
         if is_credential_error(e):
             print(
@@ -914,7 +958,12 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
             return keyword_fallback_search(query, limit, db_path, mode)
         raise
 
-    # Step 4: cosine similarity — only against rows with matching provider
+    return _rank_and_print(db_path, query_vector, index_provider, limit, mode)
+
+
+def _rank_and_print(db_path: str, query_vector, index_provider: str,
+                    limit: int, mode: str) -> int:
+    """Step 4 of search(): cosine against rows of ``index_provider`` only."""
     conn = sqlite3.connect(db_path, timeout=30.0)
     cursor = conn.cursor()
     # Optional leadership/coaching mode filter (applied only when the index

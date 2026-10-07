@@ -15,7 +15,10 @@ Three-step resolution chain:
      gemini-index.sqlite populated + GOOGLE_API_KEY available). On a LOCAL-mode
      box (index re-embedded with `embedding_engine.py --reembed-local`, rows
      stamped provider='ollama') the task is embedded with the box's own Ollama
-     model instead — never Gemini.
+     model instead. If that Ollama is DOWN, the task is embedded with Gemini on
+     the box's OWN key and scored against the separate Gemini fallback copy
+     (gemini-fallback-index.sqlite, provisioned by Skill 76) — never against the
+     local rows; no key / no copy / any Gemini failure -> keyword (step 2).
   2. Keyword overlap between task and persona name/id/tags (fallback when
      no embedding infra — better than text length, not as good as semantic)
   3. Neutral 0.6 (last resort when neither works) — explicit so the score
@@ -62,6 +65,15 @@ _GENAI_AVAILABLE = None  # tri-state: None=unknown, True=imported, False=failed
 # clear between one candidate and the next; see _is_permanent_embedding_failure().
 _EMBEDDING_UNAVAILABLE = False
 _EMBEDDING_UNAVAILABLE_REASON = ""
+
+# LOCAL-MODE FALLBACK latches (process-local, like the one above; the next
+# process retries local Ollama first). _LOCAL_DOWN: this process's Ollama embed
+# failed, so the rest of the selection goes to the Gemini fallback copy instead
+# of re-hitting a dead Ollama per candidate. _GEMINI_FB_DOWN: that Gemini
+# attempt failed too (any error/timeout), so the rest goes to keyword.
+_LOCAL_DOWN = False
+_LOCAL_DOWN_MSG = ""   # printed ONCE, with the fallback outcome, by _embed_task_in_space
+_GEMINI_FB_DOWN = False
 
 
 def _is_permanent_embedding_failure(exc: Exception) -> bool:
@@ -131,7 +143,7 @@ def _task_cache_put(key, val):
 _TASK_EMBED_LOCK = threading.Lock()
 
 
-def _task_embed(task_text: str, api_key: str, local_model: str = None):
+def _task_embed(task_text: str, api_key: str, local_model: str = None, timeout_ms: int = None):
     """The task's embedding, computed at most ONCE per process. Thread-safe.
 
     Sole entry point to _TASK_EMBED_CACHE for both semantic_task_fit() and
@@ -145,7 +157,7 @@ def _task_embed(task_text: str, api_key: str, local_model: str = None):
         vec = _task_cache_get(key)
         if vec is None:
             vec = (_embed_text_local(task_text, local_model) if local_model
-                   else _embed_text(task_text, api_key))
+                   else _embed_text(task_text, api_key, timeout_ms))
             if vec is not None:
                 _task_cache_put(key, vec)
         return vec
@@ -259,7 +271,7 @@ def _get_google_api_key(paths: dict) -> str:
     return ""
 
 
-def _embed_text(text: str, api_key: str):
+def _embed_text(text: str, api_key: str, timeout_ms: int = None):
     """Embed text via Gemini Embedding 2 (GA). Returns numpy array or None.
 
     Imports GEMINI_MODEL and GEMINI_OUTPUT_DIM from the canonical
@@ -276,7 +288,9 @@ def _embed_text(text: str, api_key: str):
             _sys.path.insert(0, _su)
         from embedding_engine import GEMINI_MODEL as _GEMINI_MODEL
         from embedding_engine import GEMINI_OUTPUT_DIM as _OUT_DIM
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(
+            api_key=api_key,
+            **({"http_options": types.HttpOptions(timeout=timeout_ms)} if timeout_ms else {}))
         response = client.models.embed_content(
             model=_GEMINI_MODEL,
             contents=text,
@@ -375,7 +389,9 @@ def _local_ready(local_model: str) -> bool:
 def _embed_text_local(text: str, model: str):
     """Embed a task (query) with the box's local Ollama via embedding_engine's
     _ollama_embed (embeddinggemma query prefix, EMBED-3 dim gate). Any failure
-    latches keyword for the rest of the process with ONE log line; never Gemini."""
+    latches _LOCAL_DOWN for the rest of the process with ONE log line; the
+    caller (_embed_task_in_space) then tries the Gemini fallback copy."""
+    global _LOCAL_DOWN, _LOCAL_DOWN_MSG
     try:
         ee = _engine()
         return ee._ollama_embed(ee.OLLAMA_EMBED_URL, model, text, kind="query")
@@ -384,12 +400,64 @@ def _embed_text_local(text: str, model: str):
             url = _engine().OLLAMA_EMBED_URL
         except Exception:
             url = "?"
-        _latch_unavailable(
-            str(e),
-            f"[semantic_task_fit] local Ollama embed failed ({e}) — is Ollama "
-            f"running with {model} at {url}? Using keyword overlap for the rest "
-            "of this process.")
+        _LOCAL_DOWN = True
+        _LOCAL_DOWN_MSG = (f"[semantic_task_fit] local Ollama embed failed ({e}) — "
+                           f"is Ollama running with {model} at {url}?")
         return None
+
+
+def _gemini_fallback_index(db_path):
+    """The box's Gemini fallback copy next to the live index, or None unless it
+    is a servable single-model (gemini, GEMINI_MODEL) index."""
+    try:
+        ee = _engine()
+        fb = Path(ee.gemini_fallback_index_path(str(db_path)))
+        if fb.is_file() and ee.get_db_index_provider(str(fb)) == ("gemini", ee.GEMINI_MODEL):
+            return fb
+    except Exception:
+        pass
+    return None
+
+
+def _embed_task_in_space(task_text, paths, db_path, local_model, api_key):
+    """Embed the task in the vector space of the index it will be compared with.
+
+    Returns (task_vec, db_path, local_model); task_vec None -> caller uses
+    keyword. Local mode: Ollama against the live local index; once Ollama has
+    failed in this process, Gemini (the box's OWN key) against the Gemini
+    fallback copy. A Gemini vector is never compared with local rows, nor a
+    local vector with the fallback copy: the returned db_path/local_model always
+    match the vector. Gemini box (local_model None): unchanged.
+    """
+    global _GEMINI_FB_DOWN, _LOCAL_DOWN_MSG
+    if not local_model:
+        return _task_embed(task_text, api_key, None), db_path, None
+    if not _LOCAL_DOWN:
+        vec = _task_embed(task_text, None, local_model)
+        if vec is not None or not _LOCAL_DOWN:
+            return vec, db_path, local_model
+    # Ollama is down -> Gemini fallback copy on the box's own key. ONE log line
+    # for the whole process says what happens next.
+    fb = _gemini_fallback_index(db_path)
+    key = _get_google_api_key(paths)
+    ready = fb and key and _try_import_genai() and not (_GEMINI_FB_DOWN or _EMBEDDING_UNAVAILABLE)
+    if _LOCAL_DOWN_MSG:
+        print(_LOCAL_DOWN_MSG + (
+            " Using Gemini on this box's own key against the Gemini fallback "
+            "copy for the rest of this process." if ready else
+            " No usable Gemini fallback (copy, own Google key or SDK missing) "
+            "— keyword overlap for the rest of this process."), file=sys.stderr)
+        _LOCAL_DOWN_MSG = ""
+    if not ready:
+        _GEMINI_FB_DOWN = True
+        return None, db_path, local_model
+    vec = _task_embed(task_text, key, None, timeout_ms=30000)  # a hung Gemini must not stall selection
+    if vec is None:
+        _GEMINI_FB_DOWN = True
+        print("[semantic_task_fit] Gemini fallback embed failed — keyword overlap "
+              "for the rest of this process.", file=sys.stderr)
+        return None, db_path, local_model
+    return vec, fb, None
 
 
 def _cosine(v1, v2) -> float:
@@ -599,7 +667,8 @@ def semantic_task_fit(
                 file=sys.stderr,
             )
         elif (local_model or api_key) and db_path.exists():
-            task_vec = _task_embed(task_text, api_key, local_model)
+            task_vec, db_path, local_model = _embed_task_in_space(
+                task_text, paths, db_path, local_model, api_key)
             if task_vec is not None:
                 persona_vec = _persona_embedding_from_index(
                     persona_id, db_path, local_model=local_model)
@@ -687,7 +756,8 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         return None
 
     # Shared task embedding — SAME cache entry semantic_task_fit() uses.
-    task_vec = _task_embed(task_text, api_key, local_model)
+    task_vec, db_path, local_model = _embed_task_in_space(
+        task_text, paths, db_path, local_model, api_key)
     if task_vec is None:
         return None
 
@@ -741,6 +811,9 @@ def clear_cache():
     """Reset the module-level task-embedding cache. Useful for tests."""
     _TASK_EMBED_CACHE.clear()
     _LOCAL_MODE_CACHE.clear()
+    global _LOCAL_DOWN, _GEMINI_FB_DOWN, _LOCAL_DOWN_MSG
+    _LOCAL_DOWN = _GEMINI_FB_DOWN = False
+    _LOCAL_DOWN_MSG = ""
 
 
 if __name__ == "__main__":

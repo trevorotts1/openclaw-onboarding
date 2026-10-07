@@ -985,6 +985,20 @@ def check_persona_gemini_index(
             msg = f"{LBL} leg-b FLAG RE-INDEX: {res['leg_b_detail']} — re-run embedding_engine.py --reembed-local"
             res["errors"].append(msg)
             _err(msg)
+        # Gemini fallback for persona selection while Ollama is down: names only,
+        # informational (never changes pass/fail; the local leg is the contract).
+        fb_present = any(
+            (d / "gemini-fallback-index.sqlite").is_file() for d in (
+                openclaw_root / "workspace" / "data" / "coaching-personas",
+                Path("/data/.openclaw/workspace/data/coaching-personas")))
+        fb_key = bool(_get_api_key("GOOGLE_API_KEY", openclaw_json)
+                      or _get_api_key("GEMINI_API_KEY", openclaw_json))
+        res["gemini_fallback_copy_present"] = fb_present
+        res["gemini_fallback_key_present"] = fb_key
+        _info(f"{LBL} gemini-fallback: copy gemini-fallback-index.sqlite "
+              f"{'present' if fb_present else 'ABSENT'}; own Google key "
+              f"{'present' if fb_key else 'ABSENT'} -> persona selection with "
+              f"Ollama down uses {'Gemini' if fb_present and fb_key else 'keyword'}")
         res["pass"] = (res["leg_a_provider_capable"] and res["leg_a_smoke"] is True
                        and res["leg_b_stamp_match"] and res["leg_c_generative_not_embedding"]
                        and not res["needs_reindex"])

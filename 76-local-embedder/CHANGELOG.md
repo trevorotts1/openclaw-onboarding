@@ -1,5 +1,8 @@
 # Changelog - Skill 76 Local Embedder
 
+## [1.1.0] - 2026-10-07
+- New step 5b: provisions the Gemini persona fallback copy (`gemini-fallback-index.sqlite`, via `provision_gemini_fallback_index`) when the box has its own Google key; skipped cleanly otherwise, never fatal. Persona selection uses it when local Ollama is down. `memory.search.fallback` is unchanged.
+
 ## [1.0.1] - 2026-10-07
 - Fix (QC): a fresh install no longer fails after the config write. The first `ollama serve` creates `~/.ollama/id_ed25519*`; keys may now go from absent to present only when this run started our own daemon, pre-existing keys must stay identical. Every guard now passes BEFORE `memory.search` is written, and the write is the last mutating step before the re-index.
 - Time limits: per-agent re-index (900 s), every brew call (1800 s), `ollama show`/`create`; bash 3.2 safe (perl alarm, background-and-kill fallback). update-skills.sh bounds the whole skill run (7200 s).

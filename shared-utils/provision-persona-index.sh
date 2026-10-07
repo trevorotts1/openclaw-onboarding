@@ -610,6 +610,86 @@ except Exception:
 }
 
 # ---------------------------------------------------------------------------
+# provision_gemini_fallback_index <MANIFEST_PATH> <COACHING_DB_DIR>
+#
+# LOCAL-MODE GEMINI FALLBACK COPY. A local-mode box (persona index rows
+# provider='ollama') cannot compare a Gemini query vector against its own rows,
+# so when its Ollama is down persona selection embeds the query with Gemini on
+# the box's OWN key and compares it against THIS separate copy of the shared
+# prebuilt Gemini persona set (same asset, sha256 gate and manifest as
+# provision_persona_index). It is written to <dir>/gemini-fallback-index.sqlite
+# and NEVER touches gemini-index.sqlite, so a local-mode index is safe and
+# --reembed-local never overwrites the copy. Idempotent: a present copy whose
+# sentinel (.gemini-fallback-index-version) equals the manifest release_tag is
+# left alone. Additive: every problem warns and returns 0.
+# ---------------------------------------------------------------------------
+provision_gemini_fallback_index() {
+    local MANIFEST_PATH="$1"
+    local COACHING_DB_DIR="$2"
+    local FB_DB="$COACHING_DB_DIR/gemini-fallback-index.sqlite"
+    local FB_SENTINEL="$COACHING_DB_DIR/.gemini-fallback-index-version"
+
+    if [ ! -f "$MANIFEST_PATH" ]; then
+        _pidx_skip_warn "gemini fallback copy: manifest not found ($MANIFEST_PATH) — skipping (additive)"
+        return 0
+    fi
+    local _FB_REBUILD _FB_URL _FB_SHA _FB_TAG
+    _FB_REBUILD="$(python3 -c 'import json,sys
+try:
+    print("true" if json.load(open(sys.argv[1])).get("asset_rebuild_required") is True else "false")
+except Exception:
+    print("false")' "$MANIFEST_PATH" 2>/dev/null || echo false)"
+    if [ "$_FB_REBUILD" = "true" ]; then
+        _pidx_skip_warn "gemini fallback copy: INDEX-MANIFEST asset_rebuild_required:true — skipping until the asset is rebuilt+published"
+        return 0
+    fi
+    _FB_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_url"])' "$MANIFEST_PATH" 2>/dev/null || true)"
+    _FB_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$MANIFEST_PATH" 2>/dev/null || true)"
+    _FB_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("release_tag",""))' "$MANIFEST_PATH" 2>/dev/null || true)"
+    if [ -z "$_FB_URL" ] || [ -z "$_FB_SHA" ] || [ -z "$_FB_TAG" ]; then
+        _pidx_skip_warn "gemini fallback copy: manifest missing asset_url/sha256/release_tag — skipping (additive)"
+        return 0
+    fi
+
+    local _FB_HAVE=""
+    [ -f "$FB_SENTINEL" ] && _FB_HAVE="$(tr -d '[:space:]' < "$FB_SENTINEL" 2>/dev/null)"
+    if [ -s "$FB_DB" ] && [ "$_FB_HAVE" = "$_FB_TAG" ]; then
+        echo "  ✓ Gemini fallback copy already provisioned (release=$_FB_TAG) — skipping download"
+        return 0
+    fi
+    if [ "${PROVISION_DRY_RUN:-0}" = "1" ]; then
+        echo "  [dry-run] would download the Gemini fallback copy (release=$_FB_TAG) from $_FB_URL to $FB_DB"
+        return 0
+    fi
+
+    mkdir -p "$COACHING_DB_DIR"
+    local _FB_GZ="/tmp/gemini-fallback-index.$$.gz" _FB_ACTUAL
+    if curl -L --retry 3 --retry-delay 5 --fail -H "Accept: application/octet-stream" "$_FB_URL" -o "$_FB_GZ" 2>/dev/null; then
+        if command -v sha256sum >/dev/null 2>&1; then
+            _FB_ACTUAL="$(sha256sum "$_FB_GZ" | awk '{print $1}')"
+        else
+            _FB_ACTUAL="$(shasum -a 256 "$_FB_GZ" | awk '{print $1}')"
+        fi
+        if [ "$_FB_ACTUAL" = "$_FB_SHA" ]; then
+            if gunzip -c "$_FB_GZ" > "$FB_DB.tmp" 2>/dev/null; then
+                mv -f "$FB_DB.tmp" "$FB_DB"
+                printf '%s\n' "$_FB_TAG" > "$FB_SENTINEL"
+                echo "  ✓ Gemini fallback copy installed at $FB_DB (sha256 verified, release=$_FB_TAG); live index untouched"
+            else
+                rm -f "$FB_DB.tmp"
+                echo "  warn: Gemini fallback copy decompress failed — persona selection uses keyword while Ollama is down until re-run"
+            fi
+        else
+            echo "  warn: Gemini fallback copy sha256 MISMATCH (expected $_FB_SHA, got $_FB_ACTUAL) — NOT installing"
+        fi
+        rm -f "$_FB_GZ"
+    else
+        echo "  warn: Gemini fallback copy download failed — retried next roll"
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # reconcile_persona_assets <skill22_dir> <coaching_db_dir> <workspace_dir>
 #
 # (v14.27.2) Reconciles the canonical persona-categories.json + the 54

@@ -328,7 +328,9 @@ mixed-model: verify fails and `search()` uses keyword mode.
   place (ids and section metadata kept), stamped `provider='ollama'`. It is
   resumable and ends with the ollama `--verify`. `search()` then embeds queries
   with the same local model (`OLLAMA_EMBED_URL`, default
-  `http://127.0.0.1:11434`). If Ollama is down, it falls back to keyword.
+  `http://127.0.0.1:11434`). If Ollama is down, it embeds the query with Gemini
+  on the box's own key and ranks it against the Gemini fallback copy (see
+  "Gemini fallback while Ollama is down"), and only then falls back to keyword.
   `provision-persona-index.sh` keeps an index that has `provider='ollama'` rows
   and never installs the Gemini asset over it.
 - **Persona selector Layer-5 and Stage C** (`semantic_task_fit.py`): a box
@@ -337,10 +339,11 @@ mixed-model: verify fails and `search()` uses keyword mode.
   The task is embedded once per selection through
   `embedding_engine._ollama_embed` with the model the index is stamped with
   (query prefix for embeddinggemma). It is scored only against rows on that
-  model, with method `ollama_embedding`. A local-mode box never calls Gemini.
-  If Ollama is down, the selector logs one line and uses keyword overlap for
-  the rest of that process. A mixed-model index (partial re-embed) also uses
-  keyword overlap.
+  model, with method `ollama_embedding`. A local-mode box does not call Gemini
+  while its Ollama answers. If Ollama is down, the selector logs one line, then
+  uses the Gemini fallback copy (next section) for the rest of that process,
+  with method `gemini_embedding` and `db=gemini-fallback-index.sqlite` in the
+  detail. A mixed-model index (partial re-embed) uses keyword overlap.
 - **CC department router and skill matcher** (corpus 6 and the context-pack
   skill match): with `SOP_EMBEDDING_PROVIDER=ollama` both embed with the CC's
   `SOP_EMBEDDING_MODEL` at `SOP_EMBEDDING_OLLAMA_URL`. Set the model to
@@ -353,12 +356,45 @@ mixed-model: verify fails and `search()` uses keyword mode.
 - **Health**: `embedding_health.py` checks a local-mode store against its own
   model and dims, with a smoke embed to the loopback Ollama. A non-loopback URL
   fails, because Ollama Cloud never embeds (B.6).
+- **Gemini fallback while Ollama is down**: see the next section.
 - **Known limits**: personas added by a newer prebuilt asset do not reach a
   local-mode box until an operator moves the index aside, re-provisions, and
   re-runs `--reembed-local`.
 - **Leaving local mode**: drop the CC marker table, set
   `SOP_EMBEDDING_PROVIDER=google`, and re-provision. For personas, move
   `gemini-index.sqlite` aside and re-provision.
+
+### Gemini fallback while Ollama is down (persona selection only)
+
+Trevor's rule: a local-mode box whose Ollama is down uses paid Gemini on the
+box's OWN Google key for persona selection, and falls to keyword only if Gemini
+also fails or the box has no key. Each client Mac uses its own key. An operator
+key or another client's key is never used.
+
+- **The copy**: a local index (768-dim `ollama` rows) cannot be compared with a
+  Gemini query vector, so the shared Gemini persona set (the prebuilt index
+  release asset, `INDEX-MANIFEST.json`) is installed as a SEPARATE file,
+  `gemini-fallback-index.sqlite`, next to `gemini-index.sqlite`.
+  `provision_gemini_fallback_index` in `provision-persona-index.sh` downloads it
+  with the same sha256 gate, skips when `.gemini-fallback-index-version` equals
+  the manifest `release_tag`, and never touches the live index. `--reembed-local`
+  and the indexer never write the copy. Skill 76 (`wire.sh`, step 5b) provisions
+  it on client Macs that have their own Google key and skips cleanly otherwise.
+  It leaves `memory.search.fallback` alone.
+- **Order** (`embedding_engine.search()` and `semantic_task_fit.py`, which is
+  vendored byte-identically into the Presentations persona service):
+  local Ollama, then (on an Ollama failure) a Gemini query embedding against the
+  fallback copy, then keyword. The vector space always matches the rows it is
+  compared with: a Gemini vector is never scored against local rows, and a local
+  vector never against the copy. No key, no copy, or any Gemini error or timeout
+  (30 s) gives keyword with one log line.
+- **Latching**: in the selector, the first Ollama failure moves the rest of that
+  process to the fallback, and the first Gemini failure moves it to keyword. The
+  next process tries local Ollama first again. `search()` is one process per
+  query, so it simply tries local first each time.
+- **Health**: `embedding_health.py` reports `gemini_fallback_copy_present` and
+  `gemini_fallback_key_present` (names only, never the key) for a local-mode
+  persona index. They are informational and do not change pass or fail.
 
 ## Runtime decision-engine retrieval (JEV 1.1, Python, this repo)
 

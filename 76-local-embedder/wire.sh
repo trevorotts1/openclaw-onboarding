@@ -611,6 +611,46 @@ case "$WRITE_RC" in
   *) die "memory.search write refused (rc=$WRITE_RC); nothing was written" ;;
 esac
 
+# ── 5b. Gemini fallback copy for persona selection (own key only) ───────────
+# Trevor's order: when this box's local Ollama is down, persona selection uses
+# Gemini on the box's OWN Google key against a SEPARATE copy of the shared
+# Gemini persona set (gemini-fallback-index.sqlite; the live local persona index
+# is never touched). Provisioned only when this box has its own key; skipped
+# cleanly otherwise. Never fatal. memory.search.fallback is NOT changed here.
+_has_gkey="$(OC_ROOT="$OC_ROOT" OC_JSON="$OC_JSON" python3 - <<'PY' 2>/dev/null
+import json, os
+ok = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+root = os.environ["OC_ROOT"]
+for f in (os.path.join(root, "secrets", ".env"),):  # same sources as semantic_task_fit
+    try:
+        for ln in open(f):
+            k, _, v = ln.strip().partition("=")
+            if k in ("GOOGLE_API_KEY", "GEMINI_API_KEY") and v.strip(" \"'"):
+                ok = True
+    except OSError:
+        pass
+try:
+    env = json.load(open(os.environ["OC_JSON"])).get("env") or {}
+    ok = ok or any(env.get(k) for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY"))
+except Exception:
+    pass
+print("yes" if ok else "no")
+PY
+)"
+if [ "$_has_gkey" != yes ]; then
+  log "Gemini persona fallback copy skipped: this box has no Google key of its own"
+else
+  _pidx_lib="$SKILL_DIR/../shared-utils/provision-persona-index.sh"
+  _pidx_man="$SKILL_DIR/../shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+  _pidx_dir="${LOCAL_EMBEDDER_COACHING_DIR:-$OC_ROOT/workspace/data/coaching-personas}"
+  if [ ! -f "$_pidx_lib" ] || [ ! -f "$_pidx_man" ]; then
+    log "Gemini persona fallback copy skipped: shared-utils provisioning files not found"
+  else
+    ( . "$_pidx_lib" && PROVISION_DRY_RUN="$DRY_RUN" provision_gemini_fallback_index "$_pidx_man" "$_pidx_dir" ) \
+      || log "Gemini persona fallback copy not provisioned (non-fatal; next roll retries)"
+  fi
+fi
+
 # ── 6. One re-index per agent: bounded, resumable ───────────────────────────
 if [ "$REINDEX" = 0 ] || [ "$DRY_RUN" = 1 ]; then
   log "re-index skipped (--no-reindex or --dry-run)"; exit 0
