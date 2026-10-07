@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path
 
-BROOT = Path("/Users/blackceomacmini/drama-song-factory-build")
+BROOT = Path(os.environ.get("DTS_BUILD_ROOT", os.getcwd()))
 MEDIA_PKG = BROOT / "qualification" / "long-form-media"
 OUT_DIR = BROOT / "qualification" / "long-form-qc"
 RECEIPTS_LIB = BROOT / "qualification" / "short-run-receipts"

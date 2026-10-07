@@ -82,8 +82,8 @@
       "logical_key": "w4-long/music-generate",
       "outcome": "succeeded",
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
+        "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+        "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
       ],
       "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
       "task_id": "5e9ed441cc177a5cc5bfaa46ff26e37d"
@@ -94,7 +94,7 @@
       "logical_key": "w4-long/image-generate",
       "outcome": "succeeded",
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
+        "<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
       ],
       "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407",
       "task_id": "52cd20311ab74e660bfe7d4cf8b19a8b"
@@ -105,7 +105,7 @@
       "logical_key": "w4-long/video-generate-s1",
       "outcome": "succeeded",
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
       ],
       "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
       "task_id": "5cfe577e66857e913d7713e67b7439c9"
@@ -116,7 +116,7 @@
       "logical_key": "w4-long/video-generate-s2",
       "outcome": "succeeded",
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
       ],
       "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
       "task_id": "392dd178ee87d269b65452e923f2a63e"
@@ -127,7 +127,7 @@
       "logical_key": "w4-long/video-generate-s3",
       "outcome": "succeeded",
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
       ],
       "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
       "task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5"

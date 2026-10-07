@@ -12,7 +12,7 @@ import json
 import os
 import sys
 
-BROOT = "/Users/blackceomacmini/drama-song-factory-build"
+BROOT = os.environ.get("DTS_BUILD_ROOT", os.getcwd())
 OUT = os.path.join(BROOT, "qualification", "long-form-media")
 EV = os.path.join(OUT, "evidence")
 REQ = os.path.join(OUT, "requests")

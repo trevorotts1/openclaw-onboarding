@@ -84,7 +84,7 @@
       "https://tempfile.aiquickdraw.com/wan30-video-alibaba/1791338944658-mrczbtqo4up.mp4"
     ],
     "saved_paths": [
-      "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+      "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
     ],
     "schema_fetched_at": null,
     "schema_source": null,
@@ -93,7 +93,7 @@
     "warnings": []
   },
   "saved_paths": [
-    "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+    "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
   ],
   "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
   "submit": {

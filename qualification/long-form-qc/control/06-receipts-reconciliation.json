@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3",
+      "artifact_path": "<build-root>/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3",
       "logical_key": "music-generate",
       "recomputed_bytes": 674101,
       "recomputed_sha256": "d725e7687aadf57b4468822a0dee46806c02a7b3f2f1d36247df673dd81d8eb2",
@@ -11,7 +11,7 @@
       "status": "AMBIGUOUS_CLAIM_MATCHES"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
+      "artifact_path": "<build-root>/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3",
       "logical_key": "music-generate",
       "recomputed_bytes": 690229,
       "recomputed_sha256": "3bfac505e213a2a904549043bbc8dc8da812473a7090664837bb33fb9c2307e3",
@@ -21,7 +21,7 @@
       "status": "AMBIGUOUS_CLAIM_NOT_THIS_PATH"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/image/deb75578cecec2d203f0a2ec18b53593_0.webp",
+      "artifact_path": "<build-root>/qualification/short-run/artifacts/image/deb75578cecec2d203f0a2ec18b53593_0.webp",
       "logical_key": "image-generate",
       "recomputed_bytes": 60936,
       "recomputed_sha256": "84d631d4e17fb9127818516c2174604a42aea0e5eb1b9b9dc5a3387b8cd5c06b",
@@ -116,9 +116,9 @@
   "explain": {
     "auto_resubmits": 0,
     "claims": "claims=6 verified=6 mismatch=0 missing=0 from R3",
-    "reconciler_scan_root": "/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts",
+    "reconciler_scan_root": "<build-root>/qualification/short-run/artifacts",
     "records_modified": 0,
-    "scan_root_note": "reconcile_receipts.py walks /Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts for every run it is asked to reconcile (hardcoded), so files added there -- including macOS .DS_Store -- are reported as unclaimed for ANY run, including w3-04-short-run. The file is not an artifact of this run.",
+    "scan_root_note": "reconcile_receipts.py walks <build-root>/qualification/short-run/artifacts for every run it is asked to reconcile (hardcoded), so files added there -- including macOS .DS_Store -- are reported as unclaimed for ANY run, including w3-04-short-run. The file is not an artifact of this run.",
     "unclaimed_files": [
       "qualification/short-run/artifacts/.DS_Store"
     ],
@@ -182,7 +182,7 @@
         {
           "amount": 2,
           "created_at": "2026-10-06T22:36:38+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/image/deb75578cecec2d203f0a2ec18b53593_0.webp\"], \"sha256\": \"84d631d4e17fb9127818516c2174604a42aea0e5eb1b9b9dc5a3387b8cd5c06b\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/short-run/artifacts/image/deb75578cecec2d203f0a2ec18b53593_0.webp\"], \"sha256\": \"84d631d4e17fb9127818516c2174604a42aea0e5eb1b9b9dc5a3387b8cd5c06b\"}",
           "provider_ref": "deb75578cecec2d203f0a2ec18b53593",
           "receipt_id": 2
         }
@@ -203,7 +203,7 @@
         {
           "amount": 6,
           "created_at": "2026-10-06T22:36:24+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3\", \"/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3\"], \"sha256\": \"d725e7687aadf57b4468822a0dee46806c02a7b3f2f1d36247df673dd81d8eb2\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_0.mp3\", \"<build-root>/qualification/short-run/artifacts/music/c31d236e89b7992d4e1ec4df3d613a60_1.mp3\"], \"sha256\": \"d725e7687aadf57b4468822a0dee46806c02a7b3f2f1d36247df673dd81d8eb2\"}",
           "provider_ref": "c31d236e89b7992d4e1ec4df3d613a60",
           "receipt_id": 1
         }

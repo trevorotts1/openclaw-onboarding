@@ -365,7 +365,7 @@
       "unknown_or_reserved_cost": 0
     },
     "invalidated_digest": "bc57a86da0ada975",
-    "parked_file": "/Users/blackceomacmini/drama-song-factory-build/tests/resume-repair-evidence/evidence/PARKED.json",
+    "parked_file": "${DTS_BUILD_ROOT}/tests/resume-repair-evidence/evidence/PARKED.json",
     "parked_file_is": "projection of the ledgers; the intake resume reader consumes it (no PARKED.json reader exists in this tree)",
     "pre_park_digest": "74a4a7d5a5210882",
     "resume_digest": "74a4a7d5a5210882",

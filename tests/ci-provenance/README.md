@@ -3,7 +3,7 @@
 Unit **W4-05-U1** (SWARM-PLAN W4-05). Stdlib python3 + `gh` + `git`.
 No network writes, no repo mutations, no secrets printed. Nothing outside
 this folder written except receipts here; scratch lives in
-`/tmp/blackceomacmini-W4-05-U1-*` (removed by the run).
+`/tmp/<operator-slug>-W4-05-U1-*` (removed by the run).
 
 ## Run
 

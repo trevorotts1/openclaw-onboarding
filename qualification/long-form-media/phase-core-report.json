@@ -148,7 +148,7 @@
         "version": 3
       }
     ],
-    "db": "/Users/blackceomacmini/drama-song-factory-build/run/state.sqlite3"
+    "db": "<build-root>/run/state.sqlite3"
   },
   "storyboard_review": {
     "findings": [],

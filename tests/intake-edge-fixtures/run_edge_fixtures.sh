@@ -10,7 +10,7 @@
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UNIT_ID="W4-02-U1"
 BOX_SLUG="${BOX_SLUG:-local}"
-LANE="${LANE:-/Users/blackceomacmini/drama-song-factory-build/swarm-plans/lanes/${UNIT_ID}-lane}"
+LANE="${LANE:-${DTS_BUILD_ROOT}/swarm-plans/lanes/${UNIT_ID}-lane}"
 mkdir -p "$LANE" || exit 2
 export BOX_SLUG
 

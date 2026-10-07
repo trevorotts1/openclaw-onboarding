@@ -3,7 +3,7 @@
     {
       "actual_cost_cents": 336,
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4"
       ],
       "sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
       "shot": "shot-01",
@@ -12,7 +12,7 @@
     {
       "actual_cost_cents": 336,
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
       ],
       "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
       "shot": "shot-02",
@@ -21,7 +21,7 @@
     {
       "actual_cost_cents": 336,
       "saved_paths": [
-        "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
+        "<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4"
       ],
       "sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
       "shot": "shot-03",

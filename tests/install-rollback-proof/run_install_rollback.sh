@@ -11,7 +11,7 @@
 set -u
 cd "$(dirname "$0")" || exit 2
 
-LANE=/Users/blackceomacmini/drama-song-factory-build/swarm-plans/lanes/W4-04-U1-lane
+LANE=${DTS_BUILD_ROOT}/swarm-plans/lanes/W4-04-U1-lane
 mkdir -p "$LANE" || exit 2
 
 export BOX_SLUG="${BOX_SLUG:-local}"

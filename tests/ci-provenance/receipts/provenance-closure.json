@@ -445,7 +445,7 @@
       "sha256": "23e88aa938e3acdc57a26bbcacf8885ad685bba403ed0c074a25c4117ba26116"
     }
   ],
-  "root": "/Users/blackceomacmini/drama-song-factory-build",
+  "root": "${DTS_BUILD_ROOT}",
   "schema": "blackceo.ci-provenance/provenance-closure/v1",
   "unit_id": "W4-05-U1",
   "verdict": "PASS"

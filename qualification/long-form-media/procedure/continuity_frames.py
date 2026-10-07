@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 
-BROOT = "/Users/blackceomacmini/drama-song-factory-build"
+BROOT = os.environ.get("DTS_BUILD_ROOT", os.getcwd())
 OUT = os.path.join(BROOT, "qualification", "long-form-media")
 W, H = 64, 114
 

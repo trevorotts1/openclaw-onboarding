@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
       "logical_key": "w4-long/music-generate",
       "recomputed_bytes": 1405594,
       "recomputed_sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
@@ -11,7 +11,7 @@
       "status": "AMBIGUOUS_CLAIM_MATCHES"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3",
       "logical_key": "w4-long/music-generate",
       "recomputed_bytes": 1492954,
       "recomputed_sha256": "69a36771348a172dcac7f5a60f3caccaebd2362100ffd9b79ce8a15ca678c98c",
@@ -21,7 +21,7 @@
       "status": "AMBIGUOUS_CLAIM_NOT_THIS_PATH"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp",
       "logical_key": "w4-long/image-generate",
       "recomputed_bytes": 58582,
       "recomputed_sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407",
@@ -31,7 +31,7 @@
       "status": "OK"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4",
       "logical_key": "w4-long/video-generate-s1",
       "recomputed_bytes": 30022697,
       "recomputed_sha256": "e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b",
@@ -41,7 +41,7 @@
       "status": "OK"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4",
       "logical_key": "w4-long/video-generate-s2",
       "recomputed_bytes": 47936461,
       "recomputed_sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
@@ -51,7 +51,7 @@
       "status": "OK"
     },
     {
-      "artifact_path": "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
+      "artifact_path": "<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4",
       "logical_key": "w4-long/video-generate-s3",
       "recomputed_bytes": 36404553,
       "recomputed_sha256": "7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f",
@@ -146,9 +146,9 @@
   "explain": {
     "auto_resubmits": 0,
     "claims": "claims=9 verified=9 mismatch=0 missing=0 from R3",
-    "reconciler_scan_root": "/Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts",
+    "reconciler_scan_root": "<build-root>/qualification/short-run/artifacts",
     "records_modified": 0,
-    "scan_root_note": "reconcile_receipts.py walks /Users/blackceomacmini/drama-song-factory-build/qualification/short-run/artifacts for every run it is asked to reconcile (hardcoded), so files added there -- including macOS .DS_Store -- are reported as unclaimed for ANY run, including w4-long. The file is not an artifact of this run.",
+    "scan_root_note": "reconcile_receipts.py walks <build-root>/qualification/short-run/artifacts for every run it is asked to reconcile (hardcoded), so files added there -- including macOS .DS_Store -- are reported as unclaimed for ANY run, including w4-long. The file is not an artifact of this run.",
     "unclaimed_files": [
       "qualification/short-run/artifacts/.DS_Store"
     ],
@@ -201,7 +201,7 @@
         {
           "amount": 2,
           "created_at": "2026-10-07T02:00:28+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp\"], \"sha256\": \"48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp\"], \"sha256\": \"48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407\"}",
           "provider_ref": "52cd20311ab74e660bfe7d4cf8b19a8b",
           "receipt_id": 5
         }
@@ -222,7 +222,7 @@
         {
           "amount": 6,
           "created_at": "2026-10-07T02:00:11+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3\", \"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3\"], \"sha256\": \"b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3\", \"<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3\"], \"sha256\": \"b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d\"}",
           "provider_ref": "5e9ed441cc177a5cc5bfaa46ff26e37d",
           "receipt_id": 4
         }
@@ -243,7 +243,7 @@
         {
           "amount": 336,
           "created_at": "2026-10-07T02:09:13+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4\"], \"sha256\": \"e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/long-form-media/artifacts/video-shot-01/5cfe577e66857e913d7713e67b7439c9_0.mp4\"], \"sha256\": \"e0c028adedfb2d04cde9925ad08c849d173ded20786fb3a570ff18fb8b01533b\"}",
           "provider_ref": "5cfe577e66857e913d7713e67b7439c9",
           "receipt_id": 6
         }
@@ -264,7 +264,7 @@
         {
           "amount": 336,
           "created_at": "2026-10-07T02:16:29+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4\"], \"sha256\": \"a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4\"], \"sha256\": \"a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5\"}",
           "provider_ref": "392dd178ee87d269b65452e923f2a63e",
           "receipt_id": 7
         }
@@ -285,7 +285,7 @@
         {
           "amount": 336,
           "created_at": "2026-10-07T02:23:59+00:00",
-          "evidence_ref": "{\"paths\": [\"/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4\"], \"sha256\": \"7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f\"}",
+          "evidence_ref": "{\"paths\": [\"<build-root>/qualification/long-form-media/artifacts/video-shot-03/c3bb63b280a862c6b8fa9f5c79ee39c5_0.mp4\"], \"sha256\": \"7009a6e340c68a9e744d227db0d0e98e34bfde318b2fd08ae4f506bf3e7ddf3f\"}",
           "provider_ref": "c3bb63b280a862c6b8fa9f5c79ee39c5",
           "receipt_id": 8
         }

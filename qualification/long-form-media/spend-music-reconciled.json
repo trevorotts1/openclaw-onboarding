@@ -85,8 +85,8 @@
       "https://tempfile.aiquickdraw.com/r/9e5f052a-41a1-461a-8e9c-25c51edb6c34.mp3"
     ],
     "saved_paths": [
-      "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
-      "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
+      "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+      "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
     ],
     "schema_fetched_at": null,
     "schema_source": null,
@@ -95,8 +95,8 @@
     "warnings": []
   },
   "saved_paths": [
-    "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
-    "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
+    "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_0.mp3",
+    "<build-root>/qualification/long-form-media/artifacts/music/5e9ed441cc177a5cc5bfaa46ff26e37d_1.mp3"
   ],
   "sha256": "b4425ff2152022086cefa4db59b44ad2e300d895212c3780ad185e7eab8a443d",
   "submit": {

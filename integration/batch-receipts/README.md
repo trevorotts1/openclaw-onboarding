@@ -50,7 +50,7 @@ local bare `origin`. No real repo, no remote push, no crontab, no timer install.
 ## Re-run
 
 ```bash
-bash /Users/blackceomacmini/drama-song-factory-build/integration/batch-receipts/verify.sh
+bash verify.sh  # repo root: integration/batch-receipts/
 ```
 
 `verify.sh` re-fetches the scratch `origin` and re-proves ancestry, window

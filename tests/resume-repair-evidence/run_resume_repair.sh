@@ -4,7 +4,7 @@
 # Suite writes only into tests/resume-repair-evidence/evidence/ plus its own
 # /tmp/lane-W4-03-U1-* scratch (removed by each test in a finally block).
 cd "$(dirname "$0")" || exit 2
-LANE=/Users/blackceomacmini/drama-song-factory-build/swarm-plans/lanes/W4-03-U1-lane
+LANE=${DTS_BUILD_ROOT}/swarm-plans/lanes/W4-03-U1-lane
 mkdir -p "$LANE"
 pass=0; fail=0; failed=""; rows=""
 for t in test_*.py; do

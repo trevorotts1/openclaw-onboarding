@@ -14,7 +14,7 @@ Three parts:
               pins the exact bytes judged.
 
   controls    live round-trip against core/delivery_variants/manifests.py
-              in private scratch (/tmp/blackceomacmini-W4-05-U1-prov-*):
+              in private scratch (/tmp/<operator-slug>-W4-05-U1-prov-*):
                 A write_provenance -> verify_binding must return ok=True
                 B manifest byte tamper  -> verify_binding must refuse
                 C artifact byte tamper  -> verify_binding must refuse
@@ -40,7 +40,7 @@ try:
 except Exception as exc:  # import failure is tooling, not a target fact
     raise SystemExit("TOOLING: cannot import core.delivery_variants: %s" % exc)
 
-SCRATCH_PREFIX = "/tmp/blackceomacmini-W4-05-U1-prov"
+SCRATCH_PREFIX = "/tmp/<operator-slug>-W4-05-U1-prov"
 
 EXPECTED_MERGE_ROWS = 4
 SHORT_RUN_ID = "w3-04-short-run"

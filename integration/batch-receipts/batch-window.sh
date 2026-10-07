@@ -25,7 +25,7 @@ set -uo pipefail
 
 T0="${T0:-1791300227}"
 MBM="${MERGE_BATCH_MINUTES:-30}"
-MT_SH="${MERGE_TRAIN_SH:-/Users/blackceomacmini/drama-song-factory-build/999-setup/.claude/skills/spec-protocol/tools/merge-train.sh}"
+MT_SH="${MERGE_TRAIN_SH:-$(git rev-parse --show-toplevel)/999-setup/.claude/skills/spec-protocol/tools/merge-train.sh}"
 HOME_DIR="${1:?usage: batch-window.sh <project-home> <event-id>}"
 EID="${2:?usage: batch-window.sh <project-home> <event-id>}"
 

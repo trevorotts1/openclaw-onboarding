@@ -4,7 +4,7 @@
 # nothing the driver claimed. Exit 0 = every check holds.
 set -uo pipefail
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT=/Users/blackceomacmini/drama-song-factory-build
+ROOT="${DTS_BUILD_ROOT:-$(pwd)}"
 LANE="$ROOT/swarm-plans/lanes/W5-01-U1-lane"
 REPO="$LANE/scratch/repo"
 fails=0
@@ -15,7 +15,7 @@ ck() { # ck <name> <0/1>
 python3 - "$OUT" "$ROOT/run/state.json" <<'PY'
 import json, sys, subprocess, os
 out, state_path = sys.argv[1], sys.argv[2]
-R = "/Users/blackceomacmini/drama-song-factory-build/swarm-plans/lanes/W5-01-U1-lane/scratch/repo"
+R = os.path.join(os.environ.get("DTS_BUILD_ROOT", os.getcwd()), "swarm-plans/lanes/W5-01-U1-lane/scratch/repo")
 ok = []
 def ck(name, cond):
     ok.append((name, bool(cond)))

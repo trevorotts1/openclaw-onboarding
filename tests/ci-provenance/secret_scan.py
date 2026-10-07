@@ -33,7 +33,7 @@ Three independent instruments, all must come back clean:
 
 Discrimination controls (a zero is worthless without them):
   A  plant a fabricated github_pat-lookalike in
-     /tmp/blackceomacmini-W4-05-U1-secret-plant/ -> pattern scan must
+     /tmp/<operator-slug>-W4-05-U1-secret-plant/ -> pattern scan must
      detect it.
   B  plant one real env value (memory only, never written outside the
      scratch plant file) -> env-value search must detect it.
@@ -56,7 +56,7 @@ from pathlib import Path
 
 from lib import EXIT_TOOLING, ROOT, ToolingError, finish, utcnow
 
-SCRATCH_PREFIX = "/tmp/blackceomacmini-W4-05-U1-secret-plant"
+SCRATCH_PREFIX = "/tmp/<operator-slug>-W4-05-U1-secret-plant"
 ENV_STORES = [Path(os.path.expanduser("~/.openclaw/secrets/.env")),
               Path(os.path.expanduser("~/.openclaw/.env"))]
 

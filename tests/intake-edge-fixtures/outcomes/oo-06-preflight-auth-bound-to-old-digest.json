@@ -1,7 +1,7 @@
 {
   "argv": [
     "/opt/homebrew/opt/python@3.14/bin/python3.14",
-    "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
     "preflight",
     "--root",
     "/tmp/local-W4-02-U1-rzuyl_mz",

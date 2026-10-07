@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-BROOT = "/Users/blackceomacmini/drama-song-factory-build"
+BROOT = os.environ.get("DTS_BUILD_ROOT", os.getcwd())
 OUT = os.path.join(BROOT, "qualification", "long-form-media")
 SPEND_DB = os.path.join(BROOT, "run", "spend.sqlite3")
 STATE_DB = os.path.join(BROOT, "run", "state.sqlite3")

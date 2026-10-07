@@ -15,7 +15,7 @@
   ],
   "catalog": {
     "active_model_count": 37,
-    "path": "/Users/blackceomacmini/openclaw-onboarding/67-kie-video/models.json",
+    "path": "<operator-home>/openclaw-onboarding/67-kie-video/models.json",
     "schema_version": "1.0",
     "source": "read-at-runtime",
     "verified_at": "2026-08-26"

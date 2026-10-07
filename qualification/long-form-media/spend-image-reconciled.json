@@ -84,7 +84,7 @@
       "https://tempfile.aiquickdraw.com/js/g4/a1ec45042331.webp"
     ],
     "saved_paths": [
-      "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
+      "<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
     ],
     "schema_fetched_at": null,
     "schema_source": null,
@@ -93,7 +93,7 @@
     "warnings": []
   },
   "saved_paths": [
-    "/Users/blackceomacmini/drama-song-factory-build/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
+    "<build-root>/qualification/long-form-media/artifacts/image/52cd20311ab74e660bfe7d4cf8b19a8b_0.webp"
   ],
   "sha256": "48e9ddc0ae8a2cbee0225a0e05c0a3d84f914d43625351df12b9103dab5be407",
   "submit": {

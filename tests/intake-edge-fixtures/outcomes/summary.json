@@ -2,7 +2,7 @@
   "box_slug": "local",
   "checks": 501,
   "checks_failed": 0,
-  "factory": "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+  "factory": "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
   "failed_checks": [],
   "families": {
     "ambiguous-briefs": {

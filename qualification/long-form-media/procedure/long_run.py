@@ -29,17 +29,17 @@ import subprocess
 import sys
 import time
 
-BROOT = "/Users/blackceomacmini/drama-song-factory-build"
+BROOT = os.environ.get("DTS_BUILD_ROOT", os.getcwd())
 OUT = os.path.join(BROOT, "qualification", "long-form-media")
 EV = os.path.join(OUT, "evidence")
 REQ = os.path.join(OUT, "requests")
 ART = os.path.join(OUT, "artifacts")
-LANE = "/Users/blackceomacmini/drama-song-factory-build/swarm-plans/lanes/W4-01-U1-lane"
-TMP = "/tmp/blackceomacmini-W4-01-U1"
+LANE = os.path.join(os.environ.get("DTS_BUILD_ROOT", os.getcwd()), "swarm-plans/lanes/W4-01-U1-lane")
+TMP = "/tmp/<operator-slug>-W4-01-U1"
 
 SPEND_DB = os.path.join(BROOT, "run", "spend.sqlite3")
 STATE_DB = os.path.join(BROOT, "run", "state.sqlite3")
-ADAPTER = "/Users/blackceomacmini/openclaw-onboarding/74-kie-live-adapter/scripts/kie_live_adapter.py"
+ADAPTER = "<operator-home>/openclaw-onboarding/74-kie-live-adapter/scripts/kie_live_adapter.py"
 SIXTYEIGHT = os.path.join(BROOT, "onboarding", "68-kie-audio", "scripts",
                           "validate_audio_request.py")
 

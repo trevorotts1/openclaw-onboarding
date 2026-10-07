@@ -11,9 +11,9 @@
   "baseline": {
     "description": "pre-current recorded releases, read from git history (read-only)",
     "nine_commit": "8203088763d1bb93c402dc88db0c916e0a099f78",
-    "nine_repo": "/Users/blackceomacmini/drama-song-factory-build/999-setup",
+    "nine_repo": "${DTS_BUILD_ROOT}/999-setup",
     "openclaw_commit": "f2b99f2927a9d731918f33eb9e8c033b670f324d",
-    "openclaw_repo": "/Users/blackceomacmini/openclaw-onboarding"
+    "openclaw_repo": "<operator-home>/openclaw-onboarding"
   },
   "before": {
     "openclaw_tree_sha256": "ed9be866a79278999c08821eb4515088b8be3c2f8739043291e100474aea10a1",
