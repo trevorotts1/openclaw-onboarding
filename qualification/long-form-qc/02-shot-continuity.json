@@ -1,0 +1,214 @@
+{
+  "adversarial": {
+    "criteria": [
+      "boring_repetition",
+      "unclear_storytelling",
+      "missing_emotional_beat",
+      "product_too_early",
+      "product_too_late",
+      "continuity_mistakes",
+      "unsupported_claim_visualization",
+      "impossible_generation_requirements",
+      "weak_camera_variety",
+      "pacing_mismatch",
+      "cost_inefficiency",
+      "shots_that_cannot_be_visually_qcd"
+    ],
+    "findings": [],
+    "outcome": "pass",
+    "reason_code": "storyboard-accepted"
+  },
+  "checks": [
+    {
+      "detail": "3 shots",
+      "id": "SHOTS_PRESENT",
+      "status": "PASS"
+    },
+    {
+      "detail": "duration 63.000s, 12 lines",
+      "id": "TIMING_MAP",
+      "status": "PASS"
+    },
+    {
+      "detail": "3 shots bound, duration 63.000s",
+      "id": "PLAN_BOUND",
+      "status": "PASS"
+    },
+    {
+      "detail": "storyboard-accepted (0 findings)",
+      "id": "STORYBOARD_ADVERSARIAL",
+      "status": "PASS"
+    },
+    {
+      "detail": "1 records valid",
+      "id": "CHARACTER_DNA",
+      "status": "PASS"
+    },
+    {
+      "detail": "every shot reference is an approved character asset",
+      "id": "REFERENCE_LINKAGE",
+      "status": "PASS"
+    }
+  ],
+  "run_id": "w4-long",
+  "shot_records": [
+    {
+      "adjacency": {
+        "detail": "first shot; no predecessor to be continuous with",
+        "status": "NOT_APPLICABLE"
+      },
+      "bound_lines": [
+        "hook01",
+        "hook02",
+        "hook03"
+      ],
+      "camera_direction": "locked-off medium shot, camera static at chest height",
+      "characters": [
+        "char-owner-shop"
+      ],
+      "contract_present": true,
+      "covered_text": "I sing my BlackCEO Drama Song / I built this Factory demo for owners / I feel the rhythm lift my day",
+      "duration_s": 21.0,
+      "location_id": "shop-doorway",
+      "lyric_line_ids": [
+        "hook01",
+        "hook02",
+        "hook03"
+      ],
+      "next_shot": "shot-02",
+      "prev_shot": null,
+      "qc_requirements": [
+        "character identity matches the keyframe in every frame",
+        "wardrobe identical across all three shots",
+        "no burned-in text, captions or logos",
+        "clip duration within one frame of the planned window",
+        "lower third stays clear for a caption"
+      ],
+      "review_findings": [],
+      "shot_id": "shot-01",
+      "story_stage": "hook",
+      "verdict": "PASS",
+      "wardrobe_ids": [
+        "ward-gold-hoops-thin-chain",
+        "ward-knit-cream-tee"
+      ],
+      "window": [
+        0.0,
+        21.0
+      ]
+    },
+    {
+      "adjacency": {
+        "detail": "contiguous with shot-01",
+        "gap_s": 0.0,
+        "status": "PASS"
+      },
+      "bound_lines": [
+        "verse01",
+        "verse02",
+        "verse03",
+        "verse04"
+      ],
+      "camera_direction": "slow push-in from medium to medium close-up",
+      "characters": [
+        "char-owner-shop"
+      ],
+      "contract_present": true,
+      "covered_text": "I keep the beat rolling in my heart / I turn my shop story into music / I watch my customers nod along / I let the Drama Song carry my pitch",
+      "duration_s": 21.0,
+      "location_id": "shop-counter",
+      "lyric_line_ids": [
+        "verse01",
+        "verse02",
+        "verse03",
+        "verse04"
+      ],
+      "next_shot": "shot-03",
+      "prev_shot": "shot-01",
+      "qc_requirements": [
+        "character identity matches the keyframe in every frame",
+        "wardrobe identical across all three shots",
+        "no burned-in text, captions or logos",
+        "clip duration within one frame of the planned window",
+        "lower third stays clear for a caption"
+      ],
+      "review_findings": [],
+      "shot_id": "shot-02",
+      "story_stage": "offer",
+      "verdict": "PASS",
+      "wardrobe_ids": [
+        "ward-gold-hoops-thin-chain",
+        "ward-knit-cream-tee"
+      ],
+      "window": [
+        21.0,
+        42.0
+      ]
+    },
+    {
+      "adjacency": {
+        "detail": "contiguous with shot-02",
+        "gap_s": 0.0,
+        "status": "PASS"
+      },
+      "bound_lines": [
+        "cta01",
+        "cta02",
+        "cta03",
+        "cta04",
+        "cta05"
+      ],
+      "camera_direction": "slow pull-back from medium close-up to wide",
+      "characters": [
+        "char-owner-shop"
+      ],
+      "contract_present": true,
+      "covered_text": "Visit BlackCEO dot com and book the demo / Hear what your brand sounds like sung / Start today and let the tune travel / BlackCEO Drama Song Ad Factory starts here / Book the demo before the week ends",
+      "duration_s": 21.0,
+      "location_id": "shop-floor-wide",
+      "lyric_line_ids": [
+        "cta01",
+        "cta02",
+        "cta03",
+        "cta04",
+        "cta05"
+      ],
+      "next_shot": null,
+      "prev_shot": "shot-02",
+      "qc_requirements": [
+        "character identity matches the keyframe in every frame",
+        "wardrobe identical across all three shots",
+        "no burned-in text, captions or logos",
+        "clip duration within one frame of the planned window",
+        "lower third stays clear for a caption"
+      ],
+      "review_findings": [],
+      "shot_id": "shot-03",
+      "story_stage": "call to action",
+      "verdict": "PASS",
+      "wardrobe_ids": [
+        "ward-gold-hoops-thin-chain",
+        "ward-knit-cream-tee"
+      ],
+      "window": [
+        42.0,
+        63.0
+      ]
+    }
+  ],
+  "shot_verdicts": {
+    "FAIL": [],
+    "PASS": [
+      "shot-01",
+      "shot-02",
+      "shot-03"
+    ],
+    "UNAVAILABLE": []
+  },
+  "shots_checked": 3,
+  "shots_total": 3,
+  "tool": "long-qc.shot_continuity",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "PASS"
+}
