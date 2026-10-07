@@ -6,6 +6,39 @@ frontmatter `version:` field).
 
 ---
 
+## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
+
+Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
+
+Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
+build core (`<build>/core/`) so this copy carries the version 2 BUILD-OUT
+outputs, byte-identical to the Claude-Nine / Claude Code copy; entrypoint,
+exit map and the 14 production modules unchanged.
+
+### Added (BUILD-OUT owned outputs, whole modules)
+- `audio_c3/extend/`, `audio_c3/voice_packs/`, `batch_mode/`,
+  `catalog_calculator/extensions/`, `choice_card/looks/`, `intake_book/`,
+  `kie_dispatch/unknown_resolution/`, `shot_planner/speaker_check/`,
+  `style_bibles/canvas_to_3d/`, `style_bibles/canvas_to_life/`
+- import closure those modules need to load: `audio_c3/voice_casting.py`,
+  `choice_card/stl_voice_guard/`, `lip_sync/narrator_rule/`, `music_styles/`,
+  `qc_voice_match/` (root package only), `spoken_share/`, `style_bibles/hybrid/`,
+  `style_defaults/`, `voice_velvet_echo/`
+
+### Changed
+- `SKILL.md` exit-map note: removed the dead build-tree test path
+  (`tests/distribution-parity/run_parity.sh`), plan G5 packaging step.
+
+### Not shipped here, on record
+- `core/docs_rename_velvet_voiceover/` — build-tree sweep tool carrying
+  operator absolute paths; build tooling, never client skill code.
+- `core/lip_sync/kling_first/`, `core/qc_voice_match/octave_guard/` — not yet
+  present in build core (unit outputs still in their lanes).
+- `core/kie_dispatch/kie_dispatch.py` — packaging owned by unit `A2-R2-U2`,
+  whose canonical module is under fix; shipped only from the fixed core.
+
+`version:` stays `v2.3.0`: the release bump belongs to the V2-W4 ship lane.
+
 ## [v2.4.2] - 2026-10-07 - fix: style bible compiler routes its prompt cap through the one KIE enforcer
 
 ### Fixed

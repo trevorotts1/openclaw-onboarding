@@ -1,0 +1,50 @@
+{
+  "scenes": {
+    "beat04": {"speaker": "chanel", "onscreen": "chanel",
+               "stems": [{"kind": "suno_line", "speaker_id": "chanel",
+                          "isolated": true, "stem_id": "st-beat04"}]},
+    "beat07": {"speaker": "mentor", "onscreen": "mentor",
+               "stems": [{"kind": "suno_line", "speaker_id": "mentor",
+                          "isolated": true, "stem_id": "st-beat07"}]},
+    "beat09": {"speaker": "chanel", "onscreen": "chanel",
+               "stems": [{"kind": "suno_line", "speaker_id": "chanel",
+                          "isolated": true, "stem_id": "st-beat09"}]},
+    "cta12": {"speaker": "narrator", "onscreen": "chanel",
+              "stems": [{"kind": "suno_line", "speaker_id": "narrator",
+                         "isolated": true, "stem_id": "st-cta12"}]}
+  },
+  "device_scene": {
+    "beat06": {"speaker": "voicemail", "onscreen": "phone",
+               "stems": [{"kind": "suno_line", "speaker_id": "voicemail",
+                          "isolated": true, "stem_id": "st-beat06"}]}
+  },
+  "violations": {
+    "mixed_stem": {"speaker": "chanel", "onscreen": "chanel",
+                   "stems": [{"kind": "suno_line", "speaker_id": "chanel",
+                              "isolated": true},
+                             {"kind": "suno_line", "speaker_id": "narrator",
+                              "isolated": true}]},
+    "sung_stem": {"speaker": "chanel", "onscreen": "chanel",
+                  "stems": [{"kind": "sung", "speaker_id": "chanel",
+                             "isolated": true}]},
+    "music_stem": {"speaker": "chanel", "onscreen": "chanel",
+                   "stems": [{"kind": "music_bed", "speaker_id": null,
+                              "isolated": true}]},
+    "other_speaker_stem": {"speaker": "chanel", "onscreen": "chanel",
+                           "stems": [{"kind": "suno_line",
+                                      "speaker_id": "mentor",
+                                      "isolated": true}]},
+    "not_isolated": {"speaker": "chanel", "onscreen": "chanel",
+                     "stems": [{"kind": "suno_line", "speaker_id": "chanel",
+                                "isolated": false}]},
+    "face_mismatch": {"speaker": "mentor", "onscreen": "chanel",
+                      "stems": [{"kind": "suno_line", "speaker_id": "mentor",
+                                 "isolated": true}]},
+    "device_voice_on_person": {"speaker": "voicemail", "onscreen": "chanel",
+                               "stems": [{"kind": "suno_line",
+                                          "speaker_id": "voicemail",
+                                          "isolated": true}]},
+    "narrator_on_person_no_stem": {"speaker": "narrator",
+                                   "onscreen": "chanel"}
+  }
+}
