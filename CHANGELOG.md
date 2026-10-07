@@ -9436,6 +9436,7 @@ so guard G3 does not apply, and all ten version markers continue to agree at the
 - unit/W3-02-U7: test(75-drama-song-ad-factory): clean-install discovery test (W3-02-U7) (merge 289a49e4a648)
 - unit/W3-02-U8: drama-song-factory W3-02-U8: Skill 75 EXAMPLES.md + QC.md (merge 6724384a05a9)
 - unit/PKG-01-U1: test(PKG-01-U1): extended distribution parity — enumerate both packaged skill folders, diff every packaged module + doc, zero byte drift (merge 3c89df2be966)
+- unit/OPR-U1: Source: Owner 2026-10-07 purge order + conductor CI scan 2026-10-07 (only external refs: shared-utils/kie_prompt_gates.json lines 60+186) (merge d546500db40e)
 
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 
