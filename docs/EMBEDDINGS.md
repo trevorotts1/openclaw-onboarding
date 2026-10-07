@@ -364,7 +364,7 @@ mixed-model: verify fails and `search()` uses keyword mode.
   `SOP_EMBEDDING_PROVIDER=google`, and re-provision. For personas, move
   `gemini-index.sqlite` aside and re-provision.
 
-### Gemini fallback while Ollama is down (persona selection only)
+### Gemini fallback while Ollama is down (persona selection and the CC SOP vote)
 
 Trevor's rule: a local-mode box whose Ollama is down uses paid Gemini on the
 box's OWN Google key for persona selection, and falls to keyword only if Gemini
@@ -399,6 +399,19 @@ key or another client's key is never used.
   model once it is back (a still-dead Ollama just re-latches). The next process
   tries local Ollama first again. `search()` is one process per
   query, so it simply tries local first each time.
+- **SOP vote (CC v7.6.108+)**: the Command Center's SOP vote falls back the same
+  way, against table `sop_embeddings_gemini_fallback` (never `sop_embeddings`,
+  the local 768-dim table). Skill 76 (`wire.sh`, step 5c) runs the CC's
+  `scripts/provision-gemini-fallback-sop-set.ts` from the box's CC dir with
+  `--manifest shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json --db <the
+  resolved mission-control.db>`. It downloads the sha256-pinned shared asset and
+  maps it onto the box's `sops` (zero embedding API calls, so the box's key is
+  only needed at query time; the step is still skipped without a key). Node is
+  one that loads better-sqlite3 (the CC's serving process, then Homebrew node
+  22/20, then PATH, because an nvm Node 24 fails it). Skipped on no key, no CC,
+  or CC older than 7.6.108. Bounded at 600 s, never fatal, and re-run only when
+  the manifest sha256 or the box's `sops` count changes
+  (`~/.openclaw/local-embedder/gemini-sop-fallback.done`).
 - **Health**: `embedding_health.py` reports `gemini_fallback_copy_present` and
   `gemini_fallback_key_present` (names only, never the key) for a local-mode
   persona index. They are informational and do not change pass or fail.
