@@ -73,6 +73,20 @@ git -C "$BOX" remote set-url origin "$WORK/does-not-exist.git"
 cc_dirty_overlap "$BOX" >/dev/null 2>&1; rc=$?
 [ "$rc" = 2 ] && ok "(d) rc=2 when origin unreachable" || bad "(d) rc=$rc"
 
+echo "== (f) conflicting local tag must not break the helper =="
+mk f; BOX="$WORK/f-box"
+G -C "$WORK/f-push" tag v1 && G -C "$WORK/f-push" push -q origin v1
+G -C "$BOX" fetch -q origin   # box now has v1 = init
+printf 'x\n' >> "$WORK/f-push/B.txt"; G -C "$WORK/f-push" commit -q -am second
+G -C "$WORK/f-push" tag -f v1 >/dev/null && G -C "$WORK/f-push" push -q -f origin v1 HEAD:main
+printf 'local-edit\n' >> "$BOX/A.txt"
+git -C "$BOX" fetch -q --tags origin 2>/dev/null; [ $? -ne 0 ] && ok "(f) precondition: plain fetch clobbers-tag error reproduced" || bad "(f) tag clash not reproduced"
+out="$(cc_dirty_overlap "$BOX")"; rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] && ok "(f) rc=0 despite tag clash (no overlap)" || bad "(f) rc=$rc out='$out'"
+printf 'up\n' >> "$WORK/f-push/A.txt"; G -C "$WORK/f-push" commit -q -am upA; G -C "$WORK/f-push" push -q origin HEAD:main
+out="$(cc_dirty_overlap "$BOX")"; rc=$?
+[ "$rc" = 1 ] && [ "$out" = "A.txt" ] && ok "(f) rc=1 A.txt despite tag clash (overlap)" || bad "(f) rc=$rc out='$out'"
+
 echo "== (e) all three call sites use the helper and never reset/stash a dirty tree =="
 n="$(grep -c 'declare -F cc_dirty_overlap' "$UPDATER")"
 [ "$n" = 3 ] && ok "(e) 3 guarded call sites" || bad "(e) expected 3 call sites, found $n"

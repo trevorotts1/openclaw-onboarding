@@ -240,7 +240,7 @@ LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 #   rc 2 = cannot tell (fetch failed / origin ref missing) -- caller treats as blocked
 cc_dirty_overlap() {
   local d="$1" def local_f up_f
-  git -C "$d" fetch --quiet origin 2>/dev/null || return 2
+  git -C "$d" fetch --quiet --no-tags origin 2>/dev/null || return 2
   def="$(git -C "$d" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
   def="${def#origin/}"; [ -n "$def" ] || def="main"
   git -C "$d" rev-parse --verify --quiet "origin/$def" >/dev/null 2>&1 || return 2
