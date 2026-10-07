@@ -1,0 +1,141 @@
+{
+  "skill": "75-drama-song-ad-factory",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 - Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (01-teach-yourself-protocol) before using this skill - repo law and build-directive section 25 step 1. The folder ships with install.sh / update-skills.sh; verify it exists: ls ~/.openclaw/skills/01-teach-yourself-protocol (Mac) or ls /data/.openclaw/skills/01-teach-yourself-protocol (VPS)."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 - Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 75 - every production skill installs on a backed-up box. The folder ships with install.sh / update-skills.sh; verify: ls ~/.openclaw/skills/02-back-yourself-up-protocol (Mac) or ls /data/.openclaw/skills/02-back-yourself-up-protocol (VPS)."
+    },
+    {
+      "id": "skill-07-kie-setup",
+      "type": "skill",
+      "label": "Skill 07 - KIE Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 07 (07-kie-setup): it owns KIE account setup and the credential context every paid KIE path in this factory builds on. From an onboarding checkout run: bash update-skills.sh; verify the 07-kie-setup folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-46-callback-relay",
+      "type": "skill",
+      "label": "Skill 46 - KIE callback relay",
+      "check": { "skill": "46-kie-callback-relay" },
+      "severity": "required",
+      "satisfy": "Install Skill 46 (46-kie-callback-relay): async KIE provider callbacks (image/video/audio task completion) are relayed by Skill 46, not by this skill. From an onboarding checkout run: bash update-skills.sh; verify the 46-kie-callback-relay folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-66-kie-image",
+      "type": "skill",
+      "label": "Skill 66 - KIE image",
+      "check": { "skill": "66-kie-image" },
+      "severity": "required",
+      "satisfy": "Install Skill 66 (66-kie-image): image generation, prompt constraints and image domain QC ride Skill 66 (build-directive section 2.1/5.1 - references to Skills 66/67/68/74 do not install them). From an onboarding checkout run: bash update-skills.sh; verify the 66-kie-image folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-67-kie-video",
+      "type": "skill",
+      "label": "Skill 67 - KIE video",
+      "check": { "skill": "67-kie-video" },
+      "severity": "required",
+      "satisfy": "Install Skill 67 (67-kie-video): video clip routing and video domain QC ride Skill 67 (no hardcoded model pins in this skill). From an onboarding checkout run: bash update-skills.sh; verify the 67-kie-video folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-68-kie-audio",
+      "type": "skill",
+      "label": "Skill 68 - KIE audio (Suno)",
+      "check": { "skill": "68-kie-audio" },
+      "severity": "required",
+      "satisfy": "Install Skill 68 (68-kie-audio): Suno music/lyrics/vocals go through Skill 68's createTask contract (V6/V6_MINI/V6_WILD market envelope; legacy dedicated routes stay V4-V5_5 only). From an onboarding checkout run: bash update-skills.sh; verify the 68-kie-audio folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-74-kie-live-adapter",
+      "type": "skill",
+      "label": "Skill 74 - KIE live adapter",
+      "check": { "skill": "74-kie-live-adapter" },
+      "severity": "required",
+      "satisfy": "Install Skill 74 (74-kie-live-adapter): paid transport (discovery, schemas, upload, submit, poll, credits) rides Skill 74 shadow-first; this skill never opens a competing transport. From an onboarding checkout run: bash update-skills.sh; verify the 74-kie-live-adapter folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-24-storyboard-writer",
+      "type": "skill",
+      "label": "Skill 24 - Storyboard Writer",
+      "check": { "skill": "24-storyboard-writer" },
+      "severity": "required",
+      "satisfy": "Install Skill 24 (24-storyboard-writer): storyboard/shot planning output reuses the canonical storyboard skill (build-directive section 25 step 3). From an onboarding checkout run: bash update-skills.sh; verify the 24-storyboard-writer folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-25-video-creator",
+      "type": "skill",
+      "label": "Skill 25 - Video Creator",
+      "check": { "skill": "25-video-creator" },
+      "severity": "required",
+      "satisfy": "Install Skill 25 (25-video-creator): ordinary FFmpeg-based video work rides Skills 25/27 (SKILL.md route law). From an onboarding checkout run: bash update-skills.sh; verify the 25-video-creator folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-27-video-editor",
+      "type": "skill",
+      "label": "Skill 27 - Video Editor",
+      "check": { "skill": "27-video-editor" },
+      "severity": "required",
+      "satisfy": "Install Skill 27 (27-video-editor): ordinary FFmpeg-based editing rides Skills 25/27 (SKILL.md route law). From an onboarding checkout run: bash update-skills.sh; verify the 27-video-editor folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-30-fish-audio",
+      "type": "skill",
+      "label": "Skill 30 - Fish Audio API reference",
+      "check": { "skill": "30-fish-audio-api-reference" },
+      "severity": "optional",
+      "satisfy": "Install Skill 30 (30-fish-audio-api-reference) before any spoken-voiceover stage: TTS to Fish Audio rides Skill 30; sung music never needs it (build-directive section 10.3 - no new ElevenLabs dependency). From an onboarding checkout run: bash update-skills.sh; verify the 30-fish-audio-api-reference folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "KIE API Key",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "KIE_API_KEY is the KIE.ai Market API bearer credential (Authorization: Bearer <KIE_API_KEY>). The env var NAME is repo convention (Skill 07 / Skill 66 precedent; KIE's own docs show only the literal placeholder YOUR_API_KEY). Confirm it is SET without printing the value: check ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600, and openclaw.json env.vars. If absent, ask the operator to add KIE_API_KEY to ~/.openclaw/secrets/.env (chmod 600), then run: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Do NOT mint a new key."
+    },
+    {
+      "id": "fish-audio-api-key",
+      "type": "credential",
+      "label": "Fish Audio API key (spoken voiceover only)",
+      "check": { "envVar": "FISH_AUDIO_API_KEY" },
+      "severity": "optional",
+      "satisfy": "FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) are needed only for spoken voiceover stages via Skill 30; a song with sung vocals never needs them. Confirm presence without printing values: ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. If absent and voiceover is in scope, ask the operator to add them there, then run: openclaw config set env.vars.FISH_AUDIO_API_KEY \"$FISH_AUDIO_API_KEY\". Do NOT mint a new key."
+    },
+    {
+      "id": "python3-binary",
+      "type": "binary",
+      "label": "Python 3 (control layer)",
+      "check": { "binary": "python3" },
+      "severity": "required",
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages. Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
+    },
+    {
+      "id": "ffmpeg-binary",
+      "type": "binary",
+      "label": "FFmpeg (assembly)",
+      "check": { "binary": "ffmpeg" },
+      "severity": "required",
+      "satisfy": "ffmpeg must be on PATH: clip stitching, voiceover mux and the -14 LUFS finish ride FFmpeg (DEPENDENCY-MANIFEST section 3). Verify: ffmpeg -version. If missing: Mac brew install ffmpeg; VPS apt-get update && apt-get install -y ffmpeg. Rerun the check after install."
+    },
+    {
+      "id": "faster-whisper-optional",
+      "type": "manual",
+      "label": "faster-whisper lyric-alignment fallback (optional)",
+      "check": { "note": "Optional local lyric-alignment fallback (DEPENDENCY-MANIFEST section 3): provider-native timing is the default (build-directive section 12.4); faster-whisper gives timing/mismatch evidence only and is NOT installed on the audited box (verified 2026-10-06, import faster_whisper -> ModuleNotFoundError). Pin + hash arrive at release. Approved lyrics remain the source of truth; never treat ASR output as new approved text." },
+      "severity": "optional",
+      "satisfy": "Install faster-whisper only when a campaign needs the local alignment fallback; pin per DEPENDENCY-MANIFEST section 3 at release."
+    }
+  ]
+}
