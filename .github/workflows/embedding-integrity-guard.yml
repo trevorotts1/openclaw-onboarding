@@ -51,6 +51,7 @@ on:
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
       - tests/unit/embedding-ollama-local-mode.test.py
+      - tests/unit/semantic-task-fit-local-mode.test.py
       - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
@@ -94,6 +95,7 @@ on:
       - scripts/hash-universal-sops-manifest.py
       - tests/unit/embedding-hard-gate.test.sh
       - tests/unit/embedding-ollama-local-mode.test.py
+      - tests/unit/semantic-task-fit-local-mode.test.py
       - shared-utils/provision-persona-index.sh
       - tests/unit/pipeline-provider-routing.test.sh
       - tests/unit/storm-guard.test.sh
@@ -143,6 +145,7 @@ jobs:
         run: |
           python3 -m pip install --quiet numpy
           python3 tests/unit/embedding-ollama-local-mode.test.py -v
+          python3 tests/unit/semantic-task-fit-local-mode.test.py -v
 
       - name: Section-tagger / indexer agreement (existing invariant)
         run: |
