@@ -61,7 +61,8 @@ instead of re-embedded on every dispatch. See
    → rc 0 pass / rc 4 fail (every row must be gemini/3072 with blob length
    dim*4). The ONE other contract is the explicit local Ollama opt-in (see
    "Local Ollama mode" below): `--verify --verify-provider ollama` holds such an
-   index to `ollama/nomic-embed-text` @ 768. It is never selected automatically.
+   index to `ollama/$OLLAMA_EMBED_MODEL` @ `$OLLAMA_EMBED_DIM` (default
+   `embeddinggemma-2:740m` @ 768). It is never selected automatically.
 4. **Converge-aware chunk indexer (EMBED-4).** The canonical index is
    section-level. `cmd_index` (chunk indexer) skips any file whose md5 already
    exists as a section row — no accidental full re-embed, no mixed units.
@@ -281,8 +282,32 @@ library).
 ## Local Ollama mode (explicit per-box opt-in, corpora 1–2 and 5)
 
 For a box whose Gemini key cannot pay (e.g. HTTP 402), both searches can run on
-the box's own local Ollama (`nomic-embed-text` @ 768, free, no key). Nothing
-selects it automatically. A box stays on Gemini until an operator switches it:
+the box's own local Ollama (default `embeddinggemma-2:740m` @ 768, free, no key).
+Nothing selects it automatically. A box stays on Gemini until an operator
+switches it.
+
+The persona engine's local model is set per box by two keys. The process
+environment wins; otherwise they are read from the box's `secrets/.env` (or the
+`openclaw.json` `env` block), so a fresh shell, cron run, or agent `exec` uses
+the same model:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `OLLAMA_EMBED_MODEL` | `embeddinggemma-2:740m` | Ollama model for `--reembed-local`, the rows' `model` stamp, and `--verify --verify-provider ollama`. |
+| `OLLAMA_EMBED_DIM` | `768` | Vector width every local embed and the verify contract must match. |
+
+`embeddinggemma-2:740m` @ 768 is the only supported local model. The override
+keys exist for testing a replacement model. The model must be pulled into the
+local Ollama first (`ollama pull <model>`).
+`embeddinggemma*` models get their model-card task prefixes
+(`task: search result | query: …` for queries, `title: none | text: …` for
+documents). Other models get the raw text. Query-time `search()` always embeds
+with the model the index is stamped with, so a later env change cannot produce
+cross-model scores. To switch models, set the keys and re-run `--reembed-local`.
+It re-embeds every row not already on the new model. An index stamped with any
+other local model fails `--verify --verify-provider ollama` (rc 4) with a hint
+to re-embed with `--reembed-local`, and `search()` prints the same warning. While a re-embed is partial, the index is
+mixed-model: verify fails and `search()` uses keyword mode.
 
 - **CC SOP index (corpus 5)**: in the Command Center's `.env.local` set
   `SOP_EMBEDDING_PROVIDER=ollama` (optionally `SOP_EMBEDDING_OLLAMA_URL`,
