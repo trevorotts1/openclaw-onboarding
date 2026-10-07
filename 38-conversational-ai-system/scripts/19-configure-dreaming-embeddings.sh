@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 19-configure-dreaming-embeddings.sh
 # Skill 38 — Step O.6 (Dreaming + Embeddings configuration).
-# Idempotent: skips if agents.defaults.memorySearch.provider is already set.
+# Idempotent: skips if memory.search.provider (current OpenClaw key) or the legacy
+# agents.defaults.memorySearch.provider is already set. A box on the Skill 76 local
+# Ollama embedder (provider ollama on loopback) is accepted with no key needed.
 # Uses Python deep-merge (NOT `openclaw config set` — that fails with
 # "Invalid input" for nested keys on 2026.5.22+; see ~/clawd/MEMORY.md
 # "OpenClaw 8-layer memory activation pattern").
@@ -40,6 +42,26 @@ has_key() {
   return 1
 }
 
+# Skill 76: a box whose memory search runs on the local Ollama embedder
+# (provider ollama + remote.baseUrl on 127.0.0.1/localhost/::1) needs no OpenAI or
+# Google key. Accept it before the key check instead of failing.
+if python3 - "$CONFIG_FILE" <<'LEPY' 2>/dev/null
+import json, sys
+from urllib.parse import urlparse
+c = json.load(open(sys.argv[1]))
+new = (c.get("memory") or {}).get("search") if isinstance(c.get("memory"), dict) else None
+new = new if isinstance(new, dict) else {}
+old = ((c.get("agents") or {}).get("defaults") or {}).get("memorySearch") or {}
+prov = new.get("provider") or old.get("provider")
+remote = new.get("remote") or old.get("remote") or {}
+host = urlparse(str(remote.get("baseUrl") or "")).hostname if isinstance(remote, dict) else ""
+sys.exit(0 if str(prov or "").strip().lower() == "ollama" and host in ("127.0.0.1", "localhost", "::1") else 1)
+LEPY
+then
+  echo "[O.6] memory search runs on the local Ollama embedder (Skill 76) — accepted, no OpenAI/Google key needed, nothing changed."
+  exit 0
+fi
+
 # SK1-02: resolve a CLIENT-OWNED embedding provider for memorySearch. Anthropic is
 # NEVER valid here: (1) Anthropic ships no embeddings API, so writing it to
 # memorySearch.provider breaks memory search outright; (2) clients never use
@@ -59,7 +81,8 @@ EXISTING="$(python3 -c "
 import json,sys
 try:
   c=json.load(open('$CONFIG_FILE'))
-  v=c.get('agents',{}).get('defaults',{}).get('memorySearch',{}).get('provider')
+  new=(c.get('memory') or {}).get('search') if isinstance(c.get('memory'), dict) else None
+  v=(new or {}).get('provider') or c.get('agents',{}).get('defaults',{}).get('memorySearch',{}).get('provider')
   print(v if v else '')
 except Exception:
   print('')

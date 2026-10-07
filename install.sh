@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v26.0.5"
+ONBOARDING_VERSION="v26.1.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5240,7 +5240,21 @@ try:
     NON_GEMINI_OK     = {"text-embedding-3-small", "text-embedding-3-large",
                          "openai/text-embedding-3-small", "openai/text-embedding-3-large"}
 
-    if gemini_key:
+    # Skill 76 LOCAL EMBEDDER GUARD: memory search on a loopback Ollama
+    # (provider ollama + remote.baseUrl 127.0.0.1/localhost/::1, read from
+    # memory.search, else the legacy agents.defaults.memorySearch) is owned by
+    # 76-local-embedder. Never re-pin provider/model/fallback over it.
+    from urllib.parse import urlparse as _urlparse
+    _ms_new = (config.get('memory') or {}).get('search') if isinstance(config.get('memory'), dict) else None
+    _ms_new = _ms_new if isinstance(_ms_new, dict) else {}
+    _ms_eff_provider = _ms_new.get('provider') or ms.get('provider')
+    _ms_eff_remote = _ms_new.get('remote') or ms.get('remote') or {}
+    _ms_eff_host = (_urlparse(str(_ms_eff_remote.get('baseUrl') or '')).hostname or '') if isinstance(_ms_eff_remote, dict) else ''
+    local_embedder = str(_ms_eff_provider or '').strip().lower() == 'ollama' and _ms_eff_host in ('127.0.0.1', 'localhost', '::1')
+
+    if local_embedder:
+        print("  ✓ memory search is on the local Ollama embedder (Skill 76) — keep local embedder, provider/model/fallback untouched")
+    elif gemini_key:
         # Usable Google/Gemini key present → pin the GA fleet-standard embedding.
         ms['provider'] = "gemini"
         cur = ms.get('model')
@@ -5318,7 +5332,9 @@ try:
     #   memorySearch.cache.maxEntries    — keep last N embeddings in RAM
     # ────────────────────────────────────────────────────────────────────────
     has_second_provider = (gemini_key and openai_key)
-    if has_second_provider:
+    if local_embedder:
+        pass  # fallback is owned by 76-local-embedder (openai only when an OpenAI key exists)
+    elif has_second_provider:
         # Gemini is primary; OpenAI is the fast, low-latency fallback.
         fb = ms.setdefault('fallback', {})
         if isinstance(fb, str):

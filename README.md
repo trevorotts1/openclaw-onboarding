@@ -1,15 +1,17 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.0.5 — Skill 38 inbound messaging repairs itself on update.** Boxes that already installed Skill 38 now receive the inbound-hooks fix automatically on their next update: the shared front door runs `skill38-inbound-hooks`, which removes the config key OpenClaw 2026.9.x rejects and sets the trusted proxy so customer messages through the Cloudflare tunnel are no longer refused. Builds on v26.0.2 and the Skill 38 v2.0.9 docker-tenant install fix. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.102**.
+> **v26.1.0 — free local memory-search embeddings on client Macs (Skill 76).** On the next update every client Mac gets Ollama (reused, upgraded in place when idle, or installed headless), the local `embeddinggemma-2:740m` embedder pinned to `num_ctx 8192`, and OpenClaw memory search switched to it. Existing Ollama Cloud setups are verified unchanged. VPS and Contabo boxes are not affected. Supports native Linux and Docker topologies on Hostinger and Contabo. Paired Command Center: **v7.6.102**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v26.0.5.
+> **Version:** see `/version` - this repo at v26.1.0.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v26.0.5
+## Current release: v26.1.0
+
+Skill 76 (Local Embedder) v1.0.0: client Macs embed OpenClaw memory search locally and free (see CHANGELOG v26.1.0). The install, Skill 31 and update re-pinners skip memory search on a loopback Ollama; Skill 38 step O.6 accepts it without an OpenAI or Google key; `embedding_health.py` checks it by metadata only.
 
 Skill 38 (Conversational AI) v2.0.10: installed boxes get the inbound-hooks fix on their next update with no manual setup re-run, through the front-door repair `skill38-inbound-hooks` (see CHANGELOG v26.0.3). Presentations Step 4 lands the retired text-overlay doctrine, the canonical assembler steps and an installer-managed watchdog; the interview prior-completion declaration batch (INT-001..INT-005) supersedes the earlier unmerged PR #1249. Command Center installation and refresh still require **Node ^20.19.0 || ^22.13.0 || >=24** and **Command Center v7.6.68 or newer** (minimum v7.4.0). Unsupported, missing or prerelease Node versions stop the operation before dependency installation, migrations or deployment.
 
@@ -163,14 +165,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v26.0.5** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v26.1.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **75 numbered skill folders (01–75)**: 70 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **76 numbered skill folders (01–76)**: 71 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -295,8 +297,9 @@ That file is the master instruction file. It contains:
 | 73-diagnose-explain-fix | **Diagnose / Explain / Fix (v1.0.0)** — the `/def` command: finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks exactly one question (which model performs the fix). Instruction-only; no binaries, keys, or config writes. Moved here from a hand-installed slot-70 folder that collided with 70-lean-core-file-system; `update-skills.sh` retires the old `70-diagnose-explain-fix` folder. |
 | 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
 | 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
+| 76-local-embedder | **Local Embedder (v1.0.0)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, writes only `memory.search.*` and re-indexes each agent once. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
 
-**Total: 75 numbered skill folders** (01–75): **70 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 76 numbered skill folders** (01–76): **71 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

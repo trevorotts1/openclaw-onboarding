@@ -1,3 +1,11 @@
+## [2.0.12] - 2026-10-06 - fix: step O.6 accepts the Skill 76 local Ollama embedder
+
+`scripts/19-configure-dreaming-embeddings.sh` failed with "no client-owned embedding provider key" on a
+box whose memory search runs on the local Ollama embedder (Skill 76) and that has no OpenAI or Google key.
+It now accepts that box first (provider `ollama` with `remote.baseUrl` on 127.0.0.1, localhost or ::1) and
+changes nothing. The "already set" check also reads `memory.search.provider` (the current OpenClaw key)
+before the legacy `agents.defaults.memorySearch.provider`.
+
 ## [2.0.10] - 2026-10-06 - fix: boxes that already installed Skill 38 get the inbound-hooks fix on their next update
 
 The 2.0.9 fix lived in install-time scripts, which never re-run on an installed box. New
