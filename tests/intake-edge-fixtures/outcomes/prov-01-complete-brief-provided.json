@@ -1,0 +1,231 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/blackceomacmini/drama-song-factory-build/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "/Users/blackceomacmini/drama-song-factory-build/tests/intake-edge-fixtures/fixtures/complete-brief.json",
+    "--run-id",
+    "prov-01-complete-brief-provided-rerun"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 0,
+        "rc": 0
+      },
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "outcome",
+      "detail": "ok",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "reason_code",
+      "detail": "complete-brief-zero-questions",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "exit_code",
+      "detail": 0,
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-complete",
+      "detail": [
+        "action",
+        "aspect_ratio",
+        "assets",
+        "audience",
+        "brand_rules",
+        "budget_currency",
+        "budget_minor",
+        "creative_prefs",
+        "offer",
+        "placement",
+        "repair_allowance",
+        "target_length_s"
+      ],
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-offer==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-audience==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-action==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-budget_minor==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-budget_currency==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-placement==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-aspect_ratio==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-brand_rules==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-creative_prefs==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-repair_allowance==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-target_length_s==provided",
+      "detail": "provided",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    },
+    {
+      "check": "provenance-assets==missing",
+      "detail": "missing",
+      "pass": true,
+      "scenario": "prov-01-complete-brief-provided"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 21,
+  "envelope": {
+    "command": "intake",
+    "data": {
+      "approval_invalidated": false,
+      "auth_status": "missing",
+      "changes": [],
+      "digest": "74a4a7d5a5210882",
+      "next_stage": null,
+      "provenance": {
+        "action": "provided",
+        "aspect_ratio": "provided",
+        "assets": "missing",
+        "audience": "provided",
+        "brand_rules": "provided",
+        "budget_currency": "provided",
+        "budget_minor": "provided",
+        "creative_prefs": "provided",
+        "offer": "provided",
+        "placement": "provided",
+        "repair_allowance": "provided",
+        "target_length_s": "provided"
+      },
+      "question_message": null,
+      "questions": [],
+      "summary": {
+        "assets": null,
+        "assumptions": [
+          "assets=None (assumed default)",
+          "target_length_s=30 (assumed default)"
+        ],
+        "audience": "busy parents",
+        "auth_status": "missing",
+        "cta": "visit the site and start the free trial",
+        "format": "9:16",
+        "generation_ceiling": {
+          "amount_minor": 10000,
+          "currency": "USD"
+        },
+        "offer": "demo offer",
+        "placement": "9:16 vertical short",
+        "repair_allowance": "none",
+        "target_length_s": 30
+      },
+      "untrusted_fields": null
+    },
+    "evidence": [],
+    "next_action": "Record summary digest + auth scope, then run preflight before paid work.",
+    "outcome": "ok",
+    "reason_code": "complete-brief-zero-questions",
+    "run_id": "prov-01-complete-brief-provided-rerun",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "74a4a7d5a5210882",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 0,
+  "family": "provenance-recording",
+  "notes": {},
+  "recorded_unix": 1791358789,
+  "scenario": "prov-01-complete-brief-provided",
+  "unit_id": "W4-02-U1"
+}
