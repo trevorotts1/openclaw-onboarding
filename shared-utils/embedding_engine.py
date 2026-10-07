@@ -27,7 +27,8 @@ Key invariants enforced here (PRD 1.8 + onb-gemini GA migration):
     cross-model cosine similarity (cross-provider OR cross-GA/preview).
   - LOCAL OLLAMA MODE (explicit per-box opt-in, free, no key): `--reembed-local`
     re-embeds every row of an existing index in place with a local Ollama
-    server (OLLAMA_EMBED_MODEL @768, OLLAMA_EMBED_URL default
+    server (OLLAMA_EMBED_MODEL @OLLAMA_EMBED_DIM, default embeddinggemma-2:740m @768;
+    OLLAMA_EMBED_URL default
     http://127.0.0.1:11434), stamping provider='ollama'. Search then uses the
     same local model for queries. get_embedder() never picks ollama without the
     explicit provider_hint, so a box that never re-embeds stays on Gemini.
@@ -91,8 +92,8 @@ except ImportError:
 GEMINI_MODEL = "gemini-embedding-2"           # GA model — pinned here
 GEMINI_OUTPUT_DIM = 3072                      # explicit dimensionality contract
 OPENAI_EMBED_MODEL = "text-embedding-3-small"  # 1536-dim
-OLLAMA_EMBED_MODEL = "nomic-embed-text"        # 768-dim, local opt-in only
-OLLAMA_EMBED_DIM = 768
+# Local Ollama opt-in: OLLAMA_EMBED_MODEL / OLLAMA_EMBED_DIM are resolved per
+# box (env, then secrets/.env) right after _read_secret() below.
 OLLAMA_EMBED_URL = os.environ.get("OLLAMA_EMBED_URL", "http://127.0.0.1:11434").rstrip("/")
 
 # All retired / preview Gemini embedding slugs whose vectors are INCOMPATIBLE
@@ -107,7 +108,6 @@ STALE_GEMINI_MODELS = frozenset({
 _DIM_BY_MODEL = {
     GEMINI_MODEL: GEMINI_OUTPUT_DIM,
     OPENAI_EMBED_MODEL: 1536,
-    OLLAMA_EMBED_MODEL: OLLAMA_EMBED_DIM,
 }
 # Backfill heuristic: when a pre-1.8 DB has no provider/model metadata, infer
 # from vector blob length. 3072-dim blobs may be -preview OR GA; both are
@@ -199,6 +199,16 @@ def _read_secret(name: str) -> str:
     return ""
 
 
+# Local Ollama model/dim: process env wins, then the box's secrets/.env /
+# openclaw.json env (so a fresh shell or cron run uses the SAME model the index
+# was re-embedded with). Default: embeddinggemma-2:740m @768.
+OLLAMA_EMBED_MODEL = (os.environ.get("OLLAMA_EMBED_MODEL")
+                      or _read_secret("OLLAMA_EMBED_MODEL") or "embeddinggemma-2:740m")
+OLLAMA_EMBED_DIM = int(os.environ.get("OLLAMA_EMBED_DIM")
+                       or _read_secret("OLLAMA_EMBED_DIM") or 768)
+_DIM_BY_MODEL[OLLAMA_EMBED_MODEL] = OLLAMA_EMBED_DIM
+
+
 # ---------------------------------------------------------------------------
 # Embedder resolution
 # ---------------------------------------------------------------------------
@@ -285,9 +295,17 @@ def get_client():
 # Embedding
 # ---------------------------------------------------------------------------
 
-def _ollama_embed(base_url: str, model_id: str, text: str):
-    """POST {base_url}/api/embed {model, input} -> float32 vector (EMBED-3 dim gate)."""
+def _ollama_embed(base_url: str, model_id: str, text: str, kind: str = "document"):
+    """POST {base_url}/api/embed {model, input} -> float32 vector (EMBED-3 dim gate).
+
+    embeddinggemma models are trained with task prefixes (model card): queries
+    get "task: search result | query: ", documents "title: none | text: ".
+    Any other model named by OLLAMA_EMBED_MODEL is sent the raw text.
+    """
     import urllib.request
+    if "embeddinggemma" in model_id.lower():
+        text = (f"task: search result | query: {text}" if kind == "query"
+                else f"title: none | text: {text}")
     req = urllib.request.Request(
         f"{base_url}/api/embed",
         data=json.dumps({"model": model_id, "input": text}).encode(),
@@ -442,7 +460,7 @@ def embed_query(embedder, query):
                                    provider, model_id)
                 return vec
             elif provider == "ollama":
-                return _ollama_embed(client, model_id, query)
+                return _ollama_embed(client, model_id, query, kind="query")
             else:
                 raise ValueError(f"unknown provider: {provider!r}")
         except Exception as e:
@@ -840,6 +858,18 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
 
     # Step 3: load THE SAME provider for query embedding
     embedder = get_embedder(provider_hint=index_provider)
+    if embedder is not None and index_provider == "ollama":
+        # Query with the model the index is STAMPED with, never a different
+        # local model the env may name (cross-model cosine is garbage).
+        embedder = (embedder[0], embedder[1], index_model)
+        if index_model != OLLAMA_EMBED_MODEL:
+            print(
+                f"WARNING [embedding-engine]: persona index is stamped "
+                f"ollama/{index_model!r}, not the local model "
+                f"{OLLAMA_EMBED_MODEL!r}. Re-embed with --reembed-local "
+                f"(`python3 shared-utils/embedding_engine.py --reembed-local`).",
+                file=sys.stderr,
+            )
     if embedder is None:
         # get_embedder already printed the loud WARNING about missing key
         return keyword_fallback_search(query, limit, db_path, mode)
@@ -864,7 +894,7 @@ def search(query: str, limit: int = 3, db_path: str = None, mode: str = None) ->
         if index_provider == "ollama":
             print(
                 f"WARNING [embedding-engine]: local Ollama embed failed ({e}) — is "
-                f"Ollama running with {OLLAMA_EMBED_MODEL} at {OLLAMA_EMBED_URL}? "
+                f"Ollama running with {embedder[2]} at {OLLAMA_EMBED_URL}? "
                 f"Falling back to KEYWORD search.",
                 file=sys.stderr,
             )
@@ -1027,6 +1057,14 @@ def verify_index_integrity(db_path: str = None,
             "Re-embed the offending personas (see docs/EMBEDDINGS.md).",
             file=sys.stderr,
         )
+        if expect_provider == "ollama":
+            print(
+                f"  Local mode: run `python3 shared-utils/embedding_engine.py "
+                f"--reembed-local` to re-embed every row not on "
+                f"{expect_model} @ {expect_dim} (resumable). Until it finishes "
+                f"the index is mixed-model and search() stays on KEYWORD.",
+                file=sys.stderr,
+            )
         return 4
     print(f"PASS [embedding-engine] verify: {total} rows, all "
           f"{expect_provider}/{expect_model} @ {expect_dim}-dim float32")
@@ -1401,7 +1439,8 @@ def _indexer_main():
     parser.add_argument("--verify-provider", choices=["gemini", "ollama"],
                         default="gemini",
                         help="Contract --verify checks: gemini (3072, default) or "
-                             "the local ollama opt-in (768).")
+                             "the local ollama opt-in (OLLAMA_EMBED_MODEL @ "
+                             "OLLAMA_EMBED_DIM, default embeddinggemma-2:740m @ 768).")
     parser.add_argument("--reembed-local", action="store_true",
                         help="Opt this box into FREE local Ollama embeddings: "
                              "re-embed every index row in place with "
