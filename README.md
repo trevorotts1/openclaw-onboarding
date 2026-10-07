@@ -1,15 +1,15 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.1.1 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.102**.
+> **v26.2.0 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.102**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v26.1.1.
+> **Version:** see `/version` - this repo at v26.2.0.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v26.1.1
+## Current release: v26.2.0
 
 Skill 76 (Local Embedder) v1.0.1: fixes from independent QC of v26.1.0 (see CHANGELOG v26.1.1).
 
@@ -167,7 +167,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v26.1.1** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v26.2.0** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

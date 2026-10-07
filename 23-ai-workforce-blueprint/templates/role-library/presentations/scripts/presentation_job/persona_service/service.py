@@ -496,7 +496,7 @@ class PersonaService:
                         f"task_fit_method={task_fit_method}")
             except (TypeError, ValueError):
                 pass
-        if task_fit_method in ("gemini_embedding",):
+        if task_fit_method in ("gemini_embedding", "ollama_embedding"):
             semantic_claimed = True
             semantic_evidence = (semantic_evidence + f" layer5={task_fit_method}").strip()
         method = self.scoring.method if self.scoring else (

@@ -12,7 +12,10 @@ with the task. This module fixes that.
 
 Three-step resolution chain:
   1. Gemini Embedding 2 semantic similarity (best — requires
-     gemini-index.sqlite populated + GOOGLE_API_KEY available)
+     gemini-index.sqlite populated + GOOGLE_API_KEY available). On a LOCAL-mode
+     box (index re-embedded with `embedding_engine.py --reembed-local`, rows
+     stamped provider='ollama') the task is embedded with the box's own Ollama
+     model instead — never Gemini.
   2. Keyword overlap between task and persona name/id/tags (fallback when
      no embedding infra — better than text length, not as good as semantic)
   3. Neutral 0.6 (last resort when neither works) — explicit so the score
@@ -128,19 +131,21 @@ def _task_cache_put(key, val):
 _TASK_EMBED_LOCK = threading.Lock()
 
 
-def _task_embed(task_text: str, api_key: str):
+def _task_embed(task_text: str, api_key: str, local_model: str = None):
     """The task's embedding, computed at most ONCE per process. Thread-safe.
 
     Sole entry point to _TASK_EMBED_CACHE for both semantic_task_fit() and
     semantic_persona_ids(), so the shared-embedding contract holds whether the
     callers are sequential or concurrent. Returns None when the embed fails
-    (callers fall through to keyword overlap, unchanged).
+    (callers fall through to keyword overlap, unchanged). `local_model` set =
+    local-mode box: embed with that Ollama model (own cache key), never Gemini.
     """
-    key = ("task", task_text)
+    key = ("task", task_text) if not local_model else ("task", task_text, "ollama", local_model)
     with _TASK_EMBED_LOCK:
         vec = _task_cache_get(key)
         if vec is None:
-            vec = _embed_text(task_text, api_key)
+            vec = (_embed_text_local(task_text, local_model) if local_model
+                   else _embed_text(task_text, api_key))
             if vec is not None:
                 _task_cache_put(key, vec)
         return vec
@@ -175,6 +180,54 @@ def _gemini_index_path(paths: dict) -> Path:
         if candidate.exists():
             return candidate
     return paths.get("gemini_index", Path(""))
+
+# ── REP-032 / A32: stale-index gate ───────────────────────────────────────────
+# The identity gate (decision_engine/retrieval/cache_identity.py) can only see
+# what an index DECLARES. An index built from an older persona set, read after
+# the set moved on, declares the identical space and used to be scored as if
+# current (probe case 6b). The freshness check below compares the index's own
+# build stamp against the live persona set; a stale index yields the truthful
+# lexical fallback instead of a silent semantic answer. Fail-open: no stamp,
+# unreadable stamp or absent module all keep the previous behaviour.
+try:
+    import importlib.util as _ilu_r032
+
+    def _load_retrieval_guard():
+        _ret = Path(__file__).resolve().parent / "decision_engine" / "retrieval"
+        _f = _ret / "guarded_retrieval.py"
+        if not _f.is_file():
+            return None
+        _spec = _ilu_r032.spec_from_file_location("rep032_guarded_retrieval", _f)
+        _mod = _ilu_r032.module_from_spec(_spec)
+        sys.modules["rep032_guarded_retrieval"] = _mod
+        _spec.loader.exec_module(_mod)
+        return _mod
+
+    _GUARDED_RETRIEVAL = _load_retrieval_guard()
+except Exception:  # pragma: no cover — additive guard, never blocks selection
+    _GUARDED_RETRIEVAL = None
+
+def _persona_index_dir(paths: dict):
+    """Directory holding the index DB and the box's persona-set stamps."""
+    workspace = paths.get("workspace")
+    if workspace:
+        return Path(workspace) / "data" / "coaching-personas"
+    db = paths.get("gemini_index")
+    return Path(db).parent if db else None
+
+def _index_servable(paths: dict) -> "tuple[bool, str]":
+    """(servable, reason) for the persona index under ``paths``.
+
+    False only when the index build stamp disagrees with the live persona set;
+    absent module/stamp/error all return True with a note, never a refusal.
+    """
+    if _GUARDED_RETRIEVAL is None:
+        return True, "freshness guard module absent"
+    d = _persona_index_dir(paths)
+    if d is None:
+        return True, "no index dir resolvable"
+    v = _GUARDED_RETRIEVAL.check_index_freshness(d, d / "persona-categories.json")
+    return (v.servable, v.reason)
 
 
 def _get_google_api_key(paths: dict) -> str:
@@ -247,6 +300,98 @@ def _embed_text(text: str, api_key: str):
         return None
 
 
+def _engine():
+    """shared-utils/embedding_engine (the one owner of the local Ollama helper)."""
+    _su = os.path.dirname(__file__)
+    if _su not in sys.path:
+        sys.path.insert(0, _su)
+    import embedding_engine
+    return embedding_engine
+
+
+def _latch_unavailable(reason: str, message: str) -> None:
+    global _EMBEDDING_UNAVAILABLE, _EMBEDDING_UNAVAILABLE_REASON
+    _EMBEDDING_UNAVAILABLE = True
+    _EMBEDDING_UNAVAILABLE_REASON = reason[:200]
+    print(message, file=sys.stderr)
+
+
+# LOCAL MODE (explicit per-box opt-in). A box is local when its persona index
+# was re-embedded with `embedding_engine.py --reembed-local`, which stamps every
+# row provider='ollama'. That is the SAME detection search() uses
+# (get_db_index_provider); a Gemini box never carries such rows, so it never
+# enters the local path. Cached per (path, mtime) so the 8-15 candidate calls of
+# one selection read the index stamp once.
+# ponytail: mtime of the main DB file only; a WAL-only write is seen after the
+# next checkpoint (a re-embed ends with a verify that reads the DB).
+_LOCAL_MODE_CACHE: dict = {}
+
+
+def _local_index_model(db_path):
+    """The persona index's ollama model when the box is in local mode.
+
+    Returns the stamped model (index entirely on one ollama model), '' when the
+    index is local but mixed (partial --reembed-local: keyword, exactly like
+    search()), or None when the index is not local (Gemini path, unchanged).
+    """
+    p = str(db_path)
+    if not p or not os.path.isfile(p):
+        return None
+    try:
+        ck = (p, os.stat(p).st_mtime_ns)
+        if ck in _LOCAL_MODE_CACHE:
+            return _LOCAL_MODE_CACHE[ck]
+        info = _engine().get_db_index_provider(p)
+        if info is not None:
+            out = info[1] if info[0] == "ollama" else None
+        else:
+            conn = sqlite3.connect(p, timeout=10.0)
+            try:
+                hit = conn.execute(
+                    "SELECT 1 FROM embeddings WHERE provider = 'ollama' LIMIT 1").fetchone()
+            finally:
+                conn.close()
+            out = "" if hit else None
+        _LOCAL_MODE_CACHE[ck] = out
+        return out
+    except Exception:
+        return None
+
+
+def _local_ready(local_model: str) -> bool:
+    """May this local-mode box embed now? '' (mixed index) latches keyword once."""
+    if _EMBEDDING_UNAVAILABLE:
+        return False
+    if not local_model:
+        _latch_unavailable(
+            "mixed-model local index",
+            "[semantic_task_fit] local persona index is mixed-model (partial "
+            "--reembed-local) — using keyword overlap; finish "
+            "`embedding_engine.py --reembed-local`.")
+        return False
+    return True
+
+
+def _embed_text_local(text: str, model: str):
+    """Embed a task (query) with the box's local Ollama via embedding_engine's
+    _ollama_embed (embeddinggemma query prefix, EMBED-3 dim gate). Any failure
+    latches keyword for the rest of the process with ONE log line; never Gemini."""
+    try:
+        ee = _engine()
+        return ee._ollama_embed(ee.OLLAMA_EMBED_URL, model, text, kind="query")
+    except Exception as e:
+        try:
+            url = _engine().OLLAMA_EMBED_URL
+        except Exception:
+            url = "?"
+        _latch_unavailable(
+            str(e),
+            f"[semantic_task_fit] local Ollama embed failed ({e}) — is Ollama "
+            f"running with {model} at {url}? Using keyword overlap for the rest "
+            "of this process.")
+        return None
+
+
 def _cosine(v1, v2) -> float:
     """Cosine similarity. Returns float in [-1, 1]."""
     try:
@@ -259,6 +404,32 @@ def _cosine(v1, v2) -> float:
     except ImportError:
         return 0.0
 
+
+def _vector_usable(vec) -> "tuple[bool, str]":
+    """A32: is a stored persona vector real? Returns ``(ok, reason)``.
+
+    The dimension guard elsewhere only compares SHAPES, so a NaN row and a
+    zero-norm row both sailed through and produced a score labelled
+    ``gemini_embedding`` with ``cos=nan`` / ``cos=0.000`` — a result that
+    claimed a path which could not have produced a real answer. Reject them
+    here and let the caller fall back truthfully. Accepts numpy arrays and
+    plain sequences (numpy scalars are not instances of ``float``).
+    """
+    import math
+    try:
+        vals = [float(v) for v in vec]
+    except (TypeError, ValueError):
+        return False, "vector is not numeric"
+    if not vals:
+        return False, "vector is empty"
+    norm_sq = 0.0
+    for i, f in enumerate(vals):
+        if not math.isfinite(f):
+            return False, f"vector[{i}] is non-finite ({f!r}; corrupt row)"
+        norm_sq += f * f
+    if norm_sq == 0.0:
+        return False, "zero-norm vector (no direction; cosine undefined)"
+    return True, "ok"
 
 def _current_gemini_model() -> str:
     """Model authority = shared-utils/embedding_engine.GEMINI_MODEL."""
@@ -273,7 +444,7 @@ def _current_gemini_model() -> str:
         return "gemini-embedding-2"
 
 
-def _provider_filter_sql(cur) -> str:
+def _provider_filter_sql(cur, local_model: str = None) -> str:
     """
     EMBED-7: exclude rows whose provider/model metadata is DEFINITELY not the
     current gemini model (e.g. provider='fake' plumbing rows, retired preview
@@ -292,12 +463,17 @@ def _provider_filter_sql(cur) -> str:
         return ""
     if not {"provider", "model"} <= cols:
         return ""
+    if local_model:
+        # Local mode: only rows on the index's own ollama model (never cross-model).
+        lm = local_model.replace("'", "''")
+        return f" AND provider = 'ollama' AND model = '{lm}'"
     model = _current_gemini_model().replace("'", "''")
     return (" AND (provider IS NULL OR provider = '' "
             f"OR (provider = 'gemini' AND model = '{model}'))")
 
 
-def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = None):
+def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = None,
+                                  local_model: str = None):
     """Pull the persona's representative embedding from gemini-index.sqlite.
 
     G13 fix: AVERAGE up to `top_k` chunk vectors for the persona instead of the
@@ -322,7 +498,7 @@ def _persona_embedding_from_index(persona_id: str, db_path: Path, top_k: int = N
         # Order by chunk_index so the averaged set is deterministic across calls.
         cur.execute(
             "SELECT vector FROM embeddings WHERE file_path LIKE ? "
-            + _provider_filter_sql(cur) +
+            + _provider_filter_sql(cur, local_model) +
             " ORDER BY chunk_index ASC LIMIT ?",
             (f"%{persona_id}%", int(top_k)),
         )
@@ -391,30 +567,65 @@ def semantic_task_fit(
     Score how well `persona_id` fits `task_text`. Returns:
         {
           "score":  float in [0.0, 1.0],
-          "method": "gemini_embedding" | "keyword_overlap" | "neutral_fallback",
+          "method": "gemini_embedding" | "ollama_embedding" | "keyword_overlap"
+                    | "neutral_fallback",
           "detail": str describing why this method was chosen
         }
 
     Order of attempts:
-      1. Gemini embedding similarity (best)
+      1. Gemini embedding similarity (best) — skipped when the index is STALE
+         (REP-032/A32), so a stale index never yields a semantic answer. A
+         local-mode box uses its local Ollama model here ("ollama_embedding").
       2. Keyword overlap with persona id + blueprint summary
       3. Neutral 0.6
     """
     # Step 1: try Gemini semantic embedding (skipped once _EMBEDDING_UNAVAILABLE
     # has latched — see the EMBED-FAIL-CACHE block near the top of this module)
-    if _try_import_genai() and not _EMBEDDING_UNAVAILABLE:
-        api_key = _get_google_api_key(paths)
-        db_path = _gemini_index_path(paths)
-        if api_key and db_path.exists():
-            task_vec = _task_embed(task_text, api_key)
+    db_path = _gemini_index_path(paths)
+    local_model = _local_index_model(db_path)
+    if local_model is not None:
+        use_embed, api_key = _local_ready(local_model), None
+    else:
+        use_embed = _try_import_genai() and not _EMBEDDING_UNAVAILABLE
+        api_key = _get_google_api_key(paths) if use_embed else None
+    if use_embed:
+        _servable, _fresh_reason = _index_servable(paths)
+        if not _servable:
+            # REP-032/A32 (case 6b): a stale index is not served as current.
+            print(
+                f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+                "using keyword overlap (run the persona-index rebuild to restore "
+                "semantic scoring).",
+                file=sys.stderr,
+            )
+        elif (local_model or api_key) and db_path.exists():
+            task_vec = _task_embed(task_text, api_key, local_model)
             if task_vec is not None:
-                persona_vec = _persona_embedding_from_index(persona_id, db_path)
+                persona_vec = _persona_embedding_from_index(
+                    persona_id, db_path, local_model=local_model)
+                if persona_vec is not None:
+                    _v_ok, _v_reason = _vector_usable(persona_vec)
+                    if not _v_ok:
+                        # A32: a corrupt/zero-norm stored row must not be scored
+                        # as a semantic result. Fall through to keyword overlap.
+                        print(
+                            f"[semantic_task_fit] persona {persona_id!r} vector "
+                            f"rejected: {_v_reason}; using keyword overlap.",
+                            file=sys.stderr,
+                        )
+                        persona_vec = None
                 if persona_vec is not None:
                     cos = _cosine(task_vec, persona_vec)
                     # Cosine is [-1, 1]; map to [0, 1] via (cos + 1) / 2,
                     # then clamp to [0.2, 0.98] so it never hits hard 0 or 1
                     raw = (cos + 1.0) / 2.0
                     score = max(0.2, min(0.98, raw))
+                    if local_model:
+                        return {
+                            "score":  round(score, 4),
+                            "method": "ollama_embedding",
+                            "detail": f"cos={cos:.3f}, db={db_path.name}, model={local_model}",
+                        }
                     return {
                         "score":  round(score, 4),
                         "method": "gemini_embedding",
@@ -455,15 +666,28 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
     unavailable, so the caller falls back to the subprocess / keyword path
     (never-to-zero).
     """
-    if not _try_import_genai() or _EMBEDDING_UNAVAILABLE:
+    local_model = _local_index_model(_gemini_index_path(paths))
+    if local_model is not None:
+        if not _local_ready(local_model):
+            return None
+    elif not _try_import_genai() or _EMBEDDING_UNAVAILABLE:
         return None
-    api_key = _get_google_api_key(paths)
+    _servable, _fresh_reason = _index_servable(paths)
+    if not _servable:
+        # REP-032/A32 (case 6b): never rank candidates from a stale index.
+        print(
+            f"[semantic_task_fit] index STALE — {_fresh_reason}; "
+            "skipping in-process semantic retrieval.",
+            file=sys.stderr,
+        )
+        return None
+    api_key = None if local_model else _get_google_api_key(paths)
     db_path = _gemini_index_path(paths)
-    if not api_key or not db_path.exists():
+    if not (local_model or api_key) or not db_path.exists():
         return None
 
     # Shared task embedding — SAME cache entry semantic_task_fit() uses.
-    task_vec = _task_embed(task_text, api_key)
+    task_vec = _task_embed(task_text, api_key, local_model)
     if task_vec is None:
         return None
 
@@ -477,7 +701,7 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         cur.execute(
             "SELECT file_path, vector FROM embeddings "
             "WHERE file_path LIKE '%coaching-personas/personas/%'"
-            + _provider_filter_sql(cur)
+            + _provider_filter_sql(cur, local_model)
         )
         rows = cur.fetchall()
         conn.close()
@@ -498,6 +722,8 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
         pid = os.path.basename(os.path.dirname(file_path))
         if not pid or pid == "personas":
             continue
+        if not np.isfinite(vec).all():
+            continue  # A32: a corrupt row never ranks (its cosine is NaN)
         n = np.linalg.norm(vec)
         if n == 0:
             continue
@@ -514,6 +740,7 @@ def semantic_persona_ids(task_text: str, paths: dict, top_k: int = 10) -> "list 
 def clear_cache():
     """Reset the module-level task-embedding cache. Useful for tests."""
     _TASK_EMBED_CACHE.clear()
+    _LOCAL_MODE_CACHE.clear()
 
 
 if __name__ == "__main__":

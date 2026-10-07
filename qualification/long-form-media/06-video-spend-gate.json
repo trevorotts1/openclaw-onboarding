@@ -1,0 +1,5 @@
+{
+  "allowed": true,
+  "next_action": "Release to video generation.",
+  "reason_code": "storyboard-gate-open"
+}

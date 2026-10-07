@@ -1,0 +1,104 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "${DTS_BUILD_ROOT}/core/intake_preflight/factory.py",
+    "intake",
+    "--brief-file",
+    "${DTS_BUILD_ROOT}/tests/intake-edge-fixtures/fixtures/malformed-brief.json",
+    "--run-id",
+    "amb-06-non-dict-brief"
+  ],
+  "checks": [
+    {
+      "check": "envelope-10-key-shape",
+      "detail": [
+        "command",
+        "data",
+        "evidence",
+        "next_action",
+        "outcome",
+        "reason_code",
+        "run_id",
+        "schema_version",
+        "state_version",
+        "tool_version"
+      ],
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "envelope-schema-version",
+      "detail": "blackceo.intake-preflight/envelope/v1",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "envelope-command",
+      "detail": "intake",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "outcome-in-EXIT-map",
+      "detail": "error",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "exit-code-matches-EXIT-map",
+      "detail": {
+        "expected": 1,
+        "rc": 1
+      },
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "outcome",
+      "detail": "error",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "reason_code",
+      "detail": "intake-failed",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "exit_code",
+      "detail": 1,
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    },
+    {
+      "check": "error-is-not-acceptance",
+      "detail": "error",
+      "pass": true,
+      "scenario": "amb-06-non-dict-brief"
+    }
+  ],
+  "checks_failed": 0,
+  "checks_total": 9,
+  "envelope": {
+    "command": "intake",
+    "data": {},
+    "evidence": [],
+    "next_action": "'str' object has no attribute 'get'",
+    "outcome": "error",
+    "reason_code": "intake-failed",
+    "run_id": "amb-06-non-dict-brief",
+    "schema_version": "blackceo.intake-preflight/envelope/v1",
+    "state_version": {
+      "current": "amb-06-non-dict-brief",
+      "expected": null
+    },
+    "tool_version": "0.1.0"
+  },
+  "exit_code": 1,
+  "family": "ambiguous-briefs",
+  "notes": {},
+  "recorded_unix": 1791358788,
+  "scenario": "amb-06-non-dict-brief",
+  "unit_id": "W4-02-U1"
+}

@@ -1,0 +1,60 @@
+{
+  "claimed": [
+    {
+      "stage": "intake",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "preflight",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "lyrics_approved",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "storyboard",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "music_generate",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "image_generate",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "video_generate",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "music_qc",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "timing_guard",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "final_assemble",
+      "state": "RUNNING",
+      "version": 3
+    },
+    {
+      "stage": "receipts",
+      "state": "RUNNING",
+      "version": 3
+    }
+  ],
+  "db": "<build-root>/run/state.sqlite3"
+}

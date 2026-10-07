@@ -1,0 +1,146 @@
+{
+  "actual_cost_cents": 336,
+  "credits_consumed": 672.0,
+  "estimated_cost_cents": 336,
+  "job": "video-shot-02",
+  "logical_key": "w4-long/video-generate-s2",
+  "outcome": "succeeded",
+  "reconcile": {
+    "attempt_id": "a1",
+    "command": "reconcile",
+    "evidence": {},
+    "logical_key": "w4-long/video-generate-s2",
+    "next_action": "",
+    "outcome": "ok",
+    "reason_code": "OK",
+    "run_id": "w4-long",
+    "schema_version": "1.0.0",
+    "state_version": 5,
+    "tool": "spend_ledger",
+    "tool_version": "1.0.0"
+  },
+  "request_digest": "e75f83800fe52a4d0d700c66ada3bebbcf26c46471ffd76757d94d373c21ebe7",
+  "reserve": {
+    "init_run": {
+      "attempt_id": "",
+      "command": "init_run",
+      "evidence": {},
+      "logical_key": "",
+      "next_action": "",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "plan": {
+      "attempt_id": "a1",
+      "command": "plan",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s2",
+      "next_action": "reserve before dispatch",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "reserve": {
+      "attempt_id": "a1",
+      "command": "reserve",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s2",
+      "next_action": "dispatch only against this reservation",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 2,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    }
+  },
+  "save": {
+    "adapter": "74-kie-live-adapter",
+    "adapter_mode": "shadow",
+    "backend": "native-live",
+    "capability": null,
+    "credits_consumed": 672.0,
+    "data": {
+      "cost_time": 432,
+      "result_object": null,
+      "state_raw": "success"
+    },
+    "error": null,
+    "fallback_used": false,
+    "model_id": "wan/3-0-video",
+    "provider": "kie",
+    "raw_family": "market",
+    "result_urls": [
+      "https://tempfile.aiquickdraw.com/wan30-video-alibaba/1791339379429-tjwbdih1ojb.mp4"
+    ],
+    "saved_paths": [
+      "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+    ],
+    "schema_fetched_at": null,
+    "schema_source": null,
+    "state": "success",
+    "task_id": "392dd178ee87d269b65452e923f2a63e",
+    "warnings": []
+  },
+  "saved_paths": [
+    "<build-root>/qualification/long-form-media/artifacts/video-shot-02/392dd178ee87d269b65452e923f2a63e_0.mp4"
+  ],
+  "sha256": "a2f81ab6cd7cd9560438aa0dd56fdb8d496c11e8c87316e627249b8fde4189a5",
+  "submit": {
+    "adapter": "74-kie-live-adapter",
+    "adapter_mode": "active",
+    "backend": "native-live",
+    "capability": "Text to Video, Image to Video, Video to Video",
+    "credits_consumed": null,
+    "data": {},
+    "error": null,
+    "fallback_used": false,
+    "model_id": "wan/3-0-video",
+    "provider": "kie",
+    "raw_family": "market",
+    "result_urls": [],
+    "saved_paths": [],
+    "schema_fetched_at": 1791282447.519433,
+    "schema_source": "schema:cache",
+    "state": "queued",
+    "task_id": "392dd178ee87d269b65452e923f2a63e",
+    "warnings": []
+  },
+  "task_id": "392dd178ee87d269b65452e923f2a63e",
+  "wait": {
+    "adapter": "74-kie-live-adapter",
+    "adapter_mode": "shadow",
+    "backend": "native-live",
+    "capability": null,
+    "credits_consumed": 672.0,
+    "data": {
+      "cost_time": 432,
+      "result_object": null,
+      "state_raw": "success"
+    },
+    "error": null,
+    "fallback_used": false,
+    "model_id": "wan/3-0-video",
+    "provider": "kie",
+    "raw_family": "market",
+    "result_urls": [
+      "https://tempfile.aiquickdraw.com/wan30-video-alibaba/1791339379429-tjwbdih1ojb.mp4"
+    ],
+    "saved_paths": [],
+    "schema_fetched_at": null,
+    "schema_source": null,
+    "state": "success",
+    "task_id": "392dd178ee87d269b65452e923f2a63e",
+    "warnings": []
+  }
+}

@@ -1,0 +1,5 @@
+SELFTEST ok   u1 merged, red u2 undone and stops the train, u3 untried
+SELFTEST ok   green unit pushed and MERGED only after ancestry proof; its worktree and branch removed
+SELFTEST ok   batch: red B2 bisected out, conflicting B5 skipped, B1+B3 merged in one push and recorded, rerun waits
+SELFTEST ok   proof: unproven units kept and re-queued; once proven, P1 cleaned (worktree, branch, remote branch, gate log), dirty P2 kept, CHANGELOG lists both
+SELFTEST ok   two repos: x's red gate parks X1 while y's train merges Y1; a re-queue line retries parked X1

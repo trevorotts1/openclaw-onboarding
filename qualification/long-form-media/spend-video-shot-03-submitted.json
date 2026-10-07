@@ -1,0 +1,71 @@
+{
+  "estimated_cost_cents": 336,
+  "job": "video-shot-03",
+  "logical_key": "w4-long/video-generate-s3",
+  "request_digest": "71b67f3fb3610115486e7fc99b62834d9f4f428d6efc399ac865a2aa5a4308d6",
+  "reserve": {
+    "init_run": {
+      "attempt_id": "",
+      "command": "init_run",
+      "evidence": {},
+      "logical_key": "",
+      "next_action": "",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "plan": {
+      "attempt_id": "a1",
+      "command": "plan",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s3",
+      "next_action": "reserve before dispatch",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 1,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    },
+    "reserve": {
+      "attempt_id": "a1",
+      "command": "reserve",
+      "evidence": {},
+      "logical_key": "w4-long/video-generate-s3",
+      "next_action": "dispatch only against this reservation",
+      "outcome": "ok",
+      "reason_code": "OK",
+      "run_id": "w4-long",
+      "schema_version": "1.0.0",
+      "state_version": 2,
+      "tool": "spend_ledger",
+      "tool_version": "1.0.0"
+    }
+  },
+  "submit": {
+    "adapter": "74-kie-live-adapter",
+    "adapter_mode": "active",
+    "backend": "native-live",
+    "capability": "Text to Video, Image to Video, Video to Video",
+    "credits_consumed": null,
+    "data": {},
+    "error": null,
+    "fallback_used": false,
+    "model_id": "wan/3-0-video",
+    "provider": "kie",
+    "raw_family": "market",
+    "result_urls": [],
+    "saved_paths": [],
+    "schema_fetched_at": 1791282447.519433,
+    "schema_source": "schema:cache",
+    "state": "queued",
+    "task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5",
+    "warnings": []
+  },
+  "task_id": "c3bb63b280a862c6b8fa9f5c79ee39c5"
+}

@@ -28,7 +28,7 @@ instead of re-embedded on every dispatch. See
 | 3 | Role library (426 roles) | deterministic `_index.json` lookup — **no embeddings by design** | `23-ai-workforce-blueprint/templates/role-library/_index.json` | `content_sha` (CONTENT-HASH) via `hash-content-manifest.py`, CI `library-lockstep` |
 | 4 | SOP libraries (content) | deterministic — **no embeddings by design** | dept SOPs: `_index.json sops[]` (145) · craft clusters: `universal-sops/` | dept SOPs: CONTENT-HASH · universal-sops: `_content-manifest.json` via `scripts/hash-universal-sops-manifest.py` |
 | 5 | **CC SOP / routing embeddings** (System 2, TypeScript) | Gemini vectors, one row per SOP | Command Center `mission-control.db` → `sop_embeddings` (migration 057); shipped asset also carries `role_library_embeddings` (by slug) | real-vector hard gate (`embed_sop_library.py --verify`, both tables) + sha256 asset gate + dual-surface row-count reconciliation |
-| 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors, one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
+| 6 | **Department-router semantic vectors** (System 2, TypeScript) | Gemini/OpenAI vectors (local Ollama on a local-mode box), one row per department, in-memory cache | `department-router.ts` in-process cache (not persisted) | content-hash cache key (`name+purpose+keywords`), invalidated on department edit |
 
 ## Non-negotiable invariants (EMBED-1..9)
 
@@ -82,7 +82,8 @@ instead of re-embedded on every dispatch. See
 7. **Selector never scores foreign vectors (EMBED-7).**
    `semantic_task_fit.py` excludes rows whose provider/model is definitely not
    the current gemini model (fake rows, stale slugs, openai rows) and never
-   cosine-compares mismatched dimensions.
+   cosine-compares mismatched dimensions. On a local-mode box it scores only
+   rows on the index's own ollama model.
 8. **Health checks the real DB (EMBED-8).** `embedding_health.py` leg-b reads
    provider/model/dim from the actual embeddings table (and flags rows whose
    blob length disagrees with the stamped dim = fake/corrupt).
@@ -169,7 +170,8 @@ instead of re-embedded on every dispatch. See
 - **Selector**: `persona-selector-v2.py` Stage C uses
   `shared-utils/semantic_task_fit.py` (`semantic_persona_ids`, Layer-5 task
   fit) against the same DB, with the EMBED-7 row filter; falls back to
-  keyword overlap, then neutral 0.6.
+  keyword overlap, then neutral 0.6. On a local-mode box it embeds the task
+  with the local Ollama model (see "Local Ollama mode").
 - **Categories**: `persona-categories.json` drives Stage B domain filtering
   and specialist recall. Keep index personas ⟷ categories keys in lockstep
   (the count triad + `.persona-set-version` re-wire cascade cover this at
@@ -279,7 +281,12 @@ per-process cache, cheap to rebuild on restart, and never shipped as a
 GitHub Release asset (department configs are per-client, not a shared
 library).
 
-## Local Ollama mode (explicit per-box opt-in, corpora 1–2 and 5)
+On a local-mode Command Center (`SOP_EMBEDDING_PROVIDER=ollama`) the router
+embeds with the CC's local model (`SOP_EMBEDDING_MODEL`) through the same
+`fetchEmbeddings()` and caches the vectors the same way. The context-pack
+skill matcher does the same. See "Local Ollama mode" below.
+
+## Local Ollama mode (explicit per-box opt-in, corpora 1–2, 5 and 6)
 
 For a box whose Gemini key cannot pay (e.g. HTTP 402), both searches can run on
 the box's own local Ollama (default `embeddinggemma-2:740m` @ 768, free, no key).
@@ -324,15 +331,31 @@ mixed-model: verify fails and `search()` uses keyword mode.
   `http://127.0.0.1:11434`). If Ollama is down, it falls back to keyword.
   `provision-persona-index.sh` keeps an index that has `provider='ollama'` rows
   and never installs the Gemini asset over it.
+- **Persona selector Layer-5 and Stage C** (`semantic_task_fit.py`): a box
+  is in local mode when its persona index carries `provider='ollama'` rows,
+  which only `--reembed-local` writes. That is the same check `search()` uses.
+  The task is embedded once per selection through
+  `embedding_engine._ollama_embed` with the model the index is stamped with
+  (query prefix for embeddinggemma). It is scored only against rows on that
+  model, with method `ollama_embedding`. A local-mode box never calls Gemini.
+  If Ollama is down, the selector logs one line and uses keyword overlap for
+  the rest of that process. A mixed-model index (partial re-embed) also uses
+  keyword overlap.
+- **CC department router and skill matcher** (corpus 6 and the context-pack
+  skill match): with `SOP_EMBEDDING_PROVIDER=ollama` both embed with the CC's
+  `SOP_EMBEDDING_MODEL` at `SOP_EMBEDDING_OLLAMA_URL`. Set the model to
+  `embeddinggemma-2:740m` on a local box. With an embeddinggemma model the task
+  gets `task: search result | query: …` and the department or skill text gets
+  `title: none | text: …`. If Ollama is down, the router logs one line and the
+  next picker decides (decision engine, then keyword). The skill matcher uses
+  keyword scoring. Neither ever calls Gemini or OpenAI in this mode. The SOP
+  index itself (corpus 5) is still embedded raw, without prefixes.
 - **Health**: `embedding_health.py` checks a local-mode store against its own
   model and dims, with a smoke embed to the loopback Ollama. A non-loopback URL
   fails, because Ollama Cloud never embeds (B.6).
 - **Known limits**: personas added by a newer prebuilt asset do not reach a
   local-mode box until an operator moves the index aside, re-provisions, and
-  re-runs `--reembed-local`. The selector's in-process Layer-5
-  (`semantic_task_fit.py`) stays Gemini-only and uses keyword overlap on such
-  a box. Stage C still ranks through `search()`. The CC's department routing and
-  skill matching stay on keyword in local mode.
+  re-runs `--reembed-local`.
 - **Leaving local mode**: drop the CC marker table, set
   `SOP_EMBEDDING_PROVIDER=google`, and re-provision. For personas, move
   `gemini-index.sqlite` aside and re-provision.

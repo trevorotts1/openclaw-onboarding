@@ -1,0 +1,16 @@
+{
+  "digest": "deadbeefdeadbeef",
+  "summary": {
+    "offer": "prior offer",
+    "audience": "busy parents",
+    "cta": "visit the site and start the free trial",
+    "placement": "9:16 vertical short",
+    "generation_ceiling": {
+      "amount_minor": 10000,
+      "currency": "USD"
+    },
+    "target_length_s": 30
+  },
+  "outstanding": [],
+  "next_stage": "preflight"
+}

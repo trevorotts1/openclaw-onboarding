@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "detail": "no 14.2 shot plan in package; per-shot continuity cannot be evidenced",
+      "id": "SHOTS_PRESENT",
+      "status": "UNAVAILABLE"
+    }
+  ],
+  "run_id": "w4-long",
+  "shot_records": [],
+  "shot_verdicts": {
+    "FAIL": [],
+    "PASS": [],
+    "UNAVAILABLE": []
+  },
+  "shots_checked": 0,
+  "tool": "long-qc.shot_continuity",
+  "tool_version": "1.0.0",
+  "unit_id": "W4-01-U2",
+  "verdict": "UNAVAILABLE"
+}
