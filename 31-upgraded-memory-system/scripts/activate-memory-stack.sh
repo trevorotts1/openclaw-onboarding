@@ -192,10 +192,12 @@ if _key_in_stores "$OPENROUTER_ALL_ALIASES" >/dev/null 2>&1; then OPENROUTER_OK=
 # the legacy agents.defaults.memorySearch) is owned by 76-local-embedder. Take the
 # existing "leave existing config alone" path so it is never re-pinned.
 LOCAL_EMBEDDER=0
-if python3 - "$OC_CONFIG" <<'PYEOF' 2>/dev/null
-import json, sys
+# Read-only: the path goes in through the environment (the live file is only
+# ever WRITTEN through the staged copy below).
+if OC_CFG_RO="$OC_CONFIG" python3 - <<'PYEOF' 2>/dev/null
+import json, os, sys
 from urllib.parse import urlparse
-c = json.load(open(sys.argv[1]))
+c = json.load(open(os.environ["OC_CFG_RO"]))
 new = (c.get("memory") or {}).get("search") if isinstance(c.get("memory"), dict) else None
 new = new if isinstance(new, dict) else {}
 old = ((c.get("agents") or {}).get("defaults") or {}).get("memorySearch") or {}
