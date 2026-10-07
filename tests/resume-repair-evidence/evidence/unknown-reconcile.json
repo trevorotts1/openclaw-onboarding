@@ -1,0 +1,923 @@
+{
+  "checks": [
+    {
+      "check": "init_run ok",
+      "detail": {
+        "attempt_id": "",
+        "command": "init_run",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan A ok",
+      "detail": {
+        "attempt_id": "a1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "reserve before dispatch",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reserve A ok",
+      "detail": {
+        "attempt_id": "a1",
+        "command": "reserve",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "dispatch only against this reservation",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "mark_unknown A ok (reservation retained)",
+      "detail": {
+        "attempt_id": "a1",
+        "command": "mark_unknown",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "reconcile via provider records or operator evidence; do not auto-resubmit; park if undeterminable",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan B ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "reserve before dispatch",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reserve B ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "reserve",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "dispatch only against this reservation",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "mark_submitted B ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "mark_submitted",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "poll this job; polling is distinct from resubmitting",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "mark_unknown B ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "mark_unknown",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "reconcile via provider records or operator evidence; do not auto-resubmit; park if undeterminable",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 4,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan C ok",
+      "detail": {
+        "attempt_id": "c1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "remote-tracked",
+        "next_action": "reserve before dispatch",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reserve C ok",
+      "detail": {
+        "attempt_id": "c1",
+        "command": "reserve",
+        "evidence": {},
+        "logical_key": "remote-tracked",
+        "next_action": "dispatch only against this reservation",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "mark_submitted C ok",
+      "detail": {
+        "attempt_id": "c1",
+        "command": "mark_submitted",
+        "evidence": {},
+        "logical_key": "remote-tracked",
+        "next_action": "poll this job; polling is distinct from resubmitting",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "unknown_or_reserved covers A+B",
+      "detail": 110,
+      "pass": true
+    },
+    {
+      "check": "committed covers C",
+      "detail": 70,
+      "pass": true
+    },
+    {
+      "check": "totals <= ceiling before recovery",
+      "detail": {
+        "actual_cost": 0,
+        "committed_cost": 70,
+        "currency": "USD",
+        "estimated_cost": 180,
+        "number_of_generation_calls": 2,
+        "provider_cost_by_stage": {},
+        "qc_and_repair_allowance": 0,
+        "remaining_budget": 4820,
+        "retry_cost": 0,
+        "run_status": "active",
+        "unknown_or_reserved_cost": 110
+      },
+      "pass": true
+    },
+    {
+      "check": "recover rc=0 / outcome ok",
+      "detail": {
+        "attempt_id": "",
+        "command": "recover",
+        "evidence": {
+          "jobs": [
+            {
+              "action": "BLOCKED",
+              "attempt_id": "a1",
+              "logical_key": "crash-before-dispatch",
+              "next": "reconcile via provider records or operator evidence; never auto-resubmit",
+              "reason": "NO_REMOTE_ID",
+              "state": "unknown"
+            },
+            {
+              "action": "POLL",
+              "attempt_id": "c1",
+              "logical_key": "remote-tracked",
+              "next": "poll task task-88; polling is distinct from resubmitting",
+              "reason": "REMOTE_TRACKED",
+              "state": "submitted"
+            },
+            {
+              "action": "RECONCILE",
+              "attempt_id": "b1",
+              "logical_key": "uncertain-accept",
+              "next": "poll task task-77 or operator evidence; park if undeterminable",
+              "reason": "UNCERTAIN_ACCEPTANCE",
+              "state": "unknown"
+            }
+          ]
+        },
+        "logical_key": "",
+        "next_action": "resume from last incomplete stage; no job re-dispatched",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "job_recovery",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "recover left the main DB byte-identical (sha/size/mtime)",
+      "detail": [
+        [
+          "d309c8e6c64a5041cb546f9c539ee3dfee0b53c3377e1e1cc334e295660c2efe",
+          65536,
+          1791358786785167609,
+          0
+        ],
+        [
+          "d309c8e6c64a5041cb546f9c539ee3dfee0b53c3377e1e1cc334e295660c2efe",
+          65536,
+          1791358786785167609,
+          0
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "recover wrote no pending transaction (WAL empty)",
+      "detail": 0,
+      "pass": true
+    },
+    {
+      "check": "recover changed no job row",
+      "detail": [
+        [
+          [
+            "crash-before-dispatch",
+            "a1",
+            "unknown",
+            null,
+            3
+          ],
+          [
+            "remote-tracked",
+            "c1",
+            "submitted",
+            "task-88",
+            3
+          ],
+          [
+            "uncertain-accept",
+            "b1",
+            "unknown",
+            "task-77",
+            4
+          ]
+        ],
+        [
+          [
+            "crash-before-dispatch",
+            "a1",
+            "unknown",
+            null,
+            3
+          ],
+          [
+            "remote-tracked",
+            "c1",
+            "submitted",
+            "task-88",
+            3
+          ],
+          [
+            "uncertain-accept",
+            "b1",
+            "unknown",
+            "task-77",
+            4
+          ]
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "check": "recover plans all 3 open jobs",
+      "detail": [
+        "crash-before-dispatch",
+        "remote-tracked",
+        "uncertain-accept"
+      ],
+      "pass": true
+    },
+    {
+      "check": "no-remote-id job BLOCKED / NO_REMOTE_ID",
+      "detail": {
+        "action": "BLOCKED",
+        "attempt_id": "a1",
+        "logical_key": "crash-before-dispatch",
+        "next": "reconcile via provider records or operator evidence; never auto-resubmit",
+        "reason": "NO_REMOTE_ID",
+        "state": "unknown"
+      },
+      "pass": true
+    },
+    {
+      "check": "BLOCKED plan refuses auto-resubmit",
+      "detail": "reconcile via provider records or operator evidence; never auto-resubmit",
+      "pass": true
+    },
+    {
+      "check": "unknown+remote job RECONCILE / UNCERTAIN_ACCEPTANCE",
+      "detail": {
+        "action": "RECONCILE",
+        "attempt_id": "b1",
+        "logical_key": "uncertain-accept",
+        "next": "poll task task-77 or operator evidence; park if undeterminable",
+        "reason": "UNCERTAIN_ACCEPTANCE",
+        "state": "unknown"
+      },
+      "pass": true
+    },
+    {
+      "check": "remote-tracked job POLL / REMOTE_TRACKED",
+      "detail": {
+        "action": "POLL",
+        "attempt_id": "c1",
+        "logical_key": "remote-tracked",
+        "next": "poll task task-88; polling is distinct from resubmitting",
+        "reason": "REMOTE_TRACKED",
+        "state": "submitted"
+      },
+      "pass": true
+    },
+    {
+      "check": "re-plan of active unknown key rejected DUPLICATE_LOGICAL_JOB rc=5",
+      "detail": {
+        "attempt_id": "a2",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "logical job already active as a1; poll it, never resubmit",
+        "outcome": "rejected",
+        "reason_code": "DUPLICATE_LOGICAL_JOB",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reject message forbids resubmit",
+      "detail": "logical job already active as a1; poll it, never resubmit",
+      "pass": true
+    },
+    {
+      "check": "callback for unknown job rejected NO_SUCH_JOB rc=1",
+      "detail": [
+        1,
+        {
+          "attempt_id": "g1",
+          "command": "ingest_event",
+          "evidence": {},
+          "logical_key": "ghost-key",
+          "next_action": "callbacks never create jobs; unknown run/request/task/attempt",
+          "outcome": "error",
+          "reason_code": "NO_SUCH_JOB",
+          "run_id": "w4-03-unknown",
+          "schema_version": "1.0.0",
+          "state_version": 0,
+          "tool": "job_recovery",
+          "tool_version": "1.0.0"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "terminal provider event applied",
+      "detail": [
+        0,
+        {
+          "attempt_id": "b1",
+          "command": "ingest_event",
+          "evidence": {
+            "remote_task_id": "task-77",
+            "state": "succeeded"
+          },
+          "logical_key": "uncertain-accept",
+          "next_action": "terminal event applied from unknown; persist receipt, then reconcile",
+          "outcome": "ok",
+          "reason_code": "OK",
+          "run_id": "w4-03-unknown",
+          "schema_version": "1.0.0",
+          "state_version": 5,
+          "tool": "job_recovery",
+          "tool_version": "1.0.0"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "duplicate event idempotent (DUPLICATE_EVENT)",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "ingest_event",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "event already applied; no state change",
+        "outcome": "ok",
+        "reason_code": "DUPLICATE_EVENT",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 5,
+        "tool": "job_recovery",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "older seq recorded not applied (STALE_SEQ)",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "ingest_event",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "older than applied seq 1; recorded, not applied",
+        "outcome": "ok",
+        "reason_code": "STALE_SEQ",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 5,
+        "tool": "job_recovery",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "task-id mismatch refused (TASK_MISMATCH)",
+      "detail": [
+        5,
+        {
+          "attempt_id": "b1",
+          "command": "ingest_event",
+          "evidence": {},
+          "logical_key": "uncertain-accept",
+          "next_action": "event task task-OTHER != recorded task-77",
+          "outcome": "rejected",
+          "reason_code": "TASK_MISMATCH",
+          "run_id": "w4-03-unknown",
+          "schema_version": "1.0.0",
+          "state_version": 5,
+          "tool": "job_recovery",
+          "tool_version": "1.0.0"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "record_result ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "record_result",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 5,
+        "tool": "job_recovery",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reconcile B ok",
+      "detail": {
+        "attempt_id": "b1",
+        "command": "reconcile",
+        "evidence": {},
+        "logical_key": "uncertain-accept",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 6,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "mark_terminal A ok",
+      "detail": {
+        "attempt_id": "a1",
+        "command": "mark_terminal",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "persist receipt then reconcile",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 4,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reconcile A ok on operator evidence",
+      "detail": {
+        "attempt_id": "a1",
+        "command": "reconcile",
+        "evidence": {},
+        "logical_key": "crash-before-dispatch",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown",
+        "schema_version": "1.0.0",
+        "state_version": 5,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "unknown_or_reserved cleared after reconcile",
+      "detail": 0,
+      "pass": true
+    },
+    {
+      "check": "actual cost == reconciled charge",
+      "detail": 60,
+      "pass": true
+    },
+    {
+      "check": "run still active (only C outstanding)",
+      "detail": "active",
+      "pass": true
+    },
+    {
+      "check": "one receipt per reconciled job, sum 60 (A zero-charge + B)",
+      "detail": [
+        2,
+        60
+      ],
+      "pass": true
+    },
+    {
+      "check": "receipts sum == summary actual_cost",
+      "detail": [
+        60,
+        60
+      ],
+      "pass": true
+    },
+    {
+      "check": "A and B reconciled, C still submitted",
+      "detail": {
+        "crash-before-dispatch": [
+          "reconciled",
+          "failed",
+          0
+        ],
+        "remote-tracked": [
+          "submitted",
+          null,
+          null
+        ],
+        "uncertain-accept": [
+          "reconciled",
+          "succeeded",
+          60
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "totals <= ceiling after reconcile",
+      "detail": {
+        "actual_cost": 60,
+        "committed_cost": 70,
+        "currency": "USD",
+        "estimated_cost": 70,
+        "number_of_generation_calls": 2,
+        "provider_cost_by_stage": {
+          "video": 60
+        },
+        "qc_and_repair_allowance": 0,
+        "remaining_budget": 4870,
+        "retry_cost": 0,
+        "run_status": "active",
+        "unknown_or_reserved_cost": 0
+      },
+      "pass": true
+    },
+    {
+      "check": "init_run price run ok",
+      "detail": {
+        "attempt_id": "",
+        "command": "init_run",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown-price",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan with unknown price accepted into ledger",
+      "detail": {
+        "attempt_id": "p1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "priceless",
+        "next_action": "reserve before dispatch",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown-price",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reserve with unknown price parks run rc=4 UNKNOWN_PRICE",
+      "detail": [
+        4,
+        {
+          "attempt_id": "",
+          "command": "can_spend",
+          "evidence": {},
+          "logical_key": "",
+          "next_action": "unknown prices require a decision before dispatch",
+          "outcome": "parked",
+          "reason_code": "UNKNOWN_PRICE",
+          "run_id": "w4-03-unknown-price",
+          "schema_version": "1.0.0",
+          "state_version": 0,
+          "tool": "spend_ledger",
+          "tool_version": "1.0.0"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "price run status parked",
+      "detail": "parked",
+      "pass": true
+    },
+    {
+      "check": "plan while price-parked rejected RUN_PARKED rc=5",
+      "detail": {
+        "attempt_id": "o1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "other",
+        "next_action": "reconcile or operator unpark",
+        "outcome": "rejected",
+        "reason_code": "RUN_PARKED",
+        "run_id": "w4-03-unknown-price",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "operator unpark ok",
+      "detail": {
+        "attempt_id": "",
+        "command": "unpark",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown-price",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "spend gate open again after unpark",
+      "detail": {
+        "attempt_id": "",
+        "command": "can_spend",
+        "evidence": {
+          "actual_cost": 0,
+          "committed_cost": 0,
+          "currency": "USD",
+          "estimated_cost": 0,
+          "number_of_generation_calls": 0,
+          "provider_cost_by_stage": {},
+          "qc_and_repair_allowance": 0,
+          "remaining_budget": 5000,
+          "retry_cost": 0,
+          "run_status": "active",
+          "unknown_or_reserved_cost": 0
+        },
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-unknown-price",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "final recover lists only the remote-tracked job",
+      "detail": [
+        {
+          "action": "POLL",
+          "attempt_id": "c1",
+          "logical_key": "remote-tracked",
+          "next": "poll task task-88; polling is distinct from resubmitting",
+          "reason": "REMOTE_TRACKED",
+          "state": "submitted"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "final action is POLL (polling != resubmitting)",
+      "detail": {
+        "action": "POLL",
+        "attempt_id": "c1",
+        "logical_key": "remote-tracked",
+        "next": "poll task task-88; polling is distinct from resubmitting",
+        "reason": "REMOTE_TRACKED",
+        "state": "submitted"
+      },
+      "pass": true
+    }
+  ],
+  "fail_count": 0,
+  "pass_count": 50,
+  "payload": {
+    "job_rows": [
+      [
+        "crash-before-dispatch",
+        "reconciled",
+        "failed",
+        0
+      ],
+      [
+        "remote-tracked",
+        "submitted",
+        null,
+        null
+      ],
+      [
+        "uncertain-accept",
+        "reconciled",
+        "succeeded",
+        60
+      ]
+    ],
+    "receipts": [
+      2,
+      60
+    ],
+    "recover_plan": [
+      {
+        "action": "BLOCKED",
+        "attempt_id": "a1",
+        "logical_key": "crash-before-dispatch",
+        "next": "reconcile via provider records or operator evidence; never auto-resubmit",
+        "reason": "NO_REMOTE_ID",
+        "state": "unknown"
+      },
+      {
+        "action": "POLL",
+        "attempt_id": "c1",
+        "logical_key": "remote-tracked",
+        "next": "poll task task-88; polling is distinct from resubmitting",
+        "reason": "REMOTE_TRACKED",
+        "state": "submitted"
+      },
+      {
+        "action": "RECONCILE",
+        "attempt_id": "b1",
+        "logical_key": "uncertain-accept",
+        "next": "poll task task-77 or operator evidence; park if undeterminable",
+        "reason": "UNCERTAIN_ACCEPTANCE",
+        "state": "unknown"
+      }
+    ],
+    "recover_plan_final": [
+      {
+        "action": "POLL",
+        "attempt_id": "c1",
+        "logical_key": "remote-tracked",
+        "next": "poll task task-88; polling is distinct from resubmitting",
+        "reason": "REMOTE_TRACKED",
+        "state": "submitted"
+      }
+    ],
+    "recover_readonly_db_state": {
+      "mtime_ns": 1791358786785167609,
+      "sha256": "d309c8e6c64a5041cb546f9c539ee3dfee0b53c3377e1e1cc334e295660c2efe",
+      "size": 65536,
+      "wal_size_after": 0
+    },
+    "summary_after": {
+      "actual_cost": 60,
+      "committed_cost": 70,
+      "currency": "USD",
+      "estimated_cost": 70,
+      "number_of_generation_calls": 2,
+      "provider_cost_by_stage": {
+        "video": 60
+      },
+      "qc_and_repair_allowance": 0,
+      "remaining_budget": 4870,
+      "retry_cost": 0,
+      "run_status": "active",
+      "unknown_or_reserved_cost": 0
+    },
+    "summary_before": {
+      "actual_cost": 0,
+      "committed_cost": 70,
+      "currency": "USD",
+      "estimated_cost": 180,
+      "number_of_generation_calls": 2,
+      "provider_cost_by_stage": {},
+      "qc_and_repair_allowance": 0,
+      "remaining_budget": 4820,
+      "retry_cost": 0,
+      "run_status": "active",
+      "unknown_or_reserved_cost": 110
+    },
+    "unknown_price_park": "reserve with est=None parked the run (UNKNOWN_PRICE, rc 4); plan/spend blocked RUN_PARKED until unpark"
+  },
+  "schema": "blackceo.resume-repair-evidence/v1",
+  "suite": "unknown-reconcile.json",
+  "unit": "W4-03-U1"
+}

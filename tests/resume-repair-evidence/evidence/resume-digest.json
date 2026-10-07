@@ -1,0 +1,395 @@
+{
+  "checks": [
+    {
+      "check": "intake pre-park rc=ok",
+      "detail": 0,
+      "pass": true
+    },
+    {
+      "check": "intake pre-park outcome ok",
+      "detail": "complete-brief-zero-questions",
+      "pass": true
+    },
+    {
+      "check": "digest recorded",
+      "detail": "74a4a7d5a5210882",
+      "pass": true
+    },
+    {
+      "check": "init_run ok",
+      "detail": {
+        "attempt_id": "",
+        "command": "init_run",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan mid-run ok",
+      "detail": {
+        "attempt_id": "m1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "music",
+        "next_action": "reserve before dispatch",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 1,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "reserve mid-run ok",
+      "detail": {
+        "attempt_id": "m1",
+        "command": "reserve",
+        "evidence": {},
+        "logical_key": "music",
+        "next_action": "dispatch only against this reservation",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "stage claimed RUNNING",
+      "detail": "RUNNING",
+      "pass": true
+    },
+    {
+      "check": "stage PARKED requires reason",
+      "detail": "MISSING_REASON",
+      "pass": true
+    },
+    {
+      "check": "stage PARKED with reason",
+      "detail": "PARKED",
+      "pass": true
+    },
+    {
+      "check": "stage owner cleared on PARKED",
+      "detail": null,
+      "pass": true
+    },
+    {
+      "check": "park_run outcome parked",
+      "detail": {
+        "attempt_id": "",
+        "command": "park_run",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "resume from last incomplete stage",
+        "outcome": "parked",
+        "reason_code": "MID_RUN_SUSPEND",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 0,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "park_run rc=4",
+      "detail": 4,
+      "pass": true
+    },
+    {
+      "check": "can_spend while parked rejected RUN_PARKED",
+      "detail": {
+        "attempt_id": "",
+        "command": "can_spend",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "run parked; reconcile or operator unpark",
+        "outcome": "rejected",
+        "reason_code": "RUN_PARKED",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 0,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "plan while parked rejected RUN_PARKED",
+      "detail": {
+        "attempt_id": "v1",
+        "command": "plan",
+        "evidence": {},
+        "logical_key": "video",
+        "next_action": "reconcile or operator unpark",
+        "outcome": "rejected",
+        "reason_code": "RUN_PARKED",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "summary readable while parked",
+      "detail": {
+        "attempt_id": "",
+        "command": "summary",
+        "evidence": {
+          "actual_cost": 0,
+          "committed_cost": 100,
+          "currency": "USD",
+          "estimated_cost": 100,
+          "number_of_generation_calls": 0,
+          "provider_cost_by_stage": {},
+          "qc_and_repair_allowance": 0,
+          "remaining_budget": 4900,
+          "retry_cost": 0,
+          "run_status": "parked",
+          "unknown_or_reserved_cost": 0
+        },
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 2,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "run_status parked in summary",
+      "detail": "parked",
+      "pass": true
+    },
+    {
+      "check": "committed while parked = 100",
+      "detail": {
+        "actual_cost": 0,
+        "committed_cost": 100,
+        "currency": "USD",
+        "estimated_cost": 100,
+        "number_of_generation_calls": 0,
+        "provider_cost_by_stage": {},
+        "qc_and_repair_allowance": 0,
+        "remaining_budget": 4900,
+        "retry_cost": 0,
+        "run_status": "parked",
+        "unknown_or_reserved_cost": 0
+      },
+      "pass": true
+    },
+    {
+      "check": "remaining budget >= 0 while parked",
+      "detail": 4900,
+      "pass": true
+    },
+    {
+      "check": "totals <= ceiling while parked",
+      "detail": {
+        "actual_cost": 0,
+        "committed_cost": 100,
+        "currency": "USD",
+        "estimated_cost": 100,
+        "number_of_generation_calls": 0,
+        "provider_cost_by_stage": {},
+        "qc_and_repair_allowance": 0,
+        "remaining_budget": 4900,
+        "retry_cost": 0,
+        "run_status": "parked",
+        "unknown_or_reserved_cost": 0
+      },
+      "pass": true
+    },
+    {
+      "check": "PARKED.json written and re-readable",
+      "detail": "74a4a7d5a5210882",
+      "pass": true
+    },
+    {
+      "check": "unpark ok rc=0",
+      "detail": {
+        "attempt_id": "",
+        "command": "unpark",
+        "evidence": {},
+        "logical_key": "",
+        "next_action": "",
+        "outcome": "ok",
+        "reason_code": "OK",
+        "run_id": "w4-03-resume",
+        "schema_version": "1.0.0",
+        "state_version": 3,
+        "tool": "spend_ledger",
+        "tool_version": "1.0.0"
+      },
+      "pass": true
+    },
+    {
+      "check": "stage PARKED -> READY",
+      "detail": "READY",
+      "pass": true
+    },
+    {
+      "check": "resume intake rc=ok",
+      "detail": 0,
+      "pass": true
+    },
+    {
+      "check": "resume reason = resume-no-changes",
+      "detail": "resume-no-changes",
+      "pass": true
+    },
+    {
+      "check": "resume digest identical to pre-park digest",
+      "detail": [
+        "74a4a7d5a5210882",
+        "74a4a7d5a5210882",
+        "74a4a7d5a5210882"
+      ],
+      "pass": true
+    },
+    {
+      "check": "state_version expected == current == pre-park digest",
+      "detail": {
+        "current": "74a4a7d5a5210882",
+        "expected": "74a4a7d5a5210882"
+      },
+      "pass": true
+    },
+    {
+      "check": "resume did not re-ask questions",
+      "detail": [],
+      "pass": true
+    },
+    {
+      "check": "resume keeps next_stage from PARKED.json",
+      "detail": "video",
+      "pass": true
+    },
+    {
+      "check": "changed brief parks resume (rc=3)",
+      "detail": 3,
+      "pass": true
+    },
+    {
+      "check": "reason = resume-approval-invalidated",
+      "detail": "resume-approval-invalidated",
+      "pass": true
+    },
+    {
+      "check": "digest differs after approval-affecting change",
+      "detail": [
+        "74a4a7d5a5210882",
+        "bc57a86da0ada975"
+      ],
+      "pass": true
+    },
+    {
+      "check": "approval_invalidated flagged",
+      "detail": true,
+      "pass": true
+    },
+    {
+      "check": "run active again",
+      "detail": "active",
+      "pass": true
+    },
+    {
+      "check": "no spend during park/resume",
+      "detail": 0,
+      "pass": true
+    },
+    {
+      "check": "remaining unchanged after resume",
+      "detail": 4900,
+      "pass": true
+    },
+    {
+      "check": "totals <= ceiling after resume",
+      "detail": {
+        "actual_cost": 0,
+        "committed_cost": 100,
+        "currency": "USD",
+        "estimated_cost": 100,
+        "number_of_generation_calls": 0,
+        "provider_cost_by_stage": {},
+        "qc_and_repair_allowance": 0,
+        "remaining_budget": 4900,
+        "retry_cost": 0,
+        "run_status": "active",
+        "unknown_or_reserved_cost": 0
+      },
+      "pass": true
+    },
+    {
+      "check": "exactly one job planned (no auto re-plan across park)",
+      "detail": 1,
+      "pass": true
+    }
+  ],
+  "fail_count": 0,
+  "pass_count": 37,
+  "payload": {
+    "cost": {
+      "actual_cost": 0,
+      "committed_cost": 100,
+      "currency": "USD",
+      "estimated_cost": 100,
+      "number_of_generation_calls": 0,
+      "provider_cost_by_stage": {},
+      "qc_and_repair_allowance": 0,
+      "remaining_budget": 4900,
+      "retry_cost": 0,
+      "run_status": "active",
+      "unknown_or_reserved_cost": 0
+    },
+    "invalidated_digest": "bc57a86da0ada975",
+    "parked_file": "/Users/blackceomacmini/drama-song-factory-build/tests/resume-repair-evidence/evidence/PARKED.json",
+    "parked_file_is": "projection of the ledgers; the intake resume reader consumes it (no PARKED.json reader exists in this tree)",
+    "pre_park_digest": "74a4a7d5a5210882",
+    "resume_digest": "74a4a7d5a5210882",
+    "summary_pre": {
+      "assets": null,
+      "assumptions": [
+        "assets=None (assumed default)",
+        "target_length_s=30 (assumed default)"
+      ],
+      "audience": "busy parents",
+      "auth_status": "missing",
+      "cta": "visit the site and start the free trial",
+      "format": "9:16",
+      "generation_ceiling": {
+        "amount_minor": 10000,
+        "currency": "USD"
+      },
+      "offer": "demo offer",
+      "placement": "9:16 vertical short",
+      "repair_allowance": "none",
+      "target_length_s": 30
+    }
+  },
+  "schema": "blackceo.resume-repair-evidence/v1",
+  "suite": "resume-digest.json",
+  "unit": "W4-03-U1"
+}
