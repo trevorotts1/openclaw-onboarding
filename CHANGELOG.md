@@ -1,3 +1,10 @@
+## [v26.2.1]  -  2026-10-07  -  Fleet roll refreshes a Command Center that has local edits when upstream did not touch the same files
+
+#### What changed
+- **Command Center refresh no longer skips a box just because it has local edits.** `update-skills.sh` used to skip the CC refresh (and report `state=dirty`) whenever the CC checkout had any modified tracked file. A new helper `cc_dirty_overlap` fetches (`--no-tags`, so a stale local tag cannot break it) and compares the locally modified files with the files changed upstream. No overlap: the box refreshes with `git merge --ff-only`, the local edits are kept, and the report says `local-edits-preserved=N`. Overlap: skipped as before, and the blocking files are listed. Used by `_cc_currency_probe`, the fast path and the DIRTY-CHECKOUT GUARD. Nothing is ever stashed, reset or cleaned; untracked files are still ignored.
+- **Why:** on 2026-10-07 a client box with 15 locally modified tracked files (none touched upstream) updated cleanly by hand, but the roll would have skipped it.
+- **Tests:** `tests/unit/cc-dirty-ff-when-safe.test.sh` (16: no overlap refreshes and keeps the edit, overlap skips and lists, staged variant, untracked-only unchanged, origin unreachable, clashing local tag, all three call sites use the helper).
+
 ## [v26.1.1]  -  2026-10-07  -  Skill 76 v1.0.1 (QC fixes): fresh install no longer half-switches a box, guards before the config write, time-bounded re-index and brew, fallback none, SIGTERM app stop, per-agent overrides reported
 
 #### What changed (Skill 76 v1.0.1, fixes from independent QC of v26.1.0)
