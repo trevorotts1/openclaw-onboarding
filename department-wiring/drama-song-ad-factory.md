@@ -150,7 +150,16 @@ POST   /api/tasks/{TASK_ID}/activities      significant stage transitions
 POST   /api/tasks/{TASK_ID}/deliverables    deliverables — only after they exist
 PATCH  /api/tasks/{TASK_ID}                 lifecycle moves
 PATCH  /api/openclaw/sessions/{SESSION_ID}  mark a worker session complete
+Authorization: Bearer $MC_API_TOKEN on every call above — the Command
+Center is fail-closed and 401s any write-back without it
 ```
+
+> **401 trap.** Every external `/api/*` call above must send
+> `Authorization: Bearer $MC_API_TOKEN` or it is rejected and the finished
+> task freezes `in_progress`. `POST /api/tasks/ingest` is the only exception
+> (HMAC `x-webhook-signature` over `WEBHOOK_SECRET`, never a Bearer line).
+> Never send `$OPENCLAW_GATEWAY_TOKEN` here.
+
 
 **Board (stage-card) family — `core/cc_sync.py` owns this contract:**
 
