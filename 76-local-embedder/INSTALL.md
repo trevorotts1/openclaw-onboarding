@@ -67,7 +67,8 @@ It reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in
 place only when it is idle, or installs the headless Ollama CLI under
 ~/.openclaw/ollama/ (LaunchAgent com.blackceo.ollama-serve). Then it pulls
 embeddinggemma-2:740m, pins num_ctx 8192 on that same tag, switches
-memory.search to it and re-indexes each agent once.
+memory.search to it (fallback none by default, knob
+LOCAL_EMBEDDER_FALLBACK) and re-indexes each agent once, time-bounded.
 
 STEP 3: OPTIONAL, OPERATOR ONLY
 

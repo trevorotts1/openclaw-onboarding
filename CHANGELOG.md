@@ -1,3 +1,14 @@
+## [v26.1.1]  -  2026-10-07  -  Skill 76 v1.0.1 (QC fixes): fresh install no longer half-switches a box, guards before the config write, time-bounded re-index and brew, fallback none, SIGTERM app stop, per-agent overrides reported
+
+#### What changed (Skill 76 v1.0.1, fixes from independent QC of v26.1.0)
+- **Fresh install no longer half-switches a box.** The first `ollama serve` creates `~/.ollama/id_ed25519*`, which tripped the key guard AFTER `memory.search` was written. Keys may now go from absent to present only when this run started our own daemon; pre-existing keys must stay identical. All Ollama and model work and every guard (fingerprint, keys, `OLLAMA_*` env, `/api/me`, cloud tags, `/api/show` pin) now complete before the config write, which is the last mutating step before the re-index.
+- **Nothing can hang the roll.** Per-agent re-index (900 s), every brew call (1800 s), `ollama show`/`create`, and the whole skill run in `update-skills.sh` (7200 s) are time-bounded with a bash 3.2 safe perl alarm. A timed-out agent is retried next roll.
+- **One vector space.** `memory.search.fallback` defaults to `none` (single knob `LOCAL_EMBEDDER_FALLBACK`).
+- **No osascript over SSH.** The Ollama app is stopped with SIGTERM; if it is still running after the wait the upgrade is deferred and the bundle is never replaced.
+- **Per-agent overrides** (`agents.entries.<id>.memory.search`, legacy `memorySearch`) are reported and skipped, never rewritten; the fingerprint now covers the whole `agents` block.
+- **Smaller write.** Key order and indentation kept; the file is re-read right before the atomic replace (one retry).
+- **Tests:** 65 checks; the fresh-install path now really runs with a mocked release download; mutation-proven.
+
 ## [v26.1.0]  -  2026-10-07  -  Skill 76 Local Embedder: client Macs get a free local embedder (Ollama, embeddinggemma-2:740m at num_ctx 8192) for OpenClaw memory search; re-pinners keep it
 
 #### What changed

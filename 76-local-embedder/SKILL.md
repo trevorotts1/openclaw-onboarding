@@ -7,7 +7,7 @@ description: >
   points memory.search at http://127.0.0.1:11434 and re-indexes each agent
   once. Never touches Ollama Cloud sign-in, chat-model config or OLLAMA_* env.
   Runs from the fleet roll; not a client-facing feature.
-version: 1.0.0
+version: 1.0.1
 priority: MEDIUM
 ---
 
@@ -33,7 +33,10 @@ version, retried while it exits 1). Steps, in order:
      (Homebrew cask, Homebrew formula, the app bundle swapped from the
      checksum-verified official zip with the old bundle moved to the Trash, or
      our own LaunchAgent), only when idle: no loaded models and no open
-     connections, checked 3 times 60 seconds apart, else deferred.
+     connections, checked 3 times 60 seconds apart, else deferred. The app is
+     stopped with SIGTERM (never osascript, which needs a consent prompt over
+     SSH); if it is still running after the wait, the upgrade is deferred and
+     the running bundle is never replaced. Every brew call is time-bounded.
    - Ollama installed but stopped: reported, not started.
    - No Ollama at all: the official headless CLI 0.40.0 tarball
      (sha256-verified) is extracted to `~/.openclaw/ollama/0.40.0/` and run by
@@ -42,17 +45,36 @@ version, retried while it exits 1). Steps, in order:
 3. **Model.** Pull `embeddinggemma-2:740m` if absent, then re-create the SAME
    tag from its own Modelfile plus `PARAMETER num_ctx 8192`. Verified through
    `/api/show` (metadata only, nothing is loaded).
-4. **Config.** Atomic JSON deep-merge of `memory.search` only: provider
-   `ollama`, the model, `remote.baseUrl` on 127.0.0.1, multimodal off.
-   Fallback `openai` when the client has an OpenAI key; otherwise the existing
-   fallback is kept and reported. Then `openclaw config validate` (restores
-   the backup on failure).
-5. **Post-verify (fail closed).** Chat-model config fingerprint, the
-   `~/.ollama/id_ed25519*` file metadata, the `OLLAMA_*` launchd env, the
-   `/api/me` sign-in status and the cloud tag list must all be unchanged.
-6. **Re-index.** `openclaw memory status --index --agent <id>` once per agent.
-   A marker per agent in `~/.openclaw/local-embedder/reindexed/` makes it
-   embed-once and resumable.
+4. **Guards, all BEFORE any config write (fail closed).** The fingerprint of
+   `models`, the whole `agents` block and `memory` minus `memory.search`, the
+   `~/.ollama/id_ed25519*` file metadata (they may only appear, never change,
+   and only when this run started our own daemon for the first time), the
+   `OLLAMA_*` launchd env, the `/api/me` sign-in status and the cloud tag list
+   must all be unchanged, and the pin must be confirmed by `/api/show`.
+5. **Config, the last mutating step.** Deep-merge of `memory.search` only
+   (provider `ollama`, the model, `remote.baseUrl` on 127.0.0.1, multimodal
+   off, fallback from the knob below), key order and indentation kept. The
+   file is re-read right before the atomic replace (one retry if the gateway
+   wrote it meanwhile), backed up, then `openclaw config validate` (restores
+   the backup on failure). No failure can leave memory search pointing at a
+   daemon or model that is not ready.
+6. **Re-index.** `openclaw memory status --index --agent <id>` once per agent,
+   each bounded (default 900 s); a timeout is retried next roll. A marker per
+   agent in `~/.openclaw/local-embedder/reindexed/` makes it embed-once and
+   resumable. Agents whose own `memory.search` / `memorySearch` override sets a
+   provider, model or remote are reported and skipped, never rewritten.
+
+## The fallback knob
+
+`LOCAL_EMBEDDER_FALLBACK` (in `wire.sh`) sets `memory.search.fallback`.
+**Default: `none`.** A 768-dim local index is then never queried or rebuilt
+in another provider's vector space while local Ollama is down; memory search
+pauses instead. Set it to a provider id only on purpose, for one box.
+
+Time limits (seconds): `LOCAL_EMBEDDER_REINDEX_TIMEOUT` (900 per agent),
+`LOCAL_EMBEDDER_BREW_TIMEOUT` (1800 per brew call),
+`LOCAL_EMBEDDER_APP_STOP_WAIT` (30 after SIGTERM). update-skills.sh bounds the
+whole run with `LOCAL_EMBEDDER_ROLL_TIMEOUT` (7200).
 
 ## Hard rules
 
