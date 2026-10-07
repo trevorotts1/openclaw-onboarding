@@ -7,7 +7,7 @@ description: >
   points memory.search at http://127.0.0.1:11434 and re-indexes each agent
   once. Never touches Ollama Cloud sign-in, chat-model config or OLLAMA_* env.
   Runs from the fleet roll; not a client-facing feature.
-version: 1.2.0
+version: 1.3.0
 priority: MEDIUM
 ---
 
@@ -53,13 +53,23 @@ version, retried while it exits 1). Steps, in order:
    must all be unchanged, and the pin must be confirmed by `/api/show`.
 5. **Config, the last mutating step.** Deep-merge of `memory.search` only
    (provider `ollama`, the model, `remote.baseUrl` on 127.0.0.1, multimodal
-   off, fallback from the knob below), key order and indentation kept. The
+   off, fallback from the knob below), key order and indentation kept. In the
+   SAME write, one per-agent key may change: an agent that inherits the local
+   provider (no own provider, model or remote) and has
+   `memory.search.multimodal.enabled=true` (department and cc-* agents
+   scaffolded that way) gets it set to false, because the local text embedder
+   has no multimodal adapter and its re-index would fail. The fingerprint
+   exempts exactly that key; an agent with its own provider is reported and
+   untouched. The
    file is re-read right before the atomic replace (one retry if the gateway
    wrote it meanwhile), backed up, then `openclaw config validate` (restores
    the backup on failure). No failure can leave memory search pointing at a
    daemon or model that is not ready.
 6. **Re-index.** `openclaw memory status --index --agent <id>` once per agent,
-   each bounded (default 900 s); a timeout is retried next roll. A marker per
+   each bounded (default 900 s); a timeout is retried next roll. A transient
+   SQLite error ("did not stabilize", busy, locked) is retried 2 more times with
+   a backoff (`LOCAL_EMBEDDER_REINDEX_RETRIES`, `LOCAL_EMBEDDER_REINDEX_BACKOFF`)
+   before the agent is left for the next roll. A marker per
    agent in `~/.openclaw/local-embedder/reindexed/` makes it embed-once and
    resumable. Agents whose own `memory.search` / `memorySearch` override sets a
    provider, model or remote are reported and skipped, never rewritten.
@@ -106,4 +116,7 @@ local Ollama is down. Both are skipped without a key and never fatal.
 - `bash wire.sh --dry-run`: reads only and prints the plan.
 - `bash wire.sh`: install or converge (idempotent, safe to re-run).
 - `bash wire.sh --no-reindex`: skip step 6.
+- `bash wire.sh --sop-fallback-only`: run only step 5c. update-skills.sh calls it
+  after the Command Center refresh, so a CC that reaches 7.6.108 later in the
+  same roll is still provisioned (idempotent).
 - `bash tests/test-local-embedder.sh`: offline tests with mocks.

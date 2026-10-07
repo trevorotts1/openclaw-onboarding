@@ -10,10 +10,18 @@
 #      (its own Modelfile + one PARAMETER line). Verified via /api/show, no load.
 #   3. Verify every guard (below) BEFORE any config write.
 #   4. Write ONLY memory.search.* (atomic, race-checked deep-merge + config
-#      validate). This is the LAST mutating step before the re-index, so no
-#      failure can leave a box with config on local but daemon/model not ready.
+#      validate). The one allowed per-agent change rides in the SAME write: an
+#      agent that INHERITS the local provider (no own provider/model/remote) and
+#      has multimodal.enabled=true gets that single key set to false, because the
+#      local text embedder has no multimodal adapter and the re-index would fail
+#      with "memory.search.multimodal requires a provider adapter...". An agent
+#      with its own provider/model/remote is reported and left alone.
+#      This is the LAST mutating step before the re-index, so no failure can
+#      leave a box with config on local but daemon/model not ready.
 #   5. Re-index each agent once (`openclaw memory status --index --agent <id>`),
-#      time-bounded and resumable through per-agent markers.
+#      time-bounded and resumable through per-agent markers. A transient SQLite
+#      failure ("did not stabilize", busy/locked) is retried 2 more times with a
+#      backoff before the agent is left for the next roll.
 #
 # Cloud protection (fail closed): never reads, writes or removes
 # ~/.ollama/id_ed25519*, never signs out, never touches ~/.ollama, OLLAMA_* env,
@@ -27,7 +35,10 @@
 #
 # Flags: --idempotent (accepted, always true) --dry-run (reads only, prints the
 #        plan) --with-ornith (opt-in: also pull and pin ornith-1.5:9b)
-#        --no-reindex (skip step 4)
+#        --no-reindex (skip the re-index)
+#        --sop-fallback-only (run ONLY step 5c, the Gemini SOP fallback copy;
+#          update-skills.sh calls it after the Command Center refresh, so a CC
+#          that reaches >= 7.6.108 later in the same roll is still provisioned)
 
 set -uo pipefail
 
@@ -48,6 +59,8 @@ LABEL="com.blackceo.ollama-serve"
 # "none" too). Set LOCAL_EMBEDDER_FALLBACK=<provider> only on purpose.
 MEMORY_FALLBACK="${LOCAL_EMBEDDER_FALLBACK:-none}"
 REINDEX_TIMEOUT="${LOCAL_EMBEDDER_REINDEX_TIMEOUT:-900}"   # seconds per agent
+REINDEX_RETRIES="${LOCAL_EMBEDDER_REINDEX_RETRIES:-2}"      # extra tries on a transient SQLite error
+REINDEX_BACKOFF="${LOCAL_EMBEDDER_REINDEX_BACKOFF:-20}"     # seconds; attempt N waits N x this
 BREW_TIMEOUT="${LOCAL_EMBEDDER_BREW_TIMEOUT:-1800}"        # seconds per brew call
 APP_STOP_WAIT="${LOCAL_EMBEDDER_APP_STOP_WAIT:-30}"        # seconds after SIGTERM
 
@@ -62,13 +75,14 @@ APPS_DIR="${LOCAL_EMBEDDER_APPS_DIR:-/Applications}"      # overridable for test
 IDLE_WAIT="${LOCAL_EMBEDDER_IDLE_WAIT:-60}"
 OLLAMA_ENV_NAMES="OLLAMA_HOST OLLAMA_MODELS OLLAMA_KEEP_ALIVE OLLAMA_MAX_LOADED_MODELS OLLAMA_CONTEXT_LENGTH OLLAMA_ORIGINS OLLAMA_NUM_PARALLEL OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE"
 
-DRY_RUN=0; WITH_ORNITH=0; REINDEX=1
+DRY_RUN=0; WITH_ORNITH=0; REINDEX=1; SOPFB_ONLY=0
 for _a in "$@"; do
   case "$_a" in
     --idempotent) ;;
     --dry-run) DRY_RUN=1 ;;
     --with-ornith) WITH_ORNITH=1 ;;
     --no-reindex) REINDEX=0 ;;
+    --sop-fallback-only) SOPFB_ONLY=1 ;;
     *) echo "[local-embedder] unknown flag: $_a" >&2; exit 2 ;;
   esac
 done
@@ -117,10 +131,12 @@ ver_ge "$_oc_ver" "2026.9.0" || defer "OpenClaw '$_oc_ver' is older than 2026.9.
 _loop_mode="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(((c.get("proxy") or {}).get("loopbackMode")) or "")' "$OC_JSON" 2>/dev/null)"
 [ "$_loop_mode" = block ] && defer "proxy.loopbackMode=block denies local embeddings; owner decision needed"
 
-_need_gb=5; [ "$WITH_ORNITH" = 1 ] || [ -f "$STATE_DIR/with-ornith" ] && _need_gb=15
-_free_gb="$(df -g "$HOME" 2>/dev/null | awk 'NR==2{print $4}')"
-case "$_free_gb" in ''|*[!0-9]*) defer "free disk unreadable" ;; esac
-[ "$_free_gb" -ge "$_need_gb" ] || defer "only ${_free_gb} GB free, need ${_need_gb} GB"
+if [ "$SOPFB_ONLY" = 0 ]; then
+  _need_gb=5; [ "$WITH_ORNITH" = 1 ] || [ -f "$STATE_DIR/with-ornith" ] && _need_gb=15
+  _free_gb="$(df -g "$HOME" 2>/dev/null | awk 'NR==2{print $4}')"
+  case "$_free_gb" in ''|*[!0-9]*) defer "free disk unreadable" ;; esac
+  [ "$_free_gb" -ge "$_need_gb" ] || defer "only ${_free_gb} GB free, need ${_need_gb} GB"
+fi
 
 # ── 1. Snapshots used to prove nothing outside memory.search changed ────────
 chat_fp() { python3 - "$OC_JSON" <<'PY'
@@ -128,9 +144,23 @@ chat_fp() { python3 - "$OC_JSON" <<'PY'
 # (providers, :cloud refs, contextWindow, params), the WHOLE "agents" block
 # (model primary/fallbacks, allowlist, subagents AND every per-agent memory
 # override) and top-level "memory" minus memory.search. Only memory.search is
-# outside it.
+# outside it. The ONE exception inside "agents": a per-agent
+# memory.search.multimodal.enabled (and the legacy memorySearch spelling) is
+# stripped before hashing, because step 4 may flip exactly that key to false.
+# Every other per-agent key, including provider/model/remote, stays hashed.
 import hashlib, json, sys
 cfg = json.load(open(sys.argv[1]))
+_a = cfg.get("agents")
+if isinstance(_a, dict):
+    _rows = list(_a["entries"].values()) if isinstance(_a.get("entries"), dict) else []
+    _rows += _a["list"] if isinstance(_a.get("list"), list) else []
+    for _e in _rows:
+        if not isinstance(_e, dict):
+            continue
+        _m = _e.get("memory")
+        for _b in ((_m.get("search") if isinstance(_m, dict) else None), _e.get("memorySearch")):
+            if isinstance(_b, dict) and isinstance(_b.get("multimodal"), dict):
+                _b["multimodal"].pop("enabled", None)
 mem = dict(cfg["memory"]) if isinstance(cfg.get("memory"), dict) else cfg.get("memory")
 if isinstance(mem, dict):
     mem.pop("search", None)
@@ -181,6 +211,106 @@ with_timeout() { # <seconds> <cmd...>
   if kill -0 "$w" 2>/dev/null; then kill "$w" 2>/dev/null; else rc=124; fi
   return $rc
 }
+
+# ── 1b. Gemini SOP fallback helpers (used by 5b, 5c and --sop-fallback-only) ──
+_has_gkey="$(OC_ROOT="$OC_ROOT" OC_JSON="$OC_JSON" python3 - <<'PY' 2>/dev/null
+import json, os
+ok = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+root = os.environ["OC_ROOT"]
+for f in (os.path.join(root, "secrets", ".env"), os.path.join(root, ".env")):  # same sources as embedding_engine.fallback_google_key
+    try:
+        for ln in open(f):
+            k, _, v = ln.strip().partition("=")
+            if k in ("GOOGLE_API_KEY", "GEMINI_API_KEY") and v.strip(" \"'"):
+                ok = True
+    except OSError:
+        pass
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    env = cfg.get("env") or {}
+    ok = ok or any(b.get(k) for b in (env, env.get("vars") or {}) for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY"))
+    gk = (((cfg.get("models") or {}).get("providers") or {}).get("google") or {}).get("apiKey")
+    ok = ok or (isinstance(gk, str) and gk.strip() != "" and not gk.startswith("$"))
+except Exception:
+    pass
+print("yes" if ok else "no")
+PY
+)"
+
+# 1b (cont.) Gemini fallback copy of the shared SOP set (own key only), called at step 5c:
+# Trevor's order: when local Ollama is down, the Command Center's SOP vote
+# embeds the task with the box's OWN Google key and votes against the shared
+# prebuilt Gemini SOP vectors in a SEPARATE table, sop_embeddings_gemini_fallback.
+# The CC's own script (>= v7.6.108) downloads the sha256-pinned asset and maps
+# it onto this box's sops: zero embedding API calls, so the key is needed only at
+# query time; this step is still gated on the key so a box that can never use the
+# fallback does not carry 36 MB of it. sop_embeddings (the local 768-dim table)
+# is never touched. Never fatal. Re-runs only when the manifest sha or the box's
+# sops count changed.
+SOPFB_TIMEOUT="${LOCAL_EMBEDDER_SOPFB_TIMEOUT:-600}"   # seconds (36 MB download)
+SOPFB_MIN_CC="7.6.108"
+SOPFB_SCRIPT="scripts/provision-gemini-fallback-sop-set.ts"
+sopfb_cc_dir() { local d
+  for d in "${LOCAL_EMBEDDER_CC_DIR:-}" "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+           "$HOME/projects/command-center" "$HOME/projects/blackceo-command-center" "$HOME/blackceo-command-center"; do
+    [ -n "$d" ] && [ -f "$d/package.json" ] && [ -f "$d/$SOPFB_SCRIPT" ] && { echo "$d"; return 0; }
+  done
+  return 1
+}
+# The node whose better-sqlite3 loads (the PATH node is often an nvm Node 24 that fails it):
+# the CC's own serving process first, then known Homebrew nodes, then PATH.
+sopfb_node() { local cc="$1" pid n c cands=""
+  for pid in $(lsof -nP -iTCP:"${CC_PORT:-4000}" -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p'); do
+    n="$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n\(.*\/node\)$/\1/p' | head -n1)"
+    [ -n "$n" ] && cands="$cands
+$n"
+  done
+  for c in "${CC_NODE:-}" /opt/homebrew/opt/node@22/bin/node /opt/homebrew/opt/node@20/bin/node \
+           /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 2>/dev/null)"; do
+    [ -n "$c" ] && cands="$cands
+$c"
+  done
+  while IFS= read -r c; do
+    [ -n "$c" ] && [ -x "$c" ] && ( cd "$cc" && "$c" -e "require('better-sqlite3')" ) >/dev/null 2>&1 && { echo "$c"; return 0; }
+  done <<EOF
+$cands
+EOF
+  return 1
+}
+sopfb_provision() { # returns 0 done/skipped, 1 failed (caller only logs)
+  local cc db man sha nsops stamp mark node rc ccv
+  [ "$_has_gkey" = yes ] || { log "Gemini SOP fallback skipped: this box has no Google key of its own"; return 0; }
+  cc="$(sopfb_cc_dir)" || { log "Gemini SOP fallback skipped: no Command Center with $SOPFB_SCRIPT on this box"; return 0; }
+  ccv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1] + "/package.json")).get("version",""))' "$cc" 2>/dev/null)"
+  ver_ge "$ccv" "$SOPFB_MIN_CC" || { log "Gemini SOP fallback skipped: Command Center '${ccv:-unknown}' is older than $SOPFB_MIN_CC"; return 0; }
+  man="$SKILL_DIR/../shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+  [ -f "$man" ] || { log "Gemini SOP fallback skipped: SOP embeddings manifest not found"; return 0; }
+  db="$(python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from resolve_db import find_dashboard_db, is_db_found
+p = find_dashboard_db()
+print(str(p) if is_db_found(p) else "")' "$SKILL_DIR/../shared-utils" 2>/dev/null)"
+  [ -n "$db" ] && [ -f "$db" ] || { log "Gemini SOP fallback skipped: no mission-control.db resolved"; return 0; }
+  nsops="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True).execute("select count(*) from sops").fetchone()[0])' "$db" 2>/dev/null)"
+  case "$nsops" in ''|*[!0-9]*) log "Gemini SOP fallback skipped: no readable sops table in the Command Center database"; return 0 ;; esac
+  sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$man" 2>/dev/null)"
+  [ -n "$sha" ] || { log "Gemini SOP fallback skipped: manifest has no sha256"; return 0; }
+  stamp="$sha|$nsops|$db"; mark="$STATE_DIR/gemini-sop-fallback.done"
+  if [ "$(cat "$mark" 2>/dev/null)" = "$stamp" ]; then log "Gemini SOP fallback already provisioned (manifest sha and sops count unchanged)"; return 0; fi
+  node="$(sopfb_node "$cc")" || { log "Gemini SOP fallback not provisioned: no node that loads better-sqlite3 in $cc (next roll retries)"; return 1; }
+  if [ "$DRY_RUN" = 1 ]; then log "dry-run would run (cd $cc): $node --import tsx $SOPFB_SCRIPT --manifest <manifest> --db $db"; return 0; fi
+  log "provisioning the Gemini SOP fallback set into $db (limit ${SOPFB_TIMEOUT}s)"
+  rc=0; ( cd "$cc" && with_timeout "$SOPFB_TIMEOUT" "$node" --import tsx "$SOPFB_SCRIPT" --manifest "$man" --db "$db" ) || rc=$?
+  if [ "$rc" = 0 ]; then mkdir -p "$STATE_DIR" && printf '%s\n' "$stamp" > "$mark"; return 0; fi
+  [ "$rc" = 124 ] && log "Gemini SOP fallback timed out after ${SOPFB_TIMEOUT}s"
+  return 1
+}
+
+if [ "$SOPFB_ONLY" = 1 ]; then
+  sopfb_provision || log "Gemini SOP fallback not provisioned (non-fatal; next roll retries)"
+  exit 0
+fi
 
 ollama_env() { local n; for n in $OLLAMA_ENV_NAMES; do printf '%s=%s;' "$n" "$(launchctl getenv "$n" 2>/dev/null)"; done; }
 
@@ -534,8 +664,30 @@ BACKUP="$BACKUP" OC_JSON="$OC_JSON" BASE="$BASE" EMBED_TAG="$EMBED_TAG" FALLBACK
 import hashlib, json, os, re, stat, sys
 path = os.environ["OC_JSON"]
 
+def disable_inherited_multimodal(cfg):
+    """The one allowed per-agent change: multimodal.enabled true -> false on agents
+    that INHERIT the local provider (no own provider/model/remote, same test as
+    agent_report). Nothing else on the agent is touched. Returns the agent ids."""
+    a = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    rows = [(k, v) for k, v in a["entries"].items() if isinstance(v, dict)] if isinstance(a.get("entries"), dict) else []
+    rows += [(x["id"], x) for x in (a.get("list") or []) if isinstance(x, dict) and x.get("id") and x["id"] not in dict(rows)]
+    done = []
+    for aid, e in rows:
+        mem = e.get("memory")
+        blks = [b for b in ((mem.get("search") if isinstance(mem, dict) else None), e.get("memorySearch")) if isinstance(b, dict)]
+        if any(k in b for b in blks for k in ("provider", "model", "remote")):
+            continue  # own embedder: reported by agent_report, left alone
+        hit = False
+        for b in blks:
+            if isinstance(b.get("multimodal"), dict) and b["multimodal"].get("enabled") is True:
+                b["multimodal"]["enabled"] = False
+                hit = True
+        if hit:
+            done.append(aid)
+    return done
+
 def merged(raw):
-    """Parse, deep-merge only memory.search, keep key order. Returns (text, changed)."""
+    """Parse, deep-merge only memory.search (+ the per-agent multimodal flag above), keep key order. Returns (text, changed)."""
     cfg = json.loads(raw)
     mem = cfg.setdefault("memory", {})
     if not isinstance(mem, dict):
@@ -558,7 +710,10 @@ def merged(raw):
     ms["fallback"] = os.environ["FALLBACK"]
     if old_fb != ms["fallback"]:
         print("[local-embedder] memory.search.fallback %r -> %r (one vector space; knob LOCAL_EMBEDDER_FALLBACK)" % (old_fb, ms["fallback"]))
-    if json.dumps(ms, sort_keys=True) == before:
+    mm_agents = disable_inherited_multimodal(cfg)
+    for aid in mm_agents:
+        print("[local-embedder] agent %s: memory.search.multimodal.enabled true -> false (inherits the local text embedder, which has no multimodal adapter; provider/model untouched)" % aid)
+    if json.dumps(ms, sort_keys=True) == before and not mm_agents:
         return raw, False
     m = re.search(r"\n([ \t]+)\S", raw)
     indent = m.group(1) if m else "  "
@@ -617,29 +772,6 @@ esac
 # Gemini persona set (gemini-fallback-index.sqlite; the live local persona index
 # is never touched). Provisioned only when this box has its own key; skipped
 # cleanly otherwise. Never fatal. memory.search.fallback is NOT changed here.
-_has_gkey="$(OC_ROOT="$OC_ROOT" OC_JSON="$OC_JSON" python3 - <<'PY' 2>/dev/null
-import json, os
-ok = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
-root = os.environ["OC_ROOT"]
-for f in (os.path.join(root, "secrets", ".env"), os.path.join(root, ".env")):  # same sources as embedding_engine.fallback_google_key
-    try:
-        for ln in open(f):
-            k, _, v = ln.strip().partition("=")
-            if k in ("GOOGLE_API_KEY", "GEMINI_API_KEY") and v.strip(" \"'"):
-                ok = True
-    except OSError:
-        pass
-try:
-    cfg = json.load(open(os.environ["OC_JSON"]))
-    env = cfg.get("env") or {}
-    ok = ok or any(b.get(k) for b in (env, env.get("vars") or {}) for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY"))
-    gk = (((cfg.get("models") or {}).get("providers") or {}).get("google") or {}).get("apiKey")
-    ok = ok or (isinstance(gk, str) and gk.strip() != "" and not gk.startswith("$"))
-except Exception:
-    pass
-print("yes" if ok else "no")
-PY
-)"
 if [ "$_has_gkey" != yes ]; then
   log "Gemini persona fallback copy skipped: this box has no Google key of its own"
 else
@@ -654,75 +786,8 @@ else
   fi
 fi
 
-# ── 5c. Gemini fallback copy of the shared SOP set (own key only) ───────────
-# Trevor's order: when local Ollama is down, the Command Center's SOP vote
-# embeds the task with the box's OWN Google key and votes against the shared
-# prebuilt Gemini SOP vectors in a SEPARATE table, sop_embeddings_gemini_fallback.
-# The CC's own script (>= v7.6.108) downloads the sha256-pinned asset and maps
-# it onto this box's sops: zero embedding API calls, so the key is needed only at
-# query time; this step is still gated on the key so a box that can never use the
-# fallback does not carry 36 MB of it. sop_embeddings (the local 768-dim table)
-# is never touched. Never fatal. Re-runs only when the manifest sha or the box's
-# sops count changed.
-SOPFB_TIMEOUT="${LOCAL_EMBEDDER_SOPFB_TIMEOUT:-600}"   # seconds (36 MB download)
-SOPFB_MIN_CC="7.6.108"
-SOPFB_SCRIPT="scripts/provision-gemini-fallback-sop-set.ts"
-sopfb_cc_dir() { local d
-  for d in "${LOCAL_EMBEDDER_CC_DIR:-}" "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
-           "$HOME/projects/command-center" "$HOME/projects/blackceo-command-center" "$HOME/blackceo-command-center"; do
-    [ -n "$d" ] && [ -f "$d/package.json" ] && [ -f "$d/$SOPFB_SCRIPT" ] && { echo "$d"; return 0; }
-  done
-  return 1
-}
-# The node whose better-sqlite3 loads (the PATH node is often an nvm Node 24 that fails it):
-# the CC's own serving process first, then known Homebrew nodes, then PATH.
-sopfb_node() { local cc="$1" pid n c cands=""
-  for pid in $(lsof -nP -iTCP:"${CC_PORT:-4000}" -sTCP:LISTEN -Fp 2>/dev/null | sed -n 's/^p//p'); do
-    n="$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n\(.*\/node\)$/\1/p' | head -n1)"
-    [ -n "$n" ] && cands="$cands
-$n"
-  done
-  for c in "${CC_NODE:-}" /opt/homebrew/opt/node@22/bin/node /opt/homebrew/opt/node@20/bin/node \
-           /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 2>/dev/null)"; do
-    [ -n "$c" ] && cands="$cands
-$c"
-  done
-  while IFS= read -r c; do
-    [ -n "$c" ] && [ -x "$c" ] && ( cd "$cc" && "$c" -e "require('better-sqlite3')" ) >/dev/null 2>&1 && { echo "$c"; return 0; }
-  done <<EOF
-$cands
-EOF
-  return 1
-}
-sopfb_provision() { # returns 0 done/skipped, 1 failed (caller only logs)
-  local cc db man sha nsops stamp mark node rc ccv
-  [ "$_has_gkey" = yes ] || { log "Gemini SOP fallback skipped: this box has no Google key of its own"; return 0; }
-  cc="$(sopfb_cc_dir)" || { log "Gemini SOP fallback skipped: no Command Center with $SOPFB_SCRIPT on this box"; return 0; }
-  ccv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1] + "/package.json")).get("version",""))' "$cc" 2>/dev/null)"
-  ver_ge "$ccv" "$SOPFB_MIN_CC" || { log "Gemini SOP fallback skipped: Command Center '${ccv:-unknown}' is older than $SOPFB_MIN_CC"; return 0; }
-  man="$SKILL_DIR/../shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
-  [ -f "$man" ] || { log "Gemini SOP fallback skipped: SOP embeddings manifest not found"; return 0; }
-  db="$(python3 -c '
-import sys
-sys.path.insert(0, sys.argv[1])
-from resolve_db import find_dashboard_db, is_db_found
-p = find_dashboard_db()
-print(str(p) if is_db_found(p) else "")' "$SKILL_DIR/../shared-utils" 2>/dev/null)"
-  [ -n "$db" ] && [ -f "$db" ] || { log "Gemini SOP fallback skipped: no mission-control.db resolved"; return 0; }
-  nsops="$(python3 -c 'import sqlite3,sys; print(sqlite3.connect("file:"+sys.argv[1]+"?mode=ro", uri=True).execute("select count(*) from sops").fetchone()[0])' "$db" 2>/dev/null)"
-  case "$nsops" in ''|*[!0-9]*) log "Gemini SOP fallback skipped: no readable sops table in the Command Center database"; return 0 ;; esac
-  sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$man" 2>/dev/null)"
-  [ -n "$sha" ] || { log "Gemini SOP fallback skipped: manifest has no sha256"; return 0; }
-  stamp="$sha|$nsops|$db"; mark="$STATE_DIR/gemini-sop-fallback.done"
-  if [ "$(cat "$mark" 2>/dev/null)" = "$stamp" ]; then log "Gemini SOP fallback already provisioned (manifest sha and sops count unchanged)"; return 0; fi
-  node="$(sopfb_node "$cc")" || { log "Gemini SOP fallback not provisioned: no node that loads better-sqlite3 in $cc (next roll retries)"; return 1; }
-  if [ "$DRY_RUN" = 1 ]; then log "dry-run would run (cd $cc): $node --import tsx $SOPFB_SCRIPT --manifest <manifest> --db $db"; return 0; fi
-  log "provisioning the Gemini SOP fallback set into $db (limit ${SOPFB_TIMEOUT}s)"
-  rc=0; ( cd "$cc" && with_timeout "$SOPFB_TIMEOUT" "$node" --import tsx "$SOPFB_SCRIPT" --manifest "$man" --db "$db" ) || rc=$?
-  if [ "$rc" = 0 ]; then mkdir -p "$STATE_DIR" && printf '%s\n' "$stamp" > "$mark"; return 0; fi
-  [ "$rc" = 124 ] && log "Gemini SOP fallback timed out after ${SOPFB_TIMEOUT}s"
-  return 1
-}
+# ── 5c. Gemini fallback copy of the shared SOP set: helpers sit in section 1b (above) so
+# `--sop-fallback-only` can run them alone; the call is here, in its original place.
 sopfb_provision || log "Gemini SOP fallback not provisioned (non-fatal; next roll retries)"
 
 # ── 6. One re-index per agent: bounded, resumable ───────────────────────────
@@ -736,7 +801,21 @@ while IFS="$(printf '\t')" read -r _id _kind _detail; do
   _mark="$STATE_DIR/reindexed/$_id"
   if [ "$(cat "$_mark" 2>/dev/null)" = "$EMBED_TAG" ]; then log "agent $_id already re-indexed on $EMBED_TAG"; continue; fi
   log "re-indexing agent $_id on $EMBED_TAG (limit ${REINDEX_TIMEOUT}s)"
-  _rc=0; with_timeout "$REINDEX_TIMEOUT" openclaw memory status --index --agent "$_id" || _rc=$?
+  _try=0
+  while :; do
+    _rc=0; with_timeout "$REINDEX_TIMEOUT" openclaw memory status --index --agent "$_id" >"$STATE_DIR/.reindex.$$" 2>&1 || _rc=$?
+    cat "$STATE_DIR/.reindex.$$"
+    # Only a TRANSIENT SQLite error is retried (the worker read the db mid-write, or it was
+    # locked); a timeout or any other failure goes straight to the next roll.
+    if [ "$_rc" != 0 ] && [ "$_rc" != 124 ] && [ "$_try" -lt "$REINDEX_RETRIES" ] \
+       && grep -qiE 'did not stabilize|SQLITE_BUSY|database (table )?is (locked|busy)|sqlite.*busy' "$STATE_DIR/.reindex.$$"; then
+      _try=$((_try+1))
+      log "agent $_id: transient SQLite error, retry $_try/$REINDEX_RETRIES in $((_try*REINDEX_BACKOFF))s"
+      sleep $((_try*REINDEX_BACKOFF)); continue
+    fi
+    break
+  done
+  rm -f "$STATE_DIR/.reindex.$$"
   if [ "$_rc" = 0 ]; then
     printf '%s\n' "$EMBED_TAG" > "$_mark"
   elif [ "$_rc" = 124 ]; then
