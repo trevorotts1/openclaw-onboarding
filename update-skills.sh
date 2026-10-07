@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.4.0"
+ONBOARDING_VERSION="v26.4.1"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.4.0 - safe_json_edit
+# v26.4.1 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -11389,6 +11389,25 @@ except Exception:
   # must never gate or alter anything.
   _cc_currency_probe || true
 
+  fi
+
+  # Skill 76 step 5c (Gemini SOP fallback copy) needs Command Center >= 7.6.108,
+  # but the wiring loop runs skill 76 BEFORE this refresh. On a box whose CC was
+  # older when skill 76 ran, 5c skipped ("older than 7.6.108") and nothing
+  # retried it in the same roll (LeAnne Dolce's box). Re-run ONLY 5c now that the
+  # CC is current. Chosen over reordering the wiring loop: that would move a
+  # skill with a 2h time budget past ~2000 unrelated lines and break the generic
+  # per-skill sentinel flow, while 5c is already idempotent (manifest sha + sops
+  # count stamp), key-gated and non-fatal, so a second call is a cheap no-op on
+  # any box that does not need it. Never changes the update's exit status.
+  _S76_WIRE="$SKILLS_DIR/76-local-embedder/wire.sh"
+  if [ -f "$_S76_WIRE" ]; then
+    echo "  Skill 76: re-checking the Gemini SOP fallback copy after the Command Center refresh (idempotent)..."
+    if command -v perl >/dev/null 2>&1; then
+      perl -e 'alarm shift; exec @ARGV or exit 127' 900 bash "$_S76_WIRE" --sop-fallback-only >>"$LOG_FILE" 2>&1 || echo "  Skill 76 SOP fallback re-check did not complete (non-fatal; see $LOG_FILE)"
+    else
+      bash "$_S76_WIRE" --sop-fallback-only >>"$LOG_FILE" 2>&1 || echo "  Skill 76 SOP fallback re-check did not complete (non-fatal; see $LOG_FILE)"
+    fi
   fi
 
   # ----------------------------------------------------------
