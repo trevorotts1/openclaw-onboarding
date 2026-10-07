@@ -226,6 +226,11 @@ class TestModelOverride(unittest.TestCase):
             f"OTHER=x\nOLLAMA_EMBED_MODEL={OTHER}\nOLLAMA_EMBED_DIM=768\n")
         self.assertEqual(_resolved_model(home), f"{OTHER} 768")
 
+    def test_invalid_dim_falls_back_to_768(self):
+        home = tempfile.mkdtemp()
+        for bad in ("abc", "0", "-5"):
+            self.assertEqual(_resolved_model(home, OLLAMA_EMBED_DIM=bad), f"{GEMMA} 768")
+
     def test_gemma_stamps_and_prefixes(self):
         db = _gemini_index()
         rc, out, err = _quiet(ee.cmd_reembed_local, db_path=db, pause=0)

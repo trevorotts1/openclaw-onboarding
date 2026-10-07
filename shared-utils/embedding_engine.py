@@ -204,8 +204,14 @@ def _read_secret(name: str) -> str:
 # was re-embedded with). Default: embeddinggemma-2:740m @768.
 OLLAMA_EMBED_MODEL = (os.environ.get("OLLAMA_EMBED_MODEL")
                       or _read_secret("OLLAMA_EMBED_MODEL") or "embeddinggemma-2:740m")
-OLLAMA_EMBED_DIM = int(os.environ.get("OLLAMA_EMBED_DIM")
-                       or _read_secret("OLLAMA_EMBED_DIM") or 768)
+_dim_raw = os.environ.get("OLLAMA_EMBED_DIM") or _read_secret("OLLAMA_EMBED_DIM") or "768"
+try:
+    OLLAMA_EMBED_DIM = int(_dim_raw)
+    if OLLAMA_EMBED_DIM <= 0:
+        raise ValueError
+except ValueError:  # a typo in secrets/.env must never break import fleet-wide
+    print(f"embedding_engine: invalid OLLAMA_EMBED_DIM={_dim_raw!r}, using 768", file=sys.stderr)
+    OLLAMA_EMBED_DIM = 768
 _DIM_BY_MODEL[OLLAMA_EMBED_MODEL] = OLLAMA_EMBED_DIM
 
 
