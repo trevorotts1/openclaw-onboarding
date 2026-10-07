@@ -1,0 +1,452 @@
+{
+  "controls": [
+    {
+      "control": "A-roundtrip",
+      "details": {
+        "cost_report_match": true,
+        "manifest_match": true
+      },
+      "expect": "verify_binding ok=True",
+      "got": true,
+      "ok": true
+    },
+    {
+      "control": "B-manifest-tamper",
+      "details": {
+        "manifest_match": false
+      },
+      "expect": "verify_binding ok=False",
+      "got": false,
+      "ok": true
+    },
+    {
+      "control": "C-artifact-tamper",
+      "details": {
+        "artifact_probe": false,
+        "manifest_match": true
+      },
+      "expect": "verify_binding ok=False + artifact mismatch",
+      "got": false,
+      "ok": true
+    }
+  ],
+  "counts": {
+    "controls": 3,
+    "controls_ok": 3,
+    "records": 16,
+    "records_ok": 16
+  },
+  "finished_at": "2026-10-07T03:14:57+00:00",
+  "generated_at": "2026-10-07T03:14:57+00:00",
+  "receipt_name": "provenance-closure.json",
+  "records": [
+    {
+      "bytes": 1564,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "schema_version=None",
+          "ok": true
+        },
+        {
+          "check": "provenance-field-contract",
+          "detail": "provenance fields=['model', 'provider', 'receipt_path', 'task_id']",
+          "ok": true
+        },
+        {
+          "check": "hash-required",
+          "detail": "required=['schema_version', 'artifact_id', 'run_id', 'stage', 'kind', 'path', 'sha256']",
+          "ok": true
+        }
+      ],
+      "id": "artifact-provenance-contract",
+      "kind": "file",
+      "ok": true,
+      "path": "core/contracts/artifact-schema.json",
+      "present": true,
+      "sha256": "9c7af685912cd0c5e3a3f3289c2d106fc0714b71cbd8e164dc15749d76245fd9"
+    },
+    {
+      "bytes": 7167,
+      "checks": [
+        {
+          "check": "write_provenance-defined",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "verify_binding-defined",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "pins-manifest-and-cost-hash",
+          "detail": "",
+          "ok": true
+        }
+      ],
+      "id": "delivery-provenance-writer",
+      "kind": "file",
+      "ok": true,
+      "path": "core/delivery_variants/manifests.py",
+      "present": true,
+      "sha256": "289b6a94d5807b4fed9014e98ca6f034f7aec5d1087821feeb6945b68c8eef9a"
+    },
+    {
+      "bytes": 333,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "campaign-id",
+          "detail": "campaign_id=w3-04-short-run",
+          "ok": true
+        },
+        {
+          "check": "authorization-digest-recorded",
+          "detail": "auth_scope_digest=07f39269dfc6529f",
+          "ok": true
+        },
+        {
+          "check": "authorization-source-recorded",
+          "detail": "",
+          "ok": true
+        }
+      ],
+      "id": "run-campaign-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "qualification/short-run/campaign-provenance.json",
+      "present": true,
+      "sha256": "e15c9aab988ebfa46ce688d20c7cbe20dd5ba4e481ba74bcadcd1339d4e6a5a6"
+    },
+    {
+      "bytes": 2671,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "run-id",
+          "detail": "run_id=w3-04-short-run",
+          "ok": true
+        },
+        {
+          "check": "ceiling-recorded",
+          "detail": "ceiling=5000",
+          "ok": true
+        },
+        {
+          "check": "jobs-recorded",
+          "detail": "jobs=3",
+          "ok": true
+        },
+        {
+          "check": "db-receipts-recorded",
+          "detail": "",
+          "ok": true
+        }
+      ],
+      "id": "run-receipts-record",
+      "kind": "file",
+      "ok": true,
+      "path": "qualification/short-run/08-receipts.json",
+      "present": true,
+      "sha256": "3f2a6340a514b652f101770609063e4e263c775ae1e9ca869465197b8205c342"
+    },
+    {
+      "checks": [
+        {
+          "check": "at-least-one-reconciliation",
+          "detail": "2 json files",
+          "ok": true
+        },
+        {
+          "check": "all-json-parses",
+          "detail": "all parse",
+          "ok": true
+        }
+      ],
+      "id": "receipt-reconciliation-set",
+      "kind": "dir",
+      "ok": true,
+      "path": "qualification/short-run-receipts",
+      "present": true
+    },
+    {
+      "bytes": 772,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "row-count",
+          "detail": "4 rows",
+          "ok": true
+        },
+        {
+          "check": "every-row-fetched-ancestry-proven",
+          "detail": "unproven=[]",
+          "ok": true
+        }
+      ],
+      "id": "merge-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "qualification/merge-receipts.json",
+      "present": true,
+      "sha256": "aed8838b5eff6480496e08a37c1a9d4ab7e28a97fdada10a935b4d3120943c46"
+    },
+    {
+      "bytes": 10996,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "10996 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "donor-license-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "planning/donor-selections.md",
+      "present": true,
+      "sha256": "d30e44bb7bc8daba7a26a20cd0c6d50b5fc55add102e69059d6cccff92f1e12c"
+    },
+    {
+      "bytes": 7934,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "7934 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "repo-ci-ownership-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "planning/repo-ownership.md",
+      "present": true,
+      "sha256": "dfedc94e7065d84d1f9d964ee78e8e15269818c153ad382235a0de54b9bf04c4"
+    },
+    {
+      "bytes": 2959,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "2959 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "provider-contract-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "planning/provider-contracts.md",
+      "present": true,
+      "sha256": "69ed3718f8c55a6e1b84ee817342fb5ae45f80b3d25ea6728fbfbee97e9c57cb"
+    },
+    {
+      "bytes": 10590,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "10590 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "runtime-readiness-provenance",
+      "kind": "file",
+      "ok": true,
+      "path": "planning/runtime-readiness.md",
+      "present": true,
+      "sha256": "25db2da4e4e445876a4d2ac783cfb45cbfcc71645b0ffb61a46d3ca7e93ad376"
+    },
+    {
+      "bytes": 3744,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "3744 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "notices-scaffold",
+      "kind": "file",
+      "ok": true,
+      "path": "core/release_scaffolds/THIRD_PARTY_NOTICES.md",
+      "present": true,
+      "sha256": "09ac5c1e569cbf79be578f41c4b0e96955402d8c8cd1221bb19e9613225b9a46"
+    },
+    {
+      "bytes": 2337,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "2337 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "notices-999-distribution",
+      "kind": "file",
+      "ok": true,
+      "path": "999-setup/THIRD_PARTY_NOTICES.md",
+      "present": true,
+      "sha256": "387160d72497113a0453b3bbcdf0a8b38445172607645aa7d921b98ac6f788ca"
+    },
+    {
+      "bytes": 3744,
+      "checks": [
+        {
+          "check": "non-empty",
+          "detail": "3744 bytes",
+          "ok": true
+        },
+        {
+          "check": "contains-required-markers",
+          "detail": "missing=[]",
+          "ok": true
+        }
+      ],
+      "id": "notices-onboarding-distribution",
+      "kind": "file",
+      "ok": true,
+      "path": "onboarding/75-drama-song-ad-factory/THIRD_PARTY_NOTICES.md",
+      "present": true,
+      "sha256": "09ac5c1e569cbf79be578f41c4b0e96955402d8c8cd1221bb19e9613225b9a46"
+    },
+    {
+      "bytes": 123,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "verdict-PASS",
+          "detail": "verdict=PASS",
+          "ok": true
+        },
+        {
+          "check": "unit-recorded",
+          "detail": "unit_id=W3-04-U1",
+          "ok": true
+        },
+        {
+          "check": "models-recorded",
+          "detail": "builder=opus reviewer=sonnet",
+          "ok": true
+        }
+      ],
+      "id": "qc-verdict-W3-04-U1.verdict",
+      "kind": "file",
+      "ok": true,
+      "path": "evidence/W3-04/W3-04-U1.verdict.json",
+      "present": true,
+      "sha256": "2ca66c782e8687e62d512fca0df8cb953cd65e72f53a4c68c52d1a13d6b37ba4"
+    },
+    {
+      "bytes": 123,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "verdict-PASS",
+          "detail": "verdict=PASS",
+          "ok": true
+        },
+        {
+          "check": "unit-recorded",
+          "detail": "unit_id=W3-04-U2",
+          "ok": true
+        },
+        {
+          "check": "models-recorded",
+          "detail": "builder=opus reviewer=sonnet",
+          "ok": true
+        }
+      ],
+      "id": "qc-verdict-W3-04-U2.verdict",
+      "kind": "file",
+      "ok": true,
+      "path": "evidence/W3-04/W3-04-U2.verdict.json",
+      "present": true,
+      "sha256": "bab55a92ce840f6c94beb4019f3e254da333116c96963a3152d43dc1f33c235c"
+    },
+    {
+      "bytes": 123,
+      "checks": [
+        {
+          "check": "json-parses",
+          "detail": "",
+          "ok": true
+        },
+        {
+          "check": "verdict-PASS",
+          "detail": "verdict=PASS",
+          "ok": true
+        },
+        {
+          "check": "unit-recorded",
+          "detail": "unit_id=W3-06-U1",
+          "ok": true
+        },
+        {
+          "check": "models-recorded",
+          "detail": "builder=opus reviewer=sonnet",
+          "ok": true
+        }
+      ],
+      "id": "qc-verdict-W3-06-U1.verdict",
+      "kind": "file",
+      "ok": true,
+      "path": "evidence/W3-06/W3-06-U1.verdict.json",
+      "present": true,
+      "sha256": "23e88aa938e3acdc57a26bbcacf8885ad685bba403ed0c074a25c4117ba26116"
+    }
+  ],
+  "root": "/Users/blackceomacmini/drama-song-factory-build",
+  "schema": "blackceo.ci-provenance/provenance-closure/v1",
+  "unit_id": "W4-05-U1",
+  "verdict": "PASS"
+}
