@@ -220,7 +220,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                     "install Skill 74 (%s); there is no private KIE client"
                     % ADAPTER_SKILL,
                     {"skill": ADAPTER_SKILL, "generated": False})
-    h_rc, h, h_raw = _call(runner, adapter, ["health", "--json"])
+    h_rc, h, h_raw = _call(run, adapter, ["health", "--json"])
     if h is None:
         return stop("error", "adapter-health-unreadable",
                     "Skill 74 health did not answer JSON; do not dispatch",
@@ -244,7 +244,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                                "client yet - nothing has been generated."})
 
     # ---- 3. Skill 74 preflight --------------------------------------------
-    p_rc, p, p_raw = _call(runner, adapter,
+    p_rc, p, p_raw = _call(run, adapter,
                            ["preflight", "--model", model,
                             "--units", str(units), "--json"])
     if p is None:
@@ -272,7 +272,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         prompt_file = os.path.join(tmp, "prompt.txt")
         with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(prompt or "")
-        b_rc, b, b_raw = _call(runner, adapter,
+        b_rc, b, b_raw = _call(run, adapter,
                                ["prompt-budget", "--model", model, "--check",
                                 "--prompt-file", prompt_file, "--json"])
         if b is None:
@@ -306,7 +306,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             json.dump(request, f, sort_keys=True)
         os.makedirs(save_dir, exist_ok=True)
         try:
-            r_rc, r, r_raw = _call(runner, adapter,
+            r_rc, r, r_raw = _call(run, adapter,
                                    ["run", "--request", req_file,
                                     "--save-dir", save_dir, "--json"])
         except Exception as e:                              # pragma: no cover
