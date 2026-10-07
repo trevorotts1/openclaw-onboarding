@@ -177,6 +177,40 @@ class TestFallbackOrder(_Base):
         self.assertEqual(_Genai.keys, [SECRET_KEY])
         self.assertNotIn(SECRET_KEY, err)
 
+    def test_key_only_in_secrets_env_still_uses_gemini(self):
+        os.environ.pop("GOOGLE_API_KEY")
+        sd = Path(os.environ["HOME"]) / ".openclaw" / "secrets"
+        sd.mkdir(parents=True)
+        (sd / ".env").write_text("GOOGLE_API_KEY=%s\n" % SECRET_KEY)
+        self.assertEqual(ee.fallback_google_key(), SECRET_KEY)
+        r, err = self.quiet(m.semantic_task_fit, "beta", "leadership hiring", self.paths)
+        self.assertEqual(r["method"], "gemini_embedding", r)
+        self.assertEqual(_Genai.keys, [SECRET_KEY])
+        self.assertNotIn(SECRET_KEY, err)
+
+    def test_returns_to_local_after_cooldown_when_ollama_recovers(self):
+        r, _ = self.quiet(m.semantic_task_fit, "beta", "first task leadership", self.paths)
+        self.assertEqual(r["method"], "gemini_embedding")
+        calls = _Genai.calls
+        up = lambda *a, **k: np.ones(768, dtype=np.float32)  # noqa: E731 - Ollama is back
+        with patch.object(ee, "_ollama_embed", up):
+            r, _ = self.quiet(m.semantic_task_fit, "beta", "second task leadership", self.paths)
+            self.assertEqual(r["method"], "gemini_embedding", "inside the cooldown it stays on the fallback")
+            self.assertEqual(_Genai.calls, calls + 1)
+            now = m.time.monotonic()
+            with patch.object(m.time, "monotonic", lambda: now + m._LOCAL_RETRY_SECS + 1):
+                r, _ = self.quiet(m.semantic_task_fit, "beta", "third task leadership", self.paths)
+        self.assertEqual(r["method"], "ollama_embedding", r)
+        self.assertEqual(_Genai.calls, calls + 1, "no further paid call once local is back")
+
+    def test_still_down_after_cooldown_relatches_to_gemini(self):
+        self.quiet(m.semantic_task_fit, "beta", "first task leadership", self.paths)
+        now = m.time.monotonic()
+        with patch.object(m.time, "monotonic", lambda: now + m._LOCAL_RETRY_SECS + 1):
+            r, err = self.quiet(m.semantic_task_fit, "beta", "second task leadership", self.paths)
+        self.assertEqual(r["method"], "gemini_embedding")
+        self.assertEqual(err.count("local Ollama embed failed"), 1)
+
     def test_gemini_box_key_lookup_unchanged(self):
         os.environ.pop("GOOGLE_API_KEY")
         oc = Path(os.environ["HOME"]) / ".openclaw"

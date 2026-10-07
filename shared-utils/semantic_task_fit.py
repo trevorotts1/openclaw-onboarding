@@ -32,6 +32,7 @@ import re
 import sqlite3
 import sys
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -71,6 +72,11 @@ _EMBEDDING_UNAVAILABLE_REASON = ""
 # failed, so the rest of the selection goes to the Gemini fallback copy instead
 # of re-hitting a dead Ollama per candidate. _GEMINI_FB_DOWN: that Gemini
 # attempt failed too (any error/timeout), so the rest goes to keyword.
+# A long-lived process must not stay on PAID Gemini after Ollama recovers: once
+# _LOCAL_RETRY_SECS have passed since the failure, the next embed re-probes local
+# (and clears the Gemini latch); a still-dead Ollama just re-latches.
+_LOCAL_RETRY_SECS = float(os.environ.get("SEMANTIC_TASK_FIT_LOCAL_RETRY_SECS", "60"))
+_LOCAL_DOWN_AT = 0.0
 _LOCAL_DOWN = False
 _LOCAL_DOWN_MSG = ""   # printed ONCE, with the fallback outcome, by _embed_task_in_space
 _GEMINI_FB_DOWN = False
@@ -391,7 +397,7 @@ def _embed_text_local(text: str, model: str):
     _ollama_embed (embeddinggemma query prefix, EMBED-3 dim gate). Any failure
     latches _LOCAL_DOWN for the rest of the process with ONE log line; the
     caller (_embed_task_in_space) then tries the Gemini fallback copy."""
-    global _LOCAL_DOWN, _LOCAL_DOWN_MSG
+    global _LOCAL_DOWN, _LOCAL_DOWN_MSG, _LOCAL_DOWN_AT
     try:
         ee = _engine()
         return ee._ollama_embed(ee.OLLAMA_EMBED_URL, model, text, kind="query")
@@ -401,6 +407,7 @@ def _embed_text_local(text: str, model: str):
         except Exception:
             url = "?"
         _LOCAL_DOWN = True
+        _LOCAL_DOWN_AT = time.monotonic()
         _LOCAL_DOWN_MSG = (f"[semantic_task_fit] local Ollama embed failed ({e}) — "
                            f"is Ollama running with {model} at {url}?")
         return None
@@ -429,9 +436,11 @@ def _embed_task_in_space(task_text, paths, db_path, local_model, api_key):
     local vector with the fallback copy: the returned db_path/local_model always
     match the vector. Gemini box (local_model None): unchanged.
     """
-    global _GEMINI_FB_DOWN, _LOCAL_DOWN_MSG
+    global _GEMINI_FB_DOWN, _LOCAL_DOWN_MSG, _LOCAL_DOWN
     if not local_model:
         return _task_embed(task_text, api_key, None), db_path, None
+    if _LOCAL_DOWN and time.monotonic() - _LOCAL_DOWN_AT >= _LOCAL_RETRY_SECS:
+        _LOCAL_DOWN = _GEMINI_FB_DOWN = False  # cooldown over: re-probe free local Ollama
     if not _LOCAL_DOWN:
         vec = _task_embed(task_text, None, local_model)
         if vec is not None or not _LOCAL_DOWN:
