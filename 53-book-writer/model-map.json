@@ -14,19 +14,14 @@
   "probe": {
     "ollama_models": [
       "ornith-1.5:9b",
-      "embeddinggemma-2:740m",
-      "deepseek-v4.1-flash:cloud",
-      "glm-5.3:cloud",
-      "glm-5.3-flash:cloud",
-      "minimax-m2.7:cloud",
-      "glm-5.1:cloud",
       "deepseek-v4-pro:cloud",
-      "deepseek-v4-flash:cloud",
+      "glm-5.1:cloud",
+      "minimax-m2.7:cloud",
       "deepseek-v4-pro:0813-cloud",
       "gemma4:12b-mlx",
       "qwen3.8:27b-mlx",
       "muse-glimmer:30b-mlx",
-      "deepseek-v4-flash:0731-cloud",
+      "deepseek-v4.1-flash:cloud",
       "kimi-k3:cloud",
       "glm-ocr:latest",
       "minimax-m3:cloud",
@@ -42,9 +37,9 @@
       "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND",
       "OLLAMA_MODELS"
     ],
-    "probed_at": "2026-10-07T01:12:05.348816+00:00"
+    "probed_at": "2026-08-25T11:02:07.607107+00:00"
   },
   "search_capability": "unknown",
   "image_capability": "unknown",
-  "resolved_at": "2026-10-07T01:12:05.348816+00:00"
+  "resolved_at": "2026-08-25T11:02:07.607107+00:00"
 }
