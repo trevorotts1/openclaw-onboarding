@@ -346,7 +346,7 @@ _RE = None
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
                      spoken_section_ids=None, target=None, segments=None,
-                     detector_result=None):
+                     detector_result=None, detector_share=None):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
     G5 honesty: label time is stamped ``labelled_*`` and is never a sung %.
@@ -380,6 +380,12 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      UNAVAILABLE (17.8: missing evidence never passes).
 
     Returns the verdict dict (record_for_gate builds the qc record from it).
+
+    G3-WIRE: ``detector_share`` is the measured record from
+    ``singing_detector.share_for_stem(vocal stem)`` (share_source
+    "measured"). It is the detector provenance record_for_gate prints and
+    core/qc_gate requires on a PASS sung claim; the verdict itself still
+    judges Trevor's band on the timing-map coverage (SPK001).
     """
     mode, defaulted = resolve_voice_mode(profile)
     target = resolve_sung_target(profile, target)
@@ -387,7 +393,9 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
            "voice_mode": mode, "voice_mode_defaulted": defaulted,
            "target": round(target, 4), "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
-           "next_action": None, "flags": []}
+           "next_action": None, "flags": [],
+           "detector_share": (detector_share
+                              if isinstance(detector_share, dict) else None)}
     # ---- G5: a measured detector run overrides label time ------------------
     if detector_result is not None:
         block = measured_share(detector_result)
@@ -641,6 +649,23 @@ def record_for_gate(verdict, run_id, stage, reviewer_identity,
     if not block and verdict.get("share_basis") == "planned" \
             and "LABELLED" not in summary:
         summary += " [LABELLED timing-map time, not measured]"
+    # G3-WIRE: provenance the qc_gate requires on a PASS sung claim.
+    share = verdict.get("detector_share")
+    share = share if isinstance(share, dict) else {}
+    if block and not share:
+        share = {"detector": "singing_detector", "share_source": "measured",
+                 "detector_version": block.get("detector_version"),
+                 "sung_pct": block.get("sung_pct")}
+    if share.get("detector") == "singing_detector" \
+            and share.get("share_source") == "measured":
+        summary += (" | detector=singing_detector v%s share_source=measured "
+                    "sung_share=%.1f%%"
+                    % (share.get("detector_version") or "?",
+                       float(share.get("sung_pct") or 0.0)))
+    else:
+        summary += " | share_source=%s (unmeasured)" % (
+            share.get("share_source")
+            or verdict.get("evidence_path") or "timing_map")
     rec = {"schema_version": "1.0.0", "check_id": "final:audio:sung_vocal",
            "run_id": run_id, "stage": stage, "check": "audio",
            "verdict": "PASS" if verdict["outcome"] == "PASS" else "FAIL",

@@ -32,8 +32,9 @@ What evaluate() does per question, measured from the receipt only:
   1 SUNG      -- receipt singing detector numbers on the vocal stem
                  (sung_pct / spoken_pct present, sung style required).
                  Sung share must be > 0 for a sung ad. Detector field
-                 (receipt.detector) must name the stem-based detector --
-                 labels/section names are never evidence (G5).
+                 (receipt.detector) must name core/singing_detector (G3,
+                 any separator form); labels/section names and any
+                 share_source other than "measured" are never evidence.
   2 ON TARGET -- every share and the length within CHECKLIST_TOLERANCE_PCT
                  (5.0) points of its target in the receipt.
   3 WORDS     -- receipt word coverage: words_present / words_total == 100%
@@ -242,6 +243,18 @@ def _source_named(ans, codes, q):
     codes.append("%s:%s answer names no source" % (CHECKLIST_NO_MEASUREMENT, q))
     return None
 
+def _is_singing_detector(name):
+    """G3: the sung share must come from core/singing_detector.
+
+    Normalizes separators, so "singing-detector(vocal-stem)",
+    "singing_detector" and "singing detector v2" all count; "section
+    labels", "verse/chorus time" and bare "manual" do not.
+    """
+    if not isinstance(name, str):
+        return False
+    return "singingdetector" in "".join(ch for ch in name.lower()
+                                        if ch.isalnum())
+
 
 # ------------------------------------------------------------------ Q1 SUNG
 def _q1_sung(receipt, ans, codes, details):
@@ -259,6 +272,18 @@ def _q1_sung(receipt, ans, codes, details):
     if not isinstance(detector, str) or not detector.strip():
         codes.append("%s:SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: a named-but-wrong instrument (labels, ears, "manual") is the
+        # fake-number path; only core/singing_detector measures sung share.
+        codes.append("%s:SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
+        return False
+    share_source = ans.get("share_source") or receipt.get("share_source")
+    if isinstance(share_source, str) and share_source.strip() \
+            and share_source.strip().lower() != "measured":
+        codes.append("%s:SUNG share_source=%s (need measured)"
+                     % (CHECKLIST_NO_MEASUREMENT, share_source.strip()))
         return False
     is_sung_style = isinstance(style, str) and \
         style.strip().lower() in ("sung", "all_suno", "all-suno", "suno")
@@ -696,6 +721,12 @@ def _q9_first_sung(receipt, ans, codes, details):
     if not (isinstance(detector, str) and detector.strip()):
         codes.append("%s:FIRST_SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: first-sung position is measured on the vocal stem by
+        # core/singing_detector, never read off section labels.
+        codes.append("%s:FIRST_SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
         return False
     delta = abs(got - want)
     details["first_sung_pct"] = got
