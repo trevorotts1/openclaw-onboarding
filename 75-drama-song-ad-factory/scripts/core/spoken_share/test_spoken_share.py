@@ -143,13 +143,13 @@ RAP = [
     {"delivery": "rap", "seconds": 7.5},
     {"delivery": "sung", "seconds": 77.5},
 ]
-m = SS.measure_share(RAP)
+m = SS.measure_share(RAP, "planned")
 check("rap-counted-in-measure", abs(m["share"] - 0.225) < 1e-9, m)
 check("rap-flag", m["rap_counts_as_spoken"] is True, m)
 check("rap-style-set", SS.SPOKEN_STYLE_DELIVERIES == frozenset({"spoken", "rap"}),
       sorted(SS.SPOKEN_STYLE_DELIVERIES))
 check("sung-never-spoken",
-      SS.measure_share([{"delivery": "sung", "seconds": 10.0}])
+      SS.measure_share([{"delivery": "sung", "seconds": 10.0}], "planned")
       ["spoken_style_seconds"] == 0.0)
 check("is-spoken-style-rap", SS.is_spoken_style("rap") is True)
 check("is-spoken-style-spoken", SS.is_spoken_style("Spoken ") is True)
@@ -183,11 +183,11 @@ check("refusal-text-when-fail",
 
 # share must agree with the timing measurement, or fail closed.
 check("share-vs-segments-mismatch-fail",
-      SS.check_share(0.50, RAP)["verdict"] == "FAIL",
-      SS.check_share(0.50, RAP)["reasons"])
+      SS.check_share(0.50, RAP, "planned")["verdict"] == "FAIL",
+      SS.check_share(0.50, RAP, "planned")["reasons"])
 check("matching-share-and-segments-pass",
-      SS.check_share(round(m["share"], 6), RAP)["verdict"] == "PASS",
-      SS.check_share(round(m["share"], 6), RAP))
+      SS.check_share(round(m["share"], 6), RAP, "planned")["verdict"] == "PASS",
+      SS.check_share(round(m["share"], 6), RAP, "planned"))
 
 # ------------------------------------- 5. first real singing, 15% target
 check("first-sung-target-is-15", SS.FIRST_SUNG_TARGET_PCT == 15)
@@ -219,8 +219,9 @@ check("first-sung-27-percent-redo",
 check("first-sung-10-percent-accept-early-edge", at(10)["verdict"] == "PASS")
 check("first-sung-at-zero-redo", at(0.5)["verdict"] == "FAIL")
 check("basis-is-reported", at(15)["basis"] == "planned"
-      and SS.check_first_sung([{"delivery": "sung", "seconds": 60.0}],
-                              "measured")["basis"] == "measured")
+      and SS.check_first_sung(
+          SS.segments_from_sung_stretches([(0.0, 60.0)], 60.0),
+          "measured")["basis"] == "measured")
 no_sung = [{"delivery": "spoken", "seconds": 60.0}]
 check("no-sung-fail", SS.check_first_sung(no_sung)["verdict"] == "FAIL",
       SS.check_first_sung(no_sung))
@@ -370,26 +371,28 @@ def voice(pct, lead=0.0, tail=0.0):
 
 # Sung of VOICE time (target 77.5): 76 accept, 69 flag, 60 redo.
 check("spk001-voice-76-accept",
-      SS.check_sung_of_voice(voice(76))["verdict"] == "PASS")
-v69 = SS.check_sung_of_voice(voice(69))
+      SS.check_sung_of_voice(voice(76), basis="planned")["verdict"]
+      == "PASS")
+v69 = SS.check_sung_of_voice(voice(69), basis="planned")
 check("spk001-voice-69-flag",
       v69["verdict"] == "FLAG" and len(v69["flags"]) == 1, v69)
-v60 = SS.check_sung_of_voice(voice(60))
+v60 = SS.check_sung_of_voice(voice(60), basis="planned")
 check("spk001-voice-60-redo",
       v60["verdict"] == "FAIL" and v60["reasons"], v60)
 # A 10 s music-only intro and a 5 s end card are not penalized.
 bare, framed = voice(76), voice(76, lead=10.0)
 check("spk001-intro-and-end-card-not-penalized",
-      SS.check_sung_of_voice(framed)["sung_of_voice_pct"]
-      == SS.check_sung_of_voice(bare)["sung_of_voice_pct"] == 76.0
-      and SS.check_sung_of_voice(framed)["verdict"] == "PASS"
-      and SS.check_plan(55, framed + [], "measured")["sung_of_voice"]
+      SS.check_sung_of_voice(framed, basis="planned")["sung_of_voice_pct"]
+      == SS.check_sung_of_voice(bare, basis="planned")["sung_of_voice_pct"]
+      == 76.0
+      and SS.check_sung_of_voice(framed, basis="planned")["verdict"] == "PASS"
+      and SS.check_plan(55, framed + [], "planned")["sung_of_voice"]
       ["verdict"] == "PASS")
 check("spk001-voice-direct-seconds",
       SS.check_sung_of_voice(sung_s=31.0, spoken_s=9.0)["sung_of_voice_pct"]
       == 77.5)
 check("spk001-card-target-overrides-default",
-      SS.check_sung_of_voice(voice(60), target_pct=60)["verdict"] == "PASS")
+      SS.check_sung_of_voice(voice(60), target_pct=60, basis="planned")["verdict"] == "PASS")
 check("spk001-no-voice-raises",
       raises(lambda: SS.sung_of_voice_pct(0, 0), SS.SpokenShareError)
       is not None)
@@ -468,6 +471,109 @@ for path in MODULE_FILES:
     check("no-operator-path-" + base, "/Users/" not in text, "/Users/")
 
 print()
+# ------------------------------------------- 7. G8: audio, never labels
+O3_LABELS = [
+    {"delivery": "spoken", "start": 0.0, "end": 40.0},
+    {"delivery": "sung", "start": 40.0, "end": 140.0},
+    {"delivery": "spoken", "start": 140.0, "end": 147.0},
+]
+e = raises(lambda: SS.measure_share(O3_LABELS), SS.SpokenShareError)
+check("g8-label-segments-refused",
+      e is not None and e.code == "LABELS_NOT_MEASURED"
+      and "labels, not measured" in str(e), e)
+e = raises(lambda: SS.check_share(0.54, O3_LABELS), SS.SpokenShareError)
+check("g8-check-share-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_sung_of_voice(O3_LABELS), SS.SpokenShareError)
+check("g8-check-sung-of-voice-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_first_sung(O3_LABELS, "measured"),
+           SS.SpokenShareError)
+check("g8-first-sung-measured-basis-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_plan(147, O3_LABELS, "measured"),
+           SS.SpokenShareError)
+check("g8-check-plan-measured-basis-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+check("g8-segment-basis-labels",
+      SS.segment_basis(O3_LABELS) == "planned", SS.segment_basis(O3_LABELS))
+check("g8-planned-declared-not-measured",
+      SS.measure_share(O3_LABELS, "planned")["share_source"] == "planned")
+
+# the detector's own output (segments_from_sung_stretches stamps
+# source="measured" + detector + stem id) is accepted, and an all-spoken
+# stem reads as NO singing -- never as a share of record.
+DETECTOR = SS.segments_from_sung_stretches([], 147.0,
+                                           detector_version="2.0.0",
+                                           stem_id="vocal")
+check("g8-detector-segments-stamp-measured",
+      SS.segment_basis(DETECTOR) == "measured"
+      and DETECTOR[0]["source"] == "measured"
+      and DETECTOR[0]["detector"] == "singing_detector"
+      and DETECTOR[0]["detector_version"] == "2.0.0"
+      and DETECTOR[0]["stem_id"] == "vocal", DETECTOR[0])
+m = SS.measure_share(DETECTOR)
+check("g8-detector-output-accepted", m["basis"] == "measured"
+      and m["share_source"] == "measured"
+      and m["stem_id"] == "vocal" and m["detector_version"] == "2.0.0", m)
+check("g8-o3-measured-no-singing",
+      m["sung_seconds"] == 0.0
+      and SS.check_real_singing(DETECTOR)["verdict"] == "FAIL", m)
+
+# reference stem: 55.9 s sung / 147 s runtime -> sung-or-rapped of runtime
+REF = SS.segments_from_sung_stretches([(40.0, 95.9)], 147.0,
+                                      detector_version="2.0.0",
+                                      stem_id="vocal")
+mr = SS.measure_share(REF)
+pct_sung_or_rapped = (mr["sung_seconds"] + mr["rap_seconds"]) \
+    / mr["total_seconds"] * 100.0
+check("g8-reference-measured-share-within-5-of-37-8",
+      abs(pct_sung_or_rapped - 37.8) <= 5.0,
+      round(pct_sung_or_rapped, 2))
+check("g8-reference-source-measured",
+      mr["share_source"] == "measured" and REF[0]["source"] == "measured", mr)
+
+# music_styles carries the same gate
+try:
+    import music_styles as MS2
+    e = raises(lambda: MS2.measure_share(O3_LABELS), MS2.MusicStyleError)
+    check("g8-music-styles-refuses-labels",
+          e is not None and e.code == "LABELS_NOT_MEASURED", e)
+    e = raises(lambda: MS2.check_share("soul-ballad", 60, 0.54, O3_LABELS),
+               MS2.MusicStyleError)
+    check("g8-music-styles-check-share-refuses-labels",
+          e is not None and e.code == "LABELS_NOT_MEASURED", e)
+except Exception as _e:  # noqa: BLE001
+    check("g8-music-styles-gate", False, "%s: %s" % (type(_e).__name__, _e))
+
+# sung_vocal_guard: measured segments are the primary evidence, labels refused
+try:
+    from final_assembler import sung_vocal_guard as SVG
+    lab = SVG.check_sung_vocal(segments=O3_LABELS)
+    check("g8-guard-refuses-label-segments",
+          lab["outcome"] == "UNAVAILABLE"
+          and lab["reason_code"] == "LABELS_NOT_MEASURED", lab)
+    got = SVG.check_sung_vocal(segments=DETECTOR)
+    check("g8-guard-measured-primary-reports-no-singing",
+          got["evidence_path"] == "measured_segments"
+          and got["share_basis"] == "measured"
+          and got["outcome"] == "FAIL"
+          and got["reason_code"] == "VOCAL_MISSING"
+          and got["sung_coverage"] == 0.0, got)
+    got2 = SVG.check_sung_vocal(segments=REF, target=0.4)
+    check("g8-guard-measured-share-judged-by-band",
+          got2["evidence_path"] == "measured_segments"
+          and got2["share_basis"] == "measured"
+          and got2["outcome"] == "PASS"
+          and abs(got2["sung_coverage"] - 55.9 / (55.9 + 91.1)) < 0.02, got2)
+    bad = SVG.check_sung_vocal(segments=REF, target=0.6)
+    check("g8-guard-measured-gap-over-10-is-redo",
+          bad["outcome"] == "FAIL" and bad["reason_code"] == "SUNG_COVERAGE_LOW"
+          and bad["share_basis"] == "measured", bad)
+except Exception as _e:  # noqa: BLE001
+    check("g8-guard-gate", False, "%s: %s" % (type(_e).__name__, _e))
+
+
 if FAILS:
     print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
     sys.exit(1)
