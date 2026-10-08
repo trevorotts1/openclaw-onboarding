@@ -53,6 +53,10 @@ on:
       - "tests/unit/fixtures/mock-rr-datatable.py"
       - ".github/workflows/rescue-rangers-rr031-gates.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   rescue-rangers-rr031-gates:
     name: RR-031 gates (reconcile + abort + lock + deadlines + mutation drills)

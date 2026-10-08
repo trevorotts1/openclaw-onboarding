@@ -2,6 +2,7 @@ name: rescue-rangers-rr029-notifications
 
 on:
   push:
+    branches: [main]
     paths:
       - "65-rescue-receiver/rescue-poll.sh"
       - "65-rescue-receiver/rescue-notification.py"
@@ -13,6 +14,10 @@ on:
       - "65-rescue-receiver/rescue-notification.py"
       - "tests/rescue/RR-029/**"
       - ".github/workflows/rescue-rangers-rr029-notifications.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rr029-notification-contract:

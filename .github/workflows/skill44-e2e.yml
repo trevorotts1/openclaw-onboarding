@@ -48,6 +48,10 @@ env:
   CAF_INTERNAL_STEP_BACKOFF_MS: "0"
   PYTHONUNBUFFERED: "1"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
   # ─────────────────────────────────────────────────────────────────────────────

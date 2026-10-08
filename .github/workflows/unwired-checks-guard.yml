@@ -49,6 +49,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   skill25-contract-tests:
     name: "Skill 25 — video-creator contract tests (PR #686's 16 blockers)"

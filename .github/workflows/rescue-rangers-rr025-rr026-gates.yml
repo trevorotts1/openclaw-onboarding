@@ -19,6 +19,7 @@ name: rescue-rangers-rr025-rr026-gates
 
 on:
   push:
+    branches: [main]
     paths:
       - "65-rescue-receiver/rescue-poll.sh"
       - "shared-utils/rescue-supervise.py"
@@ -32,6 +33,10 @@ on:
       - "tests/rescue/RR-025/**"
       - "tests/rescue/RR-026/**"
       - ".github/workflows/rescue-rangers-rr025-rr026-gates.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rescue-rangers-rr025-rr026-gates:

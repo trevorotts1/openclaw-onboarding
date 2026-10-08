@@ -60,6 +60,10 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/paid-advertisement/*.md"
       - ".github/workflows/ad-pipeline-lockstep.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ad-pipeline-lockstep:
     name: FB/IG ad manifest/code/ruleset lockstep + GOOD/BAD self-test
