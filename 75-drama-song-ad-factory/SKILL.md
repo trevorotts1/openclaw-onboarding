@@ -71,6 +71,32 @@ and re-verified at packaging time by the cross-distribution parity suites
 
 Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1`.
 
+## Suno song recipe (read this first when you build audio)
+
+Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
+added later) follows this recipe by default. It is what made the Kiesett and
+LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+request goes through `suno_recipe.prepare()` and the `music_director` seam
+refuses a raw Suno style that skipped it.
+
+The four rules:
+
+1. Suno is told plainly which lines to sing and which to speak.
+2. A repeated sung hook is built from the client's own words.
+3. Singing starts early.
+4. Each take's singing is measured, not taken from its labels.
+
+In plain terms: tag every lyric section Sung or Spoken, and put the same map
+in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
+hook out of words the client actually said and repeat it. Get to the first
+sung line early (target: 15% of the runtime). After Suno returns a take, run
+the detector and judge the sung and spoken shares from what it measured.
+
+The only exemption is the Velvet Voiceover version (the spoken Google voice
+over the song, id `velvet_voiceover`), which keeps its own flow. Almost
+nobody asks for it. Every other style, including the All Suno voice default,
+uses the recipe.
+
 ## Intake rules (from the build directive, section 24.3)
 
 1. Examine the supplied brief, approved project records, links/assets and

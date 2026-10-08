@@ -278,3 +278,30 @@ On the parent campaign: every selection above, the approved price, the
 recorded ceiling, and the listed lip-sync lines. The Command Center keeps one
 deliverable per ad and one Kanban card per ad and per batch; the department
 map's lead role for this skill is `vsl-video-sales-letter-specialist`.
+
+## Suno song recipe (applies to every Suno music style above)
+
+Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
+added later) follows this recipe by default. It is what made the Kiesett and
+LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+request goes through `suno_recipe.prepare()` and the `music_director` seam
+refuses a raw Suno style that skipped it.
+
+The four rules:
+
+1. Suno is told plainly which lines to sing and which to speak.
+2. A repeated sung hook is built from the client's own words.
+3. Singing starts early.
+4. Each take's singing is measured, not taken from its labels.
+
+In plain terms: tag every lyric section Sung or Spoken, and put the same map
+in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
+hook out of words the client actually said and repeat it. Get to the first
+sung line early (target: 15% of the runtime). After Suno returns a take, run
+the detector and judge the sung and spoken shares from what it measured.
+
+The only exemption is the Velvet Voiceover version (the spoken Google voice
+over the song, id `velvet_voiceover`), which keeps its own flow. Almost
+nobody asks for it. Every other style, including the All Suno voice default,
+uses the recipe.
+
