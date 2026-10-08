@@ -166,3 +166,9 @@ to self-approve a run.
 - Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 15-20 s
   in a 60-90 s ad with a 5-point grace; below the band fails
   `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the lines.
+
+## Clean ending (I5)
+
+The last 2 s of the master must not stop abruptly: audio level decays, the last sung word
+is not cut, the picture fades to the end card, and the end card (4-5 s) ends by target
+length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
