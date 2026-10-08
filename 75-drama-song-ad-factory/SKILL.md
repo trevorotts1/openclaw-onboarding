@@ -139,6 +139,14 @@ build - byte-identical; packaging re-checked on a clean copy by
 - QC independence: checkers are fresh lanes, never members of the build
   chain (opus-chain fallback members excluded from QC).
 
+## No hand-written pipeline scripts (Part H H12)
+
+Assembly, lip-sync placement and captions run only through the skill's own
+modules (`final_assembler/assembler.py` and its siblings). A run folder with its
+own ffmpeg or caption script, or a master whose receipt lacks
+`produced_by.module` and a matching `master_sha256`, fails QC
+(`final_assembler/master_provenance.py`).
+
 ## Installation
 
 1. Follow `74-kie-live-adapter`/`INSTALL.md`'s teach-yourself-protocol rule:

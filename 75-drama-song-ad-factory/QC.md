@@ -108,6 +108,15 @@ schema violation all refuse the stage (exit 5).
       generation; a campaign target may deviate only with a documented
       alternative recorded in the profile.
 
+### 5.1 Master provenance (Part H H12)
+
+Run `check_master_provenance(<run folder>, <master>)` from
+`final_assembler/master_provenance.py` and record it as the `final_edit`
+check. FAIL when the master has no assembler receipt (`produced_by.module`,
+`master_sha256`), or any run-folder script calls ffmpeg or writes captions.
+Builders call the skill's assembler, lip-sync and caption modules, never
+their own scripts.
+
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
       to actual cost, within the run ceiling recorded by the operator.
