@@ -245,7 +245,7 @@ build - byte-identical; packaging re-checked on a clean copy by
 - Every campaign artifact's twelve creative beats and twelve production
   stages stay separate contracts (directive 14).
 - QC independence: checkers are fresh lanes, never members of the build
-  chain (opus-chain fallback members excluded from QC).
+  chain (fallback members of the build lane are excluded from QC).
 
 ## No hand-written pipeline scripts (Part H H12)
 
@@ -254,6 +254,29 @@ modules (`final_assembler/assembler.py` and its siblings). A run folder with its
 own ffmpeg or caption script, or a master whose receipt lacks
 `produced_by.module` and a matching `master_sha256`, fails QC
 (`final_assembler/master_provenance.py`).
+
+## Model and agent choice: the user's choice wins
+
+This skill never picks, forces or recommends a model, an alias or an agent.
+
+- Workflows, subagents and checkers run on the model the session is already
+  using, or on an alias the user has configured and chosen. A model or alias
+  the user did not choose is never added, pinned or fallen back to.
+- If the build needs a model, alias or agent that is not configured on this
+  box, stop and tell the user in plain words which one is missing, then let
+  the user pick. Never silently swap in a different one, and never name a
+  model the user has not set up.
+- If the user names a model or agent, use exactly that one.
+
+## Main window: orchestrate only, all work visible, no silent failure
+
+- The main window only operates and orchestrates. It does not do the build
+  work itself; every piece of work runs in a visible workflow or visible
+  agent that the user can watch.
+- A workflow, agent or model that is wrong, broken or not working is never
+  allowed to fail silently. Report it right away, in plain words, with what
+  broke and what was trying to run. Do not retry quietly, skip the step,
+  swap to another model, or carry on as if it worked.
 
 ## Installation
 
