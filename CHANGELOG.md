@@ -1,3 +1,7 @@
+## [v26.4.7]  -  2026-10-08  -  fix(skill-75): Part I I2 scenes must match the song and the faces
+
+- Skill 75 v2.6.1: new `scene_match` (storyboard card per shot; sampled frames checked against line, place, action and face emotion; only failing shots regenerated). Builds on Part G G6 face emotion.
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

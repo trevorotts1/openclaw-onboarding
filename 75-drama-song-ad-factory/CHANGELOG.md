@@ -6,6 +6,16 @@ frontmatter `version:` field).
 
 ---
 
+## [2.6.1] - 2026-10-08 - Part I I2 scenes must match the song and the faces
+
+- New `scripts/core/scene_match/`: each shot carries line, meaning, place and action, and face
+  emotion at storyboard time (`check_cards`); after clips exist, sampled frames are checked
+  against them (`qc_scene_match`). A scene that is off-topic, or a smiling face under a pain
+  line, fails, and only the failing shots are regenerated. A shot with no sampled frames never
+  passes unseen. Test: `python3 scripts/core/scene_match/test_scene_match_i2.py`.
+- Includes `scripts/core/face_emotion/` (Part G G6) which it builds on.
+- `SKILL.md` gains the "Scenes must match the song and the faces" section.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
