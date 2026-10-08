@@ -108,6 +108,16 @@ guard that already failed.
    `variants/`, `checkpoints/`, `receipts/`, `delivery/`,
    `lessons/`. One run state authority only - never two writers.
 
+   **Order of stages (Part H H5): audio, then timestamps, then shot plan, then
+   pictures.** Never generate pictures before the song exists. Plan shots with
+   `shot_planner.plan_from_timestamps` from the REAL Suno timestamps
+   (`audio_c3/lyric_timing.py` output); every shot names the line it shows
+   (`shows_line_ids`) and its picture is generated at its window's length. No
+   slow motion above 1.15x (`SLOWMO_OVER_LIMIT`). QC lists shot / time / line /
+   match (`pictures_match_gate`, Q10 on the delivery checklist) and fails any
+   mismatch (`PICTURE_LINE_MISMATCH`); the assembler enforces both before any
+   render.
+
 6. **Connect Command Center context when present (step 6).** If a
    Command Center is configured for this box, read ad-campaigns context
    (campaign record, board, approvals) through its API as context only;
