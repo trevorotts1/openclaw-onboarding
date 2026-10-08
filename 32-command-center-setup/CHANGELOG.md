@@ -1,5 +1,8 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.48 - 2026-10-08 - Standard placeholder company builds the board without an interview (STD001)
+
+`run-full-install.sh`: when build-state carries `companyMode = "standard-placeholder"` with `standardPlaceholder.status = "active"` (interview incomplete 14+ days, onboarding v26.4.7), the interview gate (BLOCK A to B) is skipped and BLOCK B runs for the standard company. BLOCK B treats an `--update-only` refresh as a full install (`BLOCK_B_UPDATE_ONLY`) until the first `done` stamps `standardPlaceholder.ccProvisionedAt`. `interviewComplete` is never changed and `/interview` stays open. Real-interview gating is otherwise unchanged. Tests: `23-ai-workforce-blueprint/scripts/test-standard-placeholder-install-gate.sh`.
 ## [13.1.47] - 2026-10-08 - INF002
 
 - Runtime-parity guard test now proves every ALIAS_MAP pair matches board slug and runtime id both ways, plus the legal-compliance inverse through the CLI (INF002 F). No guard behavior change: main already matched both directions.

@@ -1,3 +1,38 @@
+## [v26.4.9]  -  2026-10-08  -  Merge train: #1639 feat(onboarding): standard company placeholder after 14 days without…; #1666 G3b: sung detector no longer reads gap-free speech as sung, skill 75…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1639 — [v26.4.9]  -  2026-10-08  -  feat(onboarding): standard company placeholder after 14 days without an interview (STD001)
+
+Trevor's order (2026-10-08): a client who has not finished the AI Workforce interview still gets a
+standard company named after them, so the Command Center and everything downstream proceed.
+
+- New 23-ai-workforce-blueprint/scripts/apply-standard-placeholder.py. STANDARD_PLACEHOLDER_AFTER_DAYS = 14,
+  measured from the onboarding start (.onboarding-state.json seededAt / startedAt, or launchBootstrap.createdAt,
+  earliest wins). Runs the existing library-only standard prebuild when it has not run, then records
+  companyMode="standard-placeholder" and standardPlaceholder{status:"active", ...}. Never writes
+  interviewComplete, interview progress, QC, or answers. Skips completed interviews, built companies,
+  and frozen legacy boxes. Idempotent.
+- New set-company-name.py: renames the company everywhere (build-state, company-config.json, Command
+  Center companies row, COMPANY_NAME) without touching the slug.
+- update-skills.sh applies the placeholder automatically on every update (best-effort, one line).
+- run-full-install.sh: an active placeholder builds the real board (BLOCK B), including on an
+  --update-only refresh until the Command Center finishes once (standardPlaceholder.ccProvisionedAt).
+- vertical-derivation-guard.py: departments already on disk when the placeholder was applied are
+  reported as grandfathered residue while the placeholder is active (fixes a client box's
+  VERTICAL_NOT_DECLARED on 'listings'); new adds are still refused; the real interview re-arms it.
+- build-workforce.py apply_standard_edits marks the placeholder superseded when the real interview completes.
+- build-state-schema.json documents companyMode and standardPlaceholder; SKILL.md and INSTRUCTIONS.md
+  document the placeholder and the edit path. Skill 32 v13.1.46.
+- Command Center: v7.6.112 (dashboard admits an active placeholder; banner invites the client to finish
+  the interview). The cc-compat.json pin to v7.6.112 lands AFTER that tag exists (follow-up commit).
+
+- Pin: cc-compat.json commandCenter.pinnedTag is now v7.6.112 (the Command Center release that admits the dashboard for the standard placeholder company, STD001; CC commit ef6b9364e8). decisionEngine SHAs re-derived at onboarding main ba1ed99f1 and CC main ef6b9364e8; release-cohort.json cc_version/cc_sha, CC_PIN in tests/unit/cc-runtime-preflight.test.py, README, DIRECT-TO-AGENT-UPDATE-MESSAGE.md and docs/interview-launch-recovery.md follow.
+
+### #1666 — G3b: sung detector no longer reads gap-free speech as sung, skill 75 v2.8.2
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.4.8]  -  2026-10-08  -  batch: mega MGB002 (6 units; skill 75 v2.8.1, skill 35 v3.7.0)
 
 One batch release of six unit pull requests (merged together in one batch pull request; none were merged one at a time): #1654, #1655, #1656, #1657, #1658, #1659. One onboarding bump (v26.4.7 to v26.4.8) and one skill 75 bump (v2.8.0 to v2.8.1). Each unit's own entry follows, unchanged except one heading level deeper.

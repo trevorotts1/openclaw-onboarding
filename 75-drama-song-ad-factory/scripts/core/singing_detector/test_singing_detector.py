@@ -153,7 +153,31 @@ r_sil = SD.score_window(numpy.full(800, numpy.nan), 0, 8)
 check("all-nan-not-sung", r_sil["sung"] is False and r_sil["score"] == 0.0,
       r_sil)
 
-# ------------------------------------------------ 4. calibration fixtures
+# --------------------------------------------- 4. CONTROL TABLE (acceptance)
+# Spoken controls must read <= SPOKEN_MAX % sung, sung controls >= SUNG_MIN %.
+# Fixtures are a few seconds each (fixtures/*.mp3, 16 kHz mono): sung = Suno
+# vocal stems of approved hook lines; spoken = Suno
+# spoken lines, Gemini TTS voiceover, an O3a spoken stem. Spoken TTS is also
+# GENERATED here with macOS `say` (13 voices, ~20 s, free) when `say` exists:
+# the 2026-10-08 bug was gap-free say speech reading 74-100% sung.
+import shutil
+import subprocess
+import tempfile
+
+SPOKEN_MAX = 15.0
+SUNG_MIN = 85.0
+SD.load_guard = lambda *a, **k: {"checked": True}   # DSP needs no RAM guard
+FIX = os.path.join(HERE, "fixtures")
+_sung_fx = [f for f in (sorted(os.listdir(FIX)) if os.path.isdir(FIX) else [])
+            if f.startswith("sung-")]
+TEXT = ("I am not small, I never was. One page of truth, and I know I will "
+        "rise. Then I read the book and I will keep climbing, step by step, "
+        "day by day, until the whole mountain is behind me. She found power "
+        "in the climb, and so can you. Get the book today, the link is below.")
+VOICES = ["Albert", "Daniel", "Eddy (English (US))", "Flo (English (US))",
+          "Fred", "Karen", "Kathy", "Moira", "Ralph", "Reed (English (US))",
+          "Samantha", "Sandy (English (US))", "Shelley (English (US))"]
+
 def _wav_dur(path):
     """Duration via the wave module for .wav, ffprobe for everything else.
     Returns None only when the file is unreadable -- never guessed."""
@@ -250,6 +274,51 @@ else:
                                       _spoken_lines is not None))
     # Fixtures live on the build box only (never in the repo): declare, do not fail.
     print("note: calibration-fixtures-declared-missing: the >= 90% claim cannot be made here")
+
+table = []   # (name, expected, sung_pct_of_voiced, voiced_s)
+for fn in sorted(os.listdir(FIX)) if os.path.isdir(FIX) else []:
+    kind = "sung" if fn.startswith("sung-") else "spoken"
+    r = SD.detect_track(os.path.join(FIX, fn))
+    table.append((fn[:-4], kind, r["sung_pct_of_voiced"], r["voiced_s"]))
+if shutil.which("say") and shutil.which("ffmpeg"):
+    with tempfile.TemporaryDirectory() as tmp:
+        for v in VOICES:
+            aiff = os.path.join(tmp, "x.aiff")
+            wav = os.path.join(tmp, "x.wav")
+            if subprocess.run(["say", "-v", v, "-o", aiff, TEXT],
+                              capture_output=True).returncode != 0:
+                print("note: say voice %r unavailable on this box" % v)
+                continue
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", aiff, "-ac",
+                            "1", "-ar", "16000", wav], check=True)
+            r = SD.detect_track(wav)
+            table.append(("say-" + v.split()[0], "spoken",
+                          r["sung_pct_of_voiced"], r["voiced_s"]))
+else:
+    print("note: macOS say not available; generated spoken controls skipped")
+
+for name, kind, pct, vs in table:
+    print("  control %-26s %-6s %5.1f%% sung of %d voiced s" % (name, kind, pct, vs))
+n_sung = sum(1 for t in table if t[1] == "sung")
+n_spoken = sum(1 for t in table if t[1] == "spoken")
+if _sung_fx:
+    check("controls-present-sung", n_sung >= 8, n_sung)
+    check("controls-present-spoken", n_spoken >= 11, n_spoken)
+else:
+    print("note: control-table fixtures not in the repo; sung controls skipped")
+bad_spoken = [t[:3] for t in table if t[1] == "spoken" and t[2] > SPOKEN_MAX]
+bad_sung = [t[:3] for t in table if t[1] == "sung" and t[2] < SUNG_MIN]
+check("every-spoken-control-at-most-15-pct-sung", not bad_spoken, bad_spoken)
+check("every-sung-control-at-least-85-pct-sung", not bad_sung, bad_sung)
+# a window of pitched voice with NO gaps and no melody must never be sung:
+check("density-alone-never-decides",
+      SD.score_window(SD.f0_track(synth_window([220.0] * 12))[0], 0, 12)
+      ["sung"] is False, "monotone gap-free tone read sung")
+if _sung_fx:
+    _sh = SD.share_for_stem(os.path.join(FIX, _sung_fx[0]))
+    check("share-record-measured", _sh["share_source"] == "measured"
+          and _sh["method"] == SD.METHOD and 0.0 <= _sh["confidence"] <= 1.0
+          and _sh["detector_version"] == SD.TOOL_VERSION, _sh)
 
 # ------------------------------------------------- 5. label-source ban (G5 seam)
 # A receipts dict that carries share_source=labels must be detectable: the

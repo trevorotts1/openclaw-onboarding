@@ -8,23 +8,24 @@ inside [Verse]/[Chorus] labels -- the music under those lines carried plain
 speech from start to finish. Every sung/spoken share in QC and receipts now
 comes from THIS detector, never from section labels.
 
-Method (chosen because it separated the calibration controls; held-note
-share and syllable rate did NOT, see calibration harness in calibrate.py):
-  track pitch (autocorrelation, 10 ms hop, 16 kHz mono), cut it into NOTES
-  = steady runs >= 120 ms within +-0.7 semitone (octave glitches and glides
-  do not form notes). Singing steps between several scale notes; Suno speech
-  only glides within about 3 semitones.
-  score = NOTE RANGE = duration-weighted 10th-to-90th percentile spread of
-  the note pitches, in semitones.
-  A window is SUNG when score >= SING_THRESH_SEMITONES and it holds
-  >= MIN_NOTES_PER_WINDOW notes at >= MIN_NOTES_PER_SECOND (guards against
-  one-off octave errors).
-
-Thresholds come from the calibration controls (calibrate.py):
-  known sung  (bsw hero lines Suno sang): scores 10.2 .. 11.25
-  known spoken (O3a [Spoken Word] lines): scores 1.3 .. 3.1
-  O3 labelled-sung (Verse/Chorus, heard by Trevor as spoken): max 5.95
-  -> 7.0 sits in the gap; nothing in the controls crosses it.
+Method (v2, 2026-10-08 fix): PITCHED-VOICE DENSITY NEVER DECIDES. The old
+note-range rule and the factory's singcheck density rule both read clean,
+gap-free TTS speech (macOS say, rap) as sung. A window is SUNG only when the
+voice behaves like a melody on a scale, measured on the steady notes
+(runs >= 120 ms within +-0.5 semitone) found in a WINDOW_S window:
+  steady   share of VOICED time inside steady notes (pitch stability)   >= 0.45
+  pcr      pitch-class concentration of the note pitches, duration
+           weighted, tuning-free: |sum(d*exp(2*pi*i*p))| / sum(d); 1.0 =
+           every note on one semitone grid, ~0 = pitches spread evenly
+           (speech glides through all of them)                          >= 0.70
+  quant    mean distance of the note-to-note intervals (>= 0.8 st) from
+           the nearest whole semitone (speech ~0.25, sung <= 0.21)       <= 0.22
+  notes    >= MIN_NOTES_PER_WINDOW and >= MIN_NOTES_PER_SECOND (few notes
+           give a high pcr by chance, speech with gaps lands here)
+Also reported, not gated: sust = share of voiced time in notes held >= 250 ms
+(sung vowels are long), and range = 10th-90th percentile note spread.
+Control table (tests/): 13 macOS say voices, Suno spoken stems, Gemini TTS
+all <= 15% sung; approved sung hooks all >= 85% sung.
 
 A sung share is a share of RUNTIME (windows vote over seconds), and the
 detector also reports share of VOICED time -- a stem with long quiet gaps
@@ -56,27 +57,33 @@ import subprocess
 import numpy as np
 
 TOOL_NAME = "singing_detector"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "2.0.0"
 METHOD = "pitch-stability+voicing+note-alignment"
 SCHEMA_VERSION = "blackceo.singing-detector/v1"
 SOURCE = "Trevor order 2026-10-08 11:35 Part G G3"
 
 SR = 16000
 #: Thresholds from calibration (see module docstring); ONE place, tests pin.
+#: LEGACY (v1 deciding rule). Still the 'score' field (note range, semitones)
+#: for old callers; it no longer decides, see PCR_MIN / QUANT_MAX / STEADY_MIN.
 SING_THRESH_SEMITONES = 7.0
+PCR_MIN = 0.70
+QUANT_MAX = 0.22
+STEADY_MIN = 0.45
+SUSTAIN_FRAMES = 25     # 250 ms
 #: Secondary arm (melodic step): a window with a note range between 3.5 and
 #: the primary threshold counts sung when the notes CHANGE melodically --
 #: duration-weighted mean |delta pitch| between consecutive notes >= 2.0
-#: semitones over >= 6 notes. Calibration: known-sung minimum 2.11 (bsw L04,
+#: semitones over >= 6 notes. Calibration: known-sung minimum 2.11 (sung hook L04,
 #: a narrow-range but genuinely melodic line); known-spoken maximum 1.68.
 STEP_RANGE_FLOOR = 3.5
 STEP_SEMITONES = 2.0
 STEP_MIN_NOTES = 6
-MIN_NOTES_PER_WINDOW = 4
+MIN_NOTES_PER_WINDOW = 6
 MIN_NOTES_PER_SECOND = 1.0
-NOTE_TOL = 0.7          # semitones inside one note
+NOTE_TOL = 0.5          # semitones inside one note
 NOTE_MIN_FRAMES = 12    # 120 ms at a 10 ms hop
-WINDOW_S = 6.0
+WINDOW_S = 8.0
 HOP_S = 1.0
 #: Voiced-frame floor for one window to score at all (20/100 ms).
 MIN_VOICED_FRAMES = 20
@@ -242,36 +249,40 @@ def melodic_step(nt):
 
 
 def score_window(st, a, b, fps=100.0):
-    """One window (seconds a..b) -> {score, step, notes, notes_per_s, sung}.
-
-    sung when the note range clears the primary threshold (wide melody), or
-    the secondary melodic-step arm holds (narrow but genuinely stepping
-    melody: range >= STEP_RANGE_FLOOR, step >= STEP_SEMITONES over
-    >= STEP_MIN_NOTES). The nps/notes guards apply to both arms."""
+    """One window (seconds a..b) -> {score, pcr, quant, steady, sust, notes,
+    notes_per_s, step, sung}. See the module docstring for the rule; the
+    count of voiced frames, not the density of voice, only gates scoring."""
     seg = st[int(a * fps):int(b * fps)]
-    if (~np.isnan(seg)).sum() < MIN_VOICED_FRAMES:
-        return {"score": 0.0, "step": 0.0, "notes": 0, "notes_per_s": 0.0,
-                "sung": False}
+    nv = int((~np.isnan(seg)).sum())
+    z = {"score": 0.0, "pcr": 0.0, "quant": 0.25, "steady": 0.0, "sust": 0.0,
+         "step": 0.0, "notes": 0, "notes_per_s": 0.0, "sung": False}
+    if nv < MIN_VOICED_FRAMES:
+        return z
     nt = notes(seg)
     nps = len(nt) / max(b - a, 1e-9)
+    z.update(notes=len(nt), notes_per_s=round(nps, 2))
     if len(nt) < 2:
-        return {"score": 0.0, "step": 0.0, "notes": len(nt),
-                "notes_per_s": round(nps, 2), "sung": False}
-    d = np.array([q[1] for q in nt])
+        return z
+    d = np.array([q[1] for q in nt], float)
     p = np.array([q[2] for q in nt])
     o = np.argsort(p)
     cw = np.cumsum(d[o]) / d.sum()
     rng = float(p[o][min(np.searchsorted(cw, 0.9), len(p) - 1)]
                 - p[o][np.searchsorted(cw, 0.1)])
-    step = melodic_step(nt)
+    pcr = float(abs(np.sum(d * np.exp(2j * np.pi * p)) / d.sum()))
+    iv = np.abs(np.diff(p))
+    big = iv[iv >= 0.8]
+    quant = float(np.mean(np.abs(big - np.round(big)))) if len(big) > 2 else 0.25
+    steady = float(d.sum() / nv)
+    sust = float(d[d >= SUSTAIN_FRAMES].sum() / nv)
     guarded = (len(nt) >= MIN_NOTES_PER_WINDOW
                and nps >= MIN_NOTES_PER_SECOND)
-    sung = bool(guarded and (
-        rng >= SING_THRESH_SEMITONES
-        or (rng >= STEP_RANGE_FLOOR and step >= STEP_SEMITONES
-            and len(nt) >= STEP_MIN_NOTES)))
-    return {"score": round(rng, 2), "step": round(step, 2), "notes": len(nt),
-            "notes_per_s": round(nps, 2), "sung": sung}
+    sung = bool(guarded and pcr >= PCR_MIN and quant <= QUANT_MAX
+                and steady >= STEADY_MIN)
+    z.update(score=round(rng, 2), pcr=round(pcr, 3), quant=round(quant, 3),
+             steady=round(steady, 3), sust=round(sust, 3),
+             step=round(melodic_step(nt), 2), sung=sung)
+    return z
 
 
 def _confidence(votes, cover, voiced):
@@ -295,7 +306,7 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
     Returns {runtime_s, sung_s, voiced_s, sung_pct_of_runtime,
     sung_pct_of_voiced, sung_share, sung_share_of_voiced, confidence,
     method, detector, detector_version, schema_version, source,
-    sung_seconds}. A second is sung when any window over it votes sung AND
+    sung_seconds}. A second is sung when half or more of the windows over it vote sung AND
     it carries voiced pitch (instrumental gaps are not counted against
     singing, and quiet bleed is not counted for it).
 
@@ -318,7 +329,9 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
         votes[lo:hi] += r["sung"]
     voiced = np.array([(~np.isnan(st[i * 100:(i + 1) * 100])).sum()
                        >= MIN_VOICED_FRAMES for i in range(n)])
-    sung = (votes > 0) & voiced
+    # half or more of the windows over a second must vote sung (an 'any'
+    # vote let a sung neighbour paint the next spoken line sung)
+    sung = (votes * 2 >= cover) & (cover > 0) & (votes > 0) & voiced
     sung_s = int(sung.sum())
     voiced_s = int(voiced.sum())
     return {
@@ -422,6 +435,10 @@ __all__ = [
     "MIN_VOICED_FRAMES",
     "NOTE_MIN_FRAMES",
     "NOTE_TOL",
+    "PCR_MIN",
+    "QUANT_MAX",
+    "STEADY_MIN",
+    "SUSTAIN_FRAMES",
     "SCHEMA_VERSION",
     "SING_THRESH_SEMITONES",
     "SOURCE",
