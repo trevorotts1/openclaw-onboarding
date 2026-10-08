@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  ci(CIO002): each check once per commit - push triggers main-only, per-PR concurrency, 93 fast guards folded into one fast-guards job
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

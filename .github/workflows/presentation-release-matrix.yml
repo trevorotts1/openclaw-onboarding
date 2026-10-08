@@ -21,6 +21,7 @@ name: presentation-release-matrix
 
 on:
   push:
+    branches: [main]
     paths:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/release-matrix/**"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py"
@@ -46,6 +47,10 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/pres043_live_smoke.py"
       - "lib-presentation-schedules.sh"
       - ".github/workflows/presentation-release-matrix.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   macos-acceptance:
