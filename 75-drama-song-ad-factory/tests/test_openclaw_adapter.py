@@ -31,6 +31,7 @@ COMPLETE_BRIEF = {
     "offer": "Drama-song factory adapter test offer",
     "audience": "busy parents",
     "action": "visit the link",
+    "website": "example.com",  # I1: intake asks for the exact address otherwise
     "budget_minor": 100,
     "budget_currency": "USD",
     "placement": "vertical-feed",  # stated, else intake asks the placement question (exit 2)

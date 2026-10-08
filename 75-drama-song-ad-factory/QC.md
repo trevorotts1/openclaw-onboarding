@@ -172,3 +172,11 @@ to self-approve a run.
 The last 2 s of the master must not stop abruptly: audio level decays, the last sung word
 is not cut, the picture fades to the end card, and the end card (4-5 s) ends by target
 length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
+
+## I1: caption spelling and website
+
+Every caption word must be a real word or a protected word (names, brands, the
+client's website). An unknown word fails with the word shown
+(`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
+the exact address; it is stored as a protected word and must appear verbatim in
+the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
