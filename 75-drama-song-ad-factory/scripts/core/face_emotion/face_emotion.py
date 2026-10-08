@@ -25,6 +25,7 @@ Three pieces, stdlib only, no network, no paid calls:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,24 +147,30 @@ def strip_warm_face(prompt, emotion):
     reasons = []
     out = prompt
     if emotion not in JOYFUL:
-        import re
+        cue = EMOTION_CUES.get(emotion, "a steady gaze")
+        # sweep EVERY smile/happy wording — a prompt can carry two phrases
+        # ("professional smile ... small fading smile"); count=1 + break
+        # left the second one in, violating the zero-token done-when.
         for word in sorted(FACE_SMILE_RES, key=len, reverse=True):
             pattern = re.compile(r"\b(\w+\s+)?%s\w*\b" % word, re.IGNORECASE)
-            hit = pattern.search(out)
-            if hit:
-                out = pattern.sub(EMOTION_CUES.get(emotion, "a steady gaze"),
-                                  out, count=1)
-                reasons.append(REASON_WARM_FACE)
-                break
+            while True:
+                m = pattern.search(out)
+                if not m:
+                    break
+                out = pattern.sub(cue, out, count=1)
+                if REASON_WARM_FACE not in reasons:
+                    reasons.append(REASON_WARM_FACE)
     # never leave "warm" bound to a face word even on joyful lines —
     # warm is a lighting token; the joyful cue carries its own wording.
-    import re
     m = re.search(r"\bwarm\s+(smile|smiling|face)\b", out, re.IGNORECASE)
     if m:
         out = out[:m.start()] + EMOTION_CUES.get(emotion, "a steady gaze") \
             + out[m.end():]
         if REASON_WARM_FACE not in reasons:
             reasons.append(REASON_WARM_FACE)
+    # collapse doubled articles left by a cue replacing "a <smile>" phrases
+    # ("a a still, blank stare" -> "a still, blank stare").
+    out = re.sub(r"\b(a|an|the)\s+\1\b", r"\1", out, flags=re.IGNORECASE)
     return out, reasons
 
 
@@ -201,6 +208,11 @@ def qc_frame_gate(shots, frames_by_shot, lyrics=None):
                              for lid in shot["lyric_line_ids"])
         emotion = _norm(contract.get("visible_emotion")) \
             or line_emotion(shot.get("story_stage"), lyric)
+        # the pain line overrides any contract label: pain is derivable
+        # from the lyric alone, so a mislabelled joyful contract emotion
+        # can never whitelist a happy frame under it.
+        if is_pain_line(lyric) and emotion in JOYFUL:
+            emotion = "hurt"
         if face_allowance(emotion) or not is_pain_line(lyric):
             continue
         for frame in (frames_by_shot or {}).get(sid) or []:
