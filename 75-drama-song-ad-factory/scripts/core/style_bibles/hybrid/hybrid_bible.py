@@ -95,9 +95,8 @@ RECIPE_ENV_VAR = "HYBRID_REALISM_RECIPE"
 RECIPE_RELATIVE = os.path.join("style-bibles", "realism-cinematic.md")
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))          # <lane>/core/style_bibles/hybrid
-FACTORY_ROOT = os.path.expanduser(os.path.join("~", "drama-song-factory-build"))
-PACKET_ROOT = os.path.expanduser(os.path.join(
-    "~", "Downloads", "CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_V2_PACKET"))
+# C3: the recipe ships with the skill (references/style-bibles/). Operator-Mac
+# home-folder defaults are gone from shipped code.
 
 _STYLE_BLOCK_RE = re.compile(r"\[STYLE\][^\[]*?\[/STYLE\]", re.DOTALL)
 
@@ -229,6 +228,10 @@ def recipe_candidate_paths(explicit=None, lane_dir=None):
 
     An explicit path is authoritative: it is the only candidate, so a pinned
     recipe that is absent refuses instead of silently loading another file.
+    Otherwise C3 order: the skill's own folder first
+    (MODULE_DIR/../../../references/style-bibles/realism-cinematic.md), then
+    an env override, then a lane fixture, then a walk up from this module to
+    the skill root and beyond. Operator-Mac defaults are not searched.
     """
     out = []
 
@@ -240,18 +243,25 @@ def recipe_candidate_paths(explicit=None, lane_dir=None):
     if explicit:
         add(explicit)
         return out
+    # C3: skill's own folder first —
+    # MODULE_DIR/../../../references/style-bibles/realism-cinematic.md
+    add(os.path.join(MODULE_DIR, os.pardir, os.pardir, os.pardir,
+                     "references", "style-bibles", "realism-cinematic.md"))
     env = os.environ.get(RECIPE_ENV_VAR)
     if env:
         add(env)
-    lane = os.path.abspath(lane_dir) if lane_dir else None
-    parents = []
+    if lane_dir:
+        lane = os.path.abspath(lane_dir)
+        add(os.path.join(lane, RECIPE_RELATIVE))
+        add(os.path.join(lane, "references", "style-bibles",
+                         "realism-cinematic.md"))
+    # Walk up from this module: <look>/ -> style_bibles/ -> core/ -> scripts/
+    # -> skill root (the shipped references/ copy) and any further ancestors.
     p = MODULE_DIR
-    for _ in range(3):                       # style_bibles/, core/, <lane|root>
+    for _ in range(6):
         p = os.path.dirname(p)
-        parents.append(p)
-    roots = ([lane] if lane else []) + parents + [FACTORY_ROOT, PACKET_ROOT]
-    for root in roots:
-        add(os.path.join(root, RECIPE_RELATIVE))
+        add(os.path.join(p, "references", "style-bibles",
+                         "realism-cinematic.md"))
     return out
 
 

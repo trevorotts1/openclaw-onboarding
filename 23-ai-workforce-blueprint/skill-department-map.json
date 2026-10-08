@@ -1467,6 +1467,7 @@
     "run a drama song factory job"
    ],
    "execution_sops": [
+    "drama-song-ad-pipeline",
     "video-pipeline-craft"
    ],
    "departments": [
@@ -1476,17 +1477,22 @@
     {
      "dept": "video",
      "primary": true,
+     "slug": "vsl-video-sales-letter-specialist"
+    },
+    {
+     "dept": "video",
+     "primary": false,
      "slug": "video-editor"
     },
     {
      "dept": "video",
      "primary": false,
-     "slug": "head-of-video-production"
+     "slug": "storyboard-pre-production-specialist"
     },
     {
      "dept": "video",
      "primary": false,
-     "slug": "storyboard-pre-production-specialist"
+     "slug": "qc-specialist-video"
     }
    ]
   },
