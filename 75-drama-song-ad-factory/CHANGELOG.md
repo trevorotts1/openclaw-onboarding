@@ -6,6 +6,28 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.5 - 2026-10-08 - G4-WIRE: target engine on Trevor's 5/10 band, wired into music_director + retake_manager
+
+G4's engine was on main but (a) its accept line was the single 5-point grace with a
+keep-the-closest-with-a-warning endgame, which G11 (Trevor order 12:30, consolidated order
+1240 item 3) replaces, and (b) nothing called it. Skill bump v2.8.4 to v2.8.5.
+
+- `core/target_engine`: `score()` now returns `worst_pts` and a `band`
+  (ACCEPT / FLAG / REDO) judged by `spoken_share.judge_gap` -- one constants module, no
+  second band. `steer()`: within 5 points = ACCEPT; past 5 up to 10 = ACCEPT_WITH_FLAG with
+  the flag written into the receipt; after the bounded rounds past 10 = REDO with the closest
+  take's measurements attached (REPLACES keep-the-closest-with-a-warning; the engine still
+  never raises and never cancels -- REDO means regenerate). New exports: `VERDICT_FLAG`,
+  `VERDICT_REDO`, `ACCEPT_PTS`, `FLAG_PTS`, `BAND_*`, `band_for_gap()`.
+- Call path (order 1150 names music_director + retake_manager): `music_director.select_best`
+  takes optional `target_metrics`/`targets` and judges the winning take through the engine
+  (receipt block `target`: verdict / band / worst_pts / flags). `retake_manager.plan` takes
+  optional `target_gap_pts` and rejects an in-band retake with `TARGET_IN_BAND` (within 5
+  accept, 5-10 flag, past 10 the retake proceeds).
+- Tests: `test_target_engine.py` proves accept/flag/redo at 5 / 6 / 10 / 14 points (both
+  boundaries), all-spoken reject-and-regenerate to REDO, closest-of-N, single-source band
+  constants, and both call paths; suite green with `HOME=$(mktemp -d)`.
+
 ## v2.8.4 - 2026-10-08 - Batch MGB005: song recipe v2, load governor, G5, G9, H10, G2, H3-TEST
 
 One batch release of nine units. #1653 CIO002 run each check once per commit (push main-only, per-PR concurrency, 93 fast guards folded); #1678 G5 honest receipts (measured sung/spoken/rap/no-voice, target, gap, every take); #1681 song recipe v2, song length formula and song dispatcher; #1684 G9 words-fit preflight before spend and Suno duration with 15% headroom; #1685 H10 each line's voice must fit the character on screen; #1687 H3-TEST fps policy (30 fps master, Kling pass-through, per-segment duplicate gate); #1688 KIE rate limit reference; #1689 G2 the builder enforces the lint it ships; #1690 load governor (machine-wide heavy-job gate, bounded ffmpeg, stage cleanup, KIE pacing). Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted).

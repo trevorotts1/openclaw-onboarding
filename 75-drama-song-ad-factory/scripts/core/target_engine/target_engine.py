@@ -13,29 +13,34 @@ What the engine does, in the order the flow asks it:
    on the train, otherwise the spoken_share timing map) and scored against
    every target; the candidate CLOSEST to every target wins the round.
 
-2. **The grace band is the accept line.** Within about GRACE_PCT
-   percentage points of every target = ACCEPT. The grace number itself is
-   owned by the spoken-grace unit (W-F-U16) in core/spoken_share; this
-   module reads it from there and defines no second grace constant.
+2. **Trevor's 5/10 band is the accept line (G10 constants, order 1240).**
+   Worst deviation <= ACCEPT_PTS (5) = ACCEPT; past 5 up to FLAG_PTS (10) =
+   accept WITH A FLAG in the receipt; past 10 = REDO. The numbers live in
+   core/spoken_share (``judge_gap``) and are read, never copied -- this
+   module defines no second band.
 
-3. **Outside the band steers, it does not stop.** A miss produces
-   adjustment knobs (lyric structure, style text, spoken budget, length)
-   and a regenerate instruction -- bounded by MAX_ROUNDS.
+3. **Outside the band steers, it does not stop.** A miss past 10 points
+   produces adjustment knobs (lyric structure, style text, spoken budget,
+   length) and a regenerate instruction -- bounded by MAX_ROUNDS.
 
-4. **Bounded, then continue anyway.** When the rounds run out, the CLOSEST
-   take is kept WITH A WARNING and the flow continues. The engine NEVER
-   raises on a missed target and NEVER cancels the work.
+4. **Bounded, then REDO with the measurements (never keep-closest).**
+   When the rounds run out still past FLAG_PTS, the verdict is REDO and
+   the closest take's measurements ride along for the handback. G11
+   (order 1240) REPLACES the old keep-closest-with-a-warning for gaps over
+   10. The engine NEVER raises on a missed target and NEVER cancels the
+   work -- REDO means regenerate the take, not stop the flow.
 
 5. **One exception, and it is still not a cancel.** Singing was chosen and
    the measurement finds NO real singing at all (all-spoken take) -> that
    candidate is rejected and the round regenerates; it counts as far
-   outside target. Exhausting the rounds still ends in keep-closest-with-
-   warning, never a raise.
+   outside target. Exhausting the rounds hands back REDO with the
+   measurements, never a raise.
 
 Dependencies (train resolve wires both):
-  - core/spoken_share is on main: the target constants (22.5 target, 12.5 / 32.5 redo edges) and
-    the timing-map measurement come from it. GRACE_PCT lands there with the
-    W-F-U16 spoken-grace branch; until it resolves, ``getattr`` supplies 5.
+  - core/spoken_share is on main: the target constants (22.5 target, 12.5 / 32.5 redo
+    edges), the 5/10 band (ACCEPT_PTS / FLAG_PTS / judge_gap) and the
+    timing-map measurement all come from it. GRACE_PCT lands there with
+    the W-F-U16 spoken-grace branch; until it resolves, ``getattr`` 5.
   - core/singing_detector is unit W-G-003's planned module: imported
     lazily at measurement time, so this module runs green before that
     branch lands and switches to it automatically after.
@@ -58,9 +63,9 @@ except ImportError:                                 # imported as core.*
 TOOL_NAME = "target_engine"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.target-engine/v1"
-SOURCE = ("Owner order 2026-10-08 11:35 (Part G, G4); grace from the "
-          "W-F-U16 spoken-grace constants in core/spoken_share; targets "
-          "from core/spoken_share (D15 retarget).")
+SOURCE = ("Owner order 2026-10-08 11:35 (Part G, G4); 5/10 band per G10 "
+          "constants in core/spoken_share (Trevor order 12:30, consolidated "
+          "order 1240 item 3); targets from core/spoken_share (D15 retarget).")
 
 # ---- the one constants module ---------------------------------------------
 # The numbers live in core/spoken_share and are read, never copied. G4 adds
@@ -78,8 +83,18 @@ CAP = _SS.CAP
 # becomes a plain read. Ceiling: a second 5 here would let the two drift.
 GRACE_PCT = getattr(_SS, "GRACE_PCT", 5)
 
+#: Trevor's 5/10 band (G11): read from the G10 constants module, never
+#: copied. <= ACCEPT_PTS off = accept; <= FLAG_PTS = accept WITH a flag in
+#: the receipt; past FLAG_PTS = REDO (regenerate). This REPLACES the old
+#: keep-the-closest-with-a-warning endgame for gaps over 10.
+ACCEPT_PTS = _SS.ACCEPT_PTS   # 5
+FLAG_PTS = _SS.FLAG_PTS       # 10
+BAND_ACCEPT = _SS.BAND_ACCEPT
+BAND_FLAG = _SS.BAND_FLAG
+BAND_REDO = _SS.BAND_REDO
+
 #: Bounded regeneration: adjust and regenerate at most this many rounds,
-#: then keep the CLOSEST take WITH A WARNING and continue. Never cancel.
+#: then REDO with the measurements attached. Never cancel.
 MAX_ROUNDS = 3
 
 #: "Generate several WHOLE-TRACK candidates per round" -- a thinner batch
@@ -91,9 +106,23 @@ MIN_CANDIDATES_PER_ROUND = 2
 TARGET_KEYS = ("spoken_share", "length_s")
 
 VERDICT_ACCEPT = "ACCEPT"
+VERDICT_FLAG = "ACCEPT_WITH_FLAG"    # 5-10 points off: accept, receipt carries the flag
+VERDICT_REDO = "REDO"                # past 10 points: regenerate (G11)
 VERDICT_ADJUST = "ADJUST"
 VERDICT_REGENERATE = "REGENERATE"
+#: Retired by G11 (no keep-the-closest path remains); exported so old
+#: importers of CONTINUE_WITH_WARNING keep resolving.
 VERDICT_CONTINUE = "CONTINUE_WITH_WARNING"
+
+
+def band_for_gap(gap_pts):
+    """Trevor's band for an already-measured gap in percentage points
+    (sign ignored) -> ACCEPT | FLAG | REDO. Thin read of
+    ``spoken_share.judge_gap`` so callers get the band through this
+    engine, never a second copy of the numbers."""
+    verdict = _SS.judge_gap(gap_pts)
+    return {_SS.VERDICT_PASS: BAND_ACCEPT, _SS.VERDICT_FLAG: BAND_FLAG,
+            _SS.VERDICT_FAIL: BAND_REDO}[verdict]
 
 
 class TargetEngineError(ValueError):
@@ -302,7 +331,12 @@ def score(metrics, tg, grace_pct=GRACE_PCT):
     points", one interpretation for seconds). ``worst`` is the largest
     deviation over the grace band (<= 1.0 = within grace). An axis the
     measurement cannot judge scores worst (inf) -- it can never pass on an
-    unmeasured target. Malformed targets raise a TargetEngineError
+    unmeasured target.
+
+    Trevor's band (G11, read from spoken_share): ``worst_pts`` is the same
+    largest deviation in points, ``band`` is ACCEPT (<= 5) / FLAG (<= 10)
+    / REDO (past 10), judged by ``spoken_share.judge_gap`` -- never a
+    second band. Malformed targets raise a TargetEngineError
     (caller bug), never a ZeroDivisionError/TypeError from the arithmetic
     below."""
     tg = _validated_targets(tg)
@@ -321,10 +355,17 @@ def score(metrics, tg, grace_pct=GRACE_PCT):
         devs[name] = round(dev_pct, 4)
         norm[name] = dev_pct / float(grace_pct)
     worst = max(norm.values())
+    worst_pts = max(devs.values()) if devs and not unmeasured \
+        else float("inf")
+    verdict = _SS.judge_gap(worst_pts)   # PASS | FLAG | FAIL
     return {
         "deviations_pct": devs,
         "normalized": norm,
         "worst": worst,
+        "worst_pts": worst_pts,
+        "band": {_SS.VERDICT_PASS: BAND_ACCEPT,
+                 _SS.VERDICT_FLAG: BAND_FLAG,
+                 _SS.VERDICT_FAIL: BAND_REDO}[verdict],
         "within_grace": worst <= 1.0,
         "grace_pct": grace_pct,
         "unmeasured": unmeasured,
@@ -333,8 +374,8 @@ def score(metrics, tg, grace_pct=GRACE_PCT):
 
 def adjustment_for(metrics, tg, grace_pct=GRACE_PCT):
     """Steering knobs for a candidate that missed: which way each miss went
-    and what the regenerating side changes (lyric structure, style text,
-    spoken budget, length). Never a cancel instruction."""
+    and what the regenerating side changes (lyric structure, spoken budget,
+    length). Never a cancel instruction."""
     knobs = {}
     t_share = tg.get("spoken_share")
     m_share = metrics.get("spoken_share")
@@ -347,9 +388,6 @@ def adjustment_for(metrics, tg, grace_pct=GRACE_PCT):
             knobs["spoken_budget"] = (
                 "raise spoken budget: re-add opener / turn / call-to-action "
                 "spoken blocks within the cap")
-        knobs["style_text"] = (
-            "style names spoken at most once, says the full band keeps playing "
-            "under it, and holds no rap / talk-singing wording")
     t_len, m_len = tg.get("length_s"), metrics.get("length_s")
     if t_len is not None and m_len is not None:
         knobs["length"] = ("trim sung lines (keep meter and rhyme)"
@@ -420,13 +458,20 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
           max_rounds=MAX_ROUNDS, grace_pct=GRACE_PCT):
     """The bounded loop. ``rounds(round_index, instruction)`` yields the
     candidate batch for one round (the caller's generator side; the
-    instruction carries the previous round's adjustment knobs). Verdicts:
+    instruction carries the previous round's adjustment knobs). Verdicts
+    (Trevor's 5/10 band, G11 -- read from spoken_share):
 
-    - ACCEPT            best candidate within grace of every target
-    - CONTINUE_WITH_WARNING  rounds exhausted -> keep the CLOSEST take,
-                          warn, continue. NEVER cancel, NEVER raise on a
-                          missed target. (A caller bug -- malformed
-                          targets, a raising generator -- still raises.)
+    - ACCEPT            worst deviation <= 5 points of every target
+    - ACCEPT_WITH_FLAG  worst deviation past 5 up to 10 points: accepted,
+                        the receipt carries the flag
+    - REDO              past 10 points after the bounded rounds: regenerate
+                          with the measurements attached. NEVER cancel,
+                          NEVER raise on a missed target. (A caller bug --
+                          malformed targets, a raising generator -- still
+                          raises.)
+
+    ``VERDICT_CONTINUE`` is retired by G11 (nothing in the flow keeps a
+    take past the band anymore); it stays exported for old importers.
     """
     if not callable(rounds):
         raise TargetEngineError("BAD_ROUNDS", "rounds must be callable")
@@ -470,13 +515,28 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
             adjustment = adjustment_for(win["metrics"] or {}, tg, grace_pct)
             history.append(record)
             continue
-        if win["score"]["within_grace"]:
-            record["verdict"] = VERDICT_ACCEPT
+        band = win["score"]["band"]
+        if band in (BAND_ACCEPT, BAND_FLAG):
+            # <= 5 points: accept. Past 5 up to 10: accept WITH the flag
+            # in the receipt (G11). Both stop the loop here.
+            verdict = VERDICT_ACCEPT if band == BAND_ACCEPT else VERDICT_FLAG
+            flags = []
+            if verdict == VERDICT_FLAG:
+                worst_axis = max(tg, key=lambda name: win["score"]
+                                 ["normalized"].get(name, float("-inf")))
+                flags.append(
+                    "FLAG: %s is %s points off target %s (band: within %s "
+                    "points accept, past %s up to %s accept with a flag)"
+                    % (worst_axis, _fmt(win["score"]["worst_pts"]),
+                       _fmt(tg[worst_axis]), _fmt(ACCEPT_PTS),
+                       _fmt(ACCEPT_PTS), _fmt(FLAG_PTS)))
+            record["verdict"] = verdict
             history.append(record)
             return {
                 "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
                 "schema": SCHEMA_VERSION, "source": SOURCE,
-                "verdict": VERDICT_ACCEPT,
+                "verdict": verdict,
+                "band": band,
                 "candidate": win["candidate"],
                 "metrics": win["metrics"],
                 "score": win["score"],
@@ -485,6 +545,7 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
                 "grace_pct": grace_pct,
                 "targets": tg,
                 "warnings": warnings,
+                "flags": flags,
                 "all_spoken_final": False,
                 "history": history,
             }
@@ -500,7 +561,9 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
         adjustment = adjustment_for(win["metrics"] or {}, tg, grace_pct)
         history.append(record)
 
-    # Rounds exhausted: keep the CLOSEST take WITH A WARNING and continue.
+    # Rounds exhausted while still past FLAG_PTS: REDO (G11 replaces G4's
+    # keep-the-closest-with-a-warning for gaps over 10). Regenerate with
+    # the closest take's measurements attached. Never cancel, never raise.
     miss_lines = []
     if last is not None and last.get("score") is not None:
         for name, value in tg.items():
@@ -513,13 +576,18 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
     else:
         miss_lines.append("no measurable candidate in any round")
     warnings.append(
-        "target not reached after %d rounds: keep the closest take and "
-        "continue -- never cancel (reinforce the closer take at the next "
-        "cut: %s)" % (max_rounds, "; ".join(miss_lines)))
+        "target not reached after %d rounds: REDO (regenerate) -- never "
+        "cancel (closest take is %s points off the %s-point band: %s)"
+        % (max_rounds,
+           _fmt(last["score"]["worst_pts"]) if last
+           and last.get("score") else "unmeasured",
+           _fmt(FLAG_PTS), "; ".join(miss_lines)))
     return {
         "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
         "schema": SCHEMA_VERSION, "source": SOURCE,
-        "verdict": VERDICT_CONTINUE,
+        "verdict": VERDICT_REDO,
+        "band": (last["score"]["band"] if last and last.get("score")
+                 else None),
         "candidate": last["candidate"] if last else None,
         "metrics": last["metrics"] if last else None,
         "score": last["score"] if last else None,
@@ -528,6 +596,7 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
         "grace_pct": grace_pct,
         "targets": tg,
         "warnings": warnings,
+        "flags": [],
         "all_spoken_final": bool(last and last.get("metrics")
                                  and last["metrics"].get("all_spoken")),
         "history": history,
