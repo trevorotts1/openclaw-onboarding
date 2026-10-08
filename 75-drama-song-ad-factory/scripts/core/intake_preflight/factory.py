@@ -61,6 +61,18 @@ PART_D_DEFAULTS = {"agents": 1, "kie_inflight": 8, "ffmpeg_jobs": 1,
                    "ffmpeg_threads": 1, "source": "part_d_defaults"}
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def envelope(command, run_id, outcome, reason_code, next_action,
              data=None, evidence=None, state_version=None):
     return {"schema_version": SCHEMA_VERSION.replace(
@@ -177,8 +189,9 @@ def lane_size_payload():
                     "ffmpeg_jobs": line["ffmpeg_jobs"],
                     "ffmpeg_threads": line["ffmpeg_threads"],
                     "source": "lane_size.module"}
-        except Exception:  # noqa: BLE001 - broken module: fall through
-            pass
+        except Exception as exc:  # noqa: BLE001 - broken module: fall through
+            _loud("warn", "LANE_SIZE_BROKEN",
+                  "using Part D default lane sizes: %r" % (exc,))
     out = dict(PART_D_DEFAULTS)
     out["source"] = "part_d_defaults"
     return out

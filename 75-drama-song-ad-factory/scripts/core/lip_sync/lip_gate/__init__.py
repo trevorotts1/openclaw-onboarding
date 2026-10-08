@@ -7,3 +7,7 @@ from .lip_gate import (  # noqa: F401
     MIN_CONTROL_MARGIN, MIN_CORR, envelope, frozen_seconds, judge, measure,
     mouth_series, qc_check, run_gate, score,
 )
+from .image_gate import (  # noqa: F401
+    LipsyncImageRefused, check_source_image, closeup_prompt, image_size,
+    require_source_image,
+)

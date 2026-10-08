@@ -195,6 +195,8 @@ critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 
 ## WHAT THIS SKILL MUST NEVER DO
 
+- Do hands-on work in the main window. The main window only orchestrates: all work runs in visible workflows and agents.
+- Fail silently. A wrong, broken or skipped gate must be a named entry in the final receipt (`failures`, or `warnings` for documented fail-soft paths) and in the message to the user.
 - Spend without a recorded ceiling, or re-submit an uncertain job.
 - Silently swap providers/models to make a gate pass.
 - Restart intake from scratch on resume, or reset the ledger.
@@ -288,8 +290,16 @@ card. The answers and the time answered go into the receipt
 - **Per-character voice registry:** no two characters share a voice, in any
   look or music style. Distinctness still holds inside the one track.
 - **Lip-sync (decision 33):** selected lines only - the pain peak, the
-  product line, the call to action and the chorus hook; three to four lines,
-  about 15 to 20 seconds, listed on the approval card. Model order is
+  product line, the call to action and the chorus hook, DOUBLED (owner order
+  2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4
+  to 6 seconds (30 to 40 seconds, scaled by ad length, no clip over 6 seconds);
+  clips go on every sung hook, the spoken opener and the spoken closing line
+  first, and are listed on the approval card. Each is a paid job, so the cost
+  roughly doubles and a plan past the spend cap is refused loudly. Every
+  lip-sync source picture passes the lip-sync image gate before any paid job
+  (straight at the camera, head and shoulders 9:16, face 35-40% of the frame
+  height, mouth closed or slightly parted, nothing over mouth or jaw, soft even
+  light, same character as the storyboard, sharp and at least 1080x1920). Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
   image plus that character's own isolated line), InfiniTalk
   `infinitalk/from-audio` as backup, **Volcengine dropped**. Tight

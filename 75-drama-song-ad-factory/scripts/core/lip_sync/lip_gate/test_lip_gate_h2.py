@@ -86,17 +86,19 @@ def _mock(table):
     calls = []
 
     def gen(provider, spec):
-        calls.append((provider, "improved" if spec else "base"))
+        calls.append((provider, "improved" if "lead_in_s" in spec else "base"))
         return "%s-%s" % calls[-1]
     return calls, gen, lambda clip: L.measure(table[clip], VOICE, CONTROL, FPS)
 
 
+PIC = {"source_image": "closeup.png",
+       "image_check": lambda img: {"pass": True}}   # picture gate has its own test
 GOOD, BAD, BAD2 = VOICE, lead(VOICE, 6), lead(VOICE, 9)
 
 
 def test_regenerate_once_then_pass_no_infinitalk():
     calls, gen, meas = _mock({"kling-base": BAD, "kling-improved": GOOD})
-    row = L.run_gate("L1", gen, meas, {})
+    row = L.run_gate("L1", gen, meas, {}, **PIC)
     assert row["verdict"] == "PASS" and row["kept"] == "kling"
     assert calls == [("kling", "base"), ("kling", "improved")]
     assert not row["infinitalk_ab"]
@@ -109,12 +111,12 @@ def test_infinitalk_one_time_ab_keeps_better():
     t = {"kling-base": BAD2, "kling-improved": BAD,
          "infinitalk-improved": GOOD}
     calls, gen, meas = _mock(t)
-    row = L.run_gate("L1", gen, meas, state)
+    row = L.run_gate("L1", gen, meas, state, **PIC)
     assert row["infinitalk_ab"] and row["kept"] == "infinitalk"
     assert row["verdict"] == "PASS"
     # second failing line: the A/B is spent, InfiniTalk is not called again
     calls.clear()
-    row2 = L.run_gate("L2", gen, meas, state)
+    row2 = L.run_gate("L2", gen, meas, state, **PIC)
     assert [c[0] for c in calls] == ["kling", "kling"] and not row2["infinitalk_ab"]
     assert row2["verdict"] == "FAIL_REPLACE" and row2["kept"] == "kling"
     assert row2["numbers"]["offset_s"] == -0.2     # kept the better of the two
@@ -124,7 +126,7 @@ def test_ab_keeps_kling_when_infinitalk_measures_worse():
     t = {"kling-base": BAD, "kling-improved": BAD,
          "infinitalk-improved": BAD2}
     _, gen, meas = _mock(t)
-    row = L.run_gate("L1", gen, meas, {})
+    row = L.run_gate("L1", gen, meas, {}, **PIC)
     assert row["kept"] == "kling" and row["verdict"] == "FAIL_REPLACE"
 
 

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.8.2
+version: v2.8.3
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -32,6 +32,28 @@ Route elsewhere when the assignment is:
 - plain KIE model dispatch -> `74-kie-live-adapter` (Skill 74)
 - Claude-Nine / Claude Code runtime -> the 999-setup twin skill
   (`.claude/skills/drama-song-ad-factory/`, same core)
+
+## Main window orchestrates only; nothing fails silently (operator rule)
+
+When this skill runs in Claude Code or claude-nine, the MAIN window only
+operates and orchestrates. ALL work is done by VISIBLE workflows and agents.
+Things that are wrong, broken or not working are NEVER allowed to fail
+silently.
+
+- The main session never does hands-on work: no media generation, no file
+  edits, no renders, no hand-run pipeline commands. It launches a visible
+  workflow (the Workflow tool) or named agents (shown in /workflows), reads
+  their verdicts, and reports them. The user chooses the agents and models;
+  the skill never names or forces a model of its own.
+- A workflow or agent that is wrong, broken or not working is reported by
+  name, with its error, in the same message. Never retry quietly, never skip
+  the step, never substitute a result.
+- Every failed or skipped gate lands in the final receipt as a named
+  `failures` entry (the run becomes `outcome: error`). The only fail-soft
+  paths are the documented ones (for example a Command Center board that is
+  unreachable); those still print a `WARNING <CODE>: ...` line and sit in the
+  receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
+  `tests/test_loud_failure.py`.
 
 ## Start here: the enforced flow
 
@@ -245,7 +267,7 @@ build - byte-identical; packaging re-checked on a clean copy by
 - Every campaign artifact's twelve creative beats and twelve production
   stages stay separate contracts (directive 14).
 - QC independence: checkers are fresh lanes, never members of the build
-  chain (opus-chain fallback members excluded from QC).
+  chain (fallback members of the build lane are excluded from QC).
 
 ## No hand-written pipeline scripts (Part H H12)
 
@@ -254,6 +276,29 @@ modules (`final_assembler/assembler.py` and its siblings). A run folder with its
 own ffmpeg or caption script, or a master whose receipt lacks
 `produced_by.module` and a matching `master_sha256`, fails QC
 (`final_assembler/master_provenance.py`).
+
+## Model and agent choice: the user's choice wins
+
+This skill never picks, forces or recommends a model, an alias or an agent.
+
+- Workflows, subagents and checkers run on the model the session is already
+  using, or on an alias the user has configured and chosen. A model or alias
+  the user did not choose is never added, pinned or fallen back to.
+- If the build needs a model, alias or agent that is not configured on this
+  box, stop and tell the user in plain words which one is missing, then let
+  the user pick. Never silently swap in a different one, and never name a
+  model the user has not set up.
+- If the user names a model or agent, use exactly that one.
+
+## Main window: orchestrate only, all work visible, no silent failure
+
+- The main window only operates and orchestrates. It does not do the build
+  work itself; every piece of work runs in a visible workflow or visible
+  agent that the user can watch.
+- A workflow, agent or model that is wrong, broken or not working is never
+  allowed to fail silently. Report it right away, in plain words, with what
+  broke and what was trying to run. Do not retry quietly, skip the step,
+  swap to another model, or carry on as if it worked.
 
 ## Installation
 
@@ -339,12 +384,20 @@ SOP named above.
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
-  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
-  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
-  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
-  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
-  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
-  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
+  includes one lip-sync close-up per speaking/singing character. It is MADE from the
+  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
+  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
+  camera (yaw and pitch within 10 degrees); head-and-shoulders, portrait 9:16, face about
+  35-40% of the frame height (accepted 30-45%); mouth closed or slightly parted, neutral,
+  no big toothy smile; nothing over the mouth or jaw (hand, microphone, hair, hat brim);
+  soft even light, no hard shadow across the mouth, background separated from the head;
+  the same 3D character as the storyboard reference; sharp, at least 1080x1920, generated
+  natively and never cropped out of a wide shot. A picture that fails any point, or one
+  that cannot be measured, is refused LOUDLY with every reason and no paid job runs
+  (`lip_gate.run_gate(..., source_image=, image_check=)` raises
+  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses the
+  picture as its source image. QC: its mouth region must be sharp and unobstructed
+  (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk
@@ -353,8 +406,15 @@ SOP named above.
   line: never a narrator, never another character. Narrator, phone,
   voicemail and laptop voices may play as voice-over but are never lip-synced
   onto a person. Lip-sync applies to the pain peak, the product line, the
-  call to action and the chorus hook - three to four lines, about 15 to 20
-  seconds, listed on the approval card; every other shot stays as the video
+  call to action and the chorus hook, now DOUBLED (owner order 2026-10-08): more
+  pieces, not longer ones. A 60 s ad carries 6 to 8 short clips of 4 to 6 seconds
+  (30 to 40 seconds in all, was 15 to 20), scaled linearly with the ad length, no
+  clip over 6 seconds (`core/lipsync_clips.py`). Clips go on every sung hook, the
+  spoken opener and the spoken closing line first. Each clip is a paid
+  `kling/ai-avatar-standard` job, so the lip-sync cost roughly doubles: the card
+  prices it through Skill 74 and a plan that would pass the spend cap is refused
+  loudly (`lipsync_clips.check_budget`), never trimmed or run past the cap. The
+  list is shown on the approval card; every other shot stays as the video
   model made it. For an All Suno run the isolated line is cut from the one
   track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
   is only the lip-sync input, never in the final mix. The Kling-avatar-first

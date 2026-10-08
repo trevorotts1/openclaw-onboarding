@@ -130,6 +130,25 @@ SONG_BANNED_STYLE_WORDS = (
     "room",
 )
 
+#: G1 amended (owner order 2026-10-08 11:50, part G, review G6): the
+#: delivery map and the tags-vs-sheet contradiction gate, sourced from
+#: core/music_styles (single point), never a second copy. The 11:35 ban
+#: is REVERSED: the style text now CARRIES the delivery map ("SPEAKS the
+#: lines tagged Spoken ... SINGS the lines tagged Sung") and negative
+#: tags banning a delivery the sheet uses are refused.
+try:
+    import music_styles as _MS                  # core/ on sys.path
+except ImportError:                             # loaded outside core/
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.abspath(
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                      "..", "..")))
+    import music_styles as _MS
+
+CONTRADICTING_NEGATIVE_TAGS = _MS.CONTRADICTING_NEGATIVE_TAGS
+LYRICS_PATHS = (("input", "lyrics"), ("lyrics",))
+
 #: Rendered once, derived, so no surface can drift from NEGATIVE_TAGS.
 TAG_LIST_TEXT = ", ".join(NEGATIVE_TAGS)
 
@@ -184,6 +203,18 @@ class NoEchoError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__("%s: %s" % (code, message))
         self.code = code
+
+
+def _music_refusal(exc: Exception) -> NoEchoError:
+    """A ``MusicStyleError`` as the refusal this module raises.
+
+    Keeps the code and strips the duplicated ``CODE: `` prefix, so the
+    envelope reports ``NEGATIVE_TAG_CONTRADICTION: ...`` once, not twice.
+    """
+    text = str(exc)
+    code = str(getattr(exc, "code", "STYLE_REFUSAL"))
+    message = text.split(": ", 1)[1] if text.startswith(code + ": ") else text
+    return NoEchoError(code, message)
 
 
 def _envelope(outcome: str, reason_code: str, errors: Iterable[str],
@@ -326,6 +357,21 @@ def _has_dry(text: str) -> bool:
     return bool(_DRY_PHRASE.search(text or ""))
 
 
+def _sheet_text(request: Any) -> str:
+    """The lyric sheet the payload carries, from the known lyrics paths."""
+    if not isinstance(request, dict):
+        return ""
+    for path in LYRICS_PATHS:
+        node: Any = request
+        for key in path:
+            if not isinstance(node, dict) or key not in node:
+                node = None
+                break
+            node = node[key]
+        if isinstance(node, str) and node.strip():
+            return node
+    return ""
+
 def _check_declared_transport(request: Dict[str, Any]) -> None:
     """Refuse a payload that already names a second producer or KIE path."""
     provider = request.get("provider")
@@ -347,7 +393,8 @@ def _check_declared_transport(request: Dict[str, Any]) -> None:
 def stamp(request: Any = None, *, kind: Optional[str] = None,
           style_text: Optional[str] = None,
           spoken_style: Optional[str] = None,
-          spoken_parts: Optional[list] = None) -> Dict[str, Any]:
+          spoken_parts: Optional[list] = None,
+          sung: Optional[bool] = None) -> Dict[str, Any]:
     """Copy ``request`` with the D22a rule written on it.
 
     Refuses (``NoEchoError``) when any spoken part names a banned style
@@ -355,6 +402,16 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     payload already names a second producer or a non-Skill-74 KIE path — the
     rule is never written over a contradicting payload. The caller's
     dictionary is never mutated.
+
+    G1 amended (owner order 2026-10-08 11:50, part G, review G6): the
+    payload is refused when its negative tags ban "spoken word" or "rap"
+    while the lyric sheet carries spoken or rap blocks (the tags would
+    contradict the sheet), and every style surface whose sheet names a
+    delivery ends with the delivery map built from that sheet ("The lead
+    SPEAKS the lines tagged Spoken ... SINGS the lines tagged Sung").
+    The earlier 11:35 rule -- ban spoken-word wording from the style text
+    and add "spoken word, rap" as negative tags -- is REVERSED: no
+    negative tag is ever added here.
     """
     if request is None:
         request = {}
@@ -381,6 +438,17 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
 
     out = copy.deepcopy(request)
     _check_declared_transport(out)
+
+    sheet = _sheet_text(out) or (style_text if isinstance(style_text, str)
+                                 else "")
+    # G1 amended: the contradiction gate runs on EVERY payload, sung or
+    # not -- negative tags banning a delivery the sheet uses are refused
+    # (the 11:35 style-text ban is reversed). MusicStyleError surfaces as
+    # NoEchoError, so the envelope contract holds.
+    try:
+        _MS.assert_no_contradiction(out.get("negative_tags") or (), sheet)
+    except _MS.MusicStyleError as exc:
+        raise _music_refusal(exc) from None
 
     out.setdefault("schema_version", SCHEMA_VERSION)
     out.setdefault("tool_version", TOOL_VERSION)
@@ -413,6 +481,26 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     out["dry_close_mic"] = True
     out["negative_tags"] = list(NEGATIVE_TAGS)
     out["style_words_banned"] = list(SPOKEN_BANNED_STYLE_WORDS)
+    # G1 amended: every style surface whose sheet names a delivery ends
+    # with the delivery map built from that sheet. A sheet that names no
+    # delivery owes no map (the G2 tag grammar owns that refusal), so a
+    # "la la" payload stamps exactly as before. No negative tag is ever
+    # added here -- the 11:35 ban is reversed.
+    try:
+        deliveries = _MS.sheet_deliveries(sheet)
+        if deliveries:
+            map_sentence = _MS.delivery_map(sheet)
+            for path, text in _style_surfaces(out):
+                if _MS.has_delivery_map(text, deliveries):
+                    continue
+                name = ".".join(str(p) for p in path) or "style_text"
+                new_text = "%s %s" % (text.rstrip(".,"), map_sentence)
+                _MS.assert_delivery_map(name, new_text, deliveries)
+                _set_surface(out, path, new_text)
+        if sung:
+            out["sung"] = True
+    except _MS.MusicStyleError as exc:
+        raise _music_refusal(exc) from None
     if kind is None or kind == KIND_SONG:
         out["song_style_words_banned"] = list(SONG_BANNED_STYLE_WORDS)
     out["rule"] = RULE_TEXT
@@ -427,7 +515,8 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
 
 def _build(kind: str, request: Any, style_text: Optional[str],
            spoken_style: Optional[str], spoken_parts: Optional[list],
-           request_id: Optional[str]) -> Dict[str, Any]:
+           request_id: Optional[str],
+           sung: Optional[bool] = None) -> Dict[str, Any]:
     """Shared builder for both payload kinds. Envelope, never an exception."""
     if request is None:
         request = {}
@@ -487,7 +576,8 @@ def _build(kind: str, request: Any, style_text: Optional[str],
                 refused_words=song_banned)
     try:
         stamped = stamp(request, kind=kind, style_text=style_text,
-                        spoken_style=spoken_style, spoken_parts=spoken_parts)
+                        spoken_style=spoken_style, spoken_parts=spoken_parts,
+                        sung=sung)
     except NoEchoError as exc:
         return _envelope("rejected", exc.code.lower(), [str(exc)],
                          request_kind=kind, request=None,
@@ -501,16 +591,24 @@ def _build(kind: str, request: Any, style_text: Optional[str],
 def song_request(request: Any = None, *, style_text: Optional[str] = None,
                  spoken_style: Optional[str] = None,
                  spoken_parts: Optional[list] = None,
-                 request_id: Optional[str] = None) -> Dict[str, Any]:
+                 request_id: Optional[str] = None,
+                 sung: Optional[bool] = None) -> Dict[str, Any]:
     """The song payload, D22a stamped. Envelope, never an exception.
 
     Hand it the payload the song builder produced (for example the
     current-envelope generate payload) and it comes back carrying the dry
     rule, the short negative tags, the spoken-part ban and the song-style
     ban (Part F F13).
+
+    G1 amended: ``sung=True`` marks the payload as a sung style. The
+    payload is refused when its negative tags ban "spoken word" or "rap"
+    while the sheet carries spoken or rap blocks, and every style surface
+    whose sheet names a delivery ends with the delivery map. No negative
+    tag is added (the 11:35 rule that added "spoken word, rap" is
+    REVERSED).
     """
     return _build(KIND_SONG, request, style_text, spoken_style,
-                  spoken_parts, request_id)
+                  spoken_parts, request_id, sung=sung)
 
 
 def voice_pack_request(request: Any = None, *, prompt: Optional[str] = None,
@@ -600,6 +698,29 @@ def check(request: Any) -> Dict[str, Any]:
                 "BANNED_SONG_STYLE_WORD_IN_STYLE:%s (a song style never uses "
                 "%r)" % (word, word))
 
+    # G1 amended: every payload whose sheet names a delivery must carry the
+    # delivery map on its style text, and no payload may set negative tags
+    # that ban a delivery its sheet uses (the 11:35 style-text ban and the
+    # sung negative tags are REVERSED).
+    sheet = _sheet_text(request)
+    deliveries = _MS.sheet_deliveries(sheet)
+    map_missing = False
+    contradicted = False
+    if deliveries:
+        for path, text in surfaces:
+            missing = _MS.missing_delivery_verbs(text, deliveries)
+            if missing:
+                map_missing = True
+                errors.append(
+                    "MISSING_DELIVERY_MAP:%s (a %s sheet needs %s)"
+                    % (".".join(path), "/".join(sorted(deliveries)),
+                       " and ".join(missing)))
+    try:
+        _MS.assert_no_contradiction(tags, sheet)
+    except Exception as exc:  # MusicStyleError -> rejection
+        contradicted = True
+        errors.append("NEGATIVE_TAG_CONTRADICTION:%s" % exc)
+
     banned: List[str] = []
     try:
         texts = _payload_spoken_texts(request)
@@ -632,6 +753,10 @@ def check(request: Any) -> Dict[str, Any]:
         elif any(e.startswith("BANNED_SONG_STYLE_WORD_IN_STYLE:")
                  for e in errors):
             reason = "banned-song-style-word"
+        elif contradicted:
+            reason = "negative-tag-contradiction"
+        elif map_missing:
+            reason = "delivery-map-missing"
         else:
             reason = "no-echo-rule-incomplete"
         return _envelope("rejected", reason, errors, request=request)

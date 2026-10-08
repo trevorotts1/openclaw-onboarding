@@ -89,15 +89,15 @@ def test_via_assemble_dry_run(tmp):
     clip = os.path.join(tmp, "lip.mp4")
     open(clip, "wb").close()
     open(os.path.join(tmp, "b.mp4"), "wb").close()
-    # 4 lip-sync lines x 4 s (16 s) in a 60 s ad: passes the E6 cov gate,
+    # 6 lip-sync clips x 5 s (30 s) in a 60 s ad: passes the E6 cov gate,
     # so the ONLY variable here is the F9 rows.
-    tl = _write_tl(tmp, [{"src": "lip.mp4", "dur": 4.0, "lip_sync": True}] * 4
+    tl = _write_tl(tmp, [{"src": "lip.mp4", "dur": 5.0, "lip_sync": True}] * 6
                    + [{"src": "b.mp4", "dur": 11.0}] * 1
-                   + [{"src": "b.mp4", "dur": 22.0}] * 1)
+                   + [{"src": "b.mp4", "dur": 19.0}] * 1)
     rec = A.assemble(tl, os.path.join(tmp, "out.mp4"), dry_run=True)
     frows = rec["evidence"].get("frame_text")
     check("dry-run receipt carries frame_text rows", isinstance(frows, list)
-          and len(frows) == 4, rec.get("reason_code"))
+          and len(frows) == 6, rec.get("reason_code"))
     check("rows map to lip-sync clips only",
           all(r["clip"].endswith("lip.mp4") for r in frows), frows)
     check("all rows find no text via the stub",
@@ -145,9 +145,9 @@ def test_block_rides_assemble(tmp):
     clip = os.path.join(tmp, "lip.mp4")
     open(clip, "wb").close()
     open(os.path.join(tmp, "b.mp4"), "wb").close()
-    tl = _write_tl(tmp, [{"src": "lip.mp4", "dur": 4.0, "lip_sync": True}] * 4
+    tl = _write_tl(tmp, [{"src": "lip.mp4", "dur": 5.0, "lip_sync": True}] * 6
                    + [{"src": "b.mp4", "dur": 11.0}] * 1
-                   + [{"src": "b.mp4", "dur": 22.0}] * 1)
+                   + [{"src": "b.mp4", "dur": 19.0}] * 1)
     # Temporary detector (always flags frame 0 on any clip).
     def always(frame_paths):
         return ["GARBLE"] * len(frame_paths)
@@ -169,7 +169,7 @@ def test_block_rides_assemble(tmp):
               and rec["reason_code"] == GARBLED_TEXT_FRAME,
               (rec.get("outcome"), rec.get("reason_code")))
         check("blocked receipt still shows every clip row",
-              len(rec["evidence"]["frame_text"]) == 4,
+              len(rec["evidence"]["frame_text"]) == 6,
               rec["evidence"].get("frame_text"))
         check("gate evidence rides the blocked receipt",
               rec["evidence"]["gate_evidence"]["frame_text"]

@@ -6,6 +6,31 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.3 - 2026-10-08 - Batch MGB004: F3, G8, G1, F16, W4-PROOF, doubled lip-sync, user model choice, orchestrate-only
+
+One batch release of eight units (#1674 F3 lipsync_cuts, #1675 G8 audio shares, #1676 user model choice, #1677 orchestrate-only and no silent failure, #1679 F16 video model gate, #1680 W4-PROOF, #1682 G1 delivery map, #1683 doubled lip-sync and image gate). Entries below are each unit's own notes. Skill 75 is now v2.8.3.
+
+### Doubled lip-sync and the lip-sync image gate (#1683)
+
+Owner order (Trevor, 2026-10-08). No version bump in this unit.
+
+- **Doubled lip-sync, more pieces not longer ones.** A 60 s ad carries 6-8 clips of 4-6 s
+  (30-40 s in all, was 15-20 s), scaled linearly with ad length, no clip over 6 s. One source:
+  new `core/lipsync_clips.py` (the operator's length-formula module is not on main; swap
+  `scale()` when it lands). `shot_planner/face_speaks.py` (band, planner: every sung hook, the
+  spoken opener and closing first, each cut to 6 s) and `final_assembler/lipsync_coverage.py`
+  (E6 floor: 50% of runtime, 6 clips per 60 s) follow it; the old 15-20 s plan now FAILS.
+- **Spend.** `lipsync_clips.check_budget` refuses loudly past the cap, unknown price or unknown
+  cap; the price card refuses a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`); price-menu snapshot and
+  every doc that held 15-20 s updated.
+- **Lip-sync image gate** `lip_sync/lip_gate/image_gate.py`: runs on every source picture before
+  any paid job (`run_gate` now requires `source_image` and `image_check`); measurable checks
+  (size, 9:16, face-box share 30-45%, frontal pose, mouth open ratio, occlusion, light, shadow,
+  background, same character, sharpness, provenance); unmeasured = refused. Prompt template
+  `closeup_prompt()` makes the picture this way.
+- Tests: `test_lipsync_clips.py`, `lip_gate/test_image_gate.py`, `extensions/test_lipsync_cap.py`;
+  H2, H4, E6 tests updated to the doubled numbers.
+
 ## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
 The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.

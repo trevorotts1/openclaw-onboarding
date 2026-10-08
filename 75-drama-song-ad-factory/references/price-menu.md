@@ -194,15 +194,24 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 
 ## 3. Lip-sync close-ups
 
-Lip-sync runs on three to four selected lines per ad, about 15 to 20 seconds
-of footage per shape (choice card section 3.6). Enforced at the final edit
-QC gate (Part E E6): at least 3 lip-sync lines, at least 15 s of lip-sync in
-a 60-90 s ad, scaling to at least 12% of runtime for longer or shorter ads.
+Lip-sync runs on 6 to 8 short clips of 4 to 6 seconds per 60 s ad, 30 to 40
+seconds of footage per shape (choice card section 3.6), doubled 2026-10-08:
+more pieces, not longer ones, scaled linearly with ad length, no clip over 6
+seconds. Enforced at the final edit QC gate (Part E E6): at least 6 lip-sync
+clips and 30 s of lip-sync in a 60 s ad (never fewer than 3 clips), scaling
+linearly (50% of runtime) for longer or shorter ads.
+
+Every clip is its own paid job, so the lip-sync line is about twice what it was.
+Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
+shapes, attempts)` multiplies seconds x the Skill 74 rate x shapes x attempts and
+REFUSES loudly (`LIPSYNC_OVER_CAP`, `LIPSYNC_PRICE_UNKNOWN`, `LIPSYNC_CAP_UNKNOWN`)
+rather than trimming the plan or running past the cap. The card also refuses a
+plan with a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`).
 
 | Order | Model (KIE id) | Rate | Snapshot for one ad, one shape |
 |---|---|---|---|
-| 1 (first) | Kling avatar (`kling/ai-avatar-standard`) | 8 cr/s = $0.04/s at 720P; 16 cr/s = $0.08/s at 1080P; up to 15 s per generation | one 6-second close-up ≈ **$0.24** at 720P; a full ad's 15-20 s ≈ **$0.60-$0.80** at 720P (double at 1080P) |
-| 2 (backup) | InfiniTalk (`infinitalk/from-audio`) | 12 cr/s = $0.06/s at 720P; 3 cr/s = $0.015/s at 480P; up to 15 s per generation | a full ad's 15-20 s ≈ **$0.90-$1.20** at 720P |
+| 1 (first) | Kling avatar (`kling/ai-avatar-standard`) | 8 cr/s = $0.04/s at 720P; 16 cr/s = $0.08/s at 1080P; up to 15 s per generation | one 6-second clip ≈ **$0.24** at 720P; a 60 s ad's 30-40 s (6-8 clips) ≈ **$1.20-$1.60** at 720P (double at 1080P) |
+| 2 (backup) | InfiniTalk (`infinitalk/from-audio`) | 12 cr/s = $0.06/s at 720P; 3 cr/s = $0.015/s at 480P; up to 15 s per generation | a 60 s ad's 30-40 s ≈ **$1.80-$2.40** at 720P |
 | dropped | Volcengine | not offered | **Dropped** (decision 33) - it barely moves a closed mouth, so it carries no price and never appears on the card |
 
 The card's own figure comes from `Skill 74 price --model
