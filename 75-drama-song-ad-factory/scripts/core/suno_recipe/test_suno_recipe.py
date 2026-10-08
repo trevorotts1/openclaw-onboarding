@@ -97,11 +97,16 @@ class Recipe(unittest.TestCase):
         with self.assertRaises(R.RecipeError):          # recipe id, no map
             MD.build_generate_request("la la", raw, "T", style_id="rnb-flow",
                                       client_text=CLIENT)
+        R.guard_request(raw, "la la", "velvet_voiceover")     # exempt id passes
+
+    def test_request_seam_accepts_recipe_output(self):
+        import music_director as MD
+        if not MD.workcopy_paths()["models"].is_file():
+            self.skipTest("68-kie-audio catalog not in this checkout")
         out = R.prepare("rnb-flow", sheet(), CLIENT)
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
                                         style_id="rnb-flow", client_text=CLIENT)
         self.assertEqual(req["input"]["style"], out["style"])
-        MD.build_generate_request("la la", raw, "T", style_id="velvet_voiceover")
 
     def test_take_scored_from_labels_fails(self):
         labels = [seg("spoken", 0, 10, "label"), seg("sung", 10, 100, "label")]
