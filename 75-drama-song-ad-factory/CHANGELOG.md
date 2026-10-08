@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.3 - 2026-10-08 - H10 voice matches the character
+
+- `qc_voice_match/line_voice_fit.py`: per-line pitch measured in the stem against the on-screen
+  character's declared band, Trevor's 5/10 target rule, `VOICE_FACE_MISMATCH` -> regenerate that
+  take, numbers in the receipt (Kiesett: sung verses at 70-86 Hz over the woman's face). Skill bump
+  v2.8.2 to v2.8.3.
+
 ## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
 The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.
