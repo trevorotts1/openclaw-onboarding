@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""H2 tests: measured lip-sync gate. Stdlib only, $0, mocked providers.
+"""H2 tests: measured lip-sync gate run (LSL002). Stdlib only, $0, mocked providers.
 
-DONE-WHEN: a deliberately shifted clip FAILS and a good clip PASSES; the
-receipt row carries the numbers; InfiniTalk runs only as a one-time A/B and
-the better-measuring clip is kept.
+DONE-WHEN: each verdict path (PASS, ACCEPT_WITH_FLAG, FAIL, UNDETERMINED,
+UNMEASURABLE) is reached, a sung line that is not a PASS is held for a person with
+NO paid redo, the 2-try cap holds, and a missing mediapipe is reported, never
+passed. The measurement itself is tested in test_sync_check.py. No client video.
 
 Run: python3 core/lip_sync/lip_gate/test_lip_gate_h2.py
 """
@@ -20,122 +21,135 @@ if LIP not in sys.path:
 
 import lip_gate as L                                   # noqa: E402
 
-FPS = 30
+FPS = 30.0
 
 
-def speech(seed, n=150, gap=None):
-    """Bursty speech-like envelope; optional (start, end) silent gap."""
+def speech(seed, n=150):
     r, out = random.Random(seed), []
     while len(out) < n:
         out += [r.uniform(.6, 1.0)] * r.randint(3, 6) + [.05] * r.randint(2, 4)
-    out = out[:n]
-    if gap:
-        out[gap[0]:gap[1]] = [.05] * (gap[1] - gap[0])
-    return out
+    return out[:n]
 
 
-VOICE, CONTROL = speech(1), speech(2)
+VOICE, OTHERS = speech(1), [speech(2), speech(3)]
+GOOD = VOICE                                  # mouth follows the audio: SYNCED
+WRONG = OTHERS[0]                             # mouth follows another line: NOT_SYNCED
+WRONG2 = OTHERS[1]
 
 
-def lead(x, frames):          # mouth moves `frames` BEFORE the sound
-    return x[frames:] + [.05] * frames
+def m_of(mouth):
+    return L.measure(mouth, VOICE, OTHERS, FPS)
 
 
-def judged(mouth, voice=VOICE):
-    return L.judge(L.measure(mouth, voice, CONTROL, FPS))
+def weak():
+    """A measurement graded WEAK (margin 0 to 0.05)."""
+    return dict(m_of(GOOD), margin=0.02)
 
 
-def test_good_passes():
-    j = judged(VOICE)
-    assert j["verdict"] == "PASS" and j["offset_s"] == 0 and j["corr"] > .9, j
-
-
-def test_shifted_fails_and_shift_fixes():
-    j = judged(lead(VOICE, 6))                 # 0.2 s early
-    assert j["verdict"] == "FAIL" and L.LIP_OFFSET in j["reasons"], j
-    assert abs(j["offset_s"] + 0.2) < 1e-6 and abs(j["shift_s"] - 0.2) < 1e-6
-    fixed = ([.05] * 6) + lead(VOICE, 6)[:-6]          # delay clip by shift_s
-    assert judged(fixed)["verdict"] == "PASS"
-
-
-def test_random_mouth_fails_corr():
-    r = random.Random(9)
-    j = judged([r.random() for _ in VOICE])
-    assert j["verdict"] == "FAIL" and L.LIP_CORR_LOW in j["reasons"], j
-
-
-def test_wrong_audio_control_margin():
-    # mouth follows the CONTROL audio: correlates with itself but the
-    # wrong-audio control matches as well -> margin fails.
-    j = L.judge(L.measure(CONTROL, VOICE, CONTROL, FPS))
-    assert L.LIP_CONTROL_MARGIN in j["reasons"] and j["verdict"] == "FAIL", j
-
-
-def test_frozen_face_fails():
-    v = speech(1, gap=(60, 90))                # 1.0 s pause inside the line
-    mouth = [0.0 if 60 <= i < 90 else x for i, x in enumerate(v)]
-    j = L.judge(L.measure(mouth, v, CONTROL, FPS))
-    assert j["frozen_s"] > L.MAX_FROZEN_S and L.LIP_FROZEN_FACE in j["reasons"], j
-    short = speech(1, gap=(60, 70))            # 0.33 s pause is fine
-    m2 = [0.0 if 60 <= i < 70 else x for i, x in enumerate(short)]
-    assert L.measure(m2, short, CONTROL, FPS)["frozen_s"] < L.MAX_FROZEN_S
+def test_judge_maps_every_verdict():
+    assert L.judge(m_of(GOOD))["verdict"] == L.PASS
+    j = L.judge(weak())
+    assert j["verdict"] == L.FLAG and j["flags"] and j["reasons"] == [], j
+    j = L.judge(m_of(WRONG))
+    assert j["verdict"] == L.FAIL and "LIP_MARGIN" in j["reasons"], j
+    j = L.judge(m_of(WRONG), sung=True)
+    assert j["verdict"] == L.UNDETERMINED and L.LIP_HELD_FOR_PERSON in j["reasons"], j
+    j = L.judge(weak(), sung=True)
+    assert j["verdict"] == L.UNDETERMINED and j["flags"] == [], j
+    assert L.judge(L.measure([.3] * 150, VOICE, OTHERS, FPS))["verdict"] == L.UNMEASURABLE
 
 
 def _mock(table):
-    """generate() returns a name; measure_clip() returns canned series."""
+    """generate() returns a name; measure_clip() returns canned measurements."""
     calls = []
 
     def gen(provider, spec):
         calls.append((provider, "improved" if "lead_in_s" in spec else "base"))
         return "%s-%s" % calls[-1]
-    return calls, gen, lambda clip: L.measure(table[clip], VOICE, CONTROL, FPS)
+    return calls, gen, lambda clip: m_of(table[clip])
 
 
 PIC = {"source_image": "closeup.png",
        "image_check": lambda img: {"pass": True}}   # picture gate has its own test
-GOOD, BAD, BAD2 = VOICE, lead(VOICE, 6), lead(VOICE, 9)
 
 
-def test_regenerate_once_then_pass_no_infinitalk():
-    calls, gen, meas = _mock({"kling-base": BAD, "kling-improved": GOOD})
+def test_pass_first_try_one_paid_job():
+    calls, gen, meas = _mock({"kling-base": GOOD})
     row = L.run_gate("L1", gen, meas, {}, **PIC)
-    assert row["verdict"] == "PASS" and row["kept"] == "kling"
+    assert row["verdict"] == L.PASS and row["paid_jobs"] == 1 and len(calls) == 1
+    assert set(row["numbers"]) == {"offset_s", "lag_frames", "corr",
+                                   "control_corr", "margin", "pct"}
+
+
+def test_weak_first_try_is_accepted_with_flag_no_second_job():
+    calls = []
+
+    def gen(provider, spec):
+        calls.append(provider)
+        return "c"
+    row = L.run_gate("L1", gen, lambda c: weak(), {}, **PIC)
+    assert row["verdict"] == L.FLAG and row["flags"] and len(calls) == 1
+    assert L.qc_check([row])["pass"]               # accepted and used
+
+
+def test_spoken_fail_then_pass_on_second_try():
+    calls, gen, meas = _mock({"kling-base": WRONG, "kling-improved": GOOD})
+    row = L.run_gate("L1", gen, meas, {}, **PIC)
+    assert row["verdict"] == L.PASS and row["paid_jobs"] == 2
     assert calls == [("kling", "base"), ("kling", "improved")]
-    assert not row["infinitalk_ab"]
-    assert set(row["numbers"]) == {"offset_s", "corr", "control_corr",
-                                   "margin", "frozen_s"}
 
 
-def test_infinitalk_one_time_ab_keeps_better():
-    state = {}
-    t = {"kling-base": BAD2, "kling-improved": BAD,
-         "infinitalk-improved": GOOD}
-    calls, gen, meas = _mock(t)
-    row = L.run_gate("L1", gen, meas, state, **PIC)
-    assert row["infinitalk_ab"] and row["kept"] == "infinitalk"
-    assert row["verdict"] == "PASS"
-    # second failing line: the A/B is spent, InfiniTalk is not called again
-    calls.clear()
-    row2 = L.run_gate("L2", gen, meas, state, **PIC)
-    assert [c[0] for c in calls] == ["kling", "kling"] and not row2["infinitalk_ab"]
-    assert row2["verdict"] == "FAIL_REPLACE" and row2["kept"] == "kling"
-    assert row2["numbers"]["offset_s"] == -0.2     # kept the better of the two
-
-
-def test_ab_keeps_kling_when_infinitalk_measures_worse():
-    t = {"kling-base": BAD, "kling-improved": BAD,
-         "infinitalk-improved": BAD2}
-    _, gen, meas = _mock(t)
+def test_two_try_cap_keeps_best_measured_take():
+    calls, gen, meas = _mock({"kling-base": WRONG2, "kling-improved": WRONG})
     row = L.run_gate("L1", gen, meas, {}, **PIC)
-    assert row["kept"] == "kling" and row["verdict"] == "FAIL_REPLACE"
+    assert len(calls) == 2 == row["paid_jobs"]     # never a third paid job
+    assert row["verdict"] == "FAIL_REPLACE" and not row["infinitalk_ab"]
+    assert row["kept_clip"] in ("kling-base", "kling-improved")
+    assert not L.qc_check([row])["pass"]
 
 
-def test_qc_check_fails_replaced_or_unnumbered():
-    ok = {"line_id": "a", "verdict": "PASS", "numbers": {}}
-    assert L.qc_check([ok])["pass"]
-    assert not L.qc_check([ok, {"line_id": "b", "verdict": "FAIL_REPLACE",
-                               "numbers": {}}])["pass"]
-    assert not L.qc_check([{"line_id": "c", "verdict": "PASS"}])["pass"]
+def test_sung_not_pass_is_held_for_a_person_with_no_paid_redo():
+    calls, gen, meas = _mock({"kling-base": WRONG, "kling-improved": GOOD})
+    row = L.run_gate("L1", gen, meas, {}, sung=True, **PIC)
+    assert row["verdict"] == L.UNDETERMINED and len(calls) == 1 == row["paid_jobs"], row
+    q = L.qc_check([row])
+    assert not q["pass"] and q["held_for_person"] == ["L1"]
+    assert L.qc_check([dict(row, person_verdict=L.PASS)])["pass"]     # a person looked, it is fine
+    calls, gen, meas = _mock({"kling-base": GOOD})
+    assert L.run_gate("L1", gen, meas, {}, sung=True, **PIC)["verdict"] == L.PASS
+
+
+def test_unmeasured_is_reported_not_passed_and_not_retried():
+    calls = []
+
+    def gen(provider, spec):
+        calls.append(provider)
+        return "c"
+
+    def meas(clip):
+        raise ValueError(L.LIP_UNMEASURED + ": mediapipe/opencv/numpy not importable")
+    row = L.run_gate("L1", gen, meas, {}, **PIC)
+    assert row["verdict"] == L.UNMEASURABLE and len(calls) == 1
+    assert not L.qc_check([row])["pass"]
+
+
+def test_missing_mediapipe_or_model_raises_unmeasured():
+    import mouth_landmarks as ML
+    os.environ["LIPSYNC_FACE_MODEL"] = "/nonexistent/face_landmarker.task"
+    try:
+        ML.mouth_series("nope.mp4")
+    except ML.Unmeasured as e:
+        assert str(e).startswith(L.LIP_UNMEASURED)
+    else:
+        raise AssertionError("must not return a series")
+
+
+def test_qc_check_fails_replaced_unmeasured_undetermined_or_unnumbered():
+    ok = {"line_id": "a", "verdict": L.PASS, "numbers": {}}
+    assert L.qc_check([ok, dict(ok, verdict=L.FLAG)])["pass"]
+    for v in ("FAIL_REPLACE", L.UNMEASURABLE, L.UNDETERMINED):
+        assert not L.qc_check([ok, dict(ok, line_id="b", verdict=v)])["pass"]
+    assert not L.qc_check([{"line_id": "c", "verdict": L.PASS}])["pass"]
 
 
 def test_envelope_ffmpeg():

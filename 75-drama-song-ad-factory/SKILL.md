@@ -484,6 +484,14 @@ SOP named above.
   `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses the
   picture as its source image. QC: its mouth region must be sharp and unobstructed
   (`lip_gate.check_reference_set`); a set without it fails.
+- **Lip-sync sync check (owner order 2026-10-08, looser):** `lip_sync/lip_gate`
+  measures mouth opening (mediapipe face landmarks, through the load governor) against
+  the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
+  ACCEPT_WITH_FLAG (WEAK: accepted and used, note in the receipt); FAIL (NOT_SYNCED on
+  a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
+  person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
+  no face model, cartoon face, silent audio, too short) is reported, never a pass. At
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk
