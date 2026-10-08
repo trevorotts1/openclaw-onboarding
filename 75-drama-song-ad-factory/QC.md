@@ -185,3 +185,7 @@ client's website). An unknown word fails with the word shown
 (`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
 the exact address; it is stored as a protected word and must appear verbatim in
 the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+
+## H10 voice fits the character on screen (Part H)
+
+Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is measured inside the vocal stem (median pitch of its voiced frames) against the declared voice band of the character whose face is shown. Distance outside the band, as a percent of the nearest edge: up to 5 accept; over 5 up to 10 accept with a flag in the receipt; over 10 is `VOICE_FACE_MISMATCH` and that take is regenerated (never keep the closest). The receipt carries `median_hz`, `band_hz`, `deviation_pct` and every attempt per line. A line still failing after the regeneration rounds rejects the run.
