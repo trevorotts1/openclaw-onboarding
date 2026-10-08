@@ -1,3 +1,7 @@
+## [v26.4.12]  -  2026-10-08  -  Batch MGB006: three Skill 75 units (drama song ad factory v2.8.5)
+
+Released as one batch. Units: #1692 G3-WIRE the singing detector wired into the QC gate and receipt paths; #1693 F18 caption and lyric QC consume F17's measured word timing; #1694 G4-WIRE the target engine on Trevor's 5/10 band, wired into music_director and retake_manager. Skill 75 v2.8.5.
+
 ## [v26.4.11]  -  2026-10-08  -  Batch MGB005: nine Skill 75 units (drama song ad factory v2.8.4)
 
 Released as one batch. Units: #1653 CIO002 run each check once per commit (push main-only, per-PR concurrency, 93 fast guards folded); #1678 G5 honest receipts (measured sung/spoken/rap/no-voice, target, gap, every take); #1681 song recipe v2, song length formula and song dispatcher; #1684 G9 words-fit preflight before spend and Suno duration with 15% headroom; #1685 H10 each line's voice must fit the character on screen; #1687 H3-TEST fps policy (30 fps master, Kling pass-through, per-segment duplicate gate); #1688 KIE rate limit reference; #1689 G2 the builder enforces the lint it ships; #1690 load governor (machine-wide heavy-job gate, bounded ffmpeg, stage cleanup, KIE pacing). Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted). Skill 75 v2.8.4.
