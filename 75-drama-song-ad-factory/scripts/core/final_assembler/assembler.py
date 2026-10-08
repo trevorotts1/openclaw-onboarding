@@ -38,6 +38,12 @@ import shutil
 import subprocess
 import sys
 
+try:                                    # E1 module (this package)
+    from . import fps_conform
+except ImportError:                     # direct-script fallback
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fps_conform  # noqa: E402
+
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
@@ -258,9 +264,15 @@ def plan_timeline(tl, base_dir=".", probe=None):
         frames = max(1, round(dur * fps))
         trans = _seg_transition(tl, s) if i > 0 else "none"
         xd = round(default_xd * fps) / fps if trans != "none" else 0.0
+        # Part E E1(3): carry source/output fps per segment. The timeline's
+        # per-segment "fps" key (absent on legacy timelines) is the clip's
+        # requested source rate; fall back to the timeline fps so the
+        # manifest records an equal-fps pass-through for legacy inputs.
+        rec = fps_conform.conform_record(
+            s.get("fps", fps) if s.get("fps") is not None else fps, fps)
         items.append({"src": s["src"], "frames": frames,
                       "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd})
+                      "xfade_dur": xd, **rec})
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -303,8 +315,16 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         cmd += ["-i", song]
     fc = []
     for i, s in enumerate(segs):
+        # Part E E1: motion-compensated conform, never the plain `fps`
+        # filter (it duplicates frames -> visible stutter). The segment's
+        # recorded source_fps decides pass-through vs minterpolate.
+        conform = fps_conform.build_conform_argv(
+            s.get("source_fps", fps), fps, w, h)
+        step = f"setpts=PTS-STARTPTS,"
+        if conform:
+            step += f"{conform},"
         fc.append(f"[{i}:v]trim=duration={s['snapped_dur']:.6f},"
-                  f"setpts=PTS-STARTPTS,fps={fps:g},"
+                  f"{step}"
                   f"scale={w}:{h},setsar=1[v{i}]")
     if len(segs) == 1:
         vlast = "[v0]"
@@ -424,6 +444,24 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
             "total_frames": plan["total_frames"], "argv": argv,
             "timeout_s": timeout}
+    # Part E E1(5) final QC gate: a master above 2% duplicated frames
+    # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
+    # accepted dup source is source fps == timeline fps; with the E1
+    # conform a failure here means a bad conform (or a passthrough used
+    # where interpolation was owed) and the render is refused.
+    dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
+    evid["dup_frame_pct"] = dup_pct
+    try:
+        fps_conform.assert_no_dupe_frames(dup_pct)
+        evid["dup_frame_gate"] = "PASS"
+    except ValueError as exc:
+        return _fail(str(exc),
+                     next_action=("master exceeds %s%% duplicated frames; "
+                                  "reconform the offending clip with "
+                                  "fps_conform.build_conform_argv (mci, "
+                                  "never the plain fps filter)"
+                                  % fps_conform.DUP_FRAMES_CAP),
+                     evidence=evid)
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
