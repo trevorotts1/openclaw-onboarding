@@ -17,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import protected_names  # noqa: E402  H7 caption gate
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import caption_timing  # noqa: E402  F18 caption cues measured by lyric_timing
+
 CTA_HOLD_MIN_SECONDS = 3.0
 MOBILE_RENDITION_WIDTH_PX = 360
 
@@ -58,12 +61,23 @@ def check_cta_hold(hold_seconds):
 
 def check_captions(caption_lines, approved_lines, pronunciation_map=None,
                    captions_enabled=True, protected=(),
-                   text_source=protected_names.CAPTION_TEXT_SOURCE):
+                   text_source=protected_names.CAPTION_TEXT_SOURCE,
+                   timing=None):
     """Caption correctness vs approved lines. Exact normalized match.
 
     H7: text must come from the approved lyric sheet (``text_source``), never
     speech-to-text; any word mismatch fails and a changed protected name
-    (character/brand) is named in the detail."""
+    (character/brand) is named in the detail.
+
+    F18: caption QC consumes F17's measured word timings. Pass ``timing`` (the
+    ``provide_word_timings`` receipt, a failure envelope, or a bare word list)
+    and the check builds its cues from the MEASURED timestamps
+    (``caption_timing.captions``: text still the sheet's own, start/end from
+    the tier that measured them), rejects out-of-order/invalid measured cue
+    times, and reports the timing ``source`` with the verdict. Timing the
+    check cannot use is UNAVAILABLE — never a PASS. With ``timing`` omitted
+    this is the text comparison it always was (a run measures first via
+    ``caption_timing.captions(sheet)`` and passes the receipt in)."""
     if not captions_enabled:
         return (UNAVAILABLE, "captions disabled; nothing to check")
     if approved_lines is None:
@@ -82,7 +96,31 @@ def check_captions(caption_lines, approved_lines, pronunciation_map=None,
     for i, (got, want) in enumerate(zip(actual, expected)):
         if got != want:
             return (FAIL, "caption line %d differs from approved" % i)
-    return (PASS, "%d caption lines match approved" % len(expected))
+    verdict = "%d caption lines match approved" % len(expected)
+    if timing is None:
+        return (PASS, verdict)
+    cues, receipt = caption_timing.captions(approved_lines, timing)
+    if not receipt.get("ok"):
+        return (UNAVAILABLE,
+                "caption timing unavailable (%s): %s"
+                % (receipt.get("reason_code"), receipt.get("detail", "")))
+    # Measured cue times must be a usable caption clock: every cue ordered
+    # (start <= end) and cues never running backwards. A receipt that fails
+    # this is corrupt/rewound timing, not a caption pass.
+    prev = float("-inf")
+    for c in cues:
+        try:
+            st, en = float(c["start"]), float(c["end"])
+        except (KeyError, TypeError, ValueError):
+            return (FAIL, "measured cue timing is not numeric")
+        if en + 1e-9 < st:
+            return (FAIL, "measured cue timing ends before it starts")
+        if st + 1e-9 < prev:
+            return (FAIL, "measured cue timing runs backwards")
+        prev = st
+    return (PASS, "%s; cue timing measured from %s (%d words)"
+            % (verdict, receipt.get("source") or "unknown-source",
+               receipt.get("words", 0)))
 
 
 def check_mobile_readability(receipt, maker_identities=()):
