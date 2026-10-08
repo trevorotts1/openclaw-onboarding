@@ -50,6 +50,17 @@ def _inside(root, p):
     return target == root or target.startswith(root + os.sep), target
 
 
+#: Version-2 delivery profiles (H8): five lengths x two shapes, named
+#: ``drama-<shape>-<length>s`` -- the only profiles preflight allows by
+#: default. The version-1 ``short-9x16-30s`` profile is retired.
+PROFILE_LENGTHS_S = (60, 90, 180, 300, 600)
+PROFILE_SHAPES = ("9x16", "16x9")
+DEFAULT_PROFILES = tuple(
+    "drama-%s-%ss" % (shape, secs)
+    for secs in PROFILE_LENGTHS_S for shape in PROFILE_SHAPES
+)
+
+
 def check(payload):
     """payload keys: tools, modules, storage_dir, min_free_bytes, approved_root,
     references[], profile, allowed_profiles[], schema_version, allowed_schemas[],
@@ -62,8 +73,8 @@ def check(payload):
     if not checks["schema_trusted"]:
         return {"outcome": "error", "reason_code": "schema-untrusted",
                 "checks": checks, "next_action": f"Use a trusted schema: {schemas}."}
-    allowed = p.get("allowed_profiles") or ["short-9x16-30s"]
-    checks["profile_known"] = (p.get("profile") or "short-9x16-30s") in allowed
+    allowed = p.get("allowed_profiles") or list(DEFAULT_PROFILES)
+    checks["profile_known"] = (p.get("profile") or DEFAULT_PROFILES[0]) in allowed
     if not checks["profile_known"]:
         return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
                 "checks": checks, "next_action": f"Choose a delivery profile in {allowed}."}

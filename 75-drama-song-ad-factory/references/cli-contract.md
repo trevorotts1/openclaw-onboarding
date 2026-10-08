@@ -71,7 +71,7 @@ Resume: no changes -> `ok` / `resume-no-changes`; approval-affecting change
 python3 scripts/core/intake_preflight/factory.py preflight \
   [--root <approved-storage-root>] [--storage-dir <path>] \
   [--ref <path>]... [--require-tool <name>]... [--require-module <name>]... \
-  [--profile short-9x16-30s] [--allowed-profiles '<json>'] \
+  [--profile drama-9x16-60s] [--allowed-profiles '<json>'] \
   [--schema-version blackceo.campaign/v1] [--allowed-schemas '<json>'] \
   [--credential <name>]... [--auth-file <path>] [--summary-digest <hex>] \
   [--min-free-bytes <n>]
