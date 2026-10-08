@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """validate-sheet-format.py — validate the Skill 35 planner sheet contract at
 schema 1.3.0 and its n8n export wiring (Owner D27 / decision 35 / plan section
-6.15, 2026-10-07).
+6.15, 2026-10-07; manual H5 rewrite 2026-10-08).
 
 Source line: "add drama song fields to the Weekly Overview (style chosen,
 status, KIE cost, video link, channels posted) as schema 1.3.0; migrate live
 client sheets with scripts/migrate-template.py (no data loss); update the
 row-append webhook payload and config/validate-sheet-format.py."
+
+The installed contract
+``35-social-media-planner/config/sheet-template.schema.json`` is authoritative:
+the row-append upsert key ``cycle_id`` is PINNED at column U (index 20) and the
+five drama-song fields sit at V..Z (indexes 21..25) under the installed payload
+keys drama_song_style, drama_song_status, kie_cost_cents, drama_song_video_url
+and drama_song_channels.
 
 This is the staged 1.3.0 validator for the wave (Skill 35's own
 config/validate-sheet-format.py still checks the 1.2.0 contract and stays
@@ -16,14 +23,16 @@ never-copied example tab, unique headings, empty starter rows — and adds the
 1.3.0 gate:
 
   * contract schema_version must be exactly 1.3.0,
-  * the Weekly Overview must be the 20 legacy headings followed, in order, by
-    the five drama-song headings (no legacy column moved or renamed),
+  * the Weekly Overview must be the 20 legacy headings, then cycle_id at
+    index 20 (column U), then the five installed drama-song headings at
+    indexes 21..25 (V..Z) — no legacy column moved or renamed,
   * identity_fields.schema_version must keep the appProperties version-match
     the row-append webhook reads,
   * with --export: the staged social-planner-row-append.json payload carries
     the five drama fields, matches them to their Weekly Overview columns, and
-    is version-matched to the sheet (1.3.0 writes U..Z; 1.2.0 reports them
-    pending instead of overwriting the technical key column).
+    is version-matched to the sheet (1.3.0 writes U..Z with the key at U;
+    1.2.0 keeps the 21-cell layout with the same key at U and reports the
+    drama fields pending instead of overwriting it).
 
 Usage:
   python3 core/smp/sheet_migration/config/validate-sheet-format.py            # resolve + validate the contract
@@ -56,8 +65,12 @@ from migrate import (  # noqa: E402
     DRAMA_SONG_PAYLOAD_KEYS,
     LEGACY_OVERVIEW_HEADINGS,
     OVERVIEW_FIELD_INDEX,
+    OVERVIEW_KEY_INDEX,
     OVERVIEW_TAB,
     SCHEMA_TO,
+    TECHNICAL_HEADING,
+    TECHNICAL_INDEX,
+    WEEKLY_OVERVIEW_HEADINGS_130,
 )
 
 EXPECTED_THIS_WEEK_COLUMNS = ["Week", "Client", "Next Action", "Drafting", "QC",
@@ -69,13 +82,11 @@ BUNDLED_CONTRACT = os.path.join(MODULE_DIR, "testdata",
 failures = []
 checks = 0
 
-
 def check(cond, ok_msg, fail_msg):
     global checks
     checks += 1
     if not cond:
         failures.append(fail_msg)
-
 
 def repo_root(start):
     """Walk up until the Skill 35 tree is visible; None outside the repo."""
@@ -87,7 +98,6 @@ def repo_root(start):
         if parent == path:
             return None
         path = parent
-
 
 def load(path):
     check(os.path.exists(path), "%s exists" % os.path.basename(path),
@@ -101,7 +111,6 @@ def load(path):
         failures.append("FAIL %s: invalid JSON (%s)" % (path, exc))
         return None
 
-
 def walk_strings(obj):
     if isinstance(obj, dict):
         for k, v in obj.items():
@@ -113,7 +122,6 @@ def walk_strings(obj):
             yield from walk_strings(item)
     else:
         yield None, obj
-
 
 def resolve_contract(explicit):
     if explicit:
@@ -130,7 +138,6 @@ def resolve_contract(explicit):
         if os.path.exists(c):
             return c
     return candidates[-1]
-
 
 def validate_contract(contract, path=""):
     """F25 checks (upstream) + the 1.3.0 drama-song gate."""
@@ -183,7 +190,7 @@ def validate_contract(contract, path=""):
 
     this_week = contract.get("tabs", {}).get("This Week", {})
     check(bool(this_week), "contract: This Week view present",
-          "FAIL contract: This Week view tab missing")
+          "FAIL This Week view tab missing")
     tw_headings = this_week.get("headings", [])
     for col in EXPECTED_THIS_WEEK_COLUMNS:
         check(col in tw_headings, "This Week column '%s'" % col,
@@ -218,7 +225,8 @@ def validate_contract(contract, path=""):
           "FAIL contract: starter_rows_rule missing — template must start "
           "EMPTY of brand/campaign/publication content")
 
-    # --- the 1.3.0 drama-song fields on Weekly Overview (plan 6.15) --------
+    # --- the installed 1.3.0 layout on Weekly Overview (plan 6.15 / H5) ----
+    # legacy 0..19 (A..T), cycle_id pinned at 20 (U), drama at 21..25 (V..Z).
     ov = contract.get("tabs", {}).get(OVERVIEW_TAB, {})
     heads = list(ov.get("headings") or [])
     check(bool(heads), "contract: '%s' headings present" % OVERVIEW_TAB,
@@ -230,27 +238,43 @@ def validate_contract(contract, path=""):
               "FAIL Weekly Overview: legacy headings moved or were renamed — "
               "1.3.0 must keep them as the prefix (found %r)"
               % (heads[:legacy_n],))
-        check(heads[legacy_n:] == DRAMA_SONG_FIELDS,
-              "Weekly Overview: drama-song fields at columns U..Y in order",
+        check(len(heads) > TECHNICAL_INDEX
+              and heads[TECHNICAL_INDEX] == TECHNICAL_HEADING,
+              "Weekly Overview: the row-append upsert key %r stays at index %d "
+              "(column U)" % (TECHNICAL_HEADING, TECHNICAL_INDEX),
+              "FAIL Weekly Overview: %r must stay at index %d (column U) — "
+              "found %r; moving it puts the webhook key in a drama column and "
+              "corrupts live sheets"
+              % (TECHNICAL_HEADING, TECHNICAL_INDEX,
+                 heads[TECHNICAL_INDEX] if len(heads) > TECHNICAL_INDEX else None))
+        check(heads[legacy_n + 1:] == DRAMA_SONG_FIELDS,
+              "Weekly Overview: drama-song fields at columns V..Z in order",
               "FAIL Weekly Overview: expected the five drama-song headings "
-              "%s after the legacy 20, found %r"
-              % (DRAMA_SONG_FIELDS, heads[legacy_n:]))
+              "%s after %r at index %d, found %r"
+              % (DRAMA_SONG_FIELDS, TECHNICAL_HEADING, TECHNICAL_INDEX,
+                 heads[legacy_n + 1:]))
         legacy_set = {str(h).strip().lower() for h in LEGACY_OVERVIEW_HEADINGS}
+        legacy_set.add(TECHNICAL_HEADING.strip().lower())
         collisions = [h for h in DRAMA_SONG_FIELDS
                       if h.strip().lower() in legacy_set]
         check(not collisions, "Weekly Overview: drama headings do not collide "
-                              "with legacy headings",
+                              "with legacy or key columns",
               "FAIL Weekly Overview: drama-song heading(s) collide with an "
               "existing column: %s" % ", ".join(collisions))
-        check(len(heads) == len(LEGACY_OVERVIEW_HEADINGS) + len(DRAMA_SONG_FIELDS),
-              "Weekly Overview: 25 headings at 1.3.0 (20 legacy + 5 drama)",
+        check(len(heads) == len(WEEKLY_OVERVIEW_HEADINGS_130),
+              "Weekly Overview: 26 headings at 1.3.0 "
+              "(20 legacy + cycle_id + 5 drama)",
               "FAIL Weekly Overview: %d headings, expected %d"
-              % (len(heads), len(LEGACY_OVERVIEW_HEADINGS) + len(DRAMA_SONG_FIELDS)))
+              % (len(heads), len(WEEKLY_OVERVIEW_HEADINGS_130)))
         for key, idx in OVERVIEW_FIELD_INDEX.items():
-            check(idx < len(heads) and heads[idx] == DRAMA_SONG_FIELDS[idx - 20],
+            check(idx < len(heads) and heads[idx] == DRAMA_SONG_FIELDS[idx - 21],
                   "payload key '%s' -> column index %d" % (key, idx),
                   "FAIL payload key '%s' does not map to index %d (%r)"
                   % (key, idx, heads[idx] if idx < len(heads) else None))
+        check(OVERVIEW_KEY_INDEX < len(heads)
+              and heads[OVERVIEW_KEY_INDEX] == TECHNICAL_HEADING,
+              "upsert key index is %d at every schema version" % OVERVIEW_KEY_INDEX,
+              "FAIL the upsert key index drifted off %d" % OVERVIEW_KEY_INDEX)
 
     declared = contract.get("drama_song_fields") or ov.get("drama_song_fields")
     if declared is not None:
@@ -272,20 +296,17 @@ def validate_contract(contract, path=""):
         check(bool(key), "payload key '%s' defined" % key,
               "FAIL payload key '%s' missing" % key)
 
-
 def _node(export, name):
     for n in export.get("nodes", []):
         if n.get("name") == name:
             return n
     return None
 
-
 def _js(export, name):
     node = _node(export, name)
     if not node:
         return ""
     return (node.get("parameters") or {}).get("jsCode", "") or ""
-
 
 def validate_row_append(export, path):
     """The staged row-append payload must carry the drama-song fields."""
@@ -315,17 +336,33 @@ def validate_row_append(export, path):
         keys = [f.get("payload_key") for f in fields]
         heads = [f.get("heading") for f in fields]
         idxs = [f.get("overview_index") for f in fields]
+        cols = [f.get("column") for f in fields]
         check(keys == DRAMA_SONG_PAYLOAD_KEYS,
-              "%s: drama payload keys in order" % name,
+              "%s: drama payload keys in order (installed keys)" % name,
               "FAIL %s: drama payload keys %r != %r"
               % (name, keys, DRAMA_SONG_PAYLOAD_KEYS))
         check(heads == DRAMA_SONG_FIELDS,
-              "%s: drama headings match the sheet contract" % name,
+              "%s: drama headings match the installed sheet contract" % name,
               "FAIL %s: drama headings %r != %r"
               % (name, heads, DRAMA_SONG_FIELDS))
         check(idxs == [OVERVIEW_FIELD_INDEX[k] for k in DRAMA_SONG_PAYLOAD_KEYS],
-              "%s: drama overview indexes 20..24" % name,
+              "%s: drama overview indexes 21..25" % name,
               "FAIL %s: drama overview indexes %r" % (name, idxs))
+        check(cols == ["V", "W", "X", "Y", "Z"],
+              "%s: drama columns V..Z" % name,
+              "FAIL %s: drama columns %r != ['V','W','X','Y','Z']"
+              % (name, cols))
+        tech = dsc.get("technical_column")
+        check(isinstance(tech, dict)
+              and tech.get("heading") == TECHNICAL_HEADING
+              and tech.get("index") == TECHNICAL_INDEX
+              and str(tech.get("column", "")).upper() == "U",
+              "%s: technical upsert key pinned at index %d (column U)"
+              % (name, TECHNICAL_INDEX),
+              "FAIL %s: drama_song_contract.technical_column is %r — the %r "
+              "upsert key must stay at index %d (column U) or the webhook "
+              "writes into a drama column"
+              % (name, tech, TECHNICAL_HEADING, TECHNICAL_INDEX))
         accepted = dsc.get("accepted_payload_versions") or []
         check("1.1.0" in accepted and "1.2.0" in accepted,
               "%s: accepts legacy 1.1.0 callers and 1.2.0" % name,
@@ -352,9 +389,9 @@ def validate_row_append(export, path):
           "%s: payload accepts schema_version 1.1.0 and 1.2.0" % name,
           "FAIL %s: payload version gate does not accept both 1.1.0 and 1.2.0"
           % name)
-    check("drama_kie_cost" in vjs and "invalid drama_kie_cost" in vjs,
-          "%s: drama_kie_cost is validated" % name,
-          "FAIL %s: drama_kie_cost is not validated in the webhook" % name)
+    check("kie_cost_cents" in vjs and "invalid kie_cost_cents" in vjs,
+          "%s: kie_cost_cents is validated" % name,
+          "FAIL %s: kie_cost_cents is not validated in the webhook" % name)
 
     # Version match: the webhook reads the sheet's own stamped version.
     meta_node = _node(export, "Verify Sheet Metadata (F14)")
@@ -374,12 +411,13 @@ def validate_row_append(export, path):
         check("A2:Z" in url,
               "%s: Weekly Overview readback covers A2:Z" % name,
               "FAIL %s: Weekly Overview readback is %r — a 1.3.0 sheet keeps "
-              "the technical key in column Z" % (name, url))
+              "the drama fields through column Z" % (name, url))
     else:
         check(False, "%s: Weekly Overview readback present" % name,
               "FAIL %s: node 'Read Weekly Overview (readback)' missing" % name)
 
-    # Build Overview Summary: writes the fields, version-matched layout.
+    # Build Overview Summary: writes the fields, version-matched layout, and
+    # NEVER writes over the key column at index 20.
     ojs = _js(export, "Build Overview Summary")
     for key in DRAMA_SONG_PAYLOAD_KEYS:
         check(key in ojs, "%s: overview writes '%s'" % (name, key),
@@ -393,6 +431,11 @@ def validate_row_append(export, path):
           "%s: overview picks Z at 1.3.0 and U at 1.2.0" % name,
           "FAIL %s: 'Build Overview Summary' does not select the row width by "
           "sheet version" % name)
+    check("KEY_INDEX" in ojs and str(TECHNICAL_INDEX) in ojs,
+          "%s: overview keeps the upsert key at index %d (column U)"
+          % (name, TECHNICAL_INDEX),
+          "FAIL %s: 'Build Overview Summary' does not pin the upsert key at "
+          "index %d (column U)" % (name, TECHNICAL_INDEX))
     check("dramaPending" in ojs and "dramaWritten" in ojs,
           "%s: receipt distinguishes written vs pending drama fields" % name,
           "FAIL %s: 'Build Overview Summary' reports neither dramaWritten nor "
@@ -423,7 +466,6 @@ def validate_row_append(export, path):
              and ":batchUpdate" in str((n.get("parameters") or {}).get("url", ""))]
     check(bool(batch), "%s: formatting/sizing runs as a real batchUpdate"
           % name, "FAIL %s: no spreadsheet.batchUpdate node" % name)
-
 
 def validate_sheet_create(export, path):
     """F25 wiring checks — ported from Skill 35's validator, unchanged."""
@@ -459,7 +501,6 @@ def validate_sheet_create(export, path):
     check(bool(batch), "%s: formatting runs as a real batchUpdate" % name,
           "FAIL %s: no spreadsheet.batchUpdate node carries the formatting "
           "requests" % name)
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -504,7 +545,6 @@ def main(argv=None):
     for f in failures:
         print(f)
     return 1 if failures else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
