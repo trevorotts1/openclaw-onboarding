@@ -228,6 +228,9 @@ decisions["audio"] = {
     "decidedAt": "2026-08-04T12:29:00Z",
     "decidedBy": "owner",
 }
+# STD001: the box ran as an ACTIVE standard placeholder before the real interview finished.
+s["companyMode"] = "standard-placeholder"
+s["standardPlaceholder"] = {"status": "active", "appliedAt": "2026-10-01T00:00:00Z"}
 json.dump(s, open(p, "w"), indent=2)
 PY
 # Mark the audio tree with a sentinel so the ARCHIVE (not delete) is provable.
@@ -248,6 +251,20 @@ if [ ! -d "$COMPANY/departments/audio" ] \
   good "A1: provenanced decline 'audio' ARCHIVED to .retired/ (never deleted)"
 else
   bad "A1: 'audio' not archived correctly (dir present=$( [ -d "$COMPANY/departments/audio" ] && echo yes || echo no ), .retired=$( ls "$COMPANY/.retired" 2>/dev/null ))"
+fi
+
+# A10 (STD001): the real interview supersedes the active standard placeholder; the custom dept survives
+python3 - "$STATE" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+sp = s.get("standardPlaceholder") or {}
+ok = s.get("companyMode") == "interview" and sp.get("status") == "superseded" and sp.get("supersededAt")
+sys.exit(0 if ok else 1)
+PY
+if [ $? -eq 0 ] && [ -f "$COMPANY/departments/listings/SOUL.md" ]; then
+  good "A10: apply-diff marks the standard placeholder superseded; custom dept still exists"
+else
+  bad "A10: placeholder not superseded after apply-diff"
 fi
 
 # A2: net-new custom added (listings has a built tree)
