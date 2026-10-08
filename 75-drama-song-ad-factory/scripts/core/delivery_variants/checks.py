@@ -70,6 +70,7 @@ def check_captions(caption_lines, approved_lines, pronunciation_map=None,
         return (UNAVAILABLE, "no approved lines bound; cannot check captions")
     bad = protected_names.check_captions(
         caption_lines, approved_lines, protected, text_source)
+    bad += protected_names.check_spelling(caption_lines, protected)  # I1
     if bad:
         return (FAIL, "; ".join(bad))
     expected = [_norm_line(_apply_pronunciation(line, pronunciation_map))

@@ -143,3 +143,11 @@ failed checks. After the 5th failed round, stop and escalate to the owner.
 A maker never signs its own gate: the final verdict for any production
 stage comes from an independent reviewer, and this document is never used
 to self-approve a run.
+
+## I1: caption spelling and website
+
+Every caption word must be a real word or a protected word (names, brands, the
+client's website). An unknown word fails with the word shown
+(`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
+the exact address; it is stored as a protected word and must appear verbatim in
+the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).

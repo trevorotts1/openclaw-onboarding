@@ -6,6 +6,24 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.5] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+
+The client's website was misspelled in the captions ("wakeuphappysis.com").
+
+### Added
+- `protected_names.check_spelling`: every caption word must be a real word
+  (bundled `english_words.txt.gz` plus simple endings) or a protected word
+  (names, brands, the client's website). An unknown word fails QC
+  (`CAPTION_MISSPELLED`) with the word shown. Wired into
+  `delivery_variants.checks.check_captions`.
+- `protected_names.check_website`: the exact address must appear verbatim in the
+  lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+- Intake asks "What is the exact website address you want people to go to?" when
+  the ad sends people to a website; stored as `website` and as a protected word.
+- Test: `scripts/core/test_caption_spelling_i1.py`.
+
+---
+
 ## [v2.6.4] - 2026-10-08 - Part H H7: captions use the approved words + protected names
 
 Kiesett's Stop Stale ad captioned "the house went still" for "Stale": the lyric

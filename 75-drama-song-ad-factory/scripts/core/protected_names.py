@@ -13,6 +13,11 @@ the sheet. Four rules, one module, stdlib only, no network, $0:
    times come from the Suno timestamps. Speech-to-text is never a text source.
 4. QC          - ``check_captions`` : any caption mismatch fails, protected
    names named in the failure.
+5. SPELLING    - ``check_spelling`` (I1) : every caption word must be a real
+   word (bundled dictionary) or a protected word (names, brands, the client's
+   website); an unknown word fails with the word shown. ``check_website``
+   requires the client's exact web address, verbatim, in lyrics, captions and
+   the end card.
 
 Comparison is word by word, case folded, punctuation ignored, section tags
 such as ``[Verse]`` ignored. No synonym tolerance: a mismatch is reported,
@@ -22,6 +27,8 @@ never repaired. Self-contained (no import of words_match) so the packaged
 from __future__ import annotations
 
 import difflib
+import gzip
+import os
 import re
 
 TOOL_VERSION = "1.0.0"
@@ -30,6 +37,9 @@ CODE_PACKET = "PACKET_LINE_REWRITTEN"
 CODE_SUNG = "PROTECTED_NAME_SUNG_WRONG"
 CODE_CAPTION = "CAPTION_MISMATCH"
 CODE_SOURCE = "CAPTION_SOURCE_NOT_SHEET"
+CODE_SPELL = "CAPTION_MISSPELLED"
+CODE_WEBSITE = "WEBSITE_NOT_VERBATIM"
+CODE_NO_DICT = "SPELLCHECK_DICTIONARY_MISSING"
 
 #: The only text source a caption may come from.
 CAPTION_TEXT_SOURCE = "approved-lyric-sheet"
@@ -55,8 +65,8 @@ def protected_list(brief):
     + product_name (strings or {name: ...} dicts). Order kept, no dupes."""
     brief = brief or {}
     out, seen = [], set()
-    for key in ("protected_names", "characters", "brands"):
-        for item in brief.get(key) or []:
+    for key in ("protected_names", "characters", "brands", "website"):
+        for item in ([brief.get(key)] if key == "website" else brief.get(key) or []):
             name = item.get("name") if isinstance(item, dict) else item
             if isinstance(name, str) and _tokens(name) and \
                     tuple(_tokens(name)) not in seen:
@@ -205,3 +215,85 @@ def check_captions(cues, sheet, protected=(), text_source=CAPTION_TEXT_SOURCE):
                          " ".join(want[i1:i2]),
                          " (protected name %s)" % ", ".join(hit) if hit else ""))
     return errors
+
+
+# --- I1: spell check + website ------------------------------------------------
+_DICT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "english_words.txt.gz")
+#: Sung filler and slang the dictionary lacks. Add here, never loosen the check.
+_EXTRA = frozenset("""ok okay yeah yep nope hey hi oh ah aw uh um mm hmm woah whoa
+gonna wanna gotta kinda cuz ya y'all na la da doo wow ain't tv dvd app apps
+online email website url wifi""".split())
+_VOCAL_RE = re.compile(r"^[aeiouhm]+$")  # ooh, ahh, mmm: held vowels
+_SHORT_CVC = re.compile(r"^[^aeiou]{1,2}[aeiou][^aeiouwxy]$")
+_dict_cache = []
+
+
+def _dictionary():
+    if not _dict_cache:
+        try:
+            with gzip.open(_DICT_PATH, "rt") as fh:
+                _dict_cache.append(frozenset(fh.read().split()))
+        except OSError:
+            _dict_cache.append(None)
+    return _dict_cache[0]
+
+
+def _is_word(w, d, depth=2):
+    """w or a simple inflection of it (web2 has no plurals/-ed/-ing)."""
+    if w in d or w in _EXTRA or _VOCAL_RE.match(w):
+        return True
+    if depth == 0:
+        return False
+    for suf, add in (("ies", "y"), ("es", ""), ("s", ""), ("ed", ""), ("ed", "e"),
+                     ("d", ""), ("ing", ""), ("ing", "e"), ("ly", ""), ("er", ""),
+                     ("er", "e"), ("est", ""), ("est", "e"), ("ness", ""), ("en", "e"), ("en", ""), ("in", "g")):
+        if w.endswith(suf) and len(w) - len(suf) >= 2:
+            stem = w[:-len(suf)] + add
+            if (suf in ("ed", "ing", "er", "est") and not add and len(stem) <= 4
+                    and _SHORT_CVC.match(stem)):
+                pass  # run + ing must double: runing is a typo, running is not
+            elif _is_word(stem, d, depth - 1):
+                return True
+            if (
+                    len(stem) > 2 and stem[-1] == stem[-2]
+                    and _is_word(stem[:-1], d, depth - 1)):  # running -> run
+                return True
+    return False
+
+
+def check_spelling(cues, protected=(), extra_words=()):
+    """I1 QC gate. [] when every caption word is a real word, a number, or a
+    protected word (character, brand, client website, ``extra_words``); else
+    one error per unknown word, the word shown. Fails closed when the bundled
+    dictionary cannot be read."""
+    d = _dictionary()
+    if d is None:
+        return ["%s %s" % (CODE_NO_DICT, os.path.basename(_DICT_PATH))]
+    ok = {t for n in list(protected or ()) + list(extra_words or ())
+          for t in _tokens(n)}
+    errors, seen = [], set()
+    for w in _tokens("\n".join(_lines(cues))):
+        base = w.split("'")[0]
+        if w in seen or w in ok or base in ok or any(c.isdigit() for c in w):
+            continue
+        seen.add(w)
+        if not (_is_word(w, d) or (base != w and _is_word(base, d)
+                                   and w.split("'")[1] in ("s", "t", "re", "ve", "ll", "d", "m"))):
+            errors.append("%s word %r is not a real word and not a protected name"
+                          % (CODE_SPELL, w))
+    return errors
+
+
+def check_website(website, **texts):
+    """I1: the client's exact web address, verbatim (case and punctuation
+    ignored), in each given text (lyrics=, captions=, end_card=). A text that
+    is None is skipped. [] when every given text carries it."""
+    want = _tokens(website)
+    if not want:
+        return []
+    return ["%s %r missing from %s (found %r)"
+            % (CODE_WEBSITE, website, label,
+               " ".join(_tokens("\n".join(_lines(t)))[:12]))
+            for label, t in sorted(texts.items())
+            if t is not None and not _spans(_tokens("\n".join(_lines(t))), want)]

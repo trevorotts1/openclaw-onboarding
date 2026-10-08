@@ -95,6 +95,9 @@ DEFAULTS = {
 Q_OFFER = "What product/offer are we promoting, and what link or assets should we use?"
 Q_AUDIENCE = "Who is it for, and what should viewers do?"
 Q_SPENDING = "What is the most you want to spend on this video? For example: $25."
+Q_WEBSITE = ("What is the exact website address you want people to go to? "
+             "Type it exactly as it should appear, for example: example.com. "
+             "We will use it word for word in the song, captions and end card.")
 Q_PLACEMENT = "What placement/format should we produce (aspect ratio + target length)?"
 
 APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_currency")
@@ -186,6 +189,7 @@ def normalize(brief, settings=None):
          ((smin if isinstance(smin, int) and smin > 0 else None), "inherited"))
     # credits still accepted: budget_currency may be "credits" or a fiat code
     take("budget_currency", (b("budget_currency") or b("currency"), "provided"), (s("budget_currency"), "inherited"))
+    take("website", (b("website"), "provided"), (s("website"), "inherited"))
     for name in ("placement", "aspect_ratio", "brand_rules", "creative_prefs", "repair_allowance"):
         take(name, (b(name), "provided"), (s(name), "inherited"), (DEFAULTS[name], "assumed"))
 
@@ -217,6 +221,16 @@ def normalize(brief, settings=None):
     return fields, prov
 
 
+_WEBSITE_RE = re.compile(r"\b(web\s?site|web\s?page|url|link|visit|go to|\w+\.(com|net|org|co|io|us))\b", re.I)
+
+
+def wants_website(fields):
+    """I1: the ad sends people to a website and the exact address is unknown."""
+    if fields.get("website"):
+        return False
+    return bool(_WEBSITE_RE.search("%s %s" % (fields.get("action") or "", fields.get("offer") or "")))
+
+
 def missing_essentials(fields, prov):
     """At most 3 questions. Placement substitutes into leftover slots only."""
     qs = []
@@ -226,6 +240,8 @@ def missing_essentials(fields, prov):
         qs.append({"id": "audience_action", "question": Q_AUDIENCE})
     if not isinstance(fields.get("budget_minor"), int) or not fields.get("budget_currency"):
         qs.append({"id": "spending_authority", "question": Q_SPENDING})
+    if wants_website(fields) and len(qs) < 3:
+        qs.append({"id": "website", "question": Q_WEBSITE})
     qs = qs[:3]
     ambiguous = prov.get("placement") == "assumed" and len(qs) < 3
     if ambiguous and not any(q["id"] == "placement" for q in qs):
@@ -239,6 +255,7 @@ def summarize(fields, auth_status="missing"):
         "assets": fields.get("assets"),
         "audience": fields.get("audience"),
         "cta": fields.get("action"),
+        "website": fields.get("website"),
         "placement": fields.get("placement"),
         "format": fields.get("aspect_ratio"),
         "target_length_s": fields.get("target_length_s"),

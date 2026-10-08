@@ -1,3 +1,5 @@
+## [v26.4.11]  -  2026-10-08  -  Skill 75 Part I I1: captions are spell-checked, and the intake asks for the exact website address
+
 ## [v26.4.10]  -  2026-10-08  -  Skill 75 Part H H7: captions use the approved lyric sheet words, protected names enforced when the sheet is built and on sung takes
 
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
