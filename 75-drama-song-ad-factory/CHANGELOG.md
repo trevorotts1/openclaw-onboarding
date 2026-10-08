@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - Part H H5: pictures match the words
+
+- New `scripts/core/shot_planner/timestamp_plan.py`: `plan_from_timestamps` (shots from REAL Suno timestamps; planned timings refused), `match_table` / `pictures_match_gate` (shot / time / line / match, `PICTURE_LINE_MISMATCH`), `check_stretch` (no slow motion above 1.15x, `SLOWMO_OVER_LIMIT`).
+- Assembler `h5_gates`: blocks both before any render; the receipt carries the stretch rows and the match table.
+- INSTRUCTIONS.md: stage order is audio, timestamps, shot plan, pictures.
+- Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

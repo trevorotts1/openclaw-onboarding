@@ -32,6 +32,13 @@ from .shot_planner import (
     e4_final_checks,
     to_e4_qc_record,
 )
+from .timestamp_plan import (  # Part H H5
+    MAX_SLOWMO,
+    plan_from_timestamps,
+    match_table,
+    pictures_match_gate,
+    check_stretch,
+)
 
 try:
     from style_bible_integration import (

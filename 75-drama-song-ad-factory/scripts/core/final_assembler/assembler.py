@@ -264,6 +264,52 @@ def motion_f12_gate(plan):
     import shot_planner.motion_score as ms
     return ms.gate_clips(plan["segments"])
 
+def _h5_core():
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.timestamp_plan as tp
+    return tp
+
+
+def _h5_stretch(seg):
+    return _h5_core().stretch_of(seg)
+
+
+def h5_gates(plan):
+    """Part H H5: no slow motion above 1.15x (SLOWMO_OVER_LIMIT) and, when
+    the timeline carries line windows and segments name the line they show,
+    every picture matches the line heard in its window
+    (PICTURE_LINE_MISMATCH). Returns (_fail or None, evidence rows)."""
+    tp = _h5_core()
+    segs = plan["segments"]
+    rows = tp.check_stretch(segs)
+    ev = {"stretch": rows}
+    bad = [r for r in rows if not r["ok"]]
+    if bad:
+        return _fail(tp.SLOWMO, next_action=(
+            "segment(s) %s are slowed above %.2fx; generate the picture at "
+            "the shot window's length instead of stretching it"
+            % (",".join(str(r["index"]) for r in bad), tp.MAX_SLOWMO)),
+            evidence=ev), ev
+    if plan.get("lines") and any(s.get("shows_line_ids") for s in segs):
+        fps = plan["fps"]
+        shots = [{"shot_id": "seg%d" % i,
+                  "song_start": s["offset_frames"] / fps,
+                  "song_end": (s["offset_frames"] + s["frames"]) / fps,
+                  "shows_line_ids": s.get("shows_line_ids", [])}
+                 for i, s in enumerate(segs)]
+        gate = tp.pictures_match_gate(shots, [
+            {"line_id": l["line_id"], "start": l["start_s"], "end": l["end_s"],
+             "text": l.get("text", "")} for l in plan["lines"]])
+        ev["pictures_match"] = gate
+        if gate["outcome"] != "ok":
+            return _fail(gate["reason_code"], next_action=(
+                "pictures do not match the words in " + ",".join(gate["mismatches"])),
+                evidence=ev), ev
+    return None, ev
+
+
 def lipsync_gate(plan):
     """E6 final edit QC: lip-sync coverage on the planned timeline.
 
@@ -526,6 +572,11 @@ def plan_timeline(tl, base_dir=".", probe=None):
             item["motion_score"] = s["motion_score"]
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
+        # Part H H5: slow-motion factor (shown s / source s, or 1/speed) and
+        # the line this picture shows ride the plan for the two gates below.
+        item["stretch"] = round(_h5_stretch({**s, "dur": dur}), 3)
+        if s.get("shows_line_ids"):
+            item["shows_line_ids"] = list(s["shows_line_ids"])
         items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
@@ -863,6 +914,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    # Part H H5: slow motion cap + pictures-match-words, before any spend.
+    h5_fail, _h5_ev = h5_gates(plan)
+    if h5_fail:
+        return h5_fail
     # F8: the final sung/spoken line must end before the end card starts.
     # No endcard_start_s key on the timeline = not checked (backward
     # compatible); a bad line window already failed in load_timeline.
@@ -919,7 +974,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "evidence": {"argv": argv, "plan": plan,
                             "timeout_s": timeout, "lipsync": cov,
                             "frame_text": frows,
-                            "motion": motion},
+                            "motion": motion, "h5": _h5_ev},
                "state_version": 0}
         blocked = cov if cov is not None else ffail
         if blocked is not None:  # blocked before spend, but evidence stays
@@ -953,7 +1008,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             "timeout_s": timeout,
             # F12: every clip's motion score rides in the receipt
             # (scored before the render; flagged clips never reached here).
-            "motion": motion}
+            "motion": motion, "h5": _h5_ev}
     # Part E E1(5) final QC gate: a master above 2% duplicated frames
     # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
     # accepted dup source is source fps == timeline fps; with the E1

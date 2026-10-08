@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  Skill 75 Part H H5: shots planned from real Suno timestamps; no slow motion above 1.15x; shots name their line; QC lists shot/time/line/match
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
